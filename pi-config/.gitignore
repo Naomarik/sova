@@ -1,0 +1,14 @@
+node_modules/
+# credential material never belongs here
+auth.json
+llmkeys
+*.key
+*.pem
+.env
+.env.*
+# runtime state pi keeps beside its config
+sessions/
+models-store.json
+model-favorites.json
+trust.json
+tmp/

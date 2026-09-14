@@ -1,0 +1,60 @@
+{
+  "providers": {
+    "openai-codex": {
+      "modelOverrides": {
+        "gpt-5.6-luna": { "contextWindow": 1050000 },
+        "gpt-5.6-sol": { "contextWindow": 1050000 },
+        "gpt-5.6-terra": { "contextWindow": 1050000 },
+        "gpt-6-astra": { "contextWindow": 1050000 }
+      }
+    },
+    "ollama": {
+      "baseUrl": "http://localhost:11434/v1",
+      "api": "openai-completions",
+      "apiKey": "ollama",
+      "compat": {
+        "supportsDeveloperRole": false,
+        "supportsReasoningEffort": false
+      },
+      "models": [
+        { "id": "qwen3:4b", "name": "Qwen3 4B (local)", "contextWindow": 40960, "maxTokens": 8192 },
+        { "id": "qwen2.5:0.5b", "name": "Qwen2.5 0.5B (local)", "contextWindow": 32768, "maxTokens": 4096 },
+        { "id": "gemma3:270m", "name": "Gemma 3 270M (local)", "contextWindow": 32768, "maxTokens": 4096 },
+        { "id": "gemma3:1b", "name": "Gemma 3 1B (local)", "contextWindow": 32768, "maxTokens": 4096 },
+        { "id": "gemma3:12b-it-qat", "name": "Gemma 3 12B IT QAT (local)", "input": ["text", "image"], "contextWindow": 131072, "maxTokens": 8192 },
+        { "id": "gemma4:26b-a4b-it-qat", "name": "Gemma 4 26B A4B IT QAT (local)", "input": ["text", "image"], "contextWindow": 131072, "maxTokens": 8192 },
+        { "id": "deepseek-r1:14b", "name": "DeepSeek R1 14B (local)", "contextWindow": 131072, "maxTokens": 8192 }
+      ]
+    },
+    "ollama-cloud": {
+      "baseUrl": "https://ollama.com/v1",
+      "api": "openai-completions",
+      "compat": {
+        "supportsDeveloperRole": false,
+        "supportsReasoningEffort": false
+      },
+      "models": [
+        { "id": "gpt-oss:20b", "name": "gpt-oss 20B (Ollama Cloud)", "contextWindow": 131072, "maxTokens": 32768 },
+        { "id": "gpt-oss:120b", "name": "gpt-oss 120B (Ollama Cloud)", "contextWindow": 131072, "maxTokens": 32768 },
+        { "id": "kimi-k2.6", "name": "Kimi K2.6 (Ollama Cloud)", "input": ["text", "image"], "contextWindow": 262144, "maxTokens": 65536 },
+        { "id": "glm-5.2", "name": "GLM-5.2 (Ollama Cloud)", "contextWindow": 202752, "maxTokens": 131072 },
+        { "id": "minimax-m3", "name": "MiniMax M3 (Ollama Cloud)", "contextWindow": 204800, "maxTokens": 131072 },
+        { "id": "kimi-k3", "name": "Kimi K3 (Ollama Cloud)", "reasoning": true, "input": ["text", "image"], "contextWindow": 1048576 },
+        { "id": "kimi-k2.7-code", "name": "Kimi K2.7 Code (Ollama Cloud)", "reasoning": true, "input": ["text", "image"], "contextWindow": 262144 },
+        { "id": "deepseek-v4.1-flash", "reasoning": true, "input": ["text", "image"], "contextWindow": 1048576 },
+        { "id": "deepseek-v4-flash:0731", "reasoning": true, "contextWindow": 1048576 },
+        { "id": "deepseek-v4-pro:0813", "reasoning": true, "contextWindow": 1048576 },
+        { "id": "glm-5.3", "reasoning": true, "contextWindow": 1048576 },
+        { "id": "glm-5.3-flash", "reasoning": true, "input": ["text", "image"], "contextWindow": 1048576 },
+        { "id": "glm-5.1", "reasoning": true, "contextWindow": 202752 },
+        { "id": "gemma4:31b", "reasoning": true, "input": ["text", "image"], "contextWindow": 262144 },
+        { "id": "minimax-m2.7", "reasoning": true, "contextWindow": 196608 },
+        { "id": "mistral-large-3:675b", "input": ["text", "image"], "contextWindow": 262144 },
+        { "id": "nemotron-3-nano:30b", "reasoning": true, "contextWindow": 262144 },
+        { "id": "nemotron-3-super", "reasoning": true, "contextWindow": 262144 },
+        { "id": "nemotron-3-ultra", "reasoning": true, "contextWindow": 262144 },
+        { "id": "qwen3.5:397b", "reasoning": true, "input": ["text", "image"], "contextWindow": 262144 }
+      ]
+    }
+  }
+}

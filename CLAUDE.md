@@ -71,3 +71,4 @@ Frontend is SolidJS (NOT React): signals/stores, `<For>/<Show>`, `onCleanup` for
 - Images: 0.85.1 `ImageContent` is `{type:"image", data, mimeType}` for prompt/steer/followUp AND storage
   (sdk.md's `source:{type:"base64"}` example is stale). Model favorites come READ-ONLY from the
   command-palette's `~/.pi/agent/model-favorites.json` (`{version:1, models:[{provider,id}]}`).
+- Context fill = input+cacheRead+cacheWrite of the last assistant usage on the branch; a compaction after it → `context: null` until the next reply (window: SDK registry, else models-store.json).

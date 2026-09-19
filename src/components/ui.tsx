@@ -4,7 +4,7 @@ import { announcement, toasts } from "../lib/ui-state";
 import { Lightbox } from "./Lightbox";
 
 export type IconName =
-  | "alert-circle" | "arrow-right" | "attach" | "image" | "attention" | "chat" | "check" | "chevron-down" | "chevron-left"
+  | "alert-circle" | "arrow-right" | "attach" | "command" | "image" | "attention" | "chat" | "check" | "chevron-down" | "chevron-left"
   | "chevron-right" | "clock" | "close" | "copy" | "file" | "folder" | "info" | "more" | "pause"
   | "plus" | "refresh" | "search" | "terminal" | "gauge" | "worker";
 

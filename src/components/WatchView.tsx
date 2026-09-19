@@ -1,8 +1,9 @@
-import { createSignal, onCleanup, Show, type JSX } from "solid-js";
+import { createEffect, createSignal, onCleanup, Show, type JSX } from "solid-js";
 import type { TranscriptItem, WatchServerMessage } from "../../shared/protocol";
-import { wsUrl } from "../lib/api";
+import { fetchTranscriptWithContext, wsUrl } from "../lib/api";
+import { contextFromItems, contextStateFor } from "../lib/context";
 import { createReconnectingSocket } from "../lib/socket";
-import { announce } from "../lib/ui-state";
+import { announce, setSessionContext } from "../lib/ui-state";
 import { Composer, type ComposerReason } from "./Composer";
 import { ConnectionBanner } from "./ConnectionBanner";
 import { HistoryItems, ThreadScroller, TranscriptSkeleton } from "./Thread";
@@ -28,6 +29,21 @@ export function WatchView(props: {
   const [items, setItems] = createSignal<TranscriptItem[] | null>(null);
   const [error, setError] = createSignal<string | null>(null);
   const [lastUpdate, setLastUpdate] = createSignal<string | null>(null);
+
+  // Context fill: the model's window comes once from the transcript response; the fill itself
+  // follows the watched items (last assistant usage on the branch; a compaction after it → null).
+  const [contextWindow, setContextWindow] = createSignal<number | null | undefined>(undefined);
+  void fetchTranscriptWithContext(props.path)
+    .then((r) => {
+      setContextWindow(r.context?.window ?? null);
+      if (!items()) setSessionContext(props.path, contextStateFor(r.context, r.items));
+    })
+    .catch(() => setContextWindow(null)); // the meter just stays without a window
+  createEffect(() => {
+    const list = items();
+    const window = contextWindow();
+    if (list && window !== undefined) setSessionContext(props.path, contextFromItems(list, window));
+  });
 
   let unannounced = 0;
   let announceTimer: ReturnType<typeof setTimeout> | undefined;

@@ -9,6 +9,7 @@ import { homeFromSessionPath, shortModel, tildePath } from "./lib/format";
 import { copyText, home, setHome } from "./lib/ui-state";
 import { ChatView, type ChatRefusal } from "./components/ChatView";
 import { AgentsView } from "./components/AgentsView";
+import { ContextGauge, ContextMetaPrefix, contextDescribedBy } from "./components/ContextGauge";
 import { ModelMenu, type ModelControl } from "./components/ModelMenu";
 import { NewSessionDialog } from "./components/NewSessionDialog";
 import { OutlineStrip } from "./components/OutlineStrip";
@@ -309,10 +310,11 @@ export function App() {
                         <Icon name="chevron-left" />
                       </a>
                       <div class="session-head-main">
-                        <h1 class="session-head-title" tabindex="-1" ref={titleEl} title={s().title}>
+                        <h1 class="session-head-title" tabindex="-1" ref={titleEl} title={s().title} aria-describedby={contextDescribedBy(d.path)}>
                           {s().title}
                         </h1>
                         <p class="session-head-meta">
+                          <ContextMetaPrefix path={d.path} />
                           <span class="text-mono" title={s().cwd}>
                             {tildePath(s().cwd, home())}
                           </span>
@@ -325,6 +327,7 @@ export function App() {
                           </Show>
                         </p>
                       </div>
+                      <ContextGauge path={d.path} />
                       <Show when={d.mode === "chat" && modelControl()}>{(c) => <ModelMenu control={c()} />}</Show>
                       <Show
                         when={working() > 0}

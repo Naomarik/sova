@@ -1498,6 +1498,15 @@ summary.sidebar-region-head .icon-twist { transition: transform var(--dur-fast) 
 @media (max-width: 767px) {
   .command-menu-foot { display: none; }
 }
+/* The Commands button (next to Attach) gives way while streaming on the
+   narrowest composers so the textarea keeps ≥132px; "/" still opens the
+   menu. Contracts, so container query + @media floor. */
+@container composer (max-width: 339px) {
+  .composer:has(.button-destructive) .composer-commands { display: none; }
+}
+@media (max-width: 371px) {
+  .composer:has(.button-destructive) .composer-commands { display: none; }
+}
 /* Narrow composer: the description is the useful part; location gives way.
    Contracts, so container query + @media floor (the skill's union). */
 @container composer (max-width: 479px) {
@@ -1660,6 +1669,73 @@ summary.sidebar-region-head .icon-twist { transition: transform var(--dur-fast) 
 .hljs-deletion { color: var(--diff-del-ink); background: var(--diff-del-bg); }
 .hljs-strong   { font-weight: var(--fw-semibold); }
 .hljs-emphasis { font-style: normal; text-decoration: underline; text-decoration-color: var(--color-border-strong); }
+
+
+/* ---- CONTEXT WINDOW (§4f). Plain text, not a meter: number first and
+   only — a 6px bar in a 56px head says less than "24%". It sits in the
+   head before the model trigger (chat) / Live chip (watch) and collapses
+   with the HEAD's width, not the window's:
+     ≥720  "Context 237k / 1M · 24%"
+     ≥520  "24%"
+     <520  leaves the head; .context-meta shows "24%" first in the meta line
+   These rules contract, so each container query has a @media floor. ---- */
+
+.session-head { container: session-head / inline-size; }
+.context-gauge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: none;
+  white-space: nowrap;
+  font-size: var(--fs-caption);
+  color: var(--color-ink-muted);
+}
+.context-label { color: var(--color-ink-muted); }
+.context-value,
+.context-meta {
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-ink-2);
+}
+.context-pct { display: none; }
+.context-meta { display: none; flex: none; }
+/* Toward the limit: the number is the fact, the hue repeats it; ≥95% also
+   gets the alert glyph so it never rests on hue alone. */
+.context-warn .context-value,
+.context-warn .context-pct,
+.context-meta.context-warn { color: var(--status-warn); }
+.context-error .context-value,
+.context-error .context-pct,
+.context-meta.context-error { color: var(--status-error); }
+.context-gauge .icon { color: var(--status-error); }
+.context-compacted .context-value { font-family: var(--font-body); font-size: var(--fs-caption); color: var(--color-ink-muted); }
+
+@container session-head (max-width: 719px) {
+  .context-label, .context-value { display: none; }
+  .context-pct { display: inline; }
+}
+@container session-head (max-width: 519px) {
+  .context-gauge { display: none; }
+  .context-meta { display: inline; }
+  .model-trigger { max-width: 88px; }   /* the title is what the head is for */
+  /* The head's aggregate "Team · n working" link chip (§10) repeats the
+     sidebar row chip and the Agents foot row; on a narrow head it goes. */
+  .session-head > .chip-count { display: none; }
+}
+/* Floor: whatever else lands in the head, the title block never collapses
+   to nothing — extra chips overflow before the title disappears. */
+.session-head-main { min-width: 72px; }
+@media (max-width: 719px) {
+  .context-label, .context-value { display: none; }
+  .context-pct { display: inline; }
+}
+@media (max-width: 519px) {
+  .context-gauge { display: none; }
+  .context-meta { display: inline; }
+  .model-trigger { max-width: 88px; }
+  .session-head > .chip-count { display: none; }
+}
 
 
 /* ---- FOLDER PICKER (new-session dialog). -------------------------------- */

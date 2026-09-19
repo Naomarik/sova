@@ -17,7 +17,8 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import type { ChatClientMessage, ChatServerMessage, SlashCommand } from "../shared/protocol";
 import { readLive } from "./live";
-import { normalizeEntries } from "./transcript";
+import { toContextInfo } from "./models";
+import { contextForBranch, normalizeEntries } from "./transcript";
 import { ForeignWriteGuard, markOwned, recentForeignWriteAgeSec } from "./write-guard";
 
 const IDLE_DISPOSE_MS = 10 * 60 * 1000;
@@ -257,11 +258,13 @@ class ChatSession {
 
   hello(): ChatServerMessage {
     const session = this.session;
+    const branch = session.sessionManager.getBranch();
     return {
       type: "hello",
-      items: normalizeEntries(session.sessionManager.getBranch()),
+      items: normalizeEntries(branch),
       isStreaming: session.isStreaming,
       model: modelLabel(session),
+      context: toContextInfo(contextForBranch(branch), this.runtime.services.modelRuntime),
     };
   }
 

@@ -2,13 +2,14 @@ import { batch, createEffect, createSignal, For, onCleanup, Show } from "solid-j
 import { createStore, reconcile } from "solid-js/store";
 import { Portal } from "solid-js/web";
 import type { ChatServerMessage, SlashCommand, TranscriptItem } from "../../shared/protocol";
-import { fetchTranscript, wsUrl } from "../lib/api";
+import { fetchTranscriptWithContext, wsUrl } from "../lib/api";
+import { contextStateFor, usageTokens, windowOf } from "../lib/context";
 import { addPendingPrompt, applyEvent, emptyLive, runDetail, type LiveState } from "../lib/live";
 import { isObj, str } from "../lib/message";
 import { createReconnectingSocket } from "../lib/socket";
 import type { OutboundImage } from "../../shared/protocol";
 import { fromDataUrl } from "../lib/images";
-import { announce, draftImages, drafts, setLocalRunning, toast } from "../lib/ui-state";
+import { announce, draftImages, drafts, sessionContext, setLocalRunning, setSessionContext, toast } from "../lib/ui-state";
 import { Composer, type ComposerReason } from "./Composer";
 import { ConnectionBanner } from "./ConnectionBanner";
 import type { ModelControl } from "./ModelMenu";
@@ -61,9 +62,10 @@ export function ChatView(props: {
   const resync = async () => {
     setSyncing(true);
     try {
-      const next = await fetchTranscript(props.path);
+      const next = await fetchTranscriptWithContext(props.path);
+      setSessionContext(props.path, contextStateFor(next.context, next.items)); // authoritative after each turn
       batch(() => {
-        setItems(next);
+        setItems(next.items);
         setLive(reconcile(emptyLive()));
         setModelRows([]);
         setCommandRows([]); // local only; the persisted entries now tell the story
@@ -87,6 +89,13 @@ export function ChatView(props: {
     batch(() => {
       for (const ev of events) {
         if (isObj(ev) && ev.type === "agent_start") announce("Working.");
+        // Context fill at turn end: the finished assistant message carries the final usage
+        // (no extra server push). A compaction makes it stale until the next reply.
+        if (isObj(ev) && ev.type === "message_end" && isObj(ev.message) && ev.message.role === "assistant") {
+          const tokens = usageTokens(ev.message.usage);
+          if (tokens !== null) setSessionContext(props.path, { tokens, window: windowOf(sessionContext()[props.path]) });
+        }
+        if (isObj(ev) && ev.type === "compaction_end") setSessionContext(props.path, "compacted");
         applyEvent(setLive, ev);
         if (isObj(ev) && ev.type === "agent_settled") settled = true;
       }
@@ -127,6 +136,7 @@ export function ChatView(props: {
             setLive(reconcile({ ...emptyLive(), running: msg.isStreaming }));
           });
           setModel(msg.model);
+          setSessionContext(props.path, contextStateFor(msg.context ?? null, msg.items));
           setModelRows([]);
           props.onModel(msg.model);
           break;

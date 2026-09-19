@@ -2,6 +2,7 @@
 // $HOME for path display, and per-session composer drafts.
 
 import { createSignal } from "solid-js";
+import type { ContextState } from "./context";
 import type { PendingImage } from "./images";
 
 export interface Toast {
@@ -38,6 +39,15 @@ export const [home, setHome] = createSignal<string | null>(null);
  * server's `busy` so the open session's row changes immediately, not at the next list refetch.
  */
 export const [localRunning, setLocalRunning] = createSignal<Record<string, boolean>>({});
+
+/**
+ * Context-window fill per session path, kept current by the open chat/watch view and read by the
+ * session head's meter. Missing key: not known yet; null: nothing to show; "compacted": the fill
+ * is stale after a compaction until the next reply.
+ */
+export const [sessionContext, setSessionContextMap] = createSignal<Record<string, ContextState>>({});
+export const setSessionContext = (path: string, ctx: ContextState) =>
+  setSessionContextMap((m) => (m[path] === ctx ? m : { ...m, [path]: ctx }));
 
 /** Composer drafts by session path. Kept in memory so switching sessions never loses one. */
 export const drafts = new Map<string, string>();

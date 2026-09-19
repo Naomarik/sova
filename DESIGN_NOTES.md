@@ -34,8 +34,9 @@ stylesheets — no component library.
 | Streaming | `.live-dot` `.run-status` `.run-status-detail` `.jump-latest` |
 | Composer | `.composer` `.composer-inner` `.composer-row` `.composer-input` (with `.input.textarea`) `.composer-actions` `.composer-foot` `.composer-reason` `.composer-hint` `.button-label` `.composer-drop` + `.composer[data-drop="active\|reject"]` |
 | Model menu (§4c) | `.model-trigger` `.model-trigger-label` `.model-menu[popover]` `.model-menu-search` `.model-menu-list` `.model-menu-group` `.model-option` `[data-active]` `.model-option-check` `.model-option-id` `.model-option-provider` `.model-menu-empty` `.model-menu-foot` |
+| Context window (§4f) | `.context-gauge` `.context-label` `.context-value` `.context-pct` `.context-meta` · states `.context-warn` `.context-error` `.context-compacted` · `.session-head` is the named container `session-head` |
 | Markdown (§4e) | `.md` (on `.message-body`) `.md-table-wrap` `.md-code` `.md-code-head` `.md-code-lang` `.md-code-copy` `.md-image-link` · syntax: `.hljs-*` roles |
-| Slash commands (§4d) | `.command-menu` `.command-menu-head` `.command-list` `.command-option` `[data-active]` `.command-option-name` `.command-option-desc` `.command-option-location` `.command-menu-empty` `.command-menu-foot` · source badge: neutral `.chip` |
+| Slash commands (§4d) | `.composer-commands` (button) · `.command-menu` `.command-menu-head` `.command-list` `.command-option` `[data-active]` `.command-option-name` `.command-option-desc` `.command-option-location` `.command-menu-empty` `.command-menu-foot` · source badge: neutral `.chip` |
 | Images (§4b) | `.message-images` `.message-images-single` `.thumb` `.toolcard-images` · lightbox: `dialog.lightbox` `.lightbox-bar` `.lightbox-caption` `.lightbox-count` `.lightbox-stage` `.lightbox-img` `.lightbox-prev` `.lightbox-next` · attachments: `.attachments` `.attachment` `.attachment-rejected` `.attachment-thumb` `.attachment-icon` `.attachment-text` `.attachment-name` `.attachment-meta` |
 | Empty / loading | `.empty` `.empty-mark` `.empty-title` `.empty-body` `.empty-action` · `.skeleton` `.skeleton-line` `.skeleton-title` `.skeleton-row` |
 | Toast | `.toast-stack` `.toast` `.toast-body` |
@@ -109,6 +110,7 @@ and `fill="none" stroke="currentColor"`.
 | `pause.svg` | Stop Turn |
 | `chat.svg` | Empty-state mark (no session selected) |
 | `attach.svg` | Attach Images (composer). New, drawn on the system grid |
+| `command.svg` | Commands button (composer, §4d): a `/` in a rounded square. New, drawn on the system grid |
 | `image.svg` | Tool-card image count, drop overlay. New, drawn on the system grid |
 | `gauge.svg` | Usage: the sidebar foot's Usage row. pi-web's own, drawn on the system grid |
 | `worker.svg` | Agents: the sidebar foot's Agents row, plus the Teams and Subagents section heads (from the skill's set) |
@@ -736,6 +738,8 @@ Driven by `ChatServerMessage.event`.
       </button>
       <input class="visually-hidden" type="file" multiple tabindex="-1" aria-hidden="true"
              accept="image/png,image/jpeg,image/gif,image/webp">
+      <!-- Commands button; see §4d -->
+      <button class="button button-icon button-ghost composer-commands" type="button" aria-label="Commands" …>…</button>
       <label class="visually-hidden" for="composer-input">Message</label>
       <textarea class="input textarea composer-input" id="composer-input" rows="1"
                 placeholder="Ask pi to…" aria-describedby="composer-reason"></textarea>
@@ -1094,7 +1098,8 @@ In chat sessions it takes the model's place in the header. Drop the model from
 
 - **Label.** The model id without the provider, in mono, with the full `provider/id` in `title`.
   With no model yet, show "Choose model".
-- **Width.** It's capped at 200px (128px under 768px), and the label truncates. Its accessible
+- **Width.** It's capped at 200px (128px under 768px, and 88px when the session head is under
+  520px, per §4f), and the label truncates. Its accessible
   name is "Model: kimi-k3", which starts with the visible text.
 - **`aria-expanded`** mirrors the menu: set it in the popover's `toggle` event. While open, the
   trigger takes the sunken fill.
@@ -1396,6 +1401,49 @@ The textarea gains these attributes, and keeps them only while the menu is open:
 | `Shift+Enter` | Newline as usual. The newline ends the token, so the menu closes |
 | Mouse down on a row | Inserts, the same as `Enter`. Use `mousedown` + `preventDefault()` so the textarea keeps focus. Hover makes a row active |
 
+### Commands button
+
+A tap target for the same menu, for phones (where nobody types `/` from habit) and for
+discoverability. It sits in `.composer-row` **immediately right of Attach Images**:
+
+```html
+<button class="button button-icon button-ghost composer-commands" type="button"
+        aria-label="Commands" title="Commands"
+        aria-haspopup="listbox" aria-controls="command-listbox" aria-expanded="false"
+        aria-describedby="composer-reason">
+  <span class="icon" style="--icon: url(/icons/command.svg)" aria-hidden="true"></span>
+</button>
+```
+
+- **Icon.** `/icons/command.svg` is a `/` inside a rounded square, drawn on the system grid
+  (24 viewBox, 1.5 stroke, round caps).
+- **Tap.**
+  - It **inserts `/` at the caret**, with a space before it if the character before the caret
+    isn't whitespace, and focuses the textarea. The existing trigger rule then opens the menu
+    with an **empty query**, so nothing new is needed in the menu logic.
+  - If the caret is already inside a `/` token, it just refocuses the textarea and reopens.
+  - Focus stays in the textarea, and `aria-activedescendant` works as before.
+- **Undo on dismiss.** If the menu closes with `Esc` or blur while the token is **still exactly
+  the bare `/` this button inserted**, remove that `/` (and the space it added). Opening and
+  dismissing leaves the text as it was. A `/` the user typed is never removed.
+- **`aria-expanded`** mirrors the menu, whichever way it opened. `aria-controls` points at
+  `#command-listbox`, which exists only while the menu is open. Setting it at all times is
+  harmless.
+- **Disabled.** The button takes `aria-disabled="true"` exactly when the menu couldn't open:
+  - the composer is disabled (it shares `aria-describedby="composer-reason"`, like Attach);
+  - there's no command list yet, or it's empty. Then its `title` becomes "No commands
+    available", and there's no composer reason.
+
+  A tap on it does nothing.
+- **Unchanged.** Typing `/`, and all the keyboard and touch behavior above, stay as they are.
+- **Width budget.** Attach 44, Commands 44, and Send collapse to 44 under 480px of composer
+  width (§4b), with 8px gaps:
+
+  | Composer width | Idle textarea | Streaming (adds Stop Turn 44) |
+  |---|---|---|
+  | 390 viewport (358 composer) | about 202px | about 150px |
+  | 320 viewport (288 composer) | 132px | **Commands hides** (under 340px of composer width while Stop Turn shows), so the textarea keeps 132px. `/` still opens the menu |
+
 ### Announcements
 
 In the composer's polite live region, announce "{n} commands available." when the menu opens,
@@ -1629,6 +1677,131 @@ Don't import a highlight.js stylesheet. These rules are the whole theme, and the
   | Accent link on surface | 4.67 | 6.81 |
   | Ink-2 blockquote on surface | 7.03 | 8.72 |
   | Syntax colors on sunken | see the theme table | see the theme table |
+
+---
+
+## 4f · Context window
+
+How full the model's context is, as of the last reply. The data is `ContextInfo
+{ tokens, window | null }`, or `null` when there's no assistant turn yet. It appears in the
+session head in **chat and watch** views.
+
+### Plain text, not a meter
+
+The readout is plain text. The skill's `.meter` puts the number first and the bar second, but in
+a 56px head a 6px bar says less than "24%" and costs a line. So it's the number alone.
+Closeness to the limit is carried by the number, then by hue, and at the top step by a glyph
+too, so it never rests on hue alone.
+
+### Markup
+
+It goes after `.session-head-main`, **before** the model trigger in chat, or before the Live chip
+in watch. A second copy leads the meta line for narrow heads, and CSS shows one or the other.
+
+```html
+<header class="session-head">
+  …back…
+  <div class="session-head-main">
+    <h1 class="session-head-title" …>…</h1>
+    <p class="session-head-meta">
+      <span class="context-meta {context-warn|context-error}" aria-hidden="true">24%</span>
+      <span class="context-meta" aria-hidden="true">·</span>
+      <span class="text-mono" title="{cwd}">~/webapps/pi-web</span>
+      …
+    </p>
+  </div>
+  <span class="context-gauge {context-warn|context-error|context-compacted}" title="{exact sentence}">
+    <!-- ≥95% only: -->
+    <span class="icon icon-sm" style="--icon: url(/icons/alert-circle.svg)" aria-hidden="true"></span>
+    <span class="context-label" aria-hidden="true">Context</span>
+    <span class="context-value" aria-hidden="true">237k / 1M · 24%</span>
+    <span class="context-pct" aria-hidden="true">24%</span>
+  </span>
+  <span class="visually-hidden" id="context-desc">{exact sentence}</span>
+  …model trigger (chat) or Live chip (watch)… copy…
+</header>
+```
+
+**AT.** All the visible context text is `aria-hidden`, because CSS hides one copy or the other.
+The fact reaches AT through **one** sentence, `#context-desc`, which sits outside both copies and
+is never hidden. Point the head title at it with
+`<h1 class="session-head-title" aria-describedby="context-desc" …>`. When nothing is shown (no
+reply yet), omit both the sentence and the `aria-describedby`.
+
+### Format
+
+| Value | Shows | Rule |
+|---|---|---|
+| Tokens under 1,000 | `812` | exact |
+| Under 10k | `8.4k` | 1 decimal, and a trailing `.0` is dropped (`8k`) |
+| 10k to under 1M | `237k` | whole thousands, rounded. A value that rounds to `1000k` shows as `1M` |
+| 1M and up | `1M`, `1.5M`, `2.1M` | 1 decimal, `.0` dropped. 1,048,576 shows as `1M` |
+| Percent | `24%` | `floor(tokens / window × 100)`, so it never shows 100% before the limit is actually reached. `<1%` when above 0 and under 1. Over the window it shows the real value (`103%`) |
+| Full | `237k / 1M · 24%` | tokens / window · percent |
+| Window unknown | `237k` | tokens only: no percent, no color steps |
+
+The numbers are mono (`--font-mono`, `--fs-mono`) with tabular numerals, in `--color-ink-2`. The
+word "Context" is `--fs-caption` in `--color-ink-muted`.
+
+### Steps toward the limit
+
+| Share of window | Class | Color | Extra |
+|---|---|---|---|
+| under 80% | none | `--color-ink-2` | — |
+| 80% and up | `.context-warn` | `--status-warn` (6.42 dark / 5.93 light on the head's surface) | — |
+| 95% and up | `.context-error` | `--status-error` (5.42 / 6.01) | The `alert-circle` glyph before "Context" |
+
+Thresholds use the exact ratio, not the rounded percent. The meta-line copy takes the same class.
+
+### Exact numbers (title and AT)
+
+- **With a window:** "Context: 237,412 of 1,048,576 tokens (24%), as of the last reply."
+- **Window unknown:** "Context: 237,412 tokens, as of the last reply. This model's limit is
+  unknown."
+- **Compacted:** "Context was compacted. The next reply reports the new size."
+
+Use `title` on `.context-gauge` for hover, and the same text in `#context-desc` for AT. Use comma
+thousands.
+
+### States
+
+| State | Shows |
+|---|---|
+| No assistant turn yet (`null` and no compaction row) | **Nothing.** No gauge and no meta copy. The empty state (§3) already says "Nothing sent yet", and a "No replies yet" readout would repeat an absence |
+| Just compacted (`null` after a compaction row) | `.context-gauge.context-compacted`: "Context" plus "compacted" (in body type, muted). Narrow shows `compacted` in the meta line |
+| Streaming | It keeps the last reply's value until the turn ends, then updates. It never animates and never pulses |
+| Watch view | Same rules, from the same data |
+
+### Width budget: what collapses first
+
+It collapses by the **head's** width (a named container on `.session-head`, with an `@media`
+floor, because these rules contract):
+
+1. **Head ≥ 720px:** full, "Context 237k / 1M · 24%" (about 165px).
+2. **520 to 719px:** the percent only, "24%" (or "237k", or "compacted"), still in the head.
+3. **Under 520px** (320 included):
+   - The gauge leaves the head, and the percent leads the meta line: `24% · ~/webapps/pi-web`.
+   - The cwd truncates first.
+   - The model trigger caps at 88px (the label truncates; the full id is in its `title`), so the
+     title keeps about 75px at 320.
+
+Order of sacrifice: the context label and fraction, then the context's place in the head, then
+the cwd, then the model label's length. The title is the last thing to shrink.
+
+Two more head rules cover every head, not just chat:
+
+- **Aggregate chip.** Under 520px of head width, the head's aggregate `Team · {n} working` /
+  `{n} working` link chip (§10) is hidden. It repeats the sidebar row's chip and the Agents
+  foot row. Before this rule, a watched live session with a team at 320 had back, Team chip,
+  Live, and copy, and that left the title block about 0px wide.
+- **Floor.** `.session-head-main` has `min-width: 72px`. Whatever else lands in the head later,
+  the title and meta line can't collapse to nothing. Extra chips overflow before the title
+  disappears, and each new head chip needs its own narrow rule.
+
+### Tokens
+
+`--font-mono`, `--fs-mono`, `--fs-caption`, `--color-ink-2`, `--color-ink-muted`,
+`--status-warn`, `--status-error`, `--space-1`.
 
 ---
 
@@ -1879,6 +2052,19 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Error: other | {server message}. You're still on `{current}`. |
 | Error action | Dismiss |
 
+### Context window
+
+| Where | Copy |
+|---|---|
+| Label (head ≥720px) | Context |
+| Value | `{tokens} / {window} · {pct}%` (e.g. `237k / 1M · 24%`) · window unknown: `{tokens}` |
+| Narrow (head <720px, and the meta line <520px) | `{pct}%` · window unknown: `{tokens}` |
+| Compacted | compacted |
+| Title / AT, with a window | Context: {tokens, comma thousands} of {window} tokens ({pct}%), as of the last reply. |
+| Title / AT, window unknown | Context: {tokens} tokens, as of the last reply. This model's limit is unknown. |
+| Title / AT, compacted | Context was compacted. The next reply reports the new size. |
+| No reply yet | (nothing shown) |
+
 ### Markdown and code
 
 | Where | Copy |
@@ -1896,6 +2082,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 
 | Where | Copy |
 |---|---|
+| Commands button `aria-label` / `title` | Commands · no list: `title` "No commands available" |
 | Menu head | Commands · {n} |
 | Listbox `aria-label` | Commands |
 | Row name | /{name} |

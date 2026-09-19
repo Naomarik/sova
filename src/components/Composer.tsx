@@ -105,11 +105,61 @@ export function Composer(props: {
     const cmd = slashMatches()[index];
     if (!token || !cmd) return;
     const next = insertCommand(input.value, token, cmd.name);
+    buttonSlash = null; // that "/" is now part of a command
     setDraft(next.text);
     input.value = next.text;
     input.setSelectionRange(next.caret, next.caret);
     input.focus();
     updateSlash(); // the caret now sits after "/name ", outside any token
+  };
+
+  // ---- Commands button: opens the same menu by inserting "/" at the caret ----------------
+  /** The "/" (and the space before it) the button inserted; removed if closed untouched. */
+  let buttonSlash: { at: number; space: boolean } | null = null;
+  const dropButtonSlash = () => {
+    const ins = buttonSlash;
+    buttonSlash = null;
+    if (!ins) return;
+    const v = input.value;
+    const token = slashTokenAt(v, ins.at + 1);
+    if (v[ins.at] !== "/" || token?.start !== ins.at || token.query !== "") return; // user typed on
+    const from = ins.space ? ins.at - 1 : ins.at;
+    const next = v.slice(0, from) + v.slice(ins.at + 1);
+    setDraft(next);
+    input.value = next;
+    input.setSelectionRange(from, from);
+  };
+  const toggleCommands = () => {
+    if (disabled() || !(props.commands?.length ?? 0)) return;
+    if (slashOpen()) {
+      const token = slashToken();
+      setSlashDismissed(token ? tokenKey(token) : null);
+      dropButtonSlash();
+      input.focus();
+      updateSlash();
+      return;
+    }
+    const v = input.value;
+    const caret = document.activeElement === input ? input.selectionStart ?? v.length : v.length;
+    const inToken = slashTokenAt(v, caret);
+    if (inToken) {
+      // Already in a (dismissed) token: just reopen it.
+      setSlashDismissed(null);
+      input.focus();
+      input.setSelectionRange(caret, caret);
+      updateSlash();
+      return;
+    }
+    const space = caret > 0 && !/\s/.test(v[caret - 1]!);
+    const insert = `${space ? " " : ""}/`;
+    const next = v.slice(0, caret) + insert + v.slice(caret);
+    setDraft(next);
+    input.value = next;
+    const at = caret + insert.length - 1;
+    buttonSlash = { at, space };
+    input.focus();
+    input.setSelectionRange(at + 1, at + 1);
+    updateSlash();
   };
   // Announce the count on open and when it changes, at most once a second (latest wins).
   let announceTimer: ReturnType<typeof setTimeout> | undefined;
@@ -328,6 +378,22 @@ export function Composer(props: {
               }}
             />
           </Show>
+          {/* Opens the §4d menu; mousedown keeps focus (and the caret) in the textarea. */}
+          <button
+            type="button"
+            class="button button-icon button-ghost composer-commands"
+            aria-label="Commands"
+            title={props.commands?.length ? "Commands" : "No commands available"}
+            aria-haspopup="listbox"
+            aria-expanded={slashOpen() ? "true" : "false"}
+            aria-controls={slashOpen() && slashMatches().length > 0 ? "command-listbox" : undefined}
+            aria-describedby="composer-reason"
+            aria-disabled={disabled() || !(props.commands?.length ?? 0) ? "true" : undefined}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={toggleCommands}
+          >
+            <Icon name="command" />
+          </button>
           <label class="visually-hidden" for="composer-input">
             Message
           </label>
@@ -344,6 +410,7 @@ export function Composer(props: {
             value={text()}
             disabled={!!props.readOnly}
             onInput={(e) => {
+              buttonSlash = null; // typed: the "/" is the user's now
               setDraft(e.currentTarget.value);
               updateSlash();
             }}
@@ -351,7 +418,10 @@ export function Composer(props: {
             onKeyUp={(e) => {
               if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) updateSlash();
             }}
-            onBlur={() => setSlashToken(null)}
+            onBlur={() => {
+              dropButtonSlash(); // closing by blur undoes an untouched button "/" too
+              setSlashToken(null);
+            }}
             onPaste={(e) => {
               const files = [...(e.clipboardData?.files ?? [])];
               if (files.length === 0) return;
@@ -380,6 +450,8 @@ export function Composer(props: {
                   e.preventDefault();
                   const token = slashToken();
                   setSlashDismissed(token ? tokenKey(token) : null);
+                  dropButtonSlash(); // a "/" the Commands button added, untouched, goes away
+                  updateSlash();
                   return;
                 }
               }

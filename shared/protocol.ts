@@ -66,10 +66,15 @@ export interface OutboundImage {
 //
 // GET  /api/sessions            -> SessionSummary[]
 // POST /api/sessions { cwd }    -> SessionSummary   (creates a NEW empty webapp-owned session)
-// GET  /api/transcript?path=…   -> { items: TranscriptItem[] }   (active branch only)
+// GET  /api/transcript?path=…   -> { items: TranscriptItem[]; context: ContextInfo | null }   (active branch only)
 // GET  /api/cwds                -> string[]                          (distinct cwds, for the new-session picker)
 // GET  /api/models              -> ModelInfo[]                       (available models; favorite=true mirrors the TUI Ctrl+P palette)
 // ---------------------------------------------------------------------------
+
+/** Context-window fill of a session: last assistant entry's usage (input+cacheRead+cacheWrite)
+    vs the model's contextWindow from models-store.json. null when no assistant message yet or
+    window unknown. Live-updates via the assistant usage in passthrough events at turn end. */
+export interface ContextInfo { tokens: number; window: number | null }
 
 export interface ModelInfo {
   /** "provider/modelId" — the canonical ref used in set_model. */
@@ -100,8 +105,8 @@ export interface SlashCommand {
 }
 
 export type ChatServerMessage =
-  /** First message after connect: current transcript + live state. */
-  | { type: "hello"; items: TranscriptItem[]; isStreaming: boolean; model: string | null }
+  /** First message after connect: current transcript + live state + context fill. */
+  | { type: "hello"; items: TranscriptItem[]; isStreaming: boolean; model: string | null; context: ContextInfo | null }
   /** Raw pi SDK agent event passthrough. Shapes documented in pi docs/rpc.md "Events":
       message_update (assistantMessageEvent: text_delta | thinking_delta | toolcall_start/delta/end),
       tool_execution_start/update/end, turn_start/end, agent_start/end, agent_settled, ... */

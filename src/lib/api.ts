@@ -1,4 +1,4 @@
-import type { AgentsInsight, ModelInfo, SessionInsight, SessionSummary, TranscriptItem, UsageInsight } from "../../shared/protocol";
+import type { AgentsInsight, ContextInfo, ModelInfo, SessionInsight, SessionSummary, TranscriptItem, UsageInsight } from "../../shared/protocol";
 
 export class ApiError extends Error {
   constructor(
@@ -44,6 +44,13 @@ export const createSession = (cwd: string) =>
 
 export const fetchTranscript = (path: string) =>
   request<{ items: TranscriptItem[] }>(`/api/transcript?path=${encodeURIComponent(path)}`).then((r) => r.items);
+
+/** The transcript plus its context-window fill (null when unknown or stale). */
+export const fetchTranscriptWithContext = (path: string) =>
+  request<{ items: TranscriptItem[]; context: ContextInfo | null }>(`/api/transcript?path=${encodeURIComponent(path)}`).then((r) => ({
+    items: r.items,
+    context: r.context ?? null,
+  }));
 
 export const fetchUsage = () => request<UsageInsight>("/api/insights/usage");
 

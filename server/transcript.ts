@@ -168,8 +168,38 @@ export function normalizeEntries(entries: Entry[]): TranscriptItem[] {
   return out;
 }
 
-/** Read a session file and return normalized active-branch items. */
-export async function readTranscript(path: string): Promise<TranscriptItem[]> {
-  const text = await readFile(path, "utf8");
-  return normalizeEntries(activeBranch(parseLines(text)));
+/** Read a session file and return its active-branch entries (root-first). */
+export async function readActiveBranch(path: string): Promise<Entry[]> {
+  return activeBranch(parseLines(await readFile(path, "utf8")));
+}
+
+/** Context fill before the window lookup: tokens + the model ("provider/id") that produced them. */
+export interface BranchContext {
+  tokens: number;
+  model: string | null;
+}
+
+/**
+ * Context fill = input + cacheRead + cacheWrite of the LAST assistant message with usage on the
+ * branch. A compaction after it makes that number stale, so we return null until the next reply.
+ * The model is the assistant message's own provider/model, else the last model_change before it,
+ * else the session's first model_change.
+ */
+export function contextForBranch(branch: Entry[]): BranchContext | null {
+  for (let i = branch.length - 1; i >= 0; i--) {
+    const e = branch[i]!;
+    if (e.type === "compaction" || (e.type === "message" && e.message?.role === "compactionSummary")) return null;
+    const m = e.type === "message" ? e.message : undefined;
+    const u = m?.role === "assistant" ? m.usage : undefined;
+    if (!u) continue;
+    const tokens = (Number(u.input) || 0) + (Number(u.cacheRead) || 0) + (Number(u.cacheWrite) || 0);
+    let model = m.provider && m.model ? `${m.provider}/${m.model}` : null;
+    if (!model) {
+      const change = branch.slice(0, i).reverse().find((x) => x.type === "model_change")
+        ?? branch.find((x) => x.type === "model_change");
+      if (change) model = `${change.provider}/${change.modelId}`;
+    }
+    return { tokens, model };
+  }
+  return null;
 }

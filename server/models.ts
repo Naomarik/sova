@@ -1,8 +1,50 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
-import type { ModelInfo } from "../shared/protocol";
+import type { ModelRuntime } from "@earendil-works/pi-coding-agent";
+import type { ContextInfo, ModelInfo } from "../shared/protocol";
 import { getModelRuntime } from "./chat-manager";
+import type { BranchContext } from "./transcript";
+
+/** pi's cached remote catalogs (READ-ONLY): {[provider]: {models: [{id, contextWindow}]}}. */
+const MODELS_STORE_FILE = join(getAgentDir(), "models-store.json");
+const windowCache = new Map<string, number | null>();
+
+function storeWindow(provider: string, id: string): number | null {
+  try {
+    const store = JSON.parse(readFileSync(MODELS_STORE_FILE, "utf8"));
+    const m = store?.[provider]?.models?.find?.((x: any) => x?.id === id);
+    return typeof m?.contextWindow === "number" ? m.contextWindow : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * contextWindow for "provider/id": the SDK model registry first (includes custom models.json
+ * providers such as ollama-cloud), then models-store.json. Cached per ref; unknown → null.
+ */
+export function contextWindow(ref: string, modelRuntime: ModelRuntime): number | null {
+  const hit = windowCache.get(ref);
+  if (hit !== undefined) return hit;
+  const slash = ref.indexOf("/"); // provider has no "/", model ids may
+  if (slash <= 0) return null;
+  const [provider, id] = [ref.slice(0, slash), ref.slice(slash + 1)];
+  const fromRegistry = modelRuntime.getModel(provider, id)?.contextWindow;
+  const window = typeof fromRegistry === "number" && fromRegistry > 0 ? fromRegistry : storeWindow(provider, id);
+  windowCache.set(ref, window);
+  return window;
+}
+
+export function toContextInfo(ctx: BranchContext | null, modelRuntime: ModelRuntime): ContextInfo | null {
+  if (!ctx) return null;
+  return { tokens: ctx.tokens, window: ctx.model ? contextWindow(ctx.model, modelRuntime) : null };
+}
+
+/** Context info for a read-only parsed branch (REST path). */
+export async function resolveContext(ctx: BranchContext | null): Promise<ContextInfo | null> {
+  return ctx ? toContextInfo(ctx, await getModelRuntime()) : null;
+}
 
 /** The command-palette extension's favorites (READ-ONLY here): {version:1, models:[{provider,id}]}. */
 const FAVORITES_FILE = join(getAgentDir(), "model-favorites.json");

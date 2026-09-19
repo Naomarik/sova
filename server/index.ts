@@ -8,12 +8,12 @@ import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { Hono } from "hono";
 import { disposeAllChats } from "./chat-manager";
 import { canonicalPath, resolveSessionPath } from "./paths";
-import { listModels } from "./models";
+import { listModels, resolveContext } from "./models";
 import { markOwned } from "./write-guard";
 import { addWebSession } from "./web-sessions";
 import { getAgentsInsight, getSessionInsight, getUsageInsight } from "./insights";
 import { getSessionSummary, listCwds, listSessions } from "./sessions-index";
-import { readTranscript } from "./transcript";
+import { contextForBranch, normalizeEntries, readActiveBranch } from "./transcript";
 import { attachWebSockets } from "./ws";
 
 const PORT = Number(process.env.PORT) || 4800;
@@ -71,7 +71,8 @@ app.get("/api/transcript", async (c) => {
   const path = resolveSessionPath(c.req.query("path"));
   if (!path) return c.json({ error: "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)" }, 400);
   if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
-  return c.json({ items: await readTranscript(path) });
+  const branch = await readActiveBranch(path);
+  return c.json({ items: normalizeEntries(branch), context: await resolveContext(contextForBranch(branch)) });
 });
 
 // Insights: read-only views of extension state (docs/insights-research.md). Missing or

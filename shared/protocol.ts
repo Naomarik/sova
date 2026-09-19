@@ -23,9 +23,9 @@ export interface SessionSummary {
     workers?: { working: number; total: number };
   } | null;
   /** While the server holds this session's runtime AND it is mid-agent-turn (streaming): true.
-      The sidebar shows a "Busy" marker. ABSENT/false when idle/closed — optional until the
-      busy-marker feature ships. Never pulsing (design rule). */
-  busy?: boolean;
+      The sidebar shows a "Busy" marker. false when idle/closed or not held by this server.
+      Never pulsing (design rule). */
+  busy: boolean;
   /** "web" if spawned via this webapp's POST /api/sessions (tracked persistently by the server,
       survives restarts); "external" for anything else. Pane rule: top region shows
       live!=null || origin==="web"; everything else goes to the bottom archive section. */

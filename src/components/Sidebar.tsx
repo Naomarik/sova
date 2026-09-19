@@ -2,7 +2,7 @@ import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import type { AgentsInsight, SessionSummary, UsageInsight } from "../../shared/protocol";
 import { relativeTime, shortModel, tildePath } from "../lib/format";
 import { activeTeams, agentsHref, type GlancePart, usageGlance, usageHref } from "../lib/insights";
-import { home } from "../lib/ui-state";
+import { home, localRunning } from "../lib/ui-state";
 import { Banner, Chip, CountChip, Icon } from "./ui";
 
 interface Group {
@@ -69,6 +69,14 @@ function GroupList(props: { groups: Group[]; selected: string | null; now: numbe
                       <Chip tone="accent" live title={`Open in a TUI · pid ${s.live!.pid} · ${s.live!.status}`}>
                         Live
                       </Chip>
+                    </Show>
+                    {/* Busy (§2): this tab's own run wins over the last fetched list; Live wins over both. */}
+                    <Show when={!s.live && (localRunning()[s.path] ?? s.busy)}>
+                      <span class="chip chip-info" title="pi is replying in this session">
+                        <i class="chip-dot" />
+                        Busy
+                        <span class="visually-hidden">, pi is replying in this session</span>
+                      </span>
                     </Show>
                   </a>
                 </li>

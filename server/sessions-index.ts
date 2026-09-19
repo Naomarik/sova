@@ -5,8 +5,9 @@ import type { SessionSummary } from "../shared/protocol";
 import { type LiveRecord, readLive } from "./live";
 import { LIVE_DIR, SESSIONS_DIR } from "./paths";
 import { isWebSession } from "./web-sessions";
+import { isSessionBusy } from "./chat-manager";
 
-type BaseSummary = Omit<SessionSummary, "live" | "origin">;
+type BaseSummary = Omit<SessionSummary, "live" | "origin" | "busy">;
 
 const CHUNK = 16 * 1024;
 const MAX_HEAD = 256 * 1024;
@@ -180,7 +181,7 @@ export async function listSessions(): Promise<SessionSummary[]> {
   for (const s of results) {
     if (!s) continue;
     const l = live.get(s.path);
-    out.push({ ...s, live: liveField(l), origin: isWebSession(s.id) ? "web" : "external" });
+    out.push({ ...s, live: liveField(l), origin: isWebSession(s.id) ? "web" : "external", busy: isSessionBusy(s.path) });
   }
   out.sort((a, b) => b.lastActiveAt.localeCompare(a.lastActiveAt));
   return out;
@@ -190,7 +191,7 @@ export async function getSessionSummary(path: string): Promise<SessionSummary | 
   const s = await summarize(path);
   if (!s) return null;
   const l = readLive().get(path);
-  return { ...s, live: liveField(l), origin: isWebSession(s.id) ? "web" : "external" };
+  return { ...s, live: liveField(l), origin: isWebSession(s.id) ? "web" : "external", busy: isSessionBusy(s.path) };
 }
 
 function isDir(p: string): boolean {

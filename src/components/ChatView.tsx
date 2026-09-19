@@ -1,4 +1,4 @@
-import { batch, createSignal, For, onCleanup, Show } from "solid-js";
+import { batch, createEffect, createSignal, For, onCleanup, Show } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { Portal } from "solid-js/web";
 import type { ChatServerMessage, SlashCommand, TranscriptItem } from "../../shared/protocol";
@@ -8,7 +8,7 @@ import { isObj, str } from "../lib/message";
 import { createReconnectingSocket } from "../lib/socket";
 import type { OutboundImage } from "../../shared/protocol";
 import { fromDataUrl } from "../lib/images";
-import { announce, draftImages, drafts, toast } from "../lib/ui-state";
+import { announce, draftImages, drafts, setLocalRunning, toast } from "../lib/ui-state";
 import { Composer, type ComposerReason } from "./Composer";
 import { ConnectionBanner } from "./ConnectionBanner";
 import type { ModelControl } from "./ModelMenu";
@@ -251,6 +251,17 @@ export function ChatView(props: {
   });
   onCleanup(() => props.onModelControl?.(null));
 
+  // Mirror this session's run state for the sidebar's Busy chip (the list refetches on settle).
+  const setMine = (running: boolean | undefined) =>
+    setLocalRunning((m) => {
+      const next = { ...m };
+      if (running === undefined) delete next[props.path];
+      else next[props.path] = running;
+      return next;
+    });
+  createEffect(() => setMine(live.running));
+  onCleanup(() => setMine(undefined));
+
   const send = (text: string, steer: boolean, images: OutboundImage[], dataUrls: string[]) => {
     if (!socket.send({ type: steer ? "steer" : "prompt", text, ...(images.length ? { images } : {}) })) return false;
     // A known slash command isn't a message to the model (templates and skills expand into other
@@ -356,8 +367,8 @@ export function ChatView(props: {
                   </div>
                 )}
               </For>
-              {/* Model/thinking info rows alone don't count as a conversation. */}
-              <Show when={live.entries.length === 0 && commandRows().length === 0 && !list().some((i) => i.kind !== "info")}>
+              {/* Only while the thread has zero rows, local rows included (§3 States). */}
+              <Show when={list().length === 0 && live.entries.length === 0 && commandRows().length === 0 && modelRows().length === 0}>
                 <div class="empty">
                   <p class="empty-title">
                     New session in <code>{props.cwdLabel}</code>.

@@ -396,6 +396,7 @@ class ChatSession {
     this.unsubscribe?.();
     for (const p of this.pendingUi.values()) p.resolve(undefined);
     this.pendingUi.clear();
+    if (held.get(this.path) === this) held.delete(this.path); // a reload may already hold a newer one
     this.onDisposed();
     try {
       await this.runtime.dispose();
@@ -488,6 +489,14 @@ class ChatSession {
 }
 
 const sessions = new Map<string, Promise<ChatSession>>();
+/** Fully opened runtimes by canonical path (pending opens are not here), for sync busy lookups. */
+const held = new Map<string, ChatSession>();
+
+/** SessionSummary.busy: this server holds the runtime and an agent run is in progress. */
+export function isSessionBusy(path: string): boolean {
+  const chat = held.get(path);
+  return !!chat && !chat.disposed && chat.session.isStreaming;
+}
 
 async function openSession(path: string, onDisposed: () => void): Promise<ChatSession> {
   if (!existsSync(path)) throw new Error(`Session file not found: ${path}`);
@@ -533,6 +542,7 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
       throw err;
     }
     chat.deferredAppends = deferred;
+    held.set(path, chat);
     return chat;
   } finally {
     restore();

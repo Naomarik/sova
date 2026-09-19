@@ -269,6 +269,35 @@ unfolded (≥768)                                  folded (<768)
 - **LIVE badge.** Shown when `live !== null`: `.chip.chip-accent.chip-live` with the word `Live`.
   The pulse is justified because it means "a TUI is running this right now". Never show the dot
   without the word.
+- **BUSY marker.** Shown when `busy === true`, meaning the server is mid-turn on a session pi-web
+  holds.
+
+  ```html
+  <span class="chip chip-info" title="pi is replying in this session"><i class="chip-dot"></i>Busy</span>
+  ```
+
+  - **No pulse.** It's a plain status chip, with a static info-hue dot and the word. Never add
+    `.chip-live`: the pulse belongs to Live alone, so a row never has two moving things.
+  - **Hue.** It's info (`--status-info`, 5.94 dark / 6.36 light on the chip's surface), not the
+    accent. Busy is our own run, and the accent's live meaning is reserved for "a TUI has this".
+  - **Accessible name.** The chip text "Busy" is part of the row link's name. Its `title` gives
+    the sentence on hover. For AT, add
+    `<span class="visually-hidden">, pi is replying in this session</span>` after the word
+    inside the chip, because `title` isn't reliably announced.
+  - **Order.** Chips sit at the right end of the row as `[{n} working] [Live]` or `[Busy]`, with
+    at most **two** chips per row:
+    - `{n} working` (§10) exists only for live sessions, and Busy only for sessions pi-web
+      holds, so Working and Busy never meet.
+    - Live and Busy shouldn't co-occur either, because pi-web never holds a TUI-owned session.
+      If both ever arrive, **Live wins** and Busy is hidden. The TUI owns it, so our view of
+      busy is stale.
+  - **320px budget.** Row inner width is 288px. The worst case is still today's: `2 working` (~80)
+    + `Live` (~64) + 2 × 12px gaps leaves about 120px for the title and meta, which truncate as
+    they already do. A Busy row has one chip (~64), so its title gets about 210px. No change to
+    row height.
+  - **Other placements.** None for v1. The open session already shows its own run state (the
+    `.run-status` line and the author's `.live-dot`, §3), so the session head doesn't repeat
+    Busy. It doesn't count toward the "N live" chip either.
 - **Live count.** `N live` as `.chip-count`, shown only when N ≥ 1. It sits at the right end of
   the count row under search (`.spread`), not in the head: at 320px the head holds exactly brand,
   Refresh, and New Session. It always counts all live sessions, not just the filtered ones.
@@ -1741,6 +1770,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Count | `{n} sessions` · filtered: `{visible} of {total} sessions` |
 | Live chip (count row under search) | `{n} live` (only when n ≥ 1). `title`: "Sessions open in a TUI" |
 | Row live chip | Live |
+| Row busy chip | Busy (static, no pulse) · `title`: "pi is replying in this session" · visually hidden suffix: ", pi is replying in this session" |
 | Untitled row | Untitled (muted) |
 | Top region head | Live & web · {n} · searching: Live & web · {hits} of {total} |
 | Archive head | Archive · {n} · searching: Archive · {hits} of {total} |

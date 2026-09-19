@@ -33,6 +33,12 @@ export function announce(text: string) {
 
 export const [home, setHome] = createSignal<string | null>(null);
 
+/**
+ * Running state of sessions this tab is chatting in, by path. The sidebar overlays it on the
+ * server's `busy` so the open session's row changes immediately, not at the next list refetch.
+ */
+export const [localRunning, setLocalRunning] = createSignal<Record<string, boolean>>({});
+
 /** Composer drafts by session path. Kept in memory so switching sessions never loses one. */
 export const drafts = new Map<string, string>();
 /** Pending image attachments by session path, kept with the text draft. */

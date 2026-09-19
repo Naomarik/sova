@@ -226,17 +226,17 @@ export function Composer(props: {
         </Show>
 
         <div class="composer-row">
+          <button
+            type="button"
+            class="button button-icon button-ghost"
+            aria-label="Attach Images"
+            aria-describedby="composer-reason"
+            aria-disabled={disabled() ? "true" : undefined}
+            onClick={() => !disabled() && picker?.click()}
+          >
+            <Icon name="attach" />
+          </button>
           <Show when={!props.readOnly}>
-            <button
-              type="button"
-              class="button button-icon button-ghost"
-              aria-label="Attach Images"
-              aria-describedby="composer-reason"
-              aria-disabled={disabled() ? "true" : undefined}
-              onClick={() => !disabled() && picker?.click()}
-            >
-              <Icon name="attach" />
-            </button>
             <input
               ref={picker}
               class="visually-hidden"

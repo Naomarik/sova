@@ -19,3 +19,6 @@ html, body, #root { height: 100%; }
 
 /* .search supplies its own Clear Search button; drop the UA's duplicate on type="search". */
 .search input[type="search"]::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; }
+
+/* InfoRow's text span sits in an inline-flex row; let long unbroken text wrap inside it. */
+.info-row-text > span { min-width: 0; overflow-wrap: anywhere; }

@@ -4,6 +4,7 @@ import { clockTime, relativeTime, shortModel, tildePath } from "../lib/format";
 import { activeTeams, memberStatus, type MemberStatus, teamAnchor, teamFresh } from "../lib/insights";
 import type { Poll } from "../lib/poll";
 import { home } from "../lib/ui-state";
+import { isHostSession } from "../lib/workers";
 import { InsightsPage, iso, Skeletons } from "./InsightsPage";
 import { sessionHref } from "./Sidebar";
 import { Chip, CountChip, Icon } from "./ui";
@@ -120,6 +121,9 @@ function AgentCard(props: { s: LiveAgentSession; workers: WorkerInfo[]; title: s
             {(p) => <a href={sessionHref(p())}>{props.title ?? props.s.name ?? tildePath(props.s.cwd, home())}</a>}
           </Show>
         </h3>
+        <Show when={props.s.embedded}>
+          <CountChip title="A chat running in pi-web">Web</CountChip>
+        </Show>
         <Show when={working() > 0}>
           <CountChip>{working()} working</CountChip>
         </Show>
@@ -147,7 +151,7 @@ function AgentCard(props: { s: LiveAgentSession; workers: WorkerInfo[]; title: s
 function AgentsSections(props: { agents: Poll<AgentsInsight>; now: number; titleOf(path: string | null): string | null }) {
   const a = () => props.agents.data();
   const teams = () => activeTeams(a());
-  const liveSessions = () => (a()?.sessions ?? []).filter((s) => s.mode !== "rpc");
+  const liveSessions = () => (a()?.sessions ?? []).filter(isHostSession);
   const solo = () =>
     liveSessions()
       .map((s) => ({ s, workers: s.workers.filter((w) => !w.teamId) }))
@@ -238,7 +242,7 @@ export function AgentsView(props: {
   const meta = () => {
     const a = props.agents.data();
     if (!a) return undefined; // nothing loaded yet (first load or error): no meta line
-    const live = a.sessions.filter((s) => s.mode !== "rpc").length;
+    const live = a.sessions.filter(isHostSession).length;
     if (live === 0) return "No pi sessions running";
     const running = live === 1 ? "1 pi session running" : `${live} pi sessions running`;
     return a.totals.working > 0 ? `${a.totals.working} working · ${running}` : running;

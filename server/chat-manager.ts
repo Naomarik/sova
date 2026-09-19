@@ -16,7 +16,8 @@ import {
   type Theme,
 } from "@earendil-works/pi-coding-agent";
 import type { ChatClientMessage, ChatServerMessage, ModeApplies, SlashCommand } from "../shared/protocol";
-import { readLive } from "./live";
+import { decodeWorkers } from "./insights";
+import { readLive, readOwnLiveRecords, workerCountsOf } from "./live";
 import { appliesAfter, MINOR_MODES, modeApplyPlan, readMode, type ModeState } from "./mode-state";
 import { toContextInfo } from "./models";
 import { contextForBranch, normalizeEntries } from "./transcript";
@@ -154,6 +155,9 @@ class ChatSession {
   private pendingUi = new Map<string, PendingUi>();
   private guard: ForeignWriteGuard | null = null;
   private guardTimer: NodeJS.Timeout | null = null;
+  private workersTimer: NodeJS.Timeout | null = null;
+  /** Wire-serialized last workers broadcast, so polls only send on change. */
+  private lastWorkersJson: string | null = null;
   /** Set once another process is seen writing this file; all writes are refused after that. */
   foreignWrite: string | null = null;
   /** Open-time SDK bookkeeping appends, written right before the first prompt/steer. */
@@ -232,6 +236,8 @@ class ChatSession {
       }
     }, GUARD_POLL_MS);
     this.guardTimer.unref();
+    this.workersTimer = setInterval(() => this.pushWorkers(), GUARD_POLL_MS);
+    this.workersTimer.unref();
     await session.bindExtensions({
       uiContext: this.createUiContext(),
       mode: "rpc",
@@ -357,6 +363,8 @@ class ChatSession {
     client.send(this.hello());
     client.send(this.commands());
     client.send(this.modeMessage(readMode()));
+    const snap = this.workersSnapshot();
+    if (snap) client.send(snap);
   }
 
   detach(client: ChatClient): void {
@@ -460,6 +468,33 @@ class ChatSession {
     for (const c of this.clients) c.send(msg);
   }
 
+  /** Worker snapshot from this runtime's own live record (the sessions extension writes one
+      even for embedded runtimes), as the wire message; null when the record or its counts
+      are absent. */
+  private workersSnapshot(): ChatServerMessage | null {
+    const rec = readOwnLiveRecords().get(this.path);
+    const counts = rec ? workerCountsOf(rec.rec) : undefined;
+    return rec && counts
+      ? { type: "workers", working: counts.working, total: counts.total, workers: decodeWorkers(rec.rec?.presence) }
+      : null;
+  }
+
+  /** Broadcast the worker snapshot when it changed since the last send; a record that
+      vanished after existing means workers went away, so send an explicit zero once. */
+  private pushWorkers(): void {
+    if (this.disposed || this.clients.size === 0) return;
+    let msg: ChatServerMessage | null = null;
+    try {
+      msg = this.workersSnapshot();
+    } catch {
+      return; // live dir unreadable mid-write: retry next tick
+    }
+    const json = msg ? JSON.stringify(msg) : null;
+    if (json === this.lastWorkersJson) return;
+    this.lastWorkersJson = json;
+    this.broadcast(msg ?? { type: "workers", working: 0, total: 0, workers: [] });
+  }
+
   private scheduleDispose(): void {
     if (this.disposeTimer || this.disposed) return;
     this.disposeTimer = setTimeout(() => {
@@ -479,6 +514,7 @@ class ChatSession {
     this.disposed = true;
     if (this.disposeTimer) clearTimeout(this.disposeTimer);
     if (this.guardTimer) clearInterval(this.guardTimer);
+    if (this.workersTimer) clearInterval(this.workersTimer);
     this.unsubscribe?.();
     for (const p of this.pendingUi.values()) p.resolve(undefined);
     this.pendingUi.clear();

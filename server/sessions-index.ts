@@ -2,13 +2,13 @@ import { statSync } from "node:fs";
 import { open, readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import type { SessionSummary } from "../shared/protocol";
-import { type LiveRecord, readLive } from "./live";
+import { type LiveRecord, readLive, readOwnLiveRecords, workerCountsOf } from "./live";
 import { LIVE_DIR, SESSIONS_DIR } from "./paths";
 import { isWebSession } from "./web-sessions";
 import { isArchived, setArchived } from "./archived-sessions";
 import { isSessionBusy } from "./chat-manager";
 
-type BaseSummary = Omit<SessionSummary, "live" | "origin" | "archived" | "busy">;
+type BaseSummary = Omit<SessionSummary, "live" | "workers" | "origin" | "archived" | "busy">;
 
 const CHUNK = 16 * 1024;
 const MAX_HEAD = 256 * 1024;
@@ -232,6 +232,7 @@ function liveField(l: LiveRecord | undefined): SessionSummary["live"] {
 export async function listSessions(): Promise<SessionSummary[]> {
   const files = await listSessionFiles();
   const live = readLive();
+  const own = readOwnLiveRecords();
   const results = await Promise.all(files.map(summarize));
   const present = new Set(files);
   for (const k of cache.keys()) if (!present.has(k)) cache.delete(k);
@@ -239,7 +240,15 @@ export async function listSessions(): Promise<SessionSummary[]> {
   for (const s of results) {
     if (!s) continue;
     const l = live.get(s.path);
-    out.push({ ...s, live: liveField(l), origin: isWebSession(s.id) ? "web" : "external", archived: isArchived(s.id), busy: isSessionBusy(s.path) });
+    const ownRec = own.get(s.path);
+    out.push({
+      ...s,
+      live: liveField(l),
+      workers: l?.workers ?? (ownRec ? workerCountsOf(ownRec.rec) : undefined),
+      origin: isWebSession(s.id) ? "web" : "external",
+      archived: isArchived(s.id),
+      busy: isSessionBusy(s.path),
+    });
   }
   out.sort((a, b) => b.lastActiveAt.localeCompare(a.lastActiveAt));
   return out;
@@ -249,7 +258,15 @@ export async function getSessionSummary(path: string): Promise<SessionSummary | 
   const s = await summarize(path);
   if (!s) return null;
   const l = readLive().get(path);
-  return { ...s, live: liveField(l), origin: isWebSession(s.id) ? "web" : "external", archived: isArchived(s.id), busy: isSessionBusy(s.path) };
+  const ownRec = readOwnLiveRecords().get(path);
+  return {
+    ...s,
+    live: liveField(l),
+    workers: l?.workers ?? (ownRec ? workerCountsOf(ownRec.rec) : undefined),
+    origin: isWebSession(s.id) ? "web" : "external",
+    archived: isArchived(s.id),
+    busy: isSessionBusy(s.path),
+  };
 }
 
 export type ArchiveResult =

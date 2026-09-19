@@ -61,6 +61,8 @@ export function ChatView(props: {
   const [modeState, setModeState] = createSignal<ModeState | null>(null);
   /** Local "Ran /name args" rows; `tui` marks one that asked for a UI pi-web can't show. */
   const [commandRows, setCommandRows] = createSignal<{ label: string; tui: boolean }[]>([]);
+  /** Subagents working now (WS "workers"); 0 until the first one arrives. */
+  const [workersWorking, setWorkersWorking] = createSignal(0);
   let modelTimer: ReturnType<typeof setTimeout> | undefined;
   onCleanup(() => clearTimeout(modelTimer));
 
@@ -143,7 +145,11 @@ export function ChatView(props: {
           setModel(msg.model);
           setSessionContext(props.path, contextStateFor(msg.context ?? null, msg.items));
           setModelRows([]);
+          setWorkersWorking(0); // a runtime without workers sends no "workers" after hello
           props.onModel(msg.model);
+          break;
+        case "workers":
+          setWorkersWorking(msg.working);
           break;
         case "commands":
           setCommands(msg.commands);
@@ -408,6 +414,7 @@ export function ChatView(props: {
         running={live.running}
         stopping={live.stopping}
         detail={live.activity ?? runDetail(live)}
+        workersWorking={workersWorking()}
         autofocus={props.autofocus}
         onSend={send}
         onAbort={abort}

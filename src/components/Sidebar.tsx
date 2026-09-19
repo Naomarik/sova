@@ -4,6 +4,7 @@ import { relativeTime, shortModel, tildePath } from "../lib/format";
 import { activeTeams, agentsHref, type GlancePart, usageGlance, usageHref } from "../lib/insights";
 import { isTopSession } from "../lib/regions";
 import { home, localRunning } from "../lib/ui-state";
+import { sessionWorking } from "../lib/workers";
 import { Banner, Chip, CountChip, Icon } from "./ui";
 
 interface Group {
@@ -63,7 +64,7 @@ function GroupList(props: { groups: Group[]; selected: string | null; now: numbe
                         </Show>
                       </p>
                     </div>
-                    <Show when={s.live?.workers?.working}>
+                    <Show when={sessionWorking(s)}>
                       {(n) => <CountChip title="Subagents working now">{n()} working</CountChip>}
                     </Show>
                     <Show when={s.live}>

@@ -56,6 +56,35 @@ export function readLiveRecords(opts: { includeOwn?: boolean } = {}): RawLiveRec
   return out;
 }
 
+/** presence.workerCounts (working/total) of a raw record, or undefined when absent or malformed. */
+export function workerCountsOf(rec: any): { working: number; total: number } | undefined {
+  const wc = rec?.presence?.workerCounts;
+  const working = count(wc?.working);
+  const total = count(wc?.total);
+  return working !== null && total !== null ? { working, total } : undefined;
+}
+
+/** Same threshold as insights' "fresh" (SCHEMA.md): writers heartbeat every ~3-4s. */
+const OWN_FRESH_MS = 15_000;
+
+/**
+ * This server's own live records (written by the sessions extension inside our embedded chat
+ * runtimes), keyed by canonical session file; the freshest heartbeat wins. Stale ones are skipped:
+ * a runtime that went away without its clean-shutdown delete must not report workers forever.
+ * They never mean "a TUI owns it" (see readLive).
+ */
+export function readOwnLiveRecords(): Map<string, RawLiveRecord> {
+  const out = new Map<string, RawLiveRecord>();
+  const now = Date.now();
+  const beat = (r: RawLiveRecord) => (typeof r.rec.heartbeat === "number" ? r.rec.heartbeat : 0);
+  for (const r of readLiveRecords({ includeOwn: true })) {
+    if (r.pid !== process.pid || !r.sessionFile || now - beat(r) > OWN_FRESH_MS) continue;
+    const prev = out.get(r.sessionFile);
+    if (!prev || beat(r) > beat(prev)) out.set(r.sessionFile, r);
+  }
+  return out;
+}
+
 /**
  * Live presence keyed by absolute session file path. Records owned by this server process
  * (the pi "sessions" extension also runs inside our embedded runtimes) are skipped: they

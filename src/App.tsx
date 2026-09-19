@@ -7,6 +7,7 @@ import { agentsHref, insightsRouteFromHash, legacyInsightsTarget } from "./lib/i
 import { createPoll } from "./lib/poll";
 import { homeFromSessionPath, shortModel, tildePath } from "./lib/format";
 import { copyText, home, setHome, toast } from "./lib/ui-state";
+import { sessionWorking } from "./lib/workers";
 import { ChatView, type ChatRefusal } from "./components/ChatView";
 import { AgentsView } from "./components/AgentsView";
 import { ContextGauge, ContextMetaPrefix, contextDescribedBy } from "./components/ContextGauge";
@@ -338,7 +339,7 @@ export function App() {
                 };
                 onCleanup(() => clearTimeout(insightTimer));
                 void loadInsight();
-                const working = () => s().live?.workers?.working ?? 0;
+                const working = () => sessionWorking(s());
                 /** The busiest live team: where the head chip links. */
                 const liveTeam = () =>
                   (insight.data?.teams ?? []).filter((t) => t.live).reduce<TeamInfo | null>((b, t) => (!b || t.working > b.working ? t : b), null);

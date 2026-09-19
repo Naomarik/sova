@@ -23,6 +23,10 @@ export interface SessionSummary {
     /** Subagent workers of that live session (from presence.workerCounts); enables sidebar badges. */
     workers?: { working: number; total: number };
   } | null;
+  /** Subagent workers of this session, whoever runs it: the TUI's (same as live.workers) or this
+      server's own embedded runtime (its own live record, which never sets `live`). Absent when no
+      record reports counts, and from older servers: fall back to live?.workers. */
+  workers?: { working: number; total: number };
   /** While the server holds this session's runtime AND it is mid-agent-turn (streaming): true.
       The sidebar shows a "Busy" marker. false when idle/closed or not held by this server.
       Never pulsing (design rule). */
@@ -212,6 +216,10 @@ export type ChatServerMessage =
       TUI built-ins (/tree, /model, …) are not included. Send one as a normal prompt "/name args". */
   | { type: "commands"; commands: SlashCommand[] }
   | { type: "ui_request"; id: string; request: unknown }
+  /** This chat's subagent workers, from the runtime's own live record (presence.workers/workerCounts).
+      Sent after hello when the record has workers, then whenever the snapshot changes (polled ~3s),
+      so it keeps coming after the parent turn settles. working 0 = none running. */
+  | { type: "workers"; working: number; total: number; workers: WorkerInfo[] }
   // Codes: "busy" = a TUI owns the session (never retry with force); "recent" = file written by an
   // unknown process, at connect or mid-chat (client may reconnect with &force=1);
   // "reloaded" = runtime reloaded by another client, or message sent to a closed runtime (reconnect);
@@ -275,6 +283,9 @@ export interface TeamInfo {
 export interface LiveAgentSession {
   path: string | null; sessionId: string | null; name: string | null; cwd: string; pid: number; mode: string | null;
   fresh: boolean; // heartbeat ≤ 15s
+  /** A chat runtime embedded in this pi-web server (own pid). Its mode is "rpc" like a headless
+      worker pi, but it's a real session that hosts agents. Absent from older servers. */
+  embedded?: boolean;
   state: "working" | "idle" | "needs-input" | "error";
   workerCounts: { total: number; working: number; waiting: number; done: number; error: number; killed: number };
   workers: WorkerInfo[]; // may be shorter than workerCounts.total

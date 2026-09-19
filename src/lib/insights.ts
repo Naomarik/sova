@@ -3,6 +3,7 @@
 
 import type { AgentsInsight, TeamInfo, TeamMember, UsageInsight, UsageProvider, UsageWindow } from "../../shared/protocol";
 import type { Tone } from "../components/ui";
+import { isHostSession } from "./workers";
 
 export const PROVIDER_NAME: Record<UsageProvider["id"], string> = {
   claude: "Claude",
@@ -192,11 +193,11 @@ export function memberStatus(m: TeamMember, liveSource: boolean): MemberStatus {
   };
 }
 
-/** Teams of live pi processes, newest first. rpc-mode records (workers themselves) don't own teams. */
+/** Teams of live pi processes, newest first. Headless workers (rpc, not embedded) don't own teams. */
 export function activeTeams(a: AgentsInsight | undefined): TeamInfo[] {
   if (!a) return [];
   return a.sessions
-    .filter((s) => s.mode !== "rpc")
+    .filter(isHostSession)
     .flatMap((s) => s.teams)
     .sort((x, y) => y.createdAt - x.createdAt);
 }

@@ -12,6 +12,7 @@ import {
   type RejectedFile,
 } from "../lib/images";
 import { announce, draftImages, drafts } from "../lib/ui-state";
+import { subagentsWorkingLabel } from "../lib/workers";
 import { Icon, type IconName } from "./ui";
 
 export interface ComposerReason {
@@ -38,6 +39,8 @@ export function Composer(props: {
   stopping: boolean;
   /** "running bash" / "thinking" / "writing" / "Compacting context" … */
   detail: string | null;
+  /** Subagents working now; after the turn settles they get their own status row. */
+  workersWorking?: number;
   autofocus?: boolean;
   /** This session's slash commands; the "/" autocomplete is off without them. */
   commands?: SlashCommand[];
@@ -312,6 +315,12 @@ export function Composer(props: {
                 <span class="run-status-detail">· {props.detail}</span>
               </Show>
             </Show>
+          </p>
+        </Show>
+        <Show when={!props.running && (props.workersWorking ?? 0) > 0}>
+          <p class="run-status">
+            <span class="live-dot" />
+            {subagentsWorkingLabel(props.workersWorking!)}
           </p>
         </Show>
 

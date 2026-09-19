@@ -379,7 +379,7 @@ function decodeWorker(w: unknown): WorkerInfo | null {
   return out;
 }
 
-function decodeWorkers(presence: Rec | undefined): WorkerInfo[] {
+export function decodeWorkers(presence: Rec | undefined): WorkerInfo[] {
   if (!Array.isArray(presence?.workers)) return [];
   return presence.workers.map(decodeWorker).filter((w: WorkerInfo | null): w is WorkerInfo => w !== null);
 }
@@ -445,6 +445,7 @@ async function liveSession({ sessionFile, pid, rec }: RawLiveRecord): Promise<Li
     pid,
     mode: str(session.mode) ?? null,
     fresh: age <= FRESH_MS && age >= -FUTURE_SLACK_MS,
+    embedded: pid === process.pid,
     state: sessionState(presence, session),
     workerCounts,
     workers,
@@ -471,10 +472,11 @@ export async function getAgentsInsight(): Promise<AgentsInsight> {
   sessions.sort((a, b) => Number(busy(b)) - Number(busy(a)) || (lastActivity.get(b) ?? 0) - (lastActivity.get(a) ?? 0));
 
   // rpc-mode records are headless pis (e.g. subagent workers, already listed under their
-  // parent's workers): not separate sessions. Stale records say nothing about "working now".
+  // parent's workers): not separate sessions. This server's own chat runtimes are rpc too, but
+  // they are sessions hosting agents. Stale records say nothing about "working now".
   const totals = { sessions: 0, working: 0, total: 0, teams: 0, teamWorking: 0, soloWorking: 0 };
   for (const s of sessions) {
-    if (s.mode === "rpc") continue;
+    if (s.mode === "rpc" && !s.embedded) continue;
     totals.sessions++;
     totals.total += s.workerCounts.total;
     totals.teams += s.teams.length;

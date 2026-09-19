@@ -346,7 +346,7 @@ export function App() {
                         </Show>
                       </Show>
                       <Show when={s().live}>
-                        <Chip tone="accent" live>
+                        <Chip tone="accent" live title={`Open in pi in a terminal · pid ${s().live!.pid} · ${s().live!.status}`}>
                           Live
                         </Chip>
                       </Show>
@@ -385,23 +385,6 @@ export function App() {
                                       <button type="button" class="button button-sm" onClick={() => openChat(false)}>
                                         Open for Chat
                                       </button>
-                                    }
-                                  />
-                                </Match>
-                                <Match when={true}>
-                                  <Banner
-                                    tone="info"
-                                    icon="terminal"
-                                    title="Live from TUI — read only"
-                                    body={
-                                      <Show when={s().live} fallback="Open in a pi TUI. We only read this file.">
-                                        {(l) => (
-                                          <>
-                                            Open in pi (pid <span class="text-mono">{l().pid}</span>) ·{" "}
-                                            <span class="text-mono">{l().status}</span>. We only read this file.
-                                          </>
-                                        )}
-                                      </Show>
                                     }
                                   />
                                 </Match>

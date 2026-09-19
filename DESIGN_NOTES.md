@@ -94,7 +94,7 @@ and `fill="none" stroke="currentColor"`.
 | `chevron-left.svg` | Back to list (folded width only) |
 | `chevron-right.svg` | Disclosure twist (rotates 90° when open) |
 | `chevron-down.svg` | Jump to Latest, the model trigger |
-| `terminal.svg` | Live-from-TUI banner, and the tool card for `bash` |
+| `terminal.svg` | The tool card for `bash`, and the "Ran `/cmd`" info row |
 | `file.svg` | Tool card for `read` / `write` / `edit` |
 | `more.svg` | Tool card for any other tool |
 | `copy.svg` | Copy Session Path, Copy Output |
@@ -164,7 +164,7 @@ unfolded (≥768)                                  folded (<768)
 ┌──────────────┬───────────────────────────┐     ┌──────────────────┐
 │ sidebar-head │ session-head              │     │ list  OR  session│
 │ search       ├───────────────────────────┤     │ (data-view)      │
-│ session list │ [live banner, sticky]     │     │                  │
+│ session list │ [error banner, sticky]    │     │                  │
 │  (pane)      │ transcript (pane)         │     │                  │
 │              ├───────────────────────────┤     │                  │
 │              │ composer                  │     │                  │
@@ -467,7 +467,7 @@ word never does.
   </header>
 
   <section class="transcript pane" id="transcript" aria-label="Transcript">
-    <div class="transcript-banner">…live banner, live only…</div>
+    <div class="transcript-banner">…error/notice banner; omitted when there is none…</div>
     <div class="transcript-inner">
       <div class="thread">…items…</div>
     </div>
@@ -617,19 +617,24 @@ Driven by `ChatServerMessage.event`.
 
 ### Live-watch (TUI-owned sessions, `/ws/watch`)
 
-- **Banner.** A sticky `.transcript-banner` at the top of the transcript pane:
+- **No persistent banner.** Watch mode has no "Live from TUI — read only" card; it was removed
+  by boss directive. Read-only is already obvious from three things that stay:
+  1. **The Live chip in the session head** (`.chip.chip-accent.chip-live`, "Live"). It carries
+     the process facts in its `title`, updated from `live` whenever the session list refreshes:
 
-  ```html
-  <div class="banner banner-info" role="status">
-    <svg class="icon banner-icon" aria-hidden="true">…terminal…</svg>
-    <div class="banner-main">
-      <p class="banner-title">Live from TUI — read only</p>
-      <p class="banner-body">Open in pi (pid <span class="text-mono">889823</span>) · <span class="text-mono">Running: bash</span>. We only read this file.</p>
-    </div>
-  </div>
-  ```
+     ```html
+     <span class="chip chip-accent chip-live" title="Open in pi in a terminal · pid 889823 · Running: bash"><i class="chip-dot"></i>Live</span>
+     ```
 
-  The banner's status text comes from `live.status`; update it when the session list refreshes.
+     The pid and status are shown only here now. They're a detail you look up, not something
+     read on every visit.
+  2. **The disabled composer**, with its reason: "Read only while this session is open in the
+     TUI." (§4 Disabled states). AT gets it through `aria-describedby="composer-reason"`.
+  3. **The error banners** below, which still appear in `.transcript-banner` when something
+     goes wrong.
+
+  `.transcript-banner` renders only while one of those banners is showing. Otherwise it's
+  omitted, so it takes no height.
 - **Appends.** `append` items fade in (the rows' `.message` uses no transform, so no animation is
   needed).
 - **Auto-follow.**
@@ -641,13 +646,13 @@ Driven by `ChatServerMessage.event`.
     button.
   - Chat sessions follow the same logic while streaming.
   - Sending a message always resumes following.
-- **When the TUI closes** (`live` goes null on refresh). The banner becomes
-  `.banner.banner-info` with title "The TUI closed this session." and body "You can chat in it
-  here now." Its `.banner-action` is `<button class="button button-sm">Open for Chat</button>`,
+- **When the TUI closes** (`live` goes null on refresh). A `.banner.banner-info` appears in
+  `.transcript-banner`, with title "The TUI closed this session." and body "You can chat in it
+  here now." It's a one-time transition with an action, not a persistent card. Its `.banner-action` is `<button class="button button-sm">Open for Chat</button>`,
   which reconnects with `/ws/chat`.
 - **Watch socket drops.** `.banner.banner-warn` with `alert-circle`. Title: "Stopped watching.
   The connection dropped." Body: "What's shown is up to `14:06`. Reconnecting…" When it
-  reconnects, go back to the info banner. The snapshot replaces the list, and scroll position is
+  reconnects, the banner goes away. The snapshot replaces the list, and scroll position is
   kept if the user wasn't following.
 
 ### States
@@ -711,6 +716,12 @@ Driven by `ChatServerMessage.event`.
   | Ink-2 on warn-bg | 6.02 | 7.78 |
   | Success on surface (chips) | 6.61 | 6.09 |
   | Error on surface (chips) | 5.42 | 6.01 |
+
+### Open questions
+
+- **Long info rows.** A multi-line custom entry renders as a centered `.info-row` between rules,
+  which reads badly. A likely fix is left-aligned and rule-less beyond 1 line, or clamped at 3
+  lines behind a disclosure. It's not specced yet and is out of the current brief.
 
 ---
 
@@ -1973,7 +1984,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 
 | Where | Copy |
 |---|---|
-| Live banner | **Live from TUI — read only** · Open in pi (pid `{pid}`) · `{live.status}`. We only read this file. |
+| Head Live chip `title` | Open in pi in a terminal · pid {pid} · {live.status} (the persistent "Live from TUI" banner was removed) |
 | TUI closed | **The TUI closed this session.** You can chat in it here now. · button: `Open for Chat` |
 | Jump button | Jump to Latest · `{n} new` (the count is omitted when 0) |
 | SR announce (throttled 5s) | {n} new entries. |

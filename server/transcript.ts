@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import type { EntryKind, TranscriptItem } from "../shared/protocol";
 import { inlineTmpImages } from "./attachments";
-import { isReport, parseReport } from "./reports";
+import { isReport, parseReport, previewLine } from "./reports";
 
 // We parse JSONL ourselves instead of using SessionManager.open(): open() is not
 // read-only (it appends "\n" to a trailing partial line and rewrites the file when
@@ -175,6 +175,26 @@ function modeMarker(entry: Entry, id: string): TranscriptItem[] {
   return [];
 }
 
+/** A pi-btw side-channel exchange. Hidden custom state in the TUI (it lives in the overlay);
+    the web has no overlay, so show it as a report row or /btw answers would be silent. */
+function btwRow(id: string, entry: Entry): TranscriptItem[] {
+  const d: any = entry.data;
+  const answer = typeof d?.answer === "string" ? d.answer : "";
+  if (!answer.trim()) return []; // still running or malformed: stay hidden like the TUI
+  const question = typeof d.question === "string" ? d.question.replace(/\s+/g, " ").trim().slice(0, 80) : "";
+  const model = typeof d.provider === "string" && typeof d.model === "string" ? `${d.provider}/${d.model}` : undefined;
+  const it = withPaths(item(id, "report", entry, answer), answer);
+  it.report = {
+    source: "btw-thread-entry",
+    agent: { id: "btw", name: question || "side question", status: "done" },
+    body: answer,
+    preview: previewLine(answer),
+    truncated: false,
+  };
+  if (model) it.model = model;
+  return [it];
+}
+
 /** Normalize one parsed JSONL entry into 0..n TranscriptItems. The header line yields none. */
 export function normalizeEntry(entry: Entry, fallbackId = "?", state?: { model?: string }): TranscriptItem[] {
   const id = typeof entry.id === "string" ? entry.id : fallbackId;
@@ -197,9 +217,12 @@ export function normalizeEntry(entry: Entry, fallbackId = "?", state?: { model?:
     case "branch_summary":
       return [item(id, "info", entry, `Branch summary: ${entry.summary ?? ""}`)];
     case "custom":
-      // Extension state, not displayable (docs/session-format.md). One exception: the mode
-      // extension's switch marker, which the TUI draws in the transcript too.
-      return entry.customType === "mode" ? modeMarker(entry, id) : [];
+      // Extension state, not displayable (docs/session-format.md). Exceptions: the mode
+      // extension's switch marker, which the TUI draws in the transcript too; and pi-btw's
+      // thread entries, which the TUI shows in its overlay but the web can only show here.
+      if (entry.customType === "mode") return modeMarker(entry, id);
+      if (entry.customType === "btw-thread-entry") return btwRow(id, entry);
+      return [];
     case "custom_message":
       return entry.display === false ? [] : [customRow(id, entry, entry.customType, entry.content)];
     default:

@@ -417,3 +417,33 @@ describe("model attribution", () => {
     for (const it of items) if (it.kind !== "assistant-text") assert.equal(it.model, undefined);
   });
 });
+
+describe("btw thread entries", () => {
+  const btwEntry = (id: string, data: unknown, customType = "btw-thread-entry") => ({
+    type: "custom",
+    id,
+    parentId: null,
+    timestamp: "2026-09-19T00:00:00.000Z",
+    customType,
+    data,
+  });
+
+  test("an answered exchange becomes a report row labeled btw", () => {
+    const items = normalizeEntry(
+      btwEntry("b1", { question: "what landed today?", answer: "Two fixes shipped.", provider: "zai", model: "glm-5.3" }),
+    );
+    assert.equal(items.length, 1);
+    const it = items[0]!;
+    assert.equal(it.kind, "report");
+    assert.equal(it.report?.source, "btw-thread-entry");
+    assert.equal(it.report?.agent?.name, "what landed today?");
+    assert.equal(it.report?.body, "Two fixes shipped.");
+    assert.equal(it.model, "zai/glm-5.3");
+  });
+
+  test("entries without an answer, resets and overrides stay hidden", () => {
+    assert.deepEqual(normalizeEntry(btwEntry("b1", { question: "hi" })), []);
+    assert.deepEqual(normalizeEntry(btwEntry("b2", { answer: "" }, "btw-thread-reset")), []);
+    assert.deepEqual(normalizeEntry(btwEntry("b3", { model: "glm-5.3" }, "btw-model-override")), []);
+  });
+});

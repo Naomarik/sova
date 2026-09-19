@@ -102,6 +102,8 @@ class ChatSession {
   private guardTimer: NodeJS.Timeout | null = null;
   /** Set once another process is seen writing this file; all writes are refused after that. */
   foreignWrite: string | null = null;
+  /** Open-time SDK bookkeeping appends, written right before the first prompt/steer. */
+  deferredAppends: Array<() => void> = [];
   disposed = false;
 
   constructor(
@@ -129,6 +131,10 @@ class ChatSession {
       }
     }
     if (this.foreignWrite) throw new BusyError(this.busyMessage(), "recent");
+  }
+
+  private flushDeferredAppends(): void {
+    for (const append of this.deferredAppends.splice(0)) append();
   }
 
   hasForeignWrites(): boolean {
@@ -231,6 +237,7 @@ class ChatSession {
           this.assertNoForeignWrites();
           const text = String(msg.text ?? "");
           if (!text.trim()) return;
+          this.flushDeferredAppends();
           // While streaming, a plain prompt is queued as a follow-up.
           const opts = this.session.isStreaming ? { streamingBehavior: "followUp" as const } : undefined;
           this.session.prompt(text, opts).catch(fail);
@@ -241,6 +248,7 @@ class ChatSession {
           this.assertNoForeignWrites();
           const text = String(msg.text ?? "");
           if (!text.trim()) return;
+          this.flushDeferredAppends();
           const p = this.session.isStreaming ? this.session.steer(text) : this.session.prompt(text);
           p.catch(fail);
           return;
@@ -387,6 +395,24 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
   if (!existsSync(path)) throw new Error(`Session file not found: ${path}`);
   const modelRuntime = await getModelRuntime();
   const sessionManager = SessionManager.open(path);
+  // The SDK records model/thinking-level entries while constructing a session (for sessions with
+  // no messages yet, or no thinking entry on the branch). Queue them and write them just before
+  // the first prompt, so merely opening (browsing) a session never modifies its file.
+  const deferred: Array<() => void> = [];
+  const appendModelChange = sessionManager.appendModelChange;
+  const appendThinkingLevelChange = sessionManager.appendThinkingLevelChange;
+  sessionManager.appendModelChange = (...args: Parameters<typeof appendModelChange>) => {
+    deferred.push(() => appendModelChange.apply(sessionManager, args));
+    return "";
+  };
+  sessionManager.appendThinkingLevelChange = (...args: Parameters<typeof appendThinkingLevelChange>) => {
+    deferred.push(() => appendThinkingLevelChange.apply(sessionManager, args));
+    return "";
+  };
+  const restore = () => {
+    sessionManager.appendModelChange = appendModelChange;
+    sessionManager.appendThinkingLevelChange = appendThinkingLevelChange;
+  };
   const createRuntime: CreateAgentSessionRuntimeFactory = async ({ cwd, sessionManager, sessionStartEvent }) => {
     const services = await createAgentSessionServices({ cwd, modelRuntime });
     return {
@@ -395,19 +421,24 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
       diagnostics: services.diagnostics,
     };
   };
-  const runtime = await createAgentSessionRuntime(createRuntime, {
-    cwd: sessionManager.getCwd(),
-    agentDir: getAgentDir(),
-    sessionManager,
-  });
-  const chat = new ChatSession(path, runtime, onDisposed);
   try {
-    await chat.bind();
-  } catch (err) {
-    await chat.dispose();
-    throw err;
+    const runtime = await createAgentSessionRuntime(createRuntime, {
+      cwd: sessionManager.getCwd(),
+      agentDir: getAgentDir(),
+      sessionManager,
+    });
+    const chat = new ChatSession(path, runtime, onDisposed);
+    try {
+      await chat.bind();
+    } catch (err) {
+      await chat.dispose();
+      throw err;
+    }
+    chat.deferredAppends = deferred;
+    return chat;
+  } finally {
+    restore();
   }
-  return chat;
 }
 
 /**

@@ -1,7 +1,9 @@
 // Image attachments (DESIGN_NOTES §4b): validating picked/pasted/dropped files, blob previews,
-// and converting to the wire's OutboundImage (base64 without the data: prefix) at send time.
+// and uploading them at send time. Like pi's TUI, the prompt then names each file's /tmp path
+// and the model reads it with the read tool; no base64 goes over the socket.
 
-import type { OutboundImage } from "../../shared/protocol";
+import type { UploadResult } from "../../shared/protocol";
+import { uploadImage } from "./api";
 import { isObj, str } from "./message";
 
 /** The formats model providers accept. */
@@ -57,33 +59,11 @@ export function dragHasAcceptedImage(dt: DataTransfer): boolean {
   return items.some((i) => i.kind === "file" && ACCEPTED_TYPES.includes(i.type));
 }
 
-const readBase64 = (file: File) =>
-  new Promise<string>((resolve, reject) => {
-    const r = new FileReader();
-    r.onload = () => {
-      const url = String(r.result);
-      resolve(url.slice(url.indexOf(",") + 1));
-    };
-    r.onerror = () => reject(r.error ?? new Error("read failed"));
-    r.readAsDataURL(file);
-  });
+/** Uploads every attachment; rejects if any upload fails (nothing should be sent then). */
+export const uploadImages = (images: PendingImage[]): Promise<UploadResult[]> => Promise.all(images.map((p) => uploadImage(p.file)));
 
-/** Reads attachments for sending: the wire form, plus data URLs for the optimistic bubble. */
-export async function encodeImages(images: PendingImage[]): Promise<{ outbound: OutboundImage[]; dataUrls: string[] }> {
-  const data = await Promise.all(images.map((p) => readBase64(p.file)));
-  return {
-    outbound: images.map((p, i) => ({ data: data[i]!, mimeType: p.mimeType })),
-    dataUrls: images.map((p, i) => `data:${p.mimeType};base64,${data[i]}`),
-  };
-}
-
-/** Rebuilds an attachment from a data URL (restoring a refused prompt's images into the draft). */
-export function fromDataUrl(dataUrl: string, name: string): PendingImage {
-  const mimeType = /^data:([^;,]+)/.exec(dataUrl)?.[1] ?? "image/png";
-  const bin = atob(dataUrl.slice(dataUrl.indexOf(",") + 1));
-  const file = new File([Uint8Array.from(bin, (c) => c.charCodeAt(0))], name, { type: mimeType });
-  return { id: ++nextId, name, mimeType, size: file.size, file, previewUrl: URL.createObjectURL(file) };
-}
+/** The prompt as sent: the typed text, then each uploaded path on its own line (pi's TUI shape). */
+export const withImagePaths = (text: string, uploads: UploadResult[]) => [text, ...uploads.map((u) => u.path)].filter(Boolean).join("\n");
 
 /** Image blocks in a pi content array (`{type:"image", data, mimeType}`) as data URLs. */
 export function imagesFromContent(content: unknown): string[] {

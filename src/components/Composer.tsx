@@ -1,13 +1,14 @@
 import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
-import type { OutboundImage, SlashCommand } from "../../shared/protocol";
+import type { SlashCommand, UploadResult } from "../../shared/protocol";
 import { insertCommand, rankCommands, slashTokenAt, type SlashToken } from "../lib/slash";
 import { commandOptionIds, SlashMenu } from "./SlashMenu";
 import {
   ACCEPTED_TYPES,
   acceptImages,
   dragHasAcceptedImage,
-  encodeImages,
   releaseImage,
+  uploadImages,
+  withImagePaths,
   type PendingImage,
   type RejectedFile,
 } from "../lib/images";
@@ -44,15 +45,15 @@ export function Composer(props: {
   autofocus?: boolean;
   /** This session's slash commands; the "/" autocomplete is off without them. */
   commands?: SlashCommand[];
-  /** `dataUrls` are the same images, for the optimistic bubble and for restoring on refusal. */
-  onSend(text: string, steer: boolean, images: OutboundImage[], dataUrls: string[]): boolean;
+  /** `text` already names each uploaded image's path; `uploads` are for the optimistic row. */
+  onSend(text: string, steer: boolean, uploads: UploadResult[]): boolean;
   onAbort(): void;
 }) {
   const [text, setText] = createSignal(drafts.get(props.path) ?? "");
   const [images, setImagesSignal] = createSignal<PendingImage[]>(draftImages.get(props.path) ?? []);
   const [rejected, setRejected] = createSignal<RejectedFile[]>([]);
   const [drop, setDrop] = createSignal<"active" | "reject" | null>(null);
-  const [encoding, setEncoding] = createSignal(false);
+  const [uploading, setUploading] = createSignal(false);
   // Slash-command autocomplete: the "/token" at the caret, the active row, and a token the
   // user dismissed with Esc (it stays closed until the caret leaves that token).
   const [slashToken, setSlashToken] = createSignal<SlashToken | null>(null);
@@ -78,7 +79,7 @@ export function Composer(props: {
   const reason = () => props.readOnly ?? props.blocked ?? null;
   /** TUI-live, connecting, reconnecting: nothing attaches and nothing sends. */
   const disabled = () => !!reason();
-  const canSend = () => !disabled() && !encoding() && (text().trim().length > 0 || images().length > 0);
+  const canSend = () => !disabled() && !uploading() && (text().trim().length > 0 || images().length > 0);
 
   // ---- Slash-command autocomplete (combobox: focus stays in the textarea) ----------------
   const slashMatches = createMemo(() => {
@@ -247,17 +248,17 @@ export function Composer(props: {
     e?.preventDefault();
     if (!canSend()) return;
     const pending = images();
-    setEncoding(true);
-    let encoded: Awaited<ReturnType<typeof encodeImages>>;
+    setUploading(true);
+    let uploads: UploadResult[];
     try {
-      encoded = await encodeImages(pending);
+      uploads = await uploadImages(pending);
     } catch {
-      setEncoding(false);
-      announce("Couldn't read the attached images. Nothing was sent.");
+      setUploading(false);
+      announce("Couldn't upload the attached images. Nothing was sent.");
       return;
     }
-    setEncoding(false);
-    if (props.onSend(text().trim(), props.running, encoded.outbound, encoded.dataUrls)) {
+    setUploading(false);
+    if (props.onSend(withImagePaths(text().trim(), uploads), props.running, uploads)) {
       pending.forEach(releaseImage);
       setDraft("");
       setImages([]);

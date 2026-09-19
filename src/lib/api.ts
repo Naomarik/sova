@@ -1,4 +1,15 @@
-import type { AgentsInsight, ContextInfo, FolderListing, ModeInfo, ModelInfo, SessionInsight, SessionSummary, TranscriptItem, UsageInsight } from "../../shared/protocol";
+import type {
+  AgentsInsight,
+  ContextInfo,
+  FolderListing,
+  ModeInfo,
+  ModelInfo,
+  SessionInsight,
+  SessionSummary,
+  TranscriptItem,
+  UploadResult,
+  UsageInsight,
+} from "../../shared/protocol";
 
 export class ApiError extends Error {
   constructor(
@@ -80,7 +91,15 @@ export const fetchTranscriptWithContext = (path: string) =>
     context: r.context ?? null,
   }));
 
-export const fetchUsage = () => request<UsageInsight>("/api/insights/usage");
+/** Stores an image in /tmp like a TUI clipboard paste; the prompt text then names its path. */
+export const uploadImage = (file: File) =>
+  request<UploadResult>("/api/upload", {
+    method: "POST",
+    headers: { "content-type": file.type },
+    body: file,
+  });
+
+export const fetchUsage =() => request<UsageInsight>("/api/insights/usage");
 
 export const fetchAgents = () => request<AgentsInsight>("/api/insights/agents");
 

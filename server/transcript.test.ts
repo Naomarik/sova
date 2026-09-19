@@ -25,6 +25,8 @@ const clip = tmpFile(`pi-clipboard-${randomUUID()}.png`);
 const wsl = tmpFile(`pi-wsl-clip-${randomUUID()}.png`);
 const typed = tmpFile(`pi-web-test-${tag}.JPG`);
 const gone = `/tmp/pi-clipboard-${randomUUID()}.png`; // never created
+const webUpload = tmpFile(`pi-web-${randomUUID()}.png`);
+const webNotUuid = tmpFile(`pi-web-notauuid-${tag}.png`);
 
 const userEntry = (text: string) => ({
   type: "message",
@@ -145,6 +147,24 @@ describe("inlineTmpImages", () => {
     assert.deepEqual(inlineTmpImages("hello  world "), { text: "hello  world " });
     assert.deepEqual(inlineTmpImages(""), { text: "" });
   });
+
+  test("a pi-web upload path (pi-web-<uuid>) leaves the text and attaches, like a clipboard paste", () => {
+    const r = inlineTmpImages(`what's this?\n${webUpload}`, true);
+    assert.equal(r.text, "what's this?");
+    assert.deepEqual(r.attachments, [{ path: webUpload, name: webUpload.slice(5), mimeType: "image/png", size: 9, available: true }]);
+  });
+
+  test("a pi-web name without a uuid is typed text: it stays, still attached", () => {
+    const r = inlineTmpImages(`compare ${webNotUuid}`, true);
+    assert.equal(r.text, `compare ${webNotUuid}`);
+    assert.equal(r.attachments?.[0]?.path, webNotUuid);
+  });
+
+  test("an upload's .part file never matches", () => {
+    const part = `/tmp/.${webUpload.slice(5)}.part`;
+    assert.deepEqual(inlineTmpImages(`see ${part}`, true), { text: `see ${part}` });
+    assert.equal(checkTmpImage(part).ok, false);
+  });
 });
 
 describe("normalizeEntry (user rows)", () => {
@@ -156,6 +176,12 @@ describe("normalizeEntry (user rows)", () => {
     assert.equal(it?.text, "fix this");
     assert.equal(it?.attachments?.[0]?.path, clip);
     assert.equal(JSON.stringify(it?.raw), before);
+  });
+
+  test("a pi-web upload path on its own line after the text becomes an attachment", () => {
+    const [web] = normalizeEntry(userEntry(`fix this\n${webUpload}`));
+    assert.equal(web?.text, "fix this");
+    assert.equal(web?.attachments?.[0]?.path, webUpload);
   });
 
   test("a path-only message has no text and keeps stored images", () => {

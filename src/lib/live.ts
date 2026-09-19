@@ -3,6 +3,7 @@
 // refetches the normalized transcript and resets this.
 
 import { produce, type SetStoreFunction } from "solid-js/store";
+import type { TmpAttachment, UploadResult } from "../../shared/protocol";
 import { imagesFromContent } from "./images";
 import { contentText, isObj, str } from "./message";
 
@@ -12,7 +13,15 @@ export type LiveBlock =
   | { type: "toolCall"; id: string; name: string; argsText: string; args?: unknown };
 
 export type LiveEntry =
-  | { kind: "user"; text: string; confirmed: boolean; images: string[] }
+  | {
+      kind: "user";
+      /** As sent, uploaded image paths included (restored verbatim into the draft if refused). */
+      text: string;
+      confirmed: boolean;
+      images: string[];
+      /** Images uploaded for this prompt, shown like a history row's path attachments. */
+      attachments?: TmpAttachment[];
+    }
   | {
       kind: "assistant";
       blocks: LiveBlock[];
@@ -94,8 +103,9 @@ function toolOutput(result: unknown): string {
 const toolImages = (result: unknown) => (isObj(result) ? imagesFromContent(result.content) : []);
 
 /** Adds the user's prompt before the server echoes it, so the thread never lags the composer. */
-export function addPendingPrompt(set: SetStoreFunction<LiveState>, text: string, images: string[] = []) {
-  set(produce((s) => void s.entries.push({ kind: "user", text, confirmed: false, images })));
+export function addPendingPrompt(set: SetStoreFunction<LiveState>, text: string, images: string[] = [], uploads: UploadResult[] = []) {
+  const attachments = uploads.map((u): TmpAttachment => ({ path: u.path, name: u.name, mimeType: u.mimeType, size: u.size, available: true }));
+  set(produce((s) => void s.entries.push({ kind: "user", text, confirmed: false, images, ...(attachments.length ? { attachments } : {}) })));
 }
 
 export function applyEvent(set: SetStoreFunction<LiveState>, event: unknown) {

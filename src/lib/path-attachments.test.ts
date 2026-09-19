@@ -5,7 +5,7 @@ import { describe, test } from "node:test";
 import type { TmpAttachment } from "../../shared/protocol";
 import { findTmpImagePaths } from "../../shared/tmp-paths";
 import { renderMarkdown } from "./markdown";
-import { chipHtml, shortName } from "./path-attachments";
+import { chipHtml, shortName, stripPastedPaths } from "./path-attachments";
 
 const uuid = "a58752a9-8229-46d3-a816-07ef24919b10";
 const path = `/tmp/pi-clipboard-${uuid}.png`;
@@ -74,5 +74,31 @@ describe("findTmpImagePaths (plain-text rows split on it)", () => {
     const text = `report: ${path}; done`;
     const [m] = findTmpImagePaths(text);
     assert.equal(text.slice(m!.start, m!.end), path);
+  });
+});
+
+describe("pi-web uploads (/tmp/pi-web-<uuid>.<ext>)", () => {
+  const web = `/tmp/pi-web-${uuid}.png`;
+
+  test("short name keeps the prefix and 4 uuid characters", () => {
+    assert.equal(shortName(web.slice(5)), "pi-web-a587….png");
+    assert.equal(shortName("pi-web-notauuid.png"), "pi-web-notauuid.png");
+  });
+
+  test("a path glued after a sentence is found; one in a code fence is not", () => {
+    const text = `what's wrong here?\n${web}`;
+    const [m] = findTmpImagePaths(text);
+    assert.equal(m?.path, web);
+    assert.equal(text.slice(m!.start, m!.end), web);
+    assert.deepEqual(findTmpImagePaths(`what's wrong here? ${web}.`).map((x) => x.path), [web]);
+    assert.deepEqual(findTmpImagePaths(`\`\`\`\n${web}\n\`\`\``), []);
+  });
+
+  test("stripPastedPaths drops upload paths like the server's user rows; typed paths stay", () => {
+    assert.equal(stripPastedPaths(`look at this\n${web}\n${path}`), "look at this");
+    assert.equal(stripPastedPaths(`a ${web} b`), "a b");
+    assert.equal(stripPastedPaths(web), "");
+    assert.equal(stripPastedPaths("compare /tmp/pi-web-notauuid.png."), "compare /tmp/pi-web-notauuid.png.");
+    assert.equal(stripPastedPaths(`\`${web}\``), `\`${web}\``);
   });
 });

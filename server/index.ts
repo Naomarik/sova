@@ -6,6 +6,7 @@ import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { Hono } from "hono";
+import { bodyLimit } from "hono/body-limit";
 import { disposeAllChats } from "./chat-manager";
 import { canonicalPath, resolveSessionPath } from "./paths";
 import { listModels, resolveContext } from "./models";
@@ -14,7 +15,7 @@ import { addWebSession } from "./web-sessions";
 import { getAgentsInsight, getSessionInsight, getUsageInsight } from "./insights";
 import { archiveSession, getSessionSummary, listCwds, listSessions } from "./sessions-index";
 import { contextForBranch, normalizeEntries, readActiveBranch } from "./transcript";
-import { checkTmpImage, readTmpImage } from "./attachments";
+import { checkTmpImage, MAX_ATTACHMENT_BYTES, readTmpImage, saveUploadedImage, UploadError } from "./attachments";
 import { listFolders } from "./folders";
 import { startModeWatcher, switchMode } from "./mode";
 import { modeInfo, parseModePatch, readMode } from "./mode-state";
@@ -132,6 +133,26 @@ app.get("/api/attachment", async (c) => {
     "X-Content-Type-Options": "nosniff",
   });
 });
+
+// A web upload becomes a /tmp file like a TUI clipboard paste; the prompt text then references
+// the path. Raw bytes + Content-Type (no multipart). 413 by middleware before we buffer.
+app.post(
+  "/api/upload",
+  bodyLimit({
+    maxSize: MAX_ATTACHMENT_BYTES,
+    onError: () => new Response(JSON.stringify({ error: "Image exceeds the 20MB limit" }), { status: 413, headers: { "Content-Type": "application/json" } }),
+  }),
+  async (c) => {
+    try {
+      const mime = (c.req.header("Content-Type") ?? "").split(";")[0]!.trim();
+      const saved = saveUploadedImage(new Uint8Array(await c.req.arrayBuffer()), mime);
+      return c.json(saved, 201);
+    } catch (err) {
+      if (err instanceof UploadError) return c.json({ error: err.message }, err.status);
+      throw err;
+    }
+  },
+);
 
 // Insights: read-only views of extension state (docs/insights-research.md). Missing or
 // corrupt sources come back as empty/unavailable payloads, not errors.

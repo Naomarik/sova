@@ -7,8 +7,9 @@ const NAME = String.raw`[A-Za-z0-9][A-Za-z0-9._-]*\.(?:png|jpe?g|webp|gif)`;
 export const TMP_IMAGE_PATH = new RegExp(`^/tmp/${NAME}$`, "i");
 /** Standalone: not part of a longer path on either side; a trailing "." ends a sentence. */
 const TOKEN = String.raw`(?<![\w./-])/tmp/${NAME}(?![\w/-]|\.\w)`;
-/** Names pi itself writes (interactive-mode handleClipboardPaste, utils/clipboard-image). */
-const PI_CLIPBOARD = /^pi-(?:clipboard|wsl-clip)-[0-9a-f-]{36}\.[a-z]+$/i;
+/** Names pi or pi-web write (interactive-mode handleClipboardPaste, utils/clipboard-image,
+    and pi-web's POST /api/upload). */
+const PI_CLIPBOARD = /^pi-(?:clipboard|wsl-clip|web)-[0-9a-f-]{36}\.[a-z]+$/i;
 
 export const isPiClipboardName = (name: string) => PI_CLIPBOARD.test(name);
 

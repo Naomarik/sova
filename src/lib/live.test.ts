@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createStore } from "solid-js/store";
-import { applyEvent, emptyLive, type LiveState } from "./live";
+import { addPendingPrompt, applyEvent, emptyLive, type LiveState } from "./live";
 
 function store(): [LiveState, ReturnType<typeof createStore<LiveState>>[1]] {
   const [s, set] = createStore<LiveState>(emptyLive());
@@ -44,4 +44,28 @@ test("events without provider/model leave the entry's model unset", () => {
   const [s, set] = store();
   applyEvent(set, messageStart());
   if (s.entries[0]?.kind === "assistant") assert.equal(s.entries[0].model, undefined);
+});
+
+test("a pending prompt carries its uploads as available attachments until confirmed", () => {
+  const [s, set] = store();
+  const path = "/tmp/pi-web-a58752a9-8229-46d3-a816-07ef24919b10.png";
+  addPendingPrompt(set, `look at this\n${path}`, [], [{ path, name: path.slice(5), mimeType: "image/png", size: 1234 }]);
+  const entry = s.entries[0];
+  assert.equal(entry?.kind, "user");
+  if (entry?.kind !== "user") return;
+  assert.equal(entry.text, `look at this\n${path}`);
+  assert.deepEqual(entry.images, []);
+  assert.deepEqual(entry.attachments, [{ path, name: path.slice(5), mimeType: "image/png", size: 1234, available: true }]);
+  applyEvent(set, { type: "message_start", message: { role: "user", content: [{ type: "text", text: entry.text }] } });
+  assert.equal(s.entries.length, 1);
+  if (s.entries[0]?.kind === "user") {
+    assert.equal(s.entries[0].confirmed, true);
+    assert.equal(s.entries[0].attachments?.length, 1);
+  }
+});
+
+test("a pending prompt without uploads has no attachments", () => {
+  const [s, set] = store();
+  addPendingPrompt(set, "hi");
+  if (s.entries[0]?.kind === "user") assert.equal(s.entries[0].attachments, undefined);
 });

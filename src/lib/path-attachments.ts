@@ -3,7 +3,7 @@
 // (lib/markdown.ts) and a Solid component for plain text (components/PathAttachment.tsx).
 
 import type { TmpAttachment } from "../../shared/protocol";
-import { isPiClipboardName } from "../../shared/tmp-paths";
+import { findTmpImagePaths, isPiClipboardName } from "../../shared/tmp-paths";
 import { copyText, openLightbox } from "./ui-state";
 
 /** Where the browser gets the bytes. It never reads /tmp itself. */
@@ -23,6 +23,25 @@ export function shortName(name: string): string {
 }
 
 const baseName = (path: string) => path.slice(path.lastIndexOf("/") + 1);
+
+/**
+ * A user row's display text without the paths pi (or pi-web's upload) inserted, since the
+ * attachment unit stands in for them; typed paths stay. Client twin of the server's
+ * inlineTmpImages(text, true), so an optimistic row reads the same after the refetch.
+ */
+export function stripPastedPaths(text: string): string {
+  let shown = text;
+  const cut = findTmpImagePaths(text).filter((m) => isPiClipboardName(baseName(m.path)));
+  if (cut.length === 0) return text;
+  for (const { start, end } of cut.reverse()) {
+    let a = start;
+    let b = end;
+    while (a > 0 && (shown[a - 1] === " " || shown[a - 1] === "\t")) a--;
+    while (b < shown.length && (shown[b] === " " || shown[b] === "\t")) b++;
+    shown = shown.slice(0, a) + "\u0000" + shown.slice(b);
+  }
+  return shown.replace(/^\u0000+|\u0000+$/gm, "").replace(/\u0000+/g, " ").trim();
+}
 
 /** The one "gone" note, also used by the user-row unit. */
 export const MISSING_NOTE = "No longer in /tmp";

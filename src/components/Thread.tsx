@@ -3,6 +3,7 @@ import type { TmpAttachment, TranscriptItem } from "../../shared/protocol";
 import type { LiveBlock, LiveEntry, LiveState } from "../lib/live";
 import { prettyJson, shortModel, stampTime, thousands, tildePath } from "../lib/format";
 import { isObj, str, timestampOf, toolCallArgs, toolResultView } from "../lib/message";
+import { stripPastedPaths } from "../lib/path-attachments";
 import { home } from "../lib/ui-state";
 import { ImageStrip } from "./ImageStrip";
 import { PathAttachment, PathText } from "./PathAttachment";
@@ -318,7 +319,14 @@ export function LiveEntries(props: { live: LiveState; author: string }) {
       {(entry: LiveEntry) => (
         <Switch>
           <Match when={entry.kind === "user" && entry}>
-            {(e) => <UserTurn text={e().text} pending={!e().confirmed} images={e().images} />}
+            {(e) => (
+              <UserTurn
+                text={e().attachments ? stripPastedPaths(e().text) : e().text}
+                pending={!e().confirmed}
+                images={e().images}
+                attachments={e().attachments}
+              />
+            )}
           </Match>
           <Match when={entry.kind === "assistant" && entry}>
             {(e) => (

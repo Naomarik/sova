@@ -7,9 +7,8 @@ import { contextStateFor, usageTokens, windowOf } from "../lib/context";
 import { addPendingPrompt, applyEvent, emptyLive, runDetail, type LiveState } from "../lib/live";
 import { isObj, str } from "../lib/message";
 import { createReconnectingSocket } from "../lib/socket";
-import type { OutboundImage } from "../../shared/protocol";
-import { fromDataUrl } from "../lib/images";
-import { announce, draftImages, drafts, sessionContext, setLocalRunning, setSessionContext, toast } from "../lib/ui-state";
+import type { UploadResult } from "../../shared/protocol";
+import { announce, drafts, sessionContext, setLocalRunning, setSessionContext, toast } from "../lib/ui-state";
 import { Composer, type ComposerReason } from "./Composer";
 import { ConnectionBanner } from "./ConnectionBanner";
 import type { ModeControl, ModeState } from "./ModeMenu";
@@ -115,15 +114,16 @@ export function ChatView(props: {
   };
   onCleanup(() => cancelAnimationFrame(frame));
 
-  /** Puts prompts the server never accepted back into the draft, so nothing typed is lost. */
+  /**
+   * Puts prompts the server never accepted back into the draft, so nothing typed is lost.
+   * Uploaded images come back as their /tmp paths, already part of the text.
+   */
   const restoreUnsent = () => {
     const unsent = live.entries.flatMap((e) => (e.kind === "user" && !e.confirmed ? [e] : []));
     if (unsent.length === 0) return;
     const texts = unsent.map((e) => e.text).filter(Boolean);
     const current = drafts.get(props.path);
     if (texts.length) drafts.set(props.path, [...texts, ...(current ? [current] : [])].join("\n\n"));
-    const images = unsent.flatMap((e) => e.images.map((src, i) => fromDataUrl(src, `Image ${i + 1}.${src.slice(11, src.indexOf(";")) || "png"}`)));
-    if (images.length) draftImages.set(props.path, [...images, ...(draftImages.get(props.path) ?? [])]);
   };
 
   const socket = createReconnectingSocket<ChatServerMessage>(wsUrl("/ws/chat", props.path, props.force), {
@@ -288,8 +288,8 @@ export function ChatView(props: {
   createEffect(() => setMine(live.running));
   onCleanup(() => setMine(undefined));
 
-  const send = (text: string, steer: boolean, images: OutboundImage[], dataUrls: string[]) => {
-    if (!socket.send({ type: steer ? "steer" : "prompt", text, ...(images.length ? { images } : {}) })) return false;
+  const send = (text: string, steer: boolean, uploads: UploadResult[]) => {
+    if (!socket.send({ type: steer ? "steer" : "prompt", text })) return false;
     // A known slash command isn't a message to the model (templates and skills expand into other
     // text, extensions may never start the agent): no optimistic bubble or running state, just a
     // local "Ran" row, whether sent idle or as a steer mid-turn (pi runs it either way).
@@ -304,7 +304,7 @@ export function ChatView(props: {
       return true;
     }
     batch(() => {
-      addPendingPrompt(setLive, text, dataUrls);
+      addPendingPrompt(setLive, text, [], uploads);
       setLive("running", true);
       setResume((n) => n + 1);
     });

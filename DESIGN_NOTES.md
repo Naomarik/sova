@@ -977,6 +977,14 @@ Images show up in three places. A **user row** and a **tool-result row** can eac
 (`TranscriptItem.images`, as data URLs). The **composer** can attach images to a prompt or a
 steer (`OutboundImage[]`).
 
+Web uploads don't ride the prompt as base64. The composer sends the bytes to
+`POST /api/upload`, which stores them like a TUI clipboard paste — a fresh
+`pi-web-<uuid>.<ext>` directly in `/tmp` — and inserts the path into the prompt text. The
+user row then shows the same path-attachment unit as TUI pastes; the model sees the image by
+reading the path. `/tmp` is ephemeral (10 days on this host, gone on reboot), after which the
+unit renders "No longer in /tmp", exactly like TUI pastes. Old base64 rows keep their inline
+thumbnails.
+
 ### Thread thumbnails
 
 On a **user row**, the images go under the head, right-aligned, and *above* the text bubble

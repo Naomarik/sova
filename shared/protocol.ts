@@ -125,6 +125,15 @@ export interface OutboundImage {
   mimeType: string; // e.g. image/png, image/jpeg
 }
 
+/** A web-uploaded image, stored like a TUI clipboard paste (POST /api/upload: raw bytes,
+    Content-Type image/png|jpeg|webp|gif -> 201). The prompt text references `path`. */
+export interface UploadResult {
+  path: string; // /tmp/pi-web-<uuid>.<ext>
+  name: string; // basename
+  mimeType: string;
+  size: number;
+}
+
 // ---------------------------------------------------------------------------
 // REST (JSON)
 //
@@ -243,6 +252,7 @@ export type WatchServerMessage =
 // ---------------------------------------------------------------------------
 // GET /api/insights/usage          -> UsageInsight
 // GET /api/insights/agents         -> AgentsInsight     (all live pi processes; poll ~5s)
+// POST /api/upload                -> UploadResult 201  (raw image bytes; Content-Type: image/*)
 // GET /api/insights/session?path=  -> SessionInsight    (400/404 semantics like /api/transcript)
 
 export interface UsageWindow { label: string; pct: number; resetsAt?: string; /** Raw counts when the provider exposes them (e.g. z.ai MCP calls: used/limit). */

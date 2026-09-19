@@ -1,6 +1,7 @@
-import { constants, realpathSync, statSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { closeSync, constants, linkSync, openSync, realpathSync, rmSync, statSync, writeSync } from "node:fs";
 import { open } from "node:fs/promises";
-import { basename, dirname, extname } from "node:path";
+import { basename, dirname, extname, join } from "node:path";
 import type { TmpAttachment } from "../shared/protocol";
 import { findTmpImagePaths, isPiClipboardName, TMP_IMAGE_PATH } from "../shared/tmp-paths";
 
@@ -20,6 +21,72 @@ const MIME_BY_EXT: Record<string, string> = {
   ".webp": "image/webp",
   ".gif": "image/gif",
 };
+
+/** Upload rejections map to HTTP statuses. */
+export class UploadError extends Error {
+  constructor(readonly status: 400 | 413 | 415 | 500, message: string) {
+    super(message);
+  }
+}
+
+const EXT_BY_MIME: Record<string, string> = {
+  "image/png": ".png",
+  "image/jpeg": ".jpg",
+  "image/webp": ".webp",
+  "image/gif": ".gif",
+};
+
+/** Magic bytes: the body must really be the image it claims to be. */
+function sniffImageMime(b: Uint8Array): string | null {
+  const eq = (offset: number, ...bytes: number[]) => bytes.every((x, i) => b[offset + i] === x);
+  if (b.length >= 8 && eq(0, 0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a)) return "image/png";
+  if (b.length >= 3 && eq(0, 0xff, 0xd8, 0xff)) return "image/jpeg";
+  if (b.length >= 12 && eq(0, 0x52, 0x49, 0x46, 0x46) && eq(8, 0x57, 0x45, 0x42, 0x50)) return "image/webp";
+  if (b.length >= 6 && eq(0, 0x47, 0x49, 0x46, 0x38) && (b[4] === 0x37 || b[4] === 0x39) && b[5] === 0x61) return "image/gif";
+  return null;
+}
+
+export interface SavedUpload {
+  path: string;
+  name: string;
+  mimeType: string;
+  size: number;
+}
+
+/** Store a web-uploaded image the way pi's TUI stores a clipboard paste: a fresh file directly
+    in /tmp, referenced by path in the prompt text (the model reads it with the read tool).
+    Magic bytes must match the declared type; the exclusive .part write + hardlink rename can
+    neither clobber an existing file nor follow a pre-planted symlink, and a .part name never
+    matches the served patterns. */
+export function saveUploadedImage(bytes: Uint8Array, declaredMime: string): SavedUpload {
+  if (!Object.prototype.hasOwnProperty.call(EXT_BY_MIME, declaredMime)) throw new UploadError(415, `Unsupported image type: ${declaredMime || "(none)"}`);
+  if (bytes.length > MAX_ATTACHMENT_BYTES) throw new UploadError(413, "Image exceeds the 20MB limit");
+  const sniffed = sniffImageMime(bytes);
+  if (!sniffed) throw new UploadError(400, "Not an image (magic bytes don't match an image format)");
+  if (sniffed !== declaredMime) throw new UploadError(400, `Body is ${sniffed}, Content-Type said ${declaredMime}`);
+  const ext = EXT_BY_MIME[sniffed]!;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const name = `pi-web-${randomUUID()}${ext}`;
+    const part = join(TMP_DIR, `.${name}.part`);
+    const finalPath = join(TMP_DIR, name);
+    try {
+      const fd = openSync(part, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL, 0o600);
+      try {
+        for (let off = 0; off < bytes.length; ) off += writeSync(fd, bytes, off);
+      } finally {
+        closeSync(fd);
+      }
+      linkSync(part, finalPath); // EEXIST instead of clobbering
+      rmSync(part, { force: true });
+      return { path: finalPath, name, mimeType: sniffed, size: bytes.length };
+    } catch (err) {
+      rmSync(part, { force: true });
+      if (err instanceof UploadError) throw err;
+      // uuid collision or leftover .part with this exact name: retry with a new one
+    }
+  }
+  throw new UploadError(500, "Could not allocate an upload name");
+}
 
 /** At most this many units per row; later paths stay plain text. Bounds the stat calls too. */
 export const MAX_ATTACHMENTS_PER_ROW = 8;

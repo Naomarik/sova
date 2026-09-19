@@ -42,7 +42,7 @@ const USAGE_STALE_MS = 10 * 60_000;
 let usageCache: { mtimeMs: number; size: number; data: Omit<UsageInsight, "stale"> } | null = null;
 
 const USAGE_PROVIDERS = ["claude", "openai", "ollama", "zai"] as const satisfies readonly UsageProvider["id"][];
-const USAGE_META_KEYS = new Set(["fetchedAt", "nextFetchAt", "errors"]);
+const USAGE_META_KEYS = new Set(["schemaVersion", "fetchedAt", "nextFetchAt", "errors"]);
 
 /** Cache shapes we don't recognize are logged once per process, not on every poll. */
 const warned = new Set<string>();
@@ -68,6 +68,28 @@ function mcpWindow(m: unknown): UsageWindow | null {
   return used !== undefined && limit !== undefined && used >= 0 && limit >= 0 ? { ...w, used, limit } : w;
 }
 
+/**
+ * Claude: `limits[]` (newer caches: every window in source order, incl. model-scoped ones like
+ * "7d scoped" with scope "Fable") when it yields a valid entry, else the legacy named windows.
+ */
+function claudeWindows(data: Rec): (UsageWindow | null)[] {
+  if (Array.isArray(data.limits) && data.limits.length) {
+    const windows: UsageWindow[] = [];
+    data.limits.forEach((l: unknown, i: number) => {
+      const w = isRec(l) && typeof l.label === "string" && l.label ? usageWindow(l.label, l) : null;
+      if (!w || !isRec(l)) {
+        warnOnce(`shape:claude:limits`, `usage-status.json: skipped unrecognized claude.limits entry (index ${i})`);
+        return;
+      }
+      if (typeof l.scope === "string" && l.scope) w.scope = l.scope;
+      if (typeof l.active === "boolean") w.active = l.active;
+      windows.push(w);
+    });
+    if (windows.length) return windows;
+  }
+  return [usageWindow("5h", data.fiveHour), usageWindow("7d", data.sevenDay), usageWindow("7d opus", data.sevenDayOpus)];
+}
+
 function usageProvider(id: UsageProvider["id"], data: unknown, error: unknown): UsageProvider {
   const err = str(error);
   const withError = (p: UsageProvider): UsageProvider => (err ? { ...p, error: err } : p);
@@ -82,7 +104,7 @@ function usageProvider(id: UsageProvider["id"], data: unknown, error: unknown): 
   if (state === "ok") {
     const windows: (UsageWindow | null)[] =
       id === "claude"
-        ? [usageWindow("5h", data.fiveHour), usageWindow("7d", data.sevenDay), usageWindow("7d opus", data.sevenDayOpus)]
+        ? claudeWindows(data)
         : id === "openai"
           ? (Array.isArray(data.windows) ? data.windows : []).map((w: unknown) =>
               usageWindow(isRec(w) && typeof w.label === "string" ? w.label : "?", w))

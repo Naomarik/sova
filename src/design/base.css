@@ -1794,6 +1794,8 @@ summary.sidebar-region-head .icon-twist { transition: transform var(--dur-fast) 
   margin: 0;
 }
 .meter-label { font-size: var(--fs-caption); font-weight: var(--fw-medium); color: var(--color-ink-2); }
+/* "Active" badge on the window the current model counts against: neutral, never a hue. */
+.meter-label .chip { margin-left: var(--space-2); font-weight: var(--fw-regular); vertical-align: 1px; }
 .meter-value {
   font-family: var(--font-mono);
   font-size: var(--fs-mono);

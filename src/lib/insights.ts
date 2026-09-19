@@ -26,18 +26,26 @@ const UNIT: Record<string, { word: string; minutes: number }> = {
   w: { word: "week", minutes: 10_080 },
 };
 
-/** "5h" → 5-hour, "1d" → 1-day, "1w" → 1-week, "45m" → 45-minute; named windows from the map. */
+/** A model-scoped window ("7d scoped", scope "Fable") keeps its length; the scope names it. */
+const SCOPED = / scoped$/;
+
+/**
+ * "5h" → 5-hour, "1d" → 1-day, "1w" → 1-week, "45m" → 45-minute; "7d scoped" with scope "Fable"
+ * → 7-day Fable; named windows from the map.
+ */
 export function windowLabel(w: UsageWindow): string {
   const named = WINDOW_LABEL[w.label];
   if (named) return named;
-  const m = /^(\d+)([mhdw])$/.exec(w.label);
-  return m ? `${m[1]}-${UNIT[m[2]!]!.word}` : w.label;
+  const base = w.label.replace(SCOPED, "");
+  const m = /^(\d+)([mhdw])$/.exec(base);
+  const length = m ? `${m[1]}-${UNIT[m[2]!]!.word}` : base;
+  return base === w.label ? length : `${length} ${w.scope ?? "scoped"}`;
 }
 
-/** Window length in minutes when the label says it ("5h", "7d", month); null when unknown ("pri", "plan"). */
+/** Window length in minutes when the label says it ("5h", "7d", "7d scoped", month); null when unknown ("pri", "plan"). */
 function windowMinutes(label: string): number | null {
   if (label === "month") return 30 * 1440;
-  const m = /^(\d+)([mhdw])$/.exec(label);
+  const m = /^(\d+)([mhdw])$/.exec(label.replace(SCOPED, ""));
   return m ? Number(m[1]) * UNIT[m[2]!]!.minutes : null;
 }
 
@@ -91,15 +99,16 @@ export function providerProblem(p: UsageProvider): { lead?: string; code?: strin
 export const PROVIDER_ABBR: Record<UsageProvider["id"], string> = { claude: "C", openai: "O", ollama: "OL", zai: "Z" };
 
 /**
- * The one window a provider shows in the compact foot: the 7-day one if present, else its longest
- * (Ollama's month, Z.ai's plan window, OpenAI's "pri"/5h when that's all). Never the MCP call quota
- * or Claude's Opus-only window. Null when the provider isn't ok or has no window.
+ * The one window a provider shows in the compact foot: the one the provider flags `active` (the
+ * limit the current model counts against; first in source order), else the 7-day one, else its
+ * longest (Ollama's month, Z.ai's plan window, OpenAI's "pri"/5h when that's all). Never the MCP
+ * quota or Claude's Opus-only window. Null when the provider isn't ok or has no window.
  */
 export function glanceWindow(p: UsageProvider): UsageWindow | null {
   if (p.state !== "ok") return null;
   const ws = p.windows.filter((w) => w.label !== "mcp" && w.label !== "7d opus");
-  const seven = ws.find((w) => w.label === "7d");
-  if (seven) return seven;
+  const preferred = ws.find((w) => w.active) ?? ws.find((w) => w.label === "7d");
+  if (preferred) return preferred;
   // Longest known length first; windows of unknown length ("pri", "plan") after, in API order.
   return [...ws].sort((a, b) => (windowMinutes(b.label) ?? -1) - (windowMinutes(a.label) ?? -1))[0] ?? null;
 }

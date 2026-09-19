@@ -1901,6 +1901,8 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Section heads (Agents page) | Teams · {n} active · Subagents · {n} working |
 | Agents page, 0 live (whole body) | **No pi sessions running.** Teams and subagents show up here while the pi session that started them runs. |
 | Window labels (`5h`, `7d`, `7d opus`, `month`, `pri`, `mcp`) | 5-hour · 7-day · 7-day Opus · Monthly · Primary · MCP uses. Other Z.ai plan windows: `{n}m` → {n}-minute, `{n}h` → {n}-hour, `{n}d` → {n}-day, `{n}w` → {n}-week |
+| Scoped window (`scope` set) | `{window} {scope}`, with any " scoped" suffix dropped: `7d scoped` + `Fable` → 7-day Fable |
+| Active window badge (`active:true`) | Active (neutral `.chip-count` in the meter label) · `title`: The window your current model counts against |
 | MCP uses context | {used} of {limit} uses, e.g. "0 of 1,000 uses" (comma thousands). Shown when the window carries both `used` and `limit`, otherwise left out |
 | Meter value | `{pct}%` used |
 | Meter context | Resets in {2h 17m} (under 24h) · Resets {Sep 25} · reset already passed: Reset at `{HH:MM}`. New reading at the next refresh. |
@@ -1990,8 +1992,10 @@ glance needs the room.
 - **Usage row, a glance at every provider:**
   - One segment per provider, in the fixed order Claude, OpenAI, Ollama Cloud, Z.ai. The tags
     are exactly `C`, `O`, `OL`, `Z`, followed by a mono `{pct}%`.
-  - **Window.** Each provider shows its 7-day window when it has one, otherwise its longest.
-    Ollama shows Monthly. Z.ai shows its plan window (5-hour), never MCP uses.
+  - **Window.** Each provider shows the window flagged `active` (the first one, if several
+    are flagged). Otherwise it shows its 7-day window, and failing that, its longest. Ollama
+    shows Monthly. Z.ai shows its plan window (5-hour), never MCP uses. An active window gets
+    no marker in the glance ("C 55%"); the tooltip names it: "Claude 7-day Fable 55%".
   - **Missing data.** A provider that isn't `ok`, or has no windows, is left out. With nothing
     at all, the row reads "Usage".
   - **High.** At 80% or more, the item takes `.usage-glance-item-high`: semibold ink, and **no
@@ -2109,6 +2113,14 @@ Both pages share one shell: a `.session-head` and a `.insights.pane` containing
 - **Cards.** There's one card per `providers[]` entry, in the order given: Claude, OpenAI,
   Ollama Cloud, Z.ai. Z.ai follows the system like every other provider: no brand color, and
   the title is "Z.ai".
+- **Scoped and active windows (any provider).**
+  - A window with a `scope` is labeled `{window} {scope}`, e.g. "7-day Fable", the same form as
+    "7-day Opus". It stays in source order, so Claude reads 5-hour, 7-day, 7-day Fable.
+  - For the head chip, a scoped 7-day counts as a long window.
+  - A window with `active: true` carries a neutral badge inside its label: `<span
+    class="meter-label">7-day Fable <span class="chip chip-count" title="The window your current
+    model counts against">Active</span></span>`. The badge has no dot, no hue, and no pulse,
+    the same pattern as the Orchestrator badge.
 - **Z.ai windows.**
   - The plan window is labeled like the others (`5h` → "5-hour"), and takes its reset from
     `resetsAt` when one is sent.

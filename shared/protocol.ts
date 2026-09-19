@@ -134,7 +134,9 @@ export type WatchServerMessage =
 // GET /api/insights/session?path=  -> SessionInsight    (400/404 semantics like /api/transcript)
 
 export interface UsageWindow { label: string; pct: number; resetsAt?: string; /** Raw counts when the provider exposes them (e.g. z.ai MCP calls: used/limit). */
-  used?: number; limit?: number }
+  used?: number; limit?: number; /** Model-family scope when the window only covers a subset (e.g. Claude's "7d scoped" Fable window). */
+  scope?: string; /** Provider-flagged binding constraint (currently active limit). */
+  active?: boolean }
 export interface UsageProvider {
   id: "claude" | "openai" | "ollama" | "zai";
   state: "ok" | "nologin" | "expired" | "nokey" | "badkey" | "na" | "error";

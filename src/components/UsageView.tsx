@@ -4,7 +4,7 @@ import { clockTime, duration, relativeTime, shortDate, thousands } from "../lib/
 import { meterTone, pct, PROVIDER_NAME, providerChip, providerProblem, windowLabel } from "../lib/insights";
 import type { Poll } from "../lib/poll";
 import { InsightsPage, iso, Skeletons } from "./InsightsPage";
-import { Banner, Chip, Icon } from "./ui";
+import { Banner, Chip, CountChip, Icon } from "./ui";
 
 function Meter(props: { w: UsageWindow; now: number }) {
   const tone = () => meterTone(props.w);
@@ -26,7 +26,13 @@ function Meter(props: { w: UsageWindow; now: number }) {
   return (
     <div class="meter" classList={{ "meter-ghost": past() }}>
       <p class="meter-head">
-        <span class="meter-label">{windowLabel(props.w)}</span>
+        <span class="meter-label">
+          {windowLabel(props.w)}
+          <Show when={props.w.active}>
+            {" "}
+            <CountChip title="The window your current model counts against">Active</CountChip>
+          </Show>
+        </span>
         <span class="meter-value">
           {pct(props.w)}%<span class="meter-of"> used</span>
         </span>

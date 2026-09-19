@@ -32,6 +32,7 @@ import {
   lastMessageEntryId,
   type DeltaMessage,
 } from "./state.ts";
+import { HEADLESS_FLAG, shouldRunOutline } from "./policy.ts";
 import { OutlinePanel, PeekPanel, type PanelResult } from "./ui.ts";
 import type { Anchor, OutlineConfig, Summarizer } from "./types.ts";
 
@@ -294,8 +295,9 @@ export default function topicOutline(pi: ExtensionAPI): void {
   }
 
   function scheduleRun(force = false): void {
-    // Summaries exist for the terminal UI; print/json/rpc sessions never trigger runs.
-    if (runtime?.ctx.mode !== "tui") return;
+    // Summaries exist for the terminal UI; other modes run them only when the host opts in
+    // with --topic-outline-headless (pi-web's embedded chat runtimes do; subagent workers don't).
+    if (!runtime || !shouldRunOutline({ mode: runtime.ctx.mode, headless: pi.getFlag(HEADLESS_FLAG) })) return;
     if (force) pendingRefresh = true;
     if (debounceTimer) clearTimeout(debounceTimer);
     const delay = runtime?.config.trigger.debounceMs ?? DEFAULT_CONFIG.trigger.debounceMs;
@@ -376,6 +378,7 @@ export default function topicOutline(pi: ExtensionAPI): void {
     return openPanel(ctx);
   }
 
+  pi.registerFlag(HEADLESS_FLAG, { type: "boolean", description: "Also run outline summaries outside the TUI (set by pi-web)" });
   pi.registerCommand("outline", { description: "Conversation topic outline (jump to topics in the transcript)", handler: handleCommand });
   pi.registerShortcut("alt+o", { description: "Open topic outline panel", handler: ctx => openPanel(ctx) });
 

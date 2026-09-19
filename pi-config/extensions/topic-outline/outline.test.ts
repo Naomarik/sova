@@ -5,6 +5,7 @@ import { extractJsonObject, parseSummarizerJson, SummarizerChain } from "./summa
 import { SummarizerError, type SummarizeInput, type SummarizerResult } from "./types.ts";
 import { fingerprintKey, fingerprintOf, isMarkedMessage, locateMarker, locateMarkerRow, markerOrdinalIndex, markerRows, sameFingerprint, stripAnsi } from "./anchors.ts";
 import { NowLine, OutlineStore, applyUpdates, extractDelta, lastMessageEntryId } from "./state.ts";
+import { HEADLESS_FLAG, shouldRunOutline } from "./policy.ts";
 
 const input = (over: Partial<SummarizeInput> = {}): SummarizeInput => ({
   existingOutline: "none",
@@ -366,4 +367,16 @@ test("locateMarker spans wrapped rows, prefers the nearest duplicate, and trusts
   assert.equal(locateMarkerRow(lines, 3, "original text", 3), 10); // +1: a reply still streaming
   assert.equal(locateMarkerRow(lines, 3, "original text", 6), undefined);
   assert.equal(locateMarkerRow(lines, 3, "original text"), undefined);
+});
+
+test("shouldRunOutline: the TUI always runs; other modes only with the headless flag", () => {
+  assert.equal(HEADLESS_FLAG, "topic-outline-headless");
+  assert.equal(shouldRunOutline({ mode: "tui", headless: undefined }), true);
+  assert.equal(shouldRunOutline({ mode: "tui", headless: true }), true);
+  for (const mode of ["print", "json", "rpc", undefined]) {
+    assert.equal(shouldRunOutline({ mode, headless: undefined }), false, `${mode} without flag`);
+    assert.equal(shouldRunOutline({ mode, headless: false }), false, `${mode} flag false`);
+    assert.equal(shouldRunOutline({ mode, headless: "true" }), false, `${mode} flag string`);
+    assert.equal(shouldRunOutline({ mode, headless: true }), true, `${mode} with flag`);
+  }
 });

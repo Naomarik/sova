@@ -101,7 +101,8 @@ export async function transcriptTests({ root, jiti, test, assert }) {
     const commands = new Map(), hooks = new Map(), peeks = [];
     const bus = { on() { return () => {}; }, emit() {} };
     const pi = { events: bus, on(name, fn) { if (!hooks.has(name)) hooks.set(name, []); hooks.get(name).push(fn); },
-      registerCommand(name, value) { commands.set(name, value); }, registerShortcut() {}, appendEntry() {} };
+      registerCommand(name, value) { commands.set(name, value); }, registerShortcut() {}, registerFlag() {}, getFlag() {},
+      appendEntry() {} };
     extension(pi);
     let nextJump;
     const ctx = {

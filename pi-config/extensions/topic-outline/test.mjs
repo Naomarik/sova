@@ -25,7 +25,7 @@ const { test } = await import('node:test');
 const assert = (await import('node:assert/strict')).default;
 
 test('topic-outline extension loads and registers command, shortcut, and events', () => {
-  const commands = new Map(), shortcuts = new Map(), hooks = new Map();
+  const commands = new Map(), shortcuts = new Map(), hooks = new Map(), flags = new Map();
   const bus = {
     on(name, fn) { if (!bus.map.has(name)) bus.map.set(name, new Set()); bus.map.get(name).add(fn); return () => bus.map.get(name)?.delete(fn); },
     emit(name, value) { for (const fn of bus.map.get(name) ?? []) fn(value); },
@@ -36,11 +36,14 @@ test('topic-outline extension loads and registers command, shortcut, and events'
     on(name, fn) { if (!hooks.has(name)) hooks.set(name, []); hooks.get(name).push(fn); },
     registerCommand(name, value) { commands.set(name, value); },
     registerShortcut(name, value) { shortcuts.set(name, value); },
+    registerFlag(name, value) { flags.set(name, value); },
+    getFlag() { return undefined; },
     appendEntry() {},
   };
   extension(pi);
   assert.ok(commands.has('outline'), 'registers /outline');
   assert.ok(shortcuts.has('alt+o'), 'registers Alt+O');
+  assert.equal(flags.get('topic-outline-headless')?.type, 'boolean', 'registers the boolean headless flag');
   for (const event of ['session_start', 'session_shutdown', 'session_tree', 'agent_start', 'agent_settled',
     'tool_execution_start', 'tool_execution_end', 'ui_prompt_start', 'ui_prompt_end', 'message_end']) {
     assert.ok(hooks.has(event), `subscribes to ${event}`);

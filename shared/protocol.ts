@@ -65,8 +65,9 @@ export type ChatServerMessage =
   /** Extension dialog bridge (select/confirm/input). Optional in MVP. */
   | { type: "ui_request"; id: string; request: unknown }
   // Codes: "busy" = a TUI owns the session (never retry with force); "recent" = file written by an
-  // unknown process within the staleness window (client may reconnect with &force=1);
-  // "reloaded" = another client reloaded the runtime (just reconnect); "internal" = server error.
+  // unknown process, at connect or mid-chat (client may reconnect with &force=1);
+  // "reloaded" = runtime reloaded by another client, or message sent to a closed runtime (reconnect);
+  // "internal" = server error.
   | { type: "error"; message: string; code?: "busy" | "recent" | "reloaded" | "internal" };
 
 /** WS /ws/watch?path= — read-only live view. Safe for sessions a TUI currently owns. Never writes. */

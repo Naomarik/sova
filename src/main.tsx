@@ -1,4 +1,7 @@
-// Placeholder — the frontend member replaces this file.
 import { render } from "solid-js/web";
+import "./design/tokens.css";
+import "./design/base.css";
+import "./app.css";
+import { App } from "./App";
 
-render(() => <div>pi-web scaffold</div>, document.getElementById("root")!);
+render(() => <App />, document.getElementById("root")!);

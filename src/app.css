@@ -1,0 +1,17 @@
+/* pi-web glue that base.css doesn't cover. Token values only. */
+
+html, body, #root { height: 100%; }
+
+/* Positions .jump-latest over the transcript pane without scrolling with it. */
+.transcript-wrap { flex: 1; min-height: 0; position: relative; display: flex; flex-direction: column; }
+.transcript-wrap > .transcript { flex: 1; }
+
+.center-fill { flex: 1; display: flex; align-items: center; justify-content: center; }
+
+.list-title-muted { color: var(--color-ink-muted); }
+
+/* Skeleton shapes from DESIGN_NOTES §3 "Loading transcript". */
+.skeleton-bubble { align-self: flex-end; width: 40%; height: var(--row-height); }
+.skeleton-w92 { width: 92%; }
+.skeleton-w78 { width: 78%; }
+.skeleton-w60 { width: 60%; }

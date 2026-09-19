@@ -1,0 +1,347 @@
+import { createEffect, createMemo, createResource, createSignal, Match, on, onCleanup, Show, Switch } from "solid-js";
+import { Portal } from "solid-js/web";
+import type { SessionSummary } from "../shared/protocol";
+import { listSessions } from "./lib/api";
+import { homeFromSessionPath, shortModel, tildePath } from "./lib/format";
+import { copyText, home, setHome } from "./lib/ui-state";
+import { ChatView, type ChatRefusal } from "./components/ChatView";
+import { NewSessionDialog } from "./components/NewSessionDialog";
+import { sessionHref, Sidebar } from "./components/Sidebar";
+import { WatchView } from "./components/WatchView";
+import { Banner, Chip, CopyButton, GlobalRegions, Icon } from "./components/ui";
+
+/** Why a session is open read-only. */
+type WatchWhy = "tui" | "recent";
+
+/** How the open session is shown. Decided once when it's opened, then changed only by events. */
+type Decision =
+  | { path: string; mode: "chat"; force: boolean; autofocus?: boolean }
+  | { path: string; mode: "watch"; why: WatchWhy; ageSec?: number; listVersion: number };
+
+function pathFromHash(): string | null {
+  const m = /^#\/s\/(.+)$/.exec(location.hash);
+  if (!m) return null;
+  try {
+    return decodeURIComponent(m[1]!);
+  } catch {
+    return null;
+  }
+}
+
+const sameSummary = (a: SessionSummary, b: SessionSummary) =>
+  a.title === b.title &&
+  a.lastActiveAt === b.lastActiveAt &&
+  a.model === b.model &&
+  a.live?.pid === b.live?.pid &&
+  a.live?.status === b.live?.status;
+
+/** Keeps the previous object for unchanged rows so <For> updates the list in place (focus survives). */
+function reuseUnchanged(next: SessionSummary[], prev: SessionSummary[] | undefined): SessionSummary[] {
+  if (!prev) return next;
+  const old = new Map(prev.map((s) => [s.path, s]));
+  return next.map((s) => {
+    const o = old.get(s.path);
+    return o && sameSummary(o, s) ? o : s;
+  });
+}
+
+/** While a session is watched, poll the list so live status (and TUI exit) shows up on its own. */
+const WATCH_POLL_MS = 10_000;
+
+const folded = () => window.matchMedia("(max-width: 767px)").matches;
+
+export function App() {
+  const [listError, setListError] = createSignal<string | null>(null);
+  /** Bumped on every successful list load, so views can tell a fresh list from a stale one. */
+  const [listVersion, setListVersion] = createSignal(0);
+  // The fetcher never rejects: on failure it keeps the previous list and reports the error,
+  // so reading the resource never throws.
+  const [sessions, { refetch }] = createResource<SessionSummary[] | undefined>(async (_, { value }) => {
+    try {
+      const next = reuseUnchanged(await listSessions(), value);
+      setListError(null);
+      setListVersion((v) => v + 1);
+      const h = next[0] && homeFromSessionPath(next[0].path);
+      if (h) setHome(h);
+      return next;
+    } catch (err) {
+      setListError((err as Error).message);
+      return value;
+    }
+  });
+  const list = () => sessions.latest; // keeps the old list on screen while refreshing
+
+  const [route, setRoute] = createSignal<string | null>(pathFromHash());
+  const [decision, setDecision] = createSignal<Decision | null>(null);
+  /** Sessions we just created: shown before the list catches up. */
+  const created = new Map<string, SessionSummary>();
+  const [creating, setCreating] = createSignal(false);
+  const [chatModel, setChatModel] = createSignal<string | null>(null);
+  const [now, setNow] = createSignal(Date.now());
+
+  const refresh = () => void refetch();
+  const onFocus = () => {
+    setNow(Date.now());
+    refresh();
+  };
+  const onHash = () => setRoute(pathFromHash());
+  window.addEventListener("focus", onFocus);
+  window.addEventListener("hashchange", onHash);
+  const tick = setInterval(() => setNow(Date.now()), 30_000);
+  onCleanup(() => {
+    window.removeEventListener("focus", onFocus);
+    window.removeEventListener("hashchange", onHash);
+    clearInterval(tick);
+  });
+
+  const summary = createMemo(() => {
+    const p = route();
+    if (!p) return null;
+    return list()?.find((s) => s.path === p) ?? created.get(p) ?? null;
+  });
+
+  /**
+   * Default for a freshly opened session: TUI-owned → read-only; else try chat without force.
+   * The server is the authority on unknown writers: it refuses with code "recent" (before hello,
+   * so nothing can be sent) and we fall back to read-only with Chat Anyway.
+   */
+  const defaultDecision = (s: SessionSummary): Decision =>
+    s.live ? { path: s.path, mode: "watch", why: "tui", listVersion: listVersion() } : { path: s.path, mode: "chat", force: false };
+
+  // Decide once per opened session, as soon as its summary is known.
+  createEffect(() => {
+    const p = route();
+    const s = summary();
+    if (!p) return setDecision(null);
+    if (!s || decision()?.path === p) return;
+    setChatModel(null);
+    setDecision(defaultDecision(s));
+  });
+
+  // At folded width, opening a session swaps the column: move focus to its title.
+  let titleEl: HTMLHeadingElement | undefined;
+  createEffect(on(route, (p) => p && folded() && queueMicrotask(() => titleEl?.focus()), { defer: true }));
+
+  const openChat = (force: boolean) => {
+    const d = decision();
+    if (d) setDecision({ path: d.path, mode: "chat", force, autofocus: true });
+  };
+  const onRefused = (kind: ChatRefusal) => {
+    const d = decision();
+    if (!d) return;
+    refresh();
+    const s = summary();
+    const age = s ? Math.round((Date.now() - Date.parse(s.lastActiveAt)) / 1000) : NaN;
+    setDecision({
+      path: d.path,
+      mode: "watch",
+      why: kind === "busy" ? "tui" : "recent",
+      ageSec: Number.isFinite(age) && age >= 0 ? age : undefined,
+      listVersion: listVersion(),
+    });
+  };
+
+  // Remount the view (and its socket) when the session, mode, or force flag changes.
+  const viewKey = createMemo(() => {
+    const d = decision();
+    if (!d || !summary()) return null;
+    return d.mode === "chat" ? `chat:${d.force}:${d.path}` : `watch:${d.why}:${d.path}`;
+  });
+
+  createEffect(() => {
+    if (decision()?.mode !== "watch") return;
+    const t = setInterval(refresh, WATCH_POLL_MS);
+    onCleanup(() => clearInterval(t));
+  });
+
+  const folderCount = () => new Set((list() ?? []).map((s) => s.cwd)).size;
+
+  return (
+    <>
+      <a class="button skip-link" href="#transcript">
+        Skip to Transcript
+      </a>
+      <div class="app" data-view={route() ? "session" : "list"}>
+        <Sidebar
+          sessions={list()}
+          loading={sessions.loading}
+          error={listError()}
+          selected={route()}
+          now={now()}
+          onRefresh={refresh}
+          onNew={() => setCreating(true)}
+        />
+
+        <main class="app-main">
+          <Show
+            when={viewKey()}
+            keyed
+            fallback={
+              <div class="center-fill">
+                <Show
+                  when={!route() || !list()}
+                  fallback={
+                    <div class="empty">
+                      <p class="empty-title">Couldn't find this session.</p>
+                      <p class="empty-body">It isn't in the list of sessions on disk anymore.</p>
+                      <a class="button empty-action" href="#/">
+                        Back to Sessions
+                      </a>
+                    </div>
+                  }
+                >
+                  <div class="empty">
+                    <Icon name="chat" class="empty-mark" />
+                    <p class="empty-title">
+                      <Show when={list()} fallback="Loading sessions.">
+                        {list()!.length} sessions across {folderCount()} folders.
+                      </Show>
+                    </p>
+                    <p class="empty-body">Pick one to read it, or start a new one.</p>
+                    <button type="button" class="button empty-action" onClick={() => setCreating(true)}>
+                      <Icon name="plus" />
+                      New Session
+                    </button>
+                  </div>
+                </Show>
+              </div>
+            }
+          >
+            {(_key) => {
+              const d = decision()!;
+              const s = () => summary() ?? created.get(d.path)!;
+              const model = () => (d.mode === "chat" ? chatModel() ?? s().model : s().model);
+              const author = () => shortModel(model()) ?? "pi";
+              return (
+                <>
+                  <header class="session-head">
+                    <a class="button button-icon button-ghost app-back" href="#/" aria-label="Back to Sessions">
+                      <Icon name="chevron-left" />
+                    </a>
+                    <div class="session-head-main">
+                      <h1 class="session-head-title" tabindex="-1" ref={titleEl} title={s().title}>
+                        {s().title}
+                      </h1>
+                      <p class="session-head-meta">
+                        <span class="text-mono" title={s().cwd}>
+                          {tildePath(s().cwd, home())}
+                        </span>
+                        <Show when={model()}>
+                          <span aria-hidden="true">·</span>
+                          <span class="text-mono" title={model()!}>
+                            {shortModel(model())}
+                          </span>
+                        </Show>
+                      </p>
+                    </div>
+                    <Show when={s().live}>
+                      <Chip tone="accent" live>
+                        Live
+                      </Chip>
+                    </Show>
+                    <CopyButton iconOnly label="Copy Session Path" text={() => d.path} onCopy={(t) => copyText(t, "Copied path.")} />
+                  </header>
+
+                  <Switch>
+                    <Match when={d.mode === "watch" && d}>
+                      {(w) => (
+                        <WatchView
+                          path={d.path}
+                          author={author()}
+                          streaming={!!s().live}
+                          stateBanner={
+                            <Switch>
+                              <Match when={w().why === "recent"}>
+                                <Banner
+                                  tone="warn"
+                                  title="Another pi process may be writing this session."
+                                  body={`${w().ageSec !== undefined ? `It changed ${w().ageSec}s ago` : "It changed"} from a process we can't identify, and no TUI claims it, so we only read it. Chatting here would put 2 writers on one file.`}
+                                  action={
+                                    <button type="button" class="button button-sm" onClick={() => openChat(true)}>
+                                      Chat Anyway
+                                    </button>
+                                  }
+                                />
+                              </Match>
+                              <Match when={!s().live && listVersion() > w().listVersion}>
+                                <Banner
+                                  tone="info"
+                                  title="The TUI closed this session."
+                                  body="You can chat in it here now."
+                                  action={
+                                    <button type="button" class="button button-sm" onClick={() => openChat(false)}>
+                                      Open for Chat
+                                    </button>
+                                  }
+                                />
+                              </Match>
+                              <Match when={true}>
+                                <Banner
+                                  tone="info"
+                                  icon="terminal"
+                                  title="Live from TUI — read only"
+                                  body={
+                                    <Show when={s().live} fallback="Open in a pi TUI. We only read this file.">
+                                      {(l) => (
+                                        <>
+                                          Open in pi (pid <span class="text-mono">{l().pid}</span>) ·{" "}
+                                          <span class="text-mono">{l().status}</span>. We only read this file.
+                                        </>
+                                      )}
+                                    </Show>
+                                  }
+                                />
+                              </Match>
+                            </Switch>
+                          }
+                          readOnly={
+                            w().why === "recent"
+                              ? { icon: "attention", text: "Read only while another process may be writing this file." }
+                              : { icon: "attention", text: "Read only while this session is open in the TUI." }
+                          }
+                        />
+                      )}
+                    </Match>
+                    <Match when={d.mode === "chat" && d}>
+                      {(c) => (
+                        <ChatView
+                          path={d.path}
+                          cwdLabel={tildePath(s().cwd, home())}
+                          author={author()}
+                          force={c().force}
+                          autofocus={c().autofocus}
+                          onModel={setChatModel}
+                          onRefused={onRefused}
+                          onSettled={refresh}
+                        />
+                      )}
+                    </Match>
+                  </Switch>
+                </>
+              );
+            }}
+          </Show>
+        </main>
+      </div>
+
+      <Show when={creating()}>
+        <Portal>
+          <NewSessionDialog
+            prefill={summary()?.cwd ?? [...(list() ?? [])].sort((a, b) => b.lastActiveAt.localeCompare(a.lastActiveAt))[0]?.cwd ?? ""}
+            knownCwds={[...new Set((list() ?? []).map((s) => s.cwd))]}
+            onCancel={() => setCreating(false)}
+            onCreated={(s) => {
+              created.set(s.path, s);
+              setCreating(false);
+              refresh();
+              // Our own new session: chat right away, composer focused.
+              setDecision({ path: s.path, mode: "chat", force: false, autofocus: true });
+              location.hash = sessionHref(s.path);
+            }}
+          />
+        </Portal>
+      </Show>
+      <GlobalRegions />
+    </>
+  );
+}

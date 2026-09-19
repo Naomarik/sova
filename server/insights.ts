@@ -41,6 +41,17 @@ const USAGE_STALE_MS = 10 * 60_000;
 
 let usageCache: { mtimeMs: number; size: number; data: Omit<UsageInsight, "stale"> } | null = null;
 
+const USAGE_PROVIDERS = ["claude", "openai", "ollama", "zai"] as const satisfies readonly UsageProvider["id"][];
+const USAGE_META_KEYS = new Set(["fetchedAt", "nextFetchAt", "errors"]);
+
+/** Cache shapes we don't recognize are logged once per process, not on every poll. */
+const warned = new Set<string>();
+function warnOnce(key: string, message: string): void {
+  if (warned.has(key)) return;
+  warned.add(key);
+  console.warn(`[insights] ${message}`);
+}
+
 function usageWindow(label: string, w: unknown): UsageWindow | null {
   if (!isRec(w)) return null;
   const pct = num(w.pct);
@@ -49,10 +60,24 @@ function usageWindow(label: string, w: unknown): UsageWindow | null {
   return resetsAt ? { label, pct, resetsAt } : { label, pct };
 }
 
+function mcpWindow(m: unknown): UsageWindow | null {
+  const w = usageWindow("mcp", m);
+  if (!w || !isRec(m)) return w;
+  const used = num(m.used);
+  const limit = num(m.limit);
+  return used !== undefined && limit !== undefined && used >= 0 && limit >= 0 ? { ...w, used, limit } : w;
+}
+
 function usageProvider(id: UsageProvider["id"], data: unknown, error: unknown): UsageProvider {
   const err = str(error);
   const withError = (p: UsageProvider): UsageProvider => (err ? { ...p, error: err } : p);
-  if (!isRec(data)) return { id, state: "error", windows: [], error: err ?? "no data" };
+  // Absent = never fetched OK (or a cache from before this source existed).
+  if (data === undefined) return { id, state: "error", windows: [], error: err ?? "no data" };
+  const unrecognized = (what: string): UsageProvider => {
+    warnOnce(`shape:${id}:${what}`, `usage-status.json: unrecognized ${id} data (${what}); reporting "na"`);
+    return withError({ id, state: "na", windows: [] });
+  };
+  if (!isRec(data)) return unrecognized(`not an object: ${typeof data}`);
   const state = str(data.state);
   if (state === "ok") {
     const windows: (UsageWindow | null)[] =
@@ -61,14 +86,21 @@ function usageProvider(id: UsageProvider["id"], data: unknown, error: unknown): 
         : id === "openai"
           ? (Array.isArray(data.windows) ? data.windows : []).map((w: unknown) =>
               usageWindow(isRec(w) && typeof w.label === "string" ? w.label : "?", w))
-          : [usageWindow("month", { pct: data.usedPct })];
+          : id === "zai"
+            ? [
+                // coding-plan window, labelled by its length ("5h", "1d", "1w", "45m")
+                usageWindow(isRec(data.fiveHour) ? (str(data.fiveHour.label) ?? "plan") : "plan", data.fiveHour),
+                // MCP call quota, with its raw call counts when both are valid
+                mcpWindow(data.mcp),
+              ]
+            : [usageWindow("month", { pct: data.usedPct })];
     const valid = windows.filter((w): w is UsageWindow => w !== null);
     // "ok" without a readable window is what the extension renders as "n/a"
-    return withError(valid.length ? { id, state: "ok", windows: valid } : { id, state: "na", windows: [] });
+    return valid.length ? withError({ id, state: "ok", windows: valid }) : unrecognized("state ok without a readable window");
   }
   const known = ["nologin", "expired", "nokey", "badkey", "na"] as const;
-  const s = known.find((k) => k === state) ?? "na";
-  return withError({ id, state: s, windows: [] });
+  const s = known.find((k) => k === state);
+  return s ? withError({ id, state: s, windows: [] }) : unrecognized(`state ${JSON.stringify(state ?? null)}`);
 }
 
 function parseUsage(text: string): Omit<UsageInsight, "stale"> | null {
@@ -80,15 +112,17 @@ function parseUsage(text: string): Omit<UsageInsight, "stale"> | null {
   }
   // Same validity rule as the extension's own reader (isCacheFile).
   if (!isRec(v) || num(v.fetchedAt) === undefined || !isRec(v.errors)) return null;
+  const errors = v.errors;
+  // UsageProvider.id is a closed union: providers added to the extension later are skipped (and logged).
+  for (const key of Object.keys(v))
+    if (!USAGE_META_KEYS.has(key) && !(USAGE_PROVIDERS as readonly string[]).includes(key))
+      warnOnce(`provider:${key}`, `usage-status.json: unknown provider "${key}" skipped`);
   return {
     available: true,
     fetchedAt: v.fetchedAt,
     nextFetchAt: num(v.nextFetchAt) ?? null,
-    providers: [
-      usageProvider("claude", v.claude, v.errors.claude),
-      usageProvider("openai", v.openai, v.errors.openai),
-      usageProvider("ollama", v.ollama, v.errors.ollama),
-    ],
+    // fixed order; a provider absent from an older cache comes back as "error", never omitted
+    providers: USAGE_PROVIDERS.map((id) => usageProvider(id, v[id], errors[id])),
   };
 }
 

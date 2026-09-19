@@ -1,7 +1,7 @@
 import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import type { AgentsInsight, SessionSummary, UsageInsight } from "../../shared/protocol";
 import { relativeTime, shortModel, tildePath } from "../lib/format";
-import { activeTeams, agentsHref, usageHref, worstWindow } from "../lib/insights";
+import { activeTeams, agentsHref, type GlancePart, usageGlance, usageHref } from "../lib/insights";
 import { home } from "../lib/ui-state";
 import { Banner, Chip, CountChip, Icon } from "./ui";
 
@@ -81,15 +81,19 @@ function GroupList(props: { groups: Group[]; selected: string | null; now: numbe
   );
 }
 
-/** Usage foot row: the highest window across providers, or the page name when there's none. */
-function UsageGlance(props: { usage: UsageInsight | undefined }) {
+/** Usage foot row: every provider at a glance ("C 47%  O 95%  OL 80%  Z 0%"), or the page name. */
+function UsageGlance(props: { parts: GlancePart[] }) {
   return (
-    <Show when={worstWindow(props.usage)} fallback="Usage">
-      {(w) => (
-        <>
-          {w().label} <span class="text-num">{w().pct}%</span>
-        </>
-      )}
+    <Show when={props.parts.length > 0} fallback="Usage">
+      <For each={props.parts}>
+        {(p) => (
+          // Stale wins over high: an old 95% isn't a current warning.
+          <span class="usage-glance-item" classList={{ "usage-glance-item-high": p.high && !p.stale, "usage-glance-item-stale": p.stale }}>
+            <span class="usage-glance-tag">{p.abbr}</span>
+            <span class="text-num">{p.pct}%</span>
+          </span>
+        )}
+      </For>
     </Show>
   );
 }
@@ -178,6 +182,9 @@ export function Sidebar(props: {
     sessionStorage.setItem(ARCHIVE_KEY, open ? "1" : "0");
   };
   const liveCount = () => all().filter((s) => s.live).length;
+  const glance = createMemo(() => usageGlance(props.usage));
+  /** The foot's usage glance in full words, for its tooltip and accessible name. */
+  const glanceText = () => (glance().length ? `Usage: ${glance().map((p) => p.full).join(", ")}` : "");
 
   const clear = () => {
     setQuery("");
@@ -340,19 +347,23 @@ export function Sidebar(props: {
       </nav>
 
       <div class="sidebar-foot">
-        <a class="list-row list-row-interactive insights-row" href={usageHref()} aria-current={props.insightsPage === "usage" ? "page" : undefined}>
+        <a
+          class="list-row list-row-interactive insights-row"
+          href={usageHref()}
+          aria-current={props.insightsPage === "usage" ? "page" : undefined}
+          title={glanceText() || undefined}
+          aria-label={glanceText() || undefined}
+        >
           <Icon name="gauge" />
-          <span class="insights-row-text">
-            <UsageGlance usage={props.usage} />
+          <span class="insights-row-text" classList={{ "usage-glance": glance().length > 0 }}>
+            <UsageGlance parts={glance()} />
           </span>
-          <Icon name="chevron-right" small />
         </a>
         <a class="list-row list-row-interactive insights-row" href={agentsHref()} aria-current={props.insightsPage === "agents" ? "page" : undefined}>
           <Icon name="worker" />
           <span class="insights-row-text">
             <AgentsGlance agents={props.agents} />
           </span>
-          <Icon name="chevron-right" small />
         </a>
       </div>
     </aside>

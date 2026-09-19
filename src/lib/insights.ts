@@ -8,20 +8,41 @@ export const PROVIDER_NAME: Record<UsageProvider["id"], string> = {
   claude: "Claude",
   openai: "OpenAI",
   ollama: "Ollama Cloud",
+  zai: "Z.ai",
 };
 
 const WINDOW_LABEL: Record<string, string> = {
-  "5h": "5-hour",
-  "7d": "7-day",
   "7d opus": "7-day Opus",
   month: "Monthly",
   pri: "Primary",
+  plan: "Plan",
+  mcp: "MCP uses",
 };
 
-export const windowLabel = (w: UsageWindow) => WINDOW_LABEL[w.label] ?? w.label;
+const UNIT: Record<string, { word: string; minutes: number }> = {
+  m: { word: "minute", minutes: 1 },
+  h: { word: "hour", minutes: 60 },
+  d: { word: "day", minutes: 1440 },
+  w: { word: "week", minutes: 10_080 },
+};
 
-/** Short windows reset on their own; weekly/monthly ones wait for the reset. */
-const isShortWindow = (w: UsageWindow) => w.label === "5h";
+/** "5h" → 5-hour, "1d" → 1-day, "1w" → 1-week, "45m" → 45-minute; named windows from the map. */
+export function windowLabel(w: UsageWindow): string {
+  const named = WINDOW_LABEL[w.label];
+  if (named) return named;
+  const m = /^(\d+)([mhdw])$/.exec(w.label);
+  return m ? `${m[1]}-${UNIT[m[2]!]!.word}` : w.label;
+}
+
+/** Window length in minutes when the label says it ("5h", "7d", month); null when unknown ("pri", "plan"). */
+function windowMinutes(label: string): number | null {
+  if (label === "month") return 30 * 1440;
+  const m = /^(\d+)([mhdw])$/.exec(label);
+  return m ? Number(m[1]) * UNIT[m[2]!]!.minutes : null;
+}
+
+/** Short windows (hours, minutes) reset on their own; day-plus windows and quotas wait for the reset. */
+const isShortWindow = (w: UsageWindow) => /^\d+[mh]$/.test(w.label);
 
 
 export const pct = (w: UsageWindow) => Math.round(w.pct);
@@ -43,6 +64,7 @@ export function providerChip(p: UsageProvider): { tone?: Tone; text: string } | 
 }
 
 const signIn = (id: UsageProvider["id"]) => (id === "openai" ? "pi /login" : "claude /login");
+const keyWord = (id: UsageProvider["id"]) => (id === "zai" ? "API key" : "key");
 
 /** One caption replacing the meters when a provider has nothing to show. Null = render meters. */
 export function providerProblem(p: UsageProvider): { lead?: string; code?: string; rest: string } | null {
@@ -54,9 +76,9 @@ export function providerProblem(p: UsageProvider): { lead?: string; code?: strin
     case "expired":
       return { lead: "Sign-in expired. Run ", code: signIn(p.id), rest: " to renew it." };
     case "nokey":
-      return { lead: "No Ollama Cloud key in ", code: "~/.pi/agent/auth.json", rest: "." };
+      return { lead: `No ${PROVIDER_NAME[p.id]} ${keyWord(p.id)} in `, code: "~/.pi/agent/auth.json", rest: "." };
     case "badkey":
-      return { lead: "Ollama Cloud refused the key in ", code: "~/.pi/agent/auth.json", rest: "." };
+      return { lead: `${PROVIDER_NAME[p.id]} refused the ${keyWord(p.id)} in `, code: "~/.pi/agent/auth.json", rest: "." };
     case "na":
       return { rest: "This account doesn't report usage." };
     case "error":
@@ -65,12 +87,45 @@ export function providerProblem(p: UsageProvider): { lead?: string; code?: strin
   }
 }
 
-/** Highest window across providers, for the sidebar foot: label "Claude 5-hour", pct 96. */
-export function worstWindow(u: UsageInsight | undefined): { label: string; pct: number } | null {
-  if (!u?.available) return null;
-  let best: { p: UsageProvider; w: UsageWindow } | null = null;
-  for (const p of u.providers) for (const w of p.windows) if (!best || w.pct > best.w.pct) best = { p, w };
-  return best ? { label: `${PROVIDER_NAME[best.p.id]} ${windowLabel(best.w)}`, pct: pct(best.w) } : null;
+/** Sidebar-foot abbreviation per provider. */
+export const PROVIDER_ABBR: Record<UsageProvider["id"], string> = { claude: "C", openai: "O", ollama: "OL", zai: "Z" };
+
+/**
+ * The one window a provider shows in the compact foot: the 7-day one if present, else its longest
+ * (Ollama's month, Z.ai's plan window, OpenAI's "pri"/5h when that's all). Never the MCP call quota
+ * or Claude's Opus-only window. Null when the provider isn't ok or has no window.
+ */
+export function glanceWindow(p: UsageProvider): UsageWindow | null {
+  if (p.state !== "ok") return null;
+  const ws = p.windows.filter((w) => w.label !== "mcp" && w.label !== "7d opus");
+  const seven = ws.find((w) => w.label === "7d");
+  if (seven) return seven;
+  // Longest known length first; windows of unknown length ("pri", "plan") after, in API order.
+  return [...ws].sort((a, b) => (windowMinutes(b.label) ?? -1) - (windowMinutes(a.label) ?? -1))[0] ?? null;
+}
+
+export interface GlancePart {
+  id: UsageProvider["id"];
+  abbr: string;
+  pct: number;
+  /** ≥ 80%: set in semibold ink (no hue: the foot has no word to pair a color with). */
+  high: boolean;
+  /** The reading is old: the provider's last fetch failed, or the whole file is stale. */
+  stale: boolean;
+  /** Full words for the tooltip and accessible name: "Claude 7-day 47%", "… 80% (stale)". */
+  full: string;
+}
+
+/** One part per provider with a readable window, in provider order; providers without data are left out. */
+export function usageGlance(u: UsageInsight | undefined): GlancePart[] {
+  if (!u?.available) return [];
+  return u.providers.flatMap((p) => {
+    const w = glanceWindow(p);
+    if (!w) return [];
+    const stale = u.stale || (!!p.error && p.windows.length > 0);
+    const full = `${PROVIDER_NAME[p.id]} ${windowLabel(w)} ${pct(w)}%${stale ? " (stale)" : ""}`;
+    return [{ id: p.id, abbr: PROVIDER_ABBR[p.id], pct: pct(w), high: w.pct >= 80, stale, full }];
+  });
 }
 
 // ---------------------------------------------------------------------------

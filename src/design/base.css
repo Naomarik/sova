@@ -1847,6 +1847,17 @@ summary.sidebar-region-head .icon-twist { transition: transform var(--dur-fast) 
 }
 .insights-row[aria-current="page"] { background: var(--color-accent-tint); color: var(--color-ink); }
 
+/* Usage glance: "C 47%  O 95%  OL 80%  Z 0%", one segment per provider.
+   Never wraps (4 × 100% ≈ 210px fits the 320px sidebar); clips as a guard.
+   High = weight, not hue (no word to pair a color with); stale = muted. */
+.usage-glance { display: flex; align-items: baseline; gap: var(--space-3); flex-wrap: nowrap; }
+.usage-glance-item { display: inline-flex; align-items: baseline; gap: var(--space-1); flex: none; }
+.usage-glance-tag { color: var(--color-ink-muted); }
+.usage-glance-item .text-num { font-family: var(--font-mono); font-size: var(--fs-mono); color: var(--color-ink-2); }
+.usage-glance-item-high .text-num { font-weight: var(--fw-semibold); color: var(--color-ink); }
+.usage-glance-item-stale .text-num,
+.usage-glance-item-stale .usage-glance-tag { color: var(--color-ink-muted); font-weight: var(--fw-regular); }
+
 
 /* ---- USAGE + AGENTS PAGES. A .pane in .app-main, under a .session-head. - */
 

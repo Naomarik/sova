@@ -1,6 +1,6 @@
 import { For, Match, Show, Switch } from "solid-js";
 import type { UsageInsight, UsageProvider, UsageWindow } from "../../shared/protocol";
-import { clockTime, duration, relativeTime, shortDate } from "../lib/format";
+import { clockTime, duration, relativeTime, shortDate, thousands } from "../lib/format";
 import { meterTone, pct, PROVIDER_NAME, providerChip, providerProblem, windowLabel } from "../lib/insights";
 import type { Poll } from "../lib/poll";
 import { InsightsPage, iso, Skeletons } from "./InsightsPage";
@@ -17,6 +17,11 @@ function Meter(props: { w: UsageWindow; now: number }) {
     if (past()) return { lead: "Reset at ", time: clockTime(props.w.resetsAt!), rest: ". New reading at the next refresh." };
     const left = at - props.now;
     return { lead: left < 86_400_000 ? `Resets in ${duration(left)}` : `Resets ${shortDate(at, props.now)}` };
+  };
+  /** MCP quota counts, when the source reports them: "12 of 1,000 uses". */
+  const uses = () => {
+    const { used, limit } = props.w;
+    return props.w.label === "mcp" && used !== undefined && limit !== undefined ? `${thousands(used)} of ${thousands(limit)} uses` : null;
   };
   return (
     <div class="meter" classList={{ "meter-ghost": past() }}>
@@ -44,6 +49,7 @@ function Meter(props: { w: UsageWindow; now: number }) {
           </p>
         )}
       </Show>
+      <Show when={uses()}>{(u) => <p class="meter-context">{u()}</p>}</Show>
     </div>
   );
 }

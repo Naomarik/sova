@@ -39,6 +39,7 @@ stylesheets — no component library.
 | Images (§4b) | `.message-images` `.message-images-single` `.thumb` `.toolcard-images` · lightbox: `dialog.lightbox` `.lightbox-bar` `.lightbox-caption` `.lightbox-count` `.lightbox-stage` `.lightbox-img` `.lightbox-prev` `.lightbox-next` · attachments: `.attachments` `.attachment` `.attachment-rejected` `.attachment-thumb` `.attachment-icon` `.attachment-text` `.attachment-name` `.attachment-meta` |
 | Empty / loading | `.empty` `.empty-mark` `.empty-title` `.empty-body` `.empty-action` · `.skeleton` `.skeleton-line` `.skeleton-title` `.skeleton-row` |
 | Toast | `.toast-stack` `.toast` `.toast-body` |
+| Insights: entry (§10) | `.sidebar-foot` holding 2 × `.insights-row` (Usage → `#/usage`, Agents → `#/agents`) `.insights-row-text` · usage glance `.usage-glance` `.usage-glance-item` `.usage-glance-item-high` `.usage-glance-item-stale` `.usage-glance-tag` · aggregate chip `.chip.chip-count` (`a.chip` when it links) |
 | Insights: Usage and Agents pages (§10) | `.insights` (+ `.pane`) `.insights-inner` `.insights-section` `.insights-section-head` `.insights-section-count` `.insights-grid` · `.card` `.card-head` `.card-title` `.card-body` `.card-foot` |
 | Usage meter (§10) | `.usage-card` `.usage-note` · `.meter` `.meter-head` `.meter-label` `.meter-value` `.meter-of` `.meter-track` `.meter-fill` `.meter-fill-warn` `.meter-fill-error` `.meter-context` `.meter-ghost` |
 | Teams / subagents (§10) | `.team-card` `.team-objective` `.agent-card` `.member-list` `.member-row` `.member-preview` |
@@ -1891,15 +1892,16 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 
 | Where | Copy |
 |---|---|
-| Foot row 1 (→ `#/usage`) | `{Provider} {window} {pct}%` (highest window) · no data: Usage |
+| Foot row 1 (→ `#/usage`) | Glance: `C {pct}%` `O {pct}%` `OL {pct}%` `Z {pct}%` (Claude, OpenAI, Ollama Cloud, Z.ai) · no data: Usage · `title`/`aria-label`: Usage: {Provider} {window} {pct}%, … (stale providers add " (stale)") |
 | Foot row 2 (→ `#/agents`) | `{n} teams` · `{w} working`, joined by ` · `, zero segments left out · nothing to report: Agents |
-| Provider names | Claude · OpenAI · Ollama Cloud |
+| Provider names | Claude · OpenAI · Ollama Cloud · Z.ai |
 | Usage page title / head meta | Usage · Updated {rel} · never read: Not read yet |
 | Agents page title / head meta | Agents · `{w} working · {n} pi sessions running` ("{w} working · " dropped at 0; "1 pi session running") · 0 live: No pi sessions running |
 | Refresh `aria-label` | Refresh Usage · Refresh Agents |
 | Section heads (Agents page) | Teams · {n} active · Subagents · {n} working |
 | Agents page, 0 live (whole body) | **No pi sessions running.** Teams and subagents show up here while the pi session that started them runs. |
-| Window labels (`5h`, `7d`, `7d opus`, `month`, `pri`) | 5-hour · 7-day · 7-day Opus · Monthly · Primary |
+| Window labels (`5h`, `7d`, `7d opus`, `month`, `pri`, `mcp`) | 5-hour · 7-day · 7-day Opus · Monthly · Primary · MCP uses. Other Z.ai plan windows: `{n}m` → {n}-minute, `{n}h` → {n}-hour, `{n}d` → {n}-day, `{n}w` → {n}-week |
+| MCP uses context | {used} of {limit} uses, e.g. "0 of 1,000 uses" (comma thousands). Shown when the window carries both `used` and `limit`, otherwise left out |
 | Meter value | `{pct}%` used |
 | Meter context | Resets in {2h 17m} (under 24h) · Resets {Sep 25} · reset already passed: Reset at `{HH:MM}`. New reading at the next refresh. |
 | Usage chips | Near limit · Rate-limited · Quota used · Stale |
@@ -1909,8 +1911,8 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Request failed | Usage: **Couldn't load usage.** · Agents: **Couldn't load agents.** Then: Nothing was changed. {server message} · button: `Retry` |
 | Provider `nologin` | Not signed in. Run `claude /login` and it'll show at the next refresh. (OpenAI: `pi /login`) |
 | Provider `expired` | Sign-in expired. Run `claude /login` to renew it. (OpenAI: `pi /login`) |
-| Provider `nokey` | No Ollama Cloud key in `~/.pi/agent/auth.json`. |
-| Provider `badkey` | Ollama Cloud refused the key in `~/.pi/agent/auth.json`. |
+| Provider `nokey` | No Ollama Cloud key in `~/.pi/agent/auth.json`. · Z.ai: No Z.ai API key in `~/.pi/agent/auth.json`. |
+| Provider `badkey` | Ollama Cloud refused the key in `~/.pi/agent/auth.json`. · Z.ai: Z.ai refused the API key in `~/.pi/agent/auth.json`. |
 | Provider `na` | This account doesn't report usage. |
 | Provider `error`, no windows | Couldn't fetch usage: {error}. We'll try again at the next refresh. |
 | Provider `error`, windows kept | Last fetch failed: {error}. Showing the previous reading. |
@@ -1961,25 +1963,46 @@ while reported states (read from a session file after the fact) never pulse and 
 ```html
 <!-- after nav.sidebar-list, outside the pane -->
 <div class="sidebar-foot">
-  <a class="list-row list-row-interactive insights-row" href="#/usage" aria-current="page"><!-- aria-current on #/usage only -->
+  <a class="list-row list-row-interactive insights-row" href="#/usage" aria-current="page"
+     title="Usage: Claude 7-day 47%, OpenAI 7-day 95%, Ollama Cloud Monthly 80% (stale), Z.ai 5-hour 0%"
+     aria-label="Usage: Claude 7-day 47%, OpenAI 7-day 95%, Ollama Cloud Monthly 80% (stale), Z.ai 5-hour 0%">
     <span class="icon" style="--icon: url(/icons/gauge.svg)" aria-hidden="true"></span>
-    <span class="insights-row-text">Claude 5-hour <span class="text-num">96%</span></span>
-    <span class="icon icon-sm" style="--icon: url(/icons/chevron-right.svg)" aria-hidden="true"></span>
+    <span class="insights-row-text usage-glance">
+      <span class="usage-glance-item"><span class="usage-glance-tag">C</span><span class="text-num">47%</span></span>
+      <span class="usage-glance-item usage-glance-item-high"><span class="usage-glance-tag">O</span><span class="text-num">95%</span></span>
+      <span class="usage-glance-item usage-glance-item-stale"><span class="usage-glance-tag">OL</span><span class="text-num">80%</span></span>
+      <span class="usage-glance-item"><span class="usage-glance-tag">Z</span><span class="text-num">0%</span></span>
+    </span>
   </a>
   <a class="list-row list-row-interactive insights-row" href="#/agents"><!-- aria-current on #/agents and #/agents/* -->
     <span class="icon" style="--icon: url(/icons/worker.svg)" aria-hidden="true"></span>
     <span class="insights-row-text"><span class="text-num">2</span> teams · <span class="text-num">3</span> working</span>
-    <span class="icon icon-sm" style="--icon: url(/icons/chevron-right.svg)" aria-hidden="true"></span>
   </a>
 </div>
 ```
 
 The foot holds **two stacked 44px rows, and both are always present**, so the layout never
 jumps. `.list-row`'s bottom border divides them. A single row split into two links was
-rejected: 288px divided in two truncates "Claude 5-hour 96%".
+rejected: 288px divided in two truncates "Claude 5-hour 96%". Neither row has a chevron. They're
+whole-row links with a hover state and the `aria-current` tint, like session rows, and the Usage
+glance needs the room.
 
-- **Usage row:** the highest-% window across providers, as `{Provider} {window} {pct}%`. With no
-  data it reads "Usage".
+- **Usage row, a glance at every provider:**
+  - One segment per provider, in the fixed order Claude, OpenAI, Ollama Cloud, Z.ai. The tags
+    are exactly `C`, `O`, `OL`, `Z`, followed by a mono `{pct}%`.
+  - **Window.** Each provider shows its 7-day window when it has one, otherwise its longest.
+    Ollama shows Monthly. Z.ai shows its plan window (5-hour), never MCP uses.
+  - **Missing data.** A provider that isn't `ok`, or has no windows, is left out. With nothing
+    at all, the row reads "Usage".
+  - **High.** At 80% or more, the item takes `.usage-glance-item-high`: semibold ink, and **no
+    hue**. The foot has no word to pair with a color, and the Usage page's chip carries the
+    status.
+  - **Stale.** When a provider has `error` with kept windows, or `usage.stale` is true, the item
+    takes `.usage-glance-item-stale`: muted, with no added text.
+  - **Full text.** The row's `title` and `aria-label` spell everything out, e.g. "Usage: Claude
+    7-day 47%, …", and a stale provider gets " (stale)" appended.
+  - **Width.** The worst case, all four at 100%, is about 210px. It fits the 320px sidebar
+    without wrapping, and `.usage-glance` still clips rather than wraps as a guard.
 - **Agents row:** `{n} teams` (active only) and `AgentsInsight.totals.working` as `{w} working`,
   joined by ` · `. Zero segments are left out. If both are zero, or nothing is live, it reads
   "Agents".
@@ -2084,7 +2107,14 @@ Both pages share one shell: a `.session-head` and a `.insights.pane` containing
 ```
 
 - **Cards.** There's one card per `providers[]` entry, in the order given: Claude, OpenAI,
-  Ollama Cloud.
+  Ollama Cloud, Z.ai. Z.ai follows the system like every other provider: no brand color, and
+  the title is "Z.ai".
+- **Z.ai windows.**
+  - The plan window is labeled like the others (`5h` → "5-hour"), and takes its reset from
+    `resetsAt` when one is sent.
+  - `mcp` is "MCP uses", the MCP tool-usage quota, shown as a percentage. Its context reads
+    "{used} of {limit} uses" (comma thousands) when the window carries both `used` and `limit`
+    (optional fields on `UsageWindow`), and is otherwise left out.
 - **Meters.** Each window gets a `.meter`. The number comes first, the bar second, and there's
   never a bar alone.
   - **Value.** `Math.round(pct)` followed by `%`. No decimals: the sources round, and a decimal
@@ -2106,7 +2136,7 @@ Both pages share one shell: a `.session-head` and a `.insights.pane` containing
   | All windows < 80% | none |
   | Any window 80–99% | `.chip.chip-warn` "Near limit" |
   | A 5-hour window ≥ 100% | `.chip.chip-warn` "Rate-limited" (it comes back on its own) |
-  | A 7-day or monthly window ≥ 100% | `.chip.chip-error` "Quota used" (waits for the reset) |
+  | A 7-day, monthly, or MCP-uses window ≥ 100% | `.chip.chip-error` "Quota used" (waits for the reset) |
   | `error` set and `windows` kept | neutral `.chip` "Stale", plus a `.usage-note` under the meters |
 
   If both a limit chip and Stale apply, show the limit chip.

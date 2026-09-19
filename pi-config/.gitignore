@@ -7,7 +7,7 @@ llmkeys
 .env
 .env.*
 # runtime state pi keeps beside its config
-sessions/
+/sessions/
 models-store.json
 model-favorites.json
 trust.json

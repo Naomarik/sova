@@ -1,5 +1,7 @@
-import { createEffect, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
-import type { OutboundImage } from "../../shared/protocol";
+import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
+import type { OutboundImage, SlashCommand } from "../../shared/protocol";
+import { insertCommand, rankCommands, slashTokenAt, type SlashToken } from "../lib/slash";
+import { commandOptionIds, SlashMenu } from "./SlashMenu";
 import {
   ACCEPTED_TYPES,
   acceptImages,
@@ -37,6 +39,8 @@ export function Composer(props: {
   /** "running bash" / "thinking" / "writing" / "Compacting context" … */
   detail: string | null;
   autofocus?: boolean;
+  /** This session's slash commands; the "/" autocomplete is off without them. */
+  commands?: SlashCommand[];
   /** `dataUrls` are the same images, for the optimistic bubble and for restoring on refusal. */
   onSend(text: string, steer: boolean, images: OutboundImage[], dataUrls: string[]): boolean;
   onAbort(): void;
@@ -46,6 +50,13 @@ export function Composer(props: {
   const [rejected, setRejected] = createSignal<RejectedFile[]>([]);
   const [drop, setDrop] = createSignal<"active" | "reject" | null>(null);
   const [encoding, setEncoding] = createSignal(false);
+  // Slash-command autocomplete: the "/token" at the caret, the active row, and a token the
+  // user dismissed with Esc (it stays closed until the caret leaves that token).
+  const [slashToken, setSlashToken] = createSignal<SlashToken | null>(null);
+  const [slashActive, setSlashActive] = createSignal(0);
+  const [slashDismissed, setSlashDismissed] = createSignal<string | null>(null);
+  /** Identity of a token's text: Esc keeps it closed until this changes. */
+  const tokenKey = (t: SlashToken) => `${t.start}:${t.query}`;
   let input!: HTMLTextAreaElement;
   let picker: HTMLInputElement | undefined;
   let list: HTMLUListElement | undefined;
@@ -65,6 +76,61 @@ export function Composer(props: {
   /** TUI-live, connecting, reconnecting: nothing attaches and nothing sends. */
   const disabled = () => !!reason();
   const canSend = () => !disabled() && !encoding() && (text().trim().length > 0 || images().length > 0);
+
+  // ---- Slash-command autocomplete (combobox: focus stays in the textarea) ----------------
+  const slashMatches = createMemo(() => {
+    const token = slashToken();
+    return token ? rankCommands(props.commands ?? [], token.query) : [];
+  });
+  const slashIds = createMemo(() => commandOptionIds(slashMatches()));
+  /** Never while disabled. Streaming is fine: pi runs a "/command" steer as a command. */
+  const slashOpen = () => {
+    const token = slashToken();
+    return !!token && !disabled() && (props.commands?.length ?? 0) > 0 && slashDismissed() !== tokenKey(token);
+  };
+  /** Re-reads the token under the caret; call after input, clicks, and caret keys. */
+  const updateSlash = () => {
+    const token = slashTokenAt(input.value, input.selectionStart ?? 0);
+    const prev = slashToken();
+    if (token?.start !== prev?.start || token?.query !== prev?.query) setSlashActive(0);
+    if (!token || tokenKey(token) !== slashDismissed()) setSlashDismissed(null);
+    setSlashToken(token);
+  };
+  const moveSlash = (delta: number) => {
+    const n = slashMatches().length;
+    if (n) setSlashActive((i) => (i + delta + n) % n);
+  };
+  const pickSlash = (index: number) => {
+    const token = slashToken();
+    const cmd = slashMatches()[index];
+    if (!token || !cmd) return;
+    const next = insertCommand(input.value, token, cmd.name);
+    setDraft(next.text);
+    input.value = next.text;
+    input.setSelectionRange(next.caret, next.caret);
+    input.focus();
+    updateSlash(); // the caret now sits after "/name ", outside any token
+  };
+  // Announce the count on open and when it changes, at most once a second (latest wins).
+  let announceTimer: ReturnType<typeof setTimeout> | undefined;
+  let lastAnnounced = 0;
+  onCleanup(() => clearTimeout(announceTimer));
+  createEffect(
+    on(
+      () => (slashOpen() ? slashMatches().length : null),
+      (n) => {
+        clearTimeout(announceTimer);
+        if (n === null) return;
+        const say = () => {
+          lastAnnounced = Date.now();
+          announce(n === 0 ? "0 commands match." : `${n} ${n === 1 ? "command" : "commands"} available.`);
+        };
+        const wait = 1000 - (Date.now() - lastAnnounced);
+        if (wait <= 0) say();
+        else announceTimer = setTimeout(say, wait);
+      },
+    ),
+  );
 
   /** The single entry point for picker, paste, and drop. */
   const addFiles = (files: File[], pasted = false) => {
@@ -174,6 +240,17 @@ export function Composer(props: {
       </div>
 
       <form class="composer-inner" aria-label="Message the agent" onSubmit={send}>
+        {/* First child: base.css anchors it just above the composer at full width. */}
+        <Show when={slashOpen()}>
+          <SlashMenu
+            commands={slashMatches()}
+            ids={slashIds()}
+            active={slashActive()}
+            query={slashToken()?.query ?? ""}
+            onPick={pickSlash}
+            onHover={setSlashActive}
+          />
+        </Show>
         <Show when={props.running}>
           <p class="run-status">
             <span class="live-dot" />
@@ -261,9 +338,20 @@ export function Composer(props: {
             rows={1}
             placeholder={props.running ? "Steer the current turn…" : "Ask pi to…"}
             aria-describedby="composer-reason"
+            aria-autocomplete={slashOpen() ? "list" : undefined}
+            aria-controls={slashOpen() && slashMatches().length > 0 ? "command-listbox" : undefined}
+            aria-activedescendant={slashOpen() && slashMatches().length > 0 ? slashIds()[slashActive()] : undefined}
             value={text()}
             disabled={!!props.readOnly}
-            onInput={(e) => setDraft(e.currentTarget.value)}
+            onInput={(e) => {
+              setDraft(e.currentTarget.value);
+              updateSlash();
+            }}
+            onClick={updateSlash}
+            onKeyUp={(e) => {
+              if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) updateSlash();
+            }}
+            onBlur={() => setSlashToken(null)}
             onPaste={(e) => {
               const files = [...(e.clipboardData?.files ?? [])];
               if (files.length === 0) return;
@@ -272,6 +360,29 @@ export function Composer(props: {
               addFiles(files, true);
             }}
             onKeyDown={(e) => {
+              if (slashOpen() && !e.isComposing) {
+                const hasMatches = slashMatches().length > 0;
+                if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                  if (!hasMatches) return;
+                  e.preventDefault();
+                  moveSlash(e.key === "ArrowDown" ? 1 : -1);
+                  return;
+                }
+                if ((e.key === "Enter" && !e.shiftKey) || e.key === "Tab") {
+                  if (hasMatches) {
+                    e.preventDefault();
+                    pickSlash(slashActive());
+                    return;
+                  }
+                  if (e.key === "Tab") return; // nothing to insert: Tab moves focus as usual
+                }
+                if (e.key === "Escape") {
+                  e.preventDefault();
+                  const token = slashToken();
+                  setSlashDismissed(token ? tokenKey(token) : null);
+                  return;
+                }
+              }
               if (e.key === "Enter" && !e.shiftKey && !e.isComposing) void send(e);
             }}
           />

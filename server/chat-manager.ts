@@ -15,7 +15,7 @@ import {
   SessionManager,
   type Theme,
 } from "@earendil-works/pi-coding-agent";
-import type { ChatClientMessage, ChatServerMessage } from "../shared/protocol";
+import type { ChatClientMessage, ChatServerMessage, SlashCommand } from "../shared/protocol";
 import { readLive } from "./live";
 import { normalizeEntries } from "./transcript";
 import { ForeignWriteGuard, markOwned, recentForeignWriteAgeSec } from "./write-guard";
@@ -112,6 +112,27 @@ function parseImages(raw: unknown): SdkImage[] | undefined {
     out.push({ type: "image", data, mimeType });
   });
   return out.length ? out : undefined;
+}
+
+/** pi SourceInfo.scope → rpc get_commands `location` ("temporary" = explicit CLI/settings path). */
+function sourceLocation(info: { scope: string } | undefined): string | undefined {
+  if (!info) return undefined;
+  return info.scope === "temporary" ? "path" : info.scope;
+}
+
+/** Same enumeration as pi's rpc get_commands (rpc-mode.js "get_commands"), per runtime/cwd. */
+function listCommands(session: AgentSession): SlashCommand[] {
+  const out: SlashCommand[] = [];
+  for (const c of session.extensionRunner.getRegisteredCommands()) {
+    out.push({ name: c.invocationName, description: c.description, source: "extension", path: c.sourceInfo?.path });
+  }
+  for (const t of session.promptTemplates) {
+    out.push({ name: t.name, description: t.description, source: "prompt", location: sourceLocation(t.sourceInfo), path: t.filePath });
+  }
+  for (const s of session.resourceLoader.getSkills().skills) {
+    out.push({ name: `skill:${s.name}`, description: s.description, source: "skill", location: sourceLocation(s.sourceInfo), path: s.filePath });
+  }
+  return out;
 }
 
 function modelLabel(session: AgentSession): string | null {
@@ -222,6 +243,16 @@ class ChatSession {
       }
       if (event.type === "agent_settled" && this.clients.size === 0) this.scheduleDispose();
     });
+    this.broadcast(this.commands()); // extension commands exist only after bindExtensions
+  }
+
+  commands(): ChatServerMessage {
+    try {
+      return { type: "commands", commands: listCommands(this.session) };
+    } catch (err) {
+      console.error("[chat] listing commands failed", err);
+      return { type: "commands", commands: [] };
+    }
   }
 
   hello(): ChatServerMessage {
@@ -239,6 +270,7 @@ class ChatSession {
     if (this.disposeTimer) clearTimeout(this.disposeTimer);
     this.disposeTimer = null;
     client.send(this.hello());
+    client.send(this.commands());
   }
 
   detach(client: ChatClient): void {
@@ -282,7 +314,12 @@ class ChatSession {
           const images = parseImages(msg.images);
           if (!text.trim() && !images) return;
           this.flushDeferredAppends();
-          const p = this.session.isStreaming ? this.session.steer(text, images) : this.session.prompt(text, { images });
+          // steer() throws on extension commands; prompt() runs them immediately (even mid-stream)
+          // and otherwise queues as steer with the same skill/template expansion.
+          const p =
+            this.session.isStreaming && !text.startsWith("/")
+              ? this.session.steer(text, images)
+              : this.session.prompt(text, { images, streamingBehavior: this.session.isStreaming ? "steer" : undefined });
           p.catch(fail);
           return;
         }

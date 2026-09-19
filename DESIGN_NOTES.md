@@ -34,10 +34,11 @@ stylesheets — no component library.
 | Streaming | `.live-dot` `.run-status` `.run-status-detail` `.jump-latest` |
 | Composer | `.composer` `.composer-inner` `.composer-row` `.composer-input` (with `.input.textarea`) `.composer-actions` `.composer-foot` `.composer-reason` `.composer-hint` `.button-label` `.composer-drop` + `.composer[data-drop="active\|reject"]` |
 | Model menu (§4c) | `.model-trigger` `.model-trigger-label` `.model-menu[popover]` `.model-menu-search` `.model-menu-list` `.model-menu-group` `.model-option` `[data-active]` `.model-option-check` `.model-option-id` `.model-option-provider` `.model-menu-empty` `.model-menu-foot` |
+| Markdown (§4e) | `.md` (on `.message-body`) `.md-table-wrap` `.md-code` `.md-code-head` `.md-code-lang` `.md-code-copy` `.md-image-link` · syntax: `.hljs-*` roles |
+| Slash commands (§4d) | `.command-menu` `.command-menu-head` `.command-list` `.command-option` `[data-active]` `.command-option-name` `.command-option-desc` `.command-option-location` `.command-menu-empty` `.command-menu-foot` · source badge: neutral `.chip` |
 | Images (§4b) | `.message-images` `.message-images-single` `.thumb` `.toolcard-images` · lightbox: `dialog.lightbox` `.lightbox-bar` `.lightbox-caption` `.lightbox-count` `.lightbox-stage` `.lightbox-img` `.lightbox-prev` `.lightbox-next` · attachments: `.attachments` `.attachment` `.attachment-rejected` `.attachment-thumb` `.attachment-icon` `.attachment-text` `.attachment-name` `.attachment-meta` |
 | Empty / loading | `.empty` `.empty-mark` `.empty-title` `.empty-body` `.empty-action` · `.skeleton` `.skeleton-line` `.skeleton-title` `.skeleton-row` |
 | Toast | `.toast-stack` `.toast` `.toast-body` |
-| Insights: entry (§10) | `.sidebar-foot` holding 2 × `.insights-row` (Usage → `#/usage`, Agents → `#/agents`) `.insights-row-text` · aggregate chip `.chip.chip-count` (`a.chip` when it links) |
 | Insights: Usage and Agents pages (§10) | `.insights` (+ `.pane`) `.insights-inner` `.insights-section` `.insights-section-head` `.insights-section-count` `.insights-grid` · `.card` `.card-head` `.card-title` `.card-body` `.card-foot` |
 | Usage meter (§10) | `.usage-card` `.usage-note` · `.meter` `.meter-head` `.meter-label` `.meter-value` `.meter-of` `.meter-track` `.meter-fill` `.meter-fill-warn` `.meter-fill-error` `.meter-context` `.meter-ghost` |
 | Teams / subagents (§10) | `.team-card` `.team-objective` `.agent-card` `.member-list` `.member-row` `.member-preview` |
@@ -1250,6 +1251,357 @@ It never auto-dismisses, because it's the only record of the failure.
 
 ---
 
+## 4d · Slash commands
+
+pi's slash commands, offered while you type. The server sends the list once per connection as
+`{type:"commands", commands}`. Names come without the slash (`sessions`, `skill:omarchy`).
+Sending `/name args` as a normal prompt runs the command.
+
+### When the menu opens
+
+- **Trigger.** A `/` at the very start of the text, or right after whitespace, opens the menu.
+  The **token** is everything from that `/` up to the caret, and it can't contain whitespace.
+  The menu stays open while the caret is inside a token, and re-filters on every input.
+- **Closing.** The menu closes when:
+  - the token ends (a space is typed, or the caret leaves it);
+  - `Esc` is pressed, which leaves the text alone;
+  - an option is inserted;
+  - the textarea loses focus.
+
+  A token dismissed with `Esc` doesn't reopen until its text changes.
+- **When it never opens.**
+  - No `commands` message has arrived yet, or the list is empty.
+  - The composer is disabled (read-only, connecting, reconnecting, or a model switch is pending).
+    If it becomes disabled while the menu is open, close it.
+- **While streaming it works as usual.** Sending `/name args` with **Steer** is fine. pi runs
+  extension commands immediately, even mid-turn, and queues `skill:` and prompt templates as a
+  steer with expansion. A turn starting or ending doesn't close the menu. The "Ran" row (below)
+  applies in both states.
+
+### Markup
+
+The menu is the **first child of `.composer-inner`** (which is `position: relative`), so it sits
+just above the composer at full composer width, at every width including 320.
+
+```html
+<div class="command-menu" id="command-menu">
+  <p class="command-menu-head" id="command-menu-head" aria-hidden="true">Commands · 3</p>
+  <div class="command-list" id="command-listbox" role="listbox" aria-label="Commands">
+    <div class="command-option" role="option" id="cmd-sessions" aria-selected="true" data-active>
+      <span class="command-option-name">/sessions</span>
+      <span class="chip">ext</span>
+      <span class="command-option-desc" title="{full description}">Search and focus live pi sessions</span>
+      <span class="command-option-location" title="{path}">user</span>
+    </div>
+    <div class="command-option" role="option" id="cmd-skill-omarchy" aria-selected="false">
+      <span class="command-option-name">/skill:omarchy</span>
+      <span class="chip">skill</span>
+      <span class="command-option-desc">…</span>
+      <span class="command-option-location">…</span>
+    </div>
+  </div>
+  <p class="command-menu-foot"><kbd>Enter</kbd> or <kbd>Tab</kbd> to insert · <kbd>Esc</kbd> to close</p>
+</div>
+```
+
+The textarea gains these attributes, and keeps them only while the menu is open:
+
+```html
+<textarea class="input textarea composer-input" id="composer-input" …
+          aria-autocomplete="list" aria-controls="command-listbox"
+          aria-activedescendant="cmd-sessions"></textarea>
+```
+
+- **Pattern.** This is the combobox pattern with a **listbox**, because inserting a name is
+  choosing one value. Focus never leaves the textarea, and the active option is
+  `aria-activedescendant`.
+  - HTML doesn't allow `role="combobox"` on a `<textarea>`, so the textarea keeps its native
+    role. It carries `aria-autocomplete="list"`, `aria-controls`, and `aria-activedescendant`,
+    which are all valid on a textbox.
+  - The active option gets `aria-selected="true"` plus `data-active` (the inset focus ring and
+    sunken fill). It's the same treatment as the model menu.
+  - Remove the three attributes when the menu closes.
+- **Rows.** Each row has two lines and is at least 44px tall.
+  - Line 1: the name with its slash, in mono, then the source chip.
+  - Line 2: the description (muted, truncated, full text in `title`), then `location` (muted
+    mono, up to 16ch, and 8ch when the composer is under 480px wide, with `path` in `title`).
+    Leave out whatever is missing.
+  - **No description** (`description` is optional, and extension commands may leave it out):
+    render only the name, the source chip, and the location if present. Don't render an empty
+    `.command-option-desc` or placeholder text. The location stays in the right column under
+    the chip, so line 2 is just the right-aligned location. With no location either, the row is
+    a single line and still 44px tall. The description tier of filtering skips it.
+- **Source chip.** A neutral `.chip` with no dot and no color: `ext` (extension), `prompt`, or
+  `skill`. It's a category, not a status, so it carries no hue and no dot.
+- **Id.** Option ids are `cmd-` plus the name, with anything outside `[a-z0-9-]` replaced by
+  `-`. Add a suffix if two names collide.
+- **Head.** "Commands · {n}" is the visible count. It's `aria-hidden` because the announcement
+  (below) says the same thing.
+- **Size.** Height is capped at `min(320px, 40vh)`, and the list scrolls inside it (keep the
+  active option in view with `block: "nearest"`). The foot is hidden under 768px.
+- **Motion.** It fades in once.
+
+### Filtering and order
+
+- **Query.** The query is the token without its `/`, matched case-insensitively against `name`.
+- **Order.**
+  1. Names that **start with** the query.
+  2. Names that **contain** it.
+  3. Names whose **description** contains it.
+
+  Within each tier, sort by name. An empty query (just `/`) lists every command by name.
+- **Active option.** The first row becomes active whenever the results change.
+- **Empty result.** Keep the menu open, drop the list, and show
+  `<p class="command-menu-empty">0 commands match “/{query}”. Enter sends it as a message.</p>`.
+  While it's empty, `Enter` is **not** intercepted: it sends, as the copy says.
+
+### Keyboard and mouse
+
+| Input | Does |
+|---|---|
+| `↓` / `↑` | Moves the active option, wrapping. It never moves the caret while the menu is open |
+| `Enter` / `Tab` | Replaces the token with `/{name} ` (with a trailing space) and closes the menu. The caret lands after the space, so arguments come next. `Enter` doesn't send; the *next* `Enter` does |
+| `Esc` | Closes the menu and leaves the text unchanged. It doesn't blur the textarea or clear the draft |
+| Typing | Keeps filtering. A space or a caret move out of the token closes the menu |
+| `Shift+Enter` | Newline as usual. The newline ends the token, so the menu closes |
+| Mouse down on a row | Inserts, the same as `Enter`. Use `mousedown` + `preventDefault()` so the textarea keeps focus. Hover makes a row active |
+
+### Announcements
+
+In the composer's polite live region, announce "{n} commands available." when the menu opens,
+and again when the count changes, at most once a second. When there are none, announce
+"0 commands match."
+
+### In the thread
+
+- **Sending.** A command goes as a normal `prompt` with the text `/{name} {args}`, or as a
+  `steer` while streaming.
+- **No optimistic bubble.** When the first token is a known command, don't add the optimistic
+  user bubble. The command isn't a message to the model, and a template or skill expands into
+  different text.
+- **Local row instead.** Append a local `.info-row`:
+
+  ```html
+  <div class="info-row" role="note">
+    <span class="info-row-text"><span class="icon icon-sm" style="--icon: url(/icons/terminal.svg)" aria-hidden="true"></span>
+      <span>Ran <code>/sessions</code></span></span>
+  </div>
+  ```
+
+  Args go inside the `<code>` too, truncated at 60 characters.
+- **What follows.** Everything after that arrives as normal events and items, and renders with
+  what already exists:
+  - **Prompt templates and skills** expand into a **user** message (the expanded text), then an
+    assistant turn.
+  - **Extension commands** may add `custom` entries, which render as **info rows** (or
+    **unknown** rows with the Raw entry disclosure). They may also send `ui_request`s (§6), or
+    produce nothing visible.
+- **Reload.** The persisted entries render the same way. The local "Ran" row is local only and
+  isn't restored.
+- **Unknown commands.** A `/word` that isn't in the list is sent and rendered as an ordinary
+  message, with the optimistic bubble.
+
+### Commands that need the terminal UI
+
+Some extension commands open TUI-only interfaces, such as custom overlays and pickers. pi-web
+can't show those. When a command's `ui_request` has a kind §6 doesn't support, or the server
+reports the command needs the TUI (answer the request with `ui_response` `value: null` so the
+command isn't left waiting), replace the "Ran" row with:
+
+```html
+<div class="info-row" role="note">
+  <span class="info-row-text"><span class="icon icon-sm" style="--icon: url(/icons/attention.svg)" aria-hidden="true"></span>
+    <span><code>/sessions</code> needs the terminal UI. Run it in pi in a terminal.</span></span>
+</div>
+```
+
+Nothing in the contract says ahead of time which commands are TUI-only, so every command is
+listed and choosable. If a flag is added later (for example `tui: true`), show "Needs the
+terminal UI" in place of the description on line 2, and keep the row choosable.
+
+### Tokens
+
+- **Menu.** `--color-surface` with a `--color-border` edge, `--r-md`, `--shadow-2`, and
+  `max-height: min(320px, 40vh)`. It sits `--space-3 + --space-1` above the composer's content,
+  on `z-index: 5` inside the composer's own stacking context.
+- **Head.** Eyebrow style (`--font-mono`, `--fs-micro`, `--ls-eyebrow`) in `--color-ink-muted`.
+- **Rows.** `--control-md` minimum. Name in `--font-mono` / `--fs-mono` / `--color-ink`.
+  Description `--fs-caption` in `--color-ink-muted`; location `--font-mono` in
+  `--color-ink-muted`. Hover and active use `--color-sunken`, and active adds the
+  `--focus-ring` inset.
+- **Chip.** The neutral `.chip`: `--color-ink-2` on `--color-surface`, with a `--color-border`
+  edge.
+
+### Contrast
+
+| Pair | Dark | Light |
+|---|---|---|
+| Ink on surface or sunken (name) | 12.34 / 13.43 | 17.86 / 14.78 |
+| Muted on surface or sunken (description, location) | 4.96 / 5.40 | 5.74 / 4.75 |
+| Ink-2 on surface (chip) | 7.03 | 8.72 |
+| Accent ring on sunken | 5.08 | 5.63 |
+
+---
+
+## 4e · Markdown and code
+
+**Scope.** **assistant-text** rows render markdown. Everything else stays as it is:
+
+- **user** text is plain, keeping `.message-text` and `white-space: pre-wrap`;
+- **thinking** is plain inside its disclosure;
+- **tool args and results** stay `<pre>` in mono.
+
+The rendered content lives in one scope class on the bubble, and `.message-text` is dropped
+there:
+
+```html
+<article class="message">
+  <div class="message-head">…</div>
+  <div class="message-body md">{rendered markdown}</div>
+</article>
+```
+
+**Renderer rules** (any GFM renderer, e.g. `marked`, plus `highlight.js`; adding either
+dependency needs approval under CLAUDE.md):
+
+- **GFM on.** That gives tables, `~~strikethrough~~`, task lists, and autolinks for bare URLs.
+- **Raw HTML is never rendered.** Any HTML in the model's output (block or inline) is emitted as
+  **escaped text**. `<div onclick="x">hi</div>` shows literally, in the surrounding font, with
+  no special styling. Don't sanitize-and-render, and don't strip it.
+- **Links.**
+  - Only absolute `http:`, `https:`, and `mailto:` URLs become links. Anything else (relative
+    paths, `javascript:`, `file:`, `data:`) renders as its link text, unlinked.
+  - Every link gets `target="_blank" rel="noreferrer"` and a trailing
+    `<span class="visually-hidden"> (opens in a new tab)</span>`. The CSS adds the `external`
+    glyph after it.
+- **Headings** stay `h1`–`h6` in the DOM, but `.md` restyles them to bubble scale. `h1` and
+  `h2` get `--fs-heading-s` at 600, and `h3`–`h6` get `--fs-body` at 600. They're never page
+  size, because a message is not a page.
+
+### Element styling (what `.md` gives you)
+
+| Element | Treatment |
+|---|---|
+| `p` | `--space-3` apart |
+| `ul` / `ol` | `--space-5` indent, `--space-1` between items, nested lists tight |
+| Task list `- [x]` | `<li><input type="checkbox" checked disabled> …` from the renderer. The bullet is dropped and the box is static (disabled, not clickable, `accent-color: --color-ink-2`). AT reads it as "checkbox, checked, dimmed". No class is needed, because CSS matches `li:has(> input[type=checkbox])` |
+| `blockquote` | A 1.5px `--color-border-strong` left rule, `--space-3` inset, `--color-ink-2` text |
+| `hr` | A 1px `--color-border` rule with `--space-4` above and below |
+| `del` | Strikethrough in `--color-ink-muted` |
+| `strong` | 600 |
+| `em` | Renderer default, which is synthetic oblique. Only regular faces ship, so it's allowed but not styled further |
+| Inline `code` | The base rule: `--color-sunken` chip, `--r-xs`, mono. It wraps anywhere |
+| Table | Always wrapped: `<div class="md-table-wrap"><table>…</table></div>`. The wrapper scrolls sideways, so the pane never widens. Header row on `--color-sunken` at 600, `--fs-caption` text, 1px row rules. Words never break mid-word, so the table grows and scrolls. `align` from GFM is honored, and right-aligned cells get tabular numerals |
+| Links | `--color-accent`, underlined, with an external glyph (one of the accent's three uses, §0). Long URLs wrap anywhere |
+
+### Code blocks
+
+Wrap every fenced block like this:
+
+```html
+<div class="md-code">
+  <div class="md-code-head">
+    <span class="md-code-lang">ts</span>
+    <button class="button button-sm button-ghost md-code-copy" type="button">
+      <span class="icon icon-sm" style="--icon: url(/icons/copy.svg)" aria-hidden="true"></span>Copy Code
+    </button>
+  </div>
+  <pre><code class="hljs language-ts">{highlighted html}</code></pre>
+</div>
+```
+
+- **Language label.** The first word of the fence's info string, lowercased, and shown in
+  uppercase eyebrow type. No info string means "text".
+- **Highlighting.**
+  - Highlight only when `hljs.getLanguage(lang)` exists. Otherwise, escape the text and add no
+    `hljs-*` spans.
+  - Don't use auto-detect: it guesses wrong on short snippets, and a wrong guess looks worse
+    than plain text.
+- **Long lines** don't wrap: the `pre` scrolls sideways inside the block (`white-space: pre;
+  overflow-x: auto`). Code keeps its shape, and the block never widens the pane, 320 included.
+- **Copy Code.**
+  - The skill has no code-block copy control, so this reuses our existing copy pattern (Copy
+    Session Path, Copy Output): `.button-sm.button-ghost` with the `copy` icon. Size sm is
+    allowed because it sits inside an already-reached context.
+  - It copies the **raw source text**, never the highlighted HTML.
+  - On success the icon turns into `check` and the label becomes "Copied" for 1.5s, then
+    reverts. Announce "Copied code." in the polite live region.
+  - No toast: the feedback sits where the click happened.
+  - On failure the label becomes "Couldn't copy" for 1.5s.
+- **Block tokens.** `--color-sunken` ground, a 1px `--color-border` edge, `--r-sm` (monospace
+  corners), and code in `--color-ink`. The head is `--control-sm` tall with a 1px rule under it.
+
+### Highlight theme (dark and light, tokens only)
+
+The skill forbids the accent for syntax ("a keyword is not an action"). So the theme uses
+weight and ink for structure, plus three status hues as *roles*. Those hues only ever appear
+inside `.md-code`, so they never read as status.
+
+| Role | highlight.js classes | Style | On sunken, dark / light |
+|---|---|---|---|
+| Keyword | `hljs-keyword` `-literal` `-selector-tag` `-doctag`, `.hljs-meta .hljs-keyword` | `--color-ink`, 600 | 13.43 / 14.78 |
+| Type | `hljs-built_in` `-type` `-class` | `--color-ink`, 530 | 13.43 / 14.78 |
+| Name | `hljs-title` (`.function_`, `.class_`), `-section` | `--status-info` | 6.47 / 5.27 |
+| String | `hljs-string` `-regexp` `-char` `-symbol` `-template-tag` `-link` | `--status-success` | 7.19 / 5.04 |
+| Number / attribute | `hljs-number` `-attr` `-attribute` `-variable` `-template-variable` `-selector-attr/-class/-id` | `--status-warn` | 6.98 / 4.90 |
+| Comment | `hljs-comment` `-quote` `-meta` | `--color-ink-muted` | 5.40 / 4.75 |
+| Punctuation | `hljs-params` `-property` `-punctuation` `-operator` `-subst` | `--color-ink-2` | 7.65 / 7.22 |
+| Diff | `hljs-addition` / `-deletion` | `--diff-add-ink` on `--diff-add-bg` / `--diff-del-ink` on `--diff-del-bg`. The `+`/`−` sign carries the meaning too | 4.91 / 5.38 · 5.01 / 5.16 |
+| Emphasis | `hljs-strong` / `-emphasis` | 600 / an underline in `--color-border-strong` (no italic face ships) | — |
+
+Don't import a highlight.js stylesheet. These rules are the whole theme, and they follow
+`data-theme` automatically.
+
+### Images in markdown
+
+- **`data:image/*` sources** (rare, and already local) render as a single §4b thumbnail. Use
+  `<ul class="message-images message-images-single">`, alt "Image in this reply" or the
+  markdown alt text if there is one, and the same lightbox.
+- **Remote `http(s)` images are never fetched automatically**, because loading them would leak
+  that you read this, from a local tool. They render as a link instead:
+
+  ```html
+  <a class="md-image-link" href="{url}" target="_blank" rel="noreferrer">
+    <span class="icon icon-sm" style="--icon: url(/icons/image.svg)" aria-hidden="true"></span>Image: {alt or "untitled"}<span class="visually-hidden"> (opens in a new tab)</span>
+  </a>
+  ```
+
+- **Anything else** renders as its alt text.
+
+### Streaming
+
+- **Re-rendering.** Re-parse the whole message's markdown per animation frame, not per delta.
+  Swap the body's content in one go.
+- **Open fences.** An **unclosed fence** mid-stream renders as an open code block, with its head
+  and label as usual. Most GFM renderers already treat the rest of the text as code. Copy Code
+  is present but copies what's there so far.
+- **Highlighting.** Highlight a block only once its fence closes, or when the turn ends. While
+  it's open it shows as plain escaped mono. Highlighting changes only color and weight, never
+  line breaks, so it causes no layout jump.
+- **Layout jumps.** Partial constructs (a table's header row before its separator, a half-typed
+  `**bold`) render as text until they complete. That jump is accepted, and there's no height
+  reservation. Auto-follow (§3) keeps the bottom pinned. When you're not following, the browser's
+  scroll anchoring (`overflow-anchor`, on by default) holds your place.
+- **Author.** The `.live-dot` stays in the author row as in §3, and there's no cursor glyph.
+
+### Accessibility
+
+- **Headings.** They stay real headings, so heading navigation works inside long replies.
+  Their level comes from the markdown. Since the page's `h1` is the session title, that
+  duplicates levels. That's accepted for model content, and they're never promoted.
+- **Code.** A code block is a `pre` that screen readers read verbatim. The Copy Code name
+  includes "Code", and the language label is visible text.
+- **Tables** keep `th`, which the renderer produces.
+- **Contrast.**
+
+  | Pair | Dark | Light |
+  |---|---|---|
+  | Accent link on surface | 4.67 | 6.81 |
+  | Ink-2 blockquote on surface | 7.03 | 8.72 |
+  | Syntax colors on sunken | see the theme table | see the theme table |
+
+---
+
 ## 5 · New Session dialog
 
 Triggered by `New Session` (sidebar head, and the empty states).
@@ -1495,6 +1847,34 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Error: timeout | The server didn't confirm the switch. You're still on `{current}`. |
 | Error: other | {server message}. You're still on `{current}`. |
 | Error action | Dismiss |
+
+### Markdown and code
+
+| Where | Copy |
+|---|---|
+| Code block button | Copy Code |
+| After copying (1.5s) | Copied |
+| Copy failed (1.5s) | Couldn't copy |
+| Announce | Copied code. |
+| Language label, no info string | text |
+| Link suffix (visually hidden) | (opens in a new tab) |
+| Remote image link | Image: {alt} · no alt: Image: untitled |
+| Inline data image alt | {alt} · no alt: Image in this reply |
+
+### Slash commands
+
+| Where | Copy |
+|---|---|
+| Menu head | Commands · {n} |
+| Listbox `aria-label` | Commands |
+| Row name | /{name} |
+| Source chip | ext · prompt · skill |
+| Empty | 0 commands match “/{query}”. Enter sends it as a message. |
+| Foot (≥768) | `Enter` or `Tab` to insert · `Esc` to close |
+| Announce | {n} commands available. · empty: 0 commands match. |
+| Thread row after sending | Ran `/{name} {args}` |
+| Needs TUI (thread row) | `/{name}` needs the terminal UI. Run it in pi in a terminal. |
+| Needs TUI (menu line 2, if the contract gains a flag) | Needs the terminal UI |
 
 ### New Session dialog
 

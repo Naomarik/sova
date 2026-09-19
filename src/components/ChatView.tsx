@@ -1,7 +1,7 @@
 import { batch, createSignal, For, onCleanup, Show } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { Portal } from "solid-js/web";
-import type { ChatServerMessage, TranscriptItem } from "../../shared/protocol";
+import type { ChatServerMessage, SlashCommand, TranscriptItem } from "../../shared/protocol";
 import { fetchTranscript, wsUrl } from "../lib/api";
 import { addPendingPrompt, applyEvent, emptyLive, runDetail, type LiveState } from "../lib/live";
 import { isObj, str } from "../lib/message";
@@ -13,10 +13,13 @@ import { Composer, type ComposerReason } from "./Composer";
 import { ConnectionBanner } from "./ConnectionBanner";
 import type { ModelControl } from "./ModelMenu";
 import { HistoryItems, InfoRow, LiveEntries, ThreadScroller, TranscriptSkeleton, TurnError } from "./Thread";
-import { Banner } from "./ui";
+import { Banner, Icon } from "./ui";
 import { UiDialog } from "./UiDialog";
 
 export type ChatRefusal = "busy" | "recent";
+
+/** ui_request kinds UiDialog can show (DESIGN_NOTES §6); anything else needs the terminal UI. */
+const UI_DIALOG_METHODS = ["select", "confirm", "input", "editor"];
 
 /**
  * Full-duplex chat with a webapp-owned session. When the server refuses to let us write
@@ -48,6 +51,10 @@ export function ChatView(props: {
   const [modelError, setModelError] = createSignal<{ target: string; from: string | null; body: string | { noCredentials: string } } | null>(null);
   /** "Model changed to …" rows shown until a transcript reload brings the persisted entry. */
   const [modelRows, setModelRows] = createSignal<string[]>([]);
+  /** This session's slash commands (sent after hello, and again after a runtime reload). */
+  const [commands, setCommands] = createSignal<SlashCommand[]>([]);
+  /** Local "Ran /name args" rows; `tui` marks one that asked for a UI pi-web can't show. */
+  const [commandRows, setCommandRows] = createSignal<{ label: string; tui: boolean }[]>([]);
   let modelTimer: ReturnType<typeof setTimeout> | undefined;
   onCleanup(() => clearTimeout(modelTimer));
 
@@ -59,6 +66,7 @@ export function ChatView(props: {
         setItems(next);
         setLive(reconcile(emptyLive()));
         setModelRows([]);
+        setCommandRows([]); // local only; the persisted entries now tell the story
       });
     } catch (err) {
       // Keep the streamed turn on screen; it's accurate, just not re-normalized.
@@ -122,6 +130,9 @@ export function ChatView(props: {
           setModelRows([]);
           props.onModel(msg.model);
           break;
+        case "commands":
+          setCommands(msg.commands);
+          break;
         case "model":
           modelSwitched(msg.model);
           break;
@@ -131,7 +142,11 @@ export function ChatView(props: {
           break;
         case "ui_request": {
           const req = isObj(msg.request) ? msg.request : {};
-          if (!req.fireAndForget) setDialogs((d) => [...d, { id: msg.id, request: msg.request }]);
+          if (!req.fireAndForget && !UI_DIALOG_METHODS.includes(str(req.method) ?? "")) {
+            // A TUI-only interface: answer so the command isn't left waiting, and say so.
+            socket.send({ type: "ui_response", id: msg.id, value: null });
+            setCommandRows((rows) => (rows.length ? [...rows.slice(0, -1), { ...rows[rows.length - 1]!, tui: true }] : rows));
+          } else if (!req.fireAndForget) setDialogs((d) => [...d, { id: msg.id, request: msg.request }]);
           else if (req.method === "notify" && str(req.message)) toast(str(req.message)!);
           // setStatus is TUI chrome (and ANSI-coded); nothing to show.
           break;
@@ -238,6 +253,19 @@ export function ChatView(props: {
 
   const send = (text: string, steer: boolean, images: OutboundImage[], dataUrls: string[]) => {
     if (!socket.send({ type: steer ? "steer" : "prompt", text, ...(images.length ? { images } : {}) })) return false;
+    // A known slash command isn't a message to the model (templates and skills expand into other
+    // text, extensions may never start the agent): no optimistic bubble or running state, just a
+    // local "Ran" row, whether sent idle or as a steer mid-turn (pi runs it either way).
+    // Unknown "/words" go through as ordinary messages.
+    const command = /^\/(\S+)/.exec(text)?.[1];
+    if (command && commands().some((c) => c.name === command)) {
+      const label = text.length > 61 ? `${text.slice(0, 60)}…` : text;
+      batch(() => {
+        setCommandRows((rows) => [...rows, { label, tui: false }]);
+        setResume((n) => n + 1);
+      });
+      return true;
+    }
     batch(() => {
       addPendingPrompt(setLive, text, dataUrls);
       setLive("running", true);
@@ -307,8 +335,29 @@ export function ChatView(props: {
                   </InfoRow>
                 )}
               </For>
+              <For each={commandRows()}>
+                {(row) => (
+                  <div class="info-row" role="note">
+                    <span class="info-row-text">
+                      <Icon name={row.tui ? "attention" : "terminal"} small />
+                      <Show
+                        when={row.tui}
+                        fallback={
+                          <span>
+                            Ran <code>{row.label}</code>
+                          </span>
+                        }
+                      >
+                        <span>
+                          <code>{row.label.split(/\s/)[0]}</code> needs the terminal UI. Run it in pi in a terminal.
+                        </span>
+                      </Show>
+                    </span>
+                  </div>
+                )}
+              </For>
               {/* Model/thinking info rows alone don't count as a conversation. */}
-              <Show when={live.entries.length === 0 && !list().some((i) => i.kind !== "info")}>
+              <Show when={live.entries.length === 0 && commandRows().length === 0 && !list().some((i) => i.kind !== "info")}>
                 <div class="empty">
                   <p class="empty-title">
                     New session in <code>{props.cwdLabel}</code>.
@@ -324,6 +373,7 @@ export function ChatView(props: {
       <Composer
         path={props.path}
         blocked={blocked()}
+        commands={commands()}
         running={live.running}
         stopping={live.stopping}
         detail={live.activity ?? runDetail(live)}

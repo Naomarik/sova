@@ -84,6 +84,17 @@ export type ChatClientMessage =
   | { type: "set_model"; ref: string }   // calls session.setModel; server replies {type:"model"} or error
   | { type: "ui_response"; id: string; value: unknown };
 
+export interface SlashCommand {
+  /** Invocation name without the leading slash, e.g. "sessions", "skill:omarchy". */
+  name: string;
+  /** Optional for extension commands (pi docs/rpc.md); the UI shows a badge-only row then. */
+  description?: string;
+  source: "extension" | "prompt" | "skill";
+  /** Where it comes from: extension path, or template/skill location (project, user, …) + path. */
+  location?: string;
+  path?: string;
+}
+
 export type ChatServerMessage =
   /** First message after connect: current transcript + live state. */
   | { type: "hello"; items: TranscriptItem[]; isStreaming: boolean; model: string | null }
@@ -93,6 +104,10 @@ export type ChatServerMessage =
   | { type: "event"; event: unknown }
   /** Extension dialog bridge (select/confirm/input). Optional in MVP. */
   | { type: "model"; model: string }    // active model changed (model_change passthrough events also exist)
+  /** Slash commands available in this session (sent right after hello, and again after a runtime
+      reload). Same enumeration as pi rpc get_commands: extension commands, prompt templates, skills.
+      TUI built-ins (/tree, /model, …) are not included. Send one as a normal prompt "/name args". */
+  | { type: "commands"; commands: SlashCommand[] }
   | { type: "ui_request"; id: string; request: unknown }
   // Codes: "busy" = a TUI owns the session (never retry with force); "recent" = file written by an
   // unknown process, at connect or mid-chat (client may reconnect with &force=1);

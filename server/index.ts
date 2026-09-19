@@ -12,8 +12,12 @@ import { listModels, resolveContext } from "./models";
 import { markOwned } from "./write-guard";
 import { addWebSession } from "./web-sessions";
 import { getAgentsInsight, getSessionInsight, getUsageInsight } from "./insights";
-import { getSessionSummary, listCwds, listSessions } from "./sessions-index";
+import { archiveSession, getSessionSummary, listCwds, listSessions } from "./sessions-index";
 import { contextForBranch, normalizeEntries, readActiveBranch } from "./transcript";
+import { checkTmpImage, readTmpImage } from "./attachments";
+import { listFolders } from "./folders";
+import { startModeWatcher, switchMode } from "./mode";
+import { modeInfo, parseModePatch, readMode } from "./mode-state";
 import { attachWebSockets } from "./ws";
 
 const PORT = Number(process.env.PORT) || 4800;
@@ -65,9 +69,47 @@ app.post("/api/sessions", async (c) => {
   return c.json(summary, 201);
 });
 
+// Moves a web-spawned session between the sidebar regions. Changes pi-web's own id list only.
+app.post("/api/sessions/archive", async (c) => {
+  let body: { path?: unknown; archived?: unknown };
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "Expected JSON body { path, archived }" }, 400);
+  }
+  if (typeof body.archived !== "boolean") return c.json({ error: "archived must be true or false" }, 400);
+  const path = resolveSessionPath(typeof body.path === "string" ? body.path : null);
+  if (!path) return c.json({ error: "Invalid or missing path (must be a .jsonl under the pi sessions dir)" }, 400);
+  if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
+  const r = await archiveSession(path, body.archived);
+  return r.ok ? c.json(r.summary) : c.json({ error: r.error }, r.status);
+});
+
 app.get("/api/cwds", async (c) => c.json(await listCwds()));
 
+// Subfolders for the New Session folder picker. Directory names only, never files (server/folders.ts).
+app.get("/api/folders", async (c) => {
+  const r = await listFolders(c.req.query("path"), { hidden: c.req.query("hidden") === "1" });
+  return r.ok ? c.json(r.listing) : c.json({ error: r.error }, r.status);
+});
+
 app.get("/api/models", async (c) => c.json(await listModels()));
+
+// The global mode (~/.pi/agent/mode.json, the mode extension's file). A switch is applied to every
+// chat this server holds, so their next message follows it (server/mode.ts).
+app.get("/api/mode", (c) => c.json(modeInfo(readMode())));
+
+app.post("/api/mode", async (c) => {
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "Expected JSON body { mode?, minorModes? }" }, 400);
+  }
+  const patch = parseModePatch(body);
+  if ("error" in patch) return c.json({ error: patch.error }, 400);
+  return c.json(await switchMode(patch));
+});
 
 app.get("/api/transcript", async (c) => {
   const path = resolveSessionPath(c.req.query("path"));
@@ -75,6 +117,20 @@ app.get("/api/transcript", async (c) => {
   if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
   const branch = await readActiveBranch(path);
   return c.json({ items: normalizeEntries(branch), context: await resolveContext(contextForBranch(branch)) });
+});
+
+// Bytes of an image a user message names by path (TranscriptItem.attachments). Only image files
+// directly in /tmp, after resolving symlinks. no-store: /tmp names get reused and cleaned.
+app.get("/api/attachment", async (c) => {
+  const check = checkTmpImage(c.req.query("path"));
+  if (!check.ok) return c.json({ error: check.error }, check.status);
+  const bytes = await readTmpImage(check.realPath);
+  if (!bytes) return c.json({ error: "File not found" }, 404);
+  return c.body(new Uint8Array(bytes), 200, {
+    "Content-Type": check.mimeType,
+    "Cache-Control": "private, no-store",
+    "X-Content-Type-Options": "nosniff",
+  });
 });
 
 // Insights: read-only views of extension state (docs/insights-research.md). Missing or
@@ -109,6 +165,7 @@ server.on("error", (err) => {
   process.exit(1);
 });
 attachWebSockets(server);
+startModeWatcher();
 
 let shuttingDown = false;
 async function shutdown() {

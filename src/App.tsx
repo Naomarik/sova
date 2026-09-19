@@ -2,14 +2,15 @@ import { createEffect, createMemo, createResource, createSignal, Match, on, onCl
 import { createStore, reconcile } from "solid-js/store";
 import { Portal } from "solid-js/web";
 import type { SessionInsight, SessionSummary, TeamInfo } from "../shared/protocol";
-import { fetchAgents, fetchSessionInsight, fetchUsage, listSessions } from "./lib/api";
+import { fetchAgents, fetchSessionInsight, fetchUsage, listSessions, setSessionArchived } from "./lib/api";
 import { agentsHref, insightsRouteFromHash, legacyInsightsTarget } from "./lib/insights";
 import { createPoll } from "./lib/poll";
 import { homeFromSessionPath, shortModel, tildePath } from "./lib/format";
-import { copyText, home, setHome } from "./lib/ui-state";
+import { copyText, home, setHome, toast } from "./lib/ui-state";
 import { ChatView, type ChatRefusal } from "./components/ChatView";
 import { AgentsView } from "./components/AgentsView";
 import { ContextGauge, ContextMetaPrefix, contextDescribedBy } from "./components/ContextGauge";
+import { ModeMenu, type ModeControl } from "./components/ModeMenu";
 import { ModelMenu, type ModelControl } from "./components/ModelMenu";
 import { NewSessionDialog } from "./components/NewSessionDialog";
 import { OutlineStrip } from "./components/OutlineStrip";
@@ -53,7 +54,8 @@ const sameSummary = (a: SessionSummary, b: SessionSummary) =>
   a.live?.pid === b.live?.pid &&
   a.live?.status === b.live?.status &&
   a.live?.workers?.working === b.live?.workers?.working &&
-  a.live?.workers?.total === b.live?.workers?.total;
+  a.live?.workers?.total === b.live?.workers?.total &&
+  a.archived === b.archived;
 
 /** Keeps the previous object for unchanged rows so <For> updates the list in place (focus survives). */
 function reuseUnchanged(next: SessionSummary[], prev: SessionSummary[] | undefined): SessionSummary[] {
@@ -75,6 +77,43 @@ const AGENTS_POLL_MS = 5_000;
 const SESSION_INSIGHT_DEBOUNCE_MS = 1500;
 
 const folded = () => window.matchMedia("(max-width: 767px)").matches;
+
+/**
+ * Archive/Unarchive for a web-spawned session (DESIGN_NOTES §2 "Archiving"). Archiving is refused
+ * while it's live in a TUI, since it would stay on top anyway; unarchiving always works.
+ */
+function ArchiveButton(props: { session: SessionSummary; onChanged(): void }) {
+  const [pending, setPending] = createSignal(false);
+  const archived = () => props.session.archived === true; // older servers send none
+  const blocked = () => !archived() && props.session.live !== null;
+  const label = () => (archived() ? "Unarchive Session" : "Archive Session");
+  const click = async () => {
+    if (pending() || blocked()) return;
+    const next = !archived();
+    setPending(true);
+    try {
+      await setSessionArchived(props.session.path, next);
+      toast(next ? "Archived. Find it under Archive." : "Moved back to Live & web.");
+      props.onChanged();
+    } catch (err) {
+      toast(`Couldn't ${next ? "archive" : "unarchive"} this session. ${(err as Error).message}`);
+    } finally {
+      setPending(false);
+    }
+  };
+  return (
+    <button
+      type="button"
+      class="button button-icon button-ghost session-archive"
+      aria-label={label()}
+      title={blocked() ? "Open in a TUI. It stays on top while live." : label()}
+      aria-disabled={blocked() || pending() ? "true" : undefined}
+      onClick={click}
+    >
+      <Icon name="archive" />
+    </button>
+  );
+}
 
 export function App() {
   const [listError, setListError] = createSignal<string | null>(null);
@@ -114,6 +153,7 @@ export function App() {
   const [chatModel, setChatModel] = createSignal<string | null>(null);
   /** The open chat session's model picker controls (DESIGN_NOTES §4c); null outside chat. */
   const [modelControl, setModelControl] = createSignal<ModelControl | null>(null);
+  const [modeControl, setModeControl] = createSignal<ModeControl | null>(null);
   const [now, setNow] = createSignal(Date.now());
 
   const refresh = () => void refetch();
@@ -328,6 +368,8 @@ export function App() {
                         </p>
                       </div>
                       <ContextGauge path={d.path} />
+                      {/* Global mode (§4g): chat sessions only; a watched TUI keeps its own in memory. */}
+                      <Show when={d.mode === "chat" && modeControl()}>{(c) => <ModeMenu control={c()} />}</Show>
                       <Show when={d.mode === "chat" && modelControl()}>{(c) => <ModelMenu control={c()} />}</Show>
                       <Show
                         when={working() > 0}
@@ -349,6 +391,9 @@ export function App() {
                         <Chip tone="accent" live title={`Open in pi in a terminal · pid ${s().live!.pid} · ${s().live!.status}`}>
                           Live
                         </Chip>
+                      </Show>
+                      <Show when={s().origin === "web"}>
+                        <ArchiveButton session={s()} onChanged={refresh} />
                       </Show>
                       <CopyButton iconOnly label="Copy Session Path" text={() => d.path} onCopy={(t) => copyText(t, "Copied path.")} />
                     </header>
@@ -406,8 +451,13 @@ export function App() {
                             author={author()}
                             force={c().force}
                             autofocus={c().autofocus}
-                            onModel={setChatModel}
+                            onModel={(m) => {
+                              setChatModel(m);
+                              // The sidebar row reads the list: re-read it after a switch.
+                              if (m && m !== s().model) refresh();
+                            }}
                             onModelControl={setModelControl}
+                            onModeControl={setModeControl}
                             onRefused={onRefused}
                             onSettled={() => {
                               refresh();

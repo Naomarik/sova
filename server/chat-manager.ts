@@ -15,8 +15,9 @@ import {
   SessionManager,
   type Theme,
 } from "@earendil-works/pi-coding-agent";
-import type { ChatClientMessage, ChatServerMessage, SlashCommand } from "../shared/protocol";
+import type { ChatClientMessage, ChatServerMessage, ModeApplies, SlashCommand } from "../shared/protocol";
 import { readLive } from "./live";
+import { appliesAfter, MINOR_MODES, modeApplyPlan, readMode, type ModeState } from "./mode-state";
 import { toContextInfo } from "./models";
 import { contextForBranch, normalizeEntries } from "./transcript";
 import { ForeignWriteGuard, markOwned, recentForeignWriteAgeSec } from "./write-guard";
@@ -158,6 +159,8 @@ class ChatSession {
   /** Open-time SDK bookkeeping appends, written right before the first prompt/steer. */
   deferredAppends: Array<() => void> = [];
   disposed = false;
+  /** How the global mode applies to this chat (ModeApplies); set at bind and by applyMode. */
+  modeApplies: ModeApplies = "now";
 
   constructor(
     readonly path: string,
@@ -242,9 +245,88 @@ class ChatSession {
       } catch (err) {
         console.error("[chat] failed to forward event", err);
       }
+      if (event.type === "agent_settled" && this.modeApplies === "after-turn") {
+        // A mid-turn switch reaches the next prompt from here on.
+        this.modeApplies = "now";
+        this.broadcast(this.modeMessage(readMode()));
+      }
       if (event.type === "agent_settled" && this.clients.size === 0) this.scheduleDispose();
     });
     this.broadcast(this.commands()); // extension commands exist only after bindExtensions
+    this.modeApplies = this.modeCommand() ? "now" : "new-chats";
+  }
+
+  /**
+   * The mode extension's own /mode command in this runtime, or undefined when it isn't loaded
+   * (extension-toggle, a name clash). Checked by source so another extension's "mode" never runs.
+   */
+  private modeCommand() {
+    const cmd = this.session.extensionRunner.getCommand("mode");
+    return cmd && /[\\/]extensions[\\/]mode[\\/]index\.ts$/.test(cmd.sourceInfo?.path ?? "") ? cmd : undefined;
+  }
+
+  modeMessage(state: ModeState): ChatServerMessage {
+    return { type: "mode", mode: state.mode, minorModes: [...state.minorModes], strict: state.strict, applies: this.modeApplies };
+  }
+
+  /**
+   * Make this runtime follow `state` (already written to mode.json) from its next prompt
+   * (modeApplyPlan). The /mode handler is called directly, never sent through prompt(), so no
+   * command text can reach the model. Resolves once the switch is in the extension's memory; the
+   * claude-heavy planner probe it then starts isn't awaited.
+   */
+  async applyMode(state: ModeState): Promise<void> {
+    if (this.disposed) return;
+    const session = this.session;
+    const streaming = session.isStreaming;
+    let live = false;
+    try {
+      assertNotLive(this.path);
+    } catch {
+      live = true;
+    }
+    const plan = modeApplyPlan({
+      foreign: live || this.hasForeignWrites(),
+      hasModeCommand: !!this.modeCommand(),
+      pristine: !session.sessionManager.getBranch().some((e) => e.type === "message" && e.message.role === "user"),
+      streaming,
+    });
+    let applies = appliesAfter(plan, streaming);
+    if (plan === "reload") {
+      try {
+        await session.reload(); // re-runs every extension factory; mode re-reads mode.json
+      } catch (err) {
+        console.error("[chat] reload for mode switch failed", err);
+        this.broadcast({ type: "error", code: "reloaded", message: "Session runtime was reloaded and failed; reconnect" });
+        await this.dispose();
+        return;
+      }
+      this.broadcast(this.commands());
+    } else if (plan === "command") {
+      // getCommand + createCommandContext + handler(args, ctx) is the SDK's own extension-command
+      // path (AgentSession._tryExecuteExtensionCommand, agent-session.js ~954 in pinned 0.85.1),
+      // minus the prompt text that path falls back to when a command is missing. Internal-ish
+      // API: re-check on SDK upgrades. The SDK reports handler errors via emitError; so do we.
+      const cmd = this.modeCommand()!;
+      const ctx = session.extensionRunner.createCommandContext();
+      this.flushDeferredAppends(); // open-time entries go before the extension's mode marker
+      try {
+        for (const minor of MINOR_MODES) await cmd.handler(`${minor} ${state.minorModes.includes(minor) ? "on" : "off"}`, ctx);
+        // Not awaited: after switching, setMode awaits the claude-heavy planner probe (up to 15s).
+        cmd.handler(state.mode, ctx).catch((err) => {
+          console.error("[chat] /mode handler failed", err);
+          if (this.disposed) return;
+          this.modeApplies = "new-chats";
+          this.broadcast(this.modeMessage(state));
+        });
+      } catch (err) {
+        console.error("[chat] /mode handler failed", err);
+        applies = "new-chats";
+      }
+      if (!this.foreignWrite) markOwned(this.path); // the marker entry is our write
+    }
+    this.modeApplies = applies;
+    this.broadcast(this.modeMessage(state));
   }
 
   commands(): ChatServerMessage {
@@ -274,6 +356,7 @@ class ChatSession {
     this.disposeTimer = null;
     client.send(this.hello());
     client.send(this.commands());
+    client.send(this.modeMessage(readMode()));
   }
 
   detach(client: ChatClient): void {
@@ -524,7 +607,14 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
     sessionManager.appendThinkingLevelChange = appendThinkingLevelChange;
   };
   const createRuntime: CreateAgentSessionRuntimeFactory = async ({ cwd, sessionManager, sessionStartEvent }) => {
-    const services = await createAgentSessionServices({ cwd, modelRuntime });
+    // topic-outline only summarizes in the TUI unless its host opts in; opt in so web chats get
+    // outlines. Boolean flag: the SDK sets it true whatever the value. Workers never get it.
+    const services = await createAgentSessionServices({
+      cwd,
+      modelRuntime,
+      extensionFlagValues: new Map([["topic-outline-headless", true]]),
+    });
+    for (const d of services.diagnostics) console.warn(`[chat] runtime ${d.type}: ${d.message}`);
     return {
       ...(await createAgentSessionFromServices({ services, sessionManager, sessionStartEvent })),
       services,
@@ -587,6 +677,9 @@ export async function acquireChat(path: string, force = false): Promise<ChatSess
   p.catch(forget);
   return p;
 }
+
+/** Every fully opened runtime this server holds (the mode switch applies to all of them). */
+export const heldChats = (): ChatSession[] => [...held.values()].filter((c) => !c.disposed);
 
 export async function disposeAllChats(): Promise<void> {
   const all = [...sessions.values()];

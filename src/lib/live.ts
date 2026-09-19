@@ -37,7 +37,7 @@ export interface LiveState {
   running: boolean;
   /** What the agent is doing besides generating, e.g. retrying or compacting. */
   activity: string | null;
-  /** The user pressed Stop Turn and the run hasn't settled yet. */
+  /** The user pressed Stop and the run hasn't settled yet. */
   stopping: boolean;
 }
 

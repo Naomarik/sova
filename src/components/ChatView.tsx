@@ -12,6 +12,7 @@ import { fromDataUrl } from "../lib/images";
 import { announce, draftImages, drafts, sessionContext, setLocalRunning, setSessionContext, toast } from "../lib/ui-state";
 import { Composer, type ComposerReason } from "./Composer";
 import { ConnectionBanner } from "./ConnectionBanner";
+import type { ModeControl, ModeState } from "./ModeMenu";
 import type { ModelControl } from "./ModelMenu";
 import { HistoryItems, InfoRow, LiveEntries, ThreadScroller, TranscriptSkeleton, TurnError } from "./Thread";
 import { Banner, Icon } from "./ui";
@@ -37,6 +38,8 @@ export function ChatView(props: {
   onModel(model: string | null): void;
   /** Hands the header its model picker's controls; null when this view goes away. */
   onModelControl?(control: ModelControl | null): void;
+  /** Hands the header this chat's mode state (§4g); null when this view goes away. */
+  onModeControl?(control: ModeControl | null): void;
   onRefused(kind: ChatRefusal, message: string): void;
   onSettled(): void;
 }) {
@@ -54,6 +57,8 @@ export function ChatView(props: {
   const [modelRows, setModelRows] = createSignal<string[]>([]);
   /** This session's slash commands (sent after hello, and again after a runtime reload). */
   const [commands, setCommands] = createSignal<SlashCommand[]>([]);
+  /** The global mode and how it applies to this chat (WS "mode"). */
+  const [modeState, setModeState] = createSignal<ModeState | null>(null);
   /** Local "Ran /name args" rows; `tui` marks one that asked for a UI pi-web can't show. */
   const [commandRows, setCommandRows] = createSignal<{ label: string; tui: boolean }[]>([]);
   let modelTimer: ReturnType<typeof setTimeout> | undefined;
@@ -145,6 +150,9 @@ export function ChatView(props: {
           break;
         case "model":
           modelSwitched(msg.model);
+          break;
+        case "mode":
+          setModeState({ mode: msg.mode, minorModes: msg.minorModes, strict: msg.strict, applies: msg.applies });
           break;
         case "event":
           queue.push(msg.event);
@@ -253,13 +261,15 @@ export function ChatView(props: {
     model,
     pending: pendingModel,
     blocked: () => {
-      if (live.running) return { title: "Model changes wait until this turn finishes.", body: "Stop Turn or wait, then pick one." };
+      if (live.running) return { title: "Model changes wait until this turn finishes.", body: "Stop or wait, then pick one." };
       const reason = blocked();
       return reason && !pendingModel() ? { title: reason.text } : null;
     },
     choose: chooseModel,
   });
   onCleanup(() => props.onModelControl?.(null));
+  props.onModeControl?.({ state: modeState });
+  onCleanup(() => props.onModeControl?.(null));
 
   // Mirror this session's run state for the sidebar's Busy chip (the list refetches on settle).
   const setMine = (running: boolean | undefined) =>

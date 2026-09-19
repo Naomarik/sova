@@ -292,6 +292,17 @@
   --measure:       72ch;
 }
 
+/* Reading column from unfolded up (DESIGN_NOTES §3 "Column width"): it grows
+   with the transcript pane, keeping 2 × space-8 of margin around the column
+   (measure + space-9), from 72ch to a 110ch cap. It stays 72ch until the
+   pane is wide enough, so nothing jumps, and folded never sees this rule.
+   `ch` resolves in each consumer's font: all of them inherit the body font. */
+@media (min-width: 768px) {
+  :root {
+    --measure: clamp(72ch, 100vw - var(--sidebar-width) - var(--space-9) - 2 * var(--space-8), 110ch);
+  }
+}
+
 /* Reduced motion: durations collapse, loops stop. Opacity fades survive. */
 @media (prefers-reduced-motion: reduce) {
   *,

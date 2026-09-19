@@ -13,7 +13,8 @@ export interface SessionSummary {
   title: string;
   createdAt: string; // ISO, from header
   lastActiveAt: string; // ISO, file mtime
-  /** "provider/model" from the first model_change entry, else null. */
+  /** Latest "provider/model": the model_change or assistant message closest to the end of the
+      file (last 256KB), else the first one in the head, else null. */
   model: string | null;
   /** Non-null when the session is currently open in a TUI (from ~/.pi/agent/sessions/live/*.json). */
   live: {
@@ -28,8 +29,12 @@ export interface SessionSummary {
   busy: boolean;
   /** "web" if spawned via this webapp's POST /api/sessions (tracked persistently by the server,
       survives restarts); "external" for anything else. Pane rule: top region shows
-      live!=null || origin==="web"; everything else goes to the bottom archive section. */
+      live!=null || (origin==="web" && !archived); everything else goes to the bottom archive section. */
   origin: "web" | "external";
+  /** The user archived this web-spawned session by hand (POST /api/sessions/archive; ids persist in
+      ~/.pi/agent/pi-web/archived-sessions.json). Only moves it between regions; it opens as before,
+      and a live one still shows on top. Absent from older servers: treat as false. */
+  archived: boolean;
 }
 
 export type EntryKind =
@@ -39,6 +44,7 @@ export type EntryKind =
   | "tool-call"
   | "tool-result"
   | "info" // session_info, model_change, compaction, labels, branch summaries etc.
+  | "report" // subagent reports and other long extension messages (custom_message); see `report`
   | "unknown";
 
 /** A normalized transcript row. `raw` carries the full parsed JSONL entry for advanced rendering. */
@@ -52,7 +58,56 @@ export interface TranscriptItem {
   /** Images attached to this row (user messages, tool results), as ready-to-render
       data URLs (`data:<mime>;base64,…`). pi stores ImageContent {type:"image", data: base64, mimeType}. */
   images?: string[];
+  /** Image paths directly in /tmp named in the row's text (pi's TUI pastes a clipboard image as
+      `/tmp/pi-clipboard-<uuid>.png`; replies, tool output and subagent reports quote it). Set on
+      user, assistant-text, info (custom messages) and tool-result rows. Only concrete names outside
+      markdown code spans/fences (shared/tmp-paths.ts), first 8 distinct per row. User rows: pi's own
+      clipboard paths are removed from `text`; every other row keeps its text as-is. `raw` is
+      untouched. Bytes: GET /api/attachment?path=. */
+  attachments?: TmpAttachment[];
+  /** kind "report" only: the parsed message. `text` holds the same body. */
+  report?: ReportInfo;
   raw: unknown;
+}
+
+/**
+ * An extension message shown as a collapsed report row instead of a centered info row: every
+ * `subagent-complete` (pi-config subagents: "### <id> (<name>) — <status>[ · task <outcome>]",
+ * optional "Error: …" and "Session: …" lines, then the worker's final output), and any other
+ * custom message longer than 200 characters or spanning lines. Parsed server-side; `raw` is
+ * untouched.
+ */
+export interface ReportInfo {
+  /** The message's customType, e.g. "subagent-complete", "intercom_message". */
+  source: string;
+  /** Present when the header parsed (current format, or the older "Subagent <id> (<name>) finished its task."). */
+  agent?: {
+    id: string; // "ag_01"
+    name: string; // "orchestrator"
+    status: string; // worker status: starting | running | waiting | stopping | done | error | killed
+    outcome?: string; // task outcome: success | error | aborted
+  };
+  error?: string; // the "Error: …" line
+  session?: string; // the "Session: …" line: a session file path or id
+  /** Markdown, verbatim, without the header lines and without the truncation trailer. */
+  body: string;
+  /** First non-empty body line with markdown markers stripped, for the collapsed row. */
+  preview: string;
+  /** The extension cut the message at 4000 characters ("[Use agent_transcript for more.]"). */
+  truncated: boolean;
+}
+
+/** An image a transcript row names by /tmp path: user messages, assistant text, info rows
+    (custom messages such as subagent reports) and tool results. */
+export interface TmpAttachment {
+  path: string; // absolute, as written in the message
+  name: string; // basename
+  mimeType: string; // from the extension
+  /** Bytes on disk, when the file exists. */
+  size?: number;
+  /** Servable at parse time: a regular file directly in /tmp, ≤ 20MB. false once /tmp was cleaned
+      (or when over the cap: then `size` is set). */
+  available: boolean;
 }
 
 /** Client→server image attachment. Base64 payload WITHOUT the data: prefix. */
@@ -66,9 +121,19 @@ export interface OutboundImage {
 //
 // GET  /api/sessions            -> SessionSummary[]
 // POST /api/sessions { cwd }    -> SessionSummary   (creates a NEW empty webapp-owned session)
+// POST /api/sessions/archive { path, archived: boolean } -> SessionSummary   (sets/clears the archive mark; never
+//                                  writes the session file. 400 bad body/path, 404 missing, 409 archiving a live
+//                                  or non-web session)
 // GET  /api/transcript?path=…   -> { items: TranscriptItem[]; context: ContextInfo | null }   (active branch only)
 // GET  /api/cwds                -> string[]                          (distinct cwds, for the new-session picker)
+// GET  /api/folders?path=…&hidden=1 -> FolderListing   (subfolders for the New Session folder picker; no path = $HOME;
+//                                  400 not absolute, 403 unreadable, 404 missing or not a folder)
 // GET  /api/models              -> ModelInfo[]                       (available models; favorite=true mirrors the TUI Ctrl+P palette)
+// GET  /api/attachment?path=…   -> image bytes (TmpAttachment.path; only /tmp/<name>.png|jpg|jpeg|webp|gif, ≤ 20MB;
+//                                  400 bad shape, 403 resolves outside /tmp or too large, 404 missing)
+// GET  /api/mode                -> ModeInfo   (the global ~/.pi/agent/mode.json; missing file → defaults)
+// POST /api/mode { mode?, minorModes? } -> ModeInfo   (merged into the fresh file, other fields kept; applied to
+//                                  every chat this server holds, see ModeApplies. 400 bad body or unknown name)
 // ---------------------------------------------------------------------------
 
 /** Context-window fill of a session: last assistant entry's usage (input+cacheRead+cacheWrite)
@@ -84,6 +149,32 @@ export interface ModelInfo {
   /** Mirrors the command-palette extension's favorites when its storage is readable. */
   favorite: boolean;
 }
+
+/** One folder's subfolders (GET /api/folders). Directories only, never files: a symlink is listed
+    when its target is a directory; dangling and unreadable entries are left out. Dot folders only
+    with hidden=1. Sorted by name, case-insensitive. */
+export interface FolderListing {
+  path: string; // absolute and normalized (path.resolve, symlinks kept as written)
+  parent: string | null; // null at the filesystem root
+  entries: { name: string; path: string; symlink?: true }[];
+  /** More than 500 subfolders: `entries` holds the first 500 in sort order. */
+  truncated: boolean;
+}
+
+/** The mode extension's global switch (pi-config/extensions/mode). One major mode, any set of
+    minor modes. `strict` is shown, never changed here. `modes`/`minors` list what exists. */
+export interface ModeInfo {
+  mode: string; // "normal" | "claude-heavy"
+  minorModes: string[]; // canonical order
+  strict: boolean;
+  modes: { id: string; description: string }[];
+  minors: { id: string; description: string }[];
+}
+
+/** Where the current mode stands for one open chat: "now" = its next message follows it;
+    "after-turn" = switched mid-turn, so messages queued in this turn keep the old one;
+    "new-chats" = this chat can't take it (no mode extension here, or another writer seen). */
+export type ModeApplies = "now" | "after-turn" | "new-chats";
 
 /** WS /ws/chat?path= — full-duplex chat for webapp-owned sessions. */
 export type ChatClientMessage =
@@ -113,6 +204,9 @@ export type ChatServerMessage =
   | { type: "event"; event: unknown }
   /** Extension dialog bridge (select/confirm/input). Optional in MVP. */
   | { type: "model"; model: string }    // active model changed (model_change passthrough events also exist)
+  /** The global mode and how it applies to this chat. Sent after hello and on every change
+      (a switch from any tab, or the TUI writing mode.json). */
+  | { type: "mode"; mode: string; minorModes: string[]; strict: boolean; applies: ModeApplies }
   /** Slash commands available in this session (sent right after hello, and again after a runtime
       reload). Same enumeration as pi rpc get_commands: extension commands, prompt templates, skills.
       TUI built-ins (/tree, /model, …) are not included. Send one as a normal prompt "/name args". */

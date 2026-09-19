@@ -25,7 +25,7 @@ const size = (bytes: number) =>
 
 /**
  * Prompt input (DESIGN_NOTES §4, §4b). Enter sends, Shift+Enter adds a newline. While `running`,
- * Send becomes Steer and Stop Turn appears. `readOnly` disables the textarea and hides Send;
+ * Send becomes Steer and a small Stop appears after it. `readOnly` disables the textarea and hides Send;
  * `blocked` keeps typing allowed but makes Send and Attach aria-disabled, with the reason read
  * out. Images attach by picker, paste, or drop. Text and images are a per-session draft that
  * survives every state change.
@@ -459,6 +459,17 @@ export function Composer(props: {
             }}
           />
           <div class="composer-actions">
+            <Show when={!props.readOnly}>
+              <button
+                type="submit"
+                class="button button-primary"
+                aria-disabled={canSend() ? undefined : "true"}
+                aria-describedby="composer-reason"
+              >
+                <Icon name="arrow-right" small />
+                <span class="button-label">{props.running ? "Steer" : "Send"}</span>
+              </button>
+            </Show>
             <Show when={props.running && !props.readOnly}>
               <button
                 type="button"
@@ -469,19 +480,8 @@ export function Composer(props: {
                   input.focus();
                 }}
               >
-                <Icon name="pause" small />
-                <span class="button-label">Stop Turn</span>
-              </button>
-            </Show>
-            <Show when={!props.readOnly}>
-              <button
-                type="submit"
-                class="button button-primary"
-                aria-disabled={canSend() ? undefined : "true"}
-                aria-describedby="composer-reason"
-              >
-                <Icon name="arrow-right" small />
-                <span class="button-label">{props.running ? "Steer" : "Send"}</span>
+                <Icon name="stop" small />
+                <span class="button-label">Stop</span>
               </button>
             </Show>
           </div>

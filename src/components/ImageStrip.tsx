@@ -4,11 +4,13 @@ import { openLightbox } from "../lib/ui-state";
 /**
  * Thumbnails on a user row or in a tool card (DESIGN_NOTES §4b). One image keeps its own shape;
  * two or more are square tiles. Each opens the lightbox at that image, scoped to this row.
- * `where` completes the alt text: "in your message" or "from tool result read".
+ * `where` completes the alt text: "in your message" or "from tool result read". `noun` replaces
+ * "Image" in it (a path attachment: "Attachment pi-clipboard-….png").
  */
-export function ImageStrip(props: { images?: string[]; where: string }) {
+export function ImageStrip(props: { images?: string[]; where: string; noun?: string }) {
   const count = () => props.images?.length ?? 0;
-  const alt = (i: number) => (count() === 1 ? `Image ${props.where}` : `Image ${i + 1} of ${count()} ${props.where}`);
+  const noun = () => props.noun ?? "Image";
+  const alt = (i: number) => (count() === 1 ? `${noun()} ${props.where}` : `${noun()} ${i + 1} of ${count()} ${props.where}`);
   return (
     <Show when={count() > 0}>
       <ul class="message-images" classList={{ "message-images-single": count() === 1 }} aria-label={`${count()} ${count() === 1 ? "image" : "images"}`}>

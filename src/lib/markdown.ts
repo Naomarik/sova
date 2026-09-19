@@ -1,46 +1,119 @@
 // Markdown for assistant-text (DESIGN_NOTES §4e). markdown-it with html:false, so any HTML in
 // model output is escaped text, never rendered. Every tag we emit ourselves is built from
-// escaped parts. highlight.js runs on a curated language set, never auto-detect.
+// escaped parts. highlight.js runs on its `common` set plus a few extras, never auto-detect.
 
 import MarkdownIt from "markdown-it";
 import type Token from "markdown-it/lib/token.mjs";
-import hljs from "highlight.js/lib/core";
-import bash from "highlight.js/lib/languages/bash";
-import css from "highlight.js/lib/languages/css";
-import diff from "highlight.js/lib/languages/diff";
-import go from "highlight.js/lib/languages/go";
-import javascript from "highlight.js/lib/languages/javascript";
-import json from "highlight.js/lib/languages/json";
-import markdown from "highlight.js/lib/languages/markdown";
-import plaintext from "highlight.js/lib/languages/plaintext";
-import python from "highlight.js/lib/languages/python";
-import rust from "highlight.js/lib/languages/rust";
-import shell from "highlight.js/lib/languages/shell";
-import sql from "highlight.js/lib/languages/sql";
-import typescript from "highlight.js/lib/languages/typescript";
-import xml from "highlight.js/lib/languages/xml";
-import yaml from "highlight.js/lib/languages/yaml";
+import hljs from "highlight.js/lib/common";
+import type { TmpAttachment } from "../../shared/protocol";
+import { findTmpImagePaths } from "../../shared/tmp-paths";
+import { chipHtml } from "./path-attachments";
+import clojure from "highlight.js/lib/languages/clojure";
+import cmake from "highlight.js/lib/languages/cmake";
+import dart from "highlight.js/lib/languages/dart";
+import dockerfile from "highlight.js/lib/languages/dockerfile";
+import elixir from "highlight.js/lib/languages/elixir";
+import erlang from "highlight.js/lib/languages/erlang";
+import haskell from "highlight.js/lib/languages/haskell";
+import http from "highlight.js/lib/languages/http";
+import latex from "highlight.js/lib/languages/latex";
+import nix from "highlight.js/lib/languages/nix";
+import powershell from "highlight.js/lib/languages/powershell";
+import protobuf from "highlight.js/lib/languages/protobuf";
+import scala from "highlight.js/lib/languages/scala";
 
-hljs.registerLanguage("bash", bash);
-hljs.registerLanguage("shell", shell);
-hljs.registerLanguage("css", css);
-hljs.registerLanguage("diff", diff);
-hljs.registerLanguage("go", go);
-hljs.registerLanguage("javascript", javascript);
-hljs.registerLanguage("json", json);
-hljs.registerLanguage("markdown", markdown);
-hljs.registerLanguage("plaintext", plaintext);
-hljs.registerLanguage("python", python);
-hljs.registerLanguage("rust", rust);
-hljs.registerLanguage("sql", sql);
-hljs.registerLanguage("typescript", typescript);
-hljs.registerLanguage("xml", xml); // also html, svg
-hljs.registerLanguage("yaml", yaml);
-// tsx/jsx highlight as TypeScript/JavaScript; the xml language covers embedded markup.
-hljs.registerAliases(["tsx"], { languageName: "typescript" });
-hljs.registerAliases(["jsx"], { languageName: "javascript" });
+// Languages models often emit that `common` lacks. Everything else stays plain text.
+hljs.registerLanguage("clojure", clojure);
+hljs.registerLanguage("cmake", cmake);
+hljs.registerLanguage("dart", dart);
+hljs.registerLanguage("dockerfile", dockerfile);
+hljs.registerLanguage("elixir", elixir);
+hljs.registerLanguage("erlang", erlang);
+hljs.registerLanguage("haskell", haskell);
+hljs.registerLanguage("http", http);
+hljs.registerLanguage("latex", latex);
+hljs.registerLanguage("nix", nix);
+hljs.registerLanguage("powershell", powershell);
+hljs.registerLanguage("protobuf", protobuf);
+hljs.registerLanguage("scala", scala);
 
 const esc = (s: string) => MarkdownIt().utils.escapeHtml(s);
+
+/**
+ * Fence words and file extensions → hljs language names. hljs knows many aliases itself (py, rb,
+ * cs, hpp, …); this table pins the common spellings to one canonical name, fixes the ones hljs
+ * gets wrong for model output (`shell` there means a `$ ` prompt transcript, not a script), and
+ * sends every "no language" spelling to plaintext. toml → ini: hljs has no toml, and its ini
+ * grammar (which aliases toml itself) covers keys, sections, strings and comments.
+ */
+const LANGUAGE_ALIASES = new Map<string, string>([
+  ["c++", "cpp"], ["cc", "cpp"], ["cxx", "cpp"], ["hpp", "cpp"], ["hh", "cpp"], ["hxx", "cpp"], ["h", "cpp"],
+  ["c#", "csharp"], ["cs", "csharp"],
+  ["objc", "objectivec"], ["objective-c", "objectivec"], ["mm", "objectivec"],
+  ["yml", "yaml"],
+  ["sh", "bash"], ["zsh", "bash"], ["shell", "bash"], ["shellscript", "bash"],
+  ["console", "shell"], ["shell-session", "shell"], ["shellsession", "shell"],
+  ["py", "python"], ["pyi", "python"], ["rb", "ruby"], ["rs", "rust"], ["golang", "go"],
+  ["kt", "kotlin"], ["kts", "kotlin"],
+  ["ps1", "powershell"], ["psm1", "powershell"], ["ps", "powershell"], ["pwsh", "powershell"],
+  ["make", "makefile"], ["mk", "makefile"], ["gnumake", "makefile"],
+  ["docker", "dockerfile"], ["containerfile", "dockerfile"],
+  ["html", "xml"], ["htm", "xml"], ["xhtml", "xml"], ["svg", "xml"], ["vue", "xml"], ["svelte", "xml"],
+  ["md", "markdown"], ["mkd", "markdown"], ["mdx", "markdown"],
+  ["toml", "ini"],
+  ["ts", "typescript"], ["tsx", "typescript"], ["mts", "typescript"], ["cts", "typescript"],
+  ["js", "javascript"], ["jsx", "javascript"], ["mjs", "javascript"], ["cjs", "javascript"],
+  ["patch", "diff"],
+  ["jsonc", "json"], ["json5", "json"],
+  ["clj", "clojure"], ["cljs", "clojure"], ["cljc", "clojure"], ["edn", "clojure"],
+  ["ex", "elixir"], ["exs", "elixir"], ["erl", "erlang"], ["hs", "haskell"], ["proto", "protobuf"],
+  ["tex", "latex"], ["gql", "graphql"],
+  ["", "plaintext"], ["text", "plaintext"], ["txt", "plaintext"], ["plain", "plaintext"],
+]);
+
+/** Fence info (or a bare extension) → hljs language name; unknown words pass through as-is. */
+export function resolveLanguage(info: string): string {
+  const word = (info.trim().split(/\s+/)[0] ?? "").toLowerCase().replace(/^\.+/, "");
+  return LANGUAGE_ALIASES.get(word) ?? word;
+}
+
+/** Whether `lang` (already resolved) gets syntax spans. Plaintext never does. */
+const highlightable = (lang: string) => lang !== "" && lang !== "plaintext" && !!hljs.getLanguage(lang);
+
+/** Escaped HTML for `source`: highlighted when `lang` (a fence word) is known, plain otherwise. */
+export function highlight(source: string, lang: string): string {
+  const resolved = resolveLanguage(lang);
+  return highlightable(resolved) ? hljs.highlight(source, { language: resolved, ignoreIllegals: true }).value : esc(source);
+}
+
+/** Whole file names that say their language without an extension. */
+const FILENAME_LANGUAGES = new Map<string, string>([
+  ["dockerfile", "dockerfile"], ["containerfile", "dockerfile"],
+  ["makefile", "makefile"], ["gnumakefile", "makefile"],
+  ["cmakelists.txt", "cmake"],
+  [".env", "ini"], [".gitconfig", "ini"], [".editorconfig", "ini"],
+  [".bashrc", "bash"], [".zshrc", "bash"], [".profile", "bash"],
+  [".gitignore", "plaintext"], [".dockerignore", "plaintext"],
+]);
+
+/** A file path → hljs language name, or "plaintext" when nothing better is known. */
+export function languageForPath(path: string): string {
+  const base = (path.split(/[\\/]/).pop() ?? "").toLowerCase();
+  const byName = FILENAME_LANGUAGES.get(base) ?? (base.startsWith(".env.") ? "ini" : base.startsWith("dockerfile.") ? "dockerfile" : undefined);
+  if (byName) return byName;
+  const dot = base.lastIndexOf(".");
+  if (dot <= 0) return "plaintext";
+  const lang = resolveLanguage(base.slice(dot + 1));
+  return highlightable(lang) ? lang : "plaintext";
+}
+
+/** Highlights file content by its path. `lang` is "" when the result is plain escaped text. */
+export function highlightByPath(source: string, path: string): { html: string; lang: string } {
+  const lang = languageForPath(path);
+  return highlightable(lang)
+    ? { html: hljs.highlight(source, { language: lang, ignoreIllegals: true }).value, lang }
+    : { html: esc(source), lang: "" };
+}
 
 /** Only these become links (§4e); anything else renders as its text. */
 const LINKABLE = /^(https?:\/\/|mailto:)/i;
@@ -54,6 +127,8 @@ interface RenderEnv {
   openFence: number | null;
   /** Per link_open: whether it rendered (so link_close knows whether to close). */
   linkStack: boolean[];
+  /** The row's /tmp image paths (TranscriptItem.attachments), shown as chips in prose. */
+  paths?: Map<string, TmpAttachment>;
 }
 
 const md = new MarkdownIt({ html: false, linkify: true, typographer: false });
@@ -66,6 +141,24 @@ md.validateLink = () => true;
 // GFM strikethrough as <del> (markdown-it emits <s>).
 md.renderer.rules.s_open = () => "<del>";
 md.renderer.rules.s_close = () => "</del>";
+
+// ---- /tmp image paths in prose → chips (§4b "Path attachments") ------------------------
+// Text tokens never hold code spans or fences, so a path in code stays text. Only paths the
+// server listed for this row become chips.
+md.renderer.rules.text = (tokens, idx, _opts, e) => {
+  const content = tokens[idx]!.content;
+  const paths = (e as unknown as RenderEnv).paths;
+  if (!paths?.size) return esc(content);
+  let html = "";
+  let at = 0;
+  for (const m of findTmpImagePaths(content)) {
+    const a = paths.get(m.path);
+    if (!a) continue;
+    html += esc(content.slice(at, m.start)) + chipHtml(a);
+    at = m.end;
+  }
+  return html + esc(content.slice(at));
+};
 
 // ---- Links -----------------------------------------------------------------------------
 md.renderer.rules.link_open = (tokens, idx, _opts, e) => {
@@ -106,14 +199,15 @@ md.renderer.rules.table_close = () => "</table></div>\n";
 
 // ---- Code blocks: head with language + Copy Code, highlight when known ------------------
 const renderCode = (source: string, info: string, env: RenderEnv, plain: boolean) => {
-  const lang = info.trim().split(/\s+/)[0]?.toLowerCase() ?? "";
+  const label = info.trim().split(/\s+/)[0]?.toLowerCase() ?? "";
+  const lang = resolveLanguage(label);
   const index = env.codes.push(source) - 1;
-  const known = !plain && lang !== "" && !!hljs.getLanguage(lang);
+  const known = !plain && highlightable(lang);
   const body = known ? hljs.highlight(source, { language: lang, ignoreIllegals: true }).value : esc(source);
   const cls = known ? ` class="hljs language-${esc(lang)}"` : "";
   return (
     `<div class="md-code"><div class="md-code-head">` +
-    `<span class="md-code-lang">${esc(lang || "text")}</span>` +
+    `<span class="md-code-lang">${esc(label || "text")}</span>` +
     `<button class="button button-sm button-ghost md-code-copy" type="button" data-code-index="${index}">` +
     `<span class="icon icon-sm" style="--icon: url(/icons/copy.svg)" aria-hidden="true"></span>` +
     `<span class="md-code-copy-label">Copy Code</span></button></div>` +
@@ -171,8 +265,9 @@ export interface RenderedMarkdown {
  * Renders model markdown to safe HTML. `streaming`: an unclosed fence renders as an open code
  * block (a closing fence is appended for rendering only) and stays unhighlighted until it closes.
  */
-export function renderMarkdown(text: string, streaming = false): RenderedMarkdown {
+export function renderMarkdown(text: string, streaming = false, attachments?: TmpAttachment[]): RenderedMarkdown {
   const env: RenderEnv = { codes: [], openFence: null, linkStack: [] };
+  if (attachments?.length) env.paths = new Map(attachments.map((a) => [a.path, a]));
   let source = text;
   const open = streaming ? unclosedFence(text) : null;
   if (open) {

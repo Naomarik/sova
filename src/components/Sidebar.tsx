@@ -2,6 +2,7 @@ import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import type { AgentsInsight, SessionSummary, UsageInsight } from "../../shared/protocol";
 import { relativeTime, shortModel, tildePath } from "../lib/format";
 import { activeTeams, agentsHref, type GlancePart, usageGlance, usageHref } from "../lib/insights";
+import { isTopSession } from "../lib/regions";
 import { home, localRunning } from "../lib/ui-state";
 import { Banner, Chip, CountChip, Icon } from "./ui";
 
@@ -167,9 +168,8 @@ export function Sidebar(props: {
     const q = query().trim().toLowerCase();
     return q ? all().filter((s) => `${s.title} ${s.cwd} ${s.model ?? ""}`.toLowerCase().includes(q)) : all();
   });
-  // Pane rule (shared/protocol.ts): live or web-spawned sessions stay on top; the rest is archive.
-  // A server that predates `origin` sends none, which counts as external.
-  const isTop = (s: SessionSummary) => s.live !== null || s.origin === "web";
+  // Pane rule: live, or web-spawned and not archived, stays on top (src/lib/regions.ts).
+  const isTop = isTopSession;
   const topHits = createMemo(() => hits().filter(isTop));
   const archiveHits = createMemo(() => hits().filter((s) => !isTop(s)));
   // Each region groups by cwd on its own, so a folder can appear in both.
@@ -333,7 +333,7 @@ export function Sidebar(props: {
             </h2>
             <Show
               when={topHits().length > 0}
-              fallback={<p class="sidebar-region-note">0 sessions open in a TUI or started here. The archive below has the rest.</p>}
+              fallback={<p class="sidebar-region-note">0 sessions open in a TUI, or started here and not archived. The archive below has the rest.</p>}
             >
               <GroupList groups={topGroups()} selected={props.selected} now={props.now} idPrefix="t" />
             </Show>

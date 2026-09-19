@@ -1,10 +1,12 @@
 import { children, createEffect, createMemo, createSignal, For, Match, on, onCleanup, Show, Switch, type JSX } from "solid-js";
-import type { TranscriptItem } from "../../shared/protocol";
+import type { TmpAttachment, TranscriptItem } from "../../shared/protocol";
 import type { LiveBlock, LiveEntry, LiveState } from "../lib/live";
 import { prettyJson, stampTime, thousands, tildePath } from "../lib/format";
 import { isObj, str, timestampOf, toolCallArgs, toolResultView } from "../lib/message";
 import { home } from "../lib/ui-state";
 import { ImageStrip } from "./ImageStrip";
+import { PathAttachment, PathText } from "./PathAttachment";
+import { ReportRow } from "./ReportRow";
 import { Markdown } from "./Markdown";
 import { ToolCard, type ToolStatus } from "./ToolCard";
 import { Banner, Icon } from "./ui";
@@ -19,7 +21,7 @@ function Stamp(props: { iso?: string }) {
   );
 }
 
-function UserTurn(props: { text: string; time?: string; pending?: boolean; images?: string[] }) {
+function UserTurn(props: { text: string; time?: string; pending?: boolean; images?: string[]; attachments?: TmpAttachment[] }) {
   return (
     <article class="message message-user" aria-label={props.time ? `You, ${stampTime(props.time)}` : "You"}>
       <div class="message-head">
@@ -30,6 +32,7 @@ function UserTurn(props: { text: string; time?: string; pending?: boolean; image
         </Show>
       </div>
       <ImageStrip images={props.images} where="in your message" />
+      <For each={props.attachments}>{(a) => <PathAttachment attachment={a} where="in your message" />}</For>
       <Show when={props.text}>
         <div class="message-body message-text">{props.text}</div>
       </Show>
@@ -37,7 +40,14 @@ function UserTurn(props: { text: string; time?: string; pending?: boolean; image
   );
 }
 
-function AssistantText(props: { text: string; author: string; time?: string; streaming?: boolean; showHead: boolean }) {
+function AssistantText(props: {
+  text: string;
+  author: string;
+  time?: string;
+  streaming?: boolean;
+  showHead: boolean;
+  attachments?: TmpAttachment[];
+}) {
   return (
     <article
       class="message"
@@ -53,7 +63,7 @@ function AssistantText(props: { text: string; author: string; time?: string; str
           <Stamp iso={props.time} />
         </div>
       </Show>
-      <Markdown text={props.text} streaming={props.streaming} />
+      <Markdown text={props.text} streaming={props.streaming} attachments={props.attachments} />
     </article>
   );
 }
@@ -186,7 +196,7 @@ export function HistoryItems(props: { items: TranscriptItem[]; author: string; s
         <div class="entry" data-entry={item.id}>
           <Switch fallback={<Unknown raw={item.raw} />}>
             <Match when={item.kind === "user"}>
-              <UserTurn text={item.text ?? ""} time={timestampOf(item.raw)} images={item.images} />
+              <UserTurn text={item.text ?? ""} time={timestampOf(item.raw)} images={item.images} attachments={item.attachments} />
             </Match>
             <Match when={item.kind === "assistant-text"}>
               <AssistantText
@@ -194,16 +204,22 @@ export function HistoryItems(props: { items: TranscriptItem[]; author: string; s
                 author={props.author}
                 time={timestampOf(item.raw)}
                 showHead={props.items[index() - 1]?.kind !== "assistant-text"}
+                attachments={item.attachments}
               />
             </Match>
             <Match when={item.kind === "thinking"}>
               <Thinking text={item.text ?? ""} />
             </Match>
+            <Match when={item.kind === "report" && item.report}>
+              {(report) => <ReportRow report={report()} attachments={item.attachments} />}
+            </Match>
             <Match when={item.kind === "info" && isObj(item.raw) && item.raw.type === "compaction" && item.raw}>
               {(raw) => <Compaction raw={raw()} />}
             </Match>
             <Match when={item.kind === "info"}>
-              <InfoRow>{item.text ?? ""}</InfoRow>
+              <InfoRow>
+                <PathText text={item.text ?? ""} attachments={item.attachments} />
+              </InfoRow>
             </Match>
             <Match when={item.kind === "tool-call"}>
               {(() => {
@@ -223,6 +239,7 @@ export function HistoryItems(props: { items: TranscriptItem[]; author: string; s
                     status={status()}
                     output={view()?.output}
                     images={item.toolCallId ? results().get(item.toolCallId)?.images : undefined}
+                    attachments={item.toolCallId ? results().get(item.toolCallId)?.attachments : undefined}
                   />
                 );
               })()}
@@ -233,7 +250,14 @@ export function HistoryItems(props: { items: TranscriptItem[]; author: string; s
                 {(() => {
                   const view = toolResultView(item.raw, item.text);
                   return (
-                    <ToolCard name="result" args={undefined} status={view.isError ? "error" : "done"} output={view.output} images={item.images} />
+                    <ToolCard
+                      name="result"
+                      args={undefined}
+                      status={view.isError ? "error" : "done"}
+                      output={view.output}
+                      images={item.images}
+                      attachments={item.attachments}
+                    />
                   );
                 })()}
               </Show>

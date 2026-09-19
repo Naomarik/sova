@@ -23,21 +23,24 @@ stylesheets — no component library.
 | Buttons | `.button` `.button-primary` `.button-destructive` `.button-ghost` `.button-sm` `.button-icon` (needs `aria-label`) |
 | Icons | `.icon` (20px) `.icon-sm` (16px) `.icon-twist` (rotates in open disclosures). Works on an inline `<svg>` or a mask `<span class="icon" style="--icon:url(/icons/x.svg)">` |
 | Modal | `.scrim` `.modal` `.modal-head` `.modal-title` `.modal-body` `.modal-foot` `.modal-spacer` `.folder-list` |
+| Folder picker (§5) | `.folder-field` `.folder-field-value` `.folder-field-empty` `.folder-picker` `.folder-picker-bar` `.folder-crumbs` `.folder-crumbs-root` `.folder-crumb` `.folder-crumb-current` `.folder-picker-list` `.folder-picker-link` `.folder-picker-note` `.folder-picker-foot` `.folder-picker-hidden` |
 | Form fields | `.field` `.field-label` `.field-hint` `.field-error` `.input` `.input-mono` `.textarea` |
-| Main head | `.session-head` `.session-head-main` `.session-head-title` `.session-head-meta` |
+| Main head | `.session-head` `.session-head-main` `.session-head-title` `.session-head-meta` `.session-archive` |
 | Transcript | `.transcript` (+ `.pane`) `.transcript-banner` `.transcript-inner` `.thread` |
 | Messages | `.message` `.message-user` `.message-streaming` `.message-head` `.message-author` `.message-time` `.message-body` `.message-text` |
 | Thinking / raw JSON | `details.disclosure` `.disclosure-summary` `.disclosure-label` `.disclosure-preview` `.disclosure-body` |
-| Tool card | `details.toolcard` `.toolcard-summary` `.toolcard-name` `.toolcard-arg` `.toolcard-body` `.toolcard-section` `.toolcard-section-label` `.toolcard-output` `.toolcard-output-error`. The running, done and failed states are chips (§3) |
+| Tool card | `details.toolcard` `.toolcard-summary` `.toolcard-name` `.toolcard-arg` `.toolcard-body` `.toolcard-section` `.toolcard-section-label` `.toolcard-output` `.toolcard-output-error` · file content (write, edit, read): `.toolcard-path` `pre.toolcard-code` `.toolcard-code-del` `.toolcard-code-add` with `.hljs-*` roles. The running, done and failed states are chips (§3) |
 | Info / unknown row | `.info-row` `.info-row-text` |
+| Report row (§3 "report") | `details.disclosure.report` `.report-summary` `.report-from` (+ `.chip`, `.disclosure-preview`) `.report-body` `.report-meta` `.report-error` |
 | Banner | `.banner` `.banner-info` `.banner-warn` `.banner-error` `.banner-success` `.banner-icon` `.banner-main` `.banner-title` `.banner-body` `.banner-action` |
 | Streaming | `.live-dot` `.run-status` `.run-status-detail` `.jump-latest` |
 | Composer | `.composer` `.composer-inner` `.composer-row` `.composer-input` (with `.input.textarea`) `.composer-actions` `.composer-foot` `.composer-reason` `.composer-hint` `.button-label` `.composer-drop` + `.composer[data-drop="active\|reject"]` |
 | Model menu (§4c) | `.model-trigger` `.model-trigger-label` `.model-menu[popover]` `.model-menu-search` `.model-menu-list` `.model-menu-group` `.model-option` `[data-active]` `.model-option-check` `.model-option-id` `.model-option-provider` `.model-menu-empty` `.model-menu-foot` |
+| Mode menu (§4g) | `.mode-trigger` `.mode-trigger-label` `.model-menu.mode-menu[popover]` (+ `.model-menu-list[role=menu]` `.model-menu-group`) `.mode-option[role=menuitemradio\|menuitemcheckbox]` `.mode-option-check` `.mode-option-text` `.mode-option-id` `.mode-option-desc` `.mode-menu-foot` |
 | Context window (§4f) | `.context-gauge` `.context-label` `.context-value` `.context-pct` `.context-meta` · states `.context-warn` `.context-error` `.context-compacted` · `.session-head` is the named container `session-head` |
 | Markdown (§4e) | `.md` (on `.message-body`) `.md-table-wrap` `.md-code` `.md-code-head` `.md-code-lang` `.md-code-copy` `.md-image-link` · syntax: `.hljs-*` roles |
 | Slash commands (§4d) | `.composer-commands` (button) · `.command-menu` `.command-menu-head` `.command-list` `.command-option` `[data-active]` `.command-option-name` `.command-option-desc` `.command-option-location` `.command-menu-empty` `.command-menu-foot` · source badge: neutral `.chip` |
-| Images (§4b) | `.message-images` `.message-images-single` `.thumb` `.toolcard-images` · lightbox: `dialog.lightbox` `.lightbox-bar` `.lightbox-caption` `.lightbox-count` `.lightbox-stage` `.lightbox-img` `.lightbox-prev` `.lightbox-next` · attachments: `.attachments` `.attachment` `.attachment-rejected` `.attachment-thumb` `.attachment-icon` `.attachment-text` `.attachment-name` `.attachment-meta` |
+| Images (§4b) | `.message-images` `.message-images-single` `.thumb` `.toolcard-images` · lightbox: `dialog.lightbox` `.lightbox-bar` `.lightbox-caption` `.lightbox-count` `.lightbox-stage` `.lightbox-img` `.lightbox-prev` `.lightbox-next` · attachments: `.attachments` `.attachment` `.attachment-rejected` `.attachment-thumb` `.attachment-icon` `.attachment-text` `.attachment-name` `.attachment-meta` · path attachments: `details.disclosure.message-attachment` `.message-attachment-missing` `.message-attachment-name` `.message-attachment-meta` `.message-attachment-body` · path chips: `button.path-chip` `.path-chip-missing` `.path-chip-name` `.path-chip-note` |
 | Empty / loading | `.empty` `.empty-mark` `.empty-title` `.empty-body` `.empty-action` · `.skeleton` `.skeleton-line` `.skeleton-title` `.skeleton-row` |
 | Toast | `.toast-stack` `.toast` `.toast-body` |
 | Insights: entry (§10) | `.sidebar-foot` holding 2 × `.insights-row` (Usage → `#/usage`, Agents → `#/agents`) `.insights-row-text` · usage glance `.usage-glance` `.usage-glance-item` `.usage-glance-item-high` `.usage-glance-item-stale` `.usage-glance-tag` · aggregate chip `.chip.chip-count` (`a.chip` when it links) |
@@ -98,6 +101,7 @@ and `fill="none" stroke="currentColor"`.
 | `file.svg` | Tool card for `read` / `write` / `edit` |
 | `more.svg` | Tool card for any other tool |
 | `copy.svg` | Copy Session Path, Copy Output |
+| `archive.svg` | Archive Session / Unarchive Session (session head, web sessions only, §2 "Archiving"): a lidded box. New, drawn on the system grid |
 | `chevron-left.svg` / `chevron-right.svg` | Also: lightbox Previous Image / Next Image |
 | `check.svg` | The copy button's icon for 1.5s after a copy; the current-model mark |
 | `folder.svg` | Folder picker rows, cwd group label |
@@ -107,7 +111,7 @@ and `fill="none" stroke="currentColor"`.
 | `clock.svg` | "Reconnecting" reason |
 | `refresh.svg` | Refresh Sessions: an icon button in `.sidebar-head`, before New Session, with `aria-label="Refresh Sessions"`. While fetching it's `aria-disabled` and the list keeps its rows |
 | `arrow-right.svg` | Send |
-| `pause.svg` | Stop Turn |
+| `stop.svg` | Stop (composer): a rounded square |
 | `chat.svg` | Empty-state mark (no session selected) |
 | `attach.svg` | Attach Images (composer). New, drawn on the system grid |
 | `command.svg` | Commands button (composer, §4d): a `/` in a rounded square. New, drawn on the system grid |
@@ -123,7 +127,7 @@ and `fill="none" stroke="currentColor"`.
 
 Four pillars, all at once: calm, concrete, warm, and candid. The rules that matter most here:
 
-- Buttons use **Title Case** and name their object: `New Session`, `Create Session`, `Stop Turn`,
+- Buttons use **Title Case** and name their object: `New Session`, `Create Session`, `Stop`,
   `Copy Session Path`. All other text is sentence case.
 - Use digits, never spelled-out numbers ("3 sessions"). Relative time in lists ("2h ago",
   "yesterday", then "Mar 4"). A 24-hour clock in mono inside the transcript (`14:06`).
@@ -311,11 +315,12 @@ unfolded (≥768)                                  folded (<768)
 
 ### Regions: top and Archive
 
-`SessionSummary.origin` divides the list into two regions:
+`SessionSummary.origin` and `archived` divide the list into two regions (`isTopSession` in
+`src/lib/regions.ts`):
 
-- **Top region:** sessions where `live !== null || origin === "web"`, meaning the ones running
-  in a TUI right now or started from pi-web.
-- **Archive:** every other session.
+- **Top region:** sessions where `live !== null || (origin === "web" && !archived)`, meaning
+  the ones running in a TUI right now, or started from pi-web and not archived by the user.
+- **Archive:** every other session. A server that sends no `archived` counts as not archived.
 
 Both regions use exactly the same folder groups and rows described above. Each region groups by
 `cwd` independently, so one folder can appear in both.
@@ -323,7 +328,7 @@ Both regions use exactly the same folder groups and rows described above. Each r
 ```html
 <nav class="sidebar-list pane" aria-label="Session list">
   <!-- Top region. With 0 rows and no query, keep the head ("Live & web · 0") and replace the
-       groups with <p class="sidebar-region-note">0 sessions open in a TUI or started here. The archive below has the rest.</p>.
+       groups with <p class="sidebar-region-note">0 sessions open in a TUI, or started here and not archived. The archive below has the rest.</p>.
        With 0 rows while searching, omit the region. -->
   <section class="sidebar-region" aria-labelledby="r-top">
     <h2 class="sidebar-region-head" id="r-top">
@@ -361,8 +366,8 @@ search is active, each shows "· {hits} of {total}" for that region.
 
 **Empty top region.** With no query, the head stays ("Live & web · 0") and the groups are
 replaced by `.sidebar-region-note`: "0 sessions open in
-a TUI or started here. The archive below has the rest." The archive is also forced open (case 1
-below).
+a TUI, or started here and not archived. The archive below has the rest." The archive is also
+forced open (case 1 below).
 
 **Archive open/closed state.**
 
@@ -383,6 +388,26 @@ below).
 rows are ordered by the rules above. A session moves between regions in place on refresh, for
 example when its TUI closes and `live` becomes null. If it's the selected row, it keeps
 `aria-current`, and case 2 keeps the archive open.
+
+**Archiving.** Sessions started from pi-web (`origin === "web"`) can be archived by hand, so
+the top region doesn't keep every one of them forever.
+
+- **Where.** An Archive Session icon button (`archive.svg`) in the session head, before Copy
+  Session Path (§3), only on web sessions. Rows are links, so it can't live in them: a button
+  inside `<a>` is invalid and splits the row's single target. It's the only archive control in
+  the app, so it stays on a head under 520px and Copy Session Path goes instead (§3, §4f
+  "Width budget").
+- **What it does.** `POST /api/sessions/archive { path, archived }`, then a list refresh. The id
+  goes into `~/.pi/agent/pi-web/archived-sessions.json`; the session file is never written.
+  Toast: "Archived. Find it under Archive." The row moves to the Archive, and case 2 keeps it
+  visible while it's open.
+- **Undo.** On an archived session the same button is Unarchive Session. Toast: "Moved back to
+  Live & web."
+- **Live.** A live session stays on top whether archived or not, and still shows its Live chip.
+  Archiving one is refused: the button is `aria-disabled`, and its `title` says "Open in a TUI.
+  It stays on top while live." Unarchiving a live session works.
+- **Failure.** Toast: "Couldn't archive this session. {server message}". Nothing moves.
+- An archived session opens, chats, and searches exactly like any other row.
 
 **Accessibility.**
 
@@ -463,6 +488,7 @@ word never does.
       </p>
     </div>
     <span class="chip chip-accent chip-live"><i class="chip-dot"></i>Live</span>   <!-- live only -->
+    <button class="button button-icon button-ghost session-archive" aria-label="Archive Session">…archive…</button>  <!-- web sessions only -->
     <button class="button button-icon button-ghost" aria-label="Copy Session Path">…copy…</button>
   </header>
 
@@ -485,12 +511,44 @@ word never does.
 - **Model.** In chat sessions the model moves out of `.session-head-meta` into the model
   trigger (§4c), placed before Copy Session Path. Watch sessions keep it in the meta line.
 - **Copy Session Path.** Copies `path`. Its icon swaps to `check` for 1.5s and a toast says
-  "Copied path." Nothing else changes.
+  "Copied path." Nothing else changes. Hidden under 520px of head width on web sessions, to
+  make room for Archive (next bullet).
+- **Archive Session / Unarchive Session.** Web sessions only, just before Copy Session Path.
+  Moves the session between the sidebar regions (§2 "Archiving"). `aria-disabled` while live
+  and not archived. **Stays under 520px of head width; Copy Session Path goes instead** on web
+  sessions. At a 320px head (292px inside its 16px/12px padding), a chat head holds back 44,
+  the model trigger at its 88px cap, and one 44px icon button, with 3 gaps of 12px: 212px,
+  leaving the title 80px. A second icon button would take it to 24px, under its 72px floor, so
+  one of the two has to go. This button is the app's only archive control, so hiding it
+  removes archiving from phones and narrow panes. Copy Session Path is a desk convenience, and
+  it's back from 520px up (and always on external sessions).
 
 ### Transcript items (by `TranscriptItem.kind`)
 
 Render items in array order. The column is `.thread` (gap `--space-4`) inside `.transcript-inner`,
-centred at 72ch plus 96px. Messages cap at `--measure`.
+centred at `--measure` plus 96px (`--space-9`). Messages, tool cards, thinking, and thumbnails
+cap at `--measure`.
+
+**Column width.** `--measure` is 72ch (648px in Inter at 14.5px, where 1ch is 9px) at folded
+width, and it grows with the pane from unfolded up:
+`clamp(72ch, 100vw − --sidebar-width − --space-9 − 2 × --space-8, 110ch)`. That keeps 64px of
+margin on each side of the column until the 110ch cap (990px). The formula is under 72ch until
+the viewport reaches 1192px, so it grows without a jump. The banner, the composer
+(`.composer-inner`), the outline strip, and Jump to Latest follow the same token, so they stay
+aligned with the column.
+
+| Viewport | Pane | `.transcript-inner` | Message cap | Composer |
+|---|---|---|---|---|
+| 390 (folded) | 390 | 390 | 358 (pane minus padding) | 358 |
+| 768 | 448 | 448 | 416 (pane minus padding) | 416 |
+| 1024 | 704 | 704 | 648 (72ch) | 672 |
+| 1280 | 960 | 832 | 736 (~82ch) | 832 |
+| 1440 | 1120 | 992 | 896 (~100ch) | 992 |
+| 1920 | 1600 | 1086 | 990 (110ch, the cap) | 1086 |
+
+The cap is the reading limit. Prose in Inter runs about 7px a character, so 110ch is about 140
+characters, and the extra width mostly goes to code, diffs, and tool output. Everything up to
+1191px, folded included, is the same as the old fixed 72ch.
 
 **user.** A right-aligned tinted bubble.
 
@@ -594,6 +652,71 @@ Server `text` is used as-is. Put machine facts (ids, model names, counts) in `<c
 followed by a `.disclosure` labelled "Raw entry" that holds `<pre>` JSON. Never drop a row
 silently.
 
+**report.** Subagent reports, and every other long extension message. A subagent's final
+report (`custom_message`, customType `subagent-complete`) can run to 4000 characters of
+markdown. As a centered caption-size info row it filled the whole viewport with literal `###`
+and `**`. It's now a collapsed disclosure with the thinking disclosure's grammar: **one line**
+closed, and the markdown on the left when open.
+
+```html
+<details class="disclosure report">
+  <summary class="disclosure-summary report-summary">
+    <span class="icon icon-sm icon-twist" style="--icon: url(/icons/chevron-right.svg)" aria-hidden="true"></span>
+    <span class="visually-hidden">Report from </span>
+    <span class="report-from">ag_01 · orchestrator</span>
+    <span class="chip chip-success"><i class="chip-dot"></i>Success</span>
+    <span class="disclosure-preview">All requested checks pass. Report for items 5 and 6, plus the item 1 flag check.</span>
+  </summary>
+  <div class="report-body">                                   <!-- rendered only once opened -->
+    <p class="report-error">Error: spawn ENOENT</p>                <!-- only with an Error line -->
+    <p class="report-meta">Session <span class="text-mono">~/.pi/agent/sessions/…jsonl</span></p>
+    <div class="message-body md">…the worker's final output, as markdown…</div>
+    <p class="report-meta">Truncated at 4000 characters. Use agent_transcript for the rest.</p>  <!-- only if cut -->
+  </div>
+</details>
+```
+
+- **What's parsed** (server, `TranscriptItem.report`). The subagents extension writes the
+  header `### {id} ({name}) — {status}[ · task {outcome}]`, then an optional `Error:` line, an
+  optional `Session:` line, then the final output. Older builds wrote `Subagent {id} ({name})
+  finished its task.` / `was killed.`, followed by a `Final output:` label, and that parses
+  too. The `[Use agent_transcript for more.]` trailer becomes a flag and leaves the body.
+  Anything that doesn't parse still renders as a report, with no chip.
+- **Closed: exactly one line.** Who (`{id} · {name}` in mono, or the message's customType), the
+  status chip, then the body's first non-empty line, with markdown marks stripped (`#`, `**`,
+  backticks, list bullets, link syntax). It's truncated with an ellipsis and never wraps.
+- **Status chip.** Failure comes first, using the extension's own "failed" rule:
+
+  | Worker | Chip |
+  |---|---|
+  | An `Error:` line, task `error`, or status `error` | `.chip-error` "Failed" |
+  | Status `killed` | `.chip-warn` "Stopped" |
+  | Task `aborted` | `.chip-warn` "Aborted" |
+  | Task `success` | `.chip-success` "Success" |
+  | Status `done` (older reports) | `.chip-success` "Done" |
+  | `starting` / `running` / `waiting` / `stopping`, no task outcome | `.chip-info` with the status word |
+  | Anything else | neutral `.chip` with the status word |
+
+  "Waiting" with task `success` reads "Success". Waiting is the worker idling after a finished
+  task, and the task result is what you're scanning for.
+- **Open.** The body goes through the markdown renderer (§4e), capped at `--measure` and
+  left-aligned under the disclosure's `--color-border` rule. It's never centered, and never
+  caption size. Path chips work in it (§4b). Error is `--status-error` caption text. Session and
+  the truncation note are `--color-ink-muted` captions. The body is parsed only when the row is
+  first opened, so a transcript with dozens of reports stays cheap.
+- **Other long extension messages** (intercom messages, team questions, broker reports): any
+  `custom_message` longer than 200 characters or spanning lines gets the same row, with its
+  customType in place of the agent and no chip. Markdown, not `<pre>`: these payloads are
+  written as markdown (`**From …**`, `_id …_`), and the renderer never runs HTML. Short
+  one-liners stay `.info-row` (mode markers, compaction notes, and so on).
+- **AT.** The native `<summary>` is the control, and its text is the name: "Report from ag_01 ·
+  orchestrator Success All requested checks…". For non-agent messages the hidden prefix is
+  "Message: ". Keyboard is native.
+- **Tokens.** Summary: the disclosure's (`--fs-caption`, `--color-ink-muted`, `--control-sm`),
+  with the sender in `--font-mono` `--color-ink-2`, capped at 40% of the row. Body: the
+  `.disclosure-body` spacing (`--space-2` / `--space-4`, `--stroke-icon` rule) as a flex
+  column with a `--space-2` gap.
+
 **Timestamps.** Take them from `raw.timestamp` when present and format as 24-hour `HH:MM` in mono.
 If the date isn't today, prefix `Mar 4 `. Put the full ISO string in `title`.
 
@@ -679,6 +802,14 @@ Driven by `ChatServerMessage.event`.
 - **Tool card.** `--color-sunken`, `--r-lg`, and `--font-mono` / `--fs-mono`. Name `--fw-semibold`
   in `--color-ink`; arg `--color-ink-muted`. `pre` sits on `--color-surface` with `--r-sm`.
   Section labels use eyebrow styling (`--fs-micro`, `--ls-eyebrow`).
+- **Tool card file content.** `write` content, each `edit` pair ("Replaced" / "With", "· n of
+  m" when several), and `read` output are highlighted by file path (never auto-detected) in
+  `pre.toolcard-code`: back on `--color-sunken`, where the syntax colors were checked, with
+  `--color-ink` and no wrapping. The path shows above in `.toolcard-path` (mono, ink-muted).
+  Edit blocks add a 3px left rule: `.toolcard-code-del` in `--diff-del-ink`,
+  `.toolcard-code-add` in `--diff-add-ink`; the label carries the meaning. Copy Code on write
+  content and on each "With" block. Unknown extensions, errors, and args still streaming stay
+  plain.
 - **Info row.** `--fs-caption` in `--color-ink-muted`, with rules in `--color-border`.
 - **Banners.**
   - Info: `--status-info-bg` with a `--status-info` icon.
@@ -755,12 +886,12 @@ Driven by `ChatServerMessage.event`.
       <textarea class="input textarea composer-input" id="composer-input" rows="1"
                 placeholder="Ask pi to…" aria-describedby="composer-reason"></textarea>
       <div class="composer-actions">
-        <!-- streaming only; kept apart from Send by the gap -->
-        <button class="button button-destructive" type="button">
-          <span class="icon" style="--icon: url(/icons/pause.svg)" aria-hidden="true"></span><span class="button-label">Stop Turn</span>
-        </button>
         <button class="button button-primary" type="submit">
           <span class="icon" style="--icon: url(/icons/arrow-right.svg)" aria-hidden="true"></span><span class="button-label">Send</span>
+        </button>
+        <!-- streaming only; last in the row, after the primary -->
+        <button class="button button-destructive" type="button">
+          <span class="icon" style="--icon: url(/icons/stop.svg)" aria-hidden="true"></span><span class="button-label">Stop</span>
         </button>
       </div>
     </div>
@@ -787,12 +918,13 @@ Driven by `ChatServerMessage.event`.
 - **Send.** Sends `{type:"prompt"}`. Clear the textarea only after the socket accepts the message.
   Show the user bubble optimistically and resume auto-follow.
 - **While streaming.** Send stays available and its label changes to `Steer`, which sends
-  `{type:"steer"}`. The placeholder becomes "Steer the current turn…". `Stop Turn`
-  (`.button-destructive`, outlined, never filled) sends `{type:"abort"}`. Show it only while
-  streaming. `Esc` does **not** abort, to prevent accidental stops.
-- **After Stop Turn.** The status reads "Stopping…" until the turn settles. Then the run status
+  `{type:"steer"}`. The placeholder becomes "Steer the current turn…". `Stop`
+  (`.button-destructive`, outlined, never filled, one word so the button stays narrow) sends
+  `{type:"abort"}`. Show it only while streaming, after Steer. `Esc` does **not** abort, to prevent
+  accidental stops.
+- **After Stop.** The status reads "Stopping…" until the turn settles. Then the run status
   disappears, and an info row says "Stopped by you at `14:08`."
-- **Focus.** Returns to the textarea after Send, Steer, or Stop Turn.
+- **Focus.** Returns to the textarea after Send, Steer, or Stop.
 - **Drafts** are never discarded. The draft survives disable/enable, reconnects, and errors. Keep
   a draft per session path in memory, so switching sessions and coming back restores it.
 
@@ -819,20 +951,23 @@ read-only live case.
 Composer ground is `--color-surface` with a top border in `--color-border`, and padding
 `--space-3` / `--space-4` plus `env(safe-area-inset-bottom)`. The textarea uses `.input`: 44px
 min, `--r-md`, `--color-border-strong` border, and an accent focus border. Send is
-`.button-primary` (`--color-accent` / `--color-on-accent`). Stop Turn is `.button-destructive`
+`.button-primary` (`--color-accent` / `--color-on-accent`). Stop is `.button-destructive`
 (`--status-error` border and label, `--status-error-bg` on hover). The reason is `--fs-caption` in
 `--color-ink-2`, and the hint is `--color-ink-muted`. The hint is hidden under 768px.
+`.composer-inner` is centred at `--measure` plus `--space-9`, the transcript column's width, so it
+widens with the column on desktop (§3 "Column width"). The slash menu spans it, and the model
+menu keeps its own 360px cap.
 
 ### Accessibility
 
 - **Label.** The textarea has a real (visually hidden) `<label>`. The placeholder is never the
   label.
 - **Contrast.** On-accent on accent (Send) is 5.61 (dark) and 6.81 (light). The control border
-  (border-strong on surface) is 3.47 and 3.61, clearing 3:1. Error on surface (Stop Turn) is 5.42
+  (border-strong on surface) is 3.47 and 3.61, clearing 3:1. Error on surface (Stop) is 5.42
   and 6.01.
-- **Stop Turn placement.** It sits to the left of Send with an `--space-2` gap, which keeps
-  destructive away from the primary as far as a two-button row allows. It's the only time the two
-  appear together.
+- **Stop placement.** It sits to the right of Steer, last in the row, with an `--space-2` gap. One
+  word plus the square glyph makes it narrower than the primary it follows, so the destructive
+  action reads as the smaller, secondary one. It's the only time the two appear together.
 
 ---
 
@@ -910,10 +1045,126 @@ collapsed summary shows a count so the images aren't hidden.
 | User row | Image in your message | Image {i} of {n} in your message |
 | Tool result | Image from tool result {toolName} | Image {i} of {n} from tool result {toolName} |
 | Pending attachment (composer) | attachment | attachment |
+| Path attachment | Attachment {name} in your message | — (one image per unit) |
 
 `{toolName}` is the paired tool-call's name (`read`, `bash`, and so on). Without a pairing it's
 "result". The thumbnail button needs no `aria-label`, because its name comes from the image's
 alt. `aria-haspopup="dialog"` tells AT that it opens something.
+
+### Path attachments
+
+When you paste an image into pi's terminal UI, pi writes it to `/tmp/pi-clipboard-<uuid>.png`
+(`/tmp/pi-wsl-clip-<uuid>.png` under WSL) and puts that **path in the message text**. The
+image never reaches the session file. Replies, tool output and subagent reports then quote
+the same path. The server finds these paths in user, assistant-text, info (custom messages,
+such as subagent reports) and tool-result rows, and sends them as `TranscriptItem.attachments`.
+On a user row each path gets a collapsed unit instead of a raw path in the bubble. Everywhere
+else it becomes an inline chip or a tool-card section (see **Other rows** below).
+
+```html
+<article class="message message-user" aria-label="You, 14:06">
+  <div class="message-head">…</div>
+  <ul class="message-images">…stored images, if any…</ul>
+  <details class="disclosure message-attachment">
+    <summary class="disclosure-summary" title="/tmp/pi-clipboard-a587….png">
+      <span class="icon icon-sm icon-twist" style="--icon: url(/icons/chevron-right.svg)" aria-hidden="true"></span>
+      <span class="icon icon-sm" style="--icon: url(/icons/image.svg)" aria-hidden="true"></span>
+      <span class="disclosure-label">Attachment</span>
+      <span class="message-attachment-name">pi-clipboard-a587….png</span>
+      <span class="message-attachment-meta">· 240 KB</span>
+    </summary>
+    <div class="message-attachment-body">          <!-- rendered only once opened -->
+      <ul class="message-images message-images-single" aria-label="1 image">
+        <li><button class="thumb" type="button" aria-haspopup="dialog">
+          <img src="/api/attachment?path=%2Ftmp%2Fpi-clipboard-a587….png" alt="Attachment pi-clipboard-a587….png in your message" loading="lazy" decoding="async">
+        </button></li>
+      </ul>
+    </div>
+  </details>
+
+  <!-- the file is gone from /tmp: a static row, not a disclosure -->
+  <div class="message-attachment message-attachment-missing" title="/tmp/pi-clipboard-fc03….png">
+    <span class="icon icon-sm" style="--icon: url(/icons/image.svg)" aria-hidden="true"></span>
+    <span class="disclosure-label">Attachment</span>
+    <span class="message-attachment-name">pi-clipboard-fc03….png</span>
+    <span class="message-attachment-meta">· No longer in /tmp</span>
+  </div>
+
+  <div class="message-body message-text">{text without pi's path}</div>
+</article>
+```
+
+- **Which paths.** An image file directly in `/tmp` (`.png`, `.jpg`, `.jpeg`, `.webp`, `.gif`),
+  standing alone as a word. Subfolders of `/tmp` and every other folder stay plain text.
+- **Only concrete names, never code.** A path counts only when its full file name is written
+  out. `/tmp/pi-clipboard-*.png`, `/tmp/pi-clipboard-<uuid>.png` and `…`-shortened names are
+  talk *about* the pattern, so they stay text. So does any path inside a markdown code span
+  or a fenced block (``` or ~~~, even if the fence is never closed). Our own reports quote the
+  pattern all the time, and a chip on a sentence about it would be wrong. A chip for a file
+  that no longer exists is fine.
+- **Cap.** At most 8 different paths per row get a unit or chip. Later ones stay text. The
+  server checks each one once, and never looks at anything but the paths it found.
+- **The text.** pi's own clipboard paths come out of the bubble, since the unit stands in for
+  them. A `/tmp` image path you typed yourself stays in the text (it's part of your sentence)
+  and still gets a unit. If nothing is left, there's no bubble (same rule as thumbnails). The
+  session file, and the text the model saw, never change.
+- **Order.** Stored images, then path attachments in the order they appear, then the bubble.
+  All right-aligned.
+- **Collapsed by default.** Pasted screenshots are big, and old ones are usually gone. The
+  image is fetched only when you open the unit, from `GET /api/attachment`. The browser never
+  reads `/tmp` itself.
+- **Open.** It shows the image as a single thumbnail (the `.message-images-single` rules). A
+  click opens the lightbox, scoped to that one image.
+- **Gone.** `/tmp` gets cleaned, so this is the usual case for older sessions. The unit becomes a
+  static row: no twist, no request, and it says "No longer in /tmp". A file over the 20MB
+  serving cap says "Too large to show · {size}" instead.
+- **Tokens.** The row uses the disclosure summary's metrics (`--control-sm` min height,
+  `--fs-caption`, `--color-ink-muted`), with the summary's hover ground hanging off the right
+  edge instead of the left. The name is `--font-mono` in `--color-ink-2`, truncated, and the
+  full path is in `title`. The size is tabular. The opened body sits `--space-2` below the
+  summary.
+- **AT.** The native `<summary>` is the control. Its name reads "Attachment {name} · {size}".
+  The thumbnail's alt is "Attachment {name} in your message", and that's also the lightbox
+  caption.
+
+**Other rows.** The path stays where it was written, so the prose still reads. It shows as a
+compact chip, never as the raw long path.
+
+```html
+<!-- in a reply (markdown) or an info row (subagent report), in place of the path -->
+<p>The screenshot at
+  <button type="button" class="path-chip path-chip-missing" data-path-chip="/tmp/pi-clipboard-a587….png"
+          aria-label="Copy path /tmp/pi-clipboard-a587….png, no longer in /tmp"
+          title="/tmp/pi-clipboard-a587….png · No longer in /tmp. Select to copy the path.">
+    <span class="icon icon-sm" style="--icon: url(/icons/image.svg)" aria-hidden="true"></span>
+    <span class="path-chip-name">pi-clipboard-a587….png</span>
+    <span class="path-chip-note">· No longer in /tmp</span>
+  </button>
+  shows the minimap.</p>
+
+<!-- the file still exists: no note; opens the lightbox -->
+<button type="button" class="path-chip" data-path-chip="…" data-available aria-haspopup="dialog"
+        aria-label="Open image pi-clipboard-a587….png" title="/tmp/pi-clipboard-a587….png">…icon, name…</button>
+```
+
+- **Chip.** One line, inline with the text. Mono `--fs-mono` in `--color-ink-2` on
+  `--color-sunken`, with a 1px `--color-border` edge (`--color-border-strong` on hover) and
+  `--r-sm`. pi's clipboard names are shortened to the prefix and 4 characters of the uuid
+  (`pi-clipboard-a587….png`). Other names show whole and truncate. The full path is always in
+  `title`.
+- **Available.** A click opens the lightbox on that one image. The alt and caption are
+  "Attachment {name}". The cursor is `zoom-in`.
+- **Gone.** The chip adds "· No longer in /tmp" in `--fs-caption`, with the name in
+  `--color-ink-muted`. A click copies the full path ("Copied path."), and the cursor is `copy`.
+- **Where.**
+  - **Replies:** chips are placed while the markdown renders, in text only, never in code.
+  - **Info rows** (custom messages, subagent reports): plain text with chips.
+  - **Tool cards:** the Output `<pre>` stays verbatim, since it's the record of what ran, and
+    the card is collapsed anyway. After Output (and Images), an "Attachments · {n}" section
+    lists the same units a user row gets.
+- **Streaming.** While a reply streams, its paths are plain text. Chips appear when the finished
+  row arrives from the server: the refetch when the turn settles, a hello, or a watch append.
+  Nothing jumps mid-stream.
 
 ### Lightbox
 
@@ -1003,7 +1254,7 @@ are rejected on the client before they're sent. If the server enforces a differe
 the numbers here and in the copy deck together.
 
 **Placement at 320px** (and anywhere the composer is under 480px wide). The row is Attach (44) +
-textarea + actions. Under 480px of composer width, `Send`, `Steer`, and `Stop Turn` drop to
+textarea + actions. Under 480px of composer width, `Send`, `Steer`, and `Stop` drop to
 icon-only 44px squares: their word sits in `.button-label`, which becomes visually hidden and
 stays the accessible name. That's why every composer button wraps its word in
 `<span class="button-label">`. At 320 while streaming, the textarea keeps 288 − 3 × 44 − 3 × 8 =
@@ -1221,7 +1472,7 @@ When the menu closes without a choice, focus returns to the trigger.
 | **Load failed** | normal | `.banner.banner-error`: **Couldn't load models.** Your current model is unchanged. Action: `<button class="button button-sm">Retry</button>` |
 | **0 models** | normal | `<p class="model-menu-empty">` "0 models have credentials. Log in with `pi` in a terminal to add one." |
 | **No matches** | normal | `<p class="model-menu-empty">` "0 models match “{query}”." |
-| **Blocked: agent running** (`isStreaming`) | enabled, so pressing it shows the reason | `.banner.banner-info`: **Model changes wait until this turn finishes.** Stop Turn or wait, then pick one. Every option gets `aria-disabled="true"`, and the list stays browsable. If a turn starts while the menu is open, the banner appears right away |
+| **Blocked: agent running** (`isStreaming`) | enabled, so pressing it shows the reason | `.banner.banner-info`: **Model changes wait until this turn finishes.** Stop or wait, then pick one. Every option gets `aria-disabled="true"`, and the list stays browsable. If a turn starts while the menu is open, the banner appears right away |
 | **Blocked: composer disabled** (connecting, reconnecting, a foreign writer, the TUI took over) | enabled | Same banner, with the current `.composer-reason` text as the title, and options disabled |
 | **Pending** (after choosing, until `{type:"model"}`) | `aria-busy="true"` and `aria-disabled="true"`. The label shows the *target* id, with `<span class="live-dot"></span>` before it. It isn't faded: `aria-busy` restores full opacity, because pending is work in progress, not an unavailable control | Closed. Focus stays on the trigger |
 | **Switched** (`{type:"model"}` arrives) | The label shows the echoed model, and the dot is removed | — |
@@ -1450,10 +1701,10 @@ discoverability. It sits in `.composer-row` **immediately right of Attach Images
 - **Width budget.** Attach 44, Commands 44, and Send collapse to 44 under 480px of composer
   width (§4b), with 8px gaps:
 
-  | Composer width | Idle textarea | Streaming (adds Stop Turn 44) |
+  | Composer width | Idle textarea | Streaming (adds Stop 44) |
   |---|---|---|
   | 390 viewport (358 composer) | about 202px | about 150px |
-  | 320 viewport (288 composer) | 132px | **Commands hides** (under 340px of composer width while Stop Turn shows), so the textarea keeps 132px. `/` still opens the menu |
+  | 320 viewport (288 composer) | 132px | **Commands hides** (under 340px of composer width while Stop shows), so the textarea keeps 132px. `/` still opens the menu |
 
 ### Announcements
 
@@ -1538,7 +1789,9 @@ terminal UI" in place of the description on line 2, and keep the row choosable.
 
 - **user** text is plain, keeping `.message-text` and `white-space: pre-wrap`;
 - **thinking** is plain inside its disclosure;
-- **tool args and results** stay `<pre>` in mono.
+- **tool args and results** stay `<pre>` in mono, except file content (`write` content, `edit`
+  before/after, `read` output), which is highlighted by its path with the theme below (§4d
+  tool card).
 
 The rendered content lives in one scope class on the bubble, and `.message-text` is dropped
 there:
@@ -1602,6 +1855,13 @@ Wrap every fenced block like this:
 - **Language label.** The first word of the fence's info string, lowercased, and shown in
   uppercase eyebrow type. No info string means "text".
 - **Highlighting.**
+  - Languages: the `highlight.js/lib/common` set plus clojure, cmake, dart, dockerfile, elixir,
+    erlang, haskell, http, latex, nix, powershell, protobuf and scala.
+  - The fence word goes through one alias table first (`resolveLanguage` in
+    `src/lib/markdown.ts`): `ts`/`tsx` → typescript, `js`/`jsx`/`mjs` → javascript, `c++`/`hpp`
+    → cpp, `c#`/`cs` → csharp, `sh`/`zsh`/`shell` → bash, `console` → shell (prompt
+    transcripts), `yml` → yaml, `html`/`vue`/`svelte` → xml, `toml` → ini, `jsonc` → json,
+    `text`/`txt`/none → plaintext (never highlighted). The label still shows the raw word.
   - Highlight only when `hljs.getLanguage(lang)` exists. Otherwise, escape the text and add no
     `hljs-*` spans.
   - Don't use auto-detect: it guesses wrong on short snippets, and a wrong guess looks worse
@@ -1624,7 +1884,7 @@ Wrap every fenced block like this:
 
 The skill forbids the accent for syntax ("a keyword is not an action"). So the theme uses
 weight and ink for structure, plus three status hues as *roles*. Those hues only ever appear
-inside `.md-code`, so they never read as status.
+inside `.md-code` and `.toolcard-code`, so they never read as status.
 
 | Role | highlight.js classes | Style | On sunken, dark / light |
 |---|---|---|---|
@@ -1799,15 +2059,22 @@ floor, because these rules contract):
 Order of sacrifice: the context label and fraction, then the context's place in the head, then
 the cwd, then the model label's length. The title is the last thing to shrink.
 
-Two more head rules cover every head, not just chat:
+Three more head rules cover every head, not just chat:
 
 - **Aggregate chip.** Under 520px of head width, the head's aggregate `Team · {n} working` /
   `{n} working` link chip (§10) is hidden. It repeats the sidebar row's chip and the Agents
   foot row. Before this rule, a watched live session with a team at 320 had back, Team chip,
   Live, and copy, and that left the title block about 0px wide.
+- **Archive over copy.** Under 520px of head width, on web sessions, Copy Session Path (the
+  icon button right after `.session-archive`) is hidden and Archive stays, since it's the only
+  archive control. With both, the title would get 24px at 320; with one, it gets 80px (numbers
+  in §3, "Archive Session / Unarchive Session").
 - **Floor.** `.session-head-main` has `min-width: 72px`. Whatever else lands in the head later,
   the title and meta line can't collapse to nothing. Extra chips overflow before the title
   disappears, and each new head chip needs its own narrow rule.
+- **Mode trigger** (chat, §4g). Under 520px of head width it's icon-only: 44px, with its name in
+  `aria-label`. Under 360px it's hidden, since the title can't spare 44px more (at 360 the title
+  keeps about 76px). There, `/mode {name}` in the composer still switches.
 
 ### Tokens
 
@@ -1816,9 +2083,136 @@ Two more head rules cover every head, not just chat:
 
 ---
 
+## 4g · Mode menu
+
+pi's mode extension (`pi-config/extensions/mode`) has one **major mode**, `normal` or
+`claude-heavy`, and any set of **minor modes** (today `align`). Both live in one global file,
+`~/.pi/agent/mode.json`. The menu switches them from the chat header. The switch is global:
+every chat this server has open follows it **from its next message**. You never start a new
+chat or reconnect. New pi sessions, web or terminal, read the file when they start.
+
+### Trigger
+
+In chat sessions it sits right before the model trigger (§4c). A watched (TUI) session shows
+nothing: the TUI keeps its mode in memory, so we can't say what it's using.
+
+```html
+<button class="button button-ghost mode-trigger" type="button" aria-haspopup="menu"
+        aria-expanded="false" aria-controls="mode-menu"
+        aria-label="Mode: claude-heavy · align" title="Mode: claude-heavy · align">
+  <span class="icon icon-sm" style="--icon: url(/icons/worker.svg)" aria-hidden="true"></span>
+  <span class="mode-trigger-label">claude-heavy · align</span>
+  <span class="icon icon-sm" style="--icon: url(/icons/chevron-down.svg)" aria-hidden="true"></span>
+</button>
+```
+
+- **Label.** The major mode, then each minor mode on, joined with " · ", in mono. It caps at
+  200px and truncates, with the full text in `title`.
+- **Name.** `aria-label` repeats the label with "Mode: " in front, so it survives when the label
+  hides. A pending switch adds ", applies after this turn".
+- **Narrow head.** Icon-only under 520px, and hidden under 360px (§4f).
+
+### Menu
+
+It uses the model menu's popover shell (`.model-menu`): a `[popover="auto"]` right-aligned under
+the trigger, and a bottom sheet under 768px. The list inside is an ARIA **menu**. A listbox
+doesn't fit here: there's nothing to search, and it mixes one exclusive choice with independent
+toggles, which is exactly what `menuitemradio` and `menuitemcheckbox` are for.
+
+```html
+<div class="model-menu mode-menu" id="mode-popover" popover="auto">
+  <div class="banner banner-info" role="status">…Applies after this turn.…</div>   <!-- only then -->
+  <div class="model-menu-list" role="menu" id="mode-menu" aria-label="Mode">
+    <div class="model-menu-group" role="group" aria-labelledby="mode-group-major">
+      <div class="list-group-label" id="mode-group-major">Major mode</div>
+      <div class="mode-option" role="menuitemradio" aria-checked="false" tabindex="-1">
+        <span class="icon icon-sm mode-option-check" style="--icon: url(/icons/check.svg)" aria-hidden="true"></span>
+        <span class="mode-option-text"><span class="mode-option-id">normal</span>
+          <span class="mode-option-desc">Pi as usual</span></span>
+      </div>
+      <div class="mode-option" role="menuitemradio" aria-checked="true" tabindex="0">…claude-heavy…</div>
+    </div>
+    <div class="model-menu-group" role="group" aria-labelledby="mode-group-minor">
+      <div class="list-group-label" id="mode-group-minor">Minor modes</div>
+      <div class="mode-option" role="menuitemcheckbox" aria-checked="true" tabindex="-1">…align…</div>
+    </div>
+  </div>
+  <p class="mode-menu-foot"><span class="text-mono">strict: off</span> · Applies to every web chat and
+    new pi sessions. Open terminal sessions keep theirs until <code>/reload</code>.</p>
+</div>
+```
+
+- **Choosing.** Picking a major mode closes the menu and returns focus to the trigger, like the
+  terminal palette. Toggling a minor mode keeps the menu open, so you can set several. While the
+  switch is saving, the rows are `aria-disabled`.
+- **Checked.** A checked row gets `--color-accent-tint` and the check. The words carry the state
+  too, since `aria-checked` is announced.
+- **strict** is shown read-only in the foot. Change it in a terminal with `/mode strict on|off`.
+- **Keyboard.** Roving `tabindex`, with real focus on the rows, so the standard focus ring shows.
+  - On open, focus goes to the checked major mode.
+  - `↑` / `↓` move and wrap. `Home` / `End` jump.
+  - `Enter` or `Space` chooses or toggles.
+  - `Esc` closes (native) and focus returns to the trigger. `Tab` closes and moves on.
+- **Motion.** The same single fade as §4c.
+
+### How a switch reaches open chats
+
+The server writes `mode.json` first: it reads the file, changes only `mode` and `minorModes`,
+and saves it atomically, so `strict` and the shortcuts are never dropped. Then each open chat
+follows it:
+
+- **A chat that has run** calls the extension's own `/mode` handler directly. That's the same
+  code the terminal runs, so it leaves the same **marker** in the transcript: an info row
+  "Mode → claude-heavy" or "Minor mode: align on". The command text never goes to the model.
+  There's no reload, so the chat's subagent workers keep running.
+- **A chat that was never prompted** reloads its runtime instead. That writes nothing to its
+  file, and no workers can exist yet.
+- **Mid-turn.** The running turn keeps the old mode, and so do messages queued during it
+  (follow-ups and steers join that turn). The chat's menu shows an info banner, "Applies after
+  this turn.", until the turn settles.
+- **Can't switch.** If the mode extension isn't loaded in that chat, or another program wrote the
+  session, the chat isn't touched. Its menu shows a warn banner, "Applies to new chats only."
+- **A terminal switched it.** The server watches `mode.json`, so open web chats follow a switch
+  made in a TUI too. Open terminal sessions don't watch the file: they pick up a web switch on
+  `/reload`. The last writer wins.
+
+### States
+
+| State | Shows |
+|---|---|
+| Idle | Trigger label, and the current rows checked |
+| Saving | Rows `aria-disabled` (the cursor is `progress`) |
+| Mid-turn switch | Info banner "Applies after this turn." (trigger name adds it too) |
+| Chat can't switch | Warn banner "Applies to new chats only." |
+| Save failed | Error banner "Couldn't switch the mode." with the reason. The mode is unchanged |
+| Load failed | Error banner "Couldn't load the modes." |
+
+### Tokens
+
+Trigger: like `.model-trigger` (`--font-mono`, `--fs-mono`, `--color-ink-2`, sunken fill while
+open, icons `--color-ink-muted`). Rows: `--control-md` min height, `--space-2` / `--space-3`
+padding, id in `--font-mono` `--color-ink`, description `--fs-caption` `--color-ink-muted`,
+checked `--color-accent-tint`, focus `--focus-ring` inset. Foot: `--fs-caption`
+`--color-ink-muted` over a `--color-border` rule.
+
+### Rejected
+
+- **A segmented control in the composer.** It reads as a per-message option, not a global
+  switch, and it costs composer width at 320px.
+- **A settings page.** That's not first-class, and it's far from the chat it affects.
+- **`/mode` only.** It works today (the slash menu lists it), but nobody finds it, and it can't
+  show the current mode.
+- **Reloading every open chat.** A runtime reload stops that chat's subagent workers, which
+  would end claude-heavy teams mid-task.
+
+---
+
 ## 5 · New Session dialog
 
 Triggered by `New Session` (sidebar head, and the empty states).
+
+The folder is **chosen, never typed**. The Folder field is a button showing the chosen path. It
+opens a folder picker in place, under the field, inside the same dialog.
 
 ```html
 <!-- Portal to body -->
@@ -1828,15 +2222,55 @@ Triggered by `New Session` (sidebar head, and the empty states).
   <form class="modal-body" id="ns-form">
     <div class="field">
       <label class="field-label" for="ns-cwd">Folder</label>
-      <input class="input input-mono" id="ns-cwd" value="/home/user/webapps/pi-web"
-             aria-describedby="ns-cwd-hint ns-cwd-error" spellcheck="false" autocomplete="off">
+      <button type="button" class="input input-mono folder-field" id="ns-cwd" title="/home/user/webapps/pi-web"
+              aria-expanded="true" aria-controls="ns-picker" aria-describedby="ns-cwd-hint ns-cwd-error">
+        <span class="folder-field-value truncate">~/webapps/pi-web</span>  <!-- none yet: .folder-field-empty "Choose a folder" -->
+        …chevron-down, class="icon icon-sm icon-twist" (turns 180° while open)…
+      </button>
       <span class="field-hint" id="ns-cwd-hint">pi runs in this folder and can read and change files in it.</span>
       <span class="field-error" id="ns-cwd-error"><!-- on error only --></span>
     </div>
+
+    <!-- Open picker (replaces the recent list while open) -->
+    <div class="folder-picker" id="ns-picker" role="group" aria-label="Choose a folder">
+      <div class="folder-picker-bar">
+        <nav class="folder-crumbs" aria-label="Path">
+          <ol>
+            <li><button type="button" class="folder-crumb" title="/home/user">~</button></li>
+            <li><button type="button" class="folder-crumb" title="/home/user/webapps">webapps</button></li>
+            <li><span class="folder-crumb-current" aria-current="location">pi-web</span></li>
+          </ol>
+        </nav>  <!-- outside $HOME the first crumb is "/" (li.folder-crumbs-root); Recent view: one current crumb "Recent folders" -->
+        <button type="button" class="button button-ghost">Home</button>
+        <button type="button" class="button button-ghost" aria-pressed="false">Recent</button>
+      </div>
+      <div class="search">
+        …search icon…
+        <input class="input" type="text" role="combobox" aria-label="Filter folders in pi-web"
+               aria-expanded="true" aria-controls="ns-picker-list" aria-autocomplete="list"
+               aria-activedescendant="ns-pf-0" aria-describedby="ns-picker-note" placeholder="Filter">
+      </div>
+      <ul class="list folder-list folder-picker-list" id="ns-picker-list" role="listbox" aria-label="Subfolders of pi-web">
+        <li id="ns-pf-0" class="list-row list-row-interactive" role="option" aria-selected="true" title="/home/user/webapps/pi-web/docs">
+          …folder… <span class="list-title truncate">docs</span> …chevron-right…
+        </li>
+        <li id="ns-pf-1" class="list-row list-row-interactive" role="option" aria-selected="false" title="…">
+          …folder… <span class="list-title truncate">shared</span> <span class="folder-picker-link">link</span> …chevron-right…
+        </li>
+      </ul>
+      <p class="folder-picker-note" id="ns-picker-note" aria-live="polite"><!-- state text, or empty (hidden) --></p>
+      <div class="folder-picker-foot">
+        <label class="folder-picker-hidden"><input type="checkbox"> Show hidden folders</label>
+        <span class="modal-spacer"></span>
+        <button type="button" class="button">Use This Folder</button>
+      </div>
+    </div>
+
+    <!-- Closed picker: the recent list, as before -->
     <div class="field">
       <span class="field-label" id="ns-recent">Recent folders</span>
       <ul class="list folder-list" role="listbox" aria-labelledby="ns-recent">
-        <li class="list-row list-row-interactive" role="option" aria-selected="true" tabindex="-1">
+        <li class="list-row list-row-interactive" role="option" aria-selected="true" tabindex="0">
           …folder… <span class="list-title truncate">~/webapps/pi-web</span>
         </li>
       </ul>
@@ -1850,27 +2284,98 @@ Triggered by `New Session` (sidebar head, and the empty states).
 </div>
 ```
 
-- **Prefill.** Use the `cwd` of the open session, else the most recently active session's `cwd`.
-  **Recent folders** are the distinct `cwd`s from the list, most recently active first, up to 20
-  entries. Show them with `~`; the full path goes in `title`.
-- **Picking.** Clicking a recent folder, or pressing Enter/Space on it, fills the input.
-  Double-click fills the input and submits. ArrowUp/ArrowDown from the input moves the active
-  option, tracked with `aria-activedescendant` on the input. This makes the input plus list a
-  combobox-lite, and it isn't required for the MVP; plain click and Tab also work.
-- **Submitting.** Enter in the input submits. Create Session posts `{cwd}`. While pending, the
-  button shows "Creating…" and is `aria-disabled`.
+**Surface: an in-place panel, not a nested dialog.** The picker opens under the field, inside
+the dialog that's already open. The chosen path, the breadcrumb, and Create Session stay in one
+view, so there's no second scrim, no second focus root, and no sheet on a sheet at folded width.
+We rejected a nested `.modal` (the §5 dialog opening another dialog): it hides the dialog it
+belongs to, and on a phone it becomes a bottom sheet over a bottom sheet. A §4c-style popover
+doesn't fit either, because the picker needs a filter, a scrolling 44px list, and a breadcrumb,
+and a popover inside a sheet would clip them.
+
+**No free typing.** The user asked for it gone, so there is no path input and no paste
+affordance. Every folder is reached by clicking or by the keyboard, and the filter only narrows
+the current list. A folder with no readable route to it (say, an unreadable parent) can't be
+chosen here. Start that session from a TUI.
+
+- **Prefill.** The `cwd` of the open session, else the most recently active session's `cwd`. The
+  field shows it with `~`, and the full path goes in `title`. With no prefill it reads "Choose a
+  folder" in `--color-ink-muted`, and Create Session is `aria-disabled`.
+- **The choice is where you are.** Opening a folder in the picker makes it the chosen folder,
+  and the field updates as you go. Create Session creates the session in the folder the field
+  shows, with the picker open or closed. "Use This Folder" and Enter on an empty list just close
+  the picker.
+- **Opening.** Clicking the field, or Enter/Space on it, toggles the picker (`aria-expanded`). It
+  opens at the chosen folder, or at `$HOME` when there is none. Focus goes to the filter.
+- **Listing.** `GET /api/folders?path=` (§REST in `shared/protocol.ts`) returns subfolders only,
+  never files: dot folders only with "Show hidden folders", symlinks to folders marked "link",
+  names A to Z case-insensitively, at most 500. No path means `$HOME`. The first answer for
+  `$HOME` also seeds `home()` when the session list couldn't.
+- **Navigating.** Click a row, or Enter on the active row, to open it. Go up by clicking a
+  breadcrumb segment, or with Backspace or ← while the filter is empty. **Home** opens `$HOME`.
+  **Recent** (`aria-pressed`) swaps the list for the folders sessions already use, and opening one
+  jumps there. Pressing Recent again goes back to the folder you were in.
+- **Filter.** Narrows the current list as you type (case-insensitive substring). It clears on
+  every navigation.
+- **Recent folders, picker closed.** The distinct session `cwd`s, most recently active first, up
+  to 20. Click or Enter/Space picks one, and double-click picks it and submits, as before. The list
+  is hidden while the picker is open, since Recent is there.
+- **Submitting.** Create Session posts `{cwd}`. While pending, the button shows "Creating…" and
+  is `aria-disabled`. Enter inside the picker never submits.
 - **On success.** Close the dialog, navigate to the new session, and focus the composer.
 - **On a server 4xx.** Show `.field-error` with the server's message, or "That folder doesn't
-  exist. Pick one that does." Set `aria-invalid="true"` on the input and move focus back to it.
-  The dialog stays open with the value intact.
+  exist. Pick one that does." Set `aria-invalid="true"` on the field, close the picker, and move
+  focus to the field. The dialog stays open with the choice intact.
 - **Other errors.** Show a `.banner.banner-error` inside `.modal-body`: "Couldn't create the
   session. Nothing was written. Try again."
-- **Focus.** Trap focus inside the dialog, and put initial focus on the input with its value
-  selected. `Esc`, Cancel, and a scrim click all close it. On close, focus returns to the button
-  that opened it. Below 768px the same markup renders as a bottom sheet.
-- **Tokens.** Modal `--color-surface`, `--r-xl`, `--shadow-3`, border `--color-border`, and
-  scrim `--scrim`. Title `--fs-heading-m`. Folder list `--color-bg` with `--r-md`, rows are
-  `--row-height` in `--font-mono`, and the selected row is `--color-accent-tint`.
+- **Focus.** The dialog traps focus, with initial focus on the Folder field. While the picker is
+  open it traps focus inside itself. Esc closes the picker only, and focus returns to the field.
+  Esc with the picker closed, Cancel, and a scrim click close the dialog, and focus returns to
+  the button that opened it. Below 768px the same markup renders as a bottom sheet.
+
+**Picker states** (in `.folder-picker-note`, `aria-live="polite"`; empty when there's nothing to
+say):
+
+| State | Note |
+|---|---|
+| Loading | Loading folders… (the list is `aria-busy`) |
+| No subfolders | No subfolders in {name}. You can still start the session here. |
+| Filter matches nothing | 0 of {n} match “{filter}”. |
+| Over 500 | Showing the first 500 folders, A to Z. Filter to narrow them. |
+| 403 | pi-web can't read this folder. Pick another one. |
+| 404 (e.g. a deleted prefill) | This folder doesn't exist. Pick another one. |
+| Other failure | Couldn't list this folder. {server message} |
+| Recent, none yet | No recent folders yet. Sessions you start add theirs here. |
+
+**Keyboard** (focus stays in the filter; the listbox follows `aria-activedescendant`):
+
+| Key | Does |
+|---|---|
+| ↓ / ↑ | Next / previous folder (stops at the ends) |
+| Home / End | First / last folder (with an empty list they move the caret) |
+| Enter | Open the active folder; with no rows, close the picker |
+| Backspace, ← | Up one folder, only while the filter is empty |
+| Esc | Close the picker (the dialog stays) |
+| Tab / Shift+Tab | Cycle through the crumbs, Home, Recent, the filter, Show hidden folders, and Use This Folder |
+
+**Accessibility.**
+
+- The listbox is `role="listbox"` driven from a `role="combobox"` filter, not a `tree`. You see
+  one level at a time and move between levels by opening folders, which is a list with
+  navigation. A tree would claim expandable nodes and ← / → semantics that this doesn't have.
+- The active option is `aria-selected="true"` (selection follows focus) and scrolls into view.
+- The breadcrumb is `<nav aria-label="Path">` with the current folder as
+  `aria-current="location"` and not a button.
+- The field is a `<button>` labelled by the `<label for>` and described by the hint and error.
+- Every control is at least 44px: crumbs (`--tap-min` wide and tall), Home, Recent, the rows,
+  the checkbox row, and Use This Folder.
+
+**Tokens.** Modal `--color-surface`, `--r-xl`, `--shadow-3`, border `--color-border`, and scrim
+`--scrim`. Title `--fs-heading-m`. Field: `.input` with `--font-mono`. Picker `--color-sunken`,
+`--r-lg`, `--color-border`, padding `--space-3`, gap `--space-2`. Crumbs `--font-mono` /
+`--fs-mono` in `--color-accent` (links), with the current one `--color-ink` `--fw-semibold` and
+`/` separators in `--color-ink-muted`. Lists `--color-bg` with `--r-md`, rows `--row-height` in
+`--font-mono`, and the active or selected row `--color-accent-tint`. Note `--fs-caption` in
+`--color-ink-2`. "link" `--fs-caption` in `--color-ink-muted`.
 
 ## 6 · Extension dialogs (`ui_request`, optional in MVP)
 
@@ -1895,7 +2400,7 @@ one is open queues behind it.
 | App shell uses `@media`, not a container query | The shell is the window. It's the same exception the skill makes for `.toast-stack` |
 | No rail and no bottom bar, and no three-pane desktop band | pi-web has one destination. The skill's "sidebar left, main right" at ≥768 is kept |
 | `.modal` restyles itself into a sheet under 768 | The skill requires a sheet at folded width. Doing it in CSS means the frontend writes one markup |
-| New product components: `.app`, `.sidebar-*`, `.search`, `.session-*`, `.transcript*`, `.disclosure*`, `.toolcard*`, `.info-row`, `.run-status`, `.jump-latest`, `.composer*`, `.folder-list`, `.brand`, `.live-dot`, `.chip-live`, `.icon`, `.skip-link`, `.truncate`, `.banner-main/-action`, `.message-time/-text`, `.modal-spacer` | Built only from system tokens and patterns. The tool card is the skill's tool-turn chat style (sunken, mono) turned into a disclosure so arguments and output fit. `.chip-live` applies the skill's run-pulse to a chip |
+| New product components: `.app`, `.sidebar-*`, `.search`, `.session-*`, `.transcript*`, `.disclosure*`, `.toolcard*`, `.info-row`, `.run-status`, `.jump-latest`, `.composer*`, `.folder-list`, `.folder-field*`, `.folder-picker*`, `.folder-crumb*`, `.brand`, `.live-dot`, `.chip-live`, `.icon`, `.skip-link`, `.truncate`, `.banner-main/-action`, `.message-time/-text`, `.modal-spacer` | Built only from system tokens and patterns. The tool card is the skill's tool-turn chat style (sunken, mono) turned into a disclosure so arguments and output fit. `.chip-live` applies the skill's run-pulse to a chip |
 | Insights components: `.sidebar-foot`, `.insights*`, `.usage-*`, `.team-*`, `.agent-card`, `.member-*`, `.outline*`, `.compaction*`; the skill's `.card-*` and `.meter*` families brought in | Built from system tokens and the skill's card, meter, list, chip, and disclosure patterns (§10) |
 | `.meter-fill` is `--color-ink-muted`, not `--color-accent` | pi-web's accent is reserved for primary, live, and focus (§0). At ≥80% the fill turns `--status-warn`, at ≥100% `--status-error`, always under a chip that says the word |
 | New tokens: `--sidebar-width`, `--composer-max`, `--tool-output-max`, `--outline-max`, `--scrim`, `--skeleton-sweep` | Layout sizes, plus the two alpha values the skill already hard-codes inline (scrim, skeleton sweep), lifted into tokens so they theme correctly |
@@ -1905,6 +2410,7 @@ one is open queues behind it.
 | Model picker is a `[popover]` + combobox + listbox (the skill's `.popover` is a plain action menu) | Choosing one value from a set is a listbox. The popover gives top layer and light dismiss. Rows keep the 44px target and hover/active never hide an action |
 | `Ctrl+P` is taken over in chat sessions | Mirrors pi's TUI palette. It's bound only where a model can change, so print still works everywhere else |
 | `.button-sm` used for Retry, Copy Output, and Open for Chat | Always inside an already-reached context (a banner or a card), never the sole action on a surface, which the skill allows |
+| `--measure` grows from 72ch to a 110ch cap with the pane from unfolded up (the skill fixes it at 72ch) | Requested: the chat column was too narrow on desktop. A transcript is mostly code, diffs, and tool output rather than running prose, and they wrap badly at 72ch. Folded width keeps 72ch exactly (§3 "Column width") |
 
 Everything the skill forbids stays forbidden: no gradients (except the skeleton sweep the skill
 documents), no blur, no tinted shadows, no color-only state, no decorative accent, no exclamation
@@ -1936,7 +2442,9 @@ Every token these notes reference, all defined in `src/design/tokens.css`:
 - **Elevation:** `--shadow-1`, `--shadow-2`, `--shadow-3`
 - **Focus and motion:** `--focus-ring`, `--focus-width`, `--focus-offset`, `--focus-color`,
   `--dur-fast`, `--dur-base`, `--ease-standard`
-- **Layout:** `--measure`, `--bp-unfolded`
+- **Layout:** `--measure` (72ch at folded width; from unfolded up
+  `clamp(72ch, 100vw − --sidebar-width − --space-9 − 2 × --space-8, 110ch)`, §3 "Column width"),
+  `--bp-unfolded`
 
 ---
 
@@ -1958,7 +2466,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Untitled row | Untitled (muted) |
 | Top region head | Live & web · {n} · searching: Live & web · {hits} of {total} |
 | Archive head | Archive · {n} · searching: Archive · {hits} of {total} |
-| Empty top region note | 0 sessions open in a TUI or started here. The archive below has the rest. |
+| Empty top region note | 0 sessions open in a TUI, or started here and not archived. The archive below has the rest. |
 | Refresh button `aria-label` | Refresh Sessions |
 | Loading | skeleton only, no text |
 | Error banner | **Couldn't read your sessions.** `~/.pi/agent/sessions` wasn't changed. Check the server is running, then retry. · button: `Retry` |
@@ -1973,12 +2481,16 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Transcript load error | **Couldn't load this transcript.** The file at `{path}` wasn't changed. {server message} · button: `Retry` |
 | New empty session | **New session in `{cwd}`.** Nothing sent yet. Your first message becomes its title. |
 | Copy path button / toast | `aria-label` "Copy Session Path" · toast "Copied path." |
+| Archive button / toasts | `aria-label` "Archive Session" · "Unarchive Session" (shown at every width; under 520px of head it replaces Copy Session Path) · disabled `title` "Open in a TUI. It stays on top while live." · toasts "Archived. Find it under Archive." · "Moved back to Live & web." · error "Couldn't archive this session. {server message}" |
 | Copy output button / toast | `Copy Output` · toast "Copied output." |
 | Unknown entry | Unrecognized entry `{raw.type}` · disclosure label "Raw entry" |
 | Long tool output | `Show All {n} Lines` |
 | Tool chips | Running · Done · Failed · No result |
 | Tool output label | Output · on error: Error |
 | Stopped turn (info row) | Stopped by you at `{HH:MM}`. |
+| Report row, closed | {id} · {name} · chip · {first line} (hidden prefix "Report from ", or "Message: " without an agent) |
+| Report chips | Failed · Stopped · Aborted · Success · Done · Starting · Running · Waiting · Stopping |
+| Report, open | Error: {message} · Session `{path}` · No output. · Truncated at 4000 characters. Use agent_transcript for the rest. |
 
 ### Live-watch
 
@@ -2005,7 +2517,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Label (visually hidden) | Message |
 | Placeholder, idle | Ask pi to… |
 | Placeholder, streaming | Steer the current turn… |
-| Buttons | `Send` · streaming: `Steer` + `Stop Turn` · after Stop Turn is pressed: "Stopping…" in run status |
+| Buttons | `Send` · streaming: `Steer` + `Stop` · after Stop is pressed: "Stopping…" in run status |
 | Hint (≥768 only) | `Enter` to send · `Shift`+`Enter` for a new line |
 | Run status | `Working` + detail: `· thinking` / `· writing` / `· running {tool}` · stopping: `Stopping…` |
 | Reason: TUI-live | Read only while this session is open in the TUI. |
@@ -2033,6 +2545,12 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Alt, user row | Image in your message · Image {i} of {n} in your message |
 | Alt, tool result | Image from tool result {toolName} · Image {i} of {n} from tool result {toolName} |
 | Alt, pending attachment | attachment |
+| Path attachment summary | Attachment {name} · {size} |
+| Path attachment, file gone | No longer in /tmp · over the cap: Too large to show · {size} |
+| Alt, path attachment | Attachment {name} in your message |
+| Path chip `aria-label` | Open image {name} · gone: Copy path {path}, no longer in /tmp |
+| Path chip, gone | · No longer in /tmp (`title`: "{path} · No longer in /tmp. Select to copy the path.") · on copy: Copied path. |
+| Tool card section label (paths) | Attachments · {n} |
 | Tool card section label | Images · {n} |
 | Tool card summary count | {n} (`title`: "{n} images") |
 | Lightbox counter | {i} / {n} |
@@ -2051,7 +2569,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | No matches | 0 models match “{query}”. |
 | No models | 0 models have credentials. Log in with `pi` in a terminal to add one. |
 | Load failed | **Couldn't load models.** Your current model is unchanged. · `Retry` |
-| Blocked, running | **Model changes wait until this turn finishes.** Stop Turn or wait, then pick one. |
+| Blocked, running | **Model changes wait until this turn finishes.** Stop or wait, then pick one. |
 | Composer reason while pending | Switching model… |
 | Announce on success | Model changed to {id}. |
 | Info row on success | Model changed to `{provider/id}` |
@@ -2062,6 +2580,22 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Error: timeout | The server didn't confirm the switch. You're still on `{current}`. |
 | Error: other | {server message}. You're still on `{current}`. |
 | Error action | Dismiss |
+
+### Mode menu
+
+| Where | Copy |
+|---|---|
+| Trigger | {mode} · {minor} … (`aria-label`/`title`: "Mode: {label}", plus ", applies after this turn" when pending) |
+| Menu `aria-label` | Mode |
+| Group labels | Major mode · Minor modes |
+| Descriptions | normal: Pi as usual · claude-heavy: Orchestrate: delegate coding and planning to Claude Code workers · minors: from pi-config `MINOR_DESCRIPTIONS` |
+| Foot | strict: {on\|off} · Applies to every web chat and new pi sessions. Open terminal sessions keep theirs until `/reload`. |
+| Pending | **Applies after this turn.** This turn keeps the old mode, and so do messages queued during it. Your next message follows the new one. |
+| Can't switch | **Applies to new chats only.** This chat can't switch: the mode extension isn't loaded here, or another program wrote this session. |
+| Save failed | **Couldn't switch the mode.** {reason}. Your mode is unchanged. |
+| Load failed | **Couldn't load the modes.** Your mode is unchanged. Close this and try again. |
+| Transcript marker | Mode → {mode} · Minor mode: {minor} on\|off |
+| Toast (from the extension) | Mode: {mode} · Minor mode: {minor} on\|off |
 
 ### Context window
 
@@ -2111,7 +2645,10 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 |---|---|
 | Title | New Session |
 | Field label / hint | Folder · pi runs in this folder and can read and change files in it. |
+| Field, nothing chosen | Choose a folder |
 | Recent label | Recent folders |
+| Picker | group label "Choose a folder" · breadcrumb `aria-label` "Path" · buttons `Home`, `Recent`, `Use This Folder` · checkbox "Show hidden folders" · filter placeholder "Filter", `aria-label` "Filter folders in {name}" / "Filter recent folders" · list `aria-label` "Subfolders of {name}" / "Recent folders" · symlink tag "link" |
+| Picker notes | Loading folders… · No subfolders in {name}. You can still start the session here. · 0 of {n} match “{filter}”. · Showing the first 500 folders, A to Z. Filter to narrow them. · pi-web can't read this folder. Pick another one. · This folder doesn't exist. Pick another one. · Couldn't list this folder. {server message} · No recent folders yet. Sessions you start add theirs here. |
 | Buttons | `Create Session` (pending: "Creating…") · `Cancel` |
 | 4xx error | {server message}, or: That folder doesn't exist. Pick one that does. |
 | Other error | **Couldn't create the session.** Nothing was written. Try again. |

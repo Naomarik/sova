@@ -869,6 +869,35 @@ summary.sidebar-region-head .icon-twist { transition: transform var(--dur-fast) 
   overflow-wrap: anywhere;
 }
 
+/* Report rows (§3 "report"): a subagent report or another long extension
+   message. Same disclosure grammar as thinking; collapsed to ONE line (who,
+   status chip, first line, ellipsis). Opened, the markdown sits on the left
+   under the disclosure rule, capped at --measure like a message. */
+.report-summary { min-width: 0; }
+.report-from {
+  flex: none;
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono);
+  color: var(--color-ink-2);
+}
+.report-summary .chip { flex: none; }
+.report-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: var(--space-1) 0 0;
+  padding: var(--space-2) 0 var(--space-2) var(--space-4);
+  border-left: var(--stroke-icon) solid var(--color-border);
+  min-width: 0;
+}
+.report-meta,
+.report-error { margin: 0; font-size: var(--fs-caption); color: var(--color-ink-muted); overflow-wrap: anywhere; }
+.report-error { color: var(--status-error); }
+
 
 /* ---- TOOL CARD. One card per tool call, its result paired inside.
    Quieter than speech: sunken ground, mono. Head always visible; args and
@@ -931,6 +960,25 @@ summary.sidebar-region-head .icon-twist { transition: transform var(--dur-fast) 
 .toolcard pre { background: var(--color-surface); }
 .toolcard-output { max-height: var(--tool-output-max); overflow-y: auto; }
 .toolcard-output-error { border-color: var(--status-error); }   /* paired with the Failed chip and an "Error" label */
+
+/* file content (write, edit, read): highlighted code goes back on sunken,
+   the ground the syntax colors were contrast-checked on; plain JSON args
+   keep the surface pre above. Code keeps its shape and scrolls sideways. */
+.toolcard-path {
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono);
+  color: var(--color-ink-muted);
+  overflow-wrap: anywhere;
+}
+.toolcard pre.toolcard-code {
+  background: var(--color-sunken);
+  color: var(--color-ink);
+  white-space: pre;
+  overflow-wrap: normal;
+}
+/* edit: the label says which side it is; the rule only speeds the scan */
+.toolcard-code-del { border-left: calc(var(--stroke-icon) * 2) solid var(--diff-del-ink); }
+.toolcard-code-add { border-left: calc(var(--stroke-icon) * 2) solid var(--diff-add-ink); }
 
 
 /* ---- INFO ROW. Model change, compaction, labels, branch summaries: a quiet
@@ -1036,7 +1084,7 @@ summary.sidebar-region-head .icon-twist { transition: transform var(--dur-fast) 
 
 
 /* ---- COMPOSER: narrow width. Below 480px of the composer, Send / Steer /
-   Stop Turn keep their icon and move their word into .button-label, which
+   Stop keep their icon and move their word into .button-label, which
    becomes visually hidden (still the accessible name). This rule CONTRACTS,
    so the container query gets a @media floor underneath (skill: the union). */
 
@@ -1188,6 +1236,65 @@ summary.sidebar-region-head .icon-twist { transition: transform var(--dur-fast) 
   color: var(--color-ink-muted);
   font-variant-numeric: tabular-nums;
 }
+
+/* Path attachments (§4b): an image a user message names by /tmp path. A
+   collapsed disclosure on the user side; opening it shows the thumbnail. A
+   file that's gone is the same row, static, saying so. */
+.message-attachment { align-self: flex-end; max-width: 100%; min-width: 0; }
+.message-attachment > .disclosure-summary {
+  margin-left: 0;
+  margin-right: calc(var(--space-2) * -1);   /* hover ground hangs past the bubble edge, mirrored */
+}
+.message-attachment-missing {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--control-sm);
+  padding: var(--space-1) 0;
+  font-size: var(--fs-caption);
+  color: var(--color-ink-muted);
+}
+.message-attachment .icon { flex: none; }
+.message-attachment-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  color: var(--color-ink-2);
+}
+.message-attachment-meta { flex: none; font-variant-numeric: tabular-nums; }
+.message-attachment-body { margin-top: var(--space-2); }
+.toolcard-section .message-attachment { align-self: auto; }
+.toolcard-section .message-attachment > .disclosure-summary { margin-right: 0; margin-left: calc(var(--space-2) * -1); }
+
+/* Path chips (§4b): the same path quoted in a reply, a subagent report or an
+   info row. Inline in the prose, one line, short name; the full path is in
+   title. Available opens the lightbox; gone copies the path. */
+.path-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  max-width: 100%;
+  padding: 0 var(--space-1);
+  border: var(--stroke-thin) solid var(--color-border);
+  border-radius: var(--r-sm);
+  background: var(--color-sunken);
+  color: var(--color-ink-2);
+  font: inherit;
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono);
+  line-height: inherit;
+  vertical-align: baseline;
+  cursor: zoom-in;
+  transition: border-color var(--dur-fast) var(--ease-standard);
+}
+.path-chip:hover { border-color: var(--color-border-strong); }
+.path-chip:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.path-chip .icon { flex: none; color: var(--color-ink-muted); }
+.path-chip-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.path-chip-missing { cursor: copy; color: var(--color-ink-muted); }
+.path-chip-note { flex: none; white-space: nowrap; font-family: var(--font-body); font-size: var(--fs-caption); }
 
 
 /* ---- LIGHTBOX. A native <dialog> opened with showModal(): top layer (no
@@ -1409,6 +1516,69 @@ summary.sidebar-region-head .icon-twist { transition: transform var(--dur-fast) 
   }
   .model-menu::backdrop { background: var(--scrim); }
   .model-menu-foot { display: none; }
+}
+
+
+/* ---- MODE MENU (§4g). The global major/minor mode switch. Same popover
+   shell as the model menu (.model-menu positions it, and makes it a bottom
+   sheet under 768px); the list is a role=menu with real focus, so rows draw
+   the standard :focus-visible ring. ------------------------------------- */
+
+.mode-trigger {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 200px;
+  gap: var(--space-1);
+  padding: 0 var(--space-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono);
+  font-weight: var(--fw-regular);
+  color: var(--color-ink-2);
+}
+.mode-trigger .icon { flex: none; color: var(--color-ink-muted); }
+.mode-trigger-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mode-trigger[aria-expanded="true"] { background: var(--color-sunken); color: var(--color-ink); }
+.mode-menu > .banner { flex: none; margin: var(--space-2) var(--space-2) 0; }
+.mode-option {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  min-height: var(--control-md);
+  padding: var(--space-2) var(--space-3);
+  cursor: pointer;
+}
+.mode-option:hover { background: var(--color-sunken); }
+.mode-option:focus-visible { outline: var(--focus-ring); outline-offset: calc(var(--focus-width) * -1); }
+.mode-option[aria-checked="true"] { background: var(--color-accent-tint); }
+.mode-option[aria-disabled="true"] { opacity: .42; cursor: progress; }
+.mode-option-check { flex: none; margin-top: 2px; color: var(--color-ink); visibility: hidden; }
+.mode-option[aria-checked="true"] .mode-option-check { visibility: visible; }
+.mode-option-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.35; }
+.mode-option-id { font-family: var(--font-mono); font-size: var(--fs-mono); color: var(--color-ink); }
+.mode-option-desc { font-size: var(--fs-caption); color: var(--color-ink-muted); }
+.mode-menu-foot {
+  flex: none;
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border-top: var(--stroke-thin) solid var(--color-border);
+  font-size: var(--fs-caption);
+  color: var(--color-ink-muted);
+}
+/* Narrow head (§4f): icon-only under 520px (its name stays in aria-label);
+   gone under 360px, where the title's 72px floor can't spare 44px more. */
+@container session-head (max-width: 519px) {
+  .mode-trigger { width: var(--control-md); padding: 0; justify-content: center; }
+  .mode-trigger-label, .mode-trigger .icon + .mode-trigger-label + .icon { display: none; }
+}
+@container session-head (max-width: 359px) {
+  .mode-trigger { display: none; }
+}
+@media (max-width: 519px) {
+  .mode-trigger { width: var(--control-md); padding: 0; justify-content: center; }
+  .mode-trigger-label, .mode-trigger .icon + .mode-trigger-label + .icon { display: none; }
+}
+@media (max-width: 359px) {
+  .mode-trigger { display: none; }
 }
 
 
@@ -1724,6 +1894,10 @@ summary.sidebar-region-head .icon-twist { transition: transform var(--dur-fast) 
   /* The head's aggregate "Team · n working" link chip (§10) repeats the
      sidebar row chip and the Agents foot row; on a narrow head it goes. */
   .session-head > .chip-count { display: none; }
+  /* Web sessions add Archive (§2 "Archiving"), the app's only archive
+     control; the 72px title floor can't hold it beside Copy Session Path,
+     so the copy button goes on a narrow head. */
+  .session-head > .session-archive + .button-icon { display: none; }
 }
 /* Floor: whatever else lands in the head, the title block never collapses
    to nothing — extra chips overflow before the title disappears. */
@@ -1737,6 +1911,7 @@ summary.sidebar-region-head .icon-twist { transition: transform var(--dur-fast) 
   .context-meta { display: inline; }
   .model-trigger { max-width: 88px; }
   .session-head > .chip-count { display: none; }
+  .session-head > .session-archive + .button-icon { display: none; }
 }
 
 
@@ -1758,6 +1933,80 @@ summary.sidebar-region-head .icon-twist { transition: transform var(--dur-fast) 
 }
 .folder-list .list-row .list-title { font-family: var(--font-mono); font-size: var(--fs-mono); font-weight: var(--fw-regular); }
 .folder-list .list-row[aria-selected="true"] { background: var(--color-accent-tint); }
+
+/* The Folder field is a button that reads like an input (§5): the chosen path
+   in mono, never typed. It opens the picker in place. */
+.folder-field {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  text-align: left;
+  cursor: pointer;
+}
+.folder-field-value { flex: 1; }
+.folder-field-empty { font-family: var(--font-body); font-size: var(--fs-body); color: var(--color-ink-muted); }
+.folder-field .icon { flex: none; color: var(--color-ink-muted); transition: transform var(--dur-fast) var(--ease-standard); }
+.folder-field[aria-expanded="true"] .icon-twist { transform: rotate(180deg); }
+
+/* The picker: a sunken panel under the field. Focus stays in its filter; the
+   listbox follows through aria-activedescendant, so the active row is the
+   tinted one. Every control keeps the 44px target. */
+.folder-picker {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: var(--stroke-thin) solid var(--color-border);
+  border-radius: var(--r-lg);
+  background: var(--color-sunken);
+}
+.folder-picker-bar { display: flex; align-items: center; gap: var(--space-1); min-width: 0; }
+.folder-crumbs { flex: 1; min-width: 0; overflow-x: auto; }
+.folder-crumbs ol {
+  display: flex;
+  align-items: center;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono);
+}
+.folder-crumbs li { display: flex; align-items: center; }
+.folder-crumbs li + li::before { content: "/"; color: var(--color-ink-muted); }
+.folder-crumbs-root + li::before { content: none; }  /* "/" already reads as the separator */
+.folder-crumb {
+  min-width: var(--tap-min);
+  min-height: var(--tap-min);
+  padding: 0 var(--space-1);
+  border: 0;
+  border-radius: var(--r-xs);
+  background: none;
+  color: var(--color-accent);
+  font: inherit;
+  cursor: pointer;
+}
+.folder-crumb:hover { text-decoration: underline; }
+.folder-crumb:focus-visible { outline: var(--focus-ring); outline-offset: calc(var(--focus-offset) * -1); }
+.folder-crumb-current { padding: 0 var(--space-1); color: var(--color-ink); font-weight: var(--fw-semibold); }
+.folder-picker .search .input { padding-right: var(--space-3); }
+.folder-picker-list:empty { display: none; }
+.folder-picker-list .list-title { flex: 1; }
+.folder-picker-list .list-row > .icon:last-child { color: var(--color-ink-muted); }
+.folder-picker-link { font-family: var(--font-body); font-size: var(--fs-caption); color: var(--color-ink-muted); }
+.folder-picker-note { margin: 0; font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-2); }
+.folder-picker-note:empty { display: none; }
+.folder-picker-foot { display: flex; align-items: center; gap: var(--space-2); }
+.folder-picker-hidden {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--tap-min);
+  font-size: var(--fs-caption);
+  color: var(--color-ink-2);
+  cursor: pointer;
+}
+.folder-picker-hidden input { width: 18px; height: 18px; margin: 0; accent-color: var(--color-accent); }
 
 
 /* =============================================================================

@@ -1,0 +1,61 @@
+// /tmp image paths named in transcript text (TranscriptItem.attachments, DESIGN_NOTES §4b "Path
+// attachments"). Inline chips come in two builds that must match: an HTML string for markdown
+// (lib/markdown.ts) and a Solid component for plain text (components/PathAttachment.tsx).
+
+import type { TmpAttachment } from "../../shared/protocol";
+import { isPiClipboardName } from "../../shared/tmp-paths";
+import { copyText, openLightbox } from "./ui-state";
+
+/** Where the browser gets the bytes. It never reads /tmp itself. */
+export const attachmentUrl = (path: string) => `/api/attachment?path=${encodeURIComponent(path)}`;
+
+/** `KB` under 1 MB, rounded; otherwise one decimal (same format as composer attachments). */
+export const fileSize = (bytes: number) =>
+  bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+
+/** pi's clipboard names keep 4 characters of the uuid: "pi-clipboard-a587….png". Others as-is. */
+export function shortName(name: string): string {
+  if (!isPiClipboardName(name)) return name;
+  const dot = name.lastIndexOf(".");
+  const stem = name.slice(0, dot);
+  const cut = stem.length - 36 + 4; // keep the prefix and the uuid's first 4
+  return `${stem.slice(0, cut)}…${name.slice(dot)}`;
+}
+
+const baseName = (path: string) => path.slice(path.lastIndexOf("/") + 1);
+
+/** The one "gone" note, also used by the user-row unit. */
+export const MISSING_NOTE = "No longer in /tmp";
+
+/** Accessible name and title for an inline chip. */
+export function chipLabels(a: TmpAttachment): { label: string; title: string } {
+  return a.available
+    ? { label: `Open image ${a.name}`, title: a.path }
+    : { label: `Copy path ${a.path}, ${MISSING_NOTE.toLowerCase()}`, title: `${a.path} · ${MISSING_NOTE}. Select to copy the path.` };
+}
+
+const escapeHtml = (s: string) =>
+  s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+
+/** The chip as escaped HTML, for markdown. Clicks are handled by activatePathChip. */
+export function chipHtml(a: TmpAttachment): string {
+  const { label, title } = chipLabels(a);
+  return (
+    `<button type="button" class="path-chip${a.available ? "" : " path-chip-missing"}" data-path-chip="${escapeHtml(a.path)}"` +
+    `${a.available ? ' data-available aria-haspopup="dialog"' : ""} aria-label="${escapeHtml(label)}" title="${escapeHtml(title)}">` +
+    `<span class="icon icon-sm" style="--icon: url(/icons/image.svg)" aria-hidden="true"></span>` +
+    `<span class="path-chip-name">${escapeHtml(shortName(a.name))}</span>` +
+    `${a.available ? "" : `<span class="path-chip-note">· ${MISSING_NOTE}</span>`}</button>`
+  );
+}
+
+/** A chip was clicked: open the image, or copy the path of a file that's gone. */
+export function activatePathChip(chip: HTMLElement): void {
+  const path = chip.dataset.pathChip;
+  if (!path) return;
+  if (chip.hasAttribute("data-available")) {
+    openLightbox([{ src: attachmentUrl(path), alt: `Attachment ${baseName(path)}` }], 0, chip);
+  } else {
+    void copyText(path, "Copied path.");
+  }
+}

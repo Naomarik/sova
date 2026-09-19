@@ -1,5 +1,7 @@
 import { readFile } from "node:fs/promises";
 import type { EntryKind, TranscriptItem } from "../shared/protocol";
+import { inlineTmpImages } from "./attachments";
+import { isReport, parseReport } from "./reports";
 
 // We parse JSONL ourselves instead of using SessionManager.open(): open() is not
 // read-only (it appends "\n" to a trailing partial line and rewrites the file when
@@ -89,11 +91,34 @@ function item(
   return it;
 }
 
+/** Attach the /tmp image paths named in `source` (the row's full text); the text stays as-is. */
+function withPaths(it: TranscriptItem, source: string): TranscriptItem {
+  const { attachments } = inlineTmpImages(source);
+  if (attachments) it.attachments = attachments;
+  return it;
+}
+
+/** An extension message: a report row when it's a subagent report or long/multi-line, else an info row. */
+function customRow(id: string, entry: Entry, customType: unknown, content: unknown): TranscriptItem {
+  const text = contentText(content);
+  const source = typeof customType === "string" ? customType : "";
+  if (!isReport(source, text)) return withPaths(item(id, "info", entry, text), text);
+  const report = parseReport(source, text);
+  const it = withPaths(item(id, "report", entry, report.body), report.body);
+  it.report = report;
+  return it;
+}
+
 function normalizeMessage(entry: Entry, id: string): TranscriptItem[] {
   const m = entry.message ?? {};
   switch (m.role) {
-    case "user":
-      return [item(id, "user", entry, contentText(m.content, false), undefined, contentImages(m.content))];
+    case "user": {
+      const it = item(id, "user", entry, undefined, undefined, contentImages(m.content));
+      const { text, attachments } = inlineTmpImages(contentText(m.content, false), true);
+      if (text !== undefined) it.text = text;
+      if (attachments) it.attachments = attachments;
+      return [it];
+    }
     case "assistant": {
       // One item per content block; ids are `${entryId}:${blockIndex}` so they stay unique.
       const out: TranscriptItem[] = [];
@@ -101,7 +126,7 @@ function normalizeMessage(entry: Entry, id: string): TranscriptItem[] {
       blocks.forEach((b, i) => {
         const bid = `${id}:${i}`;
         if (b?.type === "text") {
-          if (b.text?.trim()) out.push(item(bid, "assistant-text", entry, b.text));
+          if (b.text?.trim()) out.push(withPaths(item(bid, "assistant-text", entry, b.text), b.text));
         } else if (b?.type === "thinking") {
           if (b.thinking?.trim()) out.push(item(bid, "thinking", entry, b.thinking));
         } else if (b?.type === "toolCall") {
@@ -116,14 +141,14 @@ function normalizeMessage(entry: Entry, id: string): TranscriptItem[] {
       }
       return out;
     }
-    case "toolResult":
-      return [
-        item(id, "tool-result", entry, truncate(contentText(m.content, false), RESULT_TEXT_MAX), m.toolCallId, contentImages(m.content)),
-      ];
+    case "toolResult": {
+      const text = contentText(m.content, false);
+      return [withPaths(item(id, "tool-result", entry, truncate(text, RESULT_TEXT_MAX), m.toolCallId, contentImages(m.content)), text)];
+    }
     case "bashExecution":
       return [item(id, "info", entry, truncate(`$ ${m.command ?? ""}\n${m.output ?? ""}`, RESULT_TEXT_MAX))];
     case "custom":
-      return m.display === false ? [] : [item(id, "info", entry, contentText(m.content))];
+      return m.display === false ? [] : [customRow(id, entry, m.customType, m.content)];
     case "branchSummary":
       return [item(id, "info", entry, `Branch summary: ${m.summary ?? ""}`)];
     case "compactionSummary":
@@ -131,6 +156,14 @@ function normalizeMessage(entry: Entry, id: string): TranscriptItem[] {
     default:
       return [item(id, "unknown", entry)];
   }
+}
+
+/** pi-config mode extension marker: `{mode}` for a major switch, `{minor, on}` for a minor one. */
+function modeMarker(entry: Entry, id: string): TranscriptItem[] {
+  const d = entry.data;
+  if (d && typeof d.minor === "string" && typeof d.on === "boolean") return [item(id, "info", entry, `Minor mode: ${d.minor} ${d.on ? "on" : "off"}`)];
+  if (d && typeof d.mode === "string") return [item(id, "info", entry, `Mode → ${d.mode}`)];
+  return [];
 }
 
 /** Normalize one parsed JSONL entry into 0..n TranscriptItems. The header line yields none. */
@@ -154,9 +187,11 @@ export function normalizeEntry(entry: Entry, fallbackId = "?"): TranscriptItem[]
     case "branch_summary":
       return [item(id, "info", entry, `Branch summary: ${entry.summary ?? ""}`)];
     case "custom":
-      return []; // extension state, not displayable (docs/session-format.md)
+      // Extension state, not displayable (docs/session-format.md). One exception: the mode
+      // extension's switch marker, which the TUI draws in the transcript too.
+      return entry.customType === "mode" ? modeMarker(entry, id) : [];
     case "custom_message":
-      return entry.display === false ? [] : [item(id, "info", entry, contentText(entry.content))];
+      return entry.display === false ? [] : [customRow(id, entry, entry.customType, entry.content)];
     default:
       return [item(id, "unknown", entry)];
   }

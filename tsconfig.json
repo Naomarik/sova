@@ -12,7 +12,8 @@
     "noEmit": true,
     "skipLibCheck": true,
     "esModuleInterop": true,
-    "isolatedModules": true
+    "isolatedModules": true,
+    "allowImportingTsExtensions": true
   },
   "include": ["server", "src", "shared"]
 }

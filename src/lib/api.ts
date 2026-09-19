@@ -1,4 +1,4 @@
-import type { AgentsInsight, ContextInfo, ModelInfo, SessionInsight, SessionSummary, TranscriptItem, UsageInsight } from "../../shared/protocol";
+import type { AgentsInsight, ContextInfo, FolderListing, ModeInfo, ModelInfo, SessionInsight, SessionSummary, TranscriptItem, UsageInsight } from "../../shared/protocol";
 
 export class ApiError extends Error {
   constructor(
@@ -33,13 +33,41 @@ export const listSessions = () => request<SessionSummary[]>("/api/sessions");
 
 export const listCwds = () => request<string[]>("/api/cwds");
 
+/** Subfolders of `path` (no path: $HOME). `hidden` includes dot folders. */
+export const listFolders = (path?: string, hidden = false) => {
+  const q = new URLSearchParams();
+  if (path) q.set("path", path);
+  if (hidden) q.set("hidden", "1");
+  const qs = q.toString();
+  return request<FolderListing>(`/api/folders${qs ? `?${qs}` : ""}`);
+};
+
 export const listModels = () => request<ModelInfo[]>("/api/models");
+
+/** The global mode switch and what exists (GET /api/mode). */
+export const getMode = () => request<ModeInfo>("/api/mode");
+
+/** Switch the global mode; every open web chat follows from its next message. */
+export const postMode = (patch: { mode?: string; minorModes?: string[] }) =>
+  request<ModeInfo>("/api/mode", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(patch),
+  });
 
 export const createSession = (cwd: string) =>
   request<SessionSummary>("/api/sessions", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ cwd }),
+  });
+
+/** Moves a web-spawned session to the Archive region (true) or back to the top (false). */
+export const setSessionArchived = (path: string, archived: boolean) =>
+  request<SessionSummary>("/api/sessions/archive", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ path, archived }),
   });
 
 export const fetchTranscript = (path: string) =>

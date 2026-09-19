@@ -1,7 +1,7 @@
 {
   "lastChangelogVersion": "0.85.1",
-  "defaultProvider": "zai",
-  "defaultModel": "glm-5.3",
+  "defaultProvider": "ollama-cloud",
+  "defaultModel": "deepseek-v4.1-flash",
   "defaultThinkingLevel": "medium",
   "hideThinkingBlock": true,
   "theme": "dark",

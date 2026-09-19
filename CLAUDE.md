@@ -16,14 +16,22 @@ live-watch sessions that are open in the CLI/TUI, spawn new sessions.
   this directory, so an edit here changes the user's LIVE TUI on its next `/reload`, and every
   runtime pi-web embeds. Treat it like `shared/protocol.ts`: coordinate before changing any contract
   pi-web parses (sessions live registry `sessions/live/*.json`, usage-status cache, subagents
-  teams/snapshots, topic-outline state, command-palette `model-favorites.json`). Not covered by
-  pi-web's tsconfig; tests run per extension (see `pi-config/README.md`). `pi-config/install.sh`
-  must stay standalone, needing nothing outside `pi-config/`.
+  teams/snapshots, topic-outline state, command-palette `model-favorites.json`, mode `mode.json`).
+  Not covered by pi-web's tsconfig, with one exception: `server/mode-state.ts` imports
+  `pi-config/extensions/mode/state.ts` and `minor.ts` (hence `allowImportingTsExtensions`), so an
+  edit to either can break pi-web's typecheck. Keep both pi-runtime-free (node builtins and each
+  other only), and import nothing else from pi-config. The web mode switch calls that extension's
+  `/mode` command handler directly (`ChatSession.applyMode`), so its arguments are a contract too.
+  Tests run per extension (see `pi-config/README.md`). `pi-config/install.sh` must stay standalone,
+  needing nothing outside `pi-config/`.
 
 ## Commands
 
 - `npm run dev:server` (port **4800**) and `npm run dev:web` (Vite, proxies /api + /ws to 4800)
 - `npm run typecheck` — must pass. `npm run build` — must pass.
+- `npm test` — unit tests (`server/*.test.ts`, `src/lib/*.test.ts`). They're ESM TypeScript with
+  extensionless imports, so they run under `tsx --test`; plain `node --test <file>` fails with
+  ERR_MODULE_NOT_FOUND.
 - `pi-config/install.sh` links `pi-config/` into `~/.pi/agent`; `pi-config/install.sh --check` verifies
   that without changing anything.
 

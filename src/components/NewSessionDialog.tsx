@@ -3,11 +3,15 @@ import type { SessionSummary } from "../../shared/protocol";
 import { ApiError, createSession, listCwds } from "../lib/api";
 import { tildePath } from "../lib/format";
 import { home } from "../lib/ui-state";
+import { FolderPicker } from "./FolderPicker";
 import { Banner, Icon, trapFocus } from "./ui";
 
 const MAX_RECENT = 20;
 
-/** Asks for a folder, creates an empty webapp-owned session, and hands it back (DESIGN_NOTES §5). */
+/**
+ * Asks for a folder, creates an empty webapp-owned session, and hands it back (DESIGN_NOTES §5).
+ * The folder is chosen, never typed: the Folder field opens the folder picker in place.
+ */
 export function NewSessionDialog(props: {
   prefill: string;
   /** Folders already used by sessions; the suggestions if /api/cwds is unavailable. */
@@ -17,23 +21,19 @@ export function NewSessionDialog(props: {
 }) {
   const [cwds] = createResource(() => listCwds().catch(() => props.knownCwds));
   const [cwd, setCwd] = createSignal(props.prefill);
+  const [picking, setPicking] = createSignal(false);
   const [fieldError, setFieldError] = createSignal<string | null>(null);
   const [failed, setFailed] = createSignal(false);
   const [pending, setPending] = createSignal(false);
-  let input!: HTMLInputElement;
+  let field!: HTMLButtonElement;
   let form!: HTMLFormElement;
-  onMount(() => {
-    input.focus();
-    input.select();
-  });
+  onMount(() => field.focus());
 
-  // Suggestions narrow as you type; an exact pick still shows the whole list.
-  const recent = createMemo(() => {
-    const all = (cwds() ?? []).slice(0, MAX_RECENT);
-    const q = cwd().trim().toLowerCase();
-    if (!q || all.includes(cwd().trim())) return all;
-    return all.filter((c) => c.toLowerCase().includes(q));
-  });
+  const recent = createMemo(() => (cwds() ?? []).slice(0, MAX_RECENT));
+  const pick = (path: string) => {
+    setCwd(path);
+    setFieldError(null);
+  };
 
   const submit = async (e?: Event) => {
     e?.preventDefault();
@@ -48,7 +48,8 @@ export function NewSessionDialog(props: {
     } catch (err) {
       if (err instanceof ApiError && err.status >= 400 && err.status < 500) {
         setFieldError(err.message || "That folder doesn't exist. Pick one that does.");
-        input.focus();
+        setPicking(false);
+        field.focus();
       } else {
         setFailed(true);
       }
@@ -84,20 +85,23 @@ export function NewSessionDialog(props: {
             <label class="field-label" for="ns-cwd">
               Folder
             </label>
-            <input
-              ref={input}
-              class="input input-mono"
+            <button
+              ref={field}
+              type="button"
+              class="input input-mono folder-field"
               id="ns-cwd"
-              value={cwd()}
-              autocomplete="off"
-              spellcheck={false}
+              title={cwd() || undefined}
+              aria-expanded={picking() ? "true" : "false"}
+              aria-controls="ns-picker"
               aria-invalid={fieldError() ? "true" : undefined}
               aria-describedby="ns-cwd-hint ns-cwd-error"
-              onInput={(e) => {
-                setCwd(e.currentTarget.value);
-                setFieldError(null);
-              }}
-            />
+              onClick={() => setPicking((v) => !v)}
+            >
+              <span class="folder-field-value truncate" classList={{ "folder-field-empty": !cwd() }}>
+                {cwd() ? tildePath(cwd(), home()) : "Choose a folder"}
+              </span>
+              <Icon name="chevron-down" small class="icon-twist" />
+            </button>
             <span class="field-hint" id="ns-cwd-hint">
               pi runs in this folder and can read and change files in it.
             </span>
@@ -105,7 +109,10 @@ export function NewSessionDialog(props: {
               {fieldError()}
             </span>
           </div>
-          <Show when={recent().length > 0}>
+          <Show when={picking()}>
+            <FolderPicker start={cwd()} recents={recent()} onPick={pick} onClose={() => setPicking(false)} />
+          </Show>
+          <Show when={!picking() && recent().length > 0}>
             <div class="field">
               <span class="field-label" id="ns-recent">
                 Recent folders
@@ -119,15 +126,15 @@ export function NewSessionDialog(props: {
                       tabindex="0"
                       title={c}
                       aria-selected={c === cwd().trim() ? "true" : "false"}
-                      onClick={() => setCwd(c)}
+                      onClick={() => pick(c)}
                       onDblClick={() => {
-                        setCwd(c);
+                        pick(c);
                         form.requestSubmit();
                       }}
                       onKeyDown={(e) => {
                         if (e.key === "Enter" || e.key === " ") {
                           e.preventDefault();
-                          setCwd(c);
+                          pick(c);
                         }
                       }}
                     >

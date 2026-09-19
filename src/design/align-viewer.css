@@ -14,9 +14,11 @@
 @media (min-width: 768px) {
   .modal.align-viewer { width: min(var(--measure), calc(100vw - var(--space-8))); }
 }
-.align-viewer { height: calc(100dvh - var(--space-8)); }
+/* Cap at the viewport but never stretch to it: a short document must not leave a
+   screenful of dead space below it (base.css already caps .modal the same way). */
+.align-viewer { max-height: calc(100dvh - var(--space-8)); }
 @media (max-width: 767px) {
-  .align-viewer { height: 85dvh; }
+  .align-viewer { max-height: 85dvh; }
 }
 .align-viewer-head { display: flex; align-items: flex-start; gap: var(--space-3); }
 .align-viewer-titles { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--space-1); }
@@ -30,7 +32,9 @@
   color: var(--color-ink-muted);
 }
 .align-metrics { font-variant-numeric: tabular-nums; }
-.align-viewer-body { flex: 1; color: var(--color-ink); }
+/* Grows to fill a tall modal, shrinks (and scrolls — base.css .modal-body) when the
+   document is taller than the cap. min-height: 0 is what lets a flex item shrink. */
+.align-viewer-body { flex: 1 1 auto; min-height: 0; color: var(--color-ink); }
 
 /* Loose lists wrap each item in <p>; keep their checkboxes in the bullet's place too. */
 .align-viewer .md li:has(> p:first-child > input[type="checkbox"]) { list-style: none; margin-left: calc(var(--space-5) * -1 + var(--space-1)); }

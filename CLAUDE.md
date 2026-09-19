@@ -42,3 +42,16 @@ Pi package on disk: `/home/user/.local/share/mise/installs/node/25.2.1/lib/node_
 TS strict, ESM, no new dependencies without asking. Server normalizes JSONL entries into
 `TranscriptItem`; frontend renders those, and renders live streaming from the raw passthrough events.
 Frontend is SolidJS (NOT React): signals/stores, `<For>/<Show>`, `onCleanup` for WS teardown.
+
+## Backend notes (SDK surprises, pi 0.85.1)
+
+- `SessionManager.open(path)` is NOT read-only: it appends `"\n"` to a trailing partial line and
+  rewrites the file when migrating old versions. Never call it on a file a TUI may own —
+  transcript/watch use our own parser (`server/transcript.ts`); `open()` only for webapp-owned chats.
+- `SessionManager.create(cwd)` defers writing the file until the first assistant reply.
+  `POST /api/sessions` writes the header line itself so the new session exists on disk immediately.
+- pi's `theme` singleton is not exported (only `initTheme`). The ExtensionUIContext bridge calls
+  `initTheme()` and reads `globalThis[Symbol.for("@earendil-works/pi-coding-agent:theme")]`.
+- The sessions extension also loads inside our embedded runtimes and writes `live/*.json` with the
+  server's own pid. `server/live.ts` ignores own-pid and dead-pid records, otherwise every
+  webapp-owned session would look TUI-busy.

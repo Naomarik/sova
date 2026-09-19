@@ -1,0 +1,304 @@
+/* =============================================================================
+   pi-web — tokens.css
+   Every design decision as a custom property. Derived from the fold-ai-dev
+   design system (v1.8.0, .claude/skills/fold-ai-dev-design/tokens.css);
+   values are unchanged, only the theme model differs (see §3).
+
+   The ONLY file in src/ permitted to contain raw hex values. Components and
+   screens consume the semantic aliases (--color-*, --status-*), never --brand-*.
+
+   Load order:  tokens.css  →  base.css
+
+   Theme model — pi-web is a dev tool and ships DARK BY DEFAULT:
+     <html>                      dark
+     <html data-theme="dark">    dark
+     <html data-theme="light">   light (full, equal token set)
+   Deviation from the skill, which follows prefers-color-scheme when no
+   data-theme is set. Requested for this product; see DESIGN_NOTES.md §0.
+   ============================================================================= */
+
+
+/* -----------------------------------------------------------------------------
+   1 · FONTS — variable, latin subset, served from public/fonts/ (SIL OFL 1.1).
+   Offline-safe: no CDN.
+   -------------------------------------------------------------------------- */
+
+@font-face {
+  font-family: "Inter";
+  src: url("/fonts/Inter-Variable.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("/fonts/JetBrainsMono-Variable.woff2") format("woff2");
+  font-weight: 100 800;
+  font-style: normal;
+  font-display: swap;
+}
+
+
+/* -----------------------------------------------------------------------------
+   2 · BRAND PRIMITIVES — raw values. Never consumed directly by a component.
+   -------------------------------------------------------------------------- */
+
+:root {
+  /* Indigo — the one saturated colour. Primary action and the live indicator. */
+  --brand-indigo:            #4A43D8;
+  --brand-indigo-deep:       #3A34B4;
+  --brand-indigo-light:      #8E88FF;
+  --brand-indigo-lighter:    #A6A1FF;
+  --brand-indigo-tint:       #E8E6FA;
+  --brand-indigo-tint-dark:  #2B2650;
+
+  /* Ink & paper. Dark paper is a dark grey (L* 11.6), never a near-black. */
+  --brand-ink:        #17171C;
+  --brand-ink-2:      #4A4A57;
+  --brand-ink-3:      #656572;
+  --brand-paper:      #F2F2F7;
+  --brand-white:      #FFFFFF;
+  --brand-sunken:     #E9E9F0;
+  --brand-line:       #E3E3E9;
+  --brand-line-strong:#86868F;
+
+  --brand-ink-dk:        #F2F2F6;
+  --brand-ink-2-dk:      #B8B8C6;
+  --brand-ink-3-dk:      #9A9AA8;
+  --brand-paper-dk:      #1E1E26;
+  --brand-surface-dk:    #2C2C38;
+  --brand-sunken-dk:     #26262F;
+  --brand-line-dk:       #3B3B49;
+  --brand-line-strong-dk:#7E7E93;
+
+  /* Status, tuned per theme for AA. */
+  --brand-success:    #15704A;
+  --brand-warn:       #8A5A00;
+  --brand-error:      #B8302B;
+  --brand-info:       #2A5FA8;
+  --brand-success-dk: #4FC98D;
+  --brand-warn-dk:    #E3A63A;
+  --brand-error-dk:   #FF7A70;
+  --brand-info-dk:    #78ADF2;
+
+  /* Soft status fills — for banners and chips, never for text. */
+  --brand-success-soft:    #E7F4ED;
+  --brand-warn-soft:       #FBF1DE;
+  --brand-error-soft:      #FBEAE9;
+  --brand-info-soft:       #E9F0FA;
+  --brand-success-soft-dk: #1B4936;
+  --brand-warn-soft-dk:    #45351C;
+  --brand-error-soft-dk:   #4E2823;
+  --brand-info-soft-dk:    #1F3555;
+}
+
+
+/* -----------------------------------------------------------------------------
+   3 · SEMANTIC COLOUR — DARK (default)
+   Dark is not inverted light: the accent LIFTS, and elevation is carried by
+   surface lightness, not a heavier shadow.
+   -------------------------------------------------------------------------- */
+
+:root,
+:root[data-theme="dark"] {
+  --color-bg:            var(--brand-paper-dk);
+  --color-surface:       var(--brand-surface-dk);
+  --color-sunken:        var(--brand-sunken-dk);
+  --color-ink:           var(--brand-ink-dk);
+  --color-ink-2:         var(--brand-ink-2-dk);
+  --color-ink-muted:     var(--brand-ink-3-dk);
+  --color-border:        var(--brand-line-dk);          /* dividers — decorative, <3:1 */
+  --color-border-strong: var(--brand-line-strong-dk);   /* control borders — ≥3:1      */
+
+  --color-accent:        var(--brand-indigo-light);
+  --color-accent-hover:  var(--brand-indigo-lighter);
+  --color-accent-tint:   var(--brand-indigo-tint-dark);
+  --color-on-accent:     var(--brand-paper-dk);
+
+  --status-success:      var(--brand-success-dk);
+  --status-warn:         var(--brand-warn-dk);
+  --status-error:        var(--brand-error-dk);
+  --status-info:         var(--brand-info-dk);
+  --status-success-bg:   var(--brand-success-soft-dk);
+  --status-warn-bg:      var(--brand-warn-soft-dk);
+  --status-error-bg:     var(--brand-error-soft-dk);
+  --status-info-bg:      var(--brand-info-soft-dk);
+
+  --diff-add-bg:  #1B4936;
+  --diff-add-ink: #4FC98D;
+  --diff-del-bg:  #4E2823;
+  --diff-del-ink: #FF7A70;
+  --diff-gutter:  var(--brand-sunken-dk);
+
+  /* Neutral black only. In dark these barely read — surface lightness does
+     the work; the shadow is a backstop. */
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, .5);
+  --shadow-2: 0 1px 2px rgba(0, 0, 0, .5), 0 8px 24px -12px rgba(0, 0, 0, .75);
+  --shadow-3: 0 2px 4px rgba(0, 0, 0, .6), 0 18px 44px -16px rgba(0, 0, 0, .85);
+
+  /* Scrim and skeleton sweep. Alpha-only, no new hues (skill-documented
+     exceptions: neither can be expressed as an existing token). */
+  --scrim: rgba(14, 14, 19, .62);
+  --skeleton-sweep: rgba(255, 255, 255, .07);
+
+  color-scheme: dark;
+}
+
+
+/* -----------------------------------------------------------------------------
+   4 · SEMANTIC COLOUR — LIGHT (opt-in via data-theme="light")
+   -------------------------------------------------------------------------- */
+
+:root[data-theme="light"] {
+  --color-bg:            var(--brand-paper);
+  --color-surface:       var(--brand-white);
+  --color-sunken:        var(--brand-sunken);
+  --color-ink:           var(--brand-ink);
+  --color-ink-2:         var(--brand-ink-2);
+  --color-ink-muted:     var(--brand-ink-3);
+  --color-border:        var(--brand-line);
+  --color-border-strong: var(--brand-line-strong);
+
+  --color-accent:        var(--brand-indigo);
+  --color-accent-hover:  var(--brand-indigo-deep);
+  --color-accent-tint:   var(--brand-indigo-tint);
+  --color-on-accent:     var(--brand-white);
+
+  --status-success:      var(--brand-success);
+  --status-warn:         var(--brand-warn);
+  --status-error:        var(--brand-error);
+  --status-info:         var(--brand-info);
+  --status-success-bg:   var(--brand-success-soft);
+  --status-warn-bg:      var(--brand-warn-soft);
+  --status-error-bg:     var(--brand-error-soft);
+  --status-info-bg:      var(--brand-info-soft);
+
+  --diff-add-bg:  #E7F4ED;
+  --diff-add-ink: #15704A;
+  --diff-del-bg:  #FBEAE9;
+  --diff-del-ink: #B8302B;
+  --diff-gutter:  var(--brand-sunken);
+
+  --shadow-1: 0 1px 2px rgba(23, 23, 28, .06);
+  --shadow-2: 0 1px 2px rgba(23, 23, 28, .06), 0 8px 24px -12px rgba(23, 23, 28, .18);
+  --shadow-3: 0 2px 4px rgba(23, 23, 28, .08), 0 18px 44px -16px rgba(23, 23, 28, .26);
+
+  --scrim: rgba(14, 14, 19, .55);
+  --skeleton-sweep: rgba(255, 255, 255, .45);
+
+  color-scheme: light;
+}
+
+
+/* -----------------------------------------------------------------------------
+   5 · TYPOGRAPHY
+   Inter for what a person reads; JetBrains Mono for machine facts — paths,
+   model ids, tool names, args, output, timestamps. Four weights, nothing else.
+   -------------------------------------------------------------------------- */
+
+:root {
+  --font-display: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --font-body:    "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --font-mono:    "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  --fw-regular:  400;
+  --fw-medium:   530;
+  --fw-semibold: 600;
+  --fw-display:  640;   /* display sizes and the wordmark only */
+
+  --fs-display-xl: 40px;   --lh-display-xl: 1.05;
+  --fs-display-l:  29px;   --lh-display-l:  1.12;
+  --fs-heading-m:  20px;   --lh-heading-m:  1.25;
+  --fs-heading-s:  16px;   --lh-heading-s:  1.35;
+  --fs-body:       14.5px; --lh-body:       1.55;
+  --fs-caption:    12.5px; --lh-caption:    1.45;
+  --fs-mono:       12.5px; --lh-mono:       1.5;
+  --fs-micro:      11px;   --lh-micro:      1.3;    /* eyebrow labels and chips only */
+
+  --ls-display: -.035em;
+  --ls-heading: -.018em;
+  --ls-body:    0;
+  --ls-eyebrow: .13em;
+}
+
+
+/* -----------------------------------------------------------------------------
+   6 · SPACE, SHAPE, STROKE, SIZE
+   4px base. Product surfaces live in space-2…space-5; space-7+ only where
+   there is one idea on screen (empty states).
+   -------------------------------------------------------------------------- */
+
+:root {
+  --space-1:  4px;
+  --space-2:  8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+  --space-9: 96px;
+
+  /* Status is round, actions are not. */
+  --r-none: 0;
+  --r-xs:   4px;    /* focus ring, checkbox     */
+  --r-sm:   6px;    /* code block, tool output  */
+  --r-md:   8px;    /* button, input, select    */
+  --r-lg:  12px;    /* card, panel, bubble      */
+  --r-xl:  16px;    /* sheet, modal             */
+  --r-full: 999px;  /* chip, badge              */
+
+  --stroke-thin: 1px;     /* dividers                         */
+  --stroke-icon: 1.5px;   /* icons, control borders, outlines */
+
+  --tap-min: 44px;        /* every breakpoint, desktop included */
+  --row-height: 44px;
+  --control-sm: 36px;
+  --control-md: 44px;
+  --control-lg: 52px;
+
+  /* pi-web layout sizes (extension — see DESIGN_NOTES.md §1). */
+  --sidebar-width: 320px;
+  --composer-max:  40vh;  /* textarea auto-grow ceiling */
+  --tool-output-max: 320px;
+}
+
+
+/* -----------------------------------------------------------------------------
+   7 · FOCUS, MOTION, LAYOUT
+   One curve, three durations. Nothing loops except the live indicator and the
+   skeleton sweep, both of which report that work is happening.
+   -------------------------------------------------------------------------- */
+
+:root {
+  --focus-width:  2px;
+  --focus-offset: 2px;
+  --focus-color:  var(--color-accent);
+  --focus-ring:   var(--focus-width) solid var(--focus-color);
+
+  --dur-fast: 120ms;   /* hover, focus, press, disclosure */
+  --dur-base: 200ms;   /* popover, toast, sheet, modal     */
+  --dur-slow: 320ms;   /* full-screen transitions only     */
+  --ease-standard: cubic-bezier(.2, 0, 0, 1);
+
+  /* Bands. Custom properties do not work in @media — for JS and docs only.
+       folded   < 768   one column: list OR transcript
+       unfolded ≥ 768   sidebar left, transcript right          */
+  --bp-unfolded:  768px;
+  --bp-desktop:  1120px;
+  --page-max:    1280px;
+  --measure:       72ch;
+}
+
+/* Reduced motion: durations collapse, loops stop. Opacity fades survive. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

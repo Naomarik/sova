@@ -58,6 +58,26 @@ test("invalid enum values coerce to safe defaults without dropping the record", 
   assert.equal(deriveState(r.presence, r.session), "idle");
 });
 
+test("worker sessionFile/sessionId: kept whole, invalid values dropped per field", () => {
+  const v2 = example("v2");
+  const r = parseLiveRecord(clone(v2), NOW)!;
+  assert.match(r.presence!.workers[0].sessionFile!, /^\/home\/dev\/\.pi\/agent\/sessions\/.+\.jsonl$/);
+  assert.equal(r.presence!.workers[1].sessionFile, undefined, "claude-code workers carry only a sessionId");
+  assert.equal(r.presence!.workers[1].sessionId, "5f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f");
+  const bad = clone(v2);
+  Object.assign(bad.presence.workers[0], { sessionFile: "/" + "x".repeat(1024), sessionId: "s".repeat(65) });
+  Object.assign(bad.presence.workers[1], { sessionFile: 42, sessionId: "" });
+  Object.assign(bad.presence.workers[2], { sessionFile: "/" + "x".repeat(1023), sessionId: "s".repeat(64) });
+  const p = parseLiveRecord(bad, NOW)!.presence!;
+  assert.equal(p.workers.length, 3, "an invalid optional field never rejects the worker or the record");
+  for (const w of p.workers.slice(0, 2)) {
+    assert.ok(!("sessionFile" in w) && !("sessionId" in w), w.id);
+    assert.equal(w.name, v2.presence.workers[p.workers.indexOf(w)].name);
+  }
+  assert.equal(p.workers[2].sessionFile, "/" + "x".repeat(1023));
+  assert.equal(p.workers[2].sessionId, "s".repeat(64));
+});
+
 test("activity.error only survives in the error state; invalid target is dropped, presence kept", () => {
   const v2 = example("v2");
   v2.presence.activity.error = "boom";

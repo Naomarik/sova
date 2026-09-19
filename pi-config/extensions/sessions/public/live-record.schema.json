@@ -51,6 +51,8 @@
         "model": { "type": "string", "maxLength": 100 },
         "preview": { "type": "string", "maxLength": 180 },
         "backend": { "type": "string", "maxLength": 32 },
+        "sessionFile": { "type": "string", "minLength": 1, "maxLength": 1024, "description": "Absolute path of the worker's own transcript JSONL. Path only; never its contents. Consumers must not write to it." },
+        "sessionId": { "type": "string", "minLength": 1, "maxLength": 64, "description": "Backend session id (the Claude session id for claude-code workers)." },
         "startedAt": { "$ref": "#/$defs/epochMs" },
         "lastActivity": { "$ref": "#/$defs/epochMs" },
         "endedAt": { "$ref": "#/$defs/epochMs" },

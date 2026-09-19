@@ -26,8 +26,8 @@
     "preview": "I've split the session middleware into `validateToken` and `refreshToken`. Next I'll update the callers in routes/ and re-run the auth tests.",
     "previewAt": 1789804788000,
     "workers": [
-      { "id": "w-reviewer-1", "name": "reviewer", "status": "running", "model": "claude-sonnet-5", "preview": "Reading middleware/session.ts…", "backend": "pi", "startedAt": 1789804600000, "lastActivity": 1789804795000 },
-      { "id": "w-tests-2", "name": "test-runner", "status": "waiting", "model": "claude-haiku-4-5-20251001", "preview": "All 42 auth tests pass.", "backend": "claude", "startedAt": 1789804300000, "lastActivity": 1789804450000 },
+      { "id": "w-reviewer-1", "name": "reviewer", "status": "running", "model": "claude-sonnet-5", "preview": "Reading middleware/session.ts…", "backend": "pi", "sessionFile": "/home/dev/.pi/agent/sessions/--home-dev-src-webapp--/2026-09-19T07-56-40-000Z_0199a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b.jsonl", "sessionId": "0199a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b", "startedAt": 1789804600000, "lastActivity": 1789804795000 },
+      { "id": "w-tests-2", "name": "test-runner", "status": "waiting", "model": "claude-haiku-4-5-20251001", "preview": "All 42 auth tests pass.", "backend": "claude", "sessionId": "5f0c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f", "startedAt": 1789804300000, "lastActivity": 1789804450000 },
       { "id": "w-docs-3", "name": "docs", "status": "done", "preview": "Updated README auth section.", "backend": "pi", "startedAt": 1789803900000, "lastActivity": 1789804100000, "endedAt": 1789804100000, "outcome": "success" }
     ],
     "workerCounts": { "total": 3, "working": 1, "waiting": 1, "done": 1, "error": 0, "killed": 0 },

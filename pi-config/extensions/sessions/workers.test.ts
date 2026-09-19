@@ -147,5 +147,17 @@ test("additive fields pass through; invalid values are omitted without rejecting
 		h.snapshot([{ ...worker("killed"), outcome }]);
 		assert.equal(changes.at(-1)![0].outcome, outcome);
 	}
+	// Worker transcript path and backend session id: kept whole when valid.
+	const file = "/home/u/.pi/agent/sessions/--home-u-app--/2026-09-20T00-00-00-000Z_abc.jsonl";
+	h.snapshot([{ ...worker("running"), sessionFile: file, sessionId: "s".repeat(64) }]);
+	assert.deepEqual(changes.at(-1), [{ ...worker("running"), sessionFile: file, sessionId: "s".repeat(64) }]);
+	// Non-string, empty, or over-limit values are dropped per field (never truncated); the worker survives.
+	for (const [sessionFile, sessionId] of [[42, {}], ["", ""], ["/" + "x".repeat(1024), "s".repeat(65)]]) {
+		h.events.emit(WORKERS_SNAPSHOT_EVENT, { version: 1, workers: [{ ...worker("waiting"), sessionFile, sessionId }] });
+		assert.deepEqual(changes.at(-1), [worker("waiting")]);
+		h.snapshot([worker("running")]);
+	}
+	h.snapshot([{ ...worker("running"), sessionFile: "/" + "x".repeat(1023), sessionId: 7 as unknown as string }]);
+	assert.deepEqual(changes.at(-1), [{ ...worker("running"), sessionFile: "/" + "x".repeat(1023) }]);
 	h.fire("session_shutdown");
 });

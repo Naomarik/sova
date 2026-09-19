@@ -37,6 +37,9 @@ export const WORKER_OUTCOMES: readonly NonNullable<WorkerEntry["outcome"]>[] = [
 /** Total serialized UTF-8 budget enforced by fit(). */
 export const RECORD_BUDGET = 16_384;
 export const MAX_WORKERS = 40;
+/** WorkerEntry.sessionFile/sessionId caps (same as session.sessionFile/sessionId). */
+export const WORKER_SESSION_FILE_MAX = 1024;
+export const WORKER_SESSION_ID_MAX = 64;
 /** Records dated further in the future than this are treated as garbage. */
 const FUTURE_SKEW_MS = 5 * 60_000;
 
@@ -70,6 +73,10 @@ export interface WorkerEntry {
   model?: string;
   preview?: string;
   backend?: string;
+  /** Absolute path of the worker's own transcript JSONL; never its contents. Read-only for consumers. */
+  sessionFile?: string;
+  /** Backend session id (Claude's session id for claude-code workers). */
+  sessionId?: string;
   startedAt?: number;
   lastActivity?: number;
   endedAt?: number;
@@ -147,6 +154,8 @@ const isObj = (v: unknown): v is Obj => typeof v === "object" && v !== null && !
 const num = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
 const count = (v: unknown): v is number => Number.isSafeInteger(v) && (v as number) >= 0;
 const str = (v: unknown, limit: number): string | undefined => typeof v === "string" ? clean(v, limit) : undefined;
+const whole = (v: unknown, limit: number): string | undefined =>
+  typeof v === "string" && v.length <= limit ? clean(v, limit) || undefined : undefined;
 const oneOf = <T extends string>(v: unknown, values: readonly T[]): T | undefined =>
   typeof v === "string" && (values as readonly string[]).includes(v) ? v as T : undefined;
 
@@ -161,6 +170,9 @@ function parseWorker(value: unknown): WorkerEntry | undefined {
   return compact({
     id: clean(value.id, 150), name: clean(value.name, 120), status: clean(value.status, 80),
     model: str(value.model, 100), preview: str(value.preview, 180), backend: str(value.backend, 32),
+    // Truncating a path/id would point elsewhere: empty or over-limit ⇒ dropped.
+    sessionFile: whole(value.sessionFile, WORKER_SESSION_FILE_MAX),
+    sessionId: whole(value.sessionId, WORKER_SESSION_ID_MAX),
     startedAt: num(value.startedAt) ? value.startedAt : undefined,
     lastActivity: num(value.lastActivity) ? value.lastActivity : undefined,
     endedAt: num(value.endedAt) ? value.endedAt : undefined,

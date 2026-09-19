@@ -115,6 +115,25 @@ test('presence shares bounded assistant text, never thinking or full tool result
   } finally { await h.emit('session_shutdown'); }
 });
 
+test('presence publishes each worker transcript path and session id, dropping invalid ones', async () => {
+  const h = harness();
+  try {
+    await h.emit('session_start');
+    const file = '/home/u/.pi/agent/sessions/--home-u-app--/2026-09-20T00-00-00-000Z_0199.jsonl';
+    h.pi.events.emit('subagents:workers-snapshot', { version: 1, workers: [
+      { id: 'ag_01', name: 'pi-worker', status: 'running', backend: 'pi', sessionFile: file, sessionId: '0199' },
+      { id: 'ag_02', name: 'claude-worker', status: 'waiting', backend: 'claude-code', sessionId: 'c'.repeat(64) },
+      { id: 'ag_03', name: 'bad', status: 'running', sessionFile: '/' + 'x'.repeat(1024), sessionId: 7 },
+    ] });
+    await tick();
+    const [pi, claude, bad] = h.latest().workers;
+    assert.equal(pi.sessionFile, file); assert.equal(pi.sessionId, '0199');
+    assert.equal(claude.sessionFile, undefined); assert.equal(claude.sessionId, 'c'.repeat(64));
+    assert.equal(bad.name, 'bad');
+    assert.ok(!('sessionFile' in JSON.parse(JSON.stringify(bad))) && !('sessionId' in JSON.parse(JSON.stringify(bad))));
+  } finally { await h.emit('session_shutdown'); }
+});
+
 test('local presence: connects and publishes immediately, no registry handshake', async () => {
   const h = harness();
   h.ctx.mode = 'tui';

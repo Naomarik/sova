@@ -1,7 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { WORKER_OUTCOMES, type WorkerEntry } from "./schema.ts";
+import { WORKER_OUTCOMES, WORKER_SESSION_FILE_MAX, WORKER_SESSION_ID_MAX, type WorkerEntry } from "./schema.ts";
 
-/** schema.ts WorkerEntry: the v1 summary plus optional backend/timing/outcome. */
+/** schema.ts WorkerEntry: the v1 summary plus optional backend/session/timing/outcome. */
 export type WorkerSummary = WorkerEntry;
 
 /** Shared with the subagent manager; Claude workers use that same manager. */
@@ -13,6 +13,9 @@ export interface WorkersSnapshot {
 }
 
 const time = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value);
+// A truncated path or id is wrong, not shorter: over-limit values are dropped.
+const bounded = (value: unknown, limit: number): value is string =>
+	typeof value === "string" && value.length > 0 && value.length <= limit;
 
 function decodeSnapshot(data: unknown): WorkerSummary[] | undefined {
 	if (!data || typeof data !== "object") return;
@@ -33,6 +36,8 @@ function decodeSnapshot(data: unknown): WorkerSummary[] | undefined {
 			...(worker.model === undefined ? {} : { model: worker.model }),
 			...(worker.preview === undefined ? {} : { preview: worker.preview }),
 			...(typeof w.backend === "string" ? { backend: w.backend } : {}),
+			...(bounded(w.sessionFile, WORKER_SESSION_FILE_MAX) ? { sessionFile: w.sessionFile } : {}),
+			...(bounded(w.sessionId, WORKER_SESSION_ID_MAX) ? { sessionId: w.sessionId } : {}),
 			...(time(w.startedAt) ? { startedAt: w.startedAt } : {}),
 			...(time(w.lastActivity) ? { lastActivity: w.lastActivity } : {}),
 			...(time(w.endedAt) ? { endedAt: w.endedAt } : {}),
@@ -51,8 +56,11 @@ function decodeSnapshot(data: unknown): WorkerSummary[] | undefined {
  * Includes background/idle/retained finished workers from every backend. Status
  * is the manager's actual lifecycle status, not inferred from parent tool calls;
  * notably "waiting" means steerable, not necessarily successful. Workers may
- * also carry optional backend, startedAt/lastActivity/endedAt (ms epoch) and
- * outcome ("success"|"error"|"aborted"); invalid optional values are dropped
+ * also carry optional backend, sessionFile (absolute path of the worker's own
+ * transcript JSONL, ≤ 1024 chars; never its contents, and consumers must not
+ * write to it), sessionId (backend session id, ≤ 64 chars), startedAt/
+ * lastActivity/endedAt (ms epoch) and outcome ("success"|"error"|"aborted");
+ * empty or over-limit strings and other invalid optional values are dropped
  * per field without rejecting the snapshot. No polling,
  * subprocesses, session-history inference, or dependence on an open monitor.
  *

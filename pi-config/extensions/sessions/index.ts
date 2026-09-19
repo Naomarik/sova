@@ -8,7 +8,7 @@ import { checkFocusable, discoverFocusTarget, focusTarget, type FocusTarget } fr
 import { subscribeWorkers, type WorkerSummary } from "./workers.ts";
 import { SessionsOverlay } from "./ui.ts";
 import { clean, SessionStore, parseOutline, type Presence, type PresenceOutline } from "./state.ts";
-import { countWorkers, fit, RECORD_BUDGET, SCHEMA_VERSION, SESSION_MODES, type Activity, type SessionMeta, type SessionState } from "./schema.ts";
+import { countWorkers, fit, RECORD_BUDGET, SCHEMA_VERSION, SESSION_MODES, WORKER_SESSION_FILE_MAX, WORKER_SESSION_ID_MAX, type Activity, type SessionMeta, type SessionState } from "./schema.ts";
 
 const OUTLINE_SNAPSHOT = "topic-outline:snapshot";
 const OUTLINE_REQUEST = "topic-outline:request";
@@ -196,6 +196,8 @@ export default function sessions(pi: ExtensionAPI, deps: SessionsDeps = {}) {
         id: clean(w.id, 100), name: clean(w.name, 80), status: clean(w.status, 40),
         model: w.model ? clean(w.model, 80) : undefined, preview: w.preview ? clean(w.preview, 180) : undefined,
         backend: w.backend ? clean(w.backend, 32) : undefined,
+        sessionFile: w.sessionFile ? clean(w.sessionFile, WORKER_SESSION_FILE_MAX) : undefined,
+        sessionId: w.sessionId ? clean(w.sessionId, WORKER_SESSION_ID_MAX) : undefined,
         startedAt: w.startedAt, lastActivity: w.lastActivity, endedAt: w.endedAt, outcome: w.outcome,
       })),
       activity, workerCounts: countWorkers(workers), previewAt, focusable, focusReason };

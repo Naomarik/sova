@@ -104,8 +104,15 @@ enforce them, and the reference reader enforces them again.
 | `previewAt` | | ms epoch | | (v2) time `preview` was produced |
 
 **WorkerEntry**: `id` ✔ (150), `name` ✔ (120), `status` ✔ (80, free text),
-`model` (100), `preview` (180), `backend` (32, v2), `startedAt`/`lastActivity`/`endedAt`
+`model` (100), `preview` (180), `backend` (32, v2), `sessionFile` (1024, v2, optional),
+`sessionId` (64, v2, optional), `startedAt`/`lastActivity`/`endedAt`
 (ms epoch, v2), `outcome` (`success`|`error`|`aborted`, v2).
+`sessionFile` is the absolute path of that worker's own transcript JSONL, never its
+contents (same rule as `session.sessionFile`); consumers may read it but must never
+write to it. `sessionId` is the worker's backend session id (for `claude-code`
+workers, the Claude session id; those have no `sessionFile`). Both are additive:
+empty or over-limit values are dropped rather than truncated, and a reader that
+ignores them behaves exactly as before.
 Worker status is normalized to `starting|running|waiting|stopping|done|error|killed`,
 and common aliases map onto those (`busy` ⇒ running, `completed` ⇒ done, …).
 **Unknown ⇒ `running`**. `waiting` means steerable/idle. It does not mean the worker succeeded.
@@ -166,7 +173,7 @@ larger than `workers.length`.
 
 Records **never** contain user prompts, thinking blocks, full tool output,
 bash commands or arguments, or session transcript contents. Only the path is
-included (`sessionFile`).
+included (`session.sessionFile`, and a worker's own `sessionFile`).
 
 - Assistant text is capped: `preview` ≤ 2000 characters, `activity.error` ≤ 200.
 - `activity.toolDetail` holds a tool name plus a file **basename** only.

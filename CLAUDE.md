@@ -46,9 +46,18 @@ returns empty; the dead worker's transcript is "unavailable"). Hosted chat sessi
 survive (JSONL persistence; the webapp reconnects and the runtime reopens). Workers don't.
 
 Rules:
+- Before ANY server-graph edit: check for live workers in ANY hosted session (read
+  `~/.pi/agent/sessions/live/p<server-pid>-*.json`, heartbeat ≤ 30s: `workerCounts.working > 0`,
+  or another session's `activity.state === "working"` — your own turn counts too). Hold the edit
+  if busy: background workers from earlier turns and other web sessions die with the restart.
 - While the watch server runs, delegate only `src/**`, test files (`server/*.test.ts`), and docs.
 - Apply server-graph edits from the orchestrator session itself, batched into as few write bursts
   as possible and as the LAST step of a turn — the restart may cut the turn, but the edits persist.
+- `npm run dev:server` runs `scripts/dev-server.mjs`: a gated watcher that holds restarts while
+  any live record shows working subagents or in-flight turns (`r` key or SIGUSR2 forces).
+  `dev:server:tsx` is the old plain watch. Hosted runtimes are never idle-disposed: they live
+  until archived (the close gesture — running subagents die with it), a foreign-writer reload,
+  or server shutdown.
 - Or run the server without watch (`npx tsx server/index.ts`) for the duration of server-side work.
 
 ## pi-config mirror

@@ -7,7 +7,8 @@
     "node": ">=22.19"
   },
   "scripts": {
-    "dev:server": "tsx watch server/index.ts",
+    "dev:server": "node scripts/dev-server.mjs",
+    "dev:server:tsx": "tsx watch server/index.ts",
     "dev:web": "vite",
     "typecheck": "tsc --noEmit",
     "build": "tsc --noEmit && vite build",

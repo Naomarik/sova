@@ -190,9 +190,8 @@ unfolded (≥768)                                  folded (<768)
 <aside class="app-sidebar" aria-label="Sessions">
   <div class="sidebar-head">
     <a class="brand" href="#/"><svg class="icon" aria-hidden="true">…pi-web-mark…</svg>pi-web</a>
-    <span class="chip chip-accent chip-live chip-count" title="Sessions open in a TUI">
-      <i class="chip-dot"></i>2 live</span>            <!-- only when ≥1 live -->
     <span class="sidebar-spacer"></span>
+    <button class="button button-icon button-ghost" type="button" aria-label="Refresh Sessions">…refresh…</button>
     <button class="button" type="button"><svg class="icon" aria-hidden="true">…plus…</svg>New Session</button>
   </div>
 
@@ -205,7 +204,11 @@ unfolded (≥768)                                  folded (<768)
       <!-- only when the query is non-empty -->
       <button class="button button-icon" type="button" aria-label="Clear Search">…close…</button>
     </div>
-    <p class="search-count" id="session-count" aria-live="polite">12 of 48 sessions</p>
+    <div class="spread">
+      <p class="search-count" id="session-count" aria-live="polite">12 of 48 sessions</p>
+      <span class="chip chip-accent chip-live chip-count" title="Sessions open in a TUI">
+        <i class="chip-dot"></i>2 live</span>          <!-- only when ≥1 live -->
+    </div>
   </div>
 
   <nav class="sidebar-list pane" aria-label="Session list">
@@ -251,7 +254,9 @@ unfolded (≥768)                                  folded (<768)
 - **LIVE badge.** Shown when `live !== null`: `.chip.chip-accent.chip-live` with the word `Live`.
   The pulse is justified because it means "a TUI is running this right now". Never show the dot
   without the word.
-- **Live count** in the sidebar head: `N live` as `.chip-count`, shown only when N ≥ 1.
+- **Live count.** `N live` as `.chip-count`, shown only when N ≥ 1. It sits at the right end of
+  the count row under search (`.spread`), not in the head: at 320px the head holds exactly brand,
+  Refresh, and New Session. It always counts all live sessions, not just the filtered ones.
 - **Selection.** The row for the open session gets `aria-current="page"`, which the stylesheet
   tints with `--color-accent-tint`. The tint is never the only signal, because the head of the
   main pane repeats the title.
@@ -788,7 +793,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Search label (visually hidden) | Search sessions |
 | Search placeholder | Title, folder, or model |
 | Count | `{n} sessions` · filtered: `{visible} of {total} sessions` |
-| Live chip in head | `{n} live` (only when n ≥ 1). `title`: "Sessions open in a TUI" |
+| Live chip (count row under search) | `{n} live` (only when n ≥ 1). `title`: "Sessions open in a TUI" |
 | Row live chip | Live |
 | Untitled row | Untitled (muted) |
 | Refresh button `aria-label` | Refresh Sessions |

@@ -93,8 +93,20 @@ assert.ok(commands.has("mode"), "/mode registered");
 assert.ok(shortcuts.has("alt+m"), "alt+m registered");
 assert.ok(api.flags.has("mode"), "--mode flag registered");
 assert.ok(api.flags.has("minor"), "--minor flag registered");
-assert.ok(commands.has("mode-align"), "/mode-align registered as its own command");
-assert.match(commands.get("mode-align").description, /align/i);
+assert.ok(!commands.has("mode-align"), "/mode-align is gone; the palette Mode category replaces it");
+assert.ok(![...commands.keys()].some((name) => name.startsWith("mode-")), "no per-minor commands");
+
+// The palette discovers the Mode category on demand; nothing announces at load.
+const providers = [];
+events.on("command-palette:category-register", (provider) => providers.push(provider));
+events.emit("command-palette:category-discover", { version: 1 });
+assert.equal(providers.length, 1, "exactly one provider answers discovery");
+const provider = providers[0];
+assert.equal(provider.version, 1);
+assert.equal(provider.id, "mode");
+assert.equal(provider.label, "Mode");
+events.emit("command-palette:category-discover", { version: 2 });
+assert.equal(providers.length, 1, "unknown discovery versions are ignored");
 
 async function hook(name, ...args) {
 	return hooks.get(name)?.(...args, ctx);
@@ -173,13 +185,57 @@ assert.ok(entries.some((e) => e.type === "mode" && e.data.minor === "align" && e
 await commands.get("mode").handler("status", ctx);
 assert.match(store.notices.at(-1).message, /^minor: \(none\)$/m);
 
-// /mode-align toggles, and accepts on/off
-await commands.get("mode-align").handler("", ctx);
-assert.equal(store.status.get("mode"), "<accent>claude-heavy · strict · align</accent>", "/mode-align toggles on");
-await commands.get("mode-align").handler("off", ctx);
-assert.equal(store.status.get("mode"), "<accent>claude-heavy · strict</accent>", "/mode-align off");
-await commands.get("mode-align").handler("sideways", ctx);
-assert.equal(store.notices.at(-1).level, "warning", "bad /mode-align argument warns");
+// Palette rows: align toggles in place with a live marker; major rows switch mode
+let rows = provider.items(ctx);
+const alignRow = () => rows.find((row) => row.id === "mode:minor:align");
+assert.equal(rows.find((row) => row.id === "mode:claude-heavy").label, "✓ claude-heavy");
+assert.equal(alignRow().toggle.isOn(), false);
+alignRow().toggle.toggle();
+assert.equal(alignRow().toggle.isOn(), true, "marker reads live state after toggling");
+assert.equal(store.status.get("mode"), "<accent>claude-heavy · strict · align</accent>", "palette toggle turns align on");
+alignRow().toggle.toggle();
+assert.equal(alignRow().toggle.isOn(), false);
+assert.equal(store.status.get("mode"), "<accent>claude-heavy · strict</accent>", "palette toggle turns align off");
+await rows.find((row) => row.id === "mode:normal").run();
+assert.equal(store.status.get("mode"), "<dim>normal</dim>", "normal row switches mode");
+rows = provider.items(ctx);
+assert.equal(rows.find((row) => row.id === "mode:normal").label, "✓ normal", "fresh rows mark the new mode");
+await rows.find((row) => row.id === "mode:claude-heavy").run();
+assert.equal(store.status.get("mode"), "<accent>claude-heavy · strict</accent>", "claude-heavy row switches mode");
+
+// Bare /mode never toggles: with no palette to claim it, it explains instead
+const tuiCtx = { ...ctx, mode: "tui" };
+for (const bareCtx of [ctx, tuiCtx]) {
+	const before = store.status.get("mode");
+	await commands.get("mode").handler("", bareCtx);
+	assert.equal(store.status.get("mode"), before, "bare /mode does not toggle");
+	assert.equal(store.notices.at(-1).level, "warning");
+	assert.match(store.notices.at(-1).message, /^mode: claude-heavy$/m);
+	assert.match(store.notices.at(-1).message, /Usage: \/mode/);
+}
+
+// With a palette claimant, bare /mode opens it at the Mode category and waits for it
+const requests = [];
+let release;
+const off = events.on("command-palette:open", (request) => {
+	requests.push(request);
+	if (request.version === 1 && request.ctx.mode === "tui") request.claim(new Promise((resolve) => (release = resolve)));
+});
+const noticesBeforeOpen = store.notices.length;
+let finished = false;
+const bare = commands.get("mode").handler("", tuiCtx).then(() => (finished = true));
+await new Promise((resolve) => setImmediate(resolve));
+assert.equal(requests.length, 1);
+assert.deepEqual(requests[0].path, ["mode"]);
+assert.equal(requests[0].ctx, tuiCtx);
+assert.equal(finished, false, "handler awaits the claimed palette promise");
+release();
+await bare;
+assert.equal(finished, true);
+assert.equal(store.notices.length, noticesBeforeOpen, "no fallback warning when the palette opened");
+await commands.get("mode").handler("", ctx);
+assert.equal(requests.length, 1, "non-TUI bare /mode does not ask the palette");
+off();
 
 // Completions include minor modes
 const completions = commands.get("mode").getArgumentCompletions("al").map((item) => item.value);

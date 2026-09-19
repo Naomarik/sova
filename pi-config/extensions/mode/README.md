@@ -31,14 +31,32 @@ Claude plan mode are involved — workers run with bypassed permissions as usual
 
 | Action | Effect |
 | --- | --- |
-| `alt+m` or `/mode` | Toggle normal ↔ claude-heavy |
+| `ctrl+p` → **Mode**, or bare `/mode` | Open the mode selector (see below) |
+| `alt+m` | Toggle normal ↔ claude-heavy |
 | `/mode normal` · `/mode claude-heavy` | Set explicitly |
 | `/mode status` | Show mode, active planner, strict flag, minor modes, state file |
 | `/mode strict on\|off` | Also remove `edit`/`write` from the orchestrator while heavy (off by default) |
 | `/mode align [on\|off]` | Toggle (or set) the `align` minor mode |
-| `/mode-align [on\|off]` | Same, as its own command (its own ctrl-p palette entry) |
 | `pi --mode claude-heavy` | Start that launch in a mode (not persisted) |
 | `pi --minor align` | Start that launch with these minor modes on, comma-separated; `none` clears them (not persisted) |
+
+### Mode selector
+
+The command palette (`ctrl+p`) has a **Mode** category right after *Models &
+thinking*; bare `/mode` opens the palette straight at it. It lists:
+
+- **normal** and **claude-heavy**, radio-style: the current one is marked `✓`,
+  and Enter switches to the highlighted mode and closes the palette.
+- One row per minor mode (`align`, …) with a live `◉` on / `○` off marker.
+  Enter toggles it **in place**; the palette stays open so several can be
+  flipped in one visit. Esc goes back, Ctrl+P closes.
+
+Root-level palette search finds these rows too (type `align`, press Enter).
+Without an interactive palette (print/RPC mode, or the `command-palette`
+extension not loaded), bare `/mode` shows the current status and usage as a
+warning instead of changing anything; the `/mode <argument>` forms are the
+scriptable interface. The category is registered through
+`command-palette/contracts.ts`; rows are built in `palette.ts`.
 
 The footer always shows the current mode:
 
@@ -67,8 +85,7 @@ are appended after the heavy block (when heavy) in registry order.
 
 Like the major mode, the prompt is read per turn, so toggles apply from the
 next prompt. Unknown names hand-edited into `minorModes` are dropped on load.
-The ctrl-p command palette discovers both `/mode` and each `/mode-<minor>`
-command automatically.
+Toggle them from the palette's Mode category or with `/mode <minor> [on|off]`.
 
 ## Behaviour
 

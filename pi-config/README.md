@@ -16,7 +16,7 @@ additions, the pinned third-party packages, and five extensions kept in-tree.
 | `extensions/claude-code/` | `claude-code` worker backend for the subagent tools, driving the installed Claude Code CLI |
 | `extensions/command-palette/` | `Ctrl+P` palette over models, sessions, settings, extension commands and skills |
 | `extensions/extension-toggle/` | `/extensions` to switch extensions on and off in-session |
-| `extensions/mode/` | Global normal ↔ claude-heavy mode switcher (`alt+m`, `/mode`), orchestrating Claude Code workers with a fable/opus planner fallback |
+| `extensions/mode/` | Global normal ↔ claude-heavy mode switcher plus minor modes (`alt+m`, `ctrl+p` → Mode, `/mode`), orchestrating Claude Code workers with a fable/opus planner fallback |
 | `install.sh` | Symlinks the config files and every `extensions/*` directory and single-file `extensions/*.ts` extension into `~/.pi/agent` |
 
 Each extension directory has its own README with usage and verification steps.

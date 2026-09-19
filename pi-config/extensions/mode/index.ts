@@ -10,14 +10,18 @@
  * Minor modes (minor.ts) are extra prompt biases on top of either major mode;
  * "align" makes the agent agree on what to build before building it.
  *
- * Surface: /mode command, one /mode-<minor> command per minor mode, alt+m
- * shortcut, always-on footer status, `--mode` / `--minor` launch flags, and a
- * transcript marker on every switch. State persists globally in ~/.pi/agent/mode.json.
+ * Surface: a "Mode" category in the ctrl+p command palette (palette.ts, registered
+ * through command-palette/contracts.ts; bare /mode opens it), scriptable /mode
+ * <args>, alt+m shortcut, always-on footer status, `--mode` / `--minor` launch
+ * flags, and a transcript marker on every switch. State persists globally in
+ * ~/.pi/agent/mode.json.
  */
 import { getAgentDir, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Text, type KeyId } from "@earendil-works/pi-tui";
 import { join } from "node:path";
-import { isMinorMode, MINOR_DESCRIPTIONS, MINOR_MODES, parseMinorFlag, type MinorMode } from "./minor.ts";
+import { registerPaletteCategory, requestPaletteOpen } from "../command-palette/contracts.ts";
+import { isMinorMode, MINOR_MODES, parseMinorFlag, type MinorMode } from "./minor.ts";
+import { MODE_CATEGORY_ID, modeCategoryItems } from "./palette.ts";
 import { PlannerProbe } from "./planner.ts";
 import { composePrompt, PLANNER_PRIMARY, statusLabel, type PlannerChoice } from "./prompt.ts";
 import {
@@ -121,8 +125,34 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		ctx.ui.notify(`Minor mode: ${minor} ${on ? "on" : "off"}`, "info");
 	}
 
+	function statusLines(): string[] {
+		return [
+			`mode: ${state.mode}`,
+			`planner: ${planner.model} at ${planner.effort}${planner.fallback ? " (fallback; fable unavailable)" : ""}`,
+			`strict: ${state.strict ? "on" : "off"}`,
+			`minor: ${state.minorModes.length > 0 ? state.minorModes.join(", ") : "(none)"}`,
+			`shortcut: ${state.shortcut ?? DEFAULT_MODE_SHORTCUT}`,
+			`state file: ${STATE_FILE}`,
+		];
+	}
+
+	const usage = `Usage: /mode [normal|claude-heavy|status|strict on|strict off|${MINOR_MODES.map((minor) => `${minor} [on|off]`).join("|")}]`;
+
+	// The ctrl+p "Mode" category; the palette asks for fresh rows on every open.
+	registerPaletteCategory(pi.events, {
+		version: 1,
+		id: MODE_CATEGORY_ID,
+		label: "Mode",
+		description: "Major mode and minor-mode toggles",
+		items: (ctx) =>
+			modeCategoryItems(() => state, {
+				setMode: (next) => setMode(next, ctx),
+				setMinor: (minor, on) => setMinor(minor, on, ctx),
+			}),
+	});
+
 	pi.registerCommand("mode", {
-		description: "Switch between normal and claude-heavy orchestration modes, or toggle a minor mode",
+		description: "Open the mode selector, or set a mode with an argument",
 		getArgumentCompletions: (argumentPrefix) => {
 			const minorItems = MINOR_MODES.flatMap((minor) => [minor, `${minor} on`, `${minor} off`]);
 			const items = ["normal", "claude-heavy", "status", "strict on", "strict off", ...minorItems]
@@ -133,7 +163,15 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		handler: async (args, ctx) => {
 			const arg = args.trim();
 			if (arg === "") {
-				await setMode(toggleMode(state.mode), ctx);
+				if (ctx.mode === "tui") {
+					const opened = requestPaletteOpen(pi.events, ctx, [MODE_CATEGORY_ID]);
+					if (opened) {
+						await opened;
+						return;
+					}
+				}
+				// No palette to open (non-TUI, palette not loaded, or already open): never toggle blindly.
+				ctx.ui.notify(`${statusLines().join("\n")}\n${usage}`, "warning");
 				return;
 			}
 			if (isMode(arg)) {
@@ -141,15 +179,7 @@ export default function modeExtension(pi: ExtensionAPI): void {
 				return;
 			}
 			if (arg === "status") {
-				const lines = [
-					`mode: ${state.mode}`,
-					`planner: ${planner.model} at ${planner.effort}${planner.fallback ? " (fallback; fable unavailable)" : ""}`,
-					`strict: ${state.strict ? "on" : "off"}`,
-					`minor: ${state.minorModes.length > 0 ? state.minorModes.join(", ") : "(none)"}`,
-					`shortcut: ${state.shortcut ?? DEFAULT_MODE_SHORTCUT}`,
-					`state file: ${STATE_FILE}`,
-				];
-				ctx.ui.notify(lines.join("\n"), "info");
+				ctx.ui.notify(statusLines().join("\n"), "info");
 				return;
 			}
 			const strictToggle = /^strict\s+(on|off)$/.exec(arg);
@@ -179,32 +209,9 @@ export default function modeExtension(pi: ExtensionAPI): void {
 				setMinor(minor, on, ctx);
 				return;
 			}
-			const minorUsage = MINOR_MODES.map((minor) => `${minor} [on|off]`).join("|");
-			ctx.ui.notify(
-				`Unknown argument "${arg}". Usage: /mode [normal|claude-heavy|status|strict on|strict off|${minorUsage}]`,
-				"warning",
-			);
+			ctx.ui.notify(`Unknown argument "${arg}". ${usage}`, "warning");
 		},
 	});
-
-	// One first-class command per minor mode, so each is its own command-palette entry.
-	for (const minor of MINOR_MODES) {
-		pi.registerCommand(`mode-${minor}`, {
-			description: MINOR_DESCRIPTIONS[minor],
-			getArgumentCompletions: (argumentPrefix) => {
-				const items = ["on", "off"]
-					.filter((value) => value.startsWith(argumentPrefix.trim()))
-					.map((value) => ({ value, label: value }));
-				return items.length > 0 ? items : null;
-			},
-			handler: async (args, ctx) => {
-				const arg = args.trim();
-				if (arg === "") setMinor(minor, !hasMinor(state, minor), ctx);
-				else if (arg === "on" || arg === "off") setMinor(minor, arg === "on", ctx);
-				else ctx.ui.notify(`Unknown argument "${arg}". Usage: /mode-${minor} [on|off]`, "warning");
-			},
-		});
-	}
 
 	pi.registerShortcut((state.shortcut ?? DEFAULT_MODE_SHORTCUT) as KeyId, {
 		description: "Toggle normal / claude-heavy mode",

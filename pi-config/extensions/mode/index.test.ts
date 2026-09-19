@@ -3,7 +3,8 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { buildMinorPrompt, isMinorMode, MINOR_MODES, normalizeMinorModes, parseMinorFlag } from "./minor.ts";
+import { buildMinorPrompt, isMinorMode, MINOR_DESCRIPTIONS, MINOR_MODES, normalizeMinorModes, parseMinorFlag } from "./minor.ts";
+import { MODE_CATEGORY_ID, modeCategoryItems } from "./palette.ts";
 import { pickPlanner } from "./planner.ts";
 import { buildHeavyPrompt, composePrompt, PLANNER_FALLBACK, PLANNER_PRIMARY, statusLabel } from "./prompt.ts";
 import {
@@ -220,4 +221,52 @@ test("status labels", () => {
 		text: "claude-heavy · plan:opus · strict · align",
 		tone: "warning",
 	});
+});
+
+test("modeCategoryItems: radio major modes, live minor toggles", async () => {
+	const state: ModeState = { ...defaults(), minorModes: [] };
+	const calls: unknown[][] = [];
+	const actions = {
+		setMode: (next: string) => {
+			calls.push(["mode", next]);
+		},
+		setMinor: (minor: string, on: boolean) => {
+			calls.push(["minor", minor, on]);
+		},
+	};
+	assert.equal(MODE_CATEGORY_ID, "mode");
+	const rows = modeCategoryItems(() => state, actions);
+	assert.deepEqual(
+		rows.map((row) => row.id),
+		["mode:normal", "mode:claude-heavy", ...MINOR_MODES.map((minor) => `mode:minor:${minor}`)],
+		"two major rows, then one row per minor mode",
+	);
+	assert.equal(rows[0].label, "✓ normal");
+	assert.equal(rows[1].label, "  claude-heavy");
+	assert.equal(rows[0].description, "Pi as usual");
+	assert.ok(rows[0].run && rows[1].run && !rows[0].toggle, "major rows run, not toggle");
+
+	const heavyRows = modeCategoryItems(() => ({ ...state, mode: "claude-heavy" }), actions);
+	assert.equal(heavyRows[0].label, "  normal");
+	assert.equal(heavyRows[1].label, "✓ claude-heavy");
+
+	await rows[1].run?.();
+	await rows[0].run?.();
+	assert.deepEqual(calls, [["mode", "claude-heavy"], ["mode", "normal"]]);
+
+	calls.length = 0;
+	const align = rows.find((row) => row.id === "mode:minor:align");
+	assert.ok(align?.toggle && !align.run && !align.children);
+	assert.equal(align.label, "align");
+	assert.equal(align.description, MINOR_DESCRIPTIONS.align);
+	assert.equal(align.toggle.isOn(), false);
+	align.toggle.toggle();
+	assert.deepEqual(calls, [["minor", "align", true]], "toggle asks to turn it on");
+	// isOn and toggle read live state through getState, not a snapshot.
+	state.minorModes = ["align"];
+	assert.equal(align.toggle.isOn(), true);
+	align.toggle.toggle();
+	assert.deepEqual(calls.at(-1), ["minor", "align", false]);
+	state.minorModes = [];
+	assert.equal(align.toggle.isOn(), false);
 });

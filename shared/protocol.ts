@@ -22,6 +22,10 @@ export interface SessionSummary {
     /** Subagent workers of that live session (from presence.workerCounts); enables sidebar badges. */
     workers?: { working: number; total: number };
   } | null;
+  /** While the server holds this session's runtime AND it is mid-agent-turn (streaming): true.
+      The sidebar shows a "Busy" marker. ABSENT/false when idle/closed — optional until the
+      busy-marker feature ships. Never pulsing (design rule). */
+  busy?: boolean;
   /** "web" if spawned via this webapp's POST /api/sessions (tracked persistently by the server,
       survives restarts); "external" for anything else. Pane rule: top region shows
       live!=null || origin==="web"; everything else goes to the bottom archive section. */
@@ -129,9 +133,10 @@ export type WatchServerMessage =
 // GET /api/insights/agents         -> AgentsInsight     (all live pi processes; poll ~5s)
 // GET /api/insights/session?path=  -> SessionInsight    (400/404 semantics like /api/transcript)
 
-export interface UsageWindow { label: string; pct: number; resetsAt?: string }
+export interface UsageWindow { label: string; pct: number; resetsAt?: string; /** Raw counts when the provider exposes them (e.g. z.ai MCP calls: used/limit). */
+  used?: number; limit?: number }
 export interface UsageProvider {
-  id: "claude" | "openai" | "ollama";
+  id: "claude" | "openai" | "ollama" | "zai";
   state: "ok" | "nologin" | "expired" | "nokey" | "badkey" | "na" | "error";
   windows: UsageWindow[];
   error?: string;
@@ -142,7 +147,7 @@ export interface UsageInsight {
   fetchedAt: number | null;
   nextFetchAt: number | null;
   stale: boolean; // now - fetchedAt > 10 min (no TUI pi refreshing the cache)
-  providers: UsageProvider[]; // fixed order: claude, openai, ollama
+  providers: UsageProvider[]; // fixed order: claude, openai, ollama, zai
 }
 
 export type WorkerStatus = "starting" | "running" | "waiting" | "stopping" | "done" | "error" | "killed";

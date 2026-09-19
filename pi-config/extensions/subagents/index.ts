@@ -42,6 +42,8 @@ import {
 	type MailboxResponse,
 } from "./mailbox.ts";
 import { MCP_SERVER_NAME } from "./member-mcp.ts";
+import { WorkerRegistryRecorder } from "./registry.ts";
+import { WorkerHosting, detachRequested, type HostingOptions } from "./hosting.ts";
 
 const MAX_LIVE = 12;
 const MAX_BATCH = 8;
@@ -244,7 +246,11 @@ interface BatchRequest {
 export interface SubagentsOptions {
 	mailboxRoot?: string;
 	mailboxPollMs?: number;
+	/** Detachable workers (hosting.ts): registry root, forced enablement, host timings. */
+	hosting?: HostingOptions;
 }
+/** Emit to re-scan the registry and adopt this session's detached workers now. */
+export const WORKERS_ADOPT_EVENT = "subagents:workers-adopt";
 
 function resolvePath(value: string, cwd: string): string {
 	const raw = value.startsWith("@") ? value.slice(1) : value;
@@ -307,6 +313,10 @@ export function registerSubagents(
 	discoverBackends();
 	const groups: AgentGroup[] = [];
 	const teams = new TeamStore();
+	// Worker identity records in this (owner) session file; see registry.ts.
+	const registry = new WorkerRegistryRecorder((customType, data) => pi.appendEntry(customType, data));
+	// Detachable workers: host processes that outlive this manager (see hosting.ts).
+	const hosting = new WorkerHosting(options.hosting);
 	let counter = 0;
 	let groupCounter = 0;
 	let activeCtx: ExtensionContext | undefined;
@@ -406,6 +416,9 @@ export function registerSubagents(
 			preview: (a.error || a.finalOutput() || "No response yet.").slice(0, WORKER_PREVIEW_CHARS),
 			// Additive presence fields (still version 1). Never cwd, pid, or task text.
 			...(typeof a.backend === "string" && a.backend ? { backend: a.backend } : {}),
+			// Transcript path and backend session id only, never the transcript itself.
+			...(typeof a.sessionFile === "string" && a.sessionFile ? { sessionFile: a.sessionFile } : {}),
+			...(typeof a.sessionId === "string" && a.sessionId ? { sessionId: a.sessionId } : {}),
 			...teamField(a.id),
 			...timestamps(a),
 			...(a.taskOutcome === "success" || a.taskOutcome === "error" || a.taskOutcome === "aborted"
@@ -422,6 +435,10 @@ export function registerSubagents(
 	const refresh = () => {
 		if (shuttingDown) return;
 		pruneFinished();
+		for (const a of agents) {
+			registry.observe(a);
+			hosting.observe(a);
+		}
 		publishWorkers();
 		try {
 			if (activeCtx?.hasUI) {
@@ -504,6 +521,7 @@ export function registerSubagents(
 		// Constructors may synchronously report failure before their worker is
 		// registered. The post-spawn refresh handles those; never retain them here.
 		if (shuttingDown || !agents.includes(a)) return;
+		registry.finish(a, hosting.lost(a.id) ? "lost" : undefined);
 		if (a.isFinished() && !a.processAlive) finished.add(a);
 		pruneFinished();
 		scheduleRefresh();
@@ -655,6 +673,7 @@ export function registerSubagents(
 		const group: AgentGroup = { id: groupId, label, createdAt: Date.now(), agents: [] };
 		let committed = false;
 		let abandoned = false;
+		const launched: string[] = [];
 		const earlySettled = new Set<Worker>();
 		try {
 			for (const [index, { spec, cwd, model, tools, systemPrompt, extensions, forkSession, backend, prepared: backendPrepared }] of prepared.entries()) {
@@ -668,6 +687,24 @@ export function registerSubagents(
 					// server's own environment, never the CLI's.
 					const env = teamMember ? memberEnv(request.team!, teamMember, id) : undefined;
 					const tooling = teamMember ? memberTooling(spec.backend ?? "pi") : "none";
+					const name = (spec.count ?? 1) > 1 ? `${base}-${i + 1}` : base;
+					// Hosted: the runner's spawnImpl starts a detached host instead of the worker itself.
+					const hostedWorker = hosting.active();
+					if (hostedWorker) launched.push(id);
+					const hosted = hostedWorker
+						? hosting.launch({
+							id, groupId, groupLabel: request.groupLabel, name, backend: spec.backend ?? "pi",
+							spec: {
+								prompt: spec.prompt, backend: spec.backend ?? "pi", name, cwd, wake: spec.wake ?? true,
+								...(model === undefined ? {} : { model }),
+								...(spec.effort === undefined ? {} : { effort: spec.effort }),
+								...(tools === undefined ? {} : { tools }),
+								...(spec.backendOptions === undefined ? {} : { backendOptions: spec.backendOptions }),
+								...(extensions === undefined ? {} : { extensions }),
+							},
+							...(teamMember ? { team: { teamId: request.team!.teamId, role: teamMember.role, ...(teamMember.orchestrator ? { orchestrator: true } : {}) } } : {}),
+						})
+						: {};
 					const runner = (backend?.create ?? createRunner)(
 						{
 							model,
@@ -681,9 +718,10 @@ export function registerSubagents(
 							backend: spec.backend ?? "pi",
 							...(env && tooling === "pi" ? { env } : {}),
 							...(env && tooling === "mcp" ? { mcpServers: { [MCP_SERVER_NAME]: { command: process.execPath, args: [MEMBER_MCP], env } } } : {}),
+							...hosted,
 							id,
 							groupId,
-							name: (spec.count ?? 1) > 1 ? `${base}-${i + 1}` : base,
+							name,
 							task: spec.prompt,
 							cwd,
 							wake: spec.wake ?? true,
@@ -695,6 +733,7 @@ export function registerSubagents(
 						},
 					);
 					group.agents.push(runner);
+					hosting.bind(id, runner);
 				}
 			}
 			request.beforeCommit?.(group);
@@ -705,6 +744,8 @@ export function registerSubagents(
 			// disposal) ends only at confirmed termination, never because a kill
 			// promise resolved early or the caller stopped waiting.
 			for (const worker of group.agents) rollingBack.add(worker);
+			// A registry entry whose factory threw has no runner to finalize it.
+			for (const id of launched) if (!group.agents.some((worker) => worker.id === id)) hosting.discard(id);
 			const cleanup = group.agents.map(async (worker) => {
 				try { await worker.kill("spawn batch rolled back after factory failure"); }
 				catch { await worker.dispose(); }
@@ -736,6 +777,12 @@ export function registerSubagents(
 		groups.push(group);
 		agents.push(...group.agents);
 		committed = true;
+		// Team batches are one worker per member, in member order. Only hosted
+		// workers are recorded: the inline transport writes nothing new.
+		group.agents.forEach((worker, i) => {
+			const member = request.team?.members[i];
+			if (hosting.owns(worker.id)) registry.track(worker, member && { teamId: request.team!.teamId, role: member.role });
+		});
 		// Synchronous startup failures now have registered IDs; discarded batches
 		// never wake the parent. Only replay callbacks for returned workers.
 		for (const worker of earlySettled) onSettled(worker);
@@ -788,7 +835,10 @@ export function registerSubagents(
 	let mailboxOwned = false;
 	const memberDir = (teamId: string, workerId: string) => path.join(mailboxRoot!, teamId, workerId);
 	const ensureMailbox = (): string => {
-		if (!mailboxRoot) {
+		if (!mailboxRoot && hosting.active()) {
+			// Detachable members keep their mailbox across restarts; pending requests are answered after re-adoption.
+			mailboxRoot = hosting.mailboxRoot();
+		} else if (!mailboxRoot) {
 			mailboxRoot = fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagents-teams-"));
 			mailboxOwned = true;
 		}
@@ -1599,6 +1649,80 @@ export function registerSubagents(
 			}
 		},
 	});
+	/**
+	 * Re-adopt this owner session's detached workers (hosting.ts): a living host
+	 * is attached and its whole output replayed through a runner in adopt mode;
+	 * a dead host's log is replayed and the worker finalized (state "lost" if it
+	 * died mid-turn; its backend session id stays in the registry for a manual
+	 * resume, never an automatic one). Completions after the earlier manager's
+	 * consumed offset notify and wake exactly like live ones.
+	 */
+	let adopting: Promise<void> | undefined;
+	const adoptWorkers = (ctx: ExtensionContext): Promise<void> => {
+		if (!hosting.active()) return Promise.resolve();
+		adopting ??= (async () => {
+			try {
+				for (const { dir, meta } of hosting.candidates()) {
+					if (shuttingDown) return;
+					if (agents.some((a) => a.id === meta.id)) continue;
+					const backend = meta.backend === "pi" ? undefined : backends.get(meta.backend);
+					if (meta.backend !== "pi" && !backend) continue; // Its extension is not loaded (yet); stays detached.
+					let prepared: Record<string, unknown> = {};
+					try {
+						// Permission policy and handlers; nothing is spawned.
+						prepared = backend?.prepare?.({ ...meta.spec }, ctx) ?? {};
+					} catch {
+						prepared = {};
+					}
+					const adoption = await hosting.adopt(dir, meta);
+					if (!adoption) continue;
+					if (shuttingDown) { hosting.abandon(meta.id); return; }
+					let worker: Worker;
+					try {
+						worker = (backend?.create ?? createRunner)(
+							{
+								model: meta.spec.model,
+								effort: meta.spec.effort,
+								tools: meta.spec.tools,
+								extensions: meta.spec.extensions,
+								...prepared,
+								...adoption.options,
+								backend: meta.backend,
+								id: meta.id,
+								groupId: meta.groupId,
+								name: meta.name,
+								task: meta.spec.prompt,
+								cwd: meta.spec.cwd,
+								wake: meta.spec.wake,
+							},
+							{ onChange: scheduleRefresh, onSettled, onExit },
+						);
+					} catch {
+						hosting.abandon(meta.id);
+						continue;
+					}
+					hosting.bind(meta.id, worker);
+					let group = groups.find((g) => g.id === meta.groupId);
+					if (!group) {
+						group = { id: meta.groupId, label: meta.groupLabel ?? `${meta.groupId} · re-adopted`, createdAt: meta.createdAt, agents: [] };
+						groups.push(group);
+					}
+					group.agents.push(worker);
+					agents.push(worker);
+					registry.resume(worker);
+					if (meta.team && teams.adoptHistoryTeam(meta.team.teamId)) ensureMailbox();
+				}
+			} finally {
+				adopting = undefined;
+				refresh();
+			}
+		})();
+		return adopting;
+	};
+	const unregisterAdoptListener = pi.events?.on(WORKERS_ADOPT_EVENT, (data: unknown) => {
+		if (shuttingDown || !activeCtx || (data as { version?: unknown } | null)?.version !== 1) return;
+		void adoptWorkers(activeCtx);
+	});
 	pi.on("session_start", (_event, ctx) => {
 		activeCtx = ctx;
 		discoverBackends();
@@ -1623,6 +1747,16 @@ export function registerSubagents(
 		// IDs are reserved across every branch; displayed history only from the active one.
 		teams.reserveCounter(ctx.sessionManager.getEntries());
 		teams.restoreHistory(ctx.sessionManager.getBranch?.() ?? []);
+		hosting.setOwner(ctx.sessionManager.getSessionId?.(), ctx.sessionManager.getSessionFile?.());
+		if (hosting.active()) {
+			try {
+				hosting.reap();
+			} catch {
+				/* Archiving stale entries is best effort. */
+			}
+			// Asynchronous: pings and replays must not block session startup.
+			void adoptWorkers(ctx);
+		}
 		refresh();
 	});
 	pi.on("session_tree", (_event, ctx) => {
@@ -1632,8 +1766,11 @@ export function registerSubagents(
 		refresh();
 	});
 	pi.on("session_shutdown", async () => {
+		// Read at dispose time: the embedding process sets it only when it is going away.
+		const detach = detachRequested();
 		shuttingDown = true;
 		unregisterWorkersListener?.();
+		unregisterAdoptListener?.();
 		publishWorkers();
 		unregisterBackendListener?.();
 		unregisterDialogListener?.();
@@ -1663,14 +1800,22 @@ export function registerSubagents(
 		overlayHandle = undefined;
 		backendDialogs.clear();
 		composingEditor = false;
-		await Promise.all([...agents, ...rollingBack].map((a) => a.dispose()));
+		// Detach leaves hosted workers running for the next manager; anything
+		// whose teardown already began (agent_kill, failed spawn) still finishes.
+		const detached = detach
+			? hosting.detachAll((a) => !rollingBack.has(a) && !a.isFinished() && !a.isStopping?.())
+			: new Set<string>();
+		await Promise.all([...agents, ...rollingBack].filter((a) => rollingBack.has(a) || !detached.has(a.id)).map((a) => a.dispose()));
+		hosting.clear();
 		rollingBack.clear();
 		agents.length = 0;
 		groups.length = 0;
 		finished.clear();
 		teams.clear();
+		registry.clear();
 		// Only a root this instance created is removed; an injected root is the caller's.
-		if (mailboxRoot && mailboxOwned) {
+		// A registry mailbox goes only once no worker of this owner remains to use it.
+		if (mailboxRoot && (mailboxOwned || (!options.mailboxRoot && !detached.size && hosting.ownerEmpty()))) {
 			try {
 				fs.rmSync(mailboxRoot, { recursive: true, force: true });
 			} catch {

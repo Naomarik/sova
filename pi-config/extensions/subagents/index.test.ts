@@ -194,6 +194,16 @@ test("worker snapshots answer before startup and publish bounded background stat
 		request();
 		assert.equal(snapshots.at(-1).workers[0].endedAt, 3_000);
 		a.endedAt = undefined;
+		// The worker's own transcript path and backend session id; empty or non-string values are omitted.
+		Object.assign(a, { sessionFile: "/tmp/sessions/worker.jsonl", sessionId: "0199-worker" });
+		request();
+		assert.deepEqual(snapshots.at(-1).workers[0], { id: a.id, name: a.name, status: "running", model: "test/model",
+			preview: "No response yet.", backend: "pi", sessionFile: "/tmp/sessions/worker.jsonl", sessionId: "0199-worker",
+			startedAt: 1_000, lastActivity: 2_000 });
+		Object.assign(a, { sessionFile: "", sessionId: 42 });
+		request();
+		for (const key of ["sessionFile", "sessionId"]) assert.ok(!(key in snapshots.at(-1).workers[0]), key);
+		Object.assign(a, { sessionFile: undefined, sessionId: undefined });
 		// Privacy: cwd, pid, and task text never cross the bus.
 		for (const key of ["cwd", "pid", "task", "prompt"]) assert.ok(!(key in snapshots.at(-1).workers[0]), key);
 		assert.ok(!JSON.stringify(snapshots.at(-1)).includes("background task"));

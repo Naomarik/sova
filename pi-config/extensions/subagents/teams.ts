@@ -421,6 +421,20 @@ export class TeamStore {
 		this.history = restored.slice(-MAX_HISTORY_TEAMS);
 	}
 
+	/**
+	 * A history team whose workers were re-adopted from detached hosts is live
+	 * again: it moves to the session teams (create-time defaults are not
+	 * persisted, so team_add then applies none). True if the team is live now.
+	 */
+	adoptHistoryTeam(teamId: string): boolean {
+		const index = this.history.findIndex((t) => t.id === teamId);
+		if (index === -1) return this.session.some((t) => t.id === teamId);
+		const [team] = this.history.splice(index, 1);
+		team.origin = "session";
+		this.session.push(team);
+		return true;
+	}
+
 	private addMembers(team: TeamRecord, members: readonly PersistedMember[]): void {
 		for (const m of members) {
 			if (team.members.length >= MAX_TEAM_MEMBERS) return;

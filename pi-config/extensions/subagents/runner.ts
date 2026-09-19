@@ -150,6 +150,17 @@ export interface SpawnOptions {
 	tmpDir?: string;
 	/** @internal Injection seam: replace the real spawn with a fake child. */
 	spawnImpl?: (command: string, args: string[], options: { cwd?: string; stdio: any[]; env?: NodeJS.ProcessEnv }) => ChildProcess;
+	/**
+	 * @internal Re-adopt a worker already running under a detached host
+	 * (host-transport.ts): no argv, no startup handshake, no first prompt.
+	 * spawnImpl returns the attached transport, which replays the worker's
+	 * stdout from the start; while `replaying()` is true the lines were already
+	 * consumed by an earlier manager, so settle notifications and permission
+	 * prompts they would cause are suppressed. `sent` holds the stdin lines the
+	 * earlier managers wrote (newest tail), e.g. to tell which requests were answered.
+	 * `ended`: the host is dead and the worker gone; the log is only read back.
+	 */
+	adopt?: { replaying(): boolean; sessionId?: string; sessionFile?: string; sent?: readonly string[]; ended?: boolean };
 	/** @internal Test overrides. */
 	timings?: Partial<RunnerTimings>;
 	/** @internal Test overrides. */
@@ -341,6 +352,12 @@ export class SubagentRunner implements Worker {
 	private compactionActive = false;
 	/** Bumped on every compaction_start/compaction_end: progress evidence for a pending prompt ACK. */
 	private compactionActivity = 0;
+	/** Adopt mode (see SpawnOptions.adopt): the process was started by an earlier manager. */
+	private readonly adopted: boolean;
+	/** Adopt mode: the replayed initial task's user message was seen; later unarmed user messages are steers. */
+	private adoptedTaskSeen = false;
+	/** Request IDs must not collide with responses replayed from the earlier manager's requests. */
+	private readonly reqPrefix: string;
 
 	constructor(options: SpawnOptions, handlers: RunnerHandlers) {
 		this.id = options.id;
@@ -354,7 +371,15 @@ export class SubagentRunner implements Worker {
 		this.model = options.model;
 		this.effort = options.effort;
 		this.onChange = handlers.onChange;
-		this.onSettled = handlers.onSettled;
+		const adopt = options.adopt;
+		this.adopted = Boolean(adopt);
+		this.reqPrefix = adopt ? `req-a${Date.now().toString(36)}-` : "req-";
+		if (adopt) {
+			this.sessionId = adopt.sessionId;
+			this.sessionFile = adopt.sessionFile;
+		}
+		// History settles were announced by the earlier manager; never twice.
+		this.onSettled = adopt ? (runner) => { if (!adopt.replaying()) handlers.onSettled(runner); } : handlers.onSettled;
 		this.onExit = handlers.onExit;
 		this.timings = { ...DEFAULT_TIMINGS, ...options.timings };
 		this.limits = {
@@ -375,12 +400,12 @@ export class SubagentRunner implements Worker {
 
 	private start(options: SpawnOptions): void {
 		this.push("task", options.task);
-		const args = this.buildArgs(options);
+		const args = this.adopted ? [] : this.buildArgs(options);
 		if (!args) return; // fail() already ran
 
 		let proc: ChildProcess;
 		try {
-			const invocation = getPiInvocation(args);
+			const invocation = this.adopted ? { command: "", args } : getPiInvocation(args);
 			const spawnFn = options.spawnImpl ?? spawn;
 			proc = spawnFn(invocation.command, invocation.args, {
 				cwd: options.cwd,
@@ -430,6 +455,13 @@ export class SubagentRunner implements Worker {
 		});
 		proc.on("close", (code, signal) => this.finalizeExit(code ?? null, signal ?? null));
 
+		if (this.adopted) {
+			// The earlier manager already submitted the task and got it accepted;
+			// the replayed events move status from here.
+			this.status = "running";
+			this.initialPromptAccepted = true;
+			return;
+		}
 		// Status stays `starting` until begin() actually submits the task prompt:
 		// see begin() for the immediate-steer race this prevents.
 		void this.begin(options.task);
@@ -694,6 +726,9 @@ export class SubagentRunner implements Worker {
 				const recovery = this.recoveryPending;
 				this.recoveryPending = false;
 				if (!recovery && !this.settleAnnounced && (this.taskError || this.taskAborted)) this.carryFailure();
+				// Adopt mode: a run after a settle that this runner never armed was
+				// steered by the earlier manager. It is a fresh task.
+				if (this.adopted && !recovery && this.settleAnnounced && !this.armedAwaitingRun) this.beginAdoptedRun();
 				this.status = "running";
 				// A retry run may still be the old task; its steer is recognized by
 				// the delivered user message instead.
@@ -742,6 +777,10 @@ export class SubagentRunner implements Worker {
 					// A steer can be delivered inside the running run without a new
 					// agent_start. Its user message is the actual task boundary.
 					this.beginArmedRun();
+				} else if (message.role === "user" && this.adopted) {
+					// Replayed instructions: the first is the task (already shown), later ones are steers the earlier manager sent.
+					if (this.adoptedTaskSeen) this.push("steer", textOf(message.content));
+					this.adoptedTaskSeen = true;
 				}
 				break;
 			}
@@ -909,6 +948,17 @@ export class SubagentRunner implements Worker {
 		if (!this.leaderExited) this.onSettled(this);
 	}
 
+	/** Adopt mode: an unarmed run after a settled task (steered by the earlier manager) starts a new task. */
+	private beginAdoptedRun(): void {
+		this.taskBoundarySeq = ++this.pushSeq;
+		this.settleAnnounced = false;
+		this.taskError = undefined;
+		this.taskAborted = false;
+		this.taskOutcome = undefined;
+		this.error = undefined;
+		this.carriedFailures = [];
+	}
+
 	/** Record a failed run that Pi followed with queued instructions, and start the next run clean. */
 	private carryFailure(): void {
 		const failure = this.taskAborted
@@ -1023,7 +1073,7 @@ export class SubagentRunner implements Worker {
 		extra: Record<string, unknown>,
 		timeoutMs: number,
 	): { id: string; response: Promise<any> } {
-		const id = `req-${this.nextReqId++}`;
+		const id = `${this.reqPrefix}${this.nextReqId++}`;
 		const response = new Promise<any>((resolve) => {
 			const entry = { resolve } as PendingRequest;
 			entry.timer = setTimeout(() => {

@@ -1,6 +1,8 @@
 /** Owned persistent Claude Code stream-json adapter (probed with CLI 2.1.276 and 2.1.277).
  * Only one user UUID is in flight. Replay acknowledges delivery, result settles
- * work, and interrupt acknowledgment is NOT settlement. No external adoption.
+ * work, and interrupt acknowledgment is NOT settlement. The only adoption is of
+ * our own detached host's worker (options.adopt): its replayed user messages
+ * re-create the in-flight task from the stream itself.
  */
 import { spawn, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -189,6 +191,11 @@ export class ClaudeRunner implements Worker {
 	private privateDir?: string;
 	private systemPromptFile?: string;
 	private mcpConfigFile?: string;
+	/** Adopt mode: tasks re-created from replayed user messages; the first is the initial task. */
+	private adoptedTasks = 0;
+	/** Adopt mode: replayed permission requests no earlier manager answered; prompted again once live. */
+	private readonly replayedPermissions = new Map<string, Record<string, any>>();
+	private answeredIds?: Set<string>;
 
 	private readonly options: ClaudeSpawnOptions;
 	private readonly handlers: ClaudeRunnerHandlers;
@@ -203,8 +210,48 @@ export class ClaudeRunner implements Worker {
 			if (!Number.isSafeInteger(value) || value <= 0) throw new Error("Runner limits/timings must be positive integers");
 		}
 		this.whenClosed = this.closedState.promise;
+		if (options.adopt) this.sessionId = options.adopt.sessionId;
 		// Defer callbacks until the owner has stored the constructed runner.
-		queueMicrotask(() => this.start());
+		queueMicrotask(() => (options.adopt ? this.adopt() : this.start()));
+	}
+
+	/** True while the transport delivers output an earlier manager already consumed. */
+	private replaying(): boolean { return this.options.adopt?.replaying() === true; }
+	/** An earlier manager sent a control_response for this request (adopt.sent is its stdin). */
+	private answered(requestId: string): boolean {
+		if (!this.answeredIds) {
+			this.answeredIds = new Set();
+			for (const line of this.options.adopt?.sent ?? []) {
+				try {
+					const frame = JSON.parse(line);
+					if (frame?.type === "control_response" && typeof frame.response?.request_id === "string") this.answeredIds.add(frame.response.request_id);
+				} catch { /* not a frame */ }
+			}
+		}
+		return this.answeredIds.has(requestId);
+	}
+
+	/**
+	 * Re-attach to a worker our detached host kept running. No argv, initialize
+	 * or first message: the replayed stream rebuilds the task (see event()).
+	 */
+	private adopt(): void {
+		if (this.stopping || this.closed) return;
+		try {
+			this.proc = (this.options.spawnImpl ?? spawn)("", [], { cwd: this.options.cwd, stdio: ["pipe", "pipe", "pipe"] });
+		} catch (error) { this.fail(`Adoption failed: ${String(error)}`); return; }
+		this.initialized = true; this.initialOwed = false; this.notificationPending = false;
+		this.status = "running";
+		this.wire(this.proc);
+		this.proc.on("live", () => {
+			// Claude still waits on requests the earlier manager never answered.
+			const pending = [...this.replayedPermissions.values()];
+			this.replayedPermissions.clear();
+			for (const e of pending) this.permission(e);
+			// Replay done: no task in flight means the worker is idle and steerable.
+			if (this.closed || this.stopping || this.active || this.status !== "running") return;
+			this.status = "waiting"; this.touch();
+		});
 	}
 
 	private start(): void {
@@ -269,7 +316,11 @@ export class ClaudeRunner implements Worker {
 			const spawnOptions = { cwd: o.cwd, shell: false, detached: process.platform !== "win32", env, stdio: ["pipe", "pipe", "pipe"] };
 			this.proc = (o.spawnImpl ?? spawn)(o.executable ?? "claude", args, spawnOptions);
 		} catch (error) { this.fail(`Spawn failed: ${String(error)}`); return; }
-		const proc = this.proc;
+		this.wire(this.proc);
+		void this.initialize();
+	}
+
+	private wire(proc: ChildProcess): void {
 		this.processAlive = true; this.pid = proc.pid;
 		proc.stdin?.on("error", (e) => { if (!this.stopping) this.fail(`stdin error: ${e.message}`); });
 		proc.stdout?.on("data", (chunk: Buffer) => this.consume(this.decoder.write(chunk)));
@@ -284,7 +335,6 @@ export class ClaudeRunner implements Worker {
 			this.schedulePipeDrain(); this.touch();
 		});
 		proc.on("close", (code, signal) => this.close(code, signal));
-		void this.initialize();
 	}
 
 	private async initialize(): Promise<void> {
@@ -309,9 +359,10 @@ export class ClaudeRunner implements Worker {
 		this.privateDir = undefined; this.systemPromptFile = undefined; this.mcpConfigFile = undefined;
 	}
 	private validInput(message: string): boolean { return !!message.trim() && message.length <= this.limits.maxInputChars; }
-	private dispatch(message: string, kind: "task" | "steer"): Task {
+	/** adoptedId: the task was sent by an earlier manager and is only being re-created here (never re-sent). */
+	private dispatch(message: string, kind: "task" | "steer", adoptedId?: string): Task {
 		const task: Task = {
-			id: randomUUID(), accepted: deferred<boolean>(), settled: deferred<boolean>(), cancelled: false,
+			id: adoptedId ?? randomUUID(), accepted: deferred<boolean>(), settled: deferred<boolean>(), cancelled: false,
 			acceptTimer: setTimeout(() => {
 				if (this.active === task) this.fail("User delivery unknown: no correlated replay/result before timeout");
 			}, this.timings.requestTimeoutMs),
@@ -320,6 +371,10 @@ export class ClaudeRunner implements Worker {
 		this.status = "running"; this.taskOutcome = undefined; this.error = undefined;
 		this.permissionDenials = []; this.output = ""; this.partial = undefined; this.lastAssistant = undefined;
 		this.push(kind, message);
+		if (adoptedId) {
+			clearTimeout(task.acceptTimer); task.accepted.resolve(true);
+			return task;
+		}
 		if (!this.send({ type: "user", uuid: task.id, message: { role: "user", content: [{ type: "text", text: message }] } })) {
 			task.unsent = true; this.fail("Could not send user message");
 		}
@@ -377,6 +432,7 @@ export class ClaudeRunner implements Worker {
 		}
 		if (e.type === "control_request") { this.permission(e); return; }
 		if (e.type === "control_cancel_request") {
+			this.replayedPermissions.delete(e.request_id);
 			this.permissions.get(e.request_id)?.controller.abort(); return;
 		}
 		if (typeof e.session_id === "string") {
@@ -384,6 +440,14 @@ export class ClaudeRunner implements Worker {
 			this.sessionId = e.session_id;
 		}
 		if (e.type === "system" && e.subtype === "init" && typeof e.model === "string") this.model = e.model;
+		// Adopt mode: Claude echoes each user message it accepted (--replay-user-messages).
+		// One this runner did not send is the earlier manager's task; take it over.
+		if (this.options.adopt && !this.active && !this.stopping && e.type === "user" && e.isReplay === true && typeof e.uuid === "string") {
+			const content = e.message?.content;
+			const text = typeof content === "string" ? content
+				: Array.isArray(content) ? content.filter((b: any) => b?.type === "text").map((b: any) => String(b.text ?? "")).join("") : "";
+			this.dispatch(text, this.adoptedTasks++ ? "steer" : "task", e.uuid);
+		}
 		const task = this.active;
 		if (!task) return;
 		if (e.type === "user" && e.isReplay === true && e.uuid === task.id) {
@@ -475,7 +539,7 @@ export class ClaudeRunner implements Worker {
 	private finishTask(task: Task, outcome: TaskOutcome, correlated: boolean): void {
 		if (this.active !== task) return;
 		clearTimeout(task.acceptTimer); this.active = undefined; this.partial = undefined;
-		this.cancelPermissions(); this.taskOutcome = outcome;
+		this.cancelPermissions(); this.replayedPermissions.clear(); this.taskOutcome = outcome;
 		// The abort our own redirect requested is not a failure of the queued
 		// chain: the replacement runs next and acknowledged follow-ups follow it.
 		const redirected = outcome === "aborted" && task.cancelled && this.redirecting && !this.stopping;
@@ -498,6 +562,14 @@ export class ClaudeRunner implements Worker {
 
 	private permission(e: Record<string, any>): void {
 		if (typeof e.request_id !== "string") return;
+		// A replayed request was answered by the earlier manager, or is still
+		// pending in Claude: then it is prompted again once the replay is done.
+		if (this.replaying()) {
+			if (!this.answered(e.request_id)) this.replayedPermissions.set(e.request_id, e);
+			return;
+		}
+		// The adopted worker already exited: its log is only being read back.
+		if (this.options.adopt?.ended) return;
 		const id = e.request_id;
 		if (this.permissions.has(id)) return;
 		if (e.request?.subtype !== "can_use_tool") {
@@ -653,7 +725,8 @@ export class ClaudeRunner implements Worker {
 	private notifySettled(): void {
 		if (!this.notificationPending || !this.isSettled()) return;
 		this.notificationPending = false;
-		this.handlers.onSettled(this);
+		// The earlier manager already announced history settles; never twice.
+		if (!this.replaying()) this.handlers.onSettled(this);
 	}
 	kill(reason = "killed by user"): Promise<void> {
 		if (this.closed || this.stopping) return this.whenClosed;

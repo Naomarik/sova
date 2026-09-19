@@ -32,7 +32,16 @@ function currentTheme(): Theme {
   return g[THEME_KEY] as Theme;
 }
 
-export class BusyError extends Error {}
+/** A refusal to write. code per shared/protocol.ts: busy = TUI owns it (force never helps),
+ *  recent = unknown writer (reconnect with &force=1), reloaded = another client reloaded the runtime. */
+export class BusyError extends Error {
+  constructor(
+    message: string,
+    readonly code: "busy" | "recent" | "reloaded" = "busy",
+  ) {
+    super(message);
+  }
+}
 
 /** Minimal client interface so ws.ts owns the socket details. */
 export interface ChatClient {
@@ -116,10 +125,10 @@ class ChatSession {
       }
       if (reason) {
         this.foreignWrite = reason;
-        this.broadcast({ type: "error", code: "busy", message: this.busyMessage() });
+        this.broadcast({ type: "error", code: "recent", message: this.busyMessage() });
       }
     }
-    if (this.foreignWrite) throw new BusyError(this.busyMessage());
+    if (this.foreignWrite) throw new BusyError(this.busyMessage(), "recent");
   }
 
   hasForeignWrites(): boolean {
@@ -194,11 +203,11 @@ class ChatSession {
 
   handle(client: ChatClient, msg: ChatClientMessage): void {
     const fail = (err: unknown) => {
-      const busy = err instanceof BusyError;
-      client.send({ type: "error", code: busy ? "busy" : "internal", message: err instanceof Error ? err.message : String(err) });
+      const code = err instanceof BusyError ? err.code : "internal";
+      client.send({ type: "error", code, message: err instanceof Error ? err.message : String(err) });
     };
     if (this.disposed) {
-      client.send({ type: "error", code: "internal", message: "Session runtime was closed; reconnect" });
+      client.send({ type: "error", code: "reloaded", message: "Session runtime was closed; reconnect" });
       return;
     }
     try {
@@ -400,9 +409,9 @@ export async function acquireChat(path: string, force = false): Promise<ChatSess
     if (chat && !chat.disposed) {
       assertNotLive(path);
       if (chat.hasForeignWrites()) {
-        if (!force) throw new BusyError(chat.busyMessage());
+        if (!force) throw new BusyError(chat.busyMessage(), "recent");
         // "Chat anyway": our in-memory tree is stale, so reload from disk instead of appending to it.
-        chat.broadcast({ type: "error", code: "busy", message: "Session was reloaded by another client; reconnect" });
+        chat.broadcast({ type: "error", code: "reloaded", message: "Session was reloaded by another client; reconnect" });
         await chat.dispose();
       } else {
         return chat;
@@ -413,7 +422,7 @@ export async function acquireChat(path: string, force = false): Promise<ChatSess
   if (!force) {
     // Shared constant with the frontend: RECENT_WRITE_MS (120s) in server/write-guard.ts.
     const age = recentForeignWriteAgeSec(path);
-    if (age !== null) throw new BusyError(`modified ${age}s ago by a process we can't identify`);
+    if (age !== null) throw new BusyError(`modified ${age}s ago by a process we can't identify`, "recent");
   }
   const forget = () => {
     if (sessions.get(path) === p) sessions.delete(path);

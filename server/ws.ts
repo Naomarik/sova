@@ -42,7 +42,7 @@ async function handleChat(ws: WebSocket, path: string, force: boolean): Promise<
     chat = await acquireChat(path, force);
   } catch (err) {
     const busy = err instanceof BusyError;
-    client.send({ type: "error", code: busy ? "busy" : "internal", message: err instanceof Error ? err.message : String(err) });
+    client.send({ type: "error", code: busy ? err.code : "internal", message: err instanceof Error ? err.message : String(err) });
     ws.close(busy ? 4409 : 4500, busy ? "busy" : "open failed");
     return;
   }

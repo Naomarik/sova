@@ -3,6 +3,8 @@ import { CustomEditor, getAgentDir, SettingsManager, type ExtensionAPI, type Ext
 import { clampThinkingLevel, getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import { Palette, type MenuItem } from "./menu.ts";
 import { ModelFavorites } from "./favorites.ts";
+import { CATEGORY_DISCOVER_EVENT, CATEGORY_REGISTER_EVENT, OPEN_EVENT,
+  type CategoryDiscovery, type CategoryProvider, type OpenRequest } from "./contracts.ts";
 import { join } from "node:path";
 
 type FavoriteStore = Pick<ModelFavorites, "has" | "set">;
@@ -67,6 +69,12 @@ export default function commandPalette(pi: ExtensionAPI) {
   let editor: Editor | undefined;
   let active = false;
   let generation = 0;
+  // Filled synchronously by discovery on each open; never cached across opens.
+  const providers: CategoryProvider[] = [];
+  pi.events.on(CATEGORY_REGISTER_EVENT, (data: unknown) => {
+    const provider = data as CategoryProvider | undefined;
+    if (provider?.version === 1 && typeof provider.id === "string" && typeof provider.items === "function") providers.push(provider);
+  });
 
   pi.on("session_start", (_event, ctx) => {
     generation++;
@@ -152,6 +160,21 @@ export default function commandPalette(pi: ExtensionAPI) {
     }
     roots.unshift({ id: "Models & thinking", label: "Models & thinking", modelGroup: true,
       description: "Favorites · Ctrl+A show all · ←→ thinking level", children: modelItems(pi, ctx, favorites) });
+    providers.length = 0;
+    pi.events.emit(CATEGORY_DISCOVER_EVENT, { version: 1 } satisfies CategoryDiscovery);
+    const seen = new Set<string>();
+    const categories: MenuItem[] = [];
+    for (const provider of providers.splice(0)) {
+      if (seen.has(provider.id)) continue;
+      seen.add(provider.id);
+      try {
+        categories.push({ id: provider.id, label: provider.label, description: provider.description, children: provider.items(ctx) });
+      } catch (error) {
+        // One broken provider must not take the rest of the palette down.
+        ctx.ui.notify(`Palette category ${provider.label}: ${error instanceof Error ? error.message : String(error)}`, "error");
+      }
+    }
+    roots.splice(1, 0, ...categories);
     roots.find(r => r.id === "Settings")!.children!.push(
       builtin(ctx, "scoped-models", "Configure model cycling", "Choose and reorder models shown in the palette"),
       {
@@ -192,19 +215,27 @@ export default function commandPalette(pi: ExtensionAPI) {
     return roots;
   }
 
-  async function open(ctx: ExtensionContext) {
+  async function open(ctx: ExtensionContext, path?: string[]) {
     if (ctx.mode !== "tui" || active) return;
     active = true;
     try {
       const item = await ctx.ui.custom<MenuItem | undefined>((tui, theme, keys, done) =>
         new Palette(items(ctx), theme, keys, () => tui.requestRender(),
-          () => tui.terminal.rows - 2, done),
+          () => tui.terminal.rows - 2, done, path),
       { overlay: true, overlayOptions: { width: "80%", anchor: "top-center", offsetY: 1, margin: 1 } });
       await item?.run?.();
     } catch (error) {
       ctx.ui.notify(`Command palette: ${error instanceof Error ? error.message : String(error)}`, "error");
     } finally { active = false; }
   }
-  pi.registerShortcut("ctrl+p", { description: "Open command palette", handler: open });
-  pi.registerCommand("palette", { description: "Search commands and submenus", handler: (_args, ctx) => open(ctx) });
+  pi.registerShortcut("ctrl+p", { description: "Open command palette", handler: ctx => open(ctx) });
+  // `/palette mode` opens at a category; ids match case-insensitively.
+  pi.registerCommand("palette", { description: "Search commands and submenus; optional category id opens it directly",
+    handler: (args, ctx) => open(ctx, args.trim() ? [args.trim()] : undefined) });
+  // Other extensions deep-link through requestPaletteOpen (contracts.ts).
+  pi.events.on(OPEN_EVENT, (data: unknown) => {
+    const request = data as OpenRequest | undefined;
+    if (request?.version !== 1 || request.ctx?.mode !== "tui" || active) return;
+    request.claim(open(request.ctx, request.path));
+  });
 }

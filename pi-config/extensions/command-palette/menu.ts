@@ -12,6 +12,8 @@ export interface MenuItem {
   adjust?: (direction: -1 | 1) => void;
   modelGroup?: boolean;
   favorite?: { isFavorite: () => boolean; toggle: () => void };
+  /** Enter flips this in place; the palette stays open. */
+  toggle?: { isOn: () => boolean; toggle: () => void };
 }
 interface Frame { title: string; items: MenuItem[]; query: string; selected: number; modelGroup?: boolean }
 interface Match { item: MenuItem; path: string }
@@ -50,7 +52,7 @@ export class Palette implements Component, Focusable {
   private rows = 10;
   private closed = false;
   private showAllModels = false;
-  private favoriteError = "";
+  private error = "";
   private get modelControls(): boolean {
     const containsModels = (items: MenuItem[]): boolean => items.some(item =>
       item.modelGroup || item.favorite || (item.children && containsModels(item.children)));
@@ -62,8 +64,14 @@ export class Palette implements Component, Focusable {
 
   constructor(items: MenuItem[], private theme: Theme, private keys: KeybindingsManager,
     private redraw: () => void, private height: () => number,
-    private done: (item: MenuItem | undefined) => void) {
+    private done: (item: MenuItem | undefined) => void, initialPath?: string[]) {
     this.stack = [{ title: "Commands", items, query: "", selected: 0 }];
+    // Deep link: descend while each id (case-insensitive) names a category.
+    for (const id of initialPath ?? []) {
+      const item = this.frame.items.find(entry => entry.children && entry.id.toLowerCase() === id.toLowerCase());
+      if (!item) break;
+      this.stack.push({ title: item.label, items: item.children!, query: "", selected: 0, modelGroup: item.modelGroup });
+    }
     this.rebuild();
   }
   private rebuild(preferred?: MenuItem) {
@@ -73,7 +81,7 @@ export class Palette implements Component, Focusable {
     if (retained >= 0) this.frame.selected = retained;
     this.frame.selected = Math.max(0, Math.min(this.frame.selected, this.matches.length - 1));
     this.list = new SelectList(this.matches.map(({ item, path }, index) => ({
-      value: String(index), label: `${item.favorite ? (item.favorite.isFavorite() ? "★ " : "☆ ") : ""}${item.value ? `${item.value()}  ` : ""}${item.label}${item.children ? "  ›" : ""}`,
+      value: String(index), label: `${item.favorite ? (item.favorite.isFavorite() ? "★ " : "☆ ") : ""}${item.toggle ? (item.toggle.isOn() ? "◉ " : "○ ") : ""}${item.value ? `${item.value()}  ` : ""}${item.label}${item.children ? "  ›" : ""}`,
       description: item.value ? item.description : path || item.description,
     })), this.rows, {
       selectedPrefix: s => this.theme.fg("accent", s),
@@ -104,13 +112,13 @@ export class Palette implements Component, Focusable {
     else if (this.modelControls && matchesKey(data, "ctrl+a")) {
       const selected = this.matches[this.frame.selected]?.item;
       this.showAllModels = !this.showAllModels;
-      this.favoriteError = "";
+      this.error = "";
       this.rebuild(selected);
     } else if (this.modelControls && matchesKey(data, "ctrl+f")) {
       const selected = this.matches[this.frame.selected]?.item;
       if (selected?.favorite) {
-        try { selected.favorite.toggle(); this.favoriteError = ""; }
-        catch (error) { this.favoriteError = `Could not save favorite: ${error instanceof Error ? error.message : String(error)}`; }
+        try { selected.favorite.toggle(); this.error = ""; }
+        catch (error) { this.error = `Could not save favorite: ${error instanceof Error ? error.message : String(error)}`; }
         this.rebuild(selected);
       }
     } else if (this.keys.matches(data, "tui.select.confirm")) {
@@ -119,6 +127,10 @@ export class Palette implements Component, Focusable {
         this.stack.push({ title: item.label, items: item.children, query: "", selected: 0, modelGroup: item.modelGroup });
         this.input.setValue("");
         this.rebuild();
+      } else if (item?.toggle) {
+        try { item.toggle.toggle(); this.error = ""; }
+        catch (error) { this.error = `Could not toggle ${item.label}: ${error instanceof Error ? error.message : String(error)}`; }
+        this.rebuild(item);
       } else if (item?.run) this.close(item);
     } else if (this.matches[this.frame.selected]?.item.adjust &&
       (matchesKey(data, "left") || matchesKey(data, "right"))) {
@@ -152,7 +164,7 @@ export class Palette implements Component, Focusable {
     const inner = width - 2;
     const hints = this.modelControls ? wrapTextWithAnsi(
       `Ctrl+A ${this.showAllModels ? "favorites" : "show all"} · Ctrl+F toggle favorite`, inner - 2) : [];
-    const extra = hints.length + (this.favoriteError ? 1 : 0);
+    const extra = hints.length + (this.error ? 1 : 0);
     // SelectList adds a scroll indicator below its visible rows.
     if (height < 8 + extra) return [truncateToWidth("Palette: enlarge terminal; Ctrl+A all; Esc back", width)];
     const rows = Math.max(1, Math.min(12, height - 8 - extra));
@@ -170,10 +182,11 @@ export class Palette implements Component, Focusable {
         ? [this.theme.fg("warning", this.showAllModels ? "No matching models." :
           this.frame.query.trim() ? "No matching favorites. Ctrl+A shows all." : "No favorite models. Ctrl+A shows all.")]
         : this.list.render(inner - 2)).map(s => row(" " + s)),
-      ...(this.favoriteError ? [row(" " + this.theme.fg("error", this.favoriteError))] : []),
+      ...(this.error ? [row(" " + this.theme.fg("error", this.error))] : []),
       ...hints.map(hint => row(" " + this.theme.fg("dim", hint))),
       row(this.theme.fg("dim", this.matches[this.frame.selected]?.item.value
         ? " ←→ thinking · Enter apply · Esc back · Ctrl+P close"
+        : this.matches[this.frame.selected]?.item.toggle ? " Enter toggle · Esc back · Ctrl+P close"
         : " ↑↓ move · Enter select · Esc back · Ctrl+P close")),
       this.theme.fg("borderAccent", `╰${"─".repeat(inner)}╯`)];
     return lines;

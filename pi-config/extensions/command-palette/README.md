@@ -10,8 +10,13 @@ Run `/reload` once after installation, then press **Ctrl+P** or use `/palette`.
 - Up/Down (also Ctrl+K/J) and Page Up/Down move the selection.
 - Escape, Alt+Left, or Backspace with an empty search goes back; at the root it closes.
 - Ctrl+P or Ctrl+C closes from any depth.
-- Categories include models, thinking, sessions, settings, providers, export,
-  display, installed extension commands, prompt templates, and skills.
+- `/palette <category>` opens directly at a root category by id (matched
+  case-insensitively), e.g. `/palette mode`.
+- Categories include models, thinking, mode, sessions, settings, providers,
+  export, display, installed extension commands, prompt templates, and skills.
+- Rows marked `○`/`◉` are on/off toggles: Enter flips them in place and the
+  palette stays open (footer: *Enter toggle*). A failed toggle shows an inline
+  error without closing.
 - Extension commands are discovered when the palette opens. Each has Run and
   With arguments options. Skills/templates compose editable text for review;
   they do not start a model request until you submit from the main editor.
@@ -45,6 +50,13 @@ check and favorites with a star.
   clamped to that model's capabilities by Pi itself.
 - **Settings → Configure model cycling** manages the scoped list. The native
   `/model` (Ctrl+L) and `/thinking` pickers remain available for saving defaults.
+
+## Mode
+
+Provided by the `mode` extension, right after *Models & thinking*: the two
+major modes (current marked `✓`; Enter switches and closes, like picking a
+model) and one toggle row per minor mode (Enter toggles in place). Bare `/mode`
+opens the palette at this category. See `extensions/mode/README.md`.
 
 ## Remembered startup model
 
@@ -99,6 +111,28 @@ Browsing/cancelling leaves the main editor untouched. Built-in commands restore
 an unfinished draft if they clear the editor. Text intentionally supplied by a
 picker is not overwritten; session replacement follows Pi's normal behavior.
 Other extensions that change editor text retain their own behavior.
+
+### Category provider contract
+
+`contracts.ts` lets other extensions add root categories without importing the
+palette at runtime (the same versioned event pattern as
+`subagents/contracts.ts`):
+
+- `registerPaletteCategory(pi.events, { version: 1, id, label, description?, items(ctx) })`
+  answers `command-palette:category-discover`. The palette emits discovery on
+  **every** open and never caches providers, so load order does not matter and
+  `items(ctx)` must be cheap and read live state. Use lowercase ids that do not
+  collide with the built-in group ids (`Sessions`, `Settings`, `display`,
+  `extension`, …); duplicate ids after the first are ignored.
+- Provider categories are inserted after *Models & thinking*, in discovery
+  order. If `items()` throws, that category is skipped with an error
+  notification; the rest of the palette still opens.
+- Items may use `run` (Enter closes the palette, then runs it), `children`, or
+  `toggle: { isOn, toggle }` (Enter flips in place).
+- `requestPaletteOpen(pi.events, ctx, path?)` emits `command-palette:open`. The
+  palette claims it only for TUI contexts while no palette is open, and returns
+  a promise that settles when the palette closes (and its chosen action has
+  run); `undefined` means nobody claimed it, so callers need a fallback.
 
 No additional dependencies or background processes. `favorites.ts` stores
 preferences in `~/.pi/agent/model-favorites.json` (or Pi's `PI_CODING_AGENT_DIR`

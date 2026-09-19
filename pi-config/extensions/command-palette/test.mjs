@@ -41,6 +41,7 @@ const jiti = createJiti(import.meta.url, { interopDefault: false, alias: {
 } });
 const { Palette, searchItems } = await jiti.import(fileURLToPath(new URL('./menu.ts', import.meta.url)));
 const { default: extension, modelItems } = await jiti.import(fileURLToPath(new URL('./index.ts', import.meta.url)));
+const contracts = await jiti.import(fileURLToPath(new URL('./contracts.ts', import.meta.url)));
 const { KeybindingsManager, TUI_KEYBINDINGS, visibleWidth } = await import(tuiPath);
 const keys = new KeybindingsManager(TUI_KEYBINDINGS);
 const theme = { fg: (_, s) => s, bg: (_, s) => s, bold: s => s };
@@ -127,9 +128,17 @@ test('render stays within terminal width, including unicode and resizing', () =>
 function harness() {
   const events = new Map(); const commands = new Map(); const shortcuts = new Map();
   const sent = []; const notices = []; let draft = 'unfinished draft'; let picker;
+  const listeners = new Map();
+  const bus = {
+    on(name, handler) {
+      const set = listeners.get(name) ?? new Set(); set.add(handler); listeners.set(name, set);
+      return () => set.delete(handler);
+    },
+    emit(name, data) { for (const handler of [...(listeners.get(name) ?? [])]) handler(data); },
+  };
   const fakeEditor = { getText: () => draft, setText: text => { draft = text; },
     onSubmit: async text => { picker = text; draft = ''; } };
-  const pi = { on: (name, cb) => events.set(name, cb),
+  const pi = { events: bus, on: (name, cb) => events.set(name, cb),
     registerCommand: (name, config) => commands.set(name, config),
     registerShortcut: (name, config) => shortcuts.set(name, config),
     getCommands: () => [{ name: 'agents', source: 'extension', description: 'Manage agents' }],
@@ -152,7 +161,7 @@ function harness() {
     },
   } };
   extension(pi); events.get('session_start')({}, ctx);
-  return { ctx, events, shortcuts, sent, notices, fakeEditor,
+  return { ctx, events, bus, commands, shortcuts, sent, notices, fakeEditor,
     draft: () => draft, picker: () => picker, choose: text => { target = text; } };
 }
 test('built-in dispatch opens real UI without sending to model and restores draft', async () => {
@@ -813,4 +822,146 @@ test('last model: queued write failures are surfaced and the next selection can 
   await h.select('set');
   assert.equal(JSON.parse(readFileSync(h.path, 'utf8')).defaultModel, 'opus');
   assert.equal(h.notices.length, 1);
+});
+
+// Toggle rows: Enter flips in place, like Ctrl+F favorites, and never closes.
+function toggleRow(id, label, { on = false, fail } = {}) {
+  let state = on; let calls = 0;
+  return { id, label, description: `${label} minor mode`, calls: () => calls,
+    toggle: { isOn: () => state, toggle: () => { calls++; if (fail) throw new Error(fail); state = !state; } } };
+}
+function modeCategory(rows) {
+  return { id: 'mode', label: 'Mode', children: [
+    { id: 'mode:normal', label: '✓ normal', description: 'Pi as usual', run() {} },
+    { id: 'mode:claude-heavy', label: '  claude-heavy', run() {} }, ...rows] };
+}
+const rowLine = (p, text) => screen(p).split('\n').find(line => line.includes(text));
+test('toggle rows: Enter flips in place, keeps selection and query, never closes', () => {
+  const align = toggleRow('mode:minor:align', 'align'); const other = toggleRow('mode:minor:other', 'alignment-other');
+  const { p, completed } = paletteFixture([modeCategory([align, other]), leaf]);
+  p.handleInput(input.enter); p.handleInput('align');
+  assert.match(rowLine(p, '→'), /○ align\b/);
+  assert.match(screen(p), /Enter toggle · Esc back · Ctrl\+P close/);
+  p.handleInput(input.enter);
+  assert.equal(align.toggle.isOn(), true); assert.equal(align.calls(), 1);
+  assert.match(rowLine(p, '→'), /◉ align\b/, 'selection stays on the toggled row');
+  assert.match(screen(p), /❯ align/, 'query survives');
+  assert.match(screen(p), /Commands › Mode/);
+  p.handleInput(input.enter);
+  assert.equal(align.toggle.isOn(), false); assert.match(rowLine(p, '→'), /○ align\b/);
+  assert.deepEqual(completed, [], 'done is never called by a toggle');
+  assert.equal(other.calls(), 0);
+});
+test('toggle rows: a throwing toggle renders inline and the palette stays interactive', () => {
+  const broken = toggleRow('mode:minor:align', 'align', { fail: 'toggle-test-sentinel' });
+  const { p, completed } = paletteFixture([modeCategory([broken])]);
+  p.handleInput(input.enter); p.handleInput('align');
+  assert.doesNotThrow(() => p.handleInput(input.enter));
+  assert.match(screen(p), /Could not toggle align: toggle-test-sentinel/);
+  assert.equal(broken.toggle.isOn(), false); assert.deepEqual(completed, []);
+  p.handleInput(input.enter); assert.equal(broken.calls(), 2, 'still interactive');
+  p.handleInput(input.clear); p.handleInput('normal'); p.handleInput(input.enter);
+  assert.equal(completed[0]?.id, 'mode:normal');
+});
+test('initialPath deep-links into a category; Esc returns to root; misses stop the walk', () => {
+  const nodes = [{ id: 'sessions', label: 'Sessions', children: [leaf] }, modeCategory([toggleRow('mode:minor:align', 'align')])];
+  const completed = [];
+  const p = new Palette(nodes, theme, keys, () => {}, () => 30, item => completed.push(item), ['MODE']);
+  assert.match(screen(p), /Commands › Mode/);
+  p.handleInput(input.back);
+  assert.doesNotMatch(screen(p), /Commands › Mode/);
+  assert.match(screen(p), /Sessions/); assert.deepEqual(completed, []);
+  const missed = new Palette(nodes, theme, keys, () => {}, () => 30, () => {}, ['nope', 'mode']);
+  assert.doesNotMatch(screen(missed), /›\s*Mode/, 'stops at the first miss');
+  const leafPath = new Palette(nodes, theme, keys, () => {}, () => 30, () => {}, ['sessions', 'rename']);
+  assert.match(screen(leafPath), /Commands › Sessions/); assert.doesNotMatch(screen(leafPath), /› Rename/);
+});
+test('root search reaches a nested toggle row and Enter toggles it in place', () => {
+  const align = toggleRow('mode:minor:align', 'align');
+  const { p, completed } = paletteFixture([{ id: 'sessions', label: 'Sessions', children: [leaf] }, modeCategory([align])]);
+  p.handleInput('align');
+  assert.match(rowLine(p, '→'), /○ align/); assert.match(rowLine(p, '→'), /Mode/);
+  p.handleInput(input.enter);
+  assert.equal(align.toggle.isOn(), true); assert.match(rowLine(p, '→'), /◉ align/);
+  assert.match(screen(p), /❯ align/); assert.deepEqual(completed, []);
+  assert.doesNotMatch(screen(p), /Commands › Mode/, 'stays at root');
+});
+
+// Provider contract: discovery on every open, isolated failures, deep links.
+function captureOpen(h, steps = () => {}) {
+  const renders = [];
+  h.ctx.ui.custom = async factory => {
+    let selected;
+    const p = factory({ requestRender() {}, terminal: { rows: 32 } }, theme, keys, item => { selected = item; });
+    renders.push(screen(p)); steps(p); renders.push(screen(p));
+    p.handleInput(input.close);
+    return selected;
+  };
+  return renders;
+}
+test('providers: discovered on every open, inserted after Models & thinking, never cached', async () => {
+  const h = harness(); let calls = 0; const align = toggleRow('fake:align', 'align');
+  const off = contracts.registerPaletteCategory(h.bus, { version: 1, id: 'fake', label: 'Fake category',
+    items: ctx => { calls++; assert.equal(ctx, h.ctx); return [align]; } });
+  // A duplicate id is ignored rather than listed twice.
+  const offDuplicate = contracts.registerPaletteCategory(h.bus, { version: 1, id: 'fake', label: 'Duplicate',
+    items: () => { throw new Error('duplicates are never called'); } });
+  const renders = captureOpen(h, p => { p.handleInput(input.down); p.handleInput(input.enter); });
+  await h.shortcuts.get('ctrl+p').handler(h.ctx);
+  assert.equal(calls, 1);
+  const root = renders[0];
+  assert.ok(root.indexOf('Models & thinking') < root.indexOf('Fake category') &&
+    root.indexOf('Fake category') < root.indexOf('Sessions'), root);
+  assert.doesNotMatch(root, /Duplicate/);
+  assert.match(renders[1], /Commands › Fake category/, 'second root row is the provider');
+  assert.match(renders[1], /○ align/);
+  await h.shortcuts.get('ctrl+p').handler(h.ctx);
+  assert.equal(calls, 2, 'items() is called on every open');
+  off(); offDuplicate();
+  await h.shortcuts.get('ctrl+p').handler(h.ctx);
+  assert.equal(calls, 2); assert.doesNotMatch(renders.at(-1), /Fake category/, 'unregistered providers disappear');
+  assert.deepEqual(h.notices, []);
+});
+test('providers: a throwing items() notifies and only that category is dropped', async () => {
+  const h = harness();
+  contracts.registerPaletteCategory(h.bus, { version: 1, id: 'broken', label: 'Broken', items: () => { throw new Error('provider-sentinel'); } });
+  contracts.registerPaletteCategory(h.bus, { version: 1, id: 'good', label: 'Good category', items: () => [toggleRow('good:x', 'x')] });
+  const renders = captureOpen(h);
+  await h.shortcuts.get('ctrl+p').handler(h.ctx);
+  assert.equal(h.notices.length, 1); assert.match(h.notices[0][0], /provider-sentinel/); assert.equal(h.notices[0][1], 'error');
+  assert.doesNotMatch(renders[0], /Broken/);
+  for (const label of ['Models & thinking', 'Good category', 'Sessions', 'Settings']) assert.match(renders[0], new RegExp(label));
+});
+test('/palette <category> deep-links case-insensitively; bare /palette opens at root', async () => {
+  const h = harness();
+  contracts.registerPaletteCategory(h.bus, { version: 1, id: 'mode', label: 'Mode', items: () => [toggleRow('mode:minor:align', 'align')] });
+  const renders = captureOpen(h);
+  await h.commands.get('palette').handler(' Mode ', h.ctx);
+  assert.match(renders[0], /Commands › Mode/); assert.match(renders[0], /○ align/);
+  await h.commands.get('palette').handler('', h.ctx);
+  assert.doesNotMatch(renders.at(-1), /Commands › Mode/);
+});
+test('OPEN_EVENT is claimed only in TUI and only while no palette is open', async () => {
+  const h = harness();
+  contracts.registerPaletteCategory(h.bus, { version: 1, id: 'mode', label: 'Mode', items: () => [toggleRow('mode:minor:align', 'align')] });
+  const renders = []; let close;
+  h.ctx.ui.custom = factory => new Promise(resolve => {
+    const p = factory({ requestRender() {}, terminal: { rows: 32 } }, theme, keys, resolve);
+    renders.push(screen(p)); close = () => p.handleInput(input.close);
+  });
+  const rpc = { ...h.ctx, mode: 'rpc' };
+  assert.equal(contracts.requestPaletteOpen(h.bus, rpc, ['mode']), undefined, 'non-TUI is not claimed');
+  assert.equal(renders.length, 0);
+  h.bus.emit(contracts.OPEN_EVENT, { version: 2, ctx: h.ctx, claim: () => assert.fail('unknown version claimed') });
+  const opened = contracts.requestPaletteOpen(h.bus, h.ctx, ['mode']);
+  assert.ok(opened instanceof Promise, 'TUI request is claimed');
+  assert.equal(renders.length, 1); assert.match(renders[0], /Commands › Mode/);
+  assert.equal(contracts.requestPaletteOpen(h.bus, h.ctx, ['mode']), undefined, 'not claimed while already open');
+  assert.equal(renders.length, 1);
+  close(); await opened;
+  const again = contracts.requestPaletteOpen(h.bus, h.ctx);
+  assert.ok(again, 'claimable again after closing');
+  assert.doesNotMatch(renders[1], /Commands › Mode/);
+  close(); await again;
+  assert.deepEqual(h.notices, []);
 });

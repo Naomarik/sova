@@ -92,6 +92,28 @@ is missing or points elsewhere, or if the agent's `extensions/` directory holds
 anything that is not a symlink into this checkout (for example a hand-copied
 extension file).
 
+### Credentials and external tools
+
+This repository holds no credentials. Each machine needs these logins:
+
+| Needed for | Credential | Where it lives | How to set it up |
+| --- | --- | --- | --- |
+| Default model (`zai` / `glm-5.3` in `settings.json`) | Z.ai API key | `~/.pi/agent/auth.json`, key `zai` | `/login` in pi, or `ZAI_API_KEY` |
+| `ollama-cloud` provider (`models.json`) | Ollama API key | `auth.json`, key `ollama-cloud` | `/login` in pi |
+| `openai-codex` models | ChatGPT Plus/Pro OAuth | `auth.json`, key `openai-codex` | `/login` in pi |
+| Local `ollama` provider | none (placeholder key; Ollama at `localhost:11434`) | | |
+| `claude-code`, the Claude side of `mode`, the `topic-outline` Claude summarizer | Claude Code login | Managed by the `claude` CLI (`~/.claude/.credentials.json` on Linux) | Install [Claude Code](https://claude.com/claude-code) and log in once inside `claude` |
+
+pi writes `auth.json` with mode `600`; keep it that way (`chmod 600 ~/.pi/agent/auth.json`).
+The `claude-code` extension spawns `claude` from `PATH`. The topic-outline summarizer runs
+`~/.local/bin/claude` unless `claudeBin` in `~/.pi/agent/topic-outline.json` says otherwise.
+
+`usage-status` reads these same credential files to show subscription usage, falling back to
+`~/.codex/auth.json` for OpenAI if pi has no `openai-codex` login. A provider without a login
+shows as unavailable. The `sessions` extension's jump-to-session focus uses `tmux` and, on
+Hyprland, `hyprctl`. `pi-sessions` needs `~/.local/bin` on `PATH`. The extensions' TypeScript
+tests and the `pi-sessions` CLI need Node's built-in type stripping (Node ≥ 22.19, pi's own floor).
+
 ## What is deliberately not here
 
 Credentials (`auth.json`), sessions, the model catalog cache, model favorites
@@ -108,6 +130,8 @@ cd extensions/extension-toggle && node --test index.test.ts
 cd extensions/mode && node --test index.test.ts && node tests/smoke.mjs
 cd extensions/command-palette && node --test test.mjs
 cd extensions/sessions && node --test test.mjs
+cd extensions/codefold && node tests/run.mjs
+cd extensions/topic-outline && node test.mjs
 ```
 
 These make no model requests. The subagent and Claude tests resolve the

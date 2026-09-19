@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en-US">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Color — Fold AI Dev</title>
+<link rel="stylesheet" href="../../tokens.css">
+<link rel="stylesheet" href="../../fold-ai-dev.css">
+<link rel="stylesheet" href="../../site/docs.css">
+</head>
+<body class="docs">
+  <div class="docs-shell">
+    <nav class="docsnav" aria-label="Reference">
+      <a class="docsnav-brand" href="../index.html"><svg viewBox="0 0 32 32" width="20" height="20" aria-hidden="true" style="vertical-align:middle"><path fill="currentColor" d="M4.6 6.2 14.6 9.9v16.4L4.6 22.6z"/><path fill="currentColor" fill-opacity=".55" d="M27.4 6.2 17.4 9.9v16.4l10-3.7z"/></svg><b>Fold AI Dev</b></a>
+      
+      <p class="docsnav-label">Foundations</p>
+      <ul class="docsnav-list">
+        <li><a class="docsnav-link docsnav-link-active" href="../foundations/colors.html">Color</a></li>
+        <li><a class="docsnav-link" href="../foundations/typography.html">Typography</a></li>
+        <li><a class="docsnav-link" href="../foundations/spacing.html">Spacing</a></li>
+        <li><a class="docsnav-link" href="../foundations/radius.html">Radius</a></li>
+        <li><a class="docsnav-link" href="../foundations/shadow.html">Elevation</a></li>
+        <li><a class="docsnav-link" href="../foundations/grid-composition.html">Grid & responsive</a></li>
+        <li><a class="docsnav-link" href="../foundations/motion.html">Focus & motion</a></li>
+      </ul>
+      
+      <p class="docsnav-label">Brand</p>
+      <ul class="docsnav-list">
+        <li><a class="docsnav-link" href="../brand/logo.html">Logo</a></li>
+        <li><a class="docsnav-link" href="../brand/iconography.html">Iconography</a></li>
+      </ul>
+      
+      <p class="docsnav-label">Components</p>
+      <ul class="docsnav-list">
+        <li><a class="docsnav-link" href="../components/button.html">Button</a></li>
+        <li><a class="docsnav-link" href="../components/chip.html">Chip</a></li>
+        <li><a class="docsnav-link" href="../components/input.html">Input</a></li>
+        <li><a class="docsnav-link" href="../components/select.html">Select & combobox</a></li>
+        <li><a class="docsnav-link" href="../components/toggle.html">Toggle</a></li>
+        <li><a class="docsnav-link" href="../components/card.html">Card</a></li>
+        <li><a class="docsnav-link" href="../components/appbar.html">App bar</a></li>
+        <li><a class="docsnav-link" href="../components/nav.html">Rail & bottom bar</a></li>
+        <li><a class="docsnav-link" href="../components/tabs.html">Tabs</a></li>
+        <li><a class="docsnav-link" href="../components/breadcrumb.html">Breadcrumb</a></li>
+        <li><a class="docsnav-link" href="../components/banner.html">Banner</a></li>
+        <li><a class="docsnav-link" href="../components/toast.html">Toast</a></li>
+        <li><a class="docsnav-link" href="../components/empty.html">Empty state</a></li>
+        <li><a class="docsnav-link" href="../components/skeleton.html">Skeleton</a></li>
+        <li><a class="docsnav-link" href="../components/list.html">List & row</a></li>
+        <li><a class="docsnav-link" href="../components/tree.html">Tree</a></li>
+        <li><a class="docsnav-link" href="../components/table.html">Table</a></li>
+        <li><a class="docsnav-link" href="../components/filterbar.html">Filter bar</a></li>
+        <li><a class="docsnav-link" href="../components/meter.html">Meter</a></li>
+        <li><a class="docsnav-link" href="../components/overlay.html">Modal, sheet & popover</a></li>
+        <li><a class="docsnav-link" href="../components/tooltip.html">Tooltip</a></li>
+        <li><a class="docsnav-link" href="../components/timeline.html">Run timeline</a></li>
+        <li><a class="docsnav-link" href="../components/diff.html">Diff viewer</a></li>
+        <li><a class="docsnav-link" href="../components/approvalbar.html">Approval bar</a></li>
+        <li><a class="docsnav-link" href="../components/chat.html">Chat thread</a></li>
+      </ul>
+    </nav>
+    <main class="docs-main">
+      <button class="docs-theme button button-sm" data-theme-toggle>Theme</button>
+      <p class="text-eyebrow">Foundation</p>
+      <h1>Color</h1>
+      <p class="docs-purpose">One saturated color, spent carefully. Fold Indigo marks the primary action and the live run; everything else is ink, paper, and four status hues. The rule that matters: full-strength indigo is 5% of any composition — spend it on decoration and "this needs you" stops meaning anything.</p>
+      <section class="docs-section" id="palette">
+        <h2 class="docs-h2">Palette</h2>
+        <div class="docs-demo">
+<div class="swatches">
+  <div class="swatch">
+    <div class="swatch-c" style="background:var(--color-accent)"></div>
+    <div class="swatch-m"><b>Fold Indigo</b><code>--color-accent</code><span>#4A43D8 · #8E88FF</span><em>Primary action, live run, links</em></div>
+  </div>
+  <div class="swatch">
+    <div class="swatch-c" style="background:var(--color-accent-tint)"></div>
+    <div class="swatch-m"><b>Indigo tint</b><code>--color-accent-tint</code><span>#E8E6FA · #2B2650</span><em>Selected rows, active nav</em></div>
+  </div>
+  <div class="swatch">
+    <div class="swatch-c" style="background:var(--color-ink)"></div>
+    <div class="swatch-m"><b>Ink</b><code>--color-ink</code><span>#17171C · #F2F2F6</span><em>Body text, headings</em></div>
+  </div>
+  <div class="swatch">
+    <div class="swatch-c" style="background:var(--color-ink-2)"></div>
+    <div class="swatch-m"><b>Ink-2</b><code>--color-ink-2</code><span>#4A4A57 · #B8B8C6</span><em>Secondary prose</em></div>
+  </div>
+  <div class="swatch">
+    <div class="swatch-c" style="background:var(--color-ink-muted)"></div>
+    <div class="swatch-m"><b>Muted</b><code>--color-ink-muted</code><span>#656572 · #9A9AA8</span><em>Metadata, captions</em></div>
+  </div>
+  <div class="swatch">
+    <div class="swatch-c" style="background:var(--color-bg)"></div>
+    <div class="swatch-m"><b>Paper</b><code>--color-bg</code><span>#F2F2F7 · #1E1E26</span><em>Page background</em></div>
+  </div>
+  <div class="swatch">
+    <div class="swatch-c" style="background:var(--color-surface)"></div>
+    <div class="swatch-m"><b>Surface</b><code>--color-surface</code><span>#FFFFFF · #2C2C38</span><em>Cards, sheets</em></div>
+  </div>
+  <div class="swatch">
+    <div class="swatch-c" style="background:var(--color-sunken)"></div>
+    <div class="swatch-m"><b>Sunken</b><code>--color-sunken</code><span>#E9E9F0 · #26262F</span><em>Headers, gutters</em></div>
+  </div>
+  <div class="swatch">
+    <div class="swatch-c" style="background:var(--color-border)"></div>
+    <div class="swatch-m"><b>Border</b><code>--color-border</code><span>#E3E3E9 · #3B3B49</span><em>Dividers</em></div>
+  </div>
+  <div class="swatch">
+    <div class="swatch-c" style="background:var(--color-border-strong)"></div>
+    <div class="swatch-m"><b>Border strong</b><code>--color-border-strong</code><span>#86868F · #7E7E93</span><em>Control borders — 3:1</em></div>
+  </div>
+</div></div>
+      </section>
+      <section class="docs-section" id="ratio">
+        <h2 class="docs-h2">Usage ratio</h2>
+        <div class="docs-demo">
+<div class="ratio">
+  <div style="flex:60;background:var(--color-bg);color:var(--color-ink-muted)">60 · paper</div>
+  <div style="flex:25;background:var(--color-ink);color:var(--color-bg)">25 · ink</div>
+  <div style="flex:10;background:var(--color-accent-tint);color:var(--color-accent)">10 · tint</div>
+  <div style="flex:5;background:var(--color-accent);color:var(--color-on-accent)">5</div>
+</div>
+<p class="text-muted">The last 5% is the primary action and the live-run indicator. Nothing else.</p></div>
+      </section>
+      <section class="docs-section" id="status">
+        <h2 class="docs-h2">Status</h2>
+        <div class="docs-demo">
+<div class="cluster">
+  <span class="chip chip-success"><i class="chip-dot"></i>Passed</span>
+  <span class="chip chip-warn"><i class="chip-dot"></i>Waiting</span>
+  <span class="chip chip-error"><i class="chip-dot"></i>Failed</span>
+  <span class="chip chip-info"><i class="chip-dot"></i>Queued</span>
+  <span class="chip chip-accent"><i class="chip-dot"></i>Running</span>
+</div>
+<div class="stack" style="margin-top:var(--space-4)">
+  <div class="banner banner-warn"><span class="banner-icon">!</span><div><p class="banner-title">2 runs are waiting on you.</p><p class="banner-body">Nothing merges until you decide.</p></div></div>
+  <div class="banner banner-error"><span class="banner-icon">×</span><div><p class="banner-title">This run failed at step 4 and stopped.</p><p class="banner-body">Nothing was merged.</p></div></div>
+</div></div>
+      </section>
+      <section class="docs-section" id="styles">
+        <h2 class="docs-h2">Styles</h2>
+        <div class="table-wrap"><table class="table">
+          <thead><tr><th>Class</th><th>Role</th><th>Notes</th></tr></thead>
+          <tbody>
+          <tr><td class="text-mono">.chip-success|warn|error|info|accent</td><td>Status color on a chip</td><td>Sets <code>color</code>; the dot inherits it</td></tr>
+          <tr><td class="text-mono">.banner-success|warn|error|info</td><td>Soft status background</td><td>Uses <code>--status-*-bg</code></td></tr>
+          <tr><td class="text-mono">.text-accent|success|warn|error</td><td>Status color on text</td><td>Never the only signal</td></tr>
+          </tbody>
+        </table></div>
+      </section>
+      <section class="docs-section" id="tokens">
+        <h2 class="docs-h2">Tokens used</h2>
+        <div class="table-wrap"><table class="table">
+          <thead><tr><th>Token</th><th>Role here</th></tr></thead>
+          <tbody>
+          <tr><td class="text-mono">--color-accent</td><td>The one saturated color. Primary action, live run, and text selection.</td></tr>
+          <tr><td class="text-mono">--color-accent-tint</td><td>Selected rows and active nav. 10% of a composition.</td></tr>
+          <tr><td class="text-mono">--color-ink / -2 / -muted</td><td>Three text weights. Muted is a discrete token, not an alpha.</td></tr>
+          <tr><td class="text-mono">--color-bg / -surface / -sunken</td><td>Page, raised, recessed.</td></tr>
+          <tr><td class="text-mono">--color-border / -border-strong</td><td>Dividers vs control boundaries. Only the latter meets 3:1.</td></tr>
+          <tr><td class="text-mono">--status-*</td><td>Four hues, per theme. Always paired with a word.</td></tr>
+          </tbody>
+        </table></div>
+      </section>
+      <section class="docs-section" id="usage">
+        <h2 class="docs-h2">Usage</h2>
+        <div class="do-dont">
+          <div class="do">
+            <p class="text-eyebrow text-success">Do</p>
+            <ul><li><b>Spend indigo on the one decision the user came to make</b> — the accent is the product's only way to say "here".</li><li><b>Pair every status hue with a word and a dot</b> — 1 in 12 men can't separate red from green, and nobody can in sunlight.</li><li><b>Use `--color-border-strong` for anything a user can click</b> — it is the only border value that meets the 3:1 UI threshold.</li></ul>
+          </div>
+          <div class="dont">
+            <p class="text-eyebrow text-error">Don't</p>
+            <ul><li><b>Tint a shadow with the accent</b> — use `--shadow-1..3`, which are neutral black by policy.</li><li><b>Express muted text as `rgba(ink, .65)`</b> — use `--color-ink-muted`, which is measured against every documented surface.</li><li><b>Invert the light palette to make dark</b> — the accent lifts and elevation changes mechanism — see the dark column above.</li></ul>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+  <script>
+    // Site chrome only — the design system itself ships no JavaScript.
+    document.querySelector('[data-theme-toggle]').addEventListener('click', () => {
+      const r = document.documentElement;
+      const now = r.getAttribute('data-theme')
+        || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+      r.setAttribute('data-theme', now === 'dark' ? 'light' : 'dark');
+    });
+  </script>
+</body>
+</html>

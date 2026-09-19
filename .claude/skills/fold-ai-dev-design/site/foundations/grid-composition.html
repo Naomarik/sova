@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en-US">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Grid &amp; responsive — Fold AI Dev</title>
+<link rel="stylesheet" href="../../tokens.css">
+<link rel="stylesheet" href="../../fold-ai-dev.css">
+<link rel="stylesheet" href="../../site/docs.css">
+</head>
+<body class="docs">
+  <div class="docs-shell">
+    <nav class="docsnav" aria-label="Reference">
+      <a class="docsnav-brand" href="../index.html"><svg viewBox="0 0 32 32" width="20" height="20" aria-hidden="true" style="vertical-align:middle"><path fill="currentColor" d="M4.6 6.2 14.6 9.9v16.4L4.6 22.6z"/><path fill="currentColor" fill-opacity=".55" d="M27.4 6.2 17.4 9.9v16.4l10-3.7z"/></svg><b>Fold AI Dev</b></a>
+      
+      <p class="docsnav-label">Foundations</p>
+      <ul class="docsnav-list">
+        <li><a class="docsnav-link" href="../foundations/colors.html">Color</a></li>
+        <li><a class="docsnav-link" href="../foundations/typography.html">Typography</a></li>
+        <li><a class="docsnav-link" href="../foundations/spacing.html">Spacing</a></li>
+        <li><a class="docsnav-link" href="../foundations/radius.html">Radius</a></li>
+        <li><a class="docsnav-link" href="../foundations/shadow.html">Elevation</a></li>
+        <li><a class="docsnav-link docsnav-link-active" href="../foundations/grid-composition.html">Grid & responsive</a></li>
+        <li><a class="docsnav-link" href="../foundations/motion.html">Focus & motion</a></li>
+      </ul>
+      
+      <p class="docsnav-label">Brand</p>
+      <ul class="docsnav-list">
+        <li><a class="docsnav-link" href="../brand/logo.html">Logo</a></li>
+        <li><a class="docsnav-link" href="../brand/iconography.html">Iconography</a></li>
+      </ul>
+      
+      <p class="docsnav-label">Components</p>
+      <ul class="docsnav-list">
+        <li><a class="docsnav-link" href="../components/button.html">Button</a></li>
+        <li><a class="docsnav-link" href="../components/chip.html">Chip</a></li>
+        <li><a class="docsnav-link" href="../components/input.html">Input</a></li>
+        <li><a class="docsnav-link" href="../components/select.html">Select & combobox</a></li>
+        <li><a class="docsnav-link" href="../components/toggle.html">Toggle</a></li>
+        <li><a class="docsnav-link" href="../components/card.html">Card</a></li>
+        <li><a class="docsnav-link" href="../components/appbar.html">App bar</a></li>
+        <li><a class="docsnav-link" href="../components/nav.html">Rail & bottom bar</a></li>
+        <li><a class="docsnav-link" href="../components/tabs.html">Tabs</a></li>
+        <li><a class="docsnav-link" href="../components/breadcrumb.html">Breadcrumb</a></li>
+        <li><a class="docsnav-link" href="../components/banner.html">Banner</a></li>
+        <li><a class="docsnav-link" href="../components/toast.html">Toast</a></li>
+        <li><a class="docsnav-link" href="../components/empty.html">Empty state</a></li>
+        <li><a class="docsnav-link" href="../components/skeleton.html">Skeleton</a></li>
+        <li><a class="docsnav-link" href="../components/list.html">List & row</a></li>
+        <li><a class="docsnav-link" href="../components/tree.html">Tree</a></li>
+        <li><a class="docsnav-link" href="../components/table.html">Table</a></li>
+        <li><a class="docsnav-link" href="../components/filterbar.html">Filter bar</a></li>
+        <li><a class="docsnav-link" href="../components/meter.html">Meter</a></li>
+        <li><a class="docsnav-link" href="../components/overlay.html">Modal, sheet & popover</a></li>
+        <li><a class="docsnav-link" href="../components/tooltip.html">Tooltip</a></li>
+        <li><a class="docsnav-link" href="../components/timeline.html">Run timeline</a></li>
+        <li><a class="docsnav-link" href="../components/diff.html">Diff viewer</a></li>
+        <li><a class="docsnav-link" href="../components/approvalbar.html">Approval bar</a></li>
+        <li><a class="docsnav-link" href="../components/chat.html">Chat thread</a></li>
+      </ul>
+    </nav>
+    <main class="docs-main">
+      <button class="docs-theme button button-sm" data-theme-toggle>Theme</button>
+      <p class="text-eyebrow">Foundation</p>
+      <h1>Grid &amp; responsive</h1>
+      <p class="docs-purpose">The bands are the device, not a screen-size ladder. This product is designed first for a folded phone, so the threshold that matters is the one the phone itself crosses — the Galaxy Z Fold8 reports ~475 CSS px folded and ~933 unfolded, its main display being landscape-first, and 768 separates them. Container queries rather than media queries, because a pane can be at folded width inside a desktop window and should look like it.</p>
+      <section class="docs-section" id="breakpoints">
+        <h2 class="docs-h2">Breakpoints</h2>
+        <div class="docs-demo">
+<div class="table-wrap"><table class="table">
+  <thead><tr><th>Token</th><th>Width</th><th>Device</th><th>What changes</th></tr></thead>
+  <tbody>
+    <tr><td class="text-mono">folded</td><td class="text-mono">&lt; 768</td><td>the cover screen, ~475</td><td>Single column · bottom nav · tables become stacked cards · approval bar pinned inside the thumb arc · unified diff only</td></tr>
+    <tr><td class="text-mono">unfolded</td><td class="text-mono">≥ 768</td><td>the main screen, ~933 landscape</td><td><strong>Sidebar left, main pane right</strong> · approval bar inline · side-by-side diff available</td></tr>
+    <tr><td class="text-mono">desktop</td><td class="text-mono">≥ 1120</td><td>an external display</td><td>Three panes: rail + list + detail</td></tr>
+  </tbody>
+</table></div>
+<p class="text-muted"><strong>Unfolded means sidebar left, main pane right.</strong> Unfolding the phone turns it
+landscape, and landscape with a bottom nav wastes the width it just gained while pushing the primary action away from
+both thumbs. A screen that answers unfolding by growing one column has stretched the folded layout, not designed the
+unfolded one. <code>tablet</code> is retired as a band name: it was 768, which <code>unfolded</code> now names.</p></div>
+      </section>
+      <section class="docs-section" id="touch">
+        <h2 class="docs-h2">Touch</h2>
+        <div class="docs-demo">
+<div class="card"><div class="card-body">
+  <div class="cluster"><button class="button button-primary">Approve</button>
+    <button class="button">Review Changes</button>
+    <span style="flex:1"></span>
+    <button class="button button-destructive">Discard Run</button></div>
+  <p class="text-muted measure" style="margin-top:var(--space-3)">44×44 minimum at every breakpoint, desktop included.
+  Destructive keeps its distance from primary — never adjacent in a thumb arc.</p>
+</div></div></div>
+      </section>
+      <section class="docs-section" id="styles">
+        <h2 class="docs-h2">Styles</h2>
+        <div class="table-wrap"><table class="table">
+          <thead><tr><th>Class</th><th>Role</th><th>Notes</th></tr></thead>
+          <tbody>
+          <tr><td class="text-mono">.page</td><td>Centred, max 1280</td><td>Gutter is <code>--space-4</code></td></tr>
+          <tr><td class="text-mono">.pane</td><td>Scroll region **and** query container</td><td>The box a component measures</td></tr>
+          <tr><td class="text-mono">.measure</td><td>72ch reading cap, one element</td><td>Opt-in since 1.6.0</td></tr>
+          <tr><td class="text-mono">.prose</td><td>72ch cap on the running text inside</td><td>Leaves strips and rows alone</td></tr>
+          <tr><td class="text-mono">.table-stack</td><td>Table collapses below 768 of its <code>.table-wrap</code></td><td>Needs <code>data-label</code> per cell</td></tr>
+          </tbody>
+        </table></div>
+      </section>
+      <section class="docs-section" id="tokens">
+        <h2 class="docs-h2">Tokens used</h2>
+        <div class="table-wrap"><table class="table">
+          <thead><tr><th>Token</th><th>Role here</th></tr></thead>
+          <tbody>
+          <tr><td class="text-mono">--bp-unfolded / -desktop</td><td>768 / 1120. For JS and docs — custom properties do not work in <code>@media</code>. <code>--bp-tablet</code> is retired; it was 768, which <code>--bp-unfolded</code> now names.</td></tr>
+          <tr><td class="text-mono">--page-max</td><td>1280px.</td></tr>
+          <tr><td class="text-mono">--measure</td><td>72ch.</td></tr>
+          <tr><td class="text-mono">--tap-min</td><td>44px, every breakpoint.</td></tr>
+          </tbody>
+        </table></div>
+      </section>
+      <section class="docs-section" id="usage">
+        <h2 class="docs-h2">Usage</h2>
+        <div class="do-dont">
+          <div class="do">
+            <p class="text-eyebrow text-success">Do</p>
+            <ul><li><b>Write `@container` queries in components</b> — the component should ask its own box, not the window.</li><li><b>Give the box a `.pane` so the query has something to match</b> — a container query with no container never matches and the page still renders.</li><li><b>Name any container you declare yourself, and query it by name</b> — an unnamed `@container` binds to the nearest one, which since 1.6.0 may be a `.table-wrap` or a `.diff` rather than your screen root.</li><li><b>Duplicate every gesture with a visible control</b> — swipe is an accelerator, never the door.</li><li><b>Pin the primary decision to the bottom at folded width</b> — that is where a thumb reaches one-handed.</li></ul>
+          </div>
+          <div class="dont">
+            <p class="text-eyebrow text-error">Don't</p>
+            <ul><li><b>Let a table scroll horizontally on a phone</b> — stack it — horizontal scroll is a defeat, not a fallback.</li><li><b>Render a `.scrim` or `.modal` inside a `.pane`</b> — containment makes the pane its containing block, so it covers the pane and not the screen.</li><li><b>Let a container take its width from its own contents</b> — `container-type: inline-size` resolves the box without them, so a `.table-wrap` as a flex item measures 0px and a `.diff` in an `auto` track measures 2px.</li><li><b>Hide a control behind hover</b> — a phone has no hover, so the control does not exist there.</li><li><b>Treat folded as a degraded desktop</b> — it is a first-class width, and it is designed for first.</li></ul>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+  <script>
+    // Site chrome only — the design system itself ships no JavaScript.
+    document.querySelector('[data-theme-toggle]').addEventListener('click', () => {
+      const r = document.documentElement;
+      const now = r.getAttribute('data-theme')
+        || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+      r.setAttribute('data-theme', now === 'dark' ? 'light' : 'dark');
+    });
+  </script>
+</body>
+</html>

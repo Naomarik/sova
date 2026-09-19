@@ -1,0 +1,493 @@
+/* =============================================================================
+   Fold AI Dev — tokens.css
+   Portable AI dev. Every design decision in the system, as a custom property.
+
+   This is the ONLY file in the skill permitted to contain raw hex values.
+   Components consume semantic aliases (--color-*), never brand primitives.
+
+   Load order:  tokens.css  →  fold-ai-dev.css
+   Theme model: system-following, with a manual override.
+                Neither light nor dark is "the default" — both are designed.
+                  <html>                       follows prefers-color-scheme
+                  <html data-theme="light">    forced light
+                  <html data-theme="dark">     forced dark
+   ============================================================================= */
+
+
+/* -----------------------------------------------------------------------------
+   1 · FONTS
+   Both faces are variable, latin subset, shipped locally in fonts/.
+   Licence: SIL Open Font Licence 1.1 — redistribution permitted. See README §9.
+   Offline-safe: no CDN, no network dependency.
+   -------------------------------------------------------------------------- */
+
+@font-face {
+  font-family: "Inter";
+  src: url("fonts/Inter-Variable.woff2") format("woff2");
+  font-weight: 100 900;          /* variable range; the system permits 400–700 */
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("fonts/JetBrainsMono-Variable.woff2") format("woff2");
+  font-weight: 100 800;          /* variable range; the system permits 400–600 */
+  font-style: normal;
+  font-display: swap;
+}
+
+
+/* -----------------------------------------------------------------------------
+   2 · BRAND PRIMITIVES
+   Raw values with human names. Never consumed directly by a component —
+   always through a semantic alias below, so a theme can move underneath.
+   -------------------------------------------------------------------------- */
+
+:root {
+  /* Fold Indigo — the one saturated colour in the system.
+     Two values, because #4A43D8 goes muddy on near-black.
+     Usage ratio across any composition: 60 paper / 25 ink / 10 tint / 5 accent.
+     That last 5% is the primary action and the live-run indicator, nothing else. */
+  --brand-indigo:            #4A43D8;
+  --brand-indigo-deep:       #3A34B4;
+  --brand-indigo-light:      #8E88FF;
+  --brand-indigo-lighter:    #A6A1FF;
+  --brand-indigo-tint:       #E8E6FA;
+  --brand-indigo-tint-dark:  #2B2650;
+
+  /* Ink & paper
+     Paper is a real step off surface in both themes — light paper sits below
+     white, dark paper sits above black. A page background within 1% of the
+     cards on it reads as one flat sheet, and every card edge has to be drawn
+     by a border that isn't there in a screenshot.
+
+     Dark paper is a DARK GREY, not a near-black. This product is read at 02:00
+     on a folding phone, and a page pinned to the bottom of the range drags the
+     surfaces, borders and muted labels down with it — the screen stops looking
+     designed and starts looking switched off. Lightness ladder, in L*:
+       paper 11.6 · sunken 15.5 · surface 18.5 · border 25.4 */
+  --brand-ink:        #17171C;
+  --brand-ink-2:      #4A4A57;
+  --brand-ink-3:      #656572;
+  --brand-paper:      #F2F2F7;
+  --brand-white:      #FFFFFF;
+  --brand-sunken:     #E9E9F0;
+  --brand-line:       #E3E3E9;
+  --brand-line-strong:#86868F;
+
+  --brand-ink-dk:        #F2F2F6;
+  --brand-ink-2-dk:      #B8B8C6;
+  --brand-ink-3-dk:      #9A9AA8;
+  --brand-paper-dk:      #1E1E26;
+  --brand-surface-dk:    #2C2C38;
+  --brand-sunken-dk:     #26262F;
+  --brand-line-dk:       #3B3B49;
+  --brand-line-strong-dk:#7E7E93;
+
+  /* Status — harmonised with the palette, tuned per theme for AA. */
+  --brand-success:    #15704A;
+  --brand-warn:       #8A5A00;
+  --brand-error:      #B8302B;
+  --brand-info:       #2A5FA8;
+  --brand-success-dk: #4FC98D;
+  --brand-warn-dk:    #E3A63A;
+  --brand-error-dk:   #FF7A70;
+  --brand-info-dk:    #78ADF2;
+
+  /* Soft status backgrounds — for banners and chips, never for text. */
+  --brand-success-soft:    #E7F4ED;
+  --brand-warn-soft:       #FBF1DE;
+  --brand-error-soft:      #FBEAE9;
+  --brand-info-soft:       #E9F0FA;
+  --brand-success-soft-dk: #1B4936;
+  --brand-warn-soft-dk:    #45351C;
+  --brand-error-soft-dk:   #4E2823;
+  --brand-info-soft-dk:    #1F3555;
+}
+
+
+/* -----------------------------------------------------------------------------
+   3 · SEMANTIC COLOUR — LIGHT
+   Components consume only these. Both themes define the same names.
+   Muted ink is a discrete token, not an alpha of ink: alpha over an unknown
+   surface loses contrast unpredictably, and a token can be measured.
+   -------------------------------------------------------------------------- */
+
+:root {
+  --color-bg:            var(--brand-paper);
+  --color-surface:       var(--brand-white);
+  --color-sunken:        var(--brand-sunken);
+  --color-ink:           var(--brand-ink);
+  --color-ink-2:         var(--brand-ink-2);
+  --color-ink-muted:     var(--brand-ink-3);
+  --color-border:        var(--brand-line);          /* dividers — decorative, <3:1 */
+  --color-border-strong: var(--brand-line-strong);   /* control borders — ≥3:1      */
+
+  --color-accent:        var(--brand-indigo);
+  --color-accent-hover:  var(--brand-indigo-deep);
+  --color-accent-tint:   var(--brand-indigo-tint);
+  --color-on-accent:     var(--brand-white);
+
+  --status-success:      var(--brand-success);
+  --status-warn:         var(--brand-warn);
+  --status-error:        var(--brand-error);
+  --status-info:         var(--brand-info);
+  --status-success-bg:   var(--brand-success-soft);
+  --status-warn-bg:      var(--brand-warn-soft);
+  --status-error-bg:     var(--brand-error-soft);
+  --status-info-bg:      var(--brand-info-soft);
+
+  /* Diff surfaces — the product's core review act gets first-class tokens. */
+  --diff-add-bg:    #E7F4ED;
+  --diff-add-ink:   #15704A;
+  --diff-del-bg:    #FBEAE9;
+  --diff-del-ink:   #B8302B;
+  --diff-gutter:    var(--brand-sunken);
+
+  /* Elevation — neutral black only. No tinted shadows (README §4). */
+  --shadow-1: 0 1px 2px rgba(23, 23, 28, .06);
+  --shadow-2: 0 1px 2px rgba(23, 23, 28, .06), 0 8px 24px -12px rgba(23, 23, 28, .18);
+  --shadow-3: 0 2px 4px rgba(23, 23, 28, .08), 0 18px 44px -16px rgba(23, 23, 28, .26);
+
+  color-scheme: light;
+}
+
+
+/* -----------------------------------------------------------------------------
+   4 · SEMANTIC COLOUR — DARK
+   Dark is not inverted light. Two rules that are easy to get wrong:
+     · The accent LIFTS (#4A43D8 → #8E88FF). The light value fails on near-black.
+     · Elevation is carried by SURFACE LIGHTNESS, not a heavier shadow — a black
+       shadow on a near-black background is invisible.
+   -------------------------------------------------------------------------- */
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-bg:            var(--brand-paper-dk);
+    --color-surface:       var(--brand-surface-dk);
+    --color-sunken:        var(--brand-sunken-dk);
+    --color-ink:           var(--brand-ink-dk);
+    --color-ink-2:         var(--brand-ink-2-dk);
+    --color-ink-muted:     var(--brand-ink-3-dk);
+    --color-border:        var(--brand-line-dk);
+    --color-border-strong: var(--brand-line-strong-dk);
+
+    --color-accent:        var(--brand-indigo-light);
+    --color-accent-hover:  var(--brand-indigo-lighter);
+    --color-accent-tint:   var(--brand-indigo-tint-dark);
+    --color-on-accent:     var(--brand-paper-dk);
+
+    --status-success:      var(--brand-success-dk);
+    --status-warn:         var(--brand-warn-dk);
+    --status-error:        var(--brand-error-dk);
+    --status-info:         var(--brand-info-dk);
+    --status-success-bg:   var(--brand-success-soft-dk);
+    --status-warn-bg:      var(--brand-warn-soft-dk);
+    --status-error-bg:     var(--brand-error-soft-dk);
+    --status-info-bg:      var(--brand-info-soft-dk);
+
+    --diff-add-bg:  #1B4936;
+    --diff-add-ink: #4FC98D;
+    --diff-del-bg:  #4E2823;
+    --diff-del-ink: #FF7A70;
+    --diff-gutter:  var(--brand-sunken-dk);
+
+    --shadow-1: 0 1px 2px rgba(0, 0, 0, .5);
+    --shadow-2: 0 1px 2px rgba(0, 0, 0, .5), 0 8px 24px -12px rgba(0, 0, 0, .75);
+    --shadow-3: 0 2px 4px rgba(0, 0, 0, .6), 0 18px 44px -16px rgba(0, 0, 0, .85);
+
+    color-scheme: dark;
+  }
+}
+
+/* Manual override — wins over the media query in both directions. */
+:root[data-theme="dark"] {
+  --color-bg:            var(--brand-paper-dk);
+  --color-surface:       var(--brand-surface-dk);
+  --color-sunken:        var(--brand-sunken-dk);
+  --color-ink:           var(--brand-ink-dk);
+  --color-ink-2:         var(--brand-ink-2-dk);
+  --color-ink-muted:     var(--brand-ink-3-dk);
+  --color-border:        var(--brand-line-dk);
+  --color-border-strong: var(--brand-line-strong-dk);
+  --color-accent:        var(--brand-indigo-light);
+  --color-accent-hover:  var(--brand-indigo-lighter);
+  --color-accent-tint:   var(--brand-indigo-tint-dark);
+  --color-on-accent:     var(--brand-paper-dk);
+  --status-success:      var(--brand-success-dk);
+  --status-warn:         var(--brand-warn-dk);
+  --status-error:        var(--brand-error-dk);
+  --status-info:         var(--brand-info-dk);
+  --status-success-bg:   var(--brand-success-soft-dk);
+  --status-warn-bg:      var(--brand-warn-soft-dk);
+  --status-error-bg:     var(--brand-error-soft-dk);
+  --status-info-bg:      var(--brand-info-soft-dk);
+  --diff-add-bg:  #1B4936;
+  --diff-add-ink: #4FC98D;
+  --diff-del-bg:  #4E2823;
+  --diff-del-ink: #FF7A70;
+  --diff-gutter:  var(--brand-sunken-dk);
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, .5);
+  --shadow-2: 0 1px 2px rgba(0, 0, 0, .5), 0 8px 24px -12px rgba(0, 0, 0, .75);
+  --shadow-3: 0 2px 4px rgba(0, 0, 0, .6), 0 18px 44px -16px rgba(0, 0, 0, .85);
+  color-scheme: dark;
+}
+
+:root[data-theme="light"] {
+  --color-bg:            var(--brand-paper);
+  --color-surface:       var(--brand-white);
+  --color-sunken:        var(--brand-sunken);
+  --color-ink:           var(--brand-ink);
+  --color-ink-2:         var(--brand-ink-2);
+  --color-ink-muted:     var(--brand-ink-3);
+  --color-border:        var(--brand-line);
+  --color-border-strong: var(--brand-line-strong);
+  --color-accent:        var(--brand-indigo);
+  --color-accent-hover:  var(--brand-indigo-deep);
+  --color-accent-tint:   var(--brand-indigo-tint);
+  --color-on-accent:     var(--brand-white);
+  --status-success:      var(--brand-success);
+  --status-warn:         var(--brand-warn);
+  --status-error:        var(--brand-error);
+  --status-info:         var(--brand-info);
+  --status-success-bg:   var(--brand-success-soft);
+  --status-warn-bg:      var(--brand-warn-soft);
+  --status-error-bg:     var(--brand-error-soft);
+  --status-info-bg:      var(--brand-info-soft);
+  --diff-add-bg:  #E7F4ED;
+  --diff-add-ink: #15704A;
+  --diff-del-bg:  #FBEAE9;
+  --diff-del-ink: #B8302B;
+  --diff-gutter:  var(--brand-sunken);
+  --shadow-1: 0 1px 2px rgba(23, 23, 28, .06);
+  --shadow-2: 0 1px 2px rgba(23, 23, 28, .06), 0 8px 24px -12px rgba(23, 23, 28, .18);
+  --shadow-3: 0 2px 4px rgba(23, 23, 28, .08), 0 18px 44px -16px rgba(23, 23, 28, .26);
+  color-scheme: light;
+}
+
+
+/* -----------------------------------------------------------------------------
+   5 · TYPOGRAPHY
+   Inter for everything the user reads; JetBrains Mono reserved for machine
+   facts — IDs, paths, diffs, timestamps, counts. The mono does the technical
+   work so the sans can stay calm.
+   -------------------------------------------------------------------------- */
+
+:root {
+  --font-display: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --font-body:    "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --font-mono:    "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  /* Permitted weights. Anything else is off-system. */
+  --fw-regular:  400;
+  --fw-medium:   530;
+  --fw-semibold: 600;
+  --fw-display:  640;   /* display sizes only */
+
+  /* Type scale — px, because this is a dense product UI and rem drift across
+     nested containers costs more than it buys here. */
+  --fs-display-xl: 40px;   --lh-display-xl: 1.05;
+  --fs-display-l:  29px;   --lh-display-l:  1.12;
+  --fs-heading-m:  20px;   --lh-heading-m:  1.25;
+  --fs-heading-s:  16px;   --lh-heading-s:  1.35;
+  --fs-body:       14.5px; --lh-body:       1.55;
+  --fs-caption:    12.5px; --lh-caption:    1.45;
+  --fs-mono:       12.5px; --lh-mono:       1.5;
+  --fs-micro:      11px;   --lh-micro:      1.3;    /* eyebrow labels only */
+
+  --ls-display: -.035em;
+  --ls-heading: -.018em;
+  --ls-body:    0;
+  --ls-eyebrow: .13em;
+}
+
+
+/* -----------------------------------------------------------------------------
+   6 · SPACE, SHAPE, STROKE
+   Base unit 4px. Product surfaces live in space-2…space-5; space-7 and up
+   belong to marketing pages. Compact ops tool, not a reading environment.
+   -------------------------------------------------------------------------- */
+
+:root {
+  --space-1:  4px;
+  --space-2:  8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+  --space-9: 96px;
+
+  /* Status is round, actions are not — shape alone says what's clickable. */
+  --r-none: 0;
+  --r-xs:   4px;    /* focus ring, checkbox            */
+  --r-sm:   6px;    /* code block, diff hunk           */
+  --r-md:   8px;    /* button, input, select           */
+  --r-lg:  12px;    /* card, panel                     */
+  --r-xl:  16px;    /* sheet, modal, drawer            */
+  --r-full: 999px;  /* chip, badge, pill, avatar       */
+
+  --stroke-thin: 1px;     /* dividers                        */
+  --stroke-icon: 1.5px;   /* icons, control borders, outlines */
+
+  --tap-min: 44px;        /* every breakpoint, desktop included */
+  --row-height: 44px;
+  --control-sm: 36px;
+  --control-md: 44px;
+  --control-lg: 52px;
+}
+
+
+/* -----------------------------------------------------------------------------
+   7 · FOCUS & MOTION
+   Motion is a foundation, not a flourish. One curve, three durations, and a
+   written rule about what never moves — otherwise every consumer invents their
+   own transitions.
+   -------------------------------------------------------------------------- */
+
+:root {
+  --focus-width:  2px;
+  --focus-offset: 2px;
+  --focus-color:  var(--color-accent);
+  --focus-ring:   var(--focus-width) solid var(--focus-color);
+
+  --dur-fast: 120ms;   /* interactive state: hover, focus, press   */
+  --dur-base: 200ms;   /* entering surfaces: popover, toast, sheet */
+  --dur-slow: 320ms;   /* full-screen transitions only             */
+  --ease-standard: cubic-bezier(.2, 0, 0, 1);
+
+  /* Breakpoints. Custom properties do not work inside @media — these are for
+     JS and documentation. The literal px values below are what queries use.
+
+       folded    < 768      one column, bottom nav
+       unfolded  ≥ 768      sidebar left, main pane right
+       desktop   ≥ 1120     three panes
+
+     **The bands are the device, not a screen-size ladder.** This product is
+     designed first for a folded phone, so the one threshold that matters is
+     the one the phone itself crosses: the Galaxy Z Fold8 reports ~475 CSS px
+     folded and ~933 unfolded (landscape-first), and 768 is what separates them.
+     A number chosen for any other reason is a number no hardware ever lands on.
+
+     `--bp-tablet` is retired. It was 768 — the same threshold this now names —
+     and a tablet at 1024 gets the unfolded composition because at that width
+     the composition is the same. Two names for one line meant prose could put
+     the side rail in either band.
+
+     @container, not @media: a pane can be at folded width inside a desktop
+     window, and it should look like it. As of 1.6.0 the system's own responsive
+     components follow this — `.table-stack` asks its `.table-wrap`,
+     `.diff-split` asks its `.diff`, `.approvalbar` asks its `.pane`. The only
+     width-based @media left in fold-ai-dev.css are `.toast-stack`, which is
+     window chrome and means the window, and the floor under `.table-stack`,
+     which is explained where it is written. */
+  --bp-unfolded:  768px;
+  --bp-desktop:  1120px;
+  --page-max:    1280px;
+  --measure:       72ch;
+}
+
+/* Nothing loops, drifts or pulses — except one live-run indicator. Under
+   reduced-motion even that stops. Opacity fades survive: they carry meaning. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+
+/* -----------------------------------------------------------------------------
+   8 · ELEMENT DEFAULTS
+   A bare page with only tokens.css linked already looks like Fold AI Dev.
+   Document language is en-US (see README §3 for the grammar rules).
+   -------------------------------------------------------------------------- */
+
+/* Border-box everywhere. Without it, any padded control set to width:100%
+   overflows its column — which is exactly what a 44px target with 12px padding
+   does inside a grid. */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-ink);
+  font-family: var(--font-body);
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+h1, h2, h3, h4 {
+  font-family: var(--font-display);
+  color: var(--color-ink);
+  margin: 0 0 var(--space-3);
+  text-wrap: balance;
+}
+
+h1 { font-size: var(--fs-display-xl); line-height: var(--lh-display-xl);
+     letter-spacing: var(--ls-display); font-weight: var(--fw-display); }
+h2 { font-size: var(--fs-display-l);  line-height: var(--lh-display-l);
+     letter-spacing: -.028em;          font-weight: var(--fw-display); }
+h3 { font-size: var(--fs-heading-m);  line-height: var(--lh-heading-m);
+     letter-spacing: var(--ls-heading); font-weight: var(--fw-semibold); }
+h4 { font-size: var(--fs-heading-s);  line-height: var(--lh-heading-s);
+     letter-spacing: -.01em;           font-weight: var(--fw-semibold); }
+
+/* Margin only. The 72ch measure moved to `.prose` and `.measure` in
+   fold-ai-dev.css at 1.6.0, because as an element default it was silently wrong
+   far more often than it was right: this is a dense ops UI, `<p>` is the correct
+   element for a one-line status strip, and a strip capped at 72ch stops short
+   while still rendering, so the mistake is invisible. Every consumer had already
+   voted — 12 of 16 screens in one kit run and the prototype hub itself carried a
+   `max-width: none` to undo it. Opt in where there is running text to read. */
+p { margin: 0 0 var(--space-4); }
+
+a {
+  color: var(--color-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-thickness: 1px;
+  transition: color var(--dur-fast) var(--ease-standard);
+}
+a:hover { color: var(--color-accent-hover); }
+
+code, kbd, samp, pre {
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono);
+}
+
+small { font-size: var(--fs-caption); color: var(--color-ink-muted); }
+
+hr {
+  border: 0;
+  border-top: var(--stroke-thin) solid var(--color-border);
+  margin: var(--space-6) 0;
+}
+
+::selection {
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+}
+
+/* Never removed, never replaced by a colour change alone. */
+:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-offset);
+  border-radius: var(--r-xs);
+}

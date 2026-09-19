@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en-US">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>App bar — Fold AI Dev</title>
+<link rel="stylesheet" href="../../tokens.css">
+<link rel="stylesheet" href="../../fold-ai-dev.css">
+<link rel="stylesheet" href="../../site/docs.css">
+</head>
+<body class="docs">
+  <div class="docs-shell">
+    <nav class="docsnav" aria-label="Reference">
+      <a class="docsnav-brand" href="../index.html"><svg viewBox="0 0 32 32" width="20" height="20" aria-hidden="true" style="vertical-align:middle"><path fill="currentColor" d="M4.6 6.2 14.6 9.9v16.4L4.6 22.6z"/><path fill="currentColor" fill-opacity=".55" d="M27.4 6.2 17.4 9.9v16.4l10-3.7z"/></svg><b>Fold AI Dev</b></a>
+      
+      <p class="docsnav-label">Foundations</p>
+      <ul class="docsnav-list">
+        <li><a class="docsnav-link" href="../foundations/colors.html">Color</a></li>
+        <li><a class="docsnav-link" href="../foundations/typography.html">Typography</a></li>
+        <li><a class="docsnav-link" href="../foundations/spacing.html">Spacing</a></li>
+        <li><a class="docsnav-link" href="../foundations/radius.html">Radius</a></li>
+        <li><a class="docsnav-link" href="../foundations/shadow.html">Elevation</a></li>
+        <li><a class="docsnav-link" href="../foundations/grid-composition.html">Grid & responsive</a></li>
+        <li><a class="docsnav-link" href="../foundations/motion.html">Focus & motion</a></li>
+      </ul>
+      
+      <p class="docsnav-label">Brand</p>
+      <ul class="docsnav-list">
+        <li><a class="docsnav-link" href="../brand/logo.html">Logo</a></li>
+        <li><a class="docsnav-link" href="../brand/iconography.html">Iconography</a></li>
+      </ul>
+      
+      <p class="docsnav-label">Components</p>
+      <ul class="docsnav-list">
+        <li><a class="docsnav-link" href="../components/button.html">Button</a></li>
+        <li><a class="docsnav-link" href="../components/chip.html">Chip</a></li>
+        <li><a class="docsnav-link" href="../components/input.html">Input</a></li>
+        <li><a class="docsnav-link" href="../components/select.html">Select & combobox</a></li>
+        <li><a class="docsnav-link" href="../components/toggle.html">Toggle</a></li>
+        <li><a class="docsnav-link" href="../components/card.html">Card</a></li>
+        <li><a class="docsnav-link docsnav-link-active" href="../components/appbar.html">App bar</a></li>
+        <li><a class="docsnav-link" href="../components/nav.html">Rail & bottom bar</a></li>
+        <li><a class="docsnav-link" href="../components/tabs.html">Tabs</a></li>
+        <li><a class="docsnav-link" href="../components/breadcrumb.html">Breadcrumb</a></li>
+        <li><a class="docsnav-link" href="../components/banner.html">Banner</a></li>
+        <li><a class="docsnav-link" href="../components/toast.html">Toast</a></li>
+        <li><a class="docsnav-link" href="../components/empty.html">Empty state</a></li>
+        <li><a class="docsnav-link" href="../components/skeleton.html">Skeleton</a></li>
+        <li><a class="docsnav-link" href="../components/list.html">List & row</a></li>
+        <li><a class="docsnav-link" href="../components/tree.html">Tree</a></li>
+        <li><a class="docsnav-link" href="../components/table.html">Table</a></li>
+        <li><a class="docsnav-link" href="../components/filterbar.html">Filter bar</a></li>
+        <li><a class="docsnav-link" href="../components/meter.html">Meter</a></li>
+        <li><a class="docsnav-link" href="../components/overlay.html">Modal, sheet & popover</a></li>
+        <li><a class="docsnav-link" href="../components/tooltip.html">Tooltip</a></li>
+        <li><a class="docsnav-link" href="../components/timeline.html">Run timeline</a></li>
+        <li><a class="docsnav-link" href="../components/diff.html">Diff viewer</a></li>
+        <li><a class="docsnav-link" href="../components/approvalbar.html">Approval bar</a></li>
+        <li><a class="docsnav-link" href="../components/chat.html">Chat thread</a></li>
+      </ul>
+    </nav>
+    <main class="docs-main">
+      <button class="docs-theme button button-sm" data-theme-toggle>Theme</button>
+      <p class="text-eyebrow">Component</p>
+      <h1>App bar</h1>
+      <p class="docs-purpose">Brand, context, and status — nothing else. Actions that belong to the content belong in the content; an app bar that collects them becomes a junk drawer the user has to search.</p>
+      <section class="docs-section" id="anatomy">
+        <h2 class="docs-h2">Anatomy</h2>
+        <div class="docs-demo">
+<div class="bordered" style="overflow:hidden">
+  <div class="appbar">
+    <a class="appbar-brand" href="#"><svg viewBox="0 0 32 32" width="18" height="18" aria-hidden="true" style="vertical-align:middle"><path fill="currentColor" d="M4.6 6.2 14.6 9.9v16.4L4.6 22.6z"/><path fill="currentColor" fill-opacity=".55" d="M27.4 6.2 17.4 9.9v16.4l10-3.7z"/></svg>Fold</a>
+    <span class="appbar-title">Attention</span>
+    <span class="appbar-spacer"></span>
+    <span class="chip chip-accent"><i class="chip-dot"></i>4 running</span>
+  </div>
+</div></div>
+      </section>
+      <section class="docs-section" id="styles">
+        <h2 class="docs-h2">Styles</h2>
+        <div class="table-wrap"><table class="table">
+          <thead><tr><th>Class</th><th>Role</th><th>Notes</th></tr></thead>
+          <tbody>
+          <tr><td class="text-mono">.appbar</td><td>56px bar with bottom border</td><td><code>--color-bg</code></td></tr>
+          <tr><td class="text-mono">.appbar-brand</td><td>Symbol + wordmark link</td><td>Accent symbol, ink word</td></tr>
+          <tr><td class="text-mono">.appbar-title</td><td>Current context</td><td>16px semibold</td></tr>
+          <tr><td class="text-mono">.appbar-spacer</td><td>Flexible gap</td><td>Pushes status right</td></tr>
+          </tbody>
+        </table></div>
+      </section>
+      <section class="docs-section" id="tokens">
+        <h2 class="docs-h2">Tokens used</h2>
+        <div class="table-wrap"><table class="table">
+          <thead><tr><th>Token</th><th>Role here</th></tr></thead>
+          <tbody>
+          <tr><td class="text-mono">--color-bg / --color-border</td><td>Bar fill and its edge.</td></tr>
+          <tr><td class="text-mono">--color-accent</td><td>The symbol only — not the wordmark.</td></tr>
+          </tbody>
+        </table></div>
+      </section>
+      <section class="docs-section" id="usage">
+        <h2 class="docs-h2">Usage</h2>
+        <div class="do-dont">
+          <div class="do">
+            <p class="text-eyebrow text-success">Do</p>
+            <ul><li><b>Keep it to brand, context, and one status</b> — it is a location indicator, not a toolbar.</li><li><b>Show the live count here</b> — it is the one number worth carrying on every screen.</li><li><b>Keep the bar background at `--color-bg`</b> — a raised bar competes with the content it frames.</li></ul>
+          </div>
+          <div class="dont">
+            <p class="text-eyebrow text-error">Don't</p>
+            <ul><li><b>Collect content actions in the bar</b> — they belong beside what they act on.</li><li><b>Make the whole bar sticky at folded width</b> — vertical space is the scarcest thing on a phone.</li><li><b>Color the wordmark</b> — only the symbol takes the accent.</li></ul>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+  <script>
+    // Site chrome only — the design system itself ships no JavaScript.
+    document.querySelector('[data-theme-toggle]').addEventListener('click', () => {
+      const r = document.documentElement;
+      const now = r.getAttribute('data-theme')
+        || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+      r.setAttribute('data-theme', now === 'dark' ? 'light' : 'dark');
+    });
+  </script>
+</body>
+</html>

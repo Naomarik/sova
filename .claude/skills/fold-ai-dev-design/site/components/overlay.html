@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en-US">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Modal, sheet &amp; popover — Fold AI Dev</title>
+<link rel="stylesheet" href="../../tokens.css">
+<link rel="stylesheet" href="../../fold-ai-dev.css">
+<link rel="stylesheet" href="../../site/docs.css">
+</head>
+<body class="docs">
+  <div class="docs-shell">
+    <nav class="docsnav" aria-label="Reference">
+      <a class="docsnav-brand" href="../index.html"><svg viewBox="0 0 32 32" width="20" height="20" aria-hidden="true" style="vertical-align:middle"><path fill="currentColor" d="M4.6 6.2 14.6 9.9v16.4L4.6 22.6z"/><path fill="currentColor" fill-opacity=".55" d="M27.4 6.2 17.4 9.9v16.4l10-3.7z"/></svg><b>Fold AI Dev</b></a>
+      
+      <p class="docsnav-label">Foundations</p>
+      <ul class="docsnav-list">
+        <li><a class="docsnav-link" href="../foundations/colors.html">Color</a></li>
+        <li><a class="docsnav-link" href="../foundations/typography.html">Typography</a></li>
+        <li><a class="docsnav-link" href="../foundations/spacing.html">Spacing</a></li>
+        <li><a class="docsnav-link" href="../foundations/radius.html">Radius</a></li>
+        <li><a class="docsnav-link" href="../foundations/shadow.html">Elevation</a></li>
+        <li><a class="docsnav-link" href="../foundations/grid-composition.html">Grid & responsive</a></li>
+        <li><a class="docsnav-link" href="../foundations/motion.html">Focus & motion</a></li>
+      </ul>
+      
+      <p class="docsnav-label">Brand</p>
+      <ul class="docsnav-list">
+        <li><a class="docsnav-link" href="../brand/logo.html">Logo</a></li>
+        <li><a class="docsnav-link" href="../brand/iconography.html">Iconography</a></li>
+      </ul>
+      
+      <p class="docsnav-label">Components</p>
+      <ul class="docsnav-list">
+        <li><a class="docsnav-link" href="../components/button.html">Button</a></li>
+        <li><a class="docsnav-link" href="../components/chip.html">Chip</a></li>
+        <li><a class="docsnav-link" href="../components/input.html">Input</a></li>
+        <li><a class="docsnav-link" href="../components/select.html">Select & combobox</a></li>
+        <li><a class="docsnav-link" href="../components/toggle.html">Toggle</a></li>
+        <li><a class="docsnav-link" href="../components/card.html">Card</a></li>
+        <li><a class="docsnav-link" href="../components/appbar.html">App bar</a></li>
+        <li><a class="docsnav-link" href="../components/nav.html">Rail & bottom bar</a></li>
+        <li><a class="docsnav-link" href="../components/tabs.html">Tabs</a></li>
+        <li><a class="docsnav-link" href="../components/breadcrumb.html">Breadcrumb</a></li>
+        <li><a class="docsnav-link" href="../components/banner.html">Banner</a></li>
+        <li><a class="docsnav-link" href="../components/toast.html">Toast</a></li>
+        <li><a class="docsnav-link" href="../components/empty.html">Empty state</a></li>
+        <li><a class="docsnav-link" href="../components/skeleton.html">Skeleton</a></li>
+        <li><a class="docsnav-link" href="../components/list.html">List & row</a></li>
+        <li><a class="docsnav-link" href="../components/tree.html">Tree</a></li>
+        <li><a class="docsnav-link" href="../components/table.html">Table</a></li>
+        <li><a class="docsnav-link" href="../components/filterbar.html">Filter bar</a></li>
+        <li><a class="docsnav-link" href="../components/meter.html">Meter</a></li>
+        <li><a class="docsnav-link docsnav-link-active" href="../components/overlay.html">Modal, sheet & popover</a></li>
+        <li><a class="docsnav-link" href="../components/tooltip.html">Tooltip</a></li>
+        <li><a class="docsnav-link" href="../components/timeline.html">Run timeline</a></li>
+        <li><a class="docsnav-link" href="../components/diff.html">Diff viewer</a></li>
+        <li><a class="docsnav-link" href="../components/approvalbar.html">Approval bar</a></li>
+        <li><a class="docsnav-link" href="../components/chat.html">Chat thread</a></li>
+      </ul>
+    </nav>
+    <main class="docs-main">
+      <button class="docs-theme button button-sm" data-theme-toggle>Theme</button>
+      <p class="text-eyebrow">Component</p>
+      <h1>Modal, sheet &amp; popover</h1>
+      <p class="docs-purpose">Three ways to put something on top. At folded width a modal becomes a bottom sheet, so the decision arrives inside the thumb arc rather than in the middle of a screen nobody can reach one-handed.</p>
+      <section class="docs-section" id="modal">
+        <h2 class="docs-h2">Modal</h2>
+        <div class="docs-demo">
+<div class="modal modal-static">
+  <div class="modal-head"><h3 class="modal-title">Discard this run?</h3></div>
+  <div class="modal-body">The worker's 7 changed files go away. Nothing was merged, so nothing else changes.</div>
+  <div class="modal-foot"><button class="button button-destructive">Discard Run</button>
+    <span class="approvalbar-spacer"></span><button class="button button-ghost">Cancel</button></div>
+</div></div>
+      </section>
+      <section class="docs-section" id="sheet">
+        <h2 class="docs-h2">Sheet</h2>
+        <div class="docs-demo">
+<div class="sheet sheet-static">
+  <div class="sheet-grip"></div>
+  <h4 class="text-heading-s">Filter queue</h4>
+  <div class="stack-2" style="margin-top:var(--space-3)">
+    <label class="toggle"><input type="checkbox" checked><span class="toggle-box">✓</span>Only waiting on me</label>
+    <label class="toggle"><input type="checkbox"><span class="toggle-box">✓</span>Include finished runs</label>
+  </div>
+</div></div>
+      </section>
+      <section class="docs-section" id="popover">
+        <h2 class="docs-h2">Popover</h2>
+        <div class="docs-demo">
+<div class="popover" style="max-width:240px">
+  <a class="popover-item" href="#">Open in editor</a>
+  <a class="popover-item" href="#">Copy run ID</a>
+  <div class="popover-sep"></div>
+  <a class="popover-item text-error" href="#">Discard run</a>
+</div></div>
+      </section>
+      <section class="docs-section" id="styles">
+        <h2 class="docs-h2">Styles</h2>
+        <div class="table-wrap"><table class="table">
+          <thead><tr><th>Class</th><th>Role</th><th>Notes</th></tr></thead>
+          <tbody>
+          <tr><td class="text-mono">.scrim</td><td>Fixed dim layer</td><td>Click closes</td></tr>
+          <tr><td class="text-mono">.modal</td><td>Centred dialog, ≤520px</td><td><code>--shadow-3</code></td></tr>
+          <tr><td class="text-mono">.modal-head / -title / -body / -foot</td><td>Dialog parts</td><td>Foot holds actions</td></tr>
+          <tr><td class="text-mono">.sheet</td><td>Bottom sheet, ≤85vh</td><td>Folded-width modal</td></tr>
+          <tr><td class="text-mono">.sheet-grip</td><td>Drag handle</td><td>Affordance only</td></tr>
+          <tr><td class="text-mono">.popover</td><td>Anchored menu</td><td><code>--shadow-2</code></td></tr>
+          <tr><td class="text-mono">.popover-item</td><td>44px menu row</td><td>Never the only path</td></tr>
+          <tr><td class="text-mono">.popover-sep</td><td>Divider</td><td>Before destructive items</td></tr>
+          </tbody>
+        </table></div>
+      </section>
+      <section class="docs-section" id="tokens">
+        <h2 class="docs-h2">Tokens used</h2>
+        <div class="table-wrap"><table class="table">
+          <thead><tr><th>Token</th><th>Role here</th></tr></thead>
+          <tbody>
+          <tr><td class="text-mono">--r-xl</td><td>16px — sheets and modals.</td></tr>
+          <tr><td class="text-mono">--shadow-2 / -3</td><td>Popover / modal.</td></tr>
+          <tr><td class="text-mono">--dur-base</td><td>200ms entry.</td></tr>
+          </tbody>
+        </table></div>
+      </section>
+      <section class="docs-section" id="usage">
+        <h2 class="docs-h2">Usage</h2>
+        <div class="do-dont">
+          <div class="do">
+            <p class="text-eyebrow text-success">Do</p>
+            <ul><li><b>State what goes away and what does not</b> — the second half is what makes the decision easy.</li><li><b>Use a sheet instead of a modal at folded width</b> — the thumb cannot reach a centred dialog.</li><li><b>Separate destructive popover items with a divider</b> — distance prevents mis-taps.</li></ul>
+          </div>
+          <div class="dont">
+            <p class="text-eyebrow text-error">Don't</p>
+            <ul><li><b>Put the only path to an action in a popover</b> — hidden actions do not exist on touch.</li><li><b>Stack a modal on a modal</b> — close the first; the user has lost the thread by then.</li><li><b>Ask "Are you sure?"</b> — say what will happen instead.</li></ul>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+  <script>
+    // Site chrome only — the design system itself ships no JavaScript.
+    document.querySelector('[data-theme-toggle]').addEventListener('click', () => {
+      const r = document.documentElement;
+      const now = r.getAttribute('data-theme')
+        || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+      r.setAttribute('data-theme', now === 'dark' ? 'light' : 'dark');
+    });
+  </script>
+</body>
+</html>

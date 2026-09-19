@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en-US">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Approval bar — Fold AI Dev</title>
+<link rel="stylesheet" href="../../tokens.css">
+<link rel="stylesheet" href="../../fold-ai-dev.css">
+<link rel="stylesheet" href="../../site/docs.css">
+</head>
+<body class="docs">
+  <div class="docs-shell">
+    <nav class="docsnav" aria-label="Reference">
+      <a class="docsnav-brand" href="../index.html"><svg viewBox="0 0 32 32" width="20" height="20" aria-hidden="true" style="vertical-align:middle"><path fill="currentColor" d="M4.6 6.2 14.6 9.9v16.4L4.6 22.6z"/><path fill="currentColor" fill-opacity=".55" d="M27.4 6.2 17.4 9.9v16.4l10-3.7z"/></svg><b>Fold AI Dev</b></a>
+      
+      <p class="docsnav-label">Foundations</p>
+      <ul class="docsnav-list">
+        <li><a class="docsnav-link" href="../foundations/colors.html">Color</a></li>
+        <li><a class="docsnav-link" href="../foundations/typography.html">Typography</a></li>
+        <li><a class="docsnav-link" href="../foundations/spacing.html">Spacing</a></li>
+        <li><a class="docsnav-link" href="../foundations/radius.html">Radius</a></li>
+        <li><a class="docsnav-link" href="../foundations/shadow.html">Elevation</a></li>
+        <li><a class="docsnav-link" href="../foundations/grid-composition.html">Grid & responsive</a></li>
+        <li><a class="docsnav-link" href="../foundations/motion.html">Focus & motion</a></li>
+      </ul>
+      
+      <p class="docsnav-label">Brand</p>
+      <ul class="docsnav-list">
+        <li><a class="docsnav-link" href="../brand/logo.html">Logo</a></li>
+        <li><a class="docsnav-link" href="../brand/iconography.html">Iconography</a></li>
+      </ul>
+      
+      <p class="docsnav-label">Components</p>
+      <ul class="docsnav-list">
+        <li><a class="docsnav-link" href="../components/button.html">Button</a></li>
+        <li><a class="docsnav-link" href="../components/chip.html">Chip</a></li>
+        <li><a class="docsnav-link" href="../components/input.html">Input</a></li>
+        <li><a class="docsnav-link" href="../components/select.html">Select & combobox</a></li>
+        <li><a class="docsnav-link" href="../components/toggle.html">Toggle</a></li>
+        <li><a class="docsnav-link" href="../components/card.html">Card</a></li>
+        <li><a class="docsnav-link" href="../components/appbar.html">App bar</a></li>
+        <li><a class="docsnav-link" href="../components/nav.html">Rail & bottom bar</a></li>
+        <li><a class="docsnav-link" href="../components/tabs.html">Tabs</a></li>
+        <li><a class="docsnav-link" href="../components/breadcrumb.html">Breadcrumb</a></li>
+        <li><a class="docsnav-link" href="../components/banner.html">Banner</a></li>
+        <li><a class="docsnav-link" href="../components/toast.html">Toast</a></li>
+        <li><a class="docsnav-link" href="../components/empty.html">Empty state</a></li>
+        <li><a class="docsnav-link" href="../components/skeleton.html">Skeleton</a></li>
+        <li><a class="docsnav-link" href="../components/list.html">List & row</a></li>
+        <li><a class="docsnav-link" href="../components/tree.html">Tree</a></li>
+        <li><a class="docsnav-link" href="../components/table.html">Table</a></li>
+        <li><a class="docsnav-link" href="../components/filterbar.html">Filter bar</a></li>
+        <li><a class="docsnav-link" href="../components/meter.html">Meter</a></li>
+        <li><a class="docsnav-link" href="../components/overlay.html">Modal, sheet & popover</a></li>
+        <li><a class="docsnav-link" href="../components/tooltip.html">Tooltip</a></li>
+        <li><a class="docsnav-link" href="../components/timeline.html">Run timeline</a></li>
+        <li><a class="docsnav-link" href="../components/diff.html">Diff viewer</a></li>
+        <li><a class="docsnav-link docsnav-link-active" href="../components/approvalbar.html">Approval bar</a></li>
+        <li><a class="docsnav-link" href="../components/chat.html">Chat thread</a></li>
+      </ul>
+    </nav>
+    <main class="docs-main">
+      <button class="docs-theme button button-sm" data-theme-toggle>Theme</button>
+      <p class="text-eyebrow">Component</p>
+      <h1>Approval bar</h1>
+      <p class="docs-purpose">The persistent decision affordance — where Approve, Review, and Discard live. It pins to the bottom at folded width, inside the thumb arc, and destructive keeps its distance from primary so one mis-tap never throws away a run.</p>
+      <section class="docs-section" id="anatomy">
+        <h2 class="docs-h2">Anatomy</h2>
+        <div class="docs-demo">
+<div class="card"><div class="approvalbar">
+  <p class="approvalbar-summary">7 files · <span class="text-mono">+142 −38</span> · tests passed</p>
+  <button class="button button-primary">Approve</button>
+  <button class="button">Review Changes</button>
+  <span class="approvalbar-spacer"></span>
+  <button class="button button-destructive">Discard Run</button>
+</div></div></div>
+      </section>
+      <section class="docs-section" id="blocked">
+        <h2 class="docs-h2">When it can't be approved</h2>
+        <div class="docs-demo">
+<div class="card"><div class="approvalbar">
+  <p class="approvalbar-summary text-error">Failed at step 4. Nothing was merged.</p>
+  <button class="button button-primary" disabled>Approve</button>
+  <button class="button">View Log</button>
+  <span class="approvalbar-spacer"></span>
+  <button class="button button-destructive">Discard Run</button>
+</div></div></div>
+      </section>
+      <section class="docs-section" id="styles">
+        <h2 class="docs-h2">Styles</h2>
+        <div class="table-wrap"><table class="table">
+          <thead><tr><th>Class</th><th>Role</th><th>Notes</th></tr></thead>
+          <tbody>
+          <tr><td class="text-mono">.approvalbar</td><td>Sticky bottom bar</td><td>Static from 768 **of its <code>.pane</code>**</td></tr>
+          <tr><td class="text-mono">.approvalbar-summary</td><td>What is being decided</td><td>Full width at folded</td></tr>
+          <tr><td class="text-mono">.approvalbar-spacer</td><td>Pushes destructive away</td><td>Structural, not decorative</td></tr>
+          <tr><td class="text-mono">.pane</td><td>The review pane around it</td><td>Supplies the box the bar measures</td></tr>
+          </tbody>
+        </table></div>
+      </section>
+      <section class="docs-section" id="tokens">
+        <h2 class="docs-h2">Tokens used</h2>
+        <div class="table-wrap"><table class="table">
+          <thead><tr><th>Token</th><th>Role here</th></tr></thead>
+          <tbody>
+          <tr><td class="text-mono">--shadow-2</td><td>Lift at folded width; removed on desktop.</td></tr>
+          <tr><td class="text-mono">--bp-unfolded</td><td>768px — where it stops being sticky.</td></tr>
+          <tr><td class="text-mono">--control-md</td><td>44px actions.</td></tr>
+          </tbody>
+        </table></div>
+      </section>
+      <section class="docs-section" id="usage">
+        <h2 class="docs-h2">Usage</h2>
+        <div class="do-dont">
+          <div class="do">
+            <p class="text-eyebrow text-success">Do</p>
+            <ul><li><b>Summarise what is being approved</b> — nobody should have to scroll up to remember.</li><li><b>Keep the spacer between primary and destructive</b> — the gap is the safety mechanism.</li><li><b>Put the bar in a `.pane`</b> — it measures the pane, so a bar in a 600px pane stays pinned inside a wide window.</li><li><b>Disable Approve when approval is impossible</b> — and say why in the summary.</li></ul>
+          </div>
+          <div class="dont">
+            <p class="text-eyebrow text-error">Don't</p>
+            <ul><li><b>Put Discard next to Approve</b> — they are the two ends of the decision, not neighbours.</li><li><b>Hide the bar on scroll</b> — the decision is the reason the screen exists.</li><li><b>Use it for navigation</b> — it decides; it does not move you.</li></ul>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+  <script>
+    // Site chrome only — the design system itself ships no JavaScript.
+    document.querySelector('[data-theme-toggle]').addEventListener('click', () => {
+      const r = document.documentElement;
+      const now = r.getAttribute('data-theme')
+        || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+      r.setAttribute('data-theme', now === 'dark' ? 'light' : 'dark');
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en-US">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Tooltip — Fold AI Dev</title>
+<link rel="stylesheet" href="../../tokens.css">
+<link rel="stylesheet" href="../../fold-ai-dev.css">
+<link rel="stylesheet" href="../../site/docs.css">
+</head>
+<body class="docs">
+  <div class="docs-shell">
+    <nav class="docsnav" aria-label="Reference">
+      <a class="docsnav-brand" href="../index.html"><svg viewBox="0 0 32 32" width="20" height="20" aria-hidden="true" style="vertical-align:middle"><path fill="currentColor" d="M4.6 6.2 14.6 9.9v16.4L4.6 22.6z"/><path fill="currentColor" fill-opacity=".55" d="M27.4 6.2 17.4 9.9v16.4l10-3.7z"/></svg><b>Fold AI Dev</b></a>
+      
+      <p class="docsnav-label">Foundations</p>
+      <ul class="docsnav-list">
+        <li><a class="docsnav-link" href="../foundations/colors.html">Color</a></li>
+        <li><a class="docsnav-link" href="../foundations/typography.html">Typography</a></li>
+        <li><a class="docsnav-link" href="../foundations/spacing.html">Spacing</a></li>
+        <li><a class="docsnav-link" href="../foundations/radius.html">Radius</a></li>
+        <li><a class="docsnav-link" href="../foundations/shadow.html">Elevation</a></li>
+        <li><a class="docsnav-link" href="../foundations/grid-composition.html">Grid & responsive</a></li>
+        <li><a class="docsnav-link" href="../foundations/motion.html">Focus & motion</a></li>
+      </ul>
+      
+      <p class="docsnav-label">Brand</p>
+      <ul class="docsnav-list">
+        <li><a class="docsnav-link" href="../brand/logo.html">Logo</a></li>
+        <li><a class="docsnav-link" href="../brand/iconography.html">Iconography</a></li>
+      </ul>
+      
+      <p class="docsnav-label">Components</p>
+      <ul class="docsnav-list">
+        <li><a class="docsnav-link" href="../components/button.html">Button</a></li>
+        <li><a class="docsnav-link" href="../components/chip.html">Chip</a></li>
+        <li><a class="docsnav-link" href="../components/input.html">Input</a></li>
+        <li><a class="docsnav-link" href="../components/select.html">Select & combobox</a></li>
+        <li><a class="docsnav-link" href="../components/toggle.html">Toggle</a></li>
+        <li><a class="docsnav-link" href="../components/card.html">Card</a></li>
+        <li><a class="docsnav-link" href="../components/appbar.html">App bar</a></li>
+        <li><a class="docsnav-link" href="../components/nav.html">Rail & bottom bar</a></li>
+        <li><a class="docsnav-link" href="../components/tabs.html">Tabs</a></li>
+        <li><a class="docsnav-link" href="../components/breadcrumb.html">Breadcrumb</a></li>
+        <li><a class="docsnav-link" href="../components/banner.html">Banner</a></li>
+        <li><a class="docsnav-link" href="../components/toast.html">Toast</a></li>
+        <li><a class="docsnav-link" href="../components/empty.html">Empty state</a></li>
+        <li><a class="docsnav-link" href="../components/skeleton.html">Skeleton</a></li>
+        <li><a class="docsnav-link" href="../components/list.html">List & row</a></li>
+        <li><a class="docsnav-link" href="../components/tree.html">Tree</a></li>
+        <li><a class="docsnav-link" href="../components/table.html">Table</a></li>
+        <li><a class="docsnav-link" href="../components/filterbar.html">Filter bar</a></li>
+        <li><a class="docsnav-link" href="../components/meter.html">Meter</a></li>
+        <li><a class="docsnav-link" href="../components/overlay.html">Modal, sheet & popover</a></li>
+        <li><a class="docsnav-link docsnav-link-active" href="../components/tooltip.html">Tooltip</a></li>
+        <li><a class="docsnav-link" href="../components/timeline.html">Run timeline</a></li>
+        <li><a class="docsnav-link" href="../components/diff.html">Diff viewer</a></li>
+        <li><a class="docsnav-link" href="../components/approvalbar.html">Approval bar</a></li>
+        <li><a class="docsnav-link" href="../components/chat.html">Chat thread</a></li>
+      </ul>
+    </nav>
+    <main class="docs-main">
+      <button class="docs-theme button button-sm" data-theme-toggle>Theme</button>
+      <p class="text-eyebrow">Component</p>
+      <h1>Tooltip</h1>
+      <p class="docs-purpose">One sentence behind a term or a figure, for the user who wants it defined once. It opens on hover and on keyboard focus, and it is never the only place a fact lives — a touch user may never open it, so anything a decision depends on goes in the row or on the control instead.</p>
+      <section class="docs-section" id="term">
+        <h2 class="docs-h2">On a term</h2>
+        <div class="docs-demo">
+<p class="text-caption text-muted" style="padding-top:var(--space-7)">Sorted by
+  <span class="tip tip-static" tabindex="0" aria-describedby="tip-demo-1">free memory<span class="tip-bubble" role="tooltip" id="tip-demo-1">Inside this machine's share, latest reading.</span></span>,
+  most first.</p></div>
+      </section>
+      <section class="docs-section" id="figure">
+        <h2 class="docs-h2">On a figure</h2>
+        <div class="docs-demo">
+<p class="text-body" style="padding-top:var(--space-7)"><span class="tip" tabindex="0" aria-describedby="tip-demo-2"><span class="text-num">3.2 GB</span><span class="tip-bubble" role="tooltip" id="tip-demo-2">Free of an 8 GB share. Read 40s ago.</span></span> free</p></div>
+      </section>
+      <section class="docs-section" id="styles">
+        <h2 class="docs-h2">Styles</h2>
+        <div class="table-wrap"><table class="table">
+          <thead><tr><th>Class</th><th>Role</th><th>Notes</th></tr></thead>
+          <tbody>
+          <tr><td class="text-mono">.tip</td><td>The trigger — the term itself, dotted underline</td><td><code>tabindex="0"</code> and <code>aria-describedby</code></td></tr>
+          <tr><td class="text-mono">.tip-bubble</td><td>The sentence, above the trigger</td><td><code>role="tooltip"</code>; ≤32ch</td></tr>
+          <tr><td class="text-mono">.tip-start|end</td><td>Anchor the bubble to the trigger's start or end edge</td><td>From 768px; under it every bubble is a strip above the bottom bar</td></tr>
+          <tr><td class="text-mono">.tip-static</td><td>Demo helper — bubble held open</td><td>Documentation only</td></tr>
+          </tbody>
+        </table></div>
+      </section>
+      <section class="docs-section" id="tokens">
+        <h2 class="docs-h2">Tokens used</h2>
+        <div class="table-wrap"><table class="table">
+          <thead><tr><th>Token</th><th>Role here</th></tr></thead>
+          <tbody>
+          <tr><td class="text-mono">--color-ink / --color-bg</td><td>Inverted bubble, so it reads over any surface in either theme.</td></tr>
+          <tr><td class="text-mono">--fs-caption</td><td>12.5px sentence.</td></tr>
+          <tr><td class="text-mono">--dur-fast</td><td>120ms open.</td></tr>
+          <tr><td class="text-mono">--shadow-2</td><td>Lift off the page.</td></tr>
+          </tbody>
+        </table></div>
+      </section>
+      <section class="docs-section" id="usage">
+        <h2 class="docs-h2">Usage</h2>
+        <div class="do-dont">
+          <div class="do">
+            <p class="text-eyebrow text-success">Do</p>
+            <ul><li><b>Keep it to one sentence</b> — a second sentence is a paragraph that found a hiding place.</li><li><b>Use `.tip-start` or `.tip-end` on a trigger in a first or last column</b> — a centred bubble on an edge chip is clipped at phone width.</li><li><b>Put the trigger on the term, not on an icon</b> — the word is what the user is unsure of.</li><li><b>Give the trigger `tabindex="0"` and `aria-describedby`</b> — a tooltip only a mouse can open is a tooltip half the users never see.</li></ul>
+          </div>
+          <div class="dont">
+            <p class="text-eyebrow text-error">Don't</p>
+            <ul><li><b>Make a tooltip the only place a fact lives</b> — touch users may never open it; put the fact in the row or on the control.</li><li><b>Put a control's reason in a tooltip</b> — a disabled control carries its own reason.</li><li><b>Explain why the product behaves as it does</b> — the tooltip defines a term; it does not argue.</li></ul>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+  <script>
+    // Site chrome only — the design system itself ships no JavaScript.
+    document.querySelector('[data-theme-toggle]').addEventListener('click', () => {
+      const r = document.documentElement;
+      const now = r.getAttribute('data-theme')
+        || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+      r.setAttribute('data-theme', now === 'dark' ? 'light' : 'dark');
+    });
+  </script>
+</body>
+</html>

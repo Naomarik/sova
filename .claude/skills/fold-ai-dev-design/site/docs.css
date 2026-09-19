@@ -1,0 +1,257 @@
+/* =============================================================================
+   docs.css — reference-site chrome ONLY.
+
+   Sidebar, page shell, demo scaffolding, icon galleries, do/don't columns.
+   NEVER merge any of this into fold-ai-dev.css: demo chrome is not part of the
+   design system, and a consumer who inherits it inherits decisions nobody made
+   for their product.
+
+   Consumes the same tokens as the system, so the chrome stays in the theme.
+   ============================================================================= */
+
+.docs-shell {
+  display: block;
+  max-width: var(--page-max);
+  margin: 0 auto;
+}
+
+@media (min-width: 900px) {
+  .docs-shell {
+    display: grid;
+    grid-template-columns: 240px minmax(0, 1fr);
+    gap: var(--space-6);
+    align-items: start;
+  }
+}
+
+/* ---------------------------------------------------------------- side nav */
+
+.docsnav {
+  padding: var(--space-4);
+  border-bottom: var(--stroke-thin) solid var(--color-border);
+  /* Below the two-column breakpoint the nav sits above the content, and 31 links
+     would push the page itself off-screen. Cap it and let it scroll in place. */
+  max-height: 38vh;
+  overflow-y: auto;
+}
+@media (min-width: 900px) {
+  .docsnav {
+    position: sticky;
+    top: 0;
+    max-height: 100vh;
+    overflow-y: auto;
+    border-bottom: 0;
+    border-right: var(--stroke-thin) solid var(--color-border);
+  }
+}
+
+.docsnav-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-ink);
+  text-decoration: none;
+  font-weight: var(--fw-display);
+  letter-spacing: -.02em;
+  margin-bottom: var(--space-5);
+}
+.docsnav-brand svg { color: var(--color-accent); }
+
+.docsnav-label {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  letter-spacing: var(--ls-eyebrow);
+  text-transform: uppercase;
+  color: var(--color-ink-muted);
+  margin: var(--space-4) 0 var(--space-2);
+}
+.docsnav-list { list-style: none; margin: 0; padding: 0; }
+.docsnav-link {
+  display: block;
+  min-height: var(--tap-min);
+  line-height: var(--tap-min);
+  padding: 0 var(--space-3);
+  border-radius: var(--r-md);
+  color: var(--color-ink-2);
+  text-decoration: none;
+  font-size: var(--fs-body);
+}
+.docsnav-link:hover { background: var(--color-sunken); color: var(--color-ink); }
+.docsnav-link-active { background: var(--color-accent-tint); color: var(--color-accent); font-weight: var(--fw-medium); }
+
+/* ------------------------------------------------------------------- main */
+
+.docs-main {
+  padding: var(--space-6) var(--space-4) var(--space-9);
+  min-width: 0;
+  position: relative;
+}
+.docs-theme { position: absolute; top: var(--space-5); right: var(--space-4); }
+.docs-purpose {
+  font-size: var(--fs-heading-s);
+  line-height: 1.5;
+  color: var(--color-ink-2);
+  max-width: var(--measure);
+  margin-bottom: var(--space-7);
+}
+
+/* The reading measure, opted into. Since 1.6.0 a bare `<p>` is not capped, and
+   this site is a consumer like any other — it has to ask. It asks in exactly
+   one place: a paragraph that is a DIRECT child of a demo block is the site
+   talking, and every specimen's own text is nested inside the component it
+   belongs to and keeps that component's width.
+   Without this the site set its own prose to ~103ch on a wide display while
+   telling the reader to stop at 72. */
+.docs-demo > p {
+  max-width: var(--measure);
+}
+.docs-section { margin-bottom: var(--space-7); scroll-margin-top: var(--space-4); }
+.docs-h2 {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--ls-eyebrow);
+  text-transform: uppercase;
+  color: var(--color-ink-muted);
+  padding-bottom: var(--space-2);
+  border-bottom: var(--stroke-thin) solid var(--color-border);
+  margin-bottom: var(--space-4);
+}
+
+/* Demo scaffolding — the frame around an example, never the example itself. */
+.docs-demo > .demo-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: var(--space-4);
+}
+.docs-demo .modal-static,
+.docs-demo .sheet-static {
+  position: static;
+  transform: none;
+  width: auto;
+  max-width: 460px;
+  max-height: none;
+}
+
+/* --------------------------------------------------------- foundation demos */
+
+.swatches {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: var(--space-3);
+}
+.swatch { border: var(--stroke-thin) solid var(--color-border); border-radius: var(--r-lg); overflow: hidden; }
+.swatch-c { height: 56px; }
+.swatch-m { padding: var(--space-2) var(--space-3); background: var(--color-surface); }
+.swatch-m b { display: block; font-size: var(--fs-caption); }
+.swatch-m code { display: block; font-size: 10.5px; color: var(--color-accent); }
+.swatch-m span { display: block; font-family: var(--font-mono); font-size: 10.5px; color: var(--color-ink-muted); }
+.swatch-m em { display: block; font-style: normal; font-size: 11px; color: var(--color-ink-muted); margin-top: 2px; }
+
+.ratio {
+  display: flex;
+  height: 40px;
+  border-radius: var(--r-md);
+  overflow: hidden;
+  border: var(--stroke-thin) solid var(--color-border);
+}
+.ratio div {
+  display: grid;
+  place-items: center;
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+}
+
+.scale-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-4);
+  padding: var(--space-2) 0;
+  border-bottom: var(--stroke-thin) solid var(--color-border);
+}
+.scale-row > code { width: 96px; flex: none; font-size: var(--fs-micro); color: var(--color-accent); }
+.scale-m { width: 78px; flex: none; font-family: var(--font-mono); font-size: var(--fs-micro); }
+
+.logo-box {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-5) var(--space-6);
+  border: var(--stroke-thin) solid var(--color-border);
+  border-radius: var(--r-lg);
+  background: var(--color-surface);
+}
+.logo-box b { font-size: var(--fs-heading-m); font-weight: var(--fw-display); letter-spacing: -.03em; }
+.logo-box-accent { background: var(--color-accent); border-color: var(--color-accent); color: var(--color-on-accent); }
+.misuse {
+  display: grid;
+  place-items: center;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  border: var(--stroke-thin) dashed var(--color-border-strong);
+  border-radius: var(--r-lg);
+  min-width: 120px;
+}
+
+.icon-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: var(--space-2);
+}
+.icon-cell {
+  margin: 0;
+  display: grid;
+  place-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-2);
+  border: var(--stroke-thin) solid var(--color-border);
+  border-radius: var(--r-md);
+  background: var(--color-surface);
+  color: var(--color-ink-2);
+}
+.icon-cell figcaption {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-ink-muted);
+  text-align: center;
+  word-break: break-all;
+}
+
+/* ------------------------------------------------------------ state matrix */
+
+.state-matrix {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: var(--space-2);
+  align-items: center;
+}
+@media (max-width: 760px) {
+  .state-matrix { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+/* ---------------------------------------------------------------- do/don't */
+
+.do-dont { display: grid; gap: var(--space-4); }
+@media (min-width: 700px) { .do-dont { grid-template-columns: 1fr 1fr; } }
+.do, .dont {
+  border: var(--stroke-thin) solid var(--color-border);
+  border-radius: var(--r-lg);
+  padding: var(--space-4);
+  background: var(--color-surface);
+}
+.do  { border-left: 3px solid var(--status-success); }
+.dont{ border-left: 3px solid var(--status-error); }
+.do ul, .dont ul { margin: var(--space-2) 0 0; padding-left: var(--space-4); }
+.do li, .dont li { margin-bottom: var(--space-2); color: var(--color-ink-2); font-size: var(--fs-body); }
+.do li b, .dont li b { color: var(--color-ink); }
+
+/* ------------------------------------------------------------------- index */
+
+.index-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: var(--space-3);
+}
+.index-card { text-decoration: none; color: inherit; display: block; }
+.index-card-title { margin: 0 0 var(--space-1); }
+.index-card-body { margin: 0; font-size: var(--fs-caption); }

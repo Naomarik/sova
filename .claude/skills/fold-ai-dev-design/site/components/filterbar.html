@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en-US">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Filter bar — Fold AI Dev</title>
+<link rel="stylesheet" href="../../tokens.css">
+<link rel="stylesheet" href="../../fold-ai-dev.css">
+<link rel="stylesheet" href="../../site/docs.css">
+</head>
+<body class="docs">
+  <div class="docs-shell">
+    <nav class="docsnav" aria-label="Reference">
+      <a class="docsnav-brand" href="../index.html"><svg viewBox="0 0 32 32" width="20" height="20" aria-hidden="true" style="vertical-align:middle"><path fill="currentColor" d="M4.6 6.2 14.6 9.9v16.4L4.6 22.6z"/><path fill="currentColor" fill-opacity=".55" d="M27.4 6.2 17.4 9.9v16.4l10-3.7z"/></svg><b>Fold AI Dev</b></a>
+      
+      <p class="docsnav-label">Foundations</p>
+      <ul class="docsnav-list">
+        <li><a class="docsnav-link" href="../foundations/colors.html">Color</a></li>
+        <li><a class="docsnav-link" href="../foundations/typography.html">Typography</a></li>
+        <li><a class="docsnav-link" href="../foundations/spacing.html">Spacing</a></li>
+        <li><a class="docsnav-link" href="../foundations/radius.html">Radius</a></li>
+        <li><a class="docsnav-link" href="../foundations/shadow.html">Elevation</a></li>
+        <li><a class="docsnav-link" href="../foundations/grid-composition.html">Grid & responsive</a></li>
+        <li><a class="docsnav-link" href="../foundations/motion.html">Focus & motion</a></li>
+      </ul>
+      
+      <p class="docsnav-label">Brand</p>
+      <ul class="docsnav-list">
+        <li><a class="docsnav-link" href="../brand/logo.html">Logo</a></li>
+        <li><a class="docsnav-link" href="../brand/iconography.html">Iconography</a></li>
+      </ul>
+      
+      <p class="docsnav-label">Components</p>
+      <ul class="docsnav-list">
+        <li><a class="docsnav-link" href="../components/button.html">Button</a></li>
+        <li><a class="docsnav-link" href="../components/chip.html">Chip</a></li>
+        <li><a class="docsnav-link" href="../components/input.html">Input</a></li>
+        <li><a class="docsnav-link" href="../components/select.html">Select & combobox</a></li>
+        <li><a class="docsnav-link" href="../components/toggle.html">Toggle</a></li>
+        <li><a class="docsnav-link" href="../components/card.html">Card</a></li>
+        <li><a class="docsnav-link" href="../components/appbar.html">App bar</a></li>
+        <li><a class="docsnav-link" href="../components/nav.html">Rail & bottom bar</a></li>
+        <li><a class="docsnav-link" href="../components/tabs.html">Tabs</a></li>
+        <li><a class="docsnav-link" href="../components/breadcrumb.html">Breadcrumb</a></li>
+        <li><a class="docsnav-link" href="../components/banner.html">Banner</a></li>
+        <li><a class="docsnav-link" href="../components/toast.html">Toast</a></li>
+        <li><a class="docsnav-link" href="../components/empty.html">Empty state</a></li>
+        <li><a class="docsnav-link" href="../components/skeleton.html">Skeleton</a></li>
+        <li><a class="docsnav-link" href="../components/list.html">List & row</a></li>
+        <li><a class="docsnav-link" href="../components/tree.html">Tree</a></li>
+        <li><a class="docsnav-link" href="../components/table.html">Table</a></li>
+        <li><a class="docsnav-link docsnav-link-active" href="../components/filterbar.html">Filter bar</a></li>
+        <li><a class="docsnav-link" href="../components/meter.html">Meter</a></li>
+        <li><a class="docsnav-link" href="../components/overlay.html">Modal, sheet & popover</a></li>
+        <li><a class="docsnav-link" href="../components/tooltip.html">Tooltip</a></li>
+        <li><a class="docsnav-link" href="../components/timeline.html">Run timeline</a></li>
+        <li><a class="docsnav-link" href="../components/diff.html">Diff viewer</a></li>
+        <li><a class="docsnav-link" href="../components/approvalbar.html">Approval bar</a></li>
+        <li><a class="docsnav-link" href="../components/chat.html">Chat thread</a></li>
+      </ul>
+    </nav>
+    <main class="docs-main">
+      <button class="docs-theme button button-sm" data-theme-toggle>Theme</button>
+      <p class="text-eyebrow">Component</p>
+      <h1>Filter bar</h1>
+      <p class="docs-purpose">What a set is narrowed by, what it is ordered by, and how many it is showing — one bar, because those three facts are read together or not at all. A count sitting anywhere else eventually reads 5 while three rows are hidden, and nobody notices.</p>
+      <section class="docs-section" id="anatomy">
+        <h2 class="docs-h2">Anatomy</h2>
+        <div class="docs-demo">
+<div class="card">
+  <div class="filterbar">
+    <div class="filterbar-filters">
+      <button class="filterbar-filter filterbar-filter-on" aria-haspopup="listbox">Project
+        <span class="filterbar-value">fold-ai-dev</span></button>
+      <button class="filterbar-filter" aria-haspopup="listbox">State
+        <span class="filterbar-value">any</span></button>
+      <button class="filterbar-filter" aria-haspopup="listbox">Node
+        <span class="filterbar-value">any</span></button>
+      <button class="filterbar-order" aria-haspopup="listbox">Oldest first</button>
+    </div>
+    <p class="filterbar-count">7 of 24 <span class="visually-hidden">worktrees shown</span></p>
+  </div>
+  <div class="list">
+    <div class="list-row"><div class="list-main"><p class="list-title">Add rate limiting to /api/runs</p></div></div>
+    <div class="list-row"><div class="list-main"><p class="list-title">Migrate session store to D1</p></div></div>
+  </div>
+</div>
+<p class="text-muted">The set filter says its value in words. The tint is the cheap half — the label is the half that
+survives a colorblind reader and a phone in sunlight.</p></div>
+      </section>
+      <section class="docs-section" id="styles">
+        <h2 class="docs-h2">Styles</h2>
+        <div class="table-wrap"><table class="table">
+          <thead><tr><th>Class</th><th>Role</th><th>Notes</th></tr></thead>
+          <tbody>
+          <tr><td class="text-mono">.filterbar</td><td>The bar — wraps, sits on <code>--color-sunken</code></td><td>Above the set it governs</td></tr>
+          <tr><td class="text-mono">.filterbar-filters</td><td>The controls, at the near end</td><td>Wrapping cluster</td></tr>
+          <tr><td class="text-mono">.filterbar-filter</td><td>One axis — 44px, 8px radius</td><td>A <code>&lt;button&gt;</code>; <code>aria-haspopup</code> when it opens a list</td></tr>
+          <tr><td class="text-mono">.filterbar-filter-on</td><td>Set</td><td>Tint, and the value in the label</td></tr>
+          <tr><td class="text-mono">.filterbar-value</td><td>The value inside the label</td><td>Muted until the filter is set</td></tr>
+          <tr><td class="text-mono">.filterbar-order</td><td>The sort control</td><td>Same control, one per bar</td></tr>
+          <tr><td class="text-mono">.filterbar-count</td><td>How many are showing</td><td>Far end; answers to the filters</td></tr>
+          </tbody>
+        </table></div>
+      </section>
+      <section class="docs-section" id="tokens">
+        <h2 class="docs-h2">Tokens used</h2>
+        <div class="table-wrap"><table class="table">
+          <thead><tr><th>Token</th><th>Role here</th></tr></thead>
+          <tbody>
+          <tr><td class="text-mono">--control-md</td><td>44px — a filter bar is a touch surface, so <code>.button-sm</code> is not allowed here.</td></tr>
+          <tr><td class="text-mono">--r-md</td><td>8px. Status is round; a filter is an action.</td></tr>
+          <tr><td class="text-mono">--color-sunken</td><td>The bar's ground.</td></tr>
+          <tr><td class="text-mono">--color-border-strong</td><td>The 3:1 control border.</td></tr>
+          <tr><td class="text-mono">--color-accent / --color-accent-tint</td><td>A set filter.</td></tr>
+          </tbody>
+        </table></div>
+      </section>
+      <section class="docs-section" id="usage">
+        <h2 class="docs-h2">Usage</h2>
+        <div class="do-dont">
+          <div class="do">
+            <p class="text-eyebrow text-success">Do</p>
+            <ul><li><b>Keep the count in the bar</b> — a badge reading 5 while three rows are filtered out is a lie, and this is the only placement that catches it.</li><li><b>Say the set value in the label</b> — the tint is hue, and hue is never the signal.</li><li><b>Keep every control 44px</b> — this bar is the first thing a thumb reaches on a folded screen.</li></ul>
+          </div>
+          <div class="dont">
+            <p class="text-eyebrow text-error">Don't</p>
+            <ul><li><b>Draw a filter as a chip</b> — a chip is something you read; a filter is something you press.</li><li><b>Use `.button-sm` to fit more filters in</b> — wrap instead — the bar is built to.</li><li><b>Ship a second sort control</b> — one order per set, or the set has two orders and neither is true.</li></ul>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+  <script>
+    // Site chrome only — the design system itself ships no JavaScript.
+    document.querySelector('[data-theme-toggle]').addEventListener('click', () => {
+      const r = document.documentElement;
+      const now = r.getAttribute('data-theme')
+        || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+      r.setAttribute('data-theme', now === 'dark' ? 'light' : 'dark');
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,1552 @@
+/* =============================================================================
+   Fold AI Dev — fold-ai-dev.css
+   Compiled components + utilities. Loads AFTER tokens.css.
+
+     <link rel="stylesheet" href="tokens.css">
+     <link rel="stylesheet" href="fold-ai-dev.css">
+
+   Consumes tokens only — no raw hex below this line, with one documented
+   exception noted at .skeleton (a transparent white/black stop that cannot be
+   expressed as an existing token).
+
+   25 components, in inventory order:
+     core      button · chip · input · select · toggle · card
+     nav       app bar · rail & bottom bar · tabs · breadcrumb
+     feedback  banner · toast · empty state · skeleton
+     data      list & row · tree · table · filter bar · meter
+     overlay   modal · sheet · popover · tooltip
+     domain    run timeline · diff viewer · approval bar · chat thread
+
+   Naming is flat and hyphenated: .component, .component-variant, .component-size.
+   ============================================================================= */
+
+
+/* =============================================================================
+   BUTTON
+   One primary per view. Destructive is outlined, never filled — a filled red
+   button is the most tappable thing on screen, which is exactly backwards.
+   ============================================================================= */
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: var(--control-md);
+  padding: 0 var(--space-4);
+  border: var(--stroke-icon) solid var(--color-border-strong);
+  border-radius: var(--r-md);
+  background: var(--color-surface);
+  color: var(--color-ink);
+  font-family: var(--font-body);
+  font-size: var(--fs-body);
+  font-weight: var(--fw-medium);
+  line-height: 1;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    background-color var(--dur-fast) var(--ease-standard),
+    border-color     var(--dur-fast) var(--ease-standard),
+    color            var(--dur-fast) var(--ease-standard);
+}
+
+.button:hover        { background: var(--color-sunken); }
+.button:focus-visible{ outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.button:active       { background: var(--color-sunken); transform: translateY(1px); }
+.button:disabled,
+.button[aria-disabled="true"] { opacity: .42; cursor: not-allowed; }
+
+.button-primary {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: var(--color-on-accent);
+}
+.button-primary:hover,
+.button-primary:active {
+  background: var(--color-accent-hover);
+  border-color: var(--color-accent-hover);
+}
+
+.button-destructive {
+  background: transparent;
+  border-color: var(--status-error);
+  color: var(--status-error);
+}
+.button-destructive:hover,
+.button-destructive:active { background: var(--status-error-bg); }
+
+.button-ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--color-ink-muted);
+}
+.button-ghost:hover,
+.button-ghost:active { background: var(--color-sunken); color: var(--color-ink); }
+
+/* Sizes. sm is allowed only inside an already-tapped context (a popover, a
+   desktop table cell) — never as the sole action on a touch surface. */
+.button-sm { min-height: var(--control-sm); padding: 0 var(--space-3); font-size: var(--fs-caption); }
+.button-lg { min-height: var(--control-lg); padding: 0 var(--space-5); font-size: var(--fs-heading-s); }
+
+.button-icon { width: var(--control-md); min-height: var(--control-md); padding: 0; }
+
+/* Static state helpers — DEMO/DOCUMENTATION ONLY.
+   Production uses the real pseudo-classes above. These exist so the reference
+   site can render a full state matrix on one page. */
+.button-hover    { background: var(--color-sunken); }
+.button-primary.button-hover { background: var(--color-accent-hover); border-color: var(--color-accent-hover); }
+.button-destructive.button-hover { background: var(--status-error-bg); }
+.button-ghost.button-hover { background: var(--color-sunken); color: var(--color-ink); }
+.button-focus    { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.button-active   { background: var(--color-sunken); transform: translateY(1px); }
+.button-primary.button-active { background: var(--color-accent-hover); }
+.button-disabled { opacity: .42; cursor: not-allowed; }
+
+/* Demo helper. */
+.button-row { display: flex; gap: var(--space-2); flex-wrap: wrap; align-items: center; }
+
+
+/* =============================================================================
+   CHIP / BADGE
+   Status is round. A chip is never a button — if it does something, it's a
+   button that happens to be small.
+   ============================================================================= */
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  border: var(--stroke-thin) solid var(--color-border);
+  border-radius: var(--r-full);
+  background: var(--color-surface);
+  color: var(--color-ink-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  line-height: 1.6;
+  white-space: nowrap;
+}
+
+/* Status is never conveyed by hue alone — the dot is structural, and the label
+   always says the word. */
+.chip-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--r-full);
+  background: currentColor;
+  flex: none;
+}
+
+.chip-success { color: var(--status-success); }
+.chip-warn    { color: var(--status-warn); }
+.chip-error   { color: var(--status-error); }
+.chip-info    { color: var(--status-info); }
+.chip-accent  { color: var(--color-accent); }
+
+.chip-solid.chip-success { background: var(--status-success-bg); border-color: transparent; }
+.chip-solid.chip-warn    { background: var(--status-warn-bg);    border-color: transparent; }
+.chip-solid.chip-error   { background: var(--status-error-bg);   border-color: transparent; }
+.chip-solid.chip-info    { background: var(--status-info-bg);    border-color: transparent; }
+
+.chip-count {
+  font-variant-numeric: tabular-nums;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+
+/* =============================================================================
+   INPUT & TEXTAREA
+   ============================================================================= */
+
+.field       { display: flex; flex-direction: column; gap: var(--space-2); }
+.field-label { font-size: var(--fs-caption); font-weight: var(--fw-semibold); color: var(--color-ink); }
+.field-hint  { font-size: var(--fs-caption); color: var(--color-ink-muted); }
+.field-error { font-size: var(--fs-caption); color: var(--status-error); }
+
+/* `.field` is a stack, and some fields are a row — a switch beside its label, a
+   filter beside its select. A class composed onto `.field` that sets only
+   `display: flex` and `align-items` inherits the column and silently doubles
+   the row's height, because nothing overrode `flex-direction`; nothing had to.
+   So the system names the row rather than leaving every caller to restate it.
+
+   Declared after `.field` on purpose: equal specificity, resolved by source
+   order. No `!important` and no `.field.field-row` — a compound here would beat
+   a screen's own class, which is the next bug rather than a fix for this one. */
+.field-row {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+}
+
+.input {
+  min-height: var(--control-md);
+  width: 100%;
+  padding: 0 var(--space-3);
+  border: var(--stroke-icon) solid var(--color-border-strong);
+  border-radius: var(--r-md);
+  background: var(--color-surface);
+  color: var(--color-ink);
+  font-family: var(--font-body);
+  font-size: var(--fs-body);
+  transition: border-color var(--dur-fast) var(--ease-standard);
+}
+.input::placeholder  { color: var(--color-ink-muted); }
+.input:hover         { border-color: var(--color-ink-muted); }
+.input:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); border-color: var(--color-accent); }
+.input:disabled      { opacity: .42; cursor: not-allowed; }
+.input-invalid,
+.input[aria-invalid="true"] { border-color: var(--status-error); }
+
+.textarea {
+  min-height: calc(var(--control-md) * 2);
+  padding: var(--space-3);
+  line-height: var(--lh-body);
+  resize: vertical;
+}
+
+.input-mono { font-family: var(--font-mono); font-size: var(--fs-mono); }
+
+/* Static state helpers — demo only. */
+.input-hover { border-color: var(--color-ink-muted); }
+.input-focus { outline: var(--focus-ring); outline-offset: var(--focus-offset); border-color: var(--color-accent); }
+.input-disabled { opacity: .42; cursor: not-allowed; }
+
+
+/* =============================================================================
+   SELECT & COMBOBOX
+   ============================================================================= */
+
+.select {
+  min-height: var(--control-md);
+  width: 100%;
+  padding: 0 var(--space-6) 0 var(--space-3);
+  border: var(--stroke-icon) solid var(--color-border-strong);
+  border-radius: var(--r-md);
+  background: var(--color-surface);
+  color: var(--color-ink);
+  font-family: var(--font-body);
+  font-size: var(--fs-body);
+  cursor: pointer;
+  appearance: none;
+}
+.select:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); border-color: var(--color-accent); }
+.select:disabled      { opacity: .42; cursor: not-allowed; }
+
+.select-wrap { position: relative; display: inline-block; width: 100%; }
+.select-wrap .select-caret {
+  position: absolute;
+  right: var(--space-3);
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+  color: var(--color-ink-muted);
+}
+
+.combobox-list {
+  margin: var(--space-1) 0 0;
+  padding: var(--space-1);
+  list-style: none;
+  border: var(--stroke-thin) solid var(--color-border);
+  border-radius: var(--r-md);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-2);
+}
+.combobox-option {
+  min-height: var(--control-md);
+  display: flex;
+  align-items: center;
+  padding: 0 var(--space-3);
+  border-radius: var(--r-sm);
+  font-size: var(--fs-body);
+  cursor: pointer;
+}
+.combobox-option:hover,
+.combobox-option[aria-selected="true"] { background: var(--color-accent-tint); color: var(--color-accent); }
+
+
+/* =============================================================================
+   TOGGLE — checkbox, radio, switch
+   ============================================================================= */
+
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--tap-min);   /* the label row is the target, not the 16px box */
+  cursor: pointer;
+  font-size: var(--fs-body);
+}
+.toggle input { position: absolute; opacity: 0; width: 0; height: 0; }
+
+.toggle-box {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  border: var(--stroke-icon) solid var(--color-border-strong);
+  border-radius: var(--r-xs);
+  background: var(--color-surface);
+  display: grid;
+  place-items: center;
+  color: var(--color-on-accent);
+  transition: background-color var(--dur-fast) var(--ease-standard),
+              border-color     var(--dur-fast) var(--ease-standard);
+}
+.toggle-radio .toggle-box { border-radius: var(--r-full); }
+
+.toggle input:checked + .toggle-box {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+}
+.toggle input:focus-visible + .toggle-box {
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-offset);
+}
+.toggle input:disabled + .toggle-box { opacity: .42; }
+
+.toggle-switch .toggle-box {
+  width: 40px;
+  height: 24px;
+  border-radius: var(--r-full);
+  background: var(--color-sunken);
+  position: relative;
+  place-items: start;
+}
+.toggle-switch .toggle-box::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: var(--r-full);
+  background: var(--color-ink-muted);
+  transition: transform var(--dur-fast) var(--ease-standard),
+              background-color var(--dur-fast) var(--ease-standard);
+}
+.toggle-switch input:checked + .toggle-box::after {
+  transform: translateX(16px);
+  background: var(--color-on-accent);
+}
+
+
+/* =============================================================================
+   CARD
+   ============================================================================= */
+
+.card {
+  border: var(--stroke-thin) solid var(--color-border);
+  border-radius: var(--r-lg);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-1);
+  overflow: hidden;
+}
+.card-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: var(--stroke-thin) solid var(--color-border);
+  background: var(--color-sunken);
+}
+.card-title { font-size: var(--fs-heading-s); font-weight: var(--fw-semibold); margin: 0; }
+.card-body  { padding: var(--space-4); }
+.card-foot  {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  flex-wrap: wrap;
+  padding: var(--space-3) var(--space-4);
+  border-top: var(--stroke-thin) solid var(--color-border);
+}
+.card-raised      { box-shadow: var(--shadow-2); }
+.card-interactive { cursor: pointer; transition: border-color var(--dur-fast) var(--ease-standard); }
+.card-interactive:hover        { border-color: var(--color-border-strong); }
+.card-interactive:focus-visible{ outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+
+
+/* =============================================================================
+   APP BAR
+   ============================================================================= */
+
+.appbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 56px;
+  padding: 0 var(--space-4);
+  border-bottom: var(--stroke-thin) solid var(--color-border);
+  /* Chrome sits ON the page, so it takes the raised surface, not the page
+     colour. Paper and surface are a real step apart in both themes; chrome
+     painted `--color-bg` next to a `--color-bg` page is separated only by a
+     1px border, which vanishes in a screenshot. */
+  background: var(--color-surface);
+}
+.appbar-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-weight: var(--fw-display);
+  letter-spacing: -.03em;
+  font-size: var(--fs-heading-s);
+  color: var(--color-ink);
+  text-decoration: none;
+}
+.appbar-brand svg { color: var(--color-accent); }
+.appbar-title { font-size: var(--fs-heading-s); font-weight: var(--fw-semibold); }
+.appbar-spacer{ flex: 1; }
+
+
+/* =============================================================================
+   RAIL & BOTTOM BAR
+   The same nav, two placements: a bottom bar under 768px (thumb arc), a side
+   rail above it. Never both.
+   ============================================================================= */
+
+.bottombar {
+  display: flex;
+  align-items: stretch;
+  border-top: var(--stroke-thin) solid var(--color-border);
+  background: var(--color-surface);
+}
+.bottombar .navitem { flex: 1; flex-direction: column; gap: var(--space-1); min-height: 56px; }
+
+.rail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  border-right: var(--stroke-thin) solid var(--color-border);
+  background: var(--color-surface);
+
+  /* A rail runs the full height of what it sits beside. Sized to its items
+     instead, it reads as a floating box and its right border stops mid-page,
+     which looks like a rendering fault rather than an edge.
+
+     The three properties below are one unit, and only work in a parent whose
+     height is constrained — an app shell of `height: 100dvh` with the content
+     column as the scroller. Give the page itself the scrollbar instead and the
+     rail scrolls away with it, which is the thing navigation must never do:
+     "where am I?" has to be answerable without scrolling back up.
+
+     `align-self` is explicit because a parent with `align-items: flex-start`
+     collapses the rail to content height. `min-height: 0` lets it shrink below
+     its content so `overflow-y` actually engages, rather than growing the
+     parent — the flex default is `auto`, which silently defeats both. */
+  align-self: stretch;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* Collapsed — icons only, labels gone, targets unchanged.
+   The toggle belongs to the consumer; this class is the state. Collapsing is
+   the user's choice at every width, never the breakpoint's: a rail that
+   collapses itself when the window narrows takes away the one control the
+   user reached for. */
+.rail-collapsed { width: auto; }
+.rail-collapsed .navitem { justify-content: center; padding-inline: 0; }
+.rail-collapsed .navitem-label { display: none; }
+
+/* The text of a nav item. Separate from the icon so a collapsed rail can drop
+   it — never drop the label in an EXPANDED rail to save space, because an
+   unlabelled icon is a guess (nav.md).
+
+   `max-width` and `nowrap` are what make the ellipsis real, and they are here
+   because `min-width: 0` alone only works in the rail. A rail item is a ROW
+   flex container, so the label is a flex item on the main axis and shrinks;
+   a bottom-bar item is a COLUMN one (`.bottombar .navitem`) with
+   `align-items: center`, so the label is sized on the cross axis by its own
+   content and never shrinks at all. Measured at 475px before this line existed:
+   a 72.3px label sat in a 55.2px content box, spent all 24px of the item's
+   padding, and closed the gap to its neighbor — with no ellipsis, because
+   `overflow: hidden` had nothing to clip against. Without `nowrap` a two-word
+   label wraps to a second line instead, which breaks the 56px row. */
+.navitem-label { min-width: 0; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.navitem {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: var(--tap-min);
+  min-width: var(--tap-min);
+  padding: 0 var(--space-3);
+  border-radius: var(--r-md);
+  color: var(--color-ink-muted);
+  font-size: var(--fs-micro);
+  font-weight: var(--fw-medium);
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-standard),
+              color var(--dur-fast) var(--ease-standard);
+}
+.navitem:hover { background: var(--color-sunken); color: var(--color-ink); }
+.navitem:focus-visible { outline: var(--focus-ring); outline-offset: calc(var(--focus-offset) * -1); }
+.navitem-active,
+.navitem[aria-current="page"] { background: var(--color-accent-tint); color: var(--color-accent); }
+
+
+/* =============================================================================
+   TABS
+   ============================================================================= */
+
+.tabs {
+  display: flex;
+  gap: var(--space-1);
+  border-bottom: var(--stroke-thin) solid var(--color-border);
+  overflow-x: auto;
+}
+.tab {
+  min-height: var(--tap-min);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-3);
+  border: 0;
+  border-bottom: var(--stroke-icon) solid transparent;
+  background: transparent;
+  color: var(--color-ink-muted);
+  font-family: var(--font-body);
+  font-size: var(--fs-body);
+  font-weight: var(--fw-medium);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease-standard),
+              border-color var(--dur-fast) var(--ease-standard);
+}
+.tab:hover { color: var(--color-ink); }
+.tab:focus-visible { outline: var(--focus-ring); outline-offset: calc(var(--focus-offset) * -1); }
+.tab-active,
+.tab[aria-selected="true"] { color: var(--color-ink); border-bottom-color: var(--color-accent); }
+
+
+/* =============================================================================
+   BREADCRUMB
+   ============================================================================= */
+
+.breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--fs-caption);
+  color: var(--color-ink-muted);
+  flex-wrap: wrap;
+}
+.breadcrumb a { color: var(--color-ink-muted); text-decoration: none; }
+.breadcrumb a:hover { color: var(--color-ink); text-decoration: underline; }
+.breadcrumb-sep { color: var(--color-border-strong); }
+.breadcrumb-current { color: var(--color-ink); font-weight: var(--fw-medium); }
+
+
+/* =============================================================================
+   BANNER — in-flow, persistent. Not a toast.
+   ============================================================================= */
+
+.banner {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: var(--stroke-thin) solid var(--color-border);
+  border-radius: var(--r-lg);
+  background: var(--color-surface);
+  font-size: var(--fs-body);
+}
+.banner-title { font-weight: var(--fw-semibold); margin: 0 0 var(--space-1); }
+.banner-body  { margin: 0; color: var(--color-ink-2); }
+.banner-icon  { flex: none; margin-top: 1px; }
+
+.banner-success { background: var(--status-success-bg); border-color: transparent; }
+.banner-warn    { background: var(--status-warn-bg);    border-color: transparent; }
+.banner-error   { background: var(--status-error-bg);   border-color: transparent; }
+.banner-info    { background: var(--status-info-bg);    border-color: transparent; }
+.banner-success .banner-icon { color: var(--status-success); }
+.banner-warn    .banner-icon { color: var(--status-warn); }
+.banner-error   .banner-icon { color: var(--status-error); }
+.banner-info    .banner-icon { color: var(--status-info); }
+
+
+/* =============================================================================
+   TOAST — transient, never carries the only copy of a fact
+   ============================================================================= */
+
+.toast {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: var(--stroke-thin) solid var(--color-border);
+  border-radius: var(--r-lg);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-2);
+  font-size: var(--fs-body);
+  max-width: 420px;
+}
+.toast-body { flex: 1; }
+.toast-action { flex: none; }
+
+.toast-stack {
+  position: fixed;
+  left: var(--space-4);
+  right: var(--space-4);
+  bottom: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  align-items: center;
+  z-index: 60;
+}
+/* The one width-based @media that is meant to be one. A toast is window chrome:
+   it is `position: fixed`, it belongs to the app rather than to any pane, and
+   where it sits is a question about the window. Every other responsive rule in
+   this file asks a container instead — see `.table-stack`. */
+@media (min-width: 768px) {
+  .toast-stack { left: auto; align-items: flex-end; }
+}
+
+
+/* =============================================================================
+   EMPTY STATE
+   State the live fact before the absence. "Nothing needs you" is not
+   information; "4 runs working. Nothing to decide yet." is.
+   ============================================================================= */
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: var(--space-2);
+  padding: var(--space-8) var(--space-5);
+}
+.empty-mark  { color: var(--color-ink-muted); margin-bottom: var(--space-2); }
+.empty-title { font-size: var(--fs-heading-s); font-weight: var(--fw-semibold); margin: 0; }
+.empty-body  { color: var(--color-ink-muted); margin: 0; max-width: 44ch; }
+.empty-action{ margin-top: var(--space-3); }
+
+
+/* =============================================================================
+   SKELETON
+   ============================================================================= */
+
+.skeleton {
+  border-radius: var(--r-sm);
+  background: var(--color-sunken);
+  /* DOCUMENTED EXCEPTION: the sweep needs a transparent stop of the surface
+     colour, which no token expresses. Alpha values only — no new hues. */
+  background-image: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, .45) 50%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-sweep 1.2s var(--ease-standard) infinite;
+}
+/* In dark the white sweep blows out; the highlight is a lighter surface instead. */
+@media (prefers-color-scheme: dark) {
+  .skeleton {
+    background-image: linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0) 0%,
+      rgba(255, 255, 255, .07) 50%,
+      rgba(255, 255, 255, 0) 100%
+    );
+  }
+}
+:root[data-theme="dark"] .skeleton {
+  background-image: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, .07) 50%,
+    rgba(255, 255, 255, 0) 100%
+  );
+}
+
+.skeleton-line  { height: 12px; margin-bottom: var(--space-2); }
+.skeleton-title { height: 18px; width: 40%; }
+.skeleton-row   { height: var(--row-height); }
+
+@keyframes skeleton-sweep {
+  from { background-position: 200% 0; }
+  to   { background-position: -200% 0; }
+}
+/* The one sanctioned looping animation besides the live-run dot — and it stops
+   under reduced motion via the global override in tokens.css. */
+
+
+/* =============================================================================
+   LIST & ROW
+   44px minimum, 12px padding. The target grew; the row didn't.
+   ============================================================================= */
+
+.list { display: flex; flex-direction: column; }
+.list-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--row-height);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: var(--stroke-thin) solid var(--color-border);
+  text-decoration: none;
+  color: inherit;
+}
+.list-row:last-child { border-bottom: 0; }
+.list-row-interactive { cursor: pointer; transition: background-color var(--dur-fast) var(--ease-standard); }
+.list-row-interactive:hover { background: var(--color-sunken); }
+.list-row-interactive:focus-visible { outline: var(--focus-ring); outline-offset: calc(var(--focus-offset) * -1); }
+.list-row-selected { background: var(--color-accent-tint); }
+
+.list-main { flex: 1; min-width: 0; }
+.list-title {
+  font-size: var(--fs-body);
+  font-weight: var(--fw-medium);
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.list-meta {
+  font-size: var(--fs-caption);
+  color: var(--color-ink-muted);
+  margin: 2px 0 0;
+}
+.list-group-label {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  letter-spacing: var(--ls-eyebrow);
+  text-transform: uppercase;
+  color: var(--color-ink-muted);
+  padding: var(--space-3) var(--space-4) var(--space-2);
+}
+
+
+/* =============================================================================
+   TREE
+   A hierarchy that belongs to the data — a file explorer, a scope, a set of
+   nested groups. Not a layout device: if the nesting is the designer's idea
+   rather than the data's, this is the wrong component.
+
+   TWO DECISIONS, AND BOTH ARE ABOUT THE FOLDED SCREEN.
+
+   The indent is ONE STEP PER LEVEL, and the step is 12px. Depth is carried by a
+   guide rule down the left rather than by distance, because the alternative is
+   the name paying for the depth: at the 24px indent a desktop tree can afford,
+   a six-deep path on a 475px screen has 331px left for a filename that needed
+   more than that at level one. The rule reads at any depth; the whitespace
+   does not.
+
+   A branch is a `<details>` and its row is the `<summary>`. That is the whole
+   collapse mechanism — keyboard-operable, announced as expanded or collapsed,
+   and working with no script at all, which matters because a tree that needs
+   JavaScript to open is a tree that shows one row when the script fails.
+   ============================================================================= */
+
+.tree { list-style: none; margin: 0; padding: 0; }
+.tree-branch { list-style: none; }
+
+/* The row is the target at every level — 44px, whole-width, and the same
+   whether it is a `<summary>`, an `<a>` or a `<div>`. */
+.tree-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--row-height);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--r-md);
+  color: var(--color-ink);
+  font-size: var(--fs-body);
+  text-decoration: none;
+  cursor: pointer;
+  /* Both spellings of the disclosure marker. The twist below is the visible
+     one, and it is inside the row where it can be positioned. */
+  list-style: none;
+}
+.tree-row::-webkit-details-marker { display: none; }
+.tree-row::marker { content: ""; }
+.tree-row:hover { background: var(--color-sunken); }
+.tree-row:focus-visible { outline: var(--focus-ring); outline-offset: calc(var(--focus-offset) * -1); }
+.tree-row-selected { background: var(--color-accent-tint); color: var(--color-accent); }
+
+.tree-twist {
+  flex: none;
+  display: inline-flex;
+  color: var(--color-ink-muted);
+  transition: transform var(--dur-fast) var(--ease-standard);
+}
+/* **`[open]` is the `<details>`'s, wherever `.tree-branch` sits.** Both markups
+   are in use — the class on the `<details>`, or on the `<li>` wrapping one — and
+   a rule that assumed either left the twist pointing right on an open branch,
+   which is a disclosure control lying about what it did. */
+details[open] > .tree-row .tree-twist { transform: rotate(90deg); }
+
+.tree-mark { flex: none; display: inline-flex; color: var(--color-ink-muted); }
+.tree-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tree-meta {
+  margin-inline-start: auto;
+  flex: none;
+  font-size: var(--fs-caption);
+  color: var(--color-ink-muted);
+}
+
+.tree-children {
+  list-style: none;
+  margin: 0 0 0 var(--space-4);
+  padding-left: var(--space-3);
+  border-left: var(--stroke-thin) solid var(--color-border);
+}
+
+
+/* =============================================================================
+   TABLE
+   Below 768px a table is not a table — it becomes stacked rows. Horizontal
+   scroll on a phone is a defeat, not a fallback.
+
+   Wrap every `.table-stack` in a `.table-wrap`. The wrapper is what the stack
+   rule measures, and without it the table falls back to the window.
+   ============================================================================= */
+
+/* The scroll container is also the query container. A `.table-stack` cannot
+   query itself — a container query never styles its own container — so the
+   wrapper is the box the stack rule below asks about.
+
+   `container-type: inline-size` costs two things here, and only the first is
+   free:
+
+   1. CONTAINING BLOCK for fixed and absolute descendants. Harmless: `overflow-x:
+      auto` already clipped them, so nothing escaped this box before either.
+   2. NO INTRINSIC INLINE SIZE. Size containment resolves the box's inline size
+      without looking at its contents, so wherever a parent asks the child how
+      wide it wants to be, the answer is now 0. A `.table-wrap` as a flex item
+      measures 0px and vanishes; before 1.6.0 it measured its table. Put it
+      somewhere the width comes from the parent — `flex: 1`, a grid `1fr`,
+      `width: 100%` — never `flex: none` or a grid `auto` track. The symptom is
+      a blank region and no error, which is why it is written down here.
+
+   It also captures a bare `@container` written inside it. See THE PANE in
+   UTILITIES for the rule that covers all three anchors. */
+.table-wrap { overflow-x: auto; container-type: inline-size; }
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-body);
+}
+.table th {
+  text-align: left;
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--ls-eyebrow);
+  text-transform: uppercase;
+  color: var(--color-ink-muted);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: var(--stroke-thin) solid var(--color-border);
+  white-space: nowrap;
+}
+.table td {
+  padding: var(--space-3);
+  border-bottom: var(--stroke-thin) solid var(--color-border);
+  color: var(--color-ink-2);
+  vertical-align: top;
+}
+.table tbody tr:hover { background: var(--color-sunken); }
+.table-num  { text-align: right; font-variant-numeric: tabular-nums; font-family: var(--font-mono); }
+.table-mono { font-family: var(--font-mono); font-size: var(--fs-mono); color: var(--color-ink); }
+
+/* TWO QUERIES, AND DELETING EITHER ONE BREAKS A REAL CASE.
+
+   @container — the pane. Five columns in a 660px pane inside a 933px window is
+     the case a media query cannot see, and unstacking there puts a table in a
+     box that cannot hold one. This is the rule that makes the component honest.
+   @media — the floor. A container query with no container never matches and the
+     page still renders, so a `.table-stack` written without `.table-wrap` would
+     silently stay a table at 475px — the exact defeat the header rules out.
+
+   They are a union — stack if EITHER the window or the box is narrow — and the
+   union is not free. It trades a loud failure for a quiet one, which is the
+   only trade worth making here:
+
+     Dropping the @media buys a false negative. A `.table-stack` written
+       without a `.table-wrap` stays a five-column table on a 475px phone, and
+       no screenshot of it looks wrong enough to notice.
+     Keeping the @media costs a false positive. A `.table-wrap` WIDER than
+       767px inside a window NARROWER than 767px stacks a table that had the
+       room not to.
+
+   That false positive is reachable and has been measured: a 900px `.table-wrap`
+   inside a horizontally scrolling strip stacks at a 500px window. The
+   composition is a real one — a board of fixed-width columns you swipe through
+   — and no rule here forbids it. It is accepted anyway, because a table that
+   stacked when it had the room not to is still readable, and one that failed to
+   stack on a phone is not. Nothing about this trade is free; it is chosen.
+
+   BUILDING THAT STRIP IS THE CASE TO WATCH, and the escape is one declaration:
+   name your own container and query it by name, which no unnamed rule can
+   capture. THE PANE in UTILITIES says how.
+
+   The min-width rules further down (.diff-split, .approvalbar) are the opposite
+   case and get the opposite treatment — the note there says why. */
+
+@media (max-width: 767px) {
+  .table-stack, .table-stack thead, .table-stack tbody,
+  .table-stack tr, .table-stack th, .table-stack td { display: block; }
+  .table-stack thead { display: none; }
+  .table-stack tr {
+    border-bottom: var(--stroke-thin) solid var(--color-border);
+    padding: var(--space-3) var(--space-4);
+  }
+  .table-stack td { border: 0; padding: 0 0 var(--space-1); }
+  .table-stack td::before {
+    content: attr(data-label) " ";
+    font-family: var(--font-mono);
+    font-size: var(--fs-micro);
+    text-transform: uppercase;
+    letter-spacing: var(--ls-eyebrow);
+    color: var(--color-ink-muted);
+  }
+}
+
+@container (max-width: 767px) {
+  .table-stack, .table-stack thead, .table-stack tbody,
+  .table-stack tr, .table-stack th, .table-stack td { display: block; }
+  .table-stack thead { display: none; }
+  .table-stack tr {
+    border-bottom: var(--stroke-thin) solid var(--color-border);
+    padding: var(--space-3) var(--space-4);
+  }
+  .table-stack td { border: 0; padding: 0 0 var(--space-1); }
+  .table-stack td::before {
+    content: attr(data-label) " ";
+    font-family: var(--font-mono);
+    font-size: var(--fs-micro);
+    text-transform: uppercase;
+    letter-spacing: var(--ls-eyebrow);
+    color: var(--color-ink-muted);
+  }
+}
+
+
+/* =============================================================================
+   FILTER BAR
+   What a set is narrowed by, what it is ordered by, and how many it is showing
+   — one bar, because those three facts are read together or not at all.
+
+   THE COUNT IS PART OF THE COMPONENT, NOT A NEIGHBOUR OF IT. A badge reading 5
+   while three rows are hidden by a filter is a lie, and the only reliable
+   defence is putting the number where the filters are, so the person who
+   changed one sees the other move.
+
+   A FILTER IS A CONTROL AND TAKES A CONTROL'S SHAPE — 8px radius, 44px tall,
+   never the pill. Status is round and actions are not: a filter drawn as a chip
+   is something a person reads instead of presses, and on a phone that is a
+   control nobody finds. Set filters say the value in words (`Project ·
+   fold-ai-dev`), because the tint alone is hue carrying meaning.
+   ============================================================================= */
+
+.filterbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-sunken);
+  border-bottom: var(--stroke-thin) solid var(--color-border);
+}
+.filterbar-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.filterbar-filter,
+.filterbar-order {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--control-md);
+  padding: 0 var(--space-3);
+  border: var(--stroke-icon) solid var(--color-border-strong);
+  border-radius: var(--r-md);
+  background: var(--color-surface);
+  color: var(--color-ink);
+  font-family: var(--font-body);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-medium);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-standard),
+              border-color     var(--dur-fast) var(--ease-standard),
+              color            var(--dur-fast) var(--ease-standard);
+}
+.filterbar-filter:hover,
+.filterbar-order:hover { background: var(--color-sunken); }
+.filterbar-filter:focus-visible,
+.filterbar-order:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.filterbar-filter:disabled,
+.filterbar-order:disabled { opacity: .42; cursor: not-allowed; }
+
+/* Set. The tint is the cheap half of this; the label carrying the value is the
+   half that survives a colourblind reader and direct sunlight. */
+.filterbar-filter-on {
+  background: var(--color-accent-tint);
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+.filterbar-value { font-weight: var(--fw-regular); color: var(--color-ink-muted); }
+.filterbar-filter-on .filterbar-value { color: inherit; }
+
+.filterbar-count {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-inline-start: auto;
+  font-size: var(--fs-caption);
+  color: var(--color-ink-muted);
+}
+
+
+/* =============================================================================
+   METER
+   A measured number against what bounds it — 31 GB free of 48 GB allocated, on
+   a 64 GB machine.
+
+   NUMBER FIRST, BAR SECOND, AND NEVER A BAR ALONE. A bar is a picture of a
+   quantity nobody stated: it answers "roughly how full" and refuses "how much",
+   which is the question an operator deciding where to put a worktree is
+   actually asking. The number is the fact and the bar is the shape of it.
+
+   THE THIRD TERM IS NOT THE DENOMINATOR. `of 48 GB allocated` is what the bar
+   is drawn against; `64 GB machine` is the context the allocation itself sits
+   in, and collapsing the two loses the distinction between a full allocation
+   and a full machine.
+
+   A meter measures; it does not warn. Colour the fill by status only where the
+   word is already on the screen — per Accessibility, hue is never the signal.
+   ============================================================================= */
+
+.meter { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
+.meter-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-2);
+  margin: 0;
+}
+.meter-label { font-size: var(--fs-caption); font-weight: var(--fw-medium); color: var(--color-ink-2); }
+.meter-value {
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-ink);
+}
+.meter-of { color: var(--color-ink-muted); }
+
+/* The border is load-bearing: a fill and an empty track are a graphical object
+   carrying information, so the boundary needs the 3:1 value rather than the
+   divider one. */
+.meter-track {
+  height: 6px;
+  border: var(--stroke-thin) solid var(--color-border-strong);
+  border-radius: var(--r-full);
+  background: var(--color-sunken);
+  overflow: hidden;
+}
+.meter-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--color-accent);
+}
+.meter-context { margin: 0; font-size: var(--fs-caption); color: var(--color-ink-muted); }
+
+/* A measure the surface states and this rendering does not have a value for —
+   a wireframe, a row still loading its numbers. Dashed, because a solid empty
+   track reads as zero, and zero is a measurement. */
+.meter-ghost .meter-track { border-style: dashed; background: none; }
+
+
+/* =============================================================================
+   OVERLAY — modal, sheet, popover, tooltip
+   On folded widths a modal is a bottom sheet: it arrives inside the thumb arc.
+   ============================================================================= */
+
+.scrim {
+  position: fixed;
+  inset: 0;
+  background: rgba(14, 14, 19, .55);
+  z-index: 50;
+}
+
+.modal {
+  position: fixed;
+  z-index: 51;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: min(520px, calc(100vw - var(--space-8)));
+  border: var(--stroke-thin) solid var(--color-border);
+  border-radius: var(--r-xl);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-3);
+  overflow: hidden;
+}
+.modal-head { padding: var(--space-4); border-bottom: var(--stroke-thin) solid var(--color-border); }
+.modal-title{ font-size: var(--fs-heading-m); font-weight: var(--fw-semibold); margin: 0; }
+.modal-body { padding: var(--space-4); color: var(--color-ink-2); }
+.modal-foot {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  padding: var(--space-3) var(--space-4);
+  border-top: var(--stroke-thin) solid var(--color-border);
+}
+
+.sheet {
+  position: fixed;
+  z-index: 51;
+  left: 0; right: 0; bottom: 0;
+  border-top: var(--stroke-thin) solid var(--color-border);
+  border-radius: var(--r-xl) var(--r-xl) 0 0;
+  background: var(--color-surface);
+  box-shadow: var(--shadow-3);
+  padding: var(--space-4);
+  max-height: 85vh;
+  overflow-y: auto;
+}
+.sheet-grip {
+  width: 36px;
+  height: 4px;
+  border-radius: var(--r-full);
+  background: var(--color-border-strong);
+  margin: 0 auto var(--space-4);
+}
+
+.popover {
+  border: var(--stroke-thin) solid var(--color-border);
+  border-radius: var(--r-md);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-2);
+  padding: var(--space-2);
+  min-width: 200px;
+}
+.popover-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--control-md);
+  padding: 0 var(--space-3);
+  border-radius: var(--r-sm);
+  font-size: var(--fs-body);
+  color: var(--color-ink);
+  text-decoration: none;
+  cursor: pointer;
+}
+.popover-item:hover { background: var(--color-sunken); }
+.popover-sep { height: 1px; background: var(--color-border); margin: var(--space-1) 0; }
+
+/* Tooltip. One sentence that defines a term or a figure, shown on hover and on
+   keyboard focus, and never the only place a fact lives — a touch user may never
+   open it. The trigger is the term itself, dotted-underlined so it reads as
+   something with more behind it; the bubble is a child, so no script positions
+   it and `:focus-within` opens it for a focusable trigger. */
+.tip {
+  position: relative;
+  display: inline-block;
+  text-decoration: underline dotted;
+  text-decoration-color: var(--color-border-strong);
+  text-underline-offset: 3px;
+  cursor: help;
+}
+.tip-bubble {
+  position: absolute;
+  z-index: 40;
+  left: 50%;
+  bottom: calc(100% + var(--space-2));
+  transform: translate(-50%, 2px);
+  width: max-content;
+  max-width: 32ch;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--r-md);
+  background: var(--color-ink);
+  color: var(--color-bg);
+  font-family: var(--font-body);
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+  font-weight: var(--fw-regular);
+  text-transform: none;
+  letter-spacing: normal;
+  text-align: left;
+  white-space: normal;
+  box-shadow: var(--shadow-2);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-fast) var(--ease-standard), transform var(--dur-fast) var(--ease-standard);
+}
+.tip:hover > .tip-bubble,
+.tip:focus-visible > .tip-bubble,
+.tip:focus-within > .tip-bubble { opacity: 1; transform: translate(-50%, 0); }
+/* Demo helper. */
+.tip-static > .tip-bubble { opacity: 1; transform: translate(-50%, 0); }
+/* Alignment. Centred by default; a trigger near a pane edge anchors the bubble
+   to its own start or end edge instead, so the sentence stays inside the pane. */
+.tip-start > .tip-bubble { left: 0; transform: translate(0, 2px); }
+.tip-end > .tip-bubble { left: auto; right: 0; transform: translate(0, 2px); }
+.tip-start:hover > .tip-bubble, .tip-start:focus-visible > .tip-bubble, .tip-start:focus-within > .tip-bubble,
+.tip-end:hover > .tip-bubble, .tip-end:focus-visible > .tip-bubble, .tip-end:focus-within > .tip-bubble,
+.tip-static.tip-start > .tip-bubble, .tip-static.tip-end > .tip-bubble { transform: translate(0, 0); }
+/* Folded width. A bubble floated beside its term has nowhere to go on a 475px
+   pane — centred it crosses the edge, start-anchored it crosses the other one
+   when the term sits in a second column. So under 768px the bubble is a strip
+   pinned above the bottom bar instead, full width, and the alignment variants
+   have nothing to do. The bottom bar is 56px; the strip clears it by a step. */
+@media (max-width: 767px) {
+  .tip-bubble,
+  .tip-start > .tip-bubble,
+  .tip-end > .tip-bubble {
+    position: fixed;
+    left: var(--space-3);
+    right: var(--space-3);
+    bottom: calc(56px + var(--space-3) + env(safe-area-inset-bottom, 0px));
+    top: auto;
+    width: auto;
+    max-width: none;
+    transform: translate(0, 2px);
+  }
+  .tip:hover > .tip-bubble, .tip:focus-visible > .tip-bubble, .tip:focus-within > .tip-bubble,
+  .tip-static > .tip-bubble { transform: translate(0, 0); }
+}
+
+
+/* =============================================================================
+   RUN TIMELINE — domain
+   A stepped record of what a worker did. Every step states what happened; a
+   failure says where it stopped and what it did not touch.
+   ============================================================================= */
+
+.timeline { display: flex; flex-direction: column; padding-left: var(--space-2); }
+
+.timeline-step {
+  display: grid;
+  grid-template-columns: 20px 1fr;
+  gap: var(--space-3);
+  padding-bottom: var(--space-4);
+  position: relative;
+}
+.timeline-step:not(:last-child)::before {
+  content: "";
+  position: absolute;
+  left: 9px;
+  top: 18px;
+  bottom: 0;
+  width: var(--stroke-thin);
+  background: var(--color-border);
+}
+.timeline-marker {
+  width: 18px;
+  height: 18px;
+  border-radius: var(--r-full);
+  border: var(--stroke-icon) solid var(--color-border-strong);
+  background: var(--color-bg);
+  display: grid;
+  place-items: center;
+  color: var(--color-ink-muted);
+  z-index: 1;
+}
+.timeline-title { font-size: var(--fs-body); font-weight: var(--fw-medium); margin: 0; }
+.timeline-meta  { font-family: var(--font-mono); font-size: var(--fs-mono); color: var(--color-ink-muted); margin: 2px 0 0; }
+.timeline-body  { margin: var(--space-2) 0 0; color: var(--color-ink-2); font-size: var(--fs-caption); }
+
+.timeline-done    .timeline-marker { border-color: var(--status-success); color: var(--status-success); }
+.timeline-failed  .timeline-marker { border-color: var(--status-error);   color: var(--status-error); }
+.timeline-waiting .timeline-marker { border-color: var(--status-warn);    color: var(--status-warn); }
+.timeline-running .timeline-marker { border-color: var(--color-accent);   color: var(--color-accent); }
+
+/* The single sanctioned live indicator in the entire system. */
+.timeline-running .timeline-marker::after {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: var(--r-full);
+  background: currentColor;
+  animation: run-pulse 1.6s var(--ease-standard) infinite;
+}
+@keyframes run-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
+
+
+/* =============================================================================
+   DIFF VIEWER — domain
+   Unified below tablet, side-by-side above. Added/removed carry a sign in the
+   gutter as well as a colour — the review act must survive colour blindness.
+
+   `.diff-split` goes inside a `.diff`, which is the box it measures.
+   ============================================================================= */
+
+/* Also the query container for `.diff-split` below, and it pays the same two
+   costs `.table-wrap` does — that note has the full version.
+
+   Containing block for fixed and absolute descendants: harmless, `overflow:
+   hidden` already clipped them. No intrinsic inline size: a `.diff` in a grid
+   `auto` track, or set to `inline-block`, measures 2px — its own borders —
+   where before 1.6.0 it measured its widest line. Give it a track that supplies
+   a width.
+
+   It also captures a bare `@container` written inside it; see THE PANE. */
+.diff {
+  border: var(--stroke-thin) solid var(--color-border);
+  border-radius: var(--r-sm);
+  overflow: hidden;
+  container-type: inline-size;
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono);
+  line-height: var(--lh-mono);
+}
+.diff-file {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-sunken);
+  border-bottom: var(--stroke-thin) solid var(--color-border);
+  color: var(--color-ink);
+  font-weight: var(--fw-medium);
+}
+.diff-stat-add { color: var(--status-success); }
+.diff-stat-del { color: var(--status-error); }
+
+.diff-hunk {
+  padding: var(--space-1) var(--space-3);
+  background: var(--color-sunken);
+  color: var(--color-ink-muted);
+  border-bottom: var(--stroke-thin) solid var(--color-border);
+}
+.diff-line {
+  display: grid;
+  grid-template-columns: 44px 1fr;
+  gap: var(--space-3);
+  padding: 1px var(--space-3) 1px 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.diff-gutter {
+  text-align: right;
+  padding-right: var(--space-2);
+  color: var(--color-ink-muted);
+  background: var(--diff-gutter);
+  user-select: none;
+}
+.diff-add { background: var(--diff-add-bg); color: var(--diff-add-ink); }
+.diff-del { background: var(--diff-del-bg); color: var(--diff-del-ink); }
+.diff-add .diff-gutter::after { content: "+"; margin-left: var(--space-1); }
+.diff-del .diff-gutter::after { content: "−"; margin-left: var(--space-1); }
+
+/* REPLACED, NOT UNIONED — the opposite of `.table-stack`, and for the reason
+   that rule's note names. This is a min-width query: it *expands* the layout,
+   so OR-ing a media query in would split a 630px pane the moment the window
+   passed 768 — the bug itself, not a floor under it.
+
+   Its failure mode is what makes replacement safe. No container above a
+   `.diff-split` means this never matches, and the diff stays unified — which is
+   the correct rendering at every width, merely conservative at wide ones. A
+   `.table-stack` failing the same way is broken; this one is only cautious. */
+.diff-split { display: block; }
+@container (min-width: 768px) {
+  .diff-split { display: grid; grid-template-columns: 1fr 1fr; }
+  .diff-split > * + * { border-left: var(--stroke-thin) solid var(--color-border); }
+}
+
+
+/* =============================================================================
+   APPROVAL BAR — domain
+   The persistent decision affordance. Pinned to the bottom inside the thumb
+   arc on folded widths; inline from tablet up. Destructive sits apart from
+   primary — never adjacent in a thumb arc.
+
+   Put it in a `.pane`. Unlike the table and the diff, this component owns no
+   wrapper of its own — the box it belongs to is the review pane, which is the
+   caller's. `.pane` in UTILITIES is the one line that supplies it.
+   ============================================================================= */
+
+.approvalbar {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  padding: var(--space-3) var(--space-4);
+  border-top: var(--stroke-thin) solid var(--color-border);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-2);
+  z-index: 20;
+}
+.approvalbar-summary {
+  flex: 1 1 100%;
+  font-size: var(--fs-caption);
+  color: var(--color-ink-muted);
+  margin: 0 0 var(--space-1);
+}
+.approvalbar-spacer { flex: 1; }
+
+/* REPLACED, NOT UNIONED — a min-width rule, same as `.diff-split`. `position:
+   sticky` resolves against the nearest scroll container, so this component was
+   already pane-scoped in behaviour while asking the window about width; that
+   mismatch is what un-pinned a bar in a 600px pane the moment the window passed
+   768, and crushed its buttons with `flex-wrap: nowrap`.
+
+   Nearest container wins, and every step of the fallback is safe: a `.pane`
+   gives the pane's width, a screen root gives what the media query used to give,
+   and no container at all leaves the bar pinned and wrapping — the folded
+   composition, which is the one that fits everywhere. */
+@container (min-width: 768px) {
+  .approvalbar { position: static; box-shadow: none; flex-wrap: nowrap; }
+  .approvalbar-summary { flex: 1; margin: 0; }
+}
+
+
+/* =============================================================================
+   CHAT THREAD — domain
+   ============================================================================= */
+
+.thread { display: flex; flex-direction: column; gap: var(--space-4); }
+
+.message { display: flex; flex-direction: column; gap: var(--space-2); max-width: 72ch; }
+.message-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--fs-caption);
+  color: var(--color-ink-muted);
+}
+.message-author { font-weight: var(--fw-semibold); color: var(--color-ink); }
+.message-body {
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--r-lg);
+  background: var(--color-surface);
+  border: var(--stroke-thin) solid var(--color-border);
+  color: var(--color-ink-2);
+}
+.message-body p:last-child { margin-bottom: 0; }
+
+.message-user { align-self: flex-end; }
+.message-user .message-body { background: var(--color-accent-tint); border-color: transparent; color: var(--color-ink); }
+.message-user .message-head { justify-content: flex-end; }
+
+.message-tool .message-body {
+  background: var(--color-sunken);
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono);
+  color: var(--color-ink-2);
+}
+
+
+/* =============================================================================
+   UTILITIES — small and curated. This is not a utility framework.
+   ============================================================================= */
+
+.text-display-xl { font-size: var(--fs-display-xl); line-height: var(--lh-display-xl); letter-spacing: var(--ls-display); font-weight: var(--fw-display); }
+.text-display-l  { font-size: var(--fs-display-l);  line-height: var(--lh-display-l);  letter-spacing: -.028em; font-weight: var(--fw-display); }
+.text-heading-m  { font-size: var(--fs-heading-m);  line-height: var(--lh-heading-m);  letter-spacing: var(--ls-heading); font-weight: var(--fw-semibold); }
+.text-heading-s  { font-size: var(--fs-heading-s);  line-height: var(--lh-heading-s);  font-weight: var(--fw-semibold); }
+.text-body       { font-size: var(--fs-body);       line-height: var(--lh-body); }
+.text-caption    { font-size: var(--fs-caption);    line-height: var(--lh-caption); }
+.text-mono       { font-family: var(--font-mono);   font-size: var(--fs-mono); }
+.text-eyebrow {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  letter-spacing: var(--ls-eyebrow);
+  text-transform: uppercase;
+  font-weight: var(--fw-semibold);
+  color: var(--color-ink-muted);
+}
+.text-muted   { color: var(--color-ink-muted); }
+.text-accent  { color: var(--color-accent); }
+.text-success { color: var(--status-success); }
+.text-warn    { color: var(--status-warn); }
+.text-error   { color: var(--status-error); }
+.text-num     { font-variant-numeric: tabular-nums; }
+
+.surface { background: var(--color-surface); }
+.sunken  { background: var(--color-sunken); }
+.bordered{ border: var(--stroke-thin) solid var(--color-border); border-radius: var(--r-lg); }
+
+.stack   { display: flex; flex-direction: column; gap: var(--space-4); }
+.stack-2 { display: flex; flex-direction: column; gap: var(--space-2); }
+.stack-5 { display: flex; flex-direction: column; gap: var(--space-5); }
+.cluster { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
+.spread  { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
+
+.page {
+  max-width: var(--page-max);
+  margin: 0 auto;
+  padding: var(--space-5) var(--space-4);
+}
+
+/* THE PANE — the one layout primitive, and the box the responsive components
+   ask about. An app shell is rail + list + detail and a review layout is a
+   detail pane with an approval bar in it; both are panes. `.pane` is new at
+   1.6.0: the composition was always here, but every screen spelled it out for
+   itself, and the two lines everybody wrote are the two that make a pane a
+   pane — an independent scroll region and a query container. That second one is
+   what lets `.approvalbar` — and anything a screen writes with `@container` —
+   answer to the pane instead of to the window.
+
+   `min-height: 0` because a flex child will not scroll without it, and
+   `container-type` only contains the inline axis.
+
+   TWO HAZARDS, AND THEY ARE WHY THIS IS OPT-IN AND APPLIED NOWHERE BY DEFAULT.
+
+   Containing block. Containment makes a pane the containing block for
+   `position: fixed` descendants. A `.scrim` or `.modal` rendered inside a pane
+   covers the pane and not the viewport. Render overlays at the screen root — a
+   portal, or markup outside the pane — which is where they belonged anyway.
+
+   No intrinsic inline size. A container is sized without consulting its
+   contents, so a pane whose width was meant to come from what is in it collapses
+   to 0. Panes are normally `flex: 1` or a grid `1fr`, which is why this bites
+   `.table-wrap` and `.diff` harder than it bites this rule — see the note on
+   `.table-wrap`.
+
+   NAME YOUR OWN CONTAINERS. An unnamed `@container` binds to the nearest
+   ancestor with containment, and since 1.6.0 that may be a `.table-wrap` or a
+   `.diff` rather than the box you had in mind: a bare
+   `@container (min-width: 768px)` written inside a table wrapper measures the
+   wrapper. The defence is one extra declaration —
+
+       .myscreen { container-type: inline-size; container-name: myscreen; }
+       @container myscreen (min-width: 768px) { … }
+
+   — because a named query skips every container that does not carry the name,
+   so a component that grows containment later cannot capture it. This file's
+   own rules stay unnamed deliberately: each one wants the nearest box, and the
+   nearest box is the component it belongs to. */
+.pane {
+  container-type: inline-size;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+/* The reading measure is opt-in. `.measure` caps one element; `.prose` caps the
+   running text inside a block and leaves its strips, meters and rows alone. */
+.measure { max-width: var(--measure); }
+.prose p,
+.prose li { max-width: var(--measure); }
+
+.visually-hidden {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}

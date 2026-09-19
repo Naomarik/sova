@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en-US">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Spacing — Fold AI Dev</title>
+<link rel="stylesheet" href="../../tokens.css">
+<link rel="stylesheet" href="../../fold-ai-dev.css">
+<link rel="stylesheet" href="../../site/docs.css">
+</head>
+<body class="docs">
+  <div class="docs-shell">
+    <nav class="docsnav" aria-label="Reference">
+      <a class="docsnav-brand" href="../index.html"><svg viewBox="0 0 32 32" width="20" height="20" aria-hidden="true" style="vertical-align:middle"><path fill="currentColor" d="M4.6 6.2 14.6 9.9v16.4L4.6 22.6z"/><path fill="currentColor" fill-opacity=".55" d="M27.4 6.2 17.4 9.9v16.4l10-3.7z"/></svg><b>Fold AI Dev</b></a>
+      
+      <p class="docsnav-label">Foundations</p>
+      <ul class="docsnav-list">
+        <li><a class="docsnav-link" href="../foundations/colors.html">Color</a></li>
+        <li><a class="docsnav-link" href="../foundations/typography.html">Typography</a></li>
+        <li><a class="docsnav-link docsnav-link-active" href="../foundations/spacing.html">Spacing</a></li>
+        <li><a class="docsnav-link" href="../foundations/radius.html">Radius</a></li>
+        <li><a class="docsnav-link" href="../foundations/shadow.html">Elevation</a></li>
+        <li><a class="docsnav-link" href="../foundations/grid-composition.html">Grid & responsive</a></li>
+        <li><a class="docsnav-link" href="../foundations/motion.html">Focus & motion</a></li>
+      </ul>
+      
+      <p class="docsnav-label">Brand</p>
+      <ul class="docsnav-list">
+        <li><a class="docsnav-link" href="../brand/logo.html">Logo</a></li>
+        <li><a class="docsnav-link" href="../brand/iconography.html">Iconography</a></li>
+      </ul>
+      
+      <p class="docsnav-label">Components</p>
+      <ul class="docsnav-list">
+        <li><a class="docsnav-link" href="../components/button.html">Button</a></li>
+        <li><a class="docsnav-link" href="../components/chip.html">Chip</a></li>
+        <li><a class="docsnav-link" href="../components/input.html">Input</a></li>
+        <li><a class="docsnav-link" href="../components/select.html">Select & combobox</a></li>
+        <li><a class="docsnav-link" href="../components/toggle.html">Toggle</a></li>
+        <li><a class="docsnav-link" href="../components/card.html">Card</a></li>
+        <li><a class="docsnav-link" href="../components/appbar.html">App bar</a></li>
+        <li><a class="docsnav-link" href="../components/nav.html">Rail & bottom bar</a></li>
+        <li><a class="docsnav-link" href="../components/tabs.html">Tabs</a></li>
+        <li><a class="docsnav-link" href="../components/breadcrumb.html">Breadcrumb</a></li>
+        <li><a class="docsnav-link" href="../components/banner.html">Banner</a></li>
+        <li><a class="docsnav-link" href="../components/toast.html">Toast</a></li>
+        <li><a class="docsnav-link" href="../components/empty.html">Empty state</a></li>
+        <li><a class="docsnav-link" href="../components/skeleton.html">Skeleton</a></li>
+        <li><a class="docsnav-link" href="../components/list.html">List & row</a></li>
+        <li><a class="docsnav-link" href="../components/tree.html">Tree</a></li>
+        <li><a class="docsnav-link" href="../components/table.html">Table</a></li>
+        <li><a class="docsnav-link" href="../components/filterbar.html">Filter bar</a></li>
+        <li><a class="docsnav-link" href="../components/meter.html">Meter</a></li>
+        <li><a class="docsnav-link" href="../components/overlay.html">Modal, sheet & popover</a></li>
+        <li><a class="docsnav-link" href="../components/tooltip.html">Tooltip</a></li>
+        <li><a class="docsnav-link" href="../components/timeline.html">Run timeline</a></li>
+        <li><a class="docsnav-link" href="../components/diff.html">Diff viewer</a></li>
+        <li><a class="docsnav-link" href="../components/approvalbar.html">Approval bar</a></li>
+        <li><a class="docsnav-link" href="../components/chat.html">Chat thread</a></li>
+      </ul>
+    </nav>
+    <main class="docs-main">
+      <button class="docs-theme button button-sm" data-theme-toggle>Theme</button>
+      <p class="text-eyebrow">Foundation</p>
+      <h1>Spacing</h1>
+      <p class="docs-purpose">A 4px base and nine steps. This is a compact ops tool: surfaces live in space-2 through space-5, and space-7 upward appears only where there is one idea on the screen. You're scanning a queue, not reading an article.</p>
+      <section class="docs-section" id="scale">
+        <h2 class="docs-h2">Scale</h2>
+        <div class="docs-demo">
+<div class="stack-2">
+  <div class="spread" style="justify-content:flex-start;gap:var(--space-4)">
+    <code style="width:110px">--space-1</code><span class="text-muted" style="width:44px">4px</span>
+    <div style="height:14px;width:4px;background:var(--color-accent);border-radius:3px"></div></div>
+  <div class="spread" style="justify-content:flex-start;gap:var(--space-4)">
+    <code style="width:110px">--space-2</code><span class="text-muted" style="width:44px">8px</span>
+    <div style="height:14px;width:8px;background:var(--color-accent);border-radius:3px"></div></div>
+  <div class="spread" style="justify-content:flex-start;gap:var(--space-4)">
+    <code style="width:110px">--space-3</code><span class="text-muted" style="width:44px">12px</span>
+    <div style="height:14px;width:12px;background:var(--color-accent);border-radius:3px"></div></div>
+  <div class="spread" style="justify-content:flex-start;gap:var(--space-4)">
+    <code style="width:110px">--space-4</code><span class="text-muted" style="width:44px">16px</span>
+    <div style="height:14px;width:16px;background:var(--color-accent);border-radius:3px"></div></div>
+  <div class="spread" style="justify-content:flex-start;gap:var(--space-4)">
+    <code style="width:110px">--space-5</code><span class="text-muted" style="width:44px">24px</span>
+    <div style="height:14px;width:24px;background:var(--color-accent);border-radius:3px"></div></div>
+  <div class="spread" style="justify-content:flex-start;gap:var(--space-4)">
+    <code style="width:110px">--space-6</code><span class="text-muted" style="width:44px">32px</span>
+    <div style="height:14px;width:32px;background:var(--color-accent);border-radius:3px"></div></div>
+  <div class="spread" style="justify-content:flex-start;gap:var(--space-4)">
+    <code style="width:110px">--space-7</code><span class="text-muted" style="width:44px">48px</span>
+    <div style="height:14px;width:48px;background:var(--color-accent);border-radius:3px"></div></div>
+  <div class="spread" style="justify-content:flex-start;gap:var(--space-4)">
+    <code style="width:110px">--space-8</code><span class="text-muted" style="width:44px">64px</span>
+    <div style="height:14px;width:64px;background:var(--color-accent);border-radius:3px"></div></div>
+  <div class="spread" style="justify-content:flex-start;gap:var(--space-4)">
+    <code style="width:110px">--space-9</code><span class="text-muted" style="width:44px">96px</span>
+    <div style="height:14px;width:96px;background:var(--color-accent);border-radius:3px"></div></div>
+</div></div>
+      </section>
+      <section class="docs-section" id="density">
+        <h2 class="docs-h2">Density in practice</h2>
+        <div class="docs-demo">
+<div class="card list">
+  <div class="list-group-label">Waiting on you</div>
+  <div class="list-row"><div class="list-main"><p class="list-title">Add rate limiting to /api/runs</p>
+    <p class="list-meta">44px row · 12px padding</p></div><span class="chip chip-warn"><i class="chip-dot"></i>Waiting</span></div>
+  <div class="list-row"><div class="list-main"><p class="list-title">Migrate session store to D1</p>
+    <p class="list-meta">The target grew; the row didn't</p></div><span class="chip chip-error"><i class="chip-dot"></i>Failed</span></div>
+</div></div>
+      </section>
+      <section class="docs-section" id="styles">
+        <h2 class="docs-h2">Styles</h2>
+        <div class="table-wrap"><table class="table">
+          <thead><tr><th>Class</th><th>Role</th><th>Notes</th></tr></thead>
+          <tbody>
+          <tr><td class="text-mono">.stack</td><td>Vertical rhythm at <code>--space-4</code></td><td>Default column gap</td></tr>
+          <tr><td class="text-mono">.stack-2 / .stack-5</td><td>Tighter / looser column</td><td>8px / 24px</td></tr>
+          <tr><td class="text-mono">.cluster</td><td>Horizontal wrap at <code>--space-2</code></td><td>Buttons, chips</td></tr>
+          <tr><td class="text-mono">.spread</td><td>Space-between row</td><td>Title + action</td></tr>
+          <tr><td class="text-mono">.page</td><td>Centred page box</td><td><code>--page-max</code> + <code>--space-4</code> gutter</td></tr>
+          </tbody>
+        </table></div>
+      </section>
+      <section class="docs-section" id="tokens">
+        <h2 class="docs-h2">Tokens used</h2>
+        <div class="table-wrap"><table class="table">
+          <thead><tr><th>Token</th><th>Role here</th></tr></thead>
+          <tbody>
+          <tr><td class="text-mono">--space-1…9</td><td>4 · 8 · 12 · 16 · 24 · 32 · 48 · 64 · 96.</td></tr>
+          <tr><td class="text-mono">--row-height</td><td>44px. The list row and the tap target are the same number.</td></tr>
+          <tr><td class="text-mono">--page-max</td><td>1280px page ceiling.</td></tr>
+          </tbody>
+        </table></div>
+      </section>
+      <section class="docs-section" id="usage">
+        <h2 class="docs-h2">Usage</h2>
+        <div class="do-dont">
+          <div class="do">
+            <p class="text-eyebrow text-success">Do</p>
+            <ul><li><b>Keep product surfaces in space-2 to space-5</b> — density is what lets a folded screen show more than four items.</li><li><b>Grow padding, not type, to reach 44px</b> — bigger targets, same information.</li><li><b>Use the stack/cluster helpers instead of ad-hoc margins</b> — margins collapse and fight each other; gaps don't.</li></ul>
+          </div>
+          <div class="dont">
+            <p class="text-eyebrow text-error">Don't</p>
+            <ul><li><b>Use space-7+ on a dense surface</b> — it belongs where there is one idea per screen, such as an empty state.</li><li><b>Inflate row heights on touch devices</b> — the target is already 44px; taller rows just show less.</li><li><b>Invent a value between steps</b> — a 10px gap is a decision nobody can repeat.</li></ul>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+  <script>
+    // Site chrome only — the design system itself ships no JavaScript.
+    document.querySelector('[data-theme-toggle]').addEventListener('click', () => {
+      const r = document.documentElement;
+      const now = r.getAttribute('data-theme')
+        || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+      r.setAttribute('data-theme', now === 'dark' ? 'light' : 'dark');
+    });
+  </script>
+</body>
+</html>

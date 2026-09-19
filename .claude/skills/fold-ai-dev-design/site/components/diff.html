@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en-US">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Diff viewer — Fold AI Dev</title>
+<link rel="stylesheet" href="../../tokens.css">
+<link rel="stylesheet" href="../../fold-ai-dev.css">
+<link rel="stylesheet" href="../../site/docs.css">
+</head>
+<body class="docs">
+  <div class="docs-shell">
+    <nav class="docsnav" aria-label="Reference">
+      <a class="docsnav-brand" href="../index.html"><svg viewBox="0 0 32 32" width="20" height="20" aria-hidden="true" style="vertical-align:middle"><path fill="currentColor" d="M4.6 6.2 14.6 9.9v16.4L4.6 22.6z"/><path fill="currentColor" fill-opacity=".55" d="M27.4 6.2 17.4 9.9v16.4l10-3.7z"/></svg><b>Fold AI Dev</b></a>
+      
+      <p class="docsnav-label">Foundations</p>
+      <ul class="docsnav-list">
+        <li><a class="docsnav-link" href="../foundations/colors.html">Color</a></li>
+        <li><a class="docsnav-link" href="../foundations/typography.html">Typography</a></li>
+        <li><a class="docsnav-link" href="../foundations/spacing.html">Spacing</a></li>
+        <li><a class="docsnav-link" href="../foundations/radius.html">Radius</a></li>
+        <li><a class="docsnav-link" href="../foundations/shadow.html">Elevation</a></li>
+        <li><a class="docsnav-link" href="../foundations/grid-composition.html">Grid & responsive</a></li>
+        <li><a class="docsnav-link" href="../foundations/motion.html">Focus & motion</a></li>
+      </ul>
+      
+      <p class="docsnav-label">Brand</p>
+      <ul class="docsnav-list">
+        <li><a class="docsnav-link" href="../brand/logo.html">Logo</a></li>
+        <li><a class="docsnav-link" href="../brand/iconography.html">Iconography</a></li>
+      </ul>
+      
+      <p class="docsnav-label">Components</p>
+      <ul class="docsnav-list">
+        <li><a class="docsnav-link" href="../components/button.html">Button</a></li>
+        <li><a class="docsnav-link" href="../components/chip.html">Chip</a></li>
+        <li><a class="docsnav-link" href="../components/input.html">Input</a></li>
+        <li><a class="docsnav-link" href="../components/select.html">Select & combobox</a></li>
+        <li><a class="docsnav-link" href="../components/toggle.html">Toggle</a></li>
+        <li><a class="docsnav-link" href="../components/card.html">Card</a></li>
+        <li><a class="docsnav-link" href="../components/appbar.html">App bar</a></li>
+        <li><a class="docsnav-link" href="../components/nav.html">Rail & bottom bar</a></li>
+        <li><a class="docsnav-link" href="../components/tabs.html">Tabs</a></li>
+        <li><a class="docsnav-link" href="../components/breadcrumb.html">Breadcrumb</a></li>
+        <li><a class="docsnav-link" href="../components/banner.html">Banner</a></li>
+        <li><a class="docsnav-link" href="../components/toast.html">Toast</a></li>
+        <li><a class="docsnav-link" href="../components/empty.html">Empty state</a></li>
+        <li><a class="docsnav-link" href="../components/skeleton.html">Skeleton</a></li>
+        <li><a class="docsnav-link" href="../components/list.html">List & row</a></li>
+        <li><a class="docsnav-link" href="../components/tree.html">Tree</a></li>
+        <li><a class="docsnav-link" href="../components/table.html">Table</a></li>
+        <li><a class="docsnav-link" href="../components/filterbar.html">Filter bar</a></li>
+        <li><a class="docsnav-link" href="../components/meter.html">Meter</a></li>
+        <li><a class="docsnav-link" href="../components/overlay.html">Modal, sheet & popover</a></li>
+        <li><a class="docsnav-link" href="../components/tooltip.html">Tooltip</a></li>
+        <li><a class="docsnav-link" href="../components/timeline.html">Run timeline</a></li>
+        <li><a class="docsnav-link docsnav-link-active" href="../components/diff.html">Diff viewer</a></li>
+        <li><a class="docsnav-link" href="../components/approvalbar.html">Approval bar</a></li>
+        <li><a class="docsnav-link" href="../components/chat.html">Chat thread</a></li>
+      </ul>
+    </nav>
+    <main class="docs-main">
+      <button class="docs-theme button button-sm" data-theme-toggle>Theme</button>
+      <p class="text-eyebrow">Component</p>
+      <h1>Diff viewer</h1>
+      <p class="docs-purpose">The core review act. Unified when folded, side-by-side when unfolded — and added and removed lines carry a gutter sign as well as a color, because the one screen where color blindness must not cost you anything is the one where you approve a change.</p>
+      <section class="docs-section" id="anatomy">
+        <h2 class="docs-h2">Anatomy</h2>
+        <div class="docs-demo">
+<div class="diff">
+  <div class="diff-file"><span>src/api/runs.ts</span>
+    <span class="diff-stat-add">+4</span><span class="diff-stat-del">−1</span></div>
+  <div class="diff-hunk">@@ -18,6 +18,9 @@</div>
+  <div class="diff-line"><span class="diff-gutter">18</span><span>export async function createRun(req: Request) {</span></div>
+  <div class="diff-line diff-del"><span class="diff-gutter">19</span><span>  const body = await req.json();</span></div>
+  <div class="diff-line diff-add"><span class="diff-gutter">19</span><span>  const ok = await limiter.take(req.ip);</span></div>
+  <div class="diff-line diff-add"><span class="diff-gutter">20</span><span>  if (!ok) return new Response("slow down", { status: 429 });</span></div>
+  <div class="diff-line diff-add"><span class="diff-gutter">21</span><span>  const body = await req.json();</span></div>
+  <div class="diff-line"><span class="diff-gutter">22</span><span>}</span></div>
+</div></div>
+      </section>
+      <section class="docs-section" id="styles">
+        <h2 class="docs-h2">Styles</h2>
+        <div class="table-wrap"><table class="table">
+          <thead><tr><th>Class</th><th>Role</th><th>Notes</th></tr></thead>
+          <tbody>
+          <tr><td class="text-mono">.diff</td><td>Base — 6px radius, mono</td><td>Clips its rows; the query container for <code>.diff-split</code></td></tr>
+          <tr><td class="text-mono">.diff-file</td><td>File header with stats</td><td>Sunken strip</td></tr>
+          <tr><td class="text-mono">.diff-stat-add / -del</td><td>+n / −n</td><td>Status colors</td></tr>
+          <tr><td class="text-mono">.diff-hunk</td><td>Hunk marker row</td><td>Muted</td></tr>
+          <tr><td class="text-mono">.diff-line</td><td>Gutter + code row</td><td>Wraps rather than scrolls</td></tr>
+          <tr><td class="text-mono">.diff-gutter</td><td>Line number and sign</td><td>Not selectable</td></tr>
+          <tr><td class="text-mono">.diff-add / .diff-del</td><td>Added / removed</td><td>Background + gutter sign</td></tr>
+          <tr><td class="text-mono">.diff-split</td><td>Two columns from 768 **of its <code>.diff</code>**</td><td>Unified below that, and with no <code>.diff</code> around it</td></tr>
+          </tbody>
+        </table></div>
+      </section>
+      <section class="docs-section" id="tokens">
+        <h2 class="docs-h2">Tokens used</h2>
+        <div class="table-wrap"><table class="table">
+          <thead><tr><th>Token</th><th>Role here</th></tr></thead>
+          <tbody>
+          <tr><td class="text-mono">--diff-add-bg / --diff-add-ink</td><td>Added line, per theme.</td></tr>
+          <tr><td class="text-mono">--diff-del-bg / --diff-del-ink</td><td>Removed line.</td></tr>
+          <tr><td class="text-mono">--diff-gutter</td><td>Gutter background.</td></tr>
+          <tr><td class="text-mono">--font-mono / --fs-mono</td><td>12.5px mono.</td></tr>
+          </tbody>
+        </table></div>
+      </section>
+      <section class="docs-section" id="usage">
+        <h2 class="docs-h2">Usage</h2>
+        <div class="do-dont">
+          <div class="do">
+            <p class="text-eyebrow text-success">Do</p>
+            <ul><li><b>Keep the +/− sign in the gutter</b> — color alone fails the exact user who most needs the review to work.</li><li><b>Wrap long lines at folded width</b> — horizontal scroll inside a diff makes review impossible one-handed.</li><li><b>Show the file path and the stat together</b> — the header answers "how big is this?" before you read a line.</li></ul>
+          </div>
+          <div class="dont">
+            <p class="text-eyebrow text-error">Don't</p>
+            <ul><li><b>Use side-by-side below 768px</b> — two 40-character columns are unreadable.</li><li><b>Put a `.diff-split` outside a `.diff`</b> — it has no container to measure and stays unified forever.</li><li><b>Put a `.diff` in a grid `auto` track or set it `inline-block`</b> — it is a query container, so it has no intrinsic width and measures 2px — its own borders — rather than its widest line.</li><li><b>Syntax-highlight in brand colors</b> — the accent means "action"; a keyword is not an action.</li><li><b>Collapse context to zero lines</b> — a diff without context is not reviewable.</li></ul>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+  <script>
+    // Site chrome only — the design system itself ships no JavaScript.
+    document.querySelector('[data-theme-toggle]').addEventListener('click', () => {
+      const r = document.documentElement;
+      const now = r.getAttribute('data-theme')
+        || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+      r.setAttribute('data-theme', now === 'dark' ? 'light' : 'dark');
+    });
+  </script>
+</body>
+</html>

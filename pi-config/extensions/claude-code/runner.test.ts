@@ -850,3 +850,81 @@ test("system prompt file is removed when startup fails, and write failure fails 
 	assert.equal(missing.argv.length, 0, "never launched without its instructions");
 	assert.match(missing.runner.error!, /Could not write system prompt file/);
 });
+
+// Incident (team_01/ag_05): a background task's completion makes Claude start
+// its own turn (no host user message). Host input written meanwhile is only
+// replayed once Claude dequeues it, which can take longer than the delivery
+// deadline; its immediate receipt is a correlated command_lifecycle record.
+const lifecycle = (f: ReturnType<typeof fixture>, user: any, state: string) =>
+	f.child.out({ type: "command_lifecycle", command_uuid: user.uuid, state, uuid: `lc-${state}-${user.uuid}`, session_id: "session-1" });
+function cliTurn(f: ReturnType<typeof fixture>) {
+	f.child.out({ type: "system", subtype: "task_notification", task_id: "bg1", status: "completed", session_id: "session-1" });
+	f.child.out({ type: "system", subtype: "init", model: "sonnet", session_id: "session-1" });
+	f.child.out({ type: "assistant", message: { content: [{ type: "tool_use", name: "Bash", input: { command: "long" } }] }, session_id: "session-1" });
+}
+const aborted = { is_error: true, subtype: "error_during_execution", terminal_reason: "aborted_tools" };
+const within = <T>(promise: Promise<T>, ms = 200) => Promise.race([promise, sleep(ms).then(() => "still pending" as const)]);
+
+test("redirect queued behind a Claude-originated turn survives the delivery deadline once receipt is correlated", async (t) => {
+	const f = fixture({ timings: { requestTimeoutMs: 40, settlementTimeoutMs: 1000, abortGraceMs: 10, eofGraceMs: 10, termGraceMs: 10 } });
+	cleanup(t, f); await ready(f);
+	const first = f.child.users()[0];
+	f.child.onWrite = (e) => { if (e.type === "user") lifecycle(f, e, "queued"); };
+	const steer = f.runner.steer("R"); await tick();
+	f.child.ack(f.child.writes.find((e) => e.request?.subtype === "interrupt"));
+	f.child.result(first, aborted); cliTurn(f); // Claude dequeues its notification ahead of R
+	await sleep(80);
+	assert.equal(f.runner.status, "running", f.runner.error); assert.equal(f.runner.processAlive, true);
+	assert.equal(f.child.eof, false); assert.deepEqual(f.child.signals, []);
+	assert.deepEqual(await within(steer), { ok: true });
+	f.child.out({ type: "result", subtype: "success", result: "NOTIFIED", session_id: "session-1" }); // uncorrelated
+	assert.equal(f.runner.status, "running");
+	f.child.replay(); f.child.result(undefined, { result: "REDIRECTED" }); await tick();
+	assert.equal(f.runner.taskOutcome, "success"); assert.equal(f.runner.finalOutput(), "REDIRECTED");
+	assert.equal(f.runner.isSettled(), true); assert.deepEqual(texts(f), ["FIRST", "R"]);
+});
+
+test("follow-up to an idle worker whose Claude-originated turn is running is not failed by the delivery deadline", async (t) => {
+	const f = fixture({ timings: { requestTimeoutMs: 40, abortGraceMs: 10, eofGraceMs: 10, termGraceMs: 10 } });
+	cleanup(t, f); await ready(f); f.child.result(); cliTurn(f);
+	f.child.onWrite = (e) => { if (e.type === "user") lifecycle(f, e, "queued"); };
+	assert.deepEqual(await f.runner.followUp("[Team message] F"), { ok: true });
+	await sleep(80);
+	assert.equal(f.runner.status, "running", f.runner.error); assert.equal(f.child.eof, false);
+	f.child.replay(); f.child.result(undefined, { result: "F DONE" }); await tick();
+	assert.equal(f.runner.taskOutcome, "success"); assert.equal(f.settled.at(-1)?.output, "F DONE");
+});
+
+test("receipt of a different command does not satisfy the delivery deadline", async (t) => {
+	const f = fixture({ timings: { requestTimeoutMs: 30, abortGraceMs: 10, eofGraceMs: 10, termGraceMs: 10 } });
+	cleanup(t, f); await ready(f); f.child.result();
+	f.child.onWrite = (e) => { if (e.type === "user") lifecycle(f, { uuid: "someone-else" }, "queued"); };
+	const steer = f.runner.steer("R");
+	await sleep(60);
+	assert.equal(f.runner.status, "error"); assert.match(f.runner.error!, /delivery unknown.*timeout/);
+	f.child.close(1); assert.equal((await steer).ok, false);
+});
+
+test("a second redirect interrupting Claude's own turn does not stop the worker and still replaces the queued redirect", async (t) => {
+	const f = fixture({ timings: { requestTimeoutMs: 1000, settlementTimeoutMs: 1000, abortGraceMs: 10, eofGraceMs: 10, termGraceMs: 10 } });
+	cleanup(t, f); await ready(f);
+	const first = f.child.users()[0];
+	f.child.onWrite = (e) => { if (e.type === "user") lifecycle(f, e, "queued"); };
+	const interrupts = () => f.child.writes.filter((e) => e.request?.subtype === "interrupt");
+	const r1 = f.runner.steer("R1"); await tick();
+	f.child.ack(interrupts()[0]); f.child.result(first, aborted); cliTurn(f);
+	assert.deepEqual(await within(r1), { ok: true });
+	const queued = f.child.users()[1];
+	const r2 = f.runner.steer("R2"); await tick();
+	assert.equal(interrupts().length, 2);
+	// The interrupt lands on Claude's own turn: an uncorrelated abort, then R1 starts.
+	f.child.ack(interrupts()[1]); f.child.out({ type: "result", session_id: "session-1", ...aborted }); await tick();
+	assert.equal(f.runner.status, "running", f.runner.error); assert.equal(f.runner.processAlive, true);
+	lifecycle(f, queued, "started"); await tick(); await tick();
+	assert.equal(interrupts().length, 3, "R1 started under a spent interrupt: interrupt it again");
+	f.child.ack(interrupts()[2]); f.child.result(queued, { ...aborted, terminal_reason: "aborted_streaming" });
+	assert.deepEqual(await within(r2), { ok: true });
+	f.child.replay(); f.child.result(undefined, { result: "R2 DONE" }); await tick();
+	assert.equal(f.runner.taskOutcome, "success"); assert.equal(f.runner.finalOutput(), "R2 DONE");
+	assert.deepEqual(texts(f), ["FIRST", "R1", "R2"]); assert.deepEqual(f.child.signals, []);
+});

@@ -1,6 +1,7 @@
-/** Owned persistent Claude Code stream-json adapter (probed with CLI 2.1.276 and 2.1.277).
- * Only one user UUID is in flight. Replay acknowledges delivery, result settles
- * work, and interrupt acknowledgment is NOT settlement. No external adoption.
+/** Owned persistent Claude Code stream-json adapter (probed with CLI 2.1.276 to 2.1.278).
+ * Only one user UUID is in flight. Correlated receipt (command_lifecycle) or
+ * replay acknowledges delivery, result settles work, and interrupt
+ * acknowledgment is NOT settlement. No external adoption.
  */
 import { spawn, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -389,6 +390,19 @@ export class ClaudeRunner implements Worker {
 		if (e.type === "user" && e.isReplay === true && e.uuid === task.id) {
 			clearTimeout(task.acceptTimer); task.accepted.resolve(true);
 		}
+		// Claude runs turns of its own (e.g. a background task's completion
+		// notification) and replays host input only when it dequeues it, which can
+		// take longer than any delivery deadline. Its immediate queued receipt,
+		// correlated by our UUID, proves delivery (CLI 2.1.276-2.1.278).
+		if (e.type === "command_lifecycle" && e.command_uuid === task.id) {
+			if (e.state === "queued" || e.state === "started") { clearTimeout(task.acceptTimer); task.accepted.resolve(true); }
+			// An interrupt sent while this task was still queued was spent on
+			// Claude's own turn; the redirect still needs this one interrupted.
+			if (e.state === "started" && task.cancelled && !this.stopping) {
+				const again = () => { if (this.active === task && !this.stopping) void this.interrupt(); };
+				if (this.interruptPromise) void this.interruptPromise.then(again); else again();
+			}
+		}
 		if (e.type === "result") {
 			const ids = Array.isArray(e.user_message_uuids) ? e.user_message_uuids : [];
 			if (e.user_message_uuid !== task.id && !ids.includes(task.id)) {
@@ -396,8 +410,10 @@ export class ClaudeRunner implements Worker {
 				// crashed worker's zeroed result). The task's fate is unknown, so stop
 				// rather than wait forever. Stale/mismatched UUIDs and uncorrelated
 				// successes never settle the active task.
+				// An interrupted Claude-originated turn is not a session failure.
 				const uncorrelated = e.user_message_uuid === undefined && ids.length === 0;
-				if (uncorrelated && (e.is_error || e.subtype !== "success")) {
+				const aborted = typeof e.terminal_reason === "string" && e.terminal_reason.startsWith("aborted");
+				if (uncorrelated && !aborted && (e.is_error || e.subtype !== "success")) {
 					this.fail(`Claude session failed without task correlation: ${resultError(e)}`);
 				}
 				return;
@@ -609,7 +625,9 @@ export class ClaudeRunner implements Worker {
 				// A negative ack may mean the old turn completed naturally. Its
 				// correlated result is authoritative, but still require a response:
 				// a missing ack could leave an interrupt racing the replacement.
-				const both = Promise.all([this.interrupt(), previous.settled.promise]).then(([ack, settled]) => ack !== undefined && settled);
+				// A queued task can need a second interrupt (see event()); never dispatch under it.
+				const both = Promise.all([this.interrupt(), previous.settled.promise])
+					.then(async ([ack, settled]) => ack !== undefined && settled && (this.interruptPromise ? await this.interruptPromise : true) !== undefined);
 				const ok = await this.bounded(both, this.timings.settlementTimeoutMs, false);
 				if (!ok && this.active === previous) {
 					// The task itself never settled: its state is unknown. Fail closed.

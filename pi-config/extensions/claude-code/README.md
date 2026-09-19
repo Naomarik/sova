@@ -139,7 +139,13 @@ These are `agent_steer` arguments. Claude's default is redirect. Redirect waits
 for interrupt acknowledgment **and task settlement** before delivering the
 replacement. The interrupt/settlement deadline is 15 seconds; a message-delivery
 acknowledgment has a 30-second deadline. A timeout fails closed: the worker is
-stopped, an error is returned, and replacement execution is not assumed. Malformed
+stopped, an error is returned, and replacement execution is not assumed.
+Delivery is acknowledged by Claude's correlated receipt (`command_lifecycle`
+queued/started for our message UUID) or by its replay. Claude runs turns of its
+own, e.g. when a background task completes, and replays host input only when
+it dequeues it, possibly long after receipt; receipt alone keeps such a worker
+alive. An interrupt that lands on such a turn is not a worker failure, and a
+redirect whose predecessor was still queued interrupts it again once it starts. Malformed
 stream-json output also fails closed rather than masking protocol corruption.
 Follow-ups are held by the extension until the current task settles; raw mid-turn
 Claude stdin input is not a reliable separate-task queue. A follow-up sent to an

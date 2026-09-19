@@ -1,8 +1,9 @@
 import { children, createEffect, createMemo, createSignal, For, Match, on, onCleanup, Show, Switch, type JSX } from "solid-js";
 import type { TranscriptItem } from "../../shared/protocol";
 import type { LiveBlock, LiveEntry, LiveState } from "../lib/live";
-import { prettyJson, stampTime } from "../lib/format";
+import { prettyJson, stampTime, thousands, tildePath } from "../lib/format";
 import { isObj, str, timestampOf, toolCallArgs, toolResultView } from "../lib/message";
+import { home } from "../lib/ui-state";
 import { ImageStrip } from "./ImageStrip";
 import { ToolCard, type ToolStatus } from "./ToolCard";
 import { Banner, Icon } from "./ui";
@@ -27,10 +28,10 @@ function UserTurn(props: { text: string; time?: string; pending?: boolean; image
           <span>Sending…</span>
         </Show>
       </div>
+      <ImageStrip images={props.images} where="in your message" />
       <Show when={props.text}>
         <div class="message-body message-text">{props.text}</div>
       </Show>
-      <ImageStrip images={props.images} where="in your message" />
     </article>
   );
 }
@@ -107,6 +108,44 @@ function Unknown(props: { raw: unknown }) {
   );
 }
 
+const strings = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
+
+/** A compaction entry: where it happened in the thread, with its summary on demand. */
+function Compaction(props: { raw: Record<string, unknown> }) {
+  const tokens = () => (typeof props.raw.tokensBefore === "number" ? props.raw.tokensBefore : null);
+  const details = () => (isObj(props.raw.details) ? props.raw.details : {});
+  const read = () => strings(details().readFiles);
+  const changed = () => strings(details().modifiedFiles);
+  return (
+    <details class="disclosure compaction">
+      <summary class="disclosure-summary">
+        <Icon name="chevron-right" small class="icon-twist" />
+        <span class="disclosure-label">Compacted</span>
+        <span class="disclosure-preview">
+          <Show when={tokens() !== null} fallback="· earlier messages summarized">
+            · <span class="text-mono">{thousands(tokens()!)}</span> tokens summarized
+          </Show>
+        </span>
+      </summary>
+      <div class="disclosure-body">
+        <div class="compaction-summary">{str(props.raw.summary) ?? ""}</div>
+        <Show when={read().length > 0}>
+          <p class="toolcard-section-label">Files read</p>
+          <ul class="compaction-files">
+            <For each={read()}>{(f) => <li>{tildePath(f, home())}</li>}</For>
+          </ul>
+        </Show>
+        <Show when={changed().length > 0}>
+          <p class="toolcard-section-label">Files changed</p>
+          <ul class="compaction-files">
+            <For each={changed()}>{(f) => <li>{tildePath(f, home())}</li>}</For>
+          </ul>
+        </Show>
+      </div>
+    </details>
+  );
+}
+
 /** "The turn stopped with an error." Kept in the thread, in flow, so it stays in the record. */
 export function TurnError(props: { message: string }) {
   return (
@@ -142,58 +181,64 @@ export function HistoryItems(props: { items: TranscriptItem[]; author: string; s
   return (
     <For each={props.items}>
       {(item, index) => (
-        <Switch fallback={<Unknown raw={item.raw} />}>
-          <Match when={item.kind === "user"}>
-            <UserTurn text={item.text ?? ""} time={timestampOf(item.raw)} images={item.images} />
-          </Match>
-          <Match when={item.kind === "assistant-text"}>
-            <AssistantText
-              text={item.text ?? ""}
-              author={props.author}
-              time={timestampOf(item.raw)}
-              showHead={props.items[index() - 1]?.kind !== "assistant-text"}
-            />
-          </Match>
-          <Match when={item.kind === "thinking"}>
-            <Thinking text={item.text ?? ""} />
-          </Match>
-          <Match when={item.kind === "info"}>
-            <InfoRow>{item.text ?? ""}</InfoRow>
-          </Match>
-          <Match when={item.kind === "tool-call"}>
-            {(() => {
-              const view = () => {
-                const r = item.toolCallId ? results().get(item.toolCallId) : undefined;
-                return r ? toolResultView(r.raw, r.text) : undefined;
-              };
-              const status = (): ToolStatus => {
-                const v = view();
-                if (v) return v.isError ? "error" : "done";
-                return props.streaming && index() > lastUserIndex() ? "running" : "none";
-              };
-              return (
-                <ToolCard
-                  name={item.text ?? "tool"}
-                  args={toolCallArgs(item.raw, item.toolCallId)}
-                  status={status()}
-                  output={view()?.output}
-                  images={item.toolCallId ? results().get(item.toolCallId)?.images : undefined}
-                />
-              );
-            })()}
-          </Match>
-          <Match when={item.kind === "tool-result"}>
-            {/* Paired results render inside their call's card; orphans get their own. */}
-            <Show when={!item.toolCallId || !calls().has(item.toolCallId)}>
+        // A box-less wrapper so the outline strip can find an entry's row (Jump to Message).
+        <div class="entry" data-entry={item.id}>
+          <Switch fallback={<Unknown raw={item.raw} />}>
+            <Match when={item.kind === "user"}>
+              <UserTurn text={item.text ?? ""} time={timestampOf(item.raw)} images={item.images} />
+            </Match>
+            <Match when={item.kind === "assistant-text"}>
+              <AssistantText
+                text={item.text ?? ""}
+                author={props.author}
+                time={timestampOf(item.raw)}
+                showHead={props.items[index() - 1]?.kind !== "assistant-text"}
+              />
+            </Match>
+            <Match when={item.kind === "thinking"}>
+              <Thinking text={item.text ?? ""} />
+            </Match>
+            <Match when={item.kind === "info" && isObj(item.raw) && item.raw.type === "compaction" && item.raw}>
+              {(raw) => <Compaction raw={raw()} />}
+            </Match>
+            <Match when={item.kind === "info"}>
+              <InfoRow>{item.text ?? ""}</InfoRow>
+            </Match>
+            <Match when={item.kind === "tool-call"}>
               {(() => {
-                const view = toolResultView(item.raw, item.text);
+                const view = () => {
+                  const r = item.toolCallId ? results().get(item.toolCallId) : undefined;
+                  return r ? toolResultView(r.raw, r.text) : undefined;
+                };
+                const status = (): ToolStatus => {
+                  const v = view();
+                  if (v) return v.isError ? "error" : "done";
+                  return props.streaming && index() > lastUserIndex() ? "running" : "none";
+                };
                 return (
-                  <ToolCard name="result" args={undefined} status={view.isError ? "error" : "done"} output={view.output} images={item.images} />
+                  <ToolCard
+                    name={item.text ?? "tool"}
+                    args={toolCallArgs(item.raw, item.toolCallId)}
+                    status={status()}
+                    output={view()?.output}
+                    images={item.toolCallId ? results().get(item.toolCallId)?.images : undefined}
+                  />
                 );
               })()}
-            </Show>
-          </Match>
-        </Switch>
+            </Match>
+            <Match when={item.kind === "tool-result"}>
+              {/* Paired results render inside their call's card; orphans get their own. */}
+              <Show when={!item.toolCallId || !calls().has(item.toolCallId)}>
+                {(() => {
+                  const view = toolResultView(item.raw, item.text);
+                  return (
+                    <ToolCard name="result" args={undefined} status={view.isError ? "error" : "done"} output={view.output} images={item.images} />
+                  );
+                })()}
+              </Show>
+            </Match>
+          </Switch>
+        </div>
       )}
     </For>
   );

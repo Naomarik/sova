@@ -22,6 +22,8 @@ export function WatchView(props: {
   streaming: boolean;
   stateBanner: JSX.Element;
   readOnly: ComposerReason;
+  /** Rows were appended: data derived from the session file may have changed. */
+  onAppend?(): void;
 }) {
   const [items, setItems] = createSignal<TranscriptItem[] | null>(null);
   const [error, setError] = createSignal<string | null>(null);
@@ -52,6 +54,7 @@ export function WatchView(props: {
           setItems((prev) => [...(prev ?? []), ...msg.items]);
           setLastUpdate(new Date().toISOString());
           noteAppended(msg.items.length);
+          props.onAppend?.();
           break;
         case "error":
           setError(msg.message);

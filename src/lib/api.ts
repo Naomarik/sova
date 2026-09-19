@@ -45,6 +45,13 @@ export const createSession = (cwd: string) =>
 export const fetchTranscript = (path: string) =>
   request<{ items: TranscriptItem[] }>(`/api/transcript?path=${encodeURIComponent(path)}`).then((r) => r.items);
 
+export const fetchUsage = () => request<UsageInsight>("/api/insights/usage");
+
+export const fetchAgents = () => request<AgentsInsight>("/api/insights/agents");
+
+export const fetchSessionInsight = (path: string) =>
+  request<SessionInsight>(`/api/insights/session?path=${encodeURIComponent(path)}`);
+
 /**
  * `force` (chat only) lets the server open a session whose file was written recently by
  * something that isn't a TUI. It never overrides a live TUI.

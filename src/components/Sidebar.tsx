@@ -1,8 +1,9 @@
 import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
-import type { SessionSummary } from "../../shared/protocol";
+import type { AgentsInsight, SessionSummary, UsageInsight } from "../../shared/protocol";
 import { relativeTime, shortModel, tildePath } from "../lib/format";
+import { activeTeams, insightsHref, worstWindow } from "../lib/insights";
 import { home } from "../lib/ui-state";
-import { Banner, Chip, Icon } from "./ui";
+import { Banner, Chip, CountChip, Icon } from "./ui";
 
 interface Group {
   cwd: string;
@@ -61,6 +62,9 @@ function GroupList(props: { groups: Group[]; selected: string | null; now: numbe
                         </Show>
                       </p>
                     </div>
+                    <Show when={s.live?.workers?.working}>
+                      {(n) => <CountChip title="Subagents working now">{n()} working</CountChip>}
+                    </Show>
                     <Show when={s.live}>
                       <Chip tone="accent" live title={`Open in a TUI · pid ${s.live!.pid} · ${s.live!.status}`}>
                         Live
@@ -77,6 +81,35 @@ function GroupList(props: { groups: Group[]; selected: string | null; now: numbe
   );
 }
 
+/** The foot row's live facts, most pressing first; segments with nothing to say are left out. */
+function InsightsSummary(props: { usage: UsageInsight | undefined; agents: AgentsInsight | undefined }) {
+  const parts = () => {
+    const teams = activeTeams(props.agents).length;
+    const working = props.agents?.totals.working ?? 0;
+    const worst = worstWindow(props.usage);
+    const out: { before: string; pct?: number }[] = [];
+    if (worst) out.push({ before: `${worst.label} `, pct: worst.pct });
+    if (teams > 0) out.push({ before: `${teams} ${teams === 1 ? "team" : "teams"}` });
+    if (working > 0) out.push({ before: `${working} working` });
+    return out;
+  };
+  return (
+    <Show when={parts().length > 0} fallback="Insights">
+      <For each={parts()}>
+        {(p, i) => (
+          <>
+            {i() > 0 && " · "}
+            {p.before}
+            <Show when={p.pct !== undefined}>
+              <span class="text-num">{p.pct}%</span>
+            </Show>
+          </>
+        )}
+      </For>
+    </Show>
+  );
+}
+
 export function Sidebar(props: {
   sessions: SessionSummary[] | undefined;
   loading: boolean;
@@ -85,6 +118,10 @@ export function Sidebar(props: {
   now: number;
   onRefresh(): void;
   onNew(): void;
+  usage: UsageInsight | undefined;
+  agents: AgentsInsight | undefined;
+  /** `#/insights` is the open view. */
+  insightsOpen: boolean;
 }) {
   const [query, setQuery] = createSignal("");
   const [showSkeleton, setShowSkeleton] = createSignal(false);
@@ -293,6 +330,16 @@ export function Sidebar(props: {
           </details>
         </Show>
       </nav>
+
+      <div class="sidebar-foot">
+        <a class="list-row list-row-interactive insights-row" href={insightsHref()} aria-current={props.insightsOpen ? "page" : undefined}>
+          <Icon name="gauge" />
+          <span class="insights-row-text">
+            <InsightsSummary usage={props.usage} agents={props.agents} />
+          </span>
+          <Icon name="chevron-right" small />
+        </a>
+      </div>
     </aside>
   );
 }

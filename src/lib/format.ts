@@ -63,3 +63,25 @@ export function shortModel(model: string | null | undefined): string | null {
   const i = model.indexOf("/");
   return i >= 0 ? model.slice(i + 1) : model;
 }
+
+/** Compact span: "40s" · "42m" · "2h 17m" · "3d 4h". */
+export function duration(ms: number): string {
+  const sec = Math.max(0, Math.round(ms / 1000));
+  if (sec < 60) return `${sec}s`;
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}m`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return min % 60 ? `${hr}h ${min % 60}m` : `${hr}h`;
+  const day = Math.floor(hr / 24);
+  return hr % 24 ? `${day}d ${hr % 24}h` : `${day}d`;
+}
+
+/** "Mar 4" (year added when it isn't this year's). */
+export function shortDate(t: number, now = Date.now()): string {
+  const d = new Date(t);
+  const sameYear = d.getFullYear() === new Date(now).getFullYear();
+  return `${MONTHS[d.getMonth()]} ${d.getDate()}${sameYear ? "" : `, ${d.getFullYear()}`}`;
+}
+
+/** 50000 → "50,000". */
+export const thousands = (n: number) => n.toLocaleString("en-US");

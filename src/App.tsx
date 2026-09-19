@@ -1,14 +1,20 @@
 import { createEffect, createMemo, createResource, createSignal, Match, on, onCleanup, Show, Switch } from "solid-js";
+import { createStore, reconcile } from "solid-js/store";
 import { Portal } from "solid-js/web";
-import type { SessionSummary } from "../shared/protocol";
-import { listSessions } from "./lib/api";
+import type { SessionInsight, SessionSummary, TeamInfo } from "../shared/protocol";
+import { fetchAgents, fetchSessionInsight, fetchUsage, listSessions } from "./lib/api";
+import { insightsHref } from "./lib/insights";
+import { createPoll } from "./lib/poll";
 import { homeFromSessionPath, shortModel, tildePath } from "./lib/format";
 import { copyText, home, setHome } from "./lib/ui-state";
 import { ChatView, type ChatRefusal } from "./components/ChatView";
+import { InsightsView } from "./components/InsightsView";
+import { ModelMenu, type ModelControl } from "./components/ModelMenu";
 import { NewSessionDialog } from "./components/NewSessionDialog";
+import { OutlineStrip } from "./components/OutlineStrip";
 import { sessionHref, Sidebar } from "./components/Sidebar";
 import { WatchView } from "./components/WatchView";
-import { Banner, Chip, CopyButton, GlobalRegions, Icon } from "./components/ui";
+import { Banner, Chip, CopyButton, CountChip, GlobalRegions, Icon } from "./components/ui";
 
 /** Why a session is open read-only. */
 type WatchWhy = "tui" | "recent";
@@ -28,12 +34,25 @@ function pathFromHash(): string | null {
   }
 }
 
+/** `#/insights` or `#/insights/<teamId>`; null for any other route. */
+function insightsFromHash(): { team: string | null } | null {
+  const m = /^#\/insights(?:\/(.+))?$/.exec(location.hash);
+  if (!m) return null;
+  try {
+    return { team: m[1] ? decodeURIComponent(m[1]) : null };
+  } catch {
+    return { team: null };
+  }
+}
+
 const sameSummary = (a: SessionSummary, b: SessionSummary) =>
   a.title === b.title &&
   a.lastActiveAt === b.lastActiveAt &&
   a.model === b.model &&
   a.live?.pid === b.live?.pid &&
-  a.live?.status === b.live?.status;
+  a.live?.status === b.live?.status &&
+  a.live?.workers?.working === b.live?.workers?.working &&
+  a.live?.workers?.total === b.live?.workers?.total;
 
 /** Keeps the previous object for unchanged rows so <For> updates the list in place (focus survives). */
 function reuseUnchanged(next: SessionSummary[], prev: SessionSummary[] | undefined): SessionSummary[] {
@@ -47,6 +66,12 @@ function reuseUnchanged(next: SessionSummary[], prev: SessionSummary[] | undefin
 
 /** While a session is watched, poll the list so live status (and TUI exit) shows up on its own. */
 const WATCH_POLL_MS = 10_000;
+
+/** Insights polling (paused while the tab is hidden). The usage file itself changes ≤ every 3 min. */
+const USAGE_POLL_MS = 60_000;
+const AGENTS_POLL_MS = 5_000;
+/** Session insight (outline, teams) reloads this long after the session's file last changed. */
+const SESSION_INSIGHT_DEBOUNCE_MS = 1500;
 
 const folded = () => window.matchMedia("(max-width: 767px)").matches;
 
@@ -72,11 +97,16 @@ export function App() {
   const list = () => sessions.latest; // keeps the old list on screen while refreshing
 
   const [route, setRoute] = createSignal<string | null>(pathFromHash());
+  const [insightsRoute, setInsightsRoute] = createSignal(insightsFromHash());
+  const usage = createPoll(fetchUsage, USAGE_POLL_MS);
+  const agents = createPoll(fetchAgents, AGENTS_POLL_MS);
   const [decision, setDecision] = createSignal<Decision | null>(null);
   /** Sessions we just created: shown before the list catches up. */
   const created = new Map<string, SessionSummary>();
   const [creating, setCreating] = createSignal(false);
   const [chatModel, setChatModel] = createSignal<string | null>(null);
+  /** The open chat session's model picker controls (DESIGN_NOTES §4c); null outside chat. */
+  const [modelControl, setModelControl] = createSignal<ModelControl | null>(null);
   const [now, setNow] = createSignal(Date.now());
 
   const refresh = () => void refetch();
@@ -84,7 +114,10 @@ export function App() {
     setNow(Date.now());
     refresh();
   };
-  const onHash = () => setRoute(pathFromHash());
+  const onHash = () => {
+    setRoute(pathFromHash());
+    setInsightsRoute(insightsFromHash());
+  };
   window.addEventListener("focus", onFocus);
   window.addEventListener("hashchange", onHash);
   const tick = setInterval(() => setNow(Date.now()), 30_000);
@@ -121,6 +154,8 @@ export function App() {
   // At folded width, opening a session swaps the column: move focus to its title.
   let titleEl: HTMLHeadingElement | undefined;
   createEffect(on(route, (p) => p && folded() && queueMicrotask(() => titleEl?.focus()), { defer: true }));
+  let insightsTitleEl: HTMLHeadingElement | undefined;
+  createEffect(on(() => !!insightsRoute(), (open) => open && folded() && queueMicrotask(() => insightsTitleEl?.focus()), { defer: true }));
 
   const openChat = (force: boolean) => {
     const d = decision();
@@ -161,165 +196,235 @@ export function App() {
       <a class="button skip-link" href="#transcript">
         Skip to Transcript
       </a>
-      <div class="app" data-view={route() ? "session" : "list"}>
+      <div class="app" data-view={route() || insightsRoute() ? "session" : "list"}>
         <Sidebar
           sessions={list()}
           loading={sessions.loading}
           error={listError()}
           selected={route()}
           now={now()}
+          usage={usage.data()}
+          agents={agents.data()}
+          insightsOpen={!!insightsRoute()}
           onRefresh={refresh}
           onNew={() => setCreating(true)}
         />
 
         <main class="app-main">
           <Show
-            when={viewKey()}
-            keyed
+            when={!insightsRoute()}
             fallback={
-              <div class="center-fill">
-                <Show
-                  when={!route() || !list()}
-                  fallback={
-                    <div class="empty">
-                      <p class="empty-title">Couldn't find this session.</p>
-                      <p class="empty-body">It isn't in the list of sessions on disk anymore.</p>
-                      <a class="button empty-action" href="#/">
-                        Back to Sessions
-                      </a>
-                    </div>
-                  }
-                >
-                  <div class="empty">
-                    <Icon name="chat" class="empty-mark" />
-                    <p class="empty-title">
-                      <Show when={list()} fallback="Loading sessions.">
-                        {list()!.length} sessions across {folderCount()} folders.
-                      </Show>
-                    </p>
-                    <p class="empty-body">Pick one to read it, or start a new one.</p>
-                    <button type="button" class="button empty-action" onClick={() => setCreating(true)}>
-                      <Icon name="plus" />
-                      New Session
-                    </button>
-                  </div>
-                </Show>
-              </div>
+              <InsightsView
+                usage={usage}
+                agents={agents}
+                sessions={list()}
+                now={now()}
+                focusTeam={insightsRoute()?.team ?? null}
+                titleRef={(el) => (insightsTitleEl = el)}
+              />
             }
           >
-            {(_key) => {
-              const d = decision()!;
-              const s = () => summary() ?? created.get(d.path)!;
-              const model = () => (d.mode === "chat" ? chatModel() ?? s().model : s().model);
-              const author = () => shortModel(model()) ?? "pi";
-              return (
-                <>
-                  <header class="session-head">
-                    <a class="button button-icon button-ghost app-back" href="#/" aria-label="Back to Sessions">
-                      <Icon name="chevron-left" />
-                    </a>
-                    <div class="session-head-main">
-                      <h1 class="session-head-title" tabindex="-1" ref={titleEl} title={s().title}>
-                        {s().title}
-                      </h1>
-                      <p class="session-head-meta">
-                        <span class="text-mono" title={s().cwd}>
-                          {tildePath(s().cwd, home())}
-                        </span>
-                        <Show when={model()}>
-                          <span aria-hidden="true">·</span>
-                          <span class="text-mono" title={model()!}>
-                            {shortModel(model())}
-                          </span>
+            <Show
+              when={viewKey()}
+              keyed
+              fallback={
+                <div class="center-fill">
+                  <Show
+                    when={!route() || !list()}
+                    fallback={
+                      <div class="empty">
+                        <p class="empty-title">Couldn't find this session.</p>
+                        <p class="empty-body">It isn't in the list of sessions on disk anymore.</p>
+                        <a class="button empty-action" href="#/">
+                          Back to Sessions
+                        </a>
+                      </div>
+                    }
+                  >
+                    <div class="empty">
+                      <Icon name="chat" class="empty-mark" />
+                      <p class="empty-title">
+                        <Show when={list()} fallback="Loading sessions.">
+                          {list()!.length} sessions across {folderCount()} folders.
                         </Show>
                       </p>
+                      <p class="empty-body">Pick one to read it, or start a new one.</p>
+                      <div class="cluster empty-action">
+                        <button type="button" class="button" onClick={() => setCreating(true)}>
+                          <Icon name="plus" />
+                          New Session
+                        </button>
+                        <a class="button button-ghost" href={insightsHref()}>
+                          <Icon name="gauge" />
+                          Insights
+                        </a>
+                      </div>
                     </div>
-                    <Show when={s().live}>
-                      <Chip tone="accent" live>
-                        Live
-                      </Chip>
-                    </Show>
-                    <CopyButton iconOnly label="Copy Session Path" text={() => d.path} onCopy={(t) => copyText(t, "Copied path.")} />
-                  </header>
+                  </Show>
+                </div>
+              }
+            >
+              {(_key) => {
+                const d = decision()!;
+                const s = () => summary() ?? created.get(d.path)!;
+                const model = () => (d.mode === "chat" ? chatModel() ?? s().model : s().model);
+                const author = () => shortModel(model()) ?? "pi";
 
-                  <Switch>
-                    <Match when={d.mode === "watch" && d}>
-                      {(w) => (
-                        <WatchView
-                          path={d.path}
-                          author={author()}
-                          streaming={!!s().live}
-                          stateBanner={
-                            <Switch>
-                              <Match when={w().why === "recent"}>
-                                <Banner
-                                  tone="warn"
-                                  title="Another pi process may be writing this session."
-                                  body={`${w().ageSec !== undefined ? `It changed ${w().ageSec}s ago` : "It changed"} from a process we can't identify, and no TUI claims it, so we only read it. Chatting here would put 2 writers on one file.`}
-                                  action={
-                                    <button type="button" class="button button-sm" onClick={() => openChat(true)}>
-                                      Chat Anyway
-                                    </button>
-                                  }
-                                />
-                              </Match>
-                              <Match when={!s().live && listVersion() > w().listVersion}>
-                                <Banner
-                                  tone="info"
-                                  title="The TUI closed this session."
-                                  body="You can chat in it here now."
-                                  action={
-                                    <button type="button" class="button button-sm" onClick={() => openChat(false)}>
-                                      Open for Chat
-                                    </button>
-                                  }
-                                />
-                              </Match>
-                              <Match when={true}>
-                                <Banner
-                                  tone="info"
-                                  icon="terminal"
-                                  title="Live from TUI — read only"
-                                  body={
-                                    <Show when={s().live} fallback="Open in a pi TUI. We only read this file.">
-                                      {(l) => (
-                                        <>
-                                          Open in pi (pid <span class="text-mono">{l().pid}</span>) ·{" "}
-                                          <span class="text-mono">{l().status}</span>. We only read this file.
-                                        </>
-                                      )}
-                                    </Show>
-                                  }
-                                />
-                              </Match>
-                            </Switch>
-                          }
-                          readOnly={
-                            w().why === "recent"
-                              ? { icon: "attention", text: "Read only while another process may be writing this file." }
-                              : { icon: "attention", text: "Read only while this session is open in the TUI." }
-                          }
-                        />
-                      )}
-                    </Match>
-                    <Match when={d.mode === "chat" && d}>
-                      {(c) => (
-                        <ChatView
-                          path={d.path}
-                          cwdLabel={tildePath(s().cwd, home())}
-                          author={author()}
-                          force={c().force}
-                          autofocus={c().autofocus}
-                          onModel={setChatModel}
-                          onRefused={onRefused}
-                          onSettled={refresh}
-                        />
-                      )}
-                    </Match>
-                  </Switch>
-                </>
-              );
-            }}
+                // Outline and teams of this session; reloaded (debounced) when its file changes.
+                const [insight, setInsight] = createStore<{ data: SessionInsight | null }>({ data: null });
+                const loadInsight = async () => {
+                  try {
+                    // Keyed by id so open topics stay open when a newer outline lands.
+                    setInsight("data", reconcile(await fetchSessionInsight(d.path), { key: "id" }));
+                  } catch {
+                    // Secondary to the transcript: keep the last outline, the next change retries.
+                  }
+                };
+                let insightTimer: ReturnType<typeof setTimeout> | undefined;
+                const reloadInsight = () => {
+                  clearTimeout(insightTimer);
+                  insightTimer = setTimeout(loadInsight, SESSION_INSIGHT_DEBOUNCE_MS);
+                };
+                onCleanup(() => clearTimeout(insightTimer));
+                void loadInsight();
+                const working = () => s().live?.workers?.working ?? 0;
+                /** The busiest live team: where the head chip links. */
+                const liveTeam = () =>
+                  (insight.data?.teams ?? []).filter((t) => t.live).reduce<TeamInfo | null>((b, t) => (!b || t.working > b.working ? t : b), null);
+                const team = () => insight.data?.teams[0] ?? null;
+                return (
+                  <>
+                    <header class="session-head">
+                      <a class="button button-icon button-ghost app-back" href="#/" aria-label="Back to Sessions">
+                        <Icon name="chevron-left" />
+                      </a>
+                      <div class="session-head-main">
+                        <h1 class="session-head-title" tabindex="-1" ref={titleEl} title={s().title}>
+                          {s().title}
+                        </h1>
+                        <p class="session-head-meta">
+                          <span class="text-mono" title={s().cwd}>
+                            {tildePath(s().cwd, home())}
+                          </span>
+                          {/* Chat sessions show the model as the picker trigger instead. */}
+                          <Show when={model() && d.mode !== "chat"}>
+                            <span aria-hidden="true">·</span>
+                            <span class="text-mono" title={model()!}>
+                              {shortModel(model())}
+                            </span>
+                          </Show>
+                        </p>
+                      </div>
+                      <Show when={d.mode === "chat" && modelControl()}>{(c) => <ModelMenu control={c()} />}</Show>
+                      <Show
+                        when={working() > 0}
+                        fallback={
+                          <Show when={!s().live && team()}>
+                            {(t) => <CountChip title={t().name}>Team · {t().members.length}</CountChip>}
+                          </Show>
+                        }
+                      >
+                        <Show when={liveTeam()} fallback={<CountChip title="Subagents working now">{working()} working</CountChip>}>
+                          {(t) => (
+                            <CountChip href={insightsHref(t().id)} title={t().name}>
+                              Team · {working()} working
+                            </CountChip>
+                          )}
+                        </Show>
+                      </Show>
+                      <Show when={s().live}>
+                        <Chip tone="accent" live>
+                          Live
+                        </Chip>
+                      </Show>
+                      <CopyButton iconOnly label="Copy Session Path" text={() => d.path} onCopy={(t) => copyText(t, "Copied path.")} />
+                    </header>
+                    <Show when={insight.data?.outline}>{(o) => <OutlineStrip path={d.path} outline={o()} now={now()} />}</Show>
+
+                    <Switch>
+                      <Match when={d.mode === "watch" && d}>
+                        {(w) => (
+                          <WatchView
+                            path={d.path}
+                            author={author()}
+                            streaming={!!s().live}
+                            onAppend={reloadInsight}
+                            stateBanner={
+                              <Switch>
+                                <Match when={w().why === "recent"}>
+                                  <Banner
+                                    tone="warn"
+                                    title="Another pi process may be writing this session."
+                                    body={`${w().ageSec !== undefined ? `It changed ${w().ageSec}s ago` : "It changed"} from a process we can't identify, and no TUI claims it, so we only read it. Chatting here would put 2 writers on one file.`}
+                                    action={
+                                      <button type="button" class="button button-sm" onClick={() => openChat(true)}>
+                                        Chat Anyway
+                                      </button>
+                                    }
+                                  />
+                                </Match>
+                                <Match when={!s().live && listVersion() > w().listVersion}>
+                                  <Banner
+                                    tone="info"
+                                    title="The TUI closed this session."
+                                    body="You can chat in it here now."
+                                    action={
+                                      <button type="button" class="button button-sm" onClick={() => openChat(false)}>
+                                        Open for Chat
+                                      </button>
+                                    }
+                                  />
+                                </Match>
+                                <Match when={true}>
+                                  <Banner
+                                    tone="info"
+                                    icon="terminal"
+                                    title="Live from TUI — read only"
+                                    body={
+                                      <Show when={s().live} fallback="Open in a pi TUI. We only read this file.">
+                                        {(l) => (
+                                          <>
+                                            Open in pi (pid <span class="text-mono">{l().pid}</span>) ·{" "}
+                                            <span class="text-mono">{l().status}</span>. We only read this file.
+                                          </>
+                                        )}
+                                      </Show>
+                                    }
+                                  />
+                                </Match>
+                              </Switch>
+                            }
+                            readOnly={
+                              w().why === "recent"
+                                ? { icon: "attention", text: "Read only while another process may be writing this file." }
+                                : { icon: "attention", text: "Read only while this session is open in the TUI." }
+                            }
+                          />
+                        )}
+                      </Match>
+                      <Match when={d.mode === "chat" && d}>
+                        {(c) => (
+                          <ChatView
+                            path={d.path}
+                            cwdLabel={tildePath(s().cwd, home())}
+                            author={author()}
+                            force={c().force}
+                            autofocus={c().autofocus}
+                            onModel={setChatModel}
+                            onModelControl={setModelControl}
+                            onRefused={onRefused}
+                            onSettled={() => {
+                              refresh();
+                              reloadInsight();
+                            }}
+                          />
+                        )}
+                      </Match>
+                    </Switch>
+                  </>
+                );
+              }}
+            </Show>
           </Show>
         </main>
       </div>

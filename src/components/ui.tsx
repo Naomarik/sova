@@ -69,6 +69,24 @@ export function Chip(props: {
   );
 }
 
+/** A neutral aggregate ("3 working"): no dot, no pulse. A link when `href` is set. */
+export function CountChip(props: { href?: string; title?: string; children: JSX.Element }) {
+  return (
+    <Show
+      when={props.href}
+      fallback={
+        <span class="chip chip-count" title={props.title}>
+          {props.children}
+        </span>
+      }
+    >
+      <a class="chip chip-count" href={props.href} title={props.title}>
+        {props.children}
+      </a>
+    </Show>
+  );
+}
+
 /** Copy button whose icon turns into a check for 1.5s after a successful copy. */
 export function CopyButton(props: { label: string; text: () => string; onCopy(text: string): Promise<boolean>; iconOnly?: boolean }) {
   const [copied, setCopied] = createSignal(false);

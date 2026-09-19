@@ -4,7 +4,7 @@
 # are replaced. Run it again after cloning to a new machine.
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
-agent=${PI_AGENT_DIR:-$HOME/.pi/agent}
+agent=${PI_AGENT_DIR:-${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}}
 mkdir -p "$agent/extensions"
 
 link() {

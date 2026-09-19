@@ -55,6 +55,7 @@ pi            # installs missing pinned packages on first start
 `install.sh` moves any existing regular file it would overwrite to `<name>.bak`
 and replaces existing symlinks. Nothing under `~/.pi/agent` other than the
 linked files is touched.
+It installs into `$PI_CODING_AGENT_DIR` when that is set, and `~/.pi/agent` otherwise.
 
 ## What is deliberately not here
 

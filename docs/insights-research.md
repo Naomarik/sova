@@ -11,7 +11,7 @@ session JSONL (plus a fresher outline copy in the live registry for running sess
 
 ### 1. Usage limits: `~/.pi/agent/cache/usage-status.json`
 
-Writer: `~/.pi/agent/extensions/usage-status.ts` (symlink → `~/pi-config/extensions/usage-status.ts`).
+Writer: `~/.pi/agent/extensions/usage-status.ts` (symlink → `pi-config/extensions/usage-status.ts` in this repo).
 Written atomically (tmp + `rename`), so readers never see a partial file. No secrets in it.
 Lockfile `usage-status.json.lock` beside it: ignore it.
 
@@ -46,7 +46,7 @@ Lockfile `usage-status.json.lock` beside it: ignore it.
 
 The in-memory bus event `subagents:workers-snapshot` (what `working-subagent-count.ts` counts) is
 process-local, **but** the `sessions` extension subscribes to the same bus and republishes it in its
-live record. Public, versioned contract: `~/pi-config/extensions/sessions/public/SCHEMA.md`
+live record. Public, versioned contract: `pi-config/extensions/sessions/public/SCHEMA.md`
 (+ `live-record.schema.json`, reference reader `schema.ts`). `server/live.ts` already reads these files
 for the `live` badge. One file per pi process, atomic rename, rewritten on change and every ~3–4s.
 
@@ -99,7 +99,7 @@ Teams are persisted only here (`teams.ts` `decodeTeamEntry`). No registry file, 
 
 ### 4. Session summaries: `topic-outline` custom entries (+ compaction)
 
-Writer: `~/pi-config/extensions/topic-outline/` (`state.ts`, `types.ts`). Each summarizer run appends a
+Writer: `pi-config/extensions/topic-outline/` (`state.ts`, `types.ts`). Each summarizer run appends a
 **full snapshot** (`pi.appendEntry("topic-outline", data)`, up to ~6KB/line, 18 snapshots in the boss
 session). The extension restores the **latest snapshot on the active branch**; so does the server.
 

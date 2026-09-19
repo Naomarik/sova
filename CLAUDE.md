@@ -11,11 +11,35 @@ live-watch sessions that are open in the CLI/TUI, spawn new sessions.
 - `src/` — SolidJS + TS frontend (Vite, vite-plugin-solid; HMR = live reload). Owned by **frontend**, except `src/design/`.
 - `src/design/`, `DESIGN_NOTES.md`, `public/` — design tokens, base CSS, fonts/icons, UX spec. Owned by **designer**.
 - `.claude/skills/fold-ai-dev-design/` — the design system skill (copied from foldaidev). READ IT.
+- `pi-config/` — the user's pi config and extensions (merged in from Naomarik/pi-config with history;
+  `~/pi-config` is a compat symlink to it). Shared, not owned by any team. `~/.pi/agent` symlinks into
+  this directory, so an edit here changes the user's LIVE TUI on its next `/reload`, and every
+  runtime pi-web embeds. Treat it like `shared/protocol.ts`: coordinate before changing any contract
+  pi-web parses (sessions live registry `sessions/live/*.json`, usage-status cache, subagents
+  teams/snapshots, topic-outline state, command-palette `model-favorites.json`). Not covered by
+  pi-web's tsconfig; tests run per extension (see `pi-config/README.md`). `pi-config/install.sh`
+  must stay standalone, needing nothing outside `pi-config/`.
 
 ## Commands
 
 - `npm run dev:server` (port **4800**) and `npm run dev:web` (Vite, proxies /api + /ws to 4800)
 - `npm run typecheck` — must pass. `npm run build` — must pass.
+- `pi-config/install.sh` links `pi-config/` into `~/.pi/agent`; `pi-config/install.sh --check` verifies
+  that without changing anything.
+
+## pi-config mirror
+
+The public repo github.com/Naomarik/pi-config is a `git subtree split` of `pi-config/`, so it stays
+installable without pi-web. After committing pi-config changes on `master`, refresh it with:
+
+```sh
+git subtree split --prefix=pi-config -b pi-config-mirror   # creates, or fast-forwards, the local branch
+git push git@github.com:Naomarik/pi-config.git pi-config-mirror:master
+```
+
+The split is deterministic, so later pushes fast-forward. Only the first push after the monorepo
+merge (2026-09-19) needed `--force`, because it replaced the old unprefixed public history.
+Rewriting pi-web history under `pi-config/` would change the split hashes and force another push. Keep anything the mirror needs, such as README/LICENSE/install.sh, inside `pi-config/`.
 
 ## pi SDK facts (verified against the installed package)
 
@@ -33,7 +57,7 @@ Pi package on disk: `/home/user/.local/share/mise/installs/node/25.2.1/lib/node_
   Docs: `docs/sdk.md`; examples: `examples/sdk/11-sessions.ts`, `13-session-runtime.ts`.
 - **CRITICAL: no file locking.** If a session is open in a TUI, the webapp must NEVER write to it
   (no prompt/steer). Detect via `~/.pi/agent/sessions/live/*.json`
-  (schema: `~/pi-config/extensions/sessions/README.md`). Live sessions: read-only via `/ws/watch`
+  (schema: `pi-config/extensions/sessions/public/SCHEMA.md`). Live sessions: read-only via `/ws/watch`
   (tail the JSONL with fs.watch + parse appended lines).
 - Extension dialog bridge (ExtensionUIContext) pattern: `dist/modes/rpc/rpc-mode.js` lines ~60–260.
 

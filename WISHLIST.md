@@ -10,7 +10,7 @@ worse — the TUI's agent never sees the webapp's message (context follows *its*
 the injected message dangles on a sibling branch). Hence today's read-only watch mode.
 
 **Design (proven viable on paper):** the session JSONL is a fine message bus if the TUI
-participates. A small bridge extension (`~/pi-config/extensions/`) watches its own session
+participates. A small bridge extension (`pi-config/extensions/`) watches its own session
 file for webapp-tagged entries and injects them via `pi.sendMessage`/steer into the live
 turn. Webapp gets a "Send to TUI" mode with its own chip; the write-guard gains a
 provenance-marked exception that re-reads the leaf before appending. ~150-line extension +
@@ -43,7 +43,8 @@ branch, not the file, until first append). Full analysis: `docs/tree-web-feasibi
 
 ## Ops / upstream
 
-- **Merge `fix/steer-delivery-timeout`** (pi-config) — the ag_05-killer fix, verified.
+- **Merge `fix/steer-delivery-timeout`** (pi-config; now a pi-web branch touching only
+  `pi-config/`) — the ag_05-killer fix, verified.
   Takes effect on next pi restart.
 - **Upstreamable to Claude Code:** document `command_lifecycle` as the message-receipt
   channel; document CLI self-started turns after background tasks in stream-json mode;

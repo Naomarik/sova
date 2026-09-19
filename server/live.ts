@@ -30,7 +30,7 @@ const count = (v: unknown) => (typeof v === "number" && Number.isInteger(v) && v
 
 /**
  * All live files (~/.pi/agent/sessions/live/*.json) with an alive pid, read fresh from disk.
- * Contract: ~/pi-config/extensions/sessions/public/SCHEMA.md. Read-only: never delete or
+ * Contract: pi-config/extensions/sessions/public/SCHEMA.md. Read-only: never delete or
  * rewrite anything there, not even dead records (pi writers clean those up).
  */
 export function readLiveRecords(opts: { includeOwn?: boolean } = {}): RawLiveRecord[] {

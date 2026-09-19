@@ -5,6 +5,7 @@ import { prettyJson, stampTime, thousands, tildePath } from "../lib/format";
 import { isObj, str, timestampOf, toolCallArgs, toolResultView } from "../lib/message";
 import { home } from "../lib/ui-state";
 import { ImageStrip } from "./ImageStrip";
+import { Markdown } from "./Markdown";
 import { ToolCard, type ToolStatus } from "./ToolCard";
 import { Banner, Icon } from "./ui";
 
@@ -52,7 +53,7 @@ function AssistantText(props: { text: string; author: string; time?: string; str
           <Stamp iso={props.time} />
         </div>
       </Show>
-      <div class="message-body message-text">{props.text}</div>
+      <Markdown text={props.text} streaming={props.streaming} />
     </article>
   );
 }

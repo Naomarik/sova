@@ -287,6 +287,14 @@ Guarantees, enforced by `team-widget.test.ts`:
 - Pruned members render as `unavailable (pruned, last done/success)`; history
   teams collapse to one row (`N members — workers stopped with their session
   (history only, never live)`) instead of enumerating dead workers.
+- Torn-down members leave the widget: a `stopped` (killed) member, or one
+  pruned with last status `killed`, gets no row and no header count, and a
+  session team whose members are all torn down disappears entirely (the widget
+  is removed if nothing else remains). This covers every teardown path
+  (`agent_kill` of a run, group or member, and `/team` stop). A crashed worker
+  is `failed`, not torn down, and stays visible, as do `stopping` members until
+  their process closes. `team_list` and `/team` still report stopped members
+  and torn-down teams.
 - The widget owns **no timers or polling**: the host pushes fresh snapshots
   through the existing 100ms-throttled refresh, and removes the widget when no
   teams remain and on shutdown.

@@ -293,7 +293,8 @@ background workers with one unique role each, declared advisory ownership, and a
 workspace. Use `team_create` / `team_add` / `team_list` for model-facing coordination;
 open `/team` for a roster/member activity view, direct follow-up or redirect editors,
 exact-member stop (`x`, then `x` again), and the monitor's `o` code-fold toggle. A compact status widget appears above the
-parent editor while any team exists.
+parent editor while any team has a member that has not been stopped (killed members drop out of it;
+`team_list` and `/team` keep them).
 
 Teams reuse `agent_spawn`'s caps, validation, rollback, permission prompts, wake
 behavior, retention, and shutdown. There is no separate process manager, and

@@ -16,6 +16,9 @@
  * - member states arrive failure-aware from TeamStore; unavailable members
  *   name their reason (pruned vs previous session) and last known status
  * - the legend line keeps session scope and advisory ownership on screen
+ * - torn-down members (killed, before or after retention pruning) leave the
+ *   widget immediately and a fully torn-down team vanishes; team_list and the
+ *   /team workspace keep them as history (see `visibleTeams`)
  *
  * Batch 3a owns this file and its test; batch 3b wires it into index.ts
  * (`refresh()` → `handle.update(teamViews())`, shutdown → `handle.clear()`).
@@ -108,6 +111,42 @@ const bounded = (value: number | undefined, fallback: number): number =>
 const noun = (n: number, one: string): string => (n === 1 ? one : `${one}s`);
 
 /**
+ * A member the operator/parent deliberately tore down: `stopped` (runner
+ * status `killed`) while retained, or pruned with last known status `killed`.
+ * Crashed workers are `failed`, not torn down, and stay visible; `stopping`
+ * stays visible until the process is really gone.
+ */
+export function isTornDown(member: TeamMemberView): boolean {
+	return member.state === "stopped" || (member.availability === "pruned" && member.status === "killed");
+}
+
+/**
+ * The widget is an always-on "what is live" surface, so it drops torn-down
+ * members from rows and header counts, and drops a session team entirely once
+ * every member is torn down (whichever path got there: agent_kill of a run,
+ * group or single member, or /team stop). Partially torn-down teams keep
+ * their other rows. Store views are untouched: team_list and /team still
+ * report stopped members and torn-down teams as history. History teams and
+ * teams with no members yet pass through unchanged.
+ */
+export function visibleTeams(teams: readonly TeamView[]): TeamView[] {
+	const visible: TeamView[] = [];
+	for (const team of teams) {
+		if (team.origin === "history" || !team.members.some(isTornDown)) {
+			visible.push(team);
+			continue;
+		}
+		const members = team.members.filter((member) => !isTornDown(member));
+		if (members.length === 0) continue;
+		const counts = { ...team.counts };
+		for (const member of team.members)
+			if (isTornDown(member)) counts[member.state] = Math.max(0, (counts[member.state] ?? 0) - 1);
+		visible.push({ ...team, members, counts });
+	}
+	return visible;
+}
+
+/**
  * The setWidget component. `update()` replaces the data wholesale; `render`
  * caches per width until the next update/invalidate. There is intentionally
  * no `handleInput`: keyboard control belongs to the /team workspace.
@@ -132,7 +171,7 @@ export class TeamWidget {
 	 * widget treats them as read-only and never observes them itself.
 	 */
 	update(teams: readonly TeamView[]): void {
-		this.teams = teams;
+		this.teams = visibleTeams(teams);
 		this.cache = undefined;
 	}
 
@@ -238,7 +277,7 @@ export interface TeamWidgetAttachOptions extends TeamWidgetOptions {
 }
 
 export interface TeamWidgetHandle {
-	/** Push fresh detached views; pass [] (or call clear()) to remove the widget. */
+	/** Push fresh detached views; [] or only torn-down teams (or clear()) removes the widget. */
 	update(teams: readonly TeamView[]): void;
 	/** Remove the widget now (no live members left, session shutdown). */
 	clear(): void;
@@ -270,12 +309,14 @@ export function attachTeamWidget(ui: TeamWidgetUi, options: TeamWidgetAttachOpti
 	};
 	const handle: TeamWidgetHandle = {
 		update(teams) {
-			current = teams;
-			if (teams.length === 0) {
+			// Filter before the emptiness check so a fully torn-down roster
+			// removes the widget key instead of leaving an empty component.
+			current = visibleTeams(teams);
+			if (current.length === 0) {
 				handle.clear();
 				return;
 			}
-			if (installed) component?.update(teams);
+			if (installed) component?.update(current);
 			else {
 				installed = true;
 				install();

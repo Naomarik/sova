@@ -17,9 +17,10 @@ import {
 	TEAM_WIDGET_LEGEND,
 	TeamWidget,
 	attachTeamWidget,
+	visibleTeams,
 	type TeamWidgetUi,
 } from "./team-widget.ts";
-import type { MemberState, TeamMemberView, TeamView } from "./teams.ts";
+import { TeamStore, memberState, type MemberState, type TeamMemberView, type TeamView, type WorkerObservation } from "./teams.ts";
 
 // ── fakes ─────────────────────────────────────────────────────────────────
 
@@ -194,9 +195,10 @@ test("state dots match the /agents monitor vocabulary", () => {
 		["failed", "✗"],
 		["done", "✓"],
 		["stopping", "◌"],
-		["stopped", "⊘"],
 		["unavailable", "○"],
 	];
+	// `stopped` (⊘) keeps its mark but a torn-down member never gets a row;
+	// see the teardown tests below.
 	for (const [state, dot] of cases) {
 		const widget = new TeamWidget(plainTheme);
 		widget.update([team({ members: [member({ state }), ] })]);
@@ -261,6 +263,120 @@ test("history teams collapse to one row and never enumerate dead workers", () =>
 	assert.match(lines[0], /◆ Old \(team_02\) \[history\] · 3 unavailable/);
 	assert.match(lines[1], /3 members — workers stopped with their session \(history only, never live\)/);
 	assert.ok(!lines.some((line) => line.includes("ghost")), "history members are not enumerated");
+});
+
+// ── teardown: torn-down members and teams leave the widget ──────────────────
+
+const killedView = (partial: Partial<TeamMemberView> = {}) =>
+	member({ state: "stopped", status: "killed", taskOutcome: "aborted", processAlive: false, error: "User requested teardown of team", ...partial });
+const countsOf = (members: TeamMemberView[]): Record<MemberState, number> => {
+	const counts: Record<MemberState, number> = { working: 0, idle: 0, failed: 0, done: 0, stopping: 0, stopped: 0, unavailable: 0 };
+	for (const m of members) counts[m.state]++;
+	return counts;
+};
+
+test("a fully torn-down team vanishes from the widget: no header, no member rows", () => {
+	const members = [
+		killedView({ role: "coordinator", backend: "claude-code" }),
+		killedView({ role: "sender" }),
+		// Killed and then evicted by retention: still torn down, never resurfaces as pruned.
+		killedView({ role: "echo", available: false, availability: "pruned", state: "unavailable" }),
+	];
+	const gone = team({ id: "team_01", name: "claude-comms-e2e", members, counts: countsOf(members) });
+	const live = team({ id: "team_02", name: "Other", members: [member({ role: "builder" })], counts: countsOf([member()]) });
+	const widget = new TeamWidget(plainTheme);
+	widget.update([gone, live]);
+	const lines = widget.render(200).map((line) => line.replace(/ +$/g, ""));
+	for (const trace of ["claude-comms-e2e", "team_01", "coordinator", "sender", "echo", "stopped", "teardown", "⊘"])
+		assert.ok(!lines.some((line) => line.includes(trace)), `no trace of the torn-down team: ${trace}`);
+	assert.match(lines[0], /◆ Other \(team_02\) · 1 working/);
+	assert.ok(!lines.some((line) => line.includes("more team")), "a hidden team never counts as overflow");
+
+	// Alone, it renders nothing at all.
+	widget.update([gone]);
+	assert.deepEqual(widget.render(120), []);
+});
+
+test("partially torn-down teams keep live rows and drop stopped rows and counts", () => {
+	const members = [
+		member({ role: "builder", state: "working" }),
+		killedView({ role: "sender" }),
+		member({ role: "reviewer", state: "idle", status: "waiting", taskOutcome: "success" }),
+		member({ role: "stopper", state: "stopping", status: "stopping", taskOutcome: "aborted" }),
+	];
+	const widget = new TeamWidget(plainTheme);
+	widget.update([team({ name: "Ops", members, counts: countsOf(members) })]);
+	const lines = widget.render(200).map((line) => line.replace(/ +$/g, ""));
+	assert.equal(lines[0], "◆ Ops (team_01) · 1 working · 1 idle · 1 stopping", "header counts exclude the torn-down member");
+	assert.deepEqual(
+		lines.slice(1, -1).map((line) => /^\s*\S+ (\S+)/.exec(line)![1]),
+		["builder", "reviewer", "stopper"],
+		"stopping stays visible until the process is really gone",
+	);
+	assert.ok(!lines.some((line) => line.includes("sender") || line.includes("teardown")));
+});
+
+test("idle-success, failed (crashed) and done teams still render in full", () => {
+	const members = [
+		member({ role: "coder", state: "working" }),
+		member({ role: "helper", state: "idle", status: "waiting", taskOutcome: "success" }),
+	];
+	const crashed = [member({ role: "dead", state: "failed", status: "error", processAlive: false, error: "pi exited with code 1" })];
+	const done = [member({ role: "finisher", state: "done", status: "done", taskOutcome: "success", processAlive: false })];
+	const pruned = [member({ role: "old", state: "unavailable", available: false, availability: "pruned", status: "done" })];
+	const views = [
+		team({ id: "team_01", name: "A", members, counts: countsOf(members) }),
+		team({ id: "team_02", name: "B", members: crashed, counts: countsOf(crashed) }),
+		team({ id: "team_03", name: "C", members: done, counts: countsOf(done) }),
+		team({ id: "team_04", name: "D", members: pruned, counts: countsOf(pruned) }),
+	];
+	assert.deepEqual(visibleTeams(views), views, "nothing torn down: views pass through unchanged");
+	const widget = new TeamWidget(plainTheme, { maxTeams: 4 });
+	widget.update(views);
+	const lines = widget.render(200).map((line) => line.replace(/ +$/g, ""));
+	assert.ok(lines.includes("◆ A (team_01) · 1 working · 1 idle"));
+	assert.ok(lines.some((line) => /◐ helper .* · idle$/.test(line)));
+	assert.ok(lines.some((line) => /✗ dead .*failed · error: pi exited with code 1/.test(line)), "worker death is failure, not teardown");
+	assert.ok(lines.some((line) => /✓ finisher /.test(line)));
+	assert.ok(lines.some((line) => /○ old .*pruned, last done/.test(line)));
+});
+
+test("attachTeamWidget removes the widget key once every team is torn down", () => {
+	const ui = new FakeUi();
+	const handle = attachTeamWidget(ui);
+	const live = [member({ role: "a" }), member({ role: "b" })];
+	handle.update([team({ members: live, counts: countsOf(live) })]);
+	assert.equal(typeof ui.calls.at(-1)!.content, "function");
+	const killed = [killedView({ role: "a" }), killedView({ role: "b" })];
+	handle.update([team({ members: killed, counts: countsOf(killed) })]);
+	assert.equal(ui.calls.at(-1)!.content, undefined, "torn-down roster clears the widget key");
+	assert.equal(handle.component(), undefined);
+	const calls = ui.calls.length;
+	handle.update([team({ members: killed, counts: countsOf(killed) })]);
+	assert.equal(ui.calls.length, calls, "repeated torn-down updates stay invisible");
+});
+
+test("store views keep torn-down teams for team_list and /team; only the widget hides them", () => {
+	const store = new TeamStore();
+	const prepared = store.prepareCreate({ name: "comms", objective: "obj", members: [{ role: "lead", prompt: "t" }, { role: "dev", prompt: "t" }] });
+	store.commitCreate(prepared, 1, prepared.members.map((m, i) => ({
+		workerId: `ag_0${i + 1}`, role: m.role, ownedPaths: m.ownedPaths, backend: "pi", groupId: "run_01", addedAt: 1,
+	})));
+	prepared.release();
+	const killed: WorkerObservation = { status: "killed", taskOutcome: "aborted", error: "killed by user", processAlive: false, settled: true, finished: true };
+	assert.equal(memberState(killed), "stopped");
+	// ag_01 still retained as killed; ag_02 killed then evicted by retention.
+	store.recordEviction("ag_02", { status: "killed", taskOutcome: "aborted", error: "killed by user" });
+	const views = store.views((id) => (id === "ag_01" ? killed : undefined));
+	assert.equal(views.length, 1, "the store still reports the torn-down team");
+	assert.deepEqual(views[0].members.map((m) => [m.state, m.availability, m.status]), [
+		["stopped", "retained", "killed"],
+		["unavailable", "pruned", "killed"],
+	]);
+	assert.equal(views[0].counts.stopped, 1);
+	assert.equal(views[0].counts.unavailable, 1);
+	assert.deepEqual(visibleTeams(views), [], "the widget hides it");
+	assert.equal(views[0].members.length, 2, "filtering never mutates store views");
 });
 
 // ── bounds ──────────────────────────────────────────────────────────────────

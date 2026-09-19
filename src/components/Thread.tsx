@@ -3,6 +3,7 @@ import type { TranscriptItem } from "../../shared/protocol";
 import type { LiveBlock, LiveEntry, LiveState } from "../lib/live";
 import { prettyJson, stampTime } from "../lib/format";
 import { isObj, str, timestampOf, toolCallArgs, toolResultView } from "../lib/message";
+import { ImageStrip } from "./ImageStrip";
 import { ToolCard, type ToolStatus } from "./ToolCard";
 import { Banner, Icon } from "./ui";
 
@@ -16,7 +17,7 @@ function Stamp(props: { iso?: string }) {
   );
 }
 
-function UserTurn(props: { text: string; time?: string; pending?: boolean }) {
+function UserTurn(props: { text: string; time?: string; pending?: boolean; images?: string[] }) {
   return (
     <article class="message message-user" aria-label={props.time ? `You, ${stampTime(props.time)}` : "You"}>
       <div class="message-head">
@@ -26,7 +27,10 @@ function UserTurn(props: { text: string; time?: string; pending?: boolean }) {
           <span>Sending…</span>
         </Show>
       </div>
-      <div class="message-body message-text">{props.text}</div>
+      <Show when={props.text}>
+        <div class="message-body message-text">{props.text}</div>
+      </Show>
+      <ImageStrip images={props.images} where="in your message" />
     </article>
   );
 }
@@ -140,7 +144,7 @@ export function HistoryItems(props: { items: TranscriptItem[]; author: string; s
       {(item, index) => (
         <Switch fallback={<Unknown raw={item.raw} />}>
           <Match when={item.kind === "user"}>
-            <UserTurn text={item.text ?? ""} time={timestampOf(item.raw)} />
+            <UserTurn text={item.text ?? ""} time={timestampOf(item.raw)} images={item.images} />
           </Match>
           <Match when={item.kind === "assistant-text"}>
             <AssistantText
@@ -173,6 +177,7 @@ export function HistoryItems(props: { items: TranscriptItem[]; author: string; s
                   args={toolCallArgs(item.raw, item.toolCallId)}
                   status={status()}
                   output={view()?.output}
+                  images={item.toolCallId ? results().get(item.toolCallId)?.images : undefined}
                 />
               );
             })()}
@@ -182,7 +187,9 @@ export function HistoryItems(props: { items: TranscriptItem[]; author: string; s
             <Show when={!item.toolCallId || !calls().has(item.toolCallId)}>
               {(() => {
                 const view = toolResultView(item.raw, item.text);
-                return <ToolCard name="result" args={undefined} status={view.isError ? "error" : "done"} output={view.output} />;
+                return (
+                  <ToolCard name="result" args={undefined} status={view.isError ? "error" : "done"} output={view.output} images={item.images} />
+                );
               })()}
             </Show>
           </Match>
@@ -214,7 +221,14 @@ function LiveBlockView(props: { block: LiveBlock; live: LiveState; author: strin
             return props.live.running ? "running" : "none";
           };
           return (
-            <ToolCard name={b().name} args={b().args ?? tool()?.args} argsText={b().argsText} status={status()} output={tool()?.output} />
+            <ToolCard
+              name={b().name}
+              args={b().args ?? tool()?.args}
+              argsText={b().argsText}
+              status={status()}
+              output={tool()?.output}
+              images={tool()?.images}
+            />
           );
         }}
       </Match>
@@ -229,7 +243,7 @@ export function LiveEntries(props: { live: LiveState; author: string }) {
       {(entry: LiveEntry) => (
         <Switch>
           <Match when={entry.kind === "user" && entry}>
-            {(e) => <UserTurn text={e().text} pending={!e().confirmed} />}
+            {(e) => <UserTurn text={e().text} pending={!e().confirmed} images={e().images} />}
           </Match>
           <Match when={entry.kind === "assistant" && entry}>
             {(e) => (

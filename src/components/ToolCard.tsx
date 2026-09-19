@@ -2,6 +2,7 @@ import { createSignal, Match, Show, Switch } from "solid-js";
 import { argsSummary } from "../lib/message";
 import { prettyJson } from "../lib/format";
 import { copyText } from "../lib/ui-state";
+import { ImageStrip } from "./ImageStrip";
 import { Chip, CopyButton, Icon, type IconName } from "./ui";
 
 /** "none": no result and nothing is streaming, so none is coming. */
@@ -25,6 +26,7 @@ export function ToolCard(props: {
   argsText?: string;
   status: ToolStatus;
   output?: string;
+  images?: string[];
 }) {
   const [showAll, setShowAll] = createSignal(false);
   const hasArgs = () => props.args !== undefined || !!props.argsText;
@@ -42,6 +44,13 @@ export function ToolCard(props: {
         <span class="toolcard-arg" title={summary()}>
           {summary()}
         </span>
+        <Show when={props.images && props.images.length > 0}>
+          <span class="toolcard-images" title={`${props.images!.length} ${props.images!.length === 1 ? "image" : "images"}`}>
+            <Icon name="image" small />
+            {props.images!.length}
+            <span class="visually-hidden">{props.images!.length === 1 ? "image" : "images"}</span>
+          </span>
+        </Show>
         <Switch>
           <Match when={props.status === "running"}>
             <Chip tone="accent" live>
@@ -80,6 +89,12 @@ export function ToolCard(props: {
                 Show All {lines().length.toLocaleString("en-US")} Lines
               </button>
             </Show>
+          </div>
+        </Show>
+        <Show when={props.images && props.images.length > 0}>
+          <div class="toolcard-section">
+            <div class="toolcard-section-label">Images · {props.images!.length}</div>
+            <ImageStrip images={props.images} where={`from tool result ${props.name}`} />
           </div>
         </Show>
       </div>

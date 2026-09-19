@@ -32,9 +32,15 @@ stylesheets — no component library.
 | Info / unknown row | `.info-row` `.info-row-text` |
 | Banner | `.banner` `.banner-info` `.banner-warn` `.banner-error` `.banner-success` `.banner-icon` `.banner-main` `.banner-title` `.banner-body` `.banner-action` |
 | Streaming | `.live-dot` `.run-status` `.run-status-detail` `.jump-latest` |
-| Composer | `.composer` `.composer-inner` `.composer-row` `.composer-input` (with `.input.textarea`) `.composer-actions` `.composer-foot` `.composer-reason` `.composer-hint` |
+| Composer | `.composer` `.composer-inner` `.composer-row` `.composer-input` (with `.input.textarea`) `.composer-actions` `.composer-foot` `.composer-reason` `.composer-hint` `.button-label` `.composer-drop` + `.composer[data-drop="active\|reject"]` |
+| Model menu (§4c) | `.model-trigger` `.model-trigger-label` `.model-menu[popover]` `.model-menu-search` `.model-menu-list` `.model-menu-group` `.model-option` `[data-active]` `.model-option-check` `.model-option-id` `.model-option-provider` `.model-menu-empty` `.model-menu-foot` |
+| Images (§4b) | `.message-images` `.message-images-single` `.thumb` `.toolcard-images` · lightbox: `dialog.lightbox` `.lightbox-bar` `.lightbox-caption` `.lightbox-count` `.lightbox-stage` `.lightbox-img` `.lightbox-prev` `.lightbox-next` · attachments: `.attachments` `.attachment` `.attachment-rejected` `.attachment-thumb` `.attachment-icon` `.attachment-text` `.attachment-name` `.attachment-meta` |
 | Empty / loading | `.empty` `.empty-mark` `.empty-title` `.empty-body` `.empty-action` · `.skeleton` `.skeleton-line` `.skeleton-title` `.skeleton-row` |
 | Toast | `.toast-stack` `.toast` `.toast-body` |
+| Usage meter (§10) | `.usage-card` `.usage-note` · `.meter` `.meter-head` `.meter-label` `.meter-value` `.meter-of` `.meter-track` `.meter-fill` `.meter-fill-warn` `.meter-fill-error` `.meter-context` `.meter-ghost` |
+| Teams / subagents (§10) | `.team-card` `.team-objective` `.agent-card` `.member-list` `.member-row` `.member-preview` |
+| Outline strip (§10) | `details.outline` `.outline-summary` `.outline-label` `.outline-now` `.outline-count` `.outline-body` `.outline-overall` `.outline-state` `.outline-topics` `details.outline-topic` `.outline-topic-summary` `.outline-topic-heading` `.outline-hash` `.outline-topic-time` `.outline-bullets` `.outline-jump` |
+| Compaction row (§10) | `details.disclosure.compaction` `.compaction-summary` `.compaction-files` |
 | Utilities | `.stack` `.stack-2` `.cluster` `.spread` `.truncate` `.measure` `.visually-hidden` `.text-mono` `.text-caption` `.text-muted` `.text-error` `.text-eyebrow` `.text-num` |
 
 **All user-facing strings are in §9 · Copy deck.**
@@ -82,12 +88,13 @@ and `fill="none" stroke="currentColor"`.
 | `close.svg` | Clear search, close dialog |
 | `chevron-left.svg` | Back to list (folded width only) |
 | `chevron-right.svg` | Disclosure twist (rotates 90° when open) |
-| `chevron-down.svg` | Jump to Latest |
+| `chevron-down.svg` | Jump to Latest, the model trigger |
 | `terminal.svg` | Live-from-TUI banner, and the tool card for `bash` |
 | `file.svg` | Tool card for `read` / `write` / `edit` |
 | `more.svg` | Tool card for any other tool |
 | `copy.svg` | Copy Session Path, Copy Output |
-| `check.svg` | The copy button's icon for 1.5s after a copy |
+| `chevron-left.svg` / `chevron-right.svg` | Also: lightbox Previous Image / Next Image |
+| `check.svg` | The copy button's icon for 1.5s after a copy; the current-model mark |
 | `folder.svg` | Folder picker rows, cwd group label |
 | `info.svg` | Info rows, info banners |
 | `alert-circle.svg` | Error banners, warn banners |
@@ -97,6 +104,8 @@ and `fill="none" stroke="currentColor"`.
 | `arrow-right.svg` | Send |
 | `pause.svg` | Stop Turn |
 | `chat.svg` | Empty-state mark (no session selected) |
+| `attach.svg` | Attach Images (composer). New, drawn on the system grid |
+| `image.svg` | Tool-card image count, drop overlay. New, drawn on the system grid |
 | `check-circle.svg`, `x-circle.svg`, `external.svg`, `menu.svg`, `branch.svg` | Reserved. Shipped but unused in the MVP |
 
 `/favicon.svg` is the mark on dark paper. Link it from `index.html`:
@@ -436,6 +445,8 @@ word never does.
 - **Head title.** Uses `.session-head-title`, a single line with the full text in `title`. The
   `h1` is sized as a heading-s on purpose: the page is dense and the title is chrome, not a
   display headline.
+- **Model.** In chat sessions the model moves out of `.session-head-meta` into the model
+  trigger (§4c), placed before Copy Session Path. Watch sessions keep it in the meta line.
 - **Copy Session Path.** Copies `path`. Its icon swaps to `check` for 1.5s and a toast says
   "Copied path." Nothing else changes.
 
@@ -671,19 +682,36 @@ Driven by `ChatServerMessage.event`.
 ### Anatomy
 
 ```html
-<footer class="composer">
+<footer class="composer" data-drop="active|reject (only while dragging over it)">
+  <!-- drag-over overlay; see §4b -->
+  <div class="composer-drop" aria-hidden="true">
+    <span class="icon" style="--icon: url(/icons/image.svg)"></span><span>Drop images to attach</span>
+  </div>
   <form class="composer-inner" aria-label="Message the agent">
     <!-- while streaming only -->
     <p class="run-status"><span class="live-dot"></span>Working<span class="run-status-detail">· running bash</span></p>
 
+    <!-- pending attachments; omit the <ul> when there are none; see §4b -->
+    <ul class="attachments" aria-label="Attachments">…</ul>
+
     <div class="composer-row">
+      <button class="button button-icon button-ghost" type="button" aria-label="Attach Images"
+              aria-describedby="composer-reason">
+        <span class="icon" style="--icon: url(/icons/attach.svg)" aria-hidden="true"></span>
+      </button>
+      <input class="visually-hidden" type="file" multiple tabindex="-1" aria-hidden="true"
+             accept="image/png,image/jpeg,image/gif,image/webp">
       <label class="visually-hidden" for="composer-input">Message</label>
       <textarea class="input textarea composer-input" id="composer-input" rows="1"
                 placeholder="Ask pi to…" aria-describedby="composer-reason"></textarea>
       <div class="composer-actions">
         <!-- streaming only; kept apart from Send by the gap -->
-        <button class="button button-destructive" type="button">…pause… Stop Turn</button>
-        <button class="button button-primary" type="submit">…arrow-right… Send</button>
+        <button class="button button-destructive" type="button">
+          <span class="icon" style="--icon: url(/icons/pause.svg)" aria-hidden="true"></span><span class="button-label">Stop Turn</span>
+        </button>
+        <button class="button button-primary" type="submit">
+          <span class="icon" style="--icon: url(/icons/arrow-right.svg)" aria-hidden="true"></span><span class="button-label">Send</span>
+        </button>
       </div>
     </div>
 
@@ -728,6 +756,7 @@ the skill's copy ladder.
 | Session is live in a TUI | `disabled` | Send hidden | `attention` — "Read only while this session is open in the TUI." |
 | Chat socket connecting (first connect) | enabled (typing is fine) | Send `aria-disabled` | `clock` — "Connecting…" |
 | Chat socket dropped | enabled | Send `aria-disabled` | `clock` — "Reconnecting. Your draft is kept." |
+| Model switch pending (§4c) | enabled | Send `aria-disabled` until `{type:"model"}` or an error | `clock` — "Switching model…" |
 | Server `error` with `code:"busy"` | enabled | Send `aria-disabled` until the next `agent_settled` | `attention` — "pi is busy with another turn. Send when it finishes." |
 
 Use `aria-disabled="true"` rather than `disabled` on buttons whose reason matters. That keeps them
@@ -754,6 +783,466 @@ min, `--r-md`, `--color-border-strong` border, and an accent focus border. Send 
 - **Stop Turn placement.** It sits to the left of Send with an `--space-2` gap, which keeps
   destructive away from the primary as far as a two-button row allows. It's the only time the two
   appear together.
+
+---
+
+## 4b · Images
+
+Images show up in three places. A **user row** and a **tool-result row** can each carry images
+(`TranscriptItem.images`, as data URLs). The **composer** can attach images to a prompt or a
+steer (`OutboundImage[]`).
+
+### Thread thumbnails
+
+On a **user row**, the images go under the head, right-aligned, and *above* the text bubble
+(the images are what the text talks about). If the row has no text, leave out
+`.message-body` entirely rather than render an empty bubble.
+
+```html
+<article class="message message-user" aria-label="You, 14:06">
+  <div class="message-head"><span class="message-author">You</span><span class="message-time">14:06</span></div>
+  <!-- add message-images-single when there is exactly 1 image -->
+  <ul class="message-images" aria-label="2 images">
+    <li>
+      <button class="thumb" type="button" aria-haspopup="dialog">
+        <img src="data:image/png;base64,…" alt="Image 1 of 2 in your message" loading="lazy" decoding="async">
+      </button>
+    </li>
+    <li>
+      <button class="thumb" type="button" aria-haspopup="dialog">
+        <img src="data:image/png;base64,…" alt="Image 2 of 2 in your message" loading="lazy" decoding="async">
+      </button>
+    </li>
+  </ul>
+  <div class="message-body message-text">{text}</div>
+</article>
+```
+
+- **Sizing.**
+  - **1 image** (`.message-images.message-images-single`): it keeps its own shape, fitted
+    inside 320 × 240 (`object-fit: contain`) and never wider than the column.
+  - **2 or more:** 96 × 96 square tiles (`object-fit: cover`), with an `--space-2` gap. They
+    wrap as needed: 2 tiles fit in one row at 320px.
+- **Surface.** `--r-md` (one step under the bubble's `--r-lg`), a 1px `--color-border` edge,
+  and `--color-sunken` behind transparent pixels. On hover the border turns
+  `--color-border-strong`. Focus shows the standard ring. The cursor is `zoom-in`.
+
+On a **tool-result row**, the images go in the tool card, as a section after Output. The
+collapsed summary shows a count so the images aren't hidden.
+
+```html
+<summary class="toolcard-summary">
+  …twist, icon, name, arg…
+  <span class="toolcard-images" title="2 images">
+    <span class="icon icon-sm" style="--icon: url(/icons/image.svg)" aria-hidden="true"></span>2
+    <span class="visually-hidden">images</span>
+  </span>
+  <span class="chip chip-success"><i class="chip-dot"></i>Done</span>
+</summary>
+<div class="toolcard-body">
+  …Arguments, Output…
+  <div class="toolcard-section">
+    <div class="toolcard-section-label">Images · 2</div>
+    <ul class="message-images" aria-label="2 images">
+      <li><button class="thumb" type="button" aria-haspopup="dialog">
+        <img src="data:image/png;base64,…" alt="Image 1 of 2 from tool result read" loading="lazy" decoding="async">
+      </button></li>
+      …
+    </ul>
+  </div>
+</div>
+```
+
+**Alt text.** It's built from context, because pi stores no captions.
+
+| Where | 1 image | n images |
+|---|---|---|
+| User row | Image in your message | Image {i} of {n} in your message |
+| Tool result | Image from tool result {toolName} | Image {i} of {n} from tool result {toolName} |
+| Pending attachment (composer) | attachment | attachment |
+
+`{toolName}` is the paired tool-call's name (`read`, `bash`, and so on). Without a pairing it's
+"result". The thumbnail button needs no `aria-label`, because its name comes from the image's
+alt. `aria-haspopup="dialog"` tells AT that it opens something.
+
+### Lightbox
+
+**There is a lightbox.** Clicking or pressing Enter/Space on a `.thumb` opens that image full
+size. It's one native `<dialog>`, opened with `showModal()`. That puts it in the top layer (it
+isn't trapped by a `.pane`, and it needs no Portal), makes the page behind it inert, and gives
+Esc for free. It fades in once with `--dur-base`; nothing loops, so the animation budget is
+untouched.
+
+```html
+<dialog class="lightbox" aria-labelledby="lightbox-caption">
+  <div class="lightbox-bar">
+    <p class="lightbox-caption" id="lightbox-caption">Image 1 of 2 in your message</p>
+    <span class="lightbox-count" aria-hidden="true">1 / 2</span>   <!-- only when n > 1 -->
+    <button class="button button-icon button-ghost" type="button" aria-label="Close Image" autofocus>
+      <span class="icon" style="--icon: url(/icons/close.svg)" aria-hidden="true"></span>
+    </button>
+  </div>
+  <div class="lightbox-stage">                       <!-- a click here, outside the img, closes -->
+    <img class="lightbox-img" src="data:image/png;base64,…" alt="Image 1 of 2 in your message">
+    <!-- only when n > 1 -->
+    <button class="button button-icon lightbox-prev" type="button" aria-label="Previous Image">
+      <span class="icon" style="--icon: url(/icons/chevron-left.svg)" aria-hidden="true"></span>
+    </button>
+    <button class="button button-icon lightbox-next" type="button" aria-label="Next Image">
+      <span class="icon" style="--icon: url(/icons/chevron-right.svg)" aria-hidden="true"></span>
+    </button>
+  </div>
+</dialog>
+```
+
+- **Scope.** The lightbox steps through the images of *one row* (one message, or one tool
+  result), never the whole transcript.
+- **Caption.** The caption is the image's alt, so the label, caption, and alt all say the same
+  thing.
+- **Keys.**
+  - `Esc` closes it (native `cancel`).
+  - `ArrowLeft` / `ArrowRight` step through the images, and wrap at the ends.
+  - `Tab` cycles between Close, Previous, and Next.
+- **Dismissing.** Any of these closes it:
+  - `Esc`;
+  - the Close Image button;
+  - a click on the backdrop or on the empty stage (`event.target === dialog` or
+    `event.target.classList.contains("lightbox-stage")`).
+
+  A click *on* the image does nothing.
+- **Focus.** On open, focus goes to Close Image (`autofocus`). On close, move focus back to the
+  `.thumb` that opened it: store the element before `showModal()` and call `.focus()` on
+  `close`. Don't rely on the browser to do this.
+- **Layout.**
+  - The image is fitted to the viewport under the 56px bar, with `--space-4` around it and
+    `--space-8` side room for the arrows.
+  - Under 768px the arrows move to the bottom corners, inside the thumb arc, and the image makes
+    room above them.
+- **Tokens.** The dialog is opaque `--color-bg` (full-bleed), with `::backdrop` `--scrim`
+  underneath. Bar `--color-surface` with `--color-border`. Image on
+  `--color-surface`, with `--r-sm` and `--shadow-3`. Arrows are `.button-icon` on surface with
+  the 3:1 `--color-border-strong` edge, so they read against the scrim.
+
+### Composer attachments
+
+There are three ways in, and all three feed the same pending list.
+
+1. **Paste**, the CLI flow. In the textarea's `paste` handler, take every `File` in
+   `clipboardData.files` whose type is an image and attach it. Call `preventDefault()` only if
+   the clipboard has no `text/plain`. A paste that carries both text and an image, such as
+   copying from a web page, keeps its text and attaches the image. A pasted screenshot has no
+   useful name, so it shows as "Pasted image".
+2. **Drag and drop** onto the composer. The whole `.composer` is the target.
+   - On `dragenter`/`dragover` with `Files`:
+     - set `data-drop="active"` if at least one item is an accepted image type;
+     - otherwise set `data-drop="reject"`, which shows "Only images can be attached".
+   - Call `preventDefault()` in `dragover` so the drop is allowed.
+   - Clear `data-drop` on `dragleave` (when leaving the composer itself, not a child) and on
+     `drop`.
+   - On the **window**, `preventDefault()` for `dragover`/`drop` anywhere else. Otherwise a stray
+     drop makes the browser navigate away to the image.
+   - While the composer is disabled, never set `data-drop`, and ignore the drop.
+3. **File picker.** Attach Images is `.button-icon.button-ghost` with the `attach` icon, labelled
+   `aria-label="Attach Images"`. It opens the hidden
+   `<input type="file" multiple accept="image/png,image/jpeg,image/gif,image/webp">`. Reset the
+   input's value after reading it, so the same file can be picked twice.
+
+**Accepted.** `image/png`, `image/jpeg`, `image/gif`, and `image/webp`, up to **5 MB each** and
+**8 per message**. These are the formats model providers accept. HEIC, SVG, and anything larger
+are rejected on the client before they're sent. If the server enforces a different limit, change
+the numbers here and in the copy deck together.
+
+**Placement at 320px** (and anywhere the composer is under 480px wide). The row is Attach (44) +
+textarea + actions. Under 480px of composer width, `Send`, `Steer`, and `Stop Turn` drop to
+icon-only 44px squares: their word sits in `.button-label`, which becomes visually hidden and
+stays the accessible name. That's why every composer button wraps its word in
+`<span class="button-label">`. At 320 while streaming, the textarea keeps 288 − 3 × 44 − 3 × 8 =
+132px. Attach stays leftmost, away from the primary. The pending list sits above the row and
+wraps, so it never squeezes the textarea.
+
+**Pending list** (above the textarea):
+
+```html
+<ul class="attachments" aria-label="Attachments">
+  <li class="attachment">
+    <img class="attachment-thumb" src="blob:…" alt="attachment">
+    <span class="attachment-text">
+      <span class="attachment-name" title="screenshot-2026-09-19.png">screenshot-2026-09-19.png</span>
+      <span class="attachment-meta">240 KB</span>
+    </span>
+    <button class="button button-icon" type="button" aria-label="Remove screenshot-2026-09-19.png">
+      <span class="icon icon-sm" style="--icon: url(/icons/close.svg)" aria-hidden="true"></span>
+    </button>
+  </li>
+
+  <!-- rejected: stays in the list, is NOT sent -->
+  <li class="attachment attachment-rejected">
+    <span class="attachment-icon"><span class="icon" style="--icon: url(/icons/alert-circle.svg)" aria-hidden="true"></span></span>
+    <span class="attachment-text">
+      <span class="attachment-name" title="holiday.heic">holiday.heic</span>
+      <span class="attachment-meta">Not an image we can send</span>
+    </span>
+    <button class="button button-icon" type="button" aria-label="Dismiss holiday.heic">
+      <span class="icon icon-sm" style="--icon: url(/icons/close.svg)" aria-hidden="true"></span>
+    </button>
+  </li>
+</ul>
+```
+
+- **Shape.** Each attachment is 44px tall and at most 240px wide, with `--r-md`. It's an object
+  you remove, so it takes a control's shape, not a status chip's pill. Contents: a 32px preview
+  (`object-fit: cover`, `--r-sm`), then the name (truncated, full name in `title`) over the size
+  in mono, then a 44px Remove.
+- **Preview source.** Use `URL.createObjectURL(file)` and revoke it on remove and on send. Read
+  base64 (`OutboundImage.data`, no `data:` prefix) only when sending.
+- **Size format.** `KB` under 1 MB, rounded (`240 KB`). Otherwise one decimal (`2.4 MB`).
+- **Rejected.** Rejected files stay in the list with `.attachment-rejected`: `--status-error-bg`
+  ground, a `--status-error` edge, and the `alert-circle` icon instead of a preview. The meta
+  line gives the reason in words, so the color is never the only signal. They're never sent. The
+  button is "Dismiss {name}". All rejected items clear on the next successful send.
+- **Announcements.** Adding and rejecting are announced in the polite live region:
+  - "{n} images attached."
+  - "{name} wasn't attached. {reason}."
+- **Removing.** After Remove, focus moves to the next attachment's Remove, or the previous one's,
+  or the textarea when the list is empty.
+- **Send rules.**
+  - Send is enabled when there is text **or** at least 1 accepted attachment. An image-only
+    prompt is valid and sends `text: ""`.
+  - Send and Steer both carry the images. On a successful send, the list empties together with
+    the textarea.
+  - The optimistic user bubble shows the images right away.
+  - Drafts keep their attachments per session, the same as text.
+- **Disabled composer** (TUI-live, connecting, reconnecting). Attach Images takes the same
+  `aria-disabled` and shares `aria-describedby="composer-reason"`. Paste and drop don't attach
+  anything.
+
+**Tokens.**
+- **Attachment.** `--color-sunken` with a `--color-border` edge, `--r-md`, `--control-md`
+  tall. Name `--fs-caption` in `--color-ink`; meta `--font-mono` in `--color-ink-muted`.
+- **Rejected.** `--status-error-bg` with a `--status-error` edge, and meta in `--color-ink-2`.
+- **Drop overlay.** A `--stroke-icon` dashed `--color-accent` edge on `--color-accent-tint`,
+  with `--r-lg`, and text in `--color-ink` at `--fw-medium`. It's the one place a drag needs to
+  say "here", which is what the accent is for. Reject swaps in `--status-error` /
+  `--status-error-bg`.
+
+**Contrast.**
+
+| Pair | Dark | Light |
+|---|---|---|
+| Ink on accent-tint (drop text) | 12.57 | 14.57 |
+| Ink-2 on error-bg (rejected meta) | 6.48 | 7.49 |
+| Error on error-bg (rejected icon and edge) | 5.01 | 5.16 |
+| Muted on sunken (size meta) | 5.40 | 4.75 |
+| Border-strong on surface (lightbox arrows) | 3.47 | 3.61 |
+
+---
+
+## 4c · Model menu
+
+A searchable model picker, like pi's Ctrl+P palette. It's opened from the model button in the
+chat header. It exists only for **chat** sessions. A watched (TUI-owned) session keeps the model
+as plain mono text in `.session-head-meta`, because it can't be changed from here.
+
+### Trigger
+
+In chat sessions it takes the model's place in the header. Drop the model from
+`.session-head-meta` and put the trigger after `.session-head-main`, before Copy Session Path:
+
+```html
+<button class="button button-ghost model-trigger" type="button" id="model-trigger"
+        aria-haspopup="dialog" aria-expanded="false" aria-controls="model-menu" title="{provider/id}">
+  <span class="visually-hidden">Model: </span>
+  <span class="model-trigger-label">kimi-k3</span>
+  <span class="icon icon-sm" style="--icon: url(/icons/chevron-down.svg)" aria-hidden="true"></span>
+</button>
+```
+
+- **Label.** The model id without the provider, in mono, with the full `provider/id` in `title`.
+  With no model yet, show "Choose model".
+- **Width.** It's capped at 200px (128px under 768px), and the label truncates. Its accessible
+  name is "Model: kimi-k3", which starts with the visible text.
+- **`aria-expanded`** mirrors the menu: set it in the popover's `toggle` event. While open, the
+  trigger takes the sunken fill.
+
+### Menu
+
+```html
+<div class="model-menu" id="model-menu" popover="auto" role="dialog" aria-label="Choose model"
+     style="--menu-top: 60px; --menu-right: 16px">
+  <div class="model-menu-search">
+    <div class="search">
+      <span class="icon" style="--icon: url(/icons/search.svg)" aria-hidden="true"></span>
+      <input class="input" type="text" role="combobox" aria-label="Search models"
+             placeholder="Search models" autocomplete="off" spellcheck="false"
+             aria-expanded="true" aria-controls="model-listbox" aria-autocomplete="list"
+             aria-activedescendant="mo-openai-gpt-5">
+    </div>
+  </div>
+
+  <!-- only when changing is blocked; see Disabled -->
+  <div class="banner banner-info" role="status">…</div>
+
+  <div class="model-menu-list" id="model-listbox" role="listbox" aria-label="Models">
+    <div class="model-menu-group" role="group" aria-labelledby="mg-fav">
+      <div class="list-group-label" id="mg-fav">Favorites</div>
+      <div class="model-option" role="option" id="mo-openai-gpt-5" aria-selected="false" data-active>
+        <span class="icon icon-sm model-option-check" style="--icon: url(/icons/check.svg)" aria-hidden="true"></span>
+        <span class="model-option-id">gpt-5</span>
+        <span class="model-option-provider">openai</span>
+      </div>
+      <div class="model-option" role="option" id="mo-ollama-cloud-kimi-k3" aria-selected="true">
+        <span class="icon icon-sm model-option-check" style="--icon: url(/icons/check.svg)" aria-hidden="true"></span>
+        <span class="model-option-id">kimi-k3</span>
+        <span class="model-option-provider">ollama-cloud</span>
+      </div>
+    </div>
+    <div class="model-menu-group" role="group" aria-labelledby="mg-all">
+      <div class="list-group-label" id="mg-all">All models</div>
+      …options…
+    </div>
+  </div>
+
+  <p class="model-menu-foot"><kbd>↑</kbd><kbd>↓</kbd> to move · <kbd>Enter</kbd> to choose · <kbd>Esc</kbd> to close</p>
+</div>
+```
+
+- **Role.** This is a **listbox**, not a menu. Choosing a model is selecting one value from a
+  set, which is exactly what a listbox is for. The popup is a small dialog made of a combobox
+  input plus the listbox, so the trigger says `aria-haspopup="dialog"`. Focus stays in the input
+  the whole time, and the keyboard position is `aria-activedescendant`. The option it points to
+  gets `data-active` and draws the focus ring (inset 2px accent), because focus can't be seen
+  anywhere else.
+- **Mechanism.** It's a native `[popover="auto"]`, which puts it in the top layer. It isn't
+  clipped by a `.pane` and needs no Portal. A click outside or `Esc` closes it for free. Render
+  it once, next to the trigger. On open, measure the trigger with `getBoundingClientRect()` and
+  set `--menu-top: {rect.bottom + 4}px` and `--menu-right: {innerWidth − rect.right}px`, then
+  call `showPopover()`. Close it on window resize.
+- **Positioning.**
+  - At ≥768 (e.g. 1440) it sits right-aligned under the trigger: 360px wide (or the viewport
+    minus 32px), `max-height: min(440px, 70dvh)`, with `--r-md` and `--shadow-2`. The list
+    scrolls, and the search field and the foot stay put.
+  - Under 768 (e.g. 320) it's a bottom sheet: full width, up to 85dvh tall, with `--r-xl` top
+    corners, the scrim backdrop, and the search at the top. The keyboard hint foot is hidden.
+- **Motion.** It fades in once (`--dur-base`). Nothing loops.
+
+### Content and order
+
+- **Groups.**
+  - **Favorites** (`favorite: true`) come first, sorted by `ref`. They're marked by the group
+    label; rows carry no star.
+  - A 1px `--color-border` rule separates the favorites from **All models**: every other model,
+    sorted by provider, then id.
+  - A model appears in only one group. With no favorites there's a single group, and its label
+    is still "All models".
+- **Rows.** Each row is 44px: a check mark (visible only on the current model), the id in mono,
+  and the provider in a muted caption on the right. The current model has `aria-selected="true"`,
+  the check, and the accent-tint fill, so the mark isn't color alone. Every other row has
+  `aria-selected="false"`.
+- **Search.**
+  - Matching is case-insensitive. The query is split on whitespace, and every token must appear
+    in `provider/id`. So "anth opus" finds `anthropic/claude-opus-5`.
+  - It filters both groups and hides a group with no matches. The active option resets to the
+    first match whenever the query changes.
+  - Because focus stays in the input, typing *is* the typeahead.
+- **On open.** The query is empty, the current model is active and scrolled into view
+  (`block: "nearest"`), and the input has focus.
+
+### Keyboard
+
+| Key | Where | Does |
+|---|---|---|
+| `Ctrl+P` / `⌘P` | anywhere while a **chat** session is open | Opens the menu, and closes it if it's open. Call `preventDefault()` so print never fires. In watch sessions and on the list view it isn't bound, and the browser prints as usual |
+| `Enter` / `Space` | on the trigger | Opens |
+| `↓` / `↑` | in the menu | Moves the active option, wrapping, and skips disabled rows |
+| `PageDown` / `PageUp` | in the menu | Moves 8 options |
+| `Enter` | in the menu | Chooses the active option. Choosing the current model just closes the menu |
+| `Esc` | in the menu | Closes it (native popover behavior). The query doesn't survive |
+| `Tab` | in the menu | Closes it (on `focusout` outside the menu), and focus moves on |
+| Mouse | | Hovering a row makes it active, and clicking chooses it |
+
+When the menu closes without a choice, focus returns to the trigger.
+
+### States
+
+| State | Trigger | Menu |
+|---|---|---|
+| **Loading models** (first open; fetched on every open and cached, so later opens show the cache while it refreshes) | normal | After 300ms, 4 × `<div class="skeleton skeleton-row">` in the list, with `aria-busy="true"` on the listbox |
+| **Load failed** | normal | `.banner.banner-error`: **Couldn't load models.** Your current model is unchanged. Action: `<button class="button button-sm">Retry</button>` |
+| **0 models** | normal | `<p class="model-menu-empty">` "0 models have credentials. Log in with `pi` in a terminal to add one." |
+| **No matches** | normal | `<p class="model-menu-empty">` "0 models match “{query}”." |
+| **Blocked: agent running** (`isStreaming`) | enabled, so pressing it shows the reason | `.banner.banner-info`: **Model changes wait until this turn finishes.** Stop Turn or wait, then pick one. Every option gets `aria-disabled="true"`, and the list stays browsable. If a turn starts while the menu is open, the banner appears right away |
+| **Blocked: composer disabled** (connecting, reconnecting, a foreign writer, the TUI took over) | enabled | Same banner, with the current `.composer-reason` text as the title, and options disabled |
+| **Pending** (after choosing, until `{type:"model"}`) | `aria-busy="true"` and `aria-disabled="true"`. The label shows the *target* id, with `<span class="live-dot"></span>` before it | Closed. Focus stays on the trigger |
+| **Switched** (`{type:"model"}` arrives) | The label shows the echoed model, and the dot is removed | — |
+
+- **While pending.**
+  - The composer's Send takes `aria-disabled` with the reason "Switching model…" (`clock`
+    icon), so a prompt can't land on an ambiguous model.
+  - If there's no echo after **15s**, treat it as an error (below) with the message "The server
+    didn't confirm the switch."
+- **On switch.**
+  - Announce "Model changed to {id}." in the polite live region.
+  - Append an `.info-row` locally: "Model changed to `{provider/id}`". On reload, the persisted
+    `model_change` entry renders in the same place, so the two never appear together.
+  - The pulse is the sanctioned live indicator, and it's legitimate here because work is
+    happening.
+
+### Errors
+
+An `{type:"error"}` that arrives while a switch is pending belongs to that switch. It ends the
+pending state, the trigger reverts to the current model, and a `.banner.banner-error` shows in
+the chat's `.transcript-banner` slot (sticky at the top of the transcript; chat sessions don't
+use it otherwise):
+
+```html
+<div class="banner banner-error" role="alert">
+  <span class="icon banner-icon" style="--icon: url(/icons/alert-circle.svg)" aria-hidden="true"></span>
+  <div class="banner-main">
+    <p class="banner-title">Couldn't switch to <code>claude-opus-5</code>.</p>
+    <p class="banner-body">{body per table} You're still on <code>kimi-k3</code>.</p>
+  </div>
+  <button class="button button-sm button-ghost banner-action" type="button">Dismiss</button>
+</div>
+```
+
+The body depends on the server message (the server sends free text, so match on the prefix):
+
+| Server message starts with | Body |
+|---|---|
+| `No credentials configured for` | {provider} has no credentials set up. Log in with `pi` in a terminal, then try again. |
+| `Unknown model` | pi doesn't know this model. It may have been removed from your config. |
+| `Cannot switch models while the agent is running` | Model changes wait until this turn finishes. |
+| `code: "busy"` / `"recent"` / `"reloaded"` | the same copy the composer uses for that code |
+| anything else | {server message verbatim}. |
+
+The banner goes away on Dismiss, after the next successful switch, or when you leave the session.
+It never auto-dismisses, because it's the only record of the failure.
+
+### Tokens
+
+- **Trigger.** `.button-ghost` at 44px, `--font-mono` / `--fs-mono` in `--color-ink-2`, and
+  `--color-sunken` while open.
+- **Menu.** `--color-surface` with a `--color-border` edge, `--r-md`, and `--shadow-2`. At
+  folded width it's a sheet with `--r-xl`, `--shadow-3`, and `--scrim`.
+- **Rows.** `--control-md` tall. Id in `--font-mono` / `--color-ink`, provider `--fs-caption` in
+  `--color-ink-muted`.
+  - Hover and active: `--color-sunken`, and the active row also gets the `--focus-ring` inset.
+  - Current: `--color-accent-tint`.
+  - Disabled: opacity .42.
+- **Group rule.** `--color-border`.
+- **Foot.** `--fs-caption` in `--color-ink-muted`.
+
+### Contrast
+
+| Pair | Dark | Light |
+|---|---|---|
+| Ink on surface (ids) | 12.34 | 17.86 |
+| Muted on surface (provider) | 4.96 | 5.74 |
+| Ink on sunken (active row) | 13.43 | 14.78 |
+| Muted on sunken | 5.40 | 4.75 |
+| Ink on accent-tint (current row) | 12.57 | 14.57 |
+| Muted on accent-tint | 5.06 | 4.68 |
+| Accent ring on sunken (active marker) | 5.08 | 5.63 |
 
 ---
 
@@ -839,6 +1328,10 @@ one is open queues behind it.
 | New product components: `.app`, `.sidebar-*`, `.search`, `.session-*`, `.transcript*`, `.disclosure*`, `.toolcard*`, `.info-row`, `.run-status`, `.jump-latest`, `.composer*`, `.folder-list`, `.brand`, `.live-dot`, `.chip-live`, `.icon`, `.skip-link`, `.truncate`, `.banner-main/-action`, `.message-time/-text`, `.modal-spacer` | Built only from system tokens and patterns. The tool card is the skill's tool-turn chat style (sunken, mono) turned into a disclosure so arguments and output fit. `.chip-live` applies the skill's run-pulse to a chip |
 | New tokens: `--sidebar-width`, `--composer-max`, `--tool-output-max`, `--scrim`, `--skeleton-sweep` | Layout sizes, plus the two alpha values the skill already hard-codes inline (scrim, skeleton sweep), lifted into tokens so they theme correctly |
 | Brand: `pi-web-mark.svg` (a stroked π) and the wordmark "pi-web" set in Inter 640 at −.03em | The Fold symbol is not used. It's a placeholder mark on the system's icon grid, and swappable |
+| Composer buttons go icon-only under 480px of composer width (`.button-label` visually hidden) | Keeps the textarea usable at 320px while streaming. Each button keeps its accessible name, and Send stays the filled primary |
+| Lightbox is a native `<dialog>` rather than the skill's `.scrim` + `.modal` | Top layer, inert page, and native Esc handling. It's full-bleed because it shows content rather than asking a question |
+| Model picker is a `[popover]` + combobox + listbox (the skill's `.popover` is a plain action menu) | Choosing one value from a set is a listbox. The popover gives top layer and light dismiss. Rows keep the 44px target and hover/active never hide an action |
+| `Ctrl+P` is taken over in chat sessions | Mirrors pi's TUI palette. It's bound only where a model can change, so print still works everywhere else |
 | `.button-sm` used for Retry, Copy Output, and Open for Chat | Always inside an already-reached context (a banner or a card), never the sole action on a surface, which the skill allows |
 
 Everything the skill forbids stays forbidden: no gradients (except the skeleton sweep the skill
@@ -947,6 +1440,54 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Busy fallback, when the message was already typed and rejected | the draft stays in the textarea (not cleared), plus the busy reason. No banner |
 | Turn error banner (in thread) | **The turn stopped with an error.** {message}. Your messages are kept. Send again to retry. |
 | SR announcements | Working. · Reply finished. |
+
+### Images
+
+| Where | Copy |
+|---|---|
+| Attach button `aria-label` | Attach Images |
+| Pending list `aria-label` | Attachments |
+| Pasted image name | Pasted image |
+| Remove / Dismiss `aria-label` | Remove {name} · rejected: Dismiss {name} |
+| Rejected: wrong type | Not an image we can send |
+| Rejected: too large | Over 5 MB |
+| Rejected: too many | Over 8 images |
+| Drop overlay | Drop images to attach · reject: Only images can be attached |
+| Announce: added | {n} images attached. (1: "1 image attached.") |
+| Announce: rejected | {name} wasn't attached. {reason}. |
+| Thumb list `aria-label` | {n} images |
+| Alt, user row | Image in your message · Image {i} of {n} in your message |
+| Alt, tool result | Image from tool result {toolName} · Image {i} of {n} from tool result {toolName} |
+| Alt, pending attachment | attachment |
+| Tool card section label | Images · {n} |
+| Tool card summary count | {n} (`title`: "{n} images") |
+| Lightbox counter | {i} / {n} |
+| Lightbox buttons | Close Image · Previous Image · Next Image |
+
+### Model menu
+
+| Where | Copy |
+|---|---|
+| Trigger | {id} (visually hidden prefix "Model: ") · no model: Choose model · `title`: {provider/id} |
+| Menu `aria-label` | Choose model |
+| Search placeholder / label | Search models |
+| Listbox `aria-label` | Models |
+| Group labels | Favorites · All models |
+| Foot (≥768) | `↑` `↓` to move · `Enter` to choose · `Esc` to close |
+| No matches | 0 models match “{query}”. |
+| No models | 0 models have credentials. Log in with `pi` in a terminal to add one. |
+| Load failed | **Couldn't load models.** Your current model is unchanged. · `Retry` |
+| Blocked, running | **Model changes wait until this turn finishes.** Stop Turn or wait, then pick one. |
+| Composer reason while pending | Switching model… |
+| Announce on success | Model changed to {id}. |
+| Info row on success | Model changed to `{provider/id}` |
+| Error title | Couldn't switch to `{id}`. |
+| Error: no credentials | {provider} has no credentials set up. Log in with `pi` in a terminal, then try again. You're still on `{current}`. |
+| Error: unknown | pi doesn't know this model. It may have been removed from your config. You're still on `{current}`. |
+| Error: running | Model changes wait until this turn finishes. You're still on `{current}`. |
+| Error: timeout | The server didn't confirm the switch. You're still on `{current}`. |
+| Error: other | {server message}. You're still on `{current}`. |
+| Error action | Dismiss |
 
 ### New Session dialog
 

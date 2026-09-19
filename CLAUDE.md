@@ -68,3 +68,6 @@ Frontend is SolidJS (NOT React): signals/stores, `<For>/<Show>`, `onCleanup` for
 - Opening a chat runtime must not write: the SDK appends model_change/thinking_level_change at
   construction (empty sessions, or no thinking entry on the branch). `openSession` defers those two
   appends and replays them right before the first prompt/steer; a never-prompted session stays untouched.
+- Images: 0.85.1 `ImageContent` is `{type:"image", data, mimeType}` for prompt/steer/followUp AND storage
+  (sdk.md's `source:{type:"base64"}` example is stale). Model favorites come READ-ONLY from the
+  command-palette's `~/.pi/agent/model-favorites.json` (`{version:1, models:[{provider,id}]}`).

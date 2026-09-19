@@ -1,11 +1,12 @@
 import { createSignal, For, onCleanup, Show, type JSX } from "solid-js";
 import { Portal } from "solid-js/web";
 import { announcement, toasts } from "../lib/ui-state";
+import { Lightbox } from "./Lightbox";
 
 export type IconName =
-  | "alert-circle" | "arrow-right" | "attention" | "chat" | "check" | "chevron-down" | "chevron-left"
+  | "alert-circle" | "arrow-right" | "attach" | "image" | "attention" | "chat" | "check" | "chevron-down" | "chevron-left"
   | "chevron-right" | "clock" | "close" | "copy" | "file" | "folder" | "info" | "more" | "pause"
-  | "plus" | "refresh" | "search" | "terminal";
+  | "plus" | "refresh" | "search" | "terminal" | "gauge" | "worker";
 
 /** A shipped SVG as a mask over currentColor (base.css `span.icon`). Decorative unless labelled. */
 export function Icon(props: { name: IconName; small?: boolean; class?: string }) {
@@ -101,6 +102,7 @@ export function CopyButton(props: { label: string; text: () => string; onCopy(te
 /** The single toast stack and the single polite status region, portalled to <body>. */
 export function GlobalRegions() {
   return (
+    <>
     <Portal>
       <div class="toast-stack">
         <For each={toasts()}>{(t) => <div class="toast"><span class="toast-body">{t.text}</span></div>}</For>
@@ -109,6 +111,8 @@ export function GlobalRegions() {
         {announcement()}
       </div>
     </Portal>
+    <Lightbox />
+    </>
   );
 }
 

@@ -6,7 +6,9 @@ import { fetchTranscript, wsUrl } from "../lib/api";
 import { addPendingPrompt, applyEvent, emptyLive, runDetail, type LiveState } from "../lib/live";
 import { isObj, str } from "../lib/message";
 import { createReconnectingSocket } from "../lib/socket";
-import { announce, drafts, toast } from "../lib/ui-state";
+import type { OutboundImage } from "../../shared/protocol";
+import { fromDataUrl } from "../lib/images";
+import { announce, draftImages, drafts, toast } from "../lib/ui-state";
 import { Composer, type ComposerReason } from "./Composer";
 import { ConnectionBanner } from "./ConnectionBanner";
 import { HistoryItems, LiveEntries, ThreadScroller, TranscriptSkeleton, TurnError } from "./Thread";
@@ -79,10 +81,13 @@ export function ChatView(props: {
 
   /** Puts prompts the server never accepted back into the draft, so nothing typed is lost. */
   const restoreUnsent = () => {
-    const unsent = live.entries.flatMap((e) => (e.kind === "user" && !e.confirmed ? [e.text] : []));
+    const unsent = live.entries.flatMap((e) => (e.kind === "user" && !e.confirmed ? [e] : []));
     if (unsent.length === 0) return;
+    const texts = unsent.map((e) => e.text).filter(Boolean);
     const current = drafts.get(props.path);
-    drafts.set(props.path, [...unsent, ...(current ? [current] : [])].join("\n\n"));
+    if (texts.length) drafts.set(props.path, [...texts, ...(current ? [current] : [])].join("\n\n"));
+    const images = unsent.flatMap((e) => e.images.map((src, i) => fromDataUrl(src, `Image ${i + 1}.${src.slice(11, src.indexOf(";")) || "png"}`)));
+    if (images.length) draftImages.set(props.path, [...images, ...(draftImages.get(props.path) ?? [])]);
   };
 
   const socket = createReconnectingSocket<ChatServerMessage>(wsUrl("/ws/chat", props.path, props.force), {
@@ -155,10 +160,10 @@ export function ChatView(props: {
     return null;
   };
 
-  const send = (text: string, steer: boolean) => {
-    if (!socket.send({ type: steer ? "steer" : "prompt", text })) return false;
+  const send = (text: string, steer: boolean, images: OutboundImage[], dataUrls: string[]) => {
+    if (!socket.send({ type: steer ? "steer" : "prompt", text, ...(images.length ? { images } : {}) })) return false;
     batch(() => {
-      addPendingPrompt(setLive, text);
+      addPendingPrompt(setLive, text, dataUrls);
       setLive("running", true);
       setResume((n) => n + 1);
     });

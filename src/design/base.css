@@ -1027,6 +1027,380 @@ summary.sidebar-region-head .icon-twist { transition: transform var(--dur-fast) 
 }
 
 
+/* ---- COMPOSER: narrow width. Below 480px of the composer, Send / Steer /
+   Stop Turn keep their icon and move their word into .button-label, which
+   becomes visually hidden (still the accessible name). This rule CONTRACTS,
+   so the container query gets a @media floor underneath (skill: the union). */
+
+.composer { position: relative; container: composer / inline-size; }
+@container composer (max-width: 479px) {
+  .composer-actions .button { width: var(--control-md); padding: 0; }
+  .composer-actions .button-label {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+  }
+}
+@media (max-width: 479px) {
+  .composer-actions .button { width: var(--control-md); padding: 0; }
+  .composer-actions .button-label {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+  }
+}
+
+/* ---- COMPOSER: drop target. Set data-drop on .composer while a drag is over
+   it: "active" (images) or "reject" (nothing droppable). Words carry the
+   state; the dashed edge and tint repeat it. ------------------------------ */
+
+.composer-drop {
+  position: absolute;
+  inset: var(--space-2);
+  z-index: 2;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  border: var(--stroke-icon) dashed var(--color-accent);
+  border-radius: var(--r-lg);
+  background: var(--color-accent-tint);
+  color: var(--color-ink);
+  font-weight: var(--fw-medium);
+  pointer-events: none;
+}
+.composer[data-drop="active"] .composer-drop,
+.composer[data-drop="reject"] .composer-drop { display: flex; }
+.composer[data-drop="reject"] .composer-drop {
+  border-color: var(--status-error);
+  background: var(--status-error-bg);
+}
+.composer[data-drop="reject"] .composer-drop .icon { color: var(--status-error); }
+
+
+/* ---- ATTACHMENTS. Pending images above the textarea. An attachment is an
+   object you can remove, so it takes a control's shape (8px), not a chip's
+   pill. 44px tall so Remove is a full target. --------------------------- */
+
+.attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.attachment {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--control-md);
+  max-width: 240px;
+  padding-left: var(--space-1);
+  border: var(--stroke-thin) solid var(--color-border);
+  border-radius: var(--r-md);
+  background: var(--color-sunken);
+}
+.attachment-thumb,
+.attachment-icon {
+  width: 32px;
+  height: 32px;
+  flex: none;
+  border-radius: var(--r-sm);
+}
+.attachment-thumb { object-fit: cover; background: var(--color-surface); display: block; }
+.attachment-icon { display: grid; place-items: center; color: var(--status-error); }
+.attachment-text { display: flex; flex-direction: column; min-width: 0; flex: 1; line-height: 1.25; }
+.attachment-name {
+  font-size: var(--fs-caption);
+  color: var(--color-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.attachment-meta {
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono);
+  color: var(--color-ink-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.attachment .button-icon { flex: none; border-color: transparent; background: transparent; color: var(--color-ink-muted); }
+.attachment .button-icon:hover { color: var(--color-ink); background: var(--color-surface); }
+.attachment-rejected { border-color: var(--status-error); background: var(--status-error-bg); }
+.attachment-rejected .attachment-meta { color: var(--color-ink-2); }
+
+
+/* ---- THREAD IMAGES. Thumbnails on user rows and in tool cards. One image
+   shows at its own shape (≤320×240); two or more are 96px square tiles that
+   wrap. Each thumbnail is a button that opens the lightbox. -------------- */
+
+.message-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-width: var(--measure);
+}
+.message-user .message-images { justify-content: flex-end; }
+.thumb {
+  display: block;
+  padding: 0;
+  max-width: 100%;
+  border: var(--stroke-thin) solid var(--color-border);
+  border-radius: var(--r-md);
+  background: var(--color-sunken);
+  overflow: hidden;
+  line-height: 0;
+  cursor: zoom-in;
+  transition: border-color var(--dur-fast) var(--ease-standard);
+}
+.thumb:hover { border-color: var(--color-border-strong); }
+.thumb:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); border-radius: var(--r-md); }
+.thumb img {
+  display: block;
+  width: 96px;                      /* 2 × row-height + space-2 */
+  height: 96px;
+  object-fit: cover;
+}
+.message-images-single > li { max-width: min(320px, 100%); }
+.message-images-single .thumb img {
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: 240px;
+  object-fit: contain;
+}
+.toolcard-images {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: none;
+  color: var(--color-ink-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+
+/* ---- LIGHTBOX. A native <dialog> opened with showModal(): top layer (no
+   Portal needed, not trapped by .pane), inert page behind it, Esc closes.
+   Fades in once; nothing loops. --------------------------------------- */
+
+.lightbox {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100dvh;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: var(--color-bg);      /* opaque: the image is the only thing on screen */
+  color: var(--color-ink);
+  overflow: hidden;
+}
+.lightbox[open] {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  animation: enter-fade var(--dur-base) var(--ease-standard);
+}
+.lightbox::backdrop { background: var(--scrim); }
+.lightbox-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 56px;
+  padding: 0 var(--space-3) 0 var(--space-4);
+  border-bottom: var(--stroke-thin) solid var(--color-border);
+  background: var(--color-surface);
+}
+.lightbox-caption {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: var(--fs-body);
+  color: var(--color-ink-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lightbox-count {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono);
+  color: var(--color-ink-muted);
+  font-variant-numeric: tabular-nums;
+}
+.lightbox-stage {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-height: 0;
+  padding: var(--space-4) var(--space-8);
+}
+.lightbox-img {
+  display: block;
+  max-width: 100%;
+  max-height: calc(100dvh - 56px - var(--space-4) * 2);
+  object-fit: contain;
+  border-radius: var(--r-sm);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-3);
+}
+.lightbox-prev,
+.lightbox-next {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+}
+.lightbox-prev { left: var(--space-3); }
+.lightbox-next { right: var(--space-3); }
+.lightbox-prev:active,
+.lightbox-next:active { transform: translateY(-50%); }
+@media (max-width: 767px) {
+  .lightbox-stage { padding: var(--space-3) var(--space-3) calc(var(--control-md) + var(--space-5)); }
+  .lightbox-img { max-height: calc(100dvh - 56px - var(--control-md) - var(--space-5) - var(--space-3)); }
+  .lightbox-prev,
+  .lightbox-next { top: auto; bottom: var(--space-3); transform: none; }   /* thumb arc */
+  .lightbox-prev:active,
+  .lightbox-next:active { transform: none; }
+}
+
+
+/* ---- MODEL MENU. A searchable model picker (Ctrl+P). The trigger sits in
+   .session-head; the menu is a [popover="auto"] (top layer: not trapped by
+   a .pane, light-dismiss and Esc for free) positioned under the trigger via
+   --menu-top / --menu-right set on open. A bottom sheet under 768px. ---- */
+
+.model-trigger {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 200px;
+  gap: var(--space-1);
+  padding: 0 var(--space-2) 0 var(--space-3);
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono);
+  font-weight: var(--fw-regular);
+  color: var(--color-ink-2);
+}
+.model-trigger-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.model-trigger[aria-expanded="true"] { background: var(--color-sunken); color: var(--color-ink); }
+.model-trigger .live-dot { margin-right: var(--space-1); }
+@media (max-width: 767px) {
+  .model-trigger { max-width: 128px; }
+}
+
+.model-menu {
+  position: fixed;
+  inset: auto;
+  top: var(--menu-top, 64px);
+  right: var(--menu-right, var(--space-4));
+  width: min(360px, calc(100vw - var(--space-6)));
+  max-height: min(440px, 70dvh);
+  margin: 0;
+  padding: 0;
+  border: var(--stroke-thin) solid var(--color-border);
+  border-radius: var(--r-md);
+  background: var(--color-surface);
+  color: var(--color-ink);
+  box-shadow: var(--shadow-2);
+  overflow: hidden;
+}
+.model-menu:popover-open {
+  display: flex;
+  flex-direction: column;
+  animation: enter-fade var(--dur-base) var(--ease-standard);
+}
+.model-menu::backdrop { background: transparent; }
+.model-menu-search {
+  flex: none;
+  padding: var(--space-2);
+  border-bottom: var(--stroke-thin) solid var(--color-border);
+}
+.model-menu > .banner { flex: none; margin: var(--space-2) var(--space-2) 0; }
+.model-menu-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--space-1) 0;
+}
+.model-menu-group + .model-menu-group {
+  margin-top: var(--space-1);
+  padding-top: var(--space-1);
+  border-top: var(--stroke-thin) solid var(--color-border);
+}
+.model-menu-group .list-group-label { padding: var(--space-2) var(--space-3) var(--space-1); }
+.model-option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--control-md);
+  padding: 0 var(--space-3);
+  cursor: pointer;
+}
+.model-option:hover,
+.model-option[data-active] { background: var(--color-sunken); }
+/* The keyboard position (aria-activedescendant) draws the focus ring: focus
+   stays in the search input, so the ring is the only place it can show. */
+.model-option[data-active] { outline: var(--focus-ring); outline-offset: calc(var(--focus-width) * -1); }
+.model-option[aria-selected="true"] { background: var(--color-accent-tint); }
+.model-option[aria-disabled="true"] { opacity: .42; cursor: not-allowed; }
+.model-option-check { color: var(--color-ink); visibility: hidden; }
+.model-option[aria-selected="true"] .model-option-check { visibility: visible; }
+.model-option-id {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono);
+  color: var(--color-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.model-option-provider {
+  flex: none;
+  max-width: 40%;
+  font-size: var(--fs-caption);
+  color: var(--color-ink-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.model-menu-empty {
+  margin: 0;
+  padding: var(--space-5) var(--space-4);
+  text-align: center;
+  font-size: var(--fs-caption);
+  color: var(--color-ink-muted);
+}
+.model-menu-foot {
+  flex: none;
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border-top: var(--stroke-thin) solid var(--color-border);
+  font-size: var(--fs-caption);
+  color: var(--color-ink-muted);
+}
+@media (max-width: 767px) {
+  .model-menu {
+    top: auto;
+    right: 0;
+    left: 0;
+    bottom: 0;
+    width: auto;
+    max-height: 85dvh;
+    border-bottom: 0;
+    border-radius: var(--r-xl) var(--r-xl) 0 0;
+    box-shadow: var(--shadow-3);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  .model-menu::backdrop { background: var(--scrim); }
+  .model-menu-foot { display: none; }
+}
+
+
 /* ---- FOLDER PICKER (new-session dialog). -------------------------------- */
 
 .folder-list {

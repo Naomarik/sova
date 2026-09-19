@@ -3,6 +3,7 @@
 // refetches the normalized transcript and resets this.
 
 import { produce, type SetStoreFunction } from "solid-js/store";
+import { imagesFromContent } from "./images";
 import { contentText, isObj, str } from "./message";
 
 export type LiveBlock =
@@ -11,7 +12,7 @@ export type LiveBlock =
   | { type: "toolCall"; id: string; name: string; argsText: string; args?: unknown };
 
 export type LiveEntry =
-  | { kind: "user"; text: string; confirmed: boolean }
+  | { kind: "user"; text: string; confirmed: boolean; images: string[] }
   | {
       kind: "assistant";
       blocks: LiveBlock[];
@@ -26,6 +27,7 @@ export interface LiveTool {
   args?: unknown;
   status: "running" | "done" | "error";
   output: string;
+  images: string[];
 }
 
 export interface LiveState {
@@ -80,9 +82,11 @@ function toolOutput(result: unknown): string {
   return isObj(result) ? contentText(result.content) : typeof result === "string" ? result : "";
 }
 
+const toolImages = (result: unknown) => (isObj(result) ? imagesFromContent(result.content) : []);
+
 /** Adds the user's prompt before the server echoes it, so the thread never lags the composer. */
-export function addPendingPrompt(set: SetStoreFunction<LiveState>, text: string) {
-  set(produce((s) => void s.entries.push({ kind: "user", text, confirmed: false })));
+export function addPendingPrompt(set: SetStoreFunction<LiveState>, text: string, images: string[] = []) {
+  set(produce((s) => void s.entries.push({ kind: "user", text, confirmed: false, images })));
 }
 
 export function applyEvent(set: SetStoreFunction<LiveState>, event: unknown) {
@@ -107,7 +111,7 @@ export function applyEvent(set: SetStoreFunction<LiveState>, event: unknown) {
           } else if (msg.role === "user") {
             const pending = s.entries.find((e) => e.kind === "user" && !e.confirmed);
             if (pending && pending.kind === "user") pending.confirmed = true;
-            else s.entries.push({ kind: "user", text: contentText(msg.content), confirmed: true });
+            else s.entries.push({ kind: "user", text: contentText(msg.content), confirmed: true, images: imagesFromContent(msg.content) });
           }
           break;
         }
@@ -173,13 +177,16 @@ export function applyEvent(set: SetStoreFunction<LiveState>, event: unknown) {
         }
         case "tool_execution_start": {
           const id = str(event.toolCallId);
-          if (id) s.tools[id] = { name: str(event.toolName) ?? "tool", args: event.args, status: "running", output: "" };
+          if (id) s.tools[id] = { name: str(event.toolName) ?? "tool", args: event.args, status: "running", output: "", images: [] };
           break;
         }
         case "tool_execution_update": {
           const id = str(event.toolCallId);
           const t = id ? s.tools[id] : undefined;
-          if (t) t.output = toolOutput(event.partialResult);
+          if (t) {
+            t.output = toolOutput(event.partialResult);
+            t.images = toolImages(event.partialResult);
+          }
           break;
         }
         case "tool_execution_end": {
@@ -191,6 +198,7 @@ export function applyEvent(set: SetStoreFunction<LiveState>, event: unknown) {
             args: prev?.args ?? event.args,
             status: event.isError === true ? "error" : "done",
             output: toolOutput(event.result),
+            images: toolImages(event.result),
           };
           break;
         }

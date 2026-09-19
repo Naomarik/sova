@@ -46,25 +46,46 @@ export function activeBranch(entries: Entry[]): Entry[] {
   return path.reverse();
 }
 
-function contentText(content: unknown): string {
+/** Text blocks joined; image blocks become "[image]" unless the caller renders them as images. */
+function contentText(content: unknown, imagePlaceholder = true): string {
   if (typeof content === "string") return content;
   if (!Array.isArray(content)) return "";
   const parts: string[] = [];
   for (const b of content) {
     if (b?.type === "text" && typeof b.text === "string") parts.push(b.text);
-    else if (b?.type === "image") parts.push("[image]");
+    else if (b?.type === "image" && imagePlaceholder) parts.push("[image]");
   }
   return parts.join("\n");
+}
+
+/** ImageContent blocks ({type:"image", data, mimeType}) as data URLs, or undefined if none. */
+function contentImages(content: unknown): string[] | undefined {
+  if (!Array.isArray(content)) return undefined;
+  const out: string[] = [];
+  for (const b of content) {
+    if (b?.type === "image" && typeof b.data === "string" && typeof b.mimeType === "string") {
+      out.push(`data:${b.mimeType};base64,${b.data}`);
+    }
+  }
+  return out.length ? out : undefined;
 }
 
 function truncate(s: string, max: number): string {
   return s.length > max ? `${s.slice(0, max)}…` : s;
 }
 
-function item(id: string, kind: EntryKind, raw: unknown, text?: string, toolCallId?: string): TranscriptItem {
+function item(
+  id: string,
+  kind: EntryKind,
+  raw: unknown,
+  text?: string,
+  toolCallId?: string,
+  images?: string[],
+): TranscriptItem {
   const it: TranscriptItem = { id, kind, raw };
   if (text !== undefined) it.text = text;
   if (toolCallId !== undefined) it.toolCallId = toolCallId;
+  if (images) it.images = images;
   return it;
 }
 
@@ -72,7 +93,7 @@ function normalizeMessage(entry: Entry, id: string): TranscriptItem[] {
   const m = entry.message ?? {};
   switch (m.role) {
     case "user":
-      return [item(id, "user", entry, contentText(m.content))];
+      return [item(id, "user", entry, contentText(m.content, false), undefined, contentImages(m.content))];
     case "assistant": {
       // One item per content block; ids are `${entryId}:${blockIndex}` so they stay unique.
       const out: TranscriptItem[] = [];
@@ -96,7 +117,9 @@ function normalizeMessage(entry: Entry, id: string): TranscriptItem[] {
       return out;
     }
     case "toolResult":
-      return [item(id, "tool-result", entry, truncate(contentText(m.content), RESULT_TEXT_MAX), m.toolCallId)];
+      return [
+        item(id, "tool-result", entry, truncate(contentText(m.content, false), RESULT_TEXT_MAX), m.toolCallId, contentImages(m.content)),
+      ];
     case "bashExecution":
       return [item(id, "info", entry, truncate(`$ ${m.command ?? ""}\n${m.output ?? ""}`, RESULT_TEXT_MAX))];
     case "custom":

@@ -83,6 +83,37 @@ function toWireEvent(event: any): unknown {
   return { type: "message_update", usage: event.message?.usage, assistantMessageEvent: wire };
 }
 
+type SdkImage = NonNullable<Parameters<AgentSession["steer"]>[1]>[number];
+
+const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
+const MIME_RE = /^image\/[\w.+-]+$/;
+const BASE64_RE = /^[A-Za-z0-9+/]*={0,2}$/;
+
+/**
+ * Validate client OutboundImage[] and convert to pi's ImageContent {type:"image", data, mimeType}
+ * (the stored/SDK shape in 0.85.1; docs' `source:{type:"base64"}` wrapper is not what the types take).
+ */
+function parseImages(raw: unknown): SdkImage[] | undefined {
+  if (raw === undefined || raw === null) return undefined;
+  if (!Array.isArray(raw)) throw new Error("images must be an array of {data, mimeType}");
+  let total = 0;
+  const out: SdkImage[] = [];
+  raw.forEach((img, i) => {
+    const data = img?.data;
+    const mimeType = img?.mimeType;
+    if (typeof data !== "string" || !data || typeof mimeType !== "string" || !MIME_RE.test(mimeType)) {
+      throw new Error(`images[${i}] must be {data: base64 string, mimeType: "image/…"}`);
+    }
+    if (data.length % 4 !== 0 || !BASE64_RE.test(data)) {
+      throw new Error(`images[${i}].data is not valid base64 (send it without the data: prefix)`);
+    }
+    total += (data.length / 4) * 3 - (data.endsWith("==") ? 2 : data.endsWith("=") ? 1 : 0);
+    if (total > MAX_IMAGE_BYTES) throw new Error("images exceed the 20MB total limit");
+    out.push({ type: "image", data, mimeType });
+  });
+  return out.length ? out : undefined;
+}
+
 function modelLabel(session: AgentSession): string | null {
   const m = session.model;
   return m ? `${m.provider}/${m.id}` : null;
@@ -236,20 +267,22 @@ class ChatSession {
           assertNotLive(this.path);
           this.assertNoForeignWrites();
           const text = String(msg.text ?? "");
-          if (!text.trim()) return;
+          const images = parseImages(msg.images);
+          if (!text.trim() && !images) return;
           this.flushDeferredAppends();
           // While streaming, a plain prompt is queued as a follow-up.
-          const opts = this.session.isStreaming ? { streamingBehavior: "followUp" as const } : undefined;
-          this.session.prompt(text, opts).catch(fail);
+          const streamingBehavior = this.session.isStreaming ? ("followUp" as const) : undefined;
+          this.session.prompt(text, { images, streamingBehavior }).catch(fail);
           return;
         }
         case "steer": {
           assertNotLive(this.path);
           this.assertNoForeignWrites();
           const text = String(msg.text ?? "");
-          if (!text.trim()) return;
+          const images = parseImages(msg.images);
+          if (!text.trim() && !images) return;
           this.flushDeferredAppends();
-          const p = this.session.isStreaming ? this.session.steer(text) : this.session.prompt(text);
+          const p = this.session.isStreaming ? this.session.steer(text, images) : this.session.prompt(text, { images });
           p.catch(fail);
           return;
         }

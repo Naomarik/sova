@@ -1153,7 +1153,7 @@ In chat sessions it takes the model's place in the header. Drop the model from
 |---|---|---|
 | `Ctrl+P` / `⌘P` | anywhere while a **chat** session is open | Opens the menu, and closes it if it's open. Call `preventDefault()` so print never fires. In watch sessions and on the list view it isn't bound, and the browser prints as usual |
 | `Enter` / `Space` | on the trigger | Opens |
-| `↓` / `↑` | in the menu | Moves the active option, wrapping, and skips disabled rows |
+| `↓` / `↑` | in the menu | Moves the active option, wrapping. Normally it skips disabled rows. When *every* row is disabled (Blocked), it moves through all of them, so the list stays browsable, and `Enter` does nothing |
 | `PageDown` / `PageUp` | in the menu | Moves 8 options |
 | `Enter` | in the menu | Chooses the active option. Choosing the current model just closes the menu |
 | `Esc` | in the menu | Closes it (native popover behavior). The query doesn't survive |
@@ -1172,7 +1172,7 @@ When the menu closes without a choice, focus returns to the trigger.
 | **No matches** | normal | `<p class="model-menu-empty">` "0 models match “{query}”." |
 | **Blocked: agent running** (`isStreaming`) | enabled, so pressing it shows the reason | `.banner.banner-info`: **Model changes wait until this turn finishes.** Stop Turn or wait, then pick one. Every option gets `aria-disabled="true"`, and the list stays browsable. If a turn starts while the menu is open, the banner appears right away |
 | **Blocked: composer disabled** (connecting, reconnecting, a foreign writer, the TUI took over) | enabled | Same banner, with the current `.composer-reason` text as the title, and options disabled |
-| **Pending** (after choosing, until `{type:"model"}`) | `aria-busy="true"` and `aria-disabled="true"`. The label shows the *target* id, with `<span class="live-dot"></span>` before it | Closed. Focus stays on the trigger |
+| **Pending** (after choosing, until `{type:"model"}`) | `aria-busy="true"` and `aria-disabled="true"`. The label shows the *target* id, with `<span class="live-dot"></span>` before it. It isn't faded: `aria-busy` restores full opacity, because pending is work in progress, not an unavailable control | Closed. Focus stays on the trigger |
 | **Switched** (`{type:"model"}` arrives) | The label shows the echoed model, and the dot is removed | — |
 
 - **While pending.**

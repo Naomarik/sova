@@ -1290,6 +1290,9 @@ summary.sidebar-region-head .icon-twist { transition: transform var(--dur-fast) 
 .model-trigger-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .model-trigger[aria-expanded="true"] { background: var(--color-sunken); color: var(--color-ink); }
 .model-trigger .live-dot { margin-right: var(--space-1); }
+/* Pending is work in progress, not an unavailable control: keep it legible
+   (it stays aria-disabled for AT and clicks). */
+.model-trigger[aria-busy="true"] { opacity: 1; cursor: progress; }
 @media (max-width: 767px) {
   .model-trigger { max-width: 128px; }
 }

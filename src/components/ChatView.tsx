@@ -1,4 +1,4 @@
-import { batch, createSignal, For, onCleanup, Show, type JSX } from "solid-js";
+import { batch, createSignal, For, onCleanup, Show } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { Portal } from "solid-js/web";
 import type { ChatServerMessage, TranscriptItem } from "../../shared/protocol";
@@ -45,7 +45,7 @@ export function ChatView(props: {
   const [everOpened, setEverOpened] = createSignal(false);
   const [model, setModel] = createSignal<string | null>(null);
   const [pendingModel, setPendingModel] = createSignal<string | null>(null);
-  const [modelError, setModelError] = createSignal<{ target: string; from: string | null; body: JSX.Element } | null>(null);
+  const [modelError, setModelError] = createSignal<{ target: string; from: string | null; body: string | { noCredentials: string } } | null>(null);
   /** "Model changed to …" rows shown until a transcript reload brings the persisted entry. */
   const [modelRows, setModelRows] = createSignal<string[]>([]);
   let modelTimer: ReturnType<typeof setTimeout> | undefined;
@@ -188,13 +188,9 @@ export function ChatView(props: {
     if (code === "busy") return "Read only while this session is open in the TUI.";
     if (code === "recent") return "Read only while another process may be writing this file.";
     if (code === "reloaded") return "Reconnecting. Your draft is kept.";
+    // Data, not JSX: this runs in a socket handler, outside any reactive owner.
     const credentials = /^No credentials configured for (\S+)/.exec(message);
-    if (credentials)
-      return (
-        <>
-          {credentials[1]} has no credentials set up. Log in with <code>pi</code> in a terminal, then try again.
-        </>
-      );
+    if (credentials) return { noCredentials: credentials[1]! };
     if (message.startsWith("Unknown model")) return "pi doesn't know this model. It may have been removed from your config.";
     if (message.startsWith("Cannot switch models while the agent is running")) return "Model changes wait until this turn finishes.";
     return `${message.replace(/\.$/, "")}.`;
@@ -274,7 +270,17 @@ export function ChatView(props: {
                   }
                   body={
                     <>
-                      {err().body}
+                      {(() => {
+                        const body = err().body;
+                        return typeof body === "string" ? (
+                          body
+                        ) : (
+                          <>
+                            {body.noCredentials} has no credentials set up. Log in with <code>pi</code> in a terminal, then try
+                            again.
+                          </>
+                        );
+                      })()}
                       <Show when={err().from}> You're still on <code>{idOf(err().from!)}</code>.</Show>
                     </>
                   }

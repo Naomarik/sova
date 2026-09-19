@@ -14,21 +14,23 @@ function load(): Set<string> {
   }
 }
 
-const ids = load();
+let ids = load();
 
 export function isWebSession(id: string): boolean {
   return ids.has(id);
 }
 
 /**
- * Record a web-spawned session id; written atomically (tmp + rename). Re-reads and merges the
- * file first so ids added by another server instance (e.g. 4800 dev + an audit port) survive.
+ * Record a web-spawned session id; written atomically (tmp + rename). The file is the source of
+ * truth: re-read it and add only this id, so ids added by another server instance survive and
+ * ids removed from the file stay removed (the in-memory set is refreshed to match).
  */
 export function addWebSession(id: string): void {
-  for (const other of load()) ids.add(other);
-  ids.add(id);
+  const next = load();
+  next.add(id);
   mkdirSync(dirname(FILE), { recursive: true });
   const tmp = `${FILE}.${process.pid}.tmp`;
-  writeFileSync(tmp, JSON.stringify([...ids]));
+  writeFileSync(tmp, JSON.stringify([...next]));
   renameSync(tmp, FILE);
+  ids = next;
 }

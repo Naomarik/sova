@@ -22,7 +22,7 @@ export interface PendingImage {
 export interface RejectedFile {
   id: number;
   name: string;
-  /** "Not an image we can send" / "Over 5 MB" / "Over 8 images". */
+  /** "Unsupported type" / "Over 5 MB" / "Over 8 images" (fits the ~18-character meta line). */
   reason: string;
 }
 
@@ -40,7 +40,7 @@ export function acceptImages(
   const rejected: RejectedFile[] = [];
   for (const file of files) {
     const name = displayName(file, pasted);
-    if (!ACCEPTED_TYPES.includes(file.type)) rejected.push({ id: ++nextId, name, reason: "Not an image we can send" });
+    if (!ACCEPTED_TYPES.includes(file.type)) rejected.push({ id: ++nextId, name, reason: "Unsupported type" });
     else if (file.size > MAX_IMAGE_BYTES) rejected.push({ id: ++nextId, name, reason: "Over 5 MB" });
     else if (pendingCount + added.length >= MAX_IMAGES) rejected.push({ id: ++nextId, name, reason: "Over 8 images" });
     else added.push({ id: ++nextId, name, mimeType: file.type, size: file.size, file, previewUrl: URL.createObjectURL(file) });

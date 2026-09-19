@@ -49,7 +49,7 @@ export interface ChatClient {
 }
 
 let modelRuntimePromise: Promise<ModelRuntime> | null = null;
-function getModelRuntime(): Promise<ModelRuntime> {
+export function getModelRuntime(): Promise<ModelRuntime> {
   modelRuntimePromise ??= ModelRuntime.create().catch((err) => {
     modelRuntimePromise = null;
     throw err;
@@ -289,6 +289,34 @@ class ChatSession {
         case "abort":
           this.session.abort().catch(fail);
           return;
+        case "set_model": {
+          // setModel appends a model_change entry: same write guards as prompt.
+          assertNotLive(this.path);
+          this.assertNoForeignWrites();
+          if (this.session.isStreaming) throw new Error("Cannot switch models while the agent is running; wait or abort first");
+          const ref = String(msg.ref ?? "");
+          // Resolve against models with configured auth (= GET /api/models) BEFORE writing anything,
+          // so a rejected switch leaves the file untouched.
+          this.runtime.services.modelRuntime
+            .getAvailable()
+            .then(async (available) => {
+              const model = available.find((m) => `${m.provider}/${m.id}` === ref);
+              if (!model) {
+                const known = this.runtime.services.modelRuntime.getModel(ref.split("/")[0] ?? "", ref.slice(ref.indexOf("/") + 1));
+                throw new Error(known ? `No credentials configured for ${ref}` : `Unknown model: ${ref || "(empty ref)"}`);
+              }
+              // Re-check after the async lookup: a TUI/foreign writer may have appeared meanwhile.
+              // BusyError propagates to `fail`, which maps it to its busy/recent code.
+              assertNotLive(this.path);
+              this.assertNoForeignWrites();
+              if (this.session.isStreaming) throw new Error("Cannot switch models while the agent is running; wait or abort first");
+              this.flushDeferredAppends(); // keep open-time entries before this model_change
+              await this.session.setModel(model);
+              this.broadcast({ type: "model", model: modelLabel(this.session) ?? ref });
+            })
+            .catch(fail);
+          return;
+        }
         case "ui_response": {
           const pending = this.pendingUi.get(msg.id);
           if (pending) {

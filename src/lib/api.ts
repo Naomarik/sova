@@ -1,4 +1,4 @@
-import type { SessionSummary, TranscriptItem } from "../../shared/protocol";
+import type { AgentsInsight, ModelInfo, SessionInsight, SessionSummary, TranscriptItem, UsageInsight } from "../../shared/protocol";
 
 export class ApiError extends Error {
   constructor(
@@ -32,6 +32,8 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
 export const listSessions = () => request<SessionSummary[]>("/api/sessions");
 
 export const listCwds = () => request<string[]>("/api/cwds");
+
+export const listModels = () => request<ModelInfo[]>("/api/models");
 
 export const createSession = (cwd: string) =>
   request<SessionSummary>("/api/sessions", {

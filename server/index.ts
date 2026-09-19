@@ -8,6 +8,7 @@ import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { Hono } from "hono";
 import { disposeAllChats } from "./chat-manager";
 import { canonicalPath, resolveSessionPath } from "./paths";
+import { listModels } from "./models";
 import { markOwned } from "./write-guard";
 import { addWebSession } from "./web-sessions";
 import { getSessionSummary, listCwds, listSessions } from "./sessions-index";
@@ -62,6 +63,8 @@ app.post("/api/sessions", async (c) => {
 });
 
 app.get("/api/cwds", async (c) => c.json(await listCwds()));
+
+app.get("/api/models", async (c) => c.json(await listModels()));
 
 app.get("/api/transcript", async (c) => {
   const path = resolveSessionPath(c.req.query("path"));

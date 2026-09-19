@@ -980,7 +980,7 @@ wraps, so it never squeezes the textarea.
     <span class="attachment-icon"><span class="icon" style="--icon: url(/icons/alert-circle.svg)" aria-hidden="true"></span></span>
     <span class="attachment-text">
       <span class="attachment-name" title="holiday.heic">holiday.heic</span>
-      <span class="attachment-meta">Not an image we can send</span>
+      <span class="attachment-meta">Unsupported type</span>
     </span>
     <button class="button button-icon" type="button" aria-label="Dismiss holiday.heic">
       <span class="icon icon-sm" style="--icon: url(/icons/close.svg)" aria-hidden="true"></span>
@@ -1449,7 +1449,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Pending list `aria-label` | Attachments |
 | Pasted image name | Pasted image |
 | Remove / Dismiss `aria-label` | Remove {name} · rejected: Dismiss {name} |
-| Rejected: wrong type | Not an image we can send |
+| Rejected: wrong type | Unsupported type (the meta line fits about 18 mono characters; the full reason is in the announcement) |
 | Rejected: too large | Over 5 MB |
 | Rejected: too many | Over 8 images |
 | Drop overlay | Drop images to attach · reject: Only images can be attached |

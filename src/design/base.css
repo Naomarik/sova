@@ -953,6 +953,9 @@ summary.sidebar-region-head .icon-twist { transition: transform var(--dur-fast) 
   min-width: 0;
   text-align: center;
 }
+/* Text children of an inline-flex can't shrink by default; long rows then
+   push the transcript sideways at 320px. */
+.info-row-text > * { min-width: 0; overflow-wrap: anywhere; }
 .info-row code { background: none; padding: 0; color: var(--color-ink-2); }
 
 

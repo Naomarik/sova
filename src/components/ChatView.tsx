@@ -1,4 +1,4 @@
-import { batch, createSignal, For, onCleanup, Show } from "solid-js";
+import { batch, createSignal, For, onCleanup, Show, type JSX } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { Portal } from "solid-js/web";
 import type { ChatServerMessage, TranscriptItem } from "../../shared/protocol";
@@ -11,7 +11,9 @@ import { fromDataUrl } from "../lib/images";
 import { announce, draftImages, drafts, toast } from "../lib/ui-state";
 import { Composer, type ComposerReason } from "./Composer";
 import { ConnectionBanner } from "./ConnectionBanner";
-import { HistoryItems, LiveEntries, ThreadScroller, TranscriptSkeleton, TurnError } from "./Thread";
+import type { ModelControl } from "./ModelMenu";
+import { HistoryItems, InfoRow, LiveEntries, ThreadScroller, TranscriptSkeleton, TurnError } from "./Thread";
+import { Banner } from "./ui";
 import { UiDialog } from "./UiDialog";
 
 export type ChatRefusal = "busy" | "recent";
@@ -29,6 +31,8 @@ export function ChatView(props: {
   force: boolean;
   autofocus?: boolean;
   onModel(model: string | null): void;
+  /** Hands the header its model picker's controls; null when this view goes away. */
+  onModelControl?(control: ModelControl | null): void;
   onRefused(kind: ChatRefusal, message: string): void;
   onSettled(): void;
 }) {
@@ -39,6 +43,13 @@ export function ChatView(props: {
   const [dialogs, setDialogs] = createSignal<{ id: string; request: unknown }[]>([]);
   const [resume, setResume] = createSignal(0);
   const [everOpened, setEverOpened] = createSignal(false);
+  const [model, setModel] = createSignal<string | null>(null);
+  const [pendingModel, setPendingModel] = createSignal<string | null>(null);
+  const [modelError, setModelError] = createSignal<{ target: string; from: string | null; body: JSX.Element } | null>(null);
+  /** "Model changed to …" rows shown until a transcript reload brings the persisted entry. */
+  const [modelRows, setModelRows] = createSignal<string[]>([]);
+  let modelTimer: ReturnType<typeof setTimeout> | undefined;
+  onCleanup(() => clearTimeout(modelTimer));
 
   const resync = async () => {
     setSyncing(true);
@@ -47,6 +58,7 @@ export function ChatView(props: {
       batch(() => {
         setItems(next);
         setLive(reconcile(emptyLive()));
+        setModelRows([]);
       });
     } catch (err) {
       // Keep the streamed turn on screen; it's accurate, just not re-normalized.
@@ -106,7 +118,12 @@ export function ChatView(props: {
             setItems(msg.items);
             setLive(reconcile({ ...emptyLive(), running: msg.isStreaming }));
           });
+          setModel(msg.model);
+          setModelRows([]);
           props.onModel(msg.model);
+          break;
+        case "model":
+          modelSwitched(msg.model);
           break;
         case "event":
           queue.push(msg.event);
@@ -120,6 +137,7 @@ export function ChatView(props: {
           break;
         }
         case "error":
+          if (pendingModel()) modelFailed(msg.message, msg.code);
           switch (msg.code) {
             case "busy":
             case "recent":
@@ -131,6 +149,7 @@ export function ChatView(props: {
               socket.reconnect();
               return;
             default:
+              if (modelError()) break; // shown as the switch's banner
               setErrors((e) => [...e, msg.message]);
               // A prompt that failed before the agent started leaves nothing running.
               if (!live.entries.some((e) => e.kind === "assistant")) setLive("running", false);
@@ -157,8 +176,69 @@ export function ChatView(props: {
     }
     if (!items()) return { icon: "clock", text: "Connecting…" };
     if (syncing()) return { icon: "clock", text: "Saving this turn…" };
+    if (pendingModel()) return { icon: "clock", text: "Switching model…" };
     return null;
   };
+
+  // ---- Model switching (DESIGN_NOTES §4c) ------------------------------------------------
+  const idOf = (ref: string) => ref.slice(ref.indexOf("/") + 1);
+  /** Server messages are free text; map the known ones to the spec's copy. */
+  const switchErrorBody = (message: string, code?: string) => {
+    // Refusal codes reuse the composer's reason copy for the same state.
+    if (code === "busy") return "Read only while this session is open in the TUI.";
+    if (code === "recent") return "Read only while another process may be writing this file.";
+    if (code === "reloaded") return "Reconnecting. Your draft is kept.";
+    const credentials = /^No credentials configured for (\S+)/.exec(message);
+    if (credentials)
+      return (
+        <>
+          {credentials[1]} has no credentials set up. Log in with <code>pi</code> in a terminal, then try again.
+        </>
+      );
+    if (message.startsWith("Unknown model")) return "pi doesn't know this model. It may have been removed from your config.";
+    if (message.startsWith("Cannot switch models while the agent is running")) return "Model changes wait until this turn finishes.";
+    return `${message.replace(/\.$/, "")}.`;
+  };
+  const modelSwitched = (next: string) => {
+    const was = pendingModel();
+    clearTimeout(modelTimer);
+    batch(() => {
+      setPendingModel(null);
+      setModelError(null);
+      if (next !== model()) setModelRows((r) => [...r, next]);
+      setModel(next);
+    });
+    props.onModel(next);
+    if (was || next) announce(`Model changed to ${idOf(next)}.`);
+  };
+  const modelFailed = (message: string, code?: string) => {
+    const target = pendingModel();
+    if (!target) return;
+    clearTimeout(modelTimer);
+    batch(() => {
+      setPendingModel(null);
+      setModelError({ target, from: model(), body: switchErrorBody(message, code) });
+    });
+  };
+  const chooseModel = (ref: string) => {
+    if (pendingModel() || ref === model() || live.running || blocked()) return;
+    if (!socket.send({ type: "set_model", ref })) return;
+    setModelError(null);
+    setPendingModel(ref);
+    clearTimeout(modelTimer);
+    modelTimer = setTimeout(() => modelFailed("The server didn't confirm the switch."), 15_000);
+  };
+  props.onModelControl?.({
+    model,
+    pending: pendingModel,
+    blocked: () => {
+      if (live.running) return { title: "Model changes wait until this turn finishes.", body: "Stop Turn or wait, then pick one." };
+      const reason = blocked();
+      return reason && !pendingModel() ? { title: reason.text } : null;
+    },
+    choose: chooseModel,
+  });
+  onCleanup(() => props.onModelControl?.(null));
 
   const send = (text: string, steer: boolean, images: OutboundImage[], dataUrls: string[]) => {
     if (!socket.send({ type: steer ? "steer" : "prompt", text, ...(images.length ? { images } : {}) })) return false;
@@ -180,13 +260,47 @@ export function ChatView(props: {
         count={(items()?.length ?? 0) + live.entries.length}
         resume={resume()}
         busy={!items()}
-        banner={<ConnectionBanner socket={socket} />}
+        banner={
+          <div class="stack-2">
+            <ConnectionBanner socket={socket} />
+            <Show when={modelError()}>
+              {(err) => (
+                <Banner
+                  tone="error"
+                  title={
+                    <>
+                      Couldn't switch to <code>{idOf(err().target)}</code>.
+                    </>
+                  }
+                  body={
+                    <>
+                      {err().body}
+                      <Show when={err().from}> You're still on <code>{idOf(err().from!)}</code>.</Show>
+                    </>
+                  }
+                  action={
+                    <button type="button" class="button button-sm button-ghost" onClick={() => setModelError(null)}>
+                      Dismiss
+                    </button>
+                  }
+                />
+              )}
+            </Show>
+          </div>
+        }
       >
         <Show when={items()} fallback={<TranscriptSkeleton />}>
           {(list) => (
             <>
               <HistoryItems items={list()} author={props.author} streaming={live.running} />
               <LiveEntries live={live} author={props.author} />
+              <For each={modelRows()}>
+                {(ref) => (
+                  <InfoRow>
+                    Model changed to <code>{ref}</code>
+                  </InfoRow>
+                )}
+              </For>
               {/* Model/thinking info rows alone don't count as a conversation. */}
               <Show when={live.entries.length === 0 && !list().some((i) => i.kind !== "info")}>
                 <div class="empty">

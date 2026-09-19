@@ -10,7 +10,12 @@ live-watch sessions that are open in the CLI/TUI, spawn new sessions.
 - `server/` — Node backend: Hono (REST) + `ws` (2 WS endpoints), embeds the pi SDK. Owned by **backend**.
 - `src/` — SolidJS + TS frontend (Vite, vite-plugin-solid; HMR = live reload). Owned by **frontend**, except `src/design/`.
 - `src/design/`, `DESIGN_NOTES.md`, `public/` — design tokens, base CSS, fonts/icons, UX spec. Owned by **designer**.
-- `.claude/skills/fold-ai-dev-design/` — the design system skill (copied from foldaidev). READ IT.
+- `.claude/skills/` — project skills, registered for pi by `.pi/settings.json` (`"skills": ["../.claude/skills"]`;
+  the folder is also trusted in `~/.pi/agent/trust.json`, or pi prompts each session).
+  `fold-ai-dev-design/` — the design system skill (copied from foldaidev). READ IT.
+  `playwright/` — CDP browser automation via `scripts/start-browser.sh` + `scripts/pw.sh`; read its
+  SKILL.md before any browser work (own browser per caller, `resize` must follow `navigate`, a bare
+  `console` reloads the page).
 - `pi-config/` — the user's pi config and extensions (merged in from Naomarik/pi-config with history;
   `~/pi-config` is a compat symlink to it). Shared, not owned by any team. `~/.pi/agent` symlinks into
   this directory, so an edit here changes the user's LIVE TUI on its next `/reload`, and every

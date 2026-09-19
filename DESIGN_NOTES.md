@@ -276,8 +276,8 @@ Both regions use exactly the same folder groups and rows described above. Each r
 
 ```html
 <nav class="sidebar-list pane" aria-label="Session list">
-  <!-- Top region. With 0 rows and no query, render only the note:
-       <section class="sidebar-region"><p class="sidebar-region-note">0 sessions open in a TUI or started here. The archive below has the rest.</p></section>
+  <!-- Top region. With 0 rows and no query, keep the head ("Live & web · 0") and replace the
+       groups with <p class="sidebar-region-note">0 sessions open in a TUI or started here. The archive below has the rest.</p>.
        With 0 rows while searching, omit the region. -->
   <section class="sidebar-region" aria-labelledby="r-top">
     <h2 class="sidebar-region-head" id="r-top">
@@ -313,7 +313,8 @@ Folder labels keep sticking to the top of the pane as you scroll. Region heads d
 **Labels.** The top region is "Live & web · {n}" and the archive is "Archive · {n}". While a
 search is active, each shows "· {hits} of {total}" for that region.
 
-**Empty top region.** With no query, it's replaced by `.sidebar-region-note`: "0 sessions open in
+**Empty top region.** With no query, the head stays ("Live & web · 0") and the groups are
+replaced by `.sidebar-region-note`: "0 sessions open in
 a TUI or started here. The archive below has the rest." The archive is also forced open (case 1
 below).
 

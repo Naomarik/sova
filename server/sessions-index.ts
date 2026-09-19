@@ -6,7 +6,7 @@ import { type LiveRecord, readLive, readOwnLiveRecords, workerCountsOf } from ".
 import { LIVE_DIR, SESSIONS_DIR } from "./paths";
 import { isWebSession } from "./web-sessions";
 import { isArchived, setArchived } from "./archived-sessions";
-import { isSessionBusy } from "./chat-manager";
+import { disposeHeldChat, isSessionBusy } from "./chat-manager";
 
 type BaseSummary = Omit<SessionSummary, "live" | "workers" | "origin" | "archived" | "busy">;
 
@@ -287,7 +287,13 @@ export async function archiveSession(path: string, archived: boolean): Promise<A
   if (archived && s.origin !== "web") {
     return { ok: false, status: 409, error: "Only sessions started in pi-web can be archived. This one is already in the archive." };
   }
+  if (archived && isSessionBusy(s.path)) {
+    return { ok: false, status: 409, error: "The agent is mid-turn; abort or wait before archiving." };
+  }
   if (s.archived !== archived) setArchived(s.id, archived);
+  // Archiving is the close gesture: shut the held runtime down (running subagents die with it).
+  // There is no idle timer anymore — a runtime lives until this, a reload, or server shutdown.
+  if (archived) await disposeHeldChat(s.path, "Session archived; its runtime was closed.");
   return { ok: true, summary: { ...s, archived } };
 }
 

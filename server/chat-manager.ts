@@ -23,7 +23,6 @@ import { toContextInfo } from "./models";
 import { contextForBranch, normalizeEntries } from "./transcript";
 import { ForeignWriteGuard, markOwned, recentForeignWriteAgeSec } from "./write-guard";
 
-const IDLE_DISPOSE_MS = 10 * 60 * 1000;
 const GUARD_POLL_MS = 3000;
 
 // Extensions may read ctx.ui.theme; pi's `theme` singleton isn't exported, so initialize
@@ -151,7 +150,6 @@ interface PendingUi {
 class ChatSession {
   readonly clients = new Set<ChatClient>();
   private unsubscribe: (() => void) | null = null;
-  private disposeTimer: NodeJS.Timeout | null = null;
   private pendingUi = new Map<string, PendingUi>();
   private guard: ForeignWriteGuard | null = null;
   private guardTimer: NodeJS.Timeout | null = null;
@@ -256,7 +254,6 @@ class ChatSession {
         this.modeApplies = "now";
         this.broadcast(this.modeMessage(readMode()));
       }
-      if (event.type === "agent_settled" && this.clients.size === 0) this.scheduleDispose();
     });
     this.broadcast(this.commands()); // extension commands exist only after bindExtensions
     this.modeApplies = this.modeCommand() ? "now" : "new-chats";
@@ -358,8 +355,6 @@ class ChatSession {
 
   attach(client: ChatClient): void {
     this.clients.add(client);
-    if (this.disposeTimer) clearTimeout(this.disposeTimer);
-    this.disposeTimer = null;
     client.send(this.hello());
     client.send(this.commands());
     client.send(this.modeMessage(readMode()));
@@ -370,10 +365,10 @@ class ChatSession {
   detach(client: ChatClient): void {
     this.clients.delete(client);
     if (this.clients.size === 0) {
-      // Nobody can answer open dialogs anymore: resolve them with defaults.
+      // Nobody can answer open dialogs anymore: resolve them with defaults. The runtime stays
+      // alive: a session closes when the user archives it, not when the last tab leaves.
       for (const p of this.pendingUi.values()) p.resolve(undefined);
       this.pendingUi.clear();
-      this.scheduleDispose();
     }
   }
 
@@ -495,24 +490,9 @@ class ChatSession {
     this.broadcast(msg ?? { type: "workers", working: 0, total: 0, workers: [] });
   }
 
-  private scheduleDispose(): void {
-    if (this.disposeTimer || this.disposed) return;
-    this.disposeTimer = setTimeout(() => {
-      this.disposeTimer = null;
-      if (this.clients.size > 0) return;
-      if (this.session.isStreaming) {
-        // Let the run finish; agent_settled reschedules.
-        return;
-      }
-      void this.dispose();
-    }, IDLE_DISPOSE_MS);
-    this.disposeTimer.unref();
-  }
-
   async dispose(): Promise<void> {
     if (this.disposed) return;
     this.disposed = true;
-    if (this.disposeTimer) clearTimeout(this.disposeTimer);
     if (this.guardTimer) clearInterval(this.guardTimer);
     if (this.workersTimer) clearInterval(this.workersTimer);
     this.unsubscribe?.();
@@ -613,6 +593,16 @@ class ChatSession {
 const sessions = new Map<string, Promise<ChatSession>>();
 /** Fully opened runtimes by canonical path (pending opens are not here), for sync busy lookups. */
 const held = new Map<string, ChatSession>();
+
+/** Close a held runtime for good (archive/close): any open tab is told to reconnect, and the
+    session reopens on demand. A running turn is aborted and its workers die with it. */
+export async function disposeHeldChat(path: string, message: string): Promise<boolean> {
+  const chat = held.get(path);
+  if (!chat || chat.disposed) return false;
+  chat.broadcast({ type: "error", code: "reloaded", message });
+  await chat.dispose();
+  return true;
+}
 
 /** SessionSummary.busy: this server holds the runtime and an agent run is in progress. */
 export function isSessionBusy(path: string): boolean {

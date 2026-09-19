@@ -117,7 +117,7 @@ export default function topicOutline(pi: ExtensionAPI): void {
   function updateStatus(rebuild = false): void {
     const ctx = runtime?.ctx;
     if (!ctx || !ctx.hasUI) return;
-    let text = `§ ${nowLine.text()}`;
+    let text = nowLine.text();
     if (runtime) {
       const store = runtime.store;
       const suffix = store.state === "failed-keeping-last" ? " · outline err"

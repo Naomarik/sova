@@ -3,9 +3,11 @@
  *
  * Shows how many subagents are busy:
  * - While pi is streaming, the count is appended to the "Working" message
- *   (e.g. "Working · 2 subagents").
+ *   (e.g. "Working · 2 subagents", or "Working · 3 subagents · 2 team").
  * - While pi is idle but subagents still run in the background, an animated
  *   spinner widget is shown below the editor (e.g. "⠸ 2 subagents working").
+ * Solo subagents and team members (workers with a teamId) are counted
+ * separately; a kind with nothing working is omitted.
  *
  * Counts come from the subagents extension's "subagents:workers-snapshot"
  * events on the shared bus; without that extension pi's UI is untouched.
@@ -27,23 +29,41 @@ const WIDGET_KEY = "working-subagent-count";
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const SPINNER_INTERVAL_MS = 80;
 
-// Mirrors the subagents status line ("◆ N working · M idle"), which counts a
+// Mirrors the subagents status line ("Agents: N working · M idle"), which counts a
 // worker as working unless it is settled: finished, or parked in "waiting".
 const IDLE_STATUSES = new Set(["waiting", "done", "error", "killed"]);
 
-function countWorking(data: unknown): number | undefined {
+interface Counts {
+	solo: number;
+	team: number;
+}
+
+function countWorking(data: unknown): Counts | undefined {
 	const snapshot = data as { version?: unknown; workers?: unknown } | null | undefined;
 	if (snapshot?.version !== 1 || !Array.isArray(snapshot.workers)) return undefined;
-	return snapshot.workers.filter((worker: { status?: unknown } | null) => {
+	const counts: Counts = { solo: 0, team: 0 };
+	for (const worker of snapshot.workers as ({ status?: unknown; teamId?: unknown } | null)[]) {
 		const status = worker?.status;
-		return typeof status === "string" && !IDLE_STATUSES.has(status);
-	}).length;
+		if (typeof status !== "string" || IDLE_STATUSES.has(status)) continue;
+		// Older snapshots carry no teamId; those workers count as solo subagents.
+		if (typeof worker?.teamId === "string" && worker.teamId) counts.team++;
+		else counts.solo++;
+	}
+	return counts;
+}
+
+// "3 subagents · 2 team", omitting zero segments; "" when nothing is working.
+function splitLabel({ solo, team }: Counts): string {
+	const parts: string[] = [];
+	if (solo > 0) parts.push(`${solo} subagent${solo === 1 ? "" : "s"}`);
+	if (team > 0) parts.push(`${team} team`);
+	return parts.join(" · ");
 }
 
 export default function (pi: ExtensionAPI) {
 	let enabled = true;
 	// undefined until a snapshot arrives (subagents extension may be absent).
-	let count: number | undefined;
+	let count: Counts | undefined;
 	let activeCtx: ExtensionContext | undefined;
 	// True while the main agent is streaming; false before the first run and
 	// after "agent_settled".
@@ -54,9 +74,9 @@ export default function (pi: ExtensionAPI) {
 	// only touch pi's default message when we previously overrode it.
 	let ourMessage: string | undefined;
 
-	const working = () => count ?? 0;
-	const suffixText = () => `Working · ${working()} subagent${working() === 1 ? "" : "s"}`;
-	const widgetText = () => `${working()} subagent${working() === 1 ? "" : "s"} working`;
+	const working = () => (count ? count.solo + count.team : 0);
+	const suffixText = () => (count ? `Working · ${splitLabel(count)}` : "Working");
+	const widgetText = () => (count ? `${splitLabel(count)} working` : "");
 
 	// The suffix is only meaningful while pi is streaming; the widget covers
 	// the idle case. Showing both at once would duplicate the count.
@@ -203,7 +223,11 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 			const state =
-				count === undefined ? "no snapshot yet (subagents extension not detected)" : `${count} working`;
+				count === undefined
+					? "no snapshot yet (subagents extension not detected)"
+					: working() > 0
+						? `${splitLabel(count)} working`
+						: "0 working";
 			ctx.ui.notify(`Working subagent count: ${enabled ? "on" : "off"} · ${state}`, "info");
 		},
 	});

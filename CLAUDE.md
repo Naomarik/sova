@@ -35,6 +35,22 @@ live-watch sessions that are open in the CLI/TUI, spawn new sessions.
 - `pi-config/install.sh` links `pi-config/` into `~/.pi/agent`; `pi-config/install.sh --check` verifies
   that without changing anything.
 
+## Dev-server restart pitfall (worker suicide)
+
+`npm run dev:server` is `tsx watch`: editing ANY file in the server's live import graph —
+non-test `server/**` files, `shared/**`, and `pi-config/extensions/mode/{state,minor}.ts` —
+restarts the server process within ~100ms. Workers spawned by a session hosted in that server
+(pi or claude-code backend from agent_spawn/team_create) are CHILD PROCESSES of it with piped
+stdio: the restart kills them mid-task and zeroes the in-memory subagent registry (agent_list
+returns empty; the dead worker's transcript is "unavailable"). Hosted chat sessions themselves
+survive (JSONL persistence; the webapp reconnects and the runtime reopens). Workers don't.
+
+Rules:
+- While the watch server runs, delegate only `src/**`, test files (`server/*.test.ts`), and docs.
+- Apply server-graph edits from the orchestrator session itself, batched into as few write bursts
+  as possible and as the LAST step of a turn — the restart may cut the turn, but the edits persist.
+- Or run the server without watch (`npx tsx server/index.ts`) for the duration of server-side work.
+
 ## pi-config mirror
 
 The public repo github.com/Naomarik/pi-config is a `git subtree split` of `pi-config/`, so it stays

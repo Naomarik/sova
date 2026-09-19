@@ -2,7 +2,7 @@
 // Drives the real index.ts through the globally installed pi runtime (jiti alias),
 // with a fake ExtensionAPI/TUI and a fake claude-code backend registration.
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -157,11 +157,28 @@ assert.match(heavyPrompt.systemPrompt, /^base\n/);
 assert.match(heavyPrompt.systemPrompt, /# Mode: claude-heavy/);
 assert.match(heavyPrompt.systemPrompt, /claude-fable-5-1\[1m\]/);
 assert.ok(entries.some((e) => e.type === "mode" && e.data.mode === "claude-heavy"), "transcript marker appended");
+const modeEntries = () => entries.filter((e) => e.type === "mode");
+const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+assert.deepEqual(
+	modeEntries().at(-1).data,
+	{ mode: "claude-heavy", active: { version: 1, mode: "claude-heavy", strict: false, minorModes: [] } },
+	"the switch entry carries the full post-switch snapshot",
+);
 
 // Strict mode hides edit/write from the orchestrator and restores on mode exit
 await commands.get("mode").handler("strict on", ctx);
 assert.deepEqual(getTools(), ["read", "bash", "grep"], "strict removed edit/write");
 assert.equal(store.status.get("mode"), "<accent>claude-heavy · strict</accent>");
+assert.deepEqual(
+	modeEntries().at(-1).data,
+	{ strict: true, active: { version: 1, mode: "claude-heavy", strict: true, minorModes: [] } },
+	"strict gets its own marker",
+);
+assert.match(
+	renderers.get("mode")({ data: modeEntries().at(-1).data }, {}, ctx.ui.theme).render(80).join(""),
+	/── strict on ──/,
+	"strict marker renders",
+);
 await commands.get("mode").handler("normal", ctx);
 assert.deepEqual(getTools(), ["read", "bash", "edit", "write", "grep"], "tools restored on leaving heavy");
 assert.equal(store.status.get("mode"), "<dim>normal</dim>");
@@ -186,6 +203,11 @@ const normalAlign = await beforeAgentStart({ systemPrompt: "base" }, ctx);
 assert.match(normalAlign.systemPrompt, /^base\n\n# Minor mode: align/);
 assert.doesNotMatch(normalAlign.systemPrompt, /# Mode: claude-heavy/);
 assert.ok(entries.some((e) => e.type === "mode" && e.data.minor === "align" && e.data.on === true), "minor marker appended");
+assert.deepEqual(
+	modeEntries().at(-1).data.active,
+	{ version: 1, mode: "normal", strict: true, minorModes: ["align"] },
+	"minor switches snapshot the whole triple too",
+);
 const markerText = renderers.get("mode")({ data: { minor: "align", on: true } }, {}, ctx.ui.theme).render(80).join("");
 assert.match(markerText, /── align on ──/, "minor marker renders");
 const oldMarkerText = renderers.get("mode")({ data: { mode: "claude-heavy" } }, {}, ctx.ui.theme).render(80).join("");
@@ -234,7 +256,8 @@ assert.equal(rows.find((row) => row.id === "mode:normal").label, "✓ normal", "
 await rows.find((row) => row.id === "mode:claude-heavy").run();
 assert.equal(store.status.get("mode"), "<accent>claude-heavy · strict</accent>", "claude-heavy row switches mode");
 
-assert.equal(rows.at(-1).id, "mode:align:view", "last palette row opens the align viewer");
+assert.equal(rows.at(-2).id, "mode:align:view", "the align viewer row is second to last");
+assert.equal(rows.at(-1).id, "mode:default:save", "save as default is the last palette row");
 
 // Bare /mode never toggles: with no palette to claim it, it explains instead
 const tuiCtx = { ...ctx, mode: "tui" };
@@ -273,6 +296,86 @@ off();
 // Completions include minor modes
 const completions = commands.get("mode").getArgumentCompletions("al").map((item) => item.value);
 assert.deepEqual(completions, ["align", "align on", "align off"]);
+
+// ── Scope: mode.json is only the default; every switch lives in this session ──
+const stateFile = path.join(process.env.PI_CODING_AGENT_DIR, "mode.json");
+const readDefault = () => JSON.parse(readFileSync(stateFile, "utf8"));
+const writeDefault = (mode, minorModes) => writeFileSync(stateFile, `${JSON.stringify({ version: 1, mode, strict: false, minorModes }, null, 2)}\n`);
+assert.ok(!existsSync(stateFile), "no switch so far has written mode.json");
+
+// /mode default is the only session-side writer, and writes no entry
+await commands.get("mode").handler("claude-heavy", ctx);
+await commands.get("mode").handler("align on", ctx);
+let entriesBefore = entries.length;
+await commands.get("mode").handler("default", ctx);
+assert.equal(entries.length, entriesBefore, "/mode default appends no transcript entry");
+assert.deepEqual(readDefault(), { version: 1, mode: "claude-heavy", strict: true, minorModes: ["align"] }, "/mode default writes this session's triple");
+assert.match(store.notices.at(-1).message, /^Default mode saved: claude-heavy · strict · align/);
+
+// /mode status shows both scopes
+await commands.get("mode").handler("status", ctx);
+assert.match(store.notices.at(-1).message, /^mode: claude-heavy$/m, "status names this session's mode");
+assert.match(store.notices.at(-1).message, /^default: claude-heavy · strict · align/m, "status names the default too");
+
+// The palette's last row saves the default as well
+writeDefault("normal", []);
+await provider.items(ctx).at(-1).run();
+assert.equal(readDefault().mode, "claude-heavy", "the save-as-default row writes the file");
+
+// A snapshot on the branch beats both the launch flags and the default
+writeDefault("normal", []);
+flagValues.mode = "normal";
+flagValues.minor = "none";
+store.branch = [
+	{ type: "custom", customType: "mode", data: { mode: "normal", active: { version: 1, mode: "normal", strict: false, minorModes: [] } } },
+	{ type: "custom", customType: "mode", data: { mode: "claude-heavy", active: { version: 1, mode: "claude-heavy", strict: true, minorModes: ["align"] } } },
+	{ type: "custom", customType: "mode", data: { minor: "align", on: true } }, // legacy marker: renders, never restores
+	{ type: "custom", customType: "mode", data: { active: { version: 2, mode: "normal", strict: false, minorModes: [] } } }, // newer schema: skipped
+	{ type: "custom", customType: "mode", data: null }, // malformed: skipped
+];
+entriesBefore = entries.length;
+await hook("session_start", { reason: "startup" });
+await flush();
+assert.equal(store.status.get("mode"), "<accent>claude-heavy · strict · align</accent>", "the newest usable snapshot wins over --mode/--minor and the default");
+assert.deepEqual(getTools(), ["read", "bash", "grep"], "restoring strict heavy reapplies the strict tool set");
+assert.match((await beforeAgentStart({ systemPrompt: "base" }, ctx)).systemPrompt, /# Mode: claude-heavy/, "the restored mode shapes the prompt");
+assert.equal(entries.length, entriesBefore, "restoring appends nothing");
+
+// An empty branch adopts the default as it is now, and still writes nothing
+writeDefault("normal", ["align"]);
+store.branch = [];
+delete flagValues.mode;
+delete flagValues.minor;
+entriesBefore = entries.length;
+await hook("session_start", { reason: "resume" });
+assert.equal(store.status.get("mode"), "<accent>normal · align</accent>", "a never-switched session follows the default");
+assert.equal(entries.length, entriesBefore, "adopting the default appends no entry");
+assert.deepEqual(getTools(), ["read", "bash", "edit", "write", "grep"], "the default is not strict");
+
+// Launch flags apply on top of the default, on a first start only
+flagValues.minor = "none";
+await hook("session_start", { reason: "startup" });
+assert.equal(store.status.get("mode"), "<dim>normal</dim>", "--minor none clears the default's minor modes");
+await hook("session_start", { reason: "resume" });
+assert.equal(store.status.get("mode"), "<accent>normal · align</accent>", "flags are a launch override, not a resume one");
+delete flagValues.minor;
+
+// /tree: no snapshot on the new branch falls back to the default; one with strict heavy retools
+await hook("session_tree", { newLeafId: "a", oldLeafId: "b" });
+assert.equal(store.status.get("mode"), "<accent>normal · align</accent>", "a branch without a snapshot uses the default");
+store.branch = [{ type: "custom", customType: "mode", data: { strict: true, active: { version: 1, mode: "claude-heavy", strict: true, minorModes: [] } } }];
+await hook("session_tree", { newLeafId: "c", oldLeafId: "a" });
+await flush();
+assert.equal(store.status.get("mode"), "<accent>claude-heavy · strict</accent>", "the branch's snapshot applies");
+assert.deepEqual(getTools(), ["read", "bash", "grep"], "tree onto strict heavy removes edit/write");
+store.branch = [];
+await hook("session_tree", { newLeafId: "a", oldLeafId: "c" });
+assert.deepEqual(getTools(), ["read", "bash", "edit", "write", "grep"], "tree back off strict restores them");
+
+// Back to a plain default and a pristine branch for the scenarios below
+writeDefault("normal", []);
+await hook("session_start", { reason: "resume" });
+assert.equal(store.status.get("mode"), "<dim>normal</dim>");
 
 // --minor launch flag: applies known names, warns once about unknown ones
 await commands.get("mode").handler("normal", ctx);
@@ -424,6 +527,8 @@ assert.match(renderers.get("align-doc")({ data: { version: 1, doc: null } }, {},
 
 // session_start restores the newest doc from the branch; a later doc:null hides it; align off hides the widget but keeps the doc
 store.branch = [
+	// The session's own align toggle: without it the restore would take align from the default (off).
+	{ type: "custom", customType: "mode", data: { minor: "align", on: true, active: { version: 1, mode: "normal", strict: false, minorModes: ["align"] } } },
 	{ type: "custom", customType: "align-doc", data: alignEntries()[0].data },
 	{ type: "custom", customType: "align-doc", data: alignEntries()[1].data },
 ];

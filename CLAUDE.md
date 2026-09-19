@@ -21,7 +21,9 @@ live-watch sessions that are open in the CLI/TUI, spawn new sessions.
   this directory, so an edit here changes the user's LIVE TUI on its next `/reload`, and every
   runtime pi-web embeds. Treat it like `shared/protocol.ts`: coordinate before changing any contract
   pi-web parses (sessions live registry `sessions/live/*.json`, usage-status cache, subagents
-  teams/snapshots, topic-outline state, command-palette `model-favorites.json`, mode `mode.json`).
+  teams/snapshots, topic-outline state, command-palette `model-favorites.json`, mode `mode.json` =
+  the DEFAULT mode for new sessions; the active mode is per session, in the session's own `mode`
+  custom entry, and pi-web restores it with `restoreActive` from `state.ts`).
   Not covered by pi-web's tsconfig, with one exception: `server/mode-state.ts` imports
   `pi-config/extensions/mode/state.ts` and `minor.ts` (hence `allowImportingTsExtensions`), so an
   edit to either can break pi-web's typecheck. Keep both pi-runtime-free (node builtins and each
@@ -43,7 +45,8 @@ live-watch sessions that are open in the CLI/TUI, spawn new sessions.
 ## Dev-server restart pitfall (worker suicide)
 
 `npm run dev:server` is `tsx watch`: editing ANY file in the server's live import graph —
-non-test `server/**` files, `shared/**`, and `pi-config/extensions/mode/{state,minor}.ts` —
+non-test `server/**` files, `shared/**`, and ANY non-test file under `pi-config/extensions/mode/`
+(`scripts/dev-server.mjs` watches that whole directory, not just the two files pi-web imports) —
 restarts the server process within ~100ms. Workers spawned by a session hosted in that server
 (pi or claude-code backend from agent_spawn/team_create) are CHILD PROCESSES of it with piped
 stdio: the restart kills them mid-task and zeroes the in-memory subagent registry (agent_list

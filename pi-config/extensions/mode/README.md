@@ -1,9 +1,9 @@
 # Mode switcher for Pi
 
-A global toggle between **normal** mode (pi as usual) and **claude-heavy**
-mode, where the main agent becomes an orchestrator and delegates work to
-Claude Code background workers through the `subagents` + `claude-code`
-extensions:
+A **per-session** toggle between **normal** mode (pi as usual) and
+**claude-heavy** mode, where the main agent becomes an orchestrator and
+delegates work to Claude Code background workers through the `subagents` +
+`claude-code` extensions:
 
 - **Coding implementation** → `claude-code` workers on `opus[1m]`; the
   orchestrator picks `low` effort for mechanical changes and `medium` where
@@ -34,7 +34,8 @@ Claude plan mode are involved — workers run with bypassed permissions as usual
 | `ctrl+p` → **Mode**, or bare `/mode` | Open the mode selector (see below) |
 | `alt+m` | Toggle normal ↔ claude-heavy |
 | `/mode normal` · `/mode claude-heavy` | Set explicitly |
-| `/mode status` | Show mode, active planner, strict flag, minor modes, state file |
+| `/mode status` | Show this session's mode, the default for new sessions, active planner, strict flag, minor modes, state file |
+| `/mode default` | Save this session's mode, strict flag and minor modes as the default for new sessions (the only command here that writes `mode.json`) |
 | `/mode strict on\|off` | Also remove `edit`/`write` from the orchestrator while heavy (off by default) |
 | `/mode align [on\|off]` | Toggle (or set) the `align` minor mode |
 | `/align`, or `alt+a` | Open the read-only alignment-doc viewer (see below) |
@@ -53,6 +54,8 @@ thinking*; bare `/mode` opens the palette straight at it. It lists:
   Enter toggles it **in place**; the palette stays open so several can be
   flipped in one visit. Esc goes back, Ctrl+P closes.
 - **align: open viewer**, which opens the alignment-doc overlay.
+- **save as default**, the same as `/mode default`. Everything above it
+  changes this session only; this row is the one that changes `mode.json`.
 
 Root-level palette search finds these rows too (type `align`, press Enter).
 Without an interactive palette (print/RPC mode, or the `command-palette`
@@ -71,7 +74,10 @@ The footer always shows the current mode:
 - `claude-heavy · strict · align`
 
 Every switch appends a `── mode → … ──` marker to the transcript; minor-mode
-switches append `── align on ──` / `── align off ──`.
+switches append `── align on ──` / `── align off ──`, and strict toggles
+`── strict on ──` / `── strict off ──`. Each of those entries also carries the
+full post-switch snapshot, which is what makes the state per session (see
+**Behaviour**).
 
 ## Minor modes
 
@@ -148,12 +154,51 @@ it is not registered and a warning says so at session start.
 
 While heavy, the extension appends orchestration instructions to the system
 prompt on every turn (`before_agent_start`), so toggling takes effect on the
-next prompt without `/reload`. The mode persists globally across projects and
-restarts in `~/.pi/agent/mode.json`:
+next prompt without `/reload`.
+
+### Two scopes
+
+The **active** state — major mode, `strict`, minor modes — belongs to **one
+session**. Switching in one pi window, or in one pi-web chat, changes nothing
+anywhere else. It is persisted by snapshotting the whole triple into the same
+`mode` custom entry every switch already appended:
+
+```json
+{"customType":"mode","data":{"minor":"align","on":true,
+  "active":{"version":1,"mode":"claude-heavy","strict":false,"minorModes":["align"]}}}
+```
+
+So it travels with the transcript: it restores on `/resume`, `/reload`,
+`/fork`, `/tree` and a pi-web reopen, exactly like the alignment doc. The
+newest entry with a readable `active` wins; entries written before this
+existed, and any future schema this build cannot read, are skipped (they still
+render as markers). Restoring writes nothing, so merely opening a session
+never appends to it.
+
+`~/.pi/agent/mode.json` holds the shortcuts and the **default a new session
+starts from**:
 
 ```json
 { "version": 1, "mode": "claude-heavy", "strict": false, "minorModes": ["align"] }
 ```
+
+A session that has never switched anything follows that default, re-read on
+every start — so editing the file (or `/mode default`) moves every untouched
+session at once. The first switch in a session pins it, and it stops following.
+Launch flags (`--mode`, `--minor`) apply on top of the default at startup only,
+and lose to a session's own snapshot.
+
+`/mode default` and the palette's **save as default** row are the only things
+here that write `mode.json`; `/mode <x>`, `/mode strict on|off`, `/align
+on|off`, `alt+m` and the palette toggles never do. Other fields in the file are
+preserved when it is rewritten.
+
+**Migration.** Files written before this change are read as the default, so a
+global `"minorModes": ["align"]` would still start every new session in align.
+Set the file to what new sessions should start as — by hand, or with
+`/mode default` from a session already in that state. Sessions that predate
+this change carry no snapshot, so they follow the default until their next
+switch.
 
 An optional `"shortcut"` field (a pi-tui KeyId such as `"alt+h"`) changes the
 toggle key on the next reload. An optional `"minorShortcuts"` object (for

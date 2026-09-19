@@ -281,7 +281,7 @@ export function ChatView(props: {
     choose: chooseModel,
   });
   onCleanup(() => props.onModelControl?.(null));
-  props.onModeControl?.({ state: modeState });
+  props.onModeControl?.({ state: modeState, path: props.path });
   onCleanup(() => props.onModeControl?.(null));
 
   // Mirror this session's run state for the sidebar's Busy chip (the list refetches on settle).

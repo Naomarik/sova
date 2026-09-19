@@ -7,7 +7,7 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
-import { disposeAllChats } from "./chat-manager";
+import { disposeAllChats, heldChat } from "./chat-manager";
 import { canonicalPath, resolveSessionPath } from "./paths";
 import { listModels, resolveContext } from "./models";
 import { markOwned } from "./write-guard";
@@ -17,7 +17,7 @@ import { archiveSession, cleanupSessions, getSessionSummary, listCwds, listSessi
 import { contextForBranch, normalizeEntries, readActiveBranch } from "./transcript";
 import { checkTmpImage, MAX_ATTACHMENT_BYTES, readTmpImage, saveUploadedImage, UploadError } from "./attachments";
 import { listFolders } from "./folders";
-import { startModeWatcher, switchMode } from "./mode";
+import { switchMode } from "./mode";
 import { modeInfo, parseModePatch, readMode } from "./mode-state";
 import { attachWebSockets } from "./ws";
 
@@ -113,11 +113,17 @@ app.get("/api/folders", async (c) => {
 
 app.get("/api/models", async (c) => c.json(await listModels()));
 
-// The global mode (~/.pi/agent/mode.json, the mode extension's file). A switch is applied to every
-// chat this server holds, so their next message follows it (server/mode.ts).
+// The mode is per session (DESIGN_NOTES §4g). ~/.pi/agent/mode.json is the default new sessions
+// start from; GET reads it, POST without ?path= writes it and changes no open chat.
 app.get("/api/mode", (c) => c.json(modeInfo(readMode())));
 
+// With ?path=<session .jsonl>: switch that one held chat, from its next message (server/chat-manager
+// applyMode), leaving the default alone. Without it: write the default (server/mode.ts).
 app.post("/api/mode", async (c) => {
+  const rawPath = c.req.query("path");
+  const path = rawPath === undefined ? null : resolveSessionPath(rawPath);
+  if (rawPath !== undefined && !path)
+    return c.json({ error: "Invalid ?path= (must be a .jsonl under the pi sessions dir)" }, 400);
   let body: unknown;
   try {
     body = await c.req.json();
@@ -126,7 +132,10 @@ app.post("/api/mode", async (c) => {
   }
   const patch = parseModePatch(body);
   if ("error" in patch) return c.json({ error: patch.error }, 400);
-  return c.json(await switchMode(patch));
+  if (path === null) return c.json(await switchMode(patch));
+  const chat = heldChat(path);
+  if (!chat) return c.json({ error: "That session isn't open on this server; open the chat first" }, 404);
+  return c.json(await chat.switchMode(patch));
 });
 
 app.get("/api/transcript", async (c) => {
@@ -203,7 +212,6 @@ server.on("error", (err) => {
   process.exit(1);
 });
 attachWebSockets(server);
-startModeWatcher();
 
 let shuttingDown = false;
 async function shutdown() {

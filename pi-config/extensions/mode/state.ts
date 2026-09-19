@@ -1,4 +1,11 @@
-/** Pure mode-state handling for the mode switcher. No pi imports: unit-testable with node --test. */
+/**
+ * Pure mode-state handling for the mode switcher. No pi imports: unit-testable with node --test,
+ * and imported by pi-web's server, so this file must stay runtime-free.
+ *
+ * Two shapes live here. `ModeState` is the file at ~/.pi/agent/mode.json: the shortcuts, plus the
+ * mode/strict/minorModes triple that is now only the **default for new sessions**. `ModeActive` is
+ * that triple as one session's own active state, carried in the session's `mode` custom entries.
+ */
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { MINOR_MODES, normalizeMinorModes, type MinorMode } from "./minor.ts";
@@ -7,12 +14,13 @@ export type Mode = "normal" | "claude-heavy";
 
 export interface ModeState {
 	version: 1;
+	/** The major mode new sessions start in. A session's own mode lives in its `mode` entries (see ModeActive). */
 	mode: Mode;
-	/** Strict mode additionally removes the edit/write tools from the orchestrator while heavy. Advisory only; default off. */
+	/** Strict mode additionally removes the edit/write tools from the orchestrator while heavy. Default for new sessions; off by default. */
 	strict: boolean;
-	/** Optional override of the toggle shortcut (a pi-tui KeyId, for example "alt+h"). Default: alt+m. */
+	/** Optional override of the toggle shortcut (a pi-tui KeyId, for example "alt+h"). Default: alt+m. Global. */
 	shortcut?: string;
-	/** Active minor modes, canonical order. Absent in older files: loads as empty. */
+	/** Minor modes new sessions start with, canonical order. Absent in older files: loads as empty. */
 	minorModes: MinorMode[];
 	/** Optional per-minor-mode toggle shortcuts (pi-tui KeyIds). None by default. */
 	minorShortcuts?: Partial<Record<MinorMode, string>>;
@@ -70,17 +78,69 @@ export function normalizeState(value: unknown): ModeState {
 	return state;
 }
 
-export function hasMinor(state: ModeState, mode: MinorMode): boolean {
+export function hasMinor(state: Pick<ModeState, "minorModes">, mode: MinorMode): boolean {
 	return state.minorModes.includes(mode);
 }
 
 /** New state with the minor mode on or off, canonical order. Never mutates the input. */
-export function withMinor(state: ModeState, mode: MinorMode, on: boolean): ModeState {
+export function withMinor<T extends { minorModes: MinorMode[] }>(state: T, mode: MinorMode, on: boolean): T {
 	const others = state.minorModes.filter((active) => active !== mode);
 	return { ...state, minorModes: normalizeMinorModes(on ? [...others, mode] : others) };
 }
 
-/** Read the global state file; missing or corrupt files fall back to defaults. Never throws. */
+// ── Per-session active state ─────────────────────────────────────────────────
+
+/** The custom-entry type the extension appends on every switch; also the carrier of the snapshot below. */
+export const MODE_ENTRY_TYPE = "mode";
+
+/** One session's active mode, snapshotted into every `mode` entry so it restores with the transcript. */
+export interface ModeActive {
+	version: 1;
+	mode: Mode;
+	strict: boolean;
+	minorModes: MinorMode[];
+}
+
+/** The session-scoped triple of a state or another active snapshot, copied (never aliased). */
+export function activeOf(state: Pick<ModeState, "mode" | "strict" | "minorModes">): ModeActive {
+	return { version: 1, mode: state.mode, strict: state.strict, minorModes: [...state.minorModes] };
+}
+
+/**
+ * A stored snapshot, or undefined for anything this version does not understand: a legacy delta
+ * marker with no snapshot, a newer `version`, or a malformed payload. Never throws.
+ */
+export function normalizeActive(value: unknown): ModeActive | undefined {
+	if (value === null || typeof value !== "object" || Array.isArray(value)) return undefined;
+	const record = value as Record<string, unknown>;
+	if (record.version !== 1 || !isMode(record.mode)) return undefined;
+	return {
+		version: 1,
+		mode: record.mode,
+		strict: record.strict === true,
+		minorModes: normalizeMinorModes(record.minorModes),
+	};
+}
+
+/**
+ * The newest usable snapshot on a session branch, or undefined when the session never switched
+ * anything (only legacy markers, or no `mode` entry at all) — the caller then uses the default.
+ * Shared with pi-web so the server and the extension restore by the same rule. Never throws.
+ */
+export function restoreActive(entries: readonly { type: string; customType?: string; data?: unknown }[]): ModeActive | undefined {
+	if (!Array.isArray(entries)) return undefined;
+	for (let i = entries.length - 1; i >= 0; i--) {
+		const entry = entries[i];
+		if (!entry || entry.type !== "custom" || entry.customType !== MODE_ENTRY_TYPE) continue;
+		const data = entry.data;
+		if (data === null || typeof data !== "object" || Array.isArray(data)) continue;
+		const active = normalizeActive((data as Record<string, unknown>).active);
+		if (active) return active;
+	}
+	return undefined;
+}
+
+/** Read the defaults file; missing or corrupt files fall back to built-in defaults. Never throws. */
 export function loadState(path: string): ModeState {
 	let raw: string;
 	try {
@@ -95,7 +155,7 @@ export function loadState(path: string): ModeState {
 	}
 }
 
-/** Atomic write so a crash mid-toggle cannot corrupt the only global mode record. */
+/** Atomic write so a crash cannot corrupt the defaults file. Only `/mode default` and pi-web write it. */
 export function saveState(path: string, state: ModeState): void {
 	mkdirSync(dirname(path), { recursive: true });
 	const temporary = `${path}.tmp-${process.pid}`;

@@ -108,6 +108,23 @@ export interface ReportInfo {
       revision; only the newest on the branch becomes a row). `body` is its markdown verbatim,
       open questions as "1. [ ] …" / "2. [x] … — decision" checklist items; `agent` is absent. */
   align?: AlignReportInfo;
+  /** source "explain-doc" only: a forked /explain subagent finished and wrote its HTML page +
+      meta to the explanations store. `preview` is the topic; `agent` is absent. */
+  explain?: ExplanationInfo;
+}
+
+/** One /explain artifact: a self-contained HTML page in the explanations store
+    (~/.pi/agent/explanations/<id>/), written by a forked subagent. */
+export interface ExplanationInfo {
+  id: string; // store dir name, [A-Za-z0-9_-]+; served at /explain/<id>
+  topic: string;
+  /** One honest paragraph, written by the explainer for lists/cards. */
+  summary: string;
+  createdAt: string; // ISO 8601
+  parentSessionId: string; // session that ran /explain
+  /** Set only when there is no page to open at /explain/<id>: the explainer failed (its own
+      one-line reason), or the store entry is gone. Absent ⇒ the page is there. */
+  error?: string;
 }
 
 /** Status and metrics of an align document. status: explicit "implementing"/"confirmed" first,
@@ -169,9 +186,12 @@ export interface UploadResult {
 // GET  /api/models              -> ModelInfo[]                       (available models; favorite=true mirrors the TUI Ctrl+P palette)
 // GET  /api/attachment?path=…   -> image bytes (TmpAttachment.path; only /tmp/<name>.png|jpg|jpeg|webp|gif, ≤ 20MB;
 //                                  400 bad shape, 403 resolves outside /tmp or too large, 404 missing)
-// GET  /api/mode                -> ModeInfo   (the global ~/.pi/agent/mode.json; missing file → defaults)
-// POST /api/mode { mode?, minorModes? } -> ModeInfo   (merged into the fresh file, other fields kept; applied to
-//                                  every chat this server holds, see ModeApplies. 400 bad body or unknown name)
+// GET  /api/mode                -> ModeInfo   (the DEFAULT for new sessions: ~/.pi/agent/mode.json; missing file → defaults)
+// POST /api/mode { mode?, minorModes? } -> ModeInfo   (writes that default only, merged into the fresh file with the
+//                                  other fields kept. No open chat changes. 400 bad body or unknown name)
+// POST /api/mode?path=… { mode?, minorModes? } -> ChatModeResult   (switches THAT chat only, from its next message;
+//                                  mode.json is not written. 400 bad body/unknown name/bad path,
+//                                  404 that session isn't held open by this server)
 // ---------------------------------------------------------------------------
 
 /** Context-window fill of a session: last assistant entry's usage (input+cacheRead+cacheWrite)
@@ -199,8 +219,10 @@ export interface FolderListing {
   truncated: boolean;
 }
 
-/** The mode extension's global switch (pi-config/extensions/mode). One major mode, any set of
-    minor modes. `strict` is shown, never changed here. `modes`/`minors` list what exists. */
+/** The mode extension's settings (pi-config/extensions/mode). One major mode, any set of minor
+    modes. The mode itself is per session; `mode`/`minorModes`/`strict` here are the **default for
+    new sessions** (~/.pi/agent/mode.json), never one chat's state. `strict` is shown, never
+    changed here. `modes`/`minors` list what exists. */
 export interface ModeInfo {
   mode: string; // "normal" | "claude-heavy"
   minorModes: string[]; // canonical order
@@ -209,10 +231,17 @@ export interface ModeInfo {
   minors: { id: string; description: string }[];
 }
 
-/** Where the current mode stands for one open chat: "now" = its next message follows it;
+/** Where a switch stands for the one chat it was sent to: "now" = its next message follows it;
     "after-turn" = switched mid-turn, so messages queued in this turn keep the old one;
-    "new-chats" = this chat can't take it (no mode extension here, or another writer seen). */
+    "new-chats" = this chat can't take a switch at all (the mode extension isn't loaded in it, or
+    a foreign writer was seen), so only the default applies — to sessions started later. */
 export type ModeApplies = "now" | "after-turn" | "new-chats";
+
+/** POST /api/mode?path=…: the chat's mode after the switch, plus how it took (ModeApplies).
+    The same values reach every client of that chat as a "mode" server message. */
+export interface ChatModeResult extends ModeInfo {
+  applies: ModeApplies;
+}
 
 /** WS /ws/chat?path= — full-duplex chat for webapp-owned sessions. */
 export type ChatClientMessage =
@@ -242,8 +271,8 @@ export type ChatServerMessage =
   | { type: "event"; event: unknown }
   /** Extension dialog bridge (select/confirm/input). Optional in MVP. */
   | { type: "model"; model: string }    // active model changed (model_change passthrough events also exist)
-  /** The global mode and how it applies to this chat. Sent after hello and on every change
-      (a switch from any tab, or the TUI writing mode.json). */
+  /** THIS chat's own mode, and how the last switch applies to it. Sent after hello and after
+      every switch of this chat. No other chat's switch, and no write of the default, sends one. */
   | { type: "mode"; mode: string; minorModes: string[]; strict: boolean; applies: ModeApplies }
   /** Slash commands available in this session (sent right after hello, and again after a runtime
       reload). Same enumeration as pi rpc get_commands: extension commands, prompt templates, skills.
@@ -362,4 +391,7 @@ export interface SessionInsight {
   /** This session's own subagent workers, from its live record (empty when it isn't live, or
       absent from an older server). The nested subagents pane lists these. */
   workers?: WorkerInfo[];
+  /** /explain artifacts parented to this session (store ∪ JSONL explain-doc entries, deduped by
+      id, newest first). Absent from older servers. */
+  explanations?: ExplanationInfo[];
 }

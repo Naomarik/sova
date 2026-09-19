@@ -4,7 +4,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, test } from "node:test";
-import { appliesAfter, mergeMode, modeApplyPlan, modeInfo, modeKey, parseModePatch, readMode, writeMode } from "./mode-state";
+import { appliesAfter, mergeMode, modeApplyPlan, modeInfo, modeKey, parseModePatch, readMode, resolveChatMode, writeMode } from "./mode-state";
 import { normalizeEntry } from "./transcript";
 
 const dir = mkdtempSync(join(tmpdir(), "pi-web-mode-test-"));
@@ -82,14 +82,14 @@ describe("mode.json read/merge/write", () => {
   });
 });
 
-describe("modeApplyPlan (how one held chat takes a switch)", () => {
+describe("modeApplyPlan (how the chat a switch was sent to takes it)", () => {
   const base = { foreign: false, hasModeCommand: true, pristine: false, streaming: false };
-  test("a chat that has run: the extension's command, never a reload (its workers would stop)", () => {
+  test("the extension's command, never a reload (its workers would stop)", () => {
     assert.equal(modeApplyPlan(base), "command");
     assert.equal(modeApplyPlan({ ...base, streaming: true }), "command");
   });
-  test("never prompted and idle: reload (writes nothing)", () => {
-    assert.equal(modeApplyPlan({ ...base, pristine: true }), "reload");
+  test("never prompted takes the command path too: the marker entry pins this session's mode", () => {
+    assert.equal(modeApplyPlan({ ...base, pristine: true }), "command");
     assert.equal(modeApplyPlan({ ...base, pristine: true, streaming: true }), "command");
   });
   test("no mode command: never prompt, never reload", () => {
@@ -102,9 +102,73 @@ describe("modeApplyPlan (how one held chat takes a switch)", () => {
   test("what the selector says", () => {
     assert.equal(appliesAfter("command", false), "now");
     assert.equal(appliesAfter("command", true), "after-turn");
-    assert.equal(appliesAfter("reload", false), "now");
     assert.equal(appliesAfter("unsupported", false), "new-chats");
+    assert.equal(appliesAfter("unsupported", true), "new-chats");
     assert.equal(appliesAfter("skip", true), "new-chats");
+  });
+});
+
+describe("resolveChatMode (one chat's own mode when it opens)", () => {
+  const active = (mode: string, strict: boolean, minorModes: string[]) => ({ version: 1, mode, strict, minorModes });
+  const entry = (data: unknown) => ({ type: "custom", customType: "mode", data });
+  /** A default file that is deliberately NOT what the entries say, so overlays are visible. */
+  const defaultFile = () => {
+    const f = file(`default-${Math.random().toString(36).slice(2)}.json`);
+    writeFileSync(f, JSON.stringify({ version: 1, mode: "normal", strict: false, minorModes: ["align"], shortcut: "alt+m" }));
+    return f;
+  };
+
+  test("an empty branch is the file default, shortcuts and all", () => {
+    const f = defaultFile();
+    const s = resolveChatMode([], f);
+    assert.equal(s.mode, "normal");
+    assert.deepEqual(s.minorModes, ["align"]);
+    assert.equal(s.shortcut, "alt+m");
+  });
+
+  test("the newest entry with an active snapshot wins over the default", () => {
+    const f = defaultFile();
+    const s = resolveChatMode(
+      [
+        { type: "message", data: {} },
+        entry({ mode: "claude-heavy", active: active("claude-heavy", false, []) }),
+        entry({ strict: true, active: active("claude-heavy", true, ["align"]) }),
+      ],
+      f,
+    );
+    assert.equal(s.mode, "claude-heavy");
+    assert.equal(s.strict, true);
+    assert.deepEqual(s.minorModes, ["align"]);
+    assert.equal(s.shortcut, "alt+m"); // the file still owns everything outside the active triple
+  });
+
+  test("legacy markers and malformed entries are skipped, so the default stands", () => {
+    const f = defaultFile();
+    const s = resolveChatMode(
+      [
+        entry({ mode: "claude-heavy" }), // legacy: written under global semantics
+        entry({ minor: "align", on: true }),
+        entry({ active: { version: 2, mode: "claude-heavy" } }), // unknown version
+        entry({ active: "nope" }),
+        { type: "custom", customType: "align-doc", data: { active: active("claude-heavy", false, []) } },
+      ],
+      f,
+    );
+    assert.equal(s.mode, "normal");
+    assert.deepEqual(s.minorModes, ["align"]);
+  });
+
+  test("a missing file plus an entry: the entry alone decides", () => {
+    const s = resolveChatMode([entry({ mode: "claude-heavy", active: active("claude-heavy", false, ["align"]) })], file("absent.json"));
+    assert.equal(s.mode, "claude-heavy");
+    assert.deepEqual(s.minorModes, ["align"]);
+  });
+
+  test("it does not alias the entry's array (the caller may not mutate the session's state)", () => {
+    const a = active("claude-heavy", false, ["align"]);
+    const s = resolveChatMode([entry({ mode: "claude-heavy", active: a })], file("absent.json"));
+    s.minorModes.push("align");
+    assert.deepEqual(resolveChatMode([entry({ mode: "claude-heavy", active: a })], file("absent.json")).minorModes, ["align"]);
   });
 });
 
@@ -116,5 +180,17 @@ describe("mode markers in the transcript", () => {
     assert.deepEqual(minor.map((i) => i.text), ["Minor mode: align off"]);
     assert.deepEqual(normalizeEntry({ type: "custom", customType: "mode", data: {}, id: "m3" }), []);
     assert.deepEqual(normalizeEntry({ type: "custom", customType: "topic-outline", data: { mode: "x" }, id: "m4" }), []);
+  });
+
+  test("a strict toggle renders; the active snapshot riding along is state, never a row", () => {
+    const on = normalizeEntry({ type: "custom", customType: "mode", data: { strict: true, active: { version: 1, mode: "claude-heavy", strict: true, minorModes: [] } }, id: "s1" });
+    assert.deepEqual(on.map((i) => [i.kind, i.text]), [["info", "Strict mode on"]]);
+    const off = normalizeEntry({ type: "custom", customType: "mode", data: { strict: false }, id: "s2" });
+    assert.deepEqual(off.map((i) => i.text), ["Strict mode off"]);
+    // A major switch still renders as the major switch, not as its snapshot's strict flag.
+    const major = normalizeEntry({ type: "custom", customType: "mode", data: { mode: "claude-heavy", active: { version: 1, mode: "claude-heavy", strict: true, minorModes: [] } }, id: "s3" });
+    assert.deepEqual(major.map((i) => i.text), ["Mode → claude-heavy"]);
+    // An entry carrying only the snapshot has nothing to say in the transcript.
+    assert.deepEqual(normalizeEntry({ type: "custom", customType: "mode", data: { active: { version: 1, mode: "normal", strict: false, minorModes: [] } }, id: "s4" }), []);
   });
 });

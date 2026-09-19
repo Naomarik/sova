@@ -1,6 +1,8 @@
 import type {
   AgentsInsight,
+  ChatModeResult,
   ContextInfo,
+  ExplanationInfo,
   FolderListing,
   ModeInfo,
   ModelInfo,
@@ -56,12 +58,16 @@ export const listFolders = (path?: string, hidden = false) => {
 
 export const listModels = () => request<ModelInfo[]>("/api/models");
 
-/** The global mode switch and what exists (GET /api/mode). */
+/** The default for new sessions, and what exists (GET /api/mode). */
 export const getMode = () => request<ModeInfo>("/api/mode");
 
-/** Switch the global mode; every open web chat follows from its next message. */
-export const postMode = (patch: { mode?: string; minorModes?: string[] }) =>
-  request<ModeInfo>("/api/mode", {
+/**
+ * Switch one chat's mode (`path` = its session file): only that chat follows, from its next
+ * message, and the reply says how (ChatModeResult.applies). Without `path` this writes the
+ * default for new sessions instead and changes no open chat.
+ */
+export const postMode = (patch: { mode?: string; minorModes?: string[] }, path?: string) =>
+  request<ModeInfo | ChatModeResult>(`/api/mode${path ? `?path=${encodeURIComponent(path)}` : ""}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(patch),

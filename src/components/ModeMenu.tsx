@@ -3,25 +3,28 @@ import type { ChatServerMessage, ModeInfo } from "../../shared/protocol";
 import { getMode, postMode } from "../lib/api";
 import { Banner, Icon } from "./ui";
 
-/** This chat's last WS "mode" message: the global mode and how it applies here. */
+/** This chat's last WS "mode" message: the mode of THIS chat and how a switch applies here. */
 export type ModeState = Omit<Extract<ChatServerMessage, { type: "mode" }>, "type">;
 
-/** What the chat view exposes so the header can show and switch the mode. */
+/** What the chat view exposes so the header can show and switch this chat's mode. */
 export interface ModeControl {
   state: Accessor<ModeState | null>;
+  /** This chat's session file: POST /api/mode?path= switches this chat and no other. */
+  path: string;
 }
 
 type Item = { kind: "radio" | "check"; id: string; description: string };
 
 const itemId = (it: Item) => `mode-${it.kind}-${it.id}`;
 
-// Lists of what exists; fetched on first open, refreshed on every open.
+// Lists of what exists (and the default for new sessions); fetched on first open, refreshed on
+// every open. Only `modes`/`minors` are read from it: what is checked comes from this chat.
 const [info, setInfo] = createSignal<ModeInfo | null>(null);
 
 /**
  * The chat header's mode switch (DESIGN_NOTES §4g): a trigger plus a native popover menu. One
  * major mode (menuitemradio, picking closes) and any minor modes (menuitemcheckbox, toggling
- * stays open). The mode is global: every open web chat follows from its next message.
+ * stays open). The mode is per chat: only this chat follows, from its next message.
  */
 export function ModeMenu(props: { control: ModeControl }) {
   let trigger!: HTMLButtonElement;
@@ -34,11 +37,9 @@ export function ModeMenu(props: { control: ModeControl }) {
   const [error, setError] = createSignal<{ title: string; body: string } | null>(null);
   const [active, setActive] = createSignal(0);
 
-  const current = createMemo(() => {
-    const s = props.control.state();
-    const i = info();
-    return s ?? (i ? { mode: i.mode, minorModes: i.minorModes, strict: i.strict, applies: "now" as const } : null);
-  });
+  // This chat's own state only. Before its WS "mode" message arrives there is nothing to show:
+  // the default in `info()` is not this chat's mode, so the label stays "Mode" and nothing is checked.
+  const current = () => props.control.state();
   const items = createMemo<Item[]>(() => {
     const i = info();
     if (!i) return [];
@@ -96,7 +97,7 @@ export function ModeMenu(props: { control: ModeControl }) {
     setBusy(true);
     setError(null);
     try {
-      setInfo(await postMode(patch)); // this chat's "mode" message follows over the socket
+      setInfo(await postMode(patch, props.control.path)); // this chat's "mode" message follows over the socket
     } catch (err) {
       const why = (err instanceof Error ? err.message : String(err)).replace(/\.$/, "");
       setError({ title: "Couldn't switch the mode.", body: `${why}. Your mode is unchanged.` });
@@ -194,7 +195,7 @@ export function ModeMenu(props: { control: ModeControl }) {
         <Show when={current()?.applies === "new-chats"}>
           <Banner
             tone="warn"
-            title="Applies to new chats only."
+            title="This chat can't switch."
             body="This chat can't switch: the mode extension isn't loaded here, or another program wrote this session."
           />
         </Show>
@@ -218,8 +219,8 @@ export function ModeMenu(props: { control: ModeControl }) {
         </div>
 
         <p class="mode-menu-foot">
-          <span class="text-mono">strict: {current()?.strict ? "on" : "off"}</span> · Applies to every web chat and new pi
-          sessions. Open terminal sessions keep theirs until <code>/reload</code>.
+          <span class="text-mono">strict: {current()?.strict ? "on" : "off"}</span> · This chat only. New sessions start from
+          the default; <code>/mode default</code> saves this chat's as it.
         </p>
       </div>
     </>

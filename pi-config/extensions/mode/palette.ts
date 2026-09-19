@@ -8,6 +8,8 @@ export interface ModeActions {
 	setMinor(minor: MinorMode, on: boolean): void;
 	/** Open the read-only alignment-doc viewer (align minor mode). */
 	openAlignViewer(): void | Promise<void>;
+	/** Write this session's mode, strict flag and minor modes to mode.json as the default for new sessions. */
+	saveDefault(): void | Promise<void>;
 }
 
 export const MODE_CATEGORY_ID = "mode";
@@ -17,8 +19,11 @@ const MODE_DESCRIPTIONS: Record<Mode, string> = {
 	"claude-heavy": "Orchestrate: delegate coding and planning to Claude Code workers",
 };
 
-/** Major modes pick-and-close (radio, current ✓); minor modes toggle in place with a live marker; last row opens the align viewer. */
-export function modeCategoryItems(getState: () => ModeState, actions: ModeActions): MenuItem[] {
+/**
+ * Major modes pick-and-close (radio, current ✓); minor modes toggle in place with a live marker;
+ * then the align viewer, then "save as default". Everything above the last row is this session only.
+ */
+export function modeCategoryItems(getState: () => Pick<ModeState, "mode" | "minorModes">, actions: ModeActions): MenuItem[] {
 	const current = getState().mode;
 	const majors: MenuItem[] = (["normal", "claude-heavy"] as const).map((mode) => ({
 		id: `mode:${mode}`,
@@ -41,5 +46,11 @@ export function modeCategoryItems(getState: () => ModeState, actions: ModeAction
 		description: "Read the accumulated alignment doc (findings, approach, open questions)",
 		run: () => actions.openAlignViewer(),
 	};
-	return [...majors, ...minors, viewer];
+	const saveDefault: MenuItem = {
+		id: "mode:default:save",
+		label: "save as default",
+		description: "New sessions start in this session's mode, strict flag and minor modes",
+		run: () => actions.saveDefault(),
+	};
+	return [...majors, ...minors, viewer, saveDefault];
 }

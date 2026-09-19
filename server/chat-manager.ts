@@ -15,10 +15,10 @@ import {
   SessionManager,
   type Theme,
 } from "@earendil-works/pi-coding-agent";
-import type { ChatClientMessage, ChatServerMessage, ModeApplies, SlashCommand } from "../shared/protocol";
+import type { ChatClientMessage, ChatModeResult, ChatServerMessage, ModeApplies, SlashCommand } from "../shared/protocol";
 import { decodeWorkers } from "./insights";
 import { readLive, readOwnLiveRecords, workerCountsOf } from "./live";
-import { appliesAfter, MINOR_MODES, modeApplyPlan, readMode, type ModeState } from "./mode-state";
+import { appliesAfter, mergeMode, MINOR_MODES, modeApplyPlan, modeInfo, readMode, resolveChatMode, type ModePatch, type ModeState } from "./mode-state";
 import { toContextInfo } from "./models";
 import { contextForBranch, normalizeEntries } from "./transcript";
 import { ForeignWriteGuard, markOwned, recentForeignWriteAgeSec } from "./write-guard";
@@ -161,8 +161,14 @@ class ChatSession {
   /** Open-time SDK bookkeeping appends, written right before the first prompt/steer. */
   deferredAppends: Array<() => void> = [];
   disposed = false;
-  /** How the global mode applies to this chat (ModeApplies); set at bind and by applyMode. */
+  /** How the last switch of THIS chat applies (ModeApplies); set at bind and by applyMode. */
   modeApplies: ModeApplies = "now";
+  /**
+   * This chat's own mode — never another chat's, and never simply the file. bind() resolves it
+   * from this session's branch (resolveChatMode), and applyMode replaces it. The file default
+   * here is only a placeholder until bind() runs.
+   */
+  modeState: ModeState = readMode();
 
   constructor(
     readonly path: string,
@@ -252,10 +258,12 @@ class ChatSession {
       if (event.type === "agent_settled" && this.modeApplies === "after-turn") {
         // A mid-turn switch reaches the next prompt from here on.
         this.modeApplies = "now";
-        this.broadcast(this.modeMessage(readMode()));
+        this.broadcast(this.modeMessage());
       }
     });
     this.broadcast(this.commands()); // extension commands exist only after bindExtensions
+    // The same rule the extension's own session_start runs, so both agree on this session's mode.
+    this.modeState = resolveChatMode(session.sessionManager.getBranch());
     this.modeApplies = this.modeCommand() ? "now" : "new-chats";
   }
 
@@ -268,15 +276,26 @@ class ChatSession {
     return cmd && /[\\/]extensions[\\/]mode[\\/]index\.ts$/.test(cmd.sourceInfo?.path ?? "") ? cmd : undefined;
   }
 
-  modeMessage(state: ModeState): ChatServerMessage {
-    return { type: "mode", mode: state.mode, minorModes: [...state.minorModes], strict: state.strict, applies: this.modeApplies };
+  modeMessage(): ChatServerMessage {
+    const s = this.modeState;
+    return { type: "mode", mode: s.mode, minorModes: [...s.minorModes], strict: s.strict, applies: this.modeApplies };
   }
 
   /**
-   * Make this runtime follow `state` (already written to mode.json) from its next prompt
-   * (modeApplyPlan). The /mode handler is called directly, never sent through prompt(), so no
-   * command text can reach the model. Resolves once the switch is in the extension's memory; the
-   * claude-heavy planner probe it then starts isn't awaited.
+   * POST /api/mode?path=: merge the patch into THIS chat's mode and apply it here only. mode.json
+   * (the default for new sessions) is not touched, and no other chat hears about it.
+   */
+  async switchMode(patch: ModePatch): Promise<ChatModeResult> {
+    await this.applyMode(mergeMode(this.modeState, patch));
+    return { ...modeInfo(this.modeState), applies: this.modeApplies };
+  }
+
+  /**
+   * Make this runtime follow `state` from its next prompt (modeApplyPlan), and make it this
+   * chat's mode. The /mode handler is called directly, never sent through prompt(), so no command
+   * text can reach the model; it appends the marker entry this session later restores from.
+   * Resolves once the switch is in the extension's memory; the claude-heavy planner probe it then
+   * starts isn't awaited.
    */
   async applyMode(state: ModeState): Promise<void> {
     if (this.disposed) return;
@@ -295,17 +314,7 @@ class ChatSession {
       streaming,
     });
     let applies = appliesAfter(plan, streaming);
-    if (plan === "reload") {
-      try {
-        await session.reload(); // re-runs every extension factory; mode re-reads mode.json
-      } catch (err) {
-        console.error("[chat] reload for mode switch failed", err);
-        this.broadcast({ type: "error", code: "reloaded", message: "Session runtime was reloaded and failed; reconnect" });
-        await this.dispose();
-        return;
-      }
-      this.broadcast(this.commands());
-    } else if (plan === "command") {
+    if (plan === "command") {
       // getCommand + createCommandContext + handler(args, ctx) is the SDK's own extension-command
       // path (AgentSession._tryExecuteExtensionCommand, agent-session.js ~954 in pinned 0.85.1),
       // minus the prompt text that path falls back to when a command is missing. Internal-ish
@@ -320,16 +329,17 @@ class ChatSession {
           console.error("[chat] /mode handler failed", err);
           if (this.disposed) return;
           this.modeApplies = "new-chats";
-          this.broadcast(this.modeMessage(state));
+          this.broadcast(this.modeMessage());
         });
       } catch (err) {
         console.error("[chat] /mode handler failed", err);
         applies = "new-chats";
       }
       if (!this.foreignWrite) markOwned(this.path); // the marker entry is our write
+      this.modeState = state; // the runtime took it: this is now this chat's mode
     }
     this.modeApplies = applies;
-    this.broadcast(this.modeMessage(state));
+    this.broadcast(this.modeMessage());
   }
 
   commands(): ChatServerMessage {
@@ -357,7 +367,7 @@ class ChatSession {
     this.clients.add(client);
     client.send(this.hello());
     client.send(this.commands());
-    client.send(this.modeMessage(readMode()));
+    client.send(this.modeMessage());
     const snap = this.workersSnapshot();
     if (snap) client.send(snap);
   }
@@ -704,8 +714,11 @@ export async function acquireChat(path: string, force = false): Promise<ChatSess
   return p;
 }
 
-/** Every fully opened runtime this server holds (the mode switch applies to all of them). */
+/** Every fully opened runtime this server holds. Each keeps its own mode; there is no fan-out. */
 export const heldChats = (): ChatSession[] => [...held.values()].filter((c) => !c.disposed);
+
+/** The open chat for a session file (already through resolveSessionPath), for POST /api/mode?path=. */
+export const heldChat = (path: string): ChatSession | undefined => heldChats().find((c) => c.path === path);
 
 export async function disposeAllChats(): Promise<void> {
   const all = [...sessions.values()];

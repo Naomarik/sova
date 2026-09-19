@@ -49,7 +49,7 @@ stylesheets — no component library.
 | Teams / subagents (§10) | `.team-card` `.team-objective` `.agent-card` `.member-list` `.member-row` `.member-preview` |
 | Outline strip (§10) | `details.outline` `.outline-summary` `.outline-label` `.outline-now` `.outline-count` `.outline-body` `.outline-overall` `.outline-state` `.outline-topics` `details.outline-topic` `.outline-topic-summary` `.outline-topic-heading` `.outline-hash` `.outline-topic-time` `.outline-bullets` `.outline-jump` |
 | Compaction row (§10) | `details.disclosure.compaction` `.compaction-summary` `.compaction-files` |
-| Subagents pane (§11) | trigger `button.run-status-link` (in `.run-status`) · `.app-subagents` `.subagents-head` `.subagents-title` `.subagents-close` `.subagents-body` `.subagents-list` `button.subagent-row[aria-current]` `.subagent-row-name` `.subagent-row-status` `.subagent-row-meta` `.subagent-row-preview` `.subagents-view` `.subagents-view-head` `.subagents-view-title` `.subagents-view-meta` `.subagents-transcript` (+ `.pane`) `.subagents-banner` `.subagents-jump` (+ `.jump-latest`) `.subagents-empty` (+ `.empty`) · `.app-subagents` is the named container `subagents` |
+| Subagents pane (§11) | trigger `button.run-status-link` (in `.run-status`) · `.app-subagents` `.subagents-head` `.subagents-title` `.subagents-usage` `.subagents-close` `.subagents-body` `.subagents-list` `button.subagent-row[aria-current]` `.subagent-row-name` `.subagent-row-status` `.subagent-row-meta` `.subagent-row-preview` `.subagents-view` `.subagents-view-head` `.subagents-view-title` `.subagents-view-meta` `.subagents-transcript` (+ `.pane`) `.subagents-banner` `.subagents-jump` (+ `.jump-latest`) `.subagents-empty` (+ `.empty`) · `.app-subagents` is the named container `subagents` |
 | Utilities | `.stack` `.stack-2` `.cluster` `.spread` `.truncate` `.measure` `.visually-hidden` `.text-mono` `.text-caption` `.text-muted` `.text-error` `.text-eyebrow` `.text-num` |
 
 **All user-facing strings are in §9 · Copy deck.**
@@ -2228,10 +2228,15 @@ Three more head rules cover every head, not just chat:
 ## 4g · Mode menu
 
 pi's mode extension (`pi-config/extensions/mode`) has one **major mode**, `normal` or
-`claude-heavy`, and any set of **minor modes** (today `align`). Both live in one global file,
-`~/.pi/agent/mode.json`. The menu switches them from the chat header. The switch is global:
-every chat this server has open follows it **from its next message**. You never start a new
-chat or reconnect. New pi sessions, web or terminal, read the file when they start.
+`claude-heavy`, and any set of **minor modes** (today `align`). Both are **per session**: each
+chat keeps its own, persisted in that session's own `mode` entries. The menu switches them from
+the chat header, and the switch reaches **that chat only**, **from its next message**. You never
+start a new chat or reconnect, and no other chat or terminal session moves.
+
+`~/.pi/agent/mode.json` is the **default for new sessions** (plus the shortcuts). A session that
+has never toggled follows it; the first toggle pins that session. `GET /api/mode` reads it and
+`POST /api/mode` without `?path=` writes it; neither touches an open chat. From a terminal,
+`/mode default` saves the current session's mode as the default.
 
 ### Trigger
 
@@ -2248,8 +2253,9 @@ nothing: the TUI keeps its mode in memory, so we can't say what it's using.
 </button>
 ```
 
-- **Label.** The major mode, then each minor mode on, joined with " · ", in mono. It caps at
-  200px and truncates, with the full text in `title`.
+- **Label.** This chat's major mode, then each minor mode on, joined with " · ", in mono. It caps
+  at 200px and truncates, with the full text in `title`. Before the chat's first `mode` message
+  arrives it reads just "Mode" and no row is checked: the default is not this chat's state.
 - **Name.** `aria-label` repeats the label with "Mode: " in front, so it survives when the label
   hides. A pending switch adds ", applies after this turn".
 - **Narrow head.** Icon-only under 520px, and hidden under 360px (§4f).
@@ -2279,8 +2285,8 @@ toggles, which is exactly what `menuitemradio` and `menuitemcheckbox` are for.
       <div class="mode-option" role="menuitemcheckbox" aria-checked="true" tabindex="-1">…align…</div>
     </div>
   </div>
-  <p class="mode-menu-foot"><span class="text-mono">strict: off</span> · Applies to every web chat and
-    new pi sessions. Open terminal sessions keep theirs until <code>/reload</code>.</p>
+  <p class="mode-menu-foot"><span class="text-mono">strict: off</span> · This chat only. New sessions
+    start from the default; <code>/mode default</code> saves this chat's as it.</p>
 </div>
 ```
 
@@ -2289,7 +2295,8 @@ toggles, which is exactly what `menuitemradio` and `menuitemcheckbox` are for.
   switch is saving, the rows are `aria-disabled`.
 - **Checked.** A checked row gets `--color-accent-tint` and the check. The words carry the state
   too, since `aria-checked` is announced.
-- **strict** is shown read-only in the foot. Change it in a terminal with `/mode strict on|off`.
+- **strict** is shown read-only in the foot, for this chat. Change it in a terminal with
+  `/mode strict on|off`; that is per session too.
 - **Keyboard.** Roving `tabindex`, with real focus on the rows, so the standard focus ring shows.
   - On open, focus goes to the checked major mode.
   - `↑` / `↓` move and wrap. `Home` / `End` jump.
@@ -2297,35 +2304,38 @@ toggles, which is exactly what `menuitemradio` and `menuitemcheckbox` are for.
   - `Esc` closes (native) and focus returns to the trigger. `Tab` closes and moves on.
 - **Motion.** The same single fade as §4c.
 
-### How a switch reaches open chats
+### How a switch reaches the chat
 
-The server writes `mode.json` first: it reads the file, changes only `mode` and `minorModes`,
-and saves it atomically, so `strict` and the shortcuts are never dropped. Then each open chat
-follows it:
+`POST /api/mode?path=<session>` switches exactly the chat that file belongs to; it must be one
+this server holds open (404 otherwise), and `mode.json` is not written. The chat then:
 
-- **A chat that has run** calls the extension's own `/mode` handler directly. That's the same
-  code the terminal runs, so it leaves the same **marker** in the transcript: an info row
-  "Mode → claude-heavy" or "Minor mode: align on". The command text never goes to the model.
-  There's no reload, so the chat's subagent workers keep running.
-- **A chat that was never prompted** reloads its runtime instead. That writes nothing to its
-  file, and no workers can exist yet.
+- **Calls the extension's own `/mode` handler** directly. That's the same code the terminal runs,
+  so it leaves the same **marker** in the transcript: an info row "Mode → claude-heavy" or
+  "Minor mode: align on", plus the snapshot the extension restores from. The command text never
+  goes to the model. There's no reload, so the chat's subagent workers keep running. A chat that
+  was never prompted takes the same path (the marker is a deliberate user write).
 - **Mid-turn.** The running turn keeps the old mode, and so do messages queued during it
   (follow-ups and steers join that turn). The chat's menu shows an info banner, "Applies after
   this turn.", until the turn settles.
 - **Can't switch.** If the mode extension isn't loaded in that chat, or another program wrote the
-  session, the chat isn't touched. Its menu shows a warn banner, "Applies to new chats only."
-- **A terminal switched it.** The server watches `mode.json`, so open web chats follow a switch
-  made in a TUI too. Open terminal sessions don't watch the file: they pick up a web switch on
-  `/reload`. The last writer wins.
+  session, the chat isn't touched. Its menu shows a warn banner, "This chat can't switch." Only
+  the default applies then.
+
+**Where a chat's mode comes from when it opens.** `bind()` resolves it once, with the extension's
+own rule (`resolveChatMode`, `restoreActive` from pi-config `state.ts`): the newest `mode` entry
+on the branch that carries a snapshot wins, otherwise the default from `mode.json`. Server and
+extension therefore always agree, including after a server restart. Nothing is broadcast to other
+chats, and nothing watches `mode.json`.
 
 ### States
 
 | State | Shows |
 |---|---|
-| Idle | Trigger label, and the current rows checked |
+| Idle | Trigger label, and this chat's rows checked |
+| No `mode` message yet | Trigger reads "Mode", nothing checked (the default isn't this chat's state) |
 | Saving | Rows `aria-disabled` (the cursor is `progress`) |
 | Mid-turn switch | Info banner "Applies after this turn." (trigger name adds it too) |
-| Chat can't switch | Warn banner "Applies to new chats only." |
+| Chat can't switch | Warn banner "This chat can't switch." |
 | Save failed | Error banner "Couldn't switch the mode." with the reason. The mode is unchanged |
 | Load failed | Error banner "Couldn't load the modes." |
 
@@ -2339,13 +2349,16 @@ checked `--color-accent-tint`, focus `--focus-ring` inset. Foot: `--fs-caption`
 
 ### Rejected
 
-- **A segmented control in the composer.** It reads as a per-message option, not a global
-  switch, and it costs composer width at 320px.
+- **A segmented control in the composer.** It reads as a per-message option, not a per-chat
+  one, and it costs composer width at 320px.
 - **A settings page.** That's not first-class, and it's far from the chat it affects.
 - **`/mode` only.** It works today (the slash menu lists it), but nobody finds it, and it can't
   show the current mode.
-- **Reloading every open chat.** A runtime reload stops that chat's subagent workers, which
-  would end claude-heavy teams mid-task.
+- **Reloading the chat.** A runtime reload stops that chat's subagent workers, which would end
+  claude-heavy teams mid-task.
+- **Fanning a switch out to every open chat** (what this used to do, through `mode.json` and a
+  file watcher). One chat's mode is not another's: it moved terminals and tabs nobody asked to
+  move. The file is now only the default.
 
 ---
 
@@ -2746,9 +2759,9 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Menu `aria-label` | Mode |
 | Group labels | Major mode · Minor modes |
 | Descriptions | normal: Pi as usual · claude-heavy: Orchestrate: delegate coding and planning to Claude Code workers · minors: from pi-config `MINOR_DESCRIPTIONS` |
-| Foot | strict: {on\|off} · Applies to every web chat and new pi sessions. Open terminal sessions keep theirs until `/reload`. |
+| Foot | strict: {on\|off} · This chat only. New sessions start from the default; `/mode default` saves this chat's as it. |
 | Pending | **Applies after this turn.** This turn keeps the old mode, and so do messages queued during it. Your next message follows the new one. |
-| Can't switch | **Applies to new chats only.** This chat can't switch: the mode extension isn't loaded here, or another program wrote this session. |
+| Can't switch | **This chat can't switch.** This chat can't switch: the mode extension isn't loaded here, or another program wrote this session. |
 | Save failed | **Couldn't switch the mode.** {reason}. Your mode is unchanged. |
 | Load failed | **Couldn't load the modes.** Your mode is unchanged. Close this and try again. |
 | Transcript marker | Mode → {mode} · Minor mode: {minor} on\|off |
@@ -3323,6 +3336,7 @@ back into Working, and the pane stays where it is.
     <header class="subagents-head">
       <h2 class="subagents-title">Subagents</h2>
       <span class="chip chip-count">2 working</span>            <!-- omitted at 0 -->
+      <span class="chip chip-count subagents-usage" title="41.9k in · 11.3k out · 402k cache read · 61.8k cache write · $0.72">53.2k tokens</span>
       <button class="button button-icon button-ghost subagents-close" aria-label="Close subagents">
         <span class="icon" style="--icon: url(/icons/chevron-right.svg)" aria-hidden="true"></span>
       </button>
@@ -3363,6 +3377,16 @@ aggregate, `{n} working`, with no dot and no pulse, left out at 0. Close is a gh
 pushed right, `aria-label="Close subagents"`. Its chevron points right: it sends the pane back
 the way it came.
 
+**The token Σ** sits beside the working count as a second neutral chip, `{n} tokens` in mono
+(`.subagents-usage`), left out when nothing has been spent. It is a **session-lifetime** total:
+every worker this session ever started, including the ones the manager's retention cap and the
+live record's 40-row cap dropped, so it is normally larger than the rows add up to and it never
+goes down. The headline is input + output, the §4f token format. Everything the headline hides
+is in the `title`: `{in} in · {out} out · {cacheRead} cache read · {cacheWrite} cache write`,
+the cost (`$0.72`, `<$0.01`) when a backend reports one, and the head count it covers
+("57 subagents so far"). Under 520px of pane the chip goes and the working count stays: one
+answers whether anything is happening, the other only how much it cost.
+
 ### Body: list | transcript
 
 `.subagents-body` is a grid, `--subagents-list-width` (256px) · `minmax(0, 1fr)`. The list and
@@ -3384,7 +3408,7 @@ below an 885px window, and folded is always stacked.
     <button class="subagent-row" type="button" aria-current="true">
       <span class="subagent-row-name">designer</span>
       <span class="subagent-row-status"><span class="chip chip-accent chip-live"><i class="chip-dot"></i>Working</span></span>
-      <span class="subagent-row-meta">claude-opus-5</span>
+      <span class="subagent-row-meta">claude-opus-5 · <span class="text-mono" title="18.4k in · 5.3k out · 242k cache read · 32.1k cache write · $0.41">23.7k</span></span>
       <span class="subagent-row-preview">Editing src/design/base.css</span>
     </button>
   </li>
@@ -3399,14 +3423,18 @@ below an 885px window, and folded is always stacked.
 
   | Worker | Chip | Meta |
   |---|---|---|
-  | `running` | `.chip.chip-accent.chip-live` Working | `{model}` (the preview line carries the now) |
+  | `running` | `.chip.chip-accent.chip-live` Working | `{model}` · `{tokens}` (the preview line carries the now) |
   | `starting` | `.chip.chip-accent.chip-live` Starting | `{model}` |
-  | `waiting` | `.chip` + dot, Idle | `{model}` · as of `{HH:MM}` · after a failure: · last task failed |
-  | `stopping` | `.chip` + dot, Stopping | `{model}` |
-  | `done` | `.chip.chip-success` Done | `{model}` · as of `{HH:MM}` |
-  | `error` | `.chip.chip-error` Failed | `{model}` · as of `{HH:MM}` |
-  | `killed` | `.chip` + dot, Stopped | `{model}` · as of `{HH:MM}` |
+  | `waiting` | `.chip` + dot, Idle | `{model}` · `{tokens}` · as of `{HH:MM}` · after a failure: · last task failed |
+  | `stopping` | `.chip` + dot, Stopping | `{model}` · `{tokens}` |
+  | `done` | `.chip.chip-success` Done | `{model}` · `{tokens}` · as of `{HH:MM}` |
+  | `error` | `.chip.chip-error` Failed | `{model}` · `{tokens}` · as of `{HH:MM}` |
+  | `killed` | `.chip` + dot, Stopped | `{model}` · `{tokens}` · as of `{HH:MM}` |
 
+  **Tokens** are that worker's own running total (input + output, mono, the same §4f format and
+  the same split-and-cost `title` as the head's Σ). A worker that has spent nothing yet shows
+  none, and so does a worker from a pi-config that doesn't publish counts: the meta line then
+  reads exactly as it did before. It is one worker's spend, never the Σ.
   "As of" is `endedAt`, else `lastActivity`, mono 24-hour, the full ISO time in `title`. **Only a
   live-sourced Working or Starting chip pulses**, so each row has one pulsing thing at most. While
   the pane's connection is down, nothing pulses and every row reads "as of" the last update.
@@ -3430,7 +3458,7 @@ webapp never writes to it (CLAUDE.md: no file locking).
   <header class="subagents-view-head">
     <h3 class="subagents-view-title">designer</h3>
     <span class="chip chip-accent chip-live"><i class="chip-dot"></i>Working</span>
-    <p class="subagents-view-meta"><span class="text-mono">ag_03</span> · <span class="text-mono">claude-opus-5</span> · Read only</p>
+    <p class="subagents-view-meta"><span class="text-mono">ag_03</span> · <span class="text-mono">claude-opus-5</span> · <span class="text-mono" title="18.4k in · 5.3k out · 242k cache read · 32.1k cache write · $0.41">23.7k tokens</span> · Read only</p>
   </header>
   <section class="subagents-transcript pane" tabindex="0" aria-label="designer transcript">
     <div class="subagents-banner stack-2">…banners, or nothing…</div>
@@ -3442,8 +3470,13 @@ webapp never writes to it (CLAUDE.md: no file locking).
 
 - **Sub-header.** `.subagents-view-head` names the worker on surface above the scroll region, so
   it never scrolls away (sticky by construction, not by `position: sticky`). The title is body
-  semibold, then the same status chip as the row, then a meta line: id and model in mono, then
-  "Read only". That's the only place the read-only fact is written; it's also self-evident, since
+  semibold, then the same status chip as the row, then a meta line: id and model in mono, the
+  worker's tokens, then "Read only". The token number here is the **open transcript's own**
+  total, counted from the file as it is tailed (`/ws/watch` sends it with every `snapshot` and
+  `append`), so it ticks while you watch instead of waiting for the next worker snapshot; it
+  falls back to the row's number when the server doesn't report one. A Claude Code transcript
+  carries no cost, so that `title` shows counts only.
+  That's the only place the read-only fact is written; it's also self-evident, since
   there's nothing to type into. The head repeats the row on purpose: stacked, the list may be
   scrolled away.
 - **Thread.** The same §3 rows, capped at the transcript column (`--measure` + `--space-9`) and

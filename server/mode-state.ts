@@ -1,11 +1,13 @@
-// The global mode switch (~/.pi/agent/mode.json), owned by pi-config's mode extension. We import
-// exactly its two pure modules (state.ts, minor.ts: node:fs/node:path only) so validation and the
-// minor-mode list have one source of truth. Nothing else from pi-config. See CLAUDE.md.
+// The mode extension's settings file (~/.pi/agent/mode.json), owned by pi-config's mode extension.
+// The mode itself is per session; this file is the DEFAULT new sessions start from. We import
+// exactly its two pure modules (state.ts, minor.ts: node:fs/node:path only) so validation, the
+// minor-mode list and the restore rule have one source of truth. Nothing else from pi-config.
+// See CLAUDE.md.
 import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { MINOR_DESCRIPTIONS, MINOR_MODES } from "../pi-config/extensions/mode/minor.ts";
-import { isMode, loadState, normalizeState, saveState, type ModeState } from "../pi-config/extensions/mode/state.ts";
+import { isMode, loadState, normalizeState, restoreActive, saveState, type ModeState } from "../pi-config/extensions/mode/state.ts";
 import type { ModeApplies, ModeInfo } from "../shared/protocol";
 
 export type { ModeState };
@@ -69,31 +71,48 @@ export function writeMode(patch: ModePatch, file = modeFile()): ModeState {
   return next;
 }
 
-/** Write an already merged state again (atomic), e.g. over runtimes' own saves of it. */
+/** Write an already merged default again (atomic). No caller since the fan-out went; kept because
+    it is the only way to write the whole file at once, e.g. to repair a field we don't patch. */
 export const saveMode = (state: ModeState, file = modeFile()): void => saveState(file, state);
 
-/** Identity of the part we apply to runtimes; the watcher ignores files that match the last one. */
+/** Identity of the two fields a switch carries: two states with the same key are the same switch.
+    No caller since the mode.json watcher went (nothing compares file revisions now). */
 export const modeKey = (s: Pick<ModeState, "mode" | "minorModes">) =>
   createHash("sha1").update(JSON.stringify([s.mode, s.minorModes])).digest("hex");
 
+/** A session branch, as `sessionManager.getBranch()` returns it (structural, like restoreActive). */
+export type BranchEntries = readonly { type: string; customType?: string; data?: unknown }[];
+
 /**
- * How a held chat takes a new mode:
- * - "skip": a foreign writer was seen; we never write it. It reads the file when reopened.
+ * One chat's own mode when it opens: the default from the file, overlaid with the newest `mode`
+ * entry on its branch that carries an `active` snapshot. Same rule the extension runs in its own
+ * session_start (restoreActive, imported from state.ts), so the server and the runtime agree —
+ * including after a server restart. `version` and the shortcuts stay the file's.
+ */
+export function resolveChatMode(branch: BranchEntries, file = modeFile()): ModeState {
+  const base = loadState(file);
+  const active = restoreActive(branch);
+  return active ? { ...base, mode: active.mode, strict: active.strict, minorModes: [...active.minorModes] } : base;
+}
+
+/**
+ * How the chat a switch was sent to takes it:
+ * - "skip": a foreign writer was seen; we never write it. It resolves its own mode when reopened.
  * - "unsupported": the mode extension's /mode command isn't loaded here (so nothing reads the
  *   mode); never prompt instead.
- * - "reload": never prompted (no user message, not streaming): a reload writes nothing, and no
- *   subagent workers can exist yet to be stopped by it.
  * - "command": run the extension's own /mode handler (no reload: that would stop its workers).
+ *   A never-prompted chat takes this path too — the marker entry it appends is a deliberate
+ *   user write, and it is what pins this session's mode.
  */
 export function modeApplyPlan(chat: { foreign: boolean; hasModeCommand: boolean; pristine: boolean; streaming: boolean }):
-  "skip" | "unsupported" | "reload" | "command" {
+  "skip" | "unsupported" | "command" {
   if (chat.foreign) return "skip";
   if (!chat.hasModeCommand) return "unsupported";
-  return chat.pristine && !chat.streaming ? "reload" : "command";
+  return "command";
 }
 
 /** What the chat's selector says about the last switch. */
 export function appliesAfter(plan: ReturnType<typeof modeApplyPlan>, streaming: boolean): ModeApplies {
   if (plan === "skip" || plan === "unsupported") return "new-chats";
-  return plan === "command" && streaming ? "after-turn" : "now";
+  return streaming ? "after-turn" : "now";
 }

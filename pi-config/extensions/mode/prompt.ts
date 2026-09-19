@@ -42,8 +42,11 @@ export function buildHeavyPrompt(planner: PlannerChoice): string {
  */
 export const HEAVY_ALIGN_BRIDGE = `The align minor mode is on and takes precedence over delegation: for any ask that needs alignment, spawn at most a non-editing planning worker to investigate, emit the alignment block yourself, and spawn no implementation worker until the user has confirmed.`;
 
-/** Everything to append to this turn's system prompt: heavy block first, then minor blocks in registry order. */
-export function composePrompt(state: ModeState, planner: PlannerChoice): string | undefined {
+/**
+ * Everything to append to this turn's system prompt: heavy block first, then minor blocks in
+ * registry order. Takes just the session-scoped triple, so a `ModeActive` satisfies it too.
+ */
+export function composePrompt(state: Pick<ModeState, "mode" | "strict" | "minorModes">, planner: PlannerChoice): string | undefined {
 	const blocks: string[] = [];
 	if (state.mode === "claude-heavy") {
 		const heavy = buildHeavyPrompt(planner);

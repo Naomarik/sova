@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises";
-import type { AlignReportInfo, EntryKind, TranscriptItem } from "../shared/protocol";
+import type { AlignReportInfo, EntryKind, ExplanationInfo, TranscriptItem } from "../shared/protocol";
 import { inlineTmpImages } from "./attachments";
 import { isReport, parseReport, previewLine } from "./reports";
 
@@ -167,11 +167,16 @@ function normalizeMessage(entry: Entry, id: string, state?: { model?: string }):
   }
 }
 
-/** pi-config mode extension marker: `{mode}` for a major switch, `{minor, on}` for a minor one. */
+/**
+ * pi-config mode extension marker: `{mode}` for a major switch, `{minor, on}` for a minor one,
+ * `{strict}` for the strict toggle. Newer entries also carry an `active` snapshot (what the
+ * session restores from); it is state, not a message, so it is never rendered.
+ */
 function modeMarker(entry: Entry, id: string): TranscriptItem[] {
   const d = entry.data;
   if (d && typeof d.minor === "string" && typeof d.on === "boolean") return [item(id, "info", entry, `Minor mode: ${d.minor} ${d.on ? "on" : "off"}`)];
   if (d && typeof d.mode === "string") return [item(id, "info", entry, `Mode → ${d.mode}`)];
+  if (d && typeof d.strict === "boolean") return [item(id, "info", entry, `Strict mode ${d.strict ? "on" : "off"}`)];
   return [];
 }
 
@@ -236,6 +241,36 @@ function alignRow(id: string, entry: Entry): TranscriptItem[] {
   return [it];
 }
 
+const EXPLAIN_DOC = "explain-doc";
+
+/** A finished /explain: data is the ExplanationInfo the explainer wrote alongside its page in the
+    store (server/explanations.ts). The row carries it verbatim for the gallery/strip; `preview` is
+    the topic and `body` the summary, so the collapsed row reads without opening the page. Entries
+    without an id, a topic or a createdAt are the extension mid-write: no row. */
+function explainRow(id: string, entry: Entry): TranscriptItem[] {
+  const d: any = entry.data;
+  if (!d || typeof d !== "object") return [];
+  const s = (v: unknown): string => (typeof v === "string" ? v : "");
+  const explain: ExplanationInfo = {
+    id: s(d.id),
+    topic: s(d.topic),
+    summary: s(d.summary),
+    createdAt: s(d.createdAt),
+    parentSessionId: s(d.parentSessionId),
+  };
+  if (!explain.id || !explain.topic || !explain.createdAt) return [];
+  // A failed run records the same entry plus a one-line reason, and leaves no page behind. It
+  // goes on `report.error` (where every other report row puts its failure, so the row renders
+  // as a failure without special-casing) and on `explain.error` (so the same ExplanationInfo
+  // carries "there is nothing to open" wherever it travels: rows, strip, gallery).
+  const err = s(d.error);
+  if (err) explain.error = err;
+  const it = withPaths(item(id, "report", entry, explain.summary), explain.summary);
+  it.report = { source: EXPLAIN_DOC, body: explain.summary, preview: explain.topic, truncated: false, explain };
+  if (err) it.report.error = err;
+  return [it];
+}
+
 /** Normalize one parsed JSONL entry into 0..n TranscriptItems. The header line yields none. */
 export function normalizeEntry(entry: Entry, fallbackId = "?", state?: { model?: string }): TranscriptItem[] {
   const id = typeof entry.id === "string" ? entry.id : fallbackId;
@@ -261,10 +296,12 @@ export function normalizeEntry(entry: Entry, fallbackId = "?", state?: { model?:
       // Extension state, not displayable (docs/session-format.md). Exceptions: the mode
       // extension's switch marker, which the TUI draws in the transcript too; and pi-btw's
       // thread entries, which the TUI shows in its overlay but the web can only show here; and
-      // the align document, which the TUI opens in its viewer overlay.
+      // the align document, which the TUI opens in its viewer overlay; and a finished /explain,
+      // whose page the TUI can only point at but the web can open inline.
       if (entry.customType === "mode") return modeMarker(entry, id);
       if (entry.customType === "btw-thread-entry") return btwRow(id, entry);
       if (entry.customType === ALIGN_DOC) return alignRow(id, entry);
+      if (entry.customType === EXPLAIN_DOC) return explainRow(id, entry);
       return [];
     case "custom_message":
       return entry.display === false ? [] : [customRow(id, entry, entry.customType, entry.content)];

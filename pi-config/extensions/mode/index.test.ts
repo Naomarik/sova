@@ -8,17 +8,21 @@ import { MODE_CATEGORY_ID, modeCategoryItems } from "./palette.ts";
 import { pickPlanner } from "./planner.ts";
 import { buildHeavyPrompt, composePrompt, HEAVY_ALIGN_BRIDGE, PLANNER_FALLBACK, PLANNER_PRIMARY, statusLabel } from "./prompt.ts";
 import {
+	activeOf,
 	DEFAULT_ALIGN_VIEWER_SHORTCUT,
 	DEFAULT_MODE_SHORTCUT,
 	defaults,
 	hasMinor,
 	isMode,
 	loadState,
+	normalizeActive,
 	normalizeState,
 	parseShortcut,
+	restoreActive,
 	saveState,
 	toggleMode,
 	withMinor,
+	type ModeActive,
 	type ModeState,
 } from "./state.ts";
 
@@ -268,15 +272,22 @@ test("modeCategoryItems: radio major modes, live minor toggles", async () => {
 		openAlignViewer: () => {
 			calls.push(["viewer"]);
 		},
+		saveDefault: () => {
+			calls.push(["default"]);
+		},
 	};
 	assert.equal(MODE_CATEGORY_ID, "mode");
 	const rows = modeCategoryItems(() => state, actions);
 	assert.deepEqual(
 		rows.map((row) => row.id),
-		["mode:normal", "mode:claude-heavy", ...MINOR_MODES.map((minor) => `mode:minor:${minor}`), "mode:align:view"],
-		"two major rows, then one row per minor mode, then the align viewer",
+		["mode:normal", "mode:claude-heavy", ...MINOR_MODES.map((minor) => `mode:minor:${minor}`), "mode:align:view", "mode:default:save"],
+		"two major rows, then one row per minor mode, then the align viewer, then save as default",
 	);
-	const viewerRow = rows.at(-1);
+	const defaultRow = rows.at(-1);
+	assert.ok(defaultRow?.run && !defaultRow.toggle, "save-as-default runs, not toggles");
+	await defaultRow.run();
+	assert.deepEqual(calls.at(-1), ["default"], "the last row saves the default");
+	const viewerRow = rows.at(-2);
 	assert.ok(viewerRow?.run && !viewerRow.toggle, "viewer row runs, not toggle");
 	await viewerRow.run();
 	assert.deepEqual(calls.at(-1), ["viewer"]);
@@ -309,4 +320,113 @@ test("modeCategoryItems: radio major modes, live minor toggles", async () => {
 	assert.deepEqual(calls.at(-1), ["minor", "align", false]);
 	state.minorModes = [];
 	assert.equal(align.toggle.isOn(), false);
+});
+
+// ── Per-session active state ─────────────────────────────────────────────────
+
+test("activeOf snapshots only the session-scoped triple, copying minorModes", () => {
+	const state: ModeState = {
+		version: 1,
+		mode: "claude-heavy",
+		strict: true,
+		shortcut: "alt+h",
+		minorModes: ["align"],
+		minorShortcuts: { align: "alt+l" },
+		viewerShortcut: "alt+v",
+	};
+	const active = activeOf(state);
+	assert.deepEqual(active, { version: 1, mode: "claude-heavy", strict: true, minorModes: ["align"] });
+	assert.notEqual(active.minorModes, state.minorModes, "minorModes is copied, never aliased");
+	// A ModeActive is itself a valid input, so a restored snapshot can be re-snapshotted.
+	assert.deepEqual(activeOf(active), active);
+	assert.deepEqual(activeOf(defaults()), { version: 1, mode: "normal", strict: false, minorModes: [] });
+});
+
+test("normalizeActive round-trips a snapshot and rejects anything else without throwing", () => {
+	const active: ModeActive = { version: 1, mode: "claude-heavy", strict: true, minorModes: ["align"] };
+	assert.deepEqual(normalizeActive(JSON.parse(JSON.stringify(active))), active);
+	// Defaults for the optional halves of the triple.
+	assert.deepEqual(normalizeActive({ version: 1, mode: "normal" }), { version: 1, mode: "normal", strict: false, minorModes: [] });
+	assert.deepEqual(normalizeActive({ version: 1, mode: "normal", strict: "yes", minorModes: "align" }), {
+		version: 1,
+		mode: "normal",
+		strict: false,
+		minorModes: [],
+	});
+	assert.deepEqual(normalizeActive({ version: 1, mode: "normal", minorModes: ["align", "bogus", "align"] }), {
+		version: 1,
+		mode: "normal",
+		strict: false,
+		minorModes: ["align"],
+	});
+	for (const bad of [
+		undefined,
+		null,
+		0,
+		"claude-heavy",
+		[],
+		{},
+		{ mode: "normal" }, // missing version
+		{ version: 2, mode: "normal" }, // a newer schema this build cannot read
+		{ version: "1", mode: "normal" },
+		{ version: 1 }, // missing mode
+		{ version: 1, mode: "heavy" }, // unknown mode
+	]) {
+		assert.equal(normalizeActive(bad), undefined, `rejected: ${JSON.stringify(bad)}`);
+	}
+});
+
+test("restoreActive takes the newest usable snapshot and skips everything else", () => {
+	const older: ModeActive = { version: 1, mode: "normal", strict: false, minorModes: ["align"] };
+	const newer: ModeActive = { version: 1, mode: "claude-heavy", strict: true, minorModes: [] };
+	assert.equal(restoreActive([]), undefined, "an empty branch has no snapshot");
+	assert.equal(restoreActive(undefined as never), undefined, "a missing branch never throws");
+	assert.equal(
+		restoreActive([
+			{ type: "custom", customType: "align-doc", data: { version: 1, doc: null } },
+			{ type: "message" },
+			{ type: "custom", customType: "mode", data: { mode: "claude-heavy" } }, // legacy delta marker
+			{ type: "custom", customType: "mode", data: { minor: "align", on: true } }, // legacy delta marker
+		]),
+		undefined,
+		"legacy markers carry no session decision",
+	);
+	assert.deepEqual(
+		restoreActive([
+			{ type: "custom", customType: "mode", data: { minor: "align", on: true, active: older } },
+			{ type: "custom", customType: "mode", data: { strict: true, active: newer } },
+		]),
+		newer,
+		"the last entry with a snapshot wins",
+	);
+	assert.deepEqual(
+		restoreActive([
+			{ type: "custom", customType: "mode", data: { mode: "normal", active: older } },
+			{ type: "custom", customType: "mode", data: { active: { version: 9, mode: "normal" } } }, // newer schema
+			{ type: "custom", customType: "mode", data: { active: "claude-heavy" } }, // malformed
+			{ type: "custom", customType: "mode", data: null },
+			{ type: "custom", customType: "mode" },
+			{ type: "custom", customType: "mode", data: [{ active: newer }] }, // array payload
+			{ type: "mode", data: { active: newer } }, // not a custom entry
+			{ type: "custom", customType: "mode-state", data: { active: newer } }, // another extension's type
+		]),
+		older,
+		"unreadable newer entries fall through to the newest one this build understands",
+	);
+	// The snapshot is normalized on the way out, so a hand-edited transcript cannot poison the session.
+	assert.deepEqual(restoreActive([{ type: "custom", customType: "mode", data: { active: { version: 1, mode: "normal", minorModes: ["bogus"] } } }]), {
+		version: 1,
+		mode: "normal",
+		strict: false,
+		minorModes: [],
+	});
+});
+
+test("composePrompt takes a ModeActive, so the per-session state drives the turn", () => {
+	const active: ModeActive = { version: 1, mode: "claude-heavy", strict: true, minorModes: ["align"] };
+	const block = composePrompt(active, PLANNER_PRIMARY);
+	assert.ok(block !== undefined);
+	assert.ok(block.indexOf("# Mode: claude-heavy") < block.indexOf(HEAVY_ALIGN_BRIDGE), "heavy block, then the align bridge");
+	assert.match(block, /# Minor mode: align/);
+	assert.equal(composePrompt({ version: 1, mode: "normal", strict: true, minorModes: [] } satisfies ModeActive, PLANNER_PRIMARY), undefined);
 });

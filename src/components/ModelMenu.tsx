@@ -23,7 +23,8 @@ const [cache, setCache] = createSignal<ModelInfo[] | null>(null);
 
 /**
  * The chat header's model picker (DESIGN_NOTES §4c): a trigger plus a native popover holding a
- * combobox input and a listbox. Focus stays in the input; the keyboard position is
+ * combobox input and a listbox. Opening focuses the listbox, never the input, so a phone doesn't
+ * raise its keyboard; typing there moves into the input. The keyboard position is
  * aria-activedescendant. Ctrl/⌘+P toggles it while this chat session is open.
  */
 export function ModelMenu(props: { control: ModelControl }) {
@@ -80,17 +81,24 @@ export function ModelMenu(props: { control: ModelControl }) {
   createEffect(on(query, () => setActive(flat()[0]?.ref ?? null), { defer: true }));
   createEffect(on(active, scrollActive));
 
-  const openMenu = () => {
-    if (open()) return;
+  /** Anchors the popover under the trigger. false when the trigger isn't laid out anymore. */
+  const place = () => {
     const r = trigger.getBoundingClientRect();
+    if (trigger.offsetParent === null || (r.width === 0 && r.height === 0)) return false;
     menu.style.setProperty("--menu-top", `${Math.round(r.bottom + 4)}px`);
     menu.style.setProperty("--menu-right", `${Math.round(innerWidth - r.right)}px`);
+    return true;
+  };
+
+  const openMenu = () => {
+    if (open()) return;
+    place();
     setQuery("");
     setActive(props.control.model() ?? flat()[0]?.ref ?? null);
     chose = false;
     tabbedAway = false;
     menu.showPopover();
-    search.focus();
+    listbox.focus({ preventScroll: true }); // not the input: that would raise a phone's keyboard
     void load().then(() => {
       if (!active()) setActive(props.control.model() ?? flat()[0]?.ref ?? null);
       scrollActive();
@@ -124,13 +132,55 @@ export function ModelMenu(props: { control: ModelControl }) {
       toggle();
     }
   };
-  const onResize = () => closeMenu();
+  // A resize (a phone's keyboard opening included) only re-anchors the menu; it closes only when
+  // the trigger itself is gone from the layout.
+  const onResize = () => {
+    if (open() && !place()) closeMenu();
+  };
   document.addEventListener("keydown", onKey);
   window.addEventListener("resize", onResize);
+  window.visualViewport?.addEventListener("resize", onResize);
   onCleanup(() => {
     document.removeEventListener("keydown", onKey);
     window.removeEventListener("resize", onResize);
+    window.visualViewport?.removeEventListener("resize", onResize);
   });
+
+  /** ↑ ↓ PageUp PageDown and Enter, from the input or the listbox. */
+  const navKey = (e: KeyboardEvent): boolean => {
+    const keys: Record<string, () => void> = {
+      ArrowDown: () => move(1),
+      ArrowUp: () => move(-1),
+      PageDown: () => move(PAGE),
+      PageUp: () => move(-PAGE),
+      Enter: () => {
+        const ref = active();
+        if (ref) choose(ref);
+      },
+    };
+    const act = keys[e.key];
+    if (!act) return false;
+    e.preventDefault();
+    act();
+    return true;
+  };
+  /** On the listbox: Home/End too, and typing goes to the input (the user chose to type). */
+  const onListKey = (e: KeyboardEvent) => {
+    if (navKey(e)) return;
+    const list = flat();
+    if ((e.key === "Home" || e.key === "End") && list.length) {
+      e.preventDefault();
+      setActive(list[e.key === "Home" ? 0 : list.length - 1]!.ref);
+      return;
+    }
+    const typed = e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey;
+    if (!typed && !(e.key === "Backspace" && query())) return;
+    e.preventDefault();
+    setQuery((q) => (typed ? q + e.key : q.slice(0, -1)));
+    search.focus();
+    const end = search.value.length;
+    search.setSelectionRange(end, end);
+  };
 
   const Option = (p: { m: ModelInfo }) => (
     <div
@@ -141,7 +191,7 @@ export function ModelMenu(props: { control: ModelControl }) {
       aria-disabled={blocked() ? "true" : undefined}
       data-active={active() === p.m.ref ? "" : undefined}
       onMouseEnter={() => setActive(p.m.ref)}
-      onMouseDown={(e) => e.preventDefault() /* keep focus in the input */}
+      onMouseDown={(e) => e.preventDefault() /* keep focus where it is (input or listbox) */}
       onClick={() => choose(p.m.ref)}
     >
       <Icon name="check" small class="model-option-check" />
@@ -219,22 +269,7 @@ export function ModelMenu(props: { control: ModelControl }) {
               aria-activedescendant={active() ? optionId(active()!) : undefined}
               value={query()}
               onInput={(e) => setQuery(e.currentTarget.value)}
-              onKeyDown={(e) => {
-                const keys: Record<string, () => void> = {
-                  ArrowDown: () => move(1),
-                  ArrowUp: () => move(-1),
-                  PageDown: () => move(PAGE),
-                  PageUp: () => move(-PAGE),
-                  Enter: () => {
-                    const ref = active();
-                    if (ref) choose(ref);
-                  },
-                };
-                const act = keys[e.key];
-                if (!act) return;
-                e.preventDefault();
-                act();
-              }}
+              onKeyDown={navKey}
             />
           </div>
         </div>
@@ -253,7 +288,17 @@ export function ModelMenu(props: { control: ModelControl }) {
           />
         </Show>
 
-        <div class="model-menu-list" id="model-listbox" role="listbox" aria-label="Models" aria-busy={loading() && !cache() ? "true" : undefined} ref={listbox}>
+        <div
+          class="model-menu-list"
+          id="model-listbox"
+          role="listbox"
+          aria-label="Models"
+          tabindex="-1"
+          aria-activedescendant={active() ? optionId(active()!) : undefined}
+          aria-busy={loading() && !cache() ? "true" : undefined}
+          ref={listbox}
+          onKeyDown={onListKey}
+        >
           <Show when={!cache() && showSkeleton()}>
             <For each={[1, 2, 3, 4]}>{() => <div class="skeleton skeleton-row" />}</For>
           </Show>

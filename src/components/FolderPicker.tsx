@@ -23,7 +23,9 @@ const LIST_ID = "ns-picker-list";
 /**
  * The New Session folder picker (DESIGN_NOTES §5): an in-place panel under the Folder field.
  * The folder being browsed IS the choice: every folder you open is reported through `onPick`.
- * Focus lives in the filter, which drives the listbox through aria-activedescendant.
+ * Opening focuses the panel itself, never the filter, so a phone doesn't raise its keyboard. The
+ * panel or the filter drives the listbox through aria-activedescendant; typing on the panel moves
+ * into the filter.
  */
 export function FolderPicker(props: { start: string; recents: string[]; onPick(path: string): void; onClose(): void }) {
   const [view, setView] = createSignal<View>({ kind: "folder", path: props.start || undefined });
@@ -35,6 +37,7 @@ export function FolderPicker(props: { start: string; recents: string[]; onPick(p
   const [at, setAt] = createSignal<string | null>(props.start || null);
   let seq = 0;
   let filterEl!: HTMLInputElement;
+  let root!: HTMLDivElement;
 
   const fetchFolder = async (path: string | undefined, showHidden: boolean) => {
     const my = ++seq;
@@ -60,7 +63,7 @@ export function FolderPicker(props: { start: string; recents: string[]; onPick(p
       if (v.kind === "folder") void fetchFolder(v.path, h);
     }),
   );
-  onMount(() => filterEl.focus());
+  onMount(() => root.focus({ preventScroll: true }));
 
   const open = (path: string) => setView({ kind: "folder", path });
   const up = () => {
@@ -122,7 +125,8 @@ export function FolderPicker(props: { start: string; recents: string[]; onPick(p
     return null;
   };
 
-  const onFilterKey = (e: KeyboardEvent) => {
+  /** Keys shared by the filter and the panel. `fromFilter`: Backspace/← edit a non-empty filter. */
+  const onNavKey = (e: KeyboardEvent, fromFilter: boolean) => {
     const n = rows().length;
     switch (e.key) {
       case "ArrowDown":
@@ -148,11 +152,29 @@ export function FolderPicker(props: { start: string; recents: string[]; onPick(p
       }
       case "Backspace":
       case "ArrowLeft":
-        if (filter()) return; // editing the filter
+        if (filter()) {
+          if (fromFilter) return; // editing the filter
+          if (e.key === "ArrowLeft") return;
+          e.preventDefault();
+          typeIntoFilter(filter().slice(0, -1));
+          return;
+        }
         e.preventDefault();
         up();
         break;
+      default:
+        // Typing on the panel means the user wants the filter: move there with the character.
+        if (!fromFilter && e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+          e.preventDefault();
+          typeIntoFilter(filter() + e.key);
+        }
     }
+  };
+  const typeIntoFilter = (value: string) => {
+    setFilter(value);
+    setActive(0);
+    filterEl.focus();
+    filterEl.setSelectionRange(value.length, value.length);
   };
 
   return (
@@ -161,8 +183,21 @@ export function FolderPicker(props: { start: string; recents: string[]; onPick(p
       id="ns-picker"
       role="group"
       aria-label="Choose a folder"
-      ref={(el) => trapFocus(el)}
+      tabindex="-1"
+      aria-activedescendant={activeRow()?.id}
+      ref={(el) => {
+        root = el;
+        trapFocus(el);
+      }}
       onKeyDown={(e) => {
+        if (e.target === root) {
+          onNavKey(e, false);
+          if (e.key === "Tab" && e.shiftKey) {
+            // The panel sits before its first control; wrap like trapFocus does.
+            e.preventDefault();
+            root.querySelector<HTMLElement>(".folder-picker-foot .button")?.focus();
+          }
+        }
         if (e.key === "Escape") {
           e.preventDefault();
           e.stopPropagation(); // closes the picker, not the dialog
@@ -231,7 +266,7 @@ export function FolderPicker(props: { start: string; recents: string[]; onPick(p
             setFilter(e.currentTarget.value);
             setActive(0);
           }}
-          onKeyDown={onFilterKey}
+          onKeyDown={(e) => onNavKey(e, true)}
         />
       </div>
 

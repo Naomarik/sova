@@ -234,8 +234,10 @@ export function Composer(props: {
   };
   createEffect(on(text, () => queueMicrotask(grow)));
   onMount(() => {
-    // After the frame, so a closing dialog's focus handling has already run.
-    if (props.autofocus && !props.readOnly) requestAnimationFrame(() => input.focus());
+    // After the frame, so a closing dialog's focus handling has already run. Not on a touch-only
+    // device: focusing the textarea there raises the keyboard over the new session (§5, §4c).
+    const touchOnly = matchMedia("(hover: none) and (pointer: coarse)").matches;
+    if (props.autofocus && !props.readOnly && !touchOnly) requestAnimationFrame(() => input.focus());
   });
 
   const send = async (e?: Event) => {

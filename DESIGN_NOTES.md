@@ -1384,7 +1384,8 @@ In chat sessions it takes the model's place in the header. Drop the model from
   <!-- only when changing is blocked; see Disabled -->
   <div class="banner banner-info" role="status">…</div>
 
-  <div class="model-menu-list" id="model-listbox" role="listbox" aria-label="Models">
+  <div class="model-menu-list" id="model-listbox" role="listbox" aria-label="Models" tabindex="-1"
+       aria-activedescendant="mo-anthropic-claude-opus-5">  <!-- focused on open -->
     <div class="model-menu-group" role="group" aria-labelledby="mg-fav">
       <div class="list-group-label" id="mg-fav">Favorites</div>
       <div class="model-option" role="option" id="mo-openai-gpt-5" aria-selected="false" data-active>
@@ -1410,15 +1411,19 @@ In chat sessions it takes the model's place in the header. Drop the model from
 
 - **Role.** This is a **listbox**, not a menu. Choosing a model is selecting one value from a
   set, which is exactly what a listbox is for. The popup is a small dialog made of a combobox
-  input plus the listbox, so the trigger says `aria-haspopup="dialog"`. Focus stays in the input
-  the whole time, and the keyboard position is `aria-activedescendant`. The option it points to
-  gets `data-active` and draws the focus ring (inset 2px accent), because focus can't be seen
-  anywhere else.
+  input plus the listbox, so the trigger says `aria-haspopup="dialog"`. **Opening focuses the
+  listbox (`tabindex="-1"`), never the input.** On a phone a focused text input raises the
+  keyboard over the sheet, and nobody asked to type yet. Focus moves to the input when the user
+  taps it or starts typing. The listbox and the input both carry `aria-activedescendant`, which is
+  the keyboard position. The option it points to gets `data-active` and draws the focus ring
+  (inset 2px accent), because focus can't be seen anywhere else.
 - **Mechanism.** It's a native `[popover="auto"]`, which puts it in the top layer. It isn't
   clipped by a `.pane` and needs no Portal. A click outside or `Esc` closes it for free. Render
   it once, next to the trigger. On open, measure the trigger with `getBoundingClientRect()` and
   set `--menu-top: {rect.bottom + 4}px` and `--menu-right: {innerWidth − rect.right}px`, then
-  call `showPopover()`. Close it on window resize.
+  call `showPopover()`. **A resize never closes it.** A window or `visualViewport` resize
+  (including a phone's keyboard opening) re-measures the trigger and re-anchors the menu. It
+  closes only if the trigger isn't laid out anymore (`offsetParent === null` or a zero-size rect).
 - **Positioning.**
   - At ≥768 (e.g. 1440) it sits right-aligned under the trigger: 360px wide (or the viewport
     minus 32px), `max-height: min(440px, 70dvh)`, with `--r-md` and `--shadow-2`. The list
@@ -1445,9 +1450,11 @@ In chat sessions it takes the model's place in the header. Drop the model from
     in `provider/id`. So "anth opus" finds `anthropic/claude-opus-5`.
   - It filters both groups and hides a group with no matches. The active option resets to the
     first match whenever the query changes.
-  - Because focus stays in the input, typing *is* the typeahead.
+  - Filtering starts when the user types or taps the input. A printable key on the listbox (or
+    Backspace with a query) moves focus into the input and applies that key, so typing is still
+    the typeahead on a desktop.
 - **On open.** The query is empty, the current model is active and scrolled into view
-  (`block: "nearest"`), and the input has focus.
+  (`block: "nearest"`), and the listbox has focus, not the input, so no on-screen keyboard.
 
 ### Keyboard
 
@@ -1457,6 +1464,8 @@ In chat sessions it takes the model's place in the header. Drop the model from
 | `Enter` / `Space` | on the trigger | Opens |
 | `↓` / `↑` | in the menu | Moves the active option, wrapping. Normally it skips disabled rows. When *every* row is disabled (Blocked), it moves through all of them, so the list stays browsable, and `Enter` does nothing |
 | `PageDown` / `PageUp` | in the menu | Moves 8 options |
+| `Home` / `End` | on the listbox | First / last option (in the input they move the caret) |
+| Typing, `Backspace` | on the listbox | Moves into the input with that key, which filters |
 | `Enter` | in the menu | Chooses the active option. Choosing the current model just closes the menu |
 | `Esc` | in the menu | Closes it (native popover behavior). The query doesn't survive |
 | `Tab` | in the menu | Closes it (on `focusout` outside the menu), and focus moves on |
@@ -2232,7 +2241,8 @@ opens a folder picker in place, under the field, inside the same dialog.
     </div>
 
     <!-- Open picker (replaces the recent list while open) -->
-    <div class="folder-picker" id="ns-picker" role="group" aria-label="Choose a folder">
+    <div class="folder-picker" id="ns-picker" role="group" aria-label="Choose a folder" tabindex="-1"
+         aria-activedescendant="ns-pf-0">  <!-- focused on open, not the filter -->
       <div class="folder-picker-bar">
         <nav class="folder-crumbs" aria-label="Path">
           <ol>
@@ -2305,7 +2315,10 @@ chosen here. Start that session from a TUI.
   shows, with the picker open or closed. "Use This Folder" and Enter on an empty list just close
   the picker.
 - **Opening.** Clicking the field, or Enter/Space on it, toggles the picker (`aria-expanded`). It
-  opens at the chosen folder, or at `$HOME` when there is none. Focus goes to the filter.
+  opens at the chosen folder, or at `$HOME` when there is none. **Focus goes to the panel
+  (`tabindex="-1"`), never the filter**, because a focused text input raises a phone's keyboard.
+  Filtering starts when the user taps the filter, or types while the panel has focus. The key
+  then moves into the filter.
 - **Listing.** `GET /api/folders?path=` (§REST in `shared/protocol.ts`) returns subfolders only,
   never files: dot folders only with "Show hidden folders", symlinks to folders marked "link",
   names A to Z case-insensitively, at most 500. No path means `$HOME`. The first answer for
@@ -2321,7 +2334,9 @@ chosen here. Start that session from a TUI.
   is hidden while the picker is open, since Recent is there.
 - **Submitting.** Create Session posts `{cwd}`. While pending, the button shows "Creating…" and
   is `aria-disabled`. Enter inside the picker never submits.
-- **On success.** Close the dialog, navigate to the new session, and focus the composer.
+- **On success.** Close the dialog, navigate to the new session, and focus the composer, except
+  on a touch-only device (`(hover: none) and (pointer: coarse)`), where that would raise the
+  keyboard over the empty session. There the user taps the composer.
 - **On a server 4xx.** Show `.field-error` with the server's message, or "That folder doesn't
   exist. Pick one that does." Set `aria-invalid="true"` on the field, close the picker, and move
   focus to the field. The dialog stays open with the choice intact.
@@ -2330,7 +2345,9 @@ chosen here. Start that session from a TUI.
 - **Focus.** The dialog traps focus, with initial focus on the Folder field. While the picker is
   open it traps focus inside itself. Esc closes the picker only, and focus returns to the field.
   Esc with the picker closed, Cancel, and a scrim click close the dialog, and focus returns to
-  the button that opened it. Below 768px the same markup renders as a bottom sheet.
+  the button that opened it. Below 768px the same markup renders as a bottom sheet. A viewport
+  resize, a phone's keyboard opening included, never closes the dialog or the picker. Both are
+  in-flow and have no resize handling.
 
 **Picker states** (in `.folder-picker-note`, `aria-live="polite"`; empty when there's nothing to
 say):
@@ -2346,7 +2363,8 @@ say):
 | Other failure | Couldn't list this folder. {server message} |
 | Recent, none yet | No recent folders yet. Sessions you start add theirs here. |
 
-**Keyboard** (focus stays in the filter; the listbox follows `aria-activedescendant`):
+**Keyboard** (on the panel or in the filter; both carry `aria-activedescendant` for the
+listbox):
 
 | Key | Does |
 |---|---|
@@ -2355,7 +2373,8 @@ say):
 | Enter | Open the active folder; with no rows, close the picker |
 | Backspace, ← | Up one folder, only while the filter is empty |
 | Esc | Close the picker (the dialog stays) |
-| Tab / Shift+Tab | Cycle through the crumbs, Home, Recent, the filter, Show hidden folders, and Use This Folder |
+| Typing | On the panel: moves into the filter with that character (Backspace there edits a non-empty filter) |
+| Tab / Shift+Tab | Cycle through the crumbs, Home, Recent, the filter, Show hidden folders, and Use This Folder (Shift+Tab from the panel wraps to Use This Folder) |
 
 **Accessibility.**
 

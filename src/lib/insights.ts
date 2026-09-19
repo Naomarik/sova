@@ -142,4 +142,31 @@ export const teamFresh = (a: AgentsInsight | undefined, team: TeamInfo) =>
   !!a?.sessions.some((s) => s.fresh && s.teams.some((t) => t.id === team.id));
 
 export const teamAnchor = (id: string) => `team-${id}`;
-export const insightsHref = (teamId?: string) => (teamId ? `#/insights/${encodeURIComponent(teamId)}` : "#/insights");
+export const usageHref = () => "#/usage";
+export const agentsHref = (teamId?: string) => (teamId ? `#/agents/${encodeURIComponent(teamId)}` : "#/agents");
+
+/** The insights page in the hash, if any: `#/usage`, `#/agents`, `#/agents/<teamId>`. */
+export type InsightsRoute = { page: "usage" } | { page: "agents"; team: string | null };
+
+export function insightsRouteFromHash(hash: string): InsightsRoute | null {
+  if (hash === "#/usage") return { page: "usage" };
+  const m = /^#\/agents(?:\/(.+))?$/.exec(hash);
+  if (!m) return null;
+  try {
+    return { page: "agents", team: m[1] ? decodeURIComponent(m[1]) : null };
+  } catch {
+    return { page: "agents", team: null };
+  }
+}
+
+/** Where a pre-split `#/insights` link now points: usage, or the team's agents card. Null if not one. */
+export function legacyInsightsTarget(hash: string): string | null {
+  const m = /^#\/insights(?:\/(.+))?$/.exec(hash);
+  if (!m) return null;
+  if (!m[1]) return usageHref();
+  try {
+    return agentsHref(decodeURIComponent(m[1]));
+  } catch {
+    return agentsHref();
+  }
+}

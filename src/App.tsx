@@ -3,16 +3,17 @@ import { createStore, reconcile } from "solid-js/store";
 import { Portal } from "solid-js/web";
 import type { SessionInsight, SessionSummary, TeamInfo } from "../shared/protocol";
 import { fetchAgents, fetchSessionInsight, fetchUsage, listSessions } from "./lib/api";
-import { insightsHref } from "./lib/insights";
+import { agentsHref, insightsRouteFromHash, legacyInsightsTarget } from "./lib/insights";
 import { createPoll } from "./lib/poll";
 import { homeFromSessionPath, shortModel, tildePath } from "./lib/format";
 import { copyText, home, setHome } from "./lib/ui-state";
 import { ChatView, type ChatRefusal } from "./components/ChatView";
-import { InsightsView } from "./components/InsightsView";
+import { AgentsView } from "./components/AgentsView";
 import { ModelMenu, type ModelControl } from "./components/ModelMenu";
 import { NewSessionDialog } from "./components/NewSessionDialog";
 import { OutlineStrip } from "./components/OutlineStrip";
 import { sessionHref, Sidebar } from "./components/Sidebar";
+import { UsageView } from "./components/UsageView";
 import { WatchView } from "./components/WatchView";
 import { Banner, Chip, CopyButton, CountChip, GlobalRegions, Icon } from "./components/ui";
 
@@ -34,15 +35,14 @@ function pathFromHash(): string | null {
   }
 }
 
-/** `#/insights` or `#/insights/<teamId>`; null for any other route. */
-function insightsFromHash(): { team: string | null } | null {
-  const m = /^#\/insights(?:\/(.+))?$/.exec(location.hash);
-  if (!m) return null;
-  try {
-    return { team: m[1] ? decodeURIComponent(m[1]) : null };
-  } catch {
-    return { team: null };
-  }
+/**
+ * Insights moved from one `#/insights` page to `#/usage` and `#/agents`. Old links are swapped in
+ * place: replaceState adds no history entry (so Back skips the dead URL) and fires no hashchange;
+ * callers parse the hash right after.
+ */
+function redirectLegacyInsights() {
+  const to = legacyInsightsTarget(location.hash);
+  if (to) history.replaceState(history.state, "", to);
 }
 
 const sameSummary = (a: SessionSummary, b: SessionSummary) =>
@@ -96,8 +96,14 @@ export function App() {
   });
   const list = () => sessions.latest; // keeps the old list on screen while refreshing
 
+  redirectLegacyInsights();
   const [route, setRoute] = createSignal<string | null>(pathFromHash());
-  const [insightsRoute, setInsightsRoute] = createSignal(insightsFromHash());
+  const [insightsRoute, setInsightsRoute] = createSignal(insightsRouteFromHash(location.hash));
+  /** Team card to scroll to on `#/agents/<teamId>`. */
+  const focusTeam = () => {
+    const r = insightsRoute();
+    return r?.page === "agents" ? r.team : null;
+  };
   const usage = createPoll(fetchUsage, USAGE_POLL_MS);
   const agents = createPoll(fetchAgents, AGENTS_POLL_MS);
   const [decision, setDecision] = createSignal<Decision | null>(null);
@@ -115,8 +121,9 @@ export function App() {
     refresh();
   };
   const onHash = () => {
+    redirectLegacyInsights();
     setRoute(pathFromHash());
-    setInsightsRoute(insightsFromHash());
+    setInsightsRoute(insightsRouteFromHash(location.hash));
   };
   window.addEventListener("focus", onFocus);
   window.addEventListener("hashchange", onHash);
@@ -155,7 +162,10 @@ export function App() {
   let titleEl: HTMLHeadingElement | undefined;
   createEffect(on(route, (p) => p && folded() && queueMicrotask(() => titleEl?.focus()), { defer: true }));
   let insightsTitleEl: HTMLHeadingElement | undefined;
-  createEffect(on(() => !!insightsRoute(), (open) => open && folded() && queueMicrotask(() => insightsTitleEl?.focus()), { defer: true }));
+  // A team deep link focuses its card instead (AgentsView), at every width.
+  createEffect(
+    on(() => insightsRoute()?.page, (page) => page && !focusTeam() && folded() && queueMicrotask(() => insightsTitleEl?.focus()), { defer: true }),
+  );
 
   const openChat = (force: boolean) => {
     const d = decision();
@@ -205,7 +215,7 @@ export function App() {
           now={now()}
           usage={usage.data()}
           agents={agents.data()}
-          insightsOpen={!!insightsRoute()}
+          insightsPage={insightsRoute()?.page ?? null}
           onRefresh={refresh}
           onNew={() => setCreating(true)}
         />
@@ -214,14 +224,20 @@ export function App() {
           <Show
             when={!insightsRoute()}
             fallback={
-              <InsightsView
-                usage={usage}
-                agents={agents}
-                sessions={list()}
-                now={now()}
-                focusTeam={insightsRoute()?.team ?? null}
-                titleRef={(el) => (insightsTitleEl = el)}
-              />
+              <Switch>
+                <Match when={insightsRoute()?.page === "usage"}>
+                  <UsageView usage={usage} now={now()} titleRef={(el) => (insightsTitleEl = el)} />
+                </Match>
+                <Match when={insightsRoute()?.page === "agents"}>
+                  <AgentsView
+                    agents={agents}
+                    sessions={list()}
+                    now={now()}
+                    focusTeam={focusTeam()}
+                    titleRef={(el) => (insightsTitleEl = el)}
+                  />
+                </Match>
+              </Switch>
             }
           >
             <Show
@@ -249,16 +265,10 @@ export function App() {
                         </Show>
                       </p>
                       <p class="empty-body">Pick one to read it, or start a new one.</p>
-                      <div class="cluster empty-action">
-                        <button type="button" class="button" onClick={() => setCreating(true)}>
-                          <Icon name="plus" />
-                          New Session
-                        </button>
-                        <a class="button button-ghost" href={insightsHref()}>
-                          <Icon name="gauge" />
-                          Insights
-                        </a>
-                      </div>
+                      <button type="button" class="button empty-action" onClick={() => setCreating(true)}>
+                        <Icon name="plus" />
+                        New Session
+                      </button>
                     </div>
                   </Show>
                 </div>
@@ -324,9 +334,9 @@ export function App() {
                           </Show>
                         }
                       >
-                        <Show when={liveTeam()} fallback={<CountChip title="Subagents working now">{working()} working</CountChip>}>
+                        <Show when={liveTeam()} fallback={<CountChip href={agentsHref()} title="Subagents working now">{working()} working</CountChip>}>
                           {(t) => (
-                            <CountChip href={insightsHref(t().id)} title={t().name}>
+                            <CountChip href={agentsHref(t().id)} title={t().name}>
                               Team · {working()} working
                             </CountChip>
                           )}

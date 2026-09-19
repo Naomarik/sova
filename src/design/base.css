@@ -800,6 +800,9 @@ summary.sidebar-region-head .icon-twist { transition: transform var(--dur-fast) 
   white-space: nowrap;
 }
 .session-head-meta > * { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+/* A meta that's plain text (the Usage and Agents pages) is an anonymous flex
+   item, which can't ellipsize: render it as a block so the line gets its "…". */
+.session-head-meta:not(:has(> *)) { display: block; text-overflow: ellipsis; }
 
 
 /* ---- TRANSCRIPT. The scroll region between the head and the composer. --- */
@@ -1485,7 +1488,7 @@ summary.sidebar-region-head .icon-twist { transition: transform var(--dur-fast) 
 
 
 /* =============================================================================
-   INSIGHTS — usage limits, teams, subagents (#/insights), the per-session
+   INSIGHTS — usage limits (#/usage), teams + subagents (#/agents), the per-session
    outline strip and the compaction row. DESIGN_NOTES §10.
    ============================================================================= */
 
@@ -1571,8 +1574,8 @@ summary.sidebar-region-head .icon-twist { transition: transform var(--dur-fast) 
 .meter-ghost .meter-fill  { display: none; }
 
 
-/* ---- SIDEBAR FOOT. The doorway to #/insights: always visible, in the
-   folded thumb arc. Facts only, no color. -------------------------------- */
+/* ---- SIDEBAR FOOT. Two rows, the doorways to #/usage and #/agents: always
+   visible, in the folded thumb arc. Facts only, no color. ---------------- */
 
 .sidebar-foot {
   flex: none;
@@ -1593,7 +1596,7 @@ summary.sidebar-region-head .icon-twist { transition: transform var(--dur-fast) 
 .insights-row[aria-current="page"] { background: var(--color-accent-tint); color: var(--color-ink); }
 
 
-/* ---- INSIGHTS VIEW. A .pane in .app-main, under a .session-head. -------- */
+/* ---- USAGE + AGENTS PAGES. A .pane in .app-main, under a .session-head. - */
 
 .insights { flex: 1; background: var(--color-bg); container-name: insights; }   /* compose with .pane */
 .insights-inner {
@@ -1635,7 +1638,7 @@ summary.sidebar-region-head .icon-twist { transition: transform var(--dur-fast) 
 .usage-note { margin: 0; font-size: var(--fs-caption); color: var(--color-ink-2); }
 .usage-note code { font-family: var(--font-mono); font-size: var(--fs-mono); }
 
-/* Deep link #/insights/<teamId> focuses the card (tabindex -1); ring on :focus,
+/* Deep link #/agents/<teamId> focuses the card (tabindex -1); ring on :focus,
    since programmatic focus after a click doesn't match :focus-visible. */
 .team-card:target,
 .team-card:focus { outline: var(--focus-ring); outline-offset: var(--focus-offset); }

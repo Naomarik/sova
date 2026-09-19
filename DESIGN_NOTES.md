@@ -37,8 +37,8 @@ stylesheets — no component library.
 | Images (§4b) | `.message-images` `.message-images-single` `.thumb` `.toolcard-images` · lightbox: `dialog.lightbox` `.lightbox-bar` `.lightbox-caption` `.lightbox-count` `.lightbox-stage` `.lightbox-img` `.lightbox-prev` `.lightbox-next` · attachments: `.attachments` `.attachment` `.attachment-rejected` `.attachment-thumb` `.attachment-icon` `.attachment-text` `.attachment-name` `.attachment-meta` |
 | Empty / loading | `.empty` `.empty-mark` `.empty-title` `.empty-body` `.empty-action` · `.skeleton` `.skeleton-line` `.skeleton-title` `.skeleton-row` |
 | Toast | `.toast-stack` `.toast` `.toast-body` |
-| Insights: entry (§10) | `.sidebar-foot` `.insights-row` `.insights-row-text` · aggregate chip `.chip.chip-count` (`a.chip` when it links) |
-| Insights: view (§10) | `.insights` (+ `.pane`) `.insights-inner` `.insights-section` `.insights-section-head` `.insights-section-count` `.insights-grid` · `.card` `.card-head` `.card-title` `.card-body` `.card-foot` |
+| Insights: entry (§10) | `.sidebar-foot` holding 2 × `.insights-row` (Usage → `#/usage`, Agents → `#/agents`) `.insights-row-text` · aggregate chip `.chip.chip-count` (`a.chip` when it links) |
+| Insights: Usage and Agents pages (§10) | `.insights` (+ `.pane`) `.insights-inner` `.insights-section` `.insights-section-head` `.insights-section-count` `.insights-grid` · `.card` `.card-head` `.card-title` `.card-body` `.card-foot` |
 | Usage meter (§10) | `.usage-card` `.usage-note` · `.meter` `.meter-head` `.meter-label` `.meter-value` `.meter-of` `.meter-track` `.meter-fill` `.meter-fill-warn` `.meter-fill-error` `.meter-context` `.meter-ghost` |
 | Teams / subagents (§10) | `.team-card` `.team-objective` `.agent-card` `.member-list` `.member-row` `.member-preview` |
 | Outline strip (§10) | `details.outline` `.outline-summary` `.outline-label` `.outline-now` `.outline-count` `.outline-body` `.outline-overall` `.outline-state` `.outline-topics` `details.outline-topic` `.outline-topic-summary` `.outline-topic-heading` `.outline-hash` `.outline-topic-time` `.outline-bullets` `.outline-jump` |
@@ -108,8 +108,8 @@ and `fill="none" stroke="currentColor"`.
 | `chat.svg` | Empty-state mark (no session selected) |
 | `attach.svg` | Attach Images (composer). New, drawn on the system grid |
 | `image.svg` | Tool-card image count, drop overlay. New, drawn on the system grid |
-| `gauge.svg` | Insights: the sidebar foot row and the Usage section. pi-web's own, drawn on the system grid |
-| `worker.svg` | Insights: Teams and Subagents section heads (from the skill's set) |
+| `gauge.svg` | Usage: the sidebar foot's Usage row. pi-web's own, drawn on the system grid |
+| `worker.svg` | Agents: the sidebar foot's Agents row, plus the Teams and Subagents section heads (from the skill's set) |
 | `check-circle.svg`, `x-circle.svg`, `external.svg`, `menu.svg`, `branch.svg` | Reserved. Shipped but unused in the MVP |
 
 `/favicon.svg` is the mark on dark paper. Link it from `index.html`:
@@ -1511,11 +1511,14 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 
 | Where | Copy |
 |---|---|
-| Foot row | `{Provider} {window} {pct}%` · `{n} teams` · `{n} working`, joined by ` · `, empty segments left out · nothing to report: Insights |
+| Foot row 1 (→ `#/usage`) | `{Provider} {window} {pct}%` (highest window) · no data: Usage |
+| Foot row 2 (→ `#/agents`) | `{n} teams` · `{w} working`, joined by ` · `, zero segments left out · nothing to report: Agents |
 | Provider names | Claude · OpenAI · Ollama Cloud |
-| View title / head meta | Insights · Usage updated {rel} (no data: Usage not read yet) |
-| Refresh `aria-label` | Refresh Insights |
-| Section heads | Usage · Teams · {n} active · Subagents · {n} working |
+| Usage page title / head meta | Usage · Updated {rel} · never read: Not read yet |
+| Agents page title / head meta | Agents · `{w} working · {n} pi sessions running` ("{w} working · " dropped at 0; "1 pi session running") · 0 live: No pi sessions running |
+| Refresh `aria-label` | Refresh Usage · Refresh Agents |
+| Section heads (Agents page) | Teams · {n} active · Subagents · {n} working |
+| Agents page, 0 live (whole body) | **No pi sessions running.** Teams and subagents show up here while the pi session that started them runs. |
 | Window labels (`5h`, `7d`, `7d opus`, `month`, `pri`) | 5-hour · 7-day · 7-day Opus · Monthly · Primary |
 | Meter value | `{pct}%` used |
 | Meter context | Resets in {2h 17m} (under 24h) · Resets {Sep 25} · reset already passed: Reset at `{HH:MM}`. New reading at the next refresh. |
@@ -1523,7 +1526,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Stale usage (banner-warn) | **Usage is {42m} old.** It refreshes while pi runs in a terminal. Open a pi session, or run `/usage-refresh` in one. |
 | Usage file missing (`reason:"missing"`) | **No usage data yet.** The usage-status extension writes `~/.pi/agent/cache/usage-status.json` while pi runs, and we haven't found it. |
 | Usage file corrupt (`reason:"corrupt"`) | **Couldn't read usage.** `usage-status.json` isn't valid JSON right now. Nothing was changed. It's rewritten at the next refresh. · button: `Retry` |
-| Request failed (any insights endpoint) | **Couldn't load insights.** Nothing was changed. {server message} · button: `Retry` |
+| Request failed | Usage: **Couldn't load usage.** · Agents: **Couldn't load agents.** Then: Nothing was changed. {server message} · button: `Retry` |
 | Provider `nologin` | Not signed in. Run `claude /login` and it'll show at the next refresh. (OpenAI: `pi /login`) |
 | Provider `expired` | Sign-in expired. Run `claude /login` to renew it. (OpenAI: `pi /login`) |
 | Provider `nokey` | No Ollama Cloud key in `~/.pi/agent/auth.json`. |
@@ -1535,10 +1538,10 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Member status chips | Starting · Working · Idle · Stopping · Done · Failed · Stopped · No report yet |
 | Member meta | `{workerId}` · `{model}` · reported only: as of `{HH:MM}` · idle after a failure: last task failed |
 | Orchestrator badge | Orchestrator |
-| Teams empty, some sessions live | **{n} pi sessions running. None of them has a team.** Teams you create in pi show up here while their session runs. |
-| Teams empty, none live | **No pi sessions running.** Teams show up here while the session that made them runs. |
+| Teams empty, some sessions live | **{n} pi sessions running. None of them has a team.** (n = 1: **1 pi session running. It has no team.**) Teams you create in pi show up here while their session runs. |
+| Teams empty, none live | not shown: the whole Agents page is the 0-live empty state above |
 | Subagents empty | Section omitted |
-| Aggregate chips | {n} working · linked team chip: Team · {n} working |
+| Aggregate chips | {n} working · session head, linked: Team · {n} working (→ `#/agents/{teamId}`) or {n} working (→ `#/agents`) |
 | Outline summary | Outline · {now} · {n} topics (1 topic) |
 | Outline state line | Updated {rel} · stale adds: " · behind the latest messages" · failed-keeping-last adds: " · the last update failed, so this is the previous outline" · updating/drafting: "Updating" + live dot |
 | Outline jump | Jump to Message |
@@ -1557,11 +1560,17 @@ while reported states (read from a session file after the fact) never pulse and 
 
 ### Placement
 
-- **Global:** a main-pane view at `#/insights`, entered from a pinned `.sidebar-foot` row. The
-  head is full at 320px (§2). A third sidebar region would scroll away and mix non-session data
-  into the session list. An overlay would hide the transcript. The foot row is always visible,
-  sits in the folded thumb arc, and needs no rail. At folded width `#/insights` uses
-  `data-view="session"` and shows `.app-back`.
+- **Global:** two main-pane pages, each about one thing, entered from two pinned `.sidebar-foot`
+  rows:
+  - **`#/usage`** covers subscription limits.
+  - **`#/agents`** covers teams and subagents. Team deep links are `#/agents/{teamId}`.
+
+  The head is full at 320px (§2). A third sidebar region would scroll away and mix non-session
+  data into the session list. An overlay would hide the transcript. The foot is always visible,
+  sits in the folded thumb arc, and needs no rail. At folded width both pages use
+  `data-view="session"` and show `.app-back`.
+- **Old URLs:** `#/insights` redirects to `#/usage`, and `#/insights/{teamId}` to
+  `#/agents/{teamId}`, via `history.replaceState`, so no extra history entry is added.
 - **Per session:** `details.outline` sits directly under `.session-head`, above the live banner.
   Compactions stay in the transcript, at the point where they happened (§3 items).
 - **Aggregates:** neutral count chips on session rows and in the session head.
@@ -1572,22 +1581,31 @@ while reported states (read from a session file after the fact) never pulse and 
 ```html
 <!-- after nav.sidebar-list, outside the pane -->
 <div class="sidebar-foot">
-  <a class="list-row list-row-interactive insights-row" href="#/insights" aria-current="page"><!-- aria-current only on the route -->
+  <a class="list-row list-row-interactive insights-row" href="#/usage" aria-current="page"><!-- aria-current on #/usage only -->
     <span class="icon" style="--icon: url(/icons/gauge.svg)" aria-hidden="true"></span>
-    <span class="insights-row-text">Claude 5-hour <span class="text-num">96%</span> · 2 teams · 3 working</span>
+    <span class="insights-row-text">Claude 5-hour <span class="text-num">96%</span></span>
+    <span class="icon icon-sm" style="--icon: url(/icons/chevron-right.svg)" aria-hidden="true"></span>
+  </a>
+  <a class="list-row list-row-interactive insights-row" href="#/agents"><!-- aria-current on #/agents and #/agents/* -->
+    <span class="icon" style="--icon: url(/icons/worker.svg)" aria-hidden="true"></span>
+    <span class="insights-row-text"><span class="text-num">2</span> teams · <span class="text-num">3</span> working</span>
     <span class="icon icon-sm" style="--icon: url(/icons/chevron-right.svg)" aria-hidden="true"></span>
   </a>
 </div>
 ```
 
-The text is live facts, most pressing first:
+The foot holds **two stacked 44px rows, and both are always present**, so the layout never
+jumps. `.list-row`'s bottom border divides them. A single row split into two links was
+rejected: 288px divided in two truncates "Claude 5-hour 96%".
 
-1. The highest-% window across providers, `{Provider} {window} {pct}%`.
-2. The active team count, `{n} teams`.
-3. `AgentsInsight.totals.working`, as `{n} working`.
+- **Usage row:** the highest-% window across providers, as `{Provider} {window} {pct}%`. With no
+  data it reads "Usage".
+- **Agents row:** `{n} teams` (active only) and `AgentsInsight.totals.working` as `{w} working`,
+  joined by ` · `. Zero segments are left out. If both are zero, or nothing is live, it reads
+  "Agents".
 
-Leave out segments with nothing to say, and use "Insights" when all three are empty. The row
-takes no color and no chip, because the view carries the status. It truncates with an ellipsis.
+The rows take no color and no chip, because the pages carry the status. Each truncates with an
+ellipsis.
 
 ### Aggregate chips: "Live" vs "Working"
 
@@ -1599,28 +1617,47 @@ takes no color and no chip, because the view carries the status. It truncates wi
   one pulsing thing:
   - **Session rows (§2):** `{n} working` when `live?.workers?.working ≥ 1`, placed *before* the
     Live chip. Hidden at 0 or when absent.
-  - **Session head:** the same chip before Live. If the session has a live team, it becomes a
-    link: `<a class="chip chip-count" href="#/insights/{teamId}">Team · {n} working</a>`. With
-    more than one live team, it links to the busiest.
+  - **Session head:** the same chip before Live, as a link. With a live team it's
+    `<a class="chip chip-count" href="#/agents/{teamId}">Team · {n} working</a>`, pointing at
+    the busiest live team when there are several. Otherwise it's
+    `<a class="chip chip-count" href="#/agents">{n} working</a>`.
+  - The chip inside a sidebar session row is **never** a link, because an `<a>` can't nest in
+    the row's link. The foot's Agents row is the way to the page from the sidebar.
 
-### Insights view
+### Usage page (`#/usage`) and Agents page (`#/agents`)
+
+Both pages share one shell: a `.session-head` and a `.insights.pane` containing
+`.insights-inner`.
 
 ```html
+<!-- #/usage -->
 <header class="session-head">
   <a class="button button-icon button-ghost app-back" href="#/" aria-label="Back to Sessions">…</a>
   <div class="session-head-main">
-    <h1 class="session-head-title" tabindex="-1">Insights</h1>
-    <p class="session-head-meta">Usage updated 2m ago</p>
+    <h1 class="session-head-title" tabindex="-1">Usage</h1>
+    <p class="session-head-meta">Updated 2m ago</p>            <!-- never read: Not read yet -->
   </div>
-  <button class="button button-icon button-ghost" aria-label="Refresh Insights">…refresh…</button>
+  <button class="button button-icon button-ghost" aria-label="Refresh Usage">…refresh…</button>
 </header>
-<section class="insights pane" aria-label="Insights">
+<section class="insights pane" aria-label="Usage">
   <div class="insights-inner">
-    <section class="insights-section" aria-labelledby="ins-usage">
-      <h2 class="insights-section-head" id="ins-usage">…gauge icon-sm… Usage</h2>
-      <!-- stale banner here -->
-      <div class="insights-grid">…usage cards…</div>
-    </section>
+    <!-- stale banner here; no section head, since the h1 names the page -->
+    <div class="insights-grid">…usage cards…</div>
+  </div>
+</section>
+
+<!-- #/agents and #/agents/{teamId} -->
+<header class="session-head">
+  <a class="button button-icon button-ghost app-back" href="#/" aria-label="Back to Sessions">…</a>
+  <div class="session-head-main">
+    <h1 class="session-head-title" tabindex="-1">Agents</h1>
+    <p class="session-head-meta">3 working · 2 pi sessions running</p>   <!-- 0 live: No pi sessions running -->
+  </div>
+  <button class="button button-icon button-ghost" aria-label="Refresh Agents">…refresh…</button>
+</header>
+<section class="insights pane" aria-label="Agents">
+  <div class="insights-inner">
+    <!-- 0 live sessions: ONE .empty here and nothing else (no section heads) -->
     <section class="insights-section" aria-labelledby="ins-teams">
       <h2 class="insights-section-head" id="ins-teams">…worker icon-sm… Teams <span class="insights-section-count">· 2 active</span></h2>
       <div class="insights-grid">…team cards, or .empty…</div>
@@ -1633,17 +1670,19 @@ takes no color and no chip, because the view carries the status. It truncates wi
 </section>
 ```
 
-- **Order.** Usage comes first, then Teams, then Subagents, because usage decides whether the
-  next turn can run.
+- **Split.** Usage and agents never share a page. The Agents page runs Teams first, then
+  Subagents, and leaves out Subagents when no session has solo workers. With 0 live sessions,
+  the whole Agents body is one `.empty` (§9).
+- **Head meta (Agents).** The format is `{w} working · {n} pi sessions running`. Drop
+  "{w} working · " when w is 0, and use "1 pi session running" when n is 1.
 - **Grid.** `.insights-grid` has 1 column. It becomes 2 columns when the `insights` container is
   at least 640px wide, and 3 at 1000px or more. The container is named, per the skill.
 - **Polling** (frontend's call on intervals). Update in place and keep scroll position and
   focus. Don't show a skeleton again after the first load.
-- **Loading** (first load, after 300ms). Usage shows 3 `.skeleton` blocks at 120px tall with
-  `--r-lg`. Teams shows 1 block. Put `aria-busy` on the section.
-- **Request error.** Show `.banner-error` at the top of `.insights-inner` with Retry. Any data
-  already loaded stays visible below it.
-
+- **Loading** (first load, after 300ms). The Usage page shows 3 `.skeleton` blocks at 120px
+  tall with `--r-lg`. The Agents page shows 1. Put `aria-busy` on `.insights-inner`.
+- **Request error.** Show `.banner-error` at the top of `.insights-inner` with Retry: "Couldn't
+  load usage." or "Couldn't load agents." Any data already loaded stays visible below it.
 ### Usage cards
 
 ```html
@@ -1695,7 +1734,7 @@ takes no color and no chip, because the view carries the status. It truncates wi
   `badkey`, `na`, or `error` with no windows; see §9), with no chip and no meters. Commands in
   the note go in `<code>`.
 - **Whole file.**
-  - The head meta always shows "Usage updated {rel}", from `fetchedAt`.
+  - The Usage page's head meta always shows "Updated {rel}" from `fetchedAt`, or "Not read yet".
   - When `stale` is true (more than 10 minutes old, which means no TUI pi is refreshing it),
     add a `.banner.banner-warn` (`clock`) above the grid. The meters still render.
   - When `available` is false, replace the grid with one `.empty`. `missing` means unavailable,
@@ -1752,7 +1791,7 @@ and "as of `{HH:MM}`" in the meta.
 
   A live record with `fresh: false` renders its workers the reported way, with "as of" set to
   the heartbeat time. They're never shown as working.
-- **Deep link.** `#/insights/{teamId}` is a route segment, not a fragment, because the whole
+- **Deep link.** `#/agents/{teamId}` is a route segment, not a fragment, because the whole
   route lives in the hash. The view scrolls `#team-{teamId}` into view and focuses it (the card
   has `tabindex="-1"`). `.team-card:focus` draws the focus ring; `:focus-visible` wouldn't,
   because this focus is programmatic after a click.

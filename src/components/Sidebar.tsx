@@ -1,7 +1,7 @@
 import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import type { AgentsInsight, SessionSummary, UsageInsight } from "../../shared/protocol";
 import { relativeTime, shortModel, tildePath } from "../lib/format";
-import { activeTeams, insightsHref, worstWindow } from "../lib/insights";
+import { activeTeams, agentsHref, usageHref, worstWindow } from "../lib/insights";
 import { home } from "../lib/ui-state";
 import { Banner, Chip, CountChip, Icon } from "./ui";
 
@@ -81,28 +81,36 @@ function GroupList(props: { groups: Group[]; selected: string | null; now: numbe
   );
 }
 
-/** The foot row's live facts, most pressing first; segments with nothing to say are left out. */
-function InsightsSummary(props: { usage: UsageInsight | undefined; agents: AgentsInsight | undefined }) {
+/** Usage foot row: the highest window across providers, or the page name when there's none. */
+function UsageGlance(props: { usage: UsageInsight | undefined }) {
+  return (
+    <Show when={worstWindow(props.usage)} fallback="Usage">
+      {(w) => (
+        <>
+          {w().label} <span class="text-num">{w().pct}%</span>
+        </>
+      )}
+    </Show>
+  );
+}
+
+/** Agents foot row: active teams, then working subagents; segments with nothing to say are left out. */
+function AgentsGlance(props: { agents: AgentsInsight | undefined }) {
   const parts = () => {
     const teams = activeTeams(props.agents).length;
     const working = props.agents?.totals.working ?? 0;
-    const worst = worstWindow(props.usage);
-    const out: { before: string; pct?: number }[] = [];
-    if (worst) out.push({ before: `${worst.label} `, pct: worst.pct });
-    if (teams > 0) out.push({ before: `${teams} ${teams === 1 ? "team" : "teams"}` });
-    if (working > 0) out.push({ before: `${working} working` });
+    const out: { n: number; word: string }[] = [];
+    if (teams > 0) out.push({ n: teams, word: teams === 1 ? "team" : "teams" });
+    if (working > 0) out.push({ n: working, word: "working" });
     return out;
   };
   return (
-    <Show when={parts().length > 0} fallback="Insights">
+    <Show when={parts().length > 0} fallback="Agents">
       <For each={parts()}>
         {(p, i) => (
           <>
             {i() > 0 && " · "}
-            {p.before}
-            <Show when={p.pct !== undefined}>
-              <span class="text-num">{p.pct}%</span>
-            </Show>
+            <span class="text-num">{p.n}</span> {p.word}
           </>
         )}
       </For>
@@ -120,8 +128,8 @@ export function Sidebar(props: {
   onNew(): void;
   usage: UsageInsight | undefined;
   agents: AgentsInsight | undefined;
-  /** `#/insights` is the open view. */
-  insightsOpen: boolean;
+  /** The insights page that's open (`#/usage` or `#/agents`), for aria-current on its foot row. */
+  insightsPage: "usage" | "agents" | null;
 }) {
   const [query, setQuery] = createSignal("");
   const [showSkeleton, setShowSkeleton] = createSignal(false);
@@ -332,10 +340,17 @@ export function Sidebar(props: {
       </nav>
 
       <div class="sidebar-foot">
-        <a class="list-row list-row-interactive insights-row" href={insightsHref()} aria-current={props.insightsOpen ? "page" : undefined}>
+        <a class="list-row list-row-interactive insights-row" href={usageHref()} aria-current={props.insightsPage === "usage" ? "page" : undefined}>
           <Icon name="gauge" />
           <span class="insights-row-text">
-            <InsightsSummary usage={props.usage} agents={props.agents} />
+            <UsageGlance usage={props.usage} />
+          </span>
+          <Icon name="chevron-right" small />
+        </a>
+        <a class="list-row list-row-interactive insights-row" href={agentsHref()} aria-current={props.insightsPage === "agents" ? "page" : undefined}>
+          <Icon name="worker" />
+          <span class="insights-row-text">
+            <AgentsGlance agents={props.agents} />
           </span>
           <Icon name="chevron-right" small />
         </a>

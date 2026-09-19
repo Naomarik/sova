@@ -155,11 +155,12 @@ function menuLine(s: LiveSession, now = Date.now()): string {
 // ── focus ───────────────────────────────────────────────────────────────────
 
 type FocusResult = { ok: true; id: string } | { ok: false; id?: string; reason: string; candidates?: { id: string; name: string }[] };
+type ResolveError = Extract<FocusResult, { ok: false }>;
 
-function resolve(query: string, sessions: LiveSession[]): LiveSession | FocusResult {
+function resolve(query: string, sessions: LiveSession[]): LiveSession | ResolveError {
   const exact = sessions.find(s => s.id === query);
   if (exact) return exact;
-  const pick = (matches: LiveSession[]): LiveSession | FocusResult | undefined => {
+  const pick = (matches: LiveSession[]): LiveSession | ResolveError | undefined => {
     if (matches.length === 1) return matches[0];
     if (matches.length > 1) {
       // A leftover stale record never makes a live session ambiguous.

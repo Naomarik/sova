@@ -28,7 +28,7 @@ function decodeSnapshot(data: unknown): WorkerSummary[] | undefined {
 		ids.add(worker.id);
 		// Copy only the public fields: never leak mutable runner objects to the UI.
 		// Additive fields are optional: an invalid one is omitted, never fatal.
-		const w = worker as Record<string, unknown>;
+		const w = worker as unknown as Record<string, unknown>;
 		workers.push({ id: worker.id, name: worker.name, status: worker.status,
 			...(worker.model === undefined ? {} : { model: worker.model }),
 			...(worker.preview === undefined ? {} : { preview: worker.preview }),

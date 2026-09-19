@@ -21,7 +21,61 @@ function groupByCwd(sessions: SessionSummary[]): Group[] {
   return [...byCwd].map(([cwd, list]) => ({ cwd, sessions: list }));
 }
 
+const ARCHIVE_KEY = "pi-web:archive-open";
+
 export const sessionHref = (path: string) => `#/s/${encodeURIComponent(path)}`;
+
+/** Sessions grouped by folder, newest first: the markup of DESIGN_NOTES §2 "Anatomy". */
+function GroupList(props: { groups: Group[]; selected: string | null; now: number; idPrefix: string }) {
+  return (
+    <For each={props.groups}>
+      {(group, gi) => (
+        <section class="session-group" aria-labelledby={`${props.idPrefix}-${gi()}`}>
+          <h3 class="list-group-label" id={`${props.idPrefix}-${gi()}`} title={group.cwd}>
+            <Icon name="folder" small />
+            <span class="session-group-path">
+              <bdi>{tildePath(group.cwd, home())}</bdi>
+            </span>
+            <span class="text-num">{group.sessions.length}</span>
+          </h3>
+          <ul class="list">
+            <For each={group.sessions}>
+              {(s) => (
+                <li>
+                  <a
+                    class="list-row list-row-interactive session-row"
+                    href={sessionHref(s.path)}
+                    aria-current={props.selected === s.path ? "page" : undefined}
+                  >
+                    <div class="list-main">
+                      <p class="list-title" classList={{ "list-title-muted": s.title === "Untitled" }} title={s.title}>
+                        {s.title}
+                      </p>
+                      <p class="list-meta">
+                        {relativeTime(s.lastActiveAt, props.now)}
+                        <Show when={s.model}>
+                          {" · "}
+                          <span class="text-mono" title={s.model!}>
+                            {shortModel(s.model)}
+                          </span>
+                        </Show>
+                      </p>
+                    </div>
+                    <Show when={s.live}>
+                      <Chip tone="accent" live title={`Open in a TUI · pid ${s.live!.pid} · ${s.live!.status}`}>
+                        Live
+                      </Chip>
+                    </Show>
+                  </a>
+                </li>
+              )}
+            </For>
+          </ul>
+        </section>
+      )}
+    </For>
+  );
+}
 
 export function Sidebar(props: {
   sessions: SessionSummary[] | undefined;
@@ -56,7 +110,28 @@ export function Sidebar(props: {
     const q = query().trim().toLowerCase();
     return q ? all().filter((s) => `${s.title} ${s.cwd} ${s.model ?? ""}`.toLowerCase().includes(q)) : all();
   });
-  const groups = createMemo(() => groupByCwd(hits()));
+  // Pane rule (shared/protocol.ts): live or web-spawned sessions stay on top; the rest is archive.
+  // A server that predates `origin` sends none, which counts as external.
+  const isTop = (s: SessionSummary) => s.live !== null || s.origin === "web";
+  const topHits = createMemo(() => hits().filter(isTop));
+  const archiveHits = createMemo(() => hits().filter((s) => !isTop(s)));
+  // Each region groups by cwd on its own, so a folder can appear in both.
+  const topGroups = createMemo(() => groupByCwd(topHits()));
+  const archiveGroups = createMemo(() => groupByCwd(archiveHits()));
+  const archiveTotal = () => all().filter((s) => !isTop(s)).length;
+
+  // Collapsed by default; the user's own choice persists for the tab (DESIGN_NOTES §2 "Regions").
+  const [storedOpen, setStoredOpen] = createSignal(sessionStorage.getItem(ARCHIVE_KEY) === "1");
+  /** Forced open while searching, when the top is empty, or when the open session is archived. */
+  const forcedOpen = () =>
+    !!query().trim() || topHits().length === 0 || archiveHits().some((s) => s.path === props.selected);
+  const archiveOpen = () => forcedOpen() || storedOpen();
+  const onArchiveToggle = (e: Event & { currentTarget: HTMLDetailsElement }) => {
+    const open = e.currentTarget.open;
+    if (open === archiveOpen()) return; // our own `open` update, not the user's
+    setStoredOpen(open);
+    sessionStorage.setItem(ARCHIVE_KEY, open ? "1" : "0");
+  };
   const liveCount = () => all().filter((s) => s.live).length;
 
   const clear = () => {
@@ -187,52 +262,33 @@ export function Sidebar(props: {
           </div>
         </Show>
 
-        <For each={groups()}>
-          {(group, gi) => (
-            <section class="session-group" aria-labelledby={`g-${gi()}`}>
-              <h2 class="list-group-label" id={`g-${gi()}`} title={group.cwd}>
-                <Icon name="folder" small />
-                <span class="session-group-path">
-                  <bdi>{tildePath(group.cwd, home())}</bdi>
-                </span>
-                <span class="text-num">{group.sessions.length}</span>
-              </h2>
-              <ul class="list">
-                <For each={group.sessions}>
-                  {(s) => (
-                    <li>
-                      <a
-                        class="list-row list-row-interactive session-row"
-                        href={sessionHref(s.path)}
-                        aria-current={props.selected === s.path ? "page" : undefined}
-                      >
-                        <div class="list-main">
-                          <p class="list-title" classList={{ "list-title-muted": s.title === "Untitled" }} title={s.title}>
-                            {s.title}
-                          </p>
-                          <p class="list-meta">
-                            {relativeTime(s.lastActiveAt, props.now)}
-                            <Show when={s.model}>
-                              {" · "}
-                              <span class="text-mono" title={s.model!}>
-                                {shortModel(s.model)}
-                              </span>
-                            </Show>
-                          </p>
-                        </div>
-                        <Show when={s.live}>
-                          <Chip tone="accent" live title={`Open in a TUI · pid ${s.live!.pid} · ${s.live!.status}`}>
-                            Live
-                          </Chip>
-                        </Show>
-                      </a>
-                    </li>
-                  )}
-                </For>
-              </ul>
-            </section>
-          )}
-        </For>
+        {/* Hidden when a search empties it; kept with a note when there's simply nothing on top. */}
+        <Show when={props.sessions && all().length > 0 && (topHits().length > 0 || !query().trim())}>
+          <section class="sidebar-region" aria-labelledby="r-top">
+            <h2 class="sidebar-region-head" id="r-top">
+              Live &amp; web <span class="sidebar-region-count">· {topHits().length}</span>
+            </h2>
+            <Show
+              when={topHits().length > 0}
+              fallback={<p class="sidebar-region-note">0 sessions open in a TUI or started here. The archive below has the rest.</p>}
+            >
+              <GroupList groups={topGroups()} selected={props.selected} now={props.now} idPrefix="t" />
+            </Show>
+          </section>
+        </Show>
+
+        <Show when={archiveHits().length > 0}>
+          <details class="sidebar-region sidebar-archive" open={archiveOpen()} onToggle={onArchiveToggle}>
+            <summary class="sidebar-region-head">
+              <Icon name="chevron-right" small class="icon-twist" />
+              <span>Archive</span>
+              <span class="sidebar-region-count">
+                · {query().trim() ? `${archiveHits().length} of ${archiveTotal()}` : archiveHits().length}
+              </span>
+            </summary>
+            <GroupList groups={archiveGroups()} selected={props.selected} now={props.now} idPrefix="a" />
+          </details>
+        </Show>
       </nav>
     </aside>
   );

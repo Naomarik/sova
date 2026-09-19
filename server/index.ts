@@ -9,6 +9,7 @@ import { Hono } from "hono";
 import { disposeAllChats } from "./chat-manager";
 import { canonicalPath, resolveSessionPath } from "./paths";
 import { markOwned } from "./write-guard";
+import { addWebSession } from "./web-sessions";
 import { getSessionSummary, listCwds, listSessions } from "./sessions-index";
 import { readTranscript } from "./transcript";
 import { attachWebSockets } from "./ws";
@@ -54,6 +55,7 @@ app.post("/api/sessions", async (c) => {
   writeFileSync(rawPath, `${JSON.stringify(header)}\n`, { flag: "wx" });
   const path = canonicalPath(rawPath); // same key resolveSessionPath() will produce
   markOwned(path); // fresh mtime is ours, not a foreign writer's
+  addWebSession(header.id);
   const summary = await getSessionSummary(path);
   if (!summary) return c.json({ error: "Failed to read back new session" }, 500);
   return c.json(summary, 201);

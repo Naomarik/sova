@@ -61,3 +61,10 @@ Frontend is SolidJS (NOT React): signals/stores, `<For>/<Show>`, `onCleanup` for
   While holding a runtime, `ForeignWriteGuard` checks appended lines carry ids our SessionManager knows;
   any foreign line → busy on every prompt/steer until a `&force=1` reconnect reloads the runtime from disk.
   TUI-live sessions stay refused even with force.
+- `SessionSummary.origin`: ids of sessions spawned via `POST /api/sessions` persist in
+  `~/.pi/agent/pi-web/web-sessions.json` (`server/web-sessions.ts`); everything else is "external".
+  Writes re-read + merge (safe with several servers); reads use the startup copy plus this
+  server's own adds, so ids another running server adds show as "web" here only after a restart.
+- Opening a chat runtime must not write: the SDK appends model_change/thinking_level_change at
+  construction (empty sessions, or no thinking entry on the branch). `openSession` defers those two
+  appends and replays them right before the first prompt/steer; a never-prompted session stays untouched.

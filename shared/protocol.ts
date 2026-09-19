@@ -17,6 +17,10 @@ export interface SessionSummary {
   model: string | null;
   /** Non-null when the session is currently open in a TUI (from ~/.pi/agent/sessions/live/*.json). */
   live: { pid: number; status: string } | null;
+  /** "web" if spawned via this webapp's POST /api/sessions (tracked persistently by the server,
+      survives restarts); "external" for anything else. Pane rule: top region shows
+      live!=null || origin==="web"; everything else goes to the bottom archive section. */
+  origin: "web" | "external";
 }
 
 export type EntryKind =
@@ -36,7 +40,16 @@ export interface TranscriptItem {
   text?: string;
   /** Tool call id pairing a tool-call with its tool-result, when applicable. */
   toolCallId?: string;
+  /** Images attached to this row (user messages, tool results), as ready-to-render
+      data URLs (`data:<mime>;base64,…`). pi stores ImageContent {type:"image", data: base64, mimeType}. */
+  images?: string[];
   raw: unknown;
+}
+
+/** Client→server image attachment. Base64 payload WITHOUT the data: prefix. */
+export interface OutboundImage {
+  data: string; // base64
+  mimeType: string; // e.g. image/png, image/jpeg
 }
 
 // ---------------------------------------------------------------------------
@@ -50,8 +63,8 @@ export interface TranscriptItem {
 
 /** WS /ws/chat?path= — full-duplex chat for webapp-owned sessions. */
 export type ChatClientMessage =
-  | { type: "prompt"; text: string }
-  | { type: "steer"; text: string }
+  | { type: "prompt"; text: string; images?: OutboundImage[] }
+  | { type: "steer"; text: string; images?: OutboundImage[] }
   | { type: "abort" }
   | { type: "ui_response"; id: string; value: unknown };
 

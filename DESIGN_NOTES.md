@@ -16,7 +16,7 @@ stylesheets — no component library.
 | Need | Classes |
 |---|---|
 | App shell | `.app[data-view="list\|session"]` `.app-sidebar` `.app-main` `.app-back` `.pane` `.skip-link` |
-| Sidebar | `.sidebar-head` `.brand` `.sidebar-spacer` `.sidebar-search` `.sidebar-list` |
+| Sidebar | `.sidebar-head` `.brand` `.sidebar-spacer` `.sidebar-search` `.sidebar-list` `.sidebar-region` `.sidebar-region-head` `.sidebar-region-count` `.sidebar-region-note` `details.sidebar-archive` |
 | Search | `.search` (wraps `.icon` + `input.input` + clear `.button.button-icon`) `.search-count` |
 | Session rows | `.session-group` `.list-group-label` `.session-group-path` (+ `<bdi>`) `.list` `.list-row.list-row-interactive.session-row` `[aria-current="page"]` `.list-main` `.list-title` `.list-meta` |
 | LIVE badge / status | `.chip` `.chip-dot` `.chip-accent` `.chip-live` `.chip-success` `.chip-error` `.chip-warn` `.chip-info` `.chip-count` |
@@ -263,11 +263,103 @@ unfolded (≥768)                                  folded (<768)
 - **Refreshing** (polling or a WS nudge). Update rows in place and never re-show the skeleton.
   Keep scroll position and focus. If the focused row moves, it stays focused.
 
+### Regions: top and Archive
+
+`SessionSummary.origin` divides the list into two regions:
+
+- **Top region:** sessions where `live !== null || origin === "web"`, meaning the ones running
+  in a TUI right now or started from pi-web.
+- **Archive:** every other session.
+
+Both regions use exactly the same folder groups and rows described above. Each region groups by
+`cwd` independently, so one folder can appear in both.
+
+```html
+<nav class="sidebar-list pane" aria-label="Session list">
+  <!-- Top region. With 0 rows and no query, render only the note:
+       <section class="sidebar-region"><p class="sidebar-region-note">0 sessions open in a TUI or started here. The archive below has the rest.</p></section>
+       With 0 rows while searching, omit the region. -->
+  <section class="sidebar-region" aria-labelledby="r-top">
+    <h2 class="sidebar-region-head" id="r-top">
+      Live &amp; web <span class="sidebar-region-count">· 5</span>
+    </h2>
+    <section class="session-group" aria-labelledby="g-1">
+      <h3 class="list-group-label" id="g-1" title="/home/user/webapps/pi-web">…same as above…</h3>
+      <ul class="list">…session rows…</ul>
+    </section>
+  </section>
+
+  <!-- Archive: omitted entirely when it has 0 rows -->
+  <details class="sidebar-region sidebar-archive" open={archiveOpen()} onToggle={…}>
+    <summary class="sidebar-region-head">
+      <svg class="icon icon-sm icon-twist" aria-hidden="true">…chevron-right…</svg>
+      <span>Archive</span>
+      <span class="sidebar-region-count">· 43</span>
+    </summary>
+    <section class="session-group" aria-labelledby="ga-1">
+      <h3 class="list-group-label" id="ga-1" title="/home/user">…</h3>
+      <ul class="list">…session rows…</ul>
+    </section>
+  </details>
+</nav>
+```
+
+**Separation.** Each region opens with a 44px `.sidebar-region-head` strip on `--color-sunken`.
+The label is mono, micro, and uppercase, in `--color-ink-2`, and the count is in
+`--color-ink-muted`. Regions are divided by a `--color-border` rule. The strip is a ground change
+from the `--color-surface` sidebar, not a color accent, so it stays inside the color budget.
+Folder labels keep sticking to the top of the pane as you scroll. Region heads don't stick.
+
+**Labels.** The top region is "Live & web · {n}" and the archive is "Archive · {n}". While a
+search is active, each shows "· {hits} of {total}" for that region.
+
+**Empty top region.** With no query, it's replaced by `.sidebar-region-note`: "0 sessions open in
+a TUI or started here. The archive below has the rest." The archive is also forced open (case 1
+below).
+
+**Archive open/closed state.**
+
+- It's a native `<details>`, **collapsed by default**. The whole 44px summary row toggles it,
+  and the chevron rotates 90° when open.
+- Remember the user's choice in `sessionStorage["pi-web:archive-open"]` (`"1"`/`"0"`), read on
+  load and written on `toggle`. It lasts for the browser session, not across restarts.
+- It opens automatically, **without** changing the stored choice, when:
+  1. the top region is empty (otherwise the sidebar would show nothing but a closed strip);
+  2. the selected session (from the URL) is in the archive, so its `aria-current` row is
+     visible;
+  3. a search query is non-empty (see Search).
+
+  When the condition ends, it goes back to the stored choice. Case 2 is the exception: it doesn't
+  close under the user while they're on that session.
+
+**Ordering.** The top region comes first and the Archive last. Inside each region, groups and
+rows are ordered by the rules above. A session moves between regions in place on refresh, for
+example when its TUI closes and `live` becomes null. If it's the selected row, it keeps
+`aria-current`, and case 2 keeps the archive open.
+
+**Accessibility.**
+
+- The top region is a `section` labelled by its `h2`. Folder labels become `h3`, since they're
+  now nested one level deeper.
+- For the Archive, `<summary>` is what AT announces ("Archive · 43, collapsed"). Use a plain
+  `<span>`, not a heading, inside it, because headings inside `<summary>` are exposed
+  inconsistently. `<details>` announces expanded or collapsed on its own.
+- Keyboard: Tab reaches the summary, and Enter or Space toggles it. Rows inside a closed archive
+  aren't focusable, which is native `<details>` behavior.
+- Contrast: ink-2 on sunken is 7.65 (dark) and 7.22 (light). Muted on sunken is 5.40 and 4.75.
+- Touch: the summary is `--row-height`, 44px. At 320px the strip holds a 16px twist, the word,
+  and the count, well inside the 288px of usable width.
+
 ### Search
 
 - **Matching.** Case-insensitive substring match on `title`, `cwd`, and `model`, filtered on the
   client as the user types (no debounce needed for fewer than 2k rows).
-- **Empty groups.** A group with no matching rows is hidden.
+- **Empty groups.** A group with no matching rows is hidden, and so is a region with none.
+- **Both regions.** The query filters the top region and the Archive alike. While the query is
+  non-empty, the Archive is forced open so matches are never hidden in a collapsed region.
+  Clearing the query restores the stored open/closed choice. The count row
+  (`{visible} of {total} sessions`) covers both regions, and each region head shows its own
+  filtered count.
 - **Count.** `.search-count` always shows `{visible} of {total} sessions`, and just
   `{total} sessions` when the query is empty. It lives beside the filter it answers to,
   following the filter-bar rule.
@@ -796,6 +888,9 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Live chip (count row under search) | `{n} live` (only when n ≥ 1). `title`: "Sessions open in a TUI" |
 | Row live chip | Live |
 | Untitled row | Untitled (muted) |
+| Top region head | Live & web · {n} · searching: Live & web · {hits} of {total} |
+| Archive head | Archive · {n} · searching: Archive · {hits} of {total} |
+| Empty top region note | 0 sessions open in a TUI or started here. The archive below has the rest. |
 | Refresh button `aria-label` | Refresh Sessions |
 | Loading | skeleton only, no text |
 | Error banner | **Couldn't read your sessions.** `~/.pi/agent/sessions` wasn't changed. Check the server is running, then retry. · button: `Retry` |

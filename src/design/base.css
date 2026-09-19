@@ -719,6 +719,50 @@ i.icon {
 }
 .session-group-path > bdi { direction: ltr; unicode-bidi: isolate; }
 
+/* Regions. The list splits in two: live + webapp sessions on top, everything
+   else in a collapsible Archive below. Both use the same groups and rows. */
+.sidebar-region + .sidebar-region { border-top: var(--stroke-thin) solid var(--color-border); }
+.sidebar-region-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--row-height);
+  padding: 0 var(--space-4);
+  margin: 0;
+  background: var(--color-sunken);
+  border-bottom: var(--stroke-thin) solid var(--color-border);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--ls-eyebrow);
+  text-transform: uppercase;
+  color: var(--color-ink-2);
+}
+.sidebar-region-count {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+  color: var(--color-ink-muted);
+}
+/* The Archive head is a <summary>: the whole 44px row is the toggle. */
+summary.sidebar-region-head {
+  cursor: pointer;
+  list-style: none;
+  transition: color var(--dur-fast) var(--ease-standard);
+}
+summary.sidebar-region-head::-webkit-details-marker { display: none; }
+summary.sidebar-region-head:hover { color: var(--color-ink); }
+summary.sidebar-region-head:focus-visible { outline-offset: calc(var(--focus-offset) * -1); border-radius: 0; }
+summary.sidebar-region-head .icon-twist { transition: transform var(--dur-fast) var(--ease-standard); }
+.sidebar-archive[open] > summary .icon-twist { transform: rotate(90deg); }
+.sidebar-archive:not([open]) > summary.sidebar-region-head { border-bottom: 0; }
+/* Stands in for an empty top region, so the split still reads. */
+.sidebar-region-note {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  font-size: var(--fs-caption);
+  color: var(--color-ink-muted);
+}
+
 .session-row { align-items: flex-start; padding-top: var(--space-2); padding-bottom: var(--space-2); }
 .session-row .chip { margin-top: 2px; }
 .session-row[aria-current="page"] { background: var(--color-accent-tint); }

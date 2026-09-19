@@ -140,14 +140,4 @@ export class SessionStore {
     return VIEW_GROUPS.flatMap(group => all.filter(v => v.group === group)
       .sort((a, b) => Number(a.self) - Number(b.self) || order[group](a, b) || a.id.localeCompare(b.id)));
   }
-  /** ≤2 lines about OTHER reachable sessions needing a look; empty when none. */
-  attentionLines(now = Date.now()): string[] {
-    const items: string[] = [];
-    const views = this.views(now).filter(v => !v.self && !v.stale);
-    for (const v of views) if (v.state === "needs-input") items.push(`⚑ ${v.name} needs input`);
-    for (const v of views) if (v.state === "error") items.push(`✗ ${v.name} errored`);
-    for (const v of views) if (v.unseen && v.attention === "none") items.push(`✦ ${v.name} finished`);
-    if (items.length <= 2) return items;
-    return [items[0], `${items[1]} (+${items.length - 2} more)`];
-  }
 }

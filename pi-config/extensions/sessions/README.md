@@ -86,16 +86,14 @@ The host feeds it with `update(views, connectionLabel)` and `setQuery(text)`.
 `done(id)` means focus that id, and `done(undefined)` means closed. The
 Ctrl+U binding exists only when `onMarkAllSeen` is passed.
 
-### Footer status and attention widget
+### Footer status
 
-In TUI mode the footer status is `⧉ N · ●a ⚑b ◆c ✦d`. The counts are N reachable
-sessions (including this one), working sessions, sessions needing input or
-errored, running workers, and unseen completions. Zero counts are omitted, so
-an all-quiet footer is just `⧉ N`. While the bus is down it shows `Sessions: disconnected`.
-
-The attention widget sits above the editor. It shows at most two lines about
-**other** reachable sessions: `⚑ <name> needs input`, `✗ <name> errored`,
-`✦ <name> finished`, and `(+N more)`. It clears itself when nothing needs a look.
+In TUI mode the footer status is `Sessions: N live · a busy · b input · c unseen`.
+The counts are N reachable sessions (including this one), busy (working)
+sessions, sessions needing input or errored, and unseen completions.
+Cross-session subagent worker totals are no longer summed into the footer;
+they still show per session in the Alt+S overlay. Zero counts are omitted, so
+an all-quiet footer is just `Sessions: N live`. While the bus is down it shows `Sessions: disconnected`.
 
 "Unseen" means a parent run settled or a worker finished since you last
 focused that session. It doesn't mean the task succeeded, and errors are
@@ -107,10 +105,9 @@ labelled separately. Unseen markers are local to this pi instance and reset on r
 written. A missing or malformed file means defaults:
 
 ```json
-{ "attentionWidget": true, "budgetBytes": 16384 }
+{ "budgetBytes": 16384 }
 ```
 
-- `attentionWidget` (default `true`): set `false` to hide the attention widget.
 - `budgetBytes` (default `16384`, clamped to 4096–65536): the total UTF-8
   budget for this session's record. When a record is over budget, content is
   dropped in the order documented in `public/SCHEMA.md` §5. `workerCounts`

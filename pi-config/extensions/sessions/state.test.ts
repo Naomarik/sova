@@ -128,21 +128,6 @@ test("recents: dedupe, newest first, capped at 8, nextRecent skips absent and ex
   assert.equal(new SessionStore(1).nextRecent(), undefined);
 });
 
-test("attentionLines: other reachable sessions only, at most two lines", () => {
-  const s = store(meta("me", 100), meta("refactor-auth", 201), meta("api-tests", 202), meta("foo", 203));
-  assert.deepEqual(s.attentionLines(T), []);
-  s.receive("me", presence({ activity: activity("needs-input", 1) }), T);
-  assert.deepEqual(s.attentionLines(T), [], "self never raises attention");
-  s.receive("api-tests", presence({ completed: 1 }), T);
-  s.receive("api-tests", presence({ completed: 2 }), T);
-  assert.deepEqual(s.attentionLines(T), ["✦ api-tests finished"]);
-  s.receive("refactor-auth", presence({ activity: activity("needs-input", 1) }), T);
-  assert.deepEqual(s.attentionLines(T), ["⚑ refactor-auth needs input", "✦ api-tests finished"]);
-  s.receive("foo", presence({ activity: activity("error", 1) }), T);
-  assert.deepEqual(s.attentionLines(T), ["⚑ refactor-auth needs input", "✗ foo errored (+1 more)"]);
-  assert.deepEqual(s.attentionLines(T + FRESH_MS + 1), [], "stale sessions never raise attention");
-});
-
 test("legacy (no schemaVersion) records map through deriveState", () => {
   const s = store();
   s.upsert(meta("old", 201, { status: "Running: bash" }), { legacy: true });

@@ -121,7 +121,7 @@ test('local presence: connects and publishes immediately, no registry handshake'
   try {
     await h.emit('session_start'); await tick();
     assert.equal(h.latest().status, 'Idle', 'published presence without any intercom registry');
-    assert.equal(h.statuses.get('sessions'), '⧉ 1', 'footer counts the local roster');
+    assert.equal(h.statuses.get('sessions'), 'Sessions: 1 live', 'footer counts the local roster');
     assert.ok(!h.events.has('intercom:extension-register') && !h.events.has('intercom:extension-registry-ready'),
       'no intercom registry events are subscribed anymore');
     await h.commands.get('sessions').handler('', h.ctx);
@@ -176,7 +176,7 @@ test('v2 pipeline: activity, basename-only tool detail, turns and buckets', asyn
   } finally { await h.emit('session_shutdown'); }
 });
 
-test('status glyphs, attention widget and recents-driven back', async () => {
+test('status glyphs, no editor widget and recents-driven back', async () => {
   const h = harness();
   h.ctx.mode = 'tui';
   const notes = []; h.ctx.ui.notify = (msg, level) => notes.push([msg, level]);
@@ -187,12 +187,10 @@ test('status glyphs, attention widget and recents-driven back', async () => {
     const base = { type: 'presence', version: 1, status: 'Needs input', since: 1, completed: 0, preview: 'p',
       workers: [{ id: 'w', name: 'x', status: 'running' }] };
     h.channelEvent({ type: 'message', fromSessionId: 'other', payload: { ...base, activity: { state: 'needs-input', since: 1 } }, heartbeat: Date.now() });
-    assert.equal(h.statuses.get('sessions'), '⧉ 2 · ⚑1 ◆1');
-    assert.deepEqual(h.widgets.get('sessions-attention'), ['⚑ api-tests needs input']);
+    assert.equal(h.statuses.get('sessions'), 'Sessions: 2 live · 1 input');
     h.channelEvent({ type: 'message', fromSessionId: 'other', payload: { ...base, status: 'Idle', workers: [] }, heartbeat: Date.now() });
-    assert.equal(h.statuses.get('sessions'), '⧉ 2');
-    assert.equal(h.widgets.get('sessions-attention'), undefined, 'widget cleared via setWidget(key, undefined)');
-    assert.ok(h.widgets.has('sessions-attention'));
+    assert.equal(h.statuses.get('sessions'), 'Sessions: 2 live');
+    assert.equal(h.widgets.size, 0, 'no widget is installed above the editor');
     await h.commands.get('sessions-back').handler('', h.ctx);
     assert.match(notes.at(-1)[0], /No previous session yet/);
     h.channelEvent({ type: 'message', fromSessionId: 'other', payload: { type: 'visited', to: 'self', from: 'other' } });

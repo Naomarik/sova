@@ -12,7 +12,6 @@ import { countWorkers, fit, RECORD_BUDGET, SCHEMA_VERSION, SESSION_MODES, type A
 
 const OUTLINE_SNAPSHOT = "topic-outline:snapshot";
 const OUTLINE_REQUEST = "topic-outline:request";
-const ATTENTION_WIDGET = "sessions-attention";
 const BUCKETS = 16;
 /** Same length as the channel's real endpointEpoch, for record-size accounting. */
 const EPOCH_PLACEHOLDER = "00000000-0000-0000-0000-000000000000";
@@ -20,7 +19,7 @@ const BUCKET_MS = 15_000;
 /** Tools whose file path is shared as a basename; everything else shares no detail. */
 const FILE_TOOLS = new Set(["read", "edit", "write"]);
 
-export interface SessionsConfig { attentionWidget: boolean; budgetBytes: number }
+export interface SessionsConfig { budgetBytes: number }
 export interface SessionsDeps {
   /** Test seam: substitute a fake presence-channel factory. */
   createChannel?: (options: PresenceChannelOptions) => PresenceChannel;
@@ -30,10 +29,9 @@ export interface SessionsDeps {
 
 /** Sync, tolerant, never written back. Parse errors ⇒ defaults. */
 export function loadConfig(path = join(homedir(), ".pi", "agent", "sessions.json")): SessionsConfig {
-  const config: SessionsConfig = { attentionWidget: true, budgetBytes: RECORD_BUDGET };
+  const config: SessionsConfig = { budgetBytes: RECORD_BUDGET };
   try {
     const raw = JSON.parse(readFileSync(path, "utf8"));
-    if (typeof raw?.attentionWidget === "boolean") config.attentionWidget = raw.attentionWidget;
     if (typeof raw?.budgetBytes === "number" && Number.isFinite(raw.budgetBytes)) {
       config.budgetBytes = Math.min(65_536, Math.max(4_096, Math.floor(raw.budgetBytes)));
     }
@@ -55,7 +53,7 @@ export default function sessions(pi: ExtensionAPI, deps: SessionsDeps = {}) {
   const sessionStartedAt = Date.now();
   let ctx: ExtensionContext | undefined;
   let live = false;
-  let config: SessionsConfig = { attentionWidget: true, budgetBytes: RECORD_BUDGET };
+  let config: SessionsConfig = { budgetBytes: RECORD_BUDGET };
   let channel: PresenceChannel | undefined;
   const store = new SessionStore(process.pid);
   let target: FocusTarget | undefined;
@@ -71,7 +69,6 @@ export default function sessions(pi: ExtensionAPI, deps: SessionsDeps = {}) {
   let overlay: SessionsOverlay | undefined;
   let overlayOpen = false;
   let closeOverlay: (() => void) | undefined;
-  let widget: string | undefined;
   // Latest topic-outline snapshot from this process's outline extension.
   // Strictly optional: everything renders without it.
   let outlineCache: PresenceOutline | undefined;
@@ -148,33 +145,20 @@ export default function sessions(pi: ExtensionAPI, deps: SessionsDeps = {}) {
       ? "Live · local presence · Alt+S sessions · Alt+Shift+S previous"
       : "Local presence starting…";
   }
-  function setWidget(lines: string[]) {
-    const next = lines.length ? JSON.stringify(lines) : undefined;
-    if (!ctx || next === widget) return;
-    widget = next;
-    try {
-      if (!lines.length) { ctx.ui.setWidget(ATTENTION_WIDGET, undefined); return; }
-      const theme = ctx.ui.theme;
-      ctx.ui.setWidget(ATTENTION_WIDGET, lines.map(line => {
-        try { return theme.fg(line.startsWith("✗") ? "error" : line.startsWith("⚑") ? "warning" : "accent", line); }
-        catch { return line; }
-      }), { placement: "aboveEditor" });
-    } catch { /* widgets are cosmetic */ }
-  }
   function render() {
     if (!live || !ctx) return;
     const views = store.views();
     overlay?.update(views, connectionLabel());
     if (ctx.mode !== "tui") return;
-    if (!store.connected) { ctx.ui.setStatus("sessions", "Sessions: disconnected"); setWidget([]); return; }
+    if (!store.connected) { ctx.ui.setStatus("sessions", "Sessions: disconnected"); return; }
     const count = (group: string) => views.filter(v => v.group === group).length;
-    const parts = [
-      ["●", count("working")], ["⚑", count("needs-input")],
-      ["◆", views.reduce((n, v) => n + v.workerCounts.working, 0)], ["✦", views.filter(v => v.unseen).length],
-    ].filter(([, n]) => n).map(([glyph, n]) => `${glyph}${n}`);
+    const parts: Array<[string, number]> = [
+      ["busy", count("working")], ["input", count("needs-input")],
+      ["unseen", views.filter(v => v.unseen).length],
+    ];
+    const labels = parts.filter(([, n]) => n).map(([label, n]) => `${n} ${label}`);
     const liveCount = views.length - count("unreachable");
-    ctx.ui.setStatus("sessions", `⧉ ${liveCount}${parts.length ? ` · ${parts.join(" ")}` : ""}`);
-    setWidget(config.attentionWidget ? store.attentionLines() : []);
+    ctx.ui.setStatus("sessions", `Sessions: ${[`${liveCount} live`, ...labels].join(" · ")}`);
   }
   function meta(): Omit<SessionMeta, "id" | "endpointEpoch"> {
     const c = ctx!;
@@ -386,7 +370,6 @@ export default function sessions(pi: ExtensionAPI, deps: SessionsDeps = {}) {
     channel?.close();
     outlineCache = undefined;
     ctx?.ui.setStatus("sessions", undefined);
-    if (widget !== undefined) { widget = undefined; try { ctx?.ui.setWidget(ATTENTION_WIDGET, undefined); } catch { /* cosmetic */ } }
     ctx = undefined; channel = undefined;
   });
   pi.on("session_info_changed", () => {

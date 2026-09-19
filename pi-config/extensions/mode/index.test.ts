@@ -8,6 +8,7 @@ import { MODE_CATEGORY_ID, modeCategoryItems } from "./palette.ts";
 import { pickPlanner } from "./planner.ts";
 import { buildHeavyPrompt, composePrompt, PLANNER_FALLBACK, PLANNER_PRIMARY, statusLabel } from "./prompt.ts";
 import {
+	DEFAULT_ALIGN_VIEWER_SHORTCUT,
 	DEFAULT_MODE_SHORTCUT,
 	defaults,
 	hasMinor,
@@ -95,6 +96,21 @@ test("minor modes normalize to known names in canonical order", () => {
 	assert.ok(!isMinorMode(1));
 });
 
+test("viewerShortcut is kept when valid, dropped when invalid, and round-trips", () => {
+	assert.equal(DEFAULT_ALIGN_VIEWER_SHORTCUT, "alt+a");
+	assert.equal(normalizeState({ viewerShortcut: "alt+v" }).viewerShortcut, "alt+v");
+	assert.equal(normalizeState({ viewerShortcut: "nope" }).viewerShortcut, undefined);
+	assert.equal(normalizeState({}).viewerShortcut, undefined);
+	const dir = tmp();
+	try {
+		const path = join(dir, "mode.json");
+		saveState(path, { ...defaults(), viewerShortcut: "alt+v" });
+		assert.equal(loadState(path).viewerShortcut, "alt+v");
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
 test("minorShortcuts keep only valid KeyIds for known minor modes", () => {
 	assert.deepEqual(normalizeState({ minorShortcuts: { align: "alt+a" } }).minorShortcuts, { align: "alt+a" });
 	assert.equal(normalizeState({ minorShortcuts: { align: "not a key" } }).minorShortcuts, undefined);
@@ -161,6 +177,18 @@ test("composePrompt joins the heavy block and minor blocks", () => {
 	assert.match(align, /Stop and wait/);
 	assert.match(align, /Exempt/);
 	assert.match(align, /do not re-ask/);
+	// The block skeleton align.ts parses (headings verbatim, task-list questions, status words).
+	assert.match(align, /^## Alignment: /m);
+	assert.match(align, /^### Findings$/m);
+	assert.match(align, /^### Approach$/m);
+	assert.match(align, /^### Open questions$/m);
+	assert.match(align, /^### Rejected$/m);
+	assert.match(align, /^### Status$/m);
+	assert.match(align, /1\. \[ \] /);
+	assert.match(align, /`\[x\]`/);
+	assert.match(align, /Status `confirmed`/);
+	assert.match(align, /Status `implementing`/);
+	assert.match(align, /go ahead while questions are still open/);
 });
 
 test("mode helpers", () => {
@@ -233,14 +261,22 @@ test("modeCategoryItems: radio major modes, live minor toggles", async () => {
 		setMinor: (minor: string, on: boolean) => {
 			calls.push(["minor", minor, on]);
 		},
+		openAlignViewer: () => {
+			calls.push(["viewer"]);
+		},
 	};
 	assert.equal(MODE_CATEGORY_ID, "mode");
 	const rows = modeCategoryItems(() => state, actions);
 	assert.deepEqual(
 		rows.map((row) => row.id),
-		["mode:normal", "mode:claude-heavy", ...MINOR_MODES.map((minor) => `mode:minor:${minor}`)],
-		"two major rows, then one row per minor mode",
+		["mode:normal", "mode:claude-heavy", ...MINOR_MODES.map((minor) => `mode:minor:${minor}`), "mode:align:view"],
+		"two major rows, then one row per minor mode, then the align viewer",
 	);
+	const viewerRow = rows.at(-1);
+	assert.ok(viewerRow?.run && !viewerRow.toggle, "viewer row runs, not toggle");
+	await viewerRow.run();
+	assert.deepEqual(calls.at(-1), ["viewer"]);
+	calls.length = 0;
 	assert.equal(rows[0].label, "✓ normal");
 	assert.equal(rows[1].label, "  claude-heavy");
 	assert.equal(rows[0].description, "Pi as usual");

@@ -104,6 +104,22 @@ export interface ReportInfo {
   preview: string;
   /** The extension cut the message at 4000 characters ("[Use agent_transcript for more.]"). */
   truncated: boolean;
+  /** source "align-doc" only: the mode extension's align document (custom entry, full snapshot per
+      revision; only the newest on the branch becomes a row). `body` is its markdown verbatim,
+      open questions as "1. [ ] …" / "2. [x] … — decision" checklist items; `agent` is absent. */
+  align?: AlignReportInfo;
+}
+
+/** Status and metrics of an align document. status: explicit "implementing"/"confirmed" first,
+    else "questions-open" (open > 0), "ready" (total > 0, none open), else "aligning". */
+export interface AlignReportInfo {
+  status: "aligning" | "questions-open" | "ready" | "confirmed" | "implementing";
+  title: string;
+  lines: number; // markdown.split("\n").length
+  open: number; // unchecked questions
+  settled: number; // checked questions
+  total: number;
+  revision: number;
 }
 
 /** An image a transcript row names by /tmp path: user messages, assistant text, info rows

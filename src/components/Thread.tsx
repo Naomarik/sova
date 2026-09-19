@@ -8,6 +8,8 @@ import { home } from "../lib/ui-state";
 import { ImageStrip } from "./ImageStrip";
 import { PathAttachment, PathText } from "./PathAttachment";
 import { ReportRow } from "./ReportRow";
+import { AlignCard } from "./AlignCard";
+import { alignOf, latestAlignId } from "../lib/align";
 import { Markdown } from "./Markdown";
 import { ToolCard, type ToolStatus } from "./ToolCard";
 import { Banner, Icon } from "./ui";
@@ -186,6 +188,7 @@ export function HistoryItems(props: { items: TranscriptItem[]; author: string; s
     for (const it of props.items) if (it.kind === "tool-call" && it.toolCallId) ids.add(it.toolCallId);
     return ids;
   });
+  const latestAlign = createMemo(() => latestAlignId(props.items));
   // Only calls after the last user message can still be in flight.
   const lastUserIndex = createMemo(() => {
     for (let i = props.items.length - 1; i >= 0; i--) if (props.items[i]!.kind === "user") return i;
@@ -215,6 +218,13 @@ export function HistoryItems(props: { items: TranscriptItem[]; author: string; s
             </Match>
             <Match when={item.kind === "thinking"}>
               <Thinking text={item.text ?? ""} />
+            </Match>
+            <Match when={item.kind === "report" && item.report && alignOf(item.report)}>
+              {(align) => (
+                <Show when={item.id === latestAlign()} fallback={<span class="align-superseded" hidden />}>
+                  <AlignCard report={item.report!} align={align()} attachments={item.attachments} />
+                </Show>
+              )}
             </Match>
             <Match when={item.kind === "report" && item.report}>
               {(report) => <ReportRow report={report()} attachments={item.attachments} />}

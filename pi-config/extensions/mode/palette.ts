@@ -6,6 +6,8 @@ import { hasMinor, type Mode, type ModeState } from "./state.ts";
 export interface ModeActions {
 	setMode(next: Mode): void | Promise<void>;
 	setMinor(minor: MinorMode, on: boolean): void;
+	/** Open the read-only alignment-doc viewer (align minor mode). */
+	openAlignViewer(): void | Promise<void>;
 }
 
 export const MODE_CATEGORY_ID = "mode";
@@ -15,7 +17,7 @@ const MODE_DESCRIPTIONS: Record<Mode, string> = {
 	"claude-heavy": "Orchestrate: delegate coding and planning to Claude Code workers",
 };
 
-/** Major modes pick-and-close (radio, current ✓); minor modes toggle in place with a live marker. */
+/** Major modes pick-and-close (radio, current ✓); minor modes toggle in place with a live marker; last row opens the align viewer. */
 export function modeCategoryItems(getState: () => ModeState, actions: ModeActions): MenuItem[] {
 	const current = getState().mode;
 	const majors: MenuItem[] = (["normal", "claude-heavy"] as const).map((mode) => ({
@@ -33,5 +35,11 @@ export function modeCategoryItems(getState: () => ModeState, actions: ModeAction
 			toggle: () => actions.setMinor(minor, !hasMinor(getState(), minor)),
 		},
 	}));
-	return [...majors, ...minors];
+	const viewer: MenuItem = {
+		id: "mode:align:view",
+		label: "align: open viewer",
+		description: "Read the accumulated alignment doc (findings, approach, open questions)",
+		run: () => actions.openAlignViewer(),
+	};
+	return [...majors, ...minors, viewer];
 }

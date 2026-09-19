@@ -16,9 +16,12 @@ export interface ModeState {
 	minorModes: MinorMode[];
 	/** Optional per-minor-mode toggle shortcuts (pi-tui KeyIds). None by default. */
 	minorShortcuts?: Partial<Record<MinorMode, string>>;
+	/** Optional override of the alignment-doc viewer shortcut (a pi-tui KeyId). Default: alt+a. */
+	viewerShortcut?: string;
 }
 
 export const DEFAULT_MODE_SHORTCUT = "alt+m";
+export const DEFAULT_ALIGN_VIEWER_SHORTCUT = "alt+a";
 
 export function defaults(): ModeState {
 	return { version: 1, mode: "normal", strict: false, minorModes: [] };
@@ -52,6 +55,8 @@ export function normalizeState(value: unknown): ModeState {
 	if (typeof record.strict === "boolean") state.strict = record.strict;
 	const shortcut = parseShortcut(record.shortcut);
 	if (shortcut !== undefined) state.shortcut = shortcut;
+	const viewerShortcut = parseShortcut(record.viewerShortcut);
+	if (viewerShortcut !== undefined) state.viewerShortcut = viewerShortcut;
 	state.minorModes = normalizeMinorModes(record.minorModes);
 	const rawMinorShortcuts = record.minorShortcuts;
 	if (rawMinorShortcuts !== null && typeof rawMinorShortcuts === "object" && !Array.isArray(rawMinorShortcuts)) {

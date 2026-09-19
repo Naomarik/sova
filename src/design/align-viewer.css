@@ -1,0 +1,45 @@
+/* Align document (pi-config mode extension, `align` minor mode): the transcript card and its
+   read-only viewer. Builds on base.css's disclosure/report row and .modal; only the deltas
+   live here. */
+
+/* The card's summary is a <button> (it opens a dialog, it doesn't disclose inline). */
+.align-card-summary {
+  width: 100%;
+  border: 0;
+  background: none;
+  text-align: left;
+}
+
+/* A document, not a question: wider than the 520px dialog, still a sheet when folded. */
+@media (min-width: 768px) {
+  .modal.align-viewer { width: min(var(--measure), calc(100vw - var(--space-8))); }
+}
+.align-viewer { height: calc(100dvh - var(--space-8)); }
+@media (max-width: 767px) {
+  .align-viewer { height: 85dvh; }
+}
+.align-viewer-head { display: flex; align-items: flex-start; gap: var(--space-3); }
+.align-viewer-titles { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--space-1); }
+.align-status {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--fs-caption);
+  color: var(--color-ink-muted);
+}
+.align-metrics { font-variant-numeric: tabular-nums; }
+.align-viewer-body { flex: 1; color: var(--color-ink); }
+
+/* Loose lists wrap each item in <p>; keep their checkboxes in the bullet's place too. */
+.align-viewer .md li:has(> p:first-child > input[type="checkbox"]) { list-style: none; margin-left: calc(var(--space-5) * -1 + var(--space-1)); }
+.align-viewer .md li > p > input[type="checkbox"] {
+  margin: 0 var(--space-2) 0 0;
+  vertical-align: -2px;
+  accent-color: var(--color-ink-2);
+  pointer-events: none;
+}
+
+/* An earlier align-doc row (a live append brought a newer revision): no row, no thread gap. */
+.entry:has(> .align-superseded) { display: none; }

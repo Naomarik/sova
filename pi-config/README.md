@@ -127,7 +127,7 @@ and the trust list are runtime state or secrets and are ignored by
 cd extensions/subagents && node tests/run.mjs && node tests/smoke.mjs && node tests/team-smoke.mjs
 cd extensions/claude-code && node tests/run.mjs && node tests/smoke.mjs && node tests/ui-permissions.mjs
 cd extensions/extension-toggle && node --test index.test.ts
-cd extensions/mode && node --test index.test.ts && node tests/smoke.mjs
+cd extensions/mode && node --test index.test.ts align.test.ts && node tests/smoke.mjs
 cd extensions/command-palette && node --test test.mjs
 cd extensions/sessions && node --test test.mjs
 cd extensions/codefold && node tests/run.mjs

@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises";
-import type { EntryKind, TranscriptItem } from "../shared/protocol";
+import type { AlignReportInfo, EntryKind, TranscriptItem } from "../shared/protocol";
 import { inlineTmpImages } from "./attachments";
 import { isReport, parseReport, previewLine } from "./reports";
 
@@ -195,6 +195,47 @@ function btwRow(id: string, entry: Entry): TranscriptItem[] {
   return [it];
 }
 
+const ALIGN_DOC = "align-doc";
+
+function isAlignDoc(entry: Entry): boolean {
+  return entry.type === "custom" && entry.customType === ALIGN_DOC;
+}
+
+/** The mode extension's align document: data {version: 1, doc: AlignDoc | null}, a full snapshot
+    per revision; align.ts is the only parser, so this reads the payload and never the markdown. doc
+    null (cleared) or without markdown, a questions array or a title yields no row; normalizeEntries keeps only
+    the newest align-doc entry on the branch. */
+function alignRow(id: string, entry: Entry): TranscriptItem[] {
+  const doc: any = entry.data?.doc;
+  if (!doc || typeof doc !== "object" || typeof doc.markdown !== "string" || !doc.markdown.trim()) return [];
+  if (!Array.isArray(doc.questions) || typeof doc.title !== "string") return [];
+  const markdown: string = doc.markdown;
+  const total: number = doc.questions.length;
+  const open: number = doc.questions.filter((q: any) => q?.checked !== true).length;
+  const status: AlignReportInfo["status"] =
+    doc.explicitStatus === "implementing" || doc.explicitStatus === "confirmed" ? doc.explicitStatus
+    : open > 0 ? "questions-open"
+    : total > 0 ? "ready"
+    : "aligning";
+  const it = withPaths(item(id, "report", entry, markdown), markdown);
+  it.report = {
+    source: ALIGN_DOC,
+    body: markdown,
+    preview: previewLine(markdown),
+    truncated: false,
+    align: {
+      status,
+      title: doc.title,
+      lines: markdown.split("\n").length,
+      open,
+      settled: total - open,
+      total,
+      revision: typeof doc.revision === "number" ? doc.revision : 0,
+    },
+  };
+  return [it];
+}
+
 /** Normalize one parsed JSONL entry into 0..n TranscriptItems. The header line yields none. */
 export function normalizeEntry(entry: Entry, fallbackId = "?", state?: { model?: string }): TranscriptItem[] {
   const id = typeof entry.id === "string" ? entry.id : fallbackId;
@@ -219,9 +260,11 @@ export function normalizeEntry(entry: Entry, fallbackId = "?", state?: { model?:
     case "custom":
       // Extension state, not displayable (docs/session-format.md). Exceptions: the mode
       // extension's switch marker, which the TUI draws in the transcript too; and pi-btw's
-      // thread entries, which the TUI shows in its overlay but the web can only show here.
+      // thread entries, which the TUI shows in its overlay but the web can only show here; and
+      // the align document, which the TUI opens in its viewer overlay.
       if (entry.customType === "mode") return modeMarker(entry, id);
       if (entry.customType === "btw-thread-entry") return btwRow(id, entry);
+      if (entry.customType === ALIGN_DOC) return alignRow(id, entry);
       return [];
     case "custom_message":
       return entry.display === false ? [] : [customRow(id, entry, entry.customType, entry.content)];
@@ -233,7 +276,10 @@ export function normalizeEntry(entry: Entry, fallbackId = "?", state?: { model?:
 export function normalizeEntries(entries: Entry[]): TranscriptItem[] {
   const out: TranscriptItem[] = [];
   const state: { model?: string } = {}; // running model_change, for assistant rows without their own
-  entries.forEach((e, i) => out.push(...normalizeEntry(e, `line${i}`, state)));
+  // Align-doc entries are revisions of one document: only the newest renders (none if it's cleared).
+  let newestAlign = -1;
+  entries.forEach((e, i) => { if (isAlignDoc(e)) newestAlign = i; });
+  entries.forEach((e, i) => { if (!isAlignDoc(e) || i === newestAlign) out.push(...normalizeEntry(e, `line${i}`, state)); });
   return out;
 }
 

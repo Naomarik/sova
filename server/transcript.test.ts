@@ -473,3 +473,123 @@ describe("btw thread entries", () => {
     assert.deepEqual(normalizeEntry(btwEntry("b3", { model: "glm-5.3" }, "btw-model-override")), []);
   });
 });
+
+describe("align-doc entries", () => {
+  const alignEntry = (id: string, data: unknown) => ({
+    type: "custom",
+    id,
+    parentId: null,
+    timestamp: "2026-09-20T00:00:00.000Z",
+    customType: "align-doc",
+    data,
+  });
+  const markdown = [
+    "## Alignment: Web align viewer",
+    "",
+    "### Findings",
+    "- transcript rows come from server/transcript.ts",
+    "",
+    "### Approach",
+    "- reuse the report kind",
+    "",
+    "### Open questions",
+    "1. [x] Reuse report rows? — yes, source align-doc",
+    "2. [ ] Show every revision?",
+    "3. [ ] Keybinding?",
+    "",
+    "### Rejected",
+    "- [ ] a new EntryKind",
+    "",
+    "### Status",
+    "aligning",
+  ].join("\n");
+  const doc = (over: Record<string, unknown> = {}) => ({
+    version: 1,
+    title: "Web align viewer",
+    markdown,
+    questions: [
+      { n: 1, text: "Reuse report rows?", checked: true },
+      { n: 2, text: "Show every revision?", checked: false },
+      { n: 3, text: "Keybinding?", checked: false },
+    ],
+    revision: 3,
+    capturedAt: "2026-09-20T00:00:00.000Z",
+    ...over,
+  });
+
+  test("a full doc becomes a report row: markdown verbatim, checklists kept, metrics from the payload", () => {
+    const [it, ...rest] = normalizeEntry(alignEntry("al1", { version: 1, doc: doc() }));
+    assert.equal(rest.length, 0);
+    assert.equal(it!.kind, "report");
+    assert.equal(it!.text, markdown);
+    assert.equal(it!.report?.source, "align-doc");
+    assert.equal(it!.report?.body, markdown);
+    assert.match(it!.report!.body, /^2\. \[ \] Show every revision\?$/m);
+    assert.match(it!.report!.body, /^1\. \[x\] Reuse report rows\? — yes/m);
+    assert.equal(it!.report?.preview, "Alignment: Web align viewer");
+    assert.equal(it!.report?.agent, undefined);
+    assert.equal(it!.report?.truncated, false);
+    assert.deepEqual(it!.report?.align, {
+      status: "questions-open",
+      title: "Web align viewer",
+      lines: markdown.split("\n").length,
+      open: 2,
+      settled: 1,
+      total: 3,
+      revision: 3,
+    });
+  });
+
+  test("status: explicit implementing/confirmed win; all settled is ready; no questions is aligning", () => {
+    const status = (d: unknown) => normalizeEntry(alignEntry("al", { version: 1, doc: d }))[0]?.report?.align?.status;
+    assert.equal(status(doc({ explicitStatus: "implementing" })), "implementing");
+    assert.equal(status(doc({ explicitStatus: "confirmed" })), "confirmed");
+    assert.equal(status(doc({ explicitStatus: "aligning" })), "questions-open");
+    assert.equal(status(doc({ questions: [{ n: 1, text: "a", checked: true }] })), "ready");
+    assert.equal(status(doc({ questions: [] })), "aligning");
+  });
+
+  test("a minimal doc (no revision, no explicitStatus) defaults revision to 0", () => {
+    const md = "## Alignment: Just started";
+    const align = normalizeEntry(alignEntry("al2", { version: 1, doc: { title: "Just started", markdown: md, questions: [] } }))[0]?.report?.align;
+    assert.deepEqual(align, { status: "aligning", title: "Just started", lines: 1, open: 0, settled: 0, total: 0, revision: 0 });
+  });
+
+  test("cleared, empty and malformed payloads yield no row", () => {
+    for (const data of [
+      { version: 1, doc: null },
+      { version: 1, doc: { markdown: "   \n" } },
+      { version: 1, doc: { markdown: 42 } },
+      { version: 1, doc: doc({ questions: undefined }) }, // align.ts is the only parser: no markdown fallback
+      { version: 1, doc: doc({ questions: "1. [ ] x" }) },
+      { version: 1, doc: doc({ title: undefined }) },
+      { version: 1, doc: "## Alignment: x" },
+      { version: 1 },
+      null,
+      "garbage",
+    ]) {
+      assert.deepEqual(normalizeEntry(alignEntry("al", data)), [], JSON.stringify(data));
+    }
+  });
+
+  test("only the newest align-doc on the branch renders; a newest clear hides older revisions", () => {
+    const user = userEntry("hi");
+    const r1 = alignEntry("al1", { version: 1, doc: doc({ revision: 1 }) });
+    const r2 = alignEntry("al2", { version: 1, doc: doc({ revision: 2 }) });
+    const rows = normalizeEntries([r1, user, r2]);
+    assert.deepEqual(rows.map((r) => r.id), ["u1", "al2"]);
+    assert.equal(rows[1]!.report?.align?.revision, 2);
+    assert.deepEqual(normalizeEntries([r1, r2, alignEntry("al3", { version: 1, doc: null })]).map((r) => r.id), []);
+    assert.deepEqual(normalizeEntries([r1, alignEntry("al3", { version: 1, doc: { markdown: 1 } })]).map((r) => r.id), []);
+  });
+
+  test("an older session without align data is unchanged: no align rows, other custom entries still hidden", () => {
+    const rows = normalizeEntries([
+      userEntry("hi"),
+      { type: "custom", id: "x1", parentId: "u1", customType: "topic-outline", data: { doc: { markdown: "## Alignment: no" } } },
+      { type: "custom_message", id: "m1", parentId: "x1", customType: "note", content: "short", display: true },
+    ]);
+    assert.deepEqual(rows.map((r) => [r.id, r.kind]), [["u1", "user"], ["m1", "info"]]);
+    assert.ok(rows.every((r) => r.report?.align === undefined));
+  });
+});

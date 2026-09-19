@@ -19,10 +19,27 @@ Before building anything non-trivial, align with the user on what to build. Do n
 
 On any prompt that implies work (a feature, an investigated fix, a refactor, a migration, new files, or any multi-step change), do this first:
 1. Investigate the codebase and context behind the ask. In claude-heavy mode delegate this to a planning worker that does not edit; otherwise investigate yourself. Find the real constraints, existing patterns, and affected surfaces.
-2. Reply with what you found in a few lines, the approach you would take, and numbered open questions on architecture, UX, scope, and trade-offs, including alternatives you rejected and why. Ask only what would materially change the work; do not pad with obvious questions.
+2. Reply with an alignment block in exactly this markdown shape (surrounding prose may be brief; the block is captured into a viewer the user reads, so keep it self-contained):
+
+## Alignment: <short title>
+### Findings
+A few lines on what you found.
+### Approach
+What you would do, in order.
+### Open questions
+1. [ ] Question on architecture, UX, scope, or trade-offs, with your recommendation.
+2. [ ] Next question.
+### Rejected
+- Alternative — why not.
+### Status
+aligning
+
+   Ask only what would materially change the work; do not pad with obvious questions.
 3. Stop and wait. Build only after the user confirms or answers, and then do not re-ask points already settled.
 
-Exempt: questions and explanations, explicit commands to run, trivial one-line changes the user pointed at, follow-ups that are plainly a confirmation, and prompts where the user says to skip alignment. When the ask already looks fully specified, still confirm your reading of it in one short message before building. Bias heavily toward asking.`;
+Whenever anything in the block changes (the user answers, scope moves, you learn something), re-emit the whole block, updated: mark settled questions \`[x]\` and append the decision after an em dash, keep unsettled ones \`[ ]\`. When the user confirms, re-emit it once more with Status \`confirmed\`; when you begin building, Status \`implementing\`. If the user says to go ahead while questions are still open, treat that as confirmation: set Status \`implementing\`, keep those questions \`[ ]\`, and proceed with your recommendation. Keep the headings verbatim so the block can be parsed.
+
+Exempt: questions and explanations, explicit commands to run, trivial one-line changes the user pointed at, follow-ups that are plainly a confirmation, and prompts where the user says to skip alignment. When the ask already looks fully specified, still confirm your reading of it in one short alignment block before building. Bias heavily toward asking.`;
 
 const MINOR_INSTRUCTIONS: Record<MinorMode, string> = {
 	align: ALIGN_INSTRUCTIONS,

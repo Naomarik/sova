@@ -266,7 +266,10 @@ export function Sidebar(props: {
         <Show when={props.sessions && all().length > 0 && (topHits().length > 0 || !query().trim())}>
           <section class="sidebar-region" aria-labelledby="r-top">
             <h2 class="sidebar-region-head" id="r-top">
-              Live &amp; web <span class="sidebar-region-count">· {topHits().length}</span>
+              Live &amp; web{" "}
+              <span class="sidebar-region-count">
+                · {query().trim() ? `${topHits().length} of ${all().length - archiveTotal()}` : topHits().length}
+              </span>
             </h2>
             <Show
               when={topHits().length > 0}

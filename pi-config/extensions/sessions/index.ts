@@ -5,7 +5,7 @@ import { join } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { createPresenceChannel, type IntercomExtensionEvent, type PresenceChannel, type PresenceChannelOptions } from "./presence.ts";
 import { checkFocusable, discoverFocusTarget, focusTarget, type FocusTarget } from "./focus.ts";
-import { subscribeWorkers, type WorkerSummary } from "./workers.ts";
+import { subscribeWorkers, type WorkerSummary, type WorkerUsageTotal } from "./workers.ts";
 import { SessionsOverlay } from "./ui.ts";
 import { clean, SessionStore, parseOutline, type Presence, type PresenceOutline } from "./state.ts";
 import { countWorkers, fit, RECORD_BUDGET, SCHEMA_VERSION, SESSION_MODES, WORKER_SESSION_FILE_MAX, WORKER_SESSION_ID_MAX, type Activity, type SessionMeta, type SessionState } from "./schema.ts";
@@ -63,6 +63,8 @@ export default function sessions(pi: ExtensionAPI, deps: SessionsDeps = {}) {
   let discovering = false;
   let discoveryTimer: ReturnType<typeof setTimeout> | undefined;
   let workers: WorkerSummary[] = [];
+  /** Lifetime Σ published by the subagent manager; undefined until one arrives. */
+  let workerUsage: WorkerUsageTotal | undefined;
   let stopWorkers: (() => void) | undefined;
   let heartbeat: ReturnType<typeof setInterval> | undefined;
   let pendingPublish: ReturnType<typeof setTimeout> | undefined;
@@ -199,8 +201,13 @@ export default function sessions(pi: ExtensionAPI, deps: SessionsDeps = {}) {
         sessionFile: w.sessionFile ? clean(w.sessionFile, WORKER_SESSION_FILE_MAX) : undefined,
         sessionId: w.sessionId ? clean(w.sessionId, WORKER_SESSION_ID_MAX) : undefined,
         startedAt: w.startedAt, lastActivity: w.lastActivity, endedAt: w.endedAt, outcome: w.outcome,
+        // Counts only, already normalized by the snapshot decoder.
+        usage: w.usage ? { ...w.usage } : undefined,
       })),
-      activity, workerCounts: countWorkers(workers), previewAt, focusable, focusReason };
+      activity, workerCounts: countWorkers(workers),
+      // The Σ covers workers the 40-row cap (and retention) dropped, so it is never recomputed here.
+      workerUsage: workerUsage ? { ...workerUsage } : undefined,
+      previewAt, focusable, focusReason };
     // Presence files are re-read by every peer every couple of seconds, so keep
     // the whole record bounded in UTF-8 bytes. The channel re-fits the exact
     // record it writes; fitting here too keeps the local view identical.
@@ -347,10 +354,10 @@ export default function sessions(pi: ExtensionAPI, deps: SessionsDeps = {}) {
         }
       }
     }
-    stopWorkers = subscribeWorkers(pi, next => {
+    stopWorkers = subscribeWorkers(pi, (next, usage) => {
       const active = new Set(workers.filter(w => /^(running|starting|busy|working)$/i.test(w.status)).map(w => w.id));
       if (next.some(w => active.has(w.id) && !/^(running|starting|busy|working)$/i.test(w.status))) completed = Date.now();
-      workers = next; schedule();
+      workers = next; workerUsage = usage; schedule();
     });
     register();
     heartbeat = setInterval(() => {

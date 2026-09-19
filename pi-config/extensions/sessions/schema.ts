@@ -81,7 +81,16 @@ export interface WorkerEntry {
   lastActivity?: number;
   endedAt?: number;
   outcome?: "success" | "error" | "aborted";
+  /** Token counts this worker has used so far. Counts only, never text; cost in USD when the backend reports one. */
+  usage?: WorkerUsage;
 }
+
+/** Cumulative token counts. Non-negative integers; `cost` is USD and may be fractional. */
+export interface WorkerUsage { input: number; output: number; cacheRead: number; cacheWrite: number; cost?: number }
+
+/** Σ across every worker the session ever spawned, including ones retention dropped.
+ *  `workers` is that lifetime count, so it can exceed `workers.length` and workerCounts.total. */
+export interface WorkerUsageTotal extends WorkerUsage { workers: number }
 
 /** working = starting|running|stopping (and unknown statuses). */
 export interface WorkerCounts { total: number; working: number; waiting: number; done: number; error: number; killed: number }
@@ -127,6 +136,8 @@ export interface Presence {
   outline?: Outline;
   activity?: Activity;
   workerCounts?: WorkerCounts;
+  /** (v2) lifetime token Σ across all workers, surviving the workers[] cap. */
+  workerUsage?: WorkerUsageTotal;
   focusable?: boolean;
   focusReason?: string;
   previewAt?: number;
@@ -165,6 +176,25 @@ function compact<T extends object>(value: T): T {
   return value;
 }
 
+/** Token counts are advisory: a malformed field is 0, a wholly malformed object is dropped.
+ *  Non-finite, negative and non-integer counts never reach a consumer. */
+function parseUsage(value: unknown): WorkerUsage | undefined {
+  if (!isObj(value)) return;
+  const tokens = (v: unknown) => (num(v) && v >= 0 ? Math.floor(v) : 0);
+  const cost = num(value.cost) && value.cost > 0 ? value.cost : undefined;
+  const usage: WorkerUsage = {
+    input: tokens(value.input), output: tokens(value.output),
+    cacheRead: tokens(value.cacheRead), cacheWrite: tokens(value.cacheWrite),
+  };
+  return compact({ ...usage, cost });
+}
+
+function parseUsageTotal(value: unknown): WorkerUsageTotal | undefined {
+  const usage = parseUsage(value);
+  if (!usage || !isObj(value)) return;
+  return { ...usage, workers: count(value.workers) ? value.workers : 0 };
+}
+
 function parseWorker(value: unknown): WorkerEntry | undefined {
   if (!isObj(value) || typeof value.id !== "string" || typeof value.name !== "string" || typeof value.status !== "string") return;
   return compact({
@@ -177,6 +207,7 @@ function parseWorker(value: unknown): WorkerEntry | undefined {
     lastActivity: num(value.lastActivity) ? value.lastActivity : undefined,
     endedAt: num(value.endedAt) ? value.endedAt : undefined,
     outcome: oneOf(value.outcome, WORKER_OUTCOMES),
+    usage: parseUsage(value.usage),
   });
 }
 
@@ -263,6 +294,7 @@ export function parsePresence(value: unknown): Presence | undefined {
     outline: parseOutline(p.outline),
     activity: parseActivity(p.activity),
     workerCounts: parseCounts(p.workerCounts),
+    workerUsage: parseUsageTotal(p.workerUsage),
     focusable: typeof p.focusable === "boolean" ? p.focusable : undefined,
     focusReason: str(p.focusReason, 120),
     previewAt: num(p.previewAt) ? p.previewAt : undefined,
@@ -352,9 +384,10 @@ export function countWorkers(workers: WorkerEntry[]): WorkerCounts {
 const bytes = (record: LiveRecord) => Buffer.byteLength(JSON.stringify(record));
 
 /** Enforce the TOTAL serialized UTF-8 budget. Drop order: outline.detail,
- *  activity.buckets, preview → 600 chars, outline.overall+topics, then workers
- *  (finished ones first, otherwise from the end). workerCounts is kept so the
- *  tally stays truthful after truncation. Mutates and returns; never throws. */
+ *  activity.buckets, preview → 600 chars, outline.overall+topics, per-worker
+ *  usage, then workers (finished ones first, otherwise from the end).
+ *  workerCounts and workerUsage are kept so the tallies stay truthful after
+ *  truncation. Mutates and returns; never throws. */
 export function fit(record: LiveRecord, budget = RECORD_BUDGET): LiveRecord {
   try {
     const p = record.presence;
@@ -365,6 +398,11 @@ export function fit(record: LiveRecord, budget = RECORD_BUDGET): LiveRecord {
     if (chars.length > 600) { p.preview = chars.slice(0, 600).join(""); if (bytes(record) <= budget) return record; }
     if (p.outline && (p.outline.overall !== undefined || p.outline.topics)) {
       delete p.outline.overall; delete p.outline.topics;
+      if (bytes(record) <= budget) return record;
+    }
+    // A row's own counts go before the row itself; the Σ in workerUsage survives either way.
+    if (p.workers.some(w => w.usage)) {
+      for (const w of p.workers) delete w.usage;
       if (bytes(record) <= budget) return record;
     }
     while (p.workers.length && bytes(record) > budget) {

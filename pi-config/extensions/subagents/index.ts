@@ -159,6 +159,29 @@ function checkTeamKeys(members: unknown, defaults?: unknown): void {
 	const extra = Object.keys(defaults).find((key) => !TEAM_DEFAULT_KEYS.has(key));
 	if (extra) throw new Error(`Unsupported team default ${extra}; defaults accept backend, model, effort and backendOptions.`);
 }
+/** Public token totals: counts only, never text. Cost is omitted when the backend reports none. */
+interface WorkerUsage { input: number; output: number; cacheRead: number; cacheWrite: number; cost?: number }
+type UsageSum = { input: number; output: number; cacheRead: number; cacheWrite: number; cost: number };
+/** Both runners keep an AgentUsage with these exact fields; a garbage value counts as 0. */
+const amount = (value: unknown): number => (typeof value === "number" && Number.isFinite(value) && value > 0 ? value : 0);
+function addUsage(total: UsageSum, a: Worker): UsageSum {
+	total.input += amount(a.usage?.input);
+	total.output += amount(a.usage?.output);
+	total.cacheRead += amount(a.usage?.cacheRead);
+	total.cacheWrite += amount(a.usage?.cacheWrite);
+	total.cost += amount(a.usage?.cost);
+	return total;
+}
+const spent = (u: UsageSum): boolean => u.input + u.output + u.cacheRead + u.cacheWrite + u.cost > 0;
+function publicUsage(u: UsageSum): WorkerUsage {
+	return {
+		input: Math.round(u.input), output: Math.round(u.output),
+		cacheRead: Math.round(u.cacheRead), cacheWrite: Math.round(u.cacheWrite),
+		...(u.cost > 0 ? { cost: u.cost } : {}),
+	};
+}
+const emptySum = (): UsageSum => ({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0 });
+
 /** This extension's own directory; a child must never load it, or it could spawn recursively. */
 const SELF_DIR = realpathOr(path.dirname(fileURLToPath(import.meta.url)));
 /**
@@ -347,6 +370,9 @@ export function registerSubagents(
 	const finished = new Set<Worker>();
 	let evictedWorkers = 0;
 	let evictedRuns = 0;
+	// Token counts of workers the retention cap already dropped. Kept so the published
+	// session total stays a lifetime total: the live list is capped, the Σ is not.
+	const evictedUsage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0 };
 	const retentionNotice = () => evictedWorkers || evictedRuns
 		? `[Retention: ${evictedWorkers} finished worker(s) and ${evictedRuns} empty run(s) evicted cumulatively; only the latest ${MAX_FINISHED} finished workers are retained, plus all live/idle workers. Evicted IDs are unavailable; saved session history is unchanged.]`
 		: "";
@@ -357,6 +383,7 @@ export function registerSubagents(
 			const a = finished.values().next().value!;
 			finished.delete(a);
 			teams.recordEviction(a.id, { status: a.status, taskOutcome: a.taskOutcome, error: a.error });
+			addUsage(evictedUsage, a);
 			agents.splice(agents.indexOf(a), 1);
 			const group = groups.find(g => g.id === a.groupId);
 			if (group) group.agents = group.agents.filter(worker => worker !== a);
@@ -406,8 +433,21 @@ export function registerSubagents(
 		const teamId = teams.teamOf(id);
 		return teamId ? { teamId } : {};
 	};
+	// Lifetime Σ across every worker this session ever spawned: the live list plus what
+	// retention already evicted. It is not the sum of the published rows, and must not be
+	// recomputed from them.
+	const sessionUsage = () => {
+		const total: UsageSum = { ...evictedUsage };
+		for (const a of agents) addUsage(total, a);
+		return { ...publicUsage(total), workers: agents.length + evictedWorkers };
+	};
+	const usageField = (a: Worker) => {
+		const usage = addUsage(emptySum(), a);
+		return spent(usage) ? { usage: publicUsage(usage) } : {};
+	};
 	const publishWorkers = () => pi.events?.emit(WORKERS_SNAPSHOT_EVENT, {
 		version: 1,
+		...(shuttingDown ? {} : { workerUsage: sessionUsage() }),
 		workers: shuttingDown ? [] : agents.map((a) => ({
 			id: a.id,
 			name: a.name,
@@ -423,6 +463,9 @@ export function registerSubagents(
 			...timestamps(a),
 			...(a.taskOutcome === "success" || a.taskOutcome === "error" || a.taskOutcome === "aborted"
 				? { outcome: a.taskOutcome } : {}),
+			// Token counts this worker has used so far (cumulative, both backends);
+			// a worker that has spent nothing yet carries no usage at all.
+			...usageField(a),
 		})),
 	});
 	// Answer immediately even before session_start, regardless of extension order.

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { subscribeWorkers, WORKERS_REQUEST_EVENT, WORKERS_SNAPSHOT_EVENT, type WorkerSummary } from "./workers.ts";
+import { subscribeWorkers, WORKERS_REQUEST_EVENT, WORKERS_SNAPSHOT_EVENT, type WorkerSummary, type WorkerUsageTotal } from "./workers.ts";
 
 function harness() {
 	const listeners = new Map<string, Set<(data: unknown) => void>>();
@@ -159,5 +159,34 @@ test("additive fields pass through; invalid values are omitted without rejecting
 	}
 	h.snapshot([{ ...worker("running"), sessionFile: "/" + "x".repeat(1023), sessionId: 7 as unknown as string }]);
 	assert.deepEqual(changes.at(-1), [{ ...worker("running"), sessionFile: "/" + "x".repeat(1023) }]);
+	h.fire("session_shutdown");
+});
+
+test("token counts pass through per worker, and the lifetime total arrives beside the list", () => {
+	const h = harness();
+	const changes: Array<[WorkerSummary[], WorkerUsageTotal | undefined]> = [];
+	subscribeWorkers(h.pi, (workers, usage) => changes.push([workers, usage]));
+	const usage = { input: 120, output: 30, cacheRead: 4000, cacheWrite: 250, cost: 0.75 };
+	h.snapshot([{ ...worker(), usage }]);
+	assert.deepEqual(changes.at(-1)![0], [{ ...worker(), usage }]);
+	assert.equal(changes.at(-1)![1], undefined, "a manager without a total sends none");
+	// Counts are advisory: bad ones read as 0, a non-object usage is dropped, the worker survives.
+	h.events.emit(WORKERS_SNAPSHOT_EVENT, { version: 1, workers: [{ ...worker("waiting"),
+		usage: { input: -3, output: "9", cacheRead: Number.NaN, cacheWrite: 12.9, cost: 0 } }] });
+	assert.deepEqual(changes.at(-1)![0], [{ ...worker("waiting"), usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 12 } }]);
+	h.events.emit(WORKERS_SNAPSHOT_EVENT, { version: 1, workers: [{ ...worker("done"), usage: "lots" }] });
+	assert.deepEqual(changes.at(-1)![0], [worker("done")]);
+	// The Σ covers evicted workers, so it is independent of the list and of its own ordering.
+	h.events.emit(WORKERS_SNAPSHOT_EVENT, { version: 1, workers: [worker()],
+		workerUsage: { input: 9000, output: 800, cacheRead: 70_000, cacheWrite: 6000, cost: 4.2, workers: 63 } });
+	assert.deepEqual(changes.at(-1)![1], { input: 9000, output: 800, cacheRead: 70_000, cacheWrite: 6000, cost: 4.2, workers: 63 });
+	h.events.emit(WORKERS_SNAPSHOT_EVENT, { version: 1, workers: [worker()],
+		workerUsage: { input: 9000, output: 800, cacheRead: 70_000, cacheWrite: 6000, cost: 4.2, workers: "many" } });
+	assert.equal(changes.at(-1)![1]!.workers, 0, "a bad lifetime count reads as 0");
+	// A changed total alone is still a change worth reporting.
+	const before = changes.length;
+	h.events.emit(WORKERS_SNAPSHOT_EVENT, { version: 1, workers: [worker()],
+		workerUsage: { input: 9001, output: 800, cacheRead: 70_000, cacheWrite: 6000, workers: 63 } });
+	assert.equal(changes.length, before + 1);
 	h.fire("session_shutdown");
 });

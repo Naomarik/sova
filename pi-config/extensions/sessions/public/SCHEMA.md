@@ -99,6 +99,7 @@ enforce them, and the reference reader enforces them again.
 | `outline` | | Outline | | topic-outline enrichment |
 | `activity` | | Activity | | (v2) structured state; prefer it over `status` |
 | `workerCounts` | | WorkerCounts | | (v2) tally of all workers, including any dropped for size |
+| `workerUsage` | | WorkerUsageTotal | | (v2) lifetime token Σ across every worker the session ever ran |
 | `focusable` | | boolean | | (v2) |
 | `focusReason` | | string | 120 | (v2) why focusing is or isn't possible |
 | `previewAt` | | ms epoch | | (v2) time `preview` was produced |
@@ -106,7 +107,7 @@ enforce them, and the reference reader enforces them again.
 **WorkerEntry**: `id` ✔ (150), `name` ✔ (120), `status` ✔ (80, free text),
 `model` (100), `preview` (180), `backend` (32, v2), `sessionFile` (1024, v2, optional),
 `sessionId` (64, v2, optional), `startedAt`/`lastActivity`/`endedAt`
-(ms epoch, v2), `outcome` (`success`|`error`|`aborted`, v2).
+(ms epoch, v2), `outcome` (`success`|`error`|`aborted`, v2), `usage` (WorkerUsage, v2).
 `sessionFile` is the absolute path of that worker's own transcript JSONL, never its
 contents (same rule as `session.sessionFile`); consumers may read it but must never
 write to it. `sessionId` is the worker's backend session id (for `claude-code`
@@ -119,6 +120,19 @@ and common aliases map onto those (`busy` ⇒ running, `completed` ⇒ done, …
 
 **WorkerCounts**: `total`, `working` (starting+running+stopping+unknown),
 `waiting`, `done`, `error`, `killed`. All are required non-negative integers.
+
+**WorkerUsage** (v2): `input`, `output`, `cacheRead`, `cacheWrite` (required
+non-negative integers, cumulative for that worker) and `cost` (USD, only when the
+backend reports one). Counts only — a record never carries worker text beyond the
+bounded `preview`. Individual bad values read as 0 rather than dropping the worker.
+
+**WorkerUsageTotal** (v2, `presence.workerUsage`): the same fields plus `workers`,
+and it is a **session-lifetime Σ**: it covers every worker the session ever spawned,
+including ones dropped by the writer's 40-row cap, by the manager's retention cap, or
+by `fit()`. So `workerUsage.workers` may exceed both `workers.length` and
+`workerCounts.total`, and the Σ is generally larger than the sum of the rows present.
+Do not recompute it from `workers[]`; a consumer wanting "the rows I can see" should
+sum `workers[].usage` itself.
 
 **Outline**: `now` (160), `overall` (300), `topics` (12 × 60), `lastHeading` (80),
 `state` (`none|drafting|fresh|updating|stale|failed-keeping-last`), `generatedAt`,
@@ -163,11 +177,13 @@ this order:
 2. `presence.activity.buckets`
 3. `presence.preview` truncated to 600 characters
 4. `presence.outline.overall` and `presence.outline.topics`
-5. `presence.workers`: finished ones (`done|error|killed`) go first regardless
+5. `presence.workers[].usage`: every row's own counts, all at once
+6. `presence.workers`: finished ones (`done|error|killed`) go first regardless
    of position, then entries are removed from the end
 
-`workerCounts` still reflects every worker, so `workerCounts.total` can be
-larger than `workers.length`.
+`workerCounts` and `workerUsage` still reflect every worker, so
+`workerCounts.total` and `workerUsage.workers` can be larger than
+`workers.length` and the Σ larger than the rows that survived.
 
 ## 6. Privacy
 

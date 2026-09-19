@@ -170,11 +170,12 @@ test("worker snapshots answer before startup and publish bounded background stat
 	h.ctx.mode = "json";
 	try {
 		request();
-		assert.deepEqual(snapshots, [{ version: 1, workers: [] }]);
+		const noUsage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, workers: 0 };
+		assert.deepEqual(snapshots, [{ version: 1, workerUsage: noUsage, workers: [] }]);
 		h.bus.emit("subagents:workers-request", { version: 2 });
 		assert.equal(snapshots.length, 1);
 		await h.start();
-		assert.deepEqual(snapshots.at(-1), { version: 1, workers: [] });
+		assert.deepEqual(snapshots.at(-1), { version: 1, workerUsage: noUsage, workers: [] });
 		await h.call("agent_spawn", { prompt: "background task", wake: false });
 		const a = h.workers[0];
 		assert.deepEqual(snapshots.at(-1).workers, [{ id: a.id, name: a.name,
@@ -230,7 +231,7 @@ test("worker snapshots answer before startup and publish bounded background stat
 		// Pending refreshes cannot republish workers after shutdown.
 		a.change();
 		const closing = h.close();
-		assert.deepEqual(snapshots.at(-1), { version: 1, workers: [] });
+		assert.deepEqual(snapshots.at(-1), { version: 1, workers: [] }, "shutdown publishes neither workers nor a total");
 		const count = snapshots.length;
 		request();
 		await closing;
@@ -238,6 +239,49 @@ test("worker snapshots answer before startup and publish bounded background stat
 		assert.equal(snapshots.length, count);
 	} finally { off(); await h.close(); }
 });
+
+test("worker snapshots carry token counts and a session-lifetime total that survives eviction", async () => {
+	const h = harness();
+	const snapshots: any[] = [];
+	const off = h.bus.on("subagents:workers-snapshot", data => snapshots.push(data));
+	const request = () => h.bus.emit("subagents:workers-request", { version: 1 });
+	const spend = (a: any, n: number) => Object.assign(a.usage, { input: n, output: n / 2, cacheRead: n * 10, cacheWrite: n, cost: n / 1000 });
+	try {
+		await h.call("agent_spawn", { agents: [{ prompt: "one" }, { prompt: "two" }] });
+		request();
+		assert.ok(snapshots.at(-1).workers.every((w: any) => !("usage" in w)), "a worker that spent nothing carries no usage");
+		assert.deepEqual(snapshots.at(-1).workerUsage, { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, workers: 2 });
+		spend(h.workers[0], 100);
+		spend(h.workers[1], 20);
+		request();
+		assert.deepEqual(snapshots.at(-1).workers[0].usage, { input: 100, output: 50, cacheRead: 1000, cacheWrite: 100, cost: 0.1 });
+		const { cost, ...counts } = snapshots.at(-1).workerUsage;
+		assert.deepEqual(counts, { input: 120, output: 60, cacheRead: 1200, cacheWrite: 120, workers: 2 });
+		assert.ok(Math.abs(cost - 0.12) < 1e-9, "costs are summed as reported, not rounded");
+		// Garbage from a backend counts as 0 and never reaches a consumer.
+		Object.assign(h.workers[1].usage, { input: Number.NaN, output: -5, cacheRead: "1000", cacheWrite: Infinity, cost: undefined });
+		request();
+		assert.ok(!("usage" in snapshots.at(-1).workers[1]), "all-garbage counts read as 0, so no usage is published");
+		assert.deepEqual(snapshots.at(-1).workerUsage,
+			{ input: 100, output: 50, cacheRead: 1000, cacheWrite: 100, cost: 0.1, workers: 2 });
+		spend(h.workers[1], 20);
+		// Retention evicts finished workers; their counts stay in the total, and so does their head count.
+		for (let i = 0; i < 55; i++) {
+			await h.call("agent_spawn", { prompt: `task ${i}` });
+			spend(h.workers.at(-1), 2);
+			h.workers.at(-1).settle(undefined, "done");
+		}
+		request();
+		const total = snapshots.at(-1).workerUsage;
+		assert.equal(snapshots.at(-1).workers.length, 52, "the list is capped");
+		assert.equal(total.workers, 57, "the total counts every worker ever spawned");
+		assert.equal(total.input, 100 + 20 + 55 * 2);
+		assert.equal(total.cacheRead, (100 + 20 + 55 * 2) * 10);
+		assert.ok(total.input > snapshots.at(-1).workers.reduce((n: number, w: any) => n + (w.usage?.input ?? 0), 0),
+			"it is not the sum of the published rows");
+	} finally { off(); await h.close(); }
+});
+
 
 test("worker snapshots include Claude and do not depend on working UI methods", async () => {
 	const h = harness();

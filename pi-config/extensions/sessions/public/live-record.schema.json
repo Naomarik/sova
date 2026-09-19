@@ -56,7 +56,27 @@
         "startedAt": { "$ref": "#/$defs/epochMs" },
         "lastActivity": { "$ref": "#/$defs/epochMs" },
         "endedAt": { "$ref": "#/$defs/epochMs" },
-        "outcome": { "enum": ["success", "error", "aborted"] }
+        "outcome": { "enum": ["success", "error", "aborted"] },
+        "usage": { "$ref": "#/$defs/WorkerUsage", "description": "(v2) cumulative token counts for this worker. Counts only, never text. Dropped first when the record is over budget." }
+      }
+    },
+    "WorkerUsage": {
+      "type": "object",
+      "required": ["input", "output", "cacheRead", "cacheWrite"],
+      "properties": {
+        "input": { "$ref": "#/$defs/count" },
+        "output": { "$ref": "#/$defs/count" },
+        "cacheRead": { "$ref": "#/$defs/count" },
+        "cacheWrite": { "$ref": "#/$defs/count" },
+        "cost": { "type": "number", "exclusiveMinimum": 0, "description": "USD, when the backend reports one; absent otherwise." }
+      }
+    },
+    "WorkerUsageTotal": {
+      "type": "object",
+      "required": ["input", "output", "cacheRead", "cacheWrite", "workers"],
+      "allOf": [{ "$ref": "#/$defs/WorkerUsage" }],
+      "properties": {
+        "workers": { "$ref": "#/$defs/count", "description": "Lifetime number of workers summed, including evicted ones; may exceed workers[].length and workerCounts.total." }
       }
     },
     "WorkerCounts": {
@@ -164,6 +184,7 @@
         "outline": { "$ref": "#/$defs/Outline" },
         "activity": { "$ref": "#/$defs/Activity" },
         "workerCounts": { "$ref": "#/$defs/WorkerCounts" },
+        "workerUsage": { "$ref": "#/$defs/WorkerUsageTotal", "description": "(v2) lifetime token \u03a3 across every worker this session ever ran, surviving the workers[] cap." },
         "focusable": { "type": "boolean" },
         "focusReason": { "type": "string", "maxLength": 120 },
         "previewAt": { "$ref": "#/$defs/epochMs" }

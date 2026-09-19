@@ -1,8 +1,9 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { WORKER_OUTCOMES, WORKER_SESSION_FILE_MAX, WORKER_SESSION_ID_MAX, type WorkerEntry } from "./schema.ts";
+import { WORKER_OUTCOMES, WORKER_SESSION_FILE_MAX, WORKER_SESSION_ID_MAX, type WorkerEntry, type WorkerUsage, type WorkerUsageTotal } from "./schema.ts";
 
-/** schema.ts WorkerEntry: the v1 summary plus optional backend/session/timing/outcome. */
+/** schema.ts WorkerEntry: the v1 summary plus optional backend/session/timing/outcome/usage. */
 export type WorkerSummary = WorkerEntry;
+export type { WorkerUsage, WorkerUsageTotal };
 
 /** Shared with the subagent manager; Claude workers use that same manager. */
 export const WORKERS_SNAPSHOT_EVENT = "subagents:workers-snapshot";
@@ -10,14 +11,33 @@ export const WORKERS_REQUEST_EVENT = "subagents:workers-request";
 export interface WorkersSnapshot {
 	version: 1;
 	workers: WorkerSummary[];
+	/** Lifetime Σ over every worker the manager ever ran, including evicted ones. */
+	workerUsage?: WorkerUsageTotal;
 }
 
 const time = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value);
+// Advisory counts: a bad field is 0, a non-object usage is dropped. Never fatal to a snapshot.
+const tokens = (value: unknown): number =>
+	typeof value === "number" && Number.isFinite(value) && value >= 0 ? Math.floor(value) : 0;
+function usageOf(value: unknown): WorkerUsage | undefined {
+	if (!value || typeof value !== "object") return;
+	const u = value as Record<string, unknown>;
+	const cost = typeof u.cost === "number" && Number.isFinite(u.cost) && u.cost > 0 ? u.cost : undefined;
+	return { input: tokens(u.input), output: tokens(u.output), cacheRead: tokens(u.cacheRead), cacheWrite: tokens(u.cacheWrite),
+		...(cost === undefined ? {} : { cost }) };
+}
 // A truncated path or id is wrong, not shorter: over-limit values are dropped.
 const bounded = (value: unknown, limit: number): value is string =>
 	typeof value === "string" && value.length > 0 && value.length <= limit;
 
-function decodeSnapshot(data: unknown): WorkerSummary[] | undefined {
+function decodeUsageTotal(data: unknown): WorkerUsageTotal | undefined {
+	const usage = usageOf(data);
+	if (!usage) return;
+	const workers = (data as Record<string, unknown>).workers;
+	return { ...usage, workers: typeof workers === "number" && Number.isSafeInteger(workers) && workers >= 0 ? workers : 0 };
+}
+
+function decodeSnapshot(data: unknown): WorkersSnapshot | undefined {
 	if (!data || typeof data !== "object") return;
 	const snapshot = data as Partial<WorkersSnapshot>;
 	if (snapshot.version !== 1 || !Array.isArray(snapshot.workers)) return;
@@ -41,14 +61,19 @@ function decodeSnapshot(data: unknown): WorkerSummary[] | undefined {
 			...(time(w.startedAt) ? { startedAt: w.startedAt } : {}),
 			...(time(w.lastActivity) ? { lastActivity: w.lastActivity } : {}),
 			...(time(w.endedAt) ? { endedAt: w.endedAt } : {}),
-			...((WORKER_OUTCOMES as readonly unknown[]).includes(w.outcome) ? { outcome: w.outcome as WorkerEntry["outcome"] } : {}) });
+			...((WORKER_OUTCOMES as readonly unknown[]).includes(w.outcome) ? { outcome: w.outcome as WorkerEntry["outcome"] } : {}),
+			...(usageOf(w.usage) ? { usage: usageOf(w.usage) } : {}) });
 	}
-	return workers;
+	const workerUsage = decodeUsageTotal((data as Record<string, unknown>).workerUsage);
+	return { version: 1, workers, ...(workerUsage ? { workerUsage } : {}) };
 }
 
 /**
  * Subscribe once per extension instance (factory or session_start). Immediately
- * reports [], then requests an authoritative snapshot. The manager must emit
+ * reports [], then requests an authoritative snapshot. The second callback argument
+ * is the manager's session-lifetime token Σ (`workerUsage`, absent from older
+ * managers): it covers evicted workers too, so it is NOT the sum of the list.
+ * The manager must emit
  * { version: 1, workers: [...] } on WORKERS_SNAPSHOT_EVENT at startup and whenever
  * its committed worker state changes, and answer WORKERS_REQUEST_EVENT
  * { version: 1 } with the same full snapshot. Empty snapshots clear the list.
@@ -59,18 +84,25 @@ function decodeSnapshot(data: unknown): WorkerSummary[] | undefined {
  * also carry optional backend, sessionFile (absolute path of the worker's own
  * transcript JSONL, ≤ 1024 chars; never its contents, and consumers must not
  * write to it), sessionId (backend session id, ≤ 64 chars), startedAt/
- * lastActivity/endedAt (ms epoch) and outcome ("success"|"error"|"aborted");
+ * lastActivity/endedAt (ms epoch), outcome ("success"|"error"|"aborted") and
+ * usage (cumulative input/output/cacheRead/cacheWrite counts, plus cost in USD
+ * when the backend reports one — counts only, never text);
  * empty or over-limit strings and other invalid optional values are dropped
- * per field without rejecting the snapshot. No polling,
+ * per field without rejecting the snapshot. An invalid usage count reads as 0. No polling,
  * subprocesses, session-history inference, or dependence on an open monitor.
  *
  * Cleanup is idempotent and automatic on session_shutdown. The owner should also
  * call it when discarding its view. A new extension instance must subscribe anew
  * after reload/session replacement. Renderers must escape untrusted text.
  */
-export function subscribeWorkers(pi: ExtensionAPI, onChange: (workers: WorkerSummary[]) => void): () => void {
+export function subscribeWorkers(
+	pi: ExtensionAPI,
+	onChange: (workers: WorkerSummary[], usage?: WorkerUsageTotal) => void,
+): () => void {
 	let callback: typeof onChange | undefined = onChange;
-	let previous = "[]";
+	// Matches the shape decodeSnapshot returns, so the first empty snapshot after
+	// the synchronous onChange([]) is deduplicated as it always was.
+	let previous = JSON.stringify({ version: 1, workers: [] });
 	let off: (() => void) | undefined;
 	const dispose = () => {
 		callback = undefined;
@@ -82,12 +114,12 @@ export function subscribeWorkers(pi: ExtensionAPI, onChange: (workers: WorkerSum
 	};
 	off = pi.events.on(WORKERS_SNAPSHOT_EVENT, (data: unknown) => {
 		if (!callback) return;
-		const workers = decodeSnapshot(data);
-		if (!workers) return;
-		const serialized = JSON.stringify(workers);
+		const snapshot = decodeSnapshot(data);
+		if (!snapshot) return;
+		const serialized = JSON.stringify(snapshot);
 		if (serialized === previous) return;
 		previous = serialized;
-		callback(workers);
+		callback(snapshot.workers, snapshot.workerUsage);
 	});
 	// Pi's lifecycle handlers have no unsubscribe API; disposed handlers are inert
 	// and release the UI callback. The event-bus listener *is* removed on disposal.

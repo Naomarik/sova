@@ -111,14 +111,16 @@ written. A missing or malformed file means defaults:
 - `budgetBytes` (default `16384`, clamped to 4096–65536): the total UTF-8
   budget for this session's record. When a record is over budget, content is
   dropped in the order documented in `public/SCHEMA.md` §5. `workerCounts`
-  stays truthful when workers are dropped.
+  and `workerUsage` stay truthful when workers are dropped.
 
 ## Workers
 
 `subagents/index.ts` publishes authoritative worker snapshots on
 `subagents:workers-snapshot`. It answers `subagents:workers-request` and
 covers both the Pi and Claude backends in that manager (see `workers.ts` for
-the contract). At most 40 workers go on the bus. Third-party worker managers
+the contract). At most 40 workers go on the bus, each with its own cumulative
+token counts (`usage`), plus one `workerUsage` Σ over every worker the session
+ever ran — evicted ones included, so it outlives both caps. Third-party worker managers
 need an adapter, because inferring workers from tool calls isn't reliable.
 
 ## External consumers

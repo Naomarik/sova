@@ -198,6 +198,57 @@ test("fit() drops fields in contract order as the budget shrinks", () => {
   assert.deepEqual(fit(clone(small), 10), small);
 });
 
+test("worker usage: bad counts read as 0, a bad object is dropped, the total keeps its lifetime count", () => {
+  const base = { type: "presence", version: 1, status: "Idle", since: 1, completed: 0, preview: "" };
+  const p = parsePresence({ ...base,
+    workers: [
+      { id: "a", name: "a", status: "running", usage: { input: 10, output: 2, cacheRead: 300, cacheWrite: 40, cost: 0.5 } },
+      { id: "b", name: "b", status: "done", usage: { input: -5, output: "x", cacheRead: Number.NaN, cacheWrite: 9.7, cost: -1 } },
+      { id: "c", name: "c", status: "running", usage: [1, 2] },
+    ],
+    workerUsage: { input: 10_000, output: 900, cacheRead: 1, cacheWrite: 2, cost: 3.5, workers: 99 } });
+  assert.ok(p);
+  assert.deepEqual(p.workers[0].usage, { input: 10, output: 2, cacheRead: 300, cacheWrite: 40, cost: 0.5 });
+  assert.deepEqual(p.workers[1].usage, { input: 0, output: 0, cacheRead: 0, cacheWrite: 9 }, "floored, clamped, no negative cost");
+  assert.equal(p.workers[2].usage, undefined, "a non-object usage never invalidates the worker");
+  assert.deepEqual(p.workerUsage, { input: 10_000, output: 900, cacheRead: 1, cacheWrite: 2, cost: 3.5, workers: 99 });
+  assert.ok(p.workerUsage!.workers > p.workers.length, "the \u03a3 is a lifetime total, not the sum of the rows");
+
+  const bad = parsePresence({ ...base, workers: [], workerUsage: { input: 5, output: 5, cacheRead: 0, cacheWrite: 0, workers: -2 } });
+  assert.deepEqual(bad?.workerUsage, { input: 5, output: 5, cacheRead: 0, cacheWrite: 0, workers: 0 }, "a bad lifetime count reads as 0");
+  assert.equal(parsePresence({ ...base, workers: [], workerUsage: 7 })?.workerUsage, undefined, "a non-object total is dropped");
+});
+
+test("fit() drops per-worker usage before any worker row", () => {
+  const record = example("v2") as LiveRecord;
+  const p = record.presence!;
+  const usage = { input: 1_234_567, output: 234_567, cacheRead: 9_876_543, cacheWrite: 345_678, cost: 12.345678 };
+  p.workers = Array.from({ length: 40 }, (_, i): WorkerEntry => ({ id: `w${i}`, name: `worker-${i}`,
+    status: i % 4 === 0 ? "done" : "running", usage: { ...usage } }));
+  p.workerUsage = { ...usage, workers: 137 };
+  const size = (r: LiveRecord) => Buffer.byteLength(JSON.stringify(r));
+  const noUsage = (() => { const r = clone(record); for (const w of r.presence!.workers) delete w.usage; return size(r); })();
+  assert.ok(noUsage < size(record), "usage is worth dropping");
+
+  const r = fit(clone(record), noUsage);
+  assert.equal(r.presence!.workers.length, 40, "every row survives");
+  assert.ok(r.presence!.workers.every(w => w.usage === undefined));
+  assert.deepEqual(r.presence!.workerUsage, p.workerUsage, "the lifetime \u03a3 is kept");
+
+  // Everything the earlier steps can give up, and no per-worker usage: below that, rows go.
+  const floor = (() => {
+    const r = clone(record); const q = r.presence!;
+    delete q.outline!.detail; delete q.activity!.buckets; delete q.outline!.overall; delete q.outline!.topics;
+    q.preview = Array.from(q.preview).slice(0, 600).join("");
+    for (const w of q.workers) delete w.usage;
+    return size(r);
+  })();
+  const tight = fit(clone(record), floor - 1);
+  assert.ok(tight.presence!.workers.length < 40, "then rows go, as before");
+  assert.deepEqual(tight.presence!.workerUsage, p.workerUsage);
+  assert.ok(size(fit(clone(record), 16_384)) <= 16_384);
+});
+
 test("deriveState maps the exact v1 status strings", () => {
   const cases: [string, string][] = [["Idle", "idle"], ["Running", "working"], ["Running: bash, read", "working"],
     ["Needs input", "needs-input"], ["Error", "error"], ["Disconnected", "idle"]];

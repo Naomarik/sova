@@ -100,9 +100,12 @@ test('presence shares bounded assistant text, never thinking or full tool result
     await h.emit('message_end', { message: { role: 'assistant', stopReason: 'stop', content: [
       { type: 'thinking', thinking: 'PRIVATE' }, { type: 'text', text: '文'.repeat(4000) },
     ] } });
-    h.pi.events.emit('subagents:workers-snapshot', { version: 1, workers: Array.from({ length: 60 }, (_, i) => ({
-      id: String(i), name: '文'.repeat(200), status: 'running', preview: '文'.repeat(400),
-    })) });
+    h.pi.events.emit('subagents:workers-snapshot', { version: 1,
+      workerUsage: { input: 12_345_678, output: 2_345_678, cacheRead: 98_765_432, cacheWrite: 1_234_567, cost: 123.456, workers: 60 },
+      workers: Array.from({ length: 60 }, (_, i) => ({
+        id: String(i), name: '文'.repeat(200), status: 'running', preview: '文'.repeat(400),
+        usage: { input: 123_456, output: 65_432, cacheRead: 7_654_321, cacheWrite: 234_567, cost: 12.3456 },
+      })) });
     await tick();
     // The whole record the channel writes (session meta + envelope) stays within the default budget.
     const record = { v: 1, schemaVersion: 2, session: { ...h.info(), id: 'p1-00000000', endpointEpoch: '0'.repeat(36) },
@@ -110,6 +113,7 @@ test('presence shares bounded assistant text, never thinking or full tool result
     assert.ok(Buffer.byteLength(JSON.stringify(record)) <= 16_384);
     assert.equal(h.options().budgetBytes, 16_384);
     assert.equal(h.latest().workerCounts.total, 60, 'counts stay truthful after truncation');
+    assert.deepEqual(h.latest().workerUsage.workers, 60, 'the Σ survives truncation too');
     assert.ok(h.latest().preview.length <= 2000);
     assert.ok(!JSON.stringify(h.latest()).includes('PRIVATE'));
   } finally { await h.emit('session_shutdown'); }
@@ -131,6 +135,28 @@ test('presence publishes each worker transcript path and session id, dropping in
     assert.equal(claude.sessionFile, undefined); assert.equal(claude.sessionId, 'c'.repeat(64));
     assert.equal(bad.name, 'bad');
     assert.ok(!('sessionFile' in JSON.parse(JSON.stringify(bad))) && !('sessionId' in JSON.parse(JSON.stringify(bad))));
+  } finally { await h.emit('session_shutdown'); }
+});
+
+test('presence carries per-worker token counts and the session-lifetime total', async () => {
+  const h = harness();
+  try {
+    await h.emit('session_start');
+    h.pi.events.emit('subagents:workers-snapshot', { version: 1,
+      workerUsage: { input: 900, output: 300, cacheRead: 5000, cacheWrite: 400, cost: 1.5, workers: 7 },
+      workers: [
+        { id: 'ag_01', name: 'a', status: 'running', usage: { input: 100, output: 20, cacheRead: 900, cacheWrite: 50, cost: 0.25 } },
+        { id: 'ag_02', name: 'b', status: 'done', usage: { input: -1, output: 'x', cacheRead: Infinity, cacheWrite: 7.9 } },
+        { id: 'ag_03', name: 'c', status: 'running', usage: 'nope' },
+      ] });
+    await tick();
+    const p = h.latest();
+    const [a, b, c] = p.workers;
+    assert.deepEqual(a.usage, { input: 100, output: 20, cacheRead: 900, cacheWrite: 50, cost: 0.25 });
+    assert.deepEqual(b.usage, { input: 0, output: 0, cacheRead: 0, cacheWrite: 7 }, 'bad counts read as 0, no cost key');
+    assert.ok(!('usage' in JSON.parse(JSON.stringify(c))), 'a non-object usage is dropped');
+    assert.deepEqual(p.workerUsage, { input: 900, output: 300, cacheRead: 5000, cacheWrite: 400, cost: 1.5, workers: 7 });
+    assert.ok(p.workerUsage.workers > p.workers.length, 'the total counts evicted workers too');
   } finally { await h.emit('session_shutdown'); }
 });
 

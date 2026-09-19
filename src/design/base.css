@@ -821,6 +821,8 @@ summary.sidebar-region-head .icon-twist { transition: transform var(--dur-fast) 
   background: var(--color-bg);
 }
 .transcript-banner .banner { max-width: calc(var(--measure) + var(--space-9) - var(--space-6)); margin: 0 auto; }
+/* Only notice/error banners live here now (§3): an empty slot takes no space. */
+.transcript-banner:not(:has(.banner)) { display: none; }
 
 /* Assistant author row carries the live dot while its turn streams. */
 .message-streaming .message-head .live-dot { margin-left: var(--space-1); }

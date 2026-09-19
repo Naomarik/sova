@@ -13,8 +13,9 @@ import { Banner } from "./ui";
 const ANNOUNCE_MS = 5000;
 
 /**
- * Read-only live tail of a session (`/ws/watch`). Never sends anything. `stateBanner` says why
- * it's read-only (TUI owns it, or an unknown process wrote it recently) and offers the way out.
+ * Read-only live tail of a session (`/ws/watch`). Never sends anything. `stateBanner` holds only
+ * notices with a way out (an unknown writer → Chat Anyway, the TUI closed → Open for Chat); a
+ * TUI-owned session has no banner, just the head's Live chip and the composer's read-only reason.
  */
 export function WatchView(props: {
   path: string;

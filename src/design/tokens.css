@@ -262,6 +262,7 @@
   --sidebar-width: 320px;
   --composer-max:  40vh;  /* textarea auto-grow ceiling */
   --tool-output-max: 320px;
+  --outline-max: 40vh;    /* open outline strip ceiling (50vh folded, in base.css) */
 }
 
 

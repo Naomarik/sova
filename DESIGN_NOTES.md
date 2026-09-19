@@ -37,6 +37,8 @@ stylesheets — no component library.
 | Images (§4b) | `.message-images` `.message-images-single` `.thumb` `.toolcard-images` · lightbox: `dialog.lightbox` `.lightbox-bar` `.lightbox-caption` `.lightbox-count` `.lightbox-stage` `.lightbox-img` `.lightbox-prev` `.lightbox-next` · attachments: `.attachments` `.attachment` `.attachment-rejected` `.attachment-thumb` `.attachment-icon` `.attachment-text` `.attachment-name` `.attachment-meta` |
 | Empty / loading | `.empty` `.empty-mark` `.empty-title` `.empty-body` `.empty-action` · `.skeleton` `.skeleton-line` `.skeleton-title` `.skeleton-row` |
 | Toast | `.toast-stack` `.toast` `.toast-body` |
+| Insights: entry (§10) | `.sidebar-foot` `.insights-row` `.insights-row-text` · aggregate chip `.chip.chip-count` (`a.chip` when it links) |
+| Insights: view (§10) | `.insights` (+ `.pane`) `.insights-inner` `.insights-section` `.insights-section-head` `.insights-section-count` `.insights-grid` · `.card` `.card-head` `.card-title` `.card-body` `.card-foot` |
 | Usage meter (§10) | `.usage-card` `.usage-note` · `.meter` `.meter-head` `.meter-label` `.meter-value` `.meter-of` `.meter-track` `.meter-fill` `.meter-fill-warn` `.meter-fill-error` `.meter-context` `.meter-ghost` |
 | Teams / subagents (§10) | `.team-card` `.team-objective` `.agent-card` `.member-list` `.member-row` `.member-preview` |
 | Outline strip (§10) | `details.outline` `.outline-summary` `.outline-label` `.outline-now` `.outline-count` `.outline-body` `.outline-overall` `.outline-state` `.outline-topics` `details.outline-topic` `.outline-topic-summary` `.outline-topic-heading` `.outline-hash` `.outline-topic-time` `.outline-bullets` `.outline-jump` |
@@ -106,6 +108,8 @@ and `fill="none" stroke="currentColor"`.
 | `chat.svg` | Empty-state mark (no session selected) |
 | `attach.svg` | Attach Images (composer). New, drawn on the system grid |
 | `image.svg` | Tool-card image count, drop overlay. New, drawn on the system grid |
+| `gauge.svg` | Insights: the sidebar foot row and the Usage section. pi-web's own, drawn on the system grid |
+| `worker.svg` | Insights: Teams and Subagents section heads (from the skill's set) |
 | `check-circle.svg`, `x-circle.svg`, `external.svg`, `menu.svg`, `branch.svg` | Reserved. Shipped but unused in the MVP |
 
 `/favicon.svg` is the mark on dark paper. Link it from `index.html`:
@@ -1326,7 +1330,9 @@ one is open queues behind it.
 | No rail and no bottom bar, and no three-pane desktop band | pi-web has one destination. The skill's "sidebar left, main right" at ≥768 is kept |
 | `.modal` restyles itself into a sheet under 768 | The skill requires a sheet at folded width. Doing it in CSS means the frontend writes one markup |
 | New product components: `.app`, `.sidebar-*`, `.search`, `.session-*`, `.transcript*`, `.disclosure*`, `.toolcard*`, `.info-row`, `.run-status`, `.jump-latest`, `.composer*`, `.folder-list`, `.brand`, `.live-dot`, `.chip-live`, `.icon`, `.skip-link`, `.truncate`, `.banner-main/-action`, `.message-time/-text`, `.modal-spacer` | Built only from system tokens and patterns. The tool card is the skill's tool-turn chat style (sunken, mono) turned into a disclosure so arguments and output fit. `.chip-live` applies the skill's run-pulse to a chip |
-| New tokens: `--sidebar-width`, `--composer-max`, `--tool-output-max`, `--scrim`, `--skeleton-sweep` | Layout sizes, plus the two alpha values the skill already hard-codes inline (scrim, skeleton sweep), lifted into tokens so they theme correctly |
+| Insights components: `.sidebar-foot`, `.insights*`, `.usage-*`, `.team-*`, `.agent-card`, `.member-*`, `.outline*`, `.compaction*`; the skill's `.card-*` and `.meter*` families brought in | Built from system tokens and the skill's card, meter, list, chip, and disclosure patterns (§10) |
+| `.meter-fill` is `--color-ink-muted`, not `--color-accent` | pi-web's accent is reserved for primary, live, and focus (§0). At ≥80% the fill turns `--status-warn`, at ≥100% `--status-error`, always under a chip that says the word |
+| New tokens: `--sidebar-width`, `--composer-max`, `--tool-output-max`, `--outline-max`, `--scrim`, `--skeleton-sweep` | Layout sizes, plus the two alpha values the skill already hard-codes inline (scrim, skeleton sweep), lifted into tokens so they theme correctly |
 | Brand: `pi-web-mark.svg` (a stroked π) and the wordmark "pi-web" set in Inter 640 at −.03em | The Fold symbol is not used. It's a placeholder mark on the system's icon grid, and swappable |
 | Composer buttons go icon-only under 480px of composer width (`.button-label` visually hidden) | Keeps the textarea usable at 320px while streaming. Each button keeps its accessible name, and Send stays the filled primary |
 | Lightbox is a native `<dialog>` rather than the skill's `.scrim` + `.modal` | Top layer, inert page, and native Esc handling. It's full-bleed because it shows content rather than asking a question |
@@ -1359,7 +1365,8 @@ Every token these notes reference, all defined in `src/design/tokens.css`:
   `--space-5`, `--space-6`, and `--space-8`)
 - **Radius:** `--r-xs`, `--r-sm`, `--r-md`, `--r-lg`, `--r-xl`, `--r-full`
 - **Stroke and size:** `--stroke-thin`, `--stroke-icon`, `--tap-min`, `--row-height`,
-  `--control-sm`, `--control-md`, `--sidebar-width`, `--composer-max`, `--tool-output-max`
+  `--control-sm`, `--control-md`, `--sidebar-width`, `--composer-max`, `--tool-output-max`,
+  `--outline-max`
 - **Elevation:** `--shadow-1`, `--shadow-2`, `--shadow-3`
 - **Focus and motion:** `--focus-ring`, `--focus-width`, `--focus-offset`, `--focus-color`,
   `--dur-fast`, `--dur-base`, `--ease-standard`
@@ -1499,3 +1506,356 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Buttons | `Create Session` (pending: "Creating…") · `Cancel` |
 | 4xx error | {server message}, or: That folder doesn't exist. Pick one that does. |
 | Other error | **Couldn't create the session.** Nothing was written. Try again. |
+
+### Insights (§10)
+
+| Where | Copy |
+|---|---|
+| Foot row | `{Provider} {window} {pct}%` · `{n} teams` · `{n} working`, joined by ` · `, empty segments left out · nothing to report: Insights |
+| Provider names | Claude · OpenAI · Ollama Cloud |
+| View title / head meta | Insights · Usage updated {rel} (no data: Usage not read yet) |
+| Refresh `aria-label` | Refresh Insights |
+| Section heads | Usage · Teams · {n} active · Subagents · {n} working |
+| Window labels (`5h`, `7d`, `7d opus`, `month`, `pri`) | 5-hour · 7-day · 7-day Opus · Monthly · Primary |
+| Meter value | `{pct}%` used |
+| Meter context | Resets in {2h 17m} (under 24h) · Resets {Sep 25} · reset already passed: Reset at `{HH:MM}`. New reading at the next refresh. |
+| Usage chips | Near limit · Rate-limited · Quota used · Stale |
+| Stale usage (banner-warn) | **Usage is {42m} old.** It refreshes while pi runs in a terminal. Open a pi session, or run `/usage-refresh` in one. |
+| Usage file missing (`reason:"missing"`) | **No usage data yet.** The usage-status extension writes `~/.pi/agent/cache/usage-status.json` while pi runs, and we haven't found it. |
+| Usage file corrupt (`reason:"corrupt"`) | **Couldn't read usage.** `usage-status.json` isn't valid JSON right now. Nothing was changed. It's rewritten at the next refresh. · button: `Retry` |
+| Request failed (any insights endpoint) | **Couldn't load insights.** Nothing was changed. {server message} · button: `Retry` |
+| Provider `nologin` | Not signed in. Run `claude /login` and it'll show at the next refresh. (OpenAI: `pi /login`) |
+| Provider `expired` | Sign-in expired. Run `claude /login` to renew it. (OpenAI: `pi /login`) |
+| Provider `nokey` | No Ollama Cloud key in `~/.pi/agent/auth.json`. |
+| Provider `badkey` | Ollama Cloud refused the key in `~/.pi/agent/auth.json`. |
+| Provider `na` | This account doesn't report usage. |
+| Provider `error`, no windows | Couldn't fetch usage: {error}. We'll try again at the next refresh. |
+| Provider `error`, windows kept | Last fetch failed: {error}. Showing the previous reading. |
+| Team card | {name} · `{id}` · foot: Started {rel} in {parent title} · ended (parent session only): chip "Ended" |
+| Member status chips | Starting · Working · Idle · Stopping · Done · Failed · Stopped · No report yet |
+| Member meta | `{workerId}` · `{model}` · reported only: as of `{HH:MM}` · idle after a failure: last task failed |
+| Orchestrator badge | Orchestrator |
+| Teams empty, some sessions live | **{n} pi sessions running. None of them has a team.** Teams you create in pi show up here while their session runs. |
+| Teams empty, none live | **No pi sessions running.** Teams show up here while the session that made them runs. |
+| Subagents empty | Section omitted |
+| Aggregate chips | {n} working · linked team chip: Team · {n} working |
+| Outline summary | Outline · {now} · {n} topics (1 topic) |
+| Outline state line | Updated {rel} · stale adds: " · behind the latest messages" · failed-keeping-last adds: " · the last update failed, so this is the previous outline" · updating/drafting: "Updating" + live dot |
+| Outline jump | Jump to Message |
+| Compaction | Compacted · `{tokens}` tokens summarized (no count: Compacted · earlier messages summarized) · Files read · Files changed |
+
+---
+
+## 10 · Insights
+
+What the user's pi extensions publish, read-only: subscription usage (usage-status), teams and
+subagents (subagents + sessions live records), and per-session summaries (topic-outline,
+compaction). Data shapes are `UsageInsight`, `AgentsInsight`, and `SessionInsight` in
+`shared/protocol.ts`. **Every status says where it came from**: live-sourced states can pulse,
+while reported states (read from a session file after the fact) never pulse and carry
+"as of `14:06`".
+
+### Placement
+
+- **Global:** a main-pane view at `#/insights`, entered from a pinned `.sidebar-foot` row. The
+  head is full at 320px (§2). A third sidebar region would scroll away and mix non-session data
+  into the session list. An overlay would hide the transcript. The foot row is always visible,
+  sits in the folded thumb arc, and needs no rail. At folded width `#/insights` uses
+  `data-view="session"` and shows `.app-back`.
+- **Per session:** `details.outline` sits directly under `.session-head`, above the live banner.
+  Compactions stay in the transcript, at the point where they happened (§3 items).
+- **Aggregates:** neutral count chips on session rows and in the session head.
+- No toasts, and nothing is announced on a poll.
+
+### Sidebar foot
+
+```html
+<!-- after nav.sidebar-list, outside the pane -->
+<div class="sidebar-foot">
+  <a class="list-row list-row-interactive insights-row" href="#/insights" aria-current="page"><!-- aria-current only on the route -->
+    <span class="icon" style="--icon: url(/icons/gauge.svg)" aria-hidden="true"></span>
+    <span class="insights-row-text">Claude 5-hour <span class="text-num">96%</span> · 2 teams · 3 working</span>
+    <span class="icon icon-sm" style="--icon: url(/icons/chevron-right.svg)" aria-hidden="true"></span>
+  </a>
+</div>
+```
+
+The text is live facts, most pressing first:
+
+1. The highest-% window across providers, `{Provider} {window} {pct}%`.
+2. The active team count, `{n} teams`.
+3. `AgentsInsight.totals.working`, as `{n} working`.
+
+Leave out segments with nothing to say, and use "Insights" when all three are empty. The row
+takes no color and no chip, because the view carries the status. It truncates with an ellipsis.
+
+### Aggregate chips: "Live" vs "Working"
+
+- **Live** is session-level: a TUI has the file open. It keeps §2's accent chip and pulse,
+  unchanged.
+- **Working** is worker-level: a subagent is mid-task. On a member row it's
+  `.chip-accent.chip-live` "Working", and pulses only when live-sourced (see Team cards).
+- **Aggregates are neutral** `.chip.chip-count`, with no dot and no pulse, so each row has only
+  one pulsing thing:
+  - **Session rows (§2):** `{n} working` when `live?.workers?.working ≥ 1`, placed *before* the
+    Live chip. Hidden at 0 or when absent.
+  - **Session head:** the same chip before Live. If the session has a live team, it becomes a
+    link: `<a class="chip chip-count" href="#/insights/{teamId}">Team · {n} working</a>`. With
+    more than one live team, it links to the busiest.
+
+### Insights view
+
+```html
+<header class="session-head">
+  <a class="button button-icon button-ghost app-back" href="#/" aria-label="Back to Sessions">…</a>
+  <div class="session-head-main">
+    <h1 class="session-head-title" tabindex="-1">Insights</h1>
+    <p class="session-head-meta">Usage updated 2m ago</p>
+  </div>
+  <button class="button button-icon button-ghost" aria-label="Refresh Insights">…refresh…</button>
+</header>
+<section class="insights pane" aria-label="Insights">
+  <div class="insights-inner">
+    <section class="insights-section" aria-labelledby="ins-usage">
+      <h2 class="insights-section-head" id="ins-usage">…gauge icon-sm… Usage</h2>
+      <!-- stale banner here -->
+      <div class="insights-grid">…usage cards…</div>
+    </section>
+    <section class="insights-section" aria-labelledby="ins-teams">
+      <h2 class="insights-section-head" id="ins-teams">…worker icon-sm… Teams <span class="insights-section-count">· 2 active</span></h2>
+      <div class="insights-grid">…team cards, or .empty…</div>
+    </section>
+    <section class="insights-section" aria-labelledby="ins-agents"><!-- only with non-team workers -->
+      <h2 class="insights-section-head" id="ins-agents">…worker icon-sm… Subagents <span class="insights-section-count">· 3 working</span></h2>
+      <div class="insights-grid">…agent cards…</div>
+    </section>
+  </div>
+</section>
+```
+
+- **Order.** Usage comes first, then Teams, then Subagents, because usage decides whether the
+  next turn can run.
+- **Grid.** `.insights-grid` has 1 column. It becomes 2 columns when the `insights` container is
+  at least 640px wide, and 3 at 1000px or more. The container is named, per the skill.
+- **Polling** (frontend's call on intervals). Update in place and keep scroll position and
+  focus. Don't show a skeleton again after the first load.
+- **Loading** (first load, after 300ms). Usage shows 3 `.skeleton` blocks at 120px tall with
+  `--r-lg`. Teams shows 1 block. Put `aria-busy` on the section.
+- **Request error.** Show `.banner-error` at the top of `.insights-inner` with Retry. Any data
+  already loaded stays visible below it.
+
+### Usage cards
+
+```html
+<article class="card usage-card" aria-labelledby="u-claude">
+  <header class="card-head">
+    <h3 class="card-title" id="u-claude">Claude</h3>
+    <span class="chip chip-warn"><i class="chip-dot"></i>Near limit</span>
+  </header>
+  <div class="card-body">
+    <div class="meter">
+      <p class="meter-head"><span class="meter-label">5-hour</span>
+        <span class="meter-value">96%<span class="meter-of"> used</span></span></p>
+      <div class="meter-track" aria-hidden="true"><span class="meter-fill meter-fill-warn" style="--meter-pct: 96%"></span></div>
+      <p class="meter-context" title="2026-09-19T07:50:00Z">Resets in 2h 17m</p>
+    </div>
+    <!-- or, instead of meters: <p class="usage-note">Not signed in. Run <code>claude /login</code> …</p> -->
+  </div>
+</article>
+```
+
+- **Cards.** There's one card per `providers[]` entry, in the order given: Claude, OpenAI,
+  Ollama Cloud.
+- **Meters.** Each window gets a `.meter`. The number comes first, the bar second, and there's
+  never a bar alone.
+  - **Value.** `Math.round(pct)` followed by `%`. No decimals: the sources round, and a decimal
+    claims precision we don't have. The fill's width is clamped to 100%.
+  - **Context.** Only when `resetsAt` exists (currently Claude only). Under 24h it's
+    "Resets in 2h 17m", otherwise "Resets Sep 25", with the ISO time in `title`. Never estimate
+    a reset.
+  - **Reset already passed** (`resetsAt < now`, which means the file is stale). Use
+    `.meter-ghost`, with no fill. The value keeps the old number, and the context says
+    "Reset at `11:50`. New reading at the next refresh."
+  - **Fill color.** The fill is neutral. It gets `.meter-fill-warn` at ≥80% and
+    `.meter-fill-error` at ≥100%. That matches the extension's own footer threshold, and it
+    always pairs with the head chip.
+- **Head chip.** The worst window decides it. The words follow the skill's model-availability
+  severities:
+
+  | Condition | Chip |
+  |---|---|
+  | All windows < 80% | none |
+  | Any window 80–99% | `.chip.chip-warn` "Near limit" |
+  | A 5-hour window ≥ 100% | `.chip.chip-warn` "Rate-limited" (it comes back on its own) |
+  | A 7-day or monthly window ≥ 100% | `.chip.chip-error` "Quota used" (waits for the reset) |
+  | `error` set and `windows` kept | neutral `.chip` "Stale", plus a `.usage-note` under the meters |
+
+  If both a limit chip and Stale apply, show the limit chip.
+- **Provider not ok.** The body is a single `.usage-note` (`nologin`, `expired`, `nokey`,
+  `badkey`, `na`, or `error` with no windows; see §9), with no chip and no meters. Commands in
+  the note go in `<code>`.
+- **Whole file.**
+  - The head meta always shows "Usage updated {rel}", from `fetchedAt`.
+  - When `stale` is true (more than 10 minutes old, which means no TUI pi is refreshing it),
+    add a `.banner.banner-warn` (`clock`) above the grid. The meters still render.
+  - When `available` is false, replace the grid with one `.empty`. `missing` means unavailable,
+    not an error. `corrupt` gets the error copy.
+
+### Team cards
+
+Teams come from `AgentsInsight.sessions[].teams`, meaning teams whose parent pi is running now.
+Workers die with their parent, so a team is only active while its parent runs. Ended teams
+have no global surface. If one is rendered at all, it's in its parent session, from
+`SessionInsight.teams` with `live: false`. There it uses the same `.team-card` markup, with a
+neutral `.chip` "Ended" in the head. Every member chip then takes the reported form: no pulse,
+and "as of `{HH:MM}`" in the meta.
+
+```html
+<article class="card team-card" id="team-team_02" aria-labelledby="tt-team_02">
+  <header class="card-head">
+    <h3 class="card-title" id="tt-team_02">pi-web-insights</h3>
+    <span class="text-mono text-caption">team_02</span>
+  </header>
+  <div class="card-body"><p class="team-objective" title="{full objective}">{objective}</p></div>
+  <ul class="list member-list">
+    <li class="list-row member-row" title="Owns: server/**">
+      <div class="list-main">
+        <p class="list-title">lead <span class="chip chip-count">Orchestrator</span></p>
+        <p class="list-meta"><span class="text-mono">ag_08</span> · <span class="text-mono">opus[1m]</span></p>
+        <p class="member-preview">{worker.preview}</p>   <!-- working only -->
+      </div>
+      <span class="chip chip-accent chip-live"><i class="chip-dot"></i>Working</span>
+    </li>
+  </ul>
+  <footer class="card-foot"><p class="text-caption">Started 42m ago in <a href="#/s/…">{parent title}</a></p></footer>
+</article>
+```
+
+- **Rows.** Rows are not targets: they carry no link and no hover. The role is `.list-title`.
+  Ids and models are mono in the meta line. Orchestrator is a neutral count-style badge, not a
+  status. Owned paths go only in the row's `title`, because they're advisory.
+- **Order.** Orchestrator first, then members in roster order.
+- **Status.** The word is always shown. The pulse appears only when `member.worker` is present
+  **and** its session is `fresh`.
+
+  | Source → status | Chip |
+  |---|---|
+  | live `running` | `.chip.chip-accent.chip-live` Working |
+  | live `starting` | `.chip.chip-accent.chip-live` Starting |
+  | `waiting` | `.chip` + dot, Idle. If `outcome` isn't `success`, the meta adds "last task failed" |
+  | `stopping` | `.chip` + dot, Stopping |
+  | `done` | `.chip.chip-success` Done |
+  | `error` | `.chip.chip-error` Failed |
+  | `killed` | `.chip` + dot, Stopped |
+  | `worker` null, `lastReport` present | that status's chip with **no pulse**, and the meta adds "as of `{HH:MM}`" |
+  | neither | neutral `.chip` No report yet |
+
+  A live record with `fresh: false` renders its workers the reported way, with "as of" set to
+  the heartbeat time. They're never shown as working.
+- **Deep link.** `#/insights/{teamId}` is a route segment, not a fragment, because the whole
+  route lives in the hash. The view scrolls `#team-{teamId}` into view and focuses it (the card
+  has `tabindex="-1"`). `.team-card:focus` draws the focus ring; `:focus-visible` wouldn't,
+  because this focus is programmatic after a click.
+
+### Subagent cards
+
+There's one `.card.agent-card` per live session that has **non-team** workers. The head holds
+the session title as a link to `#/s/…` (or `cwd`, mono, when `path` is null) and a
+`.chip-count` "{n} working". Its body is a `.member-list` of `.member-row`s: the worker's `name`
+as the title, `id` and `model` in the meta, the preview while working, and the status chip from
+the table above. When no session has solo workers, the section is omitted.
+
+### Outline strip (topic-outline)
+
+```html
+<details class="outline">
+  <summary class="outline-summary">
+    <span class="icon icon-sm icon-twist" style="--icon: url(/icons/chevron-right.svg)" aria-hidden="true"></span>
+    <span class="outline-label">Outline</span>
+    <span class="outline-now">· Audit and intercom removal complete</span>
+    <span class="outline-count">12 topics</span>
+  </summary>
+  <div class="outline-body">
+    <p class="outline-overall">{overall}</p>
+    <p class="outline-state">Updated 3m ago · behind the latest messages</p>
+    <ol class="outline-topics">
+      <li>
+        <details class="outline-topic">
+          <summary class="outline-topic-summary">
+            <span class="icon icon-sm icon-twist" style="--icon: url(/icons/chevron-right.svg)" aria-hidden="true"></span>
+            <span class="outline-topic-heading"><span class="outline-hash">#</span>Model selection and limits</span>
+            <span class="outline-topic-time">14:06</span>
+          </summary>
+          <ul class="outline-bullets"><li>…</li></ul>
+          <button class="button button-sm button-ghost outline-jump" type="button">Jump to Message</button>
+        </details>
+      </li>
+    </ol>
+  </div>
+</details>
+```
+
+- **Three steps of disclosure:**
+  1. Closed, the strip shows the `now` line.
+  2. Open, it shows `overall`, the state line, and the topic headings.
+  3. Opening a topic shows its bullets and Jump.
+- **Open state.** Both levels are closed by default. Persist the strip's open state per session
+  path in `sessionStorage`. Open states survive updates.
+- **Missing data.**
+  - When `outline` is null, render no strip at all. Most sessions have none, and an empty strip
+    on each of them is noise.
+  - Leave out an empty `now` (the summary then shows only the label and count), and likewise an
+    empty `overall`.
+- **Topic details.** `.outline-hash` appears only on `manual` topics. The time is `at` in mono
+  24-hour format, with the date prefix when the day isn't today (§3 timestamps).
+- **`updating` / `drafting`.** Put a `.live-dot` after `.outline-label` (a summarizer is running
+  now), and the state line reads "Updating".
+- **Jump to Message.**
+  - It scrolls the transcript item whose entry id equals `entryId` into view, then stops
+    auto-follow, so Jump to Latest appears (§3).
+  - Leave it out when `entryId` is null or the item isn't rendered (it was compacted away).
+- **Refetching.** Refetch after a watch `append` or chat `agent_settled`, debounced. Update in
+  place.
+- **Folded width.** `.outline-body` caps at 50vh instead of `--outline-max` (40vh).
+
+### Compaction row
+
+The compaction `info` row (§3) becomes a disclosure. It's fed by
+`SessionInsight.compactions`, matched to the row by id.
+
+```html
+<details class="disclosure compaction">
+  <summary class="disclosure-summary">
+    <span class="icon icon-sm icon-twist" …chevron-right…></span>
+    <span class="disclosure-label">Compacted</span>
+    <span class="disclosure-preview">· <span class="text-mono">67,401</span> tokens summarized</span>
+  </summary>
+  <div class="disclosure-body">
+    <div class="compaction-summary">{summary}</div>
+    <p class="toolcard-section-label">Files read</p>
+    <ul class="compaction-files"><li>~/…/extensions.md</li></ul>
+    <p class="toolcard-section-label">Files changed</p>   <!-- omit an empty list -->
+  </div>
+</details>
+```
+
+The summary is plain text with `pre-wrap`, the same as `.message-text`. Paths use `~` in place
+of `$HOME`.
+
+### Tokens, motion, and accessibility
+
+- **Tokens.** One new token: `--outline-max` (40vh). **No new colors.** Neutrals and the status
+  tokens cover everything, and accent appears only on live-sourced Working/Starting chips and
+  focus.
+- **Motion.** Nothing new animates. The pulse is reused as the skill's live indicator. Meters
+  never animate their fill.
+- **Accessibility.**
+  - The meter's number is its accessible value, and the track is `aria-hidden`.
+  - Every section and card is labelled by its heading.
+  - Status chips are text.
+  - The foot row is a link named by its text.
+  - Contrast pairs:
+    - The meter fill is muted on sunken: 5.40 (dark) and 4.75 (light), both clearing 3:1 for a
+      graphical object.
+    - Ink-2 on sunken (card heads) is 7.65 and 7.22.
+    - Ink-2 on accent-tint (the current foot row) matches the selected session row.

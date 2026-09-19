@@ -1482,3 +1482,285 @@ summary.sidebar-region-head .icon-twist { transition: transform var(--dur-fast) 
   transform: translateY(-200%);
 }
 .skip-link:focus-visible { transform: none; }
+
+
+/* =============================================================================
+   INSIGHTS — usage limits, teams, subagents (#/insights), the per-session
+   outline strip and the compaction row. DESIGN_NOTES §10.
+   ============================================================================= */
+
+/* ---- CARD parts (the skill's; pi-web had only the base card). ------------ */
+
+.card-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--row-height);
+  padding: var(--space-2) var(--space-4);
+  border-bottom: var(--stroke-thin) solid var(--color-border);
+  background: var(--color-sunken);
+}
+.card-title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: var(--fs-heading-s);
+  line-height: var(--lh-heading-s);
+  font-weight: var(--fw-semibold);
+  color: var(--color-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.card-title a { color: inherit; }
+.card-body { padding: var(--space-4); }
+.card-foot {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  flex-wrap: wrap;
+  padding: var(--space-3) var(--space-4);
+  border-top: var(--stroke-thin) solid var(--color-border);
+}
+.card-foot > p { margin: 0; }
+
+
+/* ---- METER. Number first, bar second, never a bar alone. The fill is a
+   neutral, not the accent: pi-web spends accent on primary / live / focus
+   only (§0). Warn and error fills always sit under a chip that says the word. */
+
+.meter { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
+.meter-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-1) var(--space-2);
+  margin: 0;
+}
+.meter-label { font-size: var(--fs-caption); font-weight: var(--fw-medium); color: var(--color-ink-2); }
+.meter-value {
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-ink);
+}
+.meter-of { color: var(--color-ink-muted); }
+/* The border is load-bearing: the track is a graphical object, so 3:1. */
+.meter-track {
+  height: 6px;
+  border: var(--stroke-thin) solid var(--color-border-strong);
+  border-radius: var(--r-full);
+  background: var(--color-sunken);
+  overflow: hidden;
+}
+.meter-fill {
+  display: block;
+  height: 100%;
+  width: var(--meter-pct, 0%);          /* set inline: style="--meter-pct: 42%" */
+  max-width: 100%;
+  border-radius: inherit;
+  background: var(--color-ink-muted);   /* never animates */
+}
+.meter-fill-warn  { background: var(--status-warn); }
+.meter-fill-error { background: var(--status-error); }
+.meter-context { margin: 0; font-size: var(--fs-caption); color: var(--color-ink-muted); }
+/* No current value (the window already reset): dashed, because an empty solid
+   track reads as zero, and zero is a measurement. */
+.meter-ghost .meter-track { border-style: dashed; background: none; }
+.meter-ghost .meter-fill  { display: none; }
+
+
+/* ---- SIDEBAR FOOT. The doorway to #/insights: always visible, in the
+   folded thumb arc. Facts only, no color. -------------------------------- */
+
+.sidebar-foot {
+  flex: none;
+  border-top: var(--stroke-thin) solid var(--color-border);
+  background: var(--color-surface);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.insights-row { gap: var(--space-2); padding: var(--space-2) var(--space-4); color: var(--color-ink-2); }
+.insights-row > .icon { color: var(--color-ink-muted); flex: none; }
+.insights-row-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-caption);
+}
+.insights-row[aria-current="page"] { background: var(--color-accent-tint); color: var(--color-ink); }
+
+
+/* ---- INSIGHTS VIEW. A .pane in .app-main, under a .session-head. -------- */
+
+.insights { flex: 1; background: var(--color-bg); container-name: insights; }   /* compose with .pane */
+.insights-inner {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: var(--space-4) var(--space-4) var(--space-6);
+}
+.insights-section { display: flex; flex-direction: column; gap: var(--space-3); scroll-margin-top: var(--space-4); }
+.insights-section-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--ls-eyebrow);
+  text-transform: uppercase;
+  color: var(--color-ink-2);
+}
+.insights-section-count {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+  text-transform: none;
+  font-weight: var(--fw-regular);
+  color: var(--color-ink-muted);
+}
+.insights-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-3); align-items: start; }
+@container insights (min-width: 640px)  { .insights-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@container insights (min-width: 1000px) { .insights-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+/* An empty state inside a section is one idea among several: compact. */
+.insights-grid > .empty { grid-column: 1 / -1; }
+.insights-section .empty { padding: var(--space-5) var(--space-4); }
+
+.usage-card .card-body { display: flex; flex-direction: column; gap: var(--space-4); }
+.usage-note { margin: 0; font-size: var(--fs-caption); color: var(--color-ink-2); }
+.usage-note code { font-family: var(--font-mono); font-size: var(--fs-mono); }
+
+/* Deep link #/insights/<teamId> focuses the card (tabindex -1); ring on :focus,
+   since programmatic focus after a click doesn't match :focus-visible. */
+.team-card:target,
+.team-card:focus { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.team-card .card-head .text-mono,
+.agent-card .card-head .text-mono { flex: none; color: var(--color-ink-muted); }
+.team-objective {
+  margin: 0;
+  font-size: var(--fs-caption);
+  color: var(--color-ink-2);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.team-card .card-body { padding: var(--space-3) var(--space-4); border-bottom: var(--stroke-thin) solid var(--color-border); }
+/* "Started 42m ago in {parent title}": one line; the full title goes in the link's title. */
+.team-card .card-foot > p { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Members and workers: plain rows (not targets), status chip on the right. */
+.member-list { background: var(--color-surface); }
+.member-row { align-items: flex-start; padding-top: var(--space-2); padding-bottom: var(--space-2); }
+.member-row > .chip { margin-top: 2px; }
+.member-row .list-title { display: flex; align-items: center; gap: var(--space-2); }
+.member-row .list-title .chip { font-weight: var(--fw-regular); }
+.member-preview {
+  margin: var(--space-1) 0 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono);
+  color: var(--color-ink-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Aggregate counts ("3 working") are neutral count chips: no dot, no pulse.
+   One pulsing thing per row, and that one is Live. */
+.session-row .chip + .chip { margin-left: calc(var(--space-1) * -1); }
+a.chip { text-decoration: none; }
+a.chip:hover { color: var(--color-ink); border-color: var(--color-border-strong); }
+
+
+/* ---- OUTLINE STRIP. topic-outline under .session-head: closed shows the
+   "now" line; open shows overall + topics; a topic opens to its bullets. -- */
+
+.outline {
+  flex: none;
+  background: var(--color-surface);
+  border-bottom: var(--stroke-thin) solid var(--color-border);
+}
+.outline-summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--row-height);
+  padding: 0 var(--space-4);
+  font-size: var(--fs-caption);
+  color: var(--color-ink-muted);
+  cursor: pointer;
+  list-style: none;
+  transition: background-color var(--dur-fast) var(--ease-standard);
+}
+.outline-summary::-webkit-details-marker { display: none; }
+.outline-summary:hover { background: var(--color-sunken); }
+.outline-summary:focus-visible { outline-offset: calc(var(--focus-offset) * -1); border-radius: 0; }
+.outline-summary .icon-twist,
+.outline-topic-summary .icon-twist { flex: none; transition: transform var(--dur-fast) var(--ease-standard); }
+.outline[open] > .outline-summary .icon-twist,
+.outline-topic[open] > .outline-topic-summary .icon-twist { transform: rotate(90deg); }
+.outline-label { flex: none; font-weight: var(--fw-medium); color: var(--color-ink-2); }
+.outline-now {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.outline-count { flex: none; font-variant-numeric: tabular-nums; }
+.outline-body {
+  max-height: var(--outline-max);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--space-1) var(--space-4) var(--space-3);
+  border-top: var(--stroke-thin) solid var(--color-border);
+}
+@media (max-width: 767px) { .outline-body { max-height: 50vh; } }
+.outline-overall { margin: var(--space-2) 0 var(--space-1); max-width: var(--measure); color: var(--color-ink); }
+.outline-state { margin: 0 0 var(--space-2); font-size: var(--fs-caption); color: var(--color-ink-muted); }
+.outline-topics { margin: 0; padding: 0; list-style: none; max-width: var(--measure); }
+.outline-topics > li + li { border-top: var(--stroke-thin) solid var(--color-border); }
+.outline-topic-summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--row-height);
+  cursor: pointer;
+  list-style: none;
+  color: var(--color-ink);
+}
+.outline-topic-summary::-webkit-details-marker { display: none; }
+.outline-topic-summary:hover .outline-topic-heading { text-decoration: underline; text-underline-offset: 3px; }
+.outline-topic-heading { flex: 1; min-width: 0; font-weight: var(--fw-medium); }
+.outline-hash { font-family: var(--font-mono); color: var(--color-ink-muted); margin-right: var(--space-1); }
+.outline-topic-time { flex: none; font-family: var(--font-mono); font-size: var(--fs-mono); color: var(--color-ink-muted); }
+.outline-bullets {
+  margin: 0 0 var(--space-2);
+  padding-left: calc(16px + var(--space-2) + var(--space-3));
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+  color: var(--color-ink-2);
+}
+.outline-bullets > li + li { margin-top: var(--space-1); }
+.outline-jump { margin: 0 0 var(--space-2) calc(16px + var(--space-2)); }
+
+
+/* ---- COMPACTION. The transcript's compaction row as a .disclosure. ------- */
+
+.compaction .disclosure-body { white-space: normal; }
+.compaction-summary { white-space: pre-wrap; overflow-wrap: anywhere; }
+.compaction .toolcard-section-label { margin-top: var(--space-3); color: var(--color-ink-muted); }
+.compaction-files {
+  margin: var(--space-1) 0 0;
+  padding: 0;
+  list-style: none;
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono);
+  color: var(--color-ink-muted);
+  overflow-wrap: anywhere;
+}

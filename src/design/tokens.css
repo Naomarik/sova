@@ -263,6 +263,9 @@
   --composer-max:  40vh;  /* textarea auto-grow ceiling */
   --tool-output-max: 320px;
   --outline-max: 40vh;    /* open outline strip ceiling (50vh folded, in base.css) */
+  --main-min: 440px;      /* session pane floor while the subagents pane is a column (§11) */
+  --subagents-width: clamp(520px, 40vw, 880px);   /* subagents pane, list + transcript (§11) */
+  --subagents-list-width: 256px;                   /* its worker list column (§11) */
 }
 
 

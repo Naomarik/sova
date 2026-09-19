@@ -1,10 +1,11 @@
 import { statSync } from "node:fs";
-import { open, readdir, stat } from "node:fs/promises";
-import { join } from "node:path";
+import { open, readdir, stat, unlink } from "node:fs/promises";
+import { basename, join } from "node:path";
 import type { SessionSummary } from "../shared/protocol";
 import { type LiveRecord, readLive, readOwnLiveRecords, workerCountsOf } from "./live";
 import { LIVE_DIR, SESSIONS_DIR } from "./paths";
-import { isWebSession } from "./web-sessions";
+import { isWebSession, removeWebSession } from "./web-sessions";
+import { RECENT_WRITE_MS } from "./write-guard";
 import { isArchived, setArchived } from "./archived-sessions";
 import { disposeHeldChat, isSessionBusy } from "./chat-manager";
 
@@ -239,6 +240,14 @@ export async function listSessions(): Promise<SessionSummary[]> {
   const out: SessionSummary[] = [];
   for (const s of results) {
     if (!s) continue;
+    // Empty husks — no user message anywhere in the file — are never listed, so abandoned
+    // new-session stubs don't clutter the archive (DESIGN_NOTES §2 "Archive cleanup"). Hidden
+    // only when the whole file was read: a first user message beyond the head cap never hides
+    // a session. cleanupSessions("husks") still finds and deletes them by path.
+    if (s.title === "Untitled") {
+      const st2 = await stat(s.path).catch(() => null);
+      if (st2 && (await isZeroInput(s.path, st2.size))) continue;
+    }
     const l = live.get(s.path);
     const ownRec = own.get(s.path);
     out.push({
@@ -295,6 +304,86 @@ export async function archiveSession(path: string, archived: boolean): Promise<A
   // There is no idle timer anymore — a runtime lives until this, a reload, or server shutdown.
   if (archived) await disposeHeldChat(s.path, "Session archived; its runtime was closed.");
   return { ok: true, summary: { ...s, archived } };
+}
+
+/** The session id of a session file: the uuidv7 after the last "_" of its name. */
+export function idOf(path: string): string {
+  return basename(path, ".jsonl").split("_").pop() ?? "";
+}
+
+/**
+ * True when the file is an empty husk: all of it was read and it holds no user message
+ * (readHead stops at the first one). Never guessed from a head-capped read of a big file,
+ * so a session whose first user message sits beyond MAX_HEAD is never treated as empty.
+ */
+export async function isZeroInput(path: string, size: number): Promise<boolean> {
+  if (size > MAX_HEAD) return false;
+  const head = await readHead(path);
+  return head !== null && head.title === null;
+}
+
+export type CleanupRequest =
+  | { mode: "age"; minAgeDays: number; dryRun: boolean }
+  | { mode: "husks"; dryRun: boolean };
+
+export interface CleanupResult {
+  /** Files deleted; 0 on a dry run (deletedIds then holds the candidates). */
+  deletedCount: number;
+  deletedIds: string[];
+  skipped: { live: number; busy: number; recent: number; failed: number };
+}
+
+/**
+ * POST /api/sessions/cleanup: permanently deletes transcript files from disk — sessions older
+ * than minAgeDays (by last write), or empty husks. Live, mid-turn, and just-written sessions
+ * are always skipped and counted, whatever the mode; held web runtimes are disposed first,
+ * like the archive gesture. The index cache and both id lists are updated per deleted file.
+ */
+export async function cleanupSessions(req: CleanupRequest): Promise<CleanupResult> {
+  const files = await listSessionFiles();
+  const live = readLive();
+  const now = Date.now();
+  const cutoff = req.mode === "age" ? now - req.minAgeDays * 86_400_000 : 0;
+  const skipped = { live: 0, busy: 0, recent: 0, failed: 0 };
+  const deletedIds: string[] = [];
+  for (const path of files) {
+    let st;
+    try {
+      st = await stat(path);
+    } catch {
+      continue;
+    }
+    const matches = req.mode === "age" ? st.mtimeMs < cutoff : await isZeroInput(path, st.size);
+    if (!matches) continue;
+    if (live.has(path)) {
+      skipped.live++;
+      continue;
+    }
+    if (isSessionBusy(path)) {
+      skipped.busy++;
+      continue;
+    }
+    if (now - st.mtimeMs < RECENT_WRITE_MS) {
+      skipped.recent++;
+      continue;
+    }
+    const id = idOf(path);
+    if (req.dryRun) {
+      deletedIds.push(id);
+      continue;
+    }
+    try {
+      await disposeHeldChat(path, "Session deleted by archive cleanup; its runtime was closed.");
+      await unlink(path);
+      cache.delete(path);
+      setArchived(id, false);
+      removeWebSession(id);
+      deletedIds.push(id);
+    } catch {
+      skipped.failed++;
+    }
+  }
+  return { deletedCount: req.dryRun ? 0 : deletedIds.length, deletedIds, skipped };
 }
 
 function isDir(p: string): boolean {

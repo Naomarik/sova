@@ -13,7 +13,7 @@ import { listModels, resolveContext } from "./models";
 import { markOwned } from "./write-guard";
 import { addWebSession } from "./web-sessions";
 import { getAgentsInsight, getSessionInsight, getUsageInsight } from "./insights";
-import { archiveSession, getSessionSummary, listCwds, listSessions } from "./sessions-index";
+import { archiveSession, cleanupSessions, getSessionSummary, listCwds, listSessions } from "./sessions-index";
 import { contextForBranch, normalizeEntries, readActiveBranch } from "./transcript";
 import { checkTmpImage, MAX_ATTACHMENT_BYTES, readTmpImage, saveUploadedImage, UploadError } from "./attachments";
 import { listFolders } from "./folders";
@@ -84,6 +84,23 @@ app.post("/api/sessions/archive", async (c) => {
   if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
   const r = await archiveSession(path, body.archived);
   return r.ok ? c.json(r.summary) : c.json({ error: r.error }, r.status);
+});
+
+// Permanently deletes transcript files from disk: sessions older than 7 or 30 days, or empty
+// zero-input husks. dryRun reports what would go (deletedIds) without deleting. Live, mid-turn
+// and just-written sessions are always skipped and counted in the response.
+app.post("/api/sessions/cleanup", async (c) => {
+  let body: { mode?: unknown; minAgeDays?: unknown; dryRun?: unknown };
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "Expected JSON body { mode, dryRun }" }, 400);
+  }
+  const dryRun = body.dryRun === true;
+  if (body.mode === "age" && (body.minAgeDays === 7 || body.minAgeDays === 30))
+    return c.json(await cleanupSessions({ mode: "age", minAgeDays: body.minAgeDays, dryRun }));
+  if (body.mode === "husks") return c.json(await cleanupSessions({ mode: "husks", dryRun }));
+  return c.json({ error: 'mode must be "husks", or "age" with minAgeDays 7 or 30' }, 400);
 });
 
 app.get("/api/cwds", async (c) => c.json(await listCwds()));

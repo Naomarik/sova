@@ -26,6 +26,11 @@ export function WatchView(props: {
   readOnly: ComposerReason;
   /** Rows were appended: data derived from the session file may have changed. */
   onAppend?(): void;
+  /** Subagents working now (live record); the composer shows them as a status row. */
+  workersWorking?: number;
+  /** Makes that row a button that toggles the subagents pane. */
+  onShowWorkers?(): void;
+  workersOpen?: boolean;
 }) {
   const [items, setItems] = createSignal<TranscriptItem[] | null>(null);
   const [error, setError] = createSignal<string | null>(null);
@@ -124,7 +129,18 @@ export function WatchView(props: {
           )}
         </Show>
       </ThreadScroller>
-      <Composer path={props.path} readOnly={props.readOnly} running={false} stopping={false} detail={null} onSend={() => false} onAbort={() => {}} />
+      <Composer
+        path={props.path}
+        readOnly={props.readOnly}
+        running={false}
+        stopping={false}
+        detail={null}
+        workersWorking={props.workersWorking}
+        onShowWorkers={props.onShowWorkers}
+        workersOpen={props.workersOpen}
+        onSend={() => false}
+        onAbort={() => {}}
+      />
     </>
   );
 }

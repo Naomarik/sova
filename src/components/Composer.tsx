@@ -13,7 +13,7 @@ import {
   type RejectedFile,
 } from "../lib/images";
 import { announce, draftImages, drafts } from "../lib/ui-state";
-import { subagentsWorkingLabel } from "../lib/workers";
+import { showSubagentsLabel, subagentsWorkingLabel } from "../lib/workers";
 import { Icon, type IconName } from "./ui";
 
 export interface ComposerReason {
@@ -42,6 +42,10 @@ export function Composer(props: {
   detail: string | null;
   /** Subagents working now; after the turn settles they get their own status row. */
   workersWorking?: number;
+  /** Makes the subagents status row a button that toggles the subagents pane. */
+  onShowWorkers?: () => void;
+  /** The subagents pane is open (the row's aria-expanded). */
+  workersOpen?: boolean;
   autofocus?: boolean;
   /** This session's slash commands; the "/" autocomplete is off without them. */
   commands?: SlashCommand[];
@@ -320,8 +324,30 @@ export function Composer(props: {
         </Show>
         <Show when={!props.running && (props.workersWorking ?? 0) > 0}>
           <p class="run-status">
-            <span class="live-dot" />
-            {subagentsWorkingLabel(props.workersWorking!)}
+            <Show
+              when={props.onShowWorkers}
+              fallback={
+                <>
+                  <span class="live-dot" />
+                  {subagentsWorkingLabel(props.workersWorking!)}
+                </>
+              }
+            >
+              {(show) => (
+                <button
+                  type="button"
+                  class="run-status-link"
+                  aria-label={showSubagentsLabel(props.workersWorking!)}
+                  aria-expanded={props.workersOpen ? "true" : "false"}
+                  aria-controls="subagents-pane"
+                  onClick={() => show()()}
+                >
+                  <span class="live-dot" />
+                  {subagentsWorkingLabel(props.workersWorking!)}
+                  <Icon name="chevron-right" small />
+                </button>
+              )}
+            </Show>
           </p>
         </Show>
 

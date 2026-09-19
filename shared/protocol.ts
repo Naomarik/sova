@@ -158,6 +158,10 @@ export interface UploadResult {
 // POST /api/sessions/archive { path, archived: boolean } -> SessionSummary   (sets/clears the archive mark; never
 //                                  writes the session file. 400 bad body/path, 404 missing, 409 archiving a live
 //                                  or non-web session)
+// POST /api/sessions/cleanup { mode:"age", minAgeDays:7|30, dryRun? } | { mode:"husks", dryRun? }
+//     -> { deletedCount, deletedIds: string[], skipped:{live,busy,recent,failed} }   (permanently deletes
+//     transcript files; dryRun reports candidates in deletedIds with deletedCount 0; live, mid-turn and
+//     just-written sessions are skipped and counted)
 // GET  /api/transcript?path=…   -> { items: TranscriptItem[]; context: ContextInfo | null }   (active branch only)
 // GET  /api/cwds                -> string[]                          (distinct cwds, for the new-session picker)
 // GET  /api/folders?path=…&hidden=1 -> FolderListing   (subfolders for the New Session folder picker; no path = $HOME;
@@ -297,6 +301,12 @@ export interface WorkerInfo {
   startedAt?: number; lastActivity?: number; endedAt?: number;
   outcome?: "success" | "error" | "aborted";
   teamId?: string;
+  /** Path to this worker's own pi session JSONL, so its transcript can be read (live registry
+      presence.workers[].sessionFile). Absent for a claude-code worker, or when the writer didn't
+      publish it (older pi-config). Read-only consumers: never write to a worker's session. */
+  sessionFile?: string;
+  /** Backend session id when there is no pi session file (claude-code: its Claude session id). */
+  sessionId?: string;
 }
 export interface TeamMember {
   workerId: string; role: string; orchestrator: boolean; backend: string; model?: string;
@@ -346,4 +356,7 @@ export interface SessionInsight {
   outline: SessionOutline | null; // null: no topic-outline entries on the active branch
   compactions: CompactionInfo[]; // active branch, oldest first
   teams: TeamInfo[]; // live-joined when the session is running, else history
+  /** This session's own subagent workers, from its live record (empty when it isn't live, or
+      absent from an older server). The nested subagents pane lists these. */
+  workers?: WorkerInfo[];
 }

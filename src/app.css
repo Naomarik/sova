@@ -25,3 +25,53 @@ html, body, #root { height: 100%; }
 
 /* Card-shaped skeleton for the insights grid. */
 .skeleton-card { height: 120px; border-radius: var(--r-lg); }
+
+/* Archive date sections (DESIGN_NOTES §2 "Archive by date"): each a <details> whose summary is
+   the eyebrow label (twist, name, count), collapsed by default; a rule between sections. */
+.archive-date + .archive-date { border-top: var(--stroke-thin) solid var(--color-border); }
+.archive-date-label {
+  min-height: var(--row-height);
+  padding-top: 0;
+  padding-bottom: 0;
+  font-weight: var(--fw-semibold);
+  cursor: pointer;
+  list-style: none;
+  transition: color var(--dur-fast) var(--ease-standard);
+}
+.archive-date-label::-webkit-details-marker { display: none; }
+/* Clicking a toggle must not drag-select its label while the section reflows open. */
+.sidebar-region-head,
+.archive-date-label { user-select: none; }
+.archive-date-label:hover { color: var(--color-ink); }
+.archive-date-label:focus-visible { outline-offset: calc(var(--focus-offset) * -1); border-radius: 0; }
+.archive-date-label .icon-twist { transition: transform var(--dur-fast) var(--ease-standard); }
+.archive-date[open] > .archive-date-label .icon-twist { transform: rotate(90deg); }
+.archive-date-name { flex: 1; min-width: 0; }
+/* Folder groups inside an open section: a hairline under the date row. */
+.archive-date[open] > .session-group:first-of-type { border-top: var(--stroke-thin) solid var(--color-border); }
+
+/* Archive cleanup (§2 "Archive cleanup"): one quiet button closing the open Archive. */
+.archive-tools {
+  display: flex;
+  justify-content: flex-end;
+  padding: var(--space-2) var(--space-4);
+  border-top: var(--stroke-thin) solid var(--color-border);
+}
+/* The action picker: the body's gap already spaces the intro from the list. */
+.cleanup-intro { margin: 0; }
+/* Its rows: list rows as buttons, in a bordered box. */
+.cleanup-choices { border: var(--stroke-thin) solid var(--color-border); border-radius: var(--r-lg); overflow: hidden; }
+.cleanup-choice {
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+}
+.cleanup-choices > li:not(:last-child) > .cleanup-choice { border-bottom: var(--stroke-thin) solid var(--color-border); }
+.cleanup-choice .list-title,
+.cleanup-choice .list-meta { display: block; }
+/* The scope is the point of the row: wrap it on a narrow sheet rather than cut it. */
+.cleanup-choice .list-meta { white-space: normal; }
+.cleanup-choice > .icon { color: var(--color-ink-muted); }
+.cleanup-choice[aria-disabled="true"] { cursor: default; }

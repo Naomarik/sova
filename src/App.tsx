@@ -1,7 +1,7 @@
-import { createEffect, createMemo, createResource, createSignal, Match, on, onCleanup, Show, Switch } from "solid-js";
+import { batch, createEffect, createMemo, createResource, createSignal, Match, on, onCleanup, Show, Switch } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { Portal } from "solid-js/web";
-import type { SessionInsight, SessionSummary, TeamInfo } from "../shared/protocol";
+import type { SessionInsight, SessionSummary, TeamInfo, WorkerInfo } from "../shared/protocol";
 import { fetchAgents, fetchSessionInsight, fetchUsage, listSessions, setSessionArchived } from "./lib/api";
 import { agentsHref, insightsRouteFromHash, legacyInsightsTarget } from "./lib/insights";
 import { createPoll } from "./lib/poll";
@@ -15,6 +15,7 @@ import { ModeMenu, type ModeControl } from "./components/ModeMenu";
 import { ModelMenu, type ModelControl } from "./components/ModelMenu";
 import { NewSessionDialog } from "./components/NewSessionDialog";
 import { OutlineStrip } from "./components/OutlineStrip";
+import { SubagentPane } from "./components/SubagentPane";
 import { sessionHref, Sidebar } from "./components/Sidebar";
 import { UsageView } from "./components/UsageView";
 import { WatchView } from "./components/WatchView";
@@ -243,6 +244,30 @@ export function App() {
 
   const folderCount = () => new Set((list() ?? []).map((s) => s.cwd)).size;
 
+  // ---- Subagents pane: open for one session path, closed whenever the route changes ----------
+  const [subagents, setSubagents] = createSignal<{ path: string; selected: string | null } | null>(null);
+  /** The open chat's live workers (WS "workers"), reconciled by id so pane rows keep identity. */
+  const [chatWorkers, setChatWorkers] = createStore<{ path: string | null; list: WorkerInfo[] }>({ path: null, list: [] });
+  createEffect(on(route, () => setSubagents(null), { defer: true }));
+  /** The pane's session: open, for the session on screen. */
+  const subagentsPath = () => {
+    const p = subagents()?.path;
+    return p && p === route() && viewKey() ? p : null;
+  };
+  let subagentsTrigger: HTMLElement | null = null;
+  const closeSubagents = () => {
+    setSubagents(null);
+    const trigger = subagentsTrigger?.isConnected ? subagentsTrigger : document.querySelector<HTMLElement>(".run-status-link");
+    subagentsTrigger = null;
+    queueMicrotask(() => (trigger ?? document.getElementById("transcript"))?.focus());
+  };
+  /** The composer's subagents row toggles the pane. */
+  const toggleSubagents = (path: string) => {
+    if (subagentsPath() === path) return closeSubagents();
+    subagentsTrigger = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    setSubagents({ path, selected: null });
+  };
+
   return (
     <>
       <a class="button skip-link" href="#transcript">
@@ -408,6 +433,9 @@ export function App() {
                             author={author()}
                             streaming={!!s().live}
                             onAppend={reloadInsight}
+                            workersWorking={working()}
+                            onShowWorkers={() => toggleSubagents(d.path)}
+                            workersOpen={subagentsPath() === d.path}
                             stateBanner={
                               <Switch>
                                 <Match when={w().why === "recent"}>
@@ -445,27 +473,38 @@ export function App() {
                         )}
                       </Match>
                       <Match when={d.mode === "chat" && d}>
-                        {(c) => (
-                          <ChatView
-                            path={d.path}
-                            cwdLabel={tildePath(s().cwd, home())}
-                            author={author()}
-                            force={c().force}
-                            autofocus={c().autofocus}
-                            onModel={(m) => {
-                              setChatModel(m);
-                              // The sidebar row reads the list: re-read it after a switch.
-                              if (m && m !== s().model) refresh();
-                            }}
-                            onModelControl={setModelControl}
-                            onModeControl={setModeControl}
-                            onRefused={onRefused}
-                            onSettled={() => {
-                              refresh();
-                              reloadInsight();
-                            }}
-                          />
-                        )}
+                        {(c) => {
+                          onCleanup(() => setChatWorkers({ path: null, list: [] }));
+                          return (
+                            <ChatView
+                              path={d.path}
+                              cwdLabel={tildePath(s().cwd, home())}
+                              author={author()}
+                              force={c().force}
+                              autofocus={c().autofocus}
+                              onModel={(m) => {
+                                setChatModel(m);
+                                // The sidebar row reads the list: re-read it after a switch.
+                                if (m && m !== s().model) refresh();
+                              }}
+                              onModelControl={setModelControl}
+                              onModeControl={setModeControl}
+                              onRefused={onRefused}
+                              onSettled={() => {
+                                refresh();
+                                reloadInsight();
+                              }}
+                              onWorkers={(w) =>
+                                batch(() => {
+                                  setChatWorkers("path", d.path);
+                                  setChatWorkers("list", reconcile(w, { key: "id" }));
+                                })
+                              }
+                              onShowWorkers={() => toggleSubagents(d.path)}
+                              workersOpen={subagentsPath() === d.path}
+                            />
+                          );
+                        }}
                       </Match>
                     </Switch>
                   </>
@@ -474,6 +513,18 @@ export function App() {
             </Show>
           </Show>
         </main>
+
+        <Show when={subagentsPath()} keyed>
+          {(path) => (
+            <SubagentPane
+              path={path}
+              chatWorkers={chatWorkers.path === path ? chatWorkers.list : null}
+              selected={subagents()?.selected ?? null}
+              onSelect={(id) => setSubagents({ path, selected: id })}
+              onClose={closeSubagents}
+            />
+          )}
+        </Show>
       </div>
 
       <Show when={creating()}>

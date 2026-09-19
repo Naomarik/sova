@@ -1,10 +1,12 @@
 import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import type { AgentsInsight, SessionSummary, UsageInsight } from "../../shared/protocol";
+import { type ArchiveGroupId, groupByArchiveDate } from "../lib/archive";
 import { relativeTime, shortModel, tildePath } from "../lib/format";
 import { activeTeams, agentsHref, type GlancePart, usageGlance, usageHref } from "../lib/insights";
 import { isTopSession } from "../lib/regions";
 import { home, localRunning } from "../lib/ui-state";
 import { sessionWorking } from "../lib/workers";
+import { ArchiveCleanup } from "./ArchiveCleanup";
 import { Banner, Chip, CountChip, Icon } from "./ui";
 
 interface Group {
@@ -25,6 +27,8 @@ function groupByCwd(sessions: SessionSummary[]): Group[] {
 }
 
 const ARCHIVE_KEY = "pi-web:archive-open";
+/** One key per Archive date section, same "1"/"0" values as ARCHIVE_KEY. */
+const archiveDateKey = (id: ArchiveGroupId) => `pi-web:archive-date-open-${id}`;
 
 export const sessionHref = (path: string) => `#/s/${encodeURIComponent(path)}`;
 
@@ -175,7 +179,11 @@ export function Sidebar(props: {
   const archiveHits = createMemo(() => hits().filter((s) => !isTop(s)));
   // Each region groups by cwd on its own, so a folder can appear in both.
   const topGroups = createMemo(() => groupByCwd(topHits()));
-  const archiveGroups = createMemo(() => groupByCwd(archiveHits()));
+  // The Archive splits by date first (Today … Older), then by cwd inside each date section.
+  const archiveSections = createMemo(() => {
+    const sorted = [...archiveHits()].sort((a, b) => b.lastActiveAt.localeCompare(a.lastActiveAt));
+    return groupByArchiveDate(sorted, new Date(props.now)).map((d) => ({ ...d, groups: groupByCwd(d.items) }));
+  });
   const archiveTotal = () => all().filter((s) => !isTop(s)).length;
 
   // Collapsed by default; the user's own choice persists for the tab (DESIGN_NOTES §2 "Regions").
@@ -189,6 +197,18 @@ export function Sidebar(props: {
     if (open === archiveOpen()) return; // our own `open` update, not the user's
     setStoredOpen(open);
     sessionStorage.setItem(ARCHIVE_KEY, open ? "1" : "0");
+  };
+  // Date sections: collapsed by default, each remembering its own choice the same way.
+  const [storedDateOpen, setStoredDateOpen] = createSignal<Partial<Record<ArchiveGroupId, boolean>>>({});
+  const dateStored = (id: ArchiveGroupId) => storedDateOpen()[id] ?? sessionStorage.getItem(archiveDateKey(id)) === "1";
+  /** Forced open while searching, or when it holds the open session. */
+  const dateOpen = (d: { id: ArchiveGroupId; items: SessionSummary[] }) =>
+    !!query().trim() || d.items.some((s) => s.path === props.selected) || dateStored(d.id);
+  const onDateToggle = (d: { id: ArchiveGroupId; items: SessionSummary[] }, e: Event & { currentTarget: HTMLDetailsElement }) => {
+    const open = e.currentTarget.open;
+    if (open === dateOpen(d)) return; // our own `open` update, not the user's
+    setStoredDateOpen((m) => ({ ...m, [d.id]: open }));
+    sessionStorage.setItem(archiveDateKey(d.id), open ? "1" : "0");
   };
   const liveCount = () => all().filter((s) => s.live).length;
   const glance = createMemo(() => usageGlance(props.usage));
@@ -350,7 +370,22 @@ export function Sidebar(props: {
                 · {query().trim() ? `${archiveHits().length} of ${archiveTotal()}` : archiveHits().length}
               </span>
             </summary>
-            <GroupList groups={archiveGroups()} selected={props.selected} now={props.now} idPrefix="a" />
+            <For each={archiveSections()}>
+              {(d) => (
+                <details class="archive-date" open={dateOpen(d)} onToggle={(e) => onDateToggle(d, e)}>
+                  <summary class="list-group-label archive-date-label">
+                    <Icon name="chevron-right" small class="icon-twist" />
+                    <span class="archive-date-name">{d.label}</span>
+                    <span class="text-num">{d.items.length}</span>
+                  </summary>
+                  <GroupList groups={d.groups} selected={props.selected} now={props.now} idPrefix={`a-${d.id}`} />
+                </details>
+              )}
+            </For>
+            {/* Cleanup ignores the search, so it's hidden while one filters the list. */}
+            <Show when={!query().trim()}>
+              <ArchiveCleanup sessions={all()} selected={props.selected} onDeleted={() => props.onRefresh()} />
+            </Show>
           </details>
         </Show>
       </nav>

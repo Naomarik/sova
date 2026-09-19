@@ -1,7 +1,7 @@
 import { batch, createEffect, createSignal, For, onCleanup, Show } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { Portal } from "solid-js/web";
-import type { ChatServerMessage, SlashCommand, TranscriptItem } from "../../shared/protocol";
+import type { ChatServerMessage, SlashCommand, TranscriptItem, WorkerInfo } from "../../shared/protocol";
 import { fetchTranscriptWithContext, wsUrl } from "../lib/api";
 import { contextStateFor, usageTokens, windowOf } from "../lib/context";
 import { addPendingPrompt, applyEvent, emptyLive, runDetail, type LiveState } from "../lib/live";
@@ -41,6 +41,11 @@ export function ChatView(props: {
   onModeControl?(control: ModeControl | null): void;
   onRefused(kind: ChatRefusal, message: string): void;
   onSettled(): void;
+  /** This runtime's subagents (WS "workers"; [] after each hello), for the subagents pane. */
+  onWorkers?(workers: WorkerInfo[]): void;
+  /** Toggles the subagents pane from the composer's subagents row. */
+  onShowWorkers?(): void;
+  workersOpen?: boolean;
 }) {
   const [items, setItems] = createSignal<TranscriptItem[] | null>(null);
   const [live, setLive] = createStore<LiveState>(emptyLive());
@@ -146,10 +151,12 @@ export function ChatView(props: {
           setSessionContext(props.path, contextStateFor(msg.context ?? null, msg.items));
           setModelRows([]);
           setWorkersWorking(0); // a runtime without workers sends no "workers" after hello
+          props.onWorkers?.([]);
           props.onModel(msg.model);
           break;
         case "workers":
           setWorkersWorking(msg.working);
+          props.onWorkers?.(msg.workers);
           break;
         case "commands":
           setCommands(msg.commands);
@@ -415,6 +422,8 @@ export function ChatView(props: {
         stopping={live.stopping}
         detail={live.activity ?? runDetail(live)}
         workersWorking={workersWorking()}
+        onShowWorkers={props.onShowWorkers}
+        workersOpen={props.workersOpen}
         autofocus={props.autofocus}
         onSend={send}
         onAbort={abort}

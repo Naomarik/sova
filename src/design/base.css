@@ -2359,3 +2359,294 @@ a.chip:hover { color: var(--color-ink); border-color: var(--color-border-strong)
   color: var(--color-ink-muted);
   overflow-wrap: anywhere;
 }
+
+
+/* =============================================================================
+   SUBAGENTS PANE — this session's workers, beside the session pane: a worker
+   list on the left, the selected worker's read-only transcript on the right.
+   Opened from the composer's "2 subagents working…" row. DESIGN_NOTES §11.
+   ============================================================================= */
+
+/* ---- TRIGGER. The composer's subagents row, made a control. It keeps the
+   row's look (live dot + words in ink-2) and adds a chevron and a hover fill:
+   interactive, but never a primary or secondary button. 36px drawn, 44px hit
+   area (::after), and a net 20px of layout, so the composer doesn't grow when
+   it replaces the Working row. No pressed state: the open pane is the state,
+   and aria-expanded carries it for AT. ------------------------------------ */
+
+.run-status-link {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  min-height: var(--control-sm);
+  margin: calc(var(--space-2) * -1) 0 calc(var(--space-2) * -1) calc(var(--space-2) * -1);
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: var(--r-md);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  white-space: nowrap;
+  transition:
+    background-color var(--dur-fast) var(--ease-standard),
+    color            var(--dur-fast) var(--ease-standard);
+}
+.run-status-link::after {
+  content: "";
+  position: absolute;
+  inset: calc((var(--tap-min) - var(--control-sm)) / -2) 0;
+}
+.run-status-link .icon { color: var(--color-ink-muted); }
+.run-status-link:hover,
+.run-status-link:active { background: var(--color-sunken); color: var(--color-ink); }
+.run-status-link:hover .icon { color: inherit; }
+.run-status-link:active { transform: translateY(1px); }
+.run-status-link:focus-visible { outline: var(--focus-ring); outline-offset: 0; border-radius: var(--r-md); }
+
+
+/* ---- SHELL. A third column of .app, present only while the pane is open
+   (the aside mounts and unmounts). Three bands, all window chrome (@media):
+     ≥ 1280  column: pushes the session pane, which keeps --main-min (440px);
+             the pane takes --subagents-width (520–880px) and yields first.
+     768–1279  drawer: overlays the session pane from the right, full height,
+             leaving the sidebar and a --space-8 strip of the thread visible.
+     < 768   full screen over the session view.
+   320 + 440 + 520 = 1280, which is where the column fits. -------------- */
+
+.app:has(> .app-subagents) { position: relative; }
+.app-subagents {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--color-surface);
+  container-type: inline-size;
+  container-name: subagents;
+  animation: subagents-enter var(--dur-base) var(--ease-standard);
+}
+@keyframes subagents-enter {
+  from { opacity: 0; transform: translateX(var(--space-5)); }
+  to   { opacity: 1; transform: none; }
+}
+
+@media (min-width: 768px) {
+  .app-subagents {
+    left: auto;
+    width: min(var(--subagents-width), 100% - var(--sidebar-width) - var(--space-8));
+    border-left: var(--stroke-thin) solid var(--color-border);
+    box-shadow: var(--shadow-2);
+  }
+}
+@media (min-width: 1280px) {
+  .app:has(> .app-subagents) {
+    grid-template-columns: var(--sidebar-width) minmax(var(--main-min), 1fr) var(--subagents-width);
+  }
+  .app-subagents {
+    position: static;
+    width: auto;
+    box-shadow: none;
+  }
+}
+
+/* Reduced motion: no slide, the fade stays (tokens.css collapses its length). */
+@media (prefers-reduced-motion: reduce) {
+  .app-subagents { animation-name: enter-fade; }
+}
+
+
+/* ---- HEAD. Same height and ground as .session-head, so the two heads read
+   as one band across the window. Title, count chip, then Close on the right. */
+
+.subagents-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 56px;
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4);
+  border-bottom: var(--stroke-thin) solid var(--color-border);
+  background: var(--color-surface);
+  flex: none;
+}
+.subagents-title {
+  margin: 0;
+  min-width: 0;
+  font-size: var(--fs-heading-s);
+  line-height: var(--lh-heading-s);
+  font-weight: var(--fw-semibold);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.subagents-close { margin-left: auto; }
+
+
+/* ---- BODY. List | transcript, each its own scroll region; the body itself
+   never scrolls. Under 500px of pane the two stack: list on top, capped at
+   30vh, transcript below. 500, not 520: the container is the content box, so
+   a 520px drawer measures 519 inside its border and must stay side by side.
+   That rule contracts, so the container query gets a @media floor (skill:
+   the union) — the drawer's content is under 500px below an 885px window,
+   and the pane is full width, so stacked, when folded. ---------------- */
+
+.subagents-body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: var(--subagents-list-width) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+}
+.subagents-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border-right: var(--stroke-thin) solid var(--color-border);
+  background: var(--color-surface);
+}
+.subagents-list > li { border-bottom: var(--stroke-thin) solid var(--color-border); }
+
+@container subagents (max-width: 499px) {
+  .subagents-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+  .subagents-list { max-height: 30vh; border-right: 0; border-bottom: var(--stroke-thin) solid var(--color-border); }
+}
+@media (max-width: 884px) {
+  .subagents-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+  .subagents-list { max-height: 30vh; border-right: 0; border-bottom: var(--stroke-thin) solid var(--color-border); }
+}
+
+
+/* ---- WORKER ROW. The whole row is the button. Name + status chip on the
+   first line, meta under it, the preview (mono, one line) while working.
+   Status follows the member-row table (§10): the chip carries the word, and
+   only a live Working/Starting chip pulses — one pulsing thing per row.
+   Selected: accent tint (the house selected row) plus a semibold name, so
+   the state isn't hue alone. ------------------------------------------- */
+
+.subagent-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: var(--space-2);
+  row-gap: 2px;
+  align-items: center;
+  width: 100%;
+  min-height: var(--row-height);
+  padding: var(--space-3) var(--space-4);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  transition: background-color var(--dur-fast) var(--ease-standard);
+}
+.subagent-row:hover { background: var(--color-sunken); }
+.subagent-row:focus-visible { outline: var(--focus-ring); outline-offset: calc(var(--focus-offset) * -1); border-radius: 0; }
+.subagent-row[aria-current="true"],
+.subagent-row[aria-current="true"]:hover { background: var(--color-accent-tint); }
+
+.subagent-row-name {
+  grid-column: 1;
+  min-width: 0;
+  font-size: var(--fs-body);
+  font-weight: var(--fw-medium);
+  color: var(--color-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.subagent-row[aria-current="true"] .subagent-row-name { font-weight: var(--fw-semibold); }
+.subagent-row-status { grid-column: 2; grid-row: 1; display: inline-flex; }
+.subagent-row-meta,
+.subagent-row-preview {
+  grid-column: 1 / -1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.subagent-row-meta { font-size: var(--fs-caption); color: var(--color-ink-muted); }
+.subagent-row-preview {
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono);
+  color: var(--color-ink-muted);
+}
+
+
+/* ---- TRANSCRIPT VIEW. A nested, read-only session view: a head naming the
+   worker (outside the scroll region, so it never scrolls away), then the
+   thread. No composer and no send affordances — ever. The banner slot
+   (connection, file gone) is sticky at the top of the scroll region, and
+   takes no space when empty, like .transcript-banner. ---------------- */
+
+.subagents-view {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--color-bg);
+}
+.subagents-view-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: var(--space-2);
+  row-gap: 2px;
+  padding: var(--space-2) var(--space-4);
+  border-bottom: var(--stroke-thin) solid var(--color-border);
+  background: var(--color-surface);
+  flex: none;
+}
+.subagents-view-title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
+  font-weight: var(--fw-semibold);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.subagents-view-meta {
+  flex-basis: 100%;
+  min-width: 0;
+  margin: 0;
+  font-size: var(--fs-caption);
+  color: var(--color-ink-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.subagents-transcript {           /* compose with .pane */
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0 var(--space-4) var(--space-6);
+}
+.subagents-transcript > .thread {
+  max-width: calc(var(--measure) + var(--space-9));
+  margin: var(--space-4) auto 0;
+}
+.subagents-banner {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding-top: var(--space-3);
+  background: var(--color-bg);
+}
+.subagents-banner:not(:has(.banner)) { display: none; }
+.subagents-jump { max-width: calc(100% - 2 * var(--space-4)); }
+
+/* Empty, no-file and no-selection states: one idea in the view, centred. */
+.subagents-empty { flex: 1; justify-content: center; padding: var(--space-6) var(--space-4); }

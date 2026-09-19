@@ -371,6 +371,10 @@ function decodeWorker(w: unknown): WorkerInfo | null {
   if (model) out.model = model;
   if (backend) out.backend = backend;
   if (preview) out.preview = preview;
+  const sessionFile = str(w.sessionFile);
+  const sessionId = str(w.sessionId);
+  if (sessionFile) out.sessionFile = sessionFile;
+  if (sessionId) out.sessionId = sessionId;
   for (const k of ["startedAt", "lastActivity", "endedAt"] as const) {
     const t = num(w[k]);
     if (t !== undefined) out[k] = t;
@@ -539,5 +543,6 @@ export async function getSessionInsight(path: string): Promise<SessionInsight> {
     outline: live ? overlayOutline(facts.outline, presence?.outline) : facts.outline,
     compactions: facts.compactions,
     teams: joinTeams(facts, path, workers),
+    workers: workers ?? [],
   };
 }

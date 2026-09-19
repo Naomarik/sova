@@ -25,7 +25,14 @@ after(() => {
 
 function session(id: string): string {
   const path = join(sessionsDir, `2026-09-19T00-00-00-000Z_${id}.jsonl`);
-  writeFileSync(path, `${JSON.stringify({ type: "session", version: 3, id, timestamp: "2026-09-19T00:00:00.000Z", cwd: "/tmp" })}\n`);
+  // The user message matters: zero-input husks are hidden from the session list (sessions-index).
+  writeFileSync(
+    path,
+    [
+      JSON.stringify({ type: "session", version: 3, id, timestamp: "2026-09-19T00:00:00.000Z", cwd: "/tmp" }),
+      JSON.stringify({ type: "message", id: "m1", parentId: null, timestamp: "2026-09-19T00:00:01.000Z", message: { role: "user", content: "hello" } }),
+    ].join("\n") + "\n",
+  );
   return canonicalPath(path);
 }
 

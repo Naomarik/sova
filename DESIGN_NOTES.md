@@ -16,7 +16,7 @@ stylesheets — no component library.
 | Need | Classes |
 |---|---|
 | App shell | `.app[data-view="list\|session"]` `.app-sidebar` `.app-main` `.app-back` `.pane` `.skip-link` |
-| Sidebar | `.sidebar-head` `.brand` `.sidebar-spacer` `.sidebar-search` `.sidebar-list` `.sidebar-region` `.sidebar-region-head` `.sidebar-region-count` `.sidebar-region-note` `details.sidebar-archive` |
+| Sidebar | `.sidebar-head` `.brand` `.sidebar-spacer` `.sidebar-search` `.sidebar-list` `.sidebar-region` `.sidebar-region-head` `.sidebar-region-count` `.sidebar-region-note` `details.sidebar-archive` · in `src/app.css`: `.archive-date` `.archive-date-label` `.archive-date-name` `.archive-tools` `.cleanup-intro` `.cleanup-choices` `.cleanup-choice` |
 | Search | `.search` (wraps `.icon` + `input.input` + clear `.button.button-icon`) `.search-count` |
 | Session rows | `.session-group` `.list-group-label` `.session-group-path` (+ `<bdi>`) `.list` `.list-row.list-row-interactive.session-row` `[aria-current="page"]` `.list-main` `.list-title` `.list-meta` |
 | LIVE badge / status | `.chip` `.chip-dot` `.chip-accent` `.chip-live` `.chip-success` `.chip-error` `.chip-warn` `.chip-info` `.chip-count` |
@@ -49,6 +49,7 @@ stylesheets — no component library.
 | Teams / subagents (§10) | `.team-card` `.team-objective` `.agent-card` `.member-list` `.member-row` `.member-preview` |
 | Outline strip (§10) | `details.outline` `.outline-summary` `.outline-label` `.outline-now` `.outline-count` `.outline-body` `.outline-overall` `.outline-state` `.outline-topics` `details.outline-topic` `.outline-topic-summary` `.outline-topic-heading` `.outline-hash` `.outline-topic-time` `.outline-bullets` `.outline-jump` |
 | Compaction row (§10) | `details.disclosure.compaction` `.compaction-summary` `.compaction-files` |
+| Subagents pane (§11) | trigger `button.run-status-link` (in `.run-status`) · `.app-subagents` `.subagents-head` `.subagents-title` `.subagents-close` `.subagents-body` `.subagents-list` `button.subagent-row[aria-current]` `.subagent-row-name` `.subagent-row-status` `.subagent-row-meta` `.subagent-row-preview` `.subagents-view` `.subagents-view-head` `.subagents-view-title` `.subagents-view-meta` `.subagents-transcript` (+ `.pane`) `.subagents-banner` `.subagents-jump` (+ `.jump-latest`) `.subagents-empty` (+ `.empty`) · `.app-subagents` is the named container `subagents` |
 | Utilities | `.stack` `.stack-2` `.cluster` `.spread` `.truncate` `.measure` `.visually-hidden` `.text-mono` `.text-caption` `.text-muted` `.text-error` `.text-eyebrow` `.text-num` |
 
 **All user-facing strings are in §9 · Copy deck.**
@@ -421,6 +422,129 @@ the top region doesn't keep every one of them forever.
 - Contrast: ink-2 on sunken is 7.65 (dark) and 7.22 (light). Muted on sunken is 5.40 and 4.75.
 - Touch: the summary is `--row-height`, 44px. At 320px the strip holds a 16px twist, the word,
   and the count, well inside the 288px of usable width.
+
+### Archive by date
+
+The Archive (only; the top region is unchanged) splits into date sections first, then into the
+usual folder groups inside each section. Sections, newest first, keyed on `lastActiveAt` by
+**local calendar day** in the browser's time zone (`archiveGroupOf` in `src/lib/archive.ts`):
+
+| Section | `lastActiveAt` is |
+|---|---|
+| Today | today (a future time from clock skew counts as today) |
+| Yesterday | the previous calendar day |
+| Last 7 days | 2–7 calendar days ago |
+| Last 30 days | 8–30 calendar days ago |
+| Older | more than 30 days ago, or unparseable |
+
+```html
+<details class="sidebar-region sidebar-archive" open>
+  <summary class="sidebar-region-head">…Archive · 43…</summary>
+  <details class="archive-date" open={dateOpen(d)} onToggle={…}>
+    <summary class="list-group-label archive-date-label">
+      <svg class="icon icon-sm icon-twist" aria-hidden="true">…chevron-right…</svg>
+      <span class="archive-date-name">Today</span><span class="text-num">4</span>
+    </summary>
+    <section class="session-group" aria-labelledby="a-today-0">
+      <h3 class="list-group-label" id="a-today-0" title="/home/user">…folder, path, count…</h3>
+      <ul class="list">…session rows…</ul>
+    </section>
+  </details>
+  <div class="archive-tools">…Clean Up…, see Archive cleanup…</div>
+</details>
+```
+
+- **Order.** Rows keep the `lastActiveAt`-descending order; folder groups inside a section follow
+  the usual rule (their newest row first), so one folder can appear in several sections.
+- **Empty sections** are omitted, including while a search filters the list. The count is the
+  rows visible in that section.
+- **Collapsed by default.** Each section is a native `<details>`, so an open Archive first reads
+  as five short lines (label + count), not a wall of rows. The whole 44px summary toggles it, and
+  the chevron rotates 90° when open, like the Archive head. Folder groups inside an open section
+  are unchanged.
+- **Open/closed state** follows the Archive's rule: the user's choice per section lives in
+  `sessionStorage["pi-web:archive-date-open-{id}"]` (`id` is `today`, `yesterday`, `week`,
+  `month`, `older`; `"1"`/`"0"`), read on load and written on `toggle`. A section opens
+  **without** changing its stored choice while a search query is non-empty (so every hit is
+  visible) or while it holds the selected session.
+- **Look.** The summary is the `.list-group-label` eyebrow (mono, micro, uppercase, muted), plus
+  semibold, at `--row-height`: a 16px twist in the folder icon's column, the name, and the count
+  at the right. Hover inks it. It doesn't stick; the folder labels under it keep sticking. A
+  `--color-border` rule separates sections and sits under an open section's summary. No new
+  colors.
+- **Accessibility.** AT reads the summary ("Today 4, collapsed"); it holds spans, not a heading,
+  for the reason given under Regions. Folder labels inside stay `h3`. Tab reaches each summary,
+  Enter or Space toggles it, and rows in a closed section aren't focusable.
+- **Row time vs section.** Row line 2 still uses `relativeTime`, which counts 24-hour spans, so
+  just after midnight a row can read "3h ago" under Yesterday, or "yesterday" under Last 7 days.
+  Accepted: the section answers "which day", and the row answers "how long ago".
+
+### Archive cleanup
+
+One quiet button at the end of the open Archive, after the date sections, deletes old or empty
+sessions in bulk. It uses `POST /api/sessions/cleanup` (`cleanupSessions` in `src/lib/api.ts`).
+
+```html
+<div class="archive-tools">
+  <button class="button button-sm button-ghost" aria-haspopup="dialog">Clean Up…</button>
+</div>
+```
+
+- **Why one button.** Three delete buttons inline read as a toolbar competing with the date
+  labels. One ghost `button-sm`, right-aligned in its own row under a `--color-border` rule, sits
+  where a list's footer action would. The ellipsis says a dialog comes first.
+- **Picker.** Clean Up… opens a `.modal` (`role="dialog"`, focus trapped, focus starting on the
+  first action): title "Clean Up Archive", the line "Pick what to delete. You'll see how many
+  sessions match before anything is deleted.", then the three actions as `.list-row` buttons in a
+  bordered `.cleanup-choices` box (`--r-lg`). Each row shows the label (`.list-title`), its scope
+  (`.list-meta`, the same `cleanupScope` text as the confirm dialog), and a chevron. Accessible
+  names stay "Delete Sessions Older Than 7 Days", "… 30 Days", "Delete Empty Sessions", with the
+  scope as the description. Foot: spacer · `Cancel`. Esc and the scrim cancel.
+
+```html
+<ul class="list cleanup-choices">
+  <li><button class="list-row list-row-interactive cleanup-choice" aria-label="Delete Sessions Older Than 7 Days" aria-describedby="cleanup-pick-0">
+    <span class="list-main"><span class="list-title">Older Than 7 Days</span>
+      <span class="list-meta" id="cleanup-pick-0">Sessions last active more than 7 days ago.</span></span>
+    <svg class="icon icon-sm">…chevron-right…</svg>
+  </button></li>
+  …Older Than 30 Days, Empty Sessions…
+</ul>
+```
+
+- **Actions.** `{ mode: "age", minAgeDays: 7 }`, `{ mode: "age", minAgeDays: 30 }`, and
+  `{ mode: "husks" }` (sessions nothing was ever sent in). The server decides what matches and
+  what it protects. The UI shows its numbers and never counts on its own.
+- **Hidden while searching.** Cleanup ignores the search, so a Clean Up… button under a
+  filtered list would suggest it only acts on the matches.
+- **Flow.**
+  1. Pick an action: its row's meta line reads "Checking…" and every row and Cancel are
+     `aria-disabled` while `dryRun: true` runs (Esc and the scrim do nothing then). When it
+     answers, the picker closes and focus goes back to Clean Up…, so later dialogs return focus
+     there too. On failure, the picker closes and a toast says "Couldn't check what to delete.
+     Nothing was deleted. {server message}".
+  2. The confirm dialog (`.modal` with `role="alertdialog"`, focus trapped, and focus starting on
+     **Cancel**) shows the dry run's count, which is `deletedIds.length`, or `deletedCount` when no
+     ids are sent:
+     - Title "Delete {n} sessions?", then the scope ("Sessions last active more than 7 days
+       ago." or "Empty sessions: nothing was ever sent in them."), then "This permanently deletes
+       their transcript files — this can't be undone."
+     - If any were skipped, a muted caption: "{n} skipped: {a} open in a TUI, {b} mid-turn, {c}
+       just written. They stay as they are." It lists only the nonzero reasons.
+     - Foot: `Delete {n} Sessions` (`.button-destructive`, "Deleting…" while pending) · spacer ·
+       `Cancel`. Esc and the scrim cancel, except while deleting.
+     - With 0 to delete, the title is "0 sessions to delete." and the body adds "Nothing matches
+       right now, so nothing was changed.". The foot has only `Close`.
+  3. Confirm: `dryRun: false`, then toast and announce "Deleted {n} sessions." (with the skipped
+     sentence appended when nonzero) and refresh the list. If the open session's id is in
+     `deletedIds`, go to `#/`.
+  4. On failure: toast "Couldn't delete sessions. Some may be gone; the list is refreshed. {server
+     message}", then close the dialog and refresh anyway.
+- **Lenient responses.** Missing or malformed fields read as 0, or as no ids
+  (`parseCleanupResult`), and never throw. A server without the endpoint (404) goes down the
+  failure path in step 1.
+- **Width.** One button fits any sidebar width. At 320px the picker is the usual bottom sheet
+  and the scope lines wrap rather than ellipsize, since the cut-off part ("30 days") is the point.
 
 ### Search
 
@@ -869,6 +993,7 @@ Driven by `ChatServerMessage.event`.
   <form class="composer-inner" aria-label="Message the agent">
     <!-- while streaming only -->
     <p class="run-status"><span class="live-dot"></span>Working<span class="run-status-detail">· running bash</span></p>
+    <!-- or, idle with ≥ 1 worker working: the subagents trigger, button.run-status-link (§11) -->
 
     <!-- pending attachments; omit the <ul> when there are none; see §4b -->
     <ul class="attachments" aria-label="Attachments">…</ul>
@@ -2430,7 +2555,8 @@ one is open queues behind it.
 | New product components: `.app`, `.sidebar-*`, `.search`, `.session-*`, `.transcript*`, `.disclosure*`, `.toolcard*`, `.info-row`, `.run-status`, `.jump-latest`, `.composer*`, `.folder-list`, `.folder-field*`, `.folder-picker*`, `.folder-crumb*`, `.brand`, `.live-dot`, `.chip-live`, `.icon`, `.skip-link`, `.truncate`, `.banner-main/-action`, `.message-time/-text`, `.modal-spacer` | Built only from system tokens and patterns. The tool card is the skill's tool-turn chat style (sunken, mono) turned into a disclosure so arguments and output fit. `.chip-live` applies the skill's run-pulse to a chip |
 | Insights components: `.sidebar-foot`, `.insights*`, `.usage-*`, `.team-*`, `.agent-card`, `.member-*`, `.outline*`, `.compaction*`; the skill's `.card-*` and `.meter*` families brought in | Built from system tokens and the skill's card, meter, list, chip, and disclosure patterns (§10) |
 | `.meter-fill` is `--color-ink-muted`, not `--color-accent` | pi-web's accent is reserved for primary, live, and focus (§0). At ≥80% the fill turns `--status-warn`, at ≥100% `--status-error`, always under a chip that says the word |
-| New tokens: `--sidebar-width`, `--composer-max`, `--tool-output-max`, `--outline-max`, `--scrim`, `--skeleton-sweep` | Layout sizes, plus the two alpha values the skill already hard-codes inline (scrim, skeleton sweep), lifted into tokens so they theme correctly |
+| Subagents pane (§11): `.run-status-link`, `.app-subagents`, `.subagents-*`, `.subagent-row*`, and a third `.app` column from 1280px | A fourth window width the shell branches on, besides 768. It's where the session pane can keep `--main-min` beside the pane; below it the pane is a drawer. Built from the list, chip, empty, banner, and chat patterns |
+| New tokens: `--sidebar-width`, `--composer-max`, `--tool-output-max`, `--outline-max`, `--scrim`, `--skeleton-sweep`, `--main-min`, `--subagents-width`, `--subagents-list-width` | Layout sizes, plus the two alpha values the skill already hard-codes inline (scrim, skeleton sweep), lifted into tokens so they theme correctly |
 | Brand: `pi-web-mark.svg` (a stroked π) and the wordmark "pi-web" set in Inter 640 at −.03em | The Fold symbol is not used. It's a placeholder mark on the system's icon grid, and swappable |
 | Composer buttons go icon-only under 480px of composer width (`.button-label` visually hidden) | Keeps the textarea usable at 320px while streaming. Each button keeps its accessible name, and Send stays the filled primary |
 | Lightbox is a native `<dialog>` rather than the skill's `.scrim` + `.modal` | Top layer, inert page, and native Esc handling. It's full-bleed because it shows content rather than asking a question |
@@ -2465,7 +2591,7 @@ Every token these notes reference, all defined in `src/design/tokens.css`:
 - **Radius:** `--r-xs`, `--r-sm`, `--r-md`, `--r-lg`, `--r-xl`, `--r-full`
 - **Stroke and size:** `--stroke-thin`, `--stroke-icon`, `--tap-min`, `--row-height`,
   `--control-sm`, `--control-md`, `--sidebar-width`, `--composer-max`, `--tool-output-max`,
-  `--outline-max`
+  `--outline-max`, `--main-min`, `--subagents-width`, `--subagents-list-width`
 - **Elevation:** `--shadow-1`, `--shadow-2`, `--shadow-3`
 - **Focus and motion:** `--focus-ring`, `--focus-width`, `--focus-offset`, `--focus-color`,
   `--dur-fast`, `--dur-base`, `--ease-standard`
@@ -2493,6 +2619,10 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Untitled row | Untitled (muted) |
 | Top region head | Live & web · {n} · searching: Live & web · {hits} of {total} |
 | Archive head | Archive · {n} · searching: Archive · {hits} of {total} |
+| Archive date sections | Today · Yesterday · Last 7 days · Last 30 days · Older (each with its count) |
+| Archive cleanup toolbar | eyebrow "Delete" · buttons `Older Than 7 Days` · `Older Than 30 Days` · `Empty Sessions` (`aria-label` "Delete Sessions Older Than 7 Days", …) · pending "Checking…" |
+| Archive cleanup dialog | **Delete {n} sessions?** {scope} This permanently deletes their transcript files — this can't be undone. · skipped "{n} skipped: {a} open in a TUI, {b} mid-turn, {c} just written. They stay as they are." · buttons `Delete {n} Sessions` ("Deleting…") · `Cancel` · none: **0 sessions to delete.** · `Close` |
+| Archive cleanup toasts | "Deleted {n} sessions." (+ " {skipped}.") · "Couldn't check what to delete. Nothing was deleted. {server message}" · "Couldn't delete sessions. Some may be gone; the list is refreshed. {server message}" |
 | Empty top region note | 0 sessions open in a TUI, or started here and not archived. The archive below has the rest. |
 | Refresh button `aria-label` | Refresh Sessions |
 | Loading | skeleton only, no text |
@@ -2722,6 +2852,26 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Outline state line | Updated {rel} · stale adds: " · behind the latest messages" · failed-keeping-last adds: " · the last update failed, so this is the previous outline" · updating/drafting: "Updating" + live dot |
 | Outline jump | Jump to Message |
 | Compaction | Compacted · `{tokens}` tokens summarized (no count: Compacted · earlier messages summarized) · Files read · Files changed |
+
+### Subagents pane (§11)
+
+| Where | Copy |
+|---|---|
+| Trigger | `{n} subagents working…` (1: `1 subagent working…`) · accessible name: `{n} subagents working — show subagents` |
+| Pane | label and title: Subagents · chip: `{w} working` (omitted at 0) · Close `aria-label`: Close subagents |
+| Row meta | `{model}` · settled: `{model} · as of {HH:MM}` · idle after a failure adds: · last task failed |
+| Row status chips | Working · Starting · Idle · Stopping · Done · Failed · Stopped |
+| View head meta | `{id}` · `{model}` · Read only |
+| Transcript section `aria-label` | {name} transcript |
+| No workers | **0 subagents in this session.** Workers it starts show up here while they run. |
+| None selected | **{n} subagents, {w} working.** Pick one to read its transcript. |
+| No session file (Claude Code) | **Its transcript isn't available in pi-web.** `{name}` runs on Claude Code, and pi-web only reads pi session files. Latest: {preview} |
+| No session file (pi) | **Its transcript isn't available in pi-web.** `{name}` runs on a pi that doesn't publish its session file yet. Latest: {preview} |
+| File gone, first load | **Couldn't find this worker's transcript.** `{path}` is gone. Nothing else changed. |
+| File gone after loading (banner-warn) | **This transcript's file is gone.** What's shown is up to `{HH:MM}`. |
+| Transcript file empty (just started) | **0 entries in {name}'s session so far.** Entries show up here as it writes them. |
+| Pane's session-insight fetch failed (banner-warn) | **Couldn't load this session's subagents.** {message} Your workers keep running. We'll retry on our own. |
+| Transcript socket and load errors | the §11 state table: Live-watch and Connection copy above, and Main pane's transcript load error |
 
 ---
 
@@ -3112,3 +3262,271 @@ of `$HOME`.
       graphical object.
     - Ink-2 on sunken (card heads) is 7.65 and 7.22.
     - Ink-2 on accent-tint (the current foot row) matches the selected session row.
+
+---
+
+## 11 · Subagents pane
+
+The composer's "2 subagents working…" row opens a pane beside the session: this session's
+workers on the left, the selected worker's live transcript on the right, read-only. It answers
+"what are my workers doing right now?" without leaving the conversation that started them.
+
+It is **this session only**. `#/agents` (§10) stays the cross-session surface: every running pi,
+its teams and solo workers, as cards with no transcripts. The session head's "{n} working" chip
+keeps linking there. The pane is for watching; the page is for finding.
+
+### Trigger
+
+Today the subagents row is plain text: `.run-status`, shown only while the parent's turn is idle
+and at least 1 worker runs (§3 "Run status"). It becomes a control. The `<p>` stays, and a
+button takes its contents:
+
+```html
+<p class="run-status">
+  <button type="button" class="run-status-link" aria-expanded="false" aria-controls="subagents-pane"
+          aria-label="2 subagents working — show subagents">
+    <span class="live-dot"></span>2 subagents working…
+    <span class="icon icon-sm" style="--icon: url(/icons/chevron-right.svg)" aria-hidden="true"></span>
+  </button>
+</p>
+```
+
+- **It reads as the row it was, plus two cues.** The live dot and the words keep `.run-status`'s
+  look (caption, ink-2). A muted chevron says "opens to the right", and hover fills the whole
+  control with sunken and lifts the words to ink. It never becomes a primary or secondary
+  button: it's a status you can open, and the composer already has its one primary.
+- **Size.** 36px drawn with an `--r-md` fill, a 44px hit area (a `::after` 4px above and below),
+  and a net 20px of layout, so the composer doesn't jump when this row and the Working row trade
+  places. It sits 8px left of the row's edge, so the dot lines up with the Working row's dot.
+- **The count is in the label** and changes in place. The accessible name is the visible words
+  plus what the control does: "2 subagents working — show subagents".
+
+| State | Renders |
+|---|---|
+| Parent turn running | The Working row (§3), not this one. No trigger |
+| Idle, 0 workers working | No row, no trigger |
+| Idle, ≥ 1 working | The trigger, `aria-expanded="false"` |
+| Hover · active | Sunken fill, ink words, chevron to ink · active also moves 1px down, like `.button` |
+| Focus-visible | The 2px accent ring, at `--r-md` |
+| Pane open | `aria-expanded="true"`. **No pressed styling**: the open pane beside it is the state, and a tinted trigger would be one more accent-adjacent thing in a composer that has Send. Clicking again closes the pane |
+
+The pane doesn't need the trigger to stay open. When the parent starts a turn, the row turns
+back into Working, and the pane stays where it is.
+
+### Shell: a third column
+
+```html
+<div class="app" data-view="session">
+  <aside class="app-sidebar" aria-label="Sessions">…§2…</aside>
+  <main class="app-main">…§3 head, thread, composer…</main>
+  <aside class="app-subagents" id="subagents-pane" aria-label="Subagents">
+    <header class="subagents-head">
+      <h2 class="subagents-title">Subagents</h2>
+      <span class="chip chip-count">2 working</span>            <!-- omitted at 0 -->
+      <button class="button button-icon button-ghost subagents-close" aria-label="Close subagents">
+        <span class="icon" style="--icon: url(/icons/chevron-right.svg)" aria-hidden="true"></span>
+      </button>
+    </header>
+    <div class="subagents-body">
+      <ul class="subagents-list" aria-label="Subagents">…rows…</ul>
+      <div class="subagents-view">…head + transcript, or an empty state…</div>
+    </div>
+  </aside>
+</div>
+```
+
+The aside is a direct child of `.app`, after `.app-main`, and it's **mounted only while open**.
+The grid keys off its presence (`.app:has(> .app-subagents)`), so nothing else has to change
+state. Changing route closes it. The shell is the window, so, like §1, the bands are `@media`:
+
+| Window | The pane | Session pane (`.app-main`) |
+|---|---|---|
+| ≥ 1280 | A column: `--sidebar-width` · `minmax(--main-min, 1fr)` · `--subagents-width`. It pushes | Keeps at least `--main-min` (440px) |
+| 768–1279 | A drawer over `.app-main`, anchored right, full height, `--shadow-2` and a left border. Width `min(--subagents-width, 100% − --sidebar-width − --space-8)` | Stays put underneath. The sidebar and at least a 64px strip of the thread stay visible |
+| < 768 | Full screen over the session view | Hidden beneath, unchanged |
+
+- **What wins when space is tight: the thread.** `--subagents-width` is `clamp(520px, 40vw,
+  880px)`. 320 + 440 + 520 = 1280, so the column exists only where the session pane keeps its
+  440px floor. Below that, the pane gives up its column and becomes a drawer, rather than
+  squeezing the conversation the user is in.
+- **The drawer is not modal.** No scrim, no focus trap, and the visible strip of the thread
+  still scrolls. It's a second view of the same session, not a question.
+- **Grounds.** The pane head and the list sit on surface, like the sidebar. The transcript
+  view sits on paper, like the session's own transcript. That makes the nesting read as
+  "a session inside a session".
+
+### Head
+
+`.subagents-head` matches `.session-head`: 56px, surface, a bottom border, so the two heads read
+as one band across the window. The title is `heading-s`. The count chip is the neutral §10
+aggregate, `{n} working`, with no dot and no pulse, left out at 0. Close is a ghost icon button
+pushed right, `aria-label="Close subagents"`. Its chevron points right: it sends the pane back
+the way it came.
+
+### Body: list | transcript
+
+`.subagents-body` is a grid, `--subagents-list-width` (256px) · `minmax(0, 1fr)`. The list and
+the transcript are **each their own scroll region**, and the body, the pane, and the page never
+scroll. The list scrolls on its own (`overscroll-behavior: contain`). The transcript is a `.pane`.
+
+**Under 500px of pane, the two stack.** The list goes on top, capped at 30vh with a bottom
+border, and the transcript takes the rest. The pane is a named container, `subagents`. The
+threshold is 500, not the pane's 520 minimum, because a container measures its content box: a
+520px drawer is 519 inside its border and must stay side by side. The rule contracts, so it has
+a `@media (max-width: 884px)` floor, per the skill's union: the drawer's content is under 500px
+below an 885px window, and folded is always stacked.
+
+### Worker rows
+
+```html
+<ul class="subagents-list" aria-label="Subagents">
+  <li>
+    <button class="subagent-row" type="button" aria-current="true">
+      <span class="subagent-row-name">designer</span>
+      <span class="subagent-row-status"><span class="chip chip-accent chip-live"><i class="chip-dot"></i>Working</span></span>
+      <span class="subagent-row-meta">claude-opus-5</span>
+      <span class="subagent-row-preview">Editing src/design/base.css</span>
+    </button>
+  </li>
+</ul>
+```
+
+- **Anatomy.** The whole row is the button, 44px minimum. Line 1 is the name (the team role when
+  the worker is a team member, else its own name), with the status chip at the right. Line 2 is
+  the meta. Line 3 is the preview, mono and one line, **only while working**. Every line
+  ellipsizes; the full preview goes in the row's `title`.
+- **Status** is §10's member table, word for word. The chip always carries the word:
+
+  | Worker | Chip | Meta |
+  |---|---|---|
+  | `running` | `.chip.chip-accent.chip-live` Working | `{model}` (the preview line carries the now) |
+  | `starting` | `.chip.chip-accent.chip-live` Starting | `{model}` |
+  | `waiting` | `.chip` + dot, Idle | `{model}` · as of `{HH:MM}` · after a failure: · last task failed |
+  | `stopping` | `.chip` + dot, Stopping | `{model}` |
+  | `done` | `.chip.chip-success` Done | `{model}` · as of `{HH:MM}` |
+  | `error` | `.chip.chip-error` Failed | `{model}` · as of `{HH:MM}` |
+  | `killed` | `.chip` + dot, Stopped | `{model}` · as of `{HH:MM}` |
+
+  "As of" is `endedAt`, else `lastActivity`, mono 24-hour, the full ISO time in `title`. **Only a
+  live-sourced Working or Starting chip pulses**, so each row has one pulsing thing at most. While
+  the pane's connection is down, nothing pulses and every row reads "as of" the last update.
+- **Order.** Working first, then the most recent activity first. Rows keep their identity across
+  updates, so a row never jumps under the pointer except when its status changes.
+- **Selected** is `aria-current="true"`: the house accent tint (like a selected session row) plus
+  a semibold name, so the state isn't hue alone. Hover is sunken. Focus-visible is the ring, inset.
+- **Selection.** Opening the pane selects the first row if nothing is selected yet. The
+  selection is sticky while the pane is open: if the selected worker drops out of the live list,
+  its last known record, and so its transcript, stays shown until you pick another row or close
+  the pane. That keeps a finished worker's transcript readable after the parent prunes it.
+
+### Transcript view
+
+A nested, read-only session view: **no composer, no Send, no Steer, no Stop, no attach**, and
+no disabled composer with a reason either. A worker's session belongs to its worker, and the
+webapp never writes to it (CLAUDE.md: no file locking).
+
+```html
+<div class="subagents-view">
+  <header class="subagents-view-head">
+    <h3 class="subagents-view-title">designer</h3>
+    <span class="chip chip-accent chip-live"><i class="chip-dot"></i>Working</span>
+    <p class="subagents-view-meta"><span class="text-mono">ag_03</span> · <span class="text-mono">claude-opus-5</span> · Read only</p>
+  </header>
+  <section class="subagents-transcript pane" tabindex="0" aria-label="designer transcript">
+    <div class="subagents-banner stack-2">…banners, or nothing…</div>
+    <div class="thread">…the same rows as §3…</div>
+  </section>
+  <button class="button jump-latest subagents-jump">Jump to Latest · 3 new</button>   <!-- scrolled up only -->
+</div>
+```
+
+- **Sub-header.** `.subagents-view-head` names the worker on surface above the scroll region, so
+  it never scrolls away (sticky by construction, not by `position: sticky`). The title is body
+  semibold, then the same status chip as the row, then a meta line: id and model in mono, then
+  "Read only". That's the only place the read-only fact is written; it's also self-evident, since
+  there's nothing to type into. The head repeats the row on purpose: stacked, the list may be
+  scrolled away.
+- **Thread.** The same §3 rows, capped at the transcript column (`--measure` + `--space-9`) and
+  centred, 16px side padding. Auto-follow and Jump to Latest behave exactly as §3 "Live-watch".
+  `.subagents-jump` is `.jump-latest` held inside the view's width.
+- **Banners** go in `.subagents-banner`, sticky at the top of the scroll region, taking no space
+  when empty, like `.transcript-banner`.
+
+| State | Renders in `.subagents-view` |
+|---|---|
+| No workers (the list is empty) | `.empty.subagents-empty`, no view head: **0 subagents in this session.** Workers it starts show up here while they run. The list is empty, not hidden |
+| Workers, none selected | `.empty.subagents-empty`: **{n} subagents, {w} working.** Pick one to read its transcript. |
+| Workers list couldn't be fetched | `.banner-warn`: **Couldn't load this session's subagents.** {message} Your workers keep running. We'll retry on our own. Whatever is shown stays |
+| Selected, file empty (just started) | View head, then `.empty.subagents-empty`: **0 entries in {name}'s session so far.** Entries show up here as it writes them. |
+| Loading (after 300ms) | View head, then §3's loading skeletons in the thread. `aria-busy="true"` on the section |
+| Selected, no session file (Claude Code worker) | View head, then `.empty.subagents-empty`: **Its transcript isn't available in pi-web.** `{name}` runs on Claude Code, and pi-web only reads pi session files. Latest: {preview, mono}. (Pi worker from an older pi-config: …runs on a pi that doesn't publish its session file yet.) |
+| File gone, first load | View head, then `.empty.subagents-empty`: **Couldn't find this worker's transcript.** `{path}` is gone. Nothing else changed. |
+| File gone after loading | Keep what's shown. `.banner-warn` in the banner slot: **This transcript's file is gone.** What's shown is up to `{HH:MM}`. |
+| Connection lost, retrying | Keep what's shown. `.banner-warn`: **Stopped watching. The connection dropped.** What's shown is up to `{HH:MM}`. Reconnecting… (§9 Live-watch). Pulses stop |
+| Gave up | `.banner-error`: **Lost the connection to the pi-web server.** Nothing in the session changed. Check `npm run dev:server` is running, then retry. · `Reconnect` |
+| Other load error | `.banner-error`: **Couldn't load this transcript.** The file at `{path}` wasn't changed. {server message} · `Retry` |
+
+A settled worker's transcript stays readable: Done, Failed and Stopped workers keep their rows
+for as long as the parent lists them, and a selected one stays shown after that (sticky
+selection, above).
+
+### Narrow viewports
+
+Folded (< 768), the pane is **full screen over the session view**. It isn't suppressed: on the
+phone this is the only way to watch a worker without leaving the session, and it costs nothing
+when closed. It's stacked (list on top, capped at 30vh). Close stays in the head at the right,
+in the thumb arc, and Esc works with a keyboard. There's no swipe to dismiss, since a gesture is
+never the door. The browser back button doesn't close it, because the pane isn't a route.
+
+### Accessibility
+
+- **Landmark.** `<aside aria-label="Subagents">`, a complementary landmark, with an `id` that
+  the trigger's `aria-controls` points at.
+- **Opening** moves focus to the selected row, or the first row. With no rows, it goes to the
+  close button.
+- **Focus order** follows the DOM: head (close), the rows, then the transcript section
+  (`tabindex="0"`, so the arrow keys and PageUp/PageDown scroll it), its banner actions, and
+  Jump to Latest. In the column band, Tab from the session's composer reaches the pane next.
+- **Esc** inside the pane closes it, unless a popover or menu inside it is open (that closes
+  first). Focus returns to the trigger if it's still rendered, or else to the session's
+  transcript section (`#transcript`). The same happens after Close.
+- **Rows.** Each is a `<button>` in a labelled list. The selected one carries
+  `aria-current="true"`. Its name reads the name, status word, meta, and preview in order.
+- **No aggressive live regions.** The pane announces nothing on updates: no `role="log"`, no
+  `aria-live` on the list, the chip, or the thread. Status words are text, and a user who wants
+  them reads the row. The session's single polite region (§3) stays the only one.
+- **Contrast.** Everything here is an existing pair: muted on accent-tint (the selected row's
+  meta) is 5.05 (dark) and 4.68 (light), ink on accent-tint is 12.57 and 14.57, and muted on
+  surface and sunken are already measured (§3).
+
+### Motion
+
+Opening, the pane fades in and slides 24px from the right over `--dur-base` with
+`--ease-standard`, in every band. Closing is instant: the aside unmounts, and a surface that's
+leaving shouldn't hold the eye. The column doesn't animate its width, because the thread
+reflowing mid-animation is worse than a jump. Under `prefers-reduced-motion`, the slide goes
+(the animation becomes `enter-fade`) and `tokens.css` collapses its duration. The live pulse is
+the existing one.
+
+### Tokens
+
+Three new layout tokens in `tokens.css`: `--main-min` (440px), `--subagents-width`
+(`clamp(520px, 40vw, 880px)`), `--subagents-list-width` (256px). **No new colors.** The pane uses
+surface, paper, sunken, border, accent-tint for the selected row, and the §10 chips.
+
+### Rejected
+
+- **A route (`#/s/<path>/agents/<id>`).** Back would then close panes and walk through workers,
+  where it should walk through sessions. The pane is a view of the session, not a destination.
+- **Squeezing the thread to fit the column below 1280.** At 933 it leaves the conversation
+  under 100px wide. The drawer keeps it whole underneath.
+- **Hiding the sidebar to make room.** It moves the one navigation surface depending on
+  whether a side panel is open.
+- **Suppressing the pane when folded.** It removes the feature from the device the product is
+  designed for.
+- **A tab strip for workers.** Tabs truncate names at 3 workers, and they can't carry status,
+  meta, and preview. The list can.
+- **Opening `#/agents` from the trigger.** That's a different question (every session) and
+  leaves the conversation.
+- **A pressed or tinted trigger while open.** It adds a state that the pane beside it already
+  shows.

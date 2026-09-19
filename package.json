@@ -9,6 +9,7 @@
   "scripts": {
     "dev:server": "node scripts/dev-server.mjs",
     "dev:server:tsx": "tsx watch server/index.ts",
+    "dev:server:detached": "PI_WORKER_TRANSPORT=host node scripts/dev-server.mjs",
     "dev:web": "vite",
     "typecheck": "tsc --noEmit",
     "build": "tsc --noEmit && vite build",

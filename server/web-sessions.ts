@@ -34,3 +34,14 @@ export function addWebSession(id: string): void {
   renameSync(tmp, FILE);
   ids = next;
 }
+
+/** Drop a web-spawned id (its session file was deleted); same write rules as addWebSession. */
+export function removeWebSession(id: string): void {
+  const next = load();
+  if (!next.delete(id)) return; // absent: the in-memory set already matches the file
+  mkdirSync(dirname(FILE), { recursive: true });
+  const tmp = `${FILE}.${process.pid}.tmp`;
+  writeFileSync(tmp, JSON.stringify([...next]));
+  renameSync(tmp, FILE);
+  ids = next;
+}

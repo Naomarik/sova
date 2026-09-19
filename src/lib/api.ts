@@ -10,6 +10,7 @@ import type {
   UploadResult,
   UsageInsight,
 } from "../../shared/protocol";
+import { type CleanupRequest, parseCleanupResult } from "./archive";
 
 export class ApiError extends Error {
   constructor(
@@ -80,6 +81,18 @@ export const setSessionArchived = (path: string, archived: boolean) =>
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ path, archived }),
   });
+
+/**
+ * Deletes archive sessions by age or empty "husks" (DESIGN_NOTES §2 "Archive cleanup"). With
+ * `dryRun` nothing is deleted and the result says what would be. Read leniently: the server may
+ * send fewer fields.
+ */
+export const cleanupSessions = (req: CleanupRequest, dryRun: boolean) =>
+  request<unknown>("/api/sessions/cleanup", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ ...req, dryRun }),
+  }).then(parseCleanupResult);
 
 export const fetchTranscript = (path: string) =>
   request<{ items: TranscriptItem[] }>(`/api/transcript?path=${encodeURIComponent(path)}`).then((r) => r.items);

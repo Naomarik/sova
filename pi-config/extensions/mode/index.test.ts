@@ -6,7 +6,7 @@ import test from "node:test";
 import { buildMinorPrompt, isMinorMode, MINOR_DESCRIPTIONS, MINOR_MODES, normalizeMinorModes, parseMinorFlag } from "./minor.ts";
 import { MODE_CATEGORY_ID, modeCategoryItems } from "./palette.ts";
 import { pickPlanner } from "./planner.ts";
-import { buildHeavyPrompt, composePrompt, PLANNER_FALLBACK, PLANNER_PRIMARY, statusLabel } from "./prompt.ts";
+import { buildHeavyPrompt, composePrompt, HEAVY_ALIGN_BRIDGE, PLANNER_FALLBACK, PLANNER_PRIMARY, statusLabel } from "./prompt.ts";
 import {
 	DEFAULT_ALIGN_VIEWER_SHORTCUT,
 	DEFAULT_MODE_SHORTCUT,
@@ -169,7 +169,11 @@ test("composePrompt joins the heavy block and minor blocks", () => {
 	const both = composePrompt({ ...normalAlign, mode: "claude-heavy" }, PLANNER_FALLBACK) ?? "";
 	assert.match(both, /^# Mode: claude-heavy/);
 	assert.ok(both.indexOf("# Mode: claude-heavy") < both.indexOf("# Minor mode: align"), "heavy before align");
-	assert.equal(both, `${buildHeavyPrompt(PLANNER_FALLBACK)}\n\n${buildMinorPrompt("align")}`);
+	assert.equal(both, `${buildHeavyPrompt(PLANNER_FALLBACK)}\n\n${HEAVY_ALIGN_BRIDGE}\n\n${buildMinorPrompt("align")}`);
+	// The bridge only exists when both are on: heavy alone and align alone stay verbatim.
+	assert.doesNotMatch(heavy ?? "", /align minor mode is on/);
+	assert.doesNotMatch(alignOnly ?? "", /align minor mode is on/);
+	assert.match(HEAVY_ALIGN_BRIDGE, /no implementation worker until the user has confirmed/);
 	assert.doesNotMatch(both, /\{[A-Z_]+\}/);
 
 	const align = buildMinorPrompt("align");

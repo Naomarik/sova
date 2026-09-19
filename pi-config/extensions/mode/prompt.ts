@@ -36,10 +36,19 @@ export function buildHeavyPrompt(planner: PlannerChoice): string {
 		.replace("{FALLBACK_NOTE}", fallbackNote);
 }
 
+/**
+ * Appended to the heavy block while align is also on. Without it the heavy block's "delegate all else"
+ * wins: the orchestrator spawns an implementation worker before any alignment block is emitted.
+ */
+export const HEAVY_ALIGN_BRIDGE = `The align minor mode is on and takes precedence over delegation: for any ask that needs alignment, spawn at most a non-editing planning worker to investigate, emit the alignment block yourself, and spawn no implementation worker until the user has confirmed.`;
+
 /** Everything to append to this turn's system prompt: heavy block first, then minor blocks in registry order. */
 export function composePrompt(state: ModeState, planner: PlannerChoice): string | undefined {
 	const blocks: string[] = [];
-	if (state.mode === "claude-heavy") blocks.push(buildHeavyPrompt(planner));
+	if (state.mode === "claude-heavy") {
+		const heavy = buildHeavyPrompt(planner);
+		blocks.push(state.minorModes.includes("align") ? `${heavy}\n\n${HEAVY_ALIGN_BRIDGE}` : heavy);
+	}
 	for (const minor of state.minorModes) blocks.push(buildMinorPrompt(minor));
 	return blocks.length > 0 ? blocks.join("\n\n") : undefined;
 }

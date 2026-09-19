@@ -1,15 +1,60 @@
 /**
  * Lifecycle tests for SubagentRunner, using a fake child process injected via
- * the spawnImpl seam. No real pi processes are spawned. Run with:
+ * the spawnImpl seam plus local Node fake CLIs. No real pi processes are spawned. Run with:
  *
  *   node tests/run.mjs
  */
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { EventEmitter } from "node:events";
-import type { ChildProcess } from "node:child_process";
+import { EventEmitter, getEventListeners } from "node:events";
+import { spawn, type ChildProcess } from "node:child_process";
 import { BUILTIN_TOOLS, type SpawnOptions, SubagentRunner } from "./runner.ts";
+
+for (const exitMode of ["natural", "term", "kill"]) test(`detached pipe holder cannot hang Pi closure (${exitMode})`, { skip: process.platform === "win32", timeout: 5000 }, async (t) => {
+	const naturalExit = exitMode === "natural";
+	let child: ChildProcess | undefined; let descendant: number | undefined;
+	let settled = 0; let exits = 0; let leaderExited = false;
+	const pause = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+	const script = `
+		const {spawn}=require('node:child_process');
+		const gc=spawn(process.execPath,['-e',"process.send('ready');setInterval(()=>{},1000);setTimeout(()=>process.exit(0),10000)"],{detached:true,stdio:['ignore','inherit','inherit','ipc']});
+		gc.once('message',()=>{process.send(gc.pid);gc.disconnect();gc.unref();});
+		process.stdin.resume();
+		if (${exitMode === "kill"}) process.on('SIGTERM',()=>{});
+		process.on('message',()=>process.exit(7));
+	`;
+	const runner = new SubagentRunner({ id: "pipe-test", groupId: "g", name: "fake", task: "wait", cwd: "/tmp",
+		timings: { requestTimeoutMs: 2000, abortGraceMs: 20, termGraceMs: 20, pipeDrainMs: 100 },
+		spawnImpl: (_command, _args, opts) => {
+			child = spawn(process.execPath, ["-e", script], { ...opts, stdio: ["pipe", "pipe", "pipe", "ipc"] });
+			child.on("message", (pid) => { descendant = Number(pid); });
+			child.on("exit", () => { leaderExited = true; });
+			return child;
+		},
+	}, { onChange() {}, onSettled() { settled++; }, onExit() { exits++; } });
+	t.after(async () => {
+		if (descendant) { try { process.kill(descendant, "SIGKILL"); } catch {} }
+		if (child && !leaderExited) child.kill("SIGKILL");
+		await runner.whenClosed;
+	});
+	for (let i = 0; i < 150 && !descendant; i++) await pause(10);
+	assert.ok(descendant);
+	let completed = false;
+	if (naturalExit) child!.send("exit"); else void runner.kill();
+	void runner.whenClosed.then(() => { completed = true; });
+	for (let i = 0; i < 150 && !leaderExited; i++) await pause(5);
+	assert.equal(leaderExited, true);
+	assert.equal(runner.processAlive, false); assert.equal(runner.isFinished(), false);
+	assert.equal(completed, false); assert.equal(settled, 0);
+	assert.equal((await runner.steer("must not write to dead leader")).ok, false);
+	await runner.whenClosed;
+	assert.equal(runner.status, naturalExit ? "error" : "killed");
+	assert.equal(child!.signalCode, naturalExit ? null : exitMode === "kill" ? "SIGKILL" : "SIGTERM");
+	assert.equal(settled, 1); assert.equal(exits, 1);
+	assert.equal(child!.stdout!.destroyed, true); assert.equal(child!.stderr!.destroyed, true);
+	assert.equal(process.kill(descendant!, 0), true, "detached descendant is outside containment");
+});
 
 // ── fake child ─────────────────────────────────────────────────────────────
 
@@ -198,6 +243,18 @@ test("spawn args: model, effort, tools, no-extensions, system prompt", async () 
 	assert.ok(sysIdx !== -1 && args[sysIdx + 1].endsWith("system.md"));
 	assert.equal(h.runner.status, "running");
 	await fin(h);
+});
+
+test("env is merged over the parent's environment only when given", async () => {
+	const withEnv = makeRunner({ env: { PI_SUBAGENTS_TEAM_MEMBER: "{\"version\":1}" } });
+	await boot(withEnv.child);
+	assert.equal(withEnv.spawnCalls[0].opts.env.PI_SUBAGENTS_TEAM_MEMBER, "{\"version\":1}");
+	assert.equal(withEnv.spawnCalls[0].opts.env.PATH, process.env.PATH, "the child keeps the parent's environment");
+	await fin(withEnv);
+	const plain = makeRunner({});
+	await boot(plain.child);
+	assert.equal("env" in plain.spawnCalls[0].opts, false, "no env option means Node's default inheritance");
+	await fin(plain);
 });
 
 test("empty tools allowlist uses --no-tools, absent tools uses no flag", async () => {
@@ -414,6 +471,7 @@ test("assistant failure marks the TASK failed while process parks steerable", as
 	assert.equal(h.runner.error, "provider 500");
 	assert.equal(h.runner.finalOutput(), "partial");
 	assert.equal(h.counts.settled, 1);
+	assert.equal(h.runner.isStopping(), false, "recoverable failure is steerable, not stopping");
 	await fin(h);
 });
 
@@ -695,6 +753,109 @@ test("a second steer while acceptance is pending is rejected", async () => {
 	await fin(h);
 });
 
+for (const mode of ["redirect", "followUp"] as const) {
+	for (const reply of ["accept", "reject", "missing"] as const) {
+		test(`cancel in-flight ${mode} wait without stopping worker (${reply} ACK)`, { timeout: 2000 }, async () => {
+			const h = makeRunner({ timings: { ...TEST_TIMINGS, requestTimeoutMs: 100 } });
+			try {
+				await boot(h.child);
+				const controller = new AbortController();
+				const waiting = h.runner.steer("new instructions", controller.signal, mode);
+				const line = await lastSteerLine(h.child);
+				controller.abort();
+				const result = await waiting;
+				assert.equal(result.ok, false);
+				assert.match(result.reason ?? "", /cancelled.*delivery unknown.*not stopped/);
+				assert.equal(getEventListeners(controller.signal, "abort").length, 0);
+				assert.equal(h.runner.status, "running");
+				assert.equal(h.runner.taskOutcome, undefined);
+				assert.equal(h.counts.settled, 0, "cancelling a wait is not task completion");
+				assert.match((await h.runner.steer("duplicate")).reason ?? "", /awaiting acceptance/);
+				if (reply !== "missing") h.child.reply(line.id, reply === "accept", undefined, "not allowed");
+				await flush(120); // cancellation must not become a delayed timeout kill
+				assert.equal(h.runner.processAlive, true);
+				assert.deepEqual(h.child.killSignals, []);
+				assert.ok(!h.child.sentLines().some(l => l.type === "abort"));
+				assert.equal(h.runner.steerCount, reply === "reject" ? 0 : 1);
+				assert.equal(h.runner.transcript.filter(t => t.kind === "steer").length, reply === "reject" ? 0 : 1);
+				if (reply !== "reject") h.child.event({ type: "agent_start" });
+				assistant(h.child, "actual output"); settle(h.child);
+				assert.equal(h.runner.status, "waiting");
+				assert.equal(h.runner.taskOutcome, "success");
+				assert.equal(h.runner.finalOutput(), "actual output");
+				assert.equal(h.counts.settled, 1);
+				const next = h.runner.steer("another task");
+				const nextLine = await lastSteerLine(h.child);
+				h.child.reply(nextLine.id, true);
+				assert.equal((await next).ok, true);
+			} finally { await fin(h); }
+		});
+	}
+}
+
+test("cancelled idle steer preserves completion which races its late ACK", async () => {
+	const h = makeRunner();
+	try {
+		await boot(h.child);
+		assistant(h.child, "old result"); settle(h.child);
+		const controller = new AbortController();
+		const waiting = h.runner.steer("new task", controller.signal);
+		const line = await lastSteerLine(h.child);
+		h.child.event({ type: "agent_start" });
+		assistant(h.child, "new result", { errorMessage: "actual task failure" }); settle(h.child);
+		controller.abort();
+		assert.equal((await waiting).ok, false);
+		h.child.reply(line.id, true);
+		await flush();
+		assert.equal(h.counts.settled, 2);
+		assert.equal(h.runner.status, "waiting");
+		assert.equal(h.runner.taskOutcome, "error");
+		assert.equal(h.runner.error, "actual task failure");
+		assert.equal(h.runner.finalOutput(), "new result");
+		assert.deepEqual(h.child.killSignals, []);
+	} finally { await fin(h); }
+});
+
+test("cancelled steer reconciles streaming rejection without resending", async () => {
+	const h = makeRunner();
+	try {
+		await boot(h.child);
+		assistant(h.child, "old result"); settle(h.child);
+		const controller = new AbortController();
+		const waiting = h.runner.steer("new task", controller.signal);
+		const line = await lastSteerLine(h.child);
+		controller.abort(); await waiting;
+		h.child.reply(line.id, false, undefined, "Agent is streaming");
+		await flush();
+		assert.equal(h.child.sentLines().filter(l => l.type === "prompt").length, 2);
+		assert.equal(h.runner.status, "waiting");
+		assert.equal(h.runner.taskOutcome, "success");
+		assert.equal(h.runner.finalOutput(), "old result");
+		assert.equal(h.runner.steerCount, 0);
+		assert.equal(h.counts.settled, 1);
+	} finally { await fin(h); }
+});
+
+test("steer cancellation listeners are removed on ACK and pre-aborted steers send nothing", async () => {
+	const h = makeRunner();
+	try {
+		await boot(h.child);
+		const before = h.child.sentLines().length;
+		await assert.rejects(h.runner.steer("no send", AbortSignal.abort()), /abort/i);
+		assert.equal(h.child.sentLines().length, before);
+		assert.equal(h.runner.steerCount, 0);
+		const controller = new AbortController();
+		const waiting = h.runner.steer("accepted", controller.signal);
+		const line = await lastSteerLine(h.child);
+		h.child.reply(line.id, true);
+		assert.equal((await waiting).ok, true);
+		assert.equal(getEventListeners(controller.signal, "abort").length, 0);
+		controller.abort();
+		assert.equal(h.runner.status, "running");
+		assert.deepEqual(h.child.killSignals, []);
+	} finally { await fin(h); }
+});
+
 test("steer with no ACK fails closed as acceptance-unknown", async () => {
 	const h = makeRunner({ timings: { ...TEST_TIMINGS, requestTimeoutMs: 40 } });
 	await boot(h.child);
@@ -742,11 +903,14 @@ test("steer is refused while starting, stopping, or finished", async () => {
 
 	const h = makeRunner();
 	await boot(h.child);
+	assert.equal(h.runner.isStopping(), false);
 	const killPromise = h.runner.kill();
 	assert.equal(h.runner.status, "stopping");
+	assert.equal(h.runner.isStopping(), true);
 	assert.equal((await h.runner.steer("x")).ok, false);
 	await killPromise;
 	assert.equal(h.runner.status, "killed");
+	assert.equal(h.runner.isStopping(), false, "finished, no longer stopping");
 	assert.equal((await h.runner.steer("x")).ok, false);
 	// Also during the fail-teardown window (error status, process alive).
 	const f = makeRunner();
@@ -754,8 +918,10 @@ test("steer is refused while starting, stopping, or finished", async () => {
 	f.child.stdin.emit("error", new Error("write EPIPE"));
 	await flush();
 	assert.equal(f.runner.status, "error");
+	assert.equal(f.runner.isStopping(), true, "fail() teardown is advertised");
 	assert.equal((await f.runner.steer("x")).ok, false);
 	await f.runner.whenClosed;
+	assert.equal(f.runner.isStopping(), false);
 });
 
 test("finalOutput is scoped to the current task after an accepted steer", async () => {
@@ -818,6 +984,21 @@ test("kill escalates SIGTERM → SIGKILL when the child ignores SIGTERM", async 
 	await killPromise;
 	assert.equal(h.runner.status, "killed");
 	assert.equal(h.counts.exits, 1);
+});
+
+test("failed signals never prove Pi death or settle shutdown", async (t) => {
+	const h = makeRunner({ timings: { ...TEST_TIMINGS, pipeDrainMs: 10 } });
+	t.after(() => h.child.close(null, "SIGKILL"));
+	await boot(h.child);
+	h.child.kill = (signal = "SIGTERM") => { h.child.killSignals.push(signal); return false; };
+	let closed = false; void h.runner.kill().then(() => { closed = true; });
+	await flush(150);
+	assert.deepEqual(h.child.killSignals, ["SIGTERM", "SIGKILL"]);
+	assert.equal(h.runner.processAlive, true); assert.equal(h.runner.isFinished(), false);
+	assert.equal(h.runner.isSettled(), false); assert.equal(closed, false);
+	assert.equal(h.counts.settled, 0); assert.equal(h.counts.exits, 0);
+	h.child.close(null, "SIGKILL"); await h.runner.whenClosed;
+	assert.equal(h.counts.settled, 1); assert.equal(h.counts.exits, 1);
 });
 
 test("dispose uses the fast ladder and resolves on close", async () => {
@@ -1049,4 +1230,794 @@ test("usage accumulates across assistant turns and tool results", async () => {
 	assert.equal(h.runner.usage.contextTokens, 15);
 	assert.equal(h.runner.unreadCount, 2);
 	await fin(h);
+});
+
+// ── task boundaries across queued continuation (Pi 0.85 agent-session semantics) ──
+
+/** Pi's user-message event for delivered prompts/steers. */
+function userMessage(child: FakeChild, text: string): void {
+	child.event({ type: "message_end", message: { role: "user", content: [{ type: "text", text }] } });
+}
+
+for (const mode of ["followUp", "redirect"] as const) {
+	test(`failed run followed by Pi's queued continuation reports the failure (${mode})`, async () => {
+		const h = makeRunner();
+		try {
+			await boot(h.child);
+			h.child.event({ type: "agent_start" });
+			const p = h.runner.steer("FOLLOW", undefined, mode);
+			const line = await lastSteerLine(h.child);
+			h.child.reply(line.id, true);
+			assert.equal((await p).ok, true);
+			// Non-retryable failure ends the run; Pi's post-run loop continues the queue.
+			assistant(h.child, "partial", { stopReason: "error", errorMessage: "400 invalid request" });
+			h.child.event({ type: "agent_end", messages: [], willRetry: false });
+			h.child.event({ type: "agent_start" });
+			userMessage(h.child, "FOLLOW");
+			assistant(h.child, "follow-up done", { stopReason: "stop" });
+			h.child.event({ type: "agent_end", messages: [], willRetry: false });
+			settle(h.child);
+			await flush();
+			assert.equal(h.counts.settled, 1, "one session-level settle, one announcement");
+			assert.deepEqual(h.counts.snapshots[0], { status: "waiting", taskOutcome: "error", finalOutput: "follow-up done" });
+			assert.match(h.runner.error ?? "", /Earlier instructions failed.*400 invalid request/);
+			assert.ok(h.runner.transcript.some((t) => t.kind === "error" && /400 invalid request.*continuing queued/.test(t.text)));
+			// The next explicit task starts clean.
+			const next = h.runner.steer("NEXT");
+			h.child.reply((await lastSteerLine(h.child)).id, true);
+			await next;
+			h.child.event({ type: "agent_start" });
+			assistant(h.child, "clean");
+			settle(h.child);
+			await flush();
+			assert.equal(h.runner.taskOutcome, "success");
+			assert.equal(h.runner.error, undefined);
+		} finally { await fin(h); }
+	});
+}
+
+test("continuation failure after a carried failure keeps both errors", async () => {
+	const h = makeRunner();
+	try {
+		await boot(h.child);
+		h.child.event({ type: "agent_start" });
+		assistant(h.child, "", { stopReason: "error", errorMessage: "first failure" });
+		h.child.event({ type: "agent_start" }); // extension-queued continuation, no steer armed
+		assistant(h.child, "", { stopReason: "error", errorMessage: "second failure" });
+		settle(h.child);
+		await flush();
+		assert.equal(h.runner.taskOutcome, "error");
+		assert.match(h.runner.error ?? "", /first failure.*final run error: second failure/);
+	} finally { await fin(h); }
+});
+
+test("auto-retry and overflow-compaction runs are recovery, not carried failures", async () => {
+	for (const recovery of ["retry", "agent_end", "compaction"] as const) {
+		const h = makeRunner();
+		try {
+			await boot(h.child);
+			h.child.event({ type: "agent_start" });
+			assistant(h.child, "", { stopReason: "error", errorMessage: "transient" });
+			if (recovery === "retry") h.child.event({ type: "auto_retry_start", attempt: 1, maxAttempts: 3, errorMessage: "transient" });
+			if (recovery === "agent_end") h.child.event({ type: "agent_end", messages: [], willRetry: true });
+			if (recovery === "compaction") h.child.event({ type: "compaction_end", reason: "overflow", result: {}, aborted: false, willRetry: true });
+			h.child.event({ type: "agent_start" });
+			assistant(h.child, "recovered");
+			settle(h.child);
+			await flush();
+			assert.equal(h.runner.taskOutcome, "success", recovery);
+			assert.equal(h.runner.error, undefined);
+			assert.ok(!h.runner.transcript.some((t) => /continuing queued/.test(t.text)));
+		} finally { await fin(h); }
+	}
+});
+
+test("exhausted retry followed by queued continuation is carried", async () => {
+	const h = makeRunner();
+	try {
+		await boot(h.child);
+		h.child.event({ type: "agent_start" });
+		assistant(h.child, "", { stopReason: "error", errorMessage: "529" });
+		h.child.event({ type: "auto_retry_start", attempt: 1, maxAttempts: 1, errorMessage: "529" });
+		h.child.event({ type: "agent_start" });
+		assistant(h.child, "", { stopReason: "error", errorMessage: "529 again" });
+		h.child.event({ type: "auto_retry_end", success: false, attempt: 1, finalError: "529 again" });
+		h.child.event({ type: "agent_start" });
+		assistant(h.child, "queued work");
+		settle(h.child);
+		await flush();
+		assert.equal(h.runner.taskOutcome, "error");
+		assert.match(h.runner.error ?? "", /529 again/);
+		assert.equal(h.runner.finalOutput(), "queued work");
+	} finally { await fin(h); }
+});
+
+test("predecessor settle racing a steer marker announces the predecessor's own output", async () => {
+	const h = makeRunner();
+	try {
+		await boot(h.child);
+		h.child.event({ type: "agent_start" });
+		assistant(h.child, "OLD ANSWER");
+		await flush();
+		const p = h.runner.steer("NEW TASK"); // the runner still believes Pi is running
+		const line = await lastSteerLine(h.child);
+		settle(h.child); // the old task's settle was already in flight
+		await flush();
+		assert.deepEqual(h.counts.snapshots[0], { status: "waiting", taskOutcome: "success", finalOutput: "OLD ANSWER" });
+		h.child.reply(line.id, true);
+		assert.equal((await p).ok, true);
+		h.child.event({ type: "agent_start" });
+		assert.equal(h.runner.finalOutput(), "", "the new run does not inherit the old answer");
+		assistant(h.child, "NEW ANSWER");
+		settle(h.child);
+		await flush();
+		assert.deepEqual(h.counts.snapshots[1], { status: "waiting", taskOutcome: "success", finalOutput: "NEW ANSWER" });
+	} finally { await fin(h); }
+});
+
+// Transcript trimming may evict the armed steer marker; output boundaries must not depend on it.
+for (const delivery of ["agent_start", "user message"] as const) {
+	for (const next of ["empty", "new output"] as const) {
+		test(`trimmed steer marker keeps the task output boundary (${delivery}, ${next})`, async () => {
+			const h = makeRunner({ limits: { maxTranscriptBytes: 120 } });
+			try {
+				await boot(h.child);
+				h.child.event({ type: "agent_start" });
+				const p = h.runner.steer("NEW TASK");
+				h.child.reply((await lastSteerLine(h.child)).id, true);
+				assert.equal((await p).ok, true);
+				// The predecessor keeps streaming after the provisional marker until it
+				// is evicted; its answer is the newest surviving transcript item.
+				h.child.event({ type: "tool_execution_start", toolName: "bash", toolCallId: "t1", args: { command: "echo evict" } });
+				assistant(h.child, "PREDECESSOR ANSWER");
+				assert.ok(!h.runner.transcript.some((t) => t.kind === "steer"), "steer marker was trimmed");
+				assert.equal(h.runner.transcript.at(-1)?.text, "PREDECESSOR ANSWER");
+				if (delivery === "agent_start") {
+					settle(h.child); // predecessor settles first: its own output is announced
+					await flush();
+					assert.deepEqual(h.counts.snapshots[0], { status: "waiting", taskOutcome: "success", finalOutput: "PREDECESSOR ANSWER" });
+					h.child.event({ type: "agent_start" });
+				} else {
+					userMessage(h.child, "NEW TASK");
+				}
+				assert.equal(h.runner.finalOutput(), "", "the new task does not inherit the predecessor's output");
+				assert.equal(h.runner.transcript.at(-1)?.kind, "steer", "the boundary is shown again at the new run");
+				if (next === "new output") assistant(h.child, "NEW ANSWER");
+				else h.child.event({ type: "tool_execution_start", toolName: "bash", toolCallId: "t2", args: { command: "true" } });
+				settle(h.child);
+				await flush();
+				assert.deepEqual(h.counts.snapshots.at(-1), {
+					status: "waiting",
+					taskOutcome: "success",
+					finalOutput: next === "new output" ? "NEW ANSWER" : "",
+				});
+				assert.equal(h.counts.settled, delivery === "agent_start" ? 2 : 1);
+			} finally { await fin(h); }
+		});
+	}
+}
+
+test("trimmed steer marker: predecessor output before the arm is not the pending steer's", async () => {
+	const h = makeRunner({ limits: { maxTranscriptBytes: 120 } });
+	try {
+		await boot(h.child);
+		h.child.event({ type: "agent_start" });
+		assistant(h.child, "OLD ANSWER");
+		const p = h.runner.steer("NEW TASK");
+		h.child.reply((await lastSteerLine(h.child)).id, true);
+		assert.equal((await p).ok, true);
+		for (let i = 0; i < 3; i++) h.child.event({ type: "tool_execution_start", toolName: "bash", toolCallId: `t${i}`, args: { command: `step ${i}` } });
+		assert.ok(!h.runner.transcript.some((t) => t.kind === "steer"), "steer marker was trimmed");
+		// Before the predecessor settles, the armed steer is the boundary, as without trimming.
+		assert.equal(h.runner.finalOutput(), "");
+		settle(h.child);
+		await flush();
+		assert.deepEqual(h.counts.snapshots[0], { status: "waiting", taskOutcome: "success", finalOutput: "OLD ANSWER" });
+	} finally { await fin(h); }
+});
+
+test("steer delivered inside the running run moves the boundary without agent_start", async () => {
+	const h = makeRunner();
+	try {
+		await boot(h.child);
+		h.child.event({ type: "agent_start" });
+		const p = h.runner.steer("STEERED");
+		h.child.reply((await lastSteerLine(h.child)).id, true);
+		await p;
+		assistant(h.child, "old output after the provisional marker");
+		userMessage(h.child, "STEERED"); // delivered before the next LLM call
+		assert.equal(h.runner.finalOutput(), "", "old output is not the steered task's answer");
+		h.child.event({ type: "message_end", message: { role: "assistant", content: [{ type: "toolCall", name: "bash" }] } });
+		settle(h.child);
+		await flush();
+		assert.deepEqual(h.counts.snapshots[0], { status: "waiting", taskOutcome: "success", finalOutput: "" });
+		const texts = h.runner.transcript.map((t) => `${t.kind}:${t.text}`);
+		assert.ok(texts.indexOf("steer:STEERED") > texts.indexOf("assistant:old output after the provisional marker"));
+	} finally { await fin(h); }
+});
+
+// Pi expands /skill: commands and prompt templates before queueing a streaming
+// prompt: queue_update (sent before the ACK) and the delivered user message carry
+// the expanded text, and Pi dequeues the entry right before that user message.
+
+/** Pi's queue_update event. */
+function queueUpdate(child: FakeChild, steering: string[], followUp: string[] = []): void {
+	child.event({ type: "queue_update", steering, followUp });
+}
+
+const SKILL_BODY = '<skill name="review" location="/skills/review/SKILL.md">\nReview carefully.\n</skill>\n\ndo it';
+
+/** Steer while Pi streams; Pi queues `expanded` (after `ahead`) before ACKing. */
+async function queuedSteer(h: Harness, raw: string, queue: string[], mode?: "followUp"): Promise<void> {
+	const p = h.runner.steer(raw, undefined, mode);
+	const line = await lastSteerLine(h.child);
+	if (mode === "followUp") queueUpdate(h.child, [], queue);
+	else queueUpdate(h.child, queue);
+	h.child.reply(line.id, true);
+	assert.deepEqual(await p, { ok: true });
+}
+
+test("expanded /skill steer delivered in-run: a failed steered task does not inherit old output", async () => {
+	const h = makeRunner();
+	try {
+		await boot(h.child);
+		h.child.event({ type: "agent_start" });
+		assistant(h.child, "OLD ANSWER");
+		await queuedSteer(h, "/skill:review do it", [SKILL_BODY]);
+		queueUpdate(h.child, []);
+		userMessage(h.child, SKILL_BODY);
+		assert.equal(h.runner.finalOutput(), "", "boundary moved at the expanded delivery");
+		assistant(h.child, "", { stopReason: "error", errorMessage: "api boom" });
+		settle(h.child);
+		await flush();
+		assert.equal(h.counts.settled, 1);
+		assert.deepEqual(h.counts.snapshots[0], { status: "waiting", taskOutcome: "error", finalOutput: "" });
+		const texts = h.runner.transcript.map((t) => `${t.kind}:${t.text}`);
+		assert.ok(texts.indexOf("steer:/skill:review do it") > texts.indexOf("assistant:OLD ANSWER"));
+	} finally { await fin(h); }
+});
+
+test("expanded prompt-template follow-up delivered in-run starts a fresh task", async () => {
+	const h = makeRunner();
+	try {
+		await boot(h.child);
+		h.child.event({ type: "agent_start" });
+		await queuedSteer(h, "/fix auth", ["Fix the bug in auth. Add a regression test."], "followUp");
+		assistant(h.child, "OLD ANSWER");
+		queueUpdate(h.child, [], []);
+		userMessage(h.child, "Fix the bug in auth. Add a regression test.");
+		assert.equal(h.runner.finalOutput(), "");
+		assistant(h.child, "FIXED");
+		settle(h.child);
+		await flush();
+		assert.deepEqual(h.counts.snapshots, [{ status: "waiting", taskOutcome: "success", finalOutput: "FIXED" }]);
+	} finally { await fin(h); }
+});
+
+test("a same-text user message Pi did not dequeue is not the armed steer's delivery", async () => {
+	const h = makeRunner();
+	try {
+		await boot(h.child);
+		h.child.event({ type: "agent_start" });
+		await queuedSteer(h, "/skill:review do it", [SKILL_BODY]);
+		userMessage(h.child, SKILL_BODY); // e.g. the initial prompt or a replay: not from the queue
+		assistant(h.child, "OLD ANSWER");
+		assert.equal(h.runner.finalOutput(), "OLD ANSWER", "boundary not moved yet");
+		queueUpdate(h.child, []);
+		userMessage(h.child, SKILL_BODY);
+		assert.equal(h.runner.finalOutput(), "");
+		assistant(h.child, "", { stopReason: "error", errorMessage: "api boom" });
+		settle(h.child);
+		await flush();
+		assert.deepEqual(h.counts.snapshots, [{ status: "waiting", taskOutcome: "error", finalOutput: "" }]);
+		const texts = h.runner.transcript.map((t) => `${t.kind}:${t.text}`);
+		assert.ok(texts.indexOf("steer:/skill:review do it") > texts.indexOf("assistant:OLD ANSWER"));
+	} finally { await fin(h); }
+});
+
+test("an earlier queued steer with the same expanded text does not start the armed steer", async () => {
+	const h = makeRunner();
+	try {
+		await boot(h.child);
+		h.child.event({ type: "agent_start" });
+		await queuedSteer(h, "/skill:review first", [SKILL_BODY]);
+		await queuedSteer(h, "/skill:review second", [SKILL_BODY, SKILL_BODY]);
+		queueUpdate(h.child, [SKILL_BODY]);
+		userMessage(h.child, SKILL_BODY); // the FIRST steer
+		assistant(h.child, "FIRST ANSWER");
+		assert.equal(h.runner.finalOutput(), "FIRST ANSWER", "second steer not delivered yet");
+		queueUpdate(h.child, []);
+		userMessage(h.child, SKILL_BODY); // the armed (second) steer
+		assert.equal(h.runner.finalOutput(), "");
+		assistant(h.child, "", { stopReason: "error", errorMessage: "api boom" });
+		settle(h.child);
+		await flush();
+		assert.deepEqual(h.counts.snapshots, [{ status: "waiting", taskOutcome: "error", finalOutput: "" }]);
+	} finally { await fin(h); }
+});
+
+test("a rejected steer restores the earlier armed steer's queue entry", async () => {
+	const h = makeRunner();
+	try {
+		await boot(h.child);
+		h.child.event({ type: "agent_start" });
+		await queuedSteer(h, "/skill:review do it", [SKILL_BODY]);
+		assistant(h.child, "OLD ANSWER");
+		const p = h.runner.steer("second");
+		h.child.reply((await lastSteerLine(h.child)).id, false, undefined, "nope");
+		assert.equal((await p).ok, false);
+		queueUpdate(h.child, []);
+		userMessage(h.child, SKILL_BODY);
+		assert.equal(h.runner.finalOutput(), "");
+		assistant(h.child, "", { stopReason: "error", errorMessage: "api boom" });
+		settle(h.child);
+		await flush();
+		assert.deepEqual(h.counts.snapshots, [{ status: "waiting", taskOutcome: "error", finalOutput: "" }]);
+	} finally { await fin(h); }
+});
+
+// An earlier accepted steer can be delivered while a later steer awaits its ACK;
+// if that later steer is rejected, the earlier one's delivery must not be lost.
+for (const tracked of [true, false]) {
+	test(`earlier steer delivered in-run while a later steer is pending, then the later is rejected (${tracked ? "queue-tracked" : "text match"})`, async () => {
+		const h = makeRunner();
+		try {
+			await boot(h.child);
+			h.child.event({ type: "agent_start" });
+			const earlier = tracked ? SKILL_BODY : "EARLIER";
+			if (tracked) await queuedSteer(h, "/skill:review do it", [SKILL_BODY]);
+			else {
+				const p = h.runner.steer("EARLIER");
+				h.child.reply((await lastSteerLine(h.child)).id, true);
+				assert.equal((await p).ok, true);
+			}
+			assistant(h.child, "OLD ANSWER");
+			const p = h.runner.steer("LATER");
+			const line = await lastSteerLine(h.child);
+			if (tracked) queueUpdate(h.child, []);
+			userMessage(h.child, earlier); // the earlier steer starts inside the run
+			assistant(h.child, "", { stopReason: "error", errorMessage: "api boom" });
+			h.child.reply(line.id, false, undefined, "nope");
+			assert.equal((await p).ok, false);
+			assert.equal(h.runner.finalOutput(), "", "the earlier steer's task does not inherit OLD ANSWER");
+			settle(h.child);
+			await flush();
+			assert.deepEqual(h.counts.snapshots, [{ status: "waiting", taskOutcome: "error", finalOutput: "" }]);
+			assert.ok(!h.runner.transcript.some((t) => t.text === "LATER"), "rejected marker removed");
+			// Nothing is left armed: a later run is not mistaken for the earlier steer's.
+			h.child.event({ type: "agent_start" });
+			assistant(h.child, "NEXT");
+			settle(h.child);
+			await flush();
+			assert.equal(h.counts.settled, 1, "an unarmed follow-on run does not re-announce");
+		} finally { await fin(h); }
+	});
+}
+
+test("earlier follow-up started by agent_start while a later steer is pending, then the later is rejected", async () => {
+	const h = makeRunner();
+	try {
+		await boot(h.child);
+		h.child.event({ type: "agent_start" });
+		await queuedSteer(h, "/fix auth", ["FIX"], "followUp");
+		assistant(h.child, "OLD ANSWER");
+		settle(h.child); // the predecessor settles and is announced; the follow-up is still queued
+		await flush();
+		assert.deepEqual(h.counts.snapshots, [{ status: "waiting", taskOutcome: "success", finalOutput: "OLD ANSWER" }]);
+		const p = h.runner.steer("LATER");
+		const line = await lastSteerLine(h.child);
+		queueUpdate(h.child, [], []);
+		h.child.event({ type: "agent_start" }); // Pi drains the earlier follow-up
+		userMessage(h.child, "FIX");
+		h.child.reply(line.id, false, undefined, "nope");
+		assert.equal((await p).ok, false);
+		assistant(h.child, "FIXED");
+		settle(h.child);
+		await flush();
+		assert.deepEqual(h.counts.snapshots[1], { status: "waiting", taskOutcome: "success", finalOutput: "FIXED" });
+		assert.equal(h.counts.settled, 2);
+	} finally { await fin(h); }
+});
+
+test("expanded steer delivered in-run after its marker was trimmed keeps the sequence boundary", async () => {
+	const h = makeRunner({ limits: { maxTranscriptBytes: 160 } });
+	try {
+		await boot(h.child);
+		h.child.event({ type: "agent_start" });
+		await queuedSteer(h, "/skill:review do it", [SKILL_BODY]);
+		for (let i = 0; i < 3; i++) h.child.event({ type: "tool_execution_start", toolName: "bash", toolCallId: `t${i}`, args: { command: `step ${i}` } });
+		assistant(h.child, "OLD ANSWER");
+		assert.ok(!h.runner.transcript.some((t) => t.kind === "steer"), "steer marker was trimmed");
+		assert.equal(h.runner.finalOutput(), "OLD ANSWER", "predecessor output after the arm is still current");
+		userMessage(h.child, SKILL_BODY); // not dequeued: not the steer's delivery
+		assert.equal(h.runner.finalOutput(), "OLD ANSWER");
+		queueUpdate(h.child, []);
+		userMessage(h.child, SKILL_BODY);
+		assert.equal(h.runner.finalOutput(), "", "boundary moved at the expanded delivery");
+		assert.equal(h.runner.transcript.at(-1)?.text, "/skill:review do it", "marker shown again at the new run");
+		assistant(h.child, "", { stopReason: "error", errorMessage: "api boom" });
+		settle(h.child);
+		await flush();
+		assert.deepEqual(h.counts.snapshots, [{ status: "waiting", taskOutcome: "error", finalOutput: "" }]);
+	} finally { await fin(h); }
+});
+
+test("queue tracking holds at most the armed and superseded steers' entries", async () => {
+	const h = makeRunner();
+	const tracked = () => (h.runner as any).queuedSteers.length as number;
+	try {
+		await boot(h.child);
+		h.child.event({ type: "agent_start" });
+		await queuedSteer(h, "one", ["ONE"]);
+		await queuedSteer(h, "two", ["ONE", "TWO"]);
+		await queuedSteer(h, "three", ["ONE", "TWO", "THREE"]);
+		assert.equal(tracked(), 1, "superseded, accepted steers are no longer tracked");
+		queueUpdate(h.child, []); // e.g. an abort clears Pi's queues
+		assert.equal(tracked(), 0);
+		userMessage(h.child, "THREE");
+		settle(h.child);
+		await flush();
+		assert.equal(tracked(), 0);
+	} finally { await fin(h); }
+});
+
+/** Reply to every unanswered get_state request. */
+function answerState(child: FakeChild, answered: Set<string>, data: Record<string, unknown>): number {
+	let n = 0;
+	for (const line of child.sentLines()) {
+		if (line.type !== "get_state" || answered.has(line.id)) continue;
+		answered.add(line.id); n++;
+		child.reply(line.id, true, { sessionId: "sess-1", ...data });
+	}
+	return n;
+}
+
+test("cancelled unacknowledged steer is reconciled with get_state when Pi is idle", { timeout: 3000 }, async () => {
+	const h = makeRunner({ timings: { ...TEST_TIMINGS, requestTimeoutMs: 60 } });
+	try {
+		await boot(h.child);
+		assistant(h.child, "old");
+		settle(h.child);
+		await flush();
+		const answered = new Set<string>(h.child.sentLines().filter((l) => l.type === "get_state").map((l) => l.id));
+		const controller = new AbortController();
+		const waiting = h.runner.steer("LOST", controller.signal);
+		await lastSteerLine(h.child);
+		controller.abort();
+		assert.equal((await waiting).ok, false);
+		await flush(80); // ACK deadline passes: reconciliation starts instead of a kill
+		assert.equal(h.runner.status, "running");
+		assert.equal(answerState(h.child, answered, { isStreaming: false, isCompacting: false, pendingMessageCount: 0 }), 1);
+		await flush();
+		assert.equal(h.counts.settled, 1, "one idle reading is not enough");
+		assert.equal(answerState(h.child, answered, { isStreaming: false, isCompacting: false, pendingMessageCount: 0 }), 1);
+		await flush();
+		assert.equal(h.runner.status, "waiting");
+		assert.equal(h.runner.taskOutcome, "error");
+		assert.match(h.runner.error ?? "", /acceptance unknown.*may not have been delivered/);
+		assert.equal(h.counts.settled, 2);
+		assert.equal(h.counts.snapshots[1].finalOutput, "", "no false completion output");
+		assert.deepEqual(h.child.killSignals, []);
+		assert.ok(!h.child.sentLines().some((l) => l.type === "abort"));
+		// A late run for the steer still begins and announces normally.
+		h.child.event({ type: "agent_start" });
+		assert.equal(h.runner.taskOutcome, undefined);
+		assistant(h.child, "late but real");
+		settle(h.child);
+		await flush();
+		assert.equal(h.counts.settled, 3);
+		assert.equal(h.runner.taskOutcome, "success");
+		assert.equal(h.runner.finalOutput(), "late but real");
+	} finally { await fin(h); }
+});
+
+test("reconciliation leaves a streaming or queued Pi to its own settle", { timeout: 3000 }, async () => {
+	for (const data of [{ isStreaming: true, pendingMessageCount: 0 }, { isStreaming: false, pendingMessageCount: 1 }]) {
+		const h = makeRunner({ timings: { ...TEST_TIMINGS, requestTimeoutMs: 60 } });
+		try {
+			await boot(h.child);
+			const answered = new Set<string>(h.child.sentLines().filter((l) => l.type === "get_state").map((l) => l.id));
+			const controller = new AbortController();
+			const waiting = h.runner.steer("QUEUED", controller.signal, "followUp");
+			await lastSteerLine(h.child);
+			controller.abort();
+			await waiting;
+			await flush(80);
+			assert.equal(answerState(h.child, answered, data), 1);
+			await flush(150);
+			assert.equal(h.child.sentLines().filter((l) => l.type === "get_state").length, answered.size, "no further polling");
+			assert.equal(h.runner.status, "running");
+			assert.equal(h.counts.settled, 0);
+			assistant(h.child, "done");
+			settle(h.child);
+			await flush();
+			assert.equal(h.runner.status, "waiting");
+			assert.equal(h.runner.taskOutcome, "success");
+		} finally { await fin(h); }
+	}
+});
+
+test("unanswered reconciliation records a diagnostic but never kills", { timeout: 3000 }, async () => {
+	const h = makeRunner({ timings: { ...TEST_TIMINGS, requestTimeoutMs: 30 } });
+	try {
+		await boot(h.child);
+		assistant(h.child, "old");
+		settle(h.child);
+		await flush();
+		const controller = new AbortController();
+		const waiting = h.runner.steer("LOST", controller.signal);
+		await lastSteerLine(h.child);
+		controller.abort();
+		await waiting;
+		await flush(250); // ACK deadline + four unanswered get_state deadlines
+		assert.equal(h.runner.status, "running");
+		assert.match(h.runner.error ?? "", /could not confirm.*agent_kill/);
+		assert.ok(h.runner.transcript.some((t) => t.kind === "error" && /could not confirm/.test(t.text)));
+		assert.equal(h.counts.settled, 1, "no fabricated completion");
+		assert.deepEqual(h.child.killSignals, []);
+		assert.equal(h.runner.processAlive, true);
+	} finally { await fin(h); }
+});
+
+// ── readiness and progress-aware prompt ACKs ───────────────────────────────
+// Real Pi ACKs a prompt only after preflight, which may run a whole compaction
+// LLM call; it answers get_state concurrently meanwhile.
+
+/** Answer every get_state as a compacting Pi until `stop()`; counts answered probes. */
+function answerProbes(child: FakeChild, answered: Set<string>, data: Record<string, unknown> = { isCompacting: true, isStreaming: false }) {
+	let probes = 0;
+	const timer = setInterval(() => { probes += answerState(child, answered, data); }, 5);
+	return { stop: () => clearInterval(timer), count: () => probes };
+}
+
+function stateIds(child: FakeChild): Set<string> {
+	return new Set(child.sentLines().filter((l) => l.type === "get_state").map((l) => l.id));
+}
+
+test("initial prompt ACK delayed by preflight compaction is not a timeout", { timeout: 3000 }, async () => {
+	const h = makeRunner({ timings: { ...TEST_TIMINGS, requestTimeoutMs: 40 } });
+	try {
+		await flush();
+		for (const line of h.child.sentLines()) if (line.type === "get_state") h.child.reply(line.id, true, {});
+		await flush();
+		h.child.event({ type: "compaction_start", reason: "threshold" });
+		const probes = answerProbes(h.child, stateIds(h.child));
+		assert.match((await h.runner.steer("early")).reason ?? "", /compacting/);
+		await flush(250); // several quiet windows past the old fixed deadline
+		probes.stop();
+		assert.equal(h.runner.status, "running");
+		assert.equal(h.runner.error, undefined);
+		assert.deepEqual(h.child.killSignals, []);
+		assert.ok(probes.count() >= 2, "liveness probed each quiet window");
+		h.child.event({ type: "compaction_end", reason: "threshold", aborted: false, willRetry: false, result: {} });
+		const prompts = h.child.sentLines().filter((l) => l.type === "prompt");
+		assert.equal(prompts.length, 1, "prompt never resent");
+		h.child.reply(prompts[0].id, true);
+		await flush();
+		const p = h.runner.steer("now steerable");
+		h.child.reply((await lastSteerLine(h.child)).id, true);
+		assert.equal((await p).ok, true);
+		h.child.event({ type: "agent_start" }); assistant(h.child, "done"); settle(h.child);
+		assert.equal(h.runner.taskOutcome, "success");
+	} finally { await fin(h); }
+});
+
+test("ACK shortly after compaction_end gets one more window", { timeout: 3000 }, async () => {
+	const h = makeRunner({ timings: { ...TEST_TIMINGS, requestTimeoutMs: 40 } });
+	try {
+		await flush();
+		const answered = new Set<string>();
+		assert.equal(answerState(h.child, answered, {}), 1, "readiness");
+		await flush();
+		h.child.event({ type: "compaction_start", reason: "threshold" });
+		await flush(20);
+		h.child.event({ type: "compaction_end", reason: "threshold", aborted: false, result: {} });
+		await flush(30); // first window ends: compaction activity seen, probe answered
+		assert.equal(answerState(h.child, answered, { isCompacting: false }), 1);
+		await flush(20);
+		const prompt = h.child.sentLines().find((l) => l.type === "prompt");
+		h.child.reply(prompt.id, true);
+		await flush();
+		assert.equal(h.runner.status, "running");
+		assert.deepEqual(h.child.killSignals, []);
+	} finally { await fin(h); }
+});
+
+test("compaction ACK wait fails closed when the probe goes unanswered", { timeout: 3000 }, async () => {
+	const h = makeRunner({ timings: { ...TEST_TIMINGS, requestTimeoutMs: 40 } });
+	await flush();
+	for (const line of h.child.sentLines()) if (line.type === "get_state") h.child.reply(line.id, true, {});
+	await flush();
+	h.child.event({ type: "compaction_start", reason: "threshold" });
+	await flush(120); // quiet window + unanswered probe deadline
+	assert.equal(h.runner.status, "error");
+	assert.match(h.runner.error ?? "", /Initial prompt rejected: no response/);
+	await h.runner.whenClosed;
+	assert.equal(h.child.sentLines().filter((l) => l.type === "prompt").length, 1);
+});
+
+test("compaction ACK wait is capped by ackMaxMs; a late ACK changes nothing", { timeout: 3000 }, async () => {
+	const h = makeRunner({ timings: { ...TEST_TIMINGS, requestTimeoutMs: 30, ackMaxMs: 150 } });
+	await flush();
+	for (const line of h.child.sentLines()) if (line.type === "get_state") h.child.reply(line.id, true, {});
+	await flush();
+	h.child.event({ type: "compaction_start", reason: "threshold" });
+	const probes = answerProbes(h.child, stateIds(h.child));
+	await flush(260);
+	probes.stop();
+	assert.equal(h.runner.status, "error");
+	assert.match(h.runner.error ?? "", /no response within 1\d\dms/);
+	const prompt = h.child.sentLines().find((l) => l.type === "prompt");
+	h.child.reply(prompt.id, true);
+	await h.runner.whenClosed;
+	assert.equal(h.runner.status, "error");
+	assert.equal(h.child.sentLines().filter((l) => l.type === "prompt").length, 1);
+});
+
+test("idle steer ACK delayed by preflight compaction is accepted", { timeout: 3000 }, async () => {
+	const h = makeRunner({ timings: { ...TEST_TIMINGS, requestTimeoutMs: 40 } });
+	try {
+		await boot(h.child);
+		assistant(h.child, "old"); settle(h.child);
+		await flush();
+		const answered = stateIds(h.child);
+		const steer = h.runner.steer("continue after compaction");
+		const line = await lastSteerLine(h.child);
+		assert.equal(line.streamingBehavior, undefined);
+		h.child.event({ type: "compaction_start", reason: "threshold" });
+		const probes = answerProbes(h.child, answered);
+		await flush(200);
+		probes.stop();
+		assert.equal(h.runner.processAlive, true);
+		assert.deepEqual(h.child.killSignals, []);
+		h.child.event({ type: "compaction_end", reason: "threshold", aborted: false, result: {} });
+		h.child.reply(line.id, true);
+		assert.equal((await steer).ok, true);
+		h.child.event({ type: "agent_start" }); assistant(h.child, "new"); settle(h.child);
+		assert.equal(h.runner.taskOutcome, "success");
+		assert.equal(h.runner.finalOutput(), "new");
+	} finally { await fin(h); }
+});
+
+test("cancelling a steer during a compaction ACK wait still never kills", { timeout: 3000 }, async () => {
+	const h = makeRunner({ timings: { ...TEST_TIMINGS, requestTimeoutMs: 40 } });
+	try {
+		await boot(h.child);
+		settle(h.child);
+		await flush();
+		const answered = stateIds(h.child);
+		const controller = new AbortController();
+		const steer = h.runner.steer("x", controller.signal);
+		const line = await lastSteerLine(h.child);
+		h.child.event({ type: "compaction_start", reason: "threshold" });
+		const probes = answerProbes(h.child, answered);
+		await flush(60);
+		controller.abort();
+		assert.match((await steer).reason ?? "", /cancelled/);
+		await flush(100);
+		probes.stop();
+		assert.match((await h.runner.steer("dup")).reason ?? "", /awaiting acceptance/, "steers stay serialized");
+		h.child.event({ type: "compaction_end", reason: "threshold", aborted: false, result: {} });
+		h.child.reply(line.id, true);
+		await flush();
+		assert.deepEqual(h.child.killSignals, []);
+		assert.equal(h.runner.steerCount, 1);
+	} finally { await fin(h); }
+});
+
+test("slow startup: prompt is sent only after get_state, without spending its ACK budget", { timeout: 3000 }, async () => {
+	const h = makeRunner({ timings: { ...TEST_TIMINGS, requestTimeoutMs: 40, startupTimeoutMs: 1000 } });
+	try {
+		await flush(120); // longer than requestTimeoutMs: still booting
+		assert.equal(h.runner.status, "starting");
+		assert.ok(!h.child.sentLines().some((l) => l.type === "prompt"));
+		assert.equal(h.child.sentLines().filter((l) => l.type === "get_state").length, 1, "readiness query never resent");
+		await boot(h.child);
+		assert.equal(h.runner.status, "running");
+		assert.equal(h.runner.sessionId, "sess-1");
+		assert.equal(h.child.sentLines().filter((l) => l.type === "prompt").length, 1);
+		assert.deepEqual(h.child.killSignals, []);
+	} finally { await fin(h); }
+});
+
+test("child that never becomes ready fails closed without sending the task", { timeout: 3000 }, async () => {
+	const h = makeRunner({ timings: { ...TEST_TIMINGS, startupTimeoutMs: 60 } });
+	await flush(100);
+	assert.equal(h.runner.status, "error");
+	assert.match(h.runner.error ?? "", /did not become ready.*get_state/);
+	assert.ok(!h.child.sentLines().some((l) => l.type === "prompt"));
+	await h.runner.whenClosed;
+	assert.equal(h.counts.exits, 1);
+});
+
+// ── delayed ACK × queue correlation ─────────────────────────────────────────
+// Pi emits queue_update (and may even deliver the steer) before the ACK; an
+// extended ACK wait must keep that correlation and the output boundaries.
+
+test("queue_update and in-run delivery before a delayed steer ACK start the expanded task once", { timeout: 3000 }, async () => {
+	const h = makeRunner({ timings: { ...TEST_TIMINGS, requestTimeoutMs: 40 } });
+	try {
+		await boot(h.child);
+		h.child.event({ type: "agent_start" });
+		assistant(h.child, "OLD ANSWER");
+		const answered = stateIds(h.child);
+		const p = h.runner.steer("/skill:review do it");
+		const line = await lastSteerLine(h.child);
+		queueUpdate(h.child, [SKILL_BODY]); // queued (expanded) before the ACK
+		h.child.event({ type: "compaction_start", reason: "threshold" });
+		const probes = answerProbes(h.child, answered);
+		await flush(150); // several quiet windows past the old fixed deadline
+		probes.stop();
+		assert.deepEqual(h.child.killSignals, []);
+		assert.ok(probes.count() >= 2);
+		assistant(h.child, "STILL OLD"); // the predecessor streams on after the arm
+		assert.equal(h.runner.finalOutput(), "STILL OLD", "not delivered yet");
+		h.child.event({ type: "compaction_end", reason: "threshold", aborted: false, result: {} });
+		queueUpdate(h.child, []);
+		userMessage(h.child, SKILL_BODY); // delivered while the ACK is still outstanding
+		assert.equal(h.runner.finalOutput(), "", "boundary moved before the ACK");
+		h.child.reply(line.id, true);
+		assert.deepEqual(await p, { ok: true });
+		assistant(h.child, "", { stopReason: "error", errorMessage: "api boom" });
+		settle(h.child);
+		await flush();
+		assert.deepEqual(h.counts.snapshots, [{ status: "waiting", taskOutcome: "error", finalOutput: "" }]);
+		assert.equal(h.child.sentLines().filter((l) => l.type === "prompt" && l.streamingBehavior).length, 1, "steer never resent");
+		assert.equal((h.runner as any).queuedSteers.length, 0);
+	} finally { await fin(h); }
+});
+
+test("earlier steer delivered during a later steer's extended ACK wait stands when the later is rejected", { timeout: 3000 }, async () => {
+	const h = makeRunner({ timings: { ...TEST_TIMINGS, requestTimeoutMs: 40 } });
+	try {
+		await boot(h.child);
+		h.child.event({ type: "agent_start" });
+		await queuedSteer(h, "/skill:review do it", [SKILL_BODY]);
+		assistant(h.child, "OLD ANSWER");
+		const answered = stateIds(h.child);
+		const p = h.runner.steer("LATER");
+		const line = await lastSteerLine(h.child);
+		h.child.event({ type: "compaction_start", reason: "threshold" });
+		const probes = answerProbes(h.child, answered);
+		await flush(100);
+		queueUpdate(h.child, []);
+		userMessage(h.child, SKILL_BODY); // the earlier steer starts mid-wait
+		assistant(h.child, "EARLIER ANSWER");
+		await flush(100);
+		probes.stop();
+		h.child.event({ type: "compaction_end", reason: "threshold", aborted: false, result: {} });
+		h.child.reply(line.id, false, undefined, "nope");
+		assert.equal((await p).ok, false);
+		assert.equal(h.runner.finalOutput(), "EARLIER ANSWER");
+		settle(h.child);
+		await flush();
+		assert.deepEqual(h.counts.snapshots, [{ status: "waiting", taskOutcome: "success", finalOutput: "EARLIER ANSWER" }]);
+		assert.deepEqual(h.child.killSignals, []);
+	} finally { await fin(h); }
+});
+
+test("transcript: write/edit tool items carry a render-only +/− summary; text keeps the one-liner", async () => {
+	const h = makeRunner();
+	try {
+		await boot(h.child);
+		h.child.event({ type: "agent_start" });
+		h.child.event({ type: "tool_execution_start", toolName: "write", toolCallId: "t1", args: { path: "/r/member.ts", content: "a\nb\nc\n" } });
+		h.child.event({
+			type: "tool_execution_start",
+			toolName: "edit",
+			toolCallId: "t2",
+			args: { path: "/r/teams.ts", edits: [{ oldText: "x\ny", newText: "x\nz\nw" }] },
+		});
+		h.child.event({ type: "tool_execution_start", toolName: "bash", toolCallId: "t3", args: { command: "ls" } });
+		const tools = h.runner.transcript.filter((t) => t.kind === "tool");
+		assert.deepEqual(
+			tools.map((t) => [t.text, t.summary]),
+			[
+				["/r/member.ts", "✎ write /r/member.ts  +3"],
+				["/r/teams.ts", "✎ edit /r/teams.ts  +2 −1"],
+				["ls", undefined],
+			],
+		);
+		assert.ok(!("summary" in tools[2]), "items without a summary keep their original shape");
+	} finally { await fin(h); }
 });

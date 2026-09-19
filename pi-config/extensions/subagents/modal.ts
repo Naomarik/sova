@@ -6,8 +6,8 @@
  *   Subagents   the "contact list" for the selected run
  *   Transcript  the selected subagent's output
  *
- * Deliberately read-only: there is no compose box, because the user does not
- * talk to subagents directly — the main thread does, via the agent_steer tool.
+ * No inline compose box: optional redirect/follow-up controls delegate to the
+ * host, which owns the editor prompt and delivery to the selected backend.
  *
  * Layout guarantees:
  *   - every rendered line is exactly `width` cells (or a safe fallback when
@@ -22,19 +22,22 @@
 
 import { stripVTControlCharacters } from "node:util";
 import { matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
-import type { SubagentRunner, TranscriptKind } from "./runner.ts";
+import { transcriptDisplayText } from "./codefold.ts";
+import type { SteerMode, TranscriptItem, Worker } from "./contracts.ts";
 
 export interface AgentGroup {
 	id: string;
 	label: string;
 	createdAt: number;
-	agents: SubagentRunner[];
+	agents: Worker[];
 }
 
 export interface ModalHost {
 	getGroups(): AgentGroup[];
 	killAgent(id: string): void;
 	killGroup(id: string): void;
+	/** Host owns prompting, async re-entry guards, delivery, and error reporting. */
+	steerAgent?(id: string, mode: SteerMode): void;
 	requestRender(): void;
 	close(): void;
 }
@@ -52,11 +55,11 @@ const MIN_LAYOUT_WIDTH = 34;
 /** Auto-cancel an armed kill confirmation after this long. */
 const CONFIRM_TIMEOUT_MS = 3000;
 
-function clamp(n: number, lo: number, hi: number): number {
+export function clamp(n: number, lo: number, hi: number): number {
 	return Math.max(lo, Math.min(n, hi));
 }
 
-function pad(text: string, width: number): string {
+export function pad(text: string, width: number): string {
 	if (width <= 0) return "";
 	const w = visibleWidth(text);
 	if (w >= width) return truncateToWidth(text, width, "…", true);
@@ -73,7 +76,7 @@ const TAB_SPACES = " ".repeat(TAB_WIDTH);
  * stripped, remaining control characters become spaces, tabs expand, and
  * newlines collapse to spaces so nothing can repaint or reflow the row.
  */
-function inline(text: unknown): string {
+export function inline(text: unknown): string {
 	return stripVTControlCharacters(String(text ?? ""))
 		.replace(/\r\n?/g, " ")
 		.replace(/\n/g, " ")
@@ -87,7 +90,7 @@ function inline(text: unknown): string {
  * Multi-line text for transcript bodies: same stripping, but newlines are
  * preserved (wrapTextWithAnsi splits on them) and space runs are left intact.
  */
-function bodyText(text: unknown): string {
+export function bodyText(text: unknown): string {
 	return stripVTControlCharacters(String(text ?? ""))
 		.replace(/\r\n/g, "\n")
 		.replace(/\r/g, "\n")
@@ -95,14 +98,14 @@ function bodyText(text: unknown): string {
 		.replace(CONTROL_CHARS, " ");
 }
 
-function relativeTime(ts: number): string {
+export function relativeTime(ts: number): string {
 	const seconds = Math.max(0, Math.round((Date.now() - ts) / 1000));
 	if (seconds < 60) return `${seconds}s`;
 	if (seconds < 3600) return `${Math.round(seconds / 60)}m`;
 	return `${Math.round(seconds / 3600)}h`;
 }
 
-function formatTokens(n: number): string {
+export function formatTokens(n: number): string {
 	if (n < 1000) return String(n);
 	if (n < 1_000_000) return `${(n / 1000).toFixed(1)}k`;
 	return `${(n / 1_000_000).toFixed(1)}M`;
@@ -112,15 +115,57 @@ function formatTokens(n: number): string {
  * True when a subagent's task failed — the process may still be alive in
  * `waiting` (steerable), so status alone must not decide this.
  */
-function failedOutcome(agent: SubagentRunner): boolean {
+function failedOutcome(agent: Worker): boolean {
 	if (agent.status === "error" || agent.status === "killed") return true;
 	return agent.taskOutcome === "error" || agent.taskOutcome === "aborted";
+}
+
+/**
+ * First visible row for a 2-rows-per-item list, keeping `selected` fully
+ * on screen with minimal movement and never splitting an item's row pair.
+ */
+export function windowStart(itemCount: number, selected: number, visibleRows: number, current: number): number {
+	if (itemCount === 0 || visibleRows <= 0) return 0;
+	const total = itemCount * 2;
+	const maxStart = Math.max(0, total - visibleRows);
+	const selTop = clamp(selected, 0, itemCount - 1) * 2;
+	let start = clamp(current, 0, maxStart);
+	if (visibleRows <= 1) {
+		start = Math.min(selTop, maxStart);
+	} else {
+		if (selTop < start) start = selTop;
+		if (selTop + 2 > start + visibleRows) start = selTop + 2 - visibleRows;
+	}
+	start -= start % 2; // keep item boundaries
+	return clamp(start, 0, maxStart);
+}
+
+/** Label and theme color for one transcript item kind (shared with TeamModal). */
+export function transcriptLabel(kind: TranscriptItem["kind"], toolName?: string): { label: string; color: string } {
+	switch (kind) {
+		case "task":
+			return { label: "▸ TASK", color: "accent" };
+		case "steer":
+			return { label: "▸ NEW INSTRUCTIONS", color: "warning" };
+		case "assistant":
+			return { label: "", color: "toolOutput" };
+		case "tool":
+			return { label: `→ ${toolName ? inline(toolName) : "tool"}`, color: "muted" };
+		case "tool-result":
+			return { label: "  ↳ failed", color: "error" };
+		case "error":
+			return { label: "✗ error", color: "error" };
+		default:
+			return { label: "", color: "dim" };
+	}
 }
 
 export class AgentsModal {
 	private focus: Pane = "agents";
 	private groupIndex = 0;
 	private agentIndex = 0;
+	private selectedGroupId?: string;
+	private selectedAgentId?: string;
 	/** Until the user picks a run themselves, the newest run stays selected. */
 	private groupPinned = false;
 	private scroll = 0;
@@ -134,6 +179,8 @@ export class AgentsModal {
 	private cachedKey?: string;
 	/** Transcript wrap cache, independent of the per-frame cache. */
 	private wraps = new WeakMap<object, { key: string; rows: CachedRow[] }>();
+	/** Folded code blocks are expanded (`o` toggles; collapsed by default). */
+	private expanded = false;
 	private wrapHits = 0;
 	private wrapMisses = 0;
 
@@ -155,22 +202,37 @@ export class AgentsModal {
 
 	private currentGroup(): AgentGroup | undefined {
 		const groups = this.groups();
-		if (groups.length === 0) return undefined;
-		// Follow the newest run until the user explicitly selects one.
+		// IDs survive retention splices. If an ID disappears, choose the item at
+		// its former index (the successor), or the last remaining predecessor.
+		const retained = groups.findIndex((g) => g.id === this.selectedGroupId);
 		if (!this.groupPinned) this.groupIndex = groups.length - 1;
-		this.groupIndex = clamp(this.groupIndex, 0, groups.length - 1);
-		return groups[this.groupIndex];
+		else if (retained >= 0) this.groupIndex = retained;
+		this.groupIndex = clamp(this.groupIndex, 0, Math.max(0, groups.length - 1));
+		const group = groups[this.groupIndex];
+		if (group?.id !== this.selectedGroupId) {
+			this.selectedGroupId = group?.id;
+			this.selectedAgentId = undefined;
+			this.agentIndex = 0;
+			this.resetSelectionState();
+		}
+		return group;
 	}
 
-	private currentAgents(): SubagentRunner[] {
+	private currentAgents(): Worker[] {
 		return this.currentGroup()?.agents ?? [];
 	}
 
-	private currentAgent(): SubagentRunner | undefined {
+	private currentAgent(): Worker | undefined {
 		const agents = this.currentAgents();
-		if (agents.length === 0) return undefined;
-		this.agentIndex = clamp(this.agentIndex, 0, agents.length - 1);
-		return agents[this.agentIndex];
+		const retained = agents.findIndex((a) => a.id === this.selectedAgentId);
+		if (retained >= 0) this.agentIndex = retained;
+		this.agentIndex = clamp(this.agentIndex, 0, Math.max(0, agents.length - 1));
+		const agent = agents[this.agentIndex];
+		if (agent?.id !== this.selectedAgentId) {
+			this.selectedAgentId = agent?.id;
+			this.resetSelectionState();
+		}
+		return agent;
 	}
 
 	// ── input ────────────────────────────────────────────────────────────────
@@ -180,6 +242,9 @@ export class AgentsModal {
 			this.host.close();
 			return;
 		}
+
+		// Reconcile retention before navigation or actions, even without a render.
+		this.currentAgent();
 
 		// The hint says "any other key cancels" — make that true for EVERY key
 		// except a second `x`: handled keys, scroll keys, and stray letters all
@@ -203,10 +268,13 @@ export class AgentsModal {
 				this.groupIndex = clamp(this.groupIndex + (down ? 1 : -1), 0, Math.max(0, groups.length - 1));
 				// Selecting the newest run again re-enables follow mode.
 				if (this.groupIndex === groups.length - 1) this.groupPinned = false;
+				this.selectedGroupId = groups[this.groupIndex]?.id;
+				this.selectedAgentId = undefined;
 				this.agentIndex = 0;
 			} else {
 				const agents = this.currentAgents();
 				this.agentIndex = clamp(this.agentIndex + (down ? 1 : -1), 0, Math.max(0, agents.length - 1));
+				this.selectedAgentId = agents[this.agentIndex]?.id;
 			}
 			this.onSelectionChanged();
 			return;
@@ -233,6 +301,21 @@ export class AgentsModal {
 		if (matchesKey(data, "end")) {
 			this.autoScroll = true;
 			this.redraw();
+			return;
+		}
+
+		if (data === "o") {
+			// Accordion: expand/collapse every folded code block in the transcript.
+			this.expanded = !this.expanded;
+			this.redraw();
+			return;
+		}
+
+		if (matchesKey(data, "r") || matchesKey(data, "f")) {
+			const agent = this.steerableAgent();
+			// Redraw before transferring input ownership to a host-owned prompt.
+			if (wasArmed) this.redraw();
+			if (agent) this.host.steerAgent?.(agent.id, matchesKey(data, "r") ? "redirect" : "followUp");
 			return;
 		}
 
@@ -269,6 +352,15 @@ export class AgentsModal {
 		if (wasArmed) this.redraw();
 	}
 
+	private steerableAgent(): Worker | undefined {
+		if (this.focus !== "agents" || !this.host.steerAgent) return undefined;
+		const agent = this.currentAgent();
+		// A fatal failure reports "error" while teardown is still running, so ask
+		// the worker; a live "error" worker of a backend without isStopping stays
+		// steerable and the runner remains the authority on rejection.
+		return agent && !agent.isFinished() && agent.status !== "stopping" && !agent.isStopping?.() ? agent : undefined;
+	}
+
 	/** Two-press confirm, so a stray keystroke never kills anything. */
 	private armOrFire(token: string, fire: () => void): void {
 		if (this.confirmKill === token) {
@@ -293,10 +385,15 @@ export class AgentsModal {
 		}
 	}
 
-	private onSelectionChanged(): void {
+	private resetSelectionState(): void {
 		this.clearConfirm();
 		this.scroll = 0;
 		this.autoScroll = true;
+		this.invalidate();
+	}
+
+	private onSelectionChanged(): void {
+		this.resetSelectionState();
 		const agent = this.currentAgent();
 		if (agent) agent.unreadCount = 0;
 		this.redraw();
@@ -361,24 +458,8 @@ export class AgentsModal {
 		return { runsW, listW, paneW };
 	}
 
-	/**
-	 * First visible row for a 2-rows-per-item list, keeping `selected` fully
-	 * on screen with minimal movement and never splitting an item's row pair.
-	 */
 	private windowStart(itemCount: number, selected: number, visibleRows: number, current: number): number {
-		if (itemCount === 0 || visibleRows <= 0) return 0;
-		const total = itemCount * 2;
-		const maxStart = Math.max(0, total - visibleRows);
-		const selTop = clamp(selected, 0, itemCount - 1) * 2;
-		let start = clamp(current, 0, maxStart);
-		if (visibleRows <= 1) {
-			start = Math.min(selTop, maxStart);
-		} else {
-			if (selTop < start) start = selTop;
-			if (selTop + 2 > start + visibleRows) start = selTop + 2 - visibleRows;
-		}
-		start -= start % 2; // keep item boundaries
-		return clamp(start, 0, maxStart);
+		return windowStart(itemCount, selected, visibleRows, current);
 	}
 
 	// ── render ───────────────────────────────────────────────────────────────
@@ -413,9 +494,11 @@ export class AgentsModal {
 			this.agentIndex,
 			this.scroll,
 			this.autoScroll ? 1 : 0,
+			this.expanded ? 1 : 0,
 			this.runScroll,
 			this.agentScroll,
 			this.confirmKill ?? "",
+			this.steerableAgent()?.id ?? "",
 			Math.floor(Date.now() / 1000), // relative timestamps tick
 			signature,
 			groups
@@ -429,7 +512,7 @@ export class AgentsModal {
 			agents
 				.map(
 					(a) =>
-						`${a.status}:${a.taskOutcome ?? ""}:${a.transcript.length}:${a.usage?.turns ?? 0}:${a.unreadCount}:${
+						`${a.id}:${a.name}:${a.backend ?? "pi"}:${a.model ?? ""}:${a.status}:${a.taskOutcome ?? ""}:${a.transcript.length}:${a.usage?.turns ?? 0}:${a.unreadCount}:${
 							a.sessionId ?? ""
 						}`,
 				)
@@ -454,7 +537,7 @@ export class AgentsModal {
 				) +
 				b("┬") +
 				title(
-					` ${agent ? `${inline(agent.name)} · ${agent.model ? inline(agent.model) : "default model"}` : "no subagent"}`,
+					` ${agent ? `[${inline(agent.backend ?? "pi")}] ${inline(agent.name)} · ${agent.model ? inline(agent.model) : "default model"}` : "no subagent"}`,
 					paneW,
 					true,
 				) +
@@ -523,9 +606,11 @@ export class AgentsModal {
 			return th.fg("error", ` press x again to kill ${inline(this.confirmKill.slice(6))} · any other key cancels`);
 		}
 		const scope = this.focus === "runs" ? "run" : "subagent";
+		const fold = this.expanded ? "o collapse code" : "o expand code";
+		const steer = this.steerableAgent() ? "r redirect · f follow-up · " : "";
 		const base = th.fg(
 			"dim",
-			` Tab/←→ pane · ↑↓/jk select · PgUp/PgDn scroll · End follow · x kill ${scope} · Esc close`,
+			` ${steer}Tab/←→ pane · ↑↓/jk select · PgUp/PgDn scroll · End follow · ${fold} · x kill ${scope} · Esc close`,
 		);
 		if (this.autoScroll) return base;
 		const marker = th.fg("warning", " · [paused]");
@@ -568,7 +653,7 @@ export class AgentsModal {
 	}
 
 	private buildAgentRows(
-		items: SubagentRunner[],
+		items: Worker[],
 		width: number,
 		focused: boolean,
 		selectedOffset: number,
@@ -598,7 +683,7 @@ export class AgentsModal {
 	}
 
 	/** Per-subagent dot: failure-aware, so `waiting` never hides a failed task. */
-	private dotFor(agent: SubagentRunner): string {
+	private dotFor(agent: Worker): string {
 		const th = this.theme;
 		const failed = agent.taskOutcome === "error" || agent.taskOutcome === "aborted";
 		switch (agent.status) {
@@ -621,7 +706,7 @@ export class AgentsModal {
 	}
 
 	private buildTranscriptRows(
-		agent: SubagentRunner | undefined,
+		agent: Worker | undefined,
 		width: number,
 		height: number,
 		signature: string,
@@ -659,7 +744,7 @@ export class AgentsModal {
 	 * signature that also catches in-place trim-marker rewrites: item count,
 	 * first/last anchors, and total text volume.
 	 */
-	private transcriptSignature(agent: SubagentRunner): string {
+	private transcriptSignature(agent: Worker): string {
 		const revision = (agent as { transcriptRevision?: number }).transcriptRevision;
 		if (typeof revision === "number") return `rev${revision}`;
 		const items = agent.transcript;
@@ -670,20 +755,21 @@ export class AgentsModal {
 		return `${items.length}:${first?.ts ?? -1}:${last?.ts ?? -1}:${last?.text?.length ?? -1}:${volume}`;
 	}
 
-	private wrappedTranscript(agent: SubagentRunner, width: number, signature: string): CachedRow[] {
-		const key = `${signature}@${width}`;
+	private wrappedTranscript(agent: Worker, width: number, signature: string): CachedRow[] {
+		const key = `${signature}@${width}${this.expanded ? "+" : "-"}`;
 		const cached = this.wraps.get(agent);
 		if (cached && cached.key === key) {
 			this.wrapHits++;
 			return cached.rows;
 		}
-		const th = this.theme;
 		const rows: CachedRow[] = [];
 		const inner = Math.max(4, width - 2);
 		for (const item of agent.transcript) {
 			const { label, color } = this.decorate(item.kind, item.toolName);
-			if (label) rows.push({ text: pad(` ${th.fg(color, label)}`, width), color: null });
-			const body = item.kind === "tool" ? `   ${bodyText(item.text)}` : bodyText(item.text);
+			if (label) rows.push({ text: pad(` ${label}`, width), color });
+			const indent = item.kind === "tool" ? "   " : "";
+			const text = transcriptDisplayText(item, this.expanded, inner - indent.length);
+			const body = `${indent}${bodyText(text)}`;
 			for (const wrapped of wrapTextWithAnsi(body, inner)) {
 				rows.push({ text: pad(` ${wrapped}`, width), color: item.kind === "assistant" ? null : color });
 			}
@@ -694,22 +780,7 @@ export class AgentsModal {
 		return rows;
 	}
 
-	private decorate(kind: TranscriptKind, toolName?: string): { label: string; color: string } {
-		switch (kind) {
-			case "task":
-				return { label: "▸ TASK", color: "accent" };
-			case "steer":
-				return { label: "▸ NEW INSTRUCTIONS", color: "warning" };
-			case "assistant":
-				return { label: "", color: "toolOutput" };
-			case "tool":
-				return { label: `→ ${toolName ? inline(toolName) : "tool"}`, color: "muted" };
-			case "tool-result":
-				return { label: "  ↳ failed", color: "error" };
-			case "error":
-				return { label: "✗ error", color: "error" };
-			default:
-				return { label: "", color: "dim" };
-		}
+	private decorate(kind: TranscriptItem["kind"], toolName?: string): { label: string; color: string } {
+		return transcriptLabel(kind, toolName);
 	}
 }

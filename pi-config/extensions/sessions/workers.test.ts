@@ -132,3 +132,20 @@ test("throwing initial callback does not leak an event-bus listener", () => {
 	assert.equal(h.listeners.get(WORKERS_SNAPSHOT_EVENT)!.size, 0);
 	assert.doesNotThrow(() => h.fire("session_start"));
 });
+
+test("additive fields pass through; invalid values are omitted without rejecting the snapshot", () => {
+	const h = harness();
+	const changes: WorkerSummary[][] = [];
+	subscribeWorkers(h.pi, workers => changes.push(workers));
+	h.snapshot([{ ...worker("done"), backend: "claude", startedAt: 1, lastActivity: 2, endedAt: 3, outcome: "success" }]);
+	assert.deepEqual(changes.at(-1), [{ id: "ag_01", name: "background", status: "done", model: "pi/model", preview: "Working",
+		backend: "claude", startedAt: 1, lastActivity: 2, endedAt: 3, outcome: "success" }]);
+	h.events.emit(WORKERS_SNAPSHOT_EVENT, { version: 1, workers: [{ ...worker("error"), backend: 7, startedAt: "1",
+		lastActivity: Number.NaN, endedAt: Infinity, outcome: "meh", unknownKey: { mutable: true } }] });
+	assert.deepEqual(changes.at(-1), [worker("error")]);
+	for (const outcome of ["error", "aborted"] as const) {
+		h.snapshot([{ ...worker("killed"), outcome }]);
+		assert.equal(changes.at(-1)![0].outcome, outcome);
+	}
+	h.fire("session_shutdown");
+});

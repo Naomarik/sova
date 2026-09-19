@@ -219,3 +219,17 @@ function api(io: IO) {
 export const { discoverFocusTarget, focusTarget } = api(system);
 /** Dependency-injected helpers for tests; never execute real focus commands. */
 export const __testing = { api, parseStat, ancestry, tmuxEnv };
+
+/**
+ * Payload-side gate shared by the TUI store and the `pi-sessions` CLI: does a
+ * published presence carry a validated focus target? Freshness/liveness timing
+ * is the caller's job (presence.ts / state.ts / feed.ts own the bus clock).
+ * Never focuses anything; pure validation against the published payload.
+ */
+export function checkFocusable(presence: { target?: unknown; focusable?: boolean; focusReason?: string } | undefined): { ok: boolean; reason?: string } {
+  if (!presence) return { ok: false, reason: "no rich presence published (reload that session)" };
+  if (presence.focusable === false) return { ok: false, reason: typeof presence.focusReason === "string" && presence.focusReason ? presence.focusReason : "session reported itself preview-only" };
+  if (presence.target === undefined) return { ok: false, reason: typeof presence.focusReason === "string" && presence.focusReason ? presence.focusReason : "no validated focus target published (headless or unsupported terminal?)" };
+  if (!isFocusTarget(presence.target)) return { ok: false, reason: "published focus target failed identity validation" };
+  return { ok: true };
+}

@@ -30,6 +30,7 @@ for f in "$here"/extensions/*.ts; do
 	[ -e "$f" ] || continue
 	link "$f" "$agent/extensions/$(basename "$f")"
 done
+mkdir -p "$HOME/.local/bin" && link "$here/extensions/sessions/bin/pi-sessions.ts" "$HOME/.local/bin/pi-sessions"
 
 echo
 echo "Start pi once to install the pinned packages from settings.json, then run /reload."

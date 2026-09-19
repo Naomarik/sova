@@ -1,12 +1,8 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { WORKER_OUTCOMES, type WorkerEntry } from "./schema.ts";
 
-export interface WorkerSummary {
-	id: string;
-	name: string;
-	status: string;
-	model?: string;
-	preview?: string;
-}
+/** schema.ts WorkerEntry: the v1 summary plus optional backend/timing/outcome. */
+export type WorkerSummary = WorkerEntry;
 
 /** Shared with the subagent manager; Claude workers use that same manager. */
 export const WORKERS_SNAPSHOT_EVENT = "subagents:workers-snapshot";
@@ -15,6 +11,8 @@ export interface WorkersSnapshot {
 	version: 1;
 	workers: WorkerSummary[];
 }
+
+const time = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value);
 
 function decodeSnapshot(data: unknown): WorkerSummary[] | undefined {
 	if (!data || typeof data !== "object") return;
@@ -29,9 +27,16 @@ function decodeSnapshot(data: unknown): WorkerSummary[] | undefined {
 			(worker.preview !== undefined && typeof worker.preview !== "string") || ids.has(worker.id)) return;
 		ids.add(worker.id);
 		// Copy only the public fields: never leak mutable runner objects to the UI.
+		// Additive fields are optional: an invalid one is omitted, never fatal.
+		const w = worker as Record<string, unknown>;
 		workers.push({ id: worker.id, name: worker.name, status: worker.status,
 			...(worker.model === undefined ? {} : { model: worker.model }),
-			...(worker.preview === undefined ? {} : { preview: worker.preview }) });
+			...(worker.preview === undefined ? {} : { preview: worker.preview }),
+			...(typeof w.backend === "string" ? { backend: w.backend } : {}),
+			...(time(w.startedAt) ? { startedAt: w.startedAt } : {}),
+			...(time(w.lastActivity) ? { lastActivity: w.lastActivity } : {}),
+			...(time(w.endedAt) ? { endedAt: w.endedAt } : {}),
+			...((WORKER_OUTCOMES as readonly unknown[]).includes(w.outcome) ? { outcome: w.outcome as WorkerEntry["outcome"] } : {}) });
 	}
 	return workers;
 }
@@ -45,7 +50,10 @@ function decodeSnapshot(data: unknown): WorkerSummary[] | undefined {
  *
  * Includes background/idle/retained finished workers from every backend. Status
  * is the manager's actual lifecycle status, not inferred from parent tool calls;
- * notably "waiting" means steerable, not necessarily successful. No polling,
+ * notably "waiting" means steerable, not necessarily successful. Workers may
+ * also carry optional backend, startedAt/lastActivity/endedAt (ms epoch) and
+ * outcome ("success"|"error"|"aborted"); invalid optional values are dropped
+ * per field without rejecting the snapshot. No polling,
  * subprocesses, session-history inference, or dependence on an open monitor.
  *
  * Cleanup is idempotent and automatic on session_shutdown. The owner should also

@@ -1,5 +1,6 @@
-// usage-status: shows Ollama Cloud, OpenAI Codex and Claude subscription usage in
-// pi's footer.
+// usage-status: shows Ollama Cloud, OpenAI Codex, Claude and Z.ai (GLM Coding
+// Plan) subscription usage in pi's footer, and a /usage overlay screen with the
+// per-provider detail (plans, every window, reset times).
 //
 // Takes over the footer with ctx.ui.setFooter() (a faithful copy of the built-in
 // one) so the usage segment can sit on the stats line next to the token stats.
@@ -9,7 +10,7 @@
 // many sessions are open. Credential files are only ever read, never written.
 
 import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
-import { type TUI, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { matchesKey, type TUI, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { randomBytes } from "node:crypto";
 import * as fsSync from "node:fs";
 import * as fs from "node:fs/promises";
@@ -17,7 +18,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 
 const HOME = os.homedir();
-const PI_AUTH = path.join(HOME, ".pi/agent/auth.json"); // ollama-cloud key + openai-codex oauth
+const PI_AUTH = path.join(HOME, ".pi/agent/auth.json"); // ollama-cloud key + openai-codex oauth + zai key
 const CODEX_AUTH = path.join(HOME, ".codex/auth.json");
 const CLAUDE_CREDS = path.join(HOME, ".claude/.credentials.json");
 const CACHE_DIR = path.join(HOME, ".pi/agent/cache");
@@ -30,6 +31,7 @@ const FAILURE_RETRY_MS = 60_000; // retry floor after a failed fetch
 const LOCK_STALE_MS = 30_000; // lock older than this is considered abandoned
 const FETCH_TIMEOUT_MS = 10_000;
 const FORCE_WAIT_MS = 12_000; // /usage-refresh waits this long for another holder
+const CACHE_SCHEMA = 2; // bump when a cached shape changes: older caches refetch once
 
 // ---------------------------------------------------------------------------
 // Normalized data (this is what goes into the shared cache; no secrets)
@@ -45,24 +47,46 @@ interface Window {
 	resetsAt?: string;
 }
 
+/** One entry of claude's `limits[]`: label "5h" / "7d" / "7d scoped" (+ scope model name). */
+interface ClaudeLimit extends Window {
+	label: string;
+	scope?: string;
+	active?: boolean;
+}
+
 type ClaudeData =
-	| { state: "ok"; fiveHour?: Window; sevenDay?: Window; sevenDayOpus?: Window }
+	| {
+			state: "ok";
+			fiveHour?: Window;
+			sevenDay?: Window;
+			sevenDayOpus?: Window;
+			limits?: ClaudeLimit[];
+			extraUsage?: { enabled: boolean; pct?: number };
+	  }
 	| { state: "nologin" }
 	| { state: "expired" };
 
 type OpenAiData =
-	| { state: "ok"; windows: { label: string; pct: number }[] }
+	| { state: "ok"; plan?: string; limitReached?: boolean; windows: (Window & { label: string })[] }
 	| { state: "nologin" }
 	| { state: "expired" }
 	| { state: "na" };
 
+type ZaiData =
+	| { state: "ok"; level?: string; fiveHour?: Window & { label: string }; mcp?: { used: number; limit: number; pct: number } }
+	| { state: "nokey" }
+	| { state: "badkey" }
+	| { state: "na" };
+
 interface CacheFile {
+	schemaVersion?: number; // missing on caches written before CACHE_SCHEMA 2
 	fetchedAt: number;
 	nextFetchAt: number;
 	ollama?: OllamaData;
 	openai?: OpenAiData;
 	claude?: ClaudeData;
-	errors: { ollama?: string; openai?: string; claude?: string };
+	zai?: ZaiData;
+	errors: { ollama?: string; openai?: string; claude?: string; zai?: string };
 }
 
 // ---------------------------------------------------------------------------
@@ -118,16 +142,33 @@ async function fetchOpenAi(): Promise<OpenAiData> {
 	const body: any = await res.json();
 	const limits = body?.rate_limit;
 	if (!limits || typeof limits !== "object") return { state: "na" };
-	const windows: { label: string; pct: number }[] = [];
+	const windows: (Window & { label: string })[] = [];
 	const add = (w: any, label: string) => {
-		if (w && typeof w.used_percent === "number" && Number.isFinite(w.used_percent)) windows.push({ label, pct: w.used_percent });
+		if (w && typeof w.used_percent === "number" && Number.isFinite(w.used_percent))
+			windows.push({ label, pct: w.used_percent, resetsAt: openAiReset(w) });
 	};
 	const secs = limits.primary_window?.limit_window_seconds;
 	const near = (target: number) => typeof secs === "number" && Math.abs(secs - target) <= target * 0.05;
 	add(limits.secondary_window, "5h");
 	add(limits.primary_window, near(604_800) ? "7d" : near(18_000) ? "5h" : "pri");
 	windows.sort((a, b) => (a.label === "5h" ? -1 : b.label === "5h" ? 1 : 0)); // 5h before 7d, like claude
-	return windows.length ? { state: "ok", windows } : { state: "na" };
+	if (!windows.length) return { state: "na" };
+	const plan = typeof body.plan_type === "string" && body.plan_type ? body.plan_type : undefined;
+	const limitReached = limits.limit_reached === true || limits.allowed === false ? true : undefined;
+	return { state: "ok", plan, limitReached, windows };
+}
+
+/** Window reset as ISO: `reset_at` (unix seconds), else now + `reset_after_seconds`. */
+function openAiReset(w: any): string | undefined {
+	const at = num(w.reset_at);
+	const after = num(w.reset_after_seconds);
+	return isoTime(at !== undefined ? at * 1000 : after !== undefined ? Date.now() + after * 1000 : undefined);
+}
+
+function isoTime(ms: number | undefined): string | undefined {
+	if (ms === undefined) return undefined;
+	const d = new Date(ms);
+	return Number.isFinite(d.getTime()) ? d.toISOString() : undefined;
 }
 
 function toWindow(section: any): Window | undefined {
@@ -154,12 +195,107 @@ async function fetchClaude(): Promise<ClaudeData> {
 	if (!res.ok) throw new Error(`claude HTTP ${res.status}`);
 
 	const body: any = await res.json();
+	const extra = body?.extra_usage;
 	return {
 		state: "ok",
 		fiveHour: toWindow(body?.five_hour),
 		sevenDay: toWindow(body?.seven_day),
 		sevenDayOpus: toWindow(body?.seven_day_opus),
+		limits: claudeLimits(body?.limits),
+		extraUsage: extra && typeof extra.is_enabled === "boolean" ? { enabled: extra.is_enabled, pct: num(extra.utilization) } : undefined,
 	};
+}
+
+const CLAUDE_LIMIT_LABELS: Record<string, string> = { session: "5h", weekly_all: "7d", weekly_scoped: "7d scoped" };
+
+/** The richer `limits[]` array; entries without a numeric percent (or null) are dropped. */
+function claudeLimits(raw: unknown): ClaudeLimit[] | undefined {
+	if (!Array.isArray(raw)) return undefined;
+	const out: ClaudeLimit[] = [];
+	for (const l of raw) {
+		const pct = num(l?.percent);
+		if (pct === undefined || typeof l.kind !== "string" || !l.kind) continue;
+		const scope = l.scope?.model?.display_name;
+		out.push({
+			label: CLAUDE_LIMIT_LABELS[l.kind] ?? l.kind,
+			pct,
+			resetsAt: typeof l.resets_at === "string" ? l.resets_at : undefined,
+			scope: typeof scope === "string" && scope ? scope : undefined,
+			active: typeof l.is_active === "boolean" ? l.is_active : undefined,
+		});
+	}
+	return out.length ? out : undefined;
+}
+
+const num = (v: unknown): number | undefined => (typeof v === "number" && Number.isFinite(v) ? v : undefined);
+const clampPct = (p: number) => Math.min(100, Math.max(0, p));
+const ZAI_UNIT_MINUTES: Record<number, number> = { 1: 1440, 3: 60, 5: 1, 6: 10080 }; // day, hour, minute, week
+
+/** Compact window tag from its length: 300 -> "5h", 10080 -> "1w", 45 -> "45m". */
+function zaiLabel(minutes: number): string {
+	if (minutes % 10080 === 0) return `${minutes / 10080}w`;
+	if (minutes % 1440 === 0) return `${minutes / 1440}d`;
+	if (minutes % 60 === 0) return `${minutes / 60}h`;
+	return `${minutes}m`;
+}
+
+/** Percent used; `percentage` unless usage + currentValue/remaining allow a recompute. */
+function zaiPct(l: any): number | undefined {
+	const usage = num(l.usage);
+	const current = num(l.currentValue);
+	const remaining = num(l.remaining);
+	if (usage !== undefined && usage > 0 && (current !== undefined || remaining !== undefined)) {
+		const used = Math.max(remaining !== undefined ? usage - remaining : -Infinity, current ?? -Infinity);
+		return clampPct((used / usage) * 100);
+	}
+	const p = num(l.percentage);
+	return p === undefined ? undefined : clampPct(p);
+}
+
+async function fetchZai(): Promise<ZaiData> {
+	const auth = await readJson(PI_AUTH);
+	const key = auth?.zai?.key;
+	if (typeof key !== "string" || !key) return { state: "nokey" };
+
+	const res = await fetch("https://api.z.ai/api/monitor/usage/quota/limit", {
+		headers: { Authorization: `Bearer ${key}` },
+		signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+	});
+	if (res.status === 401 || res.status === 403) return { state: "badkey" };
+	if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+	const body: any = await res.json();
+	if (body?.success !== true || body?.code !== 200) throw new Error(body?.msg ? String(body.msg) : "bad response");
+	const limits: any[] = Array.isArray(body?.data?.limits) ? body.data.limits.filter((l: any) => l && typeof l === "object") : [];
+
+	// Coding-plan window: TOKENS_LIMIT (older) or CREDIT_LIMIT (renamed); prefer the 5h one, else the shortest.
+	const minutes = (l: any) => (ZAI_UNIT_MINUTES[l.unit] ?? NaN) * l.number;
+	const plan = limits.filter((l) => l.type === "TOKENS_LIMIT" || l.type === "CREDIT_LIMIT");
+	const win =
+		plan.find((l) => l.unit === 3 && l.number === 5) ??
+		plan.filter((l) => Number.isFinite(minutes(l)) && minutes(l) > 0).sort((a, b) => minutes(a) - minutes(b))[0];
+	let fiveHour: (Window & { label: string }) | undefined;
+	const winPct = win && zaiPct(win);
+	if (winPct !== undefined) {
+		// Resets far beyond the window length are known-bad values: drop them.
+		const reset = num(win.nextResetTime);
+		const span = (Number.isFinite(minutes(win)) ? minutes(win) : 300) * 60_000 + 60_000;
+		fiveHour = { pct: winPct, label: zaiLabel(minutes(win)), resetsAt: reset !== undefined && reset <= Date.now() + span ? new Date(reset).toISOString() : undefined };
+	}
+
+	let mcp: { used: number; limit: number; pct: number } | undefined;
+	const t = limits.find((l) => l.type === "TIME_LIMIT");
+	if (t) {
+		const limit = num(t.usage);
+		const remaining = num(t.remaining);
+		const used = num(t.currentValue) ?? (limit !== undefined && remaining !== undefined ? limit - remaining : undefined);
+		const p = num(t.percentage);
+		if (limit !== undefined && limit > 0 && used !== undefined && used >= 0 && p !== undefined)
+			mcp = { used, limit, pct: clampPct(p) };
+	}
+
+	const level = typeof body.data?.level === "string" && body.data.level ? body.data.level : undefined;
+	return fiveHour || mcp ? { state: "ok", level, fiveHour, mcp } : { state: "na" };
 }
 
 function errMessage(err: unknown): string {
@@ -181,8 +317,11 @@ async function readCache(): Promise<CacheFile | undefined> {
 	const data = await readJson(CACHE_FILE); // missing or corrupt -> undefined
 	if (!isCacheFile(data)) return undefined;
 	if (typeof data.nextFetchAt !== "number") data.nextFetchAt = data.fetchedAt + FRESH_MS;
-	// Cache written before the openai source existed: refetch once.
+	// Cache written before the openai / zai sources existed: refetch once.
 	if (!data.openai && !data.errors.openai) data.nextFetchAt = 0;
+	if (!data.zai && !data.errors.zai) data.nextFetchAt = 0;
+	// Cached shapes older than CACHE_SCHEMA lack fields the /usage screen shows: refetch once.
+	if (data.schemaVersion !== CACHE_SCHEMA) data.nextFetchAt = 0;
 	return data;
 }
 
@@ -283,26 +422,31 @@ async function breakStaleLock(): Promise<boolean> {
 }
 
 async function fetchAll(prev: CacheFile | undefined): Promise<CacheFile> {
-	const [o, x, c] = await Promise.allSettled([fetchOllama(), fetchOpenAi(), fetchClaude()]);
+	const [o, x, c, z] = await Promise.allSettled([fetchOllama(), fetchOpenAi(), fetchClaude(), fetchZai()]);
 	const now = Date.now();
 	const errors: CacheFile["errors"] = {};
 	let ollama = prev?.ollama;
 	let openai = prev?.openai;
 	let claude = prev?.claude;
+	let zai = prev?.zai;
 	if (o.status === "fulfilled") ollama = o.value;
 	else errors.ollama = errMessage(o.reason);
 	if (x.status === "fulfilled") openai = x.value;
 	else errors.openai = errMessage(x.reason);
 	if (c.status === "fulfilled") claude = c.value;
 	else errors.claude = errMessage(c.reason);
+	if (z.status === "fulfilled") zai = z.value;
+	else errors.zai = errMessage(z.reason);
 
-	const failed = Boolean(errors.ollama || errors.openai || errors.claude);
+	const failed = Boolean(errors.ollama || errors.openai || errors.claude || errors.zai);
 	return {
+		schemaVersion: CACHE_SCHEMA,
 		fetchedAt: now,
 		nextFetchAt: now + (failed ? FAILURE_RETRY_MS : FRESH_MS),
 		ollama,
 		openai,
 		claude,
+		zai,
 		errors,
 	};
 }
@@ -366,7 +510,181 @@ function buildUsage(theme: Theme, cache: CacheFile | undefined, level: number): 
 	}
 	claude += c ? staleMark(cache.errors.claude) : "";
 
-	return `${dim("⛁")} ${ollama}${sep}${openai}${sep}${claude}`;
+	// Z.ai
+	let zai: string;
+	const z = cache.zai;
+	if (!z) zai = theme.fg("error", `zai: ${cache.errors.zai ?? "error"}`);
+	else if (z.state === "nokey") zai = dim("zai: no key");
+	else if (z.state === "na") zai = dim("zai n/a");
+	else if (z.state === "badkey") zai = theme.fg("warning", "zai: bad key");
+	else {
+		const parts: string[] = [];
+		if (z.fiveHour) parts.push(`${dim(z.fiveHour.label)} ${pct(z.fiveHour.pct)}`);
+		zai = `${theme.fg("muted", "zai")} ${parts.length ? parts.join(" ") : dim("n/a")}`;
+	}
+	zai += z ? staleMark(cache.errors.zai) : "";
+
+	return `${dim("⛁")} ${ollama}${sep}${openai}${sep}${claude}${sep}${zai}`;
+}
+
+// ---------------------------------------------------------------------------
+// /usage screen
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const two = (n: number) => String(n).padStart(2, "0");
+
+/** Local `Sep 25 12:00` (with `:ss` if asked). */
+function localTime(ms: number, seconds = false): string {
+	const d = new Date(ms);
+	const hm = `${two(d.getHours())}:${two(d.getMinutes())}${seconds ? `:${two(d.getSeconds())}` : ""}`;
+	return `${MONTHS[d.getMonth()]} ${d.getDate()} ${hm}`;
+}
+
+/** Reset time as local time plus a coarse countdown; both "—" when unknown. */
+function formatReset(resetsAt: string | undefined, now: number): { at: string; left: string } {
+	const ms = resetsAt ? Date.parse(resetsAt) : NaN;
+	if (!Number.isFinite(ms)) return { at: "—", left: "—" };
+	const mins = Math.floor((ms - now) / 60_000);
+	let left: string;
+	if (ms <= now) left = "due";
+	else if (mins < 1) left = "<1m";
+	else if (mins < 60) left = `in ${mins}m`;
+	else if (mins < 1440) left = `in ${Math.floor(mins / 60)}h ${mins % 60}m`;
+	else left = `in ${Math.floor(mins / 1440)}d ${Math.floor((mins % 1440) / 60)}h`;
+	return { at: localTime(ms), left };
+}
+
+/** "12s ago", "3m ago", "2h ago", "4d ago". */
+function formatAge(ms: number): string {
+	const s = Math.max(0, Math.floor(ms / 1000));
+	if (s < 60) return `${s}s ago`;
+	if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+	if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+	return `${Math.floor(s / 86400)}d ago`;
+}
+
+const LABEL_W = 20;
+
+/** The /usage overlay: boxed, clamped to `width` columns and at most `maxLines` rows. */
+function renderUsageScreen(
+	theme: Theme,
+	cache: CacheFile | undefined,
+	width: number,
+	maxLines: number,
+	status: { refreshing: boolean; failure?: string },
+): string[] {
+	const now = Date.now();
+	const dim = (s: string) => theme.fg("dim", s);
+	const pct = (p: number) => theme.fg(severity(p), `${Math.round(p)}%`.padStart(4));
+	const label = (s: string) => `${theme.fg("muted", truncateToWidth(s, LABEL_W - 1, "…", true))} `;
+	const windowRow = (name: string, w: Window) => {
+		const r = formatReset(w.resetsAt, now);
+		const reset = r.at === "—" ? dim("resets —") : `${dim("resets")} ${r.left.padEnd(10)} ${dim(r.at)}`;
+		return `${label(name)}${pct(w.pct)}   ${reset}`;
+	};
+	const note = (s: string, color: Color = "dim") => theme.fg(color, s);
+
+	const body: string[] = [];
+	const stale: string[] = [];
+	/** One provider: header (+ detail, + stale/error mark like the footer's staleMark), then its rows. */
+	const block = (name: string, detail: string | undefined, hasData: boolean, err: string | undefined, rows: string[]) => {
+		let head = theme.bold(theme.fg("accent", name));
+		if (detail) head += dim(` · ${detail}`);
+		if (err && hasData) {
+			head += theme.fg("warning", `  stale — last fetch failed: ${err}`);
+			stale.push(name);
+		}
+		if (!hasData) rows = [err ? note(`error: ${err}`, "error") : note("no data yet")];
+		body.push(head, ...rows.map((r) => `  ${r}`), "");
+	};
+
+	if (cache) {
+		const { errors } = cache;
+
+		const o = cache.ollama;
+		const oRows: string[] = [];
+		if (o?.state === "ok") oRows.push(windowRow("monthly", { pct: o.usedPct }));
+		else if (o?.state === "nokey") oRows.push(note("no key"));
+		else if (o?.state === "badkey") oRows.push(note("bad key", "warning"));
+		else if (o?.state === "na") oRows.push(note("n/a"));
+		block("Ollama Cloud", undefined, Boolean(o), errors.ollama, oRows);
+
+		const x = cache.openai;
+		const xRows: string[] = [];
+		if (x?.state === "ok") {
+			for (const w of x.windows) xRows.push(windowRow(w.label, w));
+			if (x.limitReached) xRows.push(note("limit reached", "error"));
+		} else if (x?.state === "nologin") xRows.push(note("not logged in"));
+		else if (x?.state === "expired") xRows.push(note("auth expired (run pi /login)", "warning"));
+		else if (x?.state === "na") xRows.push(note("n/a"));
+		block("OpenAI Codex", x?.state === "ok" ? x.plan : undefined, Boolean(x), errors.openai, xRows);
+
+		const c = cache.claude;
+		const cRows: string[] = [];
+		if (c?.state === "ok") {
+			const shown = new Set<string>();
+			const add = (name: string, w: Window | undefined) => {
+				if (!w) return;
+				cRows.push(windowRow(name, w));
+				shown.add(name);
+			};
+			add("5h", c.fiveHour);
+			add("7d", c.sevenDay);
+			add("7d opus", c.sevenDayOpus);
+			for (const l of c.limits ?? []) {
+				const name = l.scope ? `${l.label} (${l.scope})` : l.label;
+				if (shown.has(name)) continue;
+				cRows.push(windowRow(name, l) + (l.active === false ? dim("  inactive") : ""));
+				shown.add(name);
+			}
+			if (c.extraUsage?.enabled)
+				cRows.push(`${label("extra usage")}${c.extraUsage.pct !== undefined ? pct(c.extraUsage.pct) : dim("  on")}`);
+			if (!cRows.length) cRows.push(note("n/a"));
+		} else if (c?.state === "nologin") cRows.push(note("not logged in"));
+		else if (c?.state === "expired") cRows.push(note("auth expired (run claude /login)", "warning"));
+		block("Claude", undefined, Boolean(c), errors.claude, cRows);
+
+		const z = cache.zai;
+		const zRows: string[] = [];
+		if (z?.state === "ok") {
+			if (z.fiveHour) zRows.push(windowRow(z.fiveHour.label, z.fiveHour));
+			if (z.mcp)
+				zRows.push(`${label("mcp")}${theme.fg(severity(z.mcp.pct), `${z.mcp.used}/${z.mcp.limit} (${Math.round(z.mcp.pct)}%)`)}`);
+		} else if (z?.state === "nokey") zRows.push(note("no key"));
+		else if (z?.state === "badkey") zRows.push(note("bad key", "warning"));
+		else if (z?.state === "na") zRows.push(note("n/a"));
+		block("Z.ai GLM Coding Plan", z?.state === "ok" ? z.level : undefined, Boolean(z), errors.zai, zRows);
+		body.pop(); // trailing blank
+	} else body.push(note("usage loading… (no cached data yet)"));
+
+	const head = [theme.bold(theme.fg("accent", "Subscription usage"))];
+	let updated = cache ? `${dim("updated")} ${localTime(cache.fetchedAt, true)} ${dim(`(${formatAge(now - cache.fetchedAt)})`)}` : dim("never updated");
+	if (cache) {
+		const failed = (["ollama", "openai", "claude", "zai"] as const).filter((k) => cache.errors[k]).length;
+		updated += failed ? theme.fg("warning", ` · ${failed} source${failed > 1 ? "s" : ""} failing${stale.length ? ` (stale: ${stale.join(", ")})` : ""}`) : dim(" · all sources ok");
+	}
+	if (status.refreshing) updated += theme.fg("accent", " · refreshing…");
+	head.push(updated);
+	if (status.failure) head.push(theme.fg("error", `refresh failed: ${status.failure}`));
+	head.push("");
+	const foot = ["", dim("r refresh · q/esc close")];
+
+	// Keep the header and key hint; cut the provider blocks to fit the height budget.
+	const boxed = width >= 8;
+	const chrome = boxed ? 2 : 0;
+	const room = maxLines - chrome - head.length - foot.length;
+	const shown = body.length <= room ? body : room > 0 ? [...body.slice(0, room - 1), dim("… more (enlarge the terminal)")] : [];
+	const content = [...head, ...shown, ...foot];
+
+	if (!boxed) return content.map((l) => truncateToWidth(l, Math.max(1, width), "…")).slice(0, Math.max(1, maxLines));
+	const b = (s: string) => theme.fg("border", s);
+	const inner = width - 4;
+	const lines = [
+		b(`╭${"─".repeat(width - 2)}╮`),
+		...content.map((l) => `${b("│")} ${truncateToWidth(l, inner, "…", true)} ${b("│")}`),
+		b(`╰${"─".repeat(width - 2)}╯`),
+	];
+	return lines.length <= maxLines ? lines : [...lines.slice(0, Math.max(0, maxLines - 1)), lines[lines.length - 1]];
 }
 
 // ---------------------------------------------------------------------------
@@ -683,11 +1001,12 @@ export default function (pi: ExtensionAPI) {
 			const next = await fetchAll(latest);
 			lastCache = next;
 			await writeCache(next);
-			if (force && (next.errors.ollama || next.errors.openai || next.errors.claude)) {
+			if (force && (next.errors.ollama || next.errors.openai || next.errors.claude || next.errors.zai)) {
 				const msgs = [
 					next.errors.ollama && `ollama: ${next.errors.ollama}`,
 					next.errors.openai && `openai: ${next.errors.openai}`,
 					next.errors.claude && `claude: ${next.errors.claude}`,
+					next.errors.zai && `zai: ${next.errors.zai}`,
 				];
 				throw new Error(msgs.filter(Boolean).join("; "));
 			}
@@ -707,6 +1026,17 @@ export default function (pi: ExtensionAPI) {
 			});
 		inflight = tracked;
 		return force ? run : tracked;
+	}
+
+	/** Force refresh as /usage-refresh does; reports and returns the failure, if any. */
+	async function forceRefresh(ctx: ExtensionContext): Promise<string | undefined> {
+		try {
+			await refresh(true);
+			return undefined;
+		} catch (err) {
+			ctx.ui.notify(`usage-refresh: ${errMessage(err)}`, "error");
+			return errMessage(err);
+		}
 	}
 
 	function stop(): void {
@@ -751,14 +1081,59 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.registerCommand("usage-refresh", {
-		description: "Force-refresh Ollama Cloud / Claude usage in the footer",
+		description: "Force-refresh Ollama Cloud / OpenAI Codex / Claude / Z.ai usage (footer and /usage screen)",
 		handler: async (_args, ctx) => {
 			if (ctx.mode !== "tui" || !activeCtx) return;
-			try {
-				await refresh(true);
-			} catch (err) {
-				ctx.ui.notify(`usage-refresh: ${errMessage(err)}`, "error");
+			await forceRefresh(ctx);
+		},
+	});
+
+	pi.registerCommand("usage", {
+		description: "Show Ollama Cloud / OpenAI Codex / Claude / Z.ai usage detail with reset times",
+		handler: async (_args, ctx) => {
+			if (ctx.mode !== "tui") {
+				ctx.ui.notify("The /usage screen requires Pi's interactive TUI.", "warning");
+				return;
 			}
+			await ctx.ui.custom<null>(
+				(tui, theme, _keys, done) => {
+					const status: { refreshing: boolean; failure?: string } = { refreshing: false };
+					let closed = false;
+					const rerender = () => {
+						if (!closed) tui.requestRender();
+					};
+					const rows = () => {
+						const r = tui.terminal?.rows;
+						return typeof r === "number" && r > 0 ? r : 40;
+					};
+					// Adopt a newer shared cache (fetches only if it is stale and we win the lock).
+					void refresh().then(rerender);
+					return {
+						// Reads the live cache on every render, so refreshes show in place.
+						render: (width: number) => renderUsageScreen(theme, lastCache, width, Math.floor(rows() * 0.9), status),
+						handleInput(data: string) {
+							if (matchesKey(data, "q") || matchesKey(data, "escape") || matchesKey(data, "ctrl+c")) {
+								closed = true;
+								done(null);
+							} else if (matchesKey(data, "r") && !status.refreshing) {
+								status.refreshing = true;
+								status.failure = undefined;
+								rerender();
+								void forceRefresh(ctx).then((failure) => {
+									status.refreshing = false;
+									status.failure = failure;
+									rerender();
+								});
+							}
+						},
+						invalidate() {},
+						dispose() {
+							closed = true;
+						},
+					};
+				},
+				{ overlay: true, overlayOptions: { anchor: "center", width: "80%", maxHeight: "90%" } },
+			);
 		},
 	});
 }

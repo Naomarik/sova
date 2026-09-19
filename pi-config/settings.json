@@ -1,7 +1,7 @@
 {
   "lastChangelogVersion": "0.85.1",
-  "defaultProvider": "ollama-cloud",
-  "defaultModel": "kimi-k3",
+  "defaultProvider": "zai",
+  "defaultModel": "glm-5.3",
   "defaultThinkingLevel": "medium",
   "hideThinkingBlock": true,
   "theme": "dark",

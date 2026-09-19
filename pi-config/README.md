@@ -55,7 +55,7 @@ so `pi update --extensions` leaves them alone. To move one, run
 | `npm:pi-lens` | 4.1.6 | Extension entry disabled; skills and prompts still load |
 | `npm:pi-powerline-footer` | 0.17.1 | Extension entry disabled |
 | `git:github.com/tmustier/pi-extensions` | commit `09706a7` | Only the usage extension is selected, and it is currently toggled off |
-| `npm:pi-btw` | 0.4.1 | |
+| `npm:pi-btw` → local fork | 0.4.1 | Forked into `extensions/btw/`; degrades on headless hosts instead of going silent |
 | `npm:@narumitw/pi-stamp` | 0.51.0 | |
 
 ## Install

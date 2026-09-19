@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "pi-sessions:feed-event:1",
+  "title": "pi-sessions feed event (one NDJSON line)",
+  "description": "Events emitted by `pi-sessions watch` / `pi-sessions snapshot`. Unknown keys and unknown event types must be ignored. See SCHEMA.md.",
+  "oneOf": [
+    { "$ref": "#/$defs/Hello" },
+    { "$ref": "#/$defs/Snapshot" },
+    { "$ref": "#/$defs/Upsert" },
+    { "$ref": "#/$defs/Remove" },
+    { "$ref": "#/$defs/Error" }
+  ],
+  "$defs": {
+    "epochMs": { "type": "number" },
+    "LiveSession": {
+      "type": "object",
+      "required": ["id", "record", "fresh", "age", "legacy", "state", "attention", "workersWorking"],
+      "properties": {
+        "id": { "type": "string" },
+        "record": { "$ref": "pi-sessions:live-record:2" },
+        "fresh": { "type": "boolean", "description": "now - heartbeat ≤ 15000 and the pid is alive." },
+        "age": { "type": "number", "description": "ms since heartbeat." },
+        "legacy": { "type": "boolean", "description": "record.schemaVersion absent." },
+        "state": { "enum": ["working", "idle", "needs-input", "error"] },
+        "attention": { "enum": ["needs-input", "error", "none"] },
+        "workersWorking": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "Hello": {
+      "type": "object",
+      "required": ["type", "at", "feedVersion", "schemaVersion", "dir"],
+      "properties": {
+        "type": { "const": "hello" },
+        "at": { "$ref": "#/$defs/epochMs" },
+        "feedVersion": { "const": 1 },
+        "schemaVersion": { "const": 2 },
+        "dir": { "type": "string" }
+      }
+    },
+    "Snapshot": {
+      "type": "object",
+      "required": ["type", "at", "sessions"],
+      "properties": {
+        "type": { "const": "snapshot" },
+        "at": { "$ref": "#/$defs/epochMs" },
+        "sessions": { "type": "array", "items": { "$ref": "#/$defs/LiveSession" } }
+      }
+    },
+    "Upsert": {
+      "type": "object",
+      "required": ["type", "at", "session", "changed"],
+      "properties": {
+        "type": { "const": "upsert" },
+        "at": { "$ref": "#/$defs/epochMs" },
+        "session": { "$ref": "#/$defs/LiveSession" },
+        "changed": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Dotted paths: \"session\"/\"presence\" for a new id, \"fresh\" for a revival, otherwise e.g. \"presence.activity\", \"session.name\"."
+        }
+      }
+    },
+    "Remove": {
+      "type": "object",
+      "required": ["type", "at", "id", "reason"],
+      "properties": {
+        "type": { "const": "remove" },
+        "at": { "$ref": "#/$defs/epochMs" },
+        "id": { "type": "string" },
+        "reason": { "enum": ["left", "stale", "dead", "invalid"] }
+      }
+    },
+    "Error": {
+      "type": "object",
+      "required": ["type", "at", "message"],
+      "properties": {
+        "type": { "const": "error" },
+        "at": { "$ref": "#/$defs/epochMs" },
+        "message": { "type": "string" }
+      }
+    }
+  }
+}

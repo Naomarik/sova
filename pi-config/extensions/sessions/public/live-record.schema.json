@@ -1,0 +1,171 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "pi-sessions:live-record:2",
+  "title": "pi live session record",
+  "description": "Contents of ~/.pi/agent/sessions/live/<id>.json. `v` is frozen at 1; `schemaVersion: 2` marks v2 writers (absent = legacy v1). Unknown keys are allowed everywhere and must be ignored. Enum-typed fields are documented with their known values, but readers must coerce unknown values to safe defaults instead of rejecting (session state → idle, worker state → running); the enums here describe what writers emit. See SCHEMA.md.",
+  "type": "object",
+  "required": ["v", "session", "heartbeat"],
+  "properties": {
+    "v": { "const": 1 },
+    "schemaVersion": { "const": 2 },
+    "session": { "$ref": "#/$defs/SessionMeta" },
+    "presence": { "$ref": "#/$defs/Presence" },
+    "note": {
+      "description": "pi-internal transient control traffic. Consumers MUST ignore.",
+      "type": "object",
+      "required": ["at"],
+      "properties": { "payload": {}, "at": { "$ref": "#/$defs/epochMs" } }
+    },
+    "heartbeat": { "$ref": "#/$defs/epochMs", "description": "ms epoch of the last write; heartbeat rewrites are ≥3s apart on a 2s poll (≈ every 3–4s)." }
+  },
+  "$defs": {
+    "epochMs": { "type": "number", "description": "Milliseconds since the Unix epoch." },
+    "count": { "type": "integer", "minimum": 0 },
+    "SessionMeta": {
+      "type": "object",
+      "required": ["id", "cwd", "model", "pid", "startedAt", "lastActivity"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "description": "\"p<pid>-<8hex>\"; equals the file stem." },
+        "endpointEpoch": { "type": "string", "maxLength": 64 },
+        "name": { "type": "string", "maxLength": 80 },
+        "cwd": { "type": "string", "maxLength": 300 },
+        "model": { "type": "string", "maxLength": 160 },
+        "pid": { "type": "integer", "minimum": 1 },
+        "startedAt": { "$ref": "#/$defs/epochMs" },
+        "lastActivity": { "$ref": "#/$defs/epochMs" },
+        "status": { "type": "string", "maxLength": 100, "description": "v1 free-text label (\"Idle\", \"Running: bash\", \"Needs input\", \"Error\")." },
+        "sessionId": { "type": "string", "maxLength": 64 },
+        "sessionFile": { "type": "string", "maxLength": 1024, "description": "Absolute transcript path. Path only; the record never contains its contents." },
+        "mode": { "enum": ["tui", "rpc", "json", "print"] },
+        "host": { "type": "string", "maxLength": 64 },
+        "piVersion": { "type": "string", "maxLength": 32 }
+      }
+    },
+    "WorkerEntry": {
+      "type": "object",
+      "required": ["id", "name", "status"],
+      "properties": {
+        "id": { "type": "string", "maxLength": 150 },
+        "name": { "type": "string", "maxLength": 120 },
+        "status": { "type": "string", "maxLength": 80, "description": "Free text; normalised by readers to starting|running|waiting|stopping|done|error|killed (unknown ⇒ running)." },
+        "model": { "type": "string", "maxLength": 100 },
+        "preview": { "type": "string", "maxLength": 180 },
+        "backend": { "type": "string", "maxLength": 32 },
+        "startedAt": { "$ref": "#/$defs/epochMs" },
+        "lastActivity": { "$ref": "#/$defs/epochMs" },
+        "endedAt": { "$ref": "#/$defs/epochMs" },
+        "outcome": { "enum": ["success", "error", "aborted"] }
+      }
+    },
+    "WorkerCounts": {
+      "type": "object",
+      "required": ["total", "working", "waiting", "done", "error", "killed"],
+      "properties": {
+        "total": { "$ref": "#/$defs/count" },
+        "working": { "$ref": "#/$defs/count" },
+        "waiting": { "$ref": "#/$defs/count" },
+        "done": { "$ref": "#/$defs/count" },
+        "error": { "$ref": "#/$defs/count" },
+        "killed": { "$ref": "#/$defs/count" }
+      }
+    },
+    "Outline": {
+      "type": "object",
+      "properties": {
+        "now": { "type": "string", "maxLength": 160 },
+        "overall": { "type": "string", "maxLength": 300 },
+        "topics": { "type": "array", "maxItems": 12, "items": { "type": "string", "maxLength": 60 } },
+        "lastHeading": { "type": "string", "maxLength": 80 },
+        "state": { "enum": ["none", "drafting", "fresh", "updating", "stale", "failed-keeping-last"] },
+        "generatedAt": { "$ref": "#/$defs/epochMs" },
+        "detail": {
+          "type": "array",
+          "maxItems": 6,
+          "items": {
+            "type": "object",
+            "required": ["heading", "bullets"],
+            "properties": {
+              "heading": { "type": "string", "maxLength": 80 },
+              "bullets": { "type": "array", "maxItems": 3, "items": { "type": "string", "maxLength": 120 } }
+            }
+          }
+        }
+      }
+    },
+    "Activity": {
+      "type": "object",
+      "required": ["state", "since"],
+      "properties": {
+        "state": { "enum": ["working", "idle", "needs-input", "error"] },
+        "since": { "$ref": "#/$defs/epochMs" },
+        "tools": { "type": "array", "maxItems": 6, "items": { "type": "string", "maxLength": 40 } },
+        "toolDetail": { "type": "string", "maxLength": 60, "description": "Tool name + file basename only, e.g. \"edit · auth.ts\". Never commands or arguments." },
+        "error": { "type": "string", "maxLength": 200, "description": "Present only when state is \"error\"." },
+        "lastAssistantAt": { "$ref": "#/$defs/epochMs" },
+        "lastToolAt": { "$ref": "#/$defs/epochMs" },
+        "lastPromptAt": { "$ref": "#/$defs/epochMs" },
+        "turns": { "$ref": "#/$defs/count" },
+        "buckets": { "type": "array", "maxItems": 16, "items": { "$ref": "#/$defs/count" }, "description": "Tool executions per bucket, oldest first." },
+        "bucketMs": { "type": "number", "exclusiveMinimum": 0 }
+      }
+    },
+    "Identity": {
+      "type": "object",
+      "required": ["pid", "start", "tty"],
+      "properties": {
+        "pid": { "type": "integer", "minimum": 1 },
+        "start": { "type": "string", "pattern": "^\\d{1,24}$" },
+        "tty": { "type": "string", "pattern": "^-?\\d{1,16}$" }
+      }
+    },
+    "FocusTarget": {
+      "description": "Opaque to external tools. NEVER focus via `address` directly; use `pi-sessions focus <id>`, which re-validates the full identity.",
+      "type": "object",
+      "required": ["version", "instance", "bootId", "origin", "ghostty", "terminal", "address"],
+      "properties": {
+        "version": { "const": 1 },
+        "instance": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "bootId": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "origin": { "$ref": "#/$defs/Identity" },
+        "ghostty": { "$ref": "#/$defs/Identity" },
+        "terminal": { "$ref": "#/$defs/Identity" },
+        "address": { "type": "string", "pattern": "^0x[0-9a-fA-F]{1,32}$" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "tmux": {
+          "type": "object",
+          "required": ["socket", "server", "pane", "paneProcess", "client", "clientTty", "session", "window"],
+          "properties": {
+            "socket": { "type": "string", "pattern": "^/", "maxLength": 4096 },
+            "server": { "$ref": "#/$defs/Identity" },
+            "pane": { "type": "string", "pattern": "^%\\d+$" },
+            "paneProcess": { "$ref": "#/$defs/Identity" },
+            "client": { "$ref": "#/$defs/Identity" },
+            "clientTty": { "type": "string", "pattern": "^/dev/pts/\\d+$" },
+            "session": { "type": "string", "pattern": "^\\$\\d+$" },
+            "window": { "type": "string", "pattern": "^@\\d+$" }
+          }
+        }
+      }
+    },
+    "Presence": {
+      "type": "object",
+      "required": ["type", "version", "status", "since", "completed", "preview", "workers"],
+      "properties": {
+        "type": { "const": "presence" },
+        "version": { "const": 1 },
+        "status": { "type": "string", "maxLength": 100, "description": "v1 free-text label; prefer activity.state when present." },
+        "since": { "$ref": "#/$defs/epochMs" },
+        "completed": { "$ref": "#/$defs/epochMs", "description": "ms epoch of the last settled run or worker completion (0 if none)." },
+        "preview": { "type": "string", "maxLength": 2000, "description": "Latest assistant text, bounded." },
+        "workers": { "type": "array", "maxItems": 40, "items": { "$ref": "#/$defs/WorkerEntry" } },
+        "target": { "$ref": "#/$defs/FocusTarget" },
+        "outline": { "$ref": "#/$defs/Outline" },
+        "activity": { "$ref": "#/$defs/Activity" },
+        "workerCounts": { "$ref": "#/$defs/WorkerCounts" },
+        "focusable": { "type": "boolean" },
+        "focusReason": { "type": "string", "maxLength": 120 },
+        "previewAt": { "$ref": "#/$defs/epochMs" }
+      }
+    }
+  }
+}

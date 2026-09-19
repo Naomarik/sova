@@ -1,0 +1,34 @@
+{
+  "v": 1,
+  "session": {
+    "id": "p48213-3fa9c2d1",
+    "endpointEpoch": "9b2e6f0a-4c1d-4e7b-8a52-1f3d9c7e2b64",
+    "name": "auth-refactor",
+    "cwd": "/home/dev/src/webapp",
+    "model": "claude-opus-5",
+    "pid": 48213,
+    "startedAt": 1789801200000,
+    "lastActivity": 1789804797000,
+    "status": "Running: edit, read"
+  },
+  "presence": {
+    "type": "presence",
+    "version": 1,
+    "status": "Running: edit, read",
+    "since": 1789804790000,
+    "completed": 1789804512000,
+    "preview": "I've split the session middleware into `validateToken` and `refreshToken`. Next I'll update the callers in routes/ and re-run the auth tests.",
+    "workers": [
+      { "id": "w-reviewer-1", "name": "reviewer", "status": "running", "model": "claude-sonnet-5", "preview": "Reading middleware/session.ts…" }
+    ],
+    "outline": {
+      "now": "Splitting session middleware",
+      "overall": "Refactor auth middleware so token refresh is testable in isolation.",
+      "topics": ["Session middleware", "Token refresh"],
+      "state": "fresh",
+      "generatedAt": 1789804700000,
+      "lastHeading": "Auth fix"
+    }
+  },
+  "heartbeat": 1789804797000
+}

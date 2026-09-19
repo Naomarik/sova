@@ -1,4 +1,4 @@
 // Placeholder — the frontend member replaces this file.
-import { createRoot } from "react-dom/client";
+import { render } from "solid-js/web";
 
-createRoot(document.getElementById("root")!).render(<div>pi-web scaffold</div>);
+render(() => <div>pi-web scaffold</div>, document.getElementById("root")!);

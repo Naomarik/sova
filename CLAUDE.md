@@ -8,7 +8,7 @@ live-watch sessions that are open in the CLI/TUI, spawn new sessions.
 
 - `shared/protocol.ts` — the REST/WS wire contract. Change only with team coordination.
 - `server/` — Node backend: Hono (REST) + `ws` (2 WS endpoints), embeds the pi SDK. Owned by **backend**.
-- `src/` — React 19 + TS frontend (Vite). Owned by **frontend**, except `src/design/`.
+- `src/` — SolidJS + TS frontend (Vite, vite-plugin-solid; HMR = live reload). Owned by **frontend**, except `src/design/`.
 - `src/design/`, `DESIGN_NOTES.md`, `public/` — design tokens, base CSS, fonts/icons, UX spec. Owned by **designer**.
 - `.claude/skills/fold-ai-dev-design/` — the design system skill (copied from foldaidev). READ IT.
 
@@ -41,3 +41,4 @@ Pi package on disk: `/home/user/.local/share/mise/installs/node/25.2.1/lib/node_
 
 TS strict, ESM, no new dependencies without asking. Server normalizes JSONL entries into
 `TranscriptItem`; frontend renders those, and renders live streaming from the raw passthrough events.
+Frontend is SolidJS (NOT React): signals/stores, `<For>/<Show>`, `onCleanup` for WS teardown.

@@ -26,6 +26,10 @@ for d in "$here"/extensions/*/; do
 	d=${d%/}
 	link "$d" "$agent/extensions/$(basename "$d")"
 done
+for f in "$here"/extensions/*.ts; do
+	[ -e "$f" ] || continue
+	link "$f" "$agent/extensions/$(basename "$f")"
+done
 
 echo
 echo "Start pi once to install the pinned packages from settings.json, then run /reload."

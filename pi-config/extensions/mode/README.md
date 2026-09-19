@@ -33,9 +33,12 @@ Claude plan mode are involved — workers run with bypassed permissions as usual
 | --- | --- |
 | `alt+m` or `/mode` | Toggle normal ↔ claude-heavy |
 | `/mode normal` · `/mode claude-heavy` | Set explicitly |
-| `/mode status` | Show mode, active planner, strict flag, state file |
+| `/mode status` | Show mode, active planner, strict flag, minor modes, state file |
 | `/mode strict on\|off` | Also remove `edit`/`write` from the orchestrator while heavy (off by default) |
+| `/mode align [on\|off]` | Toggle (or set) the `align` minor mode |
+| `/mode-align [on\|off]` | Same, as its own command (its own ctrl-p palette entry) |
 | `pi --mode claude-heavy` | Start that launch in a mode (not persisted) |
+| `pi --minor align` | Start that launch with these minor modes on, comma-separated; `none` clears them (not persisted) |
 
 The footer always shows the current mode:
 
@@ -43,8 +46,29 @@ The footer always shows the current mode:
 - `◆ claude-heavy` (accent)
 - `◆ claude-heavy · plan:opus` (warning: fable planner not offered, opus/high in use)
 - `◆ claude-heavy · strict`
+- `normal · align` (accent: a minor mode is on)
+- `claude-heavy · strict · align`
 
-Every switch appends a `── mode → … ──` marker to the transcript.
+Every switch appends a `── mode → … ──` marker to the transcript; minor-mode
+switches append `── align on ──` / `── align off ──`.
+
+## Minor modes
+
+Minor modes are extra instructions toggled independently of the major mode:
+zero or more can be active at once, in normal or claude-heavy. Their blocks
+are appended after the heavy block (when heavy) in registry order.
+
+- **align** — before building anything non-trivial, the agent investigates
+  (via a non-editing planning worker when heavy, itself otherwise), replies
+  with its findings, proposed approach, and numbered open questions on
+  architecture, UX, scope and trade-offs, then stops and waits for
+  confirmation. Questions, explicit commands, pointed-at one-liners and
+  confirmations are exempt. Text in `minor.ts`.
+
+Like the major mode, the prompt is read per turn, so toggles apply from the
+next prompt. Unknown names hand-edited into `minorModes` are dropped on load.
+The ctrl-p command palette discovers both `/mode` and each `/mode-<minor>`
+command automatically.
 
 ## Behaviour
 
@@ -54,11 +78,14 @@ next prompt without `/reload`. The mode persists globally across projects and
 restarts in `~/.pi/agent/mode.json`:
 
 ```json
-{ "version": 1, "mode": "claude-heavy", "strict": false }
+{ "version": 1, "mode": "claude-heavy", "strict": false, "minorModes": ["align"] }
 ```
 
 An optional `"shortcut"` field (a pi-tui KeyId such as `"alt+h"`) changes the
-toggle key on the next reload.
+toggle key on the next reload. An optional `"minorShortcuts"` object (for
+example `{ "align": "alt+a" }`) binds a toggle key per minor mode, also on the
+next reload; there are none by default. Files written before minor modes
+existed load with no minor modes on.
 
 Planner availability is probed on entering heavy mode and on every session
 start while heavy, through the `subagents:backend-discover` contract — the same
@@ -77,6 +104,6 @@ keeps `bash`, so nothing hard-forces delegation; strict only makes `edit` and
 
 ```sh
 cd extensions/mode
-node --test index.test.ts   # pure state/prompt/planner logic
+node --test index.test.ts   # pure state/prompt/minor/planner logic
 node tests/smoke.mjs        # real index.ts against a fake pi host, no model requests
 ```

@@ -13,6 +13,9 @@ process.env.PI_CODING_AGENT_DIR = mkdtempSync(path.join(tmpdir(), "mode-smoke-")
 const modeModule = await jiti.import(pathToFileURL(path.resolve(new URL("../index.ts", import.meta.url).pathname)).href);
 const modeExtension = modeModule.default;
 
+// Launch flag values the fake host reports; scenarios mutate this.
+const flagValues = {};
+
 function makeApi() {
 	const listeners = new Map();
 	const hooks = new Map();
@@ -36,7 +39,7 @@ function makeApi() {
 		events,
 		on: (name, handler) => hooks.set(name, handler),
 		registerFlag: (name, options) => api.flags.set(name, options),
-		getFlag: () => undefined,
+		getFlag: (name) => flagValues[name],
 		registerCommand: (name, options) => commands.set(name, options),
 		registerShortcut: (id, options) => shortcuts.set(id, options),
 		appendEntry: (type, data) => entries.push({ type, data }),
@@ -68,7 +71,7 @@ let offered = [
 	{ id: "opus[1m]", name: "Opus" },
 ];
 
-const { api, hooks, commands, shortcuts, entries, events, getTools } = makeApi();
+const { api, hooks, commands, shortcuts, renderers, entries, events, getTools } = makeApi();
 const store = { status: new Map(), notices: [] };
 const ctx = makeCtx(store);
 
@@ -89,20 +92,23 @@ modeExtension(api);
 assert.ok(commands.has("mode"), "/mode registered");
 assert.ok(shortcuts.has("alt+m"), "alt+m registered");
 assert.ok(api.flags.has("mode"), "--mode flag registered");
+assert.ok(api.flags.has("minor"), "--minor flag registered");
+assert.ok(commands.has("mode-align"), "/mode-align registered as its own command");
+assert.match(commands.get("mode-align").description, /align/i);
 
 async function hook(name, ...args) {
 	return hooks.get(name)?.(...args, ctx);
 }
 
 await hook("session_start", {});
-assert.equal(store.status.get("mode"), "<dim>• normal</dim>", "normal status renders");
+assert.equal(store.status.get("mode"), "<dim>normal</dim>", "normal status renders");
 
 // before_agent_start is inert in normal mode
 assert.equal(await hooks.get("before_agent_start")({ systemPrompt: "base" }, ctx), undefined);
 
 // Toggle heavy with fable available
 await commands.get("mode").handler("claude-heavy", ctx);
-assert.equal(store.status.get("mode"), "<accent>◆ claude-heavy</accent>", "heavy status renders after probe");
+assert.equal(store.status.get("mode"), "<accent>claude-heavy</accent>", "heavy status renders after probe");
 const heavyPrompt = await hooks.get("before_agent_start")({ systemPrompt: "base" }, ctx);
 assert.match(heavyPrompt.systemPrompt, /^base\n/);
 assert.match(heavyPrompt.systemPrompt, /# Mode: claude-heavy/);
@@ -112,21 +118,82 @@ assert.ok(entries.some((e) => e.type === "mode" && e.data.mode === "claude-heavy
 // Strict mode hides edit/write from the orchestrator and restores on mode exit
 await commands.get("mode").handler("strict on", ctx);
 assert.deepEqual(getTools(), ["read", "bash", "grep"], "strict removed edit/write");
-assert.equal(store.status.get("mode"), "<accent>◆ claude-heavy · strict</accent>");
+assert.equal(store.status.get("mode"), "<accent>claude-heavy · strict</accent>");
 await commands.get("mode").handler("normal", ctx);
 assert.deepEqual(getTools(), ["read", "bash", "edit", "write", "grep"], "tools restored on leaving heavy");
-assert.equal(store.status.get("mode"), "<dim>• normal</dim>");
+assert.equal(store.status.get("mode"), "<dim>normal</dim>");
 
 // Planner fallback: fable not offered → warning status + prompt names opus/high
 offered = [{ id: "opus[1m]", name: "Opus" }];
 await commands.get("mode").handler("claude-heavy", ctx);
-assert.equal(store.status.get("mode"), "<warning>◆ claude-heavy · plan:opus · strict</warning>", "fallback reflected in status (strict is still on from the previous scenario)");
+assert.equal(store.status.get("mode"), "<warning>claude-heavy · plan:opus · strict</warning>", "fallback reflected in status (strict is still on from the previous scenario)");
 const fallbackPrompt = await hooks.get("before_agent_start")({ systemPrompt: "base" }, ctx);
 assert.match(fallbackPrompt.systemPrompt, /model "opus\[1m\]", effort "high"/);
 assert.ok(store.notices.some((n) => n.level === "warning"), "fallback notifies");
 
 // Toggling via the shortcut flips modes
 await shortcuts.get("alt+m").handler(ctx);
-assert.equal(store.status.get("mode"), "<dim>• normal</dim>", "shortcut toggles back to normal");
+assert.equal(store.status.get("mode"), "<dim>normal</dim>", "shortcut toggles back to normal");
+
+// Minor mode align in normal mode: only the align block is appended
+const alignHeader = /# Minor mode: align/;
+await commands.get("mode").handler("align on", ctx);
+assert.equal(store.status.get("mode"), "<accent>normal · align</accent>", "align shows in normal status");
+const normalAlign = await hooks.get("before_agent_start")({ systemPrompt: "base" }, ctx);
+assert.match(normalAlign.systemPrompt, /^base\n\n# Minor mode: align/);
+assert.doesNotMatch(normalAlign.systemPrompt, /# Mode: claude-heavy/);
+assert.ok(entries.some((e) => e.type === "mode" && e.data.minor === "align" && e.data.on === true), "minor marker appended");
+const markerText = renderers.get("mode")({ data: { minor: "align", on: true } }, {}, ctx.ui.theme).render(80).join("");
+assert.match(markerText, /── align on ──/, "minor marker renders");
+const oldMarkerText = renderers.get("mode")({ data: { mode: "claude-heavy" } }, {}, ctx.ui.theme).render(80).join("");
+assert.match(oldMarkerText, /── mode → claude-heavy ──/, "old major markers still render");
+
+// Switching to heavy keeps align; the heavy block precedes the align block
+offered = [
+	{ id: "claude-fable-5-1[1m]", name: "Fable" },
+	{ id: "opus[1m]", name: "Opus" },
+];
+await commands.get("mode").handler("claude-heavy", ctx);
+assert.equal(store.status.get("mode"), "<accent>claude-heavy · strict · align</accent>");
+const heavyAlign = (await hooks.get("before_agent_start")({ systemPrompt: "base" }, ctx)).systemPrompt;
+assert.ok(heavyAlign.indexOf("# Mode: claude-heavy") > 0, "heavy block present");
+assert.ok(heavyAlign.indexOf("# Mode: claude-heavy") < heavyAlign.search(alignHeader), "heavy before align");
+
+// /mode status reports minor modes
+await commands.get("mode").handler("status", ctx);
+assert.match(store.notices.at(-1).message, /^minor: align$/m);
+
+// Bare /mode align toggles off; prompt back to heavy only
+await commands.get("mode").handler("align", ctx);
+assert.equal(store.status.get("mode"), "<accent>claude-heavy · strict</accent>");
+const heavyOnly = (await hooks.get("before_agent_start")({ systemPrompt: "base" }, ctx)).systemPrompt;
+assert.match(heavyOnly, /# Mode: claude-heavy/);
+assert.doesNotMatch(heavyOnly, alignHeader);
+assert.ok(entries.some((e) => e.type === "mode" && e.data.minor === "align" && e.data.on === false), "off marker appended");
+await commands.get("mode").handler("status", ctx);
+assert.match(store.notices.at(-1).message, /^minor: \(none\)$/m);
+
+// /mode-align toggles, and accepts on/off
+await commands.get("mode-align").handler("", ctx);
+assert.equal(store.status.get("mode"), "<accent>claude-heavy · strict · align</accent>", "/mode-align toggles on");
+await commands.get("mode-align").handler("off", ctx);
+assert.equal(store.status.get("mode"), "<accent>claude-heavy · strict</accent>", "/mode-align off");
+await commands.get("mode-align").handler("sideways", ctx);
+assert.equal(store.notices.at(-1).level, "warning", "bad /mode-align argument warns");
+
+// Completions include minor modes
+const completions = commands.get("mode").getArgumentCompletions("al").map((item) => item.value);
+assert.deepEqual(completions, ["align", "align on", "align off"]);
+
+// --minor launch flag: applies known names, warns once about unknown ones
+await commands.get("mode").handler("normal", ctx);
+flagValues.minor = "align,bogus";
+const noticesBefore = store.notices.length;
+await hook("session_start", {});
+assert.equal(store.status.get("mode"), "<accent>normal · align</accent>", "--minor applied at session start");
+const flagNotices = store.notices.slice(noticesBefore);
+assert.equal(flagNotices.length, 1, "exactly one notification for the flag");
+assert.equal(flagNotices[0].level, "warning");
+assert.match(flagNotices[0].message, /bogus/);
 
 console.log("mode smoke tests passed");

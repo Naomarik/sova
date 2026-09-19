@@ -1,5 +1,6 @@
-/** The claude-heavy system-prompt text and status labels. Pure functions: unit-testable. */
-import type { Mode } from "./state.ts";
+/** The claude-heavy system-prompt text, prompt composition, and status labels. Pure functions: unit-testable. */
+import { buildMinorPrompt, type MinorMode } from "./minor.ts";
+import type { Mode, ModeState } from "./state.ts";
 
 export interface PlannerChoice {
 	model: string;
@@ -35,15 +36,31 @@ export function buildHeavyPrompt(planner: PlannerChoice): string {
 		.replace("{FALLBACK_NOTE}", fallbackNote);
 }
 
+/** Everything to append to this turn's system prompt: heavy block first, then minor blocks in registry order. */
+export function composePrompt(state: ModeState, planner: PlannerChoice): string | undefined {
+	const blocks: string[] = [];
+	if (state.mode === "claude-heavy") blocks.push(buildHeavyPrompt(planner));
+	for (const minor of state.minorModes) blocks.push(buildMinorPrompt(minor));
+	return blocks.length > 0 ? blocks.join("\n\n") : undefined;
+}
+
 export type StatusTone = "dim" | "accent" | "warning";
 
-export function statusLabel(mode: Mode, planner: PlannerChoice, strict: boolean): { text: string; tone: StatusTone } {
-	if (mode === "normal") return { text: "• normal", tone: "dim" };
+export function statusLabel(
+	mode: Mode,
+	planner: PlannerChoice,
+	strict: boolean,
+	minorModes: readonly MinorMode[],
+): { text: string; tone: StatusTone } {
 	const extras: string[] = [];
-	if (planner.fallback) extras.push("plan:opus");
-	if (strict) extras.push("strict");
+	if (mode === "claude-heavy") {
+		if (planner.fallback) extras.push("plan:opus");
+		if (strict) extras.push("strict");
+	}
+	extras.push(...minorModes);
+	const fallback = mode === "claude-heavy" && planner.fallback;
 	return {
-		text: `◆ claude-heavy${extras.length > 0 ? ` · ${extras.join(" · ")}` : ""}`,
-		tone: planner.fallback ? "warning" : "accent",
+		text: [mode, ...extras].join(" · "),
+		tone: fallback ? "warning" : mode === "claude-heavy" || minorModes.length > 0 ? "accent" : "dim",
 	};
 }

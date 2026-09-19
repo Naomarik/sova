@@ -1,5 +1,5 @@
 /**
- * Mode switcher: normal ↔ claude-heavy.
+ * Mode switcher: normal ↔ claude-heavy, plus independently toggleable minor modes.
  *
  * claude-heavy re-instructs the main agent (per turn, in before_agent_start) to
  * act as a pure orchestrator: coding implementation goes to Claude Code workers
@@ -7,21 +7,27 @@
  * planning goes to claude-fable-5-1[1m] at medium, falling back to opus[1m]/high
  * when the planner model is not offered. See prompt.ts for the full text.
  *
- * Surface: /mode command, alt+m shortcut, always-on footer status,
- * a `--mode` launch flag, and a transcript marker on every switch.
- * State persists globally in ~/.pi/agent/mode.json.
+ * Minor modes (minor.ts) are extra prompt biases on top of either major mode;
+ * "align" makes the agent agree on what to build before building it.
+ *
+ * Surface: /mode command, one /mode-<minor> command per minor mode, alt+m
+ * shortcut, always-on footer status, `--mode` / `--minor` launch flags, and a
+ * transcript marker on every switch. State persists globally in ~/.pi/agent/mode.json.
  */
 import { getAgentDir, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Text, type KeyId } from "@earendil-works/pi-tui";
 import { join } from "node:path";
+import { isMinorMode, MINOR_DESCRIPTIONS, MINOR_MODES, parseMinorFlag, type MinorMode } from "./minor.ts";
 import { PlannerProbe } from "./planner.ts";
-import { buildHeavyPrompt, PLANNER_PRIMARY, statusLabel, type PlannerChoice } from "./prompt.ts";
+import { composePrompt, PLANNER_PRIMARY, statusLabel, type PlannerChoice } from "./prompt.ts";
 import {
 	DEFAULT_MODE_SHORTCUT,
+	hasMinor,
 	isMode,
 	loadState,
 	saveState,
 	toggleMode,
+	withMinor,
 	type Mode,
 	type ModeState,
 } from "./state.ts";
@@ -31,9 +37,8 @@ const STATE_FILE = join(getAgentDir(), "mode.json");
 /** Tools removed from the orchestrator while strict claude-heavy is on. */
 const STRICT_REMOVED_TOOLS = new Set(["edit", "write"]);
 
-interface ModeMarker {
-	mode: Mode;
-}
+/** Old entries only carry `mode`; minor-mode switches carry `minor` and `on`. */
+type ModeMarker = { mode: Mode } | { minor: MinorMode; on: boolean };
 
 export default function modeExtension(pi: ExtensionAPI): void {
 	let state: ModeState = loadState(STATE_FILE);
@@ -45,9 +50,13 @@ export default function modeExtension(pi: ExtensionAPI): void {
 	let probeGeneration = 0;
 
 	pi.registerFlag("mode", { description: "Start in a mode: normal | claude-heavy", type: "string" });
+	pi.registerFlag("minor", {
+		description: `Start with minor modes on (comma-separated): ${MINOR_MODES.join(" | ")}, or none`,
+		type: "string",
+	});
 
 	function renderStatus(ctx: ExtensionContext): void {
-		const { text, tone } = statusLabel(state.mode, planner, state.strict);
+		const { text, tone } = statusLabel(state.mode, planner, state.strict, state.minorModes);
 		ctx.ui.setStatus("mode", ctx.ui.theme.fg(tone, text));
 	}
 
@@ -100,10 +109,23 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		}
 	}
 
+	function setMinor(minor: MinorMode, on: boolean, ctx: ExtensionContext): void {
+		if (hasMinor(state, minor) === on) {
+			renderStatus(ctx);
+			return;
+		}
+		state = withMinor(state, minor, on);
+		saveState(STATE_FILE, state);
+		pi.appendEntry<ModeMarker>("mode", { minor, on });
+		renderStatus(ctx);
+		ctx.ui.notify(`Minor mode: ${minor} ${on ? "on" : "off"}`, "info");
+	}
+
 	pi.registerCommand("mode", {
-		description: "Switch between normal and claude-heavy orchestration modes",
+		description: "Switch between normal and claude-heavy orchestration modes, or toggle a minor mode",
 		getArgumentCompletions: (argumentPrefix) => {
-			const items = ["normal", "claude-heavy", "status", "strict on", "strict off"]
+			const minorItems = MINOR_MODES.flatMap((minor) => [minor, `${minor} on`, `${minor} off`]);
+			const items = ["normal", "claude-heavy", "status", "strict on", "strict off", ...minorItems]
 				.filter((value) => value.startsWith(argumentPrefix.trim()))
 				.map((value) => ({ value, label: value }));
 			return items.length > 0 ? items : null;
@@ -123,6 +145,7 @@ export default function modeExtension(pi: ExtensionAPI): void {
 					`mode: ${state.mode}`,
 					`planner: ${planner.model} at ${planner.effort}${planner.fallback ? " (fallback; fable unavailable)" : ""}`,
 					`strict: ${state.strict ? "on" : "off"}`,
+					`minor: ${state.minorModes.length > 0 ? state.minorModes.join(", ") : "(none)"}`,
 					`shortcut: ${state.shortcut ?? DEFAULT_MODE_SHORTCUT}`,
 					`state file: ${STATE_FILE}`,
 				];
@@ -149,25 +172,75 @@ export default function modeExtension(pi: ExtensionAPI): void {
 				renderStatus(ctx);
 				return;
 			}
-			ctx.ui.notify(`Unknown argument "${arg}". Usage: /mode [normal|claude-heavy|status|strict on|strict off]`, "warning");
+			const minorToggle = /^([a-z-]+)(?:\s+(on|off))?$/.exec(arg);
+			if (minorToggle && isMinorMode(minorToggle[1])) {
+				const minor = minorToggle[1];
+				const on = minorToggle[2] === undefined ? !hasMinor(state, minor) : minorToggle[2] === "on";
+				setMinor(minor, on, ctx);
+				return;
+			}
+			const minorUsage = MINOR_MODES.map((minor) => `${minor} [on|off]`).join("|");
+			ctx.ui.notify(
+				`Unknown argument "${arg}". Usage: /mode [normal|claude-heavy|status|strict on|strict off|${minorUsage}]`,
+				"warning",
+			);
 		},
 	});
+
+	// One first-class command per minor mode, so each is its own command-palette entry.
+	for (const minor of MINOR_MODES) {
+		pi.registerCommand(`mode-${minor}`, {
+			description: MINOR_DESCRIPTIONS[minor],
+			getArgumentCompletions: (argumentPrefix) => {
+				const items = ["on", "off"]
+					.filter((value) => value.startsWith(argumentPrefix.trim()))
+					.map((value) => ({ value, label: value }));
+				return items.length > 0 ? items : null;
+			},
+			handler: async (args, ctx) => {
+				const arg = args.trim();
+				if (arg === "") setMinor(minor, !hasMinor(state, minor), ctx);
+				else if (arg === "on" || arg === "off") setMinor(minor, arg === "on", ctx);
+				else ctx.ui.notify(`Unknown argument "${arg}". Usage: /mode-${minor} [on|off]`, "warning");
+			},
+		});
+	}
 
 	pi.registerShortcut((state.shortcut ?? DEFAULT_MODE_SHORTCUT) as KeyId, {
 		description: "Toggle normal / claude-heavy mode",
 		handler: async (ctx) => setMode(toggleMode(state.mode), ctx),
 	});
 
-	// The behaviour change itself: replace this turn's system prompt while heavy.
+	for (const minor of MINOR_MODES) {
+		const shortcut = state.minorShortcuts?.[minor];
+		if (shortcut === undefined) continue;
+		pi.registerShortcut(shortcut as KeyId, {
+			description: `Toggle the ${minor} minor mode`,
+			handler: async (ctx) => setMinor(minor, !hasMinor(state, minor), ctx),
+		});
+	}
+
+	// The behaviour change itself: extend this turn's system prompt with the active mode blocks.
 	pi.on("before_agent_start", async (event) => {
-		if (state.mode !== "claude-heavy") return;
-		return { systemPrompt: `${event.systemPrompt}\n\n${buildHeavyPrompt(planner)}` };
+		const block = composePrompt(state, planner);
+		if (block === undefined) return;
+		return { systemPrompt: `${event.systemPrompt}\n\n${block}` };
 	});
 
 	pi.on("session_start", async (_event, ctx) => {
-		// One-shot launch override; never written to the global file.
+		// One-shot launch overrides; never written to the global file.
 		const flag = pi.getFlag("mode");
 		if (typeof flag === "string" && isMode(flag)) state = { ...state, mode: flag };
+		const minorFlag = parseMinorFlag(pi.getFlag("minor"));
+		if (minorFlag) {
+			state = { ...state, minorModes: minorFlag.minorModes };
+			if (minorFlag.unknown.length > 0) {
+				ctx.ui.notify(
+					`Unknown minor mode in --minor: ${minorFlag.unknown.join(", ")} (known: ${MINOR_MODES.join(", ")})`,
+					"warning",
+				);
+			}
+		}
 		if (state.mode === "claude-heavy") {
 			if (state.strict) applyStrictTools();
 			renderStatus(ctx);
@@ -183,7 +256,9 @@ export default function modeExtension(pi: ExtensionAPI): void {
 
 	// A visible marker in the transcript where the behaviour changed.
 	pi.registerEntryRenderer<ModeMarker>("mode", (entry, _options, theme) => {
-		const mode = entry.data?.mode ?? "normal";
+		const data = entry.data;
+		if (data && "minor" in data) return new Text(theme.fg("dim", `── ${data.minor} ${data.on ? "on" : "off"} ──`), 0, 0);
+		const mode = data?.mode ?? "normal";
 		return new Text(theme.fg("dim", `── mode → ${mode} ──`), 0, 0);
 	});
 }

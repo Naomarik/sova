@@ -9,8 +9,8 @@ additions, the pinned third-party packages, and the extensions kept in-tree.
 > [Naomarik/pi-config](https://github.com/Naomarik/pi-config) is a
 > `git subtree split` mirror of the `pi-config/` directory of a private
 > monorepo (the pi-web app, which embeds pi and reads some of these
-> extensions' files). Development happens there, and the mirror is
-> force-pushed from it, so its commit hashes can change. Everything in this
+> extensions' files). Development happens there, and changes reach this
+> repository as ordinary fast-forward pushes. Everything in this
 > directory is self-contained: clone the mirror and `install.sh` works
 > without the web app.
 

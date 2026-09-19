@@ -2,7 +2,7 @@ import { statSync } from "node:fs";
 import { open, readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import type { SessionSummary } from "../shared/protocol";
-import { readLive } from "./live";
+import { type LiveRecord, readLive } from "./live";
 import { LIVE_DIR, SESSIONS_DIR } from "./paths";
 import { isWebSession } from "./web-sessions";
 
@@ -165,6 +165,10 @@ async function summarize(path: string): Promise<BaseSummary | null> {
   }
 }
 
+function liveField(l: LiveRecord | undefined): SessionSummary["live"] {
+  return l ? { pid: l.pid, status: l.status, ...(l.workers ? { workers: l.workers } : {}) } : null;
+}
+
 /** All sessions, newest activity first, with fresh live presence merged in. */
 export async function listSessions(): Promise<SessionSummary[]> {
   const files = await listSessionFiles();
@@ -176,7 +180,7 @@ export async function listSessions(): Promise<SessionSummary[]> {
   for (const s of results) {
     if (!s) continue;
     const l = live.get(s.path);
-    out.push({ ...s, live: l ? { pid: l.pid, status: l.status } : null, origin: isWebSession(s.id) ? "web" : "external" });
+    out.push({ ...s, live: liveField(l), origin: isWebSession(s.id) ? "web" : "external" });
   }
   out.sort((a, b) => b.lastActiveAt.localeCompare(a.lastActiveAt));
   return out;
@@ -186,7 +190,7 @@ export async function getSessionSummary(path: string): Promise<SessionSummary | 
   const s = await summarize(path);
   if (!s) return null;
   const l = readLive().get(path);
-  return { ...s, live: l ? { pid: l.pid, status: l.status } : null, origin: isWebSession(s.id) ? "web" : "external" };
+  return { ...s, live: liveField(l), origin: isWebSession(s.id) ? "web" : "external" };
 }
 
 function isDir(p: string): boolean {

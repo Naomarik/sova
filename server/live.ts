@@ -6,6 +6,15 @@ export interface LiveRecord {
   pid: number;
   status: string;
   mode: string | null;
+  /** From presence.workerCounts (sessions extension schema v2); absent for older writers. */
+  workers?: { working: number; total: number };
+}
+
+/** A parsed live file whose pid is alive. `rec` is untrusted JSON: consumers parse defensively. */
+export interface RawLiveRecord {
+  sessionFile: string | null; // canonical; null for ephemeral sessions
+  pid: number;
+  rec: any;
 }
 
 function pidAlive(pid: number): boolean {
@@ -17,14 +26,15 @@ function pidAlive(pid: number): boolean {
   }
 }
 
+const count = (v: unknown) => (typeof v === "number" && Number.isInteger(v) && v >= 0 ? v : null);
+
 /**
- * Read the live presence registry (~/.pi/agent/sessions/live/*.json) fresh from disk.
- * Keyed by absolute session file path. Records owned by this server process (the pi
- * "sessions" extension also runs inside our embedded runtimes) and records whose pid
- * is dead are skipped: they are not external writers.
+ * All live files (~/.pi/agent/sessions/live/*.json) with an alive pid, read fresh from disk.
+ * Contract: ~/pi-config/extensions/sessions/public/SCHEMA.md. Read-only: never delete or
+ * rewrite anything there, not even dead records (pi writers clean those up).
  */
-export function readLive(): Map<string, LiveRecord> {
-  const out = new Map<string, LiveRecord>();
+export function readLiveRecords(opts: { includeOwn?: boolean } = {}): RawLiveRecord[] {
+  const out: RawLiveRecord[] = [];
   let names: string[];
   try {
     names = readdirSync(LIVE_DIR);
@@ -32,20 +42,39 @@ export function readLive(): Map<string, LiveRecord> {
     return out;
   }
   for (const name of names) {
-    if (!name.endsWith(".json")) continue;
+    if (!name.endsWith(".json") || name.startsWith(".")) continue; // dotfiles = writers' temp files
     try {
       const rec = JSON.parse(readFileSync(join(LIVE_DIR, name), "utf8"));
       const s = rec?.session;
-      if (!s || typeof s.sessionFile !== "string" || typeof s.pid !== "number") continue;
-      if (s.pid === process.pid || !pidAlive(s.pid)) continue;
-      out.set(canonicalPath(s.sessionFile), {
-        pid: s.pid,
-        status: String(rec.presence?.status ?? s.status ?? "unknown"),
-        mode: typeof s.mode === "string" ? s.mode : null,
-      });
+      if (!s || typeof s.pid !== "number") continue;
+      if ((s.pid === process.pid && !opts.includeOwn) || !pidAlive(s.pid)) continue;
+      out.push({ sessionFile: typeof s.sessionFile === "string" ? canonicalPath(s.sessionFile) : null, pid: s.pid, rec });
     } catch {
       // partially written or malformed presence file: skip
     }
+  }
+  return out;
+}
+
+/**
+ * Live presence keyed by absolute session file path. Records owned by this server process
+ * (the pi "sessions" extension also runs inside our embedded runtimes) are skipped: they
+ * are not external writers.
+ */
+export function readLive(): Map<string, LiveRecord> {
+  const out = new Map<string, LiveRecord>();
+  for (const { sessionFile, pid, rec } of readLiveRecords()) {
+    if (!sessionFile) continue;
+    const s = rec.session;
+    const wc = rec.presence?.workerCounts;
+    const working = count(wc?.working);
+    const total = count(wc?.total);
+    out.set(sessionFile, {
+      pid,
+      status: String(rec.presence?.status ?? s.status ?? "unknown"),
+      mode: typeof s.mode === "string" ? s.mode : null,
+      ...(working !== null && total !== null ? { workers: { working, total } } : {}),
+    });
   }
   return out;
 }

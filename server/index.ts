@@ -11,6 +11,7 @@ import { canonicalPath, resolveSessionPath } from "./paths";
 import { listModels } from "./models";
 import { markOwned } from "./write-guard";
 import { addWebSession } from "./web-sessions";
+import { getAgentsInsight, getSessionInsight, getUsageInsight } from "./insights";
 import { getSessionSummary, listCwds, listSessions } from "./sessions-index";
 import { readTranscript } from "./transcript";
 import { attachWebSockets } from "./ws";
@@ -71,6 +72,19 @@ app.get("/api/transcript", async (c) => {
   if (!path) return c.json({ error: "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)" }, 400);
   if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
   return c.json({ items: await readTranscript(path) });
+});
+
+// Insights: read-only views of extension state (docs/insights-research.md). Missing or
+// corrupt sources come back as empty/unavailable payloads, not errors.
+app.get("/api/insights/usage", async (c) => c.json(await getUsageInsight()));
+
+app.get("/api/insights/agents", async (c) => c.json(await getAgentsInsight()));
+
+app.get("/api/insights/session", async (c) => {
+  const path = resolveSessionPath(c.req.query("path"));
+  if (!path) return c.json({ error: "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)" }, 400);
+  if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
+  return c.json(await getSessionInsight(path));
 });
 
 app.all("/api/*", (c) => c.json({ error: "Not found" }, 404));

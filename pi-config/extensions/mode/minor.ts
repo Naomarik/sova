@@ -34,7 +34,7 @@ What you would do, in order.
 ### Status
 aligning
 
-   Ask only what would materially change the work; do not pad with obvious questions.
+   Ask only what would materially change the work; do not pad with obvious questions. Use real markdown headings, not bold look-alikes: the \`## Alignment: <title>\` anchor carries the title into the viewer, and bold pseudo-headings are only a tolerated fallback (they parse with an empty title; other shapes are dropped with a warning).
 3. Stop and wait. Build only after the user confirms or answers, and then do not re-ask points already settled.
 
 Whenever anything in the block changes (the user answers, scope moves, you learn something), re-emit the whole block, updated: mark settled questions \`[x]\` and append the decision after an em dash, keep unsettled ones \`[ ]\`. When the user confirms, re-emit it once more with Status \`confirmed\`; when you begin building, Status \`implementing\`. If the user says to go ahead while questions are still open, treat that as confirmation: set Status \`implementing\`, keep those questions \`[ ]\`, and proceed with your recommendation. Keep the headings verbatim so the block can be parsed.

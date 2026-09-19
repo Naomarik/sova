@@ -4,6 +4,7 @@ import {
 	ALIGN_ENTRY_TYPE,
 	clampScroll,
 	deriveStatus,
+	looksLikeAlignBlock,
 	nextDoc,
 	normalizeAlignEntry,
 	parseAlignBlock,
@@ -142,6 +143,113 @@ test("duplicate streamed text: the first block wins", () => {
 	const parsed = parseAlignBlock(`${block}\n\n${block.replace("once", "twice")}`);
 	assert.equal(parsed?.title, "once");
 	assert.equal(parsed?.questions.length, 1);
+});
+
+const BOLD_NO_ANCHOR = `The Opus investigation came back. Report above has full details; here's the alignment summary:
+
+**Findings**
+- The hard part is already done by in-flight uncommitted work: session ids are plumbed.
+- What's missing is purely pi-web server side: resolve the file and tail it.
+- CC's JSONL is tailable line by line.
+
+**Approach** (recommended option a, ~1–1.5 days incl. tests)
+1. resolveClaudeSession(uuid) in server/paths.ts maps a uuid to a transcript path.
+2. New server/claude-transcript.ts tails the file.
+3. Wire the watcher into the existing worker registry.
+- No pi-config/ changes, no new deps. Everything stays server side.
+
+**Open questions**
+- The session-id plumbing is *uncommitted* — land that commit first or fold it in?
+- CC's own nested subagents deferred — fine for v1?
+
+**Rejected**
+- (b) Extension publishing sessionFile — couples the extension to CC's layout.
+- (c) Exposing the runner's in-memory transcript — duplicates what the file already has.
+
+**Status: aligning** — want me to proceed with option (a) as specced?`;
+
+test("bold pseudo-headings without an anchor parse as an anchorless block", () => {
+	const parsed = parseAlignBlock(BOLD_NO_ANCHOR);
+	assert.ok(parsed, "the transcript's bold block must parse");
+	assert.equal(parsed.title, "");
+	assert.equal(parsed.explicitStatus, "aligning");
+	assert.deepEqual(parsed.questions, [
+		{ n: 1, text: "The session-id plumbing is *uncommitted* — land that commit first or fold it in?", checked: false },
+		{ n: 2, text: "CC's own nested subagents deferred — fine for v1?", checked: false },
+	]);
+	assert.ok(parsed.markdown.startsWith("**Findings**\n- The hard part"), "block starts at the first section heading");
+	assert.ok(parsed.markdown.endsWith("as specced?"));
+	assert.ok(!parsed.markdown.includes("The Opus investigation"), "prose before the block is excluded");
+	for (const section of ["**Approach**", "**Rejected**", "**Status: aligning**"]) assert.ok(parsed.markdown.includes(section));
+	assert.equal(sameBlock(nextDoc(null, parsed, "2026-09-20T00:00:00.000Z"), parsed.markdown), true, "re-emit dedupes");
+});
+
+test("bold anchor and bold sections parse like their markdown forms", () => {
+	const bold = parseAlignBlock("intro\n\n**Alignment: Bold thing**\n**Findings**\nf\n**Open questions**\n1. [x] a\n2. [ ] b\n**Status**\nconfirmed\n\nTrailing prose");
+	assert.ok(bold);
+	assert.equal(bold.title, "Bold thing");
+	assert.equal(bold.explicitStatus, "confirmed");
+	assert.equal(bold.questions.length, 2);
+	assert.ok(bold.markdown.startsWith("**Alignment: Bold thing**\n**Findings**"));
+	assert.ok(bold.markdown.endsWith("Trailing prose"));
+	assert.equal(parseAlignBlock("**Alignment — dashed**")?.title, "dashed");
+	assert.equal(parseAlignBlock("**Alignment**\n**Open questions**\n- q")?.questions.length, 1);
+	assert.equal(parseAlignBlock("**Alignments are hard**\n**Findings**"), undefined);
+});
+
+test("mixed markdown and bold headings within one block", () => {
+	const mixed = parseAlignBlock("## Alignment: Mixed\n**Findings**\nf\n### Approach\na\n**Open questions**\n1. [ ] q1\n### Rejected\n- r\n**Status: implementing** — starting now\n## Next steps\n1. [ ] not a question");
+	assert.ok(mixed);
+	assert.equal(mixed.title, "Mixed");
+	assert.equal(mixed.explicitStatus, "implementing");
+	assert.deepEqual(mixed.questions, [{ n: 1, text: "q1", checked: false }]);
+	assert.ok(mixed.markdown.endsWith("— starting now"), "a same-level markdown heading still ends the block");
+	// A bold anchor with ## sections: known sections continue the block, unknown ones end it.
+	const boldAnchor = parseAlignBlock("**Alignment: b**\n## Findings\nf\n## Open questions\n- q\n## Status\naligning\n## Wrap-up\nbye");
+	assert.equal(boldAnchor?.questions.length, 1);
+	assert.equal(boldAnchor?.explicitStatus, "aligning");
+	assert.ok(boldAnchor?.markdown.endsWith("## Status\naligning"));
+});
+
+test("bold status heading with its value inline and trailing prose", () => {
+	assert.equal(parseAlignBlock("## Alignment: s\n**Status: aligning** — want me to proceed?")?.explicitStatus, "aligning");
+	assert.equal(parseAlignBlock("## Alignment: s\n**Status** confirmed, go")?.explicitStatus, "confirmed");
+	assert.equal(parseAlignBlock("## Alignment: s\n**Status**\n\nimplementing")?.explicitStatus, "implementing");
+	assert.equal(parseAlignBlock("## Alignment: s\n**Status: unknown** — hmm\nconfirmed")?.explicitStatus, undefined, "first inline value wins even when unknown");
+});
+
+test("prose that mentions section words is not a block; two headings are not enough", () => {
+	const prose = "Our approach here is simple. The status of the findings is that open questions remain; rejected ideas are listed below.\n- approach: x\n- status: y";
+	assert.equal(parseAlignBlock(prose), undefined);
+	assert.equal(looksLikeAlignBlock(prose), false);
+	const boldInline = "**Note:** the approach is fine.\n**Findings** below.\n**Status**: fine.\nThe **Approach** we took.";
+	assert.equal(parseAlignBlock(boldInline), undefined, "only two bold section headings");
+	assert.equal(parseAlignBlock("**Findings**\nf\n**Approach**\na"), undefined);
+	assert.equal(parseAlignBlock("### Findings\nf\n### Status\naligning"), undefined);
+	assert.equal(parseAlignBlock("**Findings**\nf\n**Questions**\n- q\n**Open questions**\n- q2"), undefined, "distinct sections, not distinct spellings");
+	assert.equal(parseAlignBlock("```\n**Findings**\n**Approach**\n**Status**\n```"), undefined, "fenced headings are skipped");
+	assert.equal(parseAlignBlock("**Approach to caching** is fine\n**Findings**\nf\n**Status**\nok"), undefined, "bold must be the bare section name");
+});
+
+test("anchorless markdown sections parse too; a same-level unknown heading ends the block", () => {
+	const parsed = parseAlignBlock("Intro\n### Findings\nf\n### Approach\na\n### Open questions\n1. [ ] q\n### Status\naligning\n### Next steps\n1. [ ] no");
+	assert.ok(parsed);
+	assert.equal(parsed.title, "");
+	assert.equal(parsed.questions.length, 1);
+	assert.equal(parsed.explicitStatus, "aligning");
+	assert.equal(parsed.markdown, "### Findings\nf\n### Approach\na\n### Open questions\n1. [ ] q\n### Status\naligning");
+});
+
+test("looksLikeAlignBlock: heading-shaped section names in any decoration, three distinct, outside fences", () => {
+	assert.equal(looksLikeAlignBlock(BOLD_NO_ANCHOR), true);
+	assert.equal(looksLikeAlignBlock(FULL), true);
+	assert.equal(looksLikeAlignBlock("Findings:\nf\nApproach:\na\nStatus: aligning"), true, "bare labels count");
+	assert.equal(looksLikeAlignBlock("*Findings*\nf\n__Approach__\na\n_Rejected_\nr"), true);
+	assert.equal(looksLikeAlignBlock("Findings:\nf\nApproach:\na"), false, "two is not enough");
+	assert.equal(looksLikeAlignBlock("```\nFindings:\nApproach:\nStatus:\n```"), false);
+	assert.equal(looksLikeAlignBlock("The findings: fine. Approach: fine. Status: fine."), false);
+	assert.equal(looksLikeAlignBlock("Just a plain answer with no sections.\n1. do x\n2. do y"), false);
+	for (const input of [undefined, null, 42, {}, []] as unknown[]) assert.equal(looksLikeAlignBlock(input as string), false);
 });
 
 test("CRLF input parses like LF", () => {

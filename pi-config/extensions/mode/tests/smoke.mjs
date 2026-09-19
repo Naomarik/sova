@@ -340,6 +340,49 @@ await hook("turn_end", { turnIndex: 4, message: assistant("## Alignment: truncat
 await hook("turn_end", { turnIndex: 5, message: assistant("## Alignment: truncated\n### Open q", "error"), toolResults: [] });
 assert.equal(alignEntries().length, 2, "aborted/error turns ignored");
 
+// A bold, anchorless block (the shape the agent actually emitted once) is captured, not dropped
+const boldBlock = `Summary:
+
+**Findings**
+- footer redraws
+**Approach** (option a)
+1. re-assert
+**Open questions**
+- keep it above the editor?
+**Rejected**
+- global file
+**Status: aligning** — proceed?`;
+const warningsBefore = store.notices.filter((n) => n.level === "warning").length;
+await hook("turn_end", { turnIndex: 6, message: assistant(boldBlock), toolResults: [] });
+assert.equal(alignEntries().length, 3, "bold anchorless block captured");
+assert.equal(alignEntries()[2].data.doc.title, "");
+assert.equal(alignEntries()[2].data.doc.revision, 3);
+assert.equal(alignEntries()[2].data.doc.explicitStatus, "aligning");
+assert.equal(alignEntries()[2].data.doc.questions.length, 1);
+assert.equal(store.notices.filter((n) => n.level === "warning").length, warningsBefore, "captured blocks never warn");
+await hook("turn_end", { turnIndex: 7, message: assistant(boldBlock), toolResults: [] });
+assert.equal(alignEntries().length, 3, "re-emitted bold block is not a new revision");
+
+// A block that looks like an alignment doc but has unparseable headings warns once; a plain answer stays silent
+const bareLabels = "Findings:\n- a\nApproach:\n- b\nStatus: aligning";
+await hook("turn_end", { turnIndex: 8, message: assistant(bareLabels), toolResults: [] });
+assert.equal(alignEntries().length, 3, "bare labels are not captured");
+const captureWarnings = () => store.notices.filter((n) => /looked like an alignment doc but was not captured/.test(n.message));
+assert.equal(captureWarnings().length, 1, "one warning for the malformed block");
+assert.equal(captureWarnings()[0].level, "warning");
+await hook("turn_end", { turnIndex: 9, message: assistant("Done. I changed the approach in two files; status is green."), toolResults: [] });
+assert.equal(captureWarnings().length, 1, "a plain answer never warns");
+await hook("turn_end", { turnIndex: 10, message: assistant(bareLabels, "aborted"), toolResults: [] });
+assert.equal(captureWarnings().length, 1, "aborted turns never warn");
+await commands.get("mode").handler("align off", ctx);
+await hook("turn_end", { turnIndex: 11, message: assistant(bareLabels), toolResults: [] });
+assert.equal(captureWarnings().length, 1, "no warning while align is off");
+await commands.get("mode").handler("align on", ctx);
+
+// Restore the markdown block so the viewer scenarios below see a titled doc
+await hook("turn_end", { turnIndex: 12, message: assistant(blockV2), toolResults: [] });
+assert.equal(alignEntries().length, 4);
+
 // Widget lines never exceed the width
 for (const width of [20, 40, 120]) {
 	for (const line of store.widgets.get(ALIGN_WIDGET)(fakeTui, ctx.ui.theme).render(width)) {

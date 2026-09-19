@@ -55,10 +55,20 @@ type Section = "findings" | "approach" | "questions" | "rejected" | "status" | "
 
 const ANCHOR = /^(#{1,4})\s+alignment\b(?:\s*[:—-]\s*(.*))?$/i;
 const HEADING = /^(#{1,6})\s+(.*?)\s*$/;
+/** A line opening with a `**bold**` run: `**text** trailer`. Only a heading when `text` is a known section or the anchor. */
+const BOLD = /^\s*\*\*\s*(.+?)\s*\*\*\s*(.*)$/;
+const BOLD_ANCHOR = /^alignment\b(?:\s*[:—-]\s*(.*))?$/i;
 const FENCE = /^\s*(```|~~~)/;
-const SECTION = /^(findings|approach|open questions|questions|rejected(?: alternatives)?|alternatives|status)\b/i;
+const SECTION_NAMES = "findings|approach|open questions|questions|rejected(?: alternatives)?|alternatives";
+const SECTION = new RegExp(`^(${SECTION_NAMES}|status)\\b`, "i");
+/** Bold pseudo-headings must be the bare section name (status may carry its value inline). */
+const BOLD_SECTION = new RegExp(`^(?:(?:${SECTION_NAMES})\\s*:?|status\\b(?:\\s*[:—-]\\s*.*)?)$`, "i");
+/** Looser shape for the "looks like an alignment doc" heuristic: `Findings:`, `*Approach*`, `__Status__: x`, `### Rejected`. */
+const LOOSE_SECTION = new RegExp(`^\\s*(?:#{1,6}\\s+)?(?:(\\*\\*|__|\\*|_)\\s*)?(${SECTION_NAMES}|status)(?![a-z])(.*)$`, "i");
 const QUESTION = /^\s*(?:(\d+)[.)]|[-*•])\s+(?:\[([ xX])\]\s*)?(.+)$/;
 const STATUS_WORD = /\b(confirmed|implementing|aligning)\b/i;
+/** Without an anchor, this many distinct section headings mark a block. */
+const MIN_SECTIONS_WITHOUT_ANCHOR = 3;
 
 function sectionOf(headingText: string): Section {
 	const match = SECTION.exec(headingText);
@@ -67,6 +77,70 @@ function sectionOf(headingText: string): Section {
 	if (name === "findings" || name === "approach" || name === "status") return name;
 	if (name === "open questions" || name === "questions") return "questions";
 	return "rejected";
+}
+
+interface Heading {
+	kind: "md" | "bold";
+	/** Markdown heading depth; bold pseudo-headings count as level 2. */
+	depth: number;
+	/** Heading text without markers. */
+	text: string;
+	/** Prose after a bold run's closing `**` ("" for markdown headings). */
+	trailer: string;
+	section: Section;
+}
+
+/** The line as a heading: a `#` heading, or a `**bold**` run that names a section or the anchor. Anything else is prose. */
+function headingOf(line: string): Heading | undefined {
+	const md = HEADING.exec(line);
+	if (md) {
+		const text = md[2].replace(/\s#+$/, "");
+		return { kind: "md", depth: md[1].length, text, trailer: "", section: sectionOf(text) };
+	}
+	const bold = BOLD.exec(line);
+	if (!bold) return undefined;
+	const text = bold[1];
+	if (!BOLD_SECTION.test(text) && !BOLD_ANCHOR.test(text)) return undefined;
+	return { kind: "bold", depth: 2, text, trailer: bold[2], section: sectionOf(text) };
+}
+
+function anchorOf(line: string): { level: number; title: string } | undefined {
+	const md = ANCHOR.exec(line.trimEnd());
+	if (md) return { level: md[1].length, title: oneLine((md[2] ?? "").replace(/\s#+$/, "")) };
+	const bold = BOLD.exec(line);
+	const inner = bold ? BOLD_ANCHOR.exec(bold[1]) : null;
+	if (inner) return { level: 2, title: oneLine(inner[1] ?? "") };
+	return undefined;
+}
+
+/** Lines outside code fences, in order, with their index. */
+function unfenced(lines: string[]): { i: number; line: string }[] {
+	const out: { i: number; line: string }[] = [];
+	let inFence = false;
+	for (let i = 0; i < lines.length; i++) {
+		if (FENCE.test(lines[i])) {
+			inFence = !inFence;
+			continue;
+		}
+		if (!inFence) out.push({ i, line: lines[i] });
+	}
+	return out;
+}
+
+/** Section named by a loosely decorated heading line, or undefined when the line is prose. */
+function looseSectionOf(line: string): Section | undefined {
+	const match = LOOSE_SECTION.exec(line);
+	if (!match) return undefined;
+	const marker = match[1];
+	const section = sectionOf(match[2]);
+	let rest = match[3];
+	if (marker !== undefined) {
+		const close = rest.indexOf(marker);
+		if (close < 0) return undefined;
+		rest = rest.slice(0, close);
+	}
+	const ok = section === "status" ? /^\s*(?:[:—-].*)?$/.test(rest) : /^\s*:?\s*$/.test(rest);
+	return ok ? section : undefined;
 }
 
 function indentOf(line: string): number {
@@ -82,31 +156,78 @@ function explicitFrom(text: string): ExplicitStatus | undefined {
 	return match ? (match[1].toLowerCase() as ExplicitStatus) : undefined;
 }
 
-/** The first `## Alignment[: title]` block in `text`, or undefined when there is none. Never throws. */
+/**
+ * True when `text` has at least three distinct section headings in any loosely
+ * heading-shaped form (`### Findings`, `**Approach**`, `*Rejected*`, `__Status__`,
+ * a bare `Findings:` line), outside code fences. Broader than what `parseAlignBlock`
+ * accepts, so a caller can warn when a block looked like an alignment doc but did
+ * not parse. Prose that merely mentions the words does not count. Never throws.
+ */
+export function looksLikeAlignBlock(text: string): boolean {
+	try {
+		if (typeof text !== "string") return false;
+		const seen = new Set<Section>();
+		for (const { line } of unfenced(text.replace(/\r\n?/g, "\n").split("\n"))) {
+			const section = looseSectionOf(line);
+			if (section !== undefined && section !== "other") seen.add(section);
+		}
+		return seen.size >= MIN_SECTIONS_WITHOUT_ANCHOR;
+	} catch {
+		return false;
+	}
+}
+
+/**
+ * The first alignment block in `text`, or undefined when there is none. Never throws.
+ *
+ * The block is anchored by `## Alignment[: title]` (levels 1–4) or its bold form
+ * `**Alignment[: title]**`. Sections are `### Findings` / `### Approach` /
+ * `### Open questions` / `### Rejected` / `### Status` headings, or the same names
+ * as `**bold**` pseudo-headings (mixed freely; bold status may carry its value inline,
+ * `**Status: aligning** — prose`). Without any anchor, a run of at least three
+ * distinct section headings (heading-shaped only, never prose mentions) starts a
+ * block with an empty title at the first of them. Code fences are skipped.
+ */
 export function parseAlignBlock(text: string): ParsedDoc | undefined {
 	try {
 		if (typeof text !== "string") return undefined;
 		const lines = text.replace(/\r\n?/g, "\n").split("\n");
+		const visible = unfenced(lines);
 
-		let inFence = false;
 		let start = -1;
+		/** First line parsed for sections: the line after the anchor, or the anchorless block's own first heading. */
+		let bodyStart = -1;
 		let level = 0;
 		let title = "";
-		for (let i = 0; i < lines.length; i++) {
-			if (FENCE.test(lines[i])) {
-				inFence = !inFence;
-				continue;
-			}
-			if (inFence) continue;
-			const anchor = ANCHOR.exec(lines[i].trimEnd());
+		// Loose block ends: a markdown heading at or above the anchor level ends the block
+		// unless it is a known section (bold anchors and anchorless blocks have no real level).
+		let loose = false;
+		for (const { i, line } of visible) {
+			const anchor = anchorOf(line);
 			if (anchor) {
 				start = i;
-				level = anchor[1].length;
-				title = oneLine((anchor[2] ?? "").replace(/\s#+$/, ""));
+				bodyStart = i + 1;
+				level = anchor.level;
+				title = anchor.title;
+				loose = line.trimStart().startsWith("*");
 				break;
 			}
 		}
-		if (start < 0) return undefined;
+		if (start < 0) {
+			const seen = new Set<Section>();
+			let first: { i: number; heading: Heading } | undefined;
+			for (const { i, line } of visible) {
+				const heading = headingOf(line);
+				if (!heading || heading.section === "other") continue;
+				if (!first) first = { i, heading };
+				seen.add(heading.section);
+			}
+			if (!first || seen.size < MIN_SECTIONS_WITHOUT_ANCHOR) return undefined;
+			start = first.i;
+			bodyStart = first.i;
+			level = first.heading.depth;
+			loose = true;
+		}
 
 		const questions: AlignQuestion[] = [];
 		let explicitStatus: ExplicitStatus | undefined;
@@ -115,9 +236,9 @@ export function parseAlignBlock(text: string): ParsedDoc | undefined {
 		let current: AlignQuestion | undefined;
 		let baseIndent = -1;
 		let end = lines.length;
-		inFence = false;
+		let inFence = false;
 
-		for (let i = start + 1; i < lines.length; i++) {
+		for (let i = bodyStart; i < lines.length; i++) {
 			const line = lines[i];
 			if (FENCE.test(line)) {
 				inFence = !inFence;
@@ -125,18 +246,16 @@ export function parseAlignBlock(text: string): ParsedDoc | undefined {
 				continue;
 			}
 			if (inFence) continue;
-			const heading = HEADING.exec(line);
+			const heading = headingOf(line);
 			if (heading) {
-				const depth = heading[1].length;
-				if (depth <= level) {
+				if (heading.kind === "md" && heading.depth <= level && !(loose && heading.section !== "other")) {
 					end = i;
 					break;
 				}
-				const headingText = heading[2].replace(/\s#+$/, "");
-				section = sectionOf(headingText);
+				section = heading.section;
 				current = undefined;
 				if (section === "status" && !statusSeen) {
-					const inline = headingText.replace(/^status\b\s*[:—-]?\s*/i, "");
+					const inline = oneLine(`${heading.text.replace(/^status\b\s*[:—-]?\s*/i, "")} ${heading.trailer}`);
 					if (inline !== "") {
 						statusSeen = true;
 						explicitStatus = explicitFrom(inline);

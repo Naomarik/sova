@@ -32,6 +32,7 @@ import { registerPaletteCategory, requestPaletteOpen } from "../command-palette/
 import {
 	ALIGN_ENTRY_TYPE,
 	ALIGN_WIDGET_KEY,
+	looksLikeAlignBlock,
 	nextDoc,
 	parseAlignBlock,
 	restoreAlignDoc,
@@ -200,7 +201,11 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		return `v${summary.revision} · ${statusLabelText(summary.status)}${settled} · ${summary.lines} lines`;
 	}
 
-	/** Capture the assistant's "## Alignment:" block from a finished turn while align is on. */
+	/**
+	 * Capture the assistant's alignment block from a finished turn while align is on.
+	 * A message that looks like an alignment doc but does not parse gets a warning
+	 * instead of silently leaving the doc unchanged.
+	 */
 	function captureAlign(message: unknown, ctx: ExtensionContext): void {
 		if (!hasMinor(state, "align")) return;
 		const m = message as { role?: string; content?: unknown; stopReason?: string } | undefined;
@@ -211,7 +216,17 @@ export default function modeExtension(pi: ExtensionAPI): void {
 			.map((block) => block.text)
 			.join("\n");
 		const parsed = parseAlignBlock(text);
-		if (parsed === undefined || sameBlock(alignDoc, parsed.markdown)) return;
+		if (parsed === undefined) {
+			if (looksLikeAlignBlock(text)) {
+				try {
+					ctx.ui.notify("align: block looked like an alignment doc but was not captured — headings must be ##/### or **bold**", "warning");
+				} catch {
+					// The warning is best-effort.
+				}
+			}
+			return;
+		}
+		if (sameBlock(alignDoc, parsed.markdown)) return;
 		alignDoc = nextDoc(alignDoc, parsed, new Date().toISOString());
 		persistAlignDoc();
 		liveViewer?.setDoc(alignDoc);

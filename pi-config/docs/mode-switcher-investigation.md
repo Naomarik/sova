@@ -1,7 +1,7 @@
 # Mode switcher for pi: investigation report
 
 Date: 2026-09-19. pi version inspected: `@earendil-works/pi-coding-agent` 0.85.1
-(`~/.local/share/mise/installs/node/25.2.1/lib/node_modules/@earendil-works/pi-coding-agent`).
+(`$(npm root -g)/@earendil-works/pi-coding-agent`).
 Scope: design and feasibility only. Nothing has been implemented.
 
 Sources read: `README.md`; `docs/extensions.md`, `tui.md`, `keybindings.md`,

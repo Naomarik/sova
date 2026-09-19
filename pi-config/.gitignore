@@ -12,3 +12,6 @@ models-store.json
 model-favorites.json
 trust.json
 tmp/
+# local, per-machine overrides
+*.local
+*.local.json

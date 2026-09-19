@@ -1,6 +1,6 @@
 # Claude CLI probes — 2026-09-18
 
-Binary: /home/user/.local/bin/claude, version 2.1.276. Sonnet alias resolved to claude-sonnet-5. No extension/project source changes. Private scratch directory; native Claude session records were also created by the CLI. Reported list-price total: $0.087436 (not a claim about subscription charges).
+Binary: ~/.local/bin/claude, version 2.1.276. Sonnet alias resolved to claude-sonnet-5. No extension/project source changes. Private scratch directory; native Claude session records were also created by the CLI. Reported list-price total: $0.087436 (not a claim about subscription charges).
 
 ## Observed
 
@@ -35,7 +35,7 @@ probe.mjs: continuity/resume/initialize. controls.mjs: dispatch interrupt, mid-t
 
 # Follow-up probe — CLI 2.1.277 (2026-09-18)
 
-Binary: /home/user/.local/bin/claude → versions/2.1.277. One process, `--model haiku`, `--tools ""`, `--setting-sources ""`, `--strict-mcp-config`, `--permission-mode dontAsk`, `--max-budget-usd 0.5`, private scratch cwd, detached group with watchdog. Reported list-price total: $0.031. Process group gone after stdin EOF.
+Binary: ~/.local/bin/claude → versions/2.1.277. One process, `--model haiku`, `--tools ""`, `--setting-sources ""`, `--strict-mcp-config`, `--permission-mode dontAsk`, `--max-budget-usd 0.5`, private scratch cwd, detached group with watchdog. Reported list-price total: $0.031. Process group gone after stdin EOF.
 
 ## Observed
 

@@ -1271,13 +1271,18 @@ test("team_create composes headers before backend validation, commits membership
 		);
 		assert.equal(h.appended.findIndex((e) => e.customType === "subagents-counters-v2") > -1, true);
 		assert.ok(h.appended.findIndex((e) => e.customType === "subagents-counters-v2") < h.appended.indexOf(teamEntries[0]));
-		// The workers-snapshot protocol is unchanged for team members.
+		// Team members' snapshot rows add only teamId (still version 1); solo workers omit it.
+		const committed = snapshots.find((s: any) => s.workers.length === 2);
+		assert.deepEqual(committed.workers.map((w: any) => w.teamId), ["team_01", "team_01"], "first published rows already carry teamId");
 		await h.call("agent_spawn", { prompt: "plain", wake: false });
 		h.bus.emit("subagents:workers-request", { version: 1 });
+		assert.equal(snapshots.at(-1).version, 1);
 		const rows = snapshots.at(-1).workers;
 		const byId = (id: string) => rows.find((w: any) => w.id === id);
+		assert.ok(!("teamId" in byId("ag_03")));
 		for (const id of ["ag_01", "ag_02"]) {
-			assert.deepEqual(Object.keys(byId(id)).sort(), Object.keys(byId("ag_03")).sort(), `snapshot row for ${id} has the plain-worker shape`);
+			assert.equal(byId(id).teamId, "team_01");
+			assert.deepEqual(Object.keys(byId(id)).filter((k) => k !== "teamId").sort(), Object.keys(byId("ag_03")).sort(), `snapshot row for ${id} has the plain-worker shape plus teamId`);
 			assert.ok(!("role" in byId(id)) && !("ownedPaths" in byId(id)) && !("team" in byId(id)));
 		}
 	} finally { offSnapshots(); await h.close(); }

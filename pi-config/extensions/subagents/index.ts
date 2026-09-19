@@ -391,6 +391,11 @@ export function registerSubagents(
 			if (typeof a[key] === "number" && Number.isFinite(a[key])) out[key] = a[key];
 		return out;
 	};
+	// Session-team membership only; history teams have no live workers.
+	const teamField = (id: string) => {
+		const teamId = teams.teamOf(id);
+		return teamId ? { teamId } : {};
+	};
 	const publishWorkers = () => pi.events?.emit(WORKERS_SNAPSHOT_EVENT, {
 		version: 1,
 		workers: shuttingDown ? [] : agents.map((a) => ({
@@ -401,6 +406,7 @@ export function registerSubagents(
 			preview: (a.error || a.finalOutput() || "No response yet.").slice(0, WORKER_PREVIEW_CHARS),
 			// Additive presence fields (still version 1). Never cwd, pid, or task text.
 			...(typeof a.backend === "string" && a.backend ? { backend: a.backend } : {}),
+			...teamField(a.id),
 			...timestamps(a),
 			...(a.taskOutcome === "success" || a.taskOutcome === "error" || a.taskOutcome === "aborted"
 				? { outcome: a.taskOutcome } : {}),
@@ -423,7 +429,7 @@ export function registerSubagents(
 				const idle = live().length - working;
 				activeCtx.ui.setStatus(
 					"subagents",
-					live().length ? `◆ ${working} working · ${Math.max(0, idle)} idle` : undefined,
+					live().length ? `Agents: ${working} working · ${Math.max(0, idle)} idle` : undefined,
 				);
 			}
 			workspaceView?.invalidate();

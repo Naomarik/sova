@@ -34,6 +34,9 @@ branch, not the file, until first append). Full analysis: `docs/tree-web-feasibi
   the slash menu so it doesn't look broken; ideally render a minimal web equivalent.
 - **Cross-tab Busy freshness.** Busy reflects instantly in the owning tab; other tabs see
   it via focus/refresh polling. A server push (WS nudge broadcast) would make it live.
+- **Long custom entries (subagent reports etc.) render as a centered block** — hard to read.
+  Left-align / restructure info-row rendering of long custom payloads (designer spotted it in
+  screenshots; parked by lead2).
 - **Agent context-window metric.** Compute rough context fill from each worker's session
   jsonl size (≈ bytes/4 tokens vs window) and show it on the Agents page per member.
   We did this by hand today; the data obviously supports it.

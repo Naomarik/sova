@@ -4,8 +4,9 @@ import type { Duplex } from "node:stream";
 import { type WebSocket, WebSocketServer } from "ws";
 import type { ChatClientMessage, ChatServerMessage, WatchServerMessage } from "../shared/protocol";
 import { acquireChat, BusyError, type ChatClient } from "./chat-manager";
+import { normalizeClaudeText, resolveClaudeSession } from "./claude-transcript";
 import { resolveSessionPath } from "./paths";
-import { SessionTail } from "./watch";
+import { type Normalize, SessionTail } from "./watch";
 
 function sendJson(ws: WebSocket, msg: ChatServerMessage | WatchServerMessage): void {
   if (ws.readyState !== ws.OPEN) return;
@@ -54,8 +55,8 @@ async function handleChat(ws: WebSocket, path: string, force: boolean): Promise<
   for (const msg of early.splice(0)) chat.handle(client, msg);
 }
 
-function handleWatch(ws: WebSocket, path: string): void {
-  const tail = new SessionTail(path, (msg) => sendJson(ws, msg));
+function handleWatch(ws: WebSocket, path: string, normalize?: Normalize): void {
+  const tail = new SessionTail(path, (msg) => sendJson(ws, msg), normalize);
   ws.on("close", () => tail.close());
   ws.on("message", () => {}); // read-only: ignore anything the client sends
   tail.start().catch((err) => {
@@ -75,6 +76,18 @@ export function attachWebSockets(server: Server): void {
       return;
     }
     wss.handleUpgrade(req, socket, head, (ws) => {
+      // /ws/watch?claude=<uuid>: a claude-code worker's own session file, in CC's own format.
+      const claudeId = route === "/ws/watch" ? url.searchParams.get("claude") : null;
+      if (claudeId) {
+        const file = resolveClaudeSession(claudeId);
+        if (!file || !existsSync(file)) {
+          sendJson(ws, { type: "error", message: file ? "Session file not found" : "Unknown Claude Code session" });
+          ws.close(4404, "bad path");
+          return;
+        }
+        handleWatch(ws, file, normalizeClaudeText);
+        return;
+      }
       const path = resolveSessionPath(url.searchParams.get("path"));
       if (!path || !existsSync(path)) {
         const message = path ? "Session file not found" : "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)";

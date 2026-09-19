@@ -1,9 +1,16 @@
 import { type FSWatcher, watch } from "node:fs";
 import { open, stat } from "node:fs/promises";
-import type { WatchServerMessage } from "../shared/protocol";
+import type { TranscriptItem, WatchServerMessage } from "../shared/protocol";
 import { activeBranch, normalizeEntries, parseLines } from "./transcript";
 
 const POLL_MS = 1500;
+
+/** JSONL text -> rows. Whole file on snapshot, the new lines only on append. */
+export type Normalize = (text: string, part: "snapshot" | "append") => TranscriptItem[];
+
+/** pi sessions: the active branch of the file, the new rows as they land. */
+const piNormalize: Normalize = (text, part) =>
+  normalizeEntries(part === "snapshot" ? activeBranch(parseLines(text)) : parseLines(text).filter((e) => e.type !== "session"));
 
 /**
  * Read-only tail of one session JSONL file for one client. Opens the file with "r" only.
@@ -21,6 +28,8 @@ export class SessionTail {
   constructor(
     private readonly path: string,
     private readonly send: (msg: WatchServerMessage) => void,
+    /** How this file's lines become rows; claude-code workers write a different format. */
+    private readonly normalize: Normalize = piNormalize,
   ) {}
 
   async start(): Promise<void> {
@@ -67,7 +76,7 @@ export class SessionTail {
     const { size } = await stat(this.path);
     const { text, consumed } = await this.readComplete(0, size);
     this.offset = consumed;
-    if (!this.closed) this.send({ type: "snapshot", items: normalizeEntries(activeBranch(parseLines(text))) });
+    if (!this.closed) this.send({ type: "snapshot", items: this.normalize(text, "snapshot") });
   }
 
   private kick(): void {
@@ -100,7 +109,7 @@ export class SessionTail {
     const { text, consumed } = await this.readComplete(this.offset, size);
     if (!consumed) return;
     this.offset += consumed;
-    const items = normalizeEntries(parseLines(text).filter((e) => e.type !== "session"));
+    const items = this.normalize(text, "append");
     if (items.length && !this.closed) this.send({ type: "append", items });
   }
 }

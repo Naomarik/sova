@@ -1,11 +1,11 @@
 import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import type { TeamMember, TranscriptItem, WatchServerMessage, WorkerInfo } from "../../shared/protocol";
-import { fetchSessionInsight, wsUrl } from "../lib/api";
+import { claudeWatchUrl, fetchSessionInsight, wsUrl } from "../lib/api";
 import { clockTime, shortModel } from "../lib/format";
 import { memberStatus } from "../lib/insights";
 import { createPoll } from "../lib/poll";
 import { createReconnectingSocket } from "../lib/socket";
-import { sortWorkers, workerLabel } from "../lib/workers";
+import { sortWorkers, sourceKey, sourceName, sourceOf, type TranscriptSource, workerLabel } from "../lib/workers";
 import { ConnectionBanner } from "./ConnectionBanner";
 import { HistoryItems, TranscriptSkeleton } from "./Thread";
 import { Banner, Chip, Icon } from "./ui";
@@ -163,11 +163,12 @@ export function SubagentPane(props: {
                         </>
                       )}
                     </Show>
+                    <Show when={w().backend === "claude-code"}>{" · Claude Code"}</Show>
                     {" · Read only"}
                   </p>
                 </header>
                 <Show
-                  when={w().sessionFile}
+                  when={sourceKey(w())}
                   keyed
                   fallback={
                     <div class="empty subagents-empty">
@@ -175,7 +176,7 @@ export function SubagentPane(props: {
                       <p class="empty-body">
                         <code>{label(w())}</code>{" "}
                         {w().backend === "claude-code"
-                          ? "runs on Claude Code, and pi-web only reads pi session files."
+                          ? "is starting — no Claude session yet."
                           : "runs on a pi that doesn't publish its session file yet."}
                         <Show when={w().preview}>
                           {(p) => (
@@ -189,8 +190,13 @@ export function SubagentPane(props: {
                     </div>
                   }
                 >
-                  {(file) => (
-                    <WorkerTranscript path={file} name={label(w())} author={shortModel(w().model) ?? label(w())} streaming={w().working} />
+                  {(key) => (
+                    <WorkerTranscript
+                      source={sourceOf(key)}
+                      name={label(w())}
+                      author={shortModel(w().model) ?? label(w())}
+                      streaming={w().working}
+                    />
                   )}
                 </Show>
               </>
@@ -239,17 +245,19 @@ function WorkerMeta(props: { worker: WorkerInfo; liveSource: boolean; class: str
   );
 }
 
+const watchUrl = (s: TranscriptSource): string => (s.kind === "pi" ? wsUrl("/ws/watch", s.path) : claudeWatchUrl(s.sessionId));
+
 /**
  * One worker's session, tailed read-only (like WatchView, without a composer or head). The
  * socket closes when the selection changes or the pane closes.
  */
-function WorkerTranscript(props: { path: string; name: string; author: string; streaming: boolean }) {
+function WorkerTranscript(props: { source: TranscriptSource; name: string; author: string; streaming: boolean }) {
   const [items, setItems] = createSignal<TranscriptItem[] | null>(null);
   const [error, setError] = createSignal<string | null>(null);
   const [gone, setGone] = createSignal(false);
   const [lastUpdate, setLastUpdate] = createSignal<string | null>(null);
 
-  const socket = createReconnectingSocket<WatchServerMessage>(wsUrl("/ws/watch", props.path), {
+  const socket = createReconnectingSocket<WatchServerMessage>(watchUrl(props.source), {
     onMessage(msg) {
       switch (msg.type) {
         case "snapshot": // may repeat if the file is rewritten: always replace
@@ -308,7 +316,7 @@ function WorkerTranscript(props: { path: string; name: string; author: string; s
         <div class="empty subagents-empty">
           <p class="empty-title">Couldn't find this worker's transcript.</p>
           <p class="empty-body">
-            <code>{props.path}</code> is gone. Nothing else changed.
+            <code>{sourceName(props.source)}</code> is gone. Nothing else changed.
           </p>
         </div>
       }
@@ -344,7 +352,7 @@ function WorkerTranscript(props: { path: string; name: string; author: string; s
               title="Couldn't load this transcript."
               body={
                 <>
-                  The file at <code>{props.path}</code> wasn't changed. {error()}
+                  The file at <code>{sourceName(props.source)}</code> wasn't changed. {error()}
                 </>
               }
               action={

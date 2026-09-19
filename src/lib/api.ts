@@ -124,8 +124,20 @@ export const fetchSessionInsight = (path: string) =>
  * something that isn't a TUI. It never overrides a live TUI.
  */
 export function wsUrl(endpoint: "/ws/chat" | "/ws/watch", path: string, force = false): string {
-  const proto = location.protocol === "https:" ? "wss:" : "ws:";
-  return `${proto}//${location.host}${endpoint}?path=${encodeURIComponent(path)}${force ? "&force=1" : ""}`;
+  return `${wsOrigin()}${endpoint}?path=${encodeURIComponent(path)}${force ? "&force=1" : ""}`;
+}
+
+function wsOrigin(): string {
+  return `${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}`;
+}
+
+/**
+ * Read-only tail of a claude-code worker's own Claude Code session (`/ws/watch?claude=<uuid>`).
+ * These workers write no pi session file; the server finds theirs under ~/.claude/projects and
+ * sends the same WatchServerMessages.
+ */
+export function claudeWatchUrl(sessionId: string): string {
+  return `${wsOrigin()}/ws/watch?claude=${encodeURIComponent(sessionId)}`;
 }
 
 /**

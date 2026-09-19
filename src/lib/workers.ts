@@ -28,3 +28,23 @@ export function workerLabel(w: Pick<WorkerInfo, "id" | "name">, teams: readonly 
 
 /** "1 subagent working — show subagents": the composer trigger's accessible name. */
 export const showSubagentsLabel = (n: number): string => `${n} ${n === 1 ? "subagent" : "subagents"} working — show subagents`;
+
+/**
+ * Where a worker's transcript is read from: its own pi session file (`/ws/watch?path=`), or —
+ * for a claude-code worker, which writes no pi file — the Claude Code session it reported
+ * (`/ws/watch?claude=`, read out of ~/.claude/projects).
+ */
+export type TranscriptSource = { kind: "pi"; path: string } | { kind: "claude"; sessionId: string };
+
+/** A stable key for the source, so the viewer remounts (and reconnects) only when it changes.
+    undefined: nothing to read yet. pi paths are absolute, so they can't look like a claude key. */
+export function sourceKey(w: Pick<WorkerInfo, "sessionFile" | "backend" | "sessionId">): string | undefined {
+  if (w.sessionFile) return w.sessionFile;
+  return w.backend === "claude-code" && w.sessionId ? `claude:${w.sessionId}` : undefined;
+}
+
+export const sourceOf = (key: string): TranscriptSource =>
+  key.startsWith("claude:") ? { kind: "claude", sessionId: key.slice("claude:".length) } : { kind: "pi", path: key };
+
+/** What the source is, for "we couldn't read it" copy. */
+export const sourceName = (s: TranscriptSource): string => (s.kind === "pi" ? s.path : `Claude session ${s.sessionId}`);

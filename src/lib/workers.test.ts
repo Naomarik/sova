@@ -1,7 +1,17 @@
 // Run: npx tsx --test src/lib/workers.test.ts (or npm test)
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { isHostSession, sessionWorking, showSubagentsLabel, sortWorkers, subagentsWorkingLabel, workerLabel } from "./workers";
+import {
+  isHostSession,
+  sessionWorking,
+  showSubagentsLabel,
+  sortWorkers,
+  sourceKey,
+  sourceName,
+  sourceOf,
+  subagentsWorkingLabel,
+  workerLabel,
+} from "./workers";
 
 const live = (working: number) => ({ pid: 1, status: "idle", workers: { working, total: working + 1 } });
 
@@ -50,4 +60,21 @@ test("workerLabel: team role by workerId, else the worker's name", () => {
 test("showSubagentsLabel names the count", () => {
   assert.equal(showSubagentsLabel(1), "1 subagent working — show subagents");
   assert.equal(showSubagentsLabel(3), "3 subagents working — show subagents");
+});
+
+test("sourceKey: the pi session file wins, then a claude-code session id, else nothing to read", () => {
+  const cc = "d1f6627b-15a8-4c51-8712-a7b1a869469b";
+  assert.equal(sourceKey({ sessionFile: "/home/x/.pi/agent/sessions/a/b.jsonl" }), "/home/x/.pi/agent/sessions/a/b.jsonl");
+  assert.equal(sourceKey({ backend: "claude-code", sessionId: cc }), `claude:${cc}`);
+  assert.equal(sourceKey({ sessionFile: "/p/a.jsonl", backend: "claude-code", sessionId: cc }), "/p/a.jsonl");
+  assert.equal(sourceKey({ backend: "claude-code" }), undefined); // still starting: no session yet
+  assert.equal(sourceKey({ backend: "pi", sessionId: cc }), undefined); // a pi id isn't a CC session
+  assert.equal(sourceKey({}), undefined);
+});
+
+test("sourceOf reads a key back, sourceName describes it", () => {
+  assert.deepEqual(sourceOf("/p/a.jsonl"), { kind: "pi", path: "/p/a.jsonl" });
+  assert.deepEqual(sourceOf("claude:abc"), { kind: "claude", sessionId: "abc" });
+  assert.equal(sourceName(sourceOf("/p/a.jsonl")), "/p/a.jsonl");
+  assert.equal(sourceName(sourceOf("claude:abc")), "Claude session abc");
 });

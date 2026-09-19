@@ -2861,11 +2861,11 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Pane | label and title: Subagents · chip: `{w} working` (omitted at 0) · Close `aria-label`: Close subagents |
 | Row meta | `{model}` · settled: `{model} · as of {HH:MM}` · idle after a failure adds: · last task failed |
 | Row status chips | Working · Starting · Idle · Stopping · Done · Failed · Stopped |
-| View head meta | `{id}` · `{model}` · Read only |
+| View head meta | `{id}` · `{model}` · Read only (a claude-code worker adds · Claude Code before Read only) |
 | Transcript section `aria-label` | {name} transcript |
 | No workers | **0 subagents in this session.** Workers it starts show up here while they run. |
 | None selected | **{n} subagents, {w} working.** Pick one to read its transcript. |
-| No session file (Claude Code) | **Its transcript isn't available in pi-web.** `{name}` runs on Claude Code, and pi-web only reads pi session files. Latest: {preview} |
+| No session yet (Claude Code) | **Its transcript isn't available in pi-web.** `{name}` is starting — no Claude session yet. Latest: {preview} |
 | No session file (pi) | **Its transcript isn't available in pi-web.** `{name}` runs on a pi that doesn't publish its session file yet. Latest: {preview} |
 | File gone, first load | **Couldn't find this worker's transcript.** `{path}` is gone. Nothing else changed. |
 | File gone after loading (banner-warn) | **This transcript's file is gone.** What's shown is up to `{HH:MM}`. |
@@ -3187,7 +3187,7 @@ the table above. When no session has solo workers, the section is omitted.
           <summary class="outline-topic-summary">
             <span class="icon icon-sm icon-twist" style="--icon: url(/icons/chevron-right.svg)" aria-hidden="true"></span>
             <span class="outline-topic-heading"><span class="outline-hash">#</span>Model selection and limits</span>
-            <span class="outline-topic-time">14:06</span>
+            <span class="outline-topic-time">2d ago</span>
           </summary>
           <ul class="outline-bullets"><li>…</li></ul>
           <button class="button button-sm button-ghost outline-jump" type="button">Jump to Message</button>
@@ -3459,8 +3459,8 @@ webapp never writes to it (CLAUDE.md: no file locking).
 | Workers list couldn't be fetched | `.banner-warn`: **Couldn't load this session's subagents.** {message} Your workers keep running. We'll retry on our own. Whatever is shown stays |
 | Selected, file empty (just started) | View head, then `.empty.subagents-empty`: **0 entries in {name}'s session so far.** Entries show up here as it writes them. |
 | Loading (after 300ms) | View head, then §3's loading skeletons in the thread. `aria-busy="true"` on the section |
-| Selected, no session file (Claude Code worker) | View head, then `.empty.subagents-empty`: **Its transcript isn't available in pi-web.** `{name}` runs on Claude Code, and pi-web only reads pi session files. Latest: {preview, mono}. (Pi worker from an older pi-config: …runs on a pi that doesn't publish its session file yet.) |
-| File gone, first load | View head, then `.empty.subagents-empty`: **Couldn't find this worker's transcript.** `{path}` is gone. Nothing else changed. |
+| Selected, no session yet (Claude Code worker) | View head, then `.empty.subagents-empty`: **Its transcript isn't available in pi-web.** `{name}` is starting — no Claude session yet. Latest: {preview, mono}. (Pi worker from an older pi-config: …runs on a pi that doesn't publish its session file yet.) |
+| File gone, first load | View head, then `.empty.subagents-empty`: **Couldn't find this worker's transcript.** `{path}` is gone (a claude-code worker reads `Claude session {id}`). Nothing else changed. |
 | File gone after loading | Keep what's shown. `.banner-warn` in the banner slot: **This transcript's file is gone.** What's shown is up to `{HH:MM}`. |
 | Connection lost, retrying | Keep what's shown. `.banner-warn`: **Stopped watching. The connection dropped.** What's shown is up to `{HH:MM}`. Reconnecting… (§9 Live-watch). Pulses stop |
 | Gave up | `.banner-error`: **Lost the connection to the pi-web server.** Nothing in the session changed. Check `npm run dev:server` is running, then retry. · `Reconnect` |
@@ -3469,6 +3469,22 @@ webapp never writes to it (CLAUDE.md: no file locking).
 A settled worker's transcript stays readable: Done, Failed and Stopped workers keep their rows
 for as long as the parent lists them, and a selected one stays shown after that (sticky
 selection, above).
+
+### Claude Code workers
+
+A worker on the claude-code backend writes no pi session file; it writes its own Claude Code
+transcript at `~/.claude/projects/<cwd-slug>/<sessionId>.jsonl`, and the live record gives us the
+session id (`WorkerInfo.sessionId`). The viewer opens `/ws/watch?claude=<uuid>` instead of
+`?path=`; the server finds the file by scanning the project dirs (id must be a UUID, the resolved
+file must stay inside `~/.claude/projects`; `server/claude-transcript.ts`) and tails it read-only
+like any other. CC's JSONL is normalized into the same `TranscriptItem` rows, each carrying a
+pi-shaped synthetic `raw`, so every row renders through the existing components: prose, thinking
+(redacted signature-only blocks are dropped), tool calls paired with their results (CC's `Bash`,
+`Read`, `Edit`, `Write`, `Glob`, `Grep` map to pi's names and icons; anything else keeps CC's
+name), compaction boundaries as info rows. Sidechains (a worker's own Task agents), injected
+meta prompts and CLI bookkeeping lines produce nothing. Arguments are CC's own (`file_path`,
+`old_string`), so an edit/write card shows JSON rather than pi's diff view. Read only, always:
+nothing is ever sent to a Claude Code session.
 
 ### Narrow viewports
 

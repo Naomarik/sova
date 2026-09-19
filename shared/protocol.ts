@@ -260,7 +260,10 @@ export type ChatServerMessage =
   // "internal" = server error.
   | { type: "error"; message: string; code?: "busy" | "recent" | "reloaded" | "internal" };
 
-/** WS /ws/watch?path= — read-only live view. Safe for sessions a TUI currently owns. Never writes. */
+/** WS /ws/watch?path= — read-only live view. Safe for sessions a TUI currently owns. Never writes.
+    Also accepts `?claude=<uuid>` instead of `?path=`: a claude-code worker's own Claude Code
+    session (WorkerInfo.sessionId), found under ~/.claude/projects and normalized into the same
+    rows. Same `snapshot`/`append`/`error` messages; an unknown id closes with 4404 like a bad path. */
 export type WatchServerMessage =
   | { type: "snapshot"; items: TranscriptItem[] }
   | { type: "append"; items: TranscriptItem[] } // new JSONL rows since snapshot, as they appear

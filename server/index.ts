@@ -17,6 +17,8 @@ import { contextForBranch, normalizeEntries, readActiveBranch } from "./transcri
 import { attachWebSockets } from "./ws";
 
 const PORT = Number(process.env.PORT) || 4800;
+// Loopback by default; set HOST=0.0.0.0 to deliberately expose on the LAN.
+const HOST = process.env.HOST || "127.0.0.1";
 const DIST_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..", "dist");
 
 // Embedded pi runtimes / extensions must never take the server down.
@@ -98,8 +100,8 @@ const spaIndex = serveStatic({ root: DIST_DIR, path: "index.html" });
 app.use("*", (c, next) => (hasDist() ? staticFiles(c, next) : next()));
 app.get("*", (c, next) => (hasDist() ? spaIndex(c, next) : next()));
 
-const server = serve({ fetch: app.fetch, port: PORT }, (info) => {
-  console.log(`pi-web server on http://localhost:${info.port}`);
+const server = serve({ fetch: app.fetch, port: PORT, hostname: HOST }, (info) => {
+  console.log(`pi-web server on http://${HOST}:${info.port}`);
 }) as Server;
 server.on("error", (err) => {
   // e.g. EADDRINUSE: don't linger half-alive behind the uncaughtException handler

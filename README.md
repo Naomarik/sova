@@ -128,7 +128,6 @@ Ollama expects. It expects Ollama at `localhost:11434`.
 | `pi-web/web-sessions.json` | Which sessions pi-web created |
 | `npm/`, `git/` | Packages pi installs from `settings.json` |
 | `skills/` | Machine-local skills (here: symlinks to the Omarchy skill and `~/.agents/skills/opentui`). Nothing in this repo depends on them |
-| `intercom/` | Left over from the pi-intercom package the `sessions` extension replaced; nothing reads it |
 | `tmp/` | Scratch state |
 
 `settings.json`, `keybindings.json`, `models.json` and `extensions/*` in that directory are
@@ -140,6 +139,7 @@ symlinks into `pi-config/`, so edits in this repo change the live TUI on its nex
 | Variable | Effect |
 | --- | --- |
 | `PORT` | Server port (default 4800) |
+| `HOST` | Server bind address (default `127.0.0.1`; `0.0.0.0` exposes it on the LAN) |
 | `PI_CODING_AGENT_DIR` | pi's agent directory (default `~/.pi/agent`). `install.sh` also honors `PI_AGENT_DIR` first |
 | `PI_SESSIONS_DIR` | Default `--dir` of the `pi-sessions` CLI |
 | `PI_TOPIC_OUTLINE_DEBUG=1` | topic-outline appends jump diagnostics to `~/.pi/agent/topic-outline-debug.log` |

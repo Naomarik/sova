@@ -1,6 +1,6 @@
 import { readdirSync, readFileSync } from "node:fs";
-import { join, resolve } from "node:path";
-import { LIVE_DIR } from "./paths";
+import { join } from "node:path";
+import { canonicalPath, LIVE_DIR } from "./paths";
 
 export interface LiveRecord {
   pid: number;
@@ -38,7 +38,7 @@ export function readLive(): Map<string, LiveRecord> {
       const s = rec?.session;
       if (!s || typeof s.sessionFile !== "string" || typeof s.pid !== "number") continue;
       if (s.pid === process.pid || !pidAlive(s.pid)) continue;
-      out.set(resolve(s.sessionFile), {
+      out.set(canonicalPath(s.sessionFile), {
         pid: s.pid,
         status: String(rec.presence?.status ?? s.status ?? "unknown"),
         mode: typeof s.mode === "string" ? s.mode : null,

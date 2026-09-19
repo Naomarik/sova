@@ -38,19 +38,24 @@ export function recentForeignWriteAgeSec(path: string): number | null {
  */
 export class ForeignWriteGuard {
   private offset: number;
+  private mtimeMs: number;
 
   constructor(
     private readonly path: string,
     private readonly isKnownId: (id: string) => boolean,
   ) {
-    this.offset = statSync(path).size;
+    const st = statSync(path);
+    this.offset = st.size;
+    this.mtimeMs = st.mtimeMs;
   }
 
   /** Returns a reason string if a foreign write is detected, else null. */
   check(): string | null {
-    const { size } = statSync(this.path);
+    const { size, mtimeMs } = statSync(this.path);
     if (size < this.offset) return "session file shrank (rewritten by another process)";
-    if (size === this.offset) return null;
+    // Our runtime only ever appends (SessionManager rewrites in place only when opening), so a
+    // changed mtime without growth means someone else modified the file in place.
+    if (size === this.offset) return mtimeMs !== this.mtimeMs ? "session file modified in place by another process" : null;
     const fd = openSync(this.path, "r");
     let data: Buffer;
     try {
@@ -73,6 +78,7 @@ export class ForeignWriteGuard {
       if (typeof id !== "string" || !this.isKnownId(id)) return "entries appended by another process";
     }
     this.offset += nl + 1;
+    this.mtimeMs = mtimeMs;
     return null;
   }
 }

@@ -7,7 +7,7 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { Hono } from "hono";
 import { disposeAllChats } from "./chat-manager";
-import { resolveSessionPath } from "./paths";
+import { canonicalPath, resolveSessionPath } from "./paths";
 import { markOwned } from "./write-guard";
 import { getSessionSummary, listCwds, listSessions } from "./sessions-index";
 import { readTranscript } from "./transcript";
@@ -46,12 +46,13 @@ app.post("/api/sessions", async (c) => {
     return c.json({ error: "cwd does not exist" }, 400);
   }
   const sm = SessionManager.create(resolve(cwd));
-  const path = sm.getSessionFile();
+  const rawPath = sm.getSessionFile();
   const header = sm.getHeader();
-  if (!path || !header) return c.json({ error: "SessionManager did not produce a session file" }, 500);
+  if (!rawPath || !header) return c.json({ error: "SessionManager did not produce a session file" }, 500);
   // SessionManager defers writing until the first assistant reply; write the header now so
   // the session exists on disk (listable, watchable, openable by path).
-  writeFileSync(path, `${JSON.stringify(header)}\n`, { flag: "wx" });
+  writeFileSync(rawPath, `${JSON.stringify(header)}\n`, { flag: "wx" });
+  const path = canonicalPath(rawPath); // same key resolveSessionPath() will produce
   markOwned(path); // fresh mtime is ours, not a foreign writer's
   const summary = await getSessionSummary(path);
   if (!summary) return c.json({ error: "Failed to read back new session" }, 500);
@@ -80,6 +81,11 @@ app.get("*", (c, next) => (hasDist() ? spaIndex(c, next) : next()));
 const server = serve({ fetch: app.fetch, port: PORT }, (info) => {
   console.log(`pi-web server on http://localhost:${info.port}`);
 }) as Server;
+server.on("error", (err) => {
+  // e.g. EADDRINUSE: don't linger half-alive behind the uncaughtException handler
+  console.error("[server] listen failed:", err.message);
+  process.exit(1);
+});
 attachWebSockets(server);
 
 let shuttingDown = false;

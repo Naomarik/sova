@@ -149,7 +149,20 @@ class ChatSession {
     const sm = session.sessionManager;
     this.guard = new ForeignWriteGuard(this.path, (id) => sm.getEntry(id) !== undefined);
     this.guardTimer = setInterval(() => {
-      if (this.clients.size === 0 || this.foreignWrite) return;
+      if (this.foreignWrite) return;
+      // A TUI that grabs the file mid-run: stop writing now (busy: force must never help).
+      const live = readLive().get(this.path);
+      if (live) {
+        this.foreignWrite = `opened by another pi process (pid ${live.pid})`;
+        this.broadcast({
+          type: "error",
+          code: "busy",
+          message: `Session was opened in another pi process (pid ${live.pid}) while held here; stopped writing. Use watch instead.`,
+        });
+        if (this.session.isStreaming) this.session.abort().catch(() => {});
+        return;
+      }
+      if (this.clients.size === 0) return;
       try {
         this.assertNoForeignWrites();
       } catch {

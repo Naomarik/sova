@@ -123,7 +123,9 @@ async function listSessionFiles(): Promise<string[]> {
       if (d.isFile() && d.name.endsWith(".jsonl")) files.push(p);
       else if (d.isDirectory() && p !== LIVE_DIR) {
         try {
-          for (const f of await readdir(p)) if (f.endsWith(".jsonl")) files.push(join(p, f));
+          // real files only: symlinks could alias another session or point outside
+          for (const f of await readdir(p, { withFileTypes: true }))
+            if (f.isFile() && f.name.endsWith(".jsonl")) files.push(join(p, f.name));
         } catch {
           // unreadable dir: skip
         }

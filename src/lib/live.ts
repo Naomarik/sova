@@ -17,6 +17,8 @@ export type LiveEntry =
       kind: "assistant";
       blocks: LiveBlock[];
       done: boolean;
+      /** "provider/model" producing this message, from message_start/message_end. */
+      model?: string;
       error?: string;
       /** ISO time the message ended as aborted. */
       stoppedAt?: string;
@@ -54,6 +56,13 @@ export function runDetail(s: LiveState): string | null {
   if (block?.type === "text") return "writing";
   if (block?.type === "toolCall") return `running ${block.name}`;
   return null;
+}
+
+/** "provider/model" of a streaming assistant message, when the event carries one. */
+function liveModelOf(msg: Record<string, unknown>): string | undefined {
+  const provider = str(msg.provider);
+  const model = str(msg.model);
+  return provider && model ? `${provider}/${model}` : undefined;
 }
 
 function blocksFromContent(content: unknown): LiveBlock[] {
@@ -107,7 +116,8 @@ export function applyEvent(set: SetStoreFunction<LiveState>, event: unknown) {
           const msg = isObj(event.message) ? event.message : {};
           if (msg.role === "assistant") {
             s.running = true;
-            s.entries.push({ kind: "assistant", blocks: blocksFromContent(msg.content), done: false });
+            const model = liveModelOf(msg);
+            s.entries.push({ kind: "assistant", blocks: blocksFromContent(msg.content), done: false, ...(model ? { model } : {}) });
           } else if (msg.role === "user") {
             const pending = s.entries.find((e) => e.kind === "user" && !e.confirmed);
             if (pending && pending.kind === "user") pending.confirmed = true;
@@ -168,6 +178,8 @@ export function applyEvent(set: SetStoreFunction<LiveState>, event: unknown) {
           if (msg.role !== "assistant") break;
           const entry = lastAssistant(s);
           // message_end is authoritative.
+          const model = liveModelOf(msg);
+          if (model) entry.model = model;
           const blocks = blocksFromContent(msg.content);
           if (blocks.length) entry.blocks = blocks;
           entry.done = true;

@@ -71,6 +71,11 @@ export interface TranscriptItem {
   attachments?: TmpAttachment[];
   /** kind "report" only: the parsed message. `text` holds the same body. */
   report?: ReportInfo;
+  /** "provider/model" that produced this row: the assistant message's own provider/model,
+      else the nearest prior model_change on the branch. Set on assistant-text, thinking and
+      tool-call rows; absent on other kinds and entries with neither (renderers fall back to
+      the session's current model). */
+  model?: string;
   raw: unknown;
 }
 

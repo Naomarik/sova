@@ -6,7 +6,7 @@ import { mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { after, describe, test } from "node:test";
 import { checkTmpImage, inlineTmpImages, MAX_ATTACHMENTS_PER_ROW, readTmpImage } from "./attachments";
 import { parseReport, previewLine } from "./reports";
-import { normalizeEntry } from "./transcript";
+import { normalizeEntries, normalizeEntry } from "./transcript";
 
 const created: string[] = [];
 function tmpFile(name: string, bytes = "png-bytes"): string {
@@ -366,5 +366,54 @@ describe("report rows (subagent-complete and long custom messages)", () => {
     assert.equal(previewLine("\n\n## The three failures\nmore"), "The three failures");
     assert.equal(previewLine("- **Item 5**: `npm test` [docs](http://x) _done_"), "Item 5: npm test docs done");
     assert.equal(previewLine(""), "");
+  });
+});
+
+describe("model attribution", () => {
+  const assistantEntry = (id: string, text: string, provider?: string, model?: string) => ({
+    type: "message",
+    id,
+    parentId: null,
+    timestamp: "2026-09-19T00:00:00.000Z",
+    message: { role: "assistant", provider, model, content: [{ type: "text", text }], stopReason: "stop" },
+  });
+  const changeEntry = (id: string, provider: string, modelId: string) => ({
+    type: "model_change",
+    id,
+    parentId: null,
+    timestamp: "2026-09-19T00:00:00.000Z",
+    provider,
+    modelId,
+  });
+
+  test("assistant rows carry their own provider/model", () => {
+    const items = normalizeEntry(assistantEntry("a1", "hi", "zai", "glm-5.3"));
+    const rows = items.filter((i) => i.kind === "assistant-text");
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0]?.model, "zai/glm-5.3");
+  });
+
+  test("rows without their own model fall back to the nearest prior model_change", () => {
+    const items = normalizeEntries([
+      changeEntry("c1", "ollama-cloud", "deepseek-v4.1-flash"),
+      assistantEntry("a1", "one"),
+      changeEntry("c2", "zai", "glm-5.3"),
+      assistantEntry("a2", "two"),
+      assistantEntry("a3", "three", "openai", "gpt-5.5"),
+    ]);
+    const rows = items.filter((i) => i.kind === "assistant-text");
+    assert.deepEqual(
+      rows.map((r) => r.model),
+      ["ollama-cloud/deepseek-v4.1-flash", "zai/glm-5.3", "openai/gpt-5.5"],
+    );
+  });
+
+  test("user and info rows carry no model", () => {
+    const items = normalizeEntries([
+      userEntry("question"),
+      assistantEntry("a1", "hi", "zai", "glm-5.3"),
+      changeEntry("c1", "zai", "glm-5.3"),
+    ]);
+    for (const it of items) if (it.kind !== "assistant-text") assert.equal(it.model, undefined);
   });
 });

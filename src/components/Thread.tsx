@@ -1,7 +1,7 @@
 import { children, createEffect, createMemo, createSignal, For, Match, on, onCleanup, Show, Switch, type JSX } from "solid-js";
 import type { TmpAttachment, TranscriptItem } from "../../shared/protocol";
 import type { LiveBlock, LiveEntry, LiveState } from "../lib/live";
-import { prettyJson, stampTime, thousands, tildePath } from "../lib/format";
+import { prettyJson, shortModel, stampTime, thousands, tildePath } from "../lib/format";
 import { isObj, str, timestampOf, toolCallArgs, toolResultView } from "../lib/message";
 import { home } from "../lib/ui-state";
 import { ImageStrip } from "./ImageStrip";
@@ -43,6 +43,8 @@ function UserTurn(props: { text: string; time?: string; pending?: boolean; image
 function AssistantText(props: {
   text: string;
   author: string;
+  /** Full "provider/model" behind `author` (its short form), for hover. */
+  model?: string;
   time?: string;
   streaming?: boolean;
   showHead: boolean;
@@ -56,7 +58,7 @@ function AssistantText(props: {
     >
       <Show when={props.showHead || props.streaming}>
         <div class="message-head">
-          <span class="message-author text-mono">{props.author}</span>
+          <span class="message-author text-mono" title={props.model}>{props.author}</span>
           <Show when={props.streaming}>
             <span class="live-dot" />
           </Show>
@@ -201,9 +203,12 @@ export function HistoryItems(props: { items: TranscriptItem[]; author: string; s
             <Match when={item.kind === "assistant-text"}>
               <AssistantText
                 text={item.text ?? ""}
-                author={props.author}
+                author={shortModel(item.model) ?? props.author}
+                model={item.model}
                 time={timestampOf(item.raw)}
-                showHead={props.items[index() - 1]?.kind !== "assistant-text"}
+                showHead={
+                  props.items[index() - 1]?.kind !== "assistant-text" || props.items[index() - 1]?.model !== item.model
+                }
                 attachments={item.attachments}
               />
             </Match>
@@ -269,13 +274,13 @@ export function HistoryItems(props: { items: TranscriptItem[]; author: string; s
   );
 }
 
-function LiveBlockView(props: { block: LiveBlock; live: LiveState; author: string; streaming: boolean; showHead: boolean }) {
+function LiveBlockView(props: { block: LiveBlock; live: LiveState; author: string; model?: string; streaming: boolean; showHead: boolean }) {
   return (
     <Switch>
       <Match when={props.block.type === "text" && props.block}>
         {(b) => (
           <Show when={b().text}>
-            <AssistantText text={b().text} author={props.author} streaming={props.streaming} showHead={props.showHead} />
+            <AssistantText text={b().text} author={props.author} model={props.model} streaming={props.streaming} showHead={props.showHead} />
           </Show>
         )}
       </Match>
@@ -324,7 +329,8 @@ export function LiveEntries(props: { live: LiveState; author: string }) {
                       <LiveBlockView
                         block={block}
                         live={props.live}
-                        author={props.author}
+                        author={shortModel(e().model) ?? props.author}
+                        model={e().model}
                         streaming={!e().done}
                         showHead={e().blocks[i() - 1]?.type !== "text"}
                       />

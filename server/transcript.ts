@@ -91,6 +91,12 @@ function item(
   return it;
 }
 
+/** Set `model` (the producing "provider/model") on an assistant-derived row, when known. */
+function withModel(it: TranscriptItem, model: string | undefined): TranscriptItem {
+  if (model !== undefined) it.model = model;
+  return it;
+}
+
 /** Attach the /tmp image paths named in `source` (the row's full text); the text stays as-is. */
 function withPaths(it: TranscriptItem, source: string): TranscriptItem {
   const { attachments } = inlineTmpImages(source);
@@ -109,7 +115,7 @@ function customRow(id: string, entry: Entry, customType: unknown, content: unkno
   return it;
 }
 
-function normalizeMessage(entry: Entry, id: string): TranscriptItem[] {
+function normalizeMessage(entry: Entry, id: string, state?: { model?: string }): TranscriptItem[] {
   const m = entry.message ?? {};
   switch (m.role) {
     case "user": {
@@ -122,15 +128,18 @@ function normalizeMessage(entry: Entry, id: string): TranscriptItem[] {
     case "assistant": {
       // One item per content block; ids are `${entryId}:${blockIndex}` so they stay unique.
       const out: TranscriptItem[] = [];
+      // This row's producer: the message's own provider/model, else the last model_change seen.
+      const model =
+        (typeof m.provider === "string" && typeof m.model === "string" ? `${m.provider}/${m.model}` : undefined) ?? state?.model;
       const blocks: any[] = Array.isArray(m.content) ? m.content : [];
       blocks.forEach((b, i) => {
         const bid = `${id}:${i}`;
         if (b?.type === "text") {
-          if (b.text?.trim()) out.push(withPaths(item(bid, "assistant-text", entry, b.text), b.text));
+          if (b.text?.trim()) out.push(withModel(withPaths(item(bid, "assistant-text", entry, b.text), b.text), model));
         } else if (b?.type === "thinking") {
-          if (b.thinking?.trim()) out.push(item(bid, "thinking", entry, b.thinking));
+          if (b.thinking?.trim()) out.push(withModel(item(bid, "thinking", entry, b.thinking), model));
         } else if (b?.type === "toolCall") {
-          out.push(item(bid, "tool-call", entry, String(b.name ?? "tool"), b.id));
+          out.push(withModel(item(bid, "tool-call", entry, String(b.name ?? "tool"), b.id), model));
         } else {
           out.push(item(bid, "unknown", entry));
         }
@@ -167,14 +176,15 @@ function modeMarker(entry: Entry, id: string): TranscriptItem[] {
 }
 
 /** Normalize one parsed JSONL entry into 0..n TranscriptItems. The header line yields none. */
-export function normalizeEntry(entry: Entry, fallbackId = "?"): TranscriptItem[] {
+export function normalizeEntry(entry: Entry, fallbackId = "?", state?: { model?: string }): TranscriptItem[] {
   const id = typeof entry.id === "string" ? entry.id : fallbackId;
   switch (entry.type) {
     case "session":
       return [];
     case "message":
-      return normalizeMessage(entry, id);
+      return normalizeMessage(entry, id, state);
     case "model_change":
+      if (state) state.model = `${entry.provider}/${entry.modelId}`;
       return [item(id, "info", entry, `Model: ${entry.provider}/${entry.modelId}`)];
     case "thinking_level_change":
       return [item(id, "info", entry, `Thinking: ${entry.thinkingLevel}`)];
@@ -199,7 +209,8 @@ export function normalizeEntry(entry: Entry, fallbackId = "?"): TranscriptItem[]
 
 export function normalizeEntries(entries: Entry[]): TranscriptItem[] {
   const out: TranscriptItem[] = [];
-  entries.forEach((e, i) => out.push(...normalizeEntry(e, `line${i}`)));
+  const state: { model?: string } = {}; // running model_change, for assistant rows without their own
+  entries.forEach((e, i) => out.push(...normalizeEntry(e, `line${i}`, state)));
   return out;
 }
 

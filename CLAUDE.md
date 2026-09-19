@@ -37,9 +37,9 @@ git subtree split --prefix=pi-config -b pi-config-mirror   # creates, or fast-fo
 git push git@github.com:Naomarik/pi-config.git pi-config-mirror:master
 ```
 
-The split is deterministic, so later pushes fast-forward. Only the first push after the monorepo
-merge (2026-09-19) needed `--force`, because it replaced the old unprefixed public history.
-Rewriting pi-web history under `pi-config/` would change the split hashes and force another push. Keep anything the mirror needs, such as README/LICENSE/install.sh, inside `pi-config/`.
+The split is deterministic, and it reproduces the original pi-config commit hashes (the import used
+`git filter-repo --to-subdirectory-filter`), so pushes fast-forward. Never use `--force`. If a push is
+rejected, pi-web history under `pi-config/` was rewritten, and that needs a look first. Keep anything the mirror needs, such as README/LICENSE/install.sh, inside `pi-config/`.
 
 ## pi SDK facts (verified against the installed package)
 

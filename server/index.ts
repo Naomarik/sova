@@ -8,6 +8,7 @@ import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { Hono } from "hono";
 import { disposeAllChats } from "./chat-manager";
 import { resolveSessionPath } from "./paths";
+import { markOwned } from "./write-guard";
 import { getSessionSummary, listCwds, listSessions } from "./sessions-index";
 import { readTranscript } from "./transcript";
 import { attachWebSockets } from "./ws";
@@ -51,6 +52,7 @@ app.post("/api/sessions", async (c) => {
   // SessionManager defers writing until the first assistant reply; write the header now so
   // the session exists on disk (listable, watchable, openable by path).
   writeFileSync(path, `${JSON.stringify(header)}\n`, { flag: "wx" });
+  markOwned(path); // fresh mtime is ours, not a foreign writer's
   const summary = await getSessionSummary(path);
   if (!summary) return c.json({ error: "Failed to read back new session" }, 500);
   return c.json(summary, 201);

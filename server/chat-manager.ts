@@ -18,8 +18,10 @@ import {
 import type { ChatClientMessage, ChatServerMessage } from "../shared/protocol";
 import { readLive } from "./live";
 import { normalizeEntries } from "./transcript";
+import { ForeignWriteGuard, markOwned, recentForeignWriteAgeSec } from "./write-guard";
 
 const IDLE_DISPOSE_MS = 10 * 60 * 1000;
+const GUARD_POLL_MS = 3000;
 
 // Extensions may read ctx.ui.theme; pi's `theme` singleton isn't exported, so initialize
 // it and read the global instance it registers (same key as pi's theme.js).
@@ -87,6 +89,10 @@ class ChatSession {
   private unsubscribe: (() => void) | null = null;
   private disposeTimer: NodeJS.Timeout | null = null;
   private pendingUi = new Map<string, PendingUi>();
+  private guard: ForeignWriteGuard | null = null;
+  private guardTimer: NodeJS.Timeout | null = null;
+  /** Set once another process is seen writing this file; all writes are refused after that. */
+  foreignWrite: string | null = null;
   disposed = false;
 
   constructor(
@@ -99,8 +105,49 @@ class ChatSession {
     return this.runtime.session;
   }
 
+  /** Throws BusyError if a foreign writer was detected (now or earlier). */
+  assertNoForeignWrites(): void {
+    if (!this.foreignWrite && this.guard) {
+      let reason: string | null;
+      try {
+        reason = this.guard.check();
+      } catch (err) {
+        reason = `session file unreadable: ${err instanceof Error ? err.message : err}`;
+      }
+      if (reason) {
+        this.foreignWrite = reason;
+        this.broadcast({ type: "error", code: "busy", message: this.busyMessage() });
+      }
+    }
+    if (this.foreignWrite) throw new BusyError(this.busyMessage());
+  }
+
+  hasForeignWrites(): boolean {
+    try {
+      this.assertNoForeignWrites();
+      return false;
+    } catch {
+      return true;
+    }
+  }
+
+  busyMessage(): string {
+    return `modified by another process while open here (${this.foreignWrite}); reconnect with force to reload`;
+  }
+
   async bind(): Promise<void> {
     const session = this.session;
+    const sm = session.sessionManager;
+    this.guard = new ForeignWriteGuard(this.path, (id) => sm.getEntry(id) !== undefined);
+    this.guardTimer = setInterval(() => {
+      if (this.clients.size === 0 || this.foreignWrite) return;
+      try {
+        this.assertNoForeignWrites();
+      } catch {
+        // already broadcast
+      }
+    }, GUARD_POLL_MS);
+    this.guardTimer.unref();
     await session.bindExtensions({
       uiContext: this.createUiContext(),
       mode: "rpc",
@@ -150,11 +197,16 @@ class ChatSession {
       const busy = err instanceof BusyError;
       client.send({ type: "error", code: busy ? "busy" : "internal", message: err instanceof Error ? err.message : String(err) });
     };
+    if (this.disposed) {
+      client.send({ type: "error", code: "internal", message: "Session runtime was closed; reconnect" });
+      return;
+    }
     try {
       switch (msg.type) {
         case "prompt": {
-          // Never write if a TUI grabbed this file after we opened it.
+          // Never write if a TUI grabbed this file, or anyone else wrote it, after we opened it.
           assertNotLive(this.path);
+          this.assertNoForeignWrites();
           const text = String(msg.text ?? "");
           if (!text.trim()) return;
           // While streaming, a plain prompt is queued as a follow-up.
@@ -164,6 +216,7 @@ class ChatSession {
         }
         case "steer": {
           assertNotLive(this.path);
+          this.assertNoForeignWrites();
           const text = String(msg.text ?? "");
           if (!text.trim()) return;
           const p = this.session.isStreaming ? this.session.steer(text) : this.session.prompt(text);
@@ -211,6 +264,7 @@ class ChatSession {
     if (this.disposed) return;
     this.disposed = true;
     if (this.disposeTimer) clearTimeout(this.disposeTimer);
+    if (this.guardTimer) clearInterval(this.guardTimer);
     this.unsubscribe?.();
     for (const p of this.pendingUi.values()) p.resolve(undefined);
     this.pendingUi.clear();
@@ -220,6 +274,8 @@ class ChatSession {
     } catch (err) {
       console.error("[chat] runtime dispose failed", err);
     }
+    // Remember the state we left the file in, so reopening soon isn't mistaken for a foreign write.
+    if (!this.foreignWrite) markOwned(this.path);
   }
 
   /**
@@ -333,19 +389,32 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
 }
 
 /**
- * Get (or open) the shared runtime for a session file. Throws BusyError when a TUI owns it.
- * Concurrent callers share one open attempt; failures are not cached.
+ * Get (or open) the shared runtime for a session file. Throws BusyError when a TUI owns it,
+ * or (unless `force`) when another process may be writing it. Concurrent callers share one
+ * open attempt; failures are not cached.
  */
-export async function acquireChat(path: string): Promise<ChatSession> {
+export async function acquireChat(path: string, force = false): Promise<ChatSession> {
   const existing = sessions.get(path);
   if (existing) {
-    const chat = await existing;
-    if (!chat.disposed) {
+    const chat = await existing.catch(() => null);
+    if (chat && !chat.disposed) {
       assertNotLive(path);
-      return chat;
+      if (chat.hasForeignWrites()) {
+        if (!force) throw new BusyError(chat.busyMessage());
+        // "Chat anyway": our in-memory tree is stale, so reload from disk instead of appending to it.
+        chat.broadcast({ type: "error", code: "busy", message: "Session was reloaded by another client; reconnect" });
+        await chat.dispose();
+      } else {
+        return chat;
+      }
     }
   }
   assertNotLive(path);
+  if (!force) {
+    // Shared constant with the frontend: RECENT_WRITE_MS (120s) in server/write-guard.ts.
+    const age = recentForeignWriteAgeSec(path);
+    if (age !== null) throw new BusyError(`modified ${age}s ago by a process we can't identify`);
+  }
   const forget = () => {
     if (sessions.get(path) === p) sessions.delete(path);
   };

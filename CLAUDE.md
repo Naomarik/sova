@@ -55,3 +55,9 @@ Frontend is SolidJS (NOT React): signals/stores, `<For>/<Show>`, `onCleanup` for
 - The sessions extension also loads inside our embedded runtimes and writes `live/*.json` with the
   server's own pid. `server/live.ts` ignores own-pid and dead-pid records, otherwise every
   webapp-owned session would look TUI-busy.
+- Unidentified writers (e.g. a headless/orchestrating pi, not in the live registry): `/ws/chat` refuses
+  (`code:"busy"`, close 4409) a session the server doesn't hold whose mtime is < 120s old
+  (`RECENT_WRITE_MS` in `server/write-guard.ts`, shared constant with the frontend) unless `&force=1`.
+  While holding a runtime, `ForeignWriteGuard` checks appended lines carry ids our SessionManager knows;
+  any foreign line → busy on every prompt/steer until a `&force=1` reconnect reloads the runtime from disk.
+  TUI-live sessions stay refused even with force.

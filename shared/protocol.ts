@@ -45,6 +45,7 @@ export interface TranscriptItem {
 // GET  /api/sessions            -> SessionSummary[]
 // POST /api/sessions { cwd }    -> SessionSummary   (creates a NEW empty webapp-owned session)
 // GET  /api/transcript?path=…   -> { items: TranscriptItem[] }   (active branch only)
+// GET  /api/cwds                -> string[]                          (distinct cwds, for the new-session picker)
 // ---------------------------------------------------------------------------
 
 /** WS /ws/chat?path= — full-duplex chat for webapp-owned sessions. */

@@ -16,7 +16,7 @@ function sendJson(ws: WebSocket, msg: ChatServerMessage | WatchServerMessage): v
   }
 }
 
-async function handleChat(ws: WebSocket, path: string): Promise<void> {
+async function handleChat(ws: WebSocket, path: string, force: boolean): Promise<void> {
   const client: ChatClient = { send: (msg) => sendJson(ws, msg) };
   // Buffer messages that arrive while the runtime is still opening.
   const early: ChatClientMessage[] = [];
@@ -39,7 +39,7 @@ async function handleChat(ws: WebSocket, path: string): Promise<void> {
   });
 
   try {
-    chat = await acquireChat(path);
+    chat = await acquireChat(path, force);
   } catch (err) {
     const busy = err instanceof BusyError;
     client.send({ type: "error", code: busy ? "busy" : "internal", message: err instanceof Error ? err.message : String(err) });
@@ -83,7 +83,7 @@ export function attachWebSockets(server: Server): void {
         return;
       }
       if (route === "/ws/chat") {
-        handleChat(ws, path).catch((err) => {
+        handleChat(ws, path, url.searchParams.get("force") === "1").catch((err) => {
           console.error("[ws/chat]", err);
           ws.close(4500, "internal");
         });

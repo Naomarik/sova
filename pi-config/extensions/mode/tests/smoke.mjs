@@ -117,7 +117,8 @@ modeExtension(api);
 
 assert.ok(commands.has("mode"), "/mode registered");
 assert.ok(shortcuts.has("alt+m"), "alt+m registered");
-assert.ok(api.flags.has("mode"), "--mode flag registered");
+assert.ok(api.flags.has("major"), "--major flag registered");
+assert.ok(!api.flags.has("mode"), "no --mode flag: pi core owns --mode (output mode)");
 assert.ok(api.flags.has("minor"), "--minor flag registered");
 assert.ok(!commands.has("mode-align"), "/mode-align is gone; the palette Mode category replaces it");
 assert.ok(![...commands.keys()].some((name) => name.startsWith("mode-")), "no per-minor commands");
@@ -324,7 +325,7 @@ assert.equal(readDefault().mode, "claude-heavy", "the save-as-default row writes
 
 // A snapshot on the branch beats both the launch flags and the default
 writeDefault("normal", []);
-flagValues.mode = "normal";
+flagValues.major = "normal";
 flagValues.minor = "none";
 store.branch = [
 	{ type: "custom", customType: "mode", data: { mode: "normal", active: { version: 1, mode: "normal", strict: false, minorModes: [] } } },
@@ -336,7 +337,7 @@ store.branch = [
 entriesBefore = entries.length;
 await hook("session_start", { reason: "startup" });
 await flush();
-assert.equal(store.status.get("mode"), "<accent>claude-heavy · strict · align</accent>", "the newest usable snapshot wins over --mode/--minor and the default");
+assert.equal(store.status.get("mode"), "<accent>claude-heavy · strict · align</accent>", "the newest usable snapshot wins over --major/--minor and the default");
 assert.deepEqual(getTools(), ["read", "bash", "grep"], "restoring strict heavy reapplies the strict tool set");
 assert.match((await beforeAgentStart({ systemPrompt: "base" }, ctx)).systemPrompt, /# Mode: claude-heavy/, "the restored mode shapes the prompt");
 assert.equal(entries.length, entriesBefore, "restoring appends nothing");
@@ -344,7 +345,7 @@ assert.equal(entries.length, entriesBefore, "restoring appends nothing");
 // An empty branch adopts the default as it is now, and still writes nothing
 writeDefault("normal", ["align"]);
 store.branch = [];
-delete flagValues.mode;
+delete flagValues.major;
 delete flagValues.minor;
 entriesBefore = entries.length;
 await hook("session_start", { reason: "resume" });
@@ -359,6 +360,16 @@ assert.equal(store.status.get("mode"), "<dim>normal</dim>", "--minor none clears
 await hook("session_start", { reason: "resume" });
 assert.equal(store.status.get("mode"), "<accent>normal · align</accent>", "flags are a launch override, not a resume one");
 delete flagValues.minor;
+
+// --major picks the launch mode; the old --mode name is core's and is ignored here
+flagValues.mode = "claude-heavy";
+await hook("session_start", { reason: "startup" });
+assert.equal(store.status.get("mode"), "<accent>normal \u00b7 align</accent>", "--mode is pi core's output-mode flag, not a mode override");
+delete flagValues.mode;
+flagValues.major = "claude-heavy";
+await hook("session_start", { reason: "startup" });
+assert.equal(store.status.get("mode"), "<accent>claude-heavy \u00b7 align</accent>", "--major starts that launch in the mode");
+delete flagValues.major;
 
 // /tree: no snapshot on the new branch falls back to the default; one with strict heavy retools
 await hook("session_tree", { newLeafId: "a", oldLeafId: "b" });

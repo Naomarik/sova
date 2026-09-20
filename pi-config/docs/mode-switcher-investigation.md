@@ -33,7 +33,7 @@ restarting pi.
 | Spawn Claude Code workers with a specific model and effort per spawn | **Yes**, via the user's own `subagents` + `claude-code` extensions. | `agent_spawn` accepts `backend`, `model`, `effort` per agent; the Claude runner passes `--model` and `--effort` to the CLI on every spawn (`claude-code/runner.ts:215-216`). |
 | Automatic fable → opus fallback | **Not built in.** The backend has no retry/fallback. | Achievable two ways: pre-flight model discovery in the extension, plus instruction-level retry by the main agent (section 2c). |
 | Global persistence across restarts | **Yes**, plain file under `getAgentDir()` (`~/.pi/agent/`). Session-level persistence via `pi.appendEntry()`. | User chose global scope; both layers are cheap. |
-| Startup flag | **Yes.** `pi.registerFlag("mode", { type: "string" })`. | `pi --mode claude-heavy`. |
+| Startup flag | **Yes.** `pi.registerFlag("major", { type: "string" })`. | `pi --major claude-heavy`. |
 
 What is genuinely hard or unsupported:
 
@@ -166,7 +166,8 @@ never cleared, in both modes; `/mode`; `alt+m`; the command palette picks up
 
 User decision: **global scope**. Layers, highest precedence first:
 
-1. `--mode <name>` CLI flag (`pi.registerFlag`), for scripted launches.
+1. `--major <name>` CLI flag (`pi.registerFlag`), for scripted launches. (Not
+   `--mode`: pi core owns that one for its output mode.)
 2. Global file `~/.pi/agent/mode.json` (`join(getAgentDir(), "mode.json")`),
    written on every switch. This is the one source of truth across projects
    and restarts. Format: `{ "version": 1, "mode": "claude-heavy",
@@ -226,7 +227,7 @@ so the streaming row also hints at the mode.
 - `/mode status` prints current mode, planner model, strict flag, and the
   path of the state file.
 - `/mode strict on|off` toggles the optional tool restriction.
-- `pi --mode claude-heavy` starts in that mode for one launch.
+- `pi --major claude-heavy` starts in that mode for one launch.
 
 ### Shortcut: `alt+m` (default), Ctrl+Tab opt-in
 

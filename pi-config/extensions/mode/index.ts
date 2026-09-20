@@ -98,7 +98,7 @@ export default function modeExtension(pi: ExtensionAPI): void {
 	const viewerShortcutClash = viewerShortcut === (config.shortcut ?? DEFAULT_MODE_SHORTCUT) || viewerShortcut === config.minorShortcuts?.align;
 	const viewerKeyHint = viewerShortcutClash ? "/align" : viewerShortcut;
 
-	pi.registerFlag("mode", { description: "Start in a mode: normal | claude-heavy", type: "string" });
+	pi.registerFlag("major", { description: "Start in a mode: normal | claude-heavy", type: "string" });
 	pi.registerFlag("minor", {
 		description: `Start with minor modes on (comma-separated): ${MINOR_MODES.join(" | ")}, or none`,
 		type: "string",
@@ -220,7 +220,7 @@ export default function modeExtension(pi: ExtensionAPI): void {
 			next = restored;
 		} else if (reason === undefined || reason === "startup") {
 			// One-shot launch overrides on top of the default; never written to the file or the session.
-			const flag = pi.getFlag("mode");
+			const flag = pi.getFlag("major");
 			if (typeof flag === "string" && isMode(flag)) next = { ...next, mode: flag };
 			const minorFlag = parseMinorFlag(pi.getFlag("minor"));
 			if (minorFlag) {

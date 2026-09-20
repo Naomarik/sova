@@ -40,8 +40,13 @@ Claude plan mode are involved — workers run with bypassed permissions as usual
 | `/mode align [on\|off]` | Toggle (or set) the `align` minor mode |
 | `/align`, or `alt+a` | Open the read-only alignment-doc viewer (see below) |
 | `/align status` · `/align clear` · `/align export [path]` · `/align on\|off` | Summarize, clear, write the doc to a file (default `.pi/align.md`), or toggle align |
-| `pi --mode claude-heavy` | Start that launch in a mode (not persisted) |
+| `pi --major claude-heavy` | Start that launch in a mode (not persisted) |
 | `pi --minor align` | Start that launch with these minor modes on, comma-separated; `none` clears them (not persisted) |
+
+Note: `--mode` is pi's own flag (the output mode: `text | json | rpc`), so the
+mode switcher's launch flag is `--major`. Core consumes `--mode <value>` before
+extension flags are read; `--mode=<value>` only ever reached this extension by
+accident.
 
 ### Mode selector
 
@@ -193,7 +198,7 @@ starts from**:
 A session that has never switched anything follows that default, re-read on
 every start — so editing the file (or `/mode default`) moves every untouched
 session at once. The first switch in a session pins it, and it stops following.
-Launch flags (`--mode`, `--minor`) apply on top of the default at startup only,
+Launch flags (`--major`, `--minor`) apply on top of the default at startup only,
 and lose to a session's own snapshot.
 
 `/mode default` and the palette's **save as default** row are the only things

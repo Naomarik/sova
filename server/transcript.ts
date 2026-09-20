@@ -259,12 +259,19 @@ function explainRow(id: string, entry: Entry): TranscriptItem[] {
     parentSessionId: s(d.parentSessionId),
   };
   if (!explain.id || !explain.topic || !explain.createdAt) return [];
-  // A failed run records the same entry plus a one-line reason, and leaves no page behind. It
-  // goes on `report.error` (where every other report row puts its failure, so the row renders
-  // as a failure without special-casing) and on `explain.error` (so the same ExplanationInfo
-  // carries "there is nothing to open" wherever it travels: rows, strip, gallery).
+  // The two halves of "the run went wrong" (pi-config/extensions/explain/store.ts
+  // ExplainEntryData), at most one ever set. `error` is fatal — no page was written, nothing to
+  // open — and also goes on `report.error`, where every other report row puts its failure, so
+  // the row reads as a failure without special-casing. `note` is advisory: the page is there and
+  // opens, the run just broke afterwards, so it stays linkable and is NOT a report error.
+  // The child's model, recorded by the extension alongside the page. Tolerate its absence:
+  // entries written before the field existed simply don't carry it.
+  const model = s(d.model);
+  if (model) explain.model = model;
   const err = s(d.error);
+  const note = s(d.note);
   if (err) explain.error = err;
+  else if (note) explain.note = note;
   const it = withPaths(item(id, "report", entry, explain.summary), explain.summary);
   it.report = { source: EXPLAIN_DOC, body: explain.summary, preview: explain.topic, truncated: false, explain };
   if (err) it.report.error = err;

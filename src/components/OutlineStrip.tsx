@@ -19,7 +19,7 @@ function entryElement(entryId: string): HTMLElement | null {
   return (wrap?.firstElementChild as HTMLElement | null) ?? null;
 }
 
-function Topic(props: { topic: OutlineTopic }) {
+function Topic(props: { topic: OutlineTopic; now: number }) {
   // Whether the anchor is in the transcript is checked when the topic opens: it may have been
   // compacted away, and the transcript renders after this strip.
   const [target, setTarget] = createSignal(false);
@@ -43,8 +43,9 @@ function Topic(props: { topic: OutlineTopic }) {
             {props.topic.heading}
           </span>
           <Show when={props.topic.at > 0}>
-            <span class="outline-topic-time" title={at()}>
-              {stampTime(at())}
+            {/* Delta, not a clock: the same formatter the session rows use, fed the strip's shared `now`. */}
+            <span class="outline-topic-time" title={`${stampTime(at(), props.now)} · ${at()}`}>
+              {relativeTime(at(), props.now)}
             </span>
           </Show>
         </summary>
@@ -110,7 +111,7 @@ export function OutlineStrip(props: { path: string; outline: SessionOutline; now
           </Show>
         </Show>
         <ol class="outline-topics">
-          <For each={props.outline.topics}>{(t) => <Topic topic={t} />}</For>
+          <For each={props.outline.topics}>{(t) => <Topic topic={t} now={props.now} />}</For>
         </ol>
       </div>
     </details>

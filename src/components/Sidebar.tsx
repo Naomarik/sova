@@ -1,12 +1,14 @@
 import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
-import type { AgentsInsight, SessionSummary, UsageInsight } from "../../shared/protocol";
+import type { AgentsInsight, ExplanationInfo, SessionSummary, UsageInsight } from "../../shared/protocol";
 import { type ArchiveGroupId, groupByArchiveDate } from "../lib/archive";
 import { relativeTime, shortModel, tildePath } from "../lib/format";
+import { newestFirst } from "../lib/explain";
 import { activeTeams, agentsHref, type GlancePart, usageGlance, usageHref } from "../lib/insights";
 import { isTopSession } from "../lib/regions";
 import { home, localRunning } from "../lib/ui-state";
 import { sessionWorking } from "../lib/workers";
 import { ArchiveCleanup } from "./ArchiveCleanup";
+import { ExplainGallery } from "./ExplainGallery";
 import { Banner, Chip, CountChip, Icon } from "./ui";
 
 interface Group {
@@ -146,10 +148,13 @@ export function Sidebar(props: {
   onNew(): void;
   usage: UsageInsight | undefined;
   agents: AgentsInsight | undefined;
+  /** Every /explain artifact on this machine (polled like usage and agents); the foot row lists them. */
+  explanations: ExplanationInfo[] | undefined;
   /** The insights page that's open (`#/usage` or `#/agents`), for aria-current on its foot row. */
   insightsPage: "usage" | "agents" | null;
 }) {
   const [query, setQuery] = createSignal("");
+  const [gallery, setGallery] = createSignal(false);
   const [showSkeleton, setShowSkeleton] = createSignal(false);
   const skeletonTimer = setTimeout(() => setShowSkeleton(true), 300);
   let search!: HTMLInputElement;
@@ -219,6 +224,8 @@ export function Sidebar(props: {
     setQuery("");
     search.focus();
   };
+
+  const explained = () => newestFirst(props.explanations ?? []);
 
   return (
     <aside class="app-sidebar" aria-label="Sessions">
@@ -409,7 +416,26 @@ export function Sidebar(props: {
             <AgentsGlance agents={props.agents} />
           </span>
         </a>
+        {/* Every explanation ever written, from any session: the same gallery the session strip opens. */}
+        <Show when={explained().length > 0}>
+          <button
+            type="button"
+            class="list-row list-row-interactive insights-row"
+            aria-haspopup="dialog"
+            title={explained()[0]!.topic}
+            onClick={() => setGallery(true)}
+          >
+            <Icon name="file" />
+            <span class="insights-row-text explain-row-text">
+              Explained <span class="text-num">{explained().length}</span>
+              <span class="explain-row-topic">{explained()[0]!.topic}</span>
+            </span>
+          </button>
+        </Show>
       </div>
+      <Show when={gallery()}>
+        <ExplainGallery explanations={explained()} scope="all" now={props.now} onClose={() => setGallery(false)} />
+      </Show>
     </aside>
   );
 }

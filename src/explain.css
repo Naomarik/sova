@@ -1,0 +1,134 @@
+/* /explain artifacts: the transcript row, the per-session strip, the sidebar row and the gallery
+   of standalone pages. Builds on base.css's disclosure/report row, .outline strip, .card and
+   .modal; only the deltas live here. Token values only. */
+
+/* ---- Transcript row. A link, not a disclosure: the page opens in a new tab. ---- */
+
+.explain-card-summary {
+  text-decoration: none;
+  color: inherit;
+}
+.explain-card-summary:hover .disclosure-preview { color: var(--color-ink); }
+/* A failed run is a statement, not a target: no hover ground, no pointer, no chevron to twist. */
+.explain-card-failed,
+.explain-card-failed:hover { background: none; cursor: default; }
+.explain-card-failed > .icon:first-child { visibility: hidden; }
+/* The fatal reason and the advisory note both hang under the row, aligned past the chevron.
+   The note is informational: muted caption, no status colour. */
+.explain-card .report-error,
+.explain-card-note { margin: 0 0 0 var(--space-5); }
+.explain-card-note { font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); overflow-wrap: anywhere; }
+.explain-card-external,
+.explain-tile-external {
+  flex: none;
+  color: var(--color-ink-muted);
+}
+
+/* ---- Session strip. Sibling of .outline under the session head, and the same row:
+   base.css §Outline strip carries both, this one as the <button> form. Nothing to add. ---- */
+
+/* ---- Sidebar row. The foot's insights rows, with a count and the latest topic.
+   The foot's rows are links; this one opens a dialog, so it's a button wearing the same
+   row — base.css §List & row resets the button box for any `button.list-row`. ---- */
+
+.explain-row-text { display: flex; align-items: baseline; gap: var(--space-2); min-width: 0; }
+.explain-row-topic {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-ink-muted);
+}
+
+/* ---- Gallery. Pages, not a question: wider than the 520px dialog, still a sheet when
+   folded (base.css folds .modal below 768px). ---- */
+
+@media (min-width: 768px) {
+  .modal.explain-gallery { width: min(960px, calc(100vw - var(--space-8))); }
+}
+.explain-gallery-head { display: flex; align-items: flex-start; gap: var(--space-3); }
+.explain-gallery-head .modal-title { flex: 1; min-width: 0; }
+.explain-gallery-body { flex: 1 1 auto; min-height: 0; }
+
+.explain-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-4);
+}
+@media (min-width: 768px) {
+  .explain-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+.explain-tile {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  color: inherit;
+  text-decoration: none;
+  transition: border-color var(--dur-fast) var(--ease-standard), box-shadow var(--dur-fast) var(--ease-standard);
+}
+.explain-tile:hover { border-color: var(--color-border-strong); box-shadow: var(--shadow-2); }
+.explain-tile:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.explain-tile-body { display: flex; flex-direction: column; gap: var(--space-1); padding: var(--space-4); }
+.explain-tile-head { display: flex; align-items: flex-start; gap: var(--space-2); }
+.explain-tile-topic {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: var(--fs-heading-s);
+  line-height: var(--lh-heading-s);
+  font-weight: var(--fw-semibold);
+  color: var(--color-ink);
+}
+/* No page to open: the card states the reason and stays put. */
+.explain-tile-failed { cursor: default; }
+.explain-tile-failed:hover { border-color: var(--color-border); box-shadow: var(--shadow-1); }
+.explain-tile-error {
+  margin: var(--space-1) 0 0;
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+  color: var(--status-error);
+  overflow-wrap: anywhere;
+}
+.explain-tile-meta { margin: 0; font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); }
+.explain-tile-note {
+  margin: var(--space-2) 0 0;
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+  color: var(--color-ink-muted);
+  overflow-wrap: anywhere;
+}
+.explain-tile-summary {
+  margin: var(--space-1) 0 0;
+  color: var(--color-ink-2);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* ---- Thumbnail (≥768px only; the component creates no iframe below that). The page is laid
+   out at its desktop width and scaled into a 16:10 clip box; the scale comes from a
+   ResizeObserver, since CSS can't divide a length by a length. ---- */
+
+.explain-thumb {
+  --explain-thumb-scale: 0;
+  position: relative;
+  aspect-ratio: 16 / 10;
+  overflow: hidden;
+  background: var(--color-sunken);
+  border-bottom: var(--stroke-thin) solid var(--color-border);
+}
+.explain-thumb-frame {
+  position: absolute;
+  inset: 0;
+  width: 1280px;
+  height: 800px;
+  border: 0;
+  transform-origin: 0 0;
+  transform: scale(var(--explain-thumb-scale));
+  pointer-events: none;
+}

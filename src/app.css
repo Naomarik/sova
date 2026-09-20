@@ -75,3 +75,12 @@ html, body, #root { height: 100%; }
 .cleanup-choice .list-meta { white-space: normal; }
 .cleanup-choice > .icon { color: var(--color-ink-muted); }
 .cleanup-choice[aria-disabled="true"] { cursor: default; }
+
+
+/* Subagents pane sections (§11): a team's members under the team, plain subagents under their
+   own head, so the two kinds are never one list. The head, its name, its count and its nested
+   list are base.css §List groups; what's left here is this pane's own delta — the team's
+   objective, indented to the head's gutter.
+   Bottom gap as margin, not padding: `overflow: hidden` clips at the padding box, so bottom
+   padding is a window the clamped third line leaks a sliced half-glyph through. */
+.subagents-group-objective { padding: 0 var(--space-4); margin-bottom: var(--space-2); }

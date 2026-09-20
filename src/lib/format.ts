@@ -64,6 +64,25 @@ export function shortModel(model: string | null | undefined): string | null {
   return i >= 0 ? model.slice(i + 1) : model;
 }
 
+/**
+ * A model id for a meta line, where the width belongs to the numbers beside it: no provider, no
+ * dated build, a dotted version, and the context variant spelled out.
+ * "anthropic/claude-haiku-4-5-20251001" → "haiku-4.5"; "claude-opus-5[1m]" → "opus-5 1M".
+ * Lossy on purpose: the full id belongs in the `title` next to it.
+ */
+export function compactModel(model: string | null | undefined): string | null {
+  const short = shortModel(model);
+  if (!short) return null;
+  const variant = /\[([^\]]+)\]\s*$/.exec(short)?.[1];
+  const id = short
+    .replace(/\s*\[[^\]]*\]\s*$/, "")
+    .replace(/-20\d{6}(?=$|-)/, "") // dated build
+    .replace(/^claude-/, "")
+    .replace(/-(\d+)-(\d+)$/, "-$1.$2");
+  if (!id) return short;
+  return variant ? `${id} ${variant.toUpperCase()}` : id;
+}
+
 /** Compact span: "40s" · "42m" · "2h 17m" · "3d 4h". */
 export function duration(ms: number): string {
   const sec = Math.max(0, Math.round(ms / 1000));

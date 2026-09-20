@@ -1,6 +1,6 @@
 import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
 import type { SlashCommand, UploadResult } from "../../shared/protocol";
-import { insertCommand, rankCommands, slashTokenAt, type SlashToken } from "../lib/slash";
+import { insertCommand, localCommand, rankCommands, slashTokenAt, type SlashToken } from "../lib/slash";
 import { commandOptionIds, SlashMenu } from "./SlashMenu";
 import {
   ACCEPTED_TYPES,
@@ -13,7 +13,7 @@ import {
   type RejectedFile,
 } from "../lib/images";
 import { announce, draftImages, drafts } from "../lib/ui-state";
-import { showSubagentsLabel, subagentsWorkingLabel } from "../lib/workers";
+import { showWorkersLabel, teamNote, type WorkingSplit, workersWorkingLabel } from "../lib/workers";
 import { Icon, type IconName } from "./ui";
 
 export interface ComposerReason {
@@ -42,6 +42,10 @@ export function Composer(props: {
   detail: string | null;
   /** Subagents working now; after the turn settles they get their own status row. */
   workersWorking?: number;
+  /** Every subagent this session has, working or settled, so the row survives going idle. */
+  workersTotal?: number;
+  /** How that count divides into team members and plain subagents; null: it can't be split. */
+  workersSplit?: WorkingSplit | null;
   /** Makes the subagents status row a button that toggles the subagents pane. */
   onShowWorkers?: () => void;
   /** The subagents pane is open (the row's aria-expanded). */
@@ -84,6 +88,24 @@ export function Composer(props: {
   /** TUI-live, connecting, reconnecting: nothing attaches and nothing sends. */
   const disabled = () => !!reason();
   const canSend = () => !disabled() && !uploading() && (text().trim().length > 0 || images().length > 0);
+
+  /** The subagents status row (§11 Trigger): what's working, or — once idle — what the session
+      has, so the pane stays one click away after every worker settles. Nothing while running:
+      the parent's own Working row takes that place. */
+  const workersRow = () => {
+    if (props.running) return null;
+    const working = props.workersWorking ?? 0;
+    if (working > 0)
+      return {
+        live: true,
+        text: workersWorkingLabel(working, props.workersSplit),
+        label: showWorkersLabel(working, props.workersSplit),
+      };
+    const total = props.workersTotal ?? 0;
+    if (total === 0 || !props.onShowWorkers) return null; // settled workers are only worth a row you can open
+    const text = `${total} ${total === 1 ? "subagent" : "subagents"}`;
+    return { live: false, text, label: `${text} — show subagents` };
+  };
 
   // ---- Slash-command autocomplete (combobox: focus stays in the textarea) ----------------
   const slashMatches = createMemo(() => {
@@ -251,6 +273,16 @@ export function Composer(props: {
   const send = async (e?: Event) => {
     e?.preventDefault();
     if (!canSend()) return;
+    // "/agents" is ours: it opens the subagents pane instead of reaching a runtime whose own
+    // monitor is TUI-only (§11 Trigger). With images attached it's a message like any other.
+    if (localCommand(text()) === "subagents" && props.onShowWorkers && images().length === 0) {
+      if (!props.workersOpen) props.onShowWorkers();
+      setDraft("");
+      input.value = "";
+      setSlashToken(null);
+      announce(props.workersOpen ? "Subagents already open." : "Subagents open.");
+      return;
+    }
     const pending = images();
     setUploading(true);
     let uploads: UploadResult[];
@@ -322,33 +354,38 @@ export function Composer(props: {
             </Show>
           </p>
         </Show>
-        <Show when={!props.running && (props.workersWorking ?? 0) > 0}>
-          <p class="run-status">
-            <Show
-              when={props.onShowWorkers}
-              fallback={
-                <>
-                  <span class="live-dot" />
-                  {subagentsWorkingLabel(props.workersWorking!)}
-                </>
-              }
-            >
-              {(show) => (
-                <button
-                  type="button"
-                  class="run-status-link"
-                  aria-label={showSubagentsLabel(props.workersWorking!)}
-                  aria-expanded={props.workersOpen ? "true" : "false"}
-                  aria-controls="subagents-pane"
-                  onClick={() => show()()}
-                >
-                  <span class="live-dot" />
-                  {subagentsWorkingLabel(props.workersWorking!)}
-                  <Icon name="chevron-right" small />
-                </button>
-              )}
-            </Show>
-          </p>
+        <Show when={workersRow()}>
+          {(row) => (
+            <p class="run-status">
+              <Show
+                when={props.onShowWorkers}
+                fallback={
+                  <>
+                    <span class="live-dot" />
+                    <span title={teamNote(props.workersSplit)}>{row().text}</span>
+                  </>
+                }
+              >
+                {(show) => (
+                  <button
+                    type="button"
+                    class="run-status-link"
+                    aria-label={row().label}
+                    title={teamNote(props.workersSplit)}
+                    aria-expanded={props.workersOpen ? "true" : "false"}
+                    aria-controls="subagents-pane"
+                    onClick={() => show()()}
+                  >
+                    <Show when={row().live}>
+                      <span class="live-dot" />
+                    </Show>
+                    {row().text}
+                    <Icon name="chevron-right" small />
+                  </button>
+                )}
+              </Show>
+            </p>
+          )}
         </Show>
 
         <Show when={images().length > 0 || rejected().length > 0}>

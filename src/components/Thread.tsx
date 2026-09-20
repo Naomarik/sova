@@ -9,7 +9,9 @@ import { ImageStrip } from "./ImageStrip";
 import { PathAttachment, PathText } from "./PathAttachment";
 import { ReportRow } from "./ReportRow";
 import { AlignCard } from "./AlignCard";
+import { ExplainCard } from "./ExplainCard";
 import { alignOf, latestAlignId } from "../lib/align";
+import { explainOf } from "../lib/explain";
 import { Markdown } from "./Markdown";
 import { ToolCard, type ToolStatus } from "./ToolCard";
 import { Banner, Icon } from "./ui";
@@ -225,6 +227,9 @@ export function HistoryItems(props: { items: TranscriptItem[]; author: string; s
                   <AlignCard report={item.report!} align={align()} attachments={item.attachments} />
                 </Show>
               )}
+            </Match>
+            <Match when={item.kind === "report" && item.report && explainOf(item.report)}>
+              {(explain) => <ExplainCard explain={explain()} />}
             </Match>
             <Match when={item.kind === "report" && item.report}>
               {(report) => <ReportRow report={report()} attachments={item.attachments} />}

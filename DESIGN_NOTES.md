@@ -49,7 +49,7 @@ stylesheets — no component library.
 | Teams / subagents (§10) | `.team-card` `.team-objective` `.agent-card` `.member-list` `.member-row` `.member-preview` |
 | Outline strip (§10) | `details.outline` `.outline-summary` `.outline-label` `.outline-now` `.outline-count` `.outline-body` `.outline-overall` `.outline-state` `.outline-topics` `details.outline-topic` `.outline-topic-summary` `.outline-topic-heading` `.outline-hash` `.outline-topic-time` `.outline-bullets` `.outline-jump` |
 | Compaction row (§10) | `details.disclosure.compaction` `.compaction-summary` `.compaction-files` |
-| Subagents pane (§11) | trigger `button.run-status-link` (in `.run-status`) · `.app-subagents` `.subagents-head` `.subagents-title` `.subagents-usage` `.subagents-close` `.subagents-body` `.subagents-list` `button.subagent-row[aria-current]` `.subagent-row-name` `.subagent-row-status` `.subagent-row-meta` `.subagent-row-preview` `.subagents-view` `.subagents-view-head` `.subagents-view-title` `.subagents-view-meta` `.subagents-transcript` (+ `.pane`) `.subagents-banner` `.subagents-jump` (+ `.jump-latest`) `.subagents-empty` (+ `.empty`) · `.app-subagents` is the named container `subagents` |
+| Subagents pane (§11) | trigger `button.run-status-link` (in `.run-status`) · `.app-subagents` `.subagents-head` `.subagents-title` `.subagents-usage` `.subagents-close` `.subagents-body` `.subagents-list` `button.subagent-row[aria-current]` `.subagent-row-name` `.subagent-row-status` `.subagent-row-meta` (+ `.meta-line`) `.subagent-row-preview` `.subagents-view` `.subagents-view-head` `.subagents-view-title` `.subagents-view-meta` (+ `.meta-line`) `.subagents-transcript` (+ `.pane`) `.subagents-banner` `.subagents-jump` (+ `.jump-latest`) `.subagents-empty` (+ `.empty`) · `.meta-line` `.meta-line-shrink` `.meta-line-sep` (a nowrap meta row whose model id is the one part that shrinks) · `.app-subagents` is the named container `subagents` |
 | Utilities | `.stack` `.stack-2` `.cluster` `.spread` `.truncate` `.measure` `.visually-hidden` `.text-mono` `.text-caption` `.text-muted` `.text-error` `.text-eyebrow` `.text-num` |
 
 **All user-facing strings are in §9 · Copy deck.**
@@ -1882,6 +1882,11 @@ and again when the count changes, at most once a second. When there are none, an
   isn't restored.
 - **Unknown commands.** A `/word` that isn't in the list is sent and rendered as an ordinary
   message, with the optimistic bubble.
+- **Local commands.** A few commands pi-web answers itself and never sends: today only a bare
+  `/agents` / `/subagents`, which opens the subagents pane (§11 Trigger). They are still listed
+  and inserted like any other command — the runtime registers them — but Enter runs them here,
+  clears the draft, and adds no row to the thread: the pane opening is the result. Anything with
+  arguments belongs to the runtime and goes through untouched.
 
 ### Commands that need the terminal UI
 
@@ -3290,7 +3295,19 @@ keeps linking there. The pane is for watching; the page is for finding.
 
 ### Trigger
 
-Today the subagents row is plain text: `.run-status`, shown only while the parent's turn is idle
+There are two ways in, and both reach the pane whether or not anything is working: the composer's
+subagents row, and `/agents`.
+
+**`/agents` (and `/subagents`), bare, opens the pane.** It is a local command (§4d): pi-web runs
+it itself and sends nothing to the runtime, whose own `/agents` monitor is a TUI overlay and
+answers a web session with "requires Pi's interactive TUI". It is listed in the "/" menu like any
+other command, because the runtime registers it; picking it there inserts `/agents`, and Enter
+opens the pane instead of sending. The draft clears, the pane takes focus, and a live region says
+"Subagents open." An already-open pane stays open (the command opens, it doesn't toggle) and says
+"Subagents already open." **With arguments** — `/subagents models haiku` — it is the runtime's
+command and goes through untouched, and so does `/agents` with images attached.
+
+The subagents row was plain text: `.run-status`, shown only while the parent's turn is idle
 and at least 1 worker runs (§3 "Run status"). It becomes a control. The `<p>` stays, and a
 button takes its contents:
 
@@ -3317,8 +3334,9 @@ button takes its contents:
 | State | Renders |
 |---|---|
 | Parent turn running | The Working row (§3), not this one. No trigger |
-| Idle, 0 workers working | No row, no trigger |
-| Idle, ≥ 1 working | The trigger, `aria-expanded="false"` |
+| Idle, 0 workers ever | No row, no trigger. `/agents` still opens the pane, which says so |
+| Idle, ≥ 1 working | The trigger, with the live dot: "2 subagents working…" |
+| Idle, none working, ≥ 1 settled | The trigger, **no live dot**: "2 subagents", labelled "2 subagents — show subagents". The per-worker counts and the Σ are what it's for, and they outlive the work |
 | Hover · active | Sunken fill, ink words, chevron to ink · active also moves 1px down, like `.button` |
 | Focus-visible | The 2px accent ring, at `--r-md` |
 | Pane open | `aria-expanded="true"`. **No pressed styling**: the open pane beside it is the state, and a tinted trigger would be one more accent-adjacent thing in a composer that has Send. Clicking again closes the pane |
@@ -3408,7 +3426,11 @@ below an 885px window, and folded is always stacked.
     <button class="subagent-row" type="button" aria-current="true">
       <span class="subagent-row-name">designer</span>
       <span class="subagent-row-status"><span class="chip chip-accent chip-live"><i class="chip-dot"></i>Working</span></span>
-      <span class="subagent-row-meta">claude-opus-5 · <span class="text-mono" title="18.4k in · 5.3k out · 242k cache read · 32.1k cache write · $0.41">23.7k</span></span>
+      <span class="subagent-row-meta meta-line">
+        <span class="text-mono meta-line-shrink" title="anthropic/claude-opus-5[1m]">opus-5 1M</span>
+        <span class="meta-line-sep" aria-hidden="true">·</span>
+        <span class="text-mono" title="18.4k in · 5.3k out · 242k cache read · 32.1k cache write · $0.41">23.7k</span>
+      </span>
       <span class="subagent-row-preview">Editing src/design/base.css</span>
     </button>
   </li>
@@ -3419,6 +3441,16 @@ below an 885px window, and folded is always stacked.
   the worker is a team member, else its own name), with the status chip at the right. Line 2 is
   the meta. Line 3 is the preview, mono and one line, **only while working**. Every line
   ellipsizes; the full preview goes in the row's `title`.
+- **The meta line ranks its facts** (`.meta-line`, shared with the transcript view's meta). It is
+  a nowrap flex row: the tokens, the "as of" time and "last task failed" keep their room, and the
+  **model id is the only part that shrinks** (`.meta-line-shrink`, ellipsized, 3ch floor). A
+  number that's been clipped is worse than a name that has, and the model is the one fact already
+  known from elsewhere. Separators are `.meta-line-sep` dots, `aria-hidden`.
+- **Model ids are shortened for display**: no provider, no dated build, a dotted version, and the
+  context variant spelled out — `anthropic/claude-haiku-4-5-20251001` → `haiku-4.5`,
+  `claude-opus-5[1m]` → `opus-5 1M`. An id that matches none of that is left as it is
+  (`gpt-5-mini`). The **full id is the `title`**, here and in the transcript view's head, so
+  nothing shortened is lost.
 - **Status** is §10's member table, word for word. The chip always carries the word:
 
   | Worker | Chip | Meta |
@@ -3458,7 +3490,7 @@ webapp never writes to it (CLAUDE.md: no file locking).
   <header class="subagents-view-head">
     <h3 class="subagents-view-title">designer</h3>
     <span class="chip chip-accent chip-live"><i class="chip-dot"></i>Working</span>
-    <p class="subagents-view-meta"><span class="text-mono">ag_03</span> · <span class="text-mono">claude-opus-5</span> · <span class="text-mono" title="18.4k in · 5.3k out · 242k cache read · 32.1k cache write · $0.41">23.7k tokens</span> · Read only</p>
+    <p class="subagents-view-meta meta-line"><span class="text-mono">ag_03</span> <span class="meta-line-sep" aria-hidden="true">·</span> <span class="text-mono meta-line-shrink" title="anthropic/claude-opus-5">opus-5</span> <span class="meta-line-sep" aria-hidden="true">·</span> <span class="text-mono" title="18.4k in · 5.3k out · 242k cache read · 32.1k cache write · $0.41">23.7k tokens</span> <span class="meta-line-sep" aria-hidden="true">·</span> <span>Read only</span></p>
   </header>
   <section class="subagents-transcript pane" tabindex="0" aria-label="designer transcript">
     <div class="subagents-banner stack-2">…banners, or nothing…</div>

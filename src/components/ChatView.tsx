@@ -1,12 +1,13 @@
 import { batch, createEffect, createSignal, For, onCleanup, Show } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { Portal } from "solid-js/web";
-import type { ChatServerMessage, SlashCommand, TranscriptItem, WorkerInfo } from "../../shared/protocol";
+import type { ChatServerMessage, SlashCommand, TeamInfo, TranscriptItem, WorkerInfo } from "../../shared/protocol";
 import { fetchTranscriptWithContext, wsUrl } from "../lib/api";
 import { contextStateFor, usageTokens, windowOf } from "../lib/context";
 import { addPendingPrompt, applyEvent, emptyLive, runDetail, type LiveState } from "../lib/live";
 import { isObj, str } from "../lib/message";
 import { createReconnectingSocket } from "../lib/socket";
+import { usageTotal, type UsageTotalView, workingSplit } from "../lib/workers";
 import type { UploadResult } from "../../shared/protocol";
 import { announce, drafts, sessionContext, setLocalRunning, setSessionContext, toast } from "../lib/ui-state";
 import { Composer, type ComposerReason } from "./Composer";
@@ -41,16 +42,21 @@ export function ChatView(props: {
   onModeControl?(control: ModeControl | null): void;
   onRefused(kind: ChatRefusal, message: string): void;
   onSettled(): void;
-  /** This runtime's subagents (WS "workers"; [] after each hello), for the subagents pane. */
-  onWorkers?(workers: WorkerInfo[]): void;
+  /** This runtime's subagents (WS "workers"; [] after each hello), for the subagents pane. The
+      Σ is the runtime's session-lifetime worker token total, null while no server reports one. */
+  onWorkers?(workers: WorkerInfo[], usage: UsageTotalView | null): void;
   /** Toggles the subagents pane from the composer's subagents row. */
   onShowWorkers?(): void;
   workersOpen?: boolean;
+  /** This session's teams (polled insight), so the status row can name team members as such. */
+  teams?: TeamInfo[];
 }) {
   const [items, setItems] = createSignal<TranscriptItem[] | null>(null);
   const [live, setLive] = createStore<LiveState>(emptyLive());
   const [syncing, setSyncing] = createSignal(false);
   const [errors, setErrors] = createSignal<string[]>([]);
+  /** A permanent open failure (code "config"): shown once, never retried, never appended to. */
+  const [configError, setConfigError] = createSignal<string | null>(null);
   const [dialogs, setDialogs] = createSignal<{ id: string; request: unknown }[]>([]);
   const [resume, setResume] = createSignal(0);
   const [everOpened, setEverOpened] = createSignal(false);
@@ -67,6 +73,9 @@ export function ChatView(props: {
   const [commandRows, setCommandRows] = createSignal<{ label: string; tui: boolean }[]>([]);
   /** Subagents working now (WS "workers"); 0 until the first one arrives. */
   const [workersWorking, setWorkersWorking] = createSignal(0);
+  /** The same message's list, so the status row can split the count against this session's teams. */
+  const [workerList, setWorkerList] = createSignal<WorkerInfo[]>([]);
+  const workersSplit = () => workingSplit(workersWorking(), workerList(), props.teams);
   let modelTimer: ReturnType<typeof setTimeout> | undefined;
   onCleanup(() => clearTimeout(modelTimer));
 
@@ -151,12 +160,14 @@ export function ChatView(props: {
           setSessionContext(props.path, contextStateFor(msg.context ?? null, msg.items));
           setModelRows([]);
           setWorkersWorking(0); // a runtime without workers sends no "workers" after hello
-          props.onWorkers?.([]);
+          setWorkerList([]);
+          props.onWorkers?.([], null);
           props.onModel(msg.model);
           break;
         case "workers":
           setWorkersWorking(msg.working);
-          props.onWorkers?.(msg.workers);
+          setWorkerList(msg.workers);
+          props.onWorkers?.(msg.workers, usageTotal(msg));
           break;
         case "commands":
           setCommands(msg.commands);
@@ -194,9 +205,19 @@ export function ChatView(props: {
             case "reloaded":
               socket.reconnect();
               return;
+            // Permanent (the session's cwd is gone): one banner, no retry loop. The socket layer
+            // already refuses to reconnect on close 4422; closing here covers a server that sends
+            // the message without the close code.
+            case "config":
+              restoreUnsent();
+              socket.close();
+              setConfigError(msg.message);
+              setLive("running", false);
+              return;
             default:
               if (modelError()) break; // shown as the switch's banner
-              setErrors((e) => [...e, msg.message]);
+              // The same failure re-reported (a reconnect loop) says nothing new: keep one row.
+              setErrors((e) => (e[e.length - 1] === msg.message ? e : [...e, msg.message]));
               // A prompt that failed before the agent started leaves nothing running.
               if (!live.entries.some((e) => e.kind === "assistant")) setLive("running", false);
           }
@@ -331,6 +352,32 @@ export function ChatView(props: {
         banner={
           <div class="stack-2">
             <ConnectionBanner socket={socket} />
+            {/* Permanent, and the way out is outside pi-web: restore the folder, then reconnect. */}
+            <Show when={configError()}>
+              {(message) => (
+                <Banner
+                  tone="error"
+                  title="This session can't be opened."
+                  body={
+                    <>
+                      {message()} Nothing in the session file changed. Restore the folder, then reconnect.
+                    </>
+                  }
+                  action={
+                    <button
+                      type="button"
+                      class="button button-sm"
+                      onClick={() => {
+                        setConfigError(null);
+                        socket.retry();
+                      }}
+                    >
+                      Reconnect
+                    </button>
+                  }
+                />
+              )}
+            </Show>
             <Show when={modelError()}>
               {(err) => (
                 <Banner
@@ -422,6 +469,8 @@ export function ChatView(props: {
         stopping={live.stopping}
         detail={live.activity ?? runDetail(live)}
         workersWorking={workersWorking()}
+        workersTotal={workerList().length}
+        workersSplit={workersSplit()}
         onShowWorkers={props.onShowWorkers}
         workersOpen={props.workersOpen}
         autofocus={props.autofocus}

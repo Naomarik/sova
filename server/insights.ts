@@ -4,18 +4,22 @@ import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import type {
   AgentsInsight,
   CompactionInfo,
+  ExplanationInfo,
   LiveAgentSession,
   OutlineTopic,
   SessionInsight,
   SessionOutline,
   TeamInfo,
   TeamMember,
+  TokenUsage,
+  TokenUsageTotal,
   UsageInsight,
   UsageProvider,
   UsageWindow,
   WorkerInfo,
   WorkerStatus,
 } from "../shared/protocol";
+import { hasPage, listExplanations, sortExplanations } from "./explanations";
 import { readLiveRecords, type RawLiveRecord } from "./live";
 import { resolveSessionPath } from "./paths";
 import { activeBranch, parseLines } from "./transcript";
@@ -182,6 +186,8 @@ export async function getUsageInsight(): Promise<UsageInsight> {
 // topic-outline snapshot, compactions. One parse per (mtime, size), active branch only.
 
 const TEAM_ENTRY = "subagents-team-v1";
+/** The explain extension's completion entry; server/transcript.ts turns it into a report row. */
+const EXPLAIN_ENTRY = "explain-doc";
 const TEAM_ID = /^team_\d+$/;
 
 interface RosterTeam {
@@ -196,6 +202,10 @@ interface SessionFacts {
   reports: Map<string, NonNullable<TeamMember["lastReport"]>>;
   outline: SessionOutline | null;
   compactions: CompactionInfo[];
+  /** The session's own id, from the header line: the parentSessionId /explain entries carry. */
+  sessionId: string | null;
+  /** explain-doc entries on the active branch (the store is the other half; see explanations()). */
+  explanations: ExplanationInfo[];
 }
 
 const FACTS_MAX = 64;
@@ -289,6 +299,23 @@ function decodeOutline(data: unknown): SessionOutline | null {
   };
 }
 
+/** One explain-doc entry's data, as server/transcript.ts explainRow reads it. */
+function decodeExplanation(data: unknown): ExplanationInfo | null {
+  if (!isRec(data)) return null;
+  const id = str(data.id);
+  const topic = str(data.topic);
+  const createdAt = str(data.createdAt);
+  if (!id || !topic || !createdAt) return null;
+  const x: ExplanationInfo = { id, topic, summary: str(data.summary) ?? "", createdAt, parentSessionId: str(data.parentSessionId) ?? "" };
+  const model = str(data.model);
+  if (model) x.model = model;
+  const error = str(data.error);
+  const note = str(data.note);
+  if (error) x.error = error;
+  else if (note) x.note = note;
+  return x;
+}
+
 function decodeCompaction(e: Rec): CompactionInfo {
   const details = isRec(e.details) ? e.details : {};
   return {
@@ -306,16 +333,30 @@ function extractFacts(text: string): SessionFacts {
   const reports: SessionFacts["reports"] = new Map();
   let outlineData: unknown;
   const compactions: CompactionInfo[] = [];
-  for (const e of activeBranch(parseLines(text))) {
+  const explanations: ExplanationInfo[] = [];
+  const entries = parseLines(text);
+  const header = entries.find((e) => e.type === "session");
+  for (const e of activeBranch(entries)) {
     if (e.type === "custom" && e.customType === TEAM_ENTRY) addTeamEntry(teams, e.data);
     else if (e.type === "custom" && e.customType === "topic-outline") outlineData = e.data;
     else if (e.type === "custom_message" && e.customType === "subagent-complete") addReport(reports, e);
     else if (e.type === "compaction") compactions.push(decodeCompaction(e));
+    else if (e.type === "custom" && e.customType === EXPLAIN_ENTRY) {
+      const x = decodeExplanation(e.data);
+      if (x) explanations.push(x);
+    }
   }
-  return { teams: [...teams.values()], reports, outline: decodeOutline(outlineData), compactions };
+  return {
+    teams: [...teams.values()],
+    reports,
+    outline: decodeOutline(outlineData),
+    compactions,
+    explanations,
+    sessionId: (header ? str(header.id) : undefined) ?? null,
+  };
 }
 
-const EMPTY_FACTS: SessionFacts = { teams: [], reports: new Map(), outline: null, compactions: [] };
+const EMPTY_FACTS: SessionFacts = { teams: [], reports: new Map(), outline: null, compactions: [], explanations: [], sessionId: null };
 
 async function sessionFacts(path: string): Promise<SessionFacts> {
   try {
@@ -361,6 +402,24 @@ function workerStatus(v: unknown): WorkerStatus {
   return WORKER_ALIASES[s] ?? "running"; // schema: unknown ⇒ running
 }
 
+/** Token counts are advisory: a bad field is 0, a non-object usage is dropped. */
+function decodeUsage(v: unknown): TokenUsage | undefined {
+  if (!isRec(v)) return undefined;
+  const cost = num(v.cost);
+  return {
+    input: count(v.input), output: count(v.output), cacheRead: count(v.cacheRead), cacheWrite: count(v.cacheWrite),
+    ...(cost !== undefined && cost > 0 ? { cost } : {}),
+  };
+}
+
+/** presence.workerUsage: the session-lifetime Σ. It covers workers the record no longer lists,
+    so it is never recomputed from presence.workers. */
+export function decodeUsageTotal(presence: Rec | undefined): TokenUsageTotal | undefined {
+  if (!isRec(presence?.workerUsage)) return undefined;
+  const usage = decodeUsage(presence.workerUsage);
+  return usage ? { ...usage, workers: count(presence.workerUsage.workers) } : undefined;
+}
+
 function decodeWorker(w: unknown): WorkerInfo | null {
   if (!isRec(w) || typeof w.id !== "string") return null;
   const status = workerStatus(w.status);
@@ -380,6 +439,8 @@ function decodeWorker(w: unknown): WorkerInfo | null {
     if (t !== undefined) out[k] = t;
   }
   if (w.outcome === "success" || w.outcome === "error" || w.outcome === "aborted") out.outcome = w.outcome;
+  const usage = decodeUsage(w.usage);
+  if (usage) out.usage = usage;
   return out;
 }
 
@@ -438,6 +499,7 @@ async function liveSession({ sessionFile, pid, rec }: RawLiveRecord): Promise<Li
         error: workers.filter((w) => w.status === "error").length,
         killed: workers.filter((w) => w.status === "killed").length,
       };
+  const usageTotal = decodeUsageTotal(presence);
   // Only expose paths the rest of the API accepts as session keys.
   const path = sessionFile ? resolveSessionPath(sessionFile) : null;
   const teams = path ? joinTeams(await sessionFacts(path), path, workers) : [];
@@ -453,6 +515,7 @@ async function liveSession({ sessionFile, pid, rec }: RawLiveRecord): Promise<Li
     state: sessionState(presence, session),
     workerCounts,
     workers,
+    ...(usageTotal ? { usageTotal } : {}),
     teams,
   };
 }
@@ -528,6 +591,35 @@ function overlayOutline(disk: SessionOutline | null, live: unknown): SessionOutl
   };
 }
 
+/**
+ * This session's /explain artifacts: the store entries parented to it, plus any explain-doc entry
+ * on its branch that the store can still serve (the recorded parentSessionId can be blank, so the
+ * branch is how those are found). Deduped by id — the store wins, it is what /explain/<id> reads —
+ * newest first.
+ *
+ * Everything here is openable: a failed run (entry carries `error`, no page was written) and an
+ * entry whose store dir is gone are both left out, so the strip count and the gallery grid match
+ * the pages that actually serve. A failure is shown once, as its failed thread row, and counted
+ * nowhere. An entry carrying `note` DOES have a page — the run broke after writing it — so it is
+ * listed, with the note, and stays linkable.
+ */
+async function explanations(facts: SessionFacts): Promise<ExplanationInfo[]> {
+  const byId = new Map<string, ExplanationInfo>();
+  if (facts.sessionId) for (const x of await listExplanations(facts.sessionId)) byId.set(x.id, x);
+  for (const x of facts.explanations) {
+    if (x.error) continue; // fatal: no page was written, so it is not one of this session's pages
+    const stored = byId.get(x.id);
+    // meta.json has no note field: the branch entry is the only place an advisory reason exists,
+    // so carry it onto the store's copy rather than letting the dedupe drop it.
+    if (stored) {
+      if (x.note) stored.note = x.note;
+    } else if (await hasPage(x.id)) {
+      byId.set(x.id, { ...x }); // a copy: facts.explanations is cached per (mtime, size)
+    }
+  }
+  return sortExplanations([...byId.values()]);
+}
+
 /** `path` must already be validated with resolveSessionPath(). Never throws. */
 export async function getSessionInsight(path: string): Promise<SessionInsight> {
   const facts = await sessionFacts(path);
@@ -539,10 +631,13 @@ export async function getSessionInsight(path: string): Promise<SessionInsight> {
   }
   const presence = isRec(live?.rec.presence) ? live.rec.presence : undefined;
   const workers = live ? decodeWorkers(presence) : null;
+  const usageTotal = live ? decodeUsageTotal(presence) : undefined;
   return {
     outline: live ? overlayOutline(facts.outline, presence?.outline) : facts.outline,
     compactions: facts.compactions,
     teams: joinTeams(facts, path, workers),
     workers: workers ?? [],
+    ...(usageTotal ? { usageTotal } : {}),
+    explanations: await explanations(facts),
   };
 }

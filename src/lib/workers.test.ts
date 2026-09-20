@@ -2,6 +2,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  capTitle,
+  formatCost,
   isHostSession,
   sessionWorking,
   showSubagentsLabel,
@@ -9,8 +11,20 @@ import {
   sourceKey,
   sourceName,
   sourceOf,
+  showWorkersLabel,
   subagentsWorkingLabel,
+  teamNote,
+  transcriptUsage,
+  usageHeadline,
+  usageTitle,
+  usageTotal,
   workerLabel,
+  workersNoun,
+  workersWorkingLabel,
+  workerTeam,
+  workerUsage,
+  workingChipTitle,
+  workingSplit,
 } from "./workers";
 
 const live = (working: number) => ({ pid: 1, status: "idle", workers: { working, total: working + 1 } });
@@ -77,4 +91,109 @@ test("sourceOf reads a key back, sourceName describes it", () => {
   assert.deepEqual(sourceOf("claude:abc"), { kind: "claude", sessionId: "abc" });
   assert.equal(sourceName(sourceOf("/p/a.jsonl")), "/p/a.jsonl");
   assert.equal(sourceName(sourceOf("claude:abc")), "Claude session abc");
+});
+
+test("usage accessors read counts off whatever the server sent, or nothing", () => {
+  const usage = { input: 1200, output: 340, cacheRead: 98_000, cacheWrite: 4500, cost: 0.41 };
+  assert.deepEqual(workerUsage({ id: "ag_01", usage }), usage);
+  assert.equal(workerUsage({ id: "ag_01" }), null, "an older pi-config publishes none");
+  assert.equal(workerUsage({ id: "ag_01", usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }), null,
+    "a worker that spent nothing shows nothing");
+  assert.equal(workerUsage(null), null);
+  // Garbage counts as 0, and a cost of 0 is dropped rather than shown as free.
+  assert.deepEqual(workerUsage({ usage: { input: "12", output: -4, cacheRead: 5, cacheWrite: Number.NaN, cost: 0 } }),
+    { input: 0, output: 0, cacheRead: 5, cacheWrite: 0 });
+  assert.deepEqual(transcriptUsage({ type: "append", items: [], usage }), usage);
+  assert.equal(transcriptUsage({ type: "append", items: [] }), null);
+  // The Σ keeps its head count, which is a lifetime number and may exceed the list.
+  assert.deepEqual(usageTotal({ workers: [], usageTotal: { ...usage, workers: 57 } }), { ...usage, workers: 57 });
+  assert.equal(usageTotal({ workers: [], usageTotal: { ...usage, workers: -1 } })!.workers, 0);
+  assert.equal(usageTotal({ workers: [] }), null);
+  assert.equal(usageTotal(undefined), null);
+});
+
+test("usage headline is input + output; the title carries the split, the cost and the head count", () => {
+  const usage = { input: 1200, output: 340, cacheRead: 98_000, cacheWrite: 4500, cost: 0.41 };
+  assert.equal(usageHeadline(usage), 1540);
+  assert.equal(usageTitle(usage), "1.2k in · 340 out · 98k cache read · 4.5k cache write · $0.41");
+  assert.equal(usageTitle({ ...usage, cost: undefined }), "1.2k in · 340 out · 98k cache read · 4.5k cache write",
+    "no cost line when the backend reports none");
+  assert.equal(usageTitle(usage, 57).startsWith("57 subagents so far · "), true);
+  assert.equal(usageTitle(usage, 1).startsWith("1 subagent so far · "), true);
+  assert.equal(formatCost(0.004), "<$0.01");
+  assert.equal(formatCost(0), null);
+  assert.equal(formatCost(undefined), null);
+});
+
+const team = (name: string, ...ids: string[]) => ({ id: `t_${name}`, name, members: ids.map((workerId) => ({ workerId, role: workerId })) });
+const w = (id: string, working: boolean, teamId?: string) => ({ id, working, teamId });
+
+test("workingSplit: team members and plain subagents counted apart, one team named", () => {
+  const teams = [team("Explain UX", "ag_01", "ag_02")] as never;
+  assert.deepEqual(workingSplit(2, [w("ag_01", true), w("ag_02", true), w("ag_09", false)], teams), { members: 2, subagents: 0, team: "Explain UX" });
+  assert.deepEqual(workingSplit(2, [w("ag_01", true), w("ag_09", true)], teams), { members: 1, subagents: 1, team: "Explain UX" });
+  assert.deepEqual(workingSplit(1, [w("ag_09", true), w("ag_01", false)], teams), { members: 0, subagents: 1 });
+  // A worker naming a team the list doesn't carry is still a member, just an unnamed one.
+  assert.deepEqual(workingSplit(1, [w("ag_77", true, "t_other")], teams), { members: 1, subagents: 0 });
+  // Two teams working: no single name to show.
+  const two = [team("Explain UX", "ag_01"), team("Runtime", "ag_02")] as never;
+  assert.deepEqual(workingSplit(2, [w("ag_01", true), w("ag_02", true)], two), { members: 2, subagents: 0 });
+});
+
+test("workingSplit returns null when the lists can't answer it", () => {
+  const teams = [team("Explain UX", "ag_01")] as never;
+  assert.equal(workingSplit(2, [w("ag_01", true)], teams), null, "list shorter than the count: don't guess");
+  assert.equal(workingSplit(1, [], teams), null);
+  assert.equal(workingSplit(1, undefined, teams), null);
+  assert.equal(workingSplit(1, [w("ag_01", true)], []), null);
+  assert.equal(workingSplit(1, [w("ag_01", true)], undefined), null);
+});
+
+test("workersWorkingLabel names what's actually working", () => {
+  assert.equal(workersWorkingLabel(2, { members: 2, subagents: 0, team: "Explain UX" }), "2 team members working…");
+  assert.equal(workersWorkingLabel(1, { members: 1, subagents: 0 }), "1 team member working…");
+  assert.equal(workersWorkingLabel(3, { members: 2, subagents: 1 }), "1 subagent · 2 team members working…");
+  assert.equal(workersWorkingLabel(3, { members: 0, subagents: 3 }), "3 subagents working…");
+  assert.equal(workersWorkingLabel(3, null), "3 subagents working…", "unsplittable: the plain wording");
+});
+
+test("showWorkersLabel, teamNote and workingChipTitle follow the split", () => {
+  assert.equal(showWorkersLabel(2, { members: 2, subagents: 0, team: "Explain UX" }), "2 team members working — show workers");
+  assert.equal(showWorkersLabel(3, { members: 2, subagents: 1 }), "1 subagent · 2 team members working — show workers");
+  assert.equal(showWorkersLabel(3, { members: 0, subagents: 3 }), "3 subagents working — show subagents");
+  assert.equal(showWorkersLabel(3, null), "3 subagents working — show subagents");
+  assert.equal(teamNote({ members: 2, subagents: 0, team: "Explain UX" }), "Team · Explain UX");
+  assert.equal(teamNote({ members: 0, subagents: 2, team: "Explain UX" }), undefined);
+  assert.equal(teamNote(null), undefined);
+  assert.equal(workingChipTitle(null), "Subagents working now");
+  assert.equal(workingChipTitle({ members: 2, subagents: 0 }), "Team members working now");
+  assert.equal(workingChipTitle({ members: 2, subagents: 1 }), "Workers working now");
+});
+
+test("workerTeam finds the owning team; workersNoun names the pane", () => {
+  const teams = [team("Explain UX", "ag_01"), team("Runtime", "ag_02")];
+  assert.equal(workerTeam({ id: "ag_02" }, teams)!.name, "Runtime");
+  assert.equal(workerTeam({ id: "ag_09" }, teams), null);
+  assert.equal(workerTeam({ id: "ag_09" }, undefined), null);
+  assert.equal(workersNoun(true), "Workers");
+  assert.equal(workersNoun(false), "Subagents");
+});
+
+test("capTitle keeps tooltips short, cutting at a word boundary", () => {
+  assert.equal(capTitle("Ship the explain strip"), "Ship the explain strip");
+  assert.equal(capTitle("  padded  "), "padded", "titles are trimmed");
+  assert.equal(capTitle(undefined), undefined);
+  assert.equal(capTitle(""), undefined, "no empty title attribute");
+  assert.equal(capTitle("   "), undefined);
+
+  const long = "word ".repeat(1000);
+  const capped = capTitle(long)!;
+  assert.ok(capped.length <= 301, `capped at ~300, got ${capped.length}`);
+  assert.ok(capped.endsWith("…"));
+  assert.equal(capped, `${"word ".repeat(60).trimEnd()}…`, "cut on the last space before 300");
+
+  assert.equal(capTitle("abcdefghij", 5), "abcde…", "no boundary to find: a hard cut");
+  assert.equal(capTitle("ab cdefghij", 5), "ab cd…", "boundary too early would gut it — hard cut instead");
+  assert.equal(capTitle("abcd efghij", 6), "abcd…");
+  assert.equal(capTitle("exactly ten", 11), "exactly ten", "max is inclusive");
 });

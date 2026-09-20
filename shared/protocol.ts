@@ -122,9 +122,18 @@ export interface ExplanationInfo {
   summary: string;
   createdAt: string; // ISO 8601
   parentSessionId: string; // session that ran /explain
-  /** Set only when there is no page to open at /explain/<id>: the explainer failed (its own
-      one-line reason), or the store entry is gone. Absent ⇒ the page is there. */
+  /** FATAL: the run wrote no servable page, so nothing may link to /explain/<id>. The explainer's
+      one-line reason. Only ever set on a transcript row's `report.explain` (alongside
+      `report.error`): the lists — SessionInsight.explanations and GET /api/explanations — carry
+      openable pages only, so an entry there never has it. */
   error?: string;
+  /** ADVISORY: the page is complete and opens, but the run errored or was aborted afterwards, so
+      it may be unfinished work. The link stays; show the reason alongside it. Appears on rows and
+      in SessionInsight.explanations. At most one of `error`/`note` is ever set. */
+  note?: string;
+  /** The model that produced the page, as the extension spawned it (e.g. "zai/glm-5.3"). Absent
+      on older stores. */
+  model?: string;
 }
 
 /** Status and metrics of an align document. status: explicit "implementing"/"confirmed" first,
@@ -282,20 +291,30 @@ export type ChatServerMessage =
   /** This chat's subagent workers, from the runtime's own live record (presence.workers/workerCounts).
       Sent after hello when the record has workers, then whenever the snapshot changes (polled ~3s),
       so it keeps coming after the parent turn settles. working 0 = none running. */
-  | { type: "workers"; working: number; total: number; workers: WorkerInfo[] }
+  /** `usageTotal` is the session-lifetime token Σ across every worker this runtime ever spawned
+      (live ones plus the ones its retention cap dropped), so it is NOT the sum of `workers[].usage`.
+      Absent when the live record predates it. */
+  | { type: "workers"; working: number; total: number; workers: WorkerInfo[]; usageTotal?: TokenUsageTotal }
   // Codes: "busy" = a TUI owns the session (never retry with force); "recent" = file written by an
   // unknown process, at connect or mid-chat (client may reconnect with &force=1);
   // "reloaded" = runtime reloaded by another client, or message sent to a closed runtime (reconnect);
-  // "internal" = server error.
-  | { type: "error"; message: string; code?: "busy" | "recent" | "reloaded" | "internal" };
+  // "config" = the session cannot be opened until something outside the server changes (its stored
+  // cwd no longer exists). PERMANENT: show it once and stop reconnecting — retrying re-runs the
+  // same failure and appends another banner. The socket closes 4422; "internal" closes 4500.
+  // "internal" = server error, transient, safe to retry.
+  | { type: "error"; message: string; code?: "busy" | "recent" | "reloaded" | "config" | "internal" };
 
 /** WS /ws/watch?path= — read-only live view. Safe for sessions a TUI currently owns. Never writes.
     Also accepts `?claude=<uuid>` instead of `?path=`: a claude-code worker's own Claude Code
     session (WorkerInfo.sessionId), found under ~/.claude/projects and normalized into the same
-    rows. Same `snapshot`/`append`/`error` messages; an unknown id closes with 4404 like a bad path. */
+    rows. Same `snapshot`/`append`/`error` messages; an unknown id closes with 4404 like a bad path.
+
+    Both `snapshot` and `append` may carry `usage`: the tokens the whole transcript has used so
+    far (always cumulative, never a delta), so an open header can tick while the file grows. It is
+    absent while the transcript reports no usage at all, and carries no cost for a Claude session. */
 export type WatchServerMessage =
-  | { type: "snapshot"; items: TranscriptItem[] }
-  | { type: "append"; items: TranscriptItem[] } // new JSONL rows since snapshot, as they appear
+  | { type: "snapshot"; items: TranscriptItem[]; usage?: TokenUsage }
+  | { type: "append"; items: TranscriptItem[]; usage?: TokenUsage } // new JSONL rows since snapshot, as they appear
   | { type: "error"; message: string };
 
 // ---------------------------------------------------------------------------
@@ -327,6 +346,12 @@ export interface UsageInsight {
 }
 
 export type WorkerStatus = "starting" | "running" | "waiting" | "stopping" | "done" | "error" | "killed";
+/** Cumulative token counts. Non-negative integers; `cost` is USD and only present when the
+    backend reports one. */
+export interface TokenUsage { input: number; output: number; cacheRead: number; cacheWrite: number; cost?: number }
+/** A token Σ plus the number of workers it covers — a session-lifetime count that can exceed the
+    workers currently listed, because evicted ones keep counting. */
+export interface TokenUsageTotal extends TokenUsage { workers: number }
 export interface WorkerInfo {
   id: string; name: string; status: WorkerStatus; working: boolean;
   model?: string; backend?: string; preview?: string;
@@ -339,6 +364,9 @@ export interface WorkerInfo {
   sessionFile?: string;
   /** Backend session id when there is no pi session file (claude-code: its Claude session id). */
   sessionId?: string;
+  /** Tokens this worker has used so far (both backends report them). Absent for a worker that
+      has spent nothing yet, and from live records written by an older pi-config. */
+  usage?: TokenUsage;
 }
 export interface TeamMember {
   workerId: string; role: string; orchestrator: boolean; backend: string; model?: string;
@@ -362,6 +390,9 @@ export interface LiveAgentSession {
   state: "working" | "idle" | "needs-input" | "error";
   workerCounts: { total: number; working: number; waiting: number; done: number; error: number; killed: number };
   workers: WorkerInfo[]; // may be shorter than workerCounts.total
+  /** Lifetime token Σ across every worker this session ever spawned (presence.workerUsage), so
+      it can cover more workers than `workers` lists. Absent from older records and servers. */
+  usageTotal?: TokenUsageTotal;
   teams: TeamInfo[];
 }
 export interface AgentsInsight {
@@ -391,6 +422,8 @@ export interface SessionInsight {
   /** This session's own subagent workers, from its live record (empty when it isn't live, or
       absent from an older server). The nested subagents pane lists these. */
   workers?: WorkerInfo[];
+  /** The same lifetime token Σ as LiveAgentSession.usageTotal, for the session on screen. */
+  usageTotal?: TokenUsageTotal;
   /** /explain artifacts parented to this session (store ∪ JSONL explain-doc entries, deduped by
       id, newest first). Absent from older servers. */
   explanations?: ExplanationInfo[];

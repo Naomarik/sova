@@ -2,18 +2,19 @@ import { batch, createEffect, createMemo, createResource, createSignal, Match, o
 import { createStore, reconcile } from "solid-js/store";
 import { Portal } from "solid-js/web";
 import type { SessionInsight, SessionSummary, TeamInfo, WorkerInfo } from "../shared/protocol";
-import { fetchAgents, fetchSessionInsight, fetchUsage, listSessions, setSessionArchived } from "./lib/api";
+import { fetchAgents, fetchExplanations, fetchSessionInsight, fetchUsage, listSessions, setSessionArchived } from "./lib/api";
 import { agentsHref, insightsRouteFromHash, legacyInsightsTarget } from "./lib/insights";
 import { createPoll } from "./lib/poll";
 import { homeFromSessionPath, shortModel, tildePath } from "./lib/format";
 import { copyText, home, setHome, toast } from "./lib/ui-state";
-import { sessionWorking } from "./lib/workers";
+import { sessionWorking, type UsageTotalView, workingChipTitle, workingSplit } from "./lib/workers";
 import { ChatView, type ChatRefusal } from "./components/ChatView";
 import { AgentsView } from "./components/AgentsView";
 import { ContextGauge, ContextMetaPrefix, contextDescribedBy } from "./components/ContextGauge";
 import { ModeMenu, type ModeControl } from "./components/ModeMenu";
 import { ModelMenu, type ModelControl } from "./components/ModelMenu";
 import { NewSessionDialog } from "./components/NewSessionDialog";
+import { ExplainStrip } from "./components/ExplainStrip";
 import { OutlineStrip } from "./components/OutlineStrip";
 import { SubagentPane } from "./components/SubagentPane";
 import { sessionHref, Sidebar } from "./components/Sidebar";
@@ -75,6 +76,8 @@ const WATCH_POLL_MS = 10_000;
 /** Insights polling (paused while the tab is hidden). The usage file itself changes ≤ every 3 min. */
 const USAGE_POLL_MS = 60_000;
 const AGENTS_POLL_MS = 5_000;
+/** The explanations store only changes when a /explain subagent finishes; the sidebar row can wait. */
+const EXPLAIN_POLL_MS = 60_000;
 /** Session insight (outline, teams) reloads this long after the session's file last changed. */
 const SESSION_INSIGHT_DEBOUNCE_MS = 1500;
 
@@ -148,6 +151,7 @@ export function App() {
   };
   const usage = createPoll(fetchUsage, USAGE_POLL_MS);
   const agents = createPoll(fetchAgents, AGENTS_POLL_MS);
+  const explanations = createPoll(fetchExplanations, EXPLAIN_POLL_MS);
   const [decision, setDecision] = createSignal<Decision | null>(null);
   /** Sessions we just created: shown before the list catches up. */
   const created = new Map<string, SessionSummary>();
@@ -246,8 +250,11 @@ export function App() {
 
   // ---- Subagents pane: open for one session path, closed whenever the route changes ----------
   const [subagents, setSubagents] = createSignal<{ path: string; selected: string | null } | null>(null);
-  /** The open chat's live workers (WS "workers"), reconciled by id so pane rows keep identity. */
-  const [chatWorkers, setChatWorkers] = createStore<{ path: string | null; list: WorkerInfo[] }>({ path: null, list: [] });
+  /** The open chat's live workers (WS "workers"), reconciled by id so pane rows keep identity,
+      with the runtime's session-lifetime token Σ beside them. */
+  const [chatWorkers, setChatWorkers] = createStore<{ path: string | null; list: WorkerInfo[]; usage: UsageTotalView | null }>(
+    { path: null, list: [], usage: null },
+  );
   createEffect(on(route, () => setSubagents(null), { defer: true }));
   /** The pane's session: open, for the session on screen. */
   const subagentsPath = () => {
@@ -282,6 +289,7 @@ export function App() {
           now={now()}
           usage={usage.data()}
           agents={agents.data()}
+          explanations={explanations.data()}
           insightsPage={insightsRoute()?.page ?? null}
           onRefresh={refresh}
           onNew={() => setCreating(true)}
@@ -369,6 +377,8 @@ export function App() {
                 const liveTeam = () =>
                   (insight.data?.teams ?? []).filter((t) => t.live).reduce<TeamInfo | null>((b, t) => (!b || t.working > b.working ? t : b), null);
                 const team = () => insight.data?.teams[0] ?? null;
+                /** What's working, by kind: team members and plain subagents are different things. */
+                const split = () => workingSplit(working(), insight.data?.workers, insight.data?.teams);
                 return (
                   <>
                     <header class="session-head">
@@ -405,7 +415,7 @@ export function App() {
                           </Show>
                         }
                       >
-                        <Show when={liveTeam()} fallback={<CountChip href={agentsHref()} title="Subagents working now">{working()} working</CountChip>}>
+                        <Show when={liveTeam()} fallback={<CountChip href={agentsHref()} title={workingChipTitle(split())}>{working()} working</CountChip>}>
                           {(t) => (
                             <CountChip href={agentsHref(t().id)} title={t().name}>
                               Team · {working()} working
@@ -424,6 +434,7 @@ export function App() {
                       <CopyButton iconOnly label="Copy Session Path" text={() => d.path} onCopy={(t) => copyText(t, "Copied path.")} />
                     </header>
                     <Show when={insight.data?.outline}>{(o) => <OutlineStrip path={d.path} outline={o()} now={now()} />}</Show>
+                    <ExplainStrip explanations={insight.data?.explanations} now={now()} />
 
                     <Switch>
                       <Match when={d.mode === "watch" && d}>
@@ -434,6 +445,8 @@ export function App() {
                             streaming={!!s().live}
                             onAppend={reloadInsight}
                             workersWorking={working()}
+                            workersTotal={insight.data?.workers?.length ?? 0}
+                            workersSplit={split()}
                             onShowWorkers={() => toggleSubagents(d.path)}
                             workersOpen={subagentsPath() === d.path}
                             stateBanner={
@@ -474,7 +487,7 @@ export function App() {
                       </Match>
                       <Match when={d.mode === "chat" && d}>
                         {(c) => {
-                          onCleanup(() => setChatWorkers({ path: null, list: [] }));
+                          onCleanup(() => setChatWorkers({ path: null, list: [], usage: null }));
                           return (
                             <ChatView
                               path={d.path}
@@ -494,14 +507,16 @@ export function App() {
                                 refresh();
                                 reloadInsight();
                               }}
-                              onWorkers={(w) =>
+                              onWorkers={(w, usage) =>
                                 batch(() => {
                                   setChatWorkers("path", d.path);
                                   setChatWorkers("list", reconcile(w, { key: "id" }));
+                                  setChatWorkers("usage", usage);
                                 })
                               }
                               onShowWorkers={() => toggleSubagents(d.path)}
                               workersOpen={subagentsPath() === d.path}
+                              teams={insight.data?.teams}
                             />
                           );
                         }}
@@ -519,6 +534,7 @@ export function App() {
             <SubagentPane
               path={path}
               chatWorkers={chatWorkers.path === path ? chatWorkers.list : null}
+              chatUsage={chatWorkers.path === path ? chatWorkers.usage : null}
               selected={subagents()?.selected ?? null}
               onSelect={(id) => setSubagents({ path, selected: id })}
               onClose={closeSubagents}

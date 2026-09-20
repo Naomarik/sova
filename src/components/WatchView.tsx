@@ -4,6 +4,7 @@ import { fetchTranscriptWithContext, wsUrl } from "../lib/api";
 import { contextFromItems, contextStateFor } from "../lib/context";
 import { createReconnectingSocket } from "../lib/socket";
 import { announce, setSessionContext } from "../lib/ui-state";
+import type { WorkingSplit } from "../lib/workers";
 import { Composer, type ComposerReason } from "./Composer";
 import { ConnectionBanner } from "./ConnectionBanner";
 import { HistoryItems, ThreadScroller, TranscriptSkeleton } from "./Thread";
@@ -28,6 +29,10 @@ export function WatchView(props: {
   onAppend?(): void;
   /** Subagents working now (live record); the composer shows them as a status row. */
   workersWorking?: number;
+  /** Every subagent the session has, so that row survives all of them settling. */
+  workersTotal?: number;
+  /** How that count divides into team members and plain subagents; null: it can't be split. */
+  workersSplit?: WorkingSplit | null;
   /** Makes that row a button that toggles the subagents pane. */
   onShowWorkers?(): void;
   workersOpen?: boolean;
@@ -136,6 +141,8 @@ export function WatchView(props: {
         stopping={false}
         detail={null}
         workersWorking={props.workersWorking}
+        workersTotal={props.workersTotal}
+        workersSplit={props.workersSplit}
         onShowWorkers={props.onShowWorkers}
         workersOpen={props.workersOpen}
         onSend={() => false}

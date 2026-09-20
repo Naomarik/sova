@@ -4,7 +4,7 @@ import { clockTime, relativeTime, shortModel, tildePath } from "../lib/format";
 import { activeTeams, memberStatus, type MemberStatus, teamAnchor, teamFresh } from "../lib/insights";
 import type { Poll } from "../lib/poll";
 import { home } from "../lib/ui-state";
-import { isHostSession } from "../lib/workers";
+import { capTitle, isHostSession } from "../lib/workers";
 import { InsightsPage, iso, Skeletons } from "./InsightsPage";
 import { sessionHref } from "./Sidebar";
 import { Chip, CountChip, Icon } from "./ui";
@@ -78,7 +78,7 @@ function TeamCard(props: { team: TeamInfo; fresh: boolean; now: number; parentTi
       </header>
       <Show when={props.team.objective}>
         <div class="card-body">
-          <p class="team-objective" title={props.team.objective}>
+          <p class="team-objective" title={capTitle(props.team.objective)}>
             {props.team.objective}
           </p>
         </div>

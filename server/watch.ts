@@ -2,6 +2,7 @@ import { type FSWatcher, watch } from "node:fs";
 import { open, stat } from "node:fs/promises";
 import type { TranscriptItem, WatchServerMessage } from "../shared/protocol";
 import { activeBranch, normalizeEntries, parseLines } from "./transcript";
+import { piUsageTally, totalOf, type UsageTally } from "./transcript-usage";
 
 const POLL_MS = 1500;
 
@@ -30,6 +31,9 @@ export class SessionTail {
     private readonly send: (msg: WatchServerMessage) => void,
     /** How this file's lines become rows; claude-code workers write a different format. */
     private readonly normalize: Normalize = piNormalize,
+    /** Running token total for this connection, in that same format. One per tail: it
+        deduplicates across reads, so it must not be shared between clients. */
+    private readonly tally: UsageTally = piUsageTally(),
   ) {}
 
   async start(): Promise<void> {
@@ -76,7 +80,8 @@ export class SessionTail {
     const { size } = await stat(this.path);
     const { text, consumed } = await this.readComplete(0, size);
     this.offset = consumed;
-    if (!this.closed) this.send({ type: "snapshot", items: this.normalize(text, "snapshot") });
+    const usage = totalOf(this.tally(text, "snapshot"));
+    if (!this.closed) this.send({ type: "snapshot", items: this.normalize(text, "snapshot"), ...(usage ? { usage } : {}) });
   }
 
   private kick(): void {
@@ -110,6 +115,8 @@ export class SessionTail {
     if (!consumed) return;
     this.offset += consumed;
     const items = this.normalize(text, "append");
-    if (items.length && !this.closed) this.send({ type: "append", items });
+    // Cumulative, so a row-less batch that still spent tokens keeps the header honest.
+    const usage = totalOf(this.tally(text, "append"));
+    if (items.length && !this.closed) this.send({ type: "append", items, ...(usage ? { usage } : {}) });
   }
 }

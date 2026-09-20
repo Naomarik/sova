@@ -466,6 +466,9 @@ i.icon {
   color: inherit;
 }
 .list-row:last-child { border-bottom: 0; }
+/* A row that acts instead of navigating is a <button> wearing the row: undo the UA's
+   button box so it sits in the list like the links around it. */
+button.list-row { width: 100%; border: 0; background: none; text-align: left; }
 .list-row-interactive { cursor: pointer; transition: background-color var(--dur-fast) var(--ease-standard); }
 .list-row-interactive:hover { background: var(--color-sunken); color: inherit; }
 .list-row-interactive:focus-visible { outline: var(--focus-ring); outline-offset: calc(var(--focus-offset) * -1); border-radius: 0; }
@@ -502,6 +505,24 @@ i.icon {
   padding: var(--space-3) var(--space-4) var(--space-2);
   margin: 0;
 }
+/* The count closes the head, whatever else is in it. */
+.list-group-label > .text-num { margin-left: auto; }
+
+/* A group head that labels a scroll region stays put while that region scrolls: the
+   sidebar's folder groups, the subagents pane's team and subagent sections. */
+.session-group .list-group-label,
+.subagents-group-label { position: sticky; top: 0; z-index: 1; background: var(--color-surface); }
+/* A machine name inside the head — a folder path, a team's name — takes the room and
+   ellipsizes; the head's own eyebrow casing stays on the kind word beside it. */
+.session-group-path,
+.subagents-group-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A team's name keeps its case beside the uppercase kind word. (A folder path does the
+   same one level up: its whole head is a path, so §Sidebar drops the casing there.) */
+.subagents-group-name { font-size: var(--fs-mono); text-transform: none; letter-spacing: 0; }
+/* A group that nests its own list inside the outer list's item draws the separators the
+   outer list draws for ungrouped rows. */
+.subagents-group-list { margin: 0; padding: 0; list-style: none; }
+.subagents-group-list > li:not(:last-child) { border-bottom: var(--stroke-thin) solid var(--color-border); }
 
 
 /* ---- OVERLAY. Modal ≤520px; a bottom sheet at folded width. Render at the
@@ -699,21 +720,14 @@ i.icon {
 
 .sidebar-list { flex: 1; }            /* compose with .pane */
 .session-group + .session-group { border-top: var(--stroke-thin) solid var(--color-border); }
+/* Sticky and ellipsized by §List groups; the whole head is a path here, so the casing
+   comes off the head itself rather than off one name inside it. */
 .session-group .list-group-label {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  background: var(--color-surface);
   text-transform: none;              /* a path is a machine fact; case matters */
   letter-spacing: 0;
   font-size: var(--fs-mono);
 }
 .session-group-path {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   direction: rtl;                   /* truncate from the left: the leaf folder is what you scan for */
   text-align: left;
 }
@@ -2273,14 +2287,19 @@ a.chip:hover { color: var(--color-ink); border-color: var(--color-border-strong)
 
 
 /* ---- OUTLINE STRIP. topic-outline under .session-head: closed shows the
-   "now" line; open shows overall + topics; a topic opens to its bullets. -- */
+   "now" line; open shows overall + topics; a topic opens to its bullets.
+   The strips under a session head share one row: .outline is a <details>
+   that twists open, .explain-strip is a <button> that opens a dialog and so
+   never twists. Same grammar, different verb. --------------------------- */
 
-.outline {
+.outline,
+.explain-strip {
   flex: none;
   background: var(--color-surface);
   border-bottom: var(--stroke-thin) solid var(--color-border);
 }
-.outline-summary {
+.outline-summary,
+.explain-strip-summary {
   display: flex;
   align-items: center;
   gap: var(--space-2);
@@ -2289,25 +2308,36 @@ a.chip:hover { color: var(--color-ink); border-color: var(--color-border-strong)
   font-size: var(--fs-caption);
   color: var(--color-ink-muted);
   cursor: pointer;
-  list-style: none;
   transition: background-color var(--dur-fast) var(--ease-standard);
 }
+/* The button form of the row undoes the UA's button box; the <summary> form drops its
+   marker, both ways a UA draws one. */
+.explain-strip-summary { width: 100%; border: 0; background: none; text-align: left; }
+.outline-summary { list-style: none; }
 .outline-summary::-webkit-details-marker { display: none; }
-.outline-summary:hover { background: var(--color-sunken); }
-.outline-summary:focus-visible { outline-offset: calc(var(--focus-offset) * -1); border-radius: 0; }
+.outline-summary:hover,
+.explain-strip-summary:hover { background: var(--color-sunken); }
+.outline-summary:focus-visible,
+.explain-strip-summary:focus-visible { outline-offset: calc(var(--focus-offset) * -1); border-radius: 0; }
+.outline-summary > .icon,
+.explain-strip-summary > .icon { flex: none; }
 .outline-summary .icon-twist,
 .outline-topic-summary .icon-twist { flex: none; transition: transform var(--dur-fast) var(--ease-standard); }
 .outline[open] > .outline-summary .icon-twist,
 .outline-topic[open] > .outline-topic-summary .icon-twist { transform: rotate(90deg); }
-.outline-label { flex: none; font-weight: var(--fw-medium); color: var(--color-ink-2); }
-.outline-now {
+.outline-label,
+.explain-strip-label { flex: none; font-weight: var(--fw-medium); color: var(--color-ink-2); }
+/* The one line the row is about: it takes the room and ellipsizes. */
+.outline-now,
+.explain-strip-topic {
   flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.outline-count { flex: none; font-variant-numeric: tabular-nums; }
+.outline-count,
+.explain-strip-count { flex: none; font-variant-numeric: tabular-nums; }
 .outline-body {
   max-height: var(--outline-max);
   overflow-y: auto;
@@ -2333,7 +2363,7 @@ a.chip:hover { color: var(--color-ink); border-color: var(--color-border-strong)
 .outline-topic-summary:hover .outline-topic-heading { text-decoration: underline; text-underline-offset: 3px; }
 .outline-topic-heading { flex: 1; min-width: 0; font-weight: var(--fw-medium); }
 .outline-hash { font-family: var(--font-mono); color: var(--color-ink-muted); margin-right: var(--space-1); }
-.outline-topic-time { flex: none; font-family: var(--font-mono); font-size: var(--fs-mono); color: var(--color-ink-muted); }
+.outline-topic-time { flex: none; white-space: nowrap; font-family: var(--font-mono); font-size: var(--fs-mono); color: var(--color-ink-muted); }
 .outline-bullets {
   margin: 0 0 var(--space-2);
   padding-left: calc(16px + var(--space-2) + var(--space-3));
@@ -2483,7 +2513,17 @@ a.chip:hover { color: var(--color-ink); border-color: var(--color-border-strong)
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* The token Σ (§11 "Head"): the same neutral count chip, mono so the number
+   reads as a measurement, and the first thing to go when the head is tight —
+   the working count answers "is anything happening?", this only "how much". */
+.subagents-usage {
+  font-family: var(--font-mono);
+  white-space: nowrap;
+}
 .subagents-close { margin-left: auto; }
+@media (max-width: 520px) {
+  .subagents-head > .subagents-usage { display: none; }
+}
 
 
 /* ---- BODY. List | transcript, each its own scroll region; the body itself
@@ -2564,6 +2604,24 @@ a.chip:hover { color: var(--color-ink); border-color: var(--color-border-strong)
 }
 .subagent-row[aria-current="true"] .subagent-row-name { font-weight: var(--fw-semibold); }
 .subagent-row-status { grid-column: 2; grid-row: 1; display: inline-flex; }
+/* A meta line where the facts have different claims on the width: everything keeps its room on
+   one line, and the model id is the only part that shrinks and ellipsizes, so a dated id can
+   never push a token count out of the row (§11 Worker rows). */
+.meta-line {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-1);
+  min-width: 0;
+}
+.meta-line > * { flex: none; white-space: nowrap; }
+.meta-line-shrink {
+  flex: 0 1 auto;
+  min-width: 3ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.meta-line-sep { color: var(--color-ink-muted); }
+
 .subagent-row-meta,
 .subagent-row-preview {
   grid-column: 1 / -1;

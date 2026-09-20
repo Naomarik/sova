@@ -5,12 +5,22 @@ export type SocketStatus = "connecting" | "open" | "reconnecting" | "failed" | "
 /** Delay before retry N (1-based). Max 5 retries, then the user retries by hand. */
 const BACKOFF_MS = [1000, 2000, 5000, 5000, 5000];
 
+/**
+ * Close codes for a condition no reconnect can fix: the server would fail the same way and the
+ * client would bank another banner each time (shared/protocol.ts, 4422 "config" — the session's
+ * stored cwd is gone). Retrying is the user's move, after changing what's outside the server.
+ * Transient closes (4500 "internal", a dropped link, a restarted server) are not in here.
+ */
+const PERMANENT_CLOSE = new Set([4422]);
+
+export const isPermanentClose = (code: number): boolean => PERMANENT_CLOSE.has(code);
+
 export interface ReconnectingSocket {
   status: Accessor<SocketStatus>;
   /** Retry number currently scheduled/in flight (0 when connected). */
   attempt: Accessor<number>;
   send(msg: unknown): boolean;
-  /** Manual retry after "failed" (resets the backoff). */
+  /** Manual retry after "failed" or a permanent "closed" (resets the backoff). */
   retry(): void;
   /** Drop the current connection and open a fresh one now (backoff reset). */
   reconnect(): void;
@@ -57,10 +67,18 @@ export function createReconnectingSocket<M>(url: string, handlers: SocketHandler
       }
       handlers.onMessage(msg);
     };
-    sock.onclose = () => {
+    sock.onclose = (ev) => {
       if (ws !== sock) return;
       ws = null;
       if (stopped) {
+        setStatus("closed");
+        return;
+      }
+      // Permanent: stay down. The server sent its `error` message before closing, so the view
+      // has already shown the reason once — reconnecting would only repeat it.
+      if (isPermanentClose(ev.code)) {
+        stopped = true;
+        clearTimeout(timer);
         setStatus("closed");
         return;
       }
@@ -98,7 +116,9 @@ export function createReconnectingSocket<M>(url: string, handlers: SocketHandler
       return true;
     },
     retry() {
-      if (status() !== "failed") return;
+      // "closed" too: a permanent close (or a view that closed us on a permanent error) stays
+      // down on its own, but the user asking for it by hand is always allowed.
+      if (status() !== "failed" && status() !== "closed") return;
       stopped = false;
       clearTimeout(timer);
       setAttempt(0);

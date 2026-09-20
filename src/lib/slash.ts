@@ -44,6 +44,19 @@ export function rankCommands(commands: SlashCommand[], query: string): SlashComm
   return [...prefix.sort(byName), ...inName.sort(byName), ...inDescription.sort(byName)];
 }
 
+/** A command pi-web answers itself rather than sending to the runtime. */
+export type LocalCommand = "subagents";
+
+/**
+ * The local command a message is, if any (DESIGN_NOTES §11 Trigger). A bare "/agents" or
+ * "/subagents" opens the subagents pane here: the runtime's monitor is TUI-only, so forwarding it
+ * only earns a "requires Pi's interactive TUI" notice. With arguments ("/subagents models …") it
+ * is the runtime's command and goes through untouched.
+ */
+export function localCommand(text: string): LocalCommand | null {
+  return /^\/(agents|subagents)$/.test(text.trim()) ? "subagents" : null;
+}
+
 /** Replaces the token with "/name " and returns the new text with the caret after the space. */
 export function insertCommand(text: string, token: SlashToken, name: string): { text: string; caret: number } {
   const before = text.slice(0, token.start);

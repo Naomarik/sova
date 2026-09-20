@@ -17,11 +17,12 @@ import { archiveSession, cleanupSessions, getSessionSummary, listCwds, listSessi
 import { contextForBranch, normalizeEntries, readActiveBranch } from "./transcript";
 import { checkTmpImage, MAX_ATTACHMENT_BYTES, readTmpImage, saveUploadedImage, UploadError } from "./attachments";
 import { listFolders } from "./folders";
+import { isExplanationId, listExplanations, readExplanationPage } from "./explanations";
 import { switchMode } from "./mode";
 import { modeInfo, parseModePatch, readMode } from "./mode-state";
 import { attachWebSockets } from "./ws";
 
-const PORT = Number(process.env.PORT) || 4800;
+const PORT = process.env.PORT ? Number(process.env.PORT) : 4800; // PORT=0: an ephemeral port (tests)
 // Loopback by default; set HOST=0.0.0.0 to deliberately expose on the LAN.
 const HOST = process.env.HOST || "127.0.0.1";
 const DIST_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..", "dist");
@@ -193,7 +194,27 @@ app.get("/api/insights/session", async (c) => {
   return c.json(await getSessionInsight(path));
 });
 
+// /explain artifacts (server/explanations.ts). The store is read-only here: listing never fails,
+// a missing or corrupt entry is simply absent. ?session=<sessionId> filters by parentSessionId.
+app.get("/api/explanations", async (c) => c.json(await listExplanations(c.req.query("session"))));
+
 app.all("/api/*", (c) => c.json({ error: "Not found" }, 404));
+
+// The explanation page itself, raw: a standalone HTML document the gallery iframes and phones
+// open directly. Registered before the static/SPA handlers below so those never shadow it; the
+// query string is passed through untouched (the page reads ?theme= itself). The id must be a
+// plain store dir name — anything with a slash, a ".." or nothing at all is a 404, not a read.
+app.get("/explain/:id", async (c) => {
+  const id = c.req.param("id");
+  const html = isExplanationId(id) ? await readExplanationPage(id) : null;
+  if (html === null) return c.text("Explanation not found", 404);
+  return c.body(html, 200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "private, no-cache" });
+});
+
+// Anything else under /explain (bare "/explain", a nested path, an encoded slash that didn't
+// survive validation) is a missing explanation, not the SPA shell.
+app.all("/explain", (c) => c.text("Explanation not found", 404));
+app.all("/explain/*", (c) => c.text("Explanation not found", 404));
 
 // Built frontend (vite build → dist/) with SPA fallback. Checked per request so a build made
 // after the server started is picked up.
@@ -203,7 +224,10 @@ const spaIndex = serveStatic({ root: DIST_DIR, path: "index.html" });
 app.use("*", (c, next) => (hasDist() ? staticFiles(c, next) : next()));
 app.get("*", (c, next) => (hasDist() ? spaIndex(c, next) : next()));
 
-const server = serve({ fetch: app.fetch, port: PORT, hostname: HOST }, (info) => {
+// Exported for server/explanations.test.ts, which drives routes through app.request() (no socket).
+export { app };
+
+export const server = serve({ fetch: app.fetch, port: PORT, hostname: HOST }, (info) => {
   console.log(`pi-web server on http://${HOST}:${info.port}`);
 }) as Server;
 server.on("error", (err) => {

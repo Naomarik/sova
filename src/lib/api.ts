@@ -122,6 +122,9 @@ export const fetchUsage =() => request<UsageInsight>("/api/insights/usage");
 
 export const fetchAgents = () => request<AgentsInsight>("/api/insights/agents");
 
+/** Every /explain artifact in the store, newest first (they're kept forever). */
+export const fetchExplanations = () => request<ExplanationInfo[]>("/api/explanations");
+
 export const fetchSessionInsight = (path: string) =>
   request<SessionInsight>(`/api/insights/session?path=${encodeURIComponent(path)}`);
 

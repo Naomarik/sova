@@ -3,9 +3,10 @@ import type { IncomingMessage, Server } from "node:http";
 import type { Duplex } from "node:stream";
 import { type WebSocket, WebSocketServer } from "ws";
 import type { ChatClientMessage, ChatServerMessage, WatchServerMessage } from "../shared/protocol";
-import { acquireChat, BusyError, type ChatClient } from "./chat-manager";
+import { acquireChat, BusyError, ConfigError, type ChatClient } from "./chat-manager";
 import { normalizeClaudeText, resolveClaudeSession } from "./claude-transcript";
 import { resolveSessionPath } from "./paths";
+import { claudeUsageTally, type UsageTally } from "./transcript-usage";
 import { type Normalize, SessionTail } from "./watch";
 
 function sendJson(ws: WebSocket, msg: ChatServerMessage | WatchServerMessage): void {
@@ -42,9 +43,14 @@ async function handleChat(ws: WebSocket, path: string, force: boolean): Promise<
   try {
     chat = await acquireChat(path, force);
   } catch (err) {
+    // Three outcomes, three close codes, because the client's retry policy keys off them:
+    // 4409 busy (another process owns it), 4422 config (permanent — do NOT reconnect), 4500
+    // internal (transient — backoff and retry).
     const busy = err instanceof BusyError;
-    client.send({ type: "error", code: busy ? err.code : "internal", message: err instanceof Error ? err.message : String(err) });
-    ws.close(busy ? 4409 : 4500, busy ? "busy" : "open failed");
+    const config = err instanceof ConfigError;
+    const code = busy ? err.code : config ? "config" : "internal";
+    client.send({ type: "error", code, message: err instanceof Error ? err.message : String(err) });
+    ws.close(busy ? 4409 : config ? 4422 : 4500, busy ? "busy" : config ? "config" : "open failed");
     return;
   }
   if (gone) {
@@ -55,8 +61,8 @@ async function handleChat(ws: WebSocket, path: string, force: boolean): Promise<
   for (const msg of early.splice(0)) chat.handle(client, msg);
 }
 
-function handleWatch(ws: WebSocket, path: string, normalize?: Normalize): void {
-  const tail = new SessionTail(path, (msg) => sendJson(ws, msg), normalize);
+function handleWatch(ws: WebSocket, path: string, normalize?: Normalize, tally?: UsageTally): void {
+  const tail = new SessionTail(path, (msg) => sendJson(ws, msg), normalize, tally);
   ws.on("close", () => tail.close());
   ws.on("message", () => {}); // read-only: ignore anything the client sends
   tail.start().catch((err) => {
@@ -85,7 +91,7 @@ export function attachWebSockets(server: Server): void {
           ws.close(4404, "bad path");
           return;
         }
-        handleWatch(ws, file, normalizeClaudeText);
+        handleWatch(ws, file, normalizeClaudeText, claudeUsageTally());
         return;
       }
       const path = resolveSessionPath(url.searchParams.get("path"));

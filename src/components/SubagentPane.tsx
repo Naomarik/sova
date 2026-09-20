@@ -1,11 +1,13 @@
-import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
-import type { TeamMember, TranscriptItem, WatchServerMessage, WorkerInfo } from "../../shared/protocol";
+import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
+import type { TeamInfo, TeamMember, TranscriptItem, WatchServerMessage, WorkerInfo } from "../../shared/protocol";
 import { claudeWatchUrl, fetchSessionInsight, wsUrl } from "../lib/api";
-import { clockTime, shortModel } from "../lib/format";
+import { clockTime, compactModel, shortModel } from "../lib/format";
 import { memberStatus } from "../lib/insights";
 import { createPoll } from "../lib/poll";
 import { createReconnectingSocket } from "../lib/socket";
-import { sortWorkers, sourceKey, sourceName, sourceOf, type TranscriptSource, workerLabel } from "../lib/workers";
+import { formatTokens } from "../lib/context";
+import { capTitle, sortWorkers, sourceKey, sourceName, sourceOf, transcriptUsage, usageHeadline, usageTitle, usageTotal,
+  type TranscriptSource, type UsageTotalView, type UsageView, workerLabel, workersNoun, workerTeam, workerUsage } from "../lib/workers";
 import { ConnectionBanner } from "./ConnectionBanner";
 import { HistoryItems, TranscriptSkeleton } from "./Thread";
 import { Banner, Chip, Icon } from "./ui";
@@ -18,6 +20,20 @@ const FOLLOW_PX = 80;
 const FILE_GONE = "Session file not found";
 
 /** Settled states carry "as of" their end (else last activity); running ones don't. */
+/** One list section: a team and the workers of it this session lists, or the teamless ones. */
+interface Group {
+  key: string;
+  team: TeamInfo | null;
+  workers: WorkerInfo[];
+}
+
+/** The dot between meta facts; a separator is punctuation, not something to read out. */
+const MetaSep = () => (
+  <span class="meta-line-sep" aria-hidden="true">
+    ·
+  </span>
+);
+
 const SETTLED = new Set<WorkerInfo["status"]>(["waiting", "done", "error", "killed"]);
 const asOf = (w: WorkerInfo): number | undefined => (SETTLED.has(w.status) ? w.endedAt ?? w.lastActivity : undefined);
 
@@ -30,6 +46,8 @@ const asOf = (w: WorkerInfo): number | undefined => (SETTLED.has(w.status) ? w.e
 export function SubagentPane(props: {
   path: string;
   chatWorkers: WorkerInfo[] | null;
+  /** The chat runtime's session-lifetime token Σ; null while watching or before the first one. */
+  chatUsage: UsageTotalView | null;
   selected: string | null;
   onSelect(id: string): void;
   onClose(): void;
@@ -39,6 +57,29 @@ export function SubagentPane(props: {
   const workers = createMemo(() => sortWorkers(props.chatWorkers ?? insight.data()?.workers ?? []));
   const working = () => workers().filter((w) => w.working).length;
   const label = (w: WorkerInfo) => workerLabel(w, insight.data()?.teams);
+  const teamOf = (w: WorkerInfo) => workerTeam(w, insight.data()?.teams);
+  /** The list in sections: one per team that owns a listed worker, then the plain subagents.
+      Section order follows the sorted list, so a working team still leads. */
+  const groups = createMemo<Group[]>(() => {
+    const out: Group[] = [];
+    for (const w of workers()) {
+      const team = teamOf(w);
+      const key = team?.id ?? "";
+      const at = out.find((g) => g.key === key);
+      if (at) at.workers.push(w);
+      else out.push({ key, team, workers: [w] });
+    }
+    return out;
+  });
+  /** Section heads only once a team actually owns a listed worker. */
+  const grouped = () => groups().some((g) => g.team);
+  /** A session with a team holds more than subagents, listed or not: the pane says so. */
+  const noun = () => workersNoun((insight.data()?.teams.length ?? 0) > 0);
+  /** The Σ the chat socket reports, else the polled insight's — a lifetime total either way. */
+  const total = () => props.chatUsage ?? usageTotal(insight.data());
+  /** What the open transcript itself reports, which ticks between worker snapshots. Another
+      worker's numbers must never linger, so the selection clears it. */
+  const [watched, setWatched] = createSignal<UsageView | null>(null);
   const loading = () => !props.chatWorkers && insight.pending();
   /** While the list's source is down nothing pulses. */
   const liveSource = () => !!props.chatWorkers || !insight.error();
@@ -50,11 +91,33 @@ export function SubagentPane(props: {
     return workers().find((w) => w.id === id) ?? (prev?.id === id ? prev : null);
   }, null);
 
+  createEffect(on(() => props.selected, () => setWatched(null), { defer: true }));
+
   // Nothing selected yet: the first row (working ones sort first).
   createEffect(() => {
     const first = workers()[0];
     if (!props.selected && first) props.onSelect(first.id);
   });
+
+  /** One worker row. Inside a team section the name is its role, and the section says whose. */
+  const row = (w: WorkerInfo) => (
+    <button
+      type="button"
+      class="subagent-row"
+      aria-current={props.selected === w.id ? "true" : undefined}
+      title={w.working ? capTitle(w.preview) : undefined}
+      onClick={() => props.onSelect(w.id)}
+    >
+      <span class="subagent-row-name">{label(w)}</span>
+      <span class="subagent-row-status">
+        <StatusChip worker={w} liveSource={liveSource()} />
+      </span>
+      <WorkerMeta worker={w} liveSource={liveSource()} class="subagent-row-meta" />
+      <Show when={w.working && w.preview}>
+        <span class="subagent-row-preview">{w.preview}</span>
+      </Show>
+    </button>
+  );
 
   let list: HTMLUListElement | undefined;
   let closeButton!: HTMLButtonElement;
@@ -80,16 +143,23 @@ export function SubagentPane(props: {
   };
 
   return (
-    <aside class="app-subagents" id="subagents-pane" aria-label="Subagents" onKeyDown={onKeyDown}>
+    <aside class="app-subagents" id="subagents-pane" aria-label={noun()} onKeyDown={onKeyDown}>
       <header class="subagents-head">
-        <h2 class="subagents-title">Subagents</h2>
+        <h2 class="subagents-title">{noun()}</h2>
         <Show when={working() > 0}>
           <span class="chip chip-count">{working()} working</span>
+        </Show>
+        <Show when={total()}>
+          {(u) => (
+            <span class="chip chip-count subagents-usage" title={usageTitle(u(), u().workers)}>
+              {formatTokens(usageHeadline(u()))} tokens
+            </span>
+          )}
         </Show>
         <button
           type="button"
           class="button button-icon button-ghost subagents-close"
-          aria-label="Close subagents"
+          aria-label={`Close ${noun().toLowerCase()}`}
           ref={closeButton}
           onClick={() => props.onClose()}
         >
@@ -97,27 +167,36 @@ export function SubagentPane(props: {
         </button>
       </header>
       <div class="subagents-body">
-        <ul class="subagents-list" aria-label="Subagents" ref={list} onKeyDown={onListKey}>
-          <For each={workers()}>
-            {(w) => (
-              <li>
-                <button
-                  type="button"
-                  class="subagent-row"
-                  aria-current={props.selected === w.id ? "true" : undefined}
-                  title={w.working ? w.preview : undefined}
-                  onClick={() => props.onSelect(w.id)}
-                >
-                  <span class="subagent-row-name">{label(w)}</span>
-                  <span class="subagent-row-status">
-                    <StatusChip worker={w} liveSource={liveSource()} />
-                  </span>
-                  <WorkerMeta worker={w} liveSource={liveSource()} class="subagent-row-meta" />
-                  <Show when={w.working && w.preview}>
-                    <span class="subagent-row-preview">{w.preview}</span>
+        <ul class="subagents-list" aria-label={noun()} ref={list} onKeyDown={onListKey}>
+          <For each={groups()}>
+            {(g, gi) => (
+              <Show when={grouped()} fallback={<For each={g.workers}>{(w) => <li>{row(w)}</li>}</For>}>
+                <li class="subagents-group">
+                  <h3 class="list-group-label subagents-group-label" id={`subagents-group-${gi()}`}>
+                    <Icon name="worker" small />
+                    <span>{g.team ? "Team" : "Subagents"}</span>
+                    <Show when={g.team}>
+                      {(t) => (
+                        <>
+                          <span aria-hidden="true">·</span>
+                          <span class="subagents-group-name">{t().name}</span>
+                        </>
+                      )}
+                    </Show>
+                    <span class="text-num">{g.workers.length}</span>
+                  </h3>
+                  <Show when={g.team?.objective}>
+                    {(o) => (
+                      <p class="team-objective subagents-group-objective" title={capTitle(o())}>
+                        {o()}
+                      </p>
+                    )}
                   </Show>
-                </button>
-              </li>
+                  <ul class="subagents-group-list" aria-labelledby={`subagents-group-${gi()}`}>
+                    <For each={g.workers}>{(w) => <li>{row(w)}</li>}</For>
+                  </ul>
+                </li>
+              </Show>
             )}
           </For>
         </ul>
@@ -133,14 +212,16 @@ export function SubagentPane(props: {
                   when={workers().length > 0}
                   fallback={
                     <div class="empty subagents-empty">
-                      <p class="empty-title">0 subagents in this session.</p>
+                      <p class="empty-title">0 {noun().toLowerCase()} in this session.</p>
                       <p class="empty-body">Workers it starts show up here while they run.</p>
                     </div>
                   }
                 >
                   <div class="empty subagents-empty">
                     <p class="empty-title">
-                      {workers().length} {workers().length === 1 ? "subagent" : "subagents"}, {working()} working.
+                      {workers().length}{" "}
+                      {grouped() ? (workers().length === 1 ? "worker" : "workers") : workers().length === 1 ? "subagent" : "subagents"}, {working()}{" "}
+                      working.
                     </p>
                     <p class="empty-body">Pick one to read its transcript.</p>
                   </div>
@@ -153,18 +234,41 @@ export function SubagentPane(props: {
                 <header class="subagents-view-head">
                   <h3 class="subagents-view-title">{label(w())}</h3>
                   <StatusChip worker={w()} liveSource={liveSource()} />
-                  <p class="subagents-view-meta">
+                  <Show when={teamOf(w())}>
+                    {(t) => (
+                      <span class="chip chip-count" title={t().objective || undefined}>
+                        Team · {t().name}
+                      </span>
+                    )}
+                  </Show>
+                  <p class="subagents-view-meta meta-line">
                     <span class="text-mono">{w().id}</span>
-                    <Show when={shortModel(w().model)}>
+                    <Show when={compactModel(w().model)}>
                       {(m) => (
                         <>
-                          {" · "}
-                          <span class="text-mono">{m()}</span>
+                          <MetaSep />
+                          <span class="text-mono meta-line-shrink" title={w().model ?? undefined}>
+                            {m()}
+                          </span>
                         </>
                       )}
                     </Show>
-                    <Show when={w().backend === "claude-code"}>{" · Claude Code"}</Show>
-                    {" · Read only"}
+                    <Show when={w().backend === "claude-code"}>
+                      <MetaSep />
+                      <span>Claude Code</span>
+                    </Show>
+                    <Show when={watched() ?? workerUsage(w())}>
+                      {(u) => (
+                        <>
+                          <MetaSep />
+                          <span class="text-mono" title={usageTitle(u())}>
+                            {formatTokens(usageHeadline(u()))} tokens
+                          </span>
+                        </>
+                      )}
+                    </Show>
+                    <MetaSep />
+                    <span>Read only</span>
                   </p>
                 </header>
                 <Show
@@ -196,6 +300,7 @@ export function SubagentPane(props: {
                       name={label(w())}
                       author={shortModel(w().model) ?? label(w())}
                       streaming={w().working}
+                      onUsage={setWatched}
                     />
                   )}
                 </Show>
@@ -218,28 +323,57 @@ function StatusChip(props: { worker: WorkerInfo; liveSource: boolean }) {
   );
 }
 
-/** `{model}` · as of `{HH:MM}` (settled) · last task failed (idle after a failure). */
+/** `{model}` · `{tokens}` · as of `{HH:MM}` (settled) · last task failed (idle after a failure).
+    A `.meta-line`: too little room clips the model id, never the count beside it. */
 function WorkerMeta(props: { worker: WorkerInfo; liveSource: boolean; class: string }) {
-  const model = () => shortModel(props.worker.model);
+  const model = () => compactModel(props.worker.model);
+  const usage = () => workerUsage(props.worker);
   const failed = () => memberStatus({ worker: props.worker } as TeamMember, props.liveSource).failed;
   /** Without a live source every row reads "as of" its last update. */
   const at = () => asOf(props.worker) ?? (props.liveSource ? undefined : props.worker.lastActivity);
   const iso = (t: number) => new Date(t).toISOString();
+  const lead = () => model() || usage();
   return (
-    <Show when={model() || at() !== undefined || failed()}>
-      <span class={props.class}>
-        <Show when={model()}>{(m) => <span class="text-mono">{m()}</span>}</Show>
+    <Show when={lead() || at() !== undefined || failed()}>
+      <span class={`${props.class} meta-line`}>
+        <Show when={model()}>
+          {(m) => (
+            <span class="text-mono meta-line-shrink" title={props.worker.model ?? undefined}>
+              {m()}
+            </span>
+          )}
+        </Show>
+        <Show when={usage()}>
+          {(u) => (
+            <>
+              <Show when={model()}>
+                <MetaSep />
+              </Show>
+              <span class="text-mono" title={usageTitle(u())}>
+                {formatTokens(usageHeadline(u()))}
+              </span>
+            </>
+          )}
+        </Show>
         <Show when={at()}>
           {(t) => (
             <>
-              {model() ? " · as of " : "As of "}
+              <Show when={lead()}>
+                <MetaSep />
+              </Show>
+              <span>{lead() ? "as of" : "As of"}</span>
               <span class="text-mono" title={iso(t())}>
                 {clockTime(iso(t()))}
               </span>
             </>
           )}
         </Show>
-        <Show when={failed()}>{model() || at() ? " · last task failed" : "Last task failed"}</Show>
+        <Show when={failed()}>
+          <Show when={lead() || at() !== undefined}>
+            <MetaSep />
+          </Show>
+          <span>{lead() || at() !== undefined ? "last task failed" : "Last task failed"}</span>
+        </Show>
       </span>
     </Show>
   );
@@ -251,7 +385,11 @@ const watchUrl = (s: TranscriptSource): string => (s.kind === "pi" ? wsUrl("/ws/
  * One worker's session, tailed read-only (like WatchView, without a composer or head). The
  * socket closes when the selection changes or the pane closes.
  */
-function WorkerTranscript(props: { source: TranscriptSource; name: string; author: string; streaming: boolean }) {
+function WorkerTranscript(props: {
+  source: TranscriptSource; name: string; author: string; streaming: boolean;
+  /** The transcript's own running token total, for the view head; null when it reports none. */
+  onUsage(usage: UsageView | null): void;
+}) {
   const [items, setItems] = createSignal<TranscriptItem[] | null>(null);
   const [error, setError] = createSignal<string | null>(null);
   const [gone, setGone] = createSignal(false);
@@ -265,10 +403,15 @@ function WorkerTranscript(props: { source: TranscriptSource; name: string; autho
           setGone(false);
           setItems(msg.items);
           setLastUpdate(new Date().toISOString());
+          // Cumulative on every message, so a server that reports none leaves the row's own count.
+          props.onUsage(transcriptUsage(msg));
           break;
         case "append":
           setItems((prev) => [...(prev ?? []), ...msg.items]);
           setLastUpdate(new Date().toISOString());
+          // Only ever upward: an append without a total (older server) leaves what we have.
+          const appended = transcriptUsage(msg);
+          if (appended) props.onUsage(appended);
           break;
         case "error":
           // A missing file stays missing: stop, rather than cycle through reconnects.

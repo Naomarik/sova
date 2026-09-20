@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
+import { closeSync, existsSync, openSync, readSync } from "node:fs";
 import {
   type AgentSession,
   type AgentSessionRuntime,
@@ -16,7 +16,7 @@ import {
   type Theme,
 } from "@earendil-works/pi-coding-agent";
 import type { ChatClientMessage, ChatModeResult, ChatServerMessage, ModeApplies, SlashCommand } from "../shared/protocol";
-import { decodeWorkers } from "./insights";
+import { decodeUsageTotal, decodeWorkers } from "./insights";
 import { readLive, readOwnLiveRecords, workerCountsOf } from "./live";
 import { appliesAfter, mergeMode, MINOR_MODES, modeApplyPlan, modeInfo, readMode, resolveChatMode, type ModePatch, type ModeState } from "./mode-state";
 import { toContextInfo } from "./models";
@@ -43,6 +43,72 @@ export class BusyError extends Error {
   ) {
     super(message);
   }
+}
+
+/**
+ * A session that cannot be opened until something outside this server changes — today, a stored
+ * `cwd` that no longer exists (the SDK refuses to build a runtime for it). Unlike BusyError this
+ * is not worth retrying: reconnecting re-runs the same failure and appends another error to the
+ * client's thread, which is how one reaped directory produced dozens of identical banners.
+ */
+export class ConfigError extends Error {
+  constructor(
+    message: string,
+    /** The missing directory, re-checked to decide when the condition has cleared. */
+    readonly cwd: string,
+  ) {
+    super(message);
+  }
+}
+
+/**
+ * Paths whose last open failed permanently, so repeat connects fail fast instead of re-running
+ * the SDK open. Keyed by session path; dropped as soon as the cwd exists again, so recreating the
+ * directory recovers without restarting the server.
+ */
+const configFailures = new Map<string, ConfigError>();
+
+/**
+ * The cached permanent failure for `path`, if it still applies. Exported because it is the whole
+ * retry policy for permanent errors: acquireChat answers from it, and it is how a caller (or a
+ * test) asks whether the condition has cleared.
+ */
+export function activeConfigFailure(path: string): ConfigError | undefined {
+  const failure = configFailures.get(path);
+  if (!failure) return undefined;
+  if (existsSync(failure.cwd)) {
+    configFailures.delete(path); // the directory came back: let the next open try for real
+    return undefined;
+  }
+  return failure;
+}
+
+/**
+ * The session's stored cwd, read straight from the JSONL header, so a missing directory can be
+ * detected before doing any of the expensive open work (model runtime, extensions, SDK session).
+ * Unreadable or headerless files return null and are left to the normal open path to report.
+ */
+function storedCwd(path: string): string | null {
+  let fd: number | undefined;
+  try {
+    fd = openSync(path, "r");
+    const buf = Buffer.alloc(8192);
+    const read = readSync(fd, buf, 0, buf.length, 0);
+    const firstLine = buf.subarray(0, read).toString("utf8").split("\n", 1)[0] ?? "";
+    const header = JSON.parse(firstLine);
+    return header?.type === "session" && typeof header.cwd === "string" && header.cwd ? header.cwd : null;
+  } catch {
+    return null;
+  } finally {
+    if (fd !== undefined) try { closeSync(fd); } catch {}
+  }
+}
+
+/** The SDK throws MissingSessionCwdError; match by name so we don't depend on its class identity. */
+function asConfigError(err: unknown, cwd: string): ConfigError | null {
+  if (err instanceof ConfigError) return err;
+  if (err instanceof Error && err.name === "MissingSessionCwdError") return new ConfigError(err.message, cwd);
+  return null;
 }
 
 /** Minimal client interface so ws.ts owns the socket details. */
@@ -475,13 +541,15 @@ class ChatSession {
 
   /** Worker snapshot from this runtime's own live record (the sessions extension writes one
       even for embedded runtimes), as the wire message; null when the record or its counts
-      are absent. */
+      are absent. The token Σ rides along: it is the record's own lifetime total, which covers
+      workers the record no longer lists, so it is never summed from the rows. */
   private workersSnapshot(): ChatServerMessage | null {
     const rec = readOwnLiveRecords().get(this.path);
     const counts = rec ? workerCountsOf(rec.rec) : undefined;
-    return rec && counts
-      ? { type: "workers", working: counts.working, total: counts.total, workers: decodeWorkers(rec.rec?.presence) }
-      : null;
+    if (!rec || !counts) return null;
+    const usageTotal = decodeUsageTotal(rec.rec?.presence);
+    return { type: "workers", working: counts.working, total: counts.total,
+      workers: decodeWorkers(rec.rec?.presence), ...(usageTotal ? { usageTotal } : {}) };
   }
 
   /** Broadcast the worker snapshot when it changed since the last send; a record that
@@ -657,9 +725,14 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
       diagnostics: services.diagnostics,
     };
   };
+  const sessionCwd = sessionManager.getCwd();
+  // The runtime cannot be built against a directory that is gone. Check before doing the work, so
+  // the failure is classified (ConfigError, not "internal") and cheap to repeat.
+  if (sessionCwd && !existsSync(sessionCwd))
+    throw new ConfigError(`Stored session working directory does not exist: ${sessionCwd}\nSession file: ${path}`, sessionCwd);
   try {
     const runtime = await createAgentSessionRuntime(createRuntime, {
-      cwd: sessionManager.getCwd(),
+      cwd: sessionCwd,
       agentDir: getAgentDir(),
       sessionManager,
     });
@@ -673,6 +746,9 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
     chat.deferredAppends = deferred;
     held.set(path, chat);
     return chat;
+  } catch (err) {
+    const config = asConfigError(err, sessionCwd);
+    throw config ?? err;
   } finally {
     restore();
   }
@@ -700,6 +776,19 @@ export async function acquireChat(path: string, force = false): Promise<ChatSess
     }
   }
   assertNotLive(path);
+  // Permanent and already known: answer from the memo. Retrying would repeat the same SDK open and
+  // hand the client another copy of an error it cannot act on. `force` does not apply — no flag
+  // makes a deleted directory exist.
+  const known = activeConfigFailure(path);
+  if (known) throw known;
+  // Detect it cheaply on the first connect too: the header's cwd is all it takes, and the open
+  // below would otherwise build a model runtime before the SDK reached the same conclusion.
+  const cwd = storedCwd(path);
+  if (cwd && !existsSync(cwd)) {
+    const failure = new ConfigError(`Stored session working directory does not exist: ${cwd}\nSession file: ${path}`, cwd);
+    configFailures.set(path, failure);
+    throw failure;
+  }
   if (!force) {
     // Shared constant with the frontend: RECENT_WRITE_MS (120s) in server/write-guard.ts.
     const age = recentForeignWriteAgeSec(path);
@@ -710,7 +799,12 @@ export async function acquireChat(path: string, force = false): Promise<ChatSess
   };
   const p = openSession(path, forget);
   sessions.set(path, p);
-  p.catch(forget);
+  p.catch((err) => {
+    // Transient failures are forgotten so the next connect retries; permanent ones are recorded so
+    // it doesn't.
+    if (err instanceof ConfigError) configFailures.set(path, err);
+    forget();
+  });
   return p;
 }
 

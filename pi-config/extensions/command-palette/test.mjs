@@ -198,7 +198,7 @@ function modelHarness() {
   const calls = [];
   const reasoning = { id: 'reasoner', name: 'Reasoner', provider: 'test', reasoning: true,
     thinkingLevelMap: { off: null, minimal: null, low: 'low', medium: null, high: 'high', xhigh: null, max: 'max' } };
-  const plain = { id: 'plain', name: 'Plain model', provider: 'test', reasoning: false };
+  const plain = { id: 'plain', name: 'Plain model', provider: 'test', reasoning: false, input: ['text'] };
   const ctx = { model: reasoning, thinkingLevel: 'high', scopedModels: [],
     modelRegistry: { getAvailable: () => [reasoning, plain] },
     ui: { notify: (...args) => calls.push(['notice', ...args]) } };
@@ -216,6 +216,15 @@ test('model rows use exact supported levels, wrap, and apply only on Enter', asy
   assert.deepEqual(h.calls, []);
   await rows[0].run();
   assert.deepEqual(h.calls, [['model', 'reasoner'], ['thinking', 'max']]);
+});
+test('model descriptions mark image input and stay quiet for text-only or unknown input', () => {
+  const h = modelHarness();
+  const seer = { id: 'seer', name: 'Seer', provider: 'test', reasoning: false, input: ['text', 'image'] };
+  h.ctx.modelRegistry.getAvailable = () => [seer, h.plain, h.reasoning];
+  const rows = modelItems(h.pi, h.ctx);
+  assert.equal(rows[0].description, 'test · Seer · vision');
+  assert.equal(rows[1].description, 'test · Plain model');
+  assert.equal(rows[2].description, 'test · Reasoner');
 });
 test('non-reasoning models stay off and pending levels are independent per row', () => {
   const h = modelHarness(); const rows = modelItems(h.pi, h.ctx);

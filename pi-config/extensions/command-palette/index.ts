@@ -41,7 +41,7 @@ export function modelItems(pi: ExtensionAPI, ctx: ExtensionContext, favorites?: 
     return {
       id: `model:${model.provider}/${model.id}`,
       label: `${current ? "✓ " : ""}${model.provider}/${model.id}`,
-      description: `${model.provider} · ${model.name}`,
+      description: `${model.provider} · ${model.name}${model.input?.includes("image") ? " · vision" : ""}`,
       favorite: favorites ? {
         isFavorite: () => favorites.has(model),
         toggle: () => favorites.set(model, !favorites.has(model)),

@@ -1,0 +1,5 @@
+{
+  "fallbacks": ["zai/glm-5.3-flash", "anthropic/claude-haiku-4-5"],
+  "exhaustedAbovePct": 90,
+  "contextChars": 2000
+}

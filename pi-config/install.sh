@@ -37,7 +37,7 @@ link() {
 }
 
 $check || mkdir -p "$agent/extensions"
-for f in settings.json keybindings.json models.json; do
+for f in settings.json keybindings.json models.json vision-delegate.json; do
 	link "$here/$f" "$agent/$f"
 done
 for d in "$here"/extensions/*/; do

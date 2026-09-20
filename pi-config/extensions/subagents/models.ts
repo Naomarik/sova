@@ -8,6 +8,7 @@ export function piModels(ctx: ExtensionContext): BackendModel[] {
 		id: `${model.provider}/${model.id}`,
 		name: model.name || model.id,
 		description: model.provider,
+		vision: model.input?.includes("image") ?? false,
 	}));
 }
 /** Punctuation-insensitive search: 'deepseek 4.1 flash' matches deepseek-v4.1-flash. */

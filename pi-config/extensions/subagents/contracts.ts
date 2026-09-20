@@ -84,6 +84,8 @@ export interface BackendModel {
 	description?: string;
 	efforts?: string[];
 	resolvedModel?: string;
+	/** Model accepts image input. Absent when the backend cannot report it. */
+	vision?: boolean;
 }
 export interface BackendRegistration {
 	version: 1;

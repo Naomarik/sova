@@ -574,6 +574,7 @@ export function registerSubagents(
 			`### ${a.id} (${a.name}) — ${a.status}${a.taskOutcome ? ` · task ${a.taskOutcome}` : ""}`,
 			a.error ? `Error: ${a.error}` : "",
 			a.sessionFile || a.sessionId ? `Session: ${a.sessionFile ?? a.sessionId}` : "",
+			`Model: ${a.model ?? "child default"} · thinking: ${a.effort ?? "default"}${a.backend && a.backend !== "pi" ? ` · backend: ${a.backend}` : ""}`,
 			a.finalOutput() || "(no output for this task)",
 		]
 			.filter(Boolean)
@@ -1058,7 +1059,7 @@ export function registerSubagents(
 	pi.registerTool({
 		name: "agent_models",
 		label: "Subagent Models",
-		description: "Discover loaded worker backends and their exact model IDs. Pi models come from this session's active registry, including extension/cloud providers; Claude models come from its CLI. Search natural names such as 'deepseek 4.1 flash'. No model task is started. Returns up to limit matches and backend discovery errors explicitly.",
+		description: "Discover loaded worker backends and their exact model IDs. Pi models come from this session's active registry, including extension/cloud providers; Claude models come from its CLI. Search natural names such as 'deepseek 4.1 flash'. No model task is started. Returns up to limit matches and backend discovery errors explicitly. Rows marked 'vision' accept image input; a worker on a model without that marker cannot look at images.",
 		promptSnippet: "Discover subagent backends, model IDs, and Claude effort options",
 		promptGuidelines: ["Use agent_models to resolve requested subagent model names; do not guess IDs or search a separate Pi CLI registry."],
 		parameters: Type.Object({ query: Type.Optional(Type.String()), backend: Type.Optional(Nonempty), limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 })) }),
@@ -1069,7 +1070,7 @@ export function registerSubagents(
 			const selected = matches.slice(0, params.limit ?? 30);
 			return result([
 				`Loaded backends: ${catalog.backends.join(", ")}`,
-				...selected.map(model => `${model.backend} · ${model.id} · ${model.name}${model.efforts?.length ? ` · effort: ${model.efforts.join(", ")}` : ""}`),
+				...selected.map(model => `${model.backend} · ${model.id} · ${model.name}${model.efforts?.length ? ` · effort: ${model.efforts.join(", ")}` : ""}${model.vision ? " · vision" : ""}`),
 				selected.length ? `${selected.length} of ${matches.length} matches.` : "No matching models. Try a broader query or check discovery errors below.",
 				...catalog.errors.map(error => `${error.backend}: ${error.error}`),
 			].join("\n"), { models: selected, totalMatches: matches.length, backends: catalog.backends, errors: catalog.errors });

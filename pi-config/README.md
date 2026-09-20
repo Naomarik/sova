@@ -19,6 +19,7 @@ additions, the pinned third-party packages, and the extensions kept in-tree.
 | Path | What it is |
 | --- | --- |
 | `settings.json` | Pi settings, including the pinned package list |
+| `vision-delegate.json` | Fallback vision models and budget for the `vision-delegate` extension |
 | `keybindings.json` | Key overrides |
 | `models.json` | Extra providers and model overrides (local Ollama and Ollama Cloud) |
 | `extensions/subagents/` | Background subagents with steering, wake-on-complete, fork, a monitor, and native coordinated teams |
@@ -30,6 +31,7 @@ additions, the pinned third-party packages, and the extensions kept in-tree.
 | `extensions/sessions/` | Live pi sessions on this machine find each other through a filesystem presence registry; ships the `pi-sessions` CLI (`bin/pi-sessions.ts`) and the record schema (`public/SCHEMA.md`) |
 | `extensions/codefold/` | Folds long fenced code blocks in assistant messages into one band |
 | `extensions/topic-outline/` | Display-only live topic outline of the conversation, with jump-to-topic |
+| `extensions/vision-delegate/` | Lets a text-only model work with images: a `look_at_image` tool plus automatic descriptions of read results and TUI attachments, routed to a fallback vision model |
 | `extensions/usage-status.ts` | Subscription usage (Ollama Cloud, OpenAI Codex, Claude, Z.ai) in the footer, plus a `/usage` overlay |
 | `extensions/wake-nudge.ts` | Lets the model schedule one-shot wakeups |
 | `extensions/working-subagent-count.ts` | Busy subagent and team-member counts on the "Working" line and in an idle widget |
@@ -77,7 +79,8 @@ The clone can live anywhere. `install.sh` resolves its own location, and the
 links it creates point at the real path of the checkout. If you have the pi-web
 monorepo, run `pi-config/install.sh` from there instead; it is the same script.
 
-For each of `settings.json`, `keybindings.json`, `models.json`, every
+For each of `settings.json`, `keybindings.json`, `models.json`,
+`vision-delegate.json`, every
 `extensions/*/` directory and every `extensions/*.ts` file, `install.sh`
 creates a symlink in the agent directory. It also links
 `extensions/sessions/bin/pi-sessions.ts` to `~/.local/bin/pi-sessions`. An
@@ -134,6 +137,7 @@ cd extensions/sessions && node --test test.mjs
 cd extensions/codefold && node tests/run.mjs
 cd extensions/explain && node tests/run.mjs && node tests/smoke.mjs
 cd extensions/topic-outline && node test.mjs
+cd extensions/vision-delegate && node tests/run.mjs
 ```
 
 These make no model requests. The subagent and Claude tests resolve the

@@ -542,6 +542,32 @@ test("transcript identifies backend sessions without files and discloses omitted
 	} finally { await h.close(); }
 });
 
+test("completion summary states model, thinking level and non-pi backend", async () => {
+	const h = harness();
+	try {
+		await h.call("agent_spawn", { prompt: "task" });
+		const worker = h.workers[0];
+		worker.sessionFile = "/tmp/s.jsonl";
+		worker.output = "the answer";
+		// Defaults: a pi worker inheriting the parent's model and thinking level.
+		worker.model = undefined; worker.effort = undefined;
+		let text = (await h.call("agent_transcript", { id: worker.id })).content[0].text;
+		assert.match(text, /^### ag_01 \(.*\) — running/);
+		assert.match(text, /\nSession: \/tmp\/s\.jsonl\n/);
+		assert.match(text, /\nModel: child default · thinking: default\n/);
+		assert.doesNotMatch(text, /backend:/);
+		assert.match(text, /\nthe answer$/);
+		// Explicit model/effort on a non-pi backend names all three.
+		worker.model = "opus"; worker.effort = "high"; worker.backend = "claude-code";
+		text = (await h.call("agent_transcript", { id: worker.id })).content[0].text;
+		assert.match(text, /\nModel: opus · thinking: high · backend: claude-code\n/);
+		// Errors stay above the metadata; empty output is still disclosed.
+		worker.backend = "pi"; worker.output = ""; worker.error = "boom";
+		text = (await h.call("agent_transcript", { id: worker.id })).content[0].text;
+		assert.match(text, /\nError: boom\nSession: .*\nModel: opus · thinking: high\n\(no output for this task\)$/);
+	} finally { await h.close(); }
+});
+
 test("backend validation is atomic across mixed batches and fails closed without registration", async () => {
 	const h = harness();
 	const created: any[] = [];

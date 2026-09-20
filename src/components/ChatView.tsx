@@ -43,6 +43,8 @@ export function ChatView(props: {
   /** Hands the header this chat's mode state (§4g); null when this view goes away. */
   onModeControl?(control: ModeControl | null): void;
   onRefused(kind: ChatRefusal, message: string): void;
+  /** A run just started here: the list's `busy` is stale until it's refetched. */
+  onStarted(): void;
   onSettled(): void;
   /** This runtime's subagents (WS "workers"; [] after each hello), for the subagents pane. The
       Σ is the runtime's session-lifetime worker token total, null while no server reports one. */
@@ -382,7 +384,16 @@ export function ChatView(props: {
       else next[props.path] = running;
       return next;
     });
-  createEffect(() => setMine(live.running));
+  // The sidebar's Busy chip falls back to the server's `busy`, which is only as fresh as the last
+  // list fetch — refresh it when a run STARTS, so the row keeps its dot after you navigate away.
+  // (The settle refresh already exists.)
+  let wasRunning = false;
+  createEffect(() => {
+    const running = live.running;
+    setMine(running);
+    if (running && !wasRunning) props.onStarted();
+    wasRunning = running;
+  });
   onCleanup(() => setMine(undefined));
 
   const send = (text: string, steer: boolean, uploads: UploadResult[]) => {

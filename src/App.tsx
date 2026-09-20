@@ -75,6 +75,11 @@ function reuseUnchanged(next: SessionSummary[], prev: SessionSummary[] | undefin
 /** While a session is watched, poll the list so live status (and TUI exit) shows up on its own. */
 const WATCH_POLL_MS = 10_000;
 
+/** While a run is in flight, re-read the list often enough that the Busy chip clears itself when
+    the run settles in a session nobody is looking at. Idle costs nothing: the interval only
+    exists while something is busy. */
+const BUSY_POLL_MS = 5_000;
+
 /** Insights polling (paused while the tab is hidden). The usage file itself changes ≤ every 3 min. */
 const USAGE_POLL_MS = 60_000;
 const AGENTS_POLL_MS = 5_000;
@@ -251,6 +256,14 @@ export function App() {
   createEffect(() => {
     if (decision()?.mode !== "watch") return;
     const t = setInterval(refresh, WATCH_POLL_MS);
+    onCleanup(() => clearInterval(t));
+  });
+
+  /** Any row claiming a run in flight (the sidebar's Busy chip's fallback source). */
+  const anyBusy = createMemo(() => (list() ?? []).some((s) => s.busy));
+  createEffect(() => {
+    if (!anyBusy()) return;
+    const t = setInterval(refresh, BUSY_POLL_MS);
     onCleanup(() => clearInterval(t));
   });
 
@@ -527,8 +540,9 @@ export function App() {
                                 // The sidebar row reads the list: re-read it after a switch.
                                 if (m && m !== s().model) refresh();
                               }}
-                                onModeControl={setModeControl}
+                              onModeControl={setModeControl}
                               onRefused={onRefused}
+                              onStarted={() => refresh()}
                               onSettled={() => {
                                 refresh();
                                 reloadInsight();

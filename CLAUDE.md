@@ -1,6 +1,6 @@
 # pi-web
 
-Webapp interface for the pi coding agent (npm: `@earendil-works/pi-coding-agent`, pinned **0.85.1**).
+Webapp interface for the pi coding agent (npm: `@earendil-works/pi-coding-agent`, pinned **0.86.0**).
 Single local user. Goals: list all sessions, view transcripts, chat in webapp-owned sessions,
 live-watch sessions that are open in the CLI/TUI, spawn new sessions.
 
@@ -90,7 +90,8 @@ Pi package on disk: `/home/user/.local/share/mise/installs/node/25.2.1/lib/node_
 - Sessions: `~/.pi/agent/sessions/--<cwd with /→->--/<iso-ts>_<uuidv7>.jsonl`.
   Line 1 header: `{"type":"session","version":3,id,timestamp,cwd}`.
   Entries have `id`/`parentId` (tree). Types: `message`, `custom`, `model_change`,
-  `thinking_level_change`, `compaction`, `session_info`, `label`, `branch_summary`.
+  `thinking_level_change`, `usage` (0.86.0+), `compaction`, `session_info`, `label`, `branch_summary`
+  (`SessionEntry` union, `dist/core/session-manager.d.ts:117`).
   Cheap listing: read only the first few lines; first user `message` = title; first `model_change` = model.
   Docs: `docs/session-format.md`.
 - SDK: `createAgentSession`, `createAgentSessionRuntime`, `SessionManager.open(path)/create(cwd)`,
@@ -100,7 +101,8 @@ Pi package on disk: `/home/user/.local/share/mise/installs/node/25.2.1/lib/node_
   (no prompt/steer). Detect via `~/.pi/agent/sessions/live/*.json`
   (schema: `pi-config/extensions/sessions/public/SCHEMA.md`). Live sessions: read-only via `/ws/watch`
   (tail the JSONL with fs.watch + parse appended lines).
-- Extension dialog bridge (ExtensionUIContext) pattern: `dist/modes/rpc/rpc-mode.js` lines ~60–260.
+- Extension dialog bridge (ExtensionUIContext) pattern: `dist/modes/rpc/rpc-mode.js` —
+  `createExtensionUIContext` at line 83, bound via `bindExtensions({uiContext, mode:"rpc", ...})` at line 231.
 
 ## Conventions
 
@@ -108,23 +110,44 @@ TS strict, ESM, no new dependencies without asking. Server normalizes JSONL entr
 `TranscriptItem`; frontend renders those, and renders live streaming from the raw passthrough events.
 Frontend is SolidJS (NOT React): signals/stores, `<For>/<Show>`, `onCleanup` for WS teardown.
 
-## Backend notes (SDK surprises, pi 0.85.1)
+## Backend notes (SDK surprises, pi 0.86.0)
 
-- `SessionManager.open(path)` is NOT read-only: it appends `"\n"` to a trailing partial line and
-  rewrites the file when migrating old versions. Never call it on a file a TUI may own —
+- `SessionManager.open(path)` is NOT read-only: `loadEntriesFromFile` appends `"\n"` to a trailing
+  partial line (`dist/core/session-manager.js:322`) and `_rewriteFile()` (`:709`) rewrites the whole
+  file when migrating old versions (`:677`). Never call it on a file a TUI may own —
   transcript/watch use our own parser (`server/transcript.ts`); `open()` only for webapp-owned chats.
-- `SessionManager.create(cwd)` defers writing the file until the first assistant reply.
+- `SessionManager.create(cwd)` defers writing the file until the first assistant reply
+  (`_persist()`, `dist/core/session-manager.js:740` — byte-identical to 0.85.1).
   `POST /api/sessions` writes the header line itself so the new session exists on disk immediately.
-- pi's `theme` singleton is not exported (only `initTheme`). The ExtensionUIContext bridge calls
-  `initTheme()` and reads `globalThis[Symbol.for("@earendil-works/pi-coding-agent:theme")]`.
+- pi's `theme` singleton is not re-exported from the package entry (`dist/index.d.ts` exports
+  `initTheme`/`Theme` only, though `theme` exists on `modes/interactive/theme/theme.ts`). The
+  ExtensionUIContext bridge calls `initTheme()` and reads
+  `globalThis[Symbol.for("@earendil-works/pi-coding-agent:theme")]` — same key pi sets in
+  `dist/modes/interactive/theme/theme.js:536`.
 - The sessions extension also loads inside our embedded runtimes and writes `live/*.json` with the
   server's own pid. `server/live.ts` ignores own-pid and dead-pid records, otherwise every
   webapp-owned session would look TUI-busy.
-- A pi 0.86.0 TUI writes two entry shapes 0.85.1 never emits: `message` entries with `role:"system"`
-  (the prompt/tool loadout: content, sections, toolsAdded/Removed) and top-level `type:"usage"`
-  entries (`kind:"cache_warm"` and future kinds). The webapp hides both from the transcript
-  (`server/transcript.ts`) and counts the usage ones in session totals (`server/transcript-usage.ts`,
-  deduped by entry id); the pinned SDK stays 0.85.1, so our own runtimes still don't write them.
+- pi 0.86.0 writes two entry shapes 0.85.1 never emitted, and since the pin moved our OWN runtimes
+  write them too: `message` entries with `role:"system"` (the prompt/tool loadout — `content`,
+  `sections`, `toolsAdded`/`toolsRemoved`; `SystemMessage` in pi-ai `dist/types.d.ts:331`) and
+  top-level `type:"usage"` entries (`UsageEntry`, `session-manager.d.ts:36`, written by
+  `SessionManager.appendUsage()`; only caller is `dist/core/cache-warmer.js:241` with
+  `kind:"cache_warm"`). Cache warming is ON by default (`getCacheWarmingMode()` →`"streaming"`,
+  `dist/core/settings-manager.js:637`), so expect these in webapp-owned sessions. The webapp hides
+  both from the transcript (`server/transcript.ts:165` and `:292`) and counts only the usage ones in
+  session totals (`server/transcript-usage.ts:66`, deduped by entry id). They never move context
+  fill: `contextForBranch` reads assistant-message usage only (`server/transcript.ts:361`).
+  `compaction` entries also gained a `systemMessage` field (additive; we ignore it).
+- **`steer()`/`followUp()` now run extension `input` handlers** (`source` defaults to `"interactive"`,
+  `dist/core/agent-session.js` `_queueUserInput`); on 0.85.1 they bypassed them entirely
+  (0.85.1 `steer()` went straight to `_queueSteer`). Narrow blast radius: `prompt()` ALREADY ran them
+  on 0.85.1 (`agent-session.js:842`), and `server/chat-manager.ts:498` only calls `steer()` when
+  `isStreaming && !text.startsWith("/")` — every other web send already went through `prompt()`. So
+  the pi-config handlers (`vision-delegate`, which describes attached images for non-vision models,
+  and `wake-nudge`) have always run against our runtimes; the genuinely new case is the mid-stream
+  steer. A handler returning `{action:"handled"}` silently swallows the message
+  (`dist/core/extensions/runner.js:1008`); returning `null`/`undefined` is the safe fall-through, and
+  neither of ours returns `handled`.
 - Unidentified writers (e.g. a headless/orchestrating pi, not in the live registry): `/ws/chat` refuses
   (`code:"busy"`, close 4409) a session the server doesn't hold whose mtime is < 120s old
   (`RECENT_WRITE_MS` in `server/write-guard.ts`, shared constant with the frontend) unless `&force=1`.
@@ -136,9 +159,11 @@ Frontend is SolidJS (NOT React): signals/stores, `<For>/<Show>`, `onCleanup` for
   Writes re-read + merge (safe with several servers); reads use the startup copy plus this
   server's own adds, so ids another running server adds show as "web" here only after a restart.
 - Opening a chat runtime must not write: the SDK appends model_change/thinking_level_change at
-  construction (empty sessions, or no thinking entry on the branch). `openSession` defers those two
+  construction (empty sessions, or no thinking entry on the branch — `dist/core/sdk.js:260-272`,
+  unchanged from 0.85.1). `openSession` defers those two
   appends and replays them right before the first prompt/steer; a never-prompted session stays untouched.
-- Images: 0.85.1 `ImageContent` is `{type:"image", data, mimeType}` for prompt/steer/followUp AND storage
+- Images: 0.86.0 `ImageContent` is still `{type:"image", data, mimeType}` (pi-ai `dist/types.d.ts:256`)
+  for prompt/steer/followUp AND storage
   (sdk.md's `source:{type:"base64"}` example is stale). Model favorites come READ-ONLY from the
   command-palette's `~/.pi/agent/model-favorites.json` (`{version:1, models:[{provider,id}]}`).
 - Context fill = input+cacheRead+cacheWrite of the last assistant usage on the branch; a compaction after it → `context: null` until the next reply (window: SDK registry, else models-store.json).

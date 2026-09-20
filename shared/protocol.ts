@@ -221,7 +221,7 @@ export interface ModelInfo {
   id: string;
   /** Mirrors the command-palette extension's favorites when its storage is readable. */
   favorite: boolean;
-  /** Thinking levels this model supports, ladder order (off…max). Mirrors pi 0.85.1
+  /** Thinking levels this model supports, ladder order (off…max). Mirrors pi 0.86.0
       getSupportedThinkingLevels: thinkingLevelMap nulls are dropped, xhigh/max need an explicit
       map entry, and non-reasoning models support only "off". */
   thinkingLevels: string[];

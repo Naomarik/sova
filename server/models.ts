@@ -73,10 +73,10 @@ export async function listModels(): Promise<ModelInfo[]> {
   });
 }
 
-/** pi's ThinkingLevel ladder, in order (pi 0.85.1 defaults.js THINKING_LEVEL_OPTIONS). */
+/** pi's ThinkingLevel ladder, in order (pi 0.86.0 defaults.js:2 THINKING_LEVEL_OPTIONS). */
 const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 
-/** Mirrors pi 0.85.1 getSupportedThinkingLevels: a reasoning model supports the ladder minus its
+/** Mirrors pi 0.86.0 getSupportedThinkingLevels (pi-ai models.js:554): a reasoning model supports the ladder minus its
  *  thinkingLevelMap nulls — except xhigh/max, which count only with an explicit non-null map
  *  entry — and a non-reasoning model supports only "off". */
 export function supportedThinkingLevels(m: {

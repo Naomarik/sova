@@ -550,8 +550,8 @@ export default function modeExtension(pi: ExtensionAPI): void {
 
 	// The behaviour change itself: put the active mode blocks into this turn's system prompt.
 	// pi >= 0.86 exposes mutable prompt sections and diffs them against what the model already
-	// has, so a toggle costs one small patch and keeps the cached prefix; hosts without them
-	// (0.85.x, including pi-web's embedded runtime) still take the whole-prompt append.
+	// has, so a toggle costs one small patch and keeps the cached prefix; older hosts without
+	// them (pi < 0.86) still take the whole-prompt append.
 	pi.on("before_agent_start", async (event) => {
 		const block = composePrompt(active, planner);
 		const sections = (event.systemPromptOptions as { sections?: Record<string, string> } | undefined)?.sections;

@@ -166,8 +166,8 @@ handler writes the blocks into `systemPromptOptions.sections.mode`, which pi
 diffs against the section the model already has: a toggle costs one small
 mid-conversation patch instead of a whole new prompt, so the cached prefix
 survives, and switching back to normal deletes the section so the instructions
-stop applying. On 0.85.x hosts — including pi-web's embedded runtime — there
-are no sections, and the blocks stay a whole-prompt append as before.
+stop applying. On older hosts without sections (pi < 0.86) there are no
+sections, and the blocks stay a whole-prompt append as before.
 
 ### Two scopes
 

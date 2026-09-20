@@ -163,7 +163,8 @@ const BASE64_RE = /^[A-Za-z0-9+/]*={0,2}$/;
 
 /**
  * Validate client OutboundImage[] and convert to pi's ImageContent {type:"image", data, mimeType}
- * (the stored/SDK shape in 0.85.1; docs' `source:{type:"base64"}` wrapper is not what the types take).
+ * (the stored/SDK shape in 0.86.0, pi-ai types.d.ts:256; docs' `source:{type:"base64"}` wrapper is
+ * not what the types take).
  */
 function parseImages(raw: unknown): SdkImage[] | undefined {
   if (raw === undefined || raw === null) return undefined;
@@ -393,7 +394,8 @@ class ChatSession {
     let applies = appliesAfter(plan, streaming);
     if (plan === "command") {
       // getCommand + createCommandContext + handler(args, ctx) is the SDK's own extension-command
-      // path (AgentSession._tryExecuteExtensionCommand, agent-session.js ~954 in pinned 0.85.1),
+      // path (AgentSession._tryExecuteExtensionCommand, agent-session.js:1062 in pinned 0.86.0;
+      // the method body is byte-identical to 0.85.1's, it only moved),
       // minus the prompt text that path falls back to when a command is missing. Internal-ish
       // API: re-check on SDK upgrades. The SDK reports handler errors via emitError; so do we.
       const cmd = this.modeCommand()!;

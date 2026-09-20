@@ -12,9 +12,11 @@ import {
   type PendingImage,
   type RejectedFile,
 } from "../lib/images";
+import { modelProvider, shortModel } from "../lib/format";
+import { thinkingLevelsFor } from "../lib/models";
 import { announce, draftImages, drafts } from "../lib/ui-state";
 import { showWorkersLabel, teamNote, type WorkingSplit, workersWorkingLabel } from "../lib/workers";
-import { ComposerMenu, type ThinkingControl } from "./ComposerMenu";
+import { ComposerMenu, type ComposerMenuApi, type ThinkingControl } from "./ComposerMenu";
 import type { ModelControl } from "./ModelMenu";
 import { Icon, type IconName } from "./ui";
 
@@ -80,6 +82,9 @@ export function Composer(props: {
   let input!: HTMLTextAreaElement;
   let picker: HTMLInputElement | undefined;
   let list: HTMLUListElement | undefined;
+  let indicator: HTMLButtonElement | undefined;
+  /** The flyout's handle (§4b), so the model indicator opens the same one popover. */
+  const [menu, setMenu] = createSignal<ComposerMenuApi | null>(null);
 
   const setDraft = (v: string) => {
     setText(v);
@@ -96,6 +101,27 @@ export function Composer(props: {
   /** TUI-live, connecting, reconnecting: nothing attaches and nothing sends. */
   const disabled = () => !!reason();
   const canSend = () => !disabled() && !uploading() && (text().trim().length > 0 || images().length > 0);
+
+  // ---- Model indicator (§4 ".composer-foot"): this session's model and thinking level, and
+  // the second trigger for the flyout that changes them. -----------------------------------
+  /** What the session runs, or the target it's switching to — the flyout's Model row, shortened. */
+  const modelRef = () => props.model?.pending() ?? props.model?.model() ?? null;
+  /** The level to show, or null when this model's ladder isn't a choice (§4b "Thinking"). */
+  const levelShown = () => {
+    const thinking = props.thinking;
+    if (!thinking || thinkingLevelsFor(props.model?.model()).length <= 1) return null;
+    return thinking.pending() ?? thinking.level();
+  };
+  /** Open by the indicator, closed by it again: one control, one state. */
+  const indicatorOpen = () => !!menu()?.open() && menu()?.anchor() === indicator;
+  /** A popover's light dismiss beats our click to it, so a pointer toggle reads the state it
+      had at press time; a keyboard activation (`detail` 0) never saw that dismiss. */
+  let openAtPress = false;
+  const toggleIndicator = (fromPointer: boolean) => {
+    if (disabled() || !indicator) return;
+    if (fromPointer ? openAtPress : indicatorOpen()) menu()?.close();
+    else menu()?.show("model", indicator); // the panel this indicator is the label for
+  };
 
   /** The subagents status row (§11 Trigger): what's working, or — once idle — what the session
       has, so the pane stays one click away after every worker settles. Nothing while running:
@@ -446,6 +472,7 @@ export function Composer(props: {
             thinking={props.thinking}
             onShowInfo={props.onShowInfo}
             onRefocus={() => input.focus()}
+            onApi={setMenu}
           />
           <Show when={!props.readOnly}>
             <input
@@ -556,6 +583,41 @@ export function Composer(props: {
         </div>
 
         <div class="composer-foot">
+          <Show when={props.model}>
+            <button
+              ref={indicator}
+              type="button"
+              class="composer-model"
+              aria-haspopup="menu"
+              aria-controls="composer-flyout"
+              aria-expanded={indicatorOpen() ? "true" : "false"}
+              aria-disabled={disabled() ? "true" : undefined}
+              aria-label={`${modelRef() ?? "No model yet"}${levelShown() ? `, thinking ${levelShown()}` : ""} — Change Model & Thinking`}
+              title={`${modelRef() ?? "Choose model"} · Change model & thinking`}
+              onPointerDown={() => (openAtPress = indicatorOpen())}
+              onClick={(e) => toggleIndicator(e.detail > 0)}
+            >
+              <Show when={props.model?.pending()}>
+                <span class="live-dot" />
+              </Show>
+              <span class="composer-model-id">{shortModel(modelRef()) ?? "Choose model"}</span>
+              <Show when={modelProvider(modelRef())}>
+                {(provider) => <span class="composer-model-meta">{provider()}</span>}
+              </Show>
+              <Show when={levelShown()}>
+                {(level) => (
+                  <>
+                    <span class="composer-model-sep" aria-hidden="true">·</span>
+                    <Show when={props.thinking?.pending()}>
+                      <span class="live-dot" />
+                    </Show>
+                    <span class="composer-model-level">{level()}</span>
+                  </>
+                )}
+              </Show>
+              <Icon name="chevron-down" small class="composer-model-caret" />
+            </button>
+          </Show>
           <span class="composer-reason" id="composer-reason">
             <Show when={reason()}>
               {(r) => (

@@ -18,7 +18,7 @@ stylesheets — no component library.
 | App shell | `.app[data-view="list\|session"]` `.app-sidebar` `.app-main` `.app-back` `.pane` `.skip-link` |
 | Sidebar | `.sidebar-head` `.brand` `.sidebar-spacer` `.sidebar-search` `.sidebar-list` `.sidebar-region` `.sidebar-region-head` `.sidebar-region-count` `.sidebar-region-note` `details.sidebar-archive` · in `src/app.css`: `.archive-date` `.archive-date-label` `.archive-date-name` `.archive-tools` `.cleanup-intro` `.cleanup-choices` `.cleanup-choice` |
 | Search | `.search` (wraps `.icon` + `input.input` + clear `.button.button-icon`) `.search-count` |
-| Session rows | `.session-group` `.list-group-label` `.session-group-path` (+ `<bdi>`) `.list` `.list-row.list-row-interactive.session-row` `[aria-current="page"]` `.list-main` `.list-title` `.list-meta` |
+| Session rows | `.session-group` `.list-group-label` `.session-group-path` (+ `<bdi>`) `.list` `.list-row.list-row-interactive.session-row` `[aria-current="page"]` `.list-main` `.list-title` `.list-summary` `.list-meta` |
 | LIVE badge / status | `.chip` `.chip-dot` `.chip-accent` `.chip-live` `.chip-success` `.chip-error` `.chip-warn` `.chip-info` `.chip-count` |
 | Buttons | `.button` `.button-primary` `.button-destructive` `.button-ghost` `.button-sm` `.button-icon` (needs `aria-label`) |
 | Icons | `.icon` (20px) `.icon-sm` (16px) `.icon-twist` (rotates in open disclosures). Works on an inline `<svg>` or a mask `<span class="icon" style="--icon:url(/icons/x.svg)">` |
@@ -35,6 +35,7 @@ stylesheets — no component library.
 | Banner | `.banner` `.banner-info` `.banner-warn` `.banner-error` `.banner-success` `.banner-icon` `.banner-main` `.banner-title` `.banner-body` `.banner-action` |
 | Streaming | `.live-dot` `.run-status` `.run-status-detail` `.jump-latest` |
 | Composer | `.composer` `.composer-inner` `.composer-row` `.composer-input` (with `.input.textarea`) `.composer-actions` `.composer-foot` `.composer-reason` `.composer-hint` `.button-label` `.composer-drop` + `.composer[data-drop="active\|reject"]` |
+| Model indicator (§4) | `button.composer-model` (the flyout's second trigger) `.composer-model-id` `.composer-model-meta` `.composer-model-sep` `.composer-model-level` `.composer-model-caret` (+ `.live-dot`) |
 | Composer flyout (§4b) | `button.composer-menu-trigger` · `.model-menu.composer-flyout[popover]` `.composer-flyout-list[role=menu]` `.composer-flyout-item` (on `.mode-option`, `[role=menuitem\|menuitemradio]`) `.composer-flyout-icon` `.composer-flyout-label` `.composer-flyout-value` `.composer-flyout-meta` `.composer-flyout-chevron` `.composer-flyout-sep[role=separator]` `.composer-flyout-head` `.composer-flyout-back` (+ `.mode-option-check` `.list-group-label` `.live-dot`) |
 | Model menu (§4c) | `.model-menu[popover]` (the flyout's shell) `.model-menu-search` `.model-menu-list` `.model-menu-group` `.model-option` `[data-active]` `.model-option-check` `.model-option-id` `.model-option-vision` `.model-option-provider` `.model-menu-empty` `.model-menu-foot` |
 | Mode menu (§4g) | `.mode-trigger` `.mode-trigger-label` `.model-menu.mode-menu[popover]` (+ `.model-menu-list[role=menu]` `.model-menu-group`) `.mode-option[role=menuitemradio\|menuitemcheckbox]` `.mode-option-check` `.mode-option-text` `.mode-option-id` `.mode-option-desc` `.mode-menu-foot` |
@@ -46,9 +47,9 @@ stylesheets — no component library.
 | Toast | `.toast-stack` `.toast` `.toast-body` |
 | Insights: entry (§10) | `.sidebar-foot` holding 2 × `.insights-row` (Usage → `#/usage`, Agents → `#/agents`) `.insights-row-text` · usage glance `.usage-glance` `.usage-glance-item` `.usage-glance-item-high` `.usage-glance-item-stale` `.usage-glance-tag` · aggregate chip `.chip.chip-count` (`a.chip` when it links) |
 | Insights: Usage and Agents pages (§10) | `.insights` (+ `.pane`) `.insights-inner` `.insights-section` `.insights-section-head` `.insights-section-count` `.insights-grid` · `.card` `.card-head` `.card-title` `.card-body` `.card-foot` |
-| Usage meter (§10) | `.usage-card` `.usage-note` · `.meter` `.meter-head` `.meter-label` `.meter-value` `.meter-of` `.meter-track` `.meter-fill` `.meter-fill-warn` `.meter-fill-error` `.meter-context` `.meter-ghost` |
+| Usage meter (§10) | `.usage-card` `.usage-note` · `.meter` `.meter-head` `.meter-label` `.meter-value` `.meter-of` `.meter-track` `.meter-fill` `.meter-fill-warn` `.meter-fill-error` `.meter-context` `.meter-ghost` · a credit balance (DeepSeek) reuses `.meter` `.meter-head` `.meter-label` `.meter-value` `.meter-context` with no track |
 | Teams / subagents (§10) | `.team-card` `.team-objective` `.agent-card` `.member-list` `.member-row` `.member-preview` |
-| Outline strip (§10) | `details.outline` `.outline-summary` `.outline-label` `.outline-now` `.outline-count` `.outline-body` `.outline-overall` `.outline-state` `.outline-topics` `details.outline-topic` `.outline-topic-summary` `.outline-topic-heading` `.outline-hash` `.outline-topic-time` `.outline-bullets` `.outline-jump` |
+| Insight strip (§10) | `details.outline` `.outline-summary` `.outline-label` `.outline-now` `.outline-count` (+ `.outline-explained` for the Explained count) `.outline-body` `.outline-explained-open` `.outline-overall` `.outline-state` `.outline-topics` `details.outline-topic` `.outline-topic-summary` `.outline-topic-heading` `.outline-hash` `.outline-topic-time` `.outline-bullets` `.outline-jump` · one row carries outline and explanations both; the old `.explain-strip*` classes are gone |
 | Compaction row (§10) | `details.disclosure.compaction` `.compaction-summary` `.compaction-files` |
 | Subagents pane (§11) | trigger `button.run-status-link` (in `.run-status`) · `.app-subagents` `.subagents-head` `.subagents-title` `.subagents-usage` `.subagents-close` `.subagents-body` `.subagents-list` `button.subagent-row[aria-current]` `.subagent-row-name` `.subagent-row-status` `.subagent-row-meta` (+ `.meta-line`) `.subagent-row-preview` `.subagents-view` `.subagents-view-head` `.subagents-view-title` `.subagents-view-meta` (+ `.meta-line`) `.subagents-transcript` (+ `.pane`) `.subagents-banner` `.subagents-jump` (+ `.jump-latest`) `.subagents-empty` (+ `.empty`) · `.meta-line` `.meta-line-shrink` `.meta-line-sep` (a nowrap meta row whose model id is the one part that shrinks) · `.app-subagents` is the named container `subagents` |
 | Utilities | `.stack` `.stack-2` `.cluster` `.spread` `.truncate` `.measure` `.visually-hidden` `.text-mono` `.text-caption` `.text-muted` `.text-error` `.text-eyebrow` `.text-num` |
@@ -230,7 +231,7 @@ unfolded (≥768)                                  folded (<768)
     <div class="spread">
       <p class="search-count" id="session-count" aria-live="polite">12 of 48 sessions</p>
       <span class="chip chip-accent chip-live chip-count" title="Sessions open in a TUI">
-        <i class="chip-dot"></i>2 live</span>          <!-- only when ≥1 live -->
+        <i class="chip-dot"></i>2 TUI</span>           <!-- only when ≥1 live -->
     </div>
   </div>
 
@@ -246,9 +247,10 @@ unfolded (≥768)                                  folded (<768)
           <a class="list-row list-row-interactive session-row" href="#/s/…" aria-current="page">
             <div class="list-main">
               <p class="list-title">Add a watch endpoint for TUI sessions</p>
+              <p class="list-summary" title="…">Wiring /ws/watch to the session tailer</p>
               <p class="list-meta">2h ago · <span class="text-mono">claude-opus-5</span></p>
             </div>
-            <span class="chip chip-accent chip-live"><i class="chip-dot"></i>Live</span>
+            <span class="chip chip-accent chip-live"><i class="chip-dot"></i>TUI</span>
           </a>
         </li>
       </ul>
@@ -271,12 +273,16 @@ unfolded (≥768)                                  folded (<768)
   group scrolls.
 - **Row line 1.** `SessionSummary.title`, truncated to one line; the full title goes in `title=`.
   `Untitled` renders in `--color-ink-muted`.
-- **Row line 2.** Relative `lastActiveAt` ("just now", "4m ago", "2h ago", "yesterday", "Mar 4"),
+- **Row line 2.** `SessionSummary.outlineNow`, the session's rolling "now" line from its latest
+  `topic-outline` snapshot. Rendered only when present: `--fs-micro` in `--color-ink-2`, one line
+  truncated with an ellipsis, the full text in `title=`. Sessions without one (older sessions, or
+  topic-outline off) omit the line entirely — the row is then title over meta, as before.
+- **Row line 3.** Relative `lastActiveAt` ("just now", "4m ago", "2h ago", "yesterday", "Mar 4"),
   then ` · `, then the model in mono. Show only the part after the first `/` and put the full
   `provider/model` in `title`. If `model` is null, omit the separator and the model.
-- **LIVE badge.** Shown when `live !== null`: `.chip.chip-accent.chip-live` with the word `Live`.
-  The pulse is justified because it means "a TUI is running this right now". Never show the dot
-  without the word.
+- **TUI badge.** Shown when `live !== null`: `.chip.chip-accent.chip-live` with the word `TUI`.
+  The pulse is still justified because it means "a TUI is running this session right now". Never
+  show the dot without the word.
 - **BUSY marker.** Shown when `busy === true`, meaning the server is mid-turn on a session pi-web
   holds.
 
@@ -299,14 +305,15 @@ unfolded (≥768)                                  folded (<768)
     - Live and Busy shouldn't co-occur either, because pi-web never holds a TUI-owned session.
       If both ever arrive, **Live wins** and Busy is hidden. The TUI owns it, so our view of
       busy is stale.
-  - **320px budget.** Row inner width is 288px. The worst case is still today's: `2 working` (~80)
-    + `Live` (~64) + 2 × 12px gaps leaves about 120px for the title and meta, which truncate as
-    they already do. A Busy row has one chip (~64), so its title gets about 210px. No change to
-    row height.
+  - **320px budget.** Row inner width is 288px. The compact chip box makes both chips narrower
+    and shorter than before: the worst case, `2 working` (~64) + `TUI` (~48) + 2 × 12px gaps,
+    leaves about 150px for the title, summary, and meta, which truncate as they already do. A
+    Busy row has one chip (~48), so its text gets about 230px. Row height grows only by the
+    summary line, and only on rows that have one.
   - **Other placements.** None for v1. The open session already shows its own run state (the
     `.run-status` line and the author's `.live-dot`, §3), so the session head doesn't repeat
     Busy. It doesn't count toward the "N live" chip either.
-- **Live count.** `N live` as `.chip-count`, shown only when N ≥ 1. It sits at the right end of
+- **Live count.** `N TUI` as `.chip-count`, shown only when N ≥ 1. It sits at the right end of
   the count row under search (`.spread`), not in the head: at 320px the head holds exactly brand,
   Refresh, and New Session. It always counts all live sessions, not just the filtered ones.
 - **Selection.** The row for the open session gets `aria-current="page"`, which the stylesheet
@@ -574,7 +581,10 @@ sessions in bulk. It uses `POST /api/sessions/cleanup` (`cleanupSessions` in `sr
 ### Tokens
 
 Sidebar ground `--color-surface`. Row hover `--color-sunken`. Selected `--color-accent-tint`.
-Title `--color-ink`, `--fw-medium`, `--fs-body`. Meta `--color-ink-muted`, `--fs-caption`. Group
+Title `--color-ink`, `--fw-medium`, `--fs-body`. Summary `--fs-micro`, `--lh-micro`,
+`--color-ink-2`. Meta `--color-ink-muted`, `--fs-caption`. Chips take the compact chip box:
+padding 1px / `--space-2`, gap `--space-1`, 5px dot, line-height 1.2 (font stays `--fs-micro`
+mono, uppercase). Group
 label `--font-mono`, `--fs-mono`, `--color-ink-muted`. Row padding `--space-2` / `--space-4`,
 `min-height: --row-height`. Head `min-height: 56px`, border `--color-border`. Brand is
 `--fw-display`, letter-spacing −.03em, and `--fs-heading-s`. The mark takes `--color-accent`; the
@@ -586,7 +596,7 @@ word never does.
   a `section` labelled by its `h2`. Rows are plain links in a `ul`, so the browser provides
   Tab/Enter behavior with no roving tabindex.
 - **Selected row.** Mark it with `aria-current="page"`.
-- **Chips are text.** The LIVE chip reads "Live" in the link's name. Don't hide it from AT.
+- **Chips are text.** The TUI chip reads "TUI" in the link's name. Don't hide it from AT.
 - **Contrast.** Ink on surface is 12.34 (dark) and 17.86 (light). Muted on surface is 4.96 and
   5.74. Muted on tint is 5.06 and 4.68. Accent on surface is 4.67 and 6.81. Accent on tint is
   4.76 and 5.55. All clear AA 4.5.
@@ -633,9 +643,10 @@ word never does.
   display headline.
 - **What the head holds.** Back, the title block, the context gauge (§4f), the mode switch
   (§4g), the working and Live chips, and Archive. Nothing else: the model and the session's
-  own facts moved into the composer flyout (§4b), which is where the session is acted on.
-- **Model.** Chat sessions show it in the flyout's Model row (§4b), not in the head. Watch
-  sessions keep it in `.session-head-meta`, as plain mono text they can't change.
+  own facts moved into the composer (§4, §4b), which is where the session is acted on.
+- **Model.** Chat sessions read it off the composer's model indicator (§4) and change it in the
+  flyout's Model row (§4b); neither is in the head. Watch sessions keep it in
+  `.session-head-meta`, as plain mono text they can't change.
 - **Copy Session Path.** Gone from the head. The path is a session fact, and it's copied from
   Session info (§4h) instead, which is where the rest of them live.
 - **Archive Session / Unarchive Session.** Web sessions only, last in the head. Moves the
@@ -1021,6 +1032,16 @@ Driven by `ChatServerMessage.event`.
     </div>
 
     <div class="composer-foot">
+      <!-- chat sessions only: the model indicator, the flyout's second trigger -->
+      <button class="composer-model" type="button" aria-haspopup="menu" aria-controls="composer-flyout"
+              aria-expanded="false" title="zai/glm-5.3 · Change model & thinking"
+              aria-label="zai/glm-5.3, thinking high — Change Model &amp; Thinking">
+        <span class="composer-model-id">glm-5.3</span>
+        <span class="composer-model-meta">zai</span>
+        <span class="composer-model-sep" aria-hidden="true">·</span>
+        <span class="composer-model-level">high</span>
+        <span class="icon icon-sm composer-model-caret" style="--icon: url(/icons/chevron-down.svg)" aria-hidden="true"></span>
+      </button>
       <span class="composer-reason" id="composer-reason"><!-- reason when disabled; else empty --></span>
       <span class="composer-hint"><kbd>Enter</kbd> to send · <kbd>Shift</kbd>+<kbd>Enter</kbd> for a new line</span>
     </div>
@@ -1051,6 +1072,22 @@ Driven by `ChatServerMessage.event`.
 - **Focus.** Returns to the textarea after Send, Steer, or Stop.
 - **Drafts** are never discarded. The draft survives disable/enable, reconnects, and errors. Keep
   a draft per session path in memory, so switching sessions and coming back restores it.
+- **The foot** reads left to right: the model indicator, the disabled reason, then the keyboard
+  hint pushed to the right edge.
+- **Model indicator.** Chat sessions only. It says what this turn will run — the id in mono, the
+  provider beside it, then `· {level}` for the thinking level — and clicking it opens the flyout
+  on its **model panel**, anchored above itself, which holds exactly those two controls (§4b).
+  The thinking
+  segment is omitted when the model's ladder has one level or none, exactly as the flyout's group
+  is. While a switch is pending it shows the **target** with a `.live-dot`, the model's and the
+  level's each before their own value; with no model yet it reads "Choose model". The full
+  `provider/id` is in `title`. It carries `aria-haspopup="menu"`,
+  `aria-controls="composer-flyout"` and an `aria-expanded` that is true only while the flyout is
+  open **and anchored to it** — clicking it again closes it; the "+" trigger keeps its own. The
+  id is the one part that shrinks, so a long ref ellipsizes rather than pushing the hint out.
+  While the composer is disabled it still shows the model and is `aria-disabled` with a dead
+  click, like the flyout's own rows. It stays at every width — the hint goes under 768px, this
+  doesn't, because it's the only place the model is on screen.
 
 ### Disabled states
 
@@ -1077,7 +1114,21 @@ Everything you do to a session that isn't typing lives behind one ghost `plus` b
 Commands) and took the model trigger and the session's own facts out of the head (§3): the
 composer is where the session is acted on, and the head is for reading.
 
+**One popover, two triggers, three panels.** The `plus` button opens the **menu** panel — Attach
+images, Commands, Session info. The model indicator in `.composer-foot` (§4) opens the **model**
+panel — the Model row and this model's Thinking ladder, the two things the indicator is the label
+for. The Model row opens the §4c **picker** as the third panel, which comes back to the model
+panel it was opened from. Each trigger anchors the popover above **itself**: the math is the same,
+measured on whichever element opened it, and closing returns focus there. The composer holds the
+flyout's handle (`show(panel, anchor)` · `close()` · `open` · `anchor`, handed over once on
+mount), so the indicator can toggle the menu it opened and mirror its state in `aria-expanded`.
+
+The model row and the ladder live in the panel the indicator names, not in the `plus` menu:
+one control, one way in, and the thing that says what the session runs is the thing that changes
+it.
+
 ```html
+<!-- the "menu" panel: what the "+" button opens -->
 <div class="model-menu composer-flyout" id="composer-flyout" popover="auto"
      style="--menu-bottom: 72px; --menu-left: 388px">
   <div class="composer-flyout-list" role="menu" aria-label="More actions">
@@ -1089,58 +1140,64 @@ composer is where the session is acted on, and the head is for reading.
     <div class="mode-option composer-flyout-item" role="menuitem" id="composer-flyout-commands" tabindex="-1">…Commands…</div>
 
     <div class="composer-flyout-sep" role="separator"></div>
-    <div class="mode-option composer-flyout-item" role="menuitem" id="composer-flyout-model" tabindex="-1"
-         aria-haspopup="true" title="zai/glm-5.3">
-      <span class="icon icon-sm composer-flyout-icon" style="--icon: url(/icons/worker.svg)" aria-hidden="true"></span>
-      <span class="composer-flyout-label">Model</span>
-      <span class="composer-flyout-value">glm-5.3</span>
-      <span class="composer-flyout-meta">zai</span>
-      <span class="icon icon-sm composer-flyout-chevron" style="--icon: url(/icons/chevron-right.svg)" aria-hidden="true"></span>
-    </div>
-
-    <div class="composer-flyout-sep" role="separator"></div>
-    <div class="model-menu-group" role="group" aria-labelledby="composer-flyout-thinking">
-      <div class="list-group-label" id="composer-flyout-thinking">Thinking</div>
-      <div class="mode-option composer-flyout-item" role="menuitemradio" id="composer-flyout-thinking-high"
-           tabindex="-1" aria-checked="true">
-        <span class="icon icon-sm mode-option-check" style="--icon: url(/icons/check.svg)" aria-hidden="true"></span>
-        <span class="composer-flyout-label">high</span>
-      </div>
-      …one row per level…
-    </div>
-
-    <div class="composer-flyout-sep" role="separator"></div>
     <div class="mode-option composer-flyout-item" role="menuitem" id="composer-flyout-info" tabindex="-1">…Session info…</div>
+  </div>
+</div>
+
+<!-- the "model" panel: what the model indicator opens, in the same popover -->
+<div class="composer-flyout-list" role="menu" aria-label="Model and thinking">
+  <div class="mode-option composer-flyout-item" role="menuitem" id="composer-flyout-model" tabindex="0"
+       aria-haspopup="true" title="zai/glm-5.3">
+    <span class="icon icon-sm composer-flyout-icon" style="--icon: url(/icons/worker.svg)" aria-hidden="true"></span>
+    <span class="composer-flyout-label">Model</span>
+    <span class="composer-flyout-value">glm-5.3</span>
+    <span class="composer-flyout-meta">zai</span>
+    <span class="icon icon-sm composer-flyout-chevron" style="--icon: url(/icons/chevron-right.svg)" aria-hidden="true"></span>
+  </div>
+
+  <div class="composer-flyout-sep" role="separator"></div>
+  <div class="model-menu-group" role="group" aria-labelledby="composer-flyout-thinking">
+    <div class="list-group-label" id="composer-flyout-thinking">Thinking</div>
+    <div class="mode-option composer-flyout-item" role="menuitemradio" id="composer-flyout-thinking-high"
+         tabindex="-1" aria-checked="true">
+      <span class="icon icon-sm mode-option-check" style="--icon: url(/icons/check.svg)" aria-hidden="true"></span>
+      <span class="composer-flyout-label">high</span>
+    </div>
+    …one row per level…
   </div>
 </div>
 ```
 
 - **Mechanism.** A native `[popover="auto"]` in the model menu's shell (`.model-menu`), so it's in
   the top layer, no `.pane` clips it, and a click outside or `Esc` closes it for free. It's
-  **anchored above** the trigger, because the composer is pinned to the bottom: on open, measure
-  the trigger and set `--menu-bottom: {innerHeight − rect.top + 4}px` and `--menu-left:
-  {rect.left}px`. A resize re-anchors it; it closes only when the trigger isn't laid out anymore.
+  **anchored above** whatever opened it, because the composer is pinned to the bottom: on open,
+  measure that element and set `--menu-bottom: {innerHeight − rect.top + 4}px` and `--menu-left:
+  {rect.left}px`. A resize re-anchors it; it closes only when the anchor isn't laid out anymore.
   Under 768px it's the same bottom sheet the model menu is.
-- **Panels.** The root menu, and the §4c model picker as a second panel in the same popover, with
-  a `Back to Menu` button above the search field. One popover means no nested light-dismiss to
-  reason about, and `Esc` always means "close the flyout".
+- **Panels.** Three, one popover: **menu** (the `plus` button's), **model** (the indicator's), and
+  the §4c **picker**, which the Model row opens and a `Back` button above its search field returns
+  from — to the model panel, which is the only way in. Only the panel in front is rendered, so it
+  is also the whole keyboard order. One popover means no nested light-dismiss to reason about, and
+  `Esc` always means "close the flyout".
 - **Keyboard.** `↑`/`↓` move and wrap, `Home`/`End` jump, `Enter`/`Space` activate, `Esc` closes
-  and returns focus to the trigger, and tabbing out closes it (`focusout` outside the menu).
-  Rows carry real focus with a roving `tabindex`, so they draw the standard `:focus-visible` ring.
-  Opening focuses the first row that isn't disabled. **`Ctrl+P` / `⌘P`** opens it straight on the
-  model panel (and closes it if that panel is already open), with `preventDefault()` so print
-  never fires. It's bound in chat sessions only; watch sessions print as usual.
-- **Rows.**
+  and returns focus to the trigger that opened it, and tabbing out closes it (`focusout` outside
+  the menu). Rows carry real focus with a roving `tabindex`, so they draw the standard
+  `:focus-visible` ring. Opening a panel — including arriving back from the picker — focuses its
+  first row that isn't disabled. **`Ctrl+P` / `⌘P`** opens the flyout straight on the picker (and
+  closes it if the picker is already in front), with `preventDefault()` so print never fires. It's
+  bound in chat sessions only; watch sessions print as usual.
+- **Rows.** Attach images, Commands and Session info are the menu panel's; Model and Thinking are
+  the model panel's.
   - **Attach images** opens the composer's hidden file picker (§4b). `aria-disabled` and
     `aria-describedby="composer-reason"` while the composer is disabled.
   - **Commands** closes the flyout and opens the slash menu exactly as the old button did (§4d).
     `aria-disabled` when the composer is disabled or there's no command list; then its `title` is
     "No commands available".
-  - **Model** shows the current id in mono with its provider, and a chevron. It's the picker's
-    trigger: `aria-haspopup="true"`, and while a switch is pending it's `aria-busy` with a
+  - **Model** is the model panel's first row: the current id in mono with its provider, and a
+    chevron. It's the picker's trigger: `aria-haspopup="true"`, and while a switch is pending it's `aria-busy` with a
     `.live-dot` before the target id, and `aria-disabled` (§4c "Pending"). Choosing applies
     immediately, closes the flyout, and focus returns to the textarea.
-  - **Thinking** is one `menuitemradio` per level of the **current model's** `thinkingLevels`,
+  - **Thinking** follows the Model row on the same panel: one `menuitemradio` per level of the **current model's** `thinkingLevels`,
     in ladder order, checked on the active one. **The whole group is hidden when the model has
     one level or isn't in the model list yet** — a ladder with one rung is not a choice. Picking
     sends `{type:"set_thinking"}`; the checked state follows the server's `{type:"thinking"}`
@@ -1164,7 +1221,10 @@ Composer ground is `--color-surface` with a top border in `--color-border`, and 
 min, `--r-md`, `--color-border-strong` border, and an accent focus border. Send is
 `.button-primary` (`--color-accent` / `--color-on-accent`). Stop is `.button-destructive`
 (`--status-error` border and label, `--status-error-bg` on hover). The reason is `--fs-caption` in
-`--color-ink-2`, and the hint is `--color-ink-muted`. The hint is hidden under 768px.
+`--color-ink-2`, and the hint is `--color-ink-muted`. The hint is hidden under 768px. The model
+indicator borrows the same pair — the id `--fs-mono` in `--color-ink-2`, everything else
+`--fs-caption` in `--color-ink-muted` — with a `--color-sunken` fill on hover and while open, and
+a `--tap-min` target stretched over a `--control-sm` row by a `::after`.
 `.composer-inner` is centred at `--measure` plus `--space-9`, the transcript column's width, so it
 widens with the column on desktop (§3 "Column width"). The slash menu spans it, and the model
 menu keeps its own 360px cap.
@@ -1566,9 +1626,10 @@ can't be changed from here.
 
 ### Trigger
 
-**It has no trigger of its own.** The picker is the composer flyout's second panel (§4 "Composer
-flyout"), opened from the flyout's Model row or straight from `Ctrl+P` / `⌘P`; the flyout's Model
-row carries the label ({id} in mono, the provider beside it, the full `provider/id` in `title`,
+**It has no trigger of its own.** The picker is the composer flyout's third panel (§4 "Composer
+flyout"), opened from the Model row on the flyout's model panel — which the composer's model
+indicator (§4) opens — or straight from `Ctrl+P` / `⌘P`. `Back` returns to that model panel. The
+Model row carries the label ({id} in mono, the provider beside it, the full `provider/id` in `title`,
 "Choose model" with no model yet) and the pending state. Everything below describes the panel.
 
 ### Menu
@@ -1576,7 +1637,7 @@ row carries the label ({id} in mono, the provider beside it, the full `provider/
 ```html
 <!-- inside the flyout's popover; the panel replaces the root menu -->
 <div class="composer-flyout-head">
-  <button class="button button-sm button-ghost composer-flyout-back" type="button">…chevron-left… Back to Menu</button>
+  <button class="button button-sm button-ghost composer-flyout-back" type="button">…chevron-left… Back</button>
 </div>
 <div class="model-menu-search">
     <div class="search">
@@ -1625,7 +1686,7 @@ row carries the label ({id} in mono, the provider beside it, the full `provider/
   the keyboard position. The option it points to gets `data-active` and draws the focus ring
   (inset 2px accent), because focus can't be seen anywhere else.
 - **Mechanism.** The flyout owns the popover; this panel is what's inside it (§4 "Composer
-  flyout" has the anchoring, the resize rule, and the `Back to Menu` affordance). Mounting the
+  flyout" has the anchoring, the resize rule, and the `Back` affordance). Mounting the
   panel re-fetches the list and shows the cached one meanwhile; the cache is shared with the
   Thinking group, which reads the same models to know their ladders (`src/lib/models.ts`).
 - **Positioning.**
@@ -1673,7 +1734,7 @@ row carries the label ({id} in mono, the provider beside it, the full `provider/
 | `Enter` | in the menu | Chooses the active option. Choosing the current model just closes the menu |
 | `Esc` | in the menu | Closes the whole flyout (native popover behavior). The query doesn't survive |
 | `Tab` | in the menu | Closes it (on `focusout` outside the menu), and focus moves on |
-| Mouse | | Hovering a row makes it active, and clicking chooses it. `Back to Menu` returns to the root panel and focuses the Model row |
+| Mouse | | Hovering a row makes it active, and clicking chooses it. `Back` returns to the model panel and focuses the Model row |
 
 When the flyout closes without a choice, focus returns to its trigger; after a choice it goes to
 the textarea, where the next thing you do is type.
@@ -1880,7 +1941,7 @@ The textarea gains these attributes, and keeps them only while the menu is open:
 ### Commands row
 
 A tap target for the same menu, for phones (where nobody types `/` from habit) and for
-discoverability. It's the flyout's **Commands** row, second in the root panel, right under Attach
+discoverability. It's the flyout's **Commands** row, second in the flyout's menu panel, right under Attach
 images (§4 "Composer flyout"):
 
 ```html
@@ -2774,13 +2835,15 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Where | Copy |
 |---|---|
 | Trigger | `aria-label` / `title`: More Actions |
-| Menu `aria-label` | More actions |
-| Rows | Attach images · Commands · Model · Session info |
+| Menu panel `aria-label` | More actions |
+| Menu panel rows | Attach images · Commands · Session info |
+| Model panel `aria-label` | Model and thinking |
+| Model panel rows | Model · the Thinking group |
 | Model row | {id} · {provider} (`title`: {provider/id}) · no model: Choose model |
 | Thinking group label | Thinking |
 | Thinking rows | the model's levels, verbatim and in ladder order: off · minimal · low · medium · high · xhigh · max |
 | Thinking disabled `title` | Thinking changes wait until this turn finishes. · else the composer reason for that state |
-| Back to the root panel | `Back to Menu` |
+| Back from the picker (to the model panel) | `Back` |
 | Thinking error title | Couldn't set thinking to `{level}`. |
 | Thinking error: running | Thinking changes wait until this turn finishes. You're still on `{level}`. |
 | Thinking error: unknown level | pi doesn't know this thinking level. You're still on `{level}`. |
@@ -2821,7 +2884,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 
 | Where | Copy |
 |---|---|
-| Opened from | the composer flyout's Model row (see "Composer flyout" above) and `Ctrl+P` / `⌘P` |
+| Opened from | the Model row on the composer flyout's model panel (see "Composer flyout" above) and `Ctrl+P` / `⌘P` |
 | Menu `aria-label` | Choose model |
 | Search placeholder / label | Search models |
 | Listbox `aria-label` | Models |
@@ -2918,9 +2981,9 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 
 | Where | Copy |
 |---|---|
-| Foot row 1 (→ `#/usage`) | Glance: `C {pct}%` `O {pct}%` `OL {pct}%` `Z {pct}%` (Claude, OpenAI, Ollama Cloud, Z.ai) · no data: Usage · `title`/`aria-label`: Usage: {Provider} {window} {pct}%, … (stale providers add " (stale)") |
+| Foot row 1 (→ `#/usage`) | Glance: `C {pct}%` `O {pct}%` `OL {pct}%` `Z {pct}%` (Claude, OpenAI, Ollama Cloud, Z.ai; DeepSeek has no percentage, so it's never here) · no data: Usage · `title`/`aria-label`: Usage: {Provider} {window} {pct}%, … (stale providers add " (stale)") |
 | Foot row 2 (→ `#/agents`) | `{n} teams` · `{w} working`, joined by ` · `, zero segments left out · nothing to report: Agents |
-| Provider names | Claude · OpenAI · Ollama Cloud · Z.ai |
+| Provider names | Claude · OpenAI · Ollama Cloud · Z.ai · DeepSeek |
 | Usage page title / head meta | Usage · Updated {rel} · never read: Not read yet |
 | Agents page title / head meta | Agents · `{w} working · {n} pi sessions running` ("{w} working · " dropped at 0; "1 pi session running") · 0 live: No pi sessions running |
 | Refresh `aria-label` | Refresh Usage · Refresh Agents |
@@ -2931,8 +2994,10 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Active window badge (`active:true`) | Active (neutral `.chip-count` in the meter label) · `title`: The window your current model counts against |
 | MCP uses context | {used} of {limit} uses, e.g. "0 of 1,000 uses" (comma thousands). Shown when the window carries both `used` and `limit`, otherwise left out |
 | Meter value | `{pct}%` used |
+| Balance (DeepSeek) | label Balance · value `$4.29` (currency of the balance) · context: the non-zero parts of Granted `$0.00` · Topped up `$4.29`, joined by ` · `, omitted when both are 0 |
+| Out of credit note | This balance can't fund calls. They'll fail until it's topped up. |
 | Meter context | Resets in {2h 17m} (under 24h) · Resets {Sep 25} · reset already passed: Reset at `{HH:MM}`. New reading at the next refresh. |
-| Usage chips | Near limit · Rate-limited · Quota used · Stale |
+| Usage chips | Near limit · Rate-limited · Quota used · Out of credit (DeepSeek, `available:false`) · Stale |
 | Stale usage (banner-warn) | **Usage is {42m} old.** It refreshes while pi runs in a terminal. Open a pi session, or run `/usage-refresh` in one. |
 | Usage file missing (`reason:"missing"`) | **No usage data yet.** The usage-status extension writes `~/.pi/agent/cache/usage-status.json` while pi runs, and we haven't found it. |
 | Usage file corrupt (`reason:"corrupt"`) | **Couldn't read usage.** `usage-status.json` isn't valid JSON right now. Nothing was changed. It's rewritten at the next refresh. · button: `Retry` |
@@ -3037,7 +3102,9 @@ glance needs the room.
 
 - **Usage row, a glance at every provider:**
   - One segment per provider, in the fixed order Claude, OpenAI, Ollama Cloud, Z.ai. The tags
-    are exactly `C`, `O`, `OL`, `Z`, followed by a mono `{pct}%`.
+    are exactly `C`, `O`, `OL`, `Z`, followed by a mono `{pct}%`. **The glance is percentages
+    only**, so a provider that reports a balance instead of windows (DeepSeek) is never in it,
+    whatever its state. It has an abbreviation, `DS`, for the day it has a percentage to show.
   - **Window.** Each provider shows the window flagged `active` (the first one, if several
     are flagged). Otherwise it shows its 7-day window, and failing that, its longest. Ollama
     shows Monthly. Z.ai shows its plan window (5-hour), never MCP uses. An active window gets
@@ -3132,7 +3199,8 @@ Both pages share one shell: a `.session-head` and a `.insights.pane` containing
   at least 640px wide, and 3 at 1000px or more. The container is named, per the skill.
 - **Polling** (frontend's call on intervals). Update in place and keep scroll position and
   focus. Don't show a skeleton again after the first load.
-- **Loading** (first load, after 300ms). The Usage page shows 3 `.skeleton` blocks at 120px
+- **Loading** (first load, after 300ms). The Usage page shows 5 `.skeleton` blocks (one per
+  provider it can show) at 120px
   tall with `--r-lg`. The Agents page shows 1. Put `aria-busy` on `.insights-inner`.
 - **Request error.** Show `.banner-error` at the top of `.insights-inner` with Retry: "Couldn't
   load usage." or "Couldn't load agents." Any data already loaded stays visible below it.
@@ -3157,8 +3225,8 @@ Both pages share one shell: a `.session-head` and a `.insights.pane` containing
 ```
 
 - **Cards.** There's one card per `providers[]` entry, in the order given: Claude, OpenAI,
-  Ollama Cloud, Z.ai. Z.ai follows the system like every other provider: no brand color, and
-  the title is "Z.ai".
+  Ollama Cloud, Z.ai, DeepSeek. Z.ai follows the system like every other provider: no brand color, and
+  the title is "Z.ai"; so does DeepSeek, titled "DeepSeek".
 - **Scoped and active windows (any provider).**
   - A window with a `scope` is labeled `{window} {scope}`, e.g. "7-day Fable", the same form as
     "7-day Opus". It stays in source order, so Claude reads 5-hour, 7-day, 7-day Fable.
@@ -3173,6 +3241,17 @@ Both pages share one shell: a `.session-head` and a `.insights.pane` containing
   - `mcp` is "MCP uses", the MCP tool-usage quota, shown as a percentage. Its context reads
     "{used} of {limit} uses" (comma thousands) when the window carries both `used` and `limit`
     (optional fields on `UsageWindow`), and is otherwise left out.
+- **DeepSeek: a balance, not meters.** DeepSeek has no usage or quota API — the only account
+  data is the prepaid credit — so its card carries `balance` and no windows. The body is one
+  `.meter` with no track: a `.meter-head` with `.meter-label` "Balance" and the money left in
+  `.meter-value` (`$4.29`, currency of the balance, `Intl.NumberFormat` `style:"currency"`), then a
+  `.meter-context` with the non-zero parts of "Granted `$0.00`" and "Topped up `$4.29`" joined by
+  " · ". With both at 0 that line is left out. There is **no percentage, no bar, and no reset
+  line** — nothing resets; the balance goes down until it's topped up. When `available` is false the
+  head chip is `.chip.chip-error` "Out of credit" and a `.usage-note` under the balance reads "This
+  balance can't fund calls. They'll fail until it's topped up." A failed fetch that kept the balance
+  keeps the usual neutral "Stale" chip and the "Last fetch failed: …" note ("Out of credit" wins
+  the chip when both apply).
 - **Meters.** Each window gets a `.meter`. The number comes first, the bar second, and there's
   never a bar alone.
   - **Value.** `Math.round(pct)` followed by `%`. No decimals: the sources round, and a decimal
@@ -3195,7 +3274,8 @@ Both pages share one shell: a `.session-head` and a `.insights.pane` containing
   | Any window 80–99% | `.chip.chip-warn` "Near limit" |
   | A 5-hour window ≥ 100% | `.chip.chip-warn` "Rate-limited" (it comes back on its own) |
   | A 7-day, monthly, or MCP-uses window ≥ 100% | `.chip.chip-error` "Quota used" (waits for the reset) |
-  | `error` set and `windows` kept | neutral `.chip` "Stale", plus a `.usage-note` under the meters |
+  | A balance with `available: false` | `.chip.chip-error` "Out of credit" (waits for a top-up) |
+  | `error` set and `windows` (or a balance) kept | neutral `.chip` "Stale", plus a `.usage-note` under the meters |
 
   If both a limit chip and Stale apply, show the limit chip.
 - **Provider not ok.** The body is a single `.usage-note` (`nologin`, `expired`, `nokey`,
@@ -3272,7 +3352,7 @@ the session title as a link to `#/s/…` (or `cwd`, mono, when `path` is null) a
 as the title, `id` and `model` in the meta, the preview while working, and the status chip from
 the table above. When no session has solo workers, the section is omitted.
 
-### Outline strip (topic-outline)
+### Insight strip (topic-outline and explanations)
 
 ```html
 <details class="outline">
@@ -3281,8 +3361,13 @@ the table above. When no session has solo workers, the section is omitted.
     <span class="outline-label">Outline</span>
     <span class="outline-now">· Audit and intercom removal complete</span>
     <span class="outline-count">12 topics</span>
+    <span class="outline-count outline-explained">· Explained 3</span>
   </summary>
   <div class="outline-body">
+    <button class="button button-sm button-ghost outline-explained-open" type="button" aria-haspopup="dialog">
+      <span class="icon icon-sm" style="--icon: url(/icons/external.svg)" aria-hidden="true"></span>Open 3 Explanations
+    </button>
+    <p class="outline-state">Latest · Why the watcher restarts · 2h ago</p>
     <p class="outline-overall">{overall}</p>
     <p class="outline-state">Updated 3m ago · behind the latest messages</p>
     <ol class="outline-topics">
@@ -3302,15 +3387,25 @@ the table above. When no session has solo workers, the section is omitted.
 </details>
 ```
 
+- **One row, both insights.** The outline and the session's /explain artifacts share this
+  single disclosure, so the session head costs one row, not two.
 - **Three steps of disclosure:**
-  1. Closed, the strip shows the `now` line.
-  2. Open, it shows `overall`, the state line, and the topic headings.
+  1. Closed, the strip shows the `now` line and the counts it has.
+  2. Open, it shows the gallery button (when there are explanations), `overall`, the state
+     line, and the topic headings.
   3. Opening a topic shows its bullets and Jump.
+- **Explanations.** When the session has any, the summary gains
+  `<span class="outline-count outline-explained">· Explained {n}</span>` after the topic count,
+  and the body opens with a ghost `Open {n} Explanations` button — the existing gallery dialog
+  (`aria-haspopup="dialog"`) — followed by `Latest · {topic} · {relative time}`.
 - **Open state.** Both levels are closed by default. Persist the strip's open state per session
   path in `sessionStorage`. Open states survive updates.
 - **Missing data.**
-  - When `outline` is null, render no strip at all. Most sessions have none, and an empty strip
-    on each of them is noise.
+  - When `outline` is null but the session has explanations, the row still discloses: the label
+    reads "Explained", the summary is `Explained · {n} · {latest topic}`, and the body holds the
+    gallery button and the Latest line.
+  - When `outline` is null and there are no explanations, render no strip at all. Most sessions
+    have neither, and an empty strip on each of them is noise.
   - Leave out an empty `now` (the summary then shows only the label and count), and likewise an
     empty `overall`.
 - **Topic details.** `.outline-hash` appears only on `manual` topics. The time is `at` in mono

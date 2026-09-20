@@ -32,7 +32,7 @@ additions, the pinned third-party packages, and the extensions kept in-tree.
 | `extensions/codefold/` | Folds long fenced code blocks in assistant messages into one band |
 | `extensions/topic-outline/` | Display-only live topic outline of the conversation, with jump-to-topic |
 | `extensions/vision-delegate/` | Lets a text-only model work with images: a `look_at_image` tool plus automatic descriptions of read results and TUI attachments, routed to a fallback vision model |
-| `extensions/usage-status.ts` | Subscription usage (Ollama Cloud, OpenAI Codex, Claude, Z.ai) in the footer, plus a `/usage` overlay |
+| `extensions/usage-status.ts` | Subscription usage (Ollama Cloud, OpenAI Codex, Claude, Z.ai, DeepSeek balance) in the footer, plus a `/usage` overlay |
 | `extensions/wake-nudge.ts` | Lets the model schedule one-shot wakeups |
 | `extensions/working-subagent-count.ts` | Busy subagent and team-member counts on the "Working" line and in an idle widget |
 | `install.sh` | Symlinks the config files and every `extensions/*` directory and single-file `extensions/*.ts` extension into `~/.pi/agent`, and `pi-sessions` into `~/.local/bin` |
@@ -105,6 +105,7 @@ This repository holds no credentials. Each machine needs these logins:
 | Default model (`zai` / `glm-5.3` in `settings.json`) | Z.ai API key | `~/.pi/agent/auth.json`, key `zai` | `/login` in pi, or `ZAI_API_KEY` |
 | `ollama-cloud` provider (`models.json`) | Ollama API key | `auth.json`, key `ollama-cloud` | `/login` in pi |
 | `openai-codex` models | ChatGPT Plus/Pro OAuth | `auth.json`, key `openai-codex` | `/login` in pi |
+| `deepseek` provider (built-in catalog: `deepseek-flash`, `deepseek-v4-pro`), and the DeepSeek balance in `usage-status` | DeepSeek API key | `auth.json`, key `deepseek` | `/login` in pi, or `DEEPSEEK_API_KEY` |
 | Local `ollama` provider | none (placeholder key; Ollama at `localhost:11434`) | | |
 | `claude-code`, the Claude side of `mode`, the `topic-outline` Claude summarizer | Claude Code login | Managed by the `claude` CLI (`~/.claude/.credentials.json` on Linux) | Install [Claude Code](https://claude.com/claude-code) and log in once inside `claude` |
 

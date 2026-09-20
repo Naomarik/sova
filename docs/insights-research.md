@@ -26,9 +26,16 @@ Lockfile `usage-status.json.lock` beside it: ignore it.
               "fiveHour":  { "pct": 96, "resetsAt": "2026-09-19T07:50:00.621229+00:00" },
               "sevenDay":  { "pct": 41, "resetsAt": "2026-09-25T18:00:00.621249+00:00" } },
               // "sevenDayOpus" optional; every window optional
-  "errors": {}                       // { ollama?, openai?, claude? }: message of the LAST failed fetch
+  "zai":    { "state": "ok", "fiveHour": { "label": "5h", "pct": 12 },      // | nokey | badkey | na
+              "mcp": { "pct": 0, "used": 0, "limit": 1000 } },              // MCP call quota
+  "deepseek": { "state": "ok", "available": true,                            // | nokey | badkey | na
+              "balances": [{ "currency": "USD", "total": 4.29, "granted": 0, "toppedUp": 4.29 }] },
+                                     // no usage API: prepaid credit only (GET /user/balance)
+  "errors": {}                       // { ollama?, openai?, claude?, zai?, deepseek? }: message of the LAST failed fetch
 }
 ```
+
+`schemaVersion` is 3 since the `deepseek` key was added (2 before it).
 
 - **Per-provider staleness:** on a failed fetch the previous provider value is kept and
   `errors.<provider>` is set (`"timeout"`, `"claude HTTP 529"`…). A provider key can be absent
@@ -137,12 +144,20 @@ with 200, never 500. Caches: usage by file mtime; per-session JSONL parse by (mt
 `sessions-index.ts`; live dir re-read per request (a few ≤16KB files)._
 
 ```ts
-// GET /api/insights/usage
-export interface UsageWindow { label: string; pct: number; resetsAt?: string } // "5h" | "7d" | "7d opus" | "month" | "pri"
+// GET /api/insights/usage   (as shipped in shared/protocol.ts)
+export interface UsageWindow { label: string; pct: number; resetsAt?: string; // "5h" | "7d" | "7d opus" | "7d scoped" | "month" | "pri" | "plan" | "mcp"
+  used?: number; limit?: number;   // raw counts when the provider exposes them (z.ai MCP calls)
+  scope?: string;                  // model family, when the window only covers a subset ("7d scoped" + "Fable")
+  active?: boolean }               // the limit the current model counts against
+export interface UsageBalance {    // prepaid credit, instead of windows (DeepSeek)
+  currency: string; total: number; granted: number; toppedUp: number;
+  available: boolean;              // false: the provider says calls aren't fundable
+}
 export interface UsageProvider {
-  id: "claude" | "openai" | "ollama";
+  id: "claude" | "openai" | "ollama" | "zai" | "deepseek";
   state: "ok" | "nologin" | "expired" | "nokey" | "badkey" | "na" | "error"; // "error" = never fetched OK
-  windows: UsageWindow[];          // [] unless state "ok"
+  windows: UsageWindow[];          // [] unless state "ok"; always [] for a credit provider
+  balance?: UsageBalance;          // set instead of windows when state "ok" (DeepSeek only)
   error?: string;                  // last fetch failed; windows (if any) are from an earlier fetch
 }
 export interface UsageInsight {
@@ -151,7 +166,7 @@ export interface UsageInsight {
   fetchedAt: number | null;        // ms epoch
   nextFetchAt: number | null;
   stale: boolean;                  // now - fetchedAt > 10 min (no TUI pi refreshing it)
-  providers: UsageProvider[];      // fixed order: claude, openai, ollama
+  providers: UsageProvider[];      // fixed order: claude, openai, ollama, zai, deepseek
 }
 
 // GET /api/insights/agents   (all live pi processes; poll ~5s)
@@ -224,6 +239,13 @@ maps to `idle`. No extension changes required.
 As implemented (`server/insights.ts`, `server/live.ts` `readLiveRecords`):
 - Usage: a provider with `state:"ok"` but no readable window is reported as `na` (the extension
   shows "n/a"). `error` is set whenever `errors.<provider>` is, even with windows (= previous reading).
+- **DeepSeek (cache `schemaVersion` 3) has a balance, not windows.** There is no usage/quota API for
+  it — the only account data is the prepaid credit at `GET https://api.deepseek.com/user/balance` —
+  so it reports `balance` and `windows: []`: no percentage, no meter bar, no reset time, and it is
+  never in the sidebar glance (percentages only). The server takes the **first** readable entry of
+  `deepseek.balances[]` (an object with a non-empty `currency` and a finite `total`; `granted` and
+  `toppedUp` default to 0), and `available` comes from the provider's own `available !== false`.
+  `state:"ok"` with no readable balance follows the same rule as a windowed provider: `na`.
 - Agents: `totals` skip rpc-mode records (headless pis such as subagent workers; they stay in
   `sessions[]` with `mode:"rpc"`). `working`/`teamWorking`/`soloWorking` count only `fresh` records;
   `sessions`/`total`/`teams` count all. A heartbeat > 5 min in the future is treated as not fresh.
@@ -301,7 +323,8 @@ _Author: frontend. Read-only study of `src/` as of b71fa09 + the working tree._
 
 - **Usage:** per provider `state` (ok / nologin / expired / nokey / badkey / na / error+message),
   windows `{label, pct, resetsAt?}` in a uniform list (Claude's fiveHour/sevenDay/sevenDayOpus and
-  OpenAI's windows normalized to one shape is easiest to render), `fetchedAt`, and either a
+  OpenAI's windows normalized to one shape is easiest to render), a `balance` instead of windows for
+  a credit provider (DeepSeek), `fetchedAt`, and either a
   `stale` flag or a threshold. `null`/404 distinct from error = "extension not installed".
 - **Teams / subagents:** list of teams `{id, name, objective?, parentSessionPath?, members:
   [{id, role, status, model?}], updatedAt}` and a total `working` count using the same idle set as
@@ -342,7 +365,7 @@ fold-ai-dev skill v1.8.0. Nothing in `DESIGN_NOTES.md` / `src/design/` changes u
 
 | Surface | Source on disk | What we can claim | What we can't |
 |---|---|---|---|
-| Usage | `~/.pi/agent/cache/usage-status.json` | Per-provider % used per window; Claude reset times; file age (`fetchedAt`); per-provider fetch failure (`errors.X`, previous value kept) | OpenAI/Ollama reset times (not in the cache). Anything fresher than the last pi refresh (it only refreshes while some pi runs) |
+| Usage | `~/.pi/agent/cache/usage-status.json` | Per-provider % used per window; Claude reset times; DeepSeek's prepaid credit balance (and whether it can fund calls); file age (`fetchedAt`); per-provider fetch failure (`errors.X`, previous value kept) | OpenAI/Ollama reset times (not in the cache). Any percentage, quota or reset for DeepSeek — it has no usage API, only a balance. Anything fresher than the last pi refresh (it only refreshes while some pi runs) |
 | Teams | `subagents-team-v1` entries in the **parent** JSONL (roster) + the parent's live record (`sessions/live/*.json`, `presence.workers[]`) while it runs + `subagent-complete` messages | Roster (role, id, model, orchestrator); **live** status per member while the parent runs; **last reported** settle state once it doesn't | Status of an ended team beyond its last report. Workers die with the parent pi, so a team is only *active* while its parent is live |
 | Working subagents | live records' `presence.workerCounts` / `workers[]` (backend `/api/insights/agents`) | Live working/idle counts per running pi, heartbeat-fresh ≤15s; solo vs team via the JSONL join | Anything for pi processes that aren't running; a record with a stale heartbeat is "unknown", not "idle" |
 | Outline | last `topic-outline` custom entry (v2) | `now`, `overall`, topics (heading, ≤3 bullets, anchor entryId, manual), state `fresh`/`stale`/`failed-keeping-last`, `generatedAt` | — |
@@ -397,7 +420,7 @@ workers as reported too ("as of" = heartbeat time), never as working.
 .session-head   [back]  h1 "Insights"   meta "Usage updated 2m ago"          [↻ Refresh Insights]
 .insights.pane
   section  h2.insights-section-head  "Usage"
-    .insights-grid → .card per provider (Claude, OpenAI, Ollama Cloud)
+    .insights-grid → .card per provider (Claude, OpenAI, Ollama Cloud, Z.ai, DeepSeek)
        .card-head  title + (chip: Near limit / Rate-limited / Quota used / Stale)
        .card-body  .meter per window
        .card-foot? caption for provider problems
@@ -416,6 +439,8 @@ workers as reported too ("as of" = heartbeat time), never as working.
   - Label: `5-hour` · `7-day` · `7-day · Opus` · `Monthly` (Ollama) · OpenAI `pri` → `Primary`.
   - Value: `Math.round(pct)` + `%`, mono, `.meter-of` " used". No decimals (Ollama's 75.6 → 76%):
     the source rounds anyway, and a decimal implies precision we don't have.
+  - DeepSeek has no meter: one `.meter-head` row, label "Balance", value the money left, plus a
+    `.meter-context` with the non-zero granted/topped-up parts. No bar, no percentage, no reset.
   - Context (third term): Claude only — "Resets in 2h 17m" under 24h, else "Resets Sep 25";
     absolute `11:50` / ISO in `title`. OpenAI/Ollama: no context line. Never estimate a reset.
   - Fill: **`--color-ink-muted`**, not accent (deviation: pi-web's accent is reserved for
@@ -428,6 +453,7 @@ workers as reported too ("as of" = heartbeat time), never as working.
   | any ≥ 80% and < 100% | `.chip.chip-warn` "Near limit" |
   | 5h window ≥ 100% | `.chip.chip-warn` "Rate-limited" (returns on its own) |
   | 7-day / monthly ≥ 100% | `.chip.chip-error` "Quota used" (waits for the reset) |
+  | balance `available: false` (DeepSeek) | `.chip.chip-error` "Out of credit" (waits for a top-up) |
   | `errors.X` set, old value kept | neutral `.chip` "Stale" + foot caption |
 - **Provider states** (card body replaces meters with one `.text-caption` line, `.chip` in head):
   `nologin`, `expired`, `nokey`, `badkey`, `na`, fetch error with no prior value — copy below.
@@ -435,7 +461,7 @@ workers as reported too ("as of" = heartbeat time), never as working.
   3 min). Head meta always says "Usage updated {rel}". Past 5 min, a `.banner.banner-warn` sits
   above the grid; meters still render (last known is better than nothing, and it says so).
 - **File missing** → one `.empty`-style card in the section, no meters (unavailable, not error).
-- Skeleton: one `.skeleton` card-shaped block per provider (3) after 300ms.
+- Skeleton: one `.skeleton` card-shaped block per provider (5) after 300ms.
 
 #### Team cards
 

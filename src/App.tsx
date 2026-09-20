@@ -13,8 +13,7 @@ import { AgentsView } from "./components/AgentsView";
 import { ContextGauge, ContextMetaPrefix, contextDescribedBy } from "./components/ContextGauge";
 import { ModeMenu, type ModeControl } from "./components/ModeMenu";
 import { NewSessionDialog } from "./components/NewSessionDialog";
-import { ExplainStrip } from "./components/ExplainStrip";
-import { OutlineStrip } from "./components/OutlineStrip";
+import { InsightStrip } from "./components/InsightStrip";
 import { SubagentPane } from "./components/SubagentPane";
 import { sessionHref, Sidebar } from "./components/Sidebar";
 import { UsageView } from "./components/UsageView";
@@ -53,6 +52,8 @@ const sameSummary = (a: SessionSummary, b: SessionSummary) =>
   a.title === b.title &&
   a.lastActiveAt === b.lastActiveAt &&
   a.model === b.model &&
+  a.outlineNow === b.outlineNow &&
+  a.outlineAt === b.outlineAt &&
   a.live?.pid === b.live?.pid &&
   a.live?.status === b.live?.status &&
   a.live?.workers?.working === b.live?.workers?.working &&
@@ -421,15 +422,14 @@ export function App() {
                       </Show>
                       <Show when={s().live}>
                         <Chip tone="accent" live title={`Open in pi in a terminal · pid ${s().live!.pid} · ${s().live!.status}`}>
-                          Live
+                          TUI
                         </Chip>
                       </Show>
                       <Show when={s().origin === "web"}>
                         <ArchiveButton session={s()} onChanged={refresh} />
                       </Show>
                     </header>
-                    <Show when={insight.data?.outline}>{(o) => <OutlineStrip path={d.path} outline={o()} now={now()} />}</Show>
-                    <ExplainStrip explanations={insight.data?.explanations} now={now()} />
+                    <InsightStrip path={d.path} outline={insight.data?.outline ?? null} explanations={insight.data?.explanations} now={now()} />
 
                     <Switch>
                       <Match when={d.mode === "watch" && d}>

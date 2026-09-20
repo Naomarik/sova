@@ -254,8 +254,8 @@ i.icon {
 .chip {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-1) var(--space-3);
+  gap: var(--space-1);
+  padding: 1px var(--space-2);
   border: var(--stroke-thin) solid var(--color-border);
   border-radius: var(--r-full);
   background: var(--color-surface);
@@ -264,13 +264,13 @@ i.icon {
   font-size: var(--fs-micro);
   letter-spacing: .05em;
   text-transform: uppercase;
-  line-height: 1.6;
+  line-height: 1.2;
   white-space: nowrap;
   flex: none;
 }
 .chip-dot {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
   border-radius: var(--r-full);
   background: currentColor;
   flex: none;
@@ -488,6 +488,15 @@ button.list-row { width: 100%; border: 0; background: none; text-align: left; }
 .list-meta {
   font-size: var(--fs-caption);
   color: var(--color-ink-muted);
+  margin: 2px 0 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.list-summary {
+  font-size: var(--fs-micro);
+  line-height: var(--lh-micro);
+  color: var(--color-ink-2);
   margin: 2px 0 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -719,7 +728,7 @@ button.list-row { width: 100%; border: 0; background: none; text-align: left; }
 }
 
 .sidebar-list { flex: 1; }            /* compose with .pane */
-.session-group + .session-group { border-top: var(--stroke-thin) solid var(--color-border); }
+.session-group + .session-group { border-top: var(--stroke-thin) solid var(--color-border); margin-top: var(--space-4); }
 /* Sticky and ellipsized by §List groups; the whole head is a path here, so the casing
    comes off the head itself rather than off one name inside it. */
 .session-group .list-group-label {
@@ -1090,11 +1099,68 @@ summary.sidebar-region-head .icon-twist { transition: transform var(--dur-fast) 
   font-size: var(--fs-caption);
   color: var(--color-ink-muted);
 }
-.composer-reason { display: inline-flex; align-items: center; gap: var(--space-2); color: var(--color-ink-2); }
-.composer-hint { margin-left: auto; }
+.composer-reason { display: inline-flex; align-items: center; gap: var(--space-2); min-width: 0; color: var(--color-ink-2); }
+.composer-hint { margin-left: auto; padding-left: var(--space-2); flex: none; }
 @media (max-width: 767px) {
   .composer-hint { display: none; }   /* no Enter-to-send hint on touch-first width */
 }
+
+/* The model indicator (§4): this session's model and thinking level, and the
+   flyout's second trigger. First in the foot, and it stays at every width —
+   the hint goes under 768px, this doesn't. The id is the one part that
+   shrinks, so a long ref ellipsizes instead of pushing the hint out. */
+
+.composer-model {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 0 1 auto;
+  min-width: 0;
+  min-height: var(--control-sm);
+  margin: 0 0 0 calc(var(--space-2) * -1);
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--color-ink-muted);
+  font: inherit;
+  font-size: var(--fs-caption);
+  white-space: nowrap;
+  cursor: pointer;
+}
+/* The 44px target the caption row is too short to hold on its own. */
+.composer-model::after {
+  content: "";
+  position: absolute;
+  inset: calc((var(--tap-min) - var(--control-sm)) / -2) 0;
+}
+.composer-model-id {
+  min-width: 0;
+  max-width: 24ch;
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono);
+  color: var(--color-ink-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.composer-model-meta { max-width: 12ch; overflow: hidden; text-overflow: ellipsis; }
+.composer-model-sep,
+.composer-model-level { flex: none; }
+.composer-model-caret { flex: none; color: var(--color-ink-muted); transform: rotate(180deg); }
+.composer-model .live-dot { flex: none; }
+.composer-model:hover,
+.composer-model[aria-expanded="true"] { background: var(--color-sunken); color: var(--color-ink); }
+.composer-model:hover .composer-model-id,
+.composer-model[aria-expanded="true"] .composer-model-id { color: var(--color-ink); }
+.composer-model:hover .composer-model-caret,
+.composer-model[aria-expanded="true"] .composer-model-caret { color: inherit; }
+.composer-model:active { transform: translateY(1px); }
+.composer-model:focus-visible { outline: var(--focus-ring); outline-offset: 0; }
+.composer-model[aria-disabled="true"] { cursor: not-allowed; }
+.composer-model[aria-disabled="true"]:hover { background: transparent; color: var(--color-ink-muted); }
+.composer-model[aria-disabled="true"]:hover .composer-model-id { color: var(--color-ink-2); }
+.composer-model[aria-disabled="true"]:active { transform: none; }
 
 
 /* ---- COMPOSER: narrow width. Below 480px of the composer, Send / Steer /
@@ -2326,20 +2392,19 @@ a.chip { text-decoration: none; }
 a.chip:hover { color: var(--color-ink); border-color: var(--color-border-strong); }
 
 
-/* ---- OUTLINE STRIP. topic-outline under .session-head: closed shows the
-   "now" line; open shows overall + topics; a topic opens to its bullets.
-   The strips under a session head share one row: .outline is a <details>
-   that twists open, .explain-strip is a <button> that opens a dialog and so
-   never twists. Same grammar, different verb. --------------------------- */
+/* ---- OUTLINE STRIP. One disclosure row under .session-head carrying both
+   kinds of insight: closed it shows the "now" line and the counts; open it
+   shows overall + topics, and — when the session has /explain artifacts — a
+   ghost button at the top of the body that opens the gallery dialog. The
+   dialog lives inside the row, so the row's chevron still only means
+   disclosure. ----------------------------------------------------------- */
 
-.outline,
-.explain-strip {
+.outline {
   flex: none;
   background: var(--color-surface);
   border-bottom: var(--stroke-thin) solid var(--color-border);
 }
-.outline-summary,
-.explain-strip-summary {
+.outline-summary {
   display: flex;
   align-items: center;
   gap: var(--space-2);
@@ -2350,34 +2415,26 @@ a.chip:hover { color: var(--color-ink); border-color: var(--color-border-strong)
   cursor: pointer;
   transition: background-color var(--dur-fast) var(--ease-standard);
 }
-/* The button form of the row undoes the UA's button box; the <summary> form drops its
-   marker, both ways a UA draws one. */
-.explain-strip-summary { width: 100%; border: 0; background: none; text-align: left; }
+/* Drop the <summary> marker, both ways a UA draws one. */
 .outline-summary { list-style: none; }
 .outline-summary::-webkit-details-marker { display: none; }
-.outline-summary:hover,
-.explain-strip-summary:hover { background: var(--color-sunken); }
-.outline-summary:focus-visible,
-.explain-strip-summary:focus-visible { outline-offset: calc(var(--focus-offset) * -1); border-radius: 0; }
-.outline-summary > .icon,
-.explain-strip-summary > .icon { flex: none; }
+.outline-summary:hover { background: var(--color-sunken); }
+.outline-summary:focus-visible { outline-offset: calc(var(--focus-offset) * -1); border-radius: 0; }
+.outline-summary > .icon { flex: none; }
 .outline-summary .icon-twist,
 .outline-topic-summary .icon-twist { flex: none; transition: transform var(--dur-fast) var(--ease-standard); }
 .outline[open] > .outline-summary .icon-twist,
 .outline-topic[open] > .outline-topic-summary .icon-twist { transform: rotate(90deg); }
-.outline-label,
-.explain-strip-label { flex: none; font-weight: var(--fw-medium); color: var(--color-ink-2); }
+.outline-label { flex: none; font-weight: var(--fw-medium); color: var(--color-ink-2); }
 /* The one line the row is about: it takes the room and ellipsizes. */
-.outline-now,
-.explain-strip-topic {
+.outline-now {
   flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.outline-count,
-.explain-strip-count { flex: none; font-variant-numeric: tabular-nums; }
+.outline-count { flex: none; font-variant-numeric: tabular-nums; }
 .outline-body {
   max-height: var(--outline-max);
   overflow-y: auto;
@@ -2388,6 +2445,8 @@ a.chip:hover { color: var(--color-ink); border-color: var(--color-border-strong)
 @media (max-width: 767px) { .outline-body { max-height: 50vh; } }
 .outline-overall { margin: var(--space-2) 0 var(--space-1); max-width: var(--measure); color: var(--color-ink); }
 .outline-state { margin: 0 0 var(--space-2); font-size: var(--fs-caption); color: var(--color-ink-muted); }
+/* First thing in the open body, on the body's own top rhythm. */
+.outline-explained-open { margin: var(--space-2) 0 var(--space-2); }
 .outline-topics { margin: 0; padding: 0; list-style: none; max-width: var(--measure); }
 .outline-topics > li + li { border-top: var(--stroke-thin) solid var(--color-border); }
 .outline-topic-summary {

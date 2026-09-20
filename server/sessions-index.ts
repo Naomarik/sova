@@ -15,12 +15,19 @@ const CHUNK = 16 * 1024;
 const MAX_HEAD = 256 * 1024;
 const MAX_TAIL = 256 * 1024;
 const TITLE_MAX = 80;
+const SUMMARY_MAX = 200;
 
 const cache = new Map<string, { mtimeMs: number; size: number; summary: BaseSummary }>();
 
 function oneLine(s: string): string {
   const t = s.replace(/\s+/g, " ").trim();
   return t.length > TITLE_MAX ? `${t.slice(0, TITLE_MAX - 1)}…` : t;
+}
+
+/** The outline's "now" line, whitespace-collapsed and capped for the sidebar's summary row. */
+function summaryLine(s: string): string {
+  const t = s.replace(/\s+/g, " ").trim();
+  return t.length > SUMMARY_MAX ? `${t.slice(0, SUMMARY_MAX - 1)}…` : t;
 }
 
 function userText(content: unknown): string {
@@ -87,6 +94,59 @@ async function readTailModel(path: string, size: number): Promise<string | null>
           try {
             const m = modelOf(JSON.parse(line.toString("utf-8")));
             if (m) return m;
+          } catch {
+            // torn trailing line or not JSON: skip
+          }
+        }
+        if (i < 0) return null;
+        stop = i;
+      }
+      carry = buf.subarray(0, stop);
+    }
+    return null;
+  } finally {
+    await fh.close();
+  }
+}
+
+/**
+ * The topic-outline's latest snapshot, scanned backwards from EOF exactly like readTailModel:
+ * the last `topic-outline` custom entry's rolling "now" line, and when it was generated. This
+ * is the sidebar's summary row; the live record's broadcast may be newer (outlineOverlay).
+ * null when the window has none (topic-outline off, older sessions, or a very long tail).
+ */
+async function readTailOutline(path: string, size: number): Promise<{ now: string; generatedAt: number } | null> {
+  const fh = await open(path, "r");
+  try {
+    const floor = Math.max(0, size - MAX_TAIL);
+    let end = size;
+    let carry = Buffer.alloc(0); // bytes after the first newline seen so far: a line's start is still unread
+    while (end > floor) {
+      const start = Math.max(floor, end - CHUNK);
+      const chunk = Buffer.alloc(end - start);
+      const { bytesRead } = await fh.read(chunk, 0, chunk.length, start);
+      if (bytesRead < chunk.length) return null; // truncated under us: the next request retries
+      end = start;
+      const buf = carry.length ? Buffer.concat([chunk, carry]) : chunk;
+      // Complete lines are those after a newline in this buffer (or all of it at BOF).
+      let stop = buf.length;
+      for (;;) {
+        const i = stop > 0 ? buf.lastIndexOf(NL, stop - 1) : -1;
+        if (i < 0 && start > 0) break; // line start not read yet: carry it into the next chunk
+        const line = buf.subarray(i + 1, stop);
+        if (line.includes('"topic-outline"')) {
+          try {
+            const e = JSON.parse(line.toString("utf-8"));
+            const data = e?.type === "custom" && e?.customType === "topic-outline" ? e.data : null;
+            if (data && typeof data.now === "string") {
+              const now = summaryLine(data.now);
+              // An empty "now" (drafting/none) is no summary: keep scanning for one that reads.
+              if (now)
+                return {
+                  now,
+                  generatedAt: typeof data.generatedAt === "number" && Number.isFinite(data.generatedAt) ? data.generatedAt : 0,
+                };
+            }
           } catch {
             // torn trailing line or not JSON: skip
           }
@@ -209,6 +269,7 @@ async function summarize(path: string): Promise<BaseSummary | null> {
     if (!head || typeof head.header.id !== "string") return null;
     const h = head.header;
     const model = (await readTailModel(path, st.size)) ?? head.model;
+    const outline = await readTailOutline(path, st.size);
     const summary: BaseSummary = {
       id: h.id,
       path,
@@ -217,6 +278,7 @@ async function summarize(path: string): Promise<BaseSummary | null> {
       createdAt: typeof h.timestamp === "string" ? h.timestamp : new Date(st.birthtimeMs || st.mtimeMs).toISOString(),
       lastActiveAt: new Date(st.mtimeMs).toISOString(),
       model,
+      ...(outline ? { outlineNow: outline.now, outlineAt: outline.generatedAt } : {}),
     };
     cache.set(path, { mtimeMs: st.mtimeMs, size: st.size, summary });
     return summary;
@@ -227,6 +289,20 @@ async function summarize(path: string): Promise<BaseSummary | null> {
 
 function liveField(l: LiveRecord | undefined): SessionSummary["live"] {
   return l ? { pid: l.pid, status: l.status, ...(l.workers ? { workers: l.workers } : {}) } : null;
+}
+
+/** The live record's outline broadcast can be newer than the file's last `topic-outline` entry
+ *  (insights' overlayOutline, reduced to the summary line): prefer it when it's at least as new. */
+function outlineOverlay(s: BaseSummary, l: LiveRecord | undefined): { outlineNow?: string; outlineAt?: number } {
+  const outline = l?.outline;
+  if (!outline || typeof outline !== "object") return {};
+  const o = outline as { now?: unknown; generatedAt?: unknown };
+  if (typeof o.now !== "string" || !o.now.trim()) return {};
+  const at = typeof o.generatedAt === "number" && Number.isFinite(o.generatedAt) ? o.generatedAt : 0;
+  if (s.outlineAt !== undefined && at < s.outlineAt) return {};
+  const now = summaryLine(o.now);
+  if (!now) return {};
+  return { outlineNow: now, outlineAt: Math.max(at, s.outlineAt ?? 0) };
 }
 
 /** All sessions, newest activity first, with fresh live presence merged in. */
@@ -252,6 +328,7 @@ export async function listSessions(): Promise<SessionSummary[]> {
     const ownRec = own.get(s.path);
     out.push({
       ...s,
+      ...outlineOverlay(s, l),
       live: liveField(l),
       workers: l?.workers ?? (ownRec ? workerCountsOf(ownRec.rec) : undefined),
       origin: isWebSession(s.id) ? "web" : "external",
@@ -270,6 +347,7 @@ export async function getSessionSummary(path: string): Promise<SessionSummary | 
   const ownRec = readOwnLiveRecords().get(path);
   return {
     ...s,
+    ...outlineOverlay(s, l),
     live: liveField(l),
     workers: l?.workers ?? (ownRec ? workerCountsOf(ownRec.rec) : undefined),
     origin: isWebSession(s.id) ? "web" : "external",

@@ -241,6 +241,10 @@ let shuttingDown = false;
 async function shutdown() {
   if (shuttingDown) process.exit(1);
   shuttingDown = true;
+  // Hosted subagent workers (PI_WORKER_TRANSPORT=host) outlive this process: the
+  // subagents extension's session_shutdown detaches them instead of killing them.
+  // No-op for the default inline transport. See pi-config/extensions/subagents/hosting.ts.
+  (globalThis as Record<symbol, unknown>)[Symbol.for("pi-web:detach-workers")] = true;
   await Promise.race([disposeAllChats(), new Promise((r) => setTimeout(r, 3000))]);
   process.exit(0);
 }

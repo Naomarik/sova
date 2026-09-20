@@ -64,6 +64,13 @@ export function shortModel(model: string | null | undefined): string | null {
   return i >= 0 ? model.slice(i + 1) : model;
 }
 
+/** The provider a model ref names: "anthropic/claude-opus-5" → "anthropic"; "" when it has none. */
+export function modelProvider(model: string | null | undefined): string {
+  if (!model) return "";
+  const i = model.indexOf("/");
+  return i > 0 ? model.slice(0, i) : "";
+}
+
 /**
  * A model id for a meta line, where the width belongs to the numbers beside it: no provider, no
  * dated build, a dotted version, and the context variant spelled out.

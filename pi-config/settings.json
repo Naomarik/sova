@@ -1,5 +1,5 @@
 {
-  "lastChangelogVersion": "0.86.0",
+  "lastChangelogVersion": "0.86.1",
   "defaultProvider": "ollama-cloud",
   "defaultModel": "deepseek-v4.1-flash",
   "defaultThinkingLevel": "medium",

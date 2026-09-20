@@ -16,6 +16,12 @@ export interface SessionSummary {
   /** Latest "provider/model": the model_change or assistant message closest to the end of the
       file (last 256KB), else the first one in the head, else null. */
   model: string | null;
+  /** The topic-outline's rolling "now" line — the session's latest summary snapshot, from the
+      last `topic-outline` entry in the file, overlaid by the live record's fresher broadcast.
+      Absent when the session has none (topic-outline off, older sessions). */
+  outlineNow?: string;
+  /** When that outline snapshot was generated (ms epoch); 0 when unknown. */
+  outlineAt?: number;
   /** Non-null when the session is currently open in a TUI (from ~/.pi/agent/sessions/live/*.json). */
   live: {
     pid: number;
@@ -352,10 +358,16 @@ export interface UsageWindow { label: string; pct: number; resetsAt?: string; /*
   used?: number; limit?: number; /** Model-family scope when the window only covers a subset (e.g. Claude's "7d scoped" Fable window). */
   scope?: string; /** Provider-flagged binding constraint (currently active limit). */
   active?: boolean }
+/** Prepaid credit balance, for a provider that reports money left instead of usage windows (DeepSeek). */
+export interface UsageBalance { currency: string; total: number; granted: number; toppedUp: number; available: boolean }
 export interface UsageProvider {
-  id: "claude" | "openai" | "ollama" | "zai";
+  id: "claude" | "openai" | "ollama" | "zai" | "deepseek";
   state: "ok" | "nologin" | "expired" | "nokey" | "badkey" | "na" | "error";
   windows: UsageWindow[];
+  /** Present instead of `windows` for a credit provider (DeepSeek has no usage API, only a
+      balance): no percentages and no reset times. `available: false` means the provider says
+      calls are not fundable. */
+  balance?: UsageBalance;
   error?: string;
 }
 export interface UsageInsight {
@@ -364,7 +376,7 @@ export interface UsageInsight {
   fetchedAt: number | null;
   nextFetchAt: number | null;
   stale: boolean; // now - fetchedAt > 10 min (no TUI pi refreshing the cache)
-  providers: UsageProvider[]; // fixed order: claude, openai, ollama, zai
+  providers: UsageProvider[]; // fixed order: claude, openai, ollama, zai, deepseek
 }
 
 export type WorkerStatus = "starting" | "running" | "waiting" | "stopping" | "done" | "error" | "killed";
@@ -377,6 +389,10 @@ export interface TokenUsageTotal extends TokenUsage { workers: number }
 export interface WorkerInfo {
   id: string; name: string; status: WorkerStatus; working: boolean;
   model?: string; backend?: string; preview?: string;
+  /** This worker's thinking/effort level as it was spawned with (pi: explicit or the parent's
+      level then; claude-code: its effort, or absent for the backend default). Absent when the
+      writer didn't publish it (older pi-config). */
+  effort?: string;
   startedAt?: number; lastActivity?: number; endedAt?: number;
   outcome?: "success" | "error" | "aborted";
   teamId?: string;

@@ -1,4 +1,5 @@
-import { createMemo, createSignal, Index, onCleanup, Show, type Accessor } from "solid-js";
+import { createMemo, createSignal, Index, Match, onCleanup, onMount, Show, Switch, type Accessor } from "solid-js";
+import { modelProvider, shortModel } from "../lib/format";
 import { ensureModels, thinkingLevelsFor } from "../lib/models";
 import { ModelPicker, type ModelControl } from "./ModelMenu";
 import { Icon, type IconName } from "./ui";
@@ -14,8 +15,21 @@ export interface ThinkingControl {
   choose(level: string): void;
 }
 
-const idOf = (ref: string) => ref.slice(ref.indexOf("/") + 1);
-const providerOf = (ref: string) => ref.slice(0, Math.max(0, ref.indexOf("/")));
+/** The flyout's three panels: the "+" button's root menu, the indicator's model panel, and the
+    §4c picker the model panel opens. */
+export type FlyoutPanel = "menu" | "model" | "picker";
+
+/** What the composer gets on mount so a second trigger — the model indicator (§4) — can open
+    this one popover, anchored above itself. */
+export interface ComposerMenuApi {
+  /** Shows the flyout on `panel`, anchored above `anchor` (the "+" trigger when it's omitted). */
+  show(panel?: FlyoutPanel, anchor?: HTMLElement): void;
+  close(): void;
+  /** The popover is open right now — a caller's `aria-expanded`. */
+  open: Accessor<boolean>;
+  /** The element it's anchored to while open, so a second trigger knows the flyout is its own. */
+  anchor: Accessor<HTMLElement | null>;
+}
 
 /** One row of the root panel. Rendering order is this array's order, separators included. */
 interface Row {
@@ -39,10 +53,11 @@ interface Row {
 }
 
 /**
- * The composer's flyout (DESIGN_NOTES §4b): one ghost `plus` button opening a native popover
- * anchored ABOVE it, in the model menu's visual family. Root panel: Attach images, Commands,
- * the Model row, this model's Thinking ladder, and Session info. The Model row swaps in the
- * §4c picker as a second panel, with a way back. Ctrl/⌘+P opens it straight on that panel.
+ * The composer's flyout (DESIGN_NOTES §4b): one native popover anchored ABOVE whatever opened
+ * it, in the model menu's visual family, with three panels. The ghost `plus` button opens the
+ * **menu** panel (Attach images, Commands, Session info); the composer's model indicator (§4)
+ * opens the **model** panel (the Model row and this model's Thinking ladder); the Model row
+ * opens the §4c **picker**, which comes back to the model panel. Ctrl/⌘+P opens the picker.
  */
 export function ComposerMenu(props: {
   /** The composer is disabled (TUI-live, connecting, reconnecting): nothing here acts. */
@@ -61,6 +76,8 @@ export function ComposerMenu(props: {
   onShowInfo?: () => void;
   /** Puts focus back in the textarea after a choice. */
   onRefocus(): void;
+  /** Called once on mount with the handle the composer's model indicator opens this menu by. */
+  onApi?: (api: ComposerMenuApi) => void;
 }) {
   let trigger!: HTMLButtonElement;
   let menu!: HTMLDivElement;
@@ -68,14 +85,17 @@ export function ComposerMenu(props: {
   let tabbedAway = false;
 
   const [open, setOpen] = createSignal(false);
-  const [panel, setPanel] = createSignal<"root" | "model">("root");
+  /** The element the popover is measured from: the "+" trigger, or whatever opened it. */
+  const [anchor, setAnchor] = createSignal<HTMLElement | null>(null);
+  const [panel, setPanel] = createSignal<FlyoutPanel>("menu");
   const [active, setActive] = createSignal(0);
 
   const levels = createMemo(() => (props.thinking ? thinkingLevelsFor(props.model?.model()) : []));
   /** One level is no choice, and an unknown model has no ladder to show yet. */
   const showThinking = () => levels().length > 1;
 
-  const rows = createMemo<Row[]>(() => {
+  /** The "+" panel: what you do to the session that isn't choosing a model. */
+  const menuRows = createMemo<Row[]>(() => {
     const out: Row[] = [];
     out.push({
       id: "attach",
@@ -102,46 +122,6 @@ export function ComposerMenu(props: {
         props.onCommands();
       },
     });
-
-    const model = props.model;
-    if (model) {
-      const pending = model.pending();
-      const ref = pending ?? model.model();
-      out.push({
-        id: "model",
-        role: "menuitem",
-        icon: "worker",
-        label: "Model",
-        value: ref ? idOf(ref) : "Choose model",
-        meta: ref ? providerOf(ref) : undefined,
-        chevron: true,
-        busy: !!pending,
-        disabled: !!pending,
-        title: pending ?? model.model() ?? "Choose model",
-        run: () => openPanel("model"),
-      });
-
-      const thinking = props.thinking;
-      if (thinking && showThinking()) {
-        const why = thinking.blocked();
-        const pendingLevel = thinking.pending();
-        for (const level of levels())
-          out.push({
-            id: `thinking-${level}`,
-            role: "menuitemradio",
-            label: level,
-            checked: level === (thinking.level() ?? ""),
-            busy: level === pendingLevel,
-            disabled: !!why || !!pendingLevel,
-            title: why ?? undefined,
-            run: () => {
-              if (why || pendingLevel || level === thinking.level()) return;
-              thinking.choose(level); // the radio follows the server's echo, which may clamp it
-            },
-          });
-      }
-    }
-
     if (props.onShowInfo)
       out.push({
         id: "info",
@@ -157,6 +137,52 @@ export function ComposerMenu(props: {
     return out;
   });
 
+  /** The indicator's panel: what the composer's model indicator says, and how to change it. */
+  const modelRows = createMemo<Row[]>(() => {
+    const out: Row[] = [];
+    const model = props.model;
+    if (!model) return out;
+    const pending = model.pending();
+    const ref = pending ?? model.model();
+    out.push({
+      id: "model",
+      role: "menuitem",
+      icon: "worker",
+      label: "Model",
+      value: shortModel(ref) ?? "Choose model",
+      meta: ref ? modelProvider(ref) || undefined : undefined,
+      chevron: true,
+      busy: !!pending,
+      disabled: !!pending,
+      title: pending ?? model.model() ?? "Choose model",
+      run: () => openPanel("picker"),
+    });
+
+    const thinking = props.thinking;
+    if (thinking && showThinking()) {
+      const why = thinking.blocked();
+      const pendingLevel = thinking.pending();
+      for (const level of levels())
+        out.push({
+          id: `thinking-${level}`,
+          role: "menuitemradio",
+          label: level,
+          checked: level === (thinking.level() ?? ""),
+          busy: level === pendingLevel,
+          disabled: !!why || !!pendingLevel,
+          title: why ?? undefined,
+          run: () => {
+            if (why || pendingLevel || level === thinking.level()) return;
+            thinking.choose(level); // the radio follows the server's echo, which may clamp it
+          },
+        });
+    }
+    return out;
+  });
+
+  /** The panel in front, which is the only list rendered — and so the keyboard's whole order. */
+  const rows = createMemo<Row[]>(() => (panel() === "model" ? modelRows() : menuRows()));
+
   /** Rows of one section, each with its index in `rows()` — the keyboard's order. */
   const pick = (keep: (r: Row) => boolean) => rows().map((r, index) => ({ r, index })).filter((x) => keep(x.r));
 
@@ -165,16 +191,21 @@ export function ComposerMenu(props: {
     queueMicrotask(() => menu.querySelectorAll<HTMLElement>(".composer-flyout-list [role^=menuitem]")[i]?.focus());
   };
 
-  /** Anchors the popover ABOVE the trigger: the composer sits at the bottom of the pane. */
+  /** Anchors the popover ABOVE its trigger: the composer sits at the bottom of the pane. */
   const place = () => {
-    const r = trigger.getBoundingClientRect();
-    if (trigger.offsetParent === null || (r.width === 0 && r.height === 0)) return false;
+    const from = anchor() ?? trigger;
+    const r = from.getBoundingClientRect();
+    if (from.offsetParent === null || (r.width === 0 && r.height === 0)) return false;
     menu.style.setProperty("--menu-bottom", `${Math.round(innerHeight - r.top + 4)}px`);
     menu.style.setProperty("--menu-left", `${Math.round(r.left)}px`);
     return true;
   };
 
-  const openMenu = (to: "root" | "model" = "root") => {
+  /** Opening focuses the first row that can act; the picker takes its own focus. */
+  const focusFirst = () => focusItem(Math.max(0, rows().findIndex((r) => !r.disabled)));
+
+  const openMenu = (to: FlyoutPanel = "menu", from?: HTMLElement) => {
+    setAnchor(from ?? trigger);
     place();
     closedByChoice = false;
     tabbedAway = false;
@@ -182,28 +213,34 @@ export function ComposerMenu(props: {
     if (!menu.matches(":popover-open")) menu.showPopover();
     setPanel(to);
     void ensureModels().catch(() => {}); // the Thinking ladder needs the list; the picker reports its own failure
-    if (to === "root") {
-      const at = rows().findIndex((r) => !r.disabled);
-      focusItem(Math.max(0, at));
-    }
+    if (to !== "picker") focusFirst();
   };
   const close = (byChoice = false) => {
     closedByChoice = byChoice;
     if (menu.matches(":popover-open")) menu.hidePopover();
   };
-  const openPanel = (to: "root" | "model") => {
+  const openPanel = (to: FlyoutPanel) => {
     place();
     setPanel(to);
-    if (to === "root") focusItem(rows().findIndex((r) => r.id === "model"));
+    if (to !== "picker") focusFirst();
   };
 
-  // Ctrl/⌘+P opens the flyout on the model panel while a chat session is open, instead of printing.
+  onMount(() =>
+    props.onApi?.({
+      show: (to = "menu", from) => openMenu(to, from),
+      close: () => close(),
+      open,
+      anchor,
+    }),
+  );
+
+  // Ctrl/⌘+P opens the flyout straight on the picker while a chat session is open, not print.
   const onKey = (e: KeyboardEvent) => {
     if (!props.model) return;
     if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "p") {
       e.preventDefault();
-      if (open() && panel() === "model") close();
-      else openMenu("model");
+      if (open() && panel() === "picker") close();
+      else openMenu("picker");
     }
   };
   // A resize (a phone's keyboard opening included) only re-anchors it; it closes only when the
@@ -284,9 +321,9 @@ export function ComposerMenu(props: {
         aria-label="More Actions"
         title="More Actions"
         aria-haspopup="menu"
-        aria-expanded={open() ? "true" : "false"}
+        aria-expanded={open() && anchor() === trigger ? "true" : "false"}
         aria-controls="composer-flyout"
-        onClick={() => (open() ? close() : openMenu())}
+        onClick={() => (open() ? close() : openMenu("menu"))}
       >
         <Icon name="plus" />
       </button>
@@ -300,20 +337,21 @@ export function ComposerMenu(props: {
           const isOpen = (e as ToggleEvent).newState === "open";
           setOpen(isOpen);
           if (isOpen) return;
-          setPanel("root"); // the panel, like the query, doesn't survive a close
-          if (!closedByChoice && !tabbedAway) trigger.focus();
+          setPanel("menu"); // the panel, like the query, doesn't survive a close
+          const from = anchor() ?? trigger;
+          setAnchor(null);
+          if (!closedByChoice && !tabbedAway) from.focus();
         }}
         onFocusOut={(e) => {
           const to = e.relatedTarget as Node | null;
-          if (to && !menu.contains(to) && to !== trigger) {
+          if (to && !menu.contains(to) && to !== trigger && to !== anchor()) {
             tabbedAway = true;
             close();
           }
         }}
       >
-        <Show
-          when={panel() === "root"}
-          fallback={
+        <Switch>
+          <Match when={panel() === "picker"}>
             <Show when={props.model}>
               {(control) => (
                 <ModelPicker
@@ -325,38 +363,41 @@ export function ComposerMenu(props: {
                   }}
                   head={
                     <div class="composer-flyout-head">
-                      <button type="button" class="button button-sm button-ghost composer-flyout-back" onClick={() => openPanel("root")}>
+                      <button type="button" class="button button-sm button-ghost composer-flyout-back" onClick={() => openPanel("model")}>
                         <Icon name="chevron-left" small />
-                        Back to Menu
+                        Back
                       </button>
                     </div>
                   }
                 />
               )}
             </Show>
-          }
-        >
-          <div class="model-menu-list composer-flyout-list" role="menu" aria-label="More actions" onKeyDown={onListKeyDown}>
-            <Index each={pick((r) => r.id === "attach" || r.id === "commands")}>{(x) => <Item r={x().r} index={x().index} />}</Index>
-            <Show when={pick((r) => r.id === "model").length > 0}>
-              <div class="composer-flyout-sep" role="separator" />
+          </Match>
+          {/* The indicator's panel: this session's model, and the ladder that model allows. */}
+          <Match when={panel() === "model"}>
+            <div class="model-menu-list composer-flyout-list" role="menu" aria-label="Model and thinking" onKeyDown={onListKeyDown}>
               <Index each={pick((r) => r.id === "model")}>{(x) => <Item r={x().r} index={x().index} />}</Index>
-            </Show>
-            <Show when={pick((r) => r.role === "menuitemradio").length > 0}>
-              <div class="composer-flyout-sep" role="separator" />
-              <div class="model-menu-group" role="group" aria-labelledby="composer-flyout-thinking">
-                <div class="list-group-label" id="composer-flyout-thinking">
-                  Thinking
+              <Show when={pick((r) => r.role === "menuitemradio").length > 0}>
+                <div class="composer-flyout-sep" role="separator" />
+                <div class="model-menu-group" role="group" aria-labelledby="composer-flyout-thinking">
+                  <div class="list-group-label" id="composer-flyout-thinking">
+                    Thinking
+                  </div>
+                  <Index each={pick((r) => r.role === "menuitemradio")}>{(x) => <Item r={x().r} index={x().index} />}</Index>
                 </div>
-                <Index each={pick((r) => r.role === "menuitemradio")}>{(x) => <Item r={x().r} index={x().index} />}</Index>
-              </div>
-            </Show>
-            <Show when={pick((r) => r.id === "info").length > 0}>
-              <div class="composer-flyout-sep" role="separator" />
-              <Index each={pick((r) => r.id === "info")}>{(x) => <Item r={x().r} index={x().index} />}</Index>
-            </Show>
-          </div>
-        </Show>
+              </Show>
+            </div>
+          </Match>
+          <Match when={panel() === "menu"}>
+            <div class="model-menu-list composer-flyout-list" role="menu" aria-label="More actions" onKeyDown={onListKeyDown}>
+              <Index each={pick((r) => r.id === "attach" || r.id === "commands")}>{(x) => <Item r={x().r} index={x().index} />}</Index>
+              <Show when={pick((r) => r.id === "info").length > 0}>
+                <div class="composer-flyout-sep" role="separator" />
+                <Index each={pick((r) => r.id === "info")}>{(x) => <Item r={x().r} index={x().index} />}</Index>
+              </Show>
+            </div>
+          </Match>
+        </Switch>
       </div>
     </>
   );

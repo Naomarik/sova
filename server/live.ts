@@ -8,6 +8,8 @@ export interface LiveRecord {
   mode: string | null;
   /** From presence.workerCounts (sessions extension schema v2); absent for older writers. */
   workers?: { working: number; total: number };
+  /** The presence outline broadcast (topic-outline), untrusted JSON: { now, generatedAt, … }. */
+  outline?: unknown;
 }
 
 /** A parsed live file whose pid is alive. `rec` is untrusted JSON: consumers parse defensively. */
@@ -103,6 +105,7 @@ export function readLive(): Map<string, LiveRecord> {
       status: String(rec.presence?.status ?? s.status ?? "unknown"),
       mode: typeof s.mode === "string" ? s.mode : null,
       ...(working !== null && total !== null ? { workers: { working, total } } : {}),
+      ...(rec.presence?.outline !== undefined ? { outline: rec.presence.outline } : {}),
     });
   }
   return out;

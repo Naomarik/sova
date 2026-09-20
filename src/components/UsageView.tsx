@@ -1,7 +1,7 @@
 import { For, Match, Show, Switch } from "solid-js";
-import type { UsageInsight, UsageProvider, UsageWindow } from "../../shared/protocol";
+import type { UsageBalance, UsageInsight, UsageProvider, UsageWindow } from "../../shared/protocol";
 import { clockTime, duration, relativeTime, shortDate, thousands } from "../lib/format";
-import { meterTone, pct, PROVIDER_NAME, providerChip, providerProblem, windowLabel } from "../lib/insights";
+import { meterTone, money, pct, PROVIDER_NAME, providerChip, providerProblem, windowLabel } from "../lib/insights";
 import type { Poll } from "../lib/poll";
 import { InsightsPage, iso, Skeletons } from "./InsightsPage";
 import { Banner, Chip, CountChip, Icon } from "./ui";
@@ -60,6 +60,33 @@ function Meter(props: { w: UsageWindow; now: number }) {
   );
 }
 
+/**
+ * A prepaid credit provider (DeepSeek) reports money left, not windows: the meter's number
+ * without the bar, and no reset — there's nothing to reset.
+ */
+function Balance(props: { b: UsageBalance }) {
+  const breakdown = () => {
+    const parts: string[] = [];
+    if (props.b.granted > 0) parts.push(`Granted ${money(props.b.granted, props.b.currency)}`);
+    if (props.b.toppedUp > 0) parts.push(`Topped up ${money(props.b.toppedUp, props.b.currency)}`);
+    return parts.length ? parts.join(" \u00b7 ") : null;
+  };
+  return (
+    <>
+      <div class="meter">
+        <p class="meter-head">
+          <span class="meter-label">Balance</span>
+          <span class="meter-value">{money(props.b.total, props.b.currency)}</span>
+        </p>
+        <Show when={breakdown()}>{(b) => <p class="meter-context">{b()}</p>}</Show>
+      </div>
+      <Show when={!props.b.available}>
+        <p class="usage-note">This balance can't fund calls. They'll fail until it's topped up.</p>
+      </Show>
+    </>
+  );
+}
+
 function UsageCard(props: { p: UsageProvider; now: number }) {
   const problem = () => providerProblem(props.p);
   return (
@@ -71,7 +98,14 @@ function UsageCard(props: { p: UsageProvider; now: number }) {
         <Show when={providerChip(props.p)}>{(c) => <Chip tone={c().tone}>{c().text}</Chip>}</Show>
       </header>
       <div class="card-body">
-        <Show when={problem()} fallback={<For each={props.p.windows}>{(w) => <Meter w={w} now={props.now} />}</For>}>
+        <Show
+          when={problem()}
+          fallback={
+            <Show when={props.p.balance} fallback={<For each={props.p.windows}>{(w) => <Meter w={w} now={props.now} />}</For>}>
+              {(b) => <Balance b={b()} />}
+            </Show>
+          }
+        >
           {(pr) => (
             <p class="usage-note">
               {pr().lead}
@@ -82,7 +116,8 @@ function UsageCard(props: { p: UsageProvider; now: number }) {
             </p>
           )}
         </Show>
-        <Show when={props.p.error && props.p.windows.length > 0}>
+        {/* A kept reading: windows, or a credit provider's balance. */}
+        <Show when={props.p.error && (props.p.windows.length > 0 || props.p.balance)}>
           <p class="usage-note">Last fetch failed: {props.p.error!.replace(/\.$/, "")}. Showing the previous reading.</p>
         </Show>
       </div>
@@ -98,7 +133,8 @@ function UsageBody(props: { usage: Poll<UsageInsight>; now: number }) {
     <Switch>
       <Match when={!u() && props.usage.pending()}>
         <div class="insights-grid">
-          <Skeletons count={3} />
+          {/* One block per provider the page can show (claude, openai, ollama, zai, deepseek). */}
+          <Skeletons count={5} />
         </div>
       </Match>
       <Match when={u()?.available === false && u()?.reason === "corrupt"}>

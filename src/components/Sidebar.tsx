@@ -60,6 +60,9 @@ function GroupList(props: { groups: Group[]; selected: string | null; now: numbe
                       <p class="list-title" classList={{ "list-title-muted": s.title === "Untitled" }} title={s.title}>
                         {s.title}
                       </p>
+                      <Show when={s.outlineNow}>
+                        <p class="list-summary" title={s.outlineNow}>{s.outlineNow}</p>
+                      </Show>
                       <p class="list-meta">
                         {relativeTime(s.lastActiveAt, props.now)}
                         <Show when={s.model}>
@@ -75,7 +78,7 @@ function GroupList(props: { groups: Group[]; selected: string | null; now: numbe
                     </Show>
                     <Show when={s.live}>
                       <Chip tone="accent" live title={`Open in a TUI · pid ${s.live!.pid} · ${s.live!.status}`}>
-                        Live
+                        TUI
                       </Chip>
                     </Show>
                     {/* Busy (§2): this tab's own run wins over the last fetched list; Live wins over both. */}
@@ -292,7 +295,7 @@ export function Sidebar(props: {
           {/* Always every live session, even while the search filters. */}
           <Show when={liveCount() > 0}>
             <Chip tone="accent" live count title="Sessions open in a TUI">
-              {liveCount()} live
+              {liveCount()} TUI
             </Chip>
           </Show>
         </div>

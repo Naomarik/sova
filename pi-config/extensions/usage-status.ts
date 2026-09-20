@@ -1,6 +1,7 @@
-// usage-status: shows Ollama Cloud, OpenAI Codex, Claude and Z.ai (GLM Coding
-// Plan) subscription usage in pi's footer, and a /usage overlay screen with the
-// per-provider detail (plans, every window, reset times).
+// usage-status: shows Ollama Cloud, OpenAI Codex, Claude, Z.ai (GLM Coding
+// Plan) and DeepSeek subscription usage in pi's footer, and a /usage overlay
+// screen with the per-provider detail (plans, every window, reset times,
+// balances).
 //
 // Takes over the footer with ctx.ui.setFooter() (a faithful copy of the built-in
 // one) so the usage segment can sit on the stats line next to the token stats.
@@ -18,7 +19,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 
 const HOME = os.homedir();
-const PI_AUTH = path.join(HOME, ".pi/agent/auth.json"); // ollama-cloud key + openai-codex oauth + zai key
+const PI_AUTH = path.join(HOME, ".pi/agent/auth.json"); // ollama-cloud key + openai-codex oauth + zai/deepseek keys
 const CODEX_AUTH = path.join(HOME, ".codex/auth.json");
 const CLAUDE_CREDS = path.join(HOME, ".claude/.credentials.json");
 const CACHE_DIR = path.join(HOME, ".pi/agent/cache");
@@ -31,7 +32,7 @@ const FAILURE_RETRY_MS = 60_000; // retry floor after a failed fetch
 const LOCK_STALE_MS = 30_000; // lock older than this is considered abandoned
 const FETCH_TIMEOUT_MS = 10_000;
 const FORCE_WAIT_MS = 12_000; // /usage-refresh waits this long for another holder
-const CACHE_SCHEMA = 2; // bump when a cached shape changes: older caches refetch once
+const CACHE_SCHEMA = 3; // bump when a cached shape changes: older caches refetch once
 
 // ---------------------------------------------------------------------------
 // Normalized data (this is what goes into the shared cache; no secrets)
@@ -78,6 +79,20 @@ type ZaiData =
 	| { state: "badkey" }
 	| { state: "na" };
 
+/** One `balance_infos[]` entry, amounts parsed out of deepseek's decimal strings. */
+interface DeepSeekBalance {
+	currency: string;
+	total: number;
+	granted: number;
+	toppedUp: number;
+}
+
+type DeepSeekData =
+	| { state: "ok"; available: boolean; balances: DeepSeekBalance[] }
+	| { state: "nokey" }
+	| { state: "badkey" }
+	| { state: "na" };
+
 interface CacheFile {
 	schemaVersion?: number; // missing on caches written before CACHE_SCHEMA 2
 	fetchedAt: number;
@@ -86,7 +101,8 @@ interface CacheFile {
 	openai?: OpenAiData;
 	claude?: ClaudeData;
 	zai?: ZaiData;
-	errors: { ollama?: string; openai?: string; claude?: string; zai?: string };
+	deepseek?: DeepSeekData;
+	errors: { ollama?: string; openai?: string; claude?: string; zai?: string; deepseek?: string };
 }
 
 // ---------------------------------------------------------------------------
@@ -298,6 +314,43 @@ async function fetchZai(): Promise<ZaiData> {
 	return fiveHour || mcp ? { state: "ok", level, fiveHour, mcp } : { state: "na" };
 }
 
+/** deepseek reports amounts as decimal strings ("4.29"); undefined when missing or unparseable. */
+function dsAmount(v: unknown): number | undefined {
+	if (typeof v === "number") return Number.isFinite(v) ? v : undefined;
+	if (typeof v !== "string" || !v.trim()) return undefined;
+	const n = Number(v);
+	return Number.isFinite(n) ? n : undefined;
+}
+
+async function fetchDeepSeek(): Promise<DeepSeekData> {
+	const auth = await readJson(PI_AUTH);
+	const key = auth?.deepseek?.key;
+	if (typeof key !== "string" || !key) return { state: "nokey" };
+
+	const res = await fetch("https://api.deepseek.com/user/balance", {
+		headers: { Authorization: `Bearer ${key}` },
+		signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+	});
+	if (res.status === 401 || res.status === 403) return { state: "badkey" };
+	if (!res.ok) throw new Error(`deepseek HTTP ${res.status}`);
+
+	const body: any = await res.json();
+	const infos: any[] = Array.isArray(body?.balance_infos) ? body.balance_infos : [];
+	const balances: DeepSeekBalance[] = [];
+	for (const b of infos) {
+		const total = dsAmount(b?.total_balance);
+		if (total === undefined || typeof b.currency !== "string" || !b.currency) continue;
+		balances.push({
+			currency: b.currency,
+			total,
+			granted: dsAmount(b.granted_balance) ?? 0,
+			toppedUp: dsAmount(b.topped_up_balance) ?? 0,
+		});
+	}
+	if (!balances.length) return { state: "na" };
+	return { state: "ok", available: body?.is_available !== false, balances };
+}
+
 function errMessage(err: unknown): string {
 	if (err instanceof Error) {
 		if (err.name === "TimeoutError" || err.name === "AbortError") return "timeout";
@@ -422,13 +475,14 @@ async function breakStaleLock(): Promise<boolean> {
 }
 
 async function fetchAll(prev: CacheFile | undefined): Promise<CacheFile> {
-	const [o, x, c, z] = await Promise.allSettled([fetchOllama(), fetchOpenAi(), fetchClaude(), fetchZai()]);
+	const [o, x, c, z, d] = await Promise.allSettled([fetchOllama(), fetchOpenAi(), fetchClaude(), fetchZai(), fetchDeepSeek()]);
 	const now = Date.now();
 	const errors: CacheFile["errors"] = {};
 	let ollama = prev?.ollama;
 	let openai = prev?.openai;
 	let claude = prev?.claude;
 	let zai = prev?.zai;
+	let deepseek = prev?.deepseek;
 	if (o.status === "fulfilled") ollama = o.value;
 	else errors.ollama = errMessage(o.reason);
 	if (x.status === "fulfilled") openai = x.value;
@@ -437,8 +491,10 @@ async function fetchAll(prev: CacheFile | undefined): Promise<CacheFile> {
 	else errors.claude = errMessage(c.reason);
 	if (z.status === "fulfilled") zai = z.value;
 	else errors.zai = errMessage(z.reason);
+	if (d.status === "fulfilled") deepseek = d.value;
+	else errors.deepseek = errMessage(d.reason);
 
-	const failed = Boolean(errors.ollama || errors.openai || errors.claude || errors.zai);
+	const failed = Boolean(errors.ollama || errors.openai || errors.claude || errors.zai || errors.deepseek);
 	return {
 		schemaVersion: CACHE_SCHEMA,
 		fetchedAt: now,
@@ -447,6 +503,7 @@ async function fetchAll(prev: CacheFile | undefined): Promise<CacheFile> {
 		openai,
 		claude,
 		zai,
+		deepseek,
 		errors,
 	};
 }
@@ -457,6 +514,15 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 // Rendering
 
 type Color = Parameters<Theme["fg"]>[0];
+
+/** `$4.29`; falls back to `XYZ 4.29` when Intl does not know the currency code. */
+function formatMoney(total: number, currency: string): string {
+	try {
+		return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(total);
+	} catch {
+		return `${currency} ${total.toFixed(2)}`;
+	}
+}
 
 function severity(usedPct: number): Color {
 	if (usedPct >= 80) return "error";
@@ -524,7 +590,21 @@ function buildUsage(theme: Theme, cache: CacheFile | undefined, level: number): 
 	}
 	zai += z ? staleMark(cache.errors.zai) : "";
 
-	return `${dim("⛁")} ${ollama}${sep}${openai}${sep}${claude}${sep}${zai}`;
+	// DeepSeek
+	let deepseek: string;
+	const d = cache.deepseek;
+	if (!d) deepseek = theme.fg("error", `deepseek: ${cache.errors.deepseek ?? "error"}`);
+	else if (d.state === "nokey") deepseek = dim("deepseek: no key");
+	else if (d.state === "na") deepseek = dim("deepseek n/a");
+	else if (d.state === "badkey") deepseek = theme.fg("warning", "deepseek: bad key");
+	else {
+		const name = level >= 1 ? "deepseek" : "ds";
+		const amounts = d.balances.map((b) => formatMoney(b.total, b.currency)).join(" ");
+		deepseek = d.available ? `${theme.fg("muted", name)} ${amounts}` : theme.fg("warning", `${name}: no credit (${amounts})`);
+	}
+	deepseek += d ? staleMark(cache.errors.deepseek) : "";
+
+	return `${dim("⛁")} ${ollama}${sep}${openai}${sep}${claude}${sep}${zai}${sep}${deepseek}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -654,13 +734,29 @@ function renderUsageScreen(
 		else if (z?.state === "badkey") zRows.push(note("bad key", "warning"));
 		else if (z?.state === "na") zRows.push(note("n/a"));
 		block("Z.ai GLM Coding Plan", z?.state === "ok" ? z.level : undefined, Boolean(z), errors.zai, zRows);
+
+		const d = cache.deepseek;
+		const dRows: string[] = [];
+		if (d?.state === "ok") {
+			for (const b of d.balances) {
+				const detail = [
+					b.granted > 0 ? `Granted ${formatMoney(b.granted, b.currency)}` : undefined,
+					b.toppedUp > 0 ? `Topped up ${formatMoney(b.toppedUp, b.currency)}` : undefined,
+				].filter(Boolean);
+				dRows.push(`${label("balance")}${formatMoney(b.total, b.currency)}${detail.length ? `   ${dim(detail.join(" · "))}` : ""}`);
+			}
+			if (!d.available) dRows.push(note("no credit — API calls fail until the balance is topped up", "warning"));
+		} else if (d?.state === "nokey") dRows.push(note("no key"));
+		else if (d?.state === "badkey") dRows.push(note("bad key", "warning"));
+		else if (d?.state === "na") dRows.push(note("n/a"));
+		block("DeepSeek", undefined, Boolean(d), errors.deepseek, dRows);
 		body.pop(); // trailing blank
 	} else body.push(note("usage loading… (no cached data yet)"));
 
 	const head = [theme.bold(theme.fg("accent", "Subscription usage"))];
 	let updated = cache ? `${dim("updated")} ${localTime(cache.fetchedAt, true)} ${dim(`(${formatAge(now - cache.fetchedAt)})`)}` : dim("never updated");
 	if (cache) {
-		const failed = (["ollama", "openai", "claude", "zai"] as const).filter((k) => cache.errors[k]).length;
+		const failed = (["ollama", "openai", "claude", "zai", "deepseek"] as const).filter((k) => cache.errors[k]).length;
 		updated += failed ? theme.fg("warning", ` · ${failed} source${failed > 1 ? "s" : ""} failing${stale.length ? ` (stale: ${stale.join(", ")})` : ""}`) : dim(" · all sources ok");
 	}
 	if (status.refreshing) updated += theme.fg("accent", " · refreshing…");
@@ -1001,12 +1097,13 @@ export default function (pi: ExtensionAPI) {
 			const next = await fetchAll(latest);
 			lastCache = next;
 			await writeCache(next);
-			if (force && (next.errors.ollama || next.errors.openai || next.errors.claude || next.errors.zai)) {
+			if (force && (next.errors.ollama || next.errors.openai || next.errors.claude || next.errors.zai || next.errors.deepseek)) {
 				const msgs = [
 					next.errors.ollama && `ollama: ${next.errors.ollama}`,
 					next.errors.openai && `openai: ${next.errors.openai}`,
 					next.errors.claude && `claude: ${next.errors.claude}`,
 					next.errors.zai && `zai: ${next.errors.zai}`,
+					next.errors.deepseek && `deepseek: ${next.errors.deepseek}`,
 				];
 				throw new Error(msgs.filter(Boolean).join("; "));
 			}
@@ -1081,7 +1178,7 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.registerCommand("usage-refresh", {
-		description: "Force-refresh Ollama Cloud / OpenAI Codex / Claude / Z.ai usage (footer and /usage screen)",
+		description: "Force-refresh Ollama Cloud / OpenAI Codex / Claude / Z.ai / DeepSeek usage (footer and /usage screen)",
 		handler: async (_args, ctx) => {
 			if (ctx.mode !== "tui" || !activeCtx) return;
 			await forceRefresh(ctx);
@@ -1089,7 +1186,7 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.registerCommand("usage", {
-		description: "Show Ollama Cloud / OpenAI Codex / Claude / Z.ai usage detail with reset times",
+		description: "Show Ollama Cloud / OpenAI Codex / Claude / Z.ai / DeepSeek usage detail with reset times and balances",
 		handler: async (_args, ctx) => {
 			if (ctx.mode !== "tui") {
 				ctx.ui.notify("The /usage screen requires Pi's interactive TUI.", "warning");

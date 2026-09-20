@@ -17,6 +17,7 @@ import type {
   TokenUsage,
   TokenUsageTotal,
   UsageInsight,
+  UsageBalance,
   UsageProvider,
   UsageWindow,
   WorkerInfo,
@@ -48,7 +49,7 @@ const USAGE_STALE_MS = 10 * 60_000;
 
 let usageCache: { mtimeMs: number; size: number; data: Omit<UsageInsight, "stale"> } | null = null;
 
-const USAGE_PROVIDERS = ["claude", "openai", "ollama", "zai"] as const satisfies readonly UsageProvider["id"][];
+const USAGE_PROVIDERS = ["claude", "openai", "ollama", "zai", "deepseek"] as const satisfies readonly UsageProvider["id"][];
 const USAGE_META_KEYS = new Set(["schemaVersion", "fetchedAt", "nextFetchAt", "errors"]);
 
 /** Cache shapes we don't recognize are logged once per process, not on every poll. */
@@ -97,6 +98,23 @@ function claudeWindows(data: Rec): (UsageWindow | null)[] {
   return [usageWindow("5h", data.fiveHour), usageWindow("7d", data.sevenDay), usageWindow("7d opus", data.sevenDayOpus)];
 }
 
+/**
+ * DeepSeek has no usage API, only prepaid credit: the first readable entry of `balances[]` (an
+ * object with a non-empty currency and a finite total; granted/toppedUp default to 0). `available`
+ * is the provider's own flag: false = it says calls can't be funded.
+ */
+function usageBalance(data: Rec): UsageBalance | null {
+  const entries = Array.isArray(data.balances) ? data.balances : [];
+  for (const b of entries) {
+    if (!isRec(b)) continue;
+    const currency = str(b.currency);
+    const total = num(b.total);
+    if (!currency || total === undefined) continue;
+    return { currency, total, granted: num(b.granted) ?? 0, toppedUp: num(b.toppedUp) ?? 0, available: data.available !== false };
+  }
+  return null;
+}
+
 function usageProvider(id: UsageProvider["id"], data: unknown, error: unknown): UsageProvider {
   const err = str(error);
   const withError = (p: UsageProvider): UsageProvider => (err ? { ...p, error: err } : p);
@@ -109,6 +127,11 @@ function usageProvider(id: UsageProvider["id"], data: unknown, error: unknown): 
   if (!isRec(data)) return unrecognized(`not an object: ${typeof data}`);
   const state = str(data.state);
   if (state === "ok") {
+    // A credit provider reports money left, never windows.
+    if (id === "deepseek") {
+      const balance = usageBalance(data);
+      return balance ? withError({ id, state: "ok", windows: [], balance }) : unrecognized("state ok without a readable balance");
+    }
     const windows: (UsageWindow | null)[] =
       id === "claude"
         ? claudeWindows(data)
@@ -469,9 +492,11 @@ function decodeWorker(w: unknown): WorkerInfo | null {
   const status = workerStatus(w.status);
   const out: WorkerInfo = { id: w.id, name: str(w.name) ?? w.id, status, working: !IDLE.has(status) };
   const model = str(w.model);
+  const effort = str(w.effort);
   const backend = str(w.backend);
   const preview = str(w.preview);
   if (model) out.model = model;
+  if (effort) out.effort = effort;
   if (backend) out.backend = backend;
   if (preview) out.preview = preview;
   const sessionFile = str(w.sessionFile);

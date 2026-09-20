@@ -10,6 +10,7 @@ export const PROVIDER_NAME: Record<UsageProvider["id"], string> = {
   openai: "OpenAI",
   ollama: "Ollama Cloud",
   zai: "Z.ai",
+  deepseek: "DeepSeek",
 };
 
 const WINDOW_LABEL: Record<string, string> = {
@@ -56,19 +57,32 @@ const isShortWindow = (w: UsageWindow) => /^\d+[mh]$/.test(w.label);
 
 export const pct = (w: UsageWindow) => Math.round(w.pct);
 
+/** A credit balance as money: "$4.29". An unusable currency code falls back to "XYZ 4.29". */
+export function money(amount: number, currency: string): string {
+  try {
+    return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(amount);
+  } catch {
+    return `${currency} ${amount.toFixed(2)}`;
+  }
+}
+
 export function meterTone(w: UsageWindow): "warn" | "error" | null {
   if (w.pct >= 100) return "error";
   if (w.pct >= 80) return "warn";
   return null;
 }
 
-/** Card head chip for a provider: the worst window decides; "Stale" only when no limit applies. */
+/**
+ * Card head chip for a provider: the worst window decides; "Stale" only when no limit applies.
+ * A credit provider (DeepSeek) has a balance and no windows, so only the funding rule can fire.
+ */
 export function providerChip(p: UsageProvider): { tone?: Tone; text: string } | null {
+  if (p.balance && !p.balance.available) return { tone: "error", text: "Out of credit" };
   const full = p.windows.filter((w) => w.pct >= 100);
   if (full.some((w) => !isShortWindow(w))) return { tone: "error", text: "Quota used" };
   if (full.length > 0) return { tone: "warn", text: "Rate-limited" };
   if (p.windows.some((w) => w.pct >= 80)) return { tone: "warn", text: "Near limit" };
-  if (p.error && p.windows.length > 0) return { text: "Stale" };
+  if (p.error && (p.windows.length > 0 || p.balance)) return { text: "Stale" };
   return null;
 }
 
@@ -97,13 +111,15 @@ export function providerProblem(p: UsageProvider): { lead?: string; code?: strin
 }
 
 /** Sidebar-foot abbreviation per provider. */
-export const PROVIDER_ABBR: Record<UsageProvider["id"], string> = { claude: "C", openai: "O", ollama: "OL", zai: "Z" };
+export const PROVIDER_ABBR: Record<UsageProvider["id"], string> = { claude: "C", openai: "O", ollama: "OL", zai: "Z", deepseek: "DS" };
 
 /**
  * The one window a provider shows in the compact foot: the one the provider flags `active` (the
  * limit the current model counts against; first in source order), else the 7-day one, else its
  * longest (Ollama's month, Z.ai's plan window, OpenAI's "pri"/5h when that's all). Never the MCP
- * quota or Claude's Opus-only window. Null when the provider isn't ok or has no window.
+ * quota or Claude's Opus-only window. Null when the provider isn't ok or has no window — a
+ * credit provider (DeepSeek, a balance and no windows) therefore never reaches the foot, which
+ * is percentages only.
  */
 export function glanceWindow(p: UsageProvider): UsageWindow | null {
   if (p.state !== "ok") return null;

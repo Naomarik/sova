@@ -30,6 +30,28 @@ export function previewLine(markdown: string): string {
   return plain.length > 240 ? `${plain.slice(0, 240)}…` : plain;
 }
 
+/**
+ * The "Model: <model> · thinking: <level>[ · backend: <name>]" line's value, split on the middle
+ * dot: first segment is the model (it may contain "/"), the rest are "key: value" pairs. Unknown
+ * keys are ignored so a newer subagents build can add one without breaking the body.
+ */
+function parseModelLine(value: string): { model?: string; effort?: string; backend?: string } {
+  const [first, ...rest] = value.split(" \u00b7 ");
+  const model = first?.trim();
+  if (!model) return {};
+  const out: { model?: string; effort?: string; backend?: string } = { model };
+  for (const part of rest) {
+    const at = part.indexOf(":");
+    if (at < 0) continue;
+    const key = part.slice(0, at).trim();
+    const val = part.slice(at + 1).trim();
+    if (!val) continue;
+    if (key === "thinking") out.effort = val;
+    else if (key === "backend") out.backend = val;
+  }
+  return out;
+}
+
 export function parseReport(source: string, text: string): ReportInfo {
   const truncated = TRAILER.test(text);
   const lines = (truncated ? text.replace(TRAILER, "") : text).split("\n");
@@ -42,6 +64,8 @@ export function parseReport(source: string, text: string): ReportInfo {
     start = 1;
     if (lines[start]?.startsWith("Error: ")) info.error = lines[start++]!.slice("Error: ".length);
     if (lines[start]?.startsWith("Session: ")) info.session = lines[start++]!.slice("Session: ".length);
+    if (lines[start]?.startsWith("Model: "))
+      Object.assign(info, parseModelLine(lines[start++]!.slice("Model: ".length)));
   } else if (old) {
     info.agent = { id: old[1]!, name: old[2]!, status: old[3] === "was killed" ? "killed" : "done" };
     start = 1;

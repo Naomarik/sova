@@ -82,9 +82,9 @@ export interface TranscriptItem {
 /**
  * An extension message shown as a collapsed report row instead of a centered info row: every
  * `subagent-complete` (pi-config subagents: "### <id> (<name>) — <status>[ · task <outcome>]",
- * optional "Error: …" and "Session: …" lines, then the worker's final output), and any other
- * custom message longer than 200 characters or spanning lines. Parsed server-side; `raw` is
- * untouched.
+ * optional "Error: …", "Session: …" and "Model: …" lines, then the worker's final output), and
+ * any other custom message longer than 200 characters or spanning lines. Parsed server-side;
+ * `raw` is untouched.
  */
 export interface ReportInfo {
   /** The message's customType, e.g. "subagent-complete", "intercom_message". */
@@ -98,6 +98,12 @@ export interface ReportInfo {
   };
   error?: string; // the "Error: …" line
   session?: string; // the "Session: …" line: a session file path or id
+  /** From the "Model: <model> · thinking: <level>[ · backend: <name>]" line, each part verbatim —
+      including the sentinels "child default" / "default". Absent on messages from older
+      subagents builds, which had no such line. */
+  model?: string; // "ollama-cloud/kimi-k3", "claude-sonnet-4-6", "child default"
+  effort?: string; // thinking level: "off" | "low" | "medium" | "high" | "default" | …
+  backend?: string; // only for non-pi backends, e.g. "claude-code"
   /** Markdown, verbatim, without the header lines and without the truncation trailer. */
   body: string;
   /** First non-empty body line with markdown markers stripped, for the collapsed row. */

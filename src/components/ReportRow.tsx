@@ -6,6 +6,11 @@ import { home } from "../lib/ui-state";
 import { Markdown } from "./Markdown";
 import { Chip, Icon } from "./ui";
 
+/** "claude-sonnet-4-6 · high · claude-code" — the model line's parts it actually has. */
+function modelMeta(r: ReportInfo): string {
+  return [r.model, r.effort, r.backend].filter(Boolean).join(" \u00b7 ");
+}
+
 /**
  * A subagent report, or another long extension message (DESIGN_NOTES §3 "report"). Collapsed
  * to one line: who, a status chip, the first line. Opened, the body renders as markdown on the
@@ -34,6 +39,11 @@ export function ReportRow(props: { report: ReportInfo; attachments?: TmpAttachme
           <Show when={r().session}>
             <p class="report-meta">
               Session <span class="text-mono">{tildePath(r().session!, home())}</span>
+            </p>
+          </Show>
+          <Show when={r().model}>
+            <p class="report-meta">
+              <span class="text-mono">{modelMeta(r())}</span>
             </p>
           </Show>
           <Show when={r().body.trim()} fallback={<p class="report-meta">No output.</p>}>

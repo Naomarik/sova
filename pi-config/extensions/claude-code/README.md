@@ -159,6 +159,13 @@ a defensive path.
 The parent is notified when the worker becomes idle, not for an intermediate
 aborted turn during redirect or before a queued follow-up starts.
 
+The CLI can also start a turn on its own after a task settled — it backgrounds a
+Bash command that passes its 120-second timeout and reports the real result once
+the command finishes. That turn's text still updates the transcript and the
+worker's final output, and its uncorrelated successful `result` notifies the
+parent a second time with the new answer (once per turn; an uncorrelated failure
+while idle announces nothing).
+
 Task completion and process exit are separate: an idle worker remains steerable,
 even after a failed task. Requested interruption is recorded as aborted, not as
 successful completion (the CLI's `aborted_tools` / `aborted_streaming` terminal

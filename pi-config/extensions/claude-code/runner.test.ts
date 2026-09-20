@@ -850,3 +850,70 @@ test("system prompt file is removed when startup fails, and write failure fails 
 	assert.equal(missing.argv.length, 0, "never launched without its instructions");
 	assert.match(missing.runner.error!, /Could not write system prompt file/);
 });
+
+// Reduction of a real run: a Bash command past Claude's 120s timeout is
+// backgrounded, the task settles on that notice, and the CLI then starts a turn
+// of its own to report the command's actual result.
+const BACKGROUND_NOTICE = "The command is running in the background. It will take about 2 minutes to complete. I'll notify you when it finishes.";
+const cliTurn = (extra: Record<string, unknown> = {}) => [
+	{ type: "system", subtype: "init", session_id: "session-1", model: "claude-x" },
+	{ type: "assistant", session_id: "session-1", message: { role: "assistant", content: [{ type: "text", text: "done: 24 ticks" }] } },
+	{ type: "result", subtype: "success", session_id: "session-1", terminal_reason: "completed", is_error: false,
+		user_message_uuid: null, user_message_uuids: [], result: "done: 24 ticks", ...extra },
+];
+
+test("a CLI-initiated turn after settlement keeps its answer and announces it once", async (t) => {
+	const f = fixture(); cleanup(t, f); await ready(f);
+	const first = f.child.users()[0];
+	f.child.result(first, { result: BACKGROUND_NOTICE, terminal_reason: "completed", is_error: false });
+	await tick();
+	assert.deepEqual(f.settled, [{ outcome: "success", output: BACKGROUND_NOTICE, isSettled: true }]);
+	for (const line of cliTurn()) f.child.out(line);
+	await tick();
+	assert.deepEqual(f.settled.map((s) => s.output), [BACKGROUND_NOTICE, "done: 24 ticks"]);
+	assert.deepEqual(f.settled.at(-1), { outcome: "success", output: "done: 24 ticks", isSettled: true });
+	assert.equal(f.runner.finalOutput(), "done: 24 ticks");
+	assert.equal(f.runner.status, "waiting");
+	const answers = f.runner.transcript.filter((i) => i.kind === "assistant").map((i) => i.text);
+	assert.deepEqual(answers, [BACKGROUND_NOTICE, "done: 24 ticks"], "the first answer is kept and the second is recorded");
+	// The same uncorrelated result again is the same run: never announced twice.
+	f.child.out(cliTurn()[2]); await tick();
+	assert.equal(f.settled.length, 2);
+	assert.equal(f.runner.transcript.filter((i) => i.text === "done: 24 ticks").length, 1);
+});
+
+test("a CLI-initiated turn streams into the transcript and an uncorrelated failure announces nothing", async (t) => {
+	const f = fixture(); cleanup(t, f); await ready(f);
+	f.child.result(undefined, { result: BACKGROUND_NOTICE }); await tick();
+	assert.equal(f.settled.length, 1);
+	f.child.out({ type: "system", subtype: "init", session_id: "session-1" });
+	f.child.out({ type: "stream_event", session_id: "session-1", event: { type: "message_start" } });
+	for (const text of ["done: ", "24 ticks"]) {
+		f.child.out({ type: "stream_event", session_id: "session-1", event: { type: "content_block_delta", delta: { type: "text_delta", text } } });
+	}
+	await tick();
+	assert.equal(f.runner.finalOutput(), "done: 24 ticks");
+	assert.equal(f.settled.length, 1, "streamed text alone does not announce");
+	// A failed CLI-initiated turn never reports a completion.
+	f.child.out({ type: "result", subtype: "error_during_execution", is_error: true, session_id: "session-1", user_message_uuid: null, user_message_uuids: [], errors: ["background failure"] });
+	await tick();
+	assert.equal(f.settled.length, 1);
+	assert.equal(f.runner.status, "waiting");
+	// Its success counterpart does announce, reading the streamed answer.
+	f.child.out(cliTurn()[2]); await tick();
+	assert.deepEqual(f.settled.at(-1), { outcome: "success", output: "done: 24 ticks", isSettled: true });
+	assert.ok(f.runner.transcript.some((i) => i.kind === "assistant" && i.text === "done: 24 ticks"));
+});
+
+test("nested and post-stop output never owns the idle session's answer", async (t) => {
+	const f = fixture(); cleanup(t, f); await ready(f);
+	f.child.result(undefined, { result: BACKGROUND_NOTICE }); await tick();
+	f.child.out({ type: "assistant", session_id: "session-1", parent_tool_use_id: "toolu_1", message: { role: "assistant", content: [{ type: "text", text: "SUBAGENT" }] } });
+	await tick();
+	assert.equal(f.runner.finalOutput(), BACKGROUND_NOTICE);
+	void f.runner.kill("stop");
+	for (const line of cliTurn()) f.child.out(line);
+	await tick();
+	assert.equal(f.settled.length, 1);
+	assert.ok(!f.runner.transcript.some((i) => i.text === "done: 24 ticks"));
+});

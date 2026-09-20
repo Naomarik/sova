@@ -3369,9 +3369,12 @@ glance needs the room.
   - **Full text.** The row's `title` and `aria-label` spell everything out, e.g. "Usage: Claude
     7-day 47%, …, DeepSeek balance $4.29" (the exact amount, not the rounded one), and a stale
     provider gets " (stale)" appended.
-  - **Width.** The worst case — four windows at 100% plus a whole-unit balance — is about
-    250px. It fits the 320px sidebar without wrapping, and `.usage-glance` still clips rather
-    than wraps as a guard.
+  - **Width.** Measured in the 320px sidebar (the glance box is 259px at a 1440px viewport):
+    a real five-provider reading (`C 83% O 97% OL 90% Z 8% DS $4`) is 226px and fits. The fifth
+    segment does spend the slack — all four windows at 100% plus `DS $4` is 263px, so the worst
+    case now overruns by a few px and `.usage-glance` clips it (it never wraps). Rounding the
+    balance to whole units is what keeps the common case comfortable; `DS $4.29` would cost
+    another ~20px.
 - **Agents row, what is live right now:** `{agents} agents · {sessions} sessions · {teams} teams`.
   Any segment at 0 is dropped, and with nothing live at all the row reads the plain word
   "Agents". The numbers come from `activeAgentCounts` in `src/lib/workers.ts`, and each one is

@@ -172,6 +172,8 @@ export class ClaudeRunner implements Worker {
 	private initialOwed = true;
 	/** Protocol settlement and host-visible idle notification are distinct. */
 	private notificationPending = true;
+	/** A CLI-initiated turn's completion was announced; new idle output re-arms it. */
+	private idleAnnounced = false;
 	private active?: Task;
 	private redirecting = false;
 	private queue: string[] = [];
@@ -367,7 +369,7 @@ export class ClaudeRunner implements Worker {
 				if (this.active === task) this.fail("User delivery unknown: no correlated replay/result before timeout");
 			}, this.timings.requestTimeoutMs),
 		};
-		this.active = task; this.initialOwed = false; this.notificationPending = true;
+		this.active = task; this.initialOwed = false; this.notificationPending = true; this.idleAnnounced = false;
 		this.status = "running"; this.taskOutcome = undefined; this.error = undefined;
 		this.permissionDenials = []; this.output = ""; this.partial = undefined; this.lastAssistant = undefined;
 		this.push(kind, message);
@@ -449,11 +451,14 @@ export class ClaudeRunner implements Worker {
 			this.dispatch(text, this.adoptedTasks++ ? "steer" : "task", e.uuid);
 		}
 		const task = this.active;
-		if (!task) return;
-		if (e.type === "user" && e.isReplay === true && e.uuid === task.id) {
+		if (task && e.type === "user" && e.isReplay === true && e.uuid === task.id) {
 			clearTimeout(task.acceptTimer); task.accepted.resolve(true);
 		}
 		if (e.type === "result") {
+			// A result with no task in flight completes a turn the CLI started by
+			// itself (observed when it reaps a Bash command it backgrounded at its
+			// own 120s timeout). That answer is newer than the settled task's.
+			if (!task) { this.idleResult(e); return; }
 			const ids = Array.isArray(e.user_message_uuids) ? e.user_message_uuids : [];
 			if (e.user_message_uuid !== task.id && !ids.includes(task.id)) {
 				// CLI 2.1.277 omits both fields on session-scoped failures (e.g. a
@@ -489,6 +494,9 @@ export class ClaudeRunner implements Worker {
 		}
 		if (this.stopping) return;
 		if (e.parent_tool_use_id) return; // Nested agent output does not own the root task's answer.
+		// Text is never dropped for want of a task: a CLI-initiated turn owns the
+		// idle session's answer too, and arms the next completion announcement.
+		if (!task && (e.type === "assistant" || e.type === "stream_event")) this.idleAnnounced = false;
 		if (e.type === "stream_event" && e.event?.type === "message_start") {
 			this.partial = undefined; this.output = "";
 		}
@@ -520,6 +528,35 @@ export class ClaudeRunner implements Worker {
 		} else if (e.type === "user" && !e.isReplay && Array.isArray(e.message?.content)) {
 			for (const block of e.message.content) if (block.type === "tool_result") this.push(block.is_error ? "tool-result" : "system", typeof block.content === "string" ? block.content : JSON.stringify(block.content ?? ""));
 		}
+	}
+	/**
+	 * Settlement-shaped bookkeeping for a CLI-initiated turn: only a genuinely
+	 * uncorrelated success counts (stale/mismatched UUIDs belong to a task that
+	 * already settled, and a failure never announces a completion). The parent
+	 * hears it through the same notification a settled task uses, once per turn.
+	 */
+	private idleResult(e: Record<string, any>): void {
+		// Never before the worker's own first task: that turn is not the CLI's.
+		if (this.stopping || this.closed || this.leaderExited || this.initialOwed || this.idleAnnounced) return;
+		const ids = Array.isArray(e.user_message_uuids) ? e.user_message_uuids : [];
+		if (e.user_message_uuid !== undefined && e.user_message_uuid !== null) return;
+		if (ids.length || e.is_error || e.subtype !== "success") return;
+		if (typeof e.result === "string") {
+			this.output = this.clip(e.result);
+			if (this.partial) this.replaceText(this.partial, this.output);
+			else if (this.lastAssistant?.text !== this.output || !this.transcript.includes(this.lastAssistant)) this.push("assistant", e.result);
+		}
+		this.partial = undefined;
+		this.updateUsage(e);
+		this.taskOutcome = "success";
+		// The earlier manager already announced whatever history replays.
+		if (this.replaying()) return;
+		this.status = "waiting";
+		this.idleAnnounced = true;
+		// Announce only after the new answer is stored: the manager reads finalOutput().
+		this.notificationPending = true;
+		this.touch();
+		this.notifySettled();
 	}
 	private updateUsage(e: Record<string, any>): void {
 		// modelUsage and total_cost_usd are process-cumulative; never sum results.

@@ -27,6 +27,7 @@ import { hasPage, listExplanations, sortExplanations } from "./explanations";
 import { readLiveRecords, type RawLiveRecord } from "./live";
 import { resolveSessionPath } from "./paths";
 import { activeBranch, parseLines } from "./transcript";
+import { LAST_KNOWN_REASON, lastKnownUsage, rememberUsage } from "./usage-last-known";
 
 // Read-only views over what the user's pi extensions leave on disk (sources and shapes:
 // docs/insights-research.md "Data sources"). Nothing here writes to ~/.pi. Every source is
@@ -47,7 +48,7 @@ const USAGE_FILE = join(getAgentDir(), "cache", "usage-status.json");
 /** Only TUI pis refresh the cache (every 180s); older than this means nothing is refreshing it. */
 const USAGE_STALE_MS = 10 * 60_000;
 
-let usageCache: { mtimeMs: number; size: number; data: Omit<UsageInsight, "stale"> } | null = null;
+let usageCache: { mtimeMs: number; size: number; data: Omit<UsageInsight, "stale">; absent: UsageProvider["id"][] } | null = null;
 
 const USAGE_PROVIDERS = ["claude", "openai", "ollama", "zai", "deepseek"] as const satisfies readonly UsageProvider["id"][];
 const USAGE_META_KEYS = new Set(["schemaVersion", "fetchedAt", "nextFetchAt", "errors"]);
@@ -155,7 +156,12 @@ function usageProvider(id: UsageProvider["id"], data: unknown, error: unknown): 
   return s ? withError({ id, state: s, windows: [] }) : unrecognized(`state ${JSON.stringify(state ?? null)}`);
 }
 
-function parseUsage(text: string): Omit<UsageInsight, "stale"> | null {
+/**
+ * `absent`: providers with no KEY at all in this cache. That is the signature of an older pi
+ * session rewriting the file from a pre-deepseek extension it still holds in memory (schemaVersion
+ * 2), not of a provider the current extension has nothing to say about — which always writes a key.
+ */
+function parseUsage(text: string): { data: Omit<UsageInsight, "stale">; absent: UsageProvider["id"][] } | null {
   let v: unknown;
   try {
     v = JSON.parse(text);
@@ -170,11 +176,14 @@ function parseUsage(text: string): Omit<UsageInsight, "stale"> | null {
     if (!USAGE_META_KEYS.has(key) && !(USAGE_PROVIDERS as readonly string[]).includes(key))
       warnOnce(`provider:${key}`, `usage-status.json: unknown provider "${key}" skipped`);
   return {
-    available: true,
-    fetchedAt: v.fetchedAt,
-    nextFetchAt: num(v.nextFetchAt) ?? null,
-    // fixed order; a provider absent from an older cache comes back as "error", never omitted
-    providers: USAGE_PROVIDERS.map((id) => usageProvider(id, v[id], errors[id])),
+    data: {
+      available: true,
+      fetchedAt: v.fetchedAt,
+      nextFetchAt: num(v.nextFetchAt) ?? null,
+      // fixed order; a provider absent from an older cache comes back as "error", never omitted
+      providers: USAGE_PROVIDERS.map((id) => usageProvider(id, v[id], errors[id])),
+    },
+    absent: USAGE_PROVIDERS.filter((id) => v[id] === undefined),
   };
 }
 
@@ -194,17 +203,28 @@ export async function getUsageInsight(): Promise<UsageInsight> {
     return unavailable("missing");
   }
   if (!usageCache || usageCache.mtimeMs !== st.mtimeMs || usageCache.size !== st.size) {
-    let data: Omit<UsageInsight, "stale"> | null;
+    let parsed: { data: Omit<UsageInsight, "stale">; absent: UsageProvider["id"][] } | null;
     try {
-      data = parseUsage(await readFile(USAGE_FILE, "utf8"));
+      parsed = parseUsage(await readFile(USAGE_FILE, "utf8"));
     } catch (err) {
       return unavailable((err as NodeJS.ErrnoException).code === "ENOENT" ? "missing" : "corrupt");
     }
-    if (!data) return unavailable("corrupt");
-    usageCache = { mtimeMs: st.mtimeMs, size: st.size, data };
+    if (!parsed) return unavailable("corrupt");
+    // Once per new cache file, not per poll: the store skips the write when nothing changed.
+    rememberUsage(parsed.data.providers);
+    usageCache = { mtimeMs: st.mtimeMs, size: st.size, data: parsed.data, absent: parsed.absent };
   }
-  const d = usageCache.data;
-  return { ...d, stale: d.fetchedAt !== null && Date.now() - d.fetchedAt > USAGE_STALE_MS };
+  const { data: d, absent } = usageCache;
+  // A key the cache doesn't carry: serve what we last read for it, said plainly. A key that IS
+  // there always wins, error and "na" included — that is the extension's own answer.
+  const providers = absent.length === 0 ? d.providers : d.providers.map((p) => (absent.includes(p.id) ? lastKnown(p) : p));
+  return { ...d, providers, stale: d.fetchedAt !== null && Date.now() - d.fetchedAt > USAGE_STALE_MS };
+}
+
+/** The stored reading for a provider the cache didn't mention, or the "no data" answer as-is. */
+function lastKnown(p: UsageProvider): UsageProvider {
+  const prev = lastKnownUsage(p.id);
+  return prev ? { ...prev, error: LAST_KNOWN_REASON } : p;
 }
 
 // ---------------------------------------------------------------------------

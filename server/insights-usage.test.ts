@@ -1,7 +1,7 @@
 // Run: npx tsx --test server/insights-usage.test.ts
 // Uses a throwaway PI_CODING_AGENT_DIR in the OS temp dir; ~/.pi is never read or written.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
@@ -13,6 +13,15 @@ const usageFile = join(agentDir, "cache", "usage-status.json");
 mkdirSync(join(agentDir, "cache"), { recursive: true });
 
 const { getUsageInsight } = await import("./insights");
+const { LAST_KNOWN_REASON, lastKnownUsage, rememberUsage, resetLastKnownCache } = await import("./usage-last-known");
+const lastKnownFile = join(agentDir, "pi-web", "usage-last-known.json");
+
+/** Forget both the parsed-cache memo's input file state and the last-known store's memory. */
+function clearStore(): void {
+  rmSync(lastKnownFile, { force: true });
+  resetLastKnownCache();
+}
+const readStore = (): any => JSON.parse(readFileSync(lastKnownFile, "utf8"));
 
 after(() => rmSync(agentDir, { recursive: true, force: true }));
 
@@ -72,13 +81,119 @@ test("deepseek ok without a readable balance reports na", async () => {
   }
 });
 
-test("a cache without a deepseek key reports error with no data", async () => {
+test("a cache without a deepseek key, and nothing remembered, reports error with no data", async () => {
+  clearStore();
   writeCache({});
   const ds = byId((await getUsageInsight()).providers, "deepseek");
   assert.equal(ds.state, "error");
   assert.equal(ds.error, "no data");
   assert.deepEqual(ds.windows, []);
   assert.equal(ds.balance, undefined);
+});
+
+// ---------------------------------------------------------------------------
+// Last-known readings: an older pi session rewriting the cache with a pre-deepseek schema drops
+// the key entirely, and that absence is the only signal we treat as "not the current source".
+
+const balance = { currency: "USD", total: 4.29, granted: 0, toppedUp: 4.29, available: true };
+const dsOk = { state: "ok", available: true, balances: [{ currency: "USD", total: 4.29, granted: 0, toppedUp: 4.29 }] };
+
+test("an absent key falls back to the last known reading, with the older-session reason", async () => {
+  clearStore();
+  writeCache({ deepseek: dsOk });
+  assert.equal(byId((await getUsageInsight()).providers, "deepseek").state, "ok");
+  // An older pi rewrites the cache at schemaVersion 2: no deepseek key at all.
+  writeCache({});
+  const ds = byId((await getUsageInsight()).providers, "deepseek");
+  assert.equal(ds.state, "ok");
+  assert.deepEqual(ds.balance, balance);
+  assert.deepEqual(ds.windows, []);
+  assert.equal(ds.error, LAST_KNOWN_REASON);
+  assert.equal(ds.error, "an older pi session is rewriting the cache (run /reload in it)");
+});
+
+test("a window provider's absent key comes back the same way", async () => {
+  clearStore();
+  writeCache({});
+  assert.deepEqual(byId((await getUsageInsight()).providers, "claude").windows, [
+    { label: "5h", pct: 96, resetsAt: "2026-09-19T07:50:00.621229+00:00" },
+    { label: "7d", pct: 41 },
+  ]);
+  writeFileSync(
+    usageFile,
+    JSON.stringify({ schemaVersion: 2, fetchedAt: Date.now(), nextFetchAt: null, ollama: { state: "ok", usedPct: 1 }, errors: {}, pad: "y" }),
+  );
+  const claude = byId((await getUsageInsight()).providers, "claude");
+  assert.equal(claude.state, "ok");
+  assert.equal(claude.error, LAST_KNOWN_REASON);
+  assert.deepEqual(claude.windows, [
+    { label: "5h", pct: 96, resetsAt: "2026-09-19T07:50:00.621229+00:00" },
+    { label: "7d", pct: 41 },
+  ]);
+  // The key that IS there wins, remembered reading or not.
+  assert.deepEqual(byId((await getUsageInsight()).providers, "ollama").windows, [{ label: "month", pct: 1 }]);
+});
+
+test("a present key is never replaced by the store, whatever it says", async () => {
+  clearStore();
+  writeCache({ deepseek: dsOk });
+  await getUsageInsight();
+  for (const [data, state] of [
+    [{ state: "badkey" }, "badkey"],
+    [{ state: "na" }, "na"],
+    [{ state: "ok", available: true, balances: [] }, "na"], // ok without a readable balance
+  ] as const) {
+    writeCache({ deepseek: data }, { deepseek: "deepseek HTTP 401" });
+    const ds = byId((await getUsageInsight()).providers, "deepseek");
+    assert.equal(ds.state, state, JSON.stringify(data));
+    assert.equal(ds.balance, undefined);
+    assert.notEqual(ds.error, LAST_KNOWN_REASON);
+  }
+});
+
+test("a stored reading older than 24h is ignored", async () => {
+  clearStore();
+  writeCache({ deepseek: dsOk });
+  await getUsageInsight();
+  const stored = readStore();
+  writeFileSync(lastKnownFile, JSON.stringify({ ...stored, savedAt: Date.now() - 24 * 60 * 60_000 - 1000 }));
+  resetLastKnownCache();
+  writeCache({});
+  const ds = byId((await getUsageInsight()).providers, "deepseek");
+  assert.equal(ds.state, "error");
+  assert.equal(ds.error, "no data");
+  assert.equal(lastKnownUsage("deepseek"), null);
+});
+
+test("the store only ever holds ok readings that carry data, and never an error", async () => {
+  clearStore();
+  writeCache({ deepseek: { state: "nokey" }, claude: { state: "ok", fiveHour: { pct: 3 } } }, { claude: "claude HTTP 500" });
+  await getUsageInsight();
+  const stored = readStore();
+  assert.equal(stored.version, 1);
+  assert.ok(typeof stored.savedAt === "number" && stored.savedAt > 0);
+  assert.equal(stored.providers.deepseek, undefined); // not ok
+  assert.deepEqual(stored.providers.claude, { id: "claude", state: "ok", windows: [{ label: "5h", pct: 3 }] });
+  assert.equal("error" in stored.providers.claude, false);
+  // Nothing to add: an unchanged reading doesn't rewrite the file.
+  const before = statSync(lastKnownFile).mtimeMs;
+  writeCache({ claude: { state: "ok", fiveHour: { pct: 3 } } });
+  await getUsageInsight();
+  assert.equal(statSync(lastKnownFile).mtimeMs, before);
+  // A changed reading does.
+  rememberUsage([{ id: "claude", state: "ok", windows: [{ label: "5h", pct: 9 }] }]);
+  assert.deepEqual(readStore().providers.claude, { id: "claude", state: "ok", windows: [{ label: "5h", pct: 9 }] });
+});
+
+test("a corrupt or absent store is empty, not a throw", () => {
+  writeFileSync(lastKnownFile, "{ not json");
+  resetLastKnownCache();
+  assert.equal(lastKnownUsage("deepseek"), null);
+  writeFileSync(lastKnownFile, JSON.stringify({ version: 9, savedAt: Date.now(), providers: { deepseek: { state: "ok", windows: [], balance } } }));
+  resetLastKnownCache();
+  assert.equal(lastKnownUsage("deepseek"), null);
+  clearStore();
+  assert.equal(lastKnownUsage("deepseek"), null);
 });
 
 test("deepseek nokey/badkey pass through, with the fetch error when there is one", async () => {

@@ -158,8 +158,16 @@ export interface UsageProvider {
   state: "ok" | "nologin" | "expired" | "nokey" | "badkey" | "na" | "error"; // "error" = never fetched OK
   windows: UsageWindow[];          // [] unless state "ok"; always [] for a credit provider
   balance?: UsageBalance;          // set instead of windows when state "ok" (DeepSeek only)
-  error?: string;                  // last fetch failed; windows (if any) are from an earlier fetch
+  error?: string;                  // last fetch failed; windows/balance (if any) are from an earlier fetch
 }
+// A provider KEY missing from the cache we just read means an older pi session (holding a
+// pre-deepseek extension in memory) rewrote it at schemaVersion 2. The server then serves that
+// provider's LAST KNOWN reading from ~/.pi/agent/pi-web/usage-last-known.json (server/usage-
+// last-known.ts: ok readings that carry windows or a balance, never an error), capped at 24h,
+// with error = "an older pi session is rewriting the cache (run /reload in it)" — which the UI
+// already renders as "Stale" + "Showing the previous reading". A key that IS present always
+// wins, error/na included, and with nothing stored (or a reading older than 24h) the provider
+// stays state:"error", windows: [], error:"no data".
 export interface UsageInsight {
   available: boolean;              // false: cache file missing or unreadable (reason says which)
   reason?: "missing" | "corrupt";
@@ -239,10 +247,21 @@ maps to `idle`. No extension changes required.
 As implemented (`server/insights.ts`, `server/live.ts` `readLiveRecords`):
 - Usage: a provider with `state:"ok"` but no readable window is reported as `na` (the extension
   shows "n/a"). `error` is set whenever `errors.<provider>` is, even with windows (= previous reading).
+- **An absent provider key falls back to the last known reading (24h cap).** The cache is shared,
+  and a pi session started before a provider existed keeps rewriting it from the extension it has
+  in memory (`schemaVersion` 2, no `deepseek` key) — the fix in those TUIs is `/reload`, but pi-web
+  must not report a provider it read minutes ago as "no data". `server/usage-last-known.ts` persists
+  every `state:"ok"` reading that carries windows or a balance to
+  `~/.pi/agent/pi-web/usage-last-known.json` (written only when a stored reading changed, never with
+  an `error`); `getUsageInsight()` reuses one for any provider whose key is `undefined` in the cache,
+  younger than **24 h**, and sets `error` to `an older pi session is rewriting the cache (run /reload
+  in it)`. Only key absence triggers it: a key that says `error`/`na` is the extension's own answer
+  and wins, and an expired or empty store leaves the old `error` / `no data` behaviour untouched.
 - **DeepSeek (cache `schemaVersion` 3) has a balance, not windows.** There is no usage/quota API for
   it — the only account data is the prepaid credit at `GET https://api.deepseek.com/user/balance` —
-  so it reports `balance` and `windows: []`: no percentage, no meter bar, no reset time, and it is
-  never in the sidebar glance (percentages only). The server takes the **first** readable entry of
+  so it reports `balance` and `windows: []`: no percentage, no meter bar and no reset time. It does
+  reach the sidebar glance, as money rather than a percentage — rounded to whole units there
+  (`DS $4`), exact in the row's tooltip and on the card (`$4.29`). The server takes the **first** readable entry of
   `deepseek.balances[]` (an object with a non-empty `currency` and a finite `total`; `granted` and
   `toppedUp` default to 0), and `available` comes from the provider's own `available !== false`.
   `state:"ok"` with no readable balance follows the same rule as a windowed provider: `na`.
@@ -365,7 +384,7 @@ fold-ai-dev skill v1.8.0. Nothing in `DESIGN_NOTES.md` / `src/design/` changes u
 
 | Surface | Source on disk | What we can claim | What we can't |
 |---|---|---|---|
-| Usage | `~/.pi/agent/cache/usage-status.json` | Per-provider % used per window; Claude reset times; DeepSeek's prepaid credit balance (and whether it can fund calls); file age (`fetchedAt`); per-provider fetch failure (`errors.X`, previous value kept) | OpenAI/Ollama reset times (not in the cache). Any percentage, quota or reset for DeepSeek — it has no usage API, only a balance. Anything fresher than the last pi refresh (it only refreshes while some pi runs) |
+| Usage | `~/.pi/agent/cache/usage-status.json`, plus our own `~/.pi/agent/pi-web/usage-last-known.json` | Per-provider % used per window; Claude reset times; DeepSeek's prepaid credit balance (and whether it can fund calls); file age (`fetchedAt`); per-provider fetch failure (`errors.X`, previous value kept); a reading up to **24 h** old for a provider whose key an older pi session dropped from the cache — labelled as the previous reading, with "run /reload in it" | OpenAI/Ollama reset times (not in the cache). Any percentage, quota or reset for DeepSeek — it has no usage API, only a balance. Anything fresher than the last pi refresh (it only refreshes while some pi runs); anything at all for a provider we have never read (no key, empty store: "no data") |
 | Teams | `subagents-team-v1` entries in the **parent** JSONL (roster) + the parent's live record (`sessions/live/*.json`, `presence.workers[]`) while it runs + `subagent-complete` messages | Roster (role, id, model, orchestrator); **live** status per member while the parent runs; **last reported** settle state once it doesn't | Status of an ended team beyond its last report. Workers die with the parent pi, so a team is only *active* while its parent is live |
 | Working subagents | live records' `presence.workerCounts` / `workers[]` (backend `/api/insights/agents`) | Live working/idle counts per running pi, heartbeat-fresh ≤15s; solo vs team via the JSONL join | Anything for pi processes that aren't running; a record with a stale heartbeat is "unknown", not "idle" |
 | Outline | last `topic-outline` custom entry (v2) | `now`, `overall`, topics (heading, ≤3 bullets, anchor entryId, manual), state `fresh`/`stale`/`failed-keeping-last`, `generatedAt` | — |

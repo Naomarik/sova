@@ -102,3 +102,34 @@ test("adopt of a dead host: permissions are never prompted and the unfinished ta
 	assert.equal(f.runner.status, "error");
 	assert.deepEqual(f.settled.map((s) => s.outcome), ["error"], "the ending is new: reported once");
 });
+
+// Same reduction as runner.test.ts: a settled task followed by a turn the CLI
+// started itself. Nothing in history is re-announced; a live one is.
+const backgroundRun = [
+	{ type: "system", subtype: "init", session_id: "session-1", model: "claude-x" },
+	user("u1", "FIRST"), result("u1", "running in the background…"),
+	{ type: "system", subtype: "init", session_id: "session-1", model: "claude-x" },
+	{ type: "assistant", session_id: "session-1", message: { role: "assistant", content: [{ type: "text", text: "done: 24 ticks" }] } },
+	{ type: "result", subtype: "success", session_id: "session-1", user_message_uuid: null, user_message_uuids: [], result: "done: 24 ticks" },
+];
+
+test("adopt: a fully historical CLI-initiated turn announces nothing but is the worker's answer", async (t) => {
+	const f = adopted(backgroundRun, 6);
+	t.after(() => { void f.runner.dispose(); f.transport.finish(null, "SIGTERM"); });
+	await f.replay();
+	assert.deepEqual(f.settled, [], "the earlier manager already announced it");
+	assert.equal(f.runner.finalOutput(), "done: 24 ticks");
+	assert.equal(f.runner.status, "waiting");
+	assert.deepEqual(f.runner.transcript.filter((i) => i.kind === "assistant").map((i) => i.text), ["running in the background…", "done: 24 ticks"]);
+});
+
+test("adopt: a CLI-initiated turn past the consumed offset is announced exactly once", async (t) => {
+	const f = adopted(backgroundRun, 3);
+	t.after(() => { void f.runner.dispose(); f.transport.finish(null, "SIGTERM"); });
+	await f.replay();
+	assert.deepEqual(f.settled, [{ outcome: "success", output: "done: 24 ticks" }]);
+	assert.equal(f.runner.finalOutput(), "done: 24 ticks");
+	assert.equal(f.runner.status, "waiting");
+	assert.deepEqual(f.stdin(), [], "nothing is (re)sent to an adopted worker");
+	assert.deepEqual(f.runner.transcript.filter((i) => i.kind === "assistant").map((i) => i.text), ["running in the background…", "done: 24 ticks"]);
+});

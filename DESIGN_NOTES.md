@@ -35,11 +35,12 @@ stylesheets — no component library.
 | Banner | `.banner` `.banner-info` `.banner-warn` `.banner-error` `.banner-success` `.banner-icon` `.banner-main` `.banner-title` `.banner-body` `.banner-action` |
 | Streaming | `.live-dot` `.run-status` `.run-status-detail` `.jump-latest` |
 | Composer | `.composer` `.composer-inner` `.composer-row` `.composer-input` (with `.input.textarea`) `.composer-actions` `.composer-foot` `.composer-reason` `.composer-hint` `.button-label` `.composer-drop` + `.composer[data-drop="active\|reject"]` |
-| Model menu (§4c) | `.model-trigger` `.model-trigger-label` `.model-menu[popover]` `.model-menu-search` `.model-menu-list` `.model-menu-group` `.model-option` `[data-active]` `.model-option-check` `.model-option-id` `.model-option-provider` `.model-menu-empty` `.model-menu-foot` |
+| Composer flyout (§4b) | `button.composer-menu-trigger` · `.model-menu.composer-flyout[popover]` `.composer-flyout-list[role=menu]` `.composer-flyout-item` (on `.mode-option`, `[role=menuitem\|menuitemradio]`) `.composer-flyout-icon` `.composer-flyout-label` `.composer-flyout-value` `.composer-flyout-meta` `.composer-flyout-chevron` `.composer-flyout-sep[role=separator]` `.composer-flyout-head` `.composer-flyout-back` (+ `.mode-option-check` `.list-group-label` `.live-dot`) |
+| Model menu (§4c) | `.model-menu[popover]` (the flyout's shell) `.model-menu-search` `.model-menu-list` `.model-menu-group` `.model-option` `[data-active]` `.model-option-check` `.model-option-id` `.model-option-provider` `.model-menu-empty` `.model-menu-foot` |
 | Mode menu (§4g) | `.mode-trigger` `.mode-trigger-label` `.model-menu.mode-menu[popover]` (+ `.model-menu-list[role=menu]` `.model-menu-group`) `.mode-option[role=menuitemradio\|menuitemcheckbox]` `.mode-option-check` `.mode-option-text` `.mode-option-id` `.mode-option-desc` `.mode-menu-foot` |
 | Context window (§4f) | `.context-gauge` `.context-label` `.context-value` `.context-pct` `.context-meta` · states `.context-warn` `.context-error` `.context-compacted` · `.session-head` is the named container `session-head` |
 | Markdown (§4e) | `.md` (on `.message-body`) `.md-table-wrap` `.md-code` `.md-code-head` `.md-code-lang` `.md-code-copy` `.md-image-link` · syntax: `.hljs-*` roles |
-| Slash commands (§4d) | `.composer-commands` (button) · `.command-menu` `.command-menu-head` `.command-list` `.command-option` `[data-active]` `.command-option-name` `.command-option-desc` `.command-option-location` `.command-menu-empty` `.command-menu-foot` · source badge: neutral `.chip` |
+| Slash commands (§4d) | `.command-menu` `.command-menu-head` `.command-list` `.command-option` `[data-active]` `.command-option-name` `.command-option-desc` `.command-option-location` `.command-menu-empty` `.command-menu-foot` · source badge: neutral `.chip` |
 | Images (§4b) | `.message-images` `.message-images-single` `.thumb` `.toolcard-images` · lightbox: `dialog.lightbox` `.lightbox-bar` `.lightbox-caption` `.lightbox-count` `.lightbox-stage` `.lightbox-img` `.lightbox-prev` `.lightbox-next` · attachments: `.attachments` `.attachment` `.attachment-rejected` `.attachment-thumb` `.attachment-icon` `.attachment-text` `.attachment-name` `.attachment-meta` · path attachments: `details.disclosure.message-attachment` `.message-attachment-missing` `.message-attachment-name` `.message-attachment-meta` `.message-attachment-body` · path chips: `button.path-chip` `.path-chip-missing` `.path-chip-name` `.path-chip-note` |
 | Empty / loading | `.empty` `.empty-mark` `.empty-title` `.empty-body` `.empty-action` · `.skeleton` `.skeleton-line` `.skeleton-title` `.skeleton-row` |
 | Toast | `.toast-stack` `.toast` `.toast-body` |
@@ -97,7 +98,7 @@ and `fill="none" stroke="currentColor"`.
 | `close.svg` | Clear search, close dialog |
 | `chevron-left.svg` | Back to list (folded width only) |
 | `chevron-right.svg` | Disclosure twist (rotates 90° when open) |
-| `chevron-down.svg` | Jump to Latest, the model trigger |
+| `chevron-down.svg` | Jump to Latest, the mode trigger |
 | `terminal.svg` | The tool card for `bash`, and the "Ran `/cmd`" info row |
 | `file.svg` | Tool card for `read` / `write` / `edit` |
 | `more.svg` | Tool card for any other tool |
@@ -393,11 +394,10 @@ example when its TUI closes and `live` becomes null. If it's the selected row, i
 **Archiving.** Sessions started from pi-web (`origin === "web"`) can be archived by hand, so
 the top region doesn't keep every one of them forever.
 
-- **Where.** An Archive Session icon button (`archive.svg`) in the session head, before Copy
-  Session Path (§3), only on web sessions. Rows are links, so it can't live in them: a button
-  inside `<a>` is invalid and splits the row's single target. It's the only archive control in
-  the app, so it stays on a head under 520px and Copy Session Path goes instead (§3, §4f
-  "Width budget").
+- **Where.** An Archive Session icon button (`archive.svg`) last in the session head (§3), only
+  on web sessions. Rows are links, so it can't live in them: a button inside `<a>` is invalid and
+  splits the row's single target. It's the only archive control in the app, so it stays at every
+  head width (§3, §4f "Width budget").
 - **What it does.** `POST /api/sessions/archive { path, archived }`, then a list refresh. The id
   goes into `~/.pi/agent/pi-web/archived-sessions.json`; the session file is never written.
   Toast: "Archived. Find it under Archive." The row moves to the Archive, and case 2 keeps it
@@ -613,7 +613,6 @@ word never does.
     </div>
     <span class="chip chip-accent chip-live"><i class="chip-dot"></i>Live</span>   <!-- live only -->
     <button class="button button-icon button-ghost session-archive" aria-label="Archive Session">…archive…</button>  <!-- web sessions only -->
-    <button class="button button-icon button-ghost" aria-label="Copy Session Path">…copy…</button>
   </header>
 
   <section class="transcript pane" id="transcript" aria-label="Transcript">
@@ -632,20 +631,19 @@ word never does.
 - **Head title.** Uses `.session-head-title`, a single line with the full text in `title`. The
   `h1` is sized as a heading-s on purpose: the page is dense and the title is chrome, not a
   display headline.
-- **Model.** In chat sessions the model moves out of `.session-head-meta` into the model
-  trigger (§4c), placed before Copy Session Path. Watch sessions keep it in the meta line.
-- **Copy Session Path.** Copies `path`. Its icon swaps to `check` for 1.5s and a toast says
-  "Copied path." Nothing else changes. Hidden under 520px of head width on web sessions, to
-  make room for Archive (next bullet).
-- **Archive Session / Unarchive Session.** Web sessions only, just before Copy Session Path.
-  Moves the session between the sidebar regions (§2 "Archiving"). `aria-disabled` while live
-  and not archived. **Stays under 520px of head width; Copy Session Path goes instead** on web
-  sessions. At a 320px head (292px inside its 16px/12px padding), a chat head holds back 44,
-  the model trigger at its 88px cap, and one 44px icon button, with 3 gaps of 12px: 212px,
-  leaving the title 80px. A second icon button would take it to 24px, under its 72px floor, so
-  one of the two has to go. This button is the app's only archive control, so hiding it
-  removes archiving from phones and narrow panes. Copy Session Path is a desk convenience, and
-  it's back from 520px up (and always on external sessions).
+- **What the head holds.** Back, the title block, the context gauge (§4f), the mode switch
+  (§4g), the working and Live chips, and Archive. Nothing else: the model and the session's
+  own facts moved into the composer flyout (§4b), which is where the session is acted on.
+- **Model.** Chat sessions show it in the flyout's Model row (§4b), not in the head. Watch
+  sessions keep it in `.session-head-meta`, as plain mono text they can't change.
+- **Copy Session Path.** Gone from the head. The path is a session fact, and it's copied from
+  Session info (§4h) instead, which is where the rest of them live.
+- **Archive Session / Unarchive Session.** Web sessions only, last in the head. Moves the
+  session between the sidebar regions (§2 "Archiving"). `aria-disabled` while live and not
+  archived. It stays at every width: at a 320px head (292px inside its 16px/12px padding) the
+  head holds Back 44, the mode trigger's icon-only 44 and this 44, with 3 gaps of 12px, leaving
+  the title 124px — above its 72px floor. This is the app's only archive control, so hiding it
+  would remove archiving from phones and narrow panes.
 
 ### Transcript items (by `TranscriptItem.kind`)
 
@@ -999,14 +997,15 @@ Driven by `ChatServerMessage.event`.
     <ul class="attachments" aria-label="Attachments">…</ul>
 
     <div class="composer-row">
-      <button class="button button-icon button-ghost" type="button" aria-label="Attach Images"
-              aria-describedby="composer-reason">
-        <span class="icon" style="--icon: url(/icons/attach.svg)" aria-hidden="true"></span>
+      <!-- the one flyout trigger; the menu itself is below -->
+      <button class="button button-icon button-ghost composer-menu-trigger" type="button" id="composer-menu-trigger"
+              aria-label="More Actions" title="More Actions" aria-haspopup="menu" aria-expanded="false"
+              aria-controls="composer-flyout">
+        <span class="icon" style="--icon: url(/icons/plus.svg)" aria-hidden="true"></span>
       </button>
+      <div class="model-menu composer-flyout" id="composer-flyout" popover="auto">…see "Composer flyout"…</div>
       <input class="visually-hidden" type="file" multiple tabindex="-1" aria-hidden="true"
              accept="image/png,image/jpeg,image/gif,image/webp">
-      <!-- Commands button; see §4d -->
-      <button class="button button-icon button-ghost composer-commands" type="button" aria-label="Commands" …>…</button>
       <label class="visually-hidden" for="composer-input">Message</label>
       <textarea class="input textarea composer-input" id="composer-input" rows="1"
                 placeholder="Ask pi to…" aria-describedby="composer-reason"></textarea>
@@ -1070,6 +1069,93 @@ Use `aria-disabled="true"` rather than `disabled` on buttons whose reason matter
 focusable, so the reason (tied to them with `aria-describedby="composer-reason"`) gets read. The
 click handler checks the state and does nothing. The textarea takes a real `disabled` only in the
 read-only live case.
+
+### Composer flyout
+
+Everything you do to a session that isn't typing lives behind one ghost `plus` button, first in
+`.composer-row`. It replaced the two icon buttons that used to sit there (Attach Images and
+Commands) and took the model trigger and the session's own facts out of the head (§3): the
+composer is where the session is acted on, and the head is for reading.
+
+```html
+<div class="model-menu composer-flyout" id="composer-flyout" popover="auto"
+     style="--menu-bottom: 72px; --menu-left: 388px">
+  <div class="composer-flyout-list" role="menu" aria-label="More actions">
+    <div class="mode-option composer-flyout-item" role="menuitem" id="composer-flyout-attach" tabindex="0"
+         aria-describedby="composer-reason">
+      <span class="icon icon-sm composer-flyout-icon" style="--icon: url(/icons/attach.svg)" aria-hidden="true"></span>
+      <span class="composer-flyout-label">Attach images</span>
+    </div>
+    <div class="mode-option composer-flyout-item" role="menuitem" id="composer-flyout-commands" tabindex="-1">…Commands…</div>
+
+    <div class="composer-flyout-sep" role="separator"></div>
+    <div class="mode-option composer-flyout-item" role="menuitem" id="composer-flyout-model" tabindex="-1"
+         aria-haspopup="true" title="zai/glm-5.3">
+      <span class="icon icon-sm composer-flyout-icon" style="--icon: url(/icons/worker.svg)" aria-hidden="true"></span>
+      <span class="composer-flyout-label">Model</span>
+      <span class="composer-flyout-value">glm-5.3</span>
+      <span class="composer-flyout-meta">zai</span>
+      <span class="icon icon-sm composer-flyout-chevron" style="--icon: url(/icons/chevron-right.svg)" aria-hidden="true"></span>
+    </div>
+
+    <div class="composer-flyout-sep" role="separator"></div>
+    <div class="model-menu-group" role="group" aria-labelledby="composer-flyout-thinking">
+      <div class="list-group-label" id="composer-flyout-thinking">Thinking</div>
+      <div class="mode-option composer-flyout-item" role="menuitemradio" id="composer-flyout-thinking-high"
+           tabindex="-1" aria-checked="true">
+        <span class="icon icon-sm mode-option-check" style="--icon: url(/icons/check.svg)" aria-hidden="true"></span>
+        <span class="composer-flyout-label">high</span>
+      </div>
+      …one row per level…
+    </div>
+
+    <div class="composer-flyout-sep" role="separator"></div>
+    <div class="mode-option composer-flyout-item" role="menuitem" id="composer-flyout-info" tabindex="-1">…Session info…</div>
+  </div>
+</div>
+```
+
+- **Mechanism.** A native `[popover="auto"]` in the model menu's shell (`.model-menu`), so it's in
+  the top layer, no `.pane` clips it, and a click outside or `Esc` closes it for free. It's
+  **anchored above** the trigger, because the composer is pinned to the bottom: on open, measure
+  the trigger and set `--menu-bottom: {innerHeight − rect.top + 4}px` and `--menu-left:
+  {rect.left}px`. A resize re-anchors it; it closes only when the trigger isn't laid out anymore.
+  Under 768px it's the same bottom sheet the model menu is.
+- **Panels.** The root menu, and the §4c model picker as a second panel in the same popover, with
+  a `Back to Menu` button above the search field. One popover means no nested light-dismiss to
+  reason about, and `Esc` always means "close the flyout".
+- **Keyboard.** `↑`/`↓` move and wrap, `Home`/`End` jump, `Enter`/`Space` activate, `Esc` closes
+  and returns focus to the trigger, and tabbing out closes it (`focusout` outside the menu).
+  Rows carry real focus with a roving `tabindex`, so they draw the standard `:focus-visible` ring.
+  Opening focuses the first row that isn't disabled. **`Ctrl+P` / `⌘P`** opens it straight on the
+  model panel (and closes it if that panel is already open), with `preventDefault()` so print
+  never fires. It's bound in chat sessions only; watch sessions print as usual.
+- **Rows.**
+  - **Attach images** opens the composer's hidden file picker (§4b). `aria-disabled` and
+    `aria-describedby="composer-reason"` while the composer is disabled.
+  - **Commands** closes the flyout and opens the slash menu exactly as the old button did (§4d).
+    `aria-disabled` when the composer is disabled or there's no command list; then its `title` is
+    "No commands available".
+  - **Model** shows the current id in mono with its provider, and a chevron. It's the picker's
+    trigger: `aria-haspopup="true"`, and while a switch is pending it's `aria-busy` with a
+    `.live-dot` before the target id, and `aria-disabled` (§4c "Pending"). Choosing applies
+    immediately, closes the flyout, and focus returns to the textarea.
+  - **Thinking** is one `menuitemradio` per level of the **current model's** `thinkingLevels`,
+    in ladder order, checked on the active one. **The whole group is hidden when the model has
+    one level or isn't in the model list yet** — a ladder with one rung is not a choice. Picking
+    sends `{type:"set_thinking"}`; the checked state follows the server's `{type:"thinking"}`
+    echo, never the click, because the server clamps to what the model supports. The flyout stays
+    open so that echo is visible, including when it lands on a different level than the one
+    picked. While the agent is running or the composer is blocked, every row is `aria-disabled`
+    with the reason in `title`.
+  - **Session info** closes the flyout and opens §4h.
+- **Changing the model re-reads the ladder.** The server re-clamps on a model switch and sends
+  `{type:"thinking"}` again, so the group re-renders for the new model: switching from a model at
+  `low` to one whose ladder is `off · high · max` shows those three, checked wherever the server
+  put it.
+- **Refusals.** A `{type:"error"}` while a thinking change is pending ends the pending state and
+  shows a `.banner-error` in the transcript's banner slot, exactly like a refused model switch
+  (§4c "Errors"). The level on screen never changes on a refusal.
 
 ### Tokens
 
@@ -1376,23 +1462,24 @@ There are three ways in, and all three feed the same pending list.
    - On the **window**, `preventDefault()` for `dragover`/`drop` anywhere else. Otherwise a stray
      drop makes the browser navigate away to the image.
    - While the composer is disabled, never set `data-drop`, and ignore the drop.
-3. **File picker.** Attach Images is `.button-icon.button-ghost` with the `attach` icon, labelled
-   `aria-label="Attach Images"`. It opens the hidden
-   `<input type="file" multiple accept="image/png,image/jpeg,image/gif,image/webp">`. Reset the
-   input's value after reading it, so the same file can be picked twice.
+3. **File picker.** The flyout's **Attach images** row (§4 "Composer flyout") closes the flyout and
+   opens the hidden `<input type="file" multiple accept="image/png,image/jpeg,image/gif,image/webp">`,
+   which stays the composer's — the flyout only asks for it. Reset the input's value after reading
+   it, so the same file can be picked twice.
 
 **Accepted.** `image/png`, `image/jpeg`, `image/gif`, and `image/webp`, up to **5 MB each** and
 **8 per message**. These are the formats model providers accept. HEIC, SVG, and anything larger
 are rejected on the client before they're sent. If the server enforces a different limit, change
 the numbers here and in the copy deck together.
 
-**Placement at 320px** (and anywhere the composer is under 480px wide). The row is Attach (44) +
-textarea + actions. Under 480px of composer width, `Send`, `Steer`, and `Stop` drop to
-icon-only 44px squares: their word sits in `.button-label`, which becomes visually hidden and
+**Placement at 320px** (and anywhere the composer is under 480px wide). The row is the flyout
+trigger (44) + textarea + actions. Under 480px of composer width, `Send`, `Steer`, and `Stop` drop
+to icon-only 44px squares: their word sits in `.button-label`, which becomes visually hidden and
 stays the accessible name. That's why every composer button wraps its word in
 `<span class="button-label">`. At 320 while streaming, the textarea keeps 288 − 3 × 44 − 3 × 8 =
-132px. Attach stays leftmost, away from the primary. The pending list sits above the row and
-wraps, so it never squeezes the textarea.
+132px, and no control has to hide to get there — the flyout is one button where Attach and
+Commands were two. It stays leftmost, away from the primary. The pending list sits above the row
+and wraps, so it never squeezes the textarea.
 
 **Pending list** (above the textarea):
 
@@ -1446,7 +1533,7 @@ wraps, so it never squeezes the textarea.
     the textarea.
   - The optimistic user bubble shows the images right away.
   - Drafts keep their attachments per session, the same as text.
-- **Disabled composer** (TUI-live, connecting, reconnecting). Attach Images takes the same
+- **Disabled composer** (TUI-live, connecting, reconnecting). The Attach images row takes the same
   `aria-disabled` and shares `aria-describedby="composer-reason"`. Paste and drop don't attach
   anything.
 
@@ -1473,38 +1560,25 @@ wraps, so it never squeezes the textarea.
 
 ## 4c · Model menu
 
-A searchable model picker, like pi's Ctrl+P palette. It's opened from the model button in the
-chat header. It exists only for **chat** sessions. A watched (TUI-owned) session keeps the model
-as plain mono text in `.session-head-meta`, because it can't be changed from here.
+A searchable model picker, like pi's Ctrl+P palette. It exists only for **chat** sessions. A
+watched (TUI-owned) session keeps the model as plain mono text in `.session-head-meta`, because it
+can't be changed from here.
 
 ### Trigger
 
-In chat sessions it takes the model's place in the header. Drop the model from
-`.session-head-meta` and put the trigger after `.session-head-main`, before Copy Session Path:
-
-```html
-<button class="button button-ghost model-trigger" type="button" id="model-trigger"
-        aria-haspopup="dialog" aria-expanded="false" aria-controls="model-menu" title="{provider/id}">
-  <span class="visually-hidden">Model: </span>
-  <span class="model-trigger-label">kimi-k3</span>
-  <span class="icon icon-sm" style="--icon: url(/icons/chevron-down.svg)" aria-hidden="true"></span>
-</button>
-```
-
-- **Label.** The model id without the provider, in mono, with the full `provider/id` in `title`.
-  With no model yet, show "Choose model".
-- **Width.** It's capped at 200px (128px under 768px, and 88px when the session head is under
-  520px, per §4f), and the label truncates. Its accessible
-  name is "Model: kimi-k3", which starts with the visible text.
-- **`aria-expanded`** mirrors the menu: set it in the popover's `toggle` event. While open, the
-  trigger takes the sunken fill.
+**It has no trigger of its own.** The picker is the composer flyout's second panel (§4 "Composer
+flyout"), opened from the flyout's Model row or straight from `Ctrl+P` / `⌘P`; the flyout's Model
+row carries the label ({id} in mono, the provider beside it, the full `provider/id` in `title`,
+"Choose model" with no model yet) and the pending state. Everything below describes the panel.
 
 ### Menu
 
 ```html
-<div class="model-menu" id="model-menu" popover="auto" role="dialog" aria-label="Choose model"
-     style="--menu-top: 60px; --menu-right: 16px">
-  <div class="model-menu-search">
+<!-- inside the flyout's popover; the panel replaces the root menu -->
+<div class="composer-flyout-head">
+  <button class="button button-sm button-ghost composer-flyout-back" type="button">…chevron-left… Back to Menu</button>
+</div>
+<div class="model-menu-search">
     <div class="search">
       <span class="icon" style="--icon: url(/icons/search.svg)" aria-hidden="true"></span>
       <input class="input" type="text" role="combobox" aria-label="Search models"
@@ -1538,29 +1612,25 @@ In chat sessions it takes the model's place in the header. Drop the model from
     </div>
   </div>
 
-  <p class="model-menu-foot"><kbd>↑</kbd><kbd>↓</kbd> to move · <kbd>Enter</kbd> to choose · <kbd>Esc</kbd> to close</p>
-</div>
+<p class="model-menu-foot"><kbd>↑</kbd><kbd>↓</kbd> to move · <kbd>Enter</kbd> to choose · <kbd>Esc</kbd> to close</p>
 ```
 
-- **Role.** This is a **listbox**, not a menu. Choosing a model is selecting one value from a
-  set, which is exactly what a listbox is for. The popup is a small dialog made of a combobox
-  input plus the listbox, so the trigger says `aria-haspopup="dialog"`. **Opening focuses the
+- **Role.** The list is a **listbox**, not a menu. Choosing a model is selecting one value from a
+  set, which is exactly what a listbox is for — the panel is a combobox input plus that listbox,
+  and the flyout row that opens it says `aria-haspopup="true"`. **Showing the panel focuses the
   listbox (`tabindex="-1"`), never the input.** On a phone a focused text input raises the
   keyboard over the sheet, and nobody asked to type yet. Focus moves to the input when the user
   taps it or starts typing. The listbox and the input both carry `aria-activedescendant`, which is
   the keyboard position. The option it points to gets `data-active` and draws the focus ring
   (inset 2px accent), because focus can't be seen anywhere else.
-- **Mechanism.** It's a native `[popover="auto"]`, which puts it in the top layer. It isn't
-  clipped by a `.pane` and needs no Portal. A click outside or `Esc` closes it for free. Render
-  it once, next to the trigger. On open, measure the trigger with `getBoundingClientRect()` and
-  set `--menu-top: {rect.bottom + 4}px` and `--menu-right: {innerWidth − rect.right}px`, then
-  call `showPopover()`. **A resize never closes it.** A window or `visualViewport` resize
-  (including a phone's keyboard opening) re-measures the trigger and re-anchors the menu. It
-  closes only if the trigger isn't laid out anymore (`offsetParent === null` or a zero-size rect).
+- **Mechanism.** The flyout owns the popover; this panel is what's inside it (§4 "Composer
+  flyout" has the anchoring, the resize rule, and the `Back to Menu` affordance). Mounting the
+  panel re-fetches the list and shows the cached one meanwhile; the cache is shared with the
+  Thinking group, which reads the same models to know their ladders (`src/lib/models.ts`).
 - **Positioning.**
-  - At ≥768 (e.g. 1440) it sits right-aligned under the trigger: 360px wide (or the viewport
-    minus 32px), `max-height: min(440px, 70dvh)`, with `--r-md` and `--shadow-2`. The list
-    scrolls, and the search field and the foot stay put.
+  - At ≥768 (e.g. 1440) the flyout is 360px wide (or the viewport minus 32px) with
+    `max-height: min(440px, 70dvh)`, `--r-md` and `--shadow-2`, sitting above the trigger. The
+    list scrolls, and the back row, the search field and the foot stay put.
   - Under 768 (e.g. 320) it's a bottom sheet: full width, up to 85dvh tall, with `--r-xl` top
     corners, the scrim backdrop, and the search at the top. The keyboard hint foot is hidden.
 - **Motion.** It fades in once (`--dur-base`). Nothing loops.
@@ -1593,22 +1663,23 @@ In chat sessions it takes the model's place in the header. Drop the model from
 
 | Key | Where | Does |
 |---|---|---|
-| `Ctrl+P` / `⌘P` | anywhere while a **chat** session is open | Opens the menu, and closes it if it's open. Call `preventDefault()` so print never fires. In watch sessions and on the list view it isn't bound, and the browser prints as usual |
-| `Enter` / `Space` | on the trigger | Opens |
+| `Ctrl+P` / `⌘P` | anywhere while a **chat** session is open | Opens the flyout on this panel, and closes it if that panel is already open. Call `preventDefault()` so print never fires. In watch sessions and on the list view it isn't bound, and the browser prints as usual |
+| `Enter` / `Space` | on the flyout's Model row | Opens this panel |
 | `↓` / `↑` | in the menu | Moves the active option, wrapping. Normally it skips disabled rows. When *every* row is disabled (Blocked), it moves through all of them, so the list stays browsable, and `Enter` does nothing |
 | `PageDown` / `PageUp` | in the menu | Moves 8 options |
 | `Home` / `End` | on the listbox | First / last option (in the input they move the caret) |
 | Typing, `Backspace` | on the listbox | Moves into the input with that key, which filters |
 | `Enter` | in the menu | Chooses the active option. Choosing the current model just closes the menu |
-| `Esc` | in the menu | Closes it (native popover behavior). The query doesn't survive |
+| `Esc` | in the menu | Closes the whole flyout (native popover behavior). The query doesn't survive |
 | `Tab` | in the menu | Closes it (on `focusout` outside the menu), and focus moves on |
-| Mouse | | Hovering a row makes it active, and clicking chooses it |
+| Mouse | | Hovering a row makes it active, and clicking chooses it. `Back to Menu` returns to the root panel and focuses the Model row |
 
-When the menu closes without a choice, focus returns to the trigger.
+When the flyout closes without a choice, focus returns to its trigger; after a choice it goes to
+the textarea, where the next thing you do is type.
 
 ### States
 
-| State | Trigger | Menu |
+| State | Flyout's Model row | Panel |
 |---|---|---|
 | **Loading models** (first open; fetched on every open and cached, so later opens show the cache while it refreshes) | normal | After 300ms, 4 × `<div class="skeleton skeleton-row">` in the list, with `aria-busy="true"` on the listbox |
 | **Load failed** | normal | `.banner.banner-error`: **Couldn't load models.** Your current model is unchanged. Action: `<button class="button button-sm">Retry</button>` |
@@ -1616,8 +1687,8 @@ When the menu closes without a choice, focus returns to the trigger.
 | **No matches** | normal | `<p class="model-menu-empty">` "0 models match “{query}”." |
 | **Blocked: agent running** (`isStreaming`) | enabled, so pressing it shows the reason | `.banner.banner-info`: **Model changes wait until this turn finishes.** Stop or wait, then pick one. Every option gets `aria-disabled="true"`, and the list stays browsable. If a turn starts while the menu is open, the banner appears right away |
 | **Blocked: composer disabled** (connecting, reconnecting, a foreign writer, the TUI took over) | enabled | Same banner, with the current `.composer-reason` text as the title, and options disabled |
-| **Pending** (after choosing, until `{type:"model"}`) | `aria-busy="true"` and `aria-disabled="true"`. The label shows the *target* id, with `<span class="live-dot"></span>` before it. It isn't faded: `aria-busy` restores full opacity, because pending is work in progress, not an unavailable control | Closed. Focus stays on the trigger |
-| **Switched** (`{type:"model"}` arrives) | The label shows the echoed model, and the dot is removed | — |
+| **Pending** (after choosing, until `{type:"model"}`) | `aria-busy="true"` and `aria-disabled="true"`. The row shows the *target* id, with `<span class="live-dot"></span>` before it. It isn't faded: `aria-busy` restores full opacity, because pending is work in progress, not an unavailable control | Closed with the flyout; focus is in the textarea |
+| **Switched** (`{type:"model"}` arrives) | The row shows the echoed model, and the dot is removed | The Thinking group re-renders for the new model's ladder (§4 "Composer flyout") |
 
 - **While pending.**
   - The composer's Send takes `aria-disabled` with the reason "Switching model…" (`clock`
@@ -1634,7 +1705,7 @@ When the menu closes without a choice, focus returns to the trigger.
 ### Errors
 
 An `{type:"error"}` that arrives while a switch is pending belongs to that switch. It ends the
-pending state, the trigger reverts to the current model, and a `.banner.banner-error` shows in
+pending state, the Model row reverts to the current model, and a `.banner.banner-error` shows in
 the chat's `.transcript-banner` slot (sticky at the top of the transcript; chat sessions don't
 use it otherwise):
 
@@ -1664,8 +1735,8 @@ It never auto-dismisses, because it's the only record of the failure.
 
 ### Tokens
 
-- **Trigger.** `.button-ghost` at 44px, `--font-mono` / `--fs-mono` in `--color-ink-2`, and
-  `--color-sunken` while open.
+- **Trigger.** The flyout's `plus` `.button-icon.button-ghost` at 44px, `--color-sunken` while
+  open. Its Model row carries the id in `--font-mono` / `--fs-mono` in `--color-ink-2`.
 - **Menu.** `--color-surface` with a `--color-border` edge, `--r-md`, and `--shadow-2`. At
   folded width it's a sheet with `--r-xl`, `--shadow-3`, and `--scrim`.
 - **Rows.** `--control-md` tall. Id in `--font-mono` / `--color-ink`, provider `--fs-caption` in
@@ -1805,23 +1876,23 @@ The textarea gains these attributes, and keeps them only while the menu is open:
 | `Shift+Enter` | Newline as usual. The newline ends the token, so the menu closes |
 | Mouse down on a row | Inserts, the same as `Enter`. Use `mousedown` + `preventDefault()` so the textarea keeps focus. Hover makes a row active |
 
-### Commands button
+### Commands row
 
 A tap target for the same menu, for phones (where nobody types `/` from habit) and for
-discoverability. It sits in `.composer-row` **immediately right of Attach Images**:
+discoverability. It's the flyout's **Commands** row, second in the root panel, right under Attach
+images (§4 "Composer flyout"):
 
 ```html
-<button class="button button-icon button-ghost composer-commands" type="button"
-        aria-label="Commands" title="Commands"
-        aria-haspopup="listbox" aria-controls="command-listbox" aria-expanded="false"
-        aria-describedby="composer-reason">
-  <span class="icon" style="--icon: url(/icons/command.svg)" aria-hidden="true"></span>
-</button>
+<div class="mode-option composer-flyout-item" role="menuitem" id="composer-flyout-commands"
+     tabindex="-1" title="Commands">
+  <span class="icon icon-sm composer-flyout-icon" style="--icon: url(/icons/command.svg)" aria-hidden="true"></span>
+  <span class="composer-flyout-label">Commands</span>
+</div>
 ```
 
 - **Icon.** `/icons/command.svg` is a `/` inside a rounded square, drawn on the system grid
   (24 viewBox, 1.5 stroke, round caps).
-- **Tap.**
+- **Tap.** It closes the flyout first, then does what the old button did:
   - It **inserts `/` at the caret**, with a space before it if the character before the caret
     isn't whitespace, and focuses the textarea. The existing trigger rule then opens the menu
     with an **empty query**, so nothing new is needed in the menu logic.
@@ -1830,23 +1901,22 @@ discoverability. It sits in `.composer-row` **immediately right of Attach Images
 - **Undo on dismiss.** If the menu closes with `Esc` or blur while the token is **still exactly
   the bare `/` this button inserted**, remove that `/` (and the space it added). Opening and
   dismissing leaves the text as it was. A `/` the user typed is never removed.
-- **`aria-expanded`** mirrors the menu, whichever way it opened. `aria-controls` points at
-  `#command-listbox`, which exists only while the menu is open. Setting it at all times is
-  harmless.
-- **Disabled.** The button takes `aria-disabled="true"` exactly when the menu couldn't open:
+- **`aria-expanded`** belongs to the textarea's combobox, not to this row: the menu it opens is
+  the textarea's autocomplete, and the flyout is closed by the time it appears.
+- **Disabled.** The row takes `aria-disabled="true"` exactly when the menu couldn't open:
   - the composer is disabled (it shares `aria-describedby="composer-reason"`, like Attach);
   - there's no command list yet, or it's empty. Then its `title` becomes "No commands
     available", and there's no composer reason.
 
   A tap on it does nothing.
 - **Unchanged.** Typing `/`, and all the keyboard and touch behavior above, stay as they are.
-- **Width budget.** Attach 44, Commands 44, and Send collapse to 44 under 480px of composer
+- **Width budget.** The flyout trigger is 44, and Send collapses to 44 under 480px of composer
   width (§4b), with 8px gaps:
 
   | Composer width | Idle textarea | Streaming (adds Stop 44) |
   |---|---|---|
-  | 390 viewport (358 composer) | about 202px | about 150px |
-  | 320 viewport (288 composer) | 132px | **Commands hides** (under 340px of composer width while Stop shows), so the textarea keeps 132px. `/` still opens the menu |
+  | 390 viewport (358 composer) | about 246px | about 194px |
+  | 320 viewport (288 composer) | about 176px | 132px, with nothing hidden — one flyout replaced two buttons |
 
 ### Announcements
 
@@ -2113,7 +2183,7 @@ too, so it never rests on hue alone.
 
 ### Markup
 
-It goes after `.session-head-main`, **before** the model trigger in chat, or before the Live chip
+It goes after `.session-head-main`, **before** the mode trigger in chat, or before the Live chip
 in watch. A second copy leads the meta line for narrow heads, and CSS shows one or the other.
 
 ```html
@@ -2136,7 +2206,7 @@ in watch. A second copy leads the meta line for narrow heads, and CSS shows one 
     <span class="context-pct" aria-hidden="true">24%</span>
   </span>
   <span class="visually-hidden" id="context-desc">{exact sentence}</span>
-  …model trigger (chat) or Live chip (watch)… copy…
+  …mode trigger (chat) or Live chip (watch)… archive…
 </header>
 ```
 
@@ -2200,11 +2270,12 @@ floor, because these rules contract):
 3. **Under 520px** (320 included):
    - The gauge leaves the head, and the percent leads the meta line: `24% · ~/webapps/pi-web`.
    - The cwd truncates first.
-   - The model trigger caps at 88px (the label truncates; the full id is in its `title`), so the
-     title keeps about 75px at 320.
+   - The head holds back, the mode trigger (icon-only) and Archive, so the title keeps about
+     124px at 320.
 
 Order of sacrifice: the context label and fraction, then the context's place in the head, then
-the cwd, then the model label's length. The title is the last thing to shrink.
+the cwd. The title is the last thing to shrink. The model isn't in this budget at all anymore:
+it lives in the composer flyout (§4b), which is full-width at every size.
 
 Three more head rules cover every head, not just chat:
 
@@ -2212,10 +2283,6 @@ Three more head rules cover every head, not just chat:
   `{n} working` link chip (§10) is hidden. It repeats the sidebar row's chip and the Agents
   foot row. Before this rule, a watched live session with a team at 320 had back, Team chip,
   Live, and copy, and that left the title block about 0px wide.
-- **Archive over copy.** Under 520px of head width, on web sessions, Copy Session Path (the
-  icon button right after `.session-archive`) is hidden and Archive stays, since it's the only
-  archive control. With both, the title would get 24px at 320; with one, it gets 80px (numbers
-  in §3, "Archive Session / Unarchive Session").
 - **Floor.** `.session-head-main` has `min-width: 72px`. Whatever else lands in the head later,
   the title and meta line can't collapse to nothing. Extra chips overflow before the title
   disappears, and each new head chip needs its own narrow rule.
@@ -2245,8 +2312,8 @@ has never toggled follows it; the first toggle pins that session. `GET /api/mode
 
 ### Trigger
 
-In chat sessions it sits right before the model trigger (§4c). A watched (TUI) session shows
-nothing: the TUI keeps its mode in memory, so we can't say what it's using.
+In chat sessions it sits right after the context gauge (§4f), and it's the only menu trigger
+left in the head. A watched (TUI) session shows nothing: the TUI keeps its mode in memory, so we can't say what it's using.
 
 ```html
 <button class="button button-ghost mode-trigger" type="button" aria-haspopup="menu"
@@ -2346,8 +2413,8 @@ chats, and nothing watches `mode.json`.
 
 ### Tokens
 
-Trigger: like `.model-trigger` (`--font-mono`, `--fs-mono`, `--color-ink-2`, sunken fill while
-open, icons `--color-ink-muted`). Rows: `--control-md` min height, `--space-2` / `--space-3`
+Trigger: `--font-mono`, `--fs-mono`, `--color-ink-2`, sunken fill while open, icons
+`--color-ink-muted`. Rows: `--control-md` min height, `--space-2` / `--space-3`
 padding, id in `--font-mono` `--color-ink`, description `--fs-caption` `--color-ink-muted`,
 checked `--color-accent-tint`, focus `--focus-ring` inset. Foot: `--fs-caption`
 `--color-ink-muted` over a `--color-border` rule.
@@ -2655,8 +2722,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | No session selected | **{n} sessions across {m} folders.** Pick one to read it, or start a new one. · button: `New Session` |
 | Transcript load error | **Couldn't load this transcript.** The file at `{path}` wasn't changed. {server message} · button: `Retry` |
 | New empty session | **New session in `{cwd}`.** Nothing sent yet. Your first message becomes its title. |
-| Copy path button / toast | `aria-label` "Copy Session Path" · toast "Copied path." |
-| Archive button / toasts | `aria-label` "Archive Session" · "Unarchive Session" (shown at every width; under 520px of head it replaces Copy Session Path) · disabled `title` "Open in a TUI. It stays on top while live." · toasts "Archived. Find it under Archive." · "Moved back to Live & web." · error "Couldn't archive this session. {server message}" |
+| Archive button / toasts | `aria-label` "Archive Session" · "Unarchive Session" (shown at every width) · disabled `title` "Open in a TUI. It stays on top while live." · toasts "Archived. Find it under Archive." · "Moved back to Live & web." · error "Couldn't archive this session. {server message}" |
 | Copy output button / toast | `Copy Output` · toast "Copied output." |
 | Unknown entry | Unrecognized entry `{raw.type}` · disclosure label "Raw entry" |
 | Long tool output | `Show All {n} Lines` |
@@ -2702,11 +2768,30 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Turn error banner (in thread) | **The turn stopped with an error.** {message}. Your messages are kept. Send again to retry. |
 | SR announcements | Working. · Reply finished. |
 
+### Composer flyout
+
+| Where | Copy |
+|---|---|
+| Trigger | `aria-label` / `title`: More Actions |
+| Menu `aria-label` | More actions |
+| Rows | Attach images · Commands · Model · Session info |
+| Model row | {id} · {provider} (`title`: {provider/id}) · no model: Choose model |
+| Thinking group label | Thinking |
+| Thinking rows | the model's levels, verbatim and in ladder order: off · minimal · low · medium · high · xhigh · max |
+| Thinking disabled `title` | Thinking changes wait until this turn finishes. · else the composer reason for that state |
+| Back to the root panel | `Back to Menu` |
+| Thinking error title | Couldn't set thinking to `{level}`. |
+| Thinking error: running | Thinking changes wait until this turn finishes. You're still on `{level}`. |
+| Thinking error: unknown level | pi doesn't know this thinking level. You're still on `{level}`. |
+| Thinking error: timeout | The server didn't confirm the change. You're still on `{level}`. |
+| Thinking error: other | {server message}. You're still on `{level}`. |
+| Thinking error action | Dismiss |
+
 ### Images
 
 | Where | Copy |
 |---|---|
-| Attach button `aria-label` | Attach Images |
+| Attach row (composer flyout) | Attach images |
 | Pending list `aria-label` | Attachments |
 | Pasted image name | Pasted image |
 | Remove / Dismiss `aria-label` | Remove {name} · rejected: Dismiss {name} |
@@ -2735,7 +2820,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 
 | Where | Copy |
 |---|---|
-| Trigger | {id} (visually hidden prefix "Model: ") · no model: Choose model · `title`: {provider/id} |
+| Opened from | the composer flyout's Model row (see "Composer flyout" above) and `Ctrl+P` / `⌘P` |
 | Menu `aria-label` | Choose model |
 | Search placeholder / label | Search models |
 | Listbox `aria-label` | Models |
@@ -2802,7 +2887,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 
 | Where | Copy |
 |---|---|
-| Commands button `aria-label` / `title` | Commands · no list: `title` "No commands available" |
+| Commands row (composer flyout) | Commands · no list: `title` "No commands available" |
 | Menu head | Commands · {n} |
 | Listbox `aria-label` | Commands |
 | Row name | /{name} |

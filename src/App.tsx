@@ -6,13 +6,12 @@ import { fetchAgents, fetchExplanations, fetchSessionInsight, fetchUsage, listSe
 import { agentsHref, insightsRouteFromHash, legacyInsightsTarget } from "./lib/insights";
 import { createPoll } from "./lib/poll";
 import { homeFromSessionPath, shortModel, tildePath } from "./lib/format";
-import { copyText, home, setHome, toast } from "./lib/ui-state";
+import { home, setHome, toast } from "./lib/ui-state";
 import { sessionWorking, type UsageTotalView, workingChipTitle, workingSplit } from "./lib/workers";
 import { ChatView, type ChatRefusal } from "./components/ChatView";
 import { AgentsView } from "./components/AgentsView";
 import { ContextGauge, ContextMetaPrefix, contextDescribedBy } from "./components/ContextGauge";
 import { ModeMenu, type ModeControl } from "./components/ModeMenu";
-import { ModelMenu, type ModelControl } from "./components/ModelMenu";
 import { NewSessionDialog } from "./components/NewSessionDialog";
 import { ExplainStrip } from "./components/ExplainStrip";
 import { OutlineStrip } from "./components/OutlineStrip";
@@ -20,7 +19,7 @@ import { SubagentPane } from "./components/SubagentPane";
 import { sessionHref, Sidebar } from "./components/Sidebar";
 import { UsageView } from "./components/UsageView";
 import { WatchView } from "./components/WatchView";
-import { Banner, Chip, CopyButton, CountChip, GlobalRegions, Icon } from "./components/ui";
+import { Banner, Chip, CountChip, GlobalRegions, Icon } from "./components/ui";
 
 /** Why a session is open read-only. */
 type WatchWhy = "tui" | "recent";
@@ -157,8 +156,6 @@ export function App() {
   const created = new Map<string, SessionSummary>();
   const [creating, setCreating] = createSignal(false);
   const [chatModel, setChatModel] = createSignal<string | null>(null);
-  /** The open chat session's model picker controls (DESIGN_NOTES §4c); null outside chat. */
-  const [modelControl, setModelControl] = createSignal<ModelControl | null>(null);
   const [modeControl, setModeControl] = createSignal<ModeControl | null>(null);
   const [now, setNow] = createSignal(Date.now());
 
@@ -406,7 +403,6 @@ export function App() {
                       <ContextGauge path={d.path} />
                       {/* Global mode (§4g): chat sessions only; a watched TUI keeps its own in memory. */}
                       <Show when={d.mode === "chat" && modeControl()}>{(c) => <ModeMenu control={c()} />}</Show>
-                      <Show when={d.mode === "chat" && modelControl()}>{(c) => <ModelMenu control={c()} />}</Show>
                       <Show
                         when={working() > 0}
                         fallback={
@@ -431,7 +427,6 @@ export function App() {
                       <Show when={s().origin === "web"}>
                         <ArchiveButton session={s()} onChanged={refresh} />
                       </Show>
-                      <CopyButton iconOnly label="Copy Session Path" text={() => d.path} onCopy={(t) => copyText(t, "Copied path.")} />
                     </header>
                     <Show when={insight.data?.outline}>{(o) => <OutlineStrip path={d.path} outline={o()} now={now()} />}</Show>
                     <ExplainStrip explanations={insight.data?.explanations} now={now()} />
@@ -491,6 +486,7 @@ export function App() {
                           return (
                             <ChatView
                               path={d.path}
+                              summary={() => s()}
                               cwdLabel={tildePath(s().cwd, home())}
                               author={author()}
                               force={c().force}
@@ -500,8 +496,7 @@ export function App() {
                                 // The sidebar row reads the list: re-read it after a switch.
                                 if (m && m !== s().model) refresh();
                               }}
-                              onModelControl={setModelControl}
-                              onModeControl={setModeControl}
+                                onModeControl={setModeControl}
                               onRefused={onRefused}
                               onSettled={() => {
                                 refresh();

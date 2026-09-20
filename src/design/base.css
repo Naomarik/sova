@@ -1397,31 +1397,11 @@ summary.sidebar-region-head .icon-twist { transition: transform var(--dur-fast) 
 }
 
 
-/* ---- MODEL MENU. A searchable model picker (Ctrl+P). The trigger sits in
-   .session-head; the menu is a [popover="auto"] (top layer: not trapped by
-   a .pane, light-dismiss and Esc for free) positioned under the trigger via
-   --menu-top / --menu-right set on open. A bottom sheet under 768px. ---- */
-
-.model-trigger {
-  flex: 0 1 auto;
-  min-width: 0;
-  max-width: 200px;
-  gap: var(--space-1);
-  padding: 0 var(--space-2) 0 var(--space-3);
-  font-family: var(--font-mono);
-  font-size: var(--fs-mono);
-  font-weight: var(--fw-regular);
-  color: var(--color-ink-2);
-}
-.model-trigger-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.model-trigger[aria-expanded="true"] { background: var(--color-sunken); color: var(--color-ink); }
-.model-trigger .live-dot { margin-right: var(--space-1); }
-/* Pending is work in progress, not an unavailable control: keep it legible
-   (it stays aria-disabled for AT and clicks). */
-.model-trigger[aria-busy="true"] { opacity: 1; cursor: progress; }
-@media (max-width: 767px) {
-  .model-trigger { max-width: 128px; }
-}
+/* ---- MODEL MENU. A searchable model picker (Ctrl/⌘+P). It has no trigger of
+   its own anymore: it's the second panel of the composer flyout (§4b), which
+   owns the [popover="auto"] shell these rules position — the top layer, so a
+   .pane can't clip it, with light-dismiss and Esc for free. A sheet under
+   768px. ---------------------------------------------------------------- */
 
 .model-menu {
   position: fixed;
@@ -1596,6 +1576,68 @@ summary.sidebar-region-head .icon-twist { transition: transform var(--dur-fast) 
 }
 
 
+/* ---- COMPOSER FLYOUT (§4b). One ghost "+" in the composer row opens this
+   popover ABOVE itself: the composer is pinned to the bottom of the pane, so
+   the menu grows upward from the trigger (--menu-bottom / --menu-left, set on
+   open). Same shell as the model menu — surface, border, --shadow-2, and a
+   bottom sheet under 768px — with a root role=menu panel and the §4c picker
+   as its second panel. ------------------------------------------------- */
+
+.composer-menu-trigger[aria-expanded="true"] { background: var(--color-sunken); color: var(--color-ink); }
+/* Anchored above. Under 768px the .model-menu sheet rules own the position. */
+@media (min-width: 768px) {
+  .composer-flyout {
+    top: auto;
+    right: auto;
+    bottom: var(--menu-bottom, 72px);
+    left: var(--menu-left, var(--space-4));
+  }
+}
+.composer-flyout-list { padding: var(--space-1) 0; }
+.composer-flyout .list-group-label { padding: var(--space-2) var(--space-3) var(--space-1); }
+.composer-flyout-item { align-items: center; }
+.composer-flyout-icon,
+.composer-flyout-chevron { flex: none; color: var(--color-ink-muted); }
+.composer-flyout-label { flex: none; color: var(--color-ink); }
+.composer-flyout-item[role="menuitemradio"] .composer-flyout-label {
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono);
+}
+/* The model row's value: the id in mono, pushed to the right, then its provider. */
+.composer-flyout-value {
+  flex: 1;
+  min-width: 0;
+  margin-left: auto;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono);
+  color: var(--color-ink-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.composer-flyout-meta {
+  flex: none;
+  max-width: 40%;
+  font-size: var(--fs-caption);
+  color: var(--color-ink-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.composer-flyout-item[aria-disabled="true"] { cursor: not-allowed; }
+/* Pending is work in progress, not an unavailable control (§4c "Pending"). */
+.composer-flyout-item[aria-busy="true"] { opacity: 1; cursor: progress; }
+.composer-flyout-item .live-dot { flex: none; }
+.composer-flyout-sep {
+  height: var(--stroke-thin);
+  margin: var(--space-1) 0;
+  background: var(--color-border);
+}
+.composer-flyout-head { flex: none; padding: var(--space-2) var(--space-2) 0; }
+.composer-flyout-back { gap: var(--space-1); }
+
+
 /* ---- COMMAND MENU. Slash-command autocomplete (§4d). Anchored ABOVE the
    composer's content, full composer width; focus stays in the textarea
    (aria-activedescendant). Absolute inside .composer-inner: .composer is a
@@ -1684,15 +1726,9 @@ summary.sidebar-region-head .icon-twist { transition: transform var(--dur-fast) 
 @media (max-width: 767px) {
   .command-menu-foot { display: none; }
 }
-/* The Commands button (next to Attach) gives way while streaming on the
-   narrowest composers so the textarea keeps ≥132px; "/" still opens the
-   menu. Contracts, so container query + @media floor. */
-@container composer (max-width: 339px) {
-  .composer:has(.button-destructive) .composer-commands { display: none; }
-}
-@media (max-width: 371px) {
-  .composer:has(.button-destructive) .composer-commands { display: none; }
-}
+/* The flyout replaced Attach + Commands with one 44px button (§4b), so the
+   row no longer has to drop a control at 320px: at a 288px composer while
+   streaming the textarea still keeps 132px. */
 /* Narrow composer: the description is the useful part; location gives way.
    Contracts, so container query + @media floor (the skill's union). */
 @container composer (max-width: 479px) {
@@ -1859,7 +1895,7 @@ summary.sidebar-region-head .icon-twist { transition: transform var(--dur-fast) 
 
 /* ---- CONTEXT WINDOW (§4f). Plain text, not a meter: number first and
    only — a 6px bar in a 56px head says less than "24%". It sits in the
-   head before the model trigger (chat) / Live chip (watch) and collapses
+   head before the mode trigger (chat) / Live chip (watch) and collapses
    with the HEAD's width, not the window's:
      ≥720  "Context 237k / 1M · 24%"
      ≥520  "24%"
@@ -1904,14 +1940,9 @@ summary.sidebar-region-head .icon-twist { transition: transform var(--dur-fast) 
 @container session-head (max-width: 519px) {
   .context-gauge { display: none; }
   .context-meta { display: inline; }
-  .model-trigger { max-width: 88px; }   /* the title is what the head is for */
   /* The head's aggregate "Team · n working" link chip (§10) repeats the
      sidebar row chip and the Agents foot row; on a narrow head it goes. */
   .session-head > .chip-count { display: none; }
-  /* Web sessions add Archive (§2 "Archiving"), the app's only archive
-     control; the 72px title floor can't hold it beside Copy Session Path,
-     so the copy button goes on a narrow head. */
-  .session-head > .session-archive + .button-icon { display: none; }
 }
 /* Floor: whatever else lands in the head, the title block never collapses
    to nothing — extra chips overflow before the title disappears. */
@@ -1923,9 +1954,7 @@ summary.sidebar-region-head .icon-twist { transition: transform var(--dur-fast) 
 @media (max-width: 519px) {
   .context-gauge { display: none; }
   .context-meta { display: inline; }
-  .model-trigger { max-width: 88px; }
   .session-head > .chip-count { display: none; }
-  .session-head > .session-archive + .button-icon { display: none; }
 }
 
 

@@ -1,7 +1,7 @@
 import { batch, createEffect, createSignal, For, onCleanup, Show } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { Portal } from "solid-js/web";
-import type { ChatServerMessage, SlashCommand, TeamInfo, TranscriptItem, WorkerInfo } from "../../shared/protocol";
+import type { ChatServerMessage, SessionSummary, SlashCommand, TeamInfo, TranscriptItem, WorkerInfo } from "../../shared/protocol";
 import { fetchTranscriptWithContext, wsUrl } from "../lib/api";
 import { contextStateFor, usageTokens, windowOf } from "../lib/context";
 import { addPendingPrompt, applyEvent, emptyLive, runDetail, type LiveState } from "../lib/live";
@@ -11,7 +11,9 @@ import { usageTotal, type UsageTotalView, workingSplit } from "../lib/workers";
 import type { UploadResult } from "../../shared/protocol";
 import { announce, drafts, sessionContext, setLocalRunning, setSessionContext, toast } from "../lib/ui-state";
 import { Composer, type ComposerReason } from "./Composer";
+import type { ThinkingControl } from "./ComposerMenu";
 import { ConnectionBanner } from "./ConnectionBanner";
+import { SessionInfoDialog } from "./SessionInfoDialog";
 import type { ModeControl, ModeState } from "./ModeMenu";
 import type { ModelControl } from "./ModelMenu";
 import { HistoryItems, InfoRow, LiveEntries, ThreadScroller, TranscriptSkeleton, TurnError } from "./Thread";
@@ -30,14 +32,14 @@ const UI_DIALOG_METHODS = ["select", "confirm", "input", "editor"];
  */
 export function ChatView(props: {
   path: string;
+  /** The session-list row for this chat, live from the sidebar's poll: feeds the info modal. */
+  summary?: () => SessionSummary | undefined;
   cwdLabel: string;
   author: string;
   /** Reconnect past the server's recent-write guard (never past a live TUI). */
   force: boolean;
   autofocus?: boolean;
   onModel(model: string | null): void;
-  /** Hands the header its model picker's controls; null when this view goes away. */
-  onModelControl?(control: ModelControl | null): void;
   /** Hands the header this chat's mode state (§4g); null when this view goes away. */
   onModeControl?(control: ModeControl | null): void;
   onRefused(kind: ChatRefusal, message: string): void;
@@ -65,6 +67,14 @@ export function ChatView(props: {
   const [modelError, setModelError] = createSignal<{ target: string; from: string | null; body: string | { noCredentials: string } } | null>(null);
   /** "Model changed to …" rows shown until a transcript reload brings the persisted entry. */
   const [modelRows, setModelRows] = createSignal<string[]>([]);
+  /** The session's thinking level (WS "thinking"; seeded by hello). The server is the authority:
+      it clamps to the model's ladder, and re-sends after every model switch. */
+  const [thinking, setThinking] = createSignal<string | null>(null);
+  /** Level asked for, until the echo. A refusal ends it and leaves the level as it was. */
+  const [pendingThinking, setPendingThinking] = createSignal<string | null>(null);
+  const [thinkingError, setThinkingError] = createSignal<{ target: string; from: string | null; body: string } | null>(null);
+  /** The per-session info modal (§4h), opened from the composer flyout. */
+  const [showInfo, setShowInfo] = createSignal(false);
   /** This session's slash commands (sent after hello, and again after a runtime reload). */
   const [commands, setCommands] = createSignal<SlashCommand[]>([]);
   /** The global mode and how it applies to this chat (WS "mode"). */
@@ -77,7 +87,11 @@ export function ChatView(props: {
   const [workerList, setWorkerList] = createSignal<WorkerInfo[]>([]);
   const workersSplit = () => workingSplit(workersWorking(), workerList(), props.teams);
   let modelTimer: ReturnType<typeof setTimeout> | undefined;
-  onCleanup(() => clearTimeout(modelTimer));
+  let thinkingTimer: ReturnType<typeof setTimeout> | undefined;
+  onCleanup(() => {
+    clearTimeout(modelTimer);
+    clearTimeout(thinkingTimer);
+  });
 
   const resync = async () => {
     setSyncing(true);
@@ -157,6 +171,11 @@ export function ChatView(props: {
             setLive(reconcile({ ...emptyLive(), running: msg.isStreaming }));
           });
           setModel(msg.model);
+          batch(() => {
+            setThinking(msg.thinking);
+            setPendingThinking(null);
+            setThinkingError(null);
+          });
           setSessionContext(props.path, contextStateFor(msg.context ?? null, msg.items));
           setModelRows([]);
           setWorkersWorking(0); // a runtime without workers sends no "workers" after hello
@@ -174,6 +193,20 @@ export function ChatView(props: {
           break;
         case "model":
           modelSwitched(msg.model);
+          break;
+        // The effective level, after clamping: set_thinking echoes it, and so does a model switch.
+        case "thinking":
+          clearTimeout(thinkingTimer);
+          batch(() => {
+            setThinking(msg.level);
+            setPendingThinking(null);
+            setThinkingError(null);
+          });
+          break;
+        // Rows written outside a turn (mode markers, …). Before hello there is nothing to append
+        // to: hello's own items carry them.
+        case "append":
+          setItems((list) => (list ? [...list, ...msg.items] : list));
           break;
         case "mode":
           setModeState({ mode: msg.mode, minorModes: msg.minorModes, strict: msg.strict, applies: msg.applies });
@@ -195,6 +228,7 @@ export function ChatView(props: {
         }
         case "error":
           if (pendingModel()) modelFailed(msg.message, msg.code);
+          if (pendingThinking()) thinkingFailed(msg.message);
           switch (msg.code) {
             case "busy":
             case "recent":
@@ -215,7 +249,7 @@ export function ChatView(props: {
               setLive("running", false);
               return;
             default:
-              if (modelError()) break; // shown as the switch's banner
+              if (modelError() || thinkingError()) break; // shown as the switch's banner
               // The same failure re-reported (a reconnect loop) says nothing new: keep one row.
               setErrors((e) => (e[e.length - 1] === msg.message ? e : [...e, msg.message]));
               // A prompt that failed before the agent started leaves nothing running.
@@ -291,7 +325,43 @@ export function ChatView(props: {
     clearTimeout(modelTimer);
     modelTimer = setTimeout(() => modelFailed("The server didn't confirm the switch."), 15_000);
   };
-  props.onModelControl?.({
+  // ---- Thinking level (DESIGN_NOTES §4b "Thinking") --------------------------------------
+  /** The server sends free text here too; map the two refusals it can answer with. */
+  const thinkingErrorBody = (message: string) => {
+    if (message.startsWith("Cannot change thinking while the agent is running"))
+      return "Thinking changes wait until this turn finishes.";
+    if (message.startsWith("Unknown thinking level")) return "pi doesn't know this thinking level.";
+    return `${message.replace(/\.$/, "")}.`;
+  };
+  const thinkingFailed = (message: string) => {
+    const target = pendingThinking();
+    if (!target) return;
+    clearTimeout(thinkingTimer);
+    batch(() => {
+      setPendingThinking(null);
+      setThinkingError({ target, from: thinking(), body: thinkingErrorBody(message) });
+    });
+  };
+  const thinkingBlocked = (): string | null => {
+    if (live.running) return "Thinking changes wait until this turn finishes.";
+    return blocked()?.text ?? null;
+  };
+  const thinkingControl: ThinkingControl = {
+    level: thinking,
+    pending: pendingThinking,
+    blocked: thinkingBlocked,
+    choose: (level: string) => {
+      if (pendingThinking() || level === thinking() || thinkingBlocked()) return;
+      if (!socket.send({ type: "set_thinking", level })) return;
+      setThinkingError(null);
+      setPendingThinking(level);
+      clearTimeout(thinkingTimer);
+      thinkingTimer = setTimeout(() => thinkingFailed("The server didn't confirm the change."), 15_000);
+    },
+  };
+
+  /** The composer flyout's model panel (§4b); the header no longer carries a model trigger. */
+  const modelControl: ModelControl = {
     model,
     pending: pendingModel,
     blocked: () => {
@@ -300,8 +370,7 @@ export function ChatView(props: {
       return reason && !pendingModel() ? { title: reason.text } : null;
     },
     choose: chooseModel,
-  });
-  onCleanup(() => props.onModelControl?.(null));
+  };
   props.onModeControl?.({ state: modeState, path: props.path });
   onCleanup(() => props.onModeControl?.(null));
 
@@ -411,6 +480,30 @@ export function ChatView(props: {
                 />
               )}
             </Show>
+            {/* A refused thinking change reads like a refused model switch (§4b "Thinking"). */}
+            <Show when={thinkingError()}>
+              {(err) => (
+                <Banner
+                  tone="error"
+                  title={
+                    <>
+                      Couldn't set thinking to <code>{err().target}</code>.
+                    </>
+                  }
+                  body={
+                    <>
+                      {err().body}
+                      <Show when={err().from}> You're still on <code>{err().from!}</code>.</Show>
+                    </>
+                  }
+                  action={
+                    <button type="button" class="button button-sm button-ghost" onClick={() => setThinkingError(null)}>
+                      Dismiss
+                    </button>
+                  }
+                />
+              )}
+            </Show>
           </div>
         }
       >
@@ -474,9 +567,27 @@ export function ChatView(props: {
         onShowWorkers={props.onShowWorkers}
         workersOpen={props.workersOpen}
         autofocus={props.autofocus}
+        model={modelControl}
+        thinking={thinkingControl}
+        onShowInfo={() => setShowInfo(true)}
         onSend={send}
         onAbort={abort}
       />
+      <Show when={showInfo()}>
+        <SessionInfoDialog
+          path={props.path}
+          summary={props.summary}
+          items={() => items() ?? []}
+          context={() => {
+            const state = sessionContext()[props.path];
+            return state && state !== "compacted" ? state : null;
+          }}
+          onClose={() => {
+            setShowInfo(false);
+            queueMicrotask(() => document.getElementById("composer-menu-trigger")?.focus());
+          }}
+        />
+      </Show>
       <Show when={dialogs()[0]} keyed>
         {(d) => (
           <Portal>

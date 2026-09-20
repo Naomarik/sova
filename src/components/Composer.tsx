@@ -14,6 +14,8 @@ import {
 } from "../lib/images";
 import { announce, draftImages, drafts } from "../lib/ui-state";
 import { showWorkersLabel, teamNote, type WorkingSplit, workersWorkingLabel } from "../lib/workers";
+import { ComposerMenu, type ThinkingControl } from "./ComposerMenu";
+import type { ModelControl } from "./ModelMenu";
 import { Icon, type IconName } from "./ui";
 
 export interface ComposerReason {
@@ -53,6 +55,12 @@ export function Composer(props: {
   autofocus?: boolean;
   /** This session's slash commands; the "/" autocomplete is off without them. */
   commands?: SlashCommand[];
+  /** Chat sessions only: the flyout's model picker (§4c). */
+  model?: ModelControl | null;
+  /** Chat sessions only: the flyout's Thinking ladder (§4b). */
+  thinking?: ThinkingControl | null;
+  /** Opens this session's info modal from the flyout (§4h). */
+  onShowInfo?: () => void;
   /** `text` already names each uploaded image's path; `uploads` are for the optimistic row. */
   onSend(text: string, steer: boolean, uploads: UploadResult[]): boolean;
   onAbort(): void;
@@ -428,16 +436,17 @@ export function Composer(props: {
         </Show>
 
         <div class="composer-row">
-          <button
-            type="button"
-            class="button button-icon button-ghost"
-            aria-label="Attach Images"
-            aria-describedby="composer-reason"
-            aria-disabled={disabled() ? "true" : undefined}
-            onClick={() => !disabled() && picker?.click()}
-          >
-            <Icon name="attach" />
-          </button>
+          {/* One flyout in place of the old Attach and Commands buttons (§4b). */}
+          <ComposerMenu
+            disabled={disabled()}
+            commandsAvailable={(props.commands?.length ?? 0) > 0}
+            onAttach={() => picker?.click()}
+            onCommands={toggleCommands}
+            model={props.model}
+            thinking={props.thinking}
+            onShowInfo={props.onShowInfo}
+            onRefocus={() => input.focus()}
+          />
           <Show when={!props.readOnly}>
             <input
               ref={picker}
@@ -453,22 +462,6 @@ export function Composer(props: {
               }}
             />
           </Show>
-          {/* Opens the §4d menu; mousedown keeps focus (and the caret) in the textarea. */}
-          <button
-            type="button"
-            class="button button-icon button-ghost composer-commands"
-            aria-label="Commands"
-            title={props.commands?.length ? "Commands" : "No commands available"}
-            aria-haspopup="listbox"
-            aria-expanded={slashOpen() ? "true" : "false"}
-            aria-controls={slashOpen() && slashMatches().length > 0 ? "command-listbox" : undefined}
-            aria-describedby="composer-reason"
-            aria-disabled={disabled() || !(props.commands?.length ?? 0) ? "true" : undefined}
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={toggleCommands}
-          >
-            <Icon name="command" />
-          </button>
           <label class="visually-hidden" for="composer-input">
             Message
           </label>

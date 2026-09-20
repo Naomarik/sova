@@ -513,8 +513,18 @@ class ChatSession {
             throw new Error(`Unknown thinking level: ${level || "(empty)"}`);
           this.flushDeferredAppends(); // keep open-time entries before this thinking_level_change
           // The SDK clamps to what the model supports, so the echo is the effective level.
+          const before = this.session.thinkingLevel;
           this.session.setThinkingLevel(level as Parameters<AgentSession["setThinkingLevel"]>[0]);
-          this.broadcast({ type: "thinking", level: this.session.thinkingLevel });
+          const after = this.session.thinkingLevel;
+          this.broadcast({ type: "thinking", level: after });
+          // The SDK's appendThinkingLevelChange emits no entry_appended (only the extension
+          // appendEntry API does), so the "Thinking: X" row is synthesized here; the next
+          // hello/resync replaces it with the real entry.
+          if (after !== before)
+            this.broadcast({
+              type: "append",
+              items: [{ id: `thinking-${Date.now()}`, kind: "info", raw: { type: "thinking_level_change", thinkingLevel: after }, text: `Thinking: ${after}` }],
+            });
           return;
         }
         case "set_model": {

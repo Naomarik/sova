@@ -53,3 +53,18 @@ test("claude tally deduplicates one message repeated across lines and across app
     "a sidechain agent's tokens are the worker's spend too");
   assert.equal(totalOf(next)!.cost, undefined, "CC's JSONL carries no cost");
 });
+
+test("pi tally counts top-level usage entries once, across appends, and resets on a snapshot", () => {
+  const tally = piUsageTally();
+  const warm = (id: string) => ({ id, parentId: "a", type: "usage", kind: "cache_warm", provider: "anthropic", model: "m",
+    usage: piUsage(0, 0, 50_000, 0, 0.015) });
+  const first = tally(jsonl(piMessage("a", piUsage(100, 10, 900, 50, 0.25)), warm("w1")), "snapshot");
+  assert.deepEqual(totalOf(first), { input: 100, output: 10, cacheRead: 50_900, cacheWrite: 50, cost: 0.265 });
+  // The same usage entry arriving again in an append adds nothing.
+  assert.deepEqual(totalOf(tally(jsonl(warm("w1")), "append")), totalOf(first));
+  // An unknown kind is still usage.
+  const next = tally(jsonl({ ...warm("w2"), kind: "something-new" }), "append");
+  assert.deepEqual(totalOf(next), { input: 100, output: 10, cacheRead: 100_900, cacheWrite: 50, cost: 0.28 });
+  assert.deepEqual(totalOf(tally(jsonl(warm("w3")), "snapshot")),
+    { input: 0, output: 0, cacheRead: 50_000, cacheWrite: 0, cost: 0.015 });
+});

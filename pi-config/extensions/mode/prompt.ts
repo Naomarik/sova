@@ -56,6 +56,23 @@ export function composePrompt(state: Pick<ModeState, "mode" | "strict" | "minorM
 	return blocks.length > 0 ? blocks.join("\n\n") : undefined;
 }
 
+/**
+ * The system-prompt section the mode blocks are delivered in on pi >= 0.86. Pi wraps the
+ * content as `<mode>...</mode>` and diffs it against the section the model already has,
+ * so a toggle costs one small patch instead of a whole new prompt.
+ */
+export const MODE_SECTION = "mode";
+
+/**
+ * Write this turn's blocks into a host's mutable prompt sections. No block means no mode is
+ * on, and the section must go: leaving it would keep the instruction live in the replayed
+ * prompt state after switching back to normal.
+ */
+export function applyModeSection(sections: Record<string, string>, block: string | undefined): void {
+	if (block === undefined) delete sections[MODE_SECTION];
+	else sections[MODE_SECTION] = block;
+}
+
 export type StatusTone = "dim" | "accent" | "warning";
 
 export function statusLabel(

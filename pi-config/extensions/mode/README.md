@@ -156,6 +156,14 @@ While heavy, the extension appends orchestration instructions to the system
 prompt on every turn (`before_agent_start`), so toggling takes effect on the
 next prompt without `/reload`.
 
+How those instructions reach the model depends on the host. On pi >= 0.86 the
+handler writes the blocks into `systemPromptOptions.sections.mode`, which pi
+diffs against the section the model already has: a toggle costs one small
+mid-conversation patch instead of a whole new prompt, so the cached prefix
+survives, and switching back to normal deletes the section so the instructions
+stop applying. On 0.85.x hosts — including pi-web's embedded runtime — there
+are no sections, and the blocks stay a whole-prompt append as before.
+
 ### Two scopes
 
 The **active** state — major mode, `strict`, minor modes — belongs to **one

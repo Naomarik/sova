@@ -162,6 +162,11 @@ function normalizeMessage(entry: Entry, id: string, state?: { model?: string }):
       return [item(id, "info", entry, `Branch summary: ${m.summary ?? ""}`)];
     case "compactionSummary":
       return [item(id, "info", entry, `Compaction summary: ${m.summary ?? ""}`)];
+    case "system":
+      // pi 0.86.0+: the prompt/tool loadout state replayed from the transcript
+      // (content, sections, toolsAdded/Removed). The TUI does not show it as
+      // conversation either, so neither do we.
+      return [];
     default:
       return [item(id, "unknown", entry)];
   }
@@ -283,6 +288,11 @@ export function normalizeEntry(entry: Entry, fallbackId = "?", state?: { model?:
   const id = typeof entry.id === "string" ? entry.id : fallbackId;
   switch (entry.type) {
     case "session":
+      return [];
+    case "usage":
+      // pi 0.86.0+: model-attributed usage outside the conversation (e.g. kind
+      // "cache_warm"). It contributes to session totals only (see transcript-usage.ts),
+      // never to the conversation; unknown `kind` values are still usage.
       return [];
     case "message":
       return normalizeMessage(entry, id, state);

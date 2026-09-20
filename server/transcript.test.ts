@@ -593,3 +593,21 @@ describe("align-doc entries", () => {
     assert.ok(rows.every((r) => r.report?.align === undefined));
   });
 });
+
+describe("pi 0.86.0 entries the TUI keeps out of the conversation", () => {
+  test("a system message and a usage entry render nothing at all", () => {
+    const system = {
+      type: "message", id: "s1", parentId: "u1", message: { role: "system", content: "",
+        sections: { preamble: "You are an expert coding assistant", tools: "<tools>...</tools>" },
+        toolsAdded: ["read"], toolsRemoved: [] },
+    };
+    const usage = { type: "usage", id: "w1", parentId: "s1", kind: "cache_warm", provider: "anthropic", model: "m",
+      usage: { input: 0, output: 0, cacheRead: 50_000, cacheWrite: 0, totalTokens: 50_000 } };
+    assert.deepEqual(normalizeEntry(system), []);
+    assert.deepEqual(normalizeEntry(usage), []);
+    assert.deepEqual(normalizeEntry({ ...usage, kind: "something-new" }), [], "an unknown kind is hidden too");
+    const rows = normalizeEntries([system, userEntry("hi"), usage]);
+    assert.deepEqual(rows.map((r) => [r.id, r.kind]), [["u1", "user"]]);
+    assert.ok(rows.every((r) => r.kind !== "unknown"), "nothing renders as an unrecognized entry");
+  });
+});

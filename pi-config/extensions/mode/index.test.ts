@@ -6,7 +6,16 @@ import test from "node:test";
 import { buildMinorPrompt, isMinorMode, MINOR_DESCRIPTIONS, MINOR_MODES, normalizeMinorModes, parseMinorFlag } from "./minor.ts";
 import { MODE_CATEGORY_ID, modeCategoryItems } from "./palette.ts";
 import { pickPlanner } from "./planner.ts";
-import { buildHeavyPrompt, composePrompt, HEAVY_ALIGN_BRIDGE, PLANNER_FALLBACK, PLANNER_PRIMARY, statusLabel } from "./prompt.ts";
+import {
+	applyModeSection,
+	buildHeavyPrompt,
+	composePrompt,
+	HEAVY_ALIGN_BRIDGE,
+	MODE_SECTION,
+	PLANNER_FALLBACK,
+	PLANNER_PRIMARY,
+	statusLabel,
+} from "./prompt.ts";
 import {
 	activeOf,
 	DEFAULT_ALIGN_VIEWER_SHORTCUT,
@@ -155,6 +164,28 @@ test("minor mode names never collide with /mode keywords", () => {
 		assert.ok(!["normal", "claude-heavy", "status", "strict"].includes(minor), minor);
 		assert.match(minor, /^[a-z-]+$/, "must match the /mode minor-toggle pattern");
 	}
+});
+
+test("applyModeSection sets, overwrites and deletes the mode section", () => {
+	assert.equal(MODE_SECTION, "mode");
+
+	// Set: the section appears next to whatever the host already built.
+	const sections: Record<string, string> = { preamble: "base" };
+	applyModeSection(sections, "block one");
+	assert.deepEqual(sections, { preamble: "base", mode: "block one" });
+
+	// Overwrite: a toggle replaces the section in place, so pi diffs one section.
+	applyModeSection(sections, "block two");
+	assert.deepEqual(sections, { preamble: "base", mode: "block two" });
+
+	// Delete: back to normal, the key is gone (pi sends null and drops the section).
+	applyModeSection(sections, undefined);
+	assert.deepEqual(sections, { preamble: "base" });
+	assert.ok(!(MODE_SECTION in sections), "the key is removed, not left empty");
+
+	// Deleting when nothing is set is a no-op, and never touches other sections.
+	applyModeSection(sections, undefined);
+	assert.deepEqual(sections, { preamble: "base" });
 });
 
 test("composePrompt joins the heavy block and minor blocks", () => {

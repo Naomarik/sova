@@ -120,6 +120,11 @@ Frontend is SolidJS (NOT React): signals/stores, `<For>/<Show>`, `onCleanup` for
 - The sessions extension also loads inside our embedded runtimes and writes `live/*.json` with the
   server's own pid. `server/live.ts` ignores own-pid and dead-pid records, otherwise every
   webapp-owned session would look TUI-busy.
+- A pi 0.86.0 TUI writes two entry shapes 0.85.1 never emits: `message` entries with `role:"system"`
+  (the prompt/tool loadout: content, sections, toolsAdded/Removed) and top-level `type:"usage"`
+  entries (`kind:"cache_warm"` and future kinds). The webapp hides both from the transcript
+  (`server/transcript.ts`) and counts the usage ones in session totals (`server/transcript-usage.ts`,
+  deduped by entry id); the pinned SDK stays 0.85.1, so our own runtimes still don't write them.
 - Unidentified writers (e.g. a headless/orchestrating pi, not in the live registry): `/ws/chat` refuses
   (`code:"busy"`, close 4409) a session the server doesn't hold whose mtime is < 120s old
   (`RECENT_WRITE_MS` in `server/write-guard.ts`, shared constant with the frontend) unless `&force=1`.

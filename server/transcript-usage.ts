@@ -54,15 +54,16 @@ function tally(add: (total: TokenUsage, entries: Entry[], seen: Set<string>) => 
 }
 
 /**
- * pi sessions: every assistant message's own `usage`, entries deduplicated by id.
+ * pi sessions: every assistant message's own `usage` plus every `usage` entry, deduplicated by id.
  * This is what the session has spent, including branches a rewind later abandoned —
  * unlike the context-fill number in transcript.ts, which is the last message only.
  */
 export const piUsageTally = (): UsageTally =>
   tally((total, entries, seen) => {
     for (const e of entries) {
-      if (e.type !== "message" || e.message?.role !== "assistant") continue;
-      const u = e.message.usage;
+      // Assistant messages, plus pi 0.86.0+ top-level `usage` entries: work outside the
+      // conversation (e.g. kind "cache_warm") that still counts towards session totals.
+      const u = e.type === "usage" ? e.usage : e.type === "message" && e.message?.role === "assistant" ? e.message.usage : undefined;
       if (!u) continue;
       const id = typeof e.id === "string" ? e.id : undefined;
       if (id) {

@@ -550,4 +550,25 @@ assert.ok(!store.widgets.has(ALIGN_WIDGET), "doc:null on the branch clears the w
 await commands.get("align").handler("off", ctx);
 assert.equal(store.status.get("mode"), "<dim>normal</dim>", "/align off turns the minor off");
 
+// ── Prompt delivery: diffed sections on pi ≥ 0.86, whole-prompt append on 0.85 hosts ──
+await commands.get("mode").handler("claude-heavy", ctx);
+const promptSections = { preamble: "base" };
+const sectionHost = () => ({ systemPrompt: "base", systemPromptOptions: { cwd: ctx.cwd, sections: promptSections } });
+assert.equal(await beforeAgentStart(sectionHost(), ctx), undefined, "a sections host gets no systemPrompt return");
+assert.match(promptSections.mode, /# Mode: claude-heavy/, "the block lands in the mode section");
+assert.deepEqual(Object.keys(promptSections), ["preamble", "mode"], "no other section is touched");
+
+// Back to normal: the section must go, or the replayed prompt keeps the heavy instruction live.
+await commands.get("mode").handler("normal", ctx);
+assert.equal(await beforeAgentStart(sectionHost(), ctx), undefined);
+assert.ok(!("mode" in promptSections), "normal mode deletes the section");
+assert.deepEqual(promptSections, { preamble: "base" });
+
+// A 0.85 host has no sections at all: the whole-prompt append is unchanged.
+const legacyHost = () => ({ systemPrompt: "base", systemPromptOptions: { cwd: ctx.cwd } });
+assert.equal(await beforeAgentStart(legacyHost(), ctx), undefined, "normal mode appends nothing on a 0.85 host");
+await commands.get("mode").handler("claude-heavy", ctx);
+assert.match((await beforeAgentStart(legacyHost(), ctx)).systemPrompt, /^base\n\n# Mode: claude-heavy/, "0.85 hosts still get the appended prompt");
+await commands.get("mode").handler("normal", ctx);
+
 console.log("mode smoke tests passed");

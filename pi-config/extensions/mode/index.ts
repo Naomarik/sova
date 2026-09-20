@@ -51,7 +51,7 @@ import { ALIGN_OVERLAY_OPTIONS, alignWidget, createAlignViewer, type AlignViewer
 import { isMinorMode, MINOR_MODES, parseMinorFlag, type MinorMode } from "./minor.ts";
 import { MODE_CATEGORY_ID, modeCategoryItems } from "./palette.ts";
 import { PlannerProbe } from "./planner.ts";
-import { composePrompt, PLANNER_PRIMARY, statusLabel, type PlannerChoice } from "./prompt.ts";
+import { applyModeSection, composePrompt, PLANNER_PRIMARY, statusLabel, type PlannerChoice } from "./prompt.ts";
 import {
 	activeOf,
 	DEFAULT_ALIGN_VIEWER_SHORTCUT,
@@ -548,9 +548,17 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		viewerOpen = false;
 	});
 
-	// The behaviour change itself: extend this turn's system prompt with the active mode blocks.
+	// The behaviour change itself: put the active mode blocks into this turn's system prompt.
+	// pi >= 0.86 exposes mutable prompt sections and diffs them against what the model already
+	// has, so a toggle costs one small patch and keeps the cached prefix; hosts without them
+	// (0.85.x, including pi-web's embedded runtime) still take the whole-prompt append.
 	pi.on("before_agent_start", async (event) => {
 		const block = composePrompt(active, planner);
+		const sections = (event.systemPromptOptions as { sections?: Record<string, string> } | undefined)?.sections;
+		if (sections) {
+			applyModeSection(sections, block);
+			return;
+		}
 		if (block === undefined) return;
 		return { systemPrompt: `${event.systemPrompt}\n\n${block}` };
 	});

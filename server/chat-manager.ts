@@ -187,6 +187,17 @@ function parseImages(raw: unknown): SdkImage[] | undefined {
   return out.length ? out : undefined;
 }
 
+/**
+ * Stop: drain the queued steers/follow-ups, then abort — the TUI's Esc order
+ * (restoreQueuedMessagesToEditor). abort() leaves the queue intact, so the next prompt would
+ * send itself first and the stale steer right behind it. Nothing is written to the session file.
+ */
+export function drainQueueThenAbort(session: Pick<AgentSession, "clearQueue" | "abort">, broadcast: (msg: ChatServerMessage) => void): Promise<void> {
+  const { steering, followUp } = session.clearQueue();
+  if (steering.length || followUp.length) broadcast({ type: "queue_cleared", steering, followUp });
+  return session.abort();
+}
+
 /** pi SourceInfo.scope → rpc get_commands `location` ("temporary" = explicit CLI/settings path). */
 function sourceLocation(info: { scope: string } | undefined): string | undefined {
   if (!info) return undefined;
@@ -503,7 +514,7 @@ class ChatSession {
           return;
         }
         case "abort":
-          this.session.abort().catch(fail);
+          drainQueueThenAbort(this.session, (m) => this.broadcast(m)).catch(fail);
           return;
         case "set_thinking": {
           // setThinkingLevel appends a thinking_level_change entry: same write guards as set_model.

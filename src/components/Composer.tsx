@@ -1,6 +1,6 @@
 import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
 import type { SlashCommand, UploadResult } from "../../shared/protocol";
-import { insertCommand, localCommand, rankCommands, slashTokenAt, type SlashToken } from "../lib/slash";
+import { enterRunsLocal, insertCommand, localCommand, rankCommands, slashMenuSuppressed, slashTokenAt, type SlashToken } from "../lib/slash";
 import { commandOptionIds, SlashMenu } from "./SlashMenu";
 import {
   ACCEPTED_TYPES,
@@ -54,6 +54,8 @@ export function Composer(props: {
   onShowWorkers?: () => void;
   /** The subagents pane is open (the row's aria-expanded). */
   workersOpen?: boolean;
+  /** Runs a bare "/new" (§4d): resolves to the new session's folder label, or null if none was made. */
+  onNewSession?: () => Promise<string | null>;
   autofocus?: boolean;
   /** This session's slash commands; the "/" autocomplete is off without them. */
   commands?: SlashCommand[];
@@ -66,6 +68,8 @@ export function Composer(props: {
   /** `text` already names each uploaded image's path; `uploads` are for the optimistic row. */
   onSend(text: string, steer: boolean, uploads: UploadResult[]): boolean;
   onAbort(): void;
+  /** Queued text a Stop handed back; each new object goes ahead of the draft (TUI Esc order). */
+  restored?: { text: string } | null;
 }) {
   const [text, setText] = createSignal(drafts.get(props.path) ?? "");
   const [images, setImagesSignal] = createSignal<PendingImage[]>(draftImages.get(props.path) ?? []);
@@ -152,10 +156,17 @@ export function Composer(props: {
     return token ? rankCommands(props.commands ?? [], token.query) : [];
   });
   const slashIds = createMemo(() => commandOptionIds(slashMatches()));
-  /** Never while disabled. Streaming is fine: pi runs a "/command" steer as a command. */
+  /** Never while disabled, nor on a bare local command (§4d). Streaming is fine: pi runs a
+      "/command" steer as a command. */
   const slashOpen = () => {
     const token = slashToken();
-    return !!token && !disabled() && (props.commands?.length ?? 0) > 0 && slashDismissed() !== tokenKey(token);
+    return (
+      !!token &&
+      !disabled() &&
+      (props.commands?.length ?? 0) > 0 &&
+      slashDismissed() !== tokenKey(token) &&
+      !slashMenuSuppressed(text())
+    );
   };
   /** Re-reads the token under the caret; call after input, clicks, and caret keys. */
   const updateSlash = () => {
@@ -302,6 +313,13 @@ export function Composer(props: {
     input.style.height = `${input.scrollHeight}px`;
   };
   createEffect(on(text, () => queueMicrotask(grow)));
+  createEffect(
+    on(
+      () => props.restored,
+      (r) => r?.text && setDraft([r.text, text()].filter((t) => t.trim()).join("\n\n")),
+      { defer: true },
+    ),
+  );
   onMount(() => {
     // After the frame, so a closing dialog's focus handling has already run. Not on a touch-only
     // device: focusing the textarea there raises the keyboard over the new session (§5, §4c).
@@ -309,6 +327,7 @@ export function Composer(props: {
     if (props.autofocus && !props.readOnly && !touchOnly) requestAnimationFrame(() => input.focus());
   });
 
+  let startingNew = false;
   const send = async (e?: Event) => {
     e?.preventDefault();
     if (!canSend()) return;
@@ -320,6 +339,19 @@ export function Composer(props: {
       input.value = "";
       setSlashToken(null);
       announce(props.workersOpen ? "Subagents already open." : "Subagents open.");
+      return;
+    }
+    // "/new" is ours too: a fresh session in this folder, and this one archived (§4d). Nothing
+    // reaches the runtime, so no "Ran" row. The draft stays if no session was made.
+    if (localCommand(text()) === "new" && props.onNewSession && images().length === 0) {
+      if (startingNew) return;
+      startingNew = true;
+      const cwd = await props.onNewSession().finally(() => (startingNew = false));
+      if (cwd === null) return;
+      setDraft("");
+      input.value = "";
+      setSlashToken(null);
+      announce(`New session in ${cwd}.`);
       return;
     }
     const pending = images();
@@ -530,7 +562,7 @@ export function Composer(props: {
               addFiles(files, true);
             }}
             onKeyDown={(e) => {
-              if (slashOpen() && !e.isComposing) {
+              if (slashOpen() && !e.isComposing && !enterRunsLocal(text(), e.key, e.shiftKey)) {
                 const hasMatches = slashMatches().length > 0;
                 if (e.key === "ArrowDown" || e.key === "ArrowUp") {
                   if (!hasMatches) return;

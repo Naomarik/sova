@@ -4,14 +4,15 @@ import { Portal } from "solid-js/web";
 import type { ChatServerMessage, SessionSummary, SlashCommand, TeamInfo, TranscriptItem, WorkerInfo } from "../../shared/protocol";
 import { fetchTranscriptWithContext, wsUrl } from "../lib/api";
 import { contextStateFor, usageTokens, windowOf } from "../lib/context";
-import { addPendingPrompt, applyEvent, emptyLive, runDetail, type LiveState } from "../lib/live";
+import { addPendingPrompt, applyEvent, emptyLive, runDetail, takeBackQueued, type LiveState } from "../lib/live";
 import { isObj, str } from "../lib/message";
 import { createReconnectingSocket } from "../lib/socket";
 import { usageTotal, type UsageTotalView, workingSplit } from "../lib/workers";
 import type { UploadResult } from "../../shared/protocol";
-import { announce, drafts, sessionContext, setLocalRunning, setSessionContext, toast } from "../lib/ui-state";
+import { announce, drafts, hideThinking, hideTools, sessionContext, setLocalRunning, setSessionContext, toast } from "../lib/ui-state";
+import { visibleCount } from "../lib/hidden-tools";
 import { Composer, type ComposerReason } from "./Composer";
-import type { ThinkingControl } from "./ComposerMenu";
+import { FlyoutSession, type ThinkingControl } from "./ComposerMenu";
 import { ConnectionBanner } from "./ConnectionBanner";
 import { SessionInfoDialog } from "./SessionInfoDialog";
 import type { ModeControl, ModeState } from "./ModeMenu";
@@ -52,6 +53,11 @@ export function ChatView(props: {
   /** Toggles the subagents pane from the composer's subagents row. */
   onShowWorkers?(): void;
   workersOpen?: boolean;
+  /** The session pane re-reads this after its Archive/Unarchive action succeeds; the info modal
+      needs the same, or the sidebar row stays stale until its next poll. */
+  onArchiveChanged?(): void;
+  /** A bare "/new" in the composer (§4d); resolves to the new session's folder label, or null. */
+  onNewSession?(): Promise<string | null>;
   /** This session's teams (polled insight), so the status row can name team members as such. */
   teams?: TeamInfo[];
 }) {
@@ -63,6 +69,8 @@ export function ChatView(props: {
   const [configError, setConfigError] = createSignal<string | null>(null);
   const [dialogs, setDialogs] = createSignal<{ id: string; request: unknown }[]>([]);
   const [resume, setResume] = createSignal(0);
+  /** Queued steers/follow-ups a Stop drained, handed back to the composer. */
+  const [restored, setRestored] = createSignal<{ text: string } | null>(null);
   const [everOpened, setEverOpened] = createSignal(false);
   const [model, setModel] = createSignal<string | null>(null);
   const [pendingModel, setPendingModel] = createSignal<string | null>(null);
@@ -190,6 +198,15 @@ export function ChatView(props: {
           setWorkerList(msg.workers);
           props.onWorkers?.(msg.workers, usageTotal(msg));
           break;
+        // Stop drained what was still queued; it goes back to the draft, not behind the next prompt.
+        case "queue_cleared": {
+          const text = takeBackQueued(setLive, [...msg.steering, ...msg.followUp]);
+          if (text) {
+            setRestored({ text });
+            announce("Queued message returned to the composer.");
+          }
+          break;
+        }
         case "commands":
           setCommands(msg.commands);
           break;
@@ -426,7 +443,7 @@ export function ChatView(props: {
   return (
     <>
       <ThreadScroller
-        count={(items()?.length ?? 0) + live.entries.length}
+        count={visibleCount(items() ?? [], { tools: hideTools(props.path), thinking: hideThinking(props.path) }) + live.entries.length}
         resume={resume()}
         busy={!items()}
         banner={
@@ -521,8 +538,8 @@ export function ChatView(props: {
         <Show when={items()} fallback={<TranscriptSkeleton />}>
           {(list) => (
             <>
-              <HistoryItems items={list()} author={props.author} streaming={live.running} />
-              <LiveEntries live={live} author={props.author} />
+              <HistoryItems items={list()} author={props.author} streaming={live.running} hideTools={hideTools(props.path)} hideThinking={hideThinking(props.path)} />
+              <LiveEntries live={live} author={props.author} hideTools={hideTools(props.path)} hideThinking={hideThinking(props.path)} />
               <For each={modelRows()}>
                 {(ref) => (
                   <InfoRow>
@@ -565,6 +582,7 @@ export function ChatView(props: {
         </Show>
         <For each={errors()}>{(m) => <TurnError message={m} />}</For>
       </ThreadScroller>
+      <FlyoutSession.Provider value={() => props.path}>
       <Composer
         path={props.path}
         blocked={blocked()}
@@ -577,17 +595,21 @@ export function ChatView(props: {
         workersSplit={workersSplit()}
         onShowWorkers={props.onShowWorkers}
         workersOpen={props.workersOpen}
+        onNewSession={props.onNewSession}
         autofocus={props.autofocus}
         model={modelControl}
         thinking={thinkingControl}
         onShowInfo={() => setShowInfo(true)}
         onSend={send}
         onAbort={abort}
+        restored={restored()}
       />
+      </FlyoutSession.Provider>
       <Show when={showInfo()}>
         <SessionInfoDialog
           path={props.path}
           summary={props.summary}
+          onArchiveChanged={props.onArchiveChanged}
           items={() => items() ?? []}
           context={() => {
             const state = sessionContext()[props.path];

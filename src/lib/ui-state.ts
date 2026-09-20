@@ -78,3 +78,68 @@ export const [lightbox, setLightbox] = createSignal<LightboxState | null>(null);
 
 export const openLightbox = (images: LightboxState["images"], index: number, opener: HTMLElement | null) =>
   setLightbox({ images, index, opener });
+
+// ---------------------------------------------------------------------------
+// Per-session view preferences
+//
+// Persisted so a reload keeps them: the key convention follows the sessionStorage users
+// (Sidebar's ARCHIVE_KEY, InsightStrip's per-path key) — `pi-web:<name>-<path>`. Storage access
+// is wrapped: a blocked or full localStorage must never break a render, and the in-memory map
+// below is the authority within a session either way.
+
+const PREF_PREFIX = "pi-web:";
+
+function readPref(name: string, path: string): string | null {
+  try {
+    return localStorage.getItem(`${PREF_PREFIX}${name}-${path}`);
+  } catch {
+    return null;
+  }
+}
+
+function writePref(name: string, path: string, value: string): void {
+  try {
+    localStorage.setItem(`${PREF_PREFIX}${name}-${path}`, value);
+  } catch {
+    // Persistence is a convenience; the choice still holds for this session.
+  }
+}
+
+/** Whether the session's transcript hides tool rows. The in-memory map wins over the stored
+    value, so a toggle shows immediately and still survives a reload. No path: never hidden. */
+const [hideToolsByPath, setHideToolsByPath] = createSignal<Record<string, boolean>>({});
+
+export const hideTools = (path: string | null | undefined): boolean =>
+  path ? (hideToolsByPath()[path] ?? readPref("hide-tools", path) === "1") : false;
+
+/** Says so through the status region: rows disappearing is otherwise a silent, confusing event. */
+export function setHideTools(path: string, hide: boolean): void {
+  setHideToolsByPath((m) => (m[path] === hide ? m : { ...m, [path]: hide }));
+  writePref("hide-tools", path, hide ? "1" : "0");
+  announce(hide ? "Tool calls hidden in this session." : "Tool calls shown again.");
+}
+
+/** Whether the session's transcript hides thinking rows. Its own preference: thinking is often still
+    wanted while tool cards are not. Same storage and same in-memory authority as the tool rows. */
+const [hideThinkingByPath, setHideThinkingByPath] = createSignal<Record<string, boolean>>({});
+
+export const hideThinking = (path: string | null | undefined): boolean =>
+  path ? (hideThinkingByPath()[path] ?? readPref("hide-thinking", path) === "1") : false;
+
+export function setHideThinking(path: string, hide: boolean): void {
+  setHideThinkingByPath((m) => (m[path] === hide ? m : { ...m, [path]: hide }));
+  writePref("hide-thinking", path, hide ? "1" : "0");
+  announce(hide ? "Thinking hidden in this session." : "Thinking shown again.");
+}
+
+/** The session pane's active tab per path. A plain string, so this module knows no tab list: the
+    pane narrows it to its own union. In memory only, and deliberately so — each opener sets the tab
+    as it opens the pane (`openPane`), so a stored value would be overwritten before anything read
+    it. The pane is never open across a reload either. */
+const [activeTabByPath, setActiveTabByPath] = createSignal<Record<string, string>>({});
+
+export const activeTab = (path: string | null | undefined): string | null => (path ? (activeTabByPath()[path] ?? null) : null);
+
+export function setActiveTab(path: string, id: string): void {
+  setActiveTabByPath((m) => (m[path] === id ? m : { ...m, [path]: id }));
+}

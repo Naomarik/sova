@@ -10,6 +10,7 @@ import type {
   OutlineTopic,
   SessionInsight,
   SessionOutline,
+  SessionSkills,
   SessionUsage,
   SpendOrigin,
   TeamInfo,
@@ -26,8 +27,10 @@ import type {
 import { hasPage, listExplanations, sortExplanations } from "./explanations";
 import { readLiveRecords, type RawLiveRecord } from "./live";
 import { resolveSessionPath } from "./paths";
+import { collectSkills, hasSkills } from "./skills";
 import { activeBranch, parseLines } from "./transcript";
 import { LAST_KNOWN_REASON, lastKnownUsage, rememberUsage } from "./usage-last-known";
+import { workerSkills } from "./worker-skills";
 
 // Read-only views over what the user's pi extensions leave on disk (sources and shapes:
 // docs/insights-research.md "Data sources"). Nothing here writes to ~/.pi. Every source is
@@ -255,6 +258,8 @@ interface SessionFacts {
   /** Main-thread spend from the active branch's assistant usage, per model (a model switch adds
       a row). Workers are NOT included: they join in getSessionInsight from the live record. */
   usage: { main: ModelSpendTotal; models: ModelSpendTotal[] };
+  /** Which skills the branch's prompt offered, and which were loaded: see skills.ts. */
+  skills: SessionSkills;
 }
 
 const FACTS_MAX = 64;
@@ -411,7 +416,8 @@ function extractFacts(text: string): SessionFacts {
   const byModel = new Map<string, ModelSpendTotal>();
   const entries = parseLines(text);
   const header = entries.find((e) => e.type === "session");
-  for (const e of activeBranch(entries)) {
+  const branch = activeBranch(entries);
+  for (const e of branch) {
     if (e.type === "custom" && e.customType === TEAM_ENTRY) addTeamEntry(teams, e.data);
     else if (e.type === "custom" && e.customType === "topic-outline") outlineData = e.data;
     else if (e.type === "custom_message" && e.customType === "subagent-complete") addReport(reports, e);
@@ -440,10 +446,11 @@ function extractFacts(text: string): SessionFacts {
     explanations,
     sessionId: (header ? str(header.id) : undefined) ?? null,
     usage: { main, models },
+    skills: collectSkills(branch),
   };
 }
 
-const EMPTY_FACTS: SessionFacts = { teams: [], reports: new Map(), outline: null, compactions: [], explanations: [], sessionId: null, usage: { main: zeroSpend(""), models: [] } };
+const EMPTY_FACTS: SessionFacts = { teams: [], reports: new Map(), outline: null, compactions: [], explanations: [], sessionId: null, usage: { main: zeroSpend(""), models: [] }, skills: { offered: [], used: [] } };
 
 async function sessionFacts(path: string): Promise<SessionFacts> {
   try {
@@ -722,11 +729,16 @@ export async function getSessionInsight(path: string): Promise<SessionInsight> {
   const workers = live ? decodeWorkers(presence) : null;
   const usageTotal = live ? decodeUsageTotal(presence) : undefined;
   const usage = buildUsage(facts, workers, usageTotal);
+  // A worker's own transcript is the only record of what it loaded (see server/worker-skills.ts).
+  // mtime-cached, because this endpoint is polled every 3s while the pane is open.
+  const skillsLoaded = workers && workers.length > 0 ? await workerSkills(workers) : undefined;
   return {
     outline: live ? overlayOutline(facts.outline, presence?.outline) : facts.outline,
     compactions: facts.compactions,
     teams: joinTeams(facts, path, workers),
     workers: workers ?? [],
+    ...(hasSkills(facts.skills) ? { skills: facts.skills } : {}),
+    ...(skillsLoaded ? { workerSkills: skillsLoaded } : {}),
     ...(usageTotal ? { usageTotal } : {}),
     ...(usage ? { usage } : {}),
     explanations: await explanations(facts),

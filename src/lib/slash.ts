@@ -45,16 +45,33 @@ export function rankCommands(commands: SlashCommand[], query: string): SlashComm
 }
 
 /** A command pi-web answers itself rather than sending to the runtime. */
-export type LocalCommand = "subagents";
+export type LocalCommand = "subagents" | "new";
 
 /**
- * The local command a message is, if any (DESIGN_NOTES §11 Trigger). A bare "/agents" or
+ * The local command a message is, if any (DESIGN_NOTES §4d, §11 Trigger). A bare "/agents" or
  * "/subagents" opens the subagents pane here: the runtime's monitor is TUI-only, so forwarding it
  * only earns a "requires Pi's interactive TUI" notice. With arguments ("/subagents models …") it
- * is the runtime's command and goes through untouched.
+ * is the runtime's command and goes through untouched. A bare "/new" starts a fresh session in the
+ * same folder, like the TUI's own; the runtime doesn't register it.
  */
 export function localCommand(text: string): LocalCommand | null {
-  return /^\/(agents|subagents)$/.test(text.trim()) ? "subagents" : null;
+  const t = text.trim();
+  if (/^\/(agents|subagents)$/.test(t)) return "subagents";
+  if (t === "/new") return "new";
+  return null;
+}
+
+/**
+ * Enter on a bare local command runs it, even with the "/" menu open: "/new" also matches
+ * "btw:new" by substring, and inserting that would hijack it. Shift+Enter and Tab stay the menu's.
+ */
+export function enterRunsLocal(text: string, key: string, shiftKey: boolean): boolean {
+  return key === "Enter" && !shiftKey && localCommand(text) !== null;
+}
+
+/** No "/" menu once the whole text is a bare local command ("/ne" still gets one). */
+export function slashMenuSuppressed(text: string): boolean {
+  return localCommand(text) !== null;
 }
 
 /** Replaces the token with "/name " and returns the new text with the caret after the space. */

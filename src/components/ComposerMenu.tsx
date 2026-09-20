@@ -1,6 +1,7 @@
-import { createMemo, createSignal, Index, Match, onCleanup, onMount, Show, Switch, type Accessor } from "solid-js";
+import { createContext, createMemo, createSignal, Index, Match, onCleanup, onMount, Show, Switch, useContext, type Accessor } from "solid-js";
 import { modelProvider, shortModel } from "../lib/format";
 import { ensureModels, thinkingLevelsFor } from "../lib/models";
+import { hideThinking, hideTools, setHideThinking, setHideTools } from "../lib/ui-state";
 import { ModelPicker, type ModelControl } from "./ModelMenu";
 import { Icon, type IconName } from "./ui";
 
@@ -31,10 +32,14 @@ export interface ComposerMenuApi {
   anchor: Accessor<HTMLElement | null>;
 }
 
+/** The session whose composer holds the flyout, provided by the view around it (chat or watch), so
+    the per-session "Hide tool calls" and "Hide thinking" rows need no prop threaded through the composer. */
+export const FlyoutSession = createContext<Accessor<string | undefined>>(() => undefined);
+
 /** One row of the root panel. Rendering order is this array's order, separators included. */
 interface Row {
   id: string;
-  role: "menuitem" | "menuitemradio";
+  role: "menuitem" | "menuitemradio" | "menuitemcheckbox";
   icon?: IconName;
   label: string;
   /** The model row's current id, in mono, after the label. */
@@ -55,9 +60,10 @@ interface Row {
 /**
  * The composer's flyout (DESIGN_NOTES §4b): one native popover anchored ABOVE whatever opened
  * it, in the model menu's visual family, with three panels. The ghost `plus` button opens the
- * **menu** panel (Attach images, Commands, Session info); the composer's model indicator (§4)
- * opens the **model** panel (the Model row and this model's Thinking ladder); the Model row
- * opens the §4c **picker**, which comes back to the model panel. Ctrl/⌘+P opens the picker.
+ * **menu** panel (Attach images, Commands, Hide tool calls, Hide thinking, Session info); the
+ * composer's model indicator (§4) opens the **model** panel (the Model row and this model's
+ * Thinking ladder); the Model row opens the §4c **picker**, which comes back to the model panel.
+ * Ctrl/⌘+P opens the picker.
  */
 export function ComposerMenu(props: {
   /** The composer is disabled (TUI-live, connecting, reconnecting): nothing here acts. */
@@ -89,6 +95,7 @@ export function ComposerMenu(props: {
   const [anchor, setAnchor] = createSignal<HTMLElement | null>(null);
   const [panel, setPanel] = createSignal<FlyoutPanel>("menu");
   const [active, setActive] = createSignal(0);
+  const session = useContext(FlyoutSession);
 
   const levels = createMemo(() => (props.thinking ? thinkingLevelsFor(props.model?.model()) : []));
   /** One level is no choice, and an unknown model has no ladder to show yet. */
@@ -122,6 +129,26 @@ export function ComposerMenu(props: {
         props.onCommands();
       },
     });
+    const path = session();
+    // View preferences, not writes to the session: they work in read-only sessions too.
+    if (path) {
+      out.push({
+        id: "hide-tools",
+        role: "menuitemcheckbox",
+        label: "Hide tool calls",
+        checked: hideTools(path),
+        disabled: false,
+        run: () => setHideTools(path, !hideTools(path)), // stays open: the check is the feedback
+      });
+      out.push({
+        id: "hide-thinking",
+        role: "menuitemcheckbox",
+        label: "Hide thinking",
+        checked: hideThinking(path),
+        disabled: false,
+        run: () => setHideThinking(path, !hideThinking(path)),
+      });
+    }
     if (props.onShowInfo)
       out.push({
         id: "info",
@@ -280,7 +307,7 @@ export function ComposerMenu(props: {
       role={p.r.role}
       id={`composer-flyout-${p.r.id}`}
       tabindex={active() === p.index ? 0 : -1}
-      aria-checked={p.r.role === "menuitemradio" ? (p.r.checked ? "true" : "false") : undefined}
+      aria-checked={p.r.role !== "menuitem" ? (p.r.checked ? "true" : "false") : undefined}
       aria-haspopup={p.r.chevron ? "true" : undefined}
       aria-disabled={p.r.disabled ? "true" : undefined}
       aria-busy={p.r.busy ? "true" : undefined}
@@ -292,7 +319,7 @@ export function ComposerMenu(props: {
       }}
       onFocus={() => setActive(p.index)}
     >
-      <Show when={p.r.role === "menuitemradio"} fallback={<Icon name={p.r.icon ?? "more"} small class="composer-flyout-icon" />}>
+      <Show when={p.r.role !== "menuitem"} fallback={<Icon name={p.r.icon ?? "more"} small class="composer-flyout-icon" />}>
         <Icon name="check" small class="mode-option-check" />
       </Show>
       <span class="composer-flyout-label">{p.r.label}</span>
@@ -391,9 +418,9 @@ export function ComposerMenu(props: {
           <Match when={panel() === "menu"}>
             <div class="model-menu-list composer-flyout-list" role="menu" aria-label="More actions" onKeyDown={onListKeyDown}>
               <Index each={pick((r) => r.id === "attach" || r.id === "commands")}>{(x) => <Item r={x().r} index={x().index} />}</Index>
-              <Show when={pick((r) => r.id === "info").length > 0}>
+              <Show when={pick((r) => r.id.startsWith("hide-") || r.id === "info").length > 0}>
                 <div class="composer-flyout-sep" role="separator" />
-                <Index each={pick((r) => r.id === "info")}>{(x) => <Item r={x().r} index={x().index} />}</Index>
+                <Index each={pick((r) => r.id.startsWith("hide-") || r.id === "info")}>{(x) => <Item r={x().r} index={x().index} />}</Index>
               </Show>
             </div>
           </Match>

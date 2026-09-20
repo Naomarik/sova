@@ -88,7 +88,14 @@ export function CountChip(props: { href?: string; title?: string; children: JSX.
 }
 
 /** Copy button whose icon turns into a check for 1.5s after a successful copy. */
-export function CopyButton(props: { label: string; text: () => string; onCopy(text: string): Promise<boolean>; iconOnly?: boolean }) {
+export function CopyButton(props: {
+  label: string;
+  text: () => string;
+  onCopy(text: string): Promise<boolean>;
+  iconOnly?: boolean;
+  /** What the copy is for, on hover. Default: none on the labelled button, the label when icon-only. */
+  title?: string;
+}) {
   const [copied, setCopied] = createSignal(false);
   let timer: ReturnType<typeof setTimeout> | undefined;
   onCleanup(() => clearTimeout(timer));
@@ -104,13 +111,13 @@ export function CopyButton(props: { label: string; text: () => string; onCopy(te
     <Show
       when={props.iconOnly}
       fallback={
-        <button type="button" class="button button-sm button-ghost" onClick={click}>
+        <button type="button" class="button button-sm button-ghost" title={props.title} onClick={click}>
           <Icon name={copied() ? "check" : "copy"} small />
           {props.label}
         </button>
       }
     >
-      <button type="button" class="button button-icon button-ghost" aria-label={props.label} title={props.label} onClick={click}>
+      <button type="button" class="button button-icon button-ghost" aria-label={props.label} title={props.title ?? props.label} onClick={click}>
         <Icon name={copied() ? "check" : "copy"} />
       </button>
     </Show>

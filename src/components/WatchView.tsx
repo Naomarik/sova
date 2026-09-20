@@ -3,9 +3,11 @@ import type { TranscriptItem, WatchServerMessage } from "../../shared/protocol";
 import { fetchTranscriptWithContext, wsUrl } from "../lib/api";
 import { contextFromItems, contextStateFor } from "../lib/context";
 import { createReconnectingSocket } from "../lib/socket";
-import { announce, setSessionContext } from "../lib/ui-state";
+import { announce, hideThinking, hideTools, setSessionContext } from "../lib/ui-state";
+import { visibleCount } from "../lib/hidden-tools";
 import type { WorkingSplit } from "../lib/workers";
 import { Composer, type ComposerReason } from "./Composer";
+import { FlyoutSession } from "./ComposerMenu";
 import { ConnectionBanner } from "./ConnectionBanner";
 import { HistoryItems, ThreadScroller, TranscriptSkeleton } from "./Thread";
 import { Banner } from "./ui";
@@ -93,7 +95,7 @@ export function WatchView(props: {
   return (
     <>
       <ThreadScroller
-        count={items()?.length ?? 0}
+        count={visibleCount(items() ?? [], { tools: hideTools(props.path), thinking: hideThinking(props.path) })}
         busy={!items()}
         banner={
           <div class="stack-2">
@@ -129,25 +131,27 @@ export function WatchView(props: {
                 </div>
               }
             >
-              <HistoryItems items={list()} author={props.author} streaming={props.streaming} />
+              <HistoryItems items={list()} author={props.author} streaming={props.streaming} hideTools={hideTools(props.path)} hideThinking={hideThinking(props.path)} />
             </Show>
           )}
         </Show>
       </ThreadScroller>
-      <Composer
-        path={props.path}
-        readOnly={props.readOnly}
-        running={false}
-        stopping={false}
-        detail={null}
-        workersWorking={props.workersWorking}
-        workersTotal={props.workersTotal}
-        workersSplit={props.workersSplit}
-        onShowWorkers={props.onShowWorkers}
-        workersOpen={props.workersOpen}
-        onSend={() => false}
-        onAbort={() => {}}
-      />
+      <FlyoutSession.Provider value={() => props.path}>
+        <Composer
+          path={props.path}
+          readOnly={props.readOnly}
+          running={false}
+          stopping={false}
+          detail={null}
+          workersWorking={props.workersWorking}
+          workersTotal={props.workersTotal}
+          workersSplit={props.workersSplit}
+          onShowWorkers={props.onShowWorkers}
+          workersOpen={props.workersOpen}
+          onSend={() => false}
+          onAbort={() => {}}
+        />
+      </FlyoutSession.Provider>
     </>
   );
 }

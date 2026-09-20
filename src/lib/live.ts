@@ -108,6 +108,22 @@ export function addPendingPrompt(set: SetStoreFunction<LiveState>, text: string,
   set(produce((s) => void s.entries.push({ kind: "user", text, confirmed: false, images, ...(attachments.length ? { attachments } : {}) })));
 }
 
+/**
+ * Stop drained these queued prompts (`queue_cleared`, steers then follow-ups): drops the pending
+ * row each one left and returns the text for the draft, joined like the TUI's Esc restore.
+ */
+export function takeBackQueued(set: SetStoreFunction<LiveState>, drained: string[]): string {
+  set(
+    produce((s) => {
+      for (const text of drained) {
+        const i = s.entries.findIndex((e) => e.kind === "user" && !e.confirmed && e.text === text);
+        if (i !== -1) s.entries.splice(i, 1);
+      }
+    }),
+  );
+  return drained.filter((t) => t.trim()).join("\n\n");
+}
+
 export function applyEvent(set: SetStoreFunction<LiveState>, event: unknown) {
   if (!isObj(event)) return;
   const type = str(event.type);

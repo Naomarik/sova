@@ -2,11 +2,12 @@ import { batch, createEffect, createMemo, createResource, createSignal, Match, o
 import { createStore, reconcile } from "solid-js/store";
 import { Portal } from "solid-js/web";
 import type { SessionInsight, SessionSummary, TeamInfo, WorkerInfo } from "../shared/protocol";
-import { fetchAgents, fetchExplanations, fetchSessionInsight, fetchUsage, listSessions, setSessionArchived } from "./lib/api";
+import { createSession, fetchAgents, fetchExplanations, fetchSessionInsight, fetchUsage, listSessions, setSessionArchived } from "./lib/api";
 import { agentsHref, insightsRouteFromHash, legacyInsightsTarget } from "./lib/insights";
+import { createThenArchive, newSessionCwd } from "./lib/new-session";
 import { createPoll } from "./lib/poll";
 import { homeFromSessionPath, shortModel, tildePath } from "./lib/format";
-import { home, setHome, toast } from "./lib/ui-state";
+import { activeTab, home, setActiveTab, setHome, toast } from "./lib/ui-state";
 import { sessionWorking, type UsageTotalView, workingSplit } from "./lib/workers";
 import { ChatView, type ChatRefusal } from "./components/ChatView";
 import { AgentsView } from "./components/AgentsView";
@@ -15,7 +16,7 @@ import { ModeMenu, type ModeControl } from "./components/ModeMenu";
 import { NewSessionDialog } from "./components/NewSessionDialog";
 import { ExplainGrid } from "./components/ExplainGallery";
 import { InsightStrip } from "./components/InsightStrip";
-import { SubagentPane } from "./components/SubagentPane";
+import { SessionPane, type PaneInsight } from "./components/SessionPane";
 import { sessionHref, Sidebar } from "./components/Sidebar";
 import { SidebarResizer } from "./components/SidebarResizer";
 import { UsageView } from "./components/UsageView";
@@ -87,48 +88,13 @@ const AGENTS_POLL_MS = 5_000;
 const EXPLAIN_POLL_MS = 60_000;
 /** Session insight (outline, teams) reloads this long after the session's file last changed. */
 const SESSION_INSIGHT_DEBOUNCE_MS = 1500;
+/** While the session pane is open, its worker status and file paths refresh this often. */
+const PANE_INSIGHT_POLL_MS = 3000;
 
 const folded = () => window.matchMedia("(max-width: 767px)").matches;
 
 /** The compact worker chip says its count in words for AT and on hover: "3 subagents working now". */
 const subagentsWorkingNow = (n: number) => `${n} ${n === 1 ? "subagent" : "subagents"} working now`;
-
-/**
- * Archive/Unarchive for a web-spawned session (DESIGN_NOTES §2 "Archiving"). Archiving is refused
- * while it's live in a TUI, since it would stay on top anyway; unarchiving always works.
- */
-function ArchiveButton(props: { session: SessionSummary; onChanged(): void }) {
-  const [pending, setPending] = createSignal(false);
-  const archived = () => props.session.archived === true; // older servers send none
-  const blocked = () => !archived() && props.session.live !== null;
-  const label = () => (archived() ? "Unarchive Session" : "Archive Session");
-  const click = async () => {
-    if (pending() || blocked()) return;
-    const next = !archived();
-    setPending(true);
-    try {
-      await setSessionArchived(props.session.path, next);
-      toast(next ? "Archived. Find it under Archive." : "Moved back to Live & web.");
-      props.onChanged();
-    } catch (err) {
-      toast(`Couldn't ${next ? "archive" : "unarchive"} this session. ${(err as Error).message}`);
-    } finally {
-      setPending(false);
-    }
-  };
-  return (
-    <button
-      type="button"
-      class="button button-icon button-ghost session-archive"
-      aria-label={label()}
-      title={blocked() ? "Open in a TUI. It stays on top while live." : label()}
-      aria-disabled={blocked() || pending() ? "true" : undefined}
-      onClick={click}
-    >
-      <Icon name="archive" />
-    </button>
-  );
-}
 
 export function App() {
   const [listError, setListError] = createSignal<string | null>(null);
@@ -227,6 +193,50 @@ export function App() {
     on(() => insightsRoute()?.page, (page) => page && !focusTeam() && folded() && queueMicrotask(() => insightsTitleEl?.focus()), { defer: true }),
   );
 
+  /** Opens a session we just created: chat right away, composer focused. */
+  const adoptCreated = (s: SessionSummary) => {
+    created.set(s.path, s);
+    setCreating(false);
+    refresh();
+    // Route and decision move together: "hashchange" fires later, and until then the decide
+    // effect would pair this decision with the old route and replace it, autofocus and all.
+    location.hash = sessionHref(s.path);
+    batch(() => {
+      onHash();
+      setDecision({ path: s.path, mode: "chat", force: false, autofocus: true });
+    });
+  };
+
+  /**
+   * A bare "/new" typed in `source` (§4d): a new session in the same folder, then `source` goes to
+   * the Archive. Resolves to the folder label once the new session exists, null if none was made.
+   * Only web-spawned sessions can be archived; one with subagents working stays open, since
+   * archiving closes its runtime and they'd die with it.
+   */
+  const startNewFrom = async (source: string): Promise<string | null> => {
+    const s = summary();
+    const cwd = newSessionCwd(s?.cwd, list() ?? []);
+    if (!cwd) {
+      toast("No folder to start in. Pick one.");
+      setCreating(true);
+      return null;
+    }
+    const workersBusy = (s ? sessionWorking(s) > 0 : false) || (chatWorkers.path === source && chatWorkers.list.some((w) => w.working));
+    const archivable = s?.origin === "web" && !workersBusy;
+    const out = await createThenArchive(cwd, archivable ? source : null, {
+      create: createSession,
+      archive: (path) => setSessionArchived(path, true),
+    });
+    if (!out.ok) {
+      toast(`Couldn't start a new session. ${out.error}`);
+      return null;
+    }
+    if (out.archiveError) toast(`New session started, but the previous one couldn't be archived. ${out.archiveError}`);
+    else if (s?.origin === "web" && workersBusy) toast("New session started. The previous one stays open while its subagents work.");
+    adoptCreated(out.session);
+    return tildePath(cwd, home());
+  };
+
   const openChat = (force: boolean) => {
     const d = decision();
     if (d) setDecision({ path: d.path, mode: "chat", force, autofocus: true });
@@ -277,6 +287,8 @@ export function App() {
     { path: null, list: [], usage: null },
   );
   createEffect(on(route, () => setSubagents(null), { defer: true }));
+  /** The session view's insight store, published for the pane (a sibling of <main>). */
+  const [paneInsight, setPaneInsight] = createSignal<{ path: string; insight: PaneInsight } | null>(null);
   /** The pane's session: open, for the session on screen. */
   const subagentsPath = () => {
     const p = subagents()?.path;
@@ -289,12 +301,21 @@ export function App() {
     subagentsTrigger = null;
     queueMicrotask(() => (trigger ?? document.getElementById("transcript"))?.focus());
   };
-  /** The composer's subagents row toggles the pane. */
-  const toggleSubagents = (path: string) => {
-    if (subagentsPath() === path) return closeSubagents();
-    subagentsTrigger = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    setSubagents({ path, selected: null });
+  /** Whether the pane is open for `path` on `tab`: what each opener's aria-expanded reports. */
+  const paneOn = (path: string, tab: "session" | "agents") => subagentsPath() === path && activeTab(path) === tab;
+  /**
+   * Each opener toggles its own tab: open on that tab closes the pane; closed, or open on the
+   * other tab, opens it there. Escape and the pane's close button close it whatever the tab.
+   */
+  const openPane = (path: string, tab: "session" | "agents") => {
+    if (paneOn(path, tab)) return closeSubagents();
+    const open = subagentsPath() === path;
+    if (!open) subagentsTrigger = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    setActiveTab(path, tab);
+    if (!open) setSubagents({ path, selected: null });
   };
+  /** The composer's subagents row and /subagents promise the workers: Agents. */
+  const toggleSubagents = (path: string) => openPane(path, "agents");
 
   return (
     <>
@@ -389,23 +410,56 @@ export function App() {
                 const model = () => (d.mode === "chat" ? chatModel() ?? s().model : s().model);
                 const author = () => shortModel(model()) ?? "pi";
 
-                // Outline and teams of this session; reloaded (debounced) when its file changes.
-                const [insight, setInsight] = createStore<{ data: SessionInsight | null }>({ data: null });
+                // Outline, teams and workers of this session; reloaded (debounced) when its file
+                // changes, and polled while the session pane is open for it — the one poller of
+                // this endpoint. The pane reads this same store.
+                const [insight, setInsight] = createStore<PaneInsight>({ data: null, error: null, pending: true, changed: 0 });
+                let insightRun = 0;
+                /** Set when the file changed; the next load to land says so through `changed`. */
+                let fileMoved = false;
                 const loadInsight = async () => {
+                  const mine = ++insightRun;
                   try {
+                    const next = await fetchSessionInsight(d.path);
+                    if (mine !== insightRun) return;
                     // Keyed by id so open topics stay open when a newer outline lands.
-                    setInsight("data", reconcile(await fetchSessionInsight(d.path), { key: "id" }));
-                  } catch {
+                    batch(() => {
+                      setInsight("data", reconcile(next, { key: "id" }));
+                      setInsight("error", null);
+                    });
+                  } catch (err) {
                     // Secondary to the transcript: keep the last outline, the next change retries.
+                    if (mine !== insightRun) return;
+                    setInsight("error", (err as Error).message);
                   }
+                  batch(() => {
+                    setInsight("pending", false);
+                    if (fileMoved) setInsight("changed", (n) => n + 1);
+                    fileMoved = false;
+                  });
                 };
                 let insightTimer: ReturnType<typeof setTimeout> | undefined;
                 const reloadInsight = () => {
                   clearTimeout(insightTimer);
-                  insightTimer = setTimeout(loadInsight, SESSION_INSIGHT_DEBOUNCE_MS);
+                  insightTimer = setTimeout(() => {
+                    fileMoved = true;
+                    void loadInsight();
+                  }, SESSION_INSIGHT_DEBOUNCE_MS);
                 };
-                onCleanup(() => clearTimeout(insightTimer));
+                onCleanup(() => {
+                  clearTimeout(insightTimer);
+                  insightRun++;
+                });
                 void loadInsight();
+                createEffect(() => {
+                  if (subagentsPath() !== d.path) return;
+                  void loadInsight();
+                  const t = setInterval(() => document.hidden || void loadInsight(), PANE_INSIGHT_POLL_MS);
+                  onCleanup(() => clearInterval(t));
+                });
+                const pane = { path: d.path, insight };
+                setPaneInsight(pane);
+                onCleanup(() => setPaneInsight((p) => (p === pane ? null : p)));
                 const working = () => sessionWorking(s());
                 /** The busiest live team: where the head chip links. */
                 const liveTeam = () =>
@@ -469,9 +523,17 @@ export function App() {
                           TUI
                         </Chip>
                       </Show>
-                      <Show when={s().origin === "web"}>
-                        <ArchiveButton session={s()} onChanged={refresh} />
-                      </Show>
+                      <button
+                        type="button"
+                        class="button button-icon button-ghost session-details-open"
+                        aria-label="Session details"
+                        title="Session details"
+                        aria-controls="subagents-pane"
+                        aria-expanded={paneOn(d.path, "session")}
+                        onClick={() => openPane(d.path, "session")}
+                      >
+                        <Icon name="info" />
+                      </button>
                     </header>
                     <InsightStrip path={d.path} outline={insight.data?.outline ?? null} explanations={insight.data?.explanations} now={now()} />
 
@@ -543,6 +605,7 @@ export function App() {
                               onModeControl={setModeControl}
                               onRefused={onRefused}
                               onStarted={() => refresh()}
+                              onArchiveChanged={refresh}
                               onSettled={() => {
                                 refresh();
                                 reloadInsight();
@@ -556,6 +619,7 @@ export function App() {
                               }
                               onShowWorkers={() => toggleSubagents(d.path)}
                               workersOpen={subagentsPath() === d.path}
+                              onNewSession={() => startNewFrom(d.path)}
                               teams={insight.data?.teams}
                             />
                           );
@@ -571,14 +635,20 @@ export function App() {
 
         <Show when={subagentsPath()} keyed>
           {(path) => (
-            <SubagentPane
-              path={path}
-              chatWorkers={chatWorkers.path === path ? chatWorkers.list : null}
-              chatUsage={chatWorkers.path === path ? chatWorkers.usage : null}
-              selected={subagents()?.selected ?? null}
-              onSelect={(id) => setSubagents({ path, selected: id })}
-              onClose={closeSubagents}
-            />
+            <Show when={paneInsight()?.path === path}>
+              <SessionPane
+                path={path}
+                insight={paneInsight()!.insight}
+                summary={summary() ?? undefined}
+                onArchiveChanged={refresh}
+                chatWorkers={chatWorkers.path === path ? chatWorkers.list : null}
+                chatUsage={chatWorkers.path === path ? chatWorkers.usage : null}
+                selected={subagents()?.selected ?? null}
+                onSelect={(id) => setSubagents({ path, selected: id })}
+                onClose={closeSubagents}
+                now={now()}
+              />
+            </Show>
           )}
         </Show>
 
@@ -588,17 +658,10 @@ export function App() {
       <Show when={creating()}>
         <Portal>
           <NewSessionDialog
-            prefill={summary()?.cwd ?? [...(list() ?? [])].sort((a, b) => b.lastActiveAt.localeCompare(a.lastActiveAt))[0]?.cwd ?? ""}
+            prefill={newSessionCwd(summary()?.cwd, list() ?? []) ?? ""}
             knownCwds={[...new Set((list() ?? []).map((s) => s.cwd))]}
             onCancel={() => setCreating(false)}
-            onCreated={(s) => {
-              created.set(s.path, s);
-              setCreating(false);
-              refresh();
-              // Our own new session: chat right away, composer focused.
-              setDecision({ path: s.path, mode: "chat", force: false, autofocus: true });
-              location.hash = sessionHref(s.path);
-            }}
+            onCreated={adoptCreated}
           />
         </Portal>
       </Show>

@@ -5,6 +5,7 @@ import { prettyJson, shortModel, stampTime, thousands, tildePath } from "../lib/
 import { isObj, str, timestampOf, toolCallArgs, toolResultView } from "../lib/message";
 import { stripPastedPaths } from "../lib/path-attachments";
 import { home } from "../lib/ui-state";
+import { isHiddenBlock, liveHiddenCounts, splitHidden, thinkingHiddenLabel, toolsHiddenLabel } from "../lib/hidden-tools";
 import { ImageStrip } from "./ImageStrip";
 import { PathAttachment, PathText } from "./PathAttachment";
 import { ReportRow } from "./ReportRow";
@@ -14,7 +15,7 @@ import { alignOf, latestAlignId } from "../lib/align";
 import { explainOf } from "../lib/explain";
 import { Markdown } from "./Markdown";
 import { ToolCard, type ToolStatus } from "./ToolCard";
-import { Banner, Icon } from "./ui";
+import { Banner, Chip, Icon } from "./ui";
 
 function Stamp(props: { iso?: string }) {
   return (
@@ -176,10 +177,63 @@ export function TurnError(props: { message: string }) {
 }
 
 /**
- * Renders normalized transcript items. Tool results fold into their call's card. `streaming`
- * says whether a tool without a result may still be running (vs. never got one).
+ * Stands in for the rows "Hide tool calls" and "Hide thinking" remove: each count, with any
+ * failures right after the tool count, and the blocks themselves on demand — so hiding is never a
+ * dead end and never hides a failure.
  */
-export function HistoryItems(props: { items: TranscriptItem[]; author: string; streaming: boolean }) {
+function HiddenRows(props: { calls: number; failed: number; running?: number; thinking: number; children: () => JSX.Element }) {
+  const [open, setOpen] = createSignal(false);
+  return (
+    <details class="disclosure" onToggle={(e) => setOpen(e.currentTarget.open)}>
+      <summary class="disclosure-summary">
+        <Icon name="chevron-right" small class="icon-twist" />
+        <Show when={props.calls > 0}>
+          <span class="disclosure-label">{toolsHiddenLabel(props.calls)}</span>
+          <Show when={props.failed > 0}>
+            <Chip tone="error">{props.failed} failed</Chip>
+          </Show>
+          <Show when={props.running}>
+            <Chip tone="accent" live>
+              {props.running} running
+            </Chip>
+          </Show>
+        </Show>
+        <Show when={props.thinking > 0}>
+          <span class="disclosure-label">
+            {props.calls > 0 ? "· " : ""}
+            {thinkingHiddenLabel(props.thinking)}
+          </span>
+        </Show>
+      </summary>
+      {/* Mounted only while open: a long session's blocks cost nothing while they're hidden. */}
+      <Show when={open()}>
+        <div class="disclosure-body stack-2" style={{ "white-space": "normal" }}>
+          {props.children()}
+        </div>
+      </Show>
+    </details>
+  );
+}
+
+/**
+ * Renders normalized transcript items. Tool results fold into their call's card. `streaming`
+ * says whether a tool without a result may still be running (vs. never got one). `hideTools` and `hideThinking`
+ * drops every call with its result and puts one summary row after the rest.
+ */
+export function HistoryItems(props: {
+  items: TranscriptItem[];
+  author: string;
+  streaming: boolean;
+  hideTools?: boolean;
+  hideThinking?: boolean;
+  /** Index from which a call without a result may still be running; after the last user row by default. */
+  openFrom?: number;
+}) {
+  const split = createMemo(() =>
+    props.hideTools || props.hideThinking ? splitHidden(props.items, { tools: !!props.hideTools, thinking: !!props.hideThinking }) : null,
+  );
+  /** The rows rendered: all of them, or everything but tool rows while they're hidden. */
+  const rows = () => split()?.shown ?? props.items;
   const results = createMemo(() => {
     const byCall = new Map<string, TranscriptItem>();
     for (const it of props.items) if (it.kind === "tool-result" && it.toolCallId) byCall.set(it.toolCallId, it);
@@ -196,97 +250,107 @@ export function HistoryItems(props: { items: TranscriptItem[]; author: string; s
     for (let i = props.items.length - 1; i >= 0; i--) if (props.items[i]!.kind === "user") return i;
     return -1;
   });
+  const openFrom = () => props.openFrom ?? lastUserIndex() + 1;
 
   return (
-    <For each={props.items}>
-      {(item, index) => (
-        // A box-less wrapper so the outline strip can find an entry's row (Jump to Message).
-        <div class="entry" data-entry={item.id}>
-          <Switch fallback={<Unknown raw={item.raw} />}>
-            <Match when={item.kind === "user"}>
-              <UserTurn text={item.text ?? ""} time={timestampOf(item.raw)} images={item.images} attachments={item.attachments} />
-            </Match>
-            <Match when={item.kind === "assistant-text"}>
-              <AssistantText
-                text={item.text ?? ""}
-                author={shortModel(item.model) ?? props.author}
-                model={item.model}
-                time={timestampOf(item.raw)}
-                showHead={
-                  props.items[index() - 1]?.kind !== "assistant-text" || props.items[index() - 1]?.model !== item.model
-                }
-                attachments={item.attachments}
-              />
-            </Match>
-            <Match when={item.kind === "thinking"}>
-              <Thinking text={item.text ?? ""} />
-            </Match>
-            <Match when={item.kind === "report" && item.report && alignOf(item.report)}>
-              {(align) => (
-                <Show when={item.id === latestAlign()} fallback={<span class="align-superseded" hidden />}>
-                  <AlignCard report={item.report!} align={align()} attachments={item.attachments} />
-                </Show>
-              )}
-            </Match>
-            <Match when={item.kind === "report" && item.report && explainOf(item.report)}>
-              {(explain) => <ExplainCard explain={explain()} />}
-            </Match>
-            <Match when={item.kind === "report" && item.report}>
-              {(report) => <ReportRow report={report()} attachments={item.attachments} />}
-            </Match>
-            <Match when={item.kind === "info" && isObj(item.raw) && item.raw.type === "compaction" && item.raw}>
-              {(raw) => <Compaction raw={raw()} />}
-            </Match>
-            <Match when={item.kind === "info"}>
-              <InfoRow>
-                <PathText text={item.text ?? ""} attachments={item.attachments} />
-              </InfoRow>
-            </Match>
-            <Match when={item.kind === "tool-call"}>
-              {(() => {
-                const view = () => {
-                  const r = item.toolCallId ? results().get(item.toolCallId) : undefined;
-                  return r ? toolResultView(r.raw, r.text) : undefined;
-                };
-                const status = (): ToolStatus => {
-                  const v = view();
-                  if (v) return v.isError ? "error" : "done";
-                  return props.streaming && index() > lastUserIndex() ? "running" : "none";
-                };
-                return (
-                  <ToolCard
-                    name={item.text ?? "tool"}
-                    args={toolCallArgs(item.raw, item.toolCallId)}
-                    status={status()}
-                    output={view()?.output}
-                    images={item.toolCallId ? results().get(item.toolCallId)?.images : undefined}
-                    attachments={item.toolCallId ? results().get(item.toolCallId)?.attachments : undefined}
-                  />
-                );
-              })()}
-            </Match>
-            <Match when={item.kind === "tool-result"}>
-              {/* Paired results render inside their call's card; orphans get their own. */}
-              <Show when={!item.toolCallId || !calls().has(item.toolCallId)}>
+    <>
+      <For each={rows()}>
+        {(item, index) => (
+          // A box-less wrapper so the outline strip can find an entry's row (Jump to Message).
+          <div class="entry" data-entry={item.id}>
+            <Switch fallback={<Unknown raw={item.raw} />}>
+              <Match when={item.kind === "user"}>
+                <UserTurn text={item.text ?? ""} time={timestampOf(item.raw)} images={item.images} attachments={item.attachments} />
+              </Match>
+              <Match when={item.kind === "assistant-text"}>
+                <AssistantText
+                  text={item.text ?? ""}
+                  author={shortModel(item.model) ?? props.author}
+                  model={item.model}
+                  time={timestampOf(item.raw)}
+                  showHead={
+                    rows()[index() - 1]?.kind !== "assistant-text" || rows()[index() - 1]?.model !== item.model
+                  }
+                  attachments={item.attachments}
+                />
+              </Match>
+              <Match when={item.kind === "thinking"}>
+                <Thinking text={item.text ?? ""} />
+              </Match>
+              <Match when={item.kind === "report" && item.report && alignOf(item.report)}>
+                {(align) => (
+                  <Show when={item.id === latestAlign()} fallback={<span class="align-superseded" hidden />}>
+                    <AlignCard report={item.report!} align={align()} attachments={item.attachments} />
+                  </Show>
+                )}
+              </Match>
+              <Match when={item.kind === "report" && item.report && explainOf(item.report)}>
+                {(explain) => <ExplainCard explain={explain()} />}
+              </Match>
+              <Match when={item.kind === "report" && item.report}>
+                {(report) => <ReportRow report={report()} attachments={item.attachments} />}
+              </Match>
+              <Match when={item.kind === "info" && isObj(item.raw) && item.raw.type === "compaction" && item.raw}>
+                {(raw) => <Compaction raw={raw()} />}
+              </Match>
+              <Match when={item.kind === "info"}>
+                <InfoRow>
+                  <PathText text={item.text ?? ""} attachments={item.attachments} />
+                </InfoRow>
+              </Match>
+              <Match when={item.kind === "tool-call"}>
                 {(() => {
-                  const view = toolResultView(item.raw, item.text);
+                  const view = () => {
+                    const r = item.toolCallId ? results().get(item.toolCallId) : undefined;
+                    return r ? toolResultView(r.raw, r.text) : undefined;
+                  };
+                  const status = (): ToolStatus => {
+                    const v = view();
+                    if (v) return v.isError ? "error" : "done";
+                    return props.streaming && index() >= openFrom() ? "running" : "none";
+                  };
                   return (
                     <ToolCard
-                      name="result"
-                      args={undefined}
-                      status={view.isError ? "error" : "done"}
-                      output={view.output}
-                      images={item.images}
-                      attachments={item.attachments}
+                      name={item.text ?? "tool"}
+                      args={toolCallArgs(item.raw, item.toolCallId)}
+                      status={status()}
+                      output={view()?.output}
+                      images={item.toolCallId ? results().get(item.toolCallId)?.images : undefined}
+                      attachments={item.toolCallId ? results().get(item.toolCallId)?.attachments : undefined}
                     />
                   );
                 })()}
-              </Show>
-            </Match>
-          </Switch>
-        </div>
-      )}
-    </For>
+              </Match>
+              <Match when={item.kind === "tool-result"}>
+                {/* Paired results render inside their call's card; orphans get their own. */}
+                <Show when={!item.toolCallId || !calls().has(item.toolCallId)}>
+                  {(() => {
+                    const view = toolResultView(item.raw, item.text);
+                    return (
+                      <ToolCard
+                        name="result"
+                        args={undefined}
+                        status={view.isError ? "error" : "done"}
+                        output={view.output}
+                        images={item.images}
+                        attachments={item.attachments}
+                      />
+                    );
+                  })()}
+                </Show>
+              </Match>
+            </Switch>
+          </div>
+        )}
+      </For>
+      <Show when={split()?.hidden.length ? split() : null}>
+        {(s) => (
+          <HiddenRows calls={s().calls} failed={s().failed} thinking={s().thinking}>
+            {() => <HistoryItems items={s().hidden} author={props.author} streaming={props.streaming} openFrom={s().openFrom} />}
+          </HiddenRows>
+        )}
+      </Show>
+    </>
   );
 }
 
@@ -327,53 +391,78 @@ function LiveBlockView(props: { block: LiveBlock; live: LiveState; author: strin
   );
 }
 
-/** The in-progress run assembled from streaming events. */
-export function LiveEntries(props: { live: LiveState; author: string }) {
+/** The in-progress run assembled from streaming events. `hideTools` and `hideThinking` drop those
+    blocks and put one summary row after the turn, counted from live status. */
+export function LiveEntries(props: { live: LiveState; author: string; hideTools?: boolean; hideThinking?: boolean }) {
+  const hide = () => ({ tools: !!props.hideTools, thinking: !!props.hideThinking });
+  const shows = (b: LiveBlock | undefined) => !!b && !isHiddenBlock(b, hide());
+  /** The nearest block before `i` that renders, so a hidden call doesn't repeat the author head. */
+  const shownBefore = (blocks: LiveBlock[], i: number) => {
+    for (let j = i - 1; j >= 0; j--) if (!isHiddenBlock(blocks[j], hide())) return blocks[j];
+    return undefined;
+  };
+  const hiddenBlocks = () => props.live.entries.flatMap((e) => (e.kind === "assistant" ? e.blocks.filter((b) => isHiddenBlock(b, hide())) : []));
+  /** A hidden thinking block still streams (live dot) until its own message is done. */
+  const blockDone = (b: LiveBlock) => props.live.entries.some((e) => e.kind === "assistant" && e.done && e.blocks.includes(b));
+  const hidden = createMemo(() => (props.hideTools || props.hideThinking ? liveHiddenCounts(props.live, hide()) : null));
   return (
-    <For each={props.live.entries}>
-      {(entry: LiveEntry) => (
-        <Switch>
-          <Match when={entry.kind === "user" && entry}>
-            {(e) => (
-              <UserTurn
-                text={e().attachments ? stripPastedPaths(e().text) : e().text}
-                pending={!e().confirmed}
-                images={e().images}
-                attachments={e().attachments}
-              />
+    <>
+      <For each={props.live.entries}>
+        {(entry: LiveEntry) => (
+          <Switch>
+            <Match when={entry.kind === "user" && entry}>
+              {(e) => (
+                <UserTurn
+                  text={e().attachments ? stripPastedPaths(e().text) : e().text}
+                  pending={!e().confirmed}
+                  images={e().images}
+                  attachments={e().attachments}
+                />
+              )}
+            </Match>
+            <Match when={entry.kind === "assistant" && entry}>
+              {(e) => (
+                <>
+                  <For each={e().blocks}>
+                    {(block, i) => (
+                      <Show when={shows(block)}>
+                        <LiveBlockView
+                          block={block}
+                          live={props.live}
+                          author={shortModel(e().model) ?? props.author}
+                          model={e().model}
+                          streaming={!e().done}
+                          showHead={shownBefore(e().blocks, i())?.type !== "text"}
+                        />
+                      </Show>
+                    )}
+                  </For>
+                  <Show when={e().stoppedAt}>
+                    <InfoRow>
+                      Stopped by you at <code>{stampTime(e().stoppedAt!)}</code>.
+                    </InfoRow>
+                  </Show>
+                  <Show when={e().error}>
+                    <TurnError message={e().error!} />
+                  </Show>
+                </>
+              )}
+            </Match>
+          </Switch>
+        )}
+      </For>
+      <Show when={hidden()?.calls || hidden()?.thinking ? hidden() : null}>
+        {(h) => (
+          <HiddenRows calls={h().calls} failed={h().failed} running={h().running} thinking={h().thinking}>
+            {() => (
+              <For each={hiddenBlocks()}>
+                {(b) => <LiveBlockView block={b} live={props.live} author={props.author} streaming={!blockDone(b)} showHead={false} />}
+              </For>
             )}
-          </Match>
-          <Match when={entry.kind === "assistant" && entry}>
-            {(e) => (
-              <>
-                <For each={e().blocks}>
-                  {(block, i) => (
-                    <Show when={block}>
-                      <LiveBlockView
-                        block={block}
-                        live={props.live}
-                        author={shortModel(e().model) ?? props.author}
-                        model={e().model}
-                        streaming={!e().done}
-                        showHead={e().blocks[i() - 1]?.type !== "text"}
-                      />
-                    </Show>
-                  )}
-                </For>
-                <Show when={e().stoppedAt}>
-                  <InfoRow>
-                    Stopped by you at <code>{stampTime(e().stoppedAt!)}</code>.
-                  </InfoRow>
-                </Show>
-                <Show when={e().error}>
-                  <TurnError message={e().error!} />
-                </Show>
-              </>
-            )}
-          </Match>
-        </Switch>
-      )}
-    </For>
+          </HiddenRows>
+        )}
+      </Show>
+    </>
   );
 }
 

@@ -2331,11 +2331,19 @@ and again when the count changes, at most once a second. When there are none, an
   isn't restored.
 - **Unknown commands.** A `/word` that isn't in the list is sent and rendered as an ordinary
   message, with the optimistic bubble.
-- **Local commands.** A few commands pi-web answers itself and never sends: today only a bare
-  `/agents` / `/subagents`, which opens the subagents pane (§11 Trigger). They are still listed
-  and inserted like any other command — the runtime registers them — but Enter runs them here,
-  clears the draft, and adds no row to the thread: the pane opening is the result. Anything with
-  arguments belongs to the runtime and goes through untouched.
+- **Local commands.** A few commands pi-web answers itself and never sends: a bare `/new`
+  (below), and a bare `/agents` / `/subagents`, which opens the subagents pane (§11 Trigger).
+  Those two are still listed and inserted like any other command — the runtime registers them —
+  but Enter runs them here, clears the draft, and adds no row to the thread: the pane opening is
+  the result. Once the whole text is a bare local command the menu closes, and Enter runs it
+  rather than inserting a match (`/new` would otherwise pick `btw:new`); a partial token like
+  `/ne` still opens it. Anything with arguments belongs to the runtime and goes through
+  untouched.
+- **`/new`.** Bare `/new` is a local command too, as in the TUI: it creates an empty session in
+  the chat's folder, opens it with the composer focused, and archives the session it left (only
+  once the new one exists). A session that isn't web-spawned, or whose subagents are working,
+  stays unarchived: archiving closes the runtime. The runtime doesn't register it, so it isn't
+  in the menu. With arguments or images it's an ordinary message.
 
 ### Commands that need the terminal UI
 

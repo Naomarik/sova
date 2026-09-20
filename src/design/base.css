@@ -2930,6 +2930,123 @@ a.chip:hover { color: var(--color-ink); border-color: var(--color-border-strong)
 }
 
 
+/* ---- TABS. The skill's tab strip (44px tabs, accent underline on the
+   selected one), under the head. Tabs switch views, so nothing animates:
+   the underline and the ink change at once. The strip never wraps; in a
+   narrow pane the tabs tighten, then the strip scrolls sideways. ------- */
+
+.tabs {
+  display: flex;
+  gap: var(--space-1);
+  border-bottom: var(--stroke-thin) solid var(--color-border);
+  overflow-x: auto;
+}
+.tab {
+  min-height: var(--tap-min);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-3);
+  border: 0;
+  border-bottom: var(--stroke-icon) solid transparent;
+  background: transparent;
+  color: var(--color-ink-muted);
+  font-family: var(--font-body);
+  font-size: var(--fs-body);
+  font-weight: var(--fw-medium);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.tab:hover { color: var(--color-ink); }
+.tab:focus-visible { outline: var(--focus-ring); outline-offset: calc(var(--focus-offset) * -1); }
+.tab[aria-selected="true"] { color: var(--color-ink); border-bottom-color: var(--color-accent); }
+
+.session-tabs {
+  flex: none;
+  flex-wrap: nowrap;
+  padding: 0 var(--space-2);
+  background: var(--color-surface);
+  scrollbar-width: thin;
+}
+.session-tabs > .tab { flex: none; }
+@container subagents (max-width: 359px) {
+  .session-tabs { gap: 0; padding: 0; }
+  .session-tabs > .tab { padding: 0 var(--space-2); }
+}
+
+/* The selected tab's panel fills the rest of the pane. Agents brings its own
+   two scroll regions (.subagents-body); Session scrolls here. */
+.session-panel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.session-panel-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  /* The Session tab is the Session info modal's body: same ground and ink as .modal-body. */
+  color: var(--color-ink-2);
+  background: var(--color-surface);
+}
+.session-panel-scroll:focus-visible { outline: var(--focus-ring); outline-offset: calc(var(--focus-offset) * -1); }
+
+/* Explain tab: text rows on one card, the whole row the link (the gallery owns thumbnails).
+   The summary is a sentence, so caption type, wrapped and clamped to 3 lines — .list-summary is
+   micro type, which never carries a sentence. */
+.explain-list {
+  border: var(--stroke-thin) solid var(--color-border);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+}
+.explain-list > li { border-bottom: var(--stroke-thin) solid var(--color-border); }
+.explain-list > li:last-child { border-bottom: 0; }
+.explain-row { align-items: flex-start; border-bottom: 0; }
+.explain-row > .icon { flex: none; margin-top: 3px; color: var(--color-ink-muted); }
+.explain-row .list-title { display: block; white-space: normal; }
+.explain-row .list-meta { display: block; }
+.explain-row-summary,
+.explain-row-state {
+  display: block;
+  margin: 2px 0 0;
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+  color: var(--color-ink-2);
+}
+.explain-row-summary {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+}
+
+/* Skills tab: loads on one card per section, like the explain rows. A row that jumps is a
+   .list-row-interactive button with a trailing arrow; a worker's row is a plain div, so it has
+   no hover, no pointer and no arrow. The certainty chip sits at the end of the first line. */
+.skill-list {
+  border: var(--stroke-thin) solid var(--color-border);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+}
+.skill-list > li { border-bottom: var(--stroke-thin) solid var(--color-border); }
+.skill-list > li:last-child { border-bottom: 0; }
+.skill-row { align-items: flex-start; }
+.skill-list .skill-row { border-bottom: 0; }
+.skill-row .list-title,
+.skill-row .list-meta { display: block; }
+.skill-row > .chip { flex: none; margin-top: 2px; }
+.skill-row > .icon { flex: none; margin-top: 4px; color: var(--color-ink-muted); }
+.skill-worker-head { display: flex; align-items: baseline; gap: var(--space-2); min-width: 0; margin: 0; }
+.skill-worker-head > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.skill-worker-team { text-transform: none; letter-spacing: 0; }
+
+
 /* ---- BODY. List | transcript, each its own scroll region; the body itself
    never scrolls. Under 500px of pane the two stack: list on top, capped at
    30vh, transcript below. 500, not 520: the container is the content box, so

@@ -1,19 +1,17 @@
-import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, on, onCleanup, Show } from "solid-js";
 import type { TeamInfo, TeamMember, TranscriptItem, WatchServerMessage, WorkerInfo } from "../../shared/protocol";
-import { claudeWatchUrl, fetchSessionInsight, wsUrl } from "../lib/api";
+import { claudeWatchUrl, wsUrl } from "../lib/api";
 import { clockTime, compactModel, shortModel } from "../lib/format";
 import { memberStatus } from "../lib/insights";
-import { createPoll } from "../lib/poll";
 import { createReconnectingSocket } from "../lib/socket";
 import { formatTokens } from "../lib/context";
-import { capTitle, sortWorkers, sourceKey, sourceName, sourceOf, transcriptUsage, usageHeadline, usageTitle, usageTotal,
-  type TranscriptSource, type UsageTotalView, type UsageView, workerLabel, workersNoun, workerTeam, workerUsage } from "../lib/workers";
+import { capTitle, sortWorkers, sourceKey, sourceName, sourceOf, transcriptUsage, usageHeadline, usageTitle,
+  type TranscriptSource, type UsageView, workerLabel, workersNoun, workerTeam, workerUsage } from "../lib/workers";
 import { ConnectionBanner } from "./ConnectionBanner";
+import type { PaneInsight } from "./SessionPane";
 import { HistoryItems, TranscriptSkeleton } from "./Thread";
 import { Banner, Chip, Icon } from "./ui";
 
-/** Worker status and file paths refresh this often while the pane is open. */
-const INSIGHT_POLL_MS = 3000;
 /** Within this distance of the end, the transcript follows new content. */
 const FOLLOW_PX = 80;
 /** The server's /ws/watch message for a path that doesn't exist (close 4404). */
@@ -38,22 +36,25 @@ const SETTLED = new Set<WorkerInfo["status"]>(["waiting", "done", "error", "kill
 const asOf = (w: WorkerInfo): number | undefined => (SETTLED.has(w.status) ? w.endedAt ?? w.lastActivity : undefined);
 
 /**
- * The nested subagents pane (DESIGN_NOTES §11): the open session's workers on the left, the
+ * The session pane's Agents tab (DESIGN_NOTES §11): the open session's workers on the left, the
  * selected worker's read-only transcript (its own session file over `/ws/watch`) on the right.
  * Nothing is ever sent to a worker. `chatWorkers` is the chat runtime's live list; without it
  * (watching, or before the first "workers" message) the list comes from the polled insight.
+ * The head, Escape and the opening focus belong to SessionPane.
  */
 export function SubagentPane(props: {
-  path: string;
   chatWorkers: WorkerInfo[] | null;
-  /** The chat runtime's session-lifetime token Σ; null while watching or before the first one. */
-  chatUsage: UsageTotalView | null;
+  /** App's insight, polled while the pane is open: even while chatting, the teams give workers
+      their role names. */
+  insight: PaneInsight;
   selected: string | null;
   onSelect(id: string): void;
-  onClose(): void;
 }) {
-  // Polled even while chatting: the teams give workers their role names.
-  const insight = createPoll(() => fetchSessionInsight(props.path), INSIGHT_POLL_MS);
+  const insight = {
+    data: () => props.insight.data ?? undefined,
+    error: () => props.insight.error,
+    pending: () => props.insight.pending,
+  };
   const workers = createMemo(() => sortWorkers(props.chatWorkers ?? insight.data()?.workers ?? []));
   const working = () => workers().filter((w) => w.working).length;
   const label = (w: WorkerInfo) => workerLabel(w, insight.data()?.teams);
@@ -75,8 +76,6 @@ export function SubagentPane(props: {
   const grouped = () => groups().some((g) => g.team);
   /** A session with a team holds more than subagents, listed or not: the pane says so. */
   const noun = () => workersNoun((insight.data()?.teams.length ?? 0) > 0);
-  /** The Σ the chat socket reports, else the polled insight's — a lifetime total either way. */
-  const total = () => props.chatUsage ?? usageTotal(insight.data());
   /** What the open transcript itself reports, which ticks between worker snapshots. Another
       worker's numbers must never linger, so the selection clears it. */
   const [watched, setWatched] = createSignal<UsageView | null>(null);
@@ -120,18 +119,6 @@ export function SubagentPane(props: {
   );
 
   let list: HTMLUListElement | undefined;
-  let closeButton!: HTMLButtonElement;
-  onMount(() =>
-    queueMicrotask(() =>
-      (list?.querySelector<HTMLElement>('[aria-current="true"]') ?? list?.querySelector<HTMLElement>(".subagent-row") ?? closeButton).focus(),
-    ),
-  );
-
-  const onKeyDown = (e: KeyboardEvent) => {
-    if (e.key !== "Escape" || e.defaultPrevented) return;
-    e.preventDefault();
-    props.onClose();
-  };
   /** Up/Down move between rows; Tab and Enter work as for any button. */
   const onListKey = (e: KeyboardEvent) => {
     if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
@@ -143,173 +130,149 @@ export function SubagentPane(props: {
   };
 
   return (
-    <aside class="app-subagents" id="subagents-pane" aria-label={noun()} onKeyDown={onKeyDown}>
-      <header class="subagents-head">
-        <h2 class="subagents-title">{noun()}</h2>
-        <Show when={working() > 0}>
-          <span class="chip chip-count">{working()} working</span>
-        </Show>
-        <Show when={total()}>
-          {(u) => (
-            <span class="chip chip-count subagents-usage" title={usageTitle(u(), u().workers)}>
-              {formatTokens(usageHeadline(u()))} tokens
-            </span>
-          )}
-        </Show>
-        <button
-          type="button"
-          class="button button-icon button-ghost subagents-close"
-          aria-label={`Close ${noun().toLowerCase()}`}
-          ref={closeButton}
-          onClick={() => props.onClose()}
-        >
-          <Icon name="chevron-right" />
-        </button>
-      </header>
-      <div class="subagents-body">
-        <ul class="subagents-list" aria-label={noun()} ref={list} onKeyDown={onListKey}>
-          <For each={groups()}>
-            {(g, gi) => (
-              <Show when={grouped()} fallback={<For each={g.workers}>{(w) => <li>{row(w)}</li>}</For>}>
-                <li class="subagents-group">
-                  <h3 class="list-group-label subagents-group-label" id={`subagents-group-${gi()}`}>
-                    <Icon name="worker" small />
-                    <span>{g.team ? "Team" : "Subagents"}</span>
-                    <Show when={g.team}>
-                      {(t) => (
-                        <>
-                          <span aria-hidden="true">·</span>
-                          <span class="subagents-group-name">{t().name}</span>
-                        </>
-                      )}
-                    </Show>
-                    <span class="text-num">{g.workers.length}</span>
-                  </h3>
-                  <Show when={g.team?.objective}>
-                    {(o) => (
-                      <p class="team-objective subagents-group-objective" title={capTitle(o())}>
-                        {o()}
-                      </p>
-                    )}
-                  </Show>
-                  <ul class="subagents-group-list" aria-labelledby={`subagents-group-${gi()}`}>
-                    <For each={g.workers}>{(w) => <li>{row(w)}</li>}</For>
-                  </ul>
-                </li>
-              </Show>
-            )}
-          </For>
-        </ul>
-        <div class="subagents-view">
-          <Show
-            when={selected()}
-            fallback={
-              <Show when={!loading()}>
-                <Show when={insight.error() && !props.chatWorkers && !insight.data()}>
-                  <Banner tone="warn" title="Couldn't load this session's subagents." body={`${insight.error()} Your workers keep running. We'll retry on our own.`} />
-                </Show>
-                <Show
-                  when={workers().length > 0}
-                  fallback={
-                    <div class="empty subagents-empty">
-                      <p class="empty-title">0 {noun().toLowerCase()} in this session.</p>
-                      <p class="empty-body">Workers it starts show up here while they run.</p>
-                    </div>
-                  }
-                >
-                  <div class="empty subagents-empty">
-                    <p class="empty-title">
-                      {workers().length}{" "}
-                      {grouped() ? (workers().length === 1 ? "worker" : "workers") : workers().length === 1 ? "subagent" : "subagents"}, {working()}{" "}
-                      working.
-                    </p>
-                    <p class="empty-body">Pick one to read its transcript.</p>
-                  </div>
-                </Show>
-              </Show>
-            }
-          >
-            {(w) => (
-              <>
-                <header class="subagents-view-head">
-                  <h3 class="subagents-view-title">{label(w())}</h3>
-                  <StatusChip worker={w()} liveSource={liveSource()} />
-                  <Show when={teamOf(w())}>
+    <div class="subagents-body">
+      <ul class="subagents-list" aria-label={noun()} ref={list} onKeyDown={onListKey}>
+        <For each={groups()}>
+          {(g, gi) => (
+            <Show when={grouped()} fallback={<For each={g.workers}>{(w) => <li>{row(w)}</li>}</For>}>
+              <li class="subagents-group">
+                <h3 class="list-group-label subagents-group-label" id={`subagents-group-${gi()}`}>
+                  <Icon name="worker" small />
+                  <span>{g.team ? "Team" : "Subagents"}</span>
+                  <Show when={g.team}>
                     {(t) => (
-                      <span class="chip chip-count" title={t().objective || undefined}>
-                        Team · {t().name}
-                      </span>
+                      <>
+                        <span aria-hidden="true">·</span>
+                        <span class="subagents-group-name">{t().name}</span>
+                      </>
                     )}
                   </Show>
-                  <p class="subagents-view-meta meta-line">
-                    <span class="text-mono">{w().id}</span>
-                    <Show when={compactModel(w().model)}>
-                      {(m) => (
-                        <>
-                          <MetaSep />
-                          <span class="text-mono meta-line-shrink" title={w().model ?? undefined}>
-                            {m()}
-                          </span>
-                        </>
-                      )}
-                    </Show>
-                    <Show when={w().backend === "claude-code"}>
-                      <MetaSep />
-                      <span>Claude Code</span>
-                    </Show>
-                    <Show when={watched() ?? workerUsage(w())}>
-                      {(u) => (
-                        <>
-                          <MetaSep />
-                          <span class="text-mono" title={usageTitle(u())}>
-                            {formatTokens(usageHeadline(u()))} tokens
-                          </span>
-                        </>
-                      )}
-                    </Show>
-                    <MetaSep />
-                    <span>Read only</span>
-                  </p>
-                </header>
-                <Show
-                  when={sourceKey(w())}
-                  keyed
-                  fallback={
-                    <div class="empty subagents-empty">
-                      <p class="empty-title">Its transcript isn't available in pi-web.</p>
-                      <p class="empty-body">
-                        <code>{label(w())}</code>{" "}
-                        {w().backend === "claude-code"
-                          ? "is starting — no Claude session yet."
-                          : "runs on a pi that doesn't publish its session file yet."}
-                        <Show when={w().preview}>
-                          {(p) => (
-                            <>
-                              {" Latest: "}
-                              <span class="text-mono">{p()}</span>
-                            </>
-                          )}
-                        </Show>
-                      </p>
-                    </div>
-                  }
-                >
-                  {(key) => (
-                    <WorkerTranscript
-                      source={sourceOf(key)}
-                      name={label(w())}
-                      author={shortModel(w().model) ?? label(w())}
-                      streaming={w().working}
-                      onUsage={setWatched}
-                    />
+                  <span class="text-num">{g.workers.length}</span>
+                </h3>
+                <Show when={g.team?.objective}>
+                  {(o) => (
+                    <p class="team-objective subagents-group-objective" title={capTitle(o())}>
+                      {o()}
+                    </p>
                   )}
                 </Show>
-              </>
-            )}
-          </Show>
-        </div>
+                <ul class="subagents-group-list" aria-labelledby={`subagents-group-${gi()}`}>
+                  <For each={g.workers}>{(w) => <li>{row(w)}</li>}</For>
+                </ul>
+              </li>
+            </Show>
+          )}
+        </For>
+      </ul>
+      <div class="subagents-view">
+        <Show
+          when={selected()}
+          fallback={
+            <Show when={!loading()}>
+              <Show when={insight.error() && !props.chatWorkers && !insight.data()}>
+                <Banner tone="warn" title="Couldn't load this session's subagents." body={`${insight.error()} Your workers keep running. We'll retry on our own.`} />
+              </Show>
+              <Show
+                when={workers().length > 0}
+                fallback={
+                  <div class="empty subagents-empty">
+                    <p class="empty-title">0 {noun().toLowerCase()} in this session.</p>
+                    <p class="empty-body">Workers it starts show up here while they run.</p>
+                  </div>
+                }
+              >
+                <div class="empty subagents-empty">
+                  <p class="empty-title">
+                    {workers().length}{" "}
+                    {grouped() ? (workers().length === 1 ? "worker" : "workers") : workers().length === 1 ? "subagent" : "subagents"}, {working()}{" "}
+                    working.
+                  </p>
+                  <p class="empty-body">Pick one to read its transcript.</p>
+                </div>
+              </Show>
+            </Show>
+          }
+        >
+          {(w) => (
+            <>
+              <header class="subagents-view-head">
+                <h3 class="subagents-view-title">{label(w())}</h3>
+                <StatusChip worker={w()} liveSource={liveSource()} />
+                <Show when={teamOf(w())}>
+                  {(t) => (
+                    <span class="chip chip-count" title={t().objective || undefined}>
+                      Team · {t().name}
+                    </span>
+                  )}
+                </Show>
+                <p class="subagents-view-meta meta-line">
+                  <span class="text-mono">{w().id}</span>
+                  <Show when={compactModel(w().model)}>
+                    {(m) => (
+                      <>
+                        <MetaSep />
+                        <span class="text-mono meta-line-shrink" title={w().model ?? undefined}>
+                          {m()}
+                        </span>
+                      </>
+                    )}
+                  </Show>
+                  <Show when={w().backend === "claude-code"}>
+                    <MetaSep />
+                    <span>Claude Code</span>
+                  </Show>
+                  <Show when={watched() ?? workerUsage(w())}>
+                    {(u) => (
+                      <>
+                        <MetaSep />
+                        <span class="text-mono" title={usageTitle(u())}>
+                          {formatTokens(usageHeadline(u()))} tokens
+                        </span>
+                      </>
+                    )}
+                  </Show>
+                  <MetaSep />
+                  <span>Read only</span>
+                </p>
+              </header>
+              <Show
+                when={sourceKey(w())}
+                keyed
+                fallback={
+                  <div class="empty subagents-empty">
+                    <p class="empty-title">Its transcript isn't available in pi-web.</p>
+                    <p class="empty-body">
+                      <code>{label(w())}</code>{" "}
+                      {w().backend === "claude-code"
+                        ? "is starting — no Claude session yet."
+                        : "runs on a pi that doesn't publish its session file yet."}
+                      <Show when={w().preview}>
+                        {(p) => (
+                          <>
+                            {" Latest: "}
+                            <span class="text-mono">{p()}</span>
+                          </>
+                        )}
+                      </Show>
+                    </p>
+                  </div>
+                }
+              >
+                {(key) => (
+                  <WorkerTranscript
+                    source={sourceOf(key)}
+                    name={label(w())}
+                    author={shortModel(w().model) ?? label(w())}
+                    streaming={w().working}
+                    onUsage={setWatched}
+                  />
+                )}
+              </Show>
+            </>
+          )}
+        </Show>
       </div>
-    </aside>
+    </div>
   );
 }
 

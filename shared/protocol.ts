@@ -331,6 +331,11 @@ export type ChatServerMessage =
       (live ones plus the ones its retention cap dropped), so it is NOT the sum of `workers[].usage`.
       Absent when the live record predates it. */
   | { type: "workers"; working: number; total: number; workers: WorkerInfo[]; usageTotal?: TokenUsageTotal }
+  /** Stop drained the SDK's still-queued steers and follow-ups (as queued, templates/skills
+      expanded) before aborting, the TUI's Esc order: left queued, the next prompt would deliver
+      them AFTER itself. The client drops their pending rows and puts the text back in the draft.
+      Only sent when something was queued. */
+  | { type: "queue_cleared"; steering: string[]; followUp: string[] }
   // Codes: "busy" = a TUI owns the session (never retry with force); "recent" = file written by an
   // unknown process, at connect or mid-chat (client may reconnect with &force=1);
   // "reloaded" = runtime reloaded by another client, or message sent to a closed runtime (reconnect);
@@ -476,6 +481,46 @@ export interface SessionUsage {
   models: ModelSpend[];
   workersTotal?: TokenUsageTotal;
 }
+/** One skill the session's prompt OFFERED. pi records the offered set as a diffed prompt section,
+    so a skill appears only in the system entries that introduced or changed it: `from` is the entry
+    that offered it, `until` the one that stopped. Being offered is not the same as being used. */
+export interface SessionSkillOffer {
+  name: string;
+  description?: string;
+  /** Absolute path of the skill's SKILL.md, as the prompt named it. */
+  location?: string;
+  /** ISO: the prompt entry that first offered it. Empty when that entry had no timestamp. */
+  from: string;
+  /** ISO: the entry that stopped offering it. Absent while it is still offered. */
+  until?: string;
+}
+
+/** A skill that was actually LOADED, and the evidence for it. `how`, in order of certainty:
+    `invoked` — an explicit /skill:name or a Claude Code `Skill` call, exact;
+    `read` — a read of a SKILL.md, which is pi's own rule for classifying a skill load, exact;
+    `shell` — a bash command naming a SKILL.md, inferred (a command can name one for other reasons). */
+export interface SessionSkillUse {
+  name: string;
+  /** ISO timestamp of the entry carrying the evidence. */
+  at: string;
+  /** The transcript row to jump to: `${entryId}:${blockIndex}` for a tool call, else the entry id. */
+  entryId: string;
+  how: "invoked" | "read" | "shell";
+  /** An explicit invocation's own arguments, when it carried any. */
+  args?: string;
+  /** The skill path an explicit invocation named, when it named one. */
+  location?: string;
+}
+
+/** Which skills were offered, and which were loaded. See server/skills.ts for the evidence. */
+export interface SessionSkills {
+  /** Offered along the active branch, oldest offer first. Empty when the prompt never listed one
+      (an older pi, or a session whose prompt sections were never recorded). */
+  offered: SessionSkillOffer[];
+  /** Every load, oldest first: repeats are kept, because "when" is half the question. */
+  used: SessionSkillUse[];
+}
+
 export interface SessionInsight {
   outline: SessionOutline | null; // null: no topic-outline entries on the active branch
   compactions: CompactionInfo[]; // active branch, oldest first
@@ -485,6 +530,16 @@ export interface SessionInsight {
   workers?: WorkerInfo[];
   /** The same lifetime token Σ as LiveAgentSession.usageTotal, for the session on screen. */
   usageTotal?: TokenUsageTotal;
+
+  /** Which skills the session's prompt offered, and which were actually loaded: see
+      server/skills.ts for the four signals and their reliability. Absent when neither is known. */
+  skills?: SessionSkills;
+
+  /** What each live worker loaded, by worker id, read from that worker's own transcript (a pi
+      worker's session file, or a Claude Code worker's project file). Same signals as `skills`,
+      except that a Claude Code transcript records no offered set at all. Absent when no worker
+      loaded anything, so the payload stays lean. */
+  workerSkills?: Record<string, SessionSkills>;
   /** Token spend for the whole session: per model × origin rows plus the Σs (see SessionUsage).
       Absent when nothing has been spent yet, or from an older server. */
   usage?: SessionUsage;

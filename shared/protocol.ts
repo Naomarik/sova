@@ -215,6 +215,10 @@ export interface ModelInfo {
   id: string;
   /** Mirrors the command-palette extension's favorites when its storage is readable. */
   favorite: boolean;
+  /** Thinking levels this model supports, ladder order (off…max). Mirrors pi 0.85.1
+      getSupportedThinkingLevels: thinkingLevelMap nulls are dropped, xhigh/max need an explicit
+      map entry, and non-reasoning models support only "off". */
+  thinkingLevels: string[];
 }
 
 /** One folder's subfolders (GET /api/folders). Directories only, never files: a symlink is listed
@@ -258,6 +262,7 @@ export type ChatClientMessage =
   | { type: "steer"; text: string; images?: OutboundImage[] }
   | { type: "abort" }
   | { type: "set_model"; ref: string }   // calls session.setModel; server replies {type:"model"} or error
+  | { type: "set_thinking"; level: string } // calls session.setThinkingLevel (clamped to the model); server replies {type:"thinking"}
   | { type: "ui_response"; id: string; value: unknown };
 
 export interface SlashCommand {
@@ -272,14 +277,21 @@ export interface SlashCommand {
 }
 
 export type ChatServerMessage =
-  /** First message after connect: current transcript + live state + context fill. */
-  | { type: "hello"; items: TranscriptItem[]; isStreaming: boolean; model: string | null; context: ContextInfo | null }
+  /** First message after connect: current transcript + live state + context fill.
+      thinking = the session's active thinking level (one of off…max), clamped to its model. */
+  | { type: "hello"; items: TranscriptItem[]; isStreaming: boolean; model: string | null; thinking: string; context: ContextInfo | null }
   /** Raw pi SDK agent event passthrough. Shapes documented in pi docs/rpc.md "Events":
       message_update (assistantMessageEvent: text_delta | thinking_delta | toolcall_start/delta/end),
       tool_execution_start/update/end, turn_start/end, agent_start/end, agent_settled, ... */
   | { type: "event"; event: unknown }
   /** Extension dialog bridge (select/confirm/input). Optional in MVP. */
   | { type: "model"; model: string }    // active model changed (model_change passthrough events also exist)
+  /** Active thinking level after a change: sent with hello, after set_thinking, and after a
+      model switch (the level may have been clamped to the new model's supported ladder). */
+  | { type: "thinking"; level: string }
+  /** Display entries appended outside a turn (mode markers, align docs, …), as they're written:
+      rows exactly as normalizeEntry renders them, so the pane updates without a remount/resync. */
+  | { type: "append"; items: TranscriptItem[] }
   /** THIS chat's own mode, and how the last switch applies to it. Sent after hello and after
       every switch of this chat. No other chat's switch, and no write of the default, sends one. */
   | { type: "mode"; mode: string; minorModes: string[]; strict: boolean; applies: ModeApplies }
@@ -415,6 +427,21 @@ export interface CompactionInfo {
   id: string; timestamp: string; tokensBefore: number | null; summary: string;
   readFiles: string[]; modifiedFiles: string[];
 }
+/** Where a model's tokens were spent: the main thread, plain subagents, or team members. */
+export type SpendOrigin = "main" | "subagents" | "team";
+/** One model's token spend from one origin; cost is USD when reported. */
+export interface ModelSpend extends TokenUsage { model: string; origin: SpendOrigin }
+/** This session's token spend. `models` holds one row per model × origin — a mid-session model
+    switch adds a row. Main rows tally the active branch's assistant usage (rewinds don't count);
+    worker rows come from the live record's per-worker usage, so they cover listed workers only —
+    `workersTotal` is the session-lifetime Σ across every worker ever spawned and can exceed their
+    sum (evicted workers surface there, not as rows). */
+export interface SessionUsage {
+  total: TokenUsage;
+  main: TokenUsage;
+  models: ModelSpend[];
+  workersTotal?: TokenUsageTotal;
+}
 export interface SessionInsight {
   outline: SessionOutline | null; // null: no topic-outline entries on the active branch
   compactions: CompactionInfo[]; // active branch, oldest first
@@ -424,6 +451,9 @@ export interface SessionInsight {
   workers?: WorkerInfo[];
   /** The same lifetime token Σ as LiveAgentSession.usageTotal, for the session on screen. */
   usageTotal?: TokenUsageTotal;
+  /** Token spend for the whole session: per model × origin rows plus the Σs (see SessionUsage).
+      Absent when nothing has been spent yet, or from an older server. */
+  usage?: SessionUsage;
   /** /explain artifacts parented to this session (store ∪ JSONL explain-doc entries, deduped by
       id, newest first). Absent from older servers. */
   explanations?: ExplanationInfo[];

@@ -69,6 +69,25 @@ export async function listModels(): Promise<ModelInfo[]> {
   const models = await (await getModelRuntime()).getAvailable();
   return models.map((m) => {
     const ref = `${m.provider}/${m.id}`;
-    return { ref, provider: m.provider, id: m.id, favorite: favorites.has(ref) };
+    return { ref, provider: m.provider, id: m.id, favorite: favorites.has(ref), thinkingLevels: supportedThinkingLevels(m) };
+  });
+}
+
+/** pi's ThinkingLevel ladder, in order (pi 0.85.1 defaults.js THINKING_LEVEL_OPTIONS). */
+const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+
+/** Mirrors pi 0.85.1 getSupportedThinkingLevels: a reasoning model supports the ladder minus its
+ *  thinkingLevelMap nulls — except xhigh/max, which count only with an explicit non-null map
+ *  entry — and a non-reasoning model supports only "off". */
+export function supportedThinkingLevels(m: {
+  reasoning?: boolean;
+  thinkingLevelMap?: Record<string, string | null>;
+}): string[] {
+  if (!m.reasoning) return ["off"];
+  return THINKING_LEVELS.filter((level) => {
+    const mapped = m.thinkingLevelMap?.[level];
+    if (mapped === null) return false;
+    if (level === "xhigh" || level === "max") return mapped !== undefined;
+    return true;
   });
 }

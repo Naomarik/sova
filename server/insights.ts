@@ -6,9 +6,12 @@ import type {
   CompactionInfo,
   ExplanationInfo,
   LiveAgentSession,
+  ModelSpend,
   OutlineTopic,
   SessionInsight,
   SessionOutline,
+  SessionUsage,
+  SpendOrigin,
   TeamInfo,
   TeamMember,
   TokenUsage,
@@ -206,10 +209,37 @@ interface SessionFacts {
   sessionId: string | null;
   /** explain-doc entries on the active branch (the store is the other half; see explanations()). */
   explanations: ExplanationInfo[];
+  /** Main-thread spend from the active branch's assistant usage, per model (a model switch adds
+      a row). Workers are NOT included: they join in getSessionInsight from the live record. */
+  usage: { main: ModelSpendTotal; models: ModelSpendTotal[] };
 }
 
 const FACTS_MAX = 64;
 const factsCache = new Map<string, { mtimeMs: number; size: number; facts: SessionFacts }>();
+
+/** A mutable token/cost Σ (protocol TokenUsage minus the optional cost). */
+interface ModelSpendTotal {
+  model: string;
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  cost: number;
+}
+const zeroSpend = (model: string): ModelSpendTotal => ({ model, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0 });
+const amount = (value: unknown): number =>
+  typeof value === "number" && Number.isFinite(value) && value > 0 ? value : 0;
+/** Assistant usage carries cost as {total}; WorkerUsage.cost is already a number. */
+type UsageLike = { input?: unknown; output?: unknown; cacheRead?: unknown; cacheWrite?: unknown; cost?: unknown };
+function addUsage(t: ModelSpendTotal, u: UsageLike | undefined | null): void {
+  if (!u || typeof u !== "object") return;
+  t.input += amount(u.input);
+  t.output += amount(u.output);
+  t.cacheRead += amount(u.cacheRead);
+  t.cacheWrite += amount(u.cacheWrite);
+  t.cost += amount(isRec(u.cost) ? u.cost.total : u.cost);
+}
+const spentSpend = (t: ModelSpendTotal): boolean => t.input + t.output + t.cacheRead + t.cacheWrite > 0;
 
 function decodeMember(m: unknown): RosterTeam["members"][number] | null {
   if (!isRec(m)) return null;
@@ -334,6 +364,8 @@ function extractFacts(text: string): SessionFacts {
   let outlineData: unknown;
   const compactions: CompactionInfo[] = [];
   const explanations: ExplanationInfo[] = [];
+  const main = zeroSpend("");
+  const byModel = new Map<string, ModelSpendTotal>();
   const entries = parseLines(text);
   const header = entries.find((e) => e.type === "session");
   for (const e of activeBranch(entries)) {
@@ -344,8 +376,19 @@ function extractFacts(text: string): SessionFacts {
     else if (e.type === "custom" && e.customType === EXPLAIN_ENTRY) {
       const x = decodeExplanation(e.data);
       if (x) explanations.push(x);
+    } else if (e.type === "message" && e.message?.role === "assistant" && isRec(e.message)) {
+      // Per-model main-thread spend: assistant entries carry their own provider/model + usage.
+      const m = e.message;
+      if (typeof m.provider === "string" && typeof m.model === "string") {
+        const ref = `${m.provider}/${m.model}`;
+        const row = byModel.get(ref) ?? zeroSpend(ref);
+        addUsage(row, m.usage);
+        byModel.set(ref, row);
+        addUsage(main, m.usage);
+      }
     }
   }
+  const models = [...byModel.values()].filter(spentSpend).sort((a, b) => a.model.localeCompare(b.model));
   return {
     teams: [...teams.values()],
     reports,
@@ -353,10 +396,11 @@ function extractFacts(text: string): SessionFacts {
     compactions,
     explanations,
     sessionId: (header ? str(header.id) : undefined) ?? null,
+    usage: { main, models },
   };
 }
 
-const EMPTY_FACTS: SessionFacts = { teams: [], reports: new Map(), outline: null, compactions: [], explanations: [], sessionId: null };
+const EMPTY_FACTS: SessionFacts = { teams: [], reports: new Map(), outline: null, compactions: [], explanations: [], sessionId: null, usage: { main: zeroSpend(""), models: [] } };
 
 async function sessionFacts(path: string): Promise<SessionFacts> {
   try {
@@ -632,12 +676,57 @@ export async function getSessionInsight(path: string): Promise<SessionInsight> {
   const presence = isRec(live?.rec.presence) ? live.rec.presence : undefined;
   const workers = live ? decodeWorkers(presence) : null;
   const usageTotal = live ? decodeUsageTotal(presence) : undefined;
+  const usage = buildUsage(facts, workers, usageTotal);
   return {
     outline: live ? overlayOutline(facts.outline, presence?.outline) : facts.outline,
     compactions: facts.compactions,
     teams: joinTeams(facts, path, workers),
     workers: workers ?? [],
     ...(usageTotal ? { usageTotal } : {}),
+    ...(usage ? { usage } : {}),
     explanations: await explanations(facts),
   };
 }
+
+/** SessionUsage = main rows from the branch tally + worker rows from the live record (team
+ *  members via teamId), or undefined while nothing was spent. The lifetime workers Σ rides along
+ *  separately: it can exceed the worker rows (evicted workers). */
+function buildUsage(
+  facts: SessionFacts,
+  workers: WorkerInfo[] | null,
+  usageTotal: TokenUsageTotal | undefined,
+): SessionUsage | undefined {
+  const byKey = new Map<string, { t: ModelSpendTotal; origin: SpendOrigin }>();
+  for (const m of facts.usage.models) byKey.set(`main:${m.model}`, { t: { ...m }, origin: "main" });
+  for (const w of workers ?? []) {
+    if (!w.usage) continue; // nothing spent yet / older pi-config
+    const origin: SpendOrigin = w.teamId ? "team" : "subagents";
+    const model = w.model || "unknown";
+    const key = `${origin}:${model}`;
+    const acc = byKey.get(key) ?? { t: zeroSpend(model), origin };
+    addUsage(acc.t, w.usage);
+    byKey.set(key, acc);
+  }
+  const order = { main: 0, subagents: 1, team: 2 } as const;
+  const accs = [...byKey.values()].filter((a) => spentSpend(a.t));
+  accs.sort((a, b) => order[a.origin] - order[b.origin] || a.t.model.localeCompare(b.t.model));
+  const total = zeroSpend("");
+  for (const a of accs) addUsage(total, a.t);
+  if (!spentSpend(total)) return undefined;
+  return {
+    total: toUsage(total),
+    main: toUsage(facts.usage.main),
+    models: accs.map((a) => spendOf(a.t, a.origin)),
+    ...(usageTotal ? { workersTotal: usageTotal } : {}),
+  };
+}
+
+/** ModelSpendTotal → the wire shapes (cost only when it was reported). */
+const toUsage = (t: ModelSpendTotal): TokenUsage => ({
+  input: t.input,
+  output: t.output,
+  cacheRead: t.cacheRead,
+  cacheWrite: t.cacheWrite,
+  ...(t.cost > 0 ? { cost: t.cost } : {}),
+});
+const spendOf = (t: ModelSpendTotal, origin: SpendOrigin): ModelSpend => ({ model: t.model, origin, ...toUsage(t) });

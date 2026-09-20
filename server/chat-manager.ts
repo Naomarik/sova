@@ -20,10 +20,14 @@ import { decodeUsageTotal, decodeWorkers } from "./insights";
 import { readLive, readOwnLiveRecords, workerCountsOf } from "./live";
 import { appliesAfter, mergeMode, MINOR_MODES, modeApplyPlan, modeInfo, readMode, resolveChatMode, type ModePatch, type ModeState } from "./mode-state";
 import { toContextInfo } from "./models";
-import { contextForBranch, normalizeEntries } from "./transcript";
+import { contextForBranch, normalizeEntries, normalizeEntry } from "./transcript";
 import { ForeignWriteGuard, markOwned, recentForeignWriteAgeSec } from "./write-guard";
 
 const GUARD_POLL_MS = 3000;
+
+/** pi's ThinkingLevel ladder (see server/models.ts, which mirrors the semantics). */
+const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+type ThinkingLevel = (typeof THINKING_LEVELS)[number];
 
 // Extensions may read ctx.ui.theme; pi's `theme` singleton isn't exported, so initialize
 // it and read the global instance it registers (same key as pi's theme.js).
@@ -321,6 +325,13 @@ class ChatSession {
       } catch (err) {
         console.error("[chat] failed to forward event", err);
       }
+      if (event.type === "entry_appended" && (event as { entry?: unknown }).entry) {
+        // Display entries an extension appended outside a turn (mode markers, align docs, …)
+        // reach the pane now instead of at the next hello/resync. normalizeEntry returns []
+        // for entries with nothing to show, so most appends broadcast nothing.
+        const items = normalizeEntry((event as { entry: Record<string, any> }).entry);
+        if (items.length) this.broadcast({ type: "append", items });
+      }
       if (event.type === "agent_settled" && this.modeApplies === "after-turn") {
         // A mid-turn switch reaches the next prompt from here on.
         this.modeApplies = "now";
@@ -425,6 +436,7 @@ class ChatSession {
       items: normalizeEntries(branch),
       isStreaming: session.isStreaming,
       model: modelLabel(session),
+      thinking: session.thinkingLevel,
       context: toContextInfo(contextForBranch(branch), this.runtime.services.modelRuntime),
     };
   }
@@ -491,6 +503,20 @@ class ChatSession {
         case "abort":
           this.session.abort().catch(fail);
           return;
+        case "set_thinking": {
+          // setThinkingLevel appends a thinking_level_change entry: same write guards as set_model.
+          assertNotLive(this.path);
+          this.assertNoForeignWrites();
+          if (this.session.isStreaming) throw new Error("Cannot change thinking while the agent is running; wait or abort first");
+          const level = String(msg.level ?? "");
+          if (!(THINKING_LEVELS as readonly string[]).includes(level))
+            throw new Error(`Unknown thinking level: ${level || "(empty)"}`);
+          this.flushDeferredAppends(); // keep open-time entries before this thinking_level_change
+          // The SDK clamps to what the model supports, so the echo is the effective level.
+          this.session.setThinkingLevel(level as Parameters<AgentSession["setThinkingLevel"]>[0]);
+          this.broadcast({ type: "thinking", level: this.session.thinkingLevel });
+          return;
+        }
         case "set_model": {
           // setModel appends a model_change entry: same write guards as prompt.
           assertNotLive(this.path);
@@ -515,6 +541,8 @@ class ChatSession {
               this.flushDeferredAppends(); // keep open-time entries before this model_change
               await this.session.setModel(model);
               this.broadcast({ type: "model", model: modelLabel(this.session) ?? ref });
+              // setModel re-clamps the level to the new model's ladder; the pane needs that too.
+              this.broadcast({ type: "thinking", level: this.session.thinkingLevel });
             })
             .catch(fail);
           return;

@@ -6,7 +6,7 @@
  * extension routes the pixels to a small vision model instead and puts its words
  * back into the conversation:
  *
- *   - look_at_image  — explicit: ask a question about a file on disk.
+ *   - look_at_image  — explicit: ask a question about a file on disk (only offered to text-only models).
  *   - read           — a read tool result carrying images is prefixed with a description.
  *   - input          — images attached in the TUI are described before the turn starts.
  *
@@ -44,6 +44,19 @@ class DelegationError extends Error {}
 
 function activeModelSeesImages(ctx: ExtensionContext): boolean {
 	return Boolean(ctx.model?.input?.includes("image"));
+}
+
+/**
+ * Offer look_at_image only while the model cannot see images. Merges the one name
+ * in or out of the live active set and writes nothing when it is already right;
+ * never snapshots or replaces the list, so mode's strict-mode snapshot/restore
+ * stays the only writer that does, and a restore self-heals on the next call.
+ */
+function gate(pi: ExtensionAPI, model: ExtensionContext["model"]) {
+	const active = pi.getActiveTools();
+	const want = !model?.input?.includes("image");
+	if (active.includes("look_at_image") === want) return;
+	pi.setActiveTools(want ? [...active, "look_at_image"] : active.filter((n) => n !== "look_at_image"));
 }
 
 /**
@@ -88,7 +101,7 @@ export default function visionDelegate(pi: ExtensionAPI, options: { agentDir?: s
 		name: "look_at_image",
 		label: "Look at Image",
 		description:
-			"Ask a vision model about an image file on disk (png, jpg, webp, gif, bmp) and get its answer as text. Use this when you cannot see images yourself — tool results and attachments then carry a note saying the current model does not support images. The delegate answers only from the picture plus a short excerpt of this conversation; it cannot run tools or see the repository.",
+			"Ask a vision model about an image file on disk (png, jpg, webp, gif, bmp) and get its answer as text. Only for models that cannot see images — if the current model accepts image input, read the file directly with the read tool instead; this tool refuses. You will know you cannot see images because tool results and attachments then carry a note saying the current model does not support images. The delegate answers only from the picture plus a short excerpt of this conversation; it cannot run tools or see the repository.",
 		promptSnippet: "Ask a vision model a question about an image file",
 		promptGuidelines: [
 			"Use look_at_image whenever an image is relevant and the current model cannot view images — you will have seen a note such as '[Current model does not support images]'.",
@@ -100,6 +113,13 @@ export default function visionDelegate(pi: ExtensionAPI, options: { agentDir?: s
 		}),
 		async execute(_id, params, _signal, _update, ctx) {
 			const path = isAbsolute(params.path) ? params.path : resolve(ctx.cwd, params.path);
+			if (activeModelSeesImages(ctx)) {
+				return {
+					content: [{ type: "text" as const, text: `look_at_image is only for models that cannot see images. The current model accepts image input, so read the file directly with the read tool instead: ${path}` }],
+					isError: true,
+					details: {},
+				};
+			}
 			const mimeType = mimeForPath(path);
 			if (!mimeType) {
 				return {
@@ -119,9 +139,8 @@ export default function visionDelegate(pi: ExtensionAPI, options: { agentDir?: s
 			const excerpt = conversationExcerpt(ctx.sessionManager.getBranch(), settings.contextChars);
 			try {
 				const { answer, model, pick } = await delegate(ctx, agentDir(), [{ type: "image", data, mimeType }], buildQuestionPrompt(params.question, excerpt));
-				const redundant = activeModelSeesImages(ctx) ? "\n[Note: the current model accepts image input and could have read this file directly with the read tool.]" : "";
 				return {
-					content: [{ type: "text" as const, text: `${viaLine(model, pick)}${redundant}\n${answer}` }],
+					content: [{ type: "text" as const, text: `${viaLine(model, pick)}\n${answer}` }],
 					details: { model: ref(model), path, overBudget: pick.overBudget, skipped: pick.skipped },
 				};
 			} catch (error) {
@@ -129,6 +148,13 @@ export default function visionDelegate(pi: ExtensionAPI, options: { agentDir?: s
 			}
 		},
 	});
+
+	// before_agent_start fires once per user prompt with a live ctx.model: the
+	// authoritative gate. model_select only makes a /model switch show at once; a
+	// switch mid-run leaves the tool offered for the rest of that run, which is why
+	// execute still refuses on a vision model.
+	pi.on("before_agent_start", (_event, ctx) => gate(pi, ctx.model));
+	pi.on("model_select", (event) => gate(pi, event.model));
 
 	// Automatic path 1: a read tool result that carries images the active model
 	// cannot see. The image blocks stay in place — the transport strips them for

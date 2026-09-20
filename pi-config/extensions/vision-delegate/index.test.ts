@@ -9,13 +9,14 @@ import { SETTINGS_FILE } from "./settings.ts";
 const PNG = Buffer.from("89504e470d0a1a0a0000000d49484452", "hex");
 
 /** Wires the extension against a fake registry and a throwaway agent dir. */
-function harness(options: { vision?: boolean; fallbacks?: string[]; complete?: () => Promise<any> } = {}) {
+function harness(options: { vision?: boolean; fallbacks?: string[]; complete?: () => Promise<any>; activeTools?: string[] } = {}) {
 	const agentDir = mkdtempSync(join(tmpdir(), "vision-agent-"));
 	writeFileSync(join(agentDir, SETTINGS_FILE), JSON.stringify({ fallbacks: options.fallbacks ?? ["seer/eye"], contextChars: 200 }));
 	const tools = new Map<string, any>();
 	const events = new Map<string, any>();
 	const notices: any[] = [];
 	const requests: any[] = [];
+	const active = { tools: options.activeTools ?? ["read", "bash", "look_at_image"], writes: [] as string[][] };
 	const catalog = [
 		{ provider: "seer", id: "eye", name: "Eye", input: ["text", "image"] },
 		{ provider: "blind", id: "ear", name: "Ear", input: ["text"] },
@@ -38,9 +39,14 @@ function harness(options: { vision?: boolean; fallbacks?: string[]; complete?: (
 	visionDelegate({
 		registerTool: (t: any) => tools.set(t.name, t),
 		on: (name: string, handler: any) => events.set(name, handler),
+		getActiveTools: () => [...active.tools],
+		setActiveTools: (names: string[]) => {
+			active.writes.push(names);
+			active.tools = [...names];
+		},
 	} as any, { agentDir });
 	return {
-		agentDir, ctx, tools, notices, requests,
+		agentDir, ctx, tools, notices, requests, active, catalog,
 		call: (params: any) => tools.get("look_at_image").execute("id", params, undefined, () => {}, ctx),
 		event: (name: string, data: any) => events.get(name)(data, ctx),
 		image: (name = "shot.png") => {
@@ -88,11 +94,63 @@ test("unsupported extensions and unreadable files fail cleanly without a model c
 	assert.deepEqual(h.requests, []);
 });
 
-test("delegation still works on a vision model but says the detour was unnecessary", async () => {
+test("a vision model is refused before any file read or model call and pointed at the read tool", async () => {
 	const h = harness({ vision: true });
-	const result = await h.call({ path: h.image(), question: "what is this?" });
-	assert.equal(result.isError, undefined);
-	assert.match(result.content[0].text, /could have read this file directly/);
+	const result = await h.call({ path: "absent.png", question: "what is this?" });
+	assert.equal(result.isError, true);
+	assert.match(result.content[0].text, /current model accepts image input/);
+	assert.match(result.content[0].text, /read tool/);
+	assert.ok(result.content[0].text.endsWith(join(h.agentDir, "absent.png")));
+	assert.deepEqual(h.requests, []);
+});
+
+test("before_agent_start removes look_at_image on a vision model and keeps the rest in order", () => {
+	const h = harness({ vision: true });
+	h.event("before_agent_start", {});
+	assert.deepEqual(h.active.tools, ["read", "bash"]);
+	assert.equal(h.active.writes.length, 1);
+});
+
+test("before_agent_start adds look_at_image on a text-only model", () => {
+	const h = harness({ activeTools: ["read", "bash"] });
+	h.event("before_agent_start", {});
+	assert.deepEqual(h.active.tools, ["read", "bash", "look_at_image"]);
+	assert.equal(h.active.writes.length, 1);
+});
+
+test("the gate writes nothing when the active set is already right", () => {
+	const blind = harness();
+	blind.event("before_agent_start", {});
+	blind.event("model_select", { model: blind.catalog[1] });
+	const seeing = harness({ vision: true, activeTools: ["read", "bash"] });
+	seeing.event("before_agent_start", {});
+	seeing.event("model_select", { model: seeing.catalog[0] });
+	assert.deepEqual(blind.active.writes, []);
+	assert.deepEqual(seeing.active.writes, []);
+});
+
+test("model_select flips the gate both ways", () => {
+	const h = harness();
+	h.event("model_select", { model: h.catalog[0] });
+	assert.deepEqual(h.active.tools, ["read", "bash"]);
+	h.event("model_select", { model: h.catalog[1] });
+	assert.deepEqual(h.active.tools, ["read", "bash", "look_at_image"]);
+	assert.equal(h.active.writes.length, 2);
+});
+
+test("a mode-style snapshot and restore self-heals on the next gate call", () => {
+	// Strict mode snapshots while the text-only model has the tool, the user moves
+	// to a vision model (gate removes it), then strict restores the stale snapshot.
+	const h = harness();
+	const snapshot = [...h.active.tools];
+	h.active.tools = snapshot.filter(n => n !== "bash");
+	h.event("model_select", { model: h.catalog[0] });
+	assert.deepEqual(h.active.tools, ["read"]);
+	h.active.tools = [...snapshot];
+	h.ctx.model = h.catalog[0];
+	h.event("before_agent_start", {});
+	assert.deepEqual(h.active.tools, ["read", "bash"]);
+	assert.equal(h.active.writes.length, 2);
 });
 
 test("no usable fallback is an explicit tool error naming the settings file", async () => {

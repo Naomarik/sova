@@ -76,15 +76,35 @@ says so — a degraded answer beats no answer.
 - Both hooks cap at three images per event and disclose the number skipped.
 - Both hooks fail soft: any picker or model error warns through `ctx.ui.notify`
   and passes the content through completely unchanged.
-- `look_at_image` still works when the active model *does* have vision (explicit
-  delegation can be deliberate), but the result notes the detour was unnecessary.
+- `look_at_image` refuses with a tool error when the active model *can* see
+  images, pointing it at the read tool instead. This is deliberate: a
+  vision-capable model never spends a delegated vision call on a detour.
+
+## Active-tool gate
+
+Only models that cannot see images are offered `look_at_image` at all — the
+tool, its prompt snippet and its guideline bullets are absent from a
+vision-capable model's system prompt. The gate runs on `before_agent_start`
+(once per user prompt, against the live model) and again on `model_select` so a
+`/model` switch shows at once. It writes only when the active set is wrong;
+pi then notes the loadout change once, and pi-web hides that note.
+
+The execute-time refusal above stays as a second layer: a model switched
+mid-run keeps the tool offered for the rest of that run.
+
+**For other extension authors:** this extension only ever merges the one name
+`look_at_image` into or out of `pi.getActiveTools()` via `pi.setActiveTools()`.
+It never snapshots the list and never replaces it wholesale. That is what makes
+it safe next to `mode`'s strict-mode snapshot/restore: a restored stale snapshot
+is corrected by the next gate call (at worst one extra add/remove pair), instead
+of two snapshot writers undoing each other.
 
 ## Files
 
 - `settings.ts` — settings file loading and per-field defaults
 - `picker.ts` — pure fallback/exhaustion policy over the usage cache
 - `describe.ts` — pure prompt building, conversation excerpting and formatting
-- `index.ts` — pi wiring: the tool and the two hooks
+- `index.ts` — pi wiring: the tool, the active-tool gate and the two hooks
 
 ## Tests
 

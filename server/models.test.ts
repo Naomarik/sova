@@ -1,7 +1,7 @@
 // Run: npx tsx --test server/models.test.ts
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { supportedThinkingLevels } from "./models";
+import { supportedThinkingLevels, toModelInfo } from "./models";
 
 test("non-reasoning models support only off", () => {
   assert.deepEqual(supportedThinkingLevels({ reasoning: false }), ["off"]);
@@ -42,4 +42,20 @@ test("xhigh and max need an explicit non-null map entry", () => {
     "medium",
     "high",
   ]);
+});
+
+test("input passes through verbatim; a model without one has no input key", () => {
+  const favorites = new Set(["anthropic/claude-opus-5"]);
+  const vision = toModelInfo({ provider: "anthropic", id: "claude-opus-5", input: ["text", "image"] }, favorites);
+  assert.deepEqual(vision.input, ["text", "image"]);
+  assert.equal(vision.favorite, true);
+
+  const textOnly = toModelInfo({ provider: "openai", id: "gpt-5", input: ["text"] }, favorites);
+  assert.deepEqual(textOnly.input, ["text"]);
+
+  // A custom models.json provider that omits it: absent stays absent, not [] and not ["text"].
+  const unknown = toModelInfo({ provider: "ollama-cloud", id: "kimi-k3" }, favorites);
+  assert.equal("input" in unknown, false);
+  assert.equal(unknown.favorite, false);
+  assert.equal(JSON.stringify(unknown).includes("input"), false);
 });

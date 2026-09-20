@@ -154,6 +154,12 @@ export function ModelPicker(props: {
     >
       <Icon name="check" small class="model-option-check" />
       <span class="model-option-id">{p.m.id}</span>
+      {/* Metadata, not status: only for models that take images, and never when input is unknown. */}
+      <Show when={p.m.input?.includes("image")}>
+        <span class="model-option-vision" title="Accepts images">
+          vision
+        </span>
+      </Show>
       <span class="model-option-provider">{p.m.provider}</span>
     </div>
   );

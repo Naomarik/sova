@@ -1471,6 +1471,17 @@ summary.sidebar-region-head .icon-twist { transition: transform var(--dur-fast) 
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* "vision" on a model that accepts images (ModelInfo.input). Metadata, not status: the
+   muted micro treatment, no border, no accent, and it shrinks before the id does. */
+.model-option-vision {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  line-height: var(--lh-micro);
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  color: var(--color-ink-muted);
+}
 .model-option-provider {
   flex: none;
   max-width: 40%;

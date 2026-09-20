@@ -225,6 +225,10 @@ export interface ModelInfo {
       getSupportedThinkingLevels: thinkingLevelMap nulls are dropped, xhigh/max need an explicit
       map entry, and non-reasoning models support only "off". */
   thinkingLevels: string[];
+  /** What the model accepts, verbatim from pi's Model.input. Absent = unknown (a custom
+      models.json provider that omits it); treat unknown as text-only. Vision is
+      `input?.includes("image")`, derived client-side — there is no separate flag. */
+  input?: ("text" | "image")[];
 }
 
 /** One folder's subfolders (GET /api/folders). Directories only, never files: a symlink is listed

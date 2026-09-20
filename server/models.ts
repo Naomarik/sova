@@ -67,10 +67,28 @@ function readFavorites(): Set<string> {
 export async function listModels(): Promise<ModelInfo[]> {
   const favorites = readFavorites();
   const models = await (await getModelRuntime()).getAvailable();
-  return models.map((m) => {
-    const ref = `${m.provider}/${m.id}`;
-    return { ref, provider: m.provider, id: m.id, favorite: favorites.has(ref), thinkingLevels: supportedThinkingLevels(m) };
-  });
+  return models.map((m) => toModelInfo(m, favorites));
+}
+
+/**
+ * One pi Model as the wire shape. `input` (pi 0.86.0 Model.input, "text"/"image") is passed
+ * through verbatim when the model carries one, and left off entirely otherwise — a custom
+ * models.json provider may omit it, and absent means unknown, not text-only.
+ */
+export function toModelInfo(
+  m: { provider: string; id: string; reasoning?: boolean; thinkingLevelMap?: Record<string, string | null>; input?: ("text" | "image")[] },
+  favorites: Set<string>,
+): ModelInfo {
+  const ref = `${m.provider}/${m.id}`;
+  const info: ModelInfo = {
+    ref,
+    provider: m.provider,
+    id: m.id,
+    favorite: favorites.has(ref),
+    thinkingLevels: supportedThinkingLevels(m),
+  };
+  if (Array.isArray(m.input)) info.input = m.input;
+  return info;
 }
 
 /** pi's ThinkingLevel ladder, in order (pi 0.86.0 defaults.js:2 THINKING_LEVEL_OPTIONS). */

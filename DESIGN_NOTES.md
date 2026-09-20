@@ -36,7 +36,7 @@ stylesheets — no component library.
 | Streaming | `.live-dot` `.run-status` `.run-status-detail` `.jump-latest` |
 | Composer | `.composer` `.composer-inner` `.composer-row` `.composer-input` (with `.input.textarea`) `.composer-actions` `.composer-foot` `.composer-reason` `.composer-hint` `.button-label` `.composer-drop` + `.composer[data-drop="active\|reject"]` |
 | Composer flyout (§4b) | `button.composer-menu-trigger` · `.model-menu.composer-flyout[popover]` `.composer-flyout-list[role=menu]` `.composer-flyout-item` (on `.mode-option`, `[role=menuitem\|menuitemradio]`) `.composer-flyout-icon` `.composer-flyout-label` `.composer-flyout-value` `.composer-flyout-meta` `.composer-flyout-chevron` `.composer-flyout-sep[role=separator]` `.composer-flyout-head` `.composer-flyout-back` (+ `.mode-option-check` `.list-group-label` `.live-dot`) |
-| Model menu (§4c) | `.model-menu[popover]` (the flyout's shell) `.model-menu-search` `.model-menu-list` `.model-menu-group` `.model-option` `[data-active]` `.model-option-check` `.model-option-id` `.model-option-provider` `.model-menu-empty` `.model-menu-foot` |
+| Model menu (§4c) | `.model-menu[popover]` (the flyout's shell) `.model-menu-search` `.model-menu-list` `.model-menu-group` `.model-option` `[data-active]` `.model-option-check` `.model-option-id` `.model-option-vision` `.model-option-provider` `.model-menu-empty` `.model-menu-foot` |
 | Mode menu (§4g) | `.mode-trigger` `.mode-trigger-label` `.model-menu.mode-menu[popover]` (+ `.model-menu-list[role=menu]` `.model-menu-group`) `.mode-option[role=menuitemradio\|menuitemcheckbox]` `.mode-option-check` `.mode-option-text` `.mode-option-id` `.mode-option-desc` `.mode-menu-foot` |
 | Context window (§4f) | `.context-gauge` `.context-label` `.context-value` `.context-pct` `.context-meta` · states `.context-warn` `.context-error` `.context-compacted` · `.session-head` is the named container `session-head` |
 | Markdown (§4e) | `.md` (on `.message-body`) `.md-table-wrap` `.md-code` `.md-code-head` `.md-code-lang` `.md-code-copy` `.md-image-link` · syntax: `.hljs-*` roles |
@@ -1598,6 +1598,7 @@ row carries the label ({id} in mono, the provider beside it, the full `provider/
       <div class="model-option" role="option" id="mo-openai-gpt-5" aria-selected="false" data-active>
         <span class="icon icon-sm model-option-check" style="--icon: url(/icons/check.svg)" aria-hidden="true"></span>
         <span class="model-option-id">gpt-5</span>
+        <span class="model-option-vision">vision</span>  <!-- only when ModelInfo.input has "image" -->
         <span class="model-option-provider">openai</span>
       </div>
       <div class="model-option" role="option" id="mo-ollama-cloud-kimi-k3" aria-selected="true">

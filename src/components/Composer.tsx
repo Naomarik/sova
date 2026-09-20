@@ -13,7 +13,7 @@ import {
   type RejectedFile,
 } from "../lib/images";
 import { modelProvider, shortModel } from "../lib/format";
-import { thinkingLevelsFor } from "../lib/models";
+import { ensureModels, modelList, thinkingLevelsFor } from "../lib/models";
 import { announce, draftImages, drafts } from "../lib/ui-state";
 import { showWorkersLabel, teamNote, type WorkingSplit, workersWorkingLabel } from "../lib/workers";
 import { ComposerMenu, type ComposerMenuApi, type ThinkingControl } from "./ComposerMenu";
@@ -112,6 +112,11 @@ export function Composer(props: {
     if (!thinking || thinkingLevelsFor(props.model?.model()).length <= 1) return null;
     return thinking.pending() ?? thinking.level();
   };
+  // The thinking ladder decides whether the level is worth showing, and it only arrives with the
+  // model catalog — load it as soon as a session has a thinking control, not when the flyout opens.
+  createEffect(() => {
+    if (props.thinking && props.model?.model() && !modelList()) void ensureModels().catch(() => {});
+  });
   /** Open by the indicator, closed by it again: one control, one state. */
   const indicatorOpen = () => !!menu()?.open() && menu()?.anchor() === indicator;
   /** A popover's light dismiss beats our click to it, so a pointer toggle reads the state it

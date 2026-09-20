@@ -15,17 +15,18 @@ stylesheets — no component library.
 
 | Need | Classes |
 |---|---|
-| App shell | `.app[data-view="list\|session"]` `.app-sidebar` `.app-main` `.app-back` `.pane` `.skip-link` |
+| App shell | `.app[data-view="list\|session"]` `.app-sidebar` `.app-main` `.app-back` `.pane` `.skip-link` `.pane-resizer` (+ `html.is-resizing`) |
 | Sidebar | `.sidebar-head` `.brand` `.sidebar-spacer` `.sidebar-search` `.sidebar-list` `.sidebar-region` `.sidebar-region-head` `.sidebar-region-count` `.sidebar-region-note` `details.sidebar-archive` · in `src/app.css`: `.archive-date` `.archive-date-label` `.archive-date-name` `.archive-tools` `.cleanup-intro` `.cleanup-choices` `.cleanup-choice` |
 | Search | `.search` (wraps `.icon` + `input.input` + clear `.button.button-icon`) `.search-count` |
-| Session rows | `.session-group` `.list-group-label` `.session-group-path` (+ `<bdi>`) `.list` `.list-row.list-row-interactive.session-row` `[aria-current="page"]` `.list-main` `.list-title` `.list-summary` `.list-meta` |
+| Session rows | `li.session-row-shell` (`.session-row-shell-current` when open) wrapping `.session-rail` + `.list-row.list-row-interactive.session-row` `[aria-current="page"]` `.list-main` `.list-title` `.list-summary` `.list-meta` · group chrome `.session-group` `.list-group-label` `.session-group-path` (+ `<bdi>`) `.list` |
+| Session row state (left rail) | `.session-rail` `.session-rail-item` `.session-rail-state` (+ `.chip.chip-accent` TUI or `.chip.chip-info.chip-live` Busy) `.session-rail-dot` `.session-rail-count` `.session-rail-count-live` |
 | LIVE badge / status | `.chip` `.chip-dot` `.chip-accent` `.chip-live` `.chip-success` `.chip-error` `.chip-warn` `.chip-info` `.chip-count` |
 | Buttons | `.button` `.button-primary` `.button-destructive` `.button-ghost` `.button-sm` `.button-icon` (needs `aria-label`) |
 | Icons | `.icon` (20px) `.icon-sm` (16px) `.icon-twist` (rotates in open disclosures). Works on an inline `<svg>` or a mask `<span class="icon" style="--icon:url(/icons/x.svg)">` |
 | Modal | `.scrim` `.modal` `.modal-head` `.modal-title` `.modal-body` `.modal-foot` `.modal-spacer` `.folder-list` |
 | Folder picker (§5) | `.folder-field` `.folder-field-value` `.folder-field-empty` `.folder-picker` `.folder-picker-bar` `.folder-crumbs` `.folder-crumbs-root` `.folder-crumb` `.folder-crumb-current` `.folder-picker-list` `.folder-picker-link` `.folder-picker-note` `.folder-picker-foot` `.folder-picker-hidden` |
 | Form fields | `.field` `.field-label` `.field-hint` `.field-error` `.input` `.input-mono` `.textarea` |
-| Main head | `.session-head` `.session-head-main` `.session-head-title` `.session-head-meta` `.session-archive` |
+| Main head | `.session-head` `.session-head-main` `.session-head-title` `.session-head-meta` `.session-archive` · worker count `a.chip.chip-count.session-head-working` (`{n}` + `worker` icon) |
 | Transcript | `.transcript` (+ `.pane`) `.transcript-banner` `.transcript-inner` `.thread` |
 | Messages | `.message` `.message-user` `.message-streaming` `.message-head` `.message-author` `.message-time` `.message-body` `.message-text` |
 | Thinking / raw JSON | `details.disclosure` `.disclosure-summary` `.disclosure-label` `.disclosure-preview` `.disclosure-body` |
@@ -44,8 +45,9 @@ stylesheets — no component library.
 | Slash commands (§4d) | `.command-menu` `.command-menu-head` `.command-list` `.command-option` `[data-active]` `.command-option-name` `.command-option-desc` `.command-option-location` `.command-menu-empty` `.command-menu-foot` · source badge: neutral `.chip` |
 | Images (§4b) | `.message-images` `.message-images-single` `.thumb` `.toolcard-images` · lightbox: `dialog.lightbox` `.lightbox-bar` `.lightbox-caption` `.lightbox-count` `.lightbox-stage` `.lightbox-img` `.lightbox-prev` `.lightbox-next` · attachments: `.attachments` `.attachment` `.attachment-rejected` `.attachment-thumb` `.attachment-icon` `.attachment-text` `.attachment-name` `.attachment-meta` · path attachments: `details.disclosure.message-attachment` `.message-attachment-missing` `.message-attachment-name` `.message-attachment-meta` `.message-attachment-body` · path chips: `button.path-chip` `.path-chip-missing` `.path-chip-name` `.path-chip-note` |
 | Empty / loading | `.empty` `.empty-mark` `.empty-title` `.empty-body` `.empty-action` · `.skeleton` `.skeleton-line` `.skeleton-title` `.skeleton-row` |
+| Landing page (§3) | `.welcome` `.welcome-head` (wrapping the `.empty` opening) `.explain-section` `.explain-section-head` (+ its `.text-num` count) · the grid itself is `ul.explain-grid` of `.card.explain-tile`, in `src/explain.css` |
 | Toast | `.toast-stack` `.toast` `.toast-body` |
-| Insights: entry (§10) | `.sidebar-foot` holding 2 × `.insights-row` (Usage → `#/usage`, Agents → `#/agents`) `.insights-row-text` · usage glance `.usage-glance` `.usage-glance-item` `.usage-glance-item-high` `.usage-glance-item-stale` `.usage-glance-tag` · aggregate chip `.chip.chip-count` (`a.chip` when it links) |
+| Insights: entry (§10) | `.sidebar-foot` holding 2 × `.insights-row` (Usage → `#/usage`, Agents → `#/agents`) `.insights-row-text` · usage glance `.usage-glance` `.usage-glance-item` `.usage-glance-item-high` `.usage-glance-item-stale` `.usage-glance-tag` · aggregate chip `.chip.chip-count` (`a.chip` when it links; `.session-head-working` for the head's wordless `{n}` + worker icon) |
 | Insights: Usage and Agents pages (§10) | `.insights` (+ `.pane`) `.insights-inner` `.insights-section` `.insights-section-head` `.insights-section-count` `.insights-grid` · `.card` `.card-head` `.card-title` `.card-body` `.card-foot` |
 | Usage meter (§10) | `.usage-card` `.usage-note` · `.meter` `.meter-head` `.meter-label` `.meter-value` `.meter-of` `.meter-track` `.meter-fill` `.meter-fill-warn` `.meter-fill-error` `.meter-context` `.meter-ghost` · a credit balance (DeepSeek) reuses `.meter` `.meter-head` `.meter-label` `.meter-value` `.meter-context` with no track |
 | Teams / subagents (§10) | `.team-card` `.team-objective` `.agent-card` `.member-list` `.member-row` `.member-preview` |
@@ -145,7 +147,9 @@ Four pillars, all at once: calm, concrete, warm, and candid. The rules that matt
 Spend `--color-accent` on only three things:
 
 1. The one primary button in view (Send, or Create Session inside the dialog).
-2. The live indicator (`.chip-live` and `.live-dot`).
+2. The live indicator (`.chip-live` and `.live-dot`), and every TUI mark — the sidebar row's
+   rail pill, the head's `TUI` chip, the `N TUI` count — all of which are accent but **static**
+   (see Motion).
 3. Focus rings and links.
 
 Selected rows and user bubbles take `--color-accent-tint`. Anything else that "needs color" is a
@@ -157,7 +161,17 @@ State changes use `--dur-fast` and `--ease-standard`. The modal, scrim, toast, a
 fade in over `--dur-base`. Only two things loop:
 
 - The `live-pulse` on `.chip-live .chip-dot` and `.live-dot`. It means work is happening now.
+  In the sidebar's row rail that is `.session-rail-state.chip-live .session-rail-dot` (Busy) and
+  `.session-rail-count-live .icon`, at most one of them per row.
 - The skeleton sweep.
+
+**TUI never pulses — Busy and running tools own the pulse.** This holds on every surface: the
+sidebar row's rail pill (§2), the session head's `TUI` chip (§3), and the `N TUI` count under
+search all take `.chip-accent` **without** `.chip-live`. A TUI holding a file open is
+*ownership*, and a count of them is a tally; neither is work in flight. What moves is our own
+run: Busy in a row, the composer's `.run-status` live dot, a Running tool card, and a
+live-sourced Working chip. This inverts the rule this file used to state ("the pulse belongs to
+Live alone"), and it is the reason the pulse now means something: it stops when the work does.
 
 No typing cursor blinks, and streamed text simply appears. `tokens.css` turns off every animation
 under `prefers-reduced-motion`.
@@ -183,6 +197,9 @@ unfolded (≥768)                                  folded (<768)
 <div class="app" data-view="list|session">
   <aside class="app-sidebar" aria-label="Sessions">…§2…</aside>
   <main class="app-main">…§3 head, transcript, composer…</main>
+  <!-- ≥768 only; CSS hides it folded -->
+  <div class="pane-resizer" role="separator" aria-orientation="vertical"
+       aria-label="Resize the sessions pane" title="Drag to resize · Double-click to reset"></div>
 </div>
 <!-- Portals (render at the body, never inside a .pane): scrim + modal, .toast-stack, live region -->
 ```
@@ -203,6 +220,51 @@ unfolded (≥768)                                  folded (<768)
   automatically (`.modal` restyles itself).
 - **Toasts** go in one `.toast-stack` portal. Use them only for "Copied path." / "Copied output."
   A toast is never the only record of a fact, so errors go in banners.
+
+### Resizing the sessions pane
+
+The divider between the two columns is draggable. `.pane-resizer` is a child of `.app` (the
+sidebar is `overflow: hidden` and would clip it), absolutely positioned — which is why `.app`
+takes `position: relative` from 768px up — and it writes `--sidebar-width` on
+`document.documentElement`.
+
+- **An invisible 12px hit strip.** `left: var(--sidebar-width)` with `margin-left: -6px`, so it
+  straddles `.app-sidebar`'s `border-right` evenly, top to bottom. **Nothing is drawn at rest**:
+  the sidebar's own 1px border is already the divider, and a second mark for a control nobody is
+  touching is clutter. On `:hover`, and for as long as `html.is-resizing` is set, a 1px
+  `--color-accent` hairline lights up down the centre of the strip, over `--dur-fast`. 12px is
+  under the 44px touch minimum on purpose: it is an edge, the edge has no other target within
+  44px in either direction, and every pixel it grows is a pixel stolen from a list row's
+  target.
+- **Unfolded only.** `display: none` below 768px. Folded is a single full-width column with no
+  divider and nothing to divide, so there is no handle to find.
+- **The drag.** Pointer events with pointer capture, mouse and touch alike; `touch-action: none`
+  on the strip keeps a touch drag from scrolling the page. While a drag is live the root carries
+  `is-resizing`, and `html.is-resizing, html.is-resizing *` force `cursor: col-resize` and
+  `user-select: none` — the pointer leaves the 12px strip on the first move, so the cursor and
+  the selection guard have to hold across the transcript it runs over.
+- **Clamp.** `240 … min(560, viewport − 440 − the Subagents pane)`. 440 is `--main-min`, the
+  transcript's floor; the Subagents term is its real width **only while it is a static third
+  column** (≥1280px), because below that it overlays the main pane and reserves nothing. The
+  clamp is re-applied on `resize` and `orientationchange`, so shrinking the window pulls an
+  over-wide pane back rather than squeezing the transcript out.
+- **Default 320px on every load, and nothing is persisted.** This is a decision, not an
+  omission: a width is a posture for the task in front of you, not a preference, and a
+  remembered one is a setting you have to notice and undo. Double-clicking the handle resets to
+  320 for the same reason — the way back is always one gesture.
+- **One knob, three consumers.** `--sidebar-width` feeds the `.app` grid's first column, the
+  Subagents pane's `width: min(--subagents-width, 100% − --sidebar-width − --space-8)`, and
+  `--measure`'s `clamp(72ch, 100vw − --sidebar-width − …, 110ch)` (§3 "Column width"). So
+  dragging the pane reflows the transcript's line length **live**, under the pointer, and the
+  reading column is never quietly wrong about how much room it has.
+- **No keyboard path, and that is an accepted gap.** The handle has no `tabindex`, so it is not
+  reachable by Tab, and it carries no `aria-valuenow`/`valuemin`/`valuemax` — the `role="separator"`
+  is there to name the thing, not to make it a slider. **A keyboard-only user cannot resize the
+  sessions pane at all.** It is a layout preference with no content behind it: everything the
+  pane holds is fully readable at the 320px default, every row truncates rather than hides, and
+  no fact is reachable only by widening. Nothing is lost but the adjustment itself. The right
+  fix, if this is revisited, is `tabindex="0"` plus arrow keys and the three `aria-value*`
+  attributes; until then this is written down rather than unnoticed.
 
 ---
 
@@ -230,8 +292,8 @@ unfolded (≥768)                                  folded (<768)
     </div>
     <div class="spread">
       <p class="search-count" id="session-count" aria-live="polite">12 of 48 sessions</p>
-      <span class="chip chip-accent chip-live chip-count" title="Sessions open in a TUI">
-        <i class="chip-dot"></i>2 TUI</span>           <!-- only when ≥1 live -->
+      <span class="chip chip-accent chip-count" title="Sessions open in a TUI">
+        <i class="chip-dot"></i>2 TUI</span>           <!-- only when ≥1 live; static, no pulse -->
     </div>
   </div>
 
@@ -243,14 +305,38 @@ unfolded (≥768)                                  folded (<768)
         <span class="text-num">4</span>
       </h2>
       <ul class="list">
-        <li>
+        <!-- The rail is the row's state, on the LEFT, wordless. Every row has one, even
+             an empty one, so every title starts on the same edge:
+
+               [=] ~/webapps/pi-web                              4
+             ( o )  Add a watch endpoint for TUI sessions
+              3 ⚙   Wiring /ws/watch to the session tailer
+                    2h ago · claude-opus-5
+            2├──30px──┤2├───────── 270 at a 320px sidebar ─────────┤
+        -->
+        <li class="session-row-shell session-row-shell-current">
+          <div class="session-rail">
+            <!-- at most one state pill: TUI (accent, static) or Busy (info, pulsing) -->
+            <button type="button" tabindex="-1"
+                    class="session-rail-item session-rail-state chip chip-accent"
+                    aria-label="Open in a TUI" title="Open in a TUI · pid 8124 · working">
+              <span class="session-rail-dot"></span>
+            </button>
+            <!-- only when n > 0; .session-rail-count-live pulses the icon, never the figure -->
+            <button type="button" tabindex="-1"
+                    class="session-rail-item session-rail-count session-rail-count-live"
+                    aria-label="3 subagents working" title="3 subagents working now">
+              <span class="text-num">3</span><span class="icon icon-sm"
+                    style="--icon:url(/icons/worker.svg)"></span>
+            </button>
+          </div>
           <a class="list-row list-row-interactive session-row" href="#/s/…" aria-current="page">
             <div class="list-main">
               <p class="list-title">Add a watch endpoint for TUI sessions</p>
               <p class="list-summary" title="…">Wiring /ws/watch to the session tailer</p>
               <p class="list-meta">2h ago · <span class="text-mono">claude-opus-5</span></p>
             </div>
-            <span class="chip chip-accent chip-live"><i class="chip-dot"></i>TUI</span>
+            <span class="visually-hidden">, open in a TUI, 3 subagents working</span>
           </a>
         </li>
       </ul>
@@ -280,45 +366,96 @@ unfolded (≥768)                                  folded (<768)
 - **Row line 3.** Relative `lastActiveAt` ("just now", "4m ago", "2h ago", "yesterday", "Mar 4"),
   then ` · `, then the model in mono. Show only the part after the first `/` and put the full
   `provider/model` in `title`. If `model` is null, omit the separator and the model.
-- **TUI badge.** Shown when `live !== null`: `.chip.chip-accent.chip-live` with the word `TUI`.
-  The pulse is still justified because it means "a TUI is running this session right now". Never
-  show the dot without the word.
-- **BUSY marker.** Shown when `busy === true`, meaning the server is mid-turn on a session pi-web
-  holds.
+- **Row state lives in a left rail.** Every row is a `li.session-row-shell`: a 30px
+  `.session-rail` column with a **2px horizontal margin** of its own, then the row link — a 34px
+  gutter in all. The margin is where the breathing room lives: not padding inside the rail, and
+  not a margin on the pill, so the rail's box (x=2…32) stays symmetrical and everything in it
+  centres on one axis. The 26px pill therefore sits **4px** off the panel edge — the 2px margin
+  plus 2px of centring slack — and the count centres under it on that same axis.
+  The rail is deliberately **outboard** of the
+  list's 16px text inset: it is a gutter the eye skips, not a column of content, and the titles
+  start a bare 2px right of where the old rows' text did. The rail is reserved on **every** row, including the ones
+  with nothing to say, so 278 titles start on one left edge instead of jittering with whatever
+  chip the row happens to carry. The shell owns the divider, the hover
+  (`--color-sunken`) and the open-row tint (`--color-accent-tint`, via
+  `.session-row-shell-current`), so the rail is skin, not a dead zone. Rail items are
+  `<button type="button" tabindex="-1">` — pointer and AT affordances, never tab stops
+  (Accessibility below).
+- **The rail is wordless.** It carries at most two things, stacked: a 26px state pill, then a
+  worker count. This is the one place in the product where a status ships without its word, and
+  the trade is written down under Accessibility.
+- **TUI pill.** Shown when `live !== null`: `.session-rail-item.session-rail-state.chip.chip-accent`
+  holding one `.session-rail-dot` — a 7px accent dot in a 26px round bordered pill.
+  `aria-label` "Open in a TUI. Pid {pid}, status {status}.", `title`
+  "Open in a TUI · pid {pid} · {status}".
 
-  ```html
-  <span class="chip chip-info" title="pi is replying in this session"><i class="chip-dot"></i>Busy</span>
-  ```
+  - **Static. No `.chip-live`**, here and in the session head's `TUI` chip alike (§0 Motion,
+    §3). This inverts the precedent this file used to state — *"the pulse
+    belongs to Live alone"*. A TUI holding the file open is **ownership**, not work in flight,
+    and a row that pulses all day while nothing moves teaches people that the pulse means
+    nothing. The pulse now means exactly "work in flight", which is Busy.
+  - **Hue.** Accent, unchanged: the accent's meaning is still "a TUI has this".
+- **Busy pill.** Shown when `busy === true`, meaning the server is mid-turn on a session pi-web
+  holds: `.session-rail-item.session-rail-state.chip.chip-info.chip-live`, same 26px pill, info
+  dot, **pulsing**. `aria-label` and `title` both "pi is replying in this session".
 
-  - **No pulse.** It's a plain status chip, with a static info-hue dot and the word. Never add
-    `.chip-live`: the pulse belongs to Live alone, so a row never has two moving things.
-  - **Hue.** It's info (`--status-info`, 5.94 dark / 6.36 light on the chip's surface), not the
-    accent. Busy is our own run, and the accent's live meaning is reserved for "a TUI has this".
-  - **Accessible name.** The chip text "Busy" is part of the row link's name. Its `title` gives
-    the sentence on hover. For AT, add
-    `<span class="visually-hidden">, pi is replying in this session</span>` after the word
-    inside the chip, because `title` isn't reliably announced.
-  - **Order.** Chips sit at the right end of the row as `[{n} working] [Live]` or `[Busy]`, with
-    at most **two** chips per row:
-    - `{n} working` (§10) exists only for live sessions, and Busy only for sessions pi-web
-      holds, so Working and Busy never meet.
-    - Live and Busy shouldn't co-occur either, because pi-web never holds a TUI-owned session.
-      If both ever arrive, **Live wins** and Busy is hidden. The TUI owns it, so our view of
-      busy is stale.
-  - **320px budget.** Row inner width is 288px. The compact chip box makes both chips narrower
-    and shorter than before: the worst case, `2 working` (~64) + `TUI` (~48) + 2 × 12px gaps,
-    leaves about 150px for the title, summary, and meta, which truncate as they already do. A
-    Busy row has one chip (~48), so its text gets about 230px. Row height grows only by the
-    summary line, and only on rows that have one.
-  - **Other placements.** None for v1. The open session already shows its own run state (the
-    `.run-status` line and the author's `.live-dot`, §3), so the session head doesn't repeat
-    Busy. It doesn't count toward the "N live" chip either.
-- **Live count.** `N TUI` as `.chip-count`, shown only when N ≥ 1. It sits at the right end of
-  the count row under search (`.spread`), not in the head: at 320px the head holds exactly brand,
-  Refresh, and New Session. It always counts all live sessions, not just the filtered ones.
-- **Selection.** The row for the open session gets `aria-current="page"`, which the stylesheet
-  tints with `--color-accent-tint`. The tint is never the only signal, because the head of the
-  main pane repeats the title.
+  - **The pulse is Busy's now.** `.chip-live` lands here, and only here, in a session row. It is
+    real work in flight, and it ends when the turn does.
+  - **Hue.** Info (`--status-info`, 5.94 dark / 6.36 light on the pill's surface), not the
+    accent. Busy is our own run; the accent stays reserved for "a TUI has this".
+  - **At most one pill.** TUI and Busy never co-occur — pi-web never holds a TUI-owned session —
+    and if both ever arrive, **TUI wins** and Busy is hidden: the TUI owns the file, so our view
+    of busy is stale.
+  - **What tells the two apart.** Tone (accent vs info), and static vs pulsing. One dot glyph
+    can't also carry a shape difference, so shape is not a third channel here; the honest list
+    of carriers is tone, motion, `title`, `aria-label`, and the row link's hidden suffix.
+- **Worker count.** `.session-rail-item.session-rail-count`, under the pill, only when
+  `live?.workers?.working ≥ 1`: a tabular `--fs-micro` figure and an 11px `worker` icon in
+  `--color-ink-muted`, 16px tall, no pill and no border — it is an aggregate, not a state, and it
+  must not read as a second status. `aria-label` and `title` both "{n} subagents working now". `.session-rail-count-live` pulses **the icon only**, never the figure: a moving
+  numeral can't be read. Still at most **one** moving thing per row, so the count pulses only on
+  rows whose pill is static (TUI), and a Busy row's count sits still.
+- **320px budget.** The rail costs a **34px** gutter (2px margin + 30px column + 2px margin) and
+  gives back the whole right end of the row. The pill's left edge is **4px** in and its 26px box
+  ends at x=30; the title block starts **34px** in on every row and runs
+  **320 − 34 − 16 = 270px** — against the old worst case of about **150px**, when
+  `2 working` (~64) + `TUI` (~48) + two 12px gaps sat to the right of the title. That is +120px,
+  about **80% more title**, and it is the same 270px on every row: a stateless row no longer
+  reads wider than a live one.
+
+  The title column moved 2px right when the pill got its breathing room, and that is the trade as
+  accepted: 2px of gutter buys a round button that isn't touching the panel edge, and 2px off a
+  270px column is invisible where the pill's margin is not.
+
+  Those are the nominal figures. A real pane also spends its 1px right border and a 10px
+  scrollbar, so the title column in Chrome is about **259px** at a 1280 viewport and **250px** at
+  a 320px viewport — the 261/252 measured before this change, less the 2px the gutter grew; they
+  have not been re-measured. Both sides of the comparison are quoted without the scrollbar.
+
+  **Row height.** The rail can set the row's height, because the shell is
+  `align-items: flex-start` and the taller column wins. A row with **both** rail items stacks
+  8 (top padding) + 26 (pill) + 4 (gap) + 16 (count) = **54px**. Measured at 320px, the link side
+  of a title-plus-meta row is already **60px** (76px with a summary line), so the full rail fits
+  inside the height the text already makes and **no row grows** — a both-items row and a bare row
+  both measure 60px. The 54px figure is the floor the
+  rail would impose if a row ever lost its meta line — still above `--row-height` 44, and still
+  one 44px-plus target. That is the acceptable trade:
+  the rail is bounded by a number smaller than the row it sits in, and the alternative —
+  squeezing the pill or dropping the count — spends a readable state to save height we are not
+  spending.
+- **Other placements.** None for v1. The open session already shows its own run state (the
+  `.run-status` line and the author's `.live-dot`, §3), so the session head doesn't repeat Busy.
+  It doesn't count toward the "N TUI" chip either.
+- **Live count.** `N TUI` as `.chip.chip-accent.chip-count`, shown only when N ≥ 1. It sits at
+  the right end of the count row under search (`.spread`), not in the head: at 320px the head
+  holds exactly brand, Refresh, and New Session. It always counts all live sessions, not just the
+  filtered ones. **It does not pulse** — `.chip-live` came off it with the rail change. A count is
+  a tally, not work in flight, and it was the one pulse on the screen that never stopped. The
+  accent dot and the word `TUI` carry it.
+- **Selection.** The row link for the open session gets `aria-current="page"`, and its shell gets
+  `.session-row-shell-current`, which is what the stylesheet tints with `--color-accent-tint` —
+  the tint has to cover the rail too, or the open row would read as two pieces. The tint is never
+  the only signal, because the head of the main pane repeats the title.
 - **Refreshing** (polling or a WS nudge). Update rows in place and never re-show the skeleton.
   Keep scroll position and focus. If the focused row moves, it stays focused.
 
@@ -411,7 +548,8 @@ the top region doesn't keep every one of them forever.
   visible while it's open.
 - **Undo.** On an archived session the same button is Unarchive Session. Toast: "Moved back to
   Live & web."
-- **Live.** A live session stays on top whether archived or not, and still shows its Live chip.
+- **Live.** A live session stays on top whether archived or not, and still shows its TUI rail
+  pill.
   Archiving one is refused: the button is `aria-disabled`, and its `title` says "Open in a TUI.
   It stays on top while live." Unarchiving a live session works.
 - **Failure.** Toast: "Couldn't archive this session. {server message}". Nothing moves.
@@ -580,13 +718,28 @@ sessions in bulk. It uses `POST /api/sessions/cleanup` (`cleanupSessions` in `sr
 
 ### Tokens
 
-Sidebar ground `--color-surface`. Row hover `--color-sunken`. Selected `--color-accent-tint`.
+Sidebar ground `--color-surface`. Row hover and `:focus-within` `--color-sunken`, both on
+`.session-row-shell`; open row `--color-accent-tint` on `.session-row-shell-current`.
 Title `--color-ink`, `--fw-medium`, `--fs-body`. Summary `--fs-micro`, `--lh-micro`,
-`--color-ink-2`. Meta `--color-ink-muted`, `--fs-caption`. Chips take the compact chip box:
-padding 1px / `--space-2`, gap `--space-1`, 5px dot, line-height 1.2 (font stays `--fs-micro`
-mono, uppercase). Group
-label `--font-mono`, `--fs-mono`, `--color-ink-muted`. Row padding `--space-2` / `--space-4`,
-`min-height: --row-height`. Head `min-height: 56px`, border `--color-border`. Brand is
+`--color-ink-2`. Meta `--color-ink-muted`, `--fs-caption`.
+
+**The rail.** A 30px column with `margin: 0 2px` — a 34px gutter, title 34px from the
+panel edge. Rail padding is `--space-2` on **top only**, matching the row link: the horizontal
+breathing room is the margin, so the 30px box stays symmetrical and the 26px pill centres in it
+4px off the panel edge, with the count on the same axis. Items stack centred with `--space-1`.
+The state pill is 26 × 26, `--r-full`, `--stroke-thin`
+`--color-border` on `--color-surface` (`--color-border-strong` on hover), with a 7px
+`currentColor` dot; its tone is `.chip-accent` (TUI) or `.chip-info` (Busy). The count is
+borderless, 16px tall, `--font-mono` `--fs-micro` tabular in `--color-ink-muted`
+(`--color-ink` on hover), with an 11px `worker` icon. `live-pulse` runs on the Busy dot and on
+`.session-rail-count-live .icon`, nothing else in the row.
+
+Chips elsewhere take the compact chip box: padding 1px / `--space-2`, gap `--space-1`, 5px dot,
+line-height 1.2 (font stays `--fs-micro` mono, uppercase); an icon inside a `.chip-count` is
+12px. Group
+label `--font-mono`, `--fs-mono`, `--color-ink-muted`. Row link padding `--space-2` `--space-4`
+`--space-2` 0 (the rail replaces its left padding), `min-height: --row-height`. Head
+`min-height: 56px`, border `--color-border`. Brand is
 `--fw-display`, letter-spacing −.03em, and `--fs-heading-s`. The mark takes `--color-accent`; the
 word never does.
 
@@ -595,8 +748,37 @@ word never does.
 - **Landmarks.** `aside[aria-label="Sessions"]` > `nav[aria-label="Session list"]`. Each group is
   a `section` labelled by its `h2`. Rows are plain links in a `ul`, so the browser provides
   Tab/Enter behavior with no roving tabindex.
-- **Selected row.** Mark it with `aria-current="page"`.
-- **Chips are text.** The TUI chip reads "TUI" in the link's name. Don't hide it from AT.
+- **Selected row.** Mark the link with `aria-current="page"` and the shell with
+  `.session-row-shell-current`.
+- **The rail is the one sanctioned wordless status in the system.** Everywhere else, status is a
+  dot **and** the word. Session rows are the exception, and it is a deliberate one: at 320px the
+  words cost more title than they buy. What carries the state instead:
+  1. **The pill's border and tone** — a bordered 26px pill on `--color-surface`, accent for TUI
+     and info for Busy, so the dot is never a bare hue floating in a row.
+  2. **Static vs pulsing**, which separates TUI from Busy without depending on hue at all.
+     Note the limit honestly: one dot glyph can't also differ in *shape*, so the two pills are
+     the same silhouette. Motion, not form, is the non-color channel.
+  3. **`title`** on each rail button — "Open in a TUI · pid {pid} · {status}", "pi is replying in
+     this session", "{n} subagents working now".
+  4. **`aria-label`** on each rail button, so the state has a real accessible name and isn't a
+     nameless button.
+  5. **The row link's own name repeats the state** in a `.visually-hidden` span (", open in a
+     TUI", ", pi is replying in this session", ", {n} subagents working now"). A screen-reader
+     user hears the state while arrowing the list, without ever reaching the rail buttons.
+- **Rail buttons are `tabindex="-1"` on purpose.** They are affordances, not destinations: two
+  extra tab stops per row would add hundreds to a 278-row list, and the same facts are already in
+  the row link's name. They stay real buttons so pointer users get a `title` and AT can address
+  them directly.
+- **Touch.** There is no hover on touch, so tapping a rail button raises its sentence as a toast
+  — the same text as its `title`. The button sits outside the row link, so the tap doesn't open
+  the session. The pill is 26px, under the 44px target minimum: it is an optional affordance for
+  a fact the row already carries in its name, not a control, and the 44px target is the row
+  itself.
+- **The cost, stated.** A sighted touch user still sees a coloured dot and no word until they tap
+  it or open the session (§3's `.run-status` and the head say which it is). The toast is a second
+  gesture and it isn't discoverable — nothing on the row says the dot can be tapped. We accept
+  that for the sidebar and nowhere else. If a second wordless status is ever proposed, this is
+  the precedent to argue against, not with.
 - **Contrast.** Ink on surface is 12.34 (dark) and 17.86 (light). Muted on surface is 4.96 and
   5.74. Muted on tint is 5.06 and 4.68. Accent on surface is 4.67 and 6.81. Accent on tint is
   4.76 and 5.55. All clear AA 4.5.
@@ -621,7 +803,11 @@ word never does.
         <span class="text-mono">claude-opus-5</span>
       </p>
     </div>
-    <span class="chip chip-accent chip-live"><i class="chip-dot"></i>Live</span>   <!-- live only -->
+    <!-- worker count, linked: {n} + the worker icon, the rail's pair (§10) -->
+    <a class="chip chip-count session-head-working" href="#/agents"
+       title="3 subagents working now" aria-label="3 subagents working now">
+      <span class="text-num">3</span><span class="icon icon-sm" style="--icon:url(/icons/worker.svg)"></span></a>
+    <span class="chip chip-accent"><i class="chip-dot"></i>TUI</span>   <!-- live only; static, no pulse -->
     <button class="button button-icon button-ghost session-archive" aria-label="Archive Session">…archive…</button>  <!-- web sessions only -->
   </header>
 
@@ -642,7 +828,7 @@ word never does.
   `h1` is sized as a heading-s on purpose: the page is dense and the title is chrome, not a
   display headline.
 - **What the head holds.** Back, the title block, the context gauge (§4f), the mode switch
-  (§4g), the working and Live chips, and Archive. Nothing else: the model and the session's
+  (§4g), the working count and the `TUI` chip, and Archive. Nothing else: the model and the session's
   own facts moved into the composer (§4, §4b), which is where the session is acted on.
 - **Model.** Chat sessions read it off the composer's model indicator (§4) and change it in the
   flyout's Model row (§4b); neither is in the head. Watch sessions keep it in
@@ -875,11 +1061,12 @@ Driven by `ChatServerMessage.event`.
 
 - **No persistent banner.** Watch mode has no "Live from TUI — read only" card; it was removed
   by boss directive. Read-only is already obvious from three things that stay:
-  1. **The Live chip in the session head** (`.chip.chip-accent.chip-live`, "Live"). It carries
-     the process facts in its `title`, updated from `live` whenever the session list refreshes:
+  1. **The TUI chip in the session head** (`.chip.chip-accent`, the word "TUI", a **static**
+     dot — never `.chip-live`; see §0 Motion, "TUI never pulses", and §2). It carries the process
+     facts in its `title`, updated from `live` whenever the session list refreshes:
 
      ```html
-     <span class="chip chip-accent chip-live" title="Open in pi in a terminal · pid 889823 · Running: bash"><i class="chip-dot"></i>Live</span>
+     <span class="chip chip-accent" title="Open in pi in a terminal · pid 889823 · Running: bash"><i class="chip-dot"></i>TUI</span>
      ```
 
      The pid and status are shown only here now. They're a detail you look up, not something
@@ -911,11 +1098,56 @@ Driven by `ChatServerMessage.event`.
   reconnects, the banner goes away. The snapshot replaces the list, and scroll position is
   kept if the user wasn't following.
 
+### Landing page (`#/`)
+
+With no session selected the main pane is not an empty state with a grid bolted on — it is one
+page with two parts, in this order:
+
+1. **The opening**, unchanged: `.welcome-head` wrapping the `.empty` block that has always been
+   here — the `chat` mark, "{n} sessions across {m} folders.", "Pick one to read it, or start a
+   new one.", and the `New Session` button. It is the first thing read at every width.
+2. **The Explained grid**, shown **only when at least one explanation exists** (0 renders
+   nothing — no empty state, no head, no reserved space):
+
+```html
+<div class="welcome">
+  <div class="welcome-head">…the .empty opening…</div>
+  <!-- only when there is at least one explanation -->
+  <section class="explain-section" aria-labelledby="explain-section-title">
+    <h2 class="explain-section-head" id="explain-section-title">Explained <span class="text-num">6</span></h2>
+    <ul class="explain-grid">…one .card.explain-tile per page…</ul>
+  </section>
+</div>
+```
+
+- **Scrolling.** `.app-main` is a fixed-height flex column with `overflow: hidden`, so `.welcome`
+  is the scroll region itself (`flex: 1`, `min-height: 0`, `overflow-y: auto`). It carries no
+  `.pane`: the tiles ask the window, not this box.
+- **Width and padding.** `--space-4` of page padding on both sides at every width, `--space-6`
+  under the last row so the grid never runs into the viewport edge, and no top padding —
+  `.empty` brings its own `--space-8` crown. The section caps at `--page-max` (1280px) and
+  centres: these are cards, not prose, so the reading measure is the wrong cap for them.
+- **The opening centres when it is alone.** With no explanations, `.welcome-head:only-child`
+  takes the leftover height and centres its `.empty` in the pane. With the grid under it, it
+  keeps its own height at the top and the grid follows.
+- **The head is the section eyebrow**, the same rule as the Usage and Agents pages'
+  `.insights-section-head` (§10) — mono, `--fs-micro`, uppercase, `--ls-eyebrow`, `--color-ink-2`
+  — with the count as the `.text-num` span inside it, in `--color-ink-muted` and no casing. A
+  `display-l` page opener was rejected: this is the second thing on the page, not its title.
+- **Where the CSS lives.** `.welcome`, `.welcome-head`, `.explain-section` and
+  `.explain-section-head` are in `src/design/base.css`; `.explain-grid` and every `.explain-tile`
+  rule are in `src/explain.css`, which owns the tile in both places it appears.
+- **The session-scoped gallery is unchanged.** The same `ExplainGrid` still renders inside the
+  gallery modal that the insight strip's `Open {n} Explanations` button opens (§10), scoped to
+  one session and keeping the 0-explanations empty state. The landing page is the *all*-scope
+  view of the same rows, and it is a page, not a dialog: the sidebar foot no longer has an
+  Explained row.
+
 ### States
 
 | State | What renders |
 |---|---|
-| No session selected (unfolded) | `.empty` in `.app-main`, with the `chat` icon in `.empty-mark`. Title: "48 sessions across 7 folders." Body: "Pick one to read it, or start a new one." `.empty-action`: `New Session` (secondary). No composer |
+| No session selected (unfolded) | The landing page below, not a bare `.empty`: `.welcome` fills `.app-main`, its `.welcome-head` holds the `.empty` opening (`chat` icon in `.empty-mark`, title "48 sessions across 7 folders.", body "Pick one to read it, or start a new one.", `.empty-action` `New Session`), and the Explained grid follows when there is one. No composer |
 | Loading transcript (after 300ms) | Three placeholder messages in `.thread`: a right-aligned `.skeleton` 40% × 44px, then a left `.skeleton-title` plus 3 `.skeleton-line` at 92/78/60%, then a `.skeleton-row` at 60% width. Put `aria-busy="true"` on the `section`. The head renders straight away from the `SessionSummary` |
 | Error | `.banner.banner-error` in `.transcript-inner`. Title: "Couldn't load this transcript." Body: "The file at `{path}` wasn't changed. {server message}." Action: `Retry` |
 | Empty (new session) | `.empty`. Title: "New session in `~/webapps/pi-web`." Body: "Nothing sent yet. Your first message becomes its title." No action; focus the composer instead. Show it only while the thread has **zero rows**, counting local rows such as "Ran `/cmd`" (§4d) and model-change info rows. Once any row exists, the thread renders normally with no empty state |
@@ -2245,7 +2477,7 @@ too, so it never rests on hue alone.
 
 ### Markup
 
-It goes after `.session-head-main`, **before** the mode trigger in chat, or before the Live chip
+It goes after `.session-head-main`, **before** the mode trigger in chat, or before the `TUI` chip
 in watch. A second copy leads the meta line for narrow heads, and CSS shows one or the other.
 
 ```html
@@ -2268,7 +2500,7 @@ in watch. A second copy leads the meta line for narrow heads, and CSS shows one 
     <span class="context-pct" aria-hidden="true">24%</span>
   </span>
   <span class="visually-hidden" id="context-desc">{exact sentence}</span>
-  …mode trigger (chat) or Live chip (watch)… archive…
+  …mode trigger (chat) or TUI chip (watch)… archive…
 </header>
 ```
 
@@ -2342,9 +2574,9 @@ it lives in the composer flyout (§4b), which is full-width at every size.
 Three more head rules cover every head, not just chat:
 
 - **Aggregate chip.** Under 520px of head width, the head's aggregate `Team · {n} working` /
-  `{n} working` link chip (§10) is hidden. It repeats the sidebar row's chip and the Agents
-  foot row. Before this rule, a watched live session with a team at 320 had back, Team chip,
-  Live, and copy, and that left the title block about 0px wide.
+  `{n}` + worker-icon link chip (§10) is hidden. It repeats the sidebar row's rail count and the
+  Agents foot row. Before this rule, a watched live session with a team at 320 had back, Team
+  chip, Live, and copy, and that left the title block about 0px wide.
 - **Floor.** `.session-head-main` has `min-width: 72px`. Whatever else lands in the head later,
   the title and meta line can't collapse to nothing. Extra chips overflow before the title
   disappears, and each new head chip needs its own narrow rule.
@@ -2744,7 +2976,8 @@ Every token these notes reference, all defined in `src/design/tokens.css`:
   `--dur-fast`, `--dur-base`, `--ease-standard`
 - **Layout:** `--measure` (72ch at folded width; from unfolded up
   `clamp(72ch, 100vw − --sidebar-width − --space-9 − 2 × --space-8, 110ch)`, §3 "Column width"),
-  `--bp-unfolded`
+  `--page-max` (1280px — the cap on the landing page's card grid, §3, where the measure is the
+  wrong cap), `--bp-unfolded`
 
 ---
 
@@ -2757,12 +2990,15 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 
 | Where | Copy |
 |---|---|
+| Pane resizer (§1) | `aria-label` "Resize the sessions pane" · `title` "Drag to resize · Double-click to reset" — the title is the only place the two gestures are named, and it is pointer-only copy for a pointer-only control |
 | Search label (visually hidden) | Search sessions |
 | Search placeholder | Title, folder, or model |
 | Count | `{n} sessions` · filtered: `{visible} of {total} sessions` |
-| Live chip (count row under search) | `{n} live` (only when n ≥ 1). `title`: "Sessions open in a TUI" |
-| Row live chip | Live |
-| Row busy chip | Busy (static, no pulse) · `title`: "pi is replying in this session" · visually hidden suffix: ", pi is replying in this session" |
+| TUI count chip (count row under search) | `{n} TUI` (only when n ≥ 1), static — a count is not work in flight. `title`: "Sessions open in a TUI" |
+| Row TUI pill (rail) | wordless, static · `aria-label`: "Open in a TUI. Pid {pid}, status {status}." · `title`: "Open in a TUI · pid {pid} · {status}" |
+| Row Busy pill (rail) | wordless, pulsing · `aria-label` and `title`: "pi is replying in this session" |
+| Row worker count (rail) | `{n}` + worker icon · `aria-label` and `title`: "{n} subagents working now" |
+| Row link hidden suffix | ", open in a TUI" · ", pi is replying in this session" · ", {n} subagents working now" |
 | Untitled row | Untitled (muted) |
 | Top region head | Live & web · {n} · searching: Live & web · {hits} of {total} |
 | Archive head | Archive · {n} · searching: Archive · {hits} of {total} |
@@ -2782,6 +3018,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Where | Copy |
 |---|---|
 | No session selected | **{n} sessions across {m} folders.** Pick one to read it, or start a new one. · button: `New Session` |
+| No session selected, Explained grid | section head: Explained `{n}` (shown only when {n} ≥ 1; the tiles' own copy is §10) |
 | Transcript load error | **Couldn't load this transcript.** The file at `{path}` wasn't changed. {server message} · button: `Retry` |
 | New empty session | **New session in `{cwd}`.** Nothing sent yet. Your first message becomes its title. |
 | Archive button / toasts | `aria-label` "Archive Session" · "Unarchive Session" (shown at every width) · disabled `title` "Open in a TUI. It stays on top while live." · toasts "Archived. Find it under Archive." · "Moved back to Live & web." · error "Couldn't archive this session. {server message}" |
@@ -2799,7 +3036,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 
 | Where | Copy |
 |---|---|
-| Head Live chip `title` | Open in pi in a terminal · pid {pid} · {live.status} (the persistent "Live from TUI" banner was removed) |
+| Head TUI chip `title` (static, no pulse) | Open in pi in a terminal · pid {pid} · {live.status} (the persistent "Live from TUI" banner was removed) |
 | TUI closed | **The TUI closed this session.** You can chat in it here now. · button: `Open for Chat` |
 | Jump button | Jump to Latest · `{n} new` (the count is omitted when 0) |
 | SR announce (throttled 5s) | {n} new entries. |
@@ -2981,8 +3218,8 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 
 | Where | Copy |
 |---|---|
-| Foot row 1 (→ `#/usage`) | Glance: `C {pct}%` `O {pct}%` `OL {pct}%` `Z {pct}%` (Claude, OpenAI, Ollama Cloud, Z.ai; DeepSeek has no percentage, so it's never here) · no data: Usage · `title`/`aria-label`: Usage: {Provider} {window} {pct}%, … (stale providers add " (stale)") |
-| Foot row 2 (→ `#/agents`) | `{n} teams` · `{w} working`, joined by ` · `, zero segments left out · nothing to report: Agents |
+| Foot row 1 (→ `#/usage`) | Glance: `C {pct}%` `O {pct}%` `OL {pct}%` `Z {pct}%` `DS {amount}` (Claude, OpenAI, Ollama Cloud, Z.ai, DeepSeek — which has no quota, so it shows the money left, rounded to whole units: `DS $4` for a $4.29 balance) · no data: Usage · `title`/`aria-label`: Usage: {Provider} {window} {pct}%, …, DeepSeek balance $4.29 (exact amount; stale providers add " (stale)") |
+| Foot row 2 (→ `#/agents`) | `{agents} agents` · `{sessions} sessions` · `{teams} teams`, joined by ` · `, zero segments left out · nothing live: Agents · `title`/`aria-label`: {n} active agents in {m} sessions, {t} teams |
 | Provider names | Claude · OpenAI · Ollama Cloud · Z.ai · DeepSeek |
 | Usage page title / head meta | Usage · Updated {rel} · never read: Not read yet |
 | Agents page title / head meta | Agents · `{w} working · {n} pi sessions running` ("{w} working · " dropped at 0; "1 pi session running") · 0 live: No pi sessions running |
@@ -3009,6 +3246,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Provider `na` | This account doesn't report usage. |
 | Provider `error`, no windows | Couldn't fetch usage: {error}. We'll try again at the next refresh. |
 | Provider `error`, windows kept | Last fetch failed: {error}. Showing the previous reading. |
+| Provider key dropped by an older pi | Same note, with {error} = an older pi session is rewriting the cache (run /reload in it) — the reading is our own last known one, at most 24h old |
 | Team card | {name} · `{id}` · foot: Started {rel} in {parent title} · ended (parent session only): chip "Ended" |
 | Member status chips | Starting · Working · Idle · Stopping · Done · Failed · Stopped · No report yet |
 | Member meta | `{workerId}` · `{model}` · reported only: as of `{HH:MM}` · idle after a failure: last task failed |
@@ -3016,7 +3254,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Teams empty, some sessions live | **{n} pi sessions running. None of them has a team.** (n = 1: **1 pi session running. It has no team.**) Teams you create in pi show up here while their session runs. |
 | Teams empty, none live | not shown: the whole Agents page is the 0-live empty state above |
 | Subagents empty | Section omitted |
-| Aggregate chips | {n} working · session head, linked: Team · {n} working (→ `#/agents/{teamId}`) or {n} working (→ `#/agents`) |
+| Aggregate chips | sidebar rail: `{n}` + worker icon · session head, linked: Team · {n} working (→ `#/agents/{teamId}`) or `{n}` + worker icon, `.session-head-working` (→ `#/agents`), its words in `title`/`aria-label`: "{n} subagents working now" |
 | Outline summary | Outline · {now} · {n} topics (1 topic) |
 | Outline state line | Updated {rel} · stale adds: " · behind the latest messages" · failed-keeping-last adds: " · the last update failed, so this is the previous outline" · updating/drafting: "Updating" + live dot |
 | Outline jump | Jump to Message |
@@ -3069,6 +3307,8 @@ while reported states (read from a session file after the fact) never pulse and 
 - **Per session:** `details.outline` sits directly under `.session-head`, above the live banner.
   Compactions stay in the transcript, at the point where they happened (§3 items).
 - **Aggregates:** neutral count chips on session rows and in the session head.
+- **All explanations:** the landing page at `#/`, under the opening (§3). The sidebar foot has no
+  Explained row — a grid of pages is not a doorway that fits a 44px row.
 - No toasts, and nothing is announced on a poll.
 
 ### Sidebar foot
@@ -3085,11 +3325,14 @@ while reported states (read from a session file after the fact) never pulse and 
       <span class="usage-glance-item usage-glance-item-high"><span class="usage-glance-tag">O</span><span class="text-num">95%</span></span>
       <span class="usage-glance-item usage-glance-item-stale"><span class="usage-glance-tag">OL</span><span class="text-num">80%</span></span>
       <span class="usage-glance-item"><span class="usage-glance-tag">Z</span><span class="text-num">0%</span></span>
+      <span class="usage-glance-item"><span class="usage-glance-tag">DS</span><span class="text-num">$4</span></span>
     </span>
   </a>
-  <a class="list-row list-row-interactive insights-row" href="#/agents"><!-- aria-current on #/agents and #/agents/* -->
+  <!-- aria-current on #/agents and #/agents/* -->
+  <a class="list-row list-row-interactive insights-row" href="#/agents"
+     title="6 active agents in 4 sessions, 2 teams" aria-label="6 active agents in 4 sessions, 2 teams">
     <span class="icon" style="--icon: url(/icons/worker.svg)" aria-hidden="true"></span>
-    <span class="insights-row-text"><span class="text-num">2</span> teams · <span class="text-num">3</span> working</span>
+    <span class="insights-row-text"><span class="text-num">6</span> agents · <span class="text-num">4</span> sessions · <span class="text-num">2</span> teams</span>
   </a>
 </div>
 ```
@@ -3101,48 +3344,83 @@ whole-row links with a hover state and the `aria-current` tint, like session row
 glance needs the room.
 
 - **Usage row, a glance at every provider:**
-  - One segment per provider, in the fixed order Claude, OpenAI, Ollama Cloud, Z.ai. The tags
-    are exactly `C`, `O`, `OL`, `Z`, followed by a mono `{pct}%`. **The glance is percentages
-    only**, so a provider that reports a balance instead of windows (DeepSeek) is never in it,
-    whatever its state. It has an abbreviation, `DS`, for the day it has a percentage to show.
+  - One segment per provider, in the fixed order Claude, OpenAI, Ollama Cloud, Z.ai, DeepSeek.
+    The tags are exactly `C`, `O`, `OL`, `Z`, `DS`, followed by a mono number in the same
+    `.text-num`. **A provider that reports a balance instead of windows (DeepSeek) shows the
+    money, not a percentage**: `DS $4`. It has no quota, so there is no percentage to invent;
+    its segment goes last, like its card.
+  - **Two precisions for the one balance.** The foot is a shorthand, so it rounds to **whole
+    currency units** ($4.29 → `$4`, $4.99 → `$5`; `moneyCompact()`, both fraction-digit options
+    set to 0). The row's `title`/`aria-label` and the Usage card keep the **exact** amount
+    ($4.29, "Topped up $4.29"; `money()`) — the cents stay one hover, or one click, away.
   - **Window.** Each provider shows the window flagged `active` (the first one, if several
     are flagged). Otherwise it shows its 7-day window, and failing that, its longest. Ollama
     shows Monthly. Z.ai shows its plan window (5-hour), never MCP uses. An active window gets
     no marker in the glance ("C 55%"); the tooltip names it: "Claude 7-day Fable 55%".
-  - **Missing data.** A provider that isn't `ok`, or has no windows, is left out. With nothing
-    at all, the row reads "Usage".
+  - **Missing data.** A provider that isn't `ok`, or has neither windows nor a balance, is left
+    out. With nothing at all, the row reads "Usage".
   - **High.** At 80% or more, the item takes `.usage-glance-item-high`: semibold ink, and **no
     hue**. The foot has no word to pair with a color, and the Usage page's chip carries the
-    status.
-  - **Stale.** When a provider has `error` with kept windows, or `usage.stale` is true, the item
-    takes `.usage-glance-item-stale`: muted, with no added text.
+    status. A balance takes it when the provider says it can't fund calls (`available: false`):
+    out of credit is the only bad state money has, and the semibold is its only emphasis.
+  - **Stale.** When a provider has `error` with a kept reading (windows or a balance — including
+    the last known one served while an older pi session rewrites the cache), or `usage.stale` is
+    true, the item takes `.usage-glance-item-stale`: muted, with no added text.
   - **Full text.** The row's `title` and `aria-label` spell everything out, e.g. "Usage: Claude
-    7-day 47%, …", and a stale provider gets " (stale)" appended.
-  - **Width.** The worst case, all four at 100%, is about 210px. It fits the 320px sidebar
-    without wrapping, and `.usage-glance` still clips rather than wraps as a guard.
-- **Agents row:** `{n} teams` (active only) and `AgentsInsight.totals.working` as `{w} working`,
-  joined by ` · `. Zero segments are left out. If both are zero, or nothing is live, it reads
-  "Agents".
+    7-day 47%, …, DeepSeek balance $4.29" (the exact amount, not the rounded one), and a stale
+    provider gets " (stale)" appended.
+  - **Width.** The worst case — four windows at 100% plus a whole-unit balance — is about
+    250px. It fits the 320px sidebar without wrapping, and `.usage-glance` still clips rather
+    than wraps as a guard.
+- **Agents row, what is live right now:** `{agents} agents · {sessions} sessions · {teams} teams`.
+  Any segment at 0 is dropped, and with nothing live at all the row reads the plain word
+  "Agents". The numbers come from `activeAgentCounts` in `src/lib/workers.ts`, and each one is
+  narrower than it looks:
+  - **An active agent** is a worker in a *fresh* host session whose status is not settled:
+    `workerCounts.working + workerCounts.waiting` — **working** is starting, running or
+    stopping, **waiting** is a worker that finished its task and is still attached. `done`,
+    `error` and `killed` never count, and a stale heartbeat never counts. The counts are read
+    from `workerCounts`, not the `workers` array, because the array drops evicted workers.
+  - **A host session** is any live record except a headless worker pi (`mode: "rpc"` without
+    `embedded`); pi-web's own embedded rpc runtimes *are* sessions, because they host agents.
+  - **sessions** is how many fresh host sessions hold at least one active agent — not how many
+    are running.
+  - **teams** is `activeTeams(…).length`, unchanged.
+- **The row's full sentence** lives in its `title` and `aria-label`: "6 active agents in 4
+  sessions, 2 teams". The row itself has room for figures, not for the word "active".
+- **"Agents" and "working" are different windows, on purpose.** This row is the first place the
+  app says *agent*, and it counts working **and** waiting. The Agents page still summarises the
+  same machines as "{w} working" — `AgentsInsight.totals.working` — which excludes the waiting
+  ones. The foot answers "how much is attached to me right now"; the page answers "how much is
+  moving". Two numbers, two questions; neither is a rounding of the other.
 
 The rows take no color and no chip, because the pages carry the status. Each truncates with an
 ellipsis.
 
 ### Aggregate chips: "Live" vs "Working"
 
-- **Live** is session-level: a TUI has the file open. It keeps §2's accent chip and pulse,
-  unchanged.
+- **Live** is session-level: a TUI has the file open. It keeps the accent everywhere, but §2's
+  sidebar row carries it as a wordless, **static** rail pill and the session head as a worded,
+  **static** `TUI` chip. The pulse moved to Busy and to running work; no TUI mark pulses
+  anywhere (§0 Motion).
 - **Working** is worker-level: a subagent is mid-task. On a member row it's
   `.chip-accent.chip-live` "Working", and pulses only when live-sourced (see Team cards).
 - **Aggregates are neutral** `.chip.chip-count`, with no dot and no pulse, so each row has only
   one pulsing thing:
-  - **Session rows (§2):** `{n} working` when `live?.workers?.working ≥ 1`, placed *before* the
-    Live chip. Hidden at 0 or when absent.
-  - **Session head:** the same chip before Live, as a link. With a live team it's
+  - **Session rows (§2):** no chip at all. The count is `{n}` + a `worker` icon in the row's
+    left rail (`.session-rail-count`), under the state pill, when `live?.workers?.working ≥ 1`.
+    Hidden at 0 or when absent. `.session-rail-count-live` pulses the icon only, and only on a
+    row whose pill is static.
+  - **Session head:** a link chip before Live. With a live team it stays worded —
     `<a class="chip chip-count" href="#/agents/{teamId}">Team · {n} working</a>`, pointing at
-    the busiest live team when there are several. Otherwise it's
-    `<a class="chip chip-count" href="#/agents">{n} working</a>`.
-  - The chip inside a sidebar session row is **never** a link, because an `<a>` can't nest in
-    the row's link. The foot's Agents row is the way to the page from the sidebar.
+    the busiest live team when there are several. Without a team it matches the rail's
+    vocabulary: `<a class="chip chip-count session-head-working" href="#/agents">{n}<span
+    class="icon icon-sm" style="--icon:url(/icons/worker.svg)"></span></a>`,
+    `aria-label`/`title` "{n} subagents working now",
+    the word carried by the label rather than the box. The icon inside a `.chip-count` is 12px.
+  - The count inside a sidebar session row is **never** a link, because an `<a>` can't nest in
+    the row's link — and now it sits outside the link, in the rail, as a `tabindex="-1"` button.
+    The foot's Agents row is still the way to the page from the sidebar.
 
 ### Usage page (`#/usage`) and Agents page (`#/agents`)
 
@@ -3397,7 +3675,9 @@ the table above. When no session has solo workers, the section is omitted.
 - **Explanations.** When the session has any, the summary gains
   `<span class="outline-count outline-explained">· Explained {n}</span>` after the topic count,
   and the body opens with a ghost `Open {n} Explanations` button — the existing gallery dialog
-  (`aria-haspopup="dialog"`) — followed by `Latest · {topic} · {relative time}`.
+  (`aria-haspopup="dialog"`) — followed by `Latest · {topic} · {relative time}`. This dialog is
+  **unchanged** and stays session-scoped; every explanation on the machine is the landing page's
+  grid instead (§3), which is a page and not a dialog.
 - **Open state.** Both levels are closed by default. Persist the strip's open state per session
   path in `sessionStorage`. Open states survive updates.
 - **Missing data.**

@@ -104,6 +104,18 @@ function Tile(props: { item: ExplanationInfo; now: number; thumbs: boolean }) {
   );
 }
 
+/** Every explanation in the list as one card grid, newest first. Used inline on the landing page
+    and inside the gallery modal. */
+export function ExplainGrid(props: { explanations: ExplanationInfo[]; now: number }) {
+  const items = () => newestFirst(props.explanations);
+  const thumbs = createMediaQuery("(min-width: 768px)");
+  return (
+    <ul class="explain-grid">
+      <For each={items()}>{(item) => <Tile item={item} now={props.now} thumbs={thumbs()} />}</For>
+    </ul>
+  );
+}
+
 /**
  * Every explanation in one scope as a card grid, newest first, over whatever opened it (the
  * AlignView pattern: portal, scrim, trapFocus, Esc). Each card that has a page is one link to it
@@ -111,8 +123,6 @@ function Tile(props: { item: ExplanationInfo; now: number; thumbs: boolean }) {
  */
 export function ExplainGallery(props: { explanations: ExplanationInfo[]; scope: "session" | "all"; now: number; onClose(): void }) {
   const titleId = `explain-title-${++seq}`;
-  const items = () => newestFirst(props.explanations);
-  const thumbs = createMediaQuery("(min-width: 768px)");
   let close!: HTMLButtonElement;
   onMount(() => close.focus());
 
@@ -133,7 +143,7 @@ export function ExplainGallery(props: { explanations: ExplanationInfo[]; scope: 
       >
         <div class="modal-head explain-gallery-head">
           <h2 class="modal-title" id={titleId}>
-            {galleryTitle(items().length, props.scope)}
+            {galleryTitle(props.explanations.length, props.scope)}
           </h2>
           <button type="button" class="button button-icon button-ghost" aria-label="Close" title="Close" ref={close} onClick={() => props.onClose()}>
             <Icon name="close" />
@@ -141,7 +151,7 @@ export function ExplainGallery(props: { explanations: ExplanationInfo[]; scope: 
         </div>
         <div class="modal-body explain-gallery-body">
           <Show
-            when={items().length > 0}
+            when={props.explanations.length > 0}
             fallback={
               <div class="empty">
                 <p class="empty-title">0 explanations yet.</p>
@@ -151,9 +161,7 @@ export function ExplainGallery(props: { explanations: ExplanationInfo[]; scope: 
               </div>
             }
           >
-            <ul class="explain-grid">
-              <For each={items()}>{(item) => <Tile item={item} now={props.now} thumbs={thumbs()} />}</For>
-            </ul>
+            <ExplainGrid explanations={props.explanations} now={props.now} />
           </Show>
         </div>
       </div>

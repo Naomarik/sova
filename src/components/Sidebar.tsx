@@ -1,15 +1,13 @@
 import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
-import type { AgentsInsight, ExplanationInfo, SessionSummary, UsageInsight } from "../../shared/protocol";
+import type { AgentsInsight, SessionSummary, UsageInsight } from "../../shared/protocol";
 import { type ArchiveGroupId, groupByArchiveDate } from "../lib/archive";
 import { relativeTime, shortModel, tildePath } from "../lib/format";
-import { newestFirst } from "../lib/explain";
 import { activeTeams, agentsHref, type GlancePart, usageGlance, usageHref } from "../lib/insights";
 import { isTopSession } from "../lib/regions";
-import { home, localRunning } from "../lib/ui-state";
-import { sessionWorking } from "../lib/workers";
+import { home, localRunning, toast } from "../lib/ui-state";
+import { activeAgentCounts, sessionWorking } from "../lib/workers";
 import { ArchiveCleanup } from "./ArchiveCleanup";
-import { ExplainGallery } from "./ExplainGallery";
-import { Banner, Chip, CountChip, Icon } from "./ui";
+import { Banner, Chip, Icon } from "./ui";
 
 interface Group {
   cwd: string;
@@ -34,6 +32,101 @@ const archiveDateKey = (id: ArchiveGroupId) => `pi-web:archive-date-open-${id}`;
 
 export const sessionHref = (path: string) => `#/s/${encodeURIComponent(path)}`;
 
+/** "3 subagents working now" / "1 subagent working now" — rail title, toast and hidden row text. */
+const workingNow = (n: number) => `${n} ${n === 1 ? "subagent" : "subagents"} working now`;
+
+/**
+ * One session row: a wordless status rail on the left, then the link itself. The rail buttons are
+ * out of the tab order on purpose (a long list must not add two tab stops per row), so the link
+ * keeps the same state in its accessible name that the old right-hand chips exposed.
+ */
+function SessionRow(props: { session: SessionSummary; selected: string | null; now: number }) {
+  const s = () => props.session;
+  // Busy (§2): this tab's own run wins over the last fetched list; Live wins over both.
+  const isBusy = () => !s().live && !!(localRunning()[s().path] ?? s().busy);
+  const tuiTitle = () => `Open in a TUI · pid ${s().live!.pid} · ${s().live!.status}`;
+  const working = () => sessionWorking(s());
+  return (
+    <li class="session-row-shell" classList={{ "session-row-shell-current": props.selected === s().path }}>
+      <div class="session-rail">
+        {/* At most one state: live wins over busy. TUI is static now; Busy is what pulses. */}
+        <Show when={s().live}>
+          <button
+            type="button"
+            tabindex="-1"
+            class="session-rail-item session-rail-state chip chip-accent"
+            aria-label={`Open in a TUI. Pid ${s().live!.pid}, status ${s().live!.status}.`}
+            title={tuiTitle()}
+            onClick={() => toast(tuiTitle())}
+          >
+            <span class="session-rail-dot" />
+          </button>
+        </Show>
+        <Show when={isBusy()}>
+          <button
+            type="button"
+            tabindex="-1"
+            class="session-rail-item session-rail-state chip chip-info chip-live"
+            aria-label="pi is replying in this session"
+            title="pi is replying in this session"
+            onClick={() => toast("pi is replying in this session")}
+          >
+            <span class="session-rail-dot" />
+          </button>
+        </Show>
+        <Show when={working()}>
+          {(n) => (
+            <button
+              type="button"
+              tabindex="-1"
+              class="session-rail-item session-rail-count"
+              // One moving thing per row: the icon only pulses when Busy isn't already pulsing.
+              classList={{ "session-rail-count-live": !isBusy() }}
+              aria-label={workingNow(n())}
+              title={workingNow(n())}
+              onClick={() => toast(workingNow(n()))}
+            >
+              <span class="text-num">{n()}</span>
+              <Icon name="worker" small />
+            </button>
+          )}
+        </Show>
+      </div>
+      <a
+        class="list-row list-row-interactive session-row"
+        href={sessionHref(s().path)}
+        aria-current={props.selected === s().path ? "page" : undefined}
+      >
+        <div class="list-main">
+          <p class="list-title" classList={{ "list-title-muted": s().title === "Untitled" }} title={s().title}>
+            {s().title}
+          </p>
+          <Show when={s().outlineNow}>
+            <p class="list-summary" title={s().outlineNow}>{s().outlineNow}</p>
+          </Show>
+          <p class="list-meta">
+            {relativeTime(s().lastActiveAt, props.now)}
+            <Show when={s().model}>
+              {" · "}
+              <span class="text-mono" title={s().model!}>
+                {shortModel(s().model)}
+              </span>
+            </Show>
+          </p>
+        </div>
+        {/* AT parity with the old chips: the rail is wordless, so the state lives in the link's name. */}
+        <Show when={s().live}>
+          <span class="visually-hidden">, open in a TUI</span>
+        </Show>
+        <Show when={isBusy()}>
+          <span class="visually-hidden">, pi is replying in this session</span>
+        </Show>
+        <Show when={working()}>{(n) => <span class="visually-hidden">, {workingNow(n())}</span>}</Show>
+      </a>
+    </li>
+  );
+}
+
 /** Sessions grouped by folder, newest first: the markup of DESIGN_NOTES §2 "Anatomy". */
 function GroupList(props: { groups: Group[]; selected: string | null; now: number; idPrefix: string }) {
   return (
@@ -49,49 +142,7 @@ function GroupList(props: { groups: Group[]; selected: string | null; now: numbe
           </h3>
           <ul class="list">
             <For each={group.sessions}>
-              {(s) => (
-                <li>
-                  <a
-                    class="list-row list-row-interactive session-row"
-                    href={sessionHref(s.path)}
-                    aria-current={props.selected === s.path ? "page" : undefined}
-                  >
-                    <div class="list-main">
-                      <p class="list-title" classList={{ "list-title-muted": s.title === "Untitled" }} title={s.title}>
-                        {s.title}
-                      </p>
-                      <Show when={s.outlineNow}>
-                        <p class="list-summary" title={s.outlineNow}>{s.outlineNow}</p>
-                      </Show>
-                      <p class="list-meta">
-                        {relativeTime(s.lastActiveAt, props.now)}
-                        <Show when={s.model}>
-                          {" · "}
-                          <span class="text-mono" title={s.model!}>
-                            {shortModel(s.model)}
-                          </span>
-                        </Show>
-                      </p>
-                    </div>
-                    <Show when={sessionWorking(s)}>
-                      {(n) => <CountChip title="Subagents working now">{n()} working</CountChip>}
-                    </Show>
-                    <Show when={s.live}>
-                      <Chip tone="accent" live title={`Open in a TUI · pid ${s.live!.pid} · ${s.live!.status}`}>
-                        TUI
-                      </Chip>
-                    </Show>
-                    {/* Busy (§2): this tab's own run wins over the last fetched list; Live wins over both. */}
-                    <Show when={!s.live && (localRunning()[s.path] ?? s.busy)}>
-                      <span class="chip chip-info" title="pi is replying in this session">
-                        <i class="chip-dot" />
-                        Busy
-                        <span class="visually-hidden">, pi is replying in this session</span>
-                      </span>
-                    </Show>
-                  </a>
-                </li>
-              )}
+              {(s) => <SessionRow session={s} selected={props.selected} now={props.now} />}
             </For>
           </ul>
         </section>
@@ -100,7 +151,7 @@ function GroupList(props: { groups: Group[]; selected: string | null; now: numbe
   );
 }
 
-/** Usage foot row: every provider at a glance ("C 47%  O 95%  OL 80%  Z 0%"), or the page name. */
+/** Usage foot row: every provider at a glance ("C 47%  O 95%  OL 80%  Z 0%  DS $4.29"), or the page name. */
 function UsageGlance(props: { parts: GlancePart[] }) {
   return (
     <Show when={props.parts.length > 0} fallback="Usage">
@@ -109,7 +160,8 @@ function UsageGlance(props: { parts: GlancePart[] }) {
           // Stale wins over high: an old 95% isn't a current warning.
           <span class="usage-glance-item" classList={{ "usage-glance-item-high": p.high && !p.stale, "usage-glance-item-stale": p.stale }}>
             <span class="usage-glance-tag">{p.abbr}</span>
-            <span class="text-num">{p.pct}%</span>
+            {/* A credit provider shows the money left; a window provider its percentage. */}
+            <span class="text-num">{p.amount ?? `${p.pct}%`}</span>
           </span>
         )}
       </For>
@@ -117,16 +169,33 @@ function UsageGlance(props: { parts: GlancePart[] }) {
   );
 }
 
-/** Agents foot row: active teams, then working subagents; segments with nothing to say are left out. */
+/** What the Agents foot row counts: live agents, the sessions holding them, then active teams. */
+function agentsParts(agents: AgentsInsight | undefined): { n: number; word: string }[] {
+  const live = activeAgentCounts(agents);
+  const teams = activeTeams(agents).length;
+  const out: { n: number; word: string }[] = [];
+  if (live.agents > 0) out.push({ n: live.agents, word: live.agents === 1 ? "agent" : "agents" });
+  if (live.sessions > 0) out.push({ n: live.sessions, word: live.sessions === 1 ? "session" : "sessions" });
+  if (teams > 0) out.push({ n: teams, word: teams === 1 ? "team" : "teams" });
+  return out;
+}
+
+/** The same counts as one plain sentence, for the row's title and accessible name. */
+function agentsSentence(agents: AgentsInsight | undefined): string | undefined {
+  const live = activeAgentCounts(agents);
+  const teams = activeTeams(agents).length;
+  const clauses: string[] = [];
+  if (live.agents > 0) {
+    const a = `${live.agents} active ${live.agents === 1 ? "agent" : "agents"}`;
+    clauses.push(`${a} in ${live.sessions} ${live.sessions === 1 ? "session" : "sessions"}`);
+  }
+  if (teams > 0) clauses.push(`${teams} ${teams === 1 ? "team" : "teams"}`);
+  return clauses.length > 0 ? clauses.join(", ") : undefined;
+}
+
+/** Agents foot row: live agents, their sessions, then active teams; 0s are left out. */
 function AgentsGlance(props: { agents: AgentsInsight | undefined }) {
-  const parts = () => {
-    const teams = activeTeams(props.agents).length;
-    const working = props.agents?.totals.working ?? 0;
-    const out: { n: number; word: string }[] = [];
-    if (teams > 0) out.push({ n: teams, word: teams === 1 ? "team" : "teams" });
-    if (working > 0) out.push({ n: working, word: "working" });
-    return out;
-  };
+  const parts = () => agentsParts(props.agents);
   return (
     <Show when={parts().length > 0} fallback="Agents">
       <For each={parts()}>
@@ -151,13 +220,10 @@ export function Sidebar(props: {
   onNew(): void;
   usage: UsageInsight | undefined;
   agents: AgentsInsight | undefined;
-  /** Every /explain artifact on this machine (polled like usage and agents); the foot row lists them. */
-  explanations: ExplanationInfo[] | undefined;
   /** The insights page that's open (`#/usage` or `#/agents`), for aria-current on its foot row. */
   insightsPage: "usage" | "agents" | null;
 }) {
   const [query, setQuery] = createSignal("");
-  const [gallery, setGallery] = createSignal(false);
   const [showSkeleton, setShowSkeleton] = createSignal(false);
   const skeletonTimer = setTimeout(() => setShowSkeleton(true), 300);
   let search!: HTMLInputElement;
@@ -228,7 +294,6 @@ export function Sidebar(props: {
     search.focus();
   };
 
-  const explained = () => newestFirst(props.explanations ?? []);
 
   return (
     <aside class="app-sidebar" aria-label="Sessions">
@@ -294,7 +359,7 @@ export function Sidebar(props: {
           </p>
           {/* Always every live session, even while the search filters. */}
           <Show when={liveCount() > 0}>
-            <Chip tone="accent" live count title="Sessions open in a TUI">
+            <Chip tone="accent" count title="Sessions open in a TUI">
               {liveCount()} TUI
             </Chip>
           </Show>
@@ -413,32 +478,19 @@ export function Sidebar(props: {
             <UsageGlance parts={glance()} />
           </span>
         </a>
-        <a class="list-row list-row-interactive insights-row" href={agentsHref()} aria-current={props.insightsPage === "agents" ? "page" : undefined}>
+        <a
+          class="list-row list-row-interactive insights-row"
+          href={agentsHref()}
+          aria-current={props.insightsPage === "agents" ? "page" : undefined}
+          title={agentsSentence(props.agents)}
+          aria-label={agentsSentence(props.agents)}
+        >
           <Icon name="worker" />
           <span class="insights-row-text">
             <AgentsGlance agents={props.agents} />
           </span>
         </a>
-        {/* Every explanation ever written, from any session: the same gallery the session strip opens. */}
-        <Show when={explained().length > 0}>
-          <button
-            type="button"
-            class="list-row list-row-interactive insights-row"
-            aria-haspopup="dialog"
-            title={explained()[0]!.topic}
-            onClick={() => setGallery(true)}
-          >
-            <Icon name="file" />
-            <span class="insights-row-text explain-row-text">
-              Explained <span class="text-num">{explained().length}</span>
-              <span class="explain-row-topic">{explained()[0]!.topic}</span>
-            </span>
-          </button>
-        </Show>
       </div>
-      <Show when={gallery()}>
-        <ExplainGallery explanations={explained()} scope="all" now={props.now} onClose={() => setGallery(false)} />
-      </Show>
     </aside>
   );
 }

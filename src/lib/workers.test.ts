@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  activeAgentCounts,
   capTitle,
   formatCost,
   isHostSession,
@@ -49,6 +50,54 @@ test("isHostSession hides only headless worker pis", () => {
   assert.equal(isHostSession({ mode: "rpc" }), false);
   assert.equal(isHostSession({ mode: "rpc", embedded: false }), false);
   assert.equal(isHostSession({ mode: "rpc", embedded: true }), true);
+});
+
+/** A live record, counted only for `fresh` host sessions. Unlisted statuses are 0. */
+const session = (
+  fresh: boolean,
+  counts: Partial<{ working: number; waiting: number; done: number; error: number; killed: number }>,
+  mode: string | null = "tui",
+  embedded?: boolean,
+) => ({
+  mode,
+  embedded,
+  fresh,
+  workerCounts: { total: 0, working: 0, waiting: 0, done: 0, error: 0, killed: 0, ...counts },
+  workers: [], // shorter than the counts: activeAgentCounts must never read it
+  teams: [],
+});
+const insight = (...sessions: ReturnType<typeof session>[]) =>
+  ({ at: 0, totals: { sessions: 0, working: 0, total: 0, teams: 0, teamWorking: 0, soloWorking: 0 }, sessions }) as never;
+
+test("activeAgentCounts: nothing live without an insight", () => {
+  assert.deepEqual(activeAgentCounts(undefined), { agents: 0, sessions: 0 });
+  assert.deepEqual(activeAgentCounts(insight()), { agents: 0, sessions: 0 });
+});
+
+test("activeAgentCounts counts working + still-attached waiting in a fresh host session", () => {
+  assert.deepEqual(activeAgentCounts(insight(session(true, { working: 1, waiting: 2 }))), { agents: 3, sessions: 1 });
+});
+
+test("activeAgentCounts ignores a session whose heartbeat went stale", () => {
+  assert.deepEqual(activeAgentCounts(insight(session(false, { working: 2, waiting: 1 }))), { agents: 0, sessions: 0 });
+});
+
+test("activeAgentCounts ignores headless worker pis, counts embedded rpc sessions", () => {
+  assert.deepEqual(activeAgentCounts(insight(session(true, { working: 2 }, "rpc"))), { agents: 0, sessions: 0 });
+  assert.deepEqual(activeAgentCounts(insight(session(true, { working: 2 }, "rpc", false))), { agents: 0, sessions: 0 });
+  assert.deepEqual(activeAgentCounts(insight(session(true, { working: 2 }, "rpc", true))), { agents: 2, sessions: 1 });
+});
+
+test("activeAgentCounts never counts settled workers", () => {
+  assert.deepEqual(activeAgentCounts(insight(session(true, { done: 4, error: 2, killed: 1 }))), { agents: 0, sessions: 0 });
+  assert.deepEqual(activeAgentCounts(insight(session(true, { working: 1, done: 4, error: 2, killed: 1 }))), { agents: 1, sessions: 1 });
+});
+
+test("activeAgentCounts: only sessions holding an active agent count as sessions", () => {
+  const live = insight(session(true, { working: 2, waiting: 1 }), session(true, { done: 3 }));
+  assert.deepEqual(activeAgentCounts(live), { agents: 3, sessions: 1 });
+  const both = insight(session(true, { working: 2, waiting: 1 }), session(true, { waiting: 1, done: 3 }));
+  assert.deepEqual(activeAgentCounts(both), { agents: 4, sessions: 2 });
 });
 
 test("sortWorkers: working first, then newest activity (else start) first", () => {

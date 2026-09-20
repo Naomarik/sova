@@ -7,15 +7,17 @@ import { agentsHref, insightsRouteFromHash, legacyInsightsTarget } from "./lib/i
 import { createPoll } from "./lib/poll";
 import { homeFromSessionPath, shortModel, tildePath } from "./lib/format";
 import { home, setHome, toast } from "./lib/ui-state";
-import { sessionWorking, type UsageTotalView, workingChipTitle, workingSplit } from "./lib/workers";
+import { sessionWorking, type UsageTotalView, workingSplit } from "./lib/workers";
 import { ChatView, type ChatRefusal } from "./components/ChatView";
 import { AgentsView } from "./components/AgentsView";
 import { ContextGauge, ContextMetaPrefix, contextDescribedBy } from "./components/ContextGauge";
 import { ModeMenu, type ModeControl } from "./components/ModeMenu";
 import { NewSessionDialog } from "./components/NewSessionDialog";
+import { ExplainGrid } from "./components/ExplainGallery";
 import { InsightStrip } from "./components/InsightStrip";
 import { SubagentPane } from "./components/SubagentPane";
 import { sessionHref, Sidebar } from "./components/Sidebar";
+import { SidebarResizer } from "./components/SidebarResizer";
 import { UsageView } from "./components/UsageView";
 import { WatchView } from "./components/WatchView";
 import { Banner, Chip, CountChip, GlobalRegions, Icon } from "./components/ui";
@@ -82,6 +84,9 @@ const EXPLAIN_POLL_MS = 60_000;
 const SESSION_INSIGHT_DEBOUNCE_MS = 1500;
 
 const folded = () => window.matchMedia("(max-width: 767px)").matches;
+
+/** The compact worker chip says its count in words for AT and on hover: "3 subagents working now". */
+const subagentsWorkingNow = (n: number) => `${n} ${n === 1 ? "subagent" : "subagents"} working now`;
 
 /**
  * Archive/Unarchive for a web-spawned session (DESIGN_NOTES §2 "Archiving"). Archiving is refused
@@ -152,6 +157,11 @@ export function App() {
   const usage = createPoll(fetchUsage, USAGE_POLL_MS);
   const agents = createPoll(fetchAgents, AGENTS_POLL_MS);
   const explanations = createPoll(fetchExplanations, EXPLAIN_POLL_MS);
+  /** The landing page renders the grid only when it has rows; the empty state stays in the modal. */
+  const explained = createMemo(() => {
+    const items = explanations.data();
+    return items && items.length > 0 ? items : null;
+  });
   const [decision, setDecision] = createSignal<Decision | null>(null);
   /** Sessions we just created: shown before the list catches up. */
   const created = new Map<string, SessionSummary>();
@@ -287,7 +297,6 @@ export function App() {
           now={now()}
           usage={usage.data()}
           agents={agents.data()}
-          explanations={explanations.data()}
           insightsPage={insightsRoute()?.page ?? null}
           onRefresh={refresh}
           onNew={() => setCreating(true)}
@@ -317,10 +326,10 @@ export function App() {
               when={viewKey()}
               keyed
               fallback={
-                <div class="center-fill">
-                  <Show
-                    when={!route() || !list()}
-                    fallback={
+                <Show
+                  when={!route() || !list()}
+                  fallback={
+                    <div class="center-fill">
                       <div class="empty">
                         <p class="empty-title">Couldn't find this session.</p>
                         <p class="empty-body">It isn't in the list of sessions on disk anymore.</p>
@@ -328,23 +337,37 @@ export function App() {
                           Back to Sessions
                         </a>
                       </div>
-                    }
-                  >
-                    <div class="empty">
-                      <Icon name="chat" class="empty-mark" />
-                      <p class="empty-title">
-                        <Show when={list()} fallback="Loading sessions.">
-                          {list()!.length} sessions across {folderCount()} folders.
-                        </Show>
-                      </p>
-                      <p class="empty-body">Pick one to read it, or start a new one.</p>
-                      <button type="button" class="button empty-action" onClick={() => setCreating(true)}>
-                        <Icon name="plus" />
-                        New Session
-                      </button>
                     </div>
-                  </Show>
-                </div>
+                  }
+                >
+                  <div class="welcome">
+                    <div class="welcome-head">
+                      <div class="empty">
+                        <Icon name="chat" class="empty-mark" />
+                        <p class="empty-title">
+                          <Show when={list()} fallback="Loading sessions.">
+                            {list()!.length} sessions across {folderCount()} folders.
+                          </Show>
+                        </p>
+                        <p class="empty-body">Pick one to read it, or start a new one.</p>
+                        <button type="button" class="button empty-action" onClick={() => setCreating(true)}>
+                          <Icon name="plus" />
+                          New Session
+                        </button>
+                      </div>
+                    </div>
+                    <Show when={explained()}>
+                      {(list) => (
+                        <section class="explain-section" aria-labelledby="explain-section-title">
+                          <h2 class="explain-section-head" id="explain-section-title">
+                            Explained <span class="text-num">{list().length}</span>
+                          </h2>
+                          <ExplainGrid explanations={list()} now={now()} />
+                        </section>
+                      )}
+                    </Show>
+                  </div>
+                </Show>
               }
             >
               {(_key) => {
@@ -412,7 +435,15 @@ export function App() {
                           </Show>
                         }
                       >
-                        <Show when={liveTeam()} fallback={<CountChip href={agentsHref()} title={workingChipTitle(split())}>{working()} working</CountChip>}>
+                        <Show
+                          when={liveTeam()}
+                          fallback={
+                            <a class="chip chip-count session-head-working" href={agentsHref()} title={subagentsWorkingNow(working())} aria-label={subagentsWorkingNow(working())}>
+                              <span class="text-num">{working()}</span>
+                              <Icon name="worker" small />
+                            </a>
+                          }
+                        >
                           {(t) => (
                             <CountChip href={agentsHref(t().id)} title={t().name}>
                               Team · {working()} working
@@ -421,7 +452,7 @@ export function App() {
                         </Show>
                       </Show>
                       <Show when={s().live}>
-                        <Chip tone="accent" live title={`Open in pi in a terminal · pid ${s().live!.pid} · ${s().live!.status}`}>
+                        <Chip tone="accent" title={`Open in pi in a terminal · pid ${s().live!.pid} · ${s().live!.status}`}>
                           TUI
                         </Chip>
                       </Show>
@@ -536,6 +567,8 @@ export function App() {
             />
           )}
         </Show>
+
+        <SidebarResizer />
       </div>
 
       <Show when={creating()}>

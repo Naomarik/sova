@@ -66,6 +66,19 @@ export function money(amount: number, currency: string): string {
   }
 }
 
+/**
+ * The same balance for the sidebar foot, in whole currency units: "$4" for 4.29, "$5" for 4.99.
+ * The foot is a shorthand; the row's tooltip keeps the cents (money()). Both fraction-digit
+ * options are required — with only `maximumFractionDigits: 0`, currency style throws.
+ */
+export function moneyCompact(amount: number, currency: string): string {
+  try {
+    return new Intl.NumberFormat("en-US", { style: "currency", currency, minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(amount);
+  } catch {
+    return `${currency} ${amount.toFixed(0)}`;
+  }
+}
+
 export function meterTone(w: UsageWindow): "warn" | "error" | null {
   if (w.pct >= 100) return "error";
   if (w.pct >= 80) return "warn";
@@ -118,8 +131,8 @@ export const PROVIDER_ABBR: Record<UsageProvider["id"], string> = { claude: "C",
  * limit the current model counts against; first in source order), else the 7-day one, else its
  * longest (Ollama's month, Z.ai's plan window, OpenAI's "pri"/5h when that's all). Never the MCP
  * quota or Claude's Opus-only window. Null when the provider isn't ok or has no window — a
- * credit provider (DeepSeek, a balance and no windows) therefore never reaches the foot, which
- * is percentages only.
+ * credit provider (DeepSeek, a balance and no windows) has no window to pick, and reaches the
+ * foot through its balance instead (usageGlance).
  */
 export function glanceWindow(p: UsageProvider): UsageWindow | null {
   if (p.state !== "ok") return null;
@@ -133,24 +146,44 @@ export function glanceWindow(p: UsageProvider): UsageWindow | null {
 export interface GlancePart {
   id: UsageProvider["id"];
   abbr: string;
-  pct: number;
-  /** ≥ 80%: set in semibold ink (no hue: the foot has no word to pair a color with). */
+  /** Percentage used of the glance window. Absent for a credit provider, which has `amount`. */
+  pct?: number;
+  /** Money left for a credit provider (DeepSeek): it has no quota, and inventing a percentage for
+      it would be a lie. Already formatted, and rounded to whole units for the foot ("$4"); `full`
+      carries the exact amount. A part carries `pct` or `amount`. */
+  amount?: string;
+  /** Emphasis: set in semibold ink (no hue: the foot has no word to pair a color with). ≥ 80%
+      used for a window provider; out of credit for a credit one — its only bad state. */
   high: boolean;
   /** The reading is old: the provider's last fetch failed, or the whole file is stale. */
   stale: boolean;
-  /** Full words for the tooltip and accessible name: "Claude 7-day 47%", "… 80% (stale)". */
+  /** Full words for the tooltip and accessible name: "Claude 7-day 47%", "DeepSeek balance $4.29",
+      "… 80% (stale)". */
   full: string;
 }
 
-/** One part per provider with a readable window, in provider order; providers without data are left out. */
+/**
+ * One part per provider with something to show — a readable window, or a credit provider's
+ * balance — in provider order; providers without data are left out.
+ */
 export function usageGlance(u: UsageInsight | undefined): GlancePart[] {
   if (!u?.available) return [];
-  return u.providers.flatMap((p) => {
+  return u.providers.flatMap((p): GlancePart[] => {
+    const abbr = PROVIDER_ABBR[p.id];
+    const suffix = (stale: boolean) => (stale ? " (stale)" : "");
+    if (p.state === "ok" && p.balance) {
+      const stale = u.stale || !!p.error;
+      // Whole units in the row, the exact amount in the tooltip. No percentage: the only
+      // emphasis a balance has is "this can't fund calls".
+      const amount = moneyCompact(p.balance.total, p.balance.currency);
+      const exact = money(p.balance.total, p.balance.currency);
+      return [{ id: p.id, abbr, amount, high: !p.balance.available, stale, full: `${PROVIDER_NAME[p.id]} balance ${exact}${suffix(stale)}` }];
+    }
     const w = glanceWindow(p);
     if (!w) return [];
     const stale = u.stale || (!!p.error && p.windows.length > 0);
-    const full = `${PROVIDER_NAME[p.id]} ${windowLabel(w)} ${pct(w)}%${stale ? " (stale)" : ""}`;
-    return [{ id: p.id, abbr: PROVIDER_ABBR[p.id], pct: pct(w), high: w.pct >= 80, stale, full }];
+    const full = `${PROVIDER_NAME[p.id]} ${windowLabel(w)} ${pct(w)}%${suffix(stale)}`;
+    return [{ id: p.id, abbr, pct: pct(w), high: w.pct >= 80, stale, full }];
   });
 }
 

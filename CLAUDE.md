@@ -141,13 +141,16 @@ Frontend is SolidJS (NOT React): signals/stores, `<For>/<Show>`, `onCleanup` for
 - **`steer()`/`followUp()` now run extension `input` handlers** (`source` defaults to `"interactive"`,
   `dist/core/agent-session.js` `_queueUserInput`); on 0.85.1 they bypassed them entirely
   (0.85.1 `steer()` went straight to `_queueSteer`). Narrow blast radius: `prompt()` ALREADY ran them
-  on 0.85.1 (`agent-session.js:842`), and `server/chat-manager.ts:498` only calls `steer()` when
+  on 0.85.1 (`agent-session.js:842`), and `server/chat-manager.ts:499-501` only calls `steer()` when
   `isStreaming && !text.startsWith("/")` — every other web send already went through `prompt()`. So
   the pi-config handlers (`vision-delegate`, which describes attached images for non-vision models,
   and `wake-nudge`) have always run against our runtimes; the genuinely new case is the mid-stream
   steer. A handler returning `{action:"handled"}` silently swallows the message
   (`dist/core/extensions/runner.js:1008`); returning `null`/`undefined` is the safe fall-through, and
-  neither of ours returns `handled`.
+  neither of ours returns `handled`. A mid-stream steer that CARRIES IMAGES while the active model
+  cannot see them waits on `vision-delegate`'s describe call before it is queued
+  (`pi-config/extensions/vision-delegate/index.ts:150-161`), so it can land after the turn it meant
+  to interrupt — nothing is dropped, and plain steers are unaffected.
 - Unidentified writers (e.g. a headless/orchestrating pi, not in the live registry): `/ws/chat` refuses
   (`code:"busy"`, close 4409) a session the server doesn't hold whose mtime is < 120s old
   (`RECENT_WRITE_MS` in `server/write-guard.ts`, shared constant with the frontend) unless `&force=1`.

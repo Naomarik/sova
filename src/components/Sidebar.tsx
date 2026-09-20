@@ -1,12 +1,13 @@
 import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
-import type { AgentsInsight, SessionSummary, UsageInsight } from "../../shared/protocol";
+import type { AgentsInsight, ContextInfo, SessionSummary, UsageInsight } from "../../shared/protocol";
 import { type ArchiveGroupId, groupByArchiveDate } from "../lib/archive";
 import { relativeTime, shortModel, tildePath } from "../lib/format";
 import { activeTeams, agentsHref, type GlancePart, usageGlance, usageHref } from "../lib/insights";
 import { isTopSession } from "../lib/regions";
-import { home, localRunning, toast } from "../lib/ui-state";
+import { home, localRunning, sessionContext, toast } from "../lib/ui-state";
 import { activeAgentCounts, sessionWorking } from "../lib/workers";
 import { ArchiveCleanup } from "./ArchiveCleanup";
+import { ContextRing } from "./ContextRing";
 import { Banner, Chip, Icon } from "./ui";
 
 interface Group {
@@ -46,6 +47,15 @@ function SessionRow(props: { session: SessionSummary; selected: string | null; n
   const isBusy = () => !s().live && !!(localRunning()[s().path] ?? s().busy);
   const tuiTitle = () => `Open in a TUI · pid ${s().live!.pid} · ${s().live!.status}`;
   const working = () => sessionWorking(s());
+  /** The row's context fill: the open session's live value wins over the list's tail value, and a
+      just-compacted session shows no ring (the head is where "compacted" is said in words). */
+  const contextOf = (s: SessionSummary): ContextInfo | null => {
+    const live = sessionContext()[s.path];
+    if (live === "compacted") return null;
+    if (live) return live;
+    const fromList = s.context;
+    return fromList && fromList.window ? fromList : null;
+  };
   return (
     <li class="session-row-shell" classList={{ "session-row-shell-current": props.selected === s().path }}>
       <div class="session-rail">
@@ -102,17 +112,31 @@ function SessionRow(props: { session: SessionSummary; selected: string | null; n
             {s().title}
           </p>
           <Show when={s().outlineNow}>
-            <p class="list-summary" title={s().outlineNow}>{s().outlineNow}</p>
+            <div class="list-line list-summary-row">
+              <p class="list-summary" title={s().outlineNow}>{s().outlineNow}</p>
+              <Show when={s().outlineTopics}>
+                {(n) => (
+                  <Show when={n() > 0}>
+                    <span class="chip chip-count session-topics" title={`${n()} topics in this session`}>
+                      <span class="text-num">{n()}</span>
+                    </span>
+                  </Show>
+                )}
+              </Show>
+            </div>
           </Show>
-          <p class="list-meta">
-            {relativeTime(s().lastActiveAt, props.now)}
-            <Show when={s().model}>
-              {" · "}
-              <span class="text-mono" title={s().model!}>
-                {shortModel(s().model)}
-              </span>
-            </Show>
-          </p>
+          <div class="list-line list-meta-row">
+            <p class="list-meta">
+              {relativeTime(s().lastActiveAt, props.now)}
+              <Show when={s().model}>
+                {" · "}
+                <span class="text-mono" title={s().model!}>
+                  {shortModel(s().model)}
+                </span>
+              </Show>
+            </p>
+            <Show when={contextOf(s())}>{(c) => <ContextRing info={c()} />}</Show>
+          </div>
         </div>
         {/* AT parity with the old chips: the rail is wordless, so the state lives in the link's name. */}
         <Show when={s().live}>

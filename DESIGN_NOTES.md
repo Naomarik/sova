@@ -18,7 +18,7 @@ stylesheets — no component library.
 | App shell | `.app[data-view="list\|session"]` `.app-sidebar` `.app-main` `.app-back` `.pane` `.skip-link` `.pane-resizer` (+ `html.is-resizing`) |
 | Sidebar | `.sidebar-head` `.brand` `.sidebar-spacer` `.sidebar-search` `.sidebar-list` `.sidebar-region` `.sidebar-region-head` `.sidebar-region-count` `.sidebar-region-note` `details.sidebar-archive` · in `src/app.css`: `.archive-date` `.archive-date-label` `.archive-date-name` `.archive-tools` `.cleanup-intro` `.cleanup-choices` `.cleanup-choice` |
 | Search | `.search` (wraps `.icon` + `input.input` + clear `.button.button-icon`) `.search-count` |
-| Session rows | `li.session-row-shell` (`.session-row-shell-current` when open) wrapping `.session-rail` + `.list-row.list-row-interactive.session-row` `[aria-current="page"]` `.list-main` `.list-title` `.list-summary` `.list-meta` · group chrome `.session-group` `.list-group-label` `.session-group-path` (+ `<bdi>`) `.list` |
+| Session rows | `li.session-row-shell` (`.session-row-shell-current` when open) wrapping `.session-rail` + `.list-row.list-row-interactive.session-row` `[aria-current="page"]` `.list-main` `.list-title` `.list-summary` `.list-meta` · lines 2–3 `.list-line` (`.list-summary-row` `.list-meta-row`) carrying `.chip.chip-count.session-topics` and `.context-ring` · group chrome `.session-group` `.list-group-label` `.session-group-path` (+ `<bdi>`) `.list` |
 | Session row state (left rail) | `.session-rail` `.session-rail-item` `.session-rail-state` (+ `.chip.chip-accent` TUI or `.chip.chip-info.chip-live` Busy) `.session-rail-dot` `.session-rail-count` `.session-rail-count-live` |
 | LIVE badge / status | `.chip` `.chip-dot` `.chip-accent` `.chip-live` `.chip-success` `.chip-error` `.chip-warn` `.chip-info` `.chip-count` |
 | Buttons | `.button` `.button-primary` `.button-destructive` `.button-ghost` `.button-sm` `.button-icon` (needs `aria-label`) |
@@ -40,7 +40,7 @@ stylesheets — no component library.
 | Composer flyout (§4b) | `button.composer-menu-trigger` · `.model-menu.composer-flyout[popover]` `.composer-flyout-list[role=menu]` `.composer-flyout-item` (on `.mode-option`, `[role=menuitem\|menuitemradio]`) `.composer-flyout-icon` `.composer-flyout-label` `.composer-flyout-value` `.composer-flyout-meta` `.composer-flyout-chevron` `.composer-flyout-sep[role=separator]` `.composer-flyout-head` `.composer-flyout-back` (+ `.mode-option-check` `.list-group-label` `.live-dot`) |
 | Model menu (§4c) | `.model-menu[popover]` (the flyout's shell) `.model-menu-search` `.model-menu-list` `.model-menu-group` `.model-option` `[data-active]` `.model-option-check` `.model-option-id` `.model-option-vision` `.model-option-provider` `.model-menu-empty` `.model-menu-foot` |
 | Mode menu (§4g) | `.mode-trigger` `.mode-trigger-label` `.model-menu.mode-menu[popover]` (+ `.model-menu-list[role=menu]` `.model-menu-group`) `.mode-option[role=menuitemradio\|menuitemcheckbox]` `.mode-option-check` `.mode-option-text` `.mode-option-id` `.mode-option-desc` `.mode-menu-foot` |
-| Context window (§4f) | `.context-gauge` `.context-label` `.context-value` `.context-pct` `.context-meta` · states `.context-warn` `.context-error` `.context-compacted` · `.session-head` is the named container `session-head` |
+| Context window (§4f) | `.context-gauge` `.context-label` `.context-value` `.context-pct` `.context-meta` · sidebar row ring `.context-ring` `.context-ring-track` `.context-ring-fill` · states `.context-warn` `.context-error` (both also on the ring's wrapper) `.context-compacted` · `.session-head` is the named container `session-head` |
 | Markdown (§4e) | `.md` (on `.message-body`) `.md-table-wrap` `.md-code` `.md-code-head` `.md-code-lang` `.md-code-copy` `.md-image-link` · syntax: `.hljs-*` roles |
 | Slash commands (§4d) | `.command-menu` `.command-menu-head` `.command-list` `.command-option` `[data-active]` `.command-option-name` `.command-option-desc` `.command-option-location` `.command-menu-empty` `.command-menu-foot` · source badge: neutral `.chip` |
 | Images (§4b) | `.message-images` `.message-images-single` `.thumb` `.toolcard-images` · lightbox: `dialog.lightbox` `.lightbox-bar` `.lightbox-caption` `.lightbox-count` `.lightbox-stage` `.lightbox-img` `.lightbox-prev` `.lightbox-next` · attachments: `.attachments` `.attachment` `.attachment-rejected` `.attachment-thumb` `.attachment-icon` `.attachment-text` `.attachment-name` `.attachment-meta` · path attachments: `details.disclosure.message-attachment` `.message-attachment-missing` `.message-attachment-name` `.message-attachment-meta` `.message-attachment-body` · path chips: `button.path-chip` `.path-chip-missing` `.path-chip-name` `.path-chip-note` |
@@ -310,9 +310,14 @@ takes `position: relative` from 768px up — and it writes `--sidebar-width` on
 
                [=] ~/webapps/pi-web                              4
              ( o )  Add a watch endpoint for TUI sessions
-              3 ⚙   Wiring /ws/watch to the session tailer
-                    2h ago · claude-opus-5
+              3 ⚙   Wiring /ws/watch to the session tailer       (7)
+                    2h ago · claude-opus-5                        ◔
             2├──30px──┤2├───────── 270 at a 320px sidebar ─────────┤
+
+             Line 1 is the title and nothing else — the rail exists because
+             chips beside the title cost it width. Lines 2 and 3 each carry
+             ONE indicator on a shared right edge: the topic count on the
+             "now" line, the context ring on the meta line.
         -->
         <li class="session-row-shell session-row-shell-current">
           <div class="session-rail">
@@ -333,8 +338,23 @@ takes `position: relative` from 768px up — and it writes `--sidebar-width` on
           <a class="list-row list-row-interactive session-row" href="#/s/…" aria-current="page">
             <div class="list-main">
               <p class="list-title">Add a watch endpoint for TUI sessions</p>
-              <p class="list-summary" title="…">Wiring /ws/watch to the session tailer</p>
-              <p class="list-meta">2h ago · <span class="text-mono">claude-opus-5</span></p>
+              <!-- line 2: the "now" line, then the outline's topic count -->
+              <div class="list-line list-summary-row">
+                <p class="list-summary" title="…">Wiring /ws/watch to the session tailer</p>
+                <span class="chip chip-count session-topics" title="7 topics in this session">
+                  <span class="text-num">7</span></span>
+              </div>
+              <!-- line 3: time and model, then the context ring -->
+              <div class="list-line list-meta-row">
+                <p class="list-meta">2h ago · <span class="text-mono" title="anthropic/claude-opus-5">claude-opus-5</span></p>
+                <span class="context-ring {context-warn|context-error}" title="{the head's exact sentence}">
+                  <svg viewBox="0 0 12 12" aria-hidden="true">
+                    <circle class="context-ring-track" cx="6" cy="6" r="5" fill="none"/>
+                    <circle class="context-ring-fill" cx="6" cy="6" r="5" fill="none"
+                            transform="rotate(-90 6 6)" style="stroke-dasharray:…;stroke-dashoffset:…"/>
+                  </svg>
+                </span>
+              </div>
             </div>
             <span class="visually-hidden">, open in a TUI, 3 subagents working</span>
           </a>
@@ -363,9 +383,27 @@ takes `position: relative` from 768px up — and it writes `--sidebar-width` on
   `topic-outline` snapshot. Rendered only when present: `--fs-micro` in `--color-ink-2`, one line
   truncated with an ellipsis, the full text in `title=`. Sessions without one (older sessions, or
   topic-outline off) omit the line entirely — the row is then title over meta, as before.
+
+  The line also carries the session's **topic count**, at its right end: a
+  `.chip.chip-count.session-topics` holding a bare figure, `title` "{n} topics in this session",
+  shown only when the count is ≥ 1. It comes from the **same outline snapshot** as the "now" line
+  it sits beside (`readTailOutline` returns both from the accepted entry), so the sentence and the
+  figure can never disagree. No count, no chip — and no chip without a "now" line either, since
+  the line is what it rides on.
 - **Row line 3.** Relative `lastActiveAt` ("just now", "4m ago", "2h ago", "yesterday", "Mar 4"),
   then ` · `, then the model in mono. Show only the part after the first `/` and put the full
   `provider/model` in `title`. If `model` is null, omit the separator and the model.
+
+  The line ends with the **context ring** (§4f): a 12px ring whose arc is the share of the window
+  the last reply left filled, `.context-warn` at ≥80% and `.context-error` at ≥95% — the same
+  `contextStep` the head's gauge uses, so a row and the session it opens step together. Its
+  `title` is the head's exact sentence. It is the one place in the product where the context fill
+  is a shape instead of a number, and §4f writes that exception down.
+- **Lines 2 and 3 are `.list-line`.** Each is a flex wrapper: the text block flexes and truncates,
+  the indicator is `flex: none`. That puts the chip and the ring on **one right edge** down the
+  whole list, which is the entire point — a ring that slid left and right with the text beside it
+  would be decoration, not a column you can scan. Line 1 gets no wrapper and no indicator, ever:
+  the right-hand chips that used to squeeze the title are why the rail exists.
 - **Row state lives in a left rail.** Every row is a `li.session-row-shell`: a 30px
   `.session-rail` column with a **2px horizontal margin** of its own, then the row link — a 34px
   gutter in all. The margin is where the breathing room lives: not padding inside the rail, and
@@ -426,6 +464,27 @@ takes `position: relative` from 768px up — and it writes `--sidebar-width` on
   The title column moved 2px right when the pill got its breathing room, and that is the trade as
   accepted: 2px of gutter buys a round button that isn't touching the panel edge, and 2px off a
   270px column is invisible where the pill's margin is not.
+
+  **Re-checked with the topic chip and the context ring** (measured in Chromium over the real
+  stylesheets, at a 320px viewport and at 1280 with the sidebar at its 320px default):
+
+  - **The title column is untouched.** `.list-title` still starts at **x=34** and still spans the
+    full **270px** nominal — the indicators are on lines 2 and 3 only, so line 1 measures exactly
+    what it measured before them. (The 259px figure quoted above is that 270 less a real 10px
+    scrollbar and the pane's 1px border; the harness draws overlay scrollbars, so it confirms the
+    nominal number, not the 259.)
+  - **The chip takes 17px** at one digit and **24px** at two, the ring **12px**, each plus one
+    `--space-2` gap. Line 2's text therefore runs 245px and line 3's 250px at 320 — both still
+    wider than the title column had in the worst case *before* the rail existed.
+  - **The text truncates first, and it is the only thing that truncates.** The indicator is
+    `flex: none` and the text block is `flex: 1; min-width: 0`, so a 96-character "now" line
+    ellipses at the chip's left edge and a 30-character model id ellipses at the ring's. Nothing
+    wraps (`flex-wrap: nowrap` on the wrapper, `white-space: nowrap` on the text), nothing clips,
+    and the document never gains a horizontal scroll.
+  - **No row grew.** A title + summary + meta row measures **77.14px** with the additions and
+    **77.14px** without them, and `.list-main` is **60.14px** either way: the chip is pinned to
+    the summary's own 14.3px line box and the 12px ring is shorter than the meta line's 19.38px.
+    The rail's 54px floor is still the floor.
 
   Those are the nominal figures. A real pane also spends its 1px right border and a 10px
   scrollbar, so the title column in Chrome is about **259px** at a 1280 viewport and **250px** at
@@ -734,6 +793,21 @@ borderless, 16px tall, `--font-mono` `--fs-micro` tabular in `--color-ink-muted`
 (`--color-ink` on hover), with an 11px `worker` icon. `live-pulse` runs on the Busy dot and on
 `.session-rail-count-live .icon`, nothing else in the row.
 
+**Lines 2 and 3.** `.list-line` is `display: flex`, `align-items: center`, gap `--space-2`,
+`min-width: 0`, `flex-wrap: nowrap`. The line's `2px` top margin moves off `.list-summary` /
+`.list-meta` and onto `.list-summary-row` / `.list-meta-row`, so the rhythm is the one the row
+already had and the margin can't collapse against the indicator; inside the wrapper the text is
+`flex: 1; min-width: 0; margin: 0` and keeps its own ellipsis, and the indicator is `flex: none`.
+`.session-topics` is a `.chip.chip-count` with `background: none` (so it reads as part of the
+row's ground, not a white pill on hover or on the current row's tint), `--color-ink-muted`,
+padding `0 --space-1`, `line-height: 1`, and a height pinned to
+`calc(--fs-micro * --lh-micro)` = 14.3px — the summary's own line box, which is what keeps it
+from growing the row. `.context-ring` is a 12 × 12 `inline-flex`, `flex: none`, holding a 12 × 12
+`svg` (`overflow: visible`); `.context-ring-track` is `--color-border` at `1.5`,
+`.context-ring-fill` is `--color-ink-muted` at `2` with `stroke-linecap: butt`, and
+`.context-warn` / `.context-error` swap the fill to `--status-warn` / `--status-error`. No
+animation and no transition on either; the fill's colour is never `currentColor`.
+
 Chips elsewhere take the compact chip box: padding 1px / `--space-2`, gap `--space-1`, 5px dot,
 line-height 1.2 (font stays `--fs-micro` mono, uppercase); an icon inside a `.chip-count` is
 12px. Group
@@ -774,6 +848,17 @@ word never does.
   the session. The pill is 26px, under the 44px target minimum: it is an optional affordance for
   a fact the row already carries in its name, not a control, and the 44px target is the row
   itself.
+- **The topic chip and the context ring are inert, and AT gets nothing from them.** Both carry a
+  `title` and nothing else: no tab stop, no `role`, no `visually-hidden` sentence in the row
+  link's name. That is a decision, not an oversight — the link's accessible name is read on every
+  arrow-down through 279 rows, and it already ends with the rail's state suffix; two more clauses
+  ("7 topics in this session, context 237,412 of 1,048,576 tokens (24%)") would roughly double it
+  and bury the title the user is actually listening for. **The cost, plainly: a screen-reader user
+  gets no context fill and no topic count from the list at all.** They have to open the session,
+  where the head's gauge states both the sentence and, through `#context-desc`, the number
+  (§4f) — and the outline strip (§10) names the topics. A sighted pointer user gets the same
+  sentence on hover; a touch user gets it on long-press, the platform's own `title` gesture. The
+  rail's own precedent applies here too: this is the sidebar, and nowhere else.
 - **The cost, stated.** A sighted touch user still sees a coloured dot and no word until they tap
   it or open the session (§3's `.run-status` and the head say which it is). The toast is a second
   gesture and it isn't discoverable — nothing on the row says the dot can be tapped. We accept
@@ -2475,6 +2560,60 @@ a 56px head a 6px bar says less than "24%" and costs a line. So it's the number 
 Closeness to the limit is carried by the number, then by hue, and at the top step by a glyph
 too, so it never rests on hue alone.
 
+### The sidebar ring: a deliberate exception
+
+**A ring is a bar**, and the rule above says the context readout is never one. The session row
+(§2, line 3) gets one anyway. This is the exception, stated once, with what buys it:
+
+- **It is list-scale, where text is not affordable.** The head has 56px and a full line to spend;
+  a row's meta line has 250px already holding a timestamp and a model id, and 279 of them scroll
+  past. "24%" on every row is 279 numbers to read when the question is *which rows are close to
+  the edge* — a question a shape answers at a glance and a column of digits does not.
+- **It is static.** No animation, no transition, no indeterminate state, no pulse. It never
+  reports that something is happening, only what the last reply left behind. The row's one
+  sanctioned moving thing is still the Busy dot.
+- **The AMOUNT is the signal; hue only repeats it.** The arc length carries the fact at every
+  value, including every value under 80% where there is no hue at all. `.context-warn` and
+  `.context-error` recolour a ring that is *already visibly three-quarters or all the way round*.
+  So this is not status by hue alone, and it doesn't need the dot-plus-word rule the chips live
+  under — there is no word to drop, because the geometry is the word.
+- **The sentence is the head's sentence.** The `title` is `contextSentence`, byte for byte what
+  the head's gauge and `#context-desc` say. Hover or long-press gets the exact numbers; nothing
+  is only in the ring.
+- **The head keeps its text, and that is why the exception is safe.** A bar cannot say
+  "compacted" and cannot name a token count. The head is where those sentences are said, so the
+  ring never has to carry a state it has no shape for — it just doesn't render.
+
+**What the ring cannot express**, and what happens instead:
+
+| Case | The row shows | Where the fact lives |
+|---|---|---|
+| No window (the model's limit is unknown) | **No ring.** A fill with no denominator is a lie about the arc | The head: "237k", tokens only, no percent |
+| Just compacted (`null` after a compaction row) | **No ring.** An empty ring would read as 0%, which is a claim we can't make | The head, in words: "compacted" |
+| No reply yet (`null`, no compaction) | **No ring.** Nothing has filled anything | The transcript's empty state, "Nothing sent yet" |
+
+In all three the meta line simply ends after the model, and the line's right edge is empty.
+
+### Honesty: what the row's number is, and isn't
+
+The head reads the **active branch**; the row reads the **file tail**. They are not the same fact,
+and on some sessions they visibly differ:
+
+- **A rewound or branched session can show a different fill in the row than in the head.**
+  `readTailContext` scans backwards from EOF and takes the first assistant reply with usage,
+  exactly as `readTailModel` takes the last model — "the file end wins", not branch-aware. Open a
+  session whose active branch is behind the file's end and the head's gauge is the one that
+  describes what you are looking at. The row is describing the file.
+- **A TUI mid-turn lags.** The live record carries no context, so a watched session's ring holds
+  the last reply's value until the new reply is appended and the index re-reads the tail. It is
+  never wrong, only late — which is the same contract the head's gauge has during streaming.
+- **The topics count comes from the same snapshot as the line it sits beside.** In the file, both
+  are read off the one accepted `topic-outline` entry (`readTailOutline`), so the sentence and the
+  figure describe one moment and cannot contradict each other. A live session's newer broadcast
+  overrides both together when it carries its `topics` array; when it carries only a "now" line,
+  the count stays at the file's — the one case where the two can be a snapshot apart, and it
+  resolves as soon as the next entry lands.
+
 ### Markup
 
 It goes after `.session-head-main`, **before** the mode trigger in chat, or before the `TUI` chip
@@ -2587,7 +2726,9 @@ Three more head rules cover every head, not just chat:
 ### Tokens
 
 `--font-mono`, `--fs-mono`, `--fs-caption`, `--color-ink-2`, `--color-ink-muted`,
-`--status-warn`, `--status-error`, `--space-1`.
+`--status-warn`, `--status-error`, `--space-1`. The sidebar ring adds `--color-border` (the
+track) and reuses `--color-ink-muted` (the fill at rest) and the two status tokens (the fill at
+its steps); its geometry — 12px box, 1.5 track, 2 fill — is written in §2's Tokens.
 
 ---
 

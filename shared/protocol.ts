@@ -22,6 +22,14 @@ export interface SessionSummary {
   outlineNow?: string;
   /** When that outline snapshot was generated (ms epoch); 0 when unknown. */
   outlineAt?: number;
+  /** Outline topics in that same snapshot — the count the sidebar shows beside the "now" line.
+      Absent when the snapshot is missing, like outlineNow. 0 is a real count. */
+  outlineTopics?: number;
+  /** Context fill at the file's last assistant reply: the head's own rule (input + cacheRead +
+      cacheWrite of the last assistant usage on the branch; a compaction after it means no value),
+      but read from the FILE TAIL, so a rewound branch can disagree with the head's gauge. Absent
+      when the tail has no reply usage. `window` is null when the model isn't in the catalog. */
+  context?: ContextInfo;
   /** Non-null when the session is currently open in a TUI (from ~/.pi/agent/sessions/live/*.json). */
   live: {
     pid: number;

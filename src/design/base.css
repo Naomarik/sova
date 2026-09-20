@@ -1002,6 +1002,79 @@ summary.sidebar-region-head .icon-twist { transition: transform var(--dur-fast) 
 .session-row.list-row-interactive:hover,
 .session-row[aria-current="page"] { background: none; }
 
+/* ---- ROW LINES 2 AND 3: text plus one indicator. The indicators ride the
+   lines BELOW the title, never line 1 — the old right-hand chips squeezed the
+   title, which is why the state moved to the left rail. `.list-line` is the
+   shared wrapper: the text flexes and truncates, the indicator is `flex: none`,
+   so the chip and the ring land on a common right edge all the way down the
+   list. That column is what makes the rings scannable — a ring that shifted
+   left and right with the text beside it would be a decoration.
+   The line's 2px top margin moves from the text to the wrapper, so the row's
+   vertical rhythm is unchanged and the margin can't collapse against the
+   indicator. `.list-summary` / `.list-meta` keep their own truncation. ---- */
+
+.list-line {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  flex-wrap: nowrap;
+}
+.list-summary-row,
+.list-meta-row { margin: 2px 0 0; }
+.list-line > .list-summary,
+.list-line > .list-meta { margin: 0; flex: 1; min-width: 0; }
+.list-line > .session-topics,
+.list-line > .context-ring { flex: none; }
+
+/* The topic count on line 2. A `.chip.chip-count` box, quieted for a micro
+   line: no fill of its own (so it reads as part of the row's ground on hover
+   and on the current row's tint, not as a white pill), muted ink, and a height
+   pinned to the line box it sits in — 11px × 1.3 = the summary's own line —
+   so the chip cannot grow the row. Everything else (mono, tabular figures,
+   round, 1px border) comes from `.chip` and `.chip-count` unchanged. */
+.session-topics {
+  height: calc(var(--fs-micro) * var(--lh-micro));
+  padding: 0 var(--space-1);
+  background: none;
+  color: var(--color-ink-muted);
+  line-height: 1;
+}
+
+/* The context ring on line 3 (§4f's one exception to "plain text, not a
+   meter"). 12 × 12: the same box as the line's own text, so it costs the row
+   no height, and at a 320px sidebar it costs the meta line 20px (12 + an 8px
+   gap) out of about 250 — the model id truncates long before it is squeezed.
+   The circle is r=5 in a 12-unit viewBox, so the track's 1.5 and the fill's 2
+   both stay inside the box (5 + 2/2 = 6, flush with the edge); the fill is the
+   heavier of the two so the arc reads as the figure and the track as the
+   ground. Track from the border token — decorative, and never the signal.
+   Static: no animation, no transition, no `transform` here (the component
+   rotates the circle itself, so nothing fights it).
+   The fill is NOT `currentColor`: the row link inherits its colour and would
+   repaint the ring on hover and on the open row. What carries the state is the
+   ARC LENGTH first — hue only repeats it — and the hue that does the repeating
+   is an explicit status token on the fill, which is why it is set three times
+   below rather than inherited once. */
+.context-ring {
+  display: inline-flex;
+  flex: none;
+  width: 12px;
+  height: 12px;
+}
+.context-ring svg { width: 12px; height: 12px; overflow: visible; }
+.context-ring-track {
+  stroke: var(--color-border);
+  stroke-width: 1.5;
+}
+.context-ring-fill {
+  stroke: var(--color-ink-muted);
+  stroke-width: 2;
+  stroke-linecap: butt;
+}
+.context-warn .context-ring-fill  { stroke: var(--status-warn); }
+.context-error .context-ring-fill { stroke: var(--status-error); }
+
 
 /* ---- MAIN PANE HEAD. Title, cwd, model, state chip, copy path. ---------- */
 

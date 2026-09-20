@@ -7,7 +7,8 @@ import { LIVE_DIR, SESSIONS_DIR } from "./paths";
 import { isWebSession, removeWebSession } from "./web-sessions";
 import { RECENT_WRITE_MS } from "./write-guard";
 import { isArchived, setArchived } from "./archived-sessions";
-import { disposeHeldChat, isSessionBusy } from "./chat-manager";
+import { disposeHeldChat, getModelRuntime, isSessionBusy } from "./chat-manager";
+import { contextWindow } from "./models";
 
 type BaseSummary = Omit<SessionSummary, "live" | "workers" | "origin" | "archived" | "busy">;
 
@@ -17,7 +18,21 @@ const MAX_TAIL = 256 * 1024;
 const TITLE_MAX = 80;
 const SUMMARY_MAX = 200;
 
-const cache = new Map<string, { mtimeMs: number; size: number; summary: BaseSummary }>();
+/** A window lookup for "provider/model", from the caller's ModelRuntime. Optional everywhere:
+ *  without one every summary reports `window: null` (getSessionSummary must stay runtime-free —
+ *  tests call it directly). */
+export type WindowResolver = (ref: string) => number | null;
+
+/** Cached per (mtime, size). `contextModel` is the ref the window is looked up under; it is kept
+ *  beside the summary because the window depends on the caller's runtime, not on the file. */
+interface CacheEntry {
+  mtimeMs: number;
+  size: number;
+  summary: BaseSummary;
+  contextModel: string | null;
+}
+
+const cache = new Map<string, CacheEntry>();
 
 function oneLine(s: string): string {
   const t = s.replace(/\s+/g, " ").trim();
@@ -111,11 +126,13 @@ async function readTailModel(path: string, size: number): Promise<string | null>
 
 /**
  * The topic-outline's latest snapshot, scanned backwards from EOF exactly like readTailModel:
- * the last `topic-outline` custom entry's rolling "now" line, and when it was generated. This
- * is the sidebar's summary row; the live record's broadcast may be newer (outlineOverlay).
+ * the last `topic-outline` custom entry's rolling "now" line, when it was generated, and how many
+ * topics that same entry carried. This is the sidebar's summary row; the live record's broadcast
+ * may be newer (outlineOverlay). The count comes from the ACCEPTED entry (the one whose "now"
+ * reads), so it always describes the snapshot shown next to it.
  * null when the window has none (topic-outline off, older sessions, or a very long tail).
  */
-async function readTailOutline(path: string, size: number): Promise<{ now: string; generatedAt: number } | null> {
+async function readTailOutline(path: string, size: number): Promise<{ now: string; generatedAt: number; topics: number } | null> {
   const fh = await open(path, "r");
   try {
     const floor = Math.max(0, size - MAX_TAIL);
@@ -145,8 +162,81 @@ async function readTailOutline(path: string, size: number): Promise<{ now: strin
                 return {
                   now,
                   generatedAt: typeof data.generatedAt === "number" && Number.isFinite(data.generatedAt) ? data.generatedAt : 0,
+                  topics: Array.isArray(data.topics) ? data.topics.length : 0,
                 };
             }
+          } catch {
+            // torn trailing line or not JSON: skip
+          }
+        }
+        if (i < 0) return null;
+        stop = i;
+      }
+      carry = buf.subarray(0, stop);
+    }
+    return null;
+  } finally {
+    await fh.close();
+  }
+}
+
+/** Context fill read off the tail: tokens, plus the model of the assistant message that spent
+ *  them ("provider/model") when it carried one. */
+interface TailContext {
+  tokens: number;
+  model: string | null;
+}
+
+/**
+ * contextForBranch's rule (server/transcript.ts) applied to ONE raw entry, walking backwards:
+ * "stale" for a compaction (the fill before it no longer describes the context), a TailContext
+ * for an assistant message carrying a usage object (missing keys count as 0), null to keep
+ * scanning. A non-object `usage`, and pi 0.86.0's top-level `type:"usage"` entries, are skipped.
+ */
+function contextOf(e: any): TailContext | "stale" | null {
+  if (e?.type === "compaction") return "stale";
+  const msg = e?.type === "message" ? e.message : null;
+  if (!msg) return null;
+  if (msg.role === "compactionSummary") return "stale";
+  if (msg.role !== "assistant") return null;
+  const u = msg.usage;
+  if (!u || typeof u !== "object") return null;
+  const tokens = (Number(u.input) || 0) + (Number(u.cacheRead) || 0) + (Number(u.cacheWrite) || 0);
+  return { tokens, model: msg.provider && msg.model ? `${msg.provider}/${msg.model}` : null };
+}
+
+/**
+ * The context fill at the file's LAST assistant reply, scanned backwards from EOF exactly like
+ * readTailModel (16KB chunks, cap 256KB, torn/capped lines skipped). Same rule as the head's
+ * contextForBranch, but on the raw file tail instead of the active branch: the first compaction
+ * met walking back from EOF means there is no number (null), otherwise the first assistant
+ * message with a usage object gives input + cacheRead + cacheWrite. null when the window has
+ * neither. Not branch-aware — on a rewound session the tail can be a reply the head never sees.
+ */
+async function readTailContext(path: string, size: number): Promise<TailContext | null> {
+  const fh = await open(path, "r");
+  try {
+    const floor = Math.max(0, size - MAX_TAIL);
+    let end = size;
+    let carry = Buffer.alloc(0); // bytes after the first newline seen so far: a line's start is still unread
+    while (end > floor) {
+      const start = Math.max(floor, end - CHUNK);
+      const chunk = Buffer.alloc(end - start);
+      const { bytesRead } = await fh.read(chunk, 0, chunk.length, start);
+      if (bytesRead < chunk.length) return null; // truncated under us: the next request retries
+      end = start;
+      const buf = carry.length ? Buffer.concat([chunk, carry]) : chunk;
+      // Complete lines are those after a newline in this buffer (or all of it at BOF).
+      let stop = buf.length;
+      for (;;) {
+        const i = stop > 0 ? buf.lastIndexOf(NL, stop - 1) : -1;
+        if (i < 0 && start > 0) break; // line start not read yet: carry it into the next chunk
+        const line = buf.subarray(i + 1, stop);
+        if (line.includes('"assistant"') || line.includes("compaction")) {
+          try {
+            const hit = contextOf(JSON.parse(line.toString("utf-8")));
+            if (hit === "stale") return null;
+            if (hit) return hit;
           } catch {
             // torn trailing line or not JSON: skip
           }
@@ -255,7 +345,23 @@ async function listSessionFiles(): Promise<string[]> {
   return files;
 }
 
-async function summarize(path: string): Promise<BaseSummary | null> {
+/**
+ * The cached summary with its context window resolved for THIS caller. The tokens come from the
+ * file (and are cached with it); the window comes from the model catalog, so a summary first
+ * cached by a runtime-less call still gets its window as soon as a resolver shows up.
+ * The ref is the assistant message's own provider/model, else the summary's tail model — which
+ * means that after a model switch the window is the CURRENT model's, i.e. the one the next reply
+ * will actually use, not the one that produced these tokens.
+ */
+function withWindow(entry: CacheEntry, resolveWindow?: WindowResolver): BaseSummary {
+  const ctx = entry.summary.context;
+  if (!ctx || !resolveWindow) return entry.summary;
+  const ref = entry.contextModel ?? entry.summary.model;
+  const window = ref ? resolveWindow(ref) : null;
+  return window === ctx.window ? entry.summary : { ...entry.summary, context: { tokens: ctx.tokens, window } };
+}
+
+async function summarize(path: string, resolveWindow?: WindowResolver): Promise<BaseSummary | null> {
   let st;
   try {
     st = await stat(path);
@@ -263,13 +369,14 @@ async function summarize(path: string): Promise<BaseSummary | null> {
     return null;
   }
   const hit = cache.get(path);
-  if (hit && hit.mtimeMs === st.mtimeMs && hit.size === st.size) return hit.summary;
+  if (hit && hit.mtimeMs === st.mtimeMs && hit.size === st.size) return withWindow(hit, resolveWindow);
   try {
     const head = await readHead(path);
     if (!head || typeof head.header.id !== "string") return null;
     const h = head.header;
     const model = (await readTailModel(path, st.size)) ?? head.model;
     const outline = await readTailOutline(path, st.size);
+    const ctx = await readTailContext(path, st.size);
     const summary: BaseSummary = {
       id: h.id,
       path,
@@ -278,10 +385,12 @@ async function summarize(path: string): Promise<BaseSummary | null> {
       createdAt: typeof h.timestamp === "string" ? h.timestamp : new Date(st.birthtimeMs || st.mtimeMs).toISOString(),
       lastActiveAt: new Date(st.mtimeMs).toISOString(),
       model,
-      ...(outline ? { outlineNow: outline.now, outlineAt: outline.generatedAt } : {}),
+      ...(outline ? { outlineNow: outline.now, outlineAt: outline.generatedAt, outlineTopics: outline.topics } : {}),
+      ...(ctx ? { context: { tokens: ctx.tokens, window: null } } : {}),
     };
-    cache.set(path, { mtimeMs: st.mtimeMs, size: st.size, summary });
-    return summary;
+    const entry: CacheEntry = { mtimeMs: st.mtimeMs, size: st.size, summary, contextModel: ctx?.model ?? null };
+    cache.set(path, entry);
+    return withWindow(entry, resolveWindow);
   } catch {
     return null;
   }
@@ -292,17 +401,23 @@ function liveField(l: LiveRecord | undefined): SessionSummary["live"] {
 }
 
 /** The live record's outline broadcast can be newer than the file's last `topic-outline` entry
- *  (insights' overlayOutline, reduced to the summary line): prefer it when it's at least as new. */
-function outlineOverlay(s: BaseSummary, l: LiveRecord | undefined): { outlineNow?: string; outlineAt?: number } {
+ *  (insights' overlayOutline, reduced to the summary line + topic count): prefer it when it's at
+ *  least as new. The broadcast's `topics` is an array of heading strings, so its length is the
+ *  count; a broadcast without that array leaves the file's count alone. */
+function outlineOverlay(s: BaseSummary, l: LiveRecord | undefined): { outlineNow?: string; outlineAt?: number; outlineTopics?: number } {
   const outline = l?.outline;
   if (!outline || typeof outline !== "object") return {};
-  const o = outline as { now?: unknown; generatedAt?: unknown };
+  const o = outline as { now?: unknown; generatedAt?: unknown; topics?: unknown };
   if (typeof o.now !== "string" || !o.now.trim()) return {};
   const at = typeof o.generatedAt === "number" && Number.isFinite(o.generatedAt) ? o.generatedAt : 0;
   if (s.outlineAt !== undefined && at < s.outlineAt) return {};
   const now = summaryLine(o.now);
   if (!now) return {};
-  return { outlineNow: now, outlineAt: Math.max(at, s.outlineAt ?? 0) };
+  return {
+    outlineNow: now,
+    outlineAt: Math.max(at, s.outlineAt ?? 0),
+    ...(Array.isArray(o.topics) ? { outlineTopics: o.topics.filter((t) => typeof t === "string").length } : {}),
+  };
 }
 
 /** All sessions, newest activity first, with fresh live presence merged in. */
@@ -310,7 +425,8 @@ export async function listSessions(): Promise<SessionSummary[]> {
   const files = await listSessionFiles();
   const live = readLive();
   const own = readOwnLiveRecords();
-  const results = await Promise.all(files.map(summarize));
+  const resolveWindow = await windowResolver();
+  const results = await Promise.all(files.map((f) => summarize(f, resolveWindow)));
   const present = new Set(files);
   for (const k of cache.keys()) if (!present.has(k)) cache.delete(k);
   const out: SessionSummary[] = [];
@@ -340,8 +456,24 @@ export async function listSessions(): Promise<SessionSummary[]> {
   return out;
 }
 
-export async function getSessionSummary(path: string): Promise<SessionSummary | null> {
-  const s = await summarize(path);
+/**
+ * The model runtime as a window lookup, resolved ONCE per listing call. Best-effort: with no
+ * auth configured (or in a test's throwaway agent dir) ModelRuntime.create() can fail, and then
+ * every context gauge simply reports `window: null` instead of failing the listing.
+ */
+async function windowResolver(): Promise<WindowResolver | undefined> {
+  try {
+    const runtime = await getModelRuntime();
+    return (ref) => contextWindow(ref, runtime);
+  } catch {
+    return undefined;
+  }
+}
+
+/** One summary. `resolveWindow` is optional on purpose: without it the context gauge has no
+ *  window (tests and any caller that must not spin up a ModelRuntime). */
+export async function getSessionSummary(path: string, resolveWindow?: WindowResolver): Promise<SessionSummary | null> {
+  const s = await summarize(path, resolveWindow);
   if (!s) return null;
   const l = readLive().get(path);
   const ownRec = readOwnLiveRecords().get(path);
@@ -366,7 +498,7 @@ export type ArchiveResult =
  * that's live in a TUI is refused (it would stay on top anyway); unarchiving always works.
  */
 export async function archiveSession(path: string, archived: boolean): Promise<ArchiveResult> {
-  const s = await getSessionSummary(path);
+  const s = await getSessionSummary(path, await windowResolver());
   if (!s) return { ok: false, status: 404, error: "Session file not found" };
   if (archived && s.live) {
     return { ok: false, status: 409, error: "This session is open in a TUI, so it stays on top while live. Nothing was archived." };

@@ -1,7 +1,7 @@
 # pi-web
 
 A local web app for the [pi coding agent](https://pi.dev) (`@earendil-works/pi-coding-agent`,
-pinned **0.85.1**), plus the pi configuration and extensions it runs with. The app lists every pi
+pinned **0.86.1**), plus the pi configuration and extensions it runs with. The app lists every pi
 session on the machine, shows transcripts, chats in sessions it owns, live-watches sessions open in
 a pi TUI (read-only), and spawns new sessions. It is for one local user.
 
@@ -29,13 +29,13 @@ the `pi-sessions` CLI also need Node's built-in TypeScript stripping). This mach
 # 1. Node and pi. Keep pi on the pinned version: pi loads the pi-config extensions and the
 #    extension tests resolve the globally installed package.
 mise use -g node@25.2.1
-npm install -g @earendil-works/pi-coding-agent@0.85.1
+npm install -g @earendil-works/pi-coding-agent@0.86.1
 
 # 2. This repo
 gh auth login                       # private repo; the token is kept in the OS keyring
 gh repo clone Naomarik/pi-web ~/webapps/pi-web
 cd ~/webapps/pi-web
-npm install                         # the server embeds its own pi 0.85.1 from node_modules
+npm install                         # the server embeds its own pi 0.86.1 from node_modules
 
 # 3. pi config and extensions -> ~/.pi/agent (and pi-sessions -> ~/.local/bin, which must be on PATH)
 pi-config/install.sh

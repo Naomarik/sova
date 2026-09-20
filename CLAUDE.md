@@ -1,6 +1,6 @@
 # pi-web
 
-Webapp interface for the pi coding agent (npm: `@earendil-works/pi-coding-agent`, pinned **0.86.0**).
+Webapp interface for the pi coding agent (npm: `@earendil-works/pi-coding-agent`, pinned **0.86.1**).
 Single local user. Goals: list all sessions, view transcripts, chat in webapp-owned sessions,
 live-watch sessions that are open in the CLI/TUI, spawn new sessions.
 
@@ -82,7 +82,7 @@ The split is deterministic, and it reproduces the original pi-config commit hash
 `git filter-repo --to-subdirectory-filter`), so pushes fast-forward. Never use `--force`. If a push is
 rejected, pi-web history under `pi-config/` was rewritten, and that needs a look first. Keep anything the mirror needs, such as README/LICENSE/install.sh, inside `pi-config/`.
 
-## pi SDK facts (verified against the installed package)
+## pi SDK facts (verified against the installed package, 0.86.1)
 
 Pi package on disk: `/home/user/.local/share/mise/installs/node/25.2.1/lib/node_modules/@earendil-works/pi-coding-agent/`
 (docs/ and examples/sdk/ there are authoritative — read them, not your memory).
@@ -110,7 +110,7 @@ TS strict, ESM, no new dependencies without asking. Server normalizes JSONL entr
 `TranscriptItem`; frontend renders those, and renders live streaming from the raw passthrough events.
 Frontend is SolidJS (NOT React): signals/stores, `<For>/<Show>`, `onCleanup` for WS teardown.
 
-## Backend notes (SDK surprises, pi 0.86.0)
+## Backend notes (SDK surprises, pi 0.86.1)
 
 - `SessionManager.open(path)` is NOT read-only: `loadEntriesFromFile` appends `"\n"` to a trailing
   partial line (`dist/core/session-manager.js:322`) and `_rewriteFile()` (`:709`) rewrites the whole
@@ -165,7 +165,7 @@ Frontend is SolidJS (NOT React): signals/stores, `<For>/<Show>`, `onCleanup` for
   construction (empty sessions, or no thinking entry on the branch — `dist/core/sdk.js:260-272`,
   unchanged from 0.85.1). `openSession` defers those two
   appends and replays them right before the first prompt/steer; a never-prompted session stays untouched.
-- Images: 0.86.0 `ImageContent` is still `{type:"image", data, mimeType}` (pi-ai `dist/types.d.ts:256`)
+- Images: 0.86.1 `ImageContent` is still `{type:"image", data, mimeType}` (pi-ai `dist/types.d.ts:256`)
   for prompt/steer/followUp AND storage
   (sdk.md's `source:{type:"base64"}` example is stale). Model favorites come READ-ONLY from the
   command-palette's `~/.pi/agent/model-favorites.json` (`{version:1, models:[{provider,id}]}`).

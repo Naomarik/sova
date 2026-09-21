@@ -305,8 +305,11 @@ export interface UploadResult {
 //                                  GROUP_LABEL_MAX characters after trimming; 404 unknown group)
 // DELETE /api/session-groups/:id -> { ok: true }   (deletes the group and its assignments; the
 //                                  sessions themselves are untouched. 404 unknown)
-// POST /api/session-groups/assign { path, groupId: string | null, label?: string | null } -> { ok: true }
-//                                  (puts one session in a group, or takes it out with null. `label` sets the
+// POST /api/session-groups/assign { path, groupId: string | null, label?: string | null } -> AssignGroupResult
+//                                  (puts one session in a group, or takes it out with null. When this write
+//                                  removes the LAST member of a group carrying `seed` (one pi-web fanned out),
+//                                  that group is deleted in the same atomic write and the response carries
+//                                  dissolved: true. A hand-made group is left standing empty. `label` sets the
 //                                  session's label in the group it lands in, `null` clears it, and omitting it
 //                                  keeps the label it already had — a session moved between groups keeps its
 //                                  metadata. 400 bad body/path or a label over GROUP_LABEL_MAX, 404 session
@@ -455,6 +458,18 @@ export interface SessionGroup {
       missing from it are appended in id order) — and it is optional in the type only because an
       older server, or a hand-written store file, may not carry it. */
   members?: GroupMember[];
+}
+
+/** 200 body of POST /api/session-groups/assign. Additive: a client that only reads `ok` is
+    unaffected. */
+export interface AssignGroupResult {
+  ok: true;
+  /** The assign emptied a fanout group (one carrying `seed`) and the server deleted it in the SAME
+      write, per spec/14-workspaces.md §14 "Emptying a group". Absent otherwise — a hand-made group
+      stands empty, because its name is the user's work. The client toasts "Dissolved “{name}”",
+      leaves the workspace route and refetches the list. Archive cleanup can also empty a group and
+      deliberately does NOT dissolve one: no client is listening to that call. */
+  dissolved?: true;
 }
 
 /** Why one member of a group batch prompt cannot be prompted right now

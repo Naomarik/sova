@@ -361,3 +361,87 @@ test("a store we create ourselves is version 1 with nothing extra", () => {
   assert.deepEqual(Object.keys(raw).sort(), ["assignments", "groups", "version"]);
   assert.equal(raw.version, 1);
 });
+
+// --- auto-dissolve of a fanout group (spec/14 "Emptying a group") ---------------------------
+// `seed` is written by the fanout stage and isn't a typed field yet; the store carries unknown
+// keys through, so these tests write one the way a newer build would.
+
+const SEED = { parentSessionPath: "/s/root.jsonl", leafId: "e9" };
+
+test("unassigning the last member of a fanout group dissolves it, and says so", () => {
+  reset({
+    version: 1,
+    groups: [{ id: "g1", name: "Fanout", createdAt: "2026-01-01T00:00:00.000Z", seed: SEED, members: [{ id: "a" }] }],
+    assignments: { a: "g1" },
+  });
+  assert.deepEqual(assignSession("a", null), { ok: true, dissolved: true });
+  assert.deepEqual(readGroups(), []);
+  assert.deepEqual(readAssignments(), {});
+});
+
+test("moving the last member OUT of a fanout group dissolves it too", () => {
+  reset({
+    version: 1,
+    groups: [
+      { id: "g1", name: "Fanout", createdAt: "2026-01-01T00:00:00.000Z", seed: SEED, members: [{ id: "a", label: "opus" }] },
+      { id: "g2", name: "Hand-made", createdAt: "2026-01-01T00:00:00.000Z" },
+    ],
+    assignments: { a: "g1" },
+  });
+  assert.deepEqual(assignSession("a", "g2"), { ok: true, dissolved: true });
+  assert.deepEqual(readGroups().map((g) => g.id), ["g2"]);
+  assert.deepEqual(membersOf("g2"), [{ id: "a", label: "opus" }], "the member arrives with its label");
+});
+
+test("a fanout group with members left is not dissolved", () => {
+  reset({
+    version: 1,
+    groups: [{ id: "g1", name: "Fanout", createdAt: "2026-01-01T00:00:00.000Z", seed: SEED }],
+    assignments: { a: "g1", b: "g1" },
+  });
+  assert.deepEqual(assignSession("a", null), { ok: true });
+  assert.deepEqual(readGroups().map((g) => g.id), ["g1"]);
+  assert.deepEqual(membersOf("g1"), [{ id: "b" }]);
+});
+
+test("a HAND-MADE group stands empty: no seed, no dissolve", () => {
+  reset({
+    version: 1,
+    groups: [{ id: "g1", name: "Work", createdAt: "2026-01-01T00:00:00.000Z", members: [{ id: "a" }] }],
+    assignments: { a: "g1" },
+  });
+  assert.deepEqual(assignSession("a", null), { ok: true }, "no dissolved flag");
+  assert.deepEqual(readGroups().map((g) => g.name), ["Work"], "the group the user named is still there");
+  assert.deepEqual(membersOf("g1"), []);
+});
+
+test("re-assigning the only member to the same fanout group does not dissolve it", () => {
+  reset({
+    version: 1,
+    groups: [{ id: "g1", name: "Fanout", createdAt: "2026-01-01T00:00:00.000Z", seed: SEED, members: [{ id: "a" }] }],
+    assignments: { a: "g1" },
+  });
+  assert.deepEqual(assignSession("a", "g1", "sonnet ×2"), { ok: true });
+  assert.deepEqual(membersOf("g1"), [{ id: "a", label: "sonnet ×2" }]);
+});
+
+test("a malformed seed is not a fanout group", () => {
+  reset({
+    version: 1,
+    groups: [{ id: "g1", name: "Fanout", createdAt: "2026-01-01T00:00:00.000Z", seed: "yes", members: [{ id: "a" }] }],
+    assignments: { a: "g1" },
+  });
+  assert.deepEqual(assignSession("a", null), { ok: true });
+  assert.deepEqual(readGroups().map((g) => g.id), ["g1"]);
+});
+
+test("archive cleanup empties a fanout group WITHOUT dissolving it (deliberate, documented)", () => {
+  reset({
+    version: 1,
+    groups: [{ id: "g1", name: "Fanout", createdAt: "2026-01-01T00:00:00.000Z", seed: SEED, members: [{ id: "a" }] }],
+    assignments: { a: "g1" },
+  });
+  dropGroupAssignments(["a"]);
+  assert.deepEqual(readGroups().map((g) => g.id), ["g1"], "no client is listening to that call");
+  assert.deepEqual(membersOf("g1"), []);
+});

@@ -264,7 +264,40 @@ export function deleteGroup(id: string): boolean {
   });
 }
 
-export type AssignResult = { ok: true } | { ok: false; status: 400 | 404; error: string };
+export type AssignResult = { ok: true; dissolved?: true } | { ok: false; status: 400 | 404; error: string };
+
+/**
+ * A group pi-web fanned out, recognised by the `seed` the fanout stage writes on it. The field is
+ * not typed here yet (it lands with that stage), but the store already carries keys this build
+ * doesn't know (see passThrough), so a `seed` written by a newer build is visible to this check
+ * today — and with nothing writing one, the rule below simply never fires.
+ */
+function isFanoutGroup(group: StoredGroup): boolean {
+  return isObj((group as unknown as { seed?: unknown }).seed);
+}
+
+/**
+ * Spec §14 "Emptying a group": a group pi-web fanned out exists to hold that fanout, so the write
+ * that removes its last member removes the group too — in the SAME atomic write, so the store is
+ * never briefly a fanout group with nothing in it. A hand-made group is left standing: its name is
+ * the user's work, and §2 already specs an empty one as a real state.
+ *
+ * Deliberately only here, on the assign gesture. Archive cleanup can also empty a group (by
+ * deleting its last member's session file) and does NOT dissolve one: nobody is listening to that
+ * call, and a bulk delete quietly removing a group as a side effect needs its own decision.
+ *
+ * Returns whether it dissolved, so the caller can tell the client the group it was viewing is gone.
+ */
+function dissolveIfEmptied(store: Store, groupId: string | null): boolean {
+  if (!groupId) return false;
+  const at = store.groups.findIndex((g) => g.id === groupId);
+  if (at < 0) return false;
+  const group = store.groups[at]!;
+  if (!isFanoutGroup(group)) return false;
+  if (Object.values(store.assignments).includes(groupId)) return false; // still has members
+  store.groups.splice(at, 1);
+  return true;
+}
 
 /**
  * POST /api/session-groups/assign: one session, at most one group (`null` takes it out of the one
@@ -279,6 +312,7 @@ export function assignSession(sessionId: string, groupId: string | null, label?:
     // must write it back unchanged.
     const group = groupId === null ? null : store.groups.find((g) => g.id === groupId);
     if (groupId !== null && !group) return { ok: false, status: 404, error: "Group not found" };
+    const from = store.assignments[sessionId] ?? null; // the group this session is leaving, if any
     let carried: string | undefined;
     for (const g of store.groups) {
       const at = g.members.findIndex((m) => m.id === sessionId);
@@ -288,12 +322,13 @@ export function assignSession(sessionId: string, groupId: string | null, label?:
     }
     if (!group) {
       delete store.assignments[sessionId];
-      return { ok: true };
+      return { ok: true, ...(dissolveIfEmptied(store, from) ? { dissolved: true as const } : {}) };
     }
     const kept = label === undefined ? carried : (label ?? undefined);
     group.members.push({ id: sessionId, ...(kept ? { label: kept } : {}) });
     store.assignments[sessionId] = group.id;
-    return { ok: true };
+    // A move out of a fanout group empties it just as surely as an unassign does.
+    return { ok: true, ...(dissolveIfEmptied(store, from) ? { dissolved: true as const } : {}) };
   });
 }
 

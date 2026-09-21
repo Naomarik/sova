@@ -196,7 +196,8 @@ app.post("/api/session-groups/assign", async (c) => {
   if (!path) return c.json({ error: "Invalid or missing path (must be a .jsonl under the pi sessions dir)" }, 400);
   if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
   const r = assignSession(idOf(path), body.groupId, label.label);
-  return r.ok ? c.json({ ok: true }) : c.json({ error: r.error }, r.status);
+  // dissolved is set only when this write emptied a fanout group, which the server then deleted.
+  return r.ok ? c.json({ ok: true, ...(r.dissolved ? { dissolved: true } : {}) }) : c.json({ error: r.error }, r.status);
 });
 
 // The group workspace's shared follow-up: one request, N sessions, all-or-nothing (spec §14).

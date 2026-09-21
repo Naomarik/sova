@@ -180,6 +180,8 @@ export class ClaudeRunner implements Worker {
 	private pipeDrainTimer?: ReturnType<typeof setTimeout>;
 	private stopping = false;
 	private initialized = false;
+	/** The configured MCP servers were checked against an init event; every turn re-emits one. */
+	private mcpChecked = false;
 	private initialOwed = true;
 	/** Protocol settlement and host-visible idle notification are distinct. */
 	private notificationPending = true;
@@ -455,7 +457,10 @@ export class ClaudeRunner implements Worker {
 			if (this.sessionId && this.sessionId !== e.session_id) { this.fail("Claude session identity changed unexpectedly"); return; }
 			this.sessionId = e.session_id;
 		}
-		if (e.type === "system" && e.subtype === "init" && typeof e.model === "string") this.model = e.model;
+		if (e.type === "system" && e.subtype === "init") {
+			if (typeof e.model === "string") this.model = e.model;
+			if (!this.mcpChecked && !this.checkMcpServers(e)) return;
+		}
 		// Adopt mode: Claude echoes each user message it accepted (--replay-user-messages).
 		// One this runner did not send is the earlier manager's task; take it over.
 		if (this.options.adopt && !this.active && !this.stopping && e.type === "user" && e.isReplay === true && typeof e.uuid === "string") {
@@ -786,6 +791,31 @@ export class ClaudeRunner implements Worker {
 		void this.shutdown(); return this.whenClosed;
 	}
 	dispose(): Promise<void> { return this.kill("session shutdown"); }
+	/**
+	 * A server that does not connect is not an error to Claude: it reports `status: "failed"` in
+	 * its init event, says nothing on stderr, and runs the turn anyway — with `--tools ""` that
+	 * leaves a worker with no tools at all, which looks like a worker that simply invents its
+	 * answers. Checked once, on the first init event; a later turn's init repeats it.
+	 * Returns false when the worker was failed.
+	 */
+	private checkMcpServers(event: any): boolean {
+		const configured = Object.keys(this.options.mcpServers ?? {});
+		if (!configured.length) return true;
+		this.mcpChecked = true;
+		const reported = new Map<string, string>();
+		if (Array.isArray(event.mcp_servers)) {
+			for (const server of event.mcp_servers) {
+				if (server && typeof server.name === "string") reported.set(server.name, typeof server.status === "string" ? server.status : "unknown");
+			}
+		}
+		for (const name of configured) {
+			const status = reported.get(name);
+			if (status === "connected") continue;
+			this.fail(`MCP server "${name}" did not connect (status ${status ?? "missing"}); the worker would run without its tools`);
+			return false;
+		}
+		return true;
+	}
 	private fail(message: string): void {
 		if (this.closed || this.stopping) return;
 		this.error = this.clip(message); this.status = "error"; this.stopping = true;

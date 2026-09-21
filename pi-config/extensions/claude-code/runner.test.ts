@@ -840,6 +840,47 @@ test("env reaches Claude's own process, wins over the inherited value, and fails
 	}
 });
 
+test("an MCP server that does not connect fails the worker instead of leaving it toolless", { skip: process.platform === "win32" }, async (t) => {
+	const { mkdtempSync, rmSync } = await import("node:fs");
+	const { tmpdir } = await import("node:os");
+	const { join } = await import("node:path");
+	const tmp = mkdtempSync(join(tmpdir(), "claude-mcp-test-")); t.after(() => rmSync(tmp, { recursive: true, force: true }));
+	const mcpServers = { team: { command: "/usr/bin/node", args: ["/srv/member-mcp.ts"] }, remote: { command: "/usr/bin/node", args: ["/srv/mcp-server.ts"] } };
+	const init = (servers: { name: string; status: string }[]) => ({ type: "system", subtype: "init", session_id: "session-1", model: "claude-x", tools: [], mcp_servers: servers });
+
+	// Claude reports a failed server in its init event, says nothing on stderr, and would run the
+	// turn anyway — with tools: [] that is a worker with no tools at all.
+	const failed = fixture({ mcpServers, tools: [], tmpDir: tmp }); cleanup(t, failed);
+	await tick(); failed.child.ack(); await tick();
+	failed.child.out(init([{ name: "team", status: "connected" }, { name: "remote", status: "failed" }]));
+	await tick();
+	assert.match(failed.runner.error!, /MCP server "remote" did not connect \(status failed\); the worker would run without its tools/);
+	assert.equal(failed.runner.status, "error");
+
+	// A server missing from the report entirely is the same failure.
+	const absent = fixture({ mcpServers, tools: [], tmpDir: tmp }); cleanup(t, absent);
+	await tick(); absent.child.ack(); await tick();
+	absent.child.out(init([{ name: "team", status: "connected" }]));
+	await tick();
+	assert.match(absent.runner.error!, /MCP server "remote" did not connect \(status missing\)/);
+
+	// All connected: nothing changes, the task is dispatched and the model is still read.
+	const ok = fixture({ mcpServers, tools: [], tmpDir: tmp }); cleanup(t, ok);
+	await tick(); ok.child.ack(); await tick();
+	ok.child.out(init([{ name: "team", status: "connected" }, { name: "remote", status: "connected" }]));
+	await tick();
+	assert.equal(ok.runner.error, undefined);
+	assert.equal(ok.runner.model, "claude-x");
+	assert.equal(ok.child.users().length, 1, "the task was dispatched");
+
+	// Without configured servers the event is not policed at all.
+	const none = fixture({ tools: [], tmpDir: tmp }); cleanup(t, none);
+	await tick(); none.child.ack(); await tick();
+	none.child.out(init([]));
+	await tick();
+	assert.equal(none.runner.error, undefined);
+});
+
 test("mcpServers that cannot be written verbatim fail closed before launch", async (t) => {
 	const { mkdtempSync, readdirSync, rmSync } = await import("node:fs");
 	const { tmpdir } = await import("node:os");

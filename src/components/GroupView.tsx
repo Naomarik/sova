@@ -755,13 +755,12 @@ function PaneMenu(props: {
   };
   const openMenu = () => {
     const r = trigger.getBoundingClientRect();
-    // Same anchoring as the group menu, and inline for the same reason: `.model-menu`'s
-    // `inset: auto; top: var(--menu-top)` is declared after any class that would move it.
-    const up = innerHeight - r.bottom < 320;
+    // A pane menu sits low in a tall window as often as the session tab does: same upward anchor,
+    // same class, now that base.css's compound selector makes the class enough on its own.
+    menu.classList.toggle("group-menu-up", innerHeight - r.bottom < 320);
     menu.style.setProperty("--menu-top", `${Math.round(r.bottom + 4)}px`);
     menu.style.setProperty("--menu-right", `${Math.max(0, Math.round(innerWidth - r.right))}px`);
-    menu.style.top = up ? "auto" : "";
-    menu.style.bottom = up ? `${Math.round(innerHeight - r.top + 4)}px` : "";
+    menu.style.setProperty("--menu-bottom", `${Math.round(innerHeight - r.top + 4)}px`);
     menu.showPopover();
     queueMicrotask(() => menu.querySelector<HTMLElement>("[role=menuitem]")?.focus());
   };
@@ -929,8 +928,6 @@ function AddMembers(props: {
     const r = trigger.getBoundingClientRect();
     menu.style.setProperty("--menu-top", `${Math.round(r.bottom + 4)}px`);
     menu.style.setProperty("--menu-right", `${Math.max(0, Math.round(innerWidth - r.right))}px`);
-    menu.style.top = "";
-    menu.style.bottom = "";
     setQuery("");
     menu.showPopover();
     queueMicrotask(() => menu.querySelector<HTMLInputElement>("input")?.focus());

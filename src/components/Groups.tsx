@@ -197,15 +197,13 @@ export function MoveToGroupMenu(props: {
     const r = trigger.getBoundingClientRect();
     menu.style.setProperty("--menu-right", `${Math.max(0, Math.round(innerWidth - r.right))}px`);
     // The Session tab's own controls sit near the bottom of a tall window: with no room for the
-    // list below the trigger, the menu anchors above it instead (base.css `.group-menu-up`).
-    // That class can't do it on its own — `.model-menu`'s `inset: auto; top: var(--menu-top)` is
-    // declared after it at the same specificity and wins — so the upward anchor is set inline.
-    // Only above the sheet band: under it the sheet rules own the position, and inline wins there.
-    const up = innerHeight - r.bottom < 320 && innerWidth >= 768;
-    menu.classList.toggle("group-menu-up", up);
-    menu.style.top = up ? "auto" : "";
-    menu.style.bottom = up ? `${Math.round(innerHeight - r.top + 4)}px` : "";
+    // list below the trigger, the menu anchors above it instead (base.css `.model-menu.group-menu-up`,
+    // which is compound so it wins the cascade). Both custom properties are always set; the class
+    // and the media query decide which one applies, so the sheet band keeps owning the position
+    // under 768px.
+    menu.classList.toggle("group-menu-up", innerHeight - r.bottom < 320);
     menu.style.setProperty("--menu-top", `${Math.round(r.bottom + 4)}px`);
+    menu.style.setProperty("--menu-bottom", `${Math.round(innerHeight - r.top + 4)}px`);
     closedByChoice = false;
     tabbedAway = false;
     setError(null);

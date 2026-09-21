@@ -28,7 +28,7 @@ import { usageTotal, type UsageTotalView, workingSplit } from "../lib/workers";
 import { patchTarget } from "./RemoteStatus";
 import type { UploadResult } from "../../shared/protocol";
 import { drafts, hideThinking, hideTools, sessionContext, setDraftText, setLocalRunning, setSessionContext, toast } from "../lib/ui-state";
-import { usePaneAnnounce, usePaneId } from "../lib/pane-scope";
+import { usePaneAnnounce, usePaneId, usePaneScope } from "../lib/pane-scope";
 import { visibleCount } from "../lib/hidden-rows";
 import { inputCount } from "../lib/input-count";
 import type { RewindControl, RewindResult } from "../lib/inputs";
@@ -104,6 +104,7 @@ export function ChatView(props: {
   // One status region for the whole page: inside a workspace every sentence from this chat says
   // which pane it came from, and every DOM id below carries the pane's id.
   const announce = usePaneAnnounce();
+  const scope = usePaneScope();
   const paneId = usePaneId();
 
   const [items, setItems] = createSignal<TranscriptItem[] | null>(null);
@@ -450,7 +451,18 @@ export function ChatView(props: {
     setDialogs((d) => d.filter((x) => x.id !== id));
   };
 
+  /**
+   * Archiving IS the close gesture: the server disposes the held runtime, so this socket closes
+   * from the server side moments after Eliminate. Inside a workspace that close is EXPECTED, and
+   * the pane says the one true thing about it — the session is archived — instead of the
+   * disconnected banner and "Not connected." the single-session view would show for the same
+   * event (spec/14-workspaces.md "Member states"). An eliminated member stays readable, which is
+   * what makes elimination reversible.
+   */
+  const archivedPane = () => !!scope.id && !!props.summary?.()?.archived;
+
   const blocked = (): ComposerReason | null => {
+    if (archivedPane()) return { icon: "archive", text: "This session is archived. Unarchive it to send." };
     switch (socket.status()) {
       case "connecting":
         return everOpened() ? { icon: "clock", text: "Reconnecting. Your draft is kept." } : { icon: "clock", text: "Connecting…" };
@@ -679,7 +691,9 @@ export function ChatView(props: {
         busy={!items()}
         banner={
           <div class="stack-2">
-            <ConnectionBanner socket={socket} />
+            <Show when={!archivedPane()}>
+              <ConnectionBanner socket={socket} />
+            </Show>
             {/* Permanent until the world it names changes: the diagnosis and the gestures that
                 fix it, derived in src/lib/open-failure.ts (spec/01-app-shell.md "The open-failure
                 banner"). The first action is the primary one; a failed Mount keeps its real

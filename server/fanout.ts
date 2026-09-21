@@ -50,7 +50,10 @@ export interface FanoutDeps {
       Shape check first (no syscall), then the FULL resolve, because fanout OPENS this file —
       sessionPathShape contains by string only (server/paths.ts). */
   resolveSource(raw: string): string | null;
-  /** Header version and the id of the file's last entry (its leaf), or null when unreadable. */
+  /** The header's version, and the source's LEAF — the last entry its transcript RENDERS on the
+      ACTIVE branch, which is what the dialog showed and so the only thing `source.leafId` can be
+      compared against. NOT the file's last entry: after a rewind the file's tail is the abandoned
+      branch (see renderedActiveLeaf). null when the file is unreadable. */
   sourceHead(path: string): Promise<{ version: number; leafId: string | null } | null>;
   live(path: string): boolean;
   streaming(path: string): boolean;

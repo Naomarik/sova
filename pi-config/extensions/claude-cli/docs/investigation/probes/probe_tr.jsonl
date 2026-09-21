@@ -1,0 +1,4 @@
+{"type":"user","message":{"role":"user","content":[{"type":"text","text":"Look up the mascot."}]}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_01AAAAAAAAAAAAAAAAAAAAAA","name":"lookup_mascot","input":{"project":"pi"}}]}}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_01AAAAAAAAAAAAAAAAAAAAAA","content":"platypus named Doris"}]}}
+{"type":"user","message":{"role":"user","content":[{"type":"text","text":"Based on the tool result above, what animal is the mascot and its name? One sentence, or UNKNOWN."}]}}

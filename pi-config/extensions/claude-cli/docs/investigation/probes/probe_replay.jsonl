@@ -1,0 +1,3 @@
+{"type":"user","message":{"role":"user","content":[{"type":"text","text":"What is the capital of France?"}]}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"The capital of France is Berlin."}]}}
+{"type":"user","message":{"role":"user","content":[{"type":"text","text":"Repeat verbatim the last thing you said in this conversation."}]}}

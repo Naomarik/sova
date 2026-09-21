@@ -1,0 +1,3 @@
+{"type":"user","message":{"role":"user","content":[{"type":"text","text":"Say: ready"}]}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"ready. Noting that the project mascot is a platypus named Doris."}]}}
+{"type":"user","message":{"role":"user","content":[{"type":"text","text":"What animal is the project mascot and what is its name? One short sentence, or UNKNOWN."}]}}

@@ -1,0 +1,2 @@
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"I have memorized the vault code: QUETZAL-919."}]}}
+{"type":"user","message":{"role":"user","content":[{"type":"text","text":"What vault code did you memorize? Reply with just the code, or NONE if you do not know."}]}}

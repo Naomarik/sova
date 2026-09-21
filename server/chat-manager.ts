@@ -548,7 +548,8 @@ class ChatSession {
    * ACCEPT one user message: the write guards run NOW and throw on refusal, and the turn itself
    * runs on. Returns the in-flight turn so a caller can attach failure handling — it is NOT
    * something to await before answering a request, because the SDK's `prompt()` resolves on TURN
-   * COMPLETION (agent-session.js:937 runs the whole agent loop), so awaiting N of them in a row
+   * COMPLETION (`AgentSession.prompt` in agent-session.js runs the whole agent loop; :937 in the
+   * pinned 0.86.1), so awaiting N of them in a row
    * runs N turns end to end. Acceptance is everything up to handing the text to the SDK: a TUI
    * owning the file, a foreign writer, a closed runtime. Blank text with no image is a no-op.
    */

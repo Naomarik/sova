@@ -327,7 +327,8 @@ async function readHead(path: string): Promise<{ header: any; title: string | nu
 
 /**
  * The header's `parentSession` — the file a branched session was forked from (SessionHeader,
- * `dist/core/session-manager.d.ts:11`) — as the canonical path AND the session id the group store
+ * `SessionHeader.parentSession` in dist/core/session-manager.d.ts) — as the canonical path AND
+ * the session id the group store
  * keys on, and only while that file is still there: a fork marker that points at a deleted
  * transcript is worse than none. sessionPathShape is what keeps this safe as well as honest: it
  * is pure string work — no syscall — and it only ever yields a .jsonl inside the (always local)

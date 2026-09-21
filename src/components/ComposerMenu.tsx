@@ -90,6 +90,11 @@ export function ComposerMenu(props: {
   thinking?: ThinkingControl | null;
   /** Opens the per-session info modal (§4h). */
   onShowInfo?: () => void;
+  /** Chat sessions with a reply: "Fan Out…" (§14b). Absent otherwise — a watch view holds no
+      runtime, a TUI-live session is never touched, and a session with no reply has nothing to
+      fork; §9 is explicit that the row is absent rather than disabled, because an absence needs
+      no explanation and a disabled row invites a question with no answer. */
+  onFanOut?: () => void;
   /** Chat sessions only: "Undo last turn", a two-step row (the first click arms it). */
   undo?: UndoControl | null;
   /** Puts focus back in the textarea after a choice. */
@@ -175,6 +180,19 @@ export function ComposerMenu(props: {
         run: () => {
           close(true);
           props.onShowInfo?.();
+        },
+      });
+    if (props.onFanOut)
+      out.push({
+        id: "fanout",
+        role: "menuitem",
+        icon: "worker",
+        label: "Fan Out…",
+        title: "Fork this session N ways and compare the answers",
+        disabled: false,
+        run: () => {
+          close(true);
+          props.onFanOut?.();
         },
       });
     // Last, after its own separator: the only row here that changes the session.
@@ -458,9 +476,13 @@ export function ComposerMenu(props: {
           <Match when={panel() === "menu"}>
             <div class="model-menu-list composer-flyout-list" role="menu" aria-label="More actions" onKeyDown={onListKeyDown}>
               <Index each={pick((r) => r.id === "attach" || r.id === "commands")}>{(x) => <Item r={x().r} index={x().index} />}</Index>
-              <Show when={pick((r) => r.id.startsWith("hide-") || r.id === "info").length > 0}>
+              {/* The rows are picked by id, so a row that matches no section is built and never
+                  rendered: "Fan Out…" belongs to this one, after Session info (§14b). */}
+              <Show when={pick((r) => r.id.startsWith("hide-") || r.id === "info" || r.id === "fanout").length > 0}>
                 <div class="composer-flyout-sep" role="separator" />
-                <Index each={pick((r) => r.id.startsWith("hide-") || r.id === "info")}>{(x) => <Item r={x().r} index={x().index} />}</Index>
+                <Index each={pick((r) => r.id.startsWith("hide-") || r.id === "info" || r.id === "fanout")}>
+                  {(x) => <Item r={x().r} index={x().index} />}
+                </Index>
               </Show>
               <Show when={pick((r) => r.id === "undo").length > 0}>
                 <div class="composer-flyout-sep" role="separator" />

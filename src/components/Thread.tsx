@@ -5,7 +5,7 @@ import { prettyJson, shortModel, stampTime, thousands, tildePath } from "../lib/
 import { isObj, str, timestampOf, toolCallArgs, toolResultView } from "../lib/message";
 import { stripPastedPaths } from "../lib/path-attachments";
 import { home } from "../lib/ui-state";
-import { registerTranscript } from "../lib/jump";
+import { entryIdOf, registerTranscript } from "../lib/jump";
 import { usePaneId } from "../lib/pane-scope";
 import { isHiddenBlock, liveHiddenCounts, splitHidden, thinkingHiddenLabel, toolsHiddenLabel } from "../lib/hidden-rows";
 import { isTurnStart } from "../lib/turn";
@@ -233,6 +233,10 @@ export function HistoryItems(props: {
   hideThinking?: boolean;
   /** Index from which a call without a result may still be running; after the last user row by default. */
   openFrom?: number;
+  /** The fork point of a fanout member (spec/14b): one drawn row, right after the entry the
+      branch was taken from. Nothing is written to the file for it — the client draws it from the
+      group's `seed`, and a member whose branch no longer holds that entry simply has no row. */
+  fork?: ForkMarker;
 }) {
   const split = createMemo(() =>
     props.hideTools || props.hideThinking ? splitHidden(props.items, { tools: !!props.hideTools, thinking: !!props.hideThinking }) : null,
@@ -256,6 +260,21 @@ export function HistoryItems(props: {
     return -1;
   });
   const openFrom = () => props.openFrom ?? lastUserIndex() + 1;
+  /**
+   * Which rendered row the fork marker follows: the LAST row belonging to the forked entry. An
+   * assistant message renders one row per content block, all sharing an entry id, so matching on
+   * the row id alone would draw the marker between a reply's own paragraphs — and matching the
+   * first block would put it before the rest of the message it says is shared.
+   */
+  const forkAfter = createMemo(() => {
+    const entryId = props.fork?.entryId;
+    if (!entryId) return -1;
+    let at = -1;
+    rows().forEach((item, i) => {
+      if (entryIdOf(item.id) === entryId) at = i;
+    });
+    return at;
+  });
 
   return (
     <>
@@ -348,6 +367,9 @@ export function HistoryItems(props: {
                 </Show>
               </Match>
             </Switch>
+            {/* After the entry, not inside its blocks: above this row is shared with the source,
+                below it is this member's own. */}
+            <Show when={forkAfter() === index() && props.fork}>{(fork) => <ForkRow fork={fork()} />}</Show>
           </div>
         )}
       </For>
@@ -585,5 +607,38 @@ export function TranscriptSkeleton() {
       </div>
       <div class="skeleton skeleton-row skeleton-w60" />
     </Show>
+  );
+}
+
+/** Where a fanout member was branched from (spec/14b "The fork point in a transcript"). */
+export interface ForkMarker {
+  /** `seed.leafId`: the entry the fork was taken at. It exists with this id in the source AND in
+      every member, because branching copies entries without re-minting their ids. */
+  entryId: string;
+  /** The source session's title, and its path while the file is still there. */
+  title: string;
+  path: string | null;
+}
+
+/**
+ * The marker row: above it is shared with the source, below it is this member's own. A rendered
+ * row, never an entry — nothing is written into the session file for it, because the fact it
+ * states already lives in the group registry, and a written marker would need the write guards.
+ */
+function ForkRow(props: { fork: ForkMarker }) {
+  return (
+    <p class="info-row fork-marker" role="note">
+      <span class="icon icon-sm" style={{ "--icon": "url(/icons/branch.svg)" }} aria-hidden="true" />
+      <span class="info-row-text">
+        Forked from{" "}
+        <Show
+          when={props.fork.path}
+          fallback={<span title="This session is no longer on disk.">{props.fork.title}</span>}
+        >
+          {(path) => <a href={`#/s/${encodeURIComponent(path())}`}>{props.fork.title}</a>}
+        </Show>{" "}
+        here
+      </span>
+    </p>
   );
 }

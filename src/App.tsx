@@ -18,6 +18,7 @@ import { AgentsView } from "./components/AgentsView";
 import { NewSessionDialog } from "./components/NewSessionDialog";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { ExplainGrid } from "./components/ExplainGallery";
+import { FanoutDialog, type FanoutSource } from "./components/FanoutDialog";
 import { GroupView, paneIdFor, workspaceFocus, type PaneWiring } from "./components/GroupView";
 import { SessionPane, type PaneInsight, type TabId } from "./components/SessionPane";
 import { SessionView } from "./components/SessionView";
@@ -254,6 +255,13 @@ export function App() {
 
   /** A session this tab just created opens for chat with its composer focused. */
   const [autofocusPath, setAutofocusPath] = createSignal<string | null>(null);
+  /**
+   * The fanout dialog, when it is open: `{}` with no source is a fresh-prompt fanout, and a
+   * `source` opens it on that session with Fork selected. It lives here rather than in the
+   * workspace because it can be opened from a session too, and it outlives the surface that
+   * opened it — the dialog stays up while the request is in flight.
+   */
+  const [fanout, setFanout] = createSignal<{ source?: FanoutSource } | null>(null);
 
   // At folded width, opening a session swaps the column: move focus to its title.
   let titleEl: HTMLHeadingElement | undefined;
@@ -413,6 +421,8 @@ export function App() {
     inputsOnly,
     subagentsPath,
     onNewSession: startNewFrom,
+    onFanOut: () => setFanout({}),
+    onFanOutFrom: (source) => setFanout({ source }),
   };
 
   return (
@@ -514,6 +524,7 @@ export function App() {
                       inputsOnly={wiring.inputsOnly}
                       subagentsPath={wiring.subagentsPath}
                       onNewSession={wiring.onNewSession}
+                      onFanOut={wiring.onFanOutFrom}
                     />
                   );
                 }}
@@ -601,6 +612,18 @@ export function App() {
             onCreated={adoptCreated}
           />
         </Portal>
+      </Show>
+      <Show when={fanout()}>
+        {(open) => (
+          <Portal>
+            <FanoutDialog
+              source={open().source}
+              sessions={list() ?? []}
+              onClose={() => setFanout(null)}
+              onCreated={refresh}
+            />
+          </Portal>
+        )}
       </Show>
       <Show when={settingsOpen()}>
         <Portal>

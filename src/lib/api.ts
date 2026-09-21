@@ -9,6 +9,8 @@ import type { FileIndex,
   AssignGroupResult,
   BatchPromptResult,
   BatchRefusal,
+  FanoutRequest,
+  FanoutResult,
   SessionGroup,
   SessionInsight,
   SessionSummary,
@@ -30,6 +32,12 @@ export type BatchOutcome =
   | { ok: false; refused: BatchRefusal[]; error?: undefined; status?: undefined }
   /** `status` so a caller can tell "the group changed under me" (400) from "the server is gone"
       (0) — the first is recoverable by re-reading the list, the second isn't. */
+  | { ok: false; error: string; status: number; refused?: undefined };
+
+/** What a fanout can come back as; the 409 is the route's answer, not an exception. */
+export type FanoutOutcome =
+  | { ok: true; result: FanoutResult }
+  | { ok: false; refused: BatchRefusal[]; error?: undefined; status?: undefined }
   | { ok: false; error: string; status: number; refused?: undefined };
 
 export class ApiError extends Error {
@@ -257,6 +265,31 @@ export async function promptSessionGroup(id: string, text: string, members?: str
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(members ? { text, members } : { text }),
+    });
+    return { ok: true, result };
+  } catch (err) {
+    const refused = err instanceof ApiError && err.status === 409 ? refusalsOf(err.body) : null;
+    if (refused) return { ok: false, refused };
+    return { ok: false, error: (err as Error).message, status: err instanceof ApiError ? err.status : 0 };
+  }
+}
+
+/**
+ * N sessions from one starting point, as one group (spec/14b-fanout.md "The route"). One write:
+ * the group, its members and their assignments land together, because a fanout that half-exists
+ * is a sidebar section the user has to clean up.
+ *
+ * Like the batch prompt, the refusal is a VALUE — a source that is mid-turn, TUI-live, in an older
+ * format or has moved on since the dialog opened comes back as a 409 with exactly one entry naming
+ * the SOURCE (which is a member of nothing, so its `id` is empty by design). A 201 can still carry
+ * `failed`: members that couldn't start, named by `ref` since they have no session.
+ */
+export async function createFanout(body: FanoutRequest): Promise<FanoutOutcome> {
+  try {
+    const result = await request<FanoutResult>("/api/session-groups/fanout", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
     });
     return { ok: true, result };
   } catch (err) {

@@ -104,6 +104,8 @@ export function Composer(props: {
   mode?: ModeControl | null;
   /** Opens this session's info modal from the flyout (§4h). */
   onShowInfo?: () => void;
+  /** "Fan Out…" in the flyout, for a chat session that can be forked (§14b). */
+  onFanOut?: () => void;
   /** Chat sessions only: the flyout's "Undo last turn" row. */
   undo?: UndoControl | null;
   /** `text` already names each attachment's path; `attachments` are for the optimistic row. */
@@ -801,6 +803,7 @@ export function Composer(props: {
             model={props.model}
             thinking={props.thinking}
             onShowInfo={props.onShowInfo}
+            onFanOut={props.onFanOut}
             undo={props.undo}
             onRefocus={() => input.focus()}
             onApi={setMenu}

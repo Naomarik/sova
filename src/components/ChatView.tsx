@@ -1,7 +1,7 @@
 import { batch, createEffect, createMemo, createSignal, For, Match, on, onCleanup, Show, Switch } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { Portal } from "solid-js/web";
-import type { ChatServerMessage, SessionSummary, SlashCommand, TeamInfo, TranscriptItem, WorkerInfo } from "../../shared/protocol";
+import type { ChatServerMessage, ContextInfo, SessionSummary, SlashCommand, TeamInfo, TranscriptItem, WorkerInfo } from "../../shared/protocol";
 import { fetchTranscriptWithContext, mountTarget, setSessionArchived, wsUrl } from "../lib/api";
 import { contextStateFor, usageTokens, windowOf } from "../lib/context";
 import { addPendingPrompt, applyEvent, emptyLive, runDetail, takeBackQueued, type LiveState } from "../lib/live";
@@ -33,13 +33,14 @@ import { visibleCount } from "../lib/hidden-rows";
 import { inputCount } from "../lib/input-count";
 import type { RewindControl, RewindResult } from "../lib/inputs";
 import { isTurnStart } from "../lib/turn";
+import { entryIdOf } from "../lib/jump";
 import { Composer, type ComposerReason } from "./Composer";
 import { FlyoutSession, type ThinkingControl, type UndoControl } from "./ComposerMenu";
 import { ConnectionBanner } from "./ConnectionBanner";
 import { SessionInfoDialog } from "./SessionInfoDialog";
 import type { ModeControl, ModeState } from "./ModeMenu";
 import type { ModelControl } from "./ModelMenu";
-import { HistoryItems, InfoRow, LiveEntries, ThreadScroller, TranscriptSkeleton, TurnError } from "./Thread";
+import { type ForkMarker, HistoryItems, InfoRow, LiveEntries, ThreadScroller, TranscriptSkeleton, TurnError } from "./Thread";
 import { Banner, Icon } from "./ui";
 import { UiDialog } from "./UiDialog";
 
@@ -100,6 +101,11 @@ export function ChatView(props: {
   onRewound?(info: { path: string; entryId: string }): void;
   /** This session's teams (polled insight), so the status row can name team members as such. */
   teams?: TeamInfo[];
+  /** Where this member was forked from, when it is one (spec/14b): one drawn row in the thread. */
+  fork?: ForkMarker;
+  /** Open the fanout dialog on this session. Absent (with the flyout row) when there is nothing
+      to fork or nobody who may read the file. */
+  onFanOut?(source: { leafId: string; messages: number; context: ContextInfo | null }): void;
 }) {
   // One status region for the whole page: inside a workspace every sentence from this chat says
   // which pane it came from, and every DOM id below carries the pane's id.
@@ -143,6 +149,34 @@ export function ChatView(props: {
   const [thinkingError, setThinkingError] = createSignal<{ target: string; from: string | null; body: string } | null>(null);
   /** The per-session info modal (§4h), opened from the composer flyout. */
   const [showInfo, setShowInfo] = createSignal(false);
+
+  /**
+   * "Fan Out…" in the flyout, and the source it hands over (spec/14b "Entry points").
+   *
+   * The leaf is the last entry THIS TRANSCRIPT RENDERS, which is the entry the user is looking at
+   * — and it is an ENTRY id, not a row id: an assistant message renders one row per content block
+   * (`${entryId}:${i}`), so the last row's own id is usually not something the server can match
+   * against the file. The server computes its side the same way (readActiveBranch + normalizeEntry,
+   * server/fanout.ts) and refuses a leaf that isn't current, so the two have to mean the same thing.
+   *
+   * The row is ABSENT rather than disabled with nothing to fork: no reply yet, or no items at all.
+   * §9 is explicit that an absence needs no explanation.
+   */
+  const fanOut = () => {
+    const list = items();
+    if (!props.onFanOut || !list || list.length === 0) return undefined;
+    if (!list.some((it) => it.kind === "assistant-text" || it.kind === "tool-call")) return undefined;
+    const leafId = entryIdOf(list[list.length - 1]!.id);
+    if (!leafId) return undefined;
+    return () => {
+      const state = sessionContext()[props.path];
+      props.onFanOut!({
+        leafId,
+        messages: list.length,
+        context: state && state !== "compacted" ? state : null,
+      });
+    };
+  };
   /** This session's slash commands (sent after hello, and again after a runtime reload). */
   const [commands, setCommands] = createSignal<SlashCommand[]>([]);
   /** The global mode and how it applies to this chat (WS "mode"). */
@@ -824,7 +858,7 @@ export function ChatView(props: {
         <Show when={items()} fallback={<TranscriptSkeleton />}>
           {(list) => (
             <>
-              <HistoryItems items={list()} author={props.author} streaming={live.running} hideTools={hideTools(props.path)} hideThinking={hideThinking(props.path)} />
+              <HistoryItems items={list()} author={props.author} streaming={live.running} hideTools={hideTools(props.path)} hideThinking={hideThinking(props.path)} fork={props.fork} />
               <LiveEntries live={live} author={props.author} hideTools={hideTools(props.path)} hideThinking={hideThinking(props.path)} />
               <For each={modelRows()}>
                 {(ref) => (
@@ -892,6 +926,7 @@ export function ChatView(props: {
         thinking={thinkingControl}
         mode={modeControl}
         onShowInfo={() => setShowInfo(true)}
+        onFanOut={fanOut()}
         undo={undoControl}
         onSend={send}
         onAbort={abort}

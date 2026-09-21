@@ -11,6 +11,18 @@ export const JUMP_CLASS = "entry-jumped";
 const escape = (id: string) => (typeof CSS !== "undefined" && CSS.escape ? CSS.escape(id) : id.replace(/["\\]/g, "\\$&"));
 
 /**
+ * The ENTRY id behind a rendered row's id. The thread gives an assistant message one item per
+ * content block, with ids `${entryId}:${blockIndex}` (plus `:stop`), so a row's id is frequently
+ * not an entry id at all. Anything that talks to the server about an entry — a fanout's
+ * `source.leafId`, which is compared against the file's own entry ids — has to send this, and
+ * anything matching a server-supplied entry id against rendered rows has to compare with it.
+ */
+export const entryIdOf = (rowId: string): string => {
+  const i = rowId.indexOf(":");
+  return i < 0 ? rowId : rowId.slice(0, i);
+};
+
+/**
  * The selectors to try, in order: the entry's own rows, then — for a block id like `<id>:2` —
  * the rows of the entry it came from. A transcript that shows the entry but not that block
  * still answers the jump.

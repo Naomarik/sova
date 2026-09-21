@@ -14,6 +14,8 @@ import { ContextGauge, ContextMetaPrefix, contextDescribedBy } from "./ContextGa
 import { InsightStrip } from "./InsightStrip";
 import { RemoteChip, RemoteHeadChip, RemoteMountedChip } from "./RemoteStatus";
 import type { PaneInsight, TabId } from "./SessionPane";
+import type { FanoutSource } from "./FanoutDialog";
+import type { ForkMarker } from "./Thread";
 import { WatchView } from "./WatchView";
 import { Banner, Chip, CountChip, Icon } from "./ui";
 
@@ -60,6 +62,8 @@ export function SessionView(props: {
   /** The user's word for this member inside its group (`GroupMember.label`), when it has one:
       the pane head shows it in place of the title, and it is what the pane is called to AT. */
   label?: () => string | null;
+  /** The group's fork point, for a member of a fanout: drawn in the thread, never written. */
+  fork?: ForkMarker;
   /** Leading control in the head (the single view's Back link, a pane's nothing). */
   lead?: JSX.Element;
   /** Trailing controls in the head: a pane's own menu. */
@@ -84,6 +88,8 @@ export function SessionView(props: {
   subagentsPath(): string | null;
   /** A bare "/new" in the composer: start a new session in this folder. */
   onNewSession(path: string): Promise<string | null>;
+  /** Open the fanout dialog on this session (the flyout's "Fan Out…"). */
+  onFanOut?(source: FanoutSource): void;
 }) {
   const path = props.path;
   const s = () => props.summary();
@@ -332,6 +338,7 @@ export function SessionView(props: {
                     workersSplit={split()}
                     onShowWorkers={() => props.toggleSubagents(path)}
                     workersOpen={props.paneOn(path, "agents")}
+                    fork={props.fork}
                     stateBanner={
                       <Switch>
                         <Match when={w().why === "recent"}>
@@ -402,6 +409,25 @@ export function SessionView(props: {
                       workersOpen={props.paneOn(path, "agents")}
                       onNewSession={() => props.onNewSession(path)}
                       teams={insight.data?.teams}
+                      fork={props.fork}
+                      onFanOut={
+                        // Never from a TUI-live session: pi-web doesn't touch a file a terminal
+                        // owns, and the leaf we can see isn't the one it is about to write, so the
+                        // fork would be from a stale point — a silently wrong comparison.
+                        props.onFanOut && !s().live
+                          ? (src) =>
+                              props.onFanOut!({
+                                session: s(),
+                                ...src,
+                                // Mid-turn is a state the dialog OPENS in: setting a fanout up
+                                // during the turn you are waiting on is the natural thing to do,
+                                // and it enables itself in place when the turn finishes.
+                                blocked: s().busy
+                                  ? `“${s().title}” is mid-turn. We read the file to fork it, and we don't read it while it's being written. This enables itself when the turn finishes.`
+                                  : null,
+                              })
+                          : undefined
+                      }
                     />
                   );
                 }}

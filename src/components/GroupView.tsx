@@ -28,12 +28,17 @@ import {
   tabLabels,
 } from "../lib/session-groups";
 import { announce, setGroupComposerActive, toast } from "../lib/ui-state";
+import { failureLines, partialClosing, partialTitle } from "../lib/fanout";
+import { findEntryRow, transcriptRoot } from "../lib/jump";
+import { clearPartial, pendingPartial } from "./FanoutDialog";
 import { sessionWorking, type UsageTotalView } from "../lib/workers";
 import type { PaneInsight, TabId } from "./SessionPane";
 import { sessionHref } from "./Sidebar";
 import { SessionView } from "./SessionView";
 import { GroupComposer } from "./GroupComposer";
-import { Icon } from "./ui";
+import type { FanoutSource } from "./FanoutDialog";
+import type { ForkMarker } from "./Thread";
+import { Banner, Icon } from "./ui";
 
 /**
  * A pane's id, issued once per session path and kept for as long as the tab lives: it suffixes
@@ -79,6 +84,9 @@ const forgetPromoted = (groupId: string) =>
 const [workspaceFocus, setWorkspaceFocus] = createSignal<string | null>(null);
 export { workspaceFocus };
 
+/** Never animate a scroll for someone who asked us not to (§0); read per call, not cached. */
+const reduceMotion = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
 /** Whether a member is mid-turn: what the tab's live dot and Eliminate's refusal both read. */
 const running = (s: SessionSummary | undefined) => !!s && (s.busy || sessionWorking(s) > 0);
 
@@ -98,6 +106,10 @@ export interface PaneWiring {
   inputsOnly(): string | null;
   subagentsPath(): string | null;
   onNewSession(path: string): Promise<string | null>;
+  /** Open the fanout dialog with no source: new members for this workspace. */
+  onFanOut(): void;
+  /** Open it on one member, to fork THAT session (the pane flyout's "Fan Out…"). */
+  onFanOutFrom(source: FanoutSource): void;
 }
 
 /**
@@ -181,6 +193,50 @@ export function GroupView(props: {
     const text = tabLabels(list);
     return new Map(rows().map((m, i) => [m.path, text[i] ?? m.title]));
   });
+
+  /**
+   * The group's fork point, and the ONLY source of a marker's position: `seed` is written when
+   * pi-web itself fanned the group out. Lineage (`parent`/`parentId`) proves two members came from
+   * one session but not WHICH entry they diverged at, so a hand-made group of forks gets no marker
+   * — a marker in the wrong place is a false claim about what is shared (gate #10, §14 "Data").
+   */
+  const fork = createMemo<ForkMarker | undefined>(() => {
+    const seed = props.group.seed;
+    if (!seed) return undefined;
+    const source = props.sessions.find((x) => x.path === seed.parentSessionPath);
+    return {
+      entryId: seed.leafId,
+      title: source?.title ?? "the source session",
+      // The source can be archived, renamed or gone; a missing file renders as plain text.
+      path: source ? source.path : null,
+    };
+  });
+
+  /**
+   * Scroll every pane so its fork marker sits at the top of its scroll region. A pane whose branch
+   * no longer holds the leaf (rewound past it) is left where it is and named in the announcement —
+   * we never guess at a position. It is a scroll, not a state: nothing is pinned afterwards.
+   */
+  const alignToFork = () => {
+    const seed = props.group.seed;
+    if (!seed) return;
+    const missed: string[] = [];
+    let aligned = 0;
+    for (const path of panes()) {
+      const row = findEntryRow(seed.leafId, transcriptRoot(path));
+      if (!row) {
+        missed.push(nameOf(path));
+        continue;
+      }
+      row.scrollIntoView({ block: "start", behavior: reduceMotion() ? "auto" : "smooth" });
+      aligned += 1;
+    }
+    announce(
+      missed.length === 0
+        ? `Aligned ${aligned} ${aligned === 1 ? "member" : "members"} to the fork point.`
+        : `Aligned ${aligned} ${aligned === 1 ? "member" : "members"}. ${missed.join(", ")} has no fork point on its branch.`,
+    );
+  };
 
   /**
    * The focused pane. The route names it, but moving between panes only replaces the URL (it is
@@ -348,6 +404,13 @@ export function GroupView(props: {
   // ---- Group lifecycle (head) ---------------------------------------------
   const [confirming, setConfirming] = createSignal(false);
   const [adding, setAdding] = createSignal(false);
+  /** The fanout that just made this group, when some members couldn't start. */
+  const partial = () => {
+    const p = pendingPartial();
+    return p && p.groupId === id() ? p : null;
+  };
+  // Another group's workspace is not where this one's report belongs.
+  createEffect(on(id, () => clearPartial(), { defer: true }));
 
   /**
    * Dissolve is Delete group under another word (§9): same route, but here it sits above open
@@ -420,6 +483,7 @@ export function GroupView(props: {
               members={panes().length}
               candidates={candidates()}
               onAdd={(session) => void add(session)}
+              onFanOut={props.wiring.onFanOut}
               onDissolve={() => void dissolve()}
             />
           }
@@ -445,6 +509,7 @@ export function GroupView(props: {
             open={adding()}
             onOpen={setAdding}
             onAdd={(s) => void add(s)}
+            onFanOut={props.wiring.onFanOut}
           />
           {/* Asked in place, in the head, like the sidebar's Delete group asks in its tool row. */}
           <Show
@@ -516,14 +581,45 @@ export function GroupView(props: {
               <Icon name="folder" class="empty-mark" />
               <p class="empty-title">{quoted(props.group.name)} has no sessions yet.</p>
               <p class="empty-body">Add some here, or drag a row onto the group in the sidebar.</p>
-              <button type="button" class="button empty-action" onClick={() => setAdding(true)}>
-                <Icon name="plus" />
-                Add Members
-              </button>
+              <div class="cluster">
+                <button type="button" class="button empty-action" onClick={() => setAdding(true)}>
+                  <Icon name="plus" />
+                  Add Members
+                </button>
+                <button type="button" class="button" onClick={props.wiring.onFanOut}>
+                  Fan Out…
+                </button>
+              </div>
             </div>
           </div>
         }
       >
+        {/* A creation that half-worked, reported where the members are rather than where the
+            dialog was: the k that started are on screen behind this. */}
+        <Show when={partial()}>
+          {(p) => (
+            <Banner
+              tone="warn"
+              title={partialTitle(panes().length, p().planned)}
+              body={
+                <>
+                  <For each={failureLines(p().failed)}>{(line) => <span class="fanout-fail-line">{line}</span>}</For>
+                  <span>{partialClosing(panes().length)}</span>
+                </>
+              }
+              action={
+                <>
+                  <button type="button" class="button button-sm" onClick={() => setAdding(true)}>
+                    Add Members
+                  </button>
+                  <button type="button" class="button button-sm button-ghost" onClick={clearPartial}>
+                    Dismiss
+                  </button>
+                </>
+              }
+            />
+          )}
+        </Show>
         <div class="workspace-row" data-mode={mode()} aria-label="Members">
           <For each={panes()}>
             {(path) => {
@@ -553,6 +649,8 @@ export function GroupView(props: {
                     summary={summary}
                     paneId={paneId}
                     label={() => labelOf(path)}
+                    fork={fork()}
+                    onFanOut={props.wiring.onFanOutFrom}
                     listVersion={props.wiring.listVersion}
                     now={props.wiring.now}
                     actions={
@@ -810,6 +908,8 @@ function AddMembers(props: {
   open: boolean;
   onOpen(open: boolean): void;
   onAdd(session: SessionSummary): void;
+  /** The last row: make new members instead of moving existing ones (§14b "Entry points"). */
+  onFanOut(): void;
 }) {
   let trigger!: HTMLButtonElement;
   let menu!: HTMLDivElement;
@@ -906,6 +1006,30 @@ function AddMembers(props: {
               )}
             </For>
           </Show>
+          {/* Adding an existing session moves it; this makes new ones. Last row, so the cheap
+              gesture comes first and the creating one is a deliberate reach. */}
+          <div class="model-menu-group" role="group" aria-label="Or make new members">
+            <div
+              class="mode-option group-option"
+              role="menuitem"
+              tabindex={0}
+              onClick={() => {
+                props.onOpen(false);
+                props.onFanOut();
+              }}
+              onKeyDown={(e) => {
+                if (e.key !== "Enter" && e.key !== " ") return;
+                e.preventDefault();
+                props.onOpen(false);
+                props.onFanOut();
+              }}
+            >
+              <span class="icon icon-sm" style={{ "--icon": "url(/icons/branch.svg)" }} aria-hidden="true" />
+              <span class="mode-option-text">
+                <span class="mode-option-id">Fan Out…</span>
+              </span>
+            </div>
+          </div>
         </div>
       </div>
     </>
@@ -926,6 +1050,7 @@ function HeadActions(props: {
   members: number;
   candidates: SessionSummary[];
   onAdd(session: SessionSummary): void;
+  onFanOut(): void;
   onDissolve(): void;
 }) {
   let trigger!: HTMLButtonElement;
@@ -1034,6 +1159,20 @@ function HeadActions(props: {
               <Icon name="plus" small />
               <span class="mode-option-text">
                 <span class="mode-option-id">Add Members</span>
+              </span>
+            </div>
+            <div
+              class="mode-option group-option"
+              role="menuitem"
+              tabindex={0}
+              onClick={() => {
+                close();
+                props.onFanOut();
+              }}
+            >
+              <span class="icon icon-sm" style={{ "--icon": "url(/icons/branch.svg)" }} aria-hidden="true" />
+              <span class="mode-option-text">
+                <span class="mode-option-id">Fan Out…</span>
               </span>
             </div>
             <div class="mode-option group-option" role="menuitem" tabindex={0} onClick={() => setAsking(true)}>

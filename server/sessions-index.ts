@@ -3,7 +3,7 @@ import { open, readdir, stat, unlink } from "node:fs/promises";
 import { basename, join } from "node:path";
 import type { SessionSummary } from "../shared/protocol";
 import { type LiveRecord, readLive, readOwnLiveRecords, workerCountsOf } from "./live";
-import { LIVE_DIR, resolveSessionPath, SESSIONS_DIR } from "./paths";
+import { LIVE_DIR, resolveSessionPath, sessionPathShape, SESSIONS_DIR } from "./paths";
 import { isWebSession, removeWebSession } from "./web-sessions";
 import { parseWakeNudge } from "../shared/wake";
 import { RECENT_WRITE_MS } from "./write-guard";
@@ -329,14 +329,16 @@ async function readHead(path: string): Promise<{ header: any; title: string | nu
  * The header's `parentSession` — the file a branched session was forked from (SessionHeader,
  * `dist/core/session-manager.d.ts:11`) — as the canonical path AND the session id the group store
  * keys on, and only while that file is still there: a fork marker that points at a deleted
- * transcript is worse than none. resolveSessionPath is what keeps the stat safe as well as honest:
- * it only ever yields a .jsonl inside the (always local) sessions dir, so this can never stat a
- * session's cwd, which for a mounted target is a fuse path that would freeze the event loop.
+ * transcript is worse than none. sessionPathShape is what keeps this safe as well as honest: it
+ * is pure string work — no syscall — and it only ever yields a .jsonl inside the (always local)
+ * sessions dir, so the one ASYNC stat below can never touch a session's cwd, which for a mounted
+ * target is a fuse path that would freeze the event loop. It is also the same construction the
+ * listing uses (SESSIONS_DIR + name), so `parent` is byte-identical to that session's own `path`.
  * Part of the cached summary, so a parent deleted after this session's last write keeps showing
  * until this file is touched again.
  */
 async function existingParent(raw: unknown): Promise<{ parent: string; parentId: string } | null> {
-  const path = resolveSessionPath(typeof raw === "string" ? raw : null);
+  const path = sessionPathShape(typeof raw === "string" ? raw : null);
   if (!path) return null;
   const there = await stat(path).then(
     () => true,

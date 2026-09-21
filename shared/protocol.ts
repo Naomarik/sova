@@ -308,9 +308,10 @@ export interface UploadResult {
 // POST /api/session-groups/assign { path, groupId: string | null, label?: string | null, index?: number }
 //                                  -> AssignGroupResult
 //                                  (puts one session in a group, or takes it out with null. When this write
-//                                  removes the LAST member of a group carrying `seed` (one pi-web fanned out),
-//                                  that group is deleted in the same atomic write and the response carries
-//                                  dissolved: true. A hand-made group is left standing empty. `label` sets the
+//                                  removes the LAST member of a group whose `autoDissolve` is set (one pi-web
+//                                  both created AND named), that group is deleted in the same atomic write and
+//                                  the response carries dissolved: true. `seed` decides nothing here: a group
+//                                  the user named stands empty even after it adopts one. `label` sets the
 //                                  session's label in the group it lands in, `null` clears it, and omitting it
 //                                  keeps the label it already had — a session moved between groups keeps its
 //                                  metadata. `index` is where it lands in the target group's member order:
@@ -533,11 +534,14 @@ export interface SessionGroup {
     unaffected. */
 export interface AssignGroupResult {
   ok: true;
-  /** The assign emptied a fanout group (one carrying `seed`) and the server deleted it in the SAME
-      write, per spec/14-workspaces.md §14 "Emptying a group". Absent otherwise — a hand-made group
-      stands empty, because its name is the user's work. The client toasts "Dissolved “{name}”",
-      leaves the workspace route and refetches the list. Archive cleanup can also empty a group and
-      deliberately does NOT dissolve one: no client is listening to that call. */
+  /** The assign emptied a group whose `autoDissolve` is set, and the server deleted it in the SAME
+      write (spec/14-workspaces.md §14 "Emptying a group"). `autoDissolve` is the whole rule and
+      `seed` decides nothing: a hand-made group that ADOPTS a fanout's seed keeps standing when
+      emptied, because a group whose name is the user's work stands empty — whether they typed it
+      at creation or later over a generated one. Absent otherwise. The client toasts
+      "Dissolved “{name}”", leaves the workspace route and refetches the list. Archive cleanup can
+      also empty a group and deliberately does NOT dissolve one: no client is listening to that
+      call, and a background listing pass must never delete a group. */
   dissolved?: true;
 }
 

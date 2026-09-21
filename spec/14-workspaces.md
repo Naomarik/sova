@@ -341,7 +341,11 @@ All four are writes to the group registry. None of them touches a session's JSON
   `#/s/{path}`. The member you picked is the answer; the workspace has done its job. The group
   header keeps a `Promoted: {title}` chip with `Add Back` for as long as the workspace stays
   mounted in this tab, so a promote made by mistake is one press from undone. The chip is not
-  persisted: it is an undo for the gesture, not a record of it.
+  persisted: it is an undo for the gesture, not a record of it. **It carries the member's label
+  and position**, because ungrouping drops the member entry: `Add Back` sends
+  `assign {path, groupId, label}` and then the order it was in, so the pane comes back named what
+  it was called and where it was. An undo that silently dropped the name you gave a member would
+  not be one.
 - **Eliminate** — the same assign-to-null, plus
   `POST /api/sessions/archive {path, archived:true}`. Two writes, one gesture, and the toast
   names both: "Removed **{title}** and archived it." For a session pi-web did not start, the

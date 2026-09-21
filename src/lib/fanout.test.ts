@@ -105,7 +105,7 @@ test("the primary counts what it will do", () => {
 test("failures sharing a ref AND a reason collapse to a count", () => {
   assert.deepEqual(
     failureLines([failure("anthropic/claude-opus-5", "the provider returned 429."), failure("anthropic/claude-opus-5", "the provider returned 429.")]),
-    ["2 × claude-opus-5 couldn't start: the provider returned 429."],
+    ["2 × anthropic/claude-opus-5 couldn't start: the provider returned 429."],
   );
 });
 
@@ -113,8 +113,8 @@ test("the same model failing two ways gets two lines, because the reasons are th
   assert.deepEqual(
     failureLines([failure("anthropic/claude-opus-5", "the provider returned 429."), failure("anthropic/claude-opus-5", "no credentials for anthropic.")]),
     [
-      "claude-opus-5 couldn't start: the provider returned 429.",
-      "claude-opus-5 couldn't start: no credentials for anthropic.",
+      "anthropic/claude-opus-5 couldn't start: the provider returned 429.",
+      "anthropic/claude-opus-5 couldn't start: no credentials for anthropic.",
     ],
   );
 });
@@ -123,8 +123,8 @@ test("distinct models each get their own line, in the order they failed", () => 
   assert.deepEqual(
     failureLines([failure("anthropic/claude-opus-5", "the provider returned 429."), failure("zai/glm-5.3", "no credentials for zai.")]),
     [
-      "claude-opus-5 couldn't start: the provider returned 429.",
-      "glm-5.3 couldn't start: no credentials for zai.",
+      "anthropic/claude-opus-5 couldn't start: the provider returned 429.",
+      "zai/glm-5.3 couldn't start: no credentials for zai.",
     ],
   );
 });
@@ -210,4 +210,17 @@ test("a member row's controls are named by the FULL ref, because two providers s
   // At 1 the − button removes the row, so it says so — the same string as the remove button.
   assert.equal(fewerLabel("zai/glm-5.3", 1), "Remove zai/glm-5.3");
   assert.equal(fewerLabel("zai/glm-5.3", 2), "One fewer zai/glm-5.3");
+});
+
+test("two providers failing the same way stay two lines, and read as two models", () => {
+  // The collapse keys on the ref, so these correctly do NOT merge — which is exactly why the
+  // short form is wrong here: it would render a non-duplicate as a visible duplicate, and the
+  // duplicate-looking pair is the NORMAL rendering for a cross-provider fanout, not an edge.
+  const lines = failureLines([failure("zai/glm-5.3", "the provider returned 429."), failure("ollama-cloud/glm-5.3", "the provider returned 429.")]);
+  assert.equal(lines.length, 2, "different refs are different models and never collapse");
+  assert.notEqual(lines[0], lines[1], "and the user can tell which is which");
+  assert.deepEqual(lines, [
+    "zai/glm-5.3 couldn't start: the provider returned 429.",
+    "ollama-cloud/glm-5.3 couldn't start: the provider returned 429.",
+  ]);
 });

@@ -110,6 +110,12 @@ export const createLabel = (members: number): string => (members === 1 ? "Create
  * message collapse to a count, because three identical refusals are one fact; sharing a ref but
  * not a message gets a line each, because the reasons are the information.
  *
+ * Named by the FULL ref, under §14b's rule stated once: wherever two members could be
+ * distinguished only by their provider, name the full ref. The collapse keys on the ref, so a
+ * `zai/glm-5.3` failure and an `ollama-cloud/glm-5.3` failure correctly do NOT merge — which
+ * means the short form would render them as two identical-looking lines that are not duplicates.
+ * The duplicate-looking pair is the normal rendering here, not an edge case.
+ *
  * Never a member number: `failed` carries no index into the plan, so which repeat of "opus ×3"
  * failed is not knowable, and "claude-opus-5 #2" would be a guess dressed as a fact.
  */
@@ -122,7 +128,7 @@ export function failureLines(failed: readonly BatchRefusal[]): string[] {
     else groups.push({ ref, message: f.message, count: 1 });
   }
   return groups.map((g) => {
-    const model = shortModel(g.ref) ?? "A member";
+    const model = g.ref || "A member";
     const who = g.count > 1 ? `${g.count} × ${model}` : model;
     return `${who} couldn't start: ${g.message}`;
   });

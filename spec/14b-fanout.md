@@ -231,7 +231,11 @@ POST /api/session-groups/fanout
     asserting the group is recorded as **not** dissolving. The test is not redundant with the
     construction: it is what would fail if the check were ever respelled negatively, which is the
     one way this shape can be made unsafe. A future shape
-    change must keep that test or take over both guarantees.
+    change must keep that test or take over both guarantees — **and must land atomically**: new
+    field in, `named` out, server and client in one window. Added beside `named` instead, the
+    client keeps sending `named`, the server reads absence, absence means `"user"`, and every
+    fanout group becomes user-named with `autoDissolve` never set by anyone — a half-done
+    migration wearing the face of a working feature (§14).
   - **Provenance, never policy.** The client reports *this is the name pi-web generated*; the
     server decides `autoDissolve` from it. A client permitted to send `autoDissolve` itself would
     assert an ownership pi-web may not have, and an older or buggy one could assert it wrongly.

@@ -6,7 +6,7 @@ const caretAfter = (text: string, token: string) => text.indexOf(token) + token.
 
 test("mentionTokenAt finds the @ token at the start and after whitespace", () => {
   assert.deepEqual(mentionTokenAt("@sr", 3), { start: 0, end: 3, query: "sr" });
-  assert.deepEqual(mentionTokenAt("look at @src/li", caretAfter("look at @src/li", "@src/li")), {
+  assert.deepEqual(mentionTokenAt("look at @src/lib", caretAfter("look at @src/lib", "@src/li")), {
     start: 8,
     end: 16,
     query: "src/li",
@@ -22,8 +22,8 @@ test("mentionTokenAt never claims an email or a bare @ mid-word", () => {
 test("mentionTokenAt ends the token at the next whitespace and tracks the caret's side", () => {
   // Caret in the middle: end still stops at the space.
   const t = mentionTokenAt("@src/li is next", 6)!;
-  assert.equal(t.end, 6);
-  assert.deepEqual(mentionTokenAt("@src main", 9), { start: 0, end: 4, query: "src" });
+  assert.equal(t.end, 7);
+  assert.deepEqual(mentionTokenAt("@src main", 4), { start: 0, end: 4, query: "src" });
   // A bare "@" with nothing typed yet is a token with an empty query.
   assert.deepEqual(mentionTokenAt("@", 1), { start: 0, end: 1, query: "" });
 });
@@ -36,7 +36,7 @@ test("mentionTokenAt keeps a quoted path (spaces) one token", () => {
   assert.equal(t.query, '"My Docs/rea');
   // Esc completes the close quote: the file pick's text is one token too.
   const done = 'see @"My Docs/readme.md" now';
-  const t2 = mentionTokenAt(done, done.indexOf("now"))!;
+  const t2 = mentionTokenAt(done, done.indexOf(" now"))!;
   assert.equal(t2.query, '"My Docs/readme.md"');
 });
 
@@ -83,7 +83,7 @@ test("mentionEntries filters by the segment, case-insensitively", () => {
   );
   assert.deepEqual(
     mentionEntries(FILES, "SRC/c").map((e) => e.name),
-    ["components"],
+    ["components", "ChatView.tsx", "Composer.tsx"], // the directory is case-insensitive too
   );
   assert.deepEqual(mentionEntries(FILES, "read"), [{ name: "README.md", path: "README.md", dir: false }]);
 });
@@ -91,7 +91,7 @@ test("mentionEntries filters by the segment, case-insensitively", () => {
 test("mentionEntries shows hidden entries once the segment starts with a dot", () => {
   assert.deepEqual(
     mentionEntries(FILES, ".").map((e) => e.name),
-    [".env", ".github"],
+    [".github", ".env"], // directories first, as everywhere
   );
   assert.deepEqual(
     mentionEntries(FILES, ".g").map((e) => e.name),

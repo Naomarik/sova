@@ -23,36 +23,24 @@ export interface MentionToken {
  * ("user@host") never qualify: their "@" follows a word character.
  */
 export function mentionTokenAt(text: string, caret: number): MentionToken | null {
-  // Backscan: track quote parity so a space inside quotes doesn't end the token.
-  let inQuote = false;
-  let i = caret;
-  let start = -1;
-  while (i > 0) {
-    const ch = text[i - 1]!;
-    if (ch === '"') {
-      inQuote = !inQuote;
-      i--;
-      continue;
+  // Walk the "@"s before the caret, nearest first, and scan each candidate token forward from its
+  // "@": a backscan can't know it is inside a quote until it has already passed the space the
+  // quote protects, so quote parity is only meaningful read left to right.
+  for (let start = text.lastIndexOf("@", caret - 1); start !== -1 && start < caret; start = start === 0 ? -1 : text.lastIndexOf("@", start - 1)) {
+    const before = start === 0 ? "" : text[start - 1]!;
+    if (before !== "" && !/\s/.test(before)) continue; // mid-word, like an email's "@"
+    let quote = false;
+    let end = start + 1;
+    while (end < text.length) {
+      const ch = text[end]!;
+      if (ch === '"') quote = !quote;
+      else if (!quote && /\s/.test(ch)) break;
+      end++;
     }
-    if (!inQuote && ch === "@") {
-      const before = i >= 2 ? text[i - 2] : "";
-      if (before === "" || /\s/.test(before)) start = i - 1;
-      break;
-    }
-    if (!inQuote && /\s/.test(ch)) break;
-    i--;
+    if (caret > end) continue; // the caret left this token; an earlier open quote may still span it
+    return { start, end, query: text.slice(start + 1, caret) };
   }
-  if (start === -1) return null;
-  // Forward scan to the token's end, seeded with the parity at the caret.
-  let quote = inQuote;
-  let end = caret;
-  while (end < text.length) {
-    const ch = text[end]!;
-    if (ch === '"') quote = !quote;
-    else if (!quote && /\s/.test(ch)) break;
-    end++;
-  }
-  return { start, end, query: text.slice(start + 1, caret) };
+  return null;
 }
 
 /** One completable entry: a name in the token's current directory. */
@@ -81,12 +69,13 @@ export function mentionQueryParts(query: string): { dir: string; segment: string
  * prefix on the name; hidden entries (".env") only match once the segment starts with ".".
  */
 export function mentionEntries(files: readonly string[], query: string): MentionEntry[] {
-  const { dirPrefix, segment } = mentionQueryParts(query);
+  const { dir: dirPrefix, segment } = mentionQueryParts(query);
   const lower = segment.toLowerCase();
+  const dirLower = dirPrefix.toLowerCase(); // the directory matches case-insensitively too ("SRC/c")
   const seen = new Set<string>();
   const out: MentionEntry[] = [];
   for (const f of files) {
-    if (!f.startsWith(dirPrefix)) continue;
+    if (!f.toLowerCase().startsWith(dirLower)) continue;
     const rest = f.slice(dirPrefix.length);
     if (rest === "") continue;
     const slash = rest.indexOf("/");
@@ -95,7 +84,7 @@ export function mentionEntries(files: readonly string[], query: string): Mention
     if (name.startsWith(".") && !segment.startsWith(".")) continue;
     if (!name.toLowerCase().startsWith(lower)) continue;
     seen.add(name);
-    out.push({ name, path: dirPrefix + name, dir: slash !== -1 });
+    out.push({ name, path: f.slice(0, dirPrefix.length) + name, dir: slash !== -1 }); // the path in the index's own casing
   }
   out.sort(
     (a, b) => Number(b.dir) - Number(a.dir) || a.name.localeCompare(b.name, undefined, { sensitivity: "base" }) || (a.name < b.name ? -1 : 1),
@@ -103,19 +92,20 @@ export function mentionEntries(files: readonly string[], query: string): Mention
   return out;
 }
 
-/** Replaces the token with the completed entry: a directory keeps the menu open (path + "/",
- *  quoted when it needs it); a file closes it (path + a space, quoted when it needs it). */
+/** Replaces the token with the completed entry. A directory keeps the token (and so the menu)
+ *  open: "@" + path + "/", the quote opened when the path needs it. A file closes it: the token
+ *  becomes the bare path — ordinary prompt text, quoted when it needs it — followed by a space
+ *  unless one already follows. The caret lands right after what was inserted. */
 export function insertMention(text: string, token: MentionToken, entry: MentionEntry): { text: string; caret: number } {
   const dirPrefix = mentionQueryParts(token.query).dir;
   const path = dirPrefix + entry.name;
   const quote = /\s/.test(path);
   const before = text.slice(0, token.start);
-  const after = text.slice(token.end).replace(/^\s+/, "");
+  const after = text.slice(token.end);
   const inserted = entry.dir
-    ? `${quote ? '"' : ""}${path}/`
-    : `${quote ? '"' : ""}${path}${quote ? '"' : ""} `;
-  const next = before + inserted + after;
-  return { text: next, caret: before.length + inserted.length };
+    ? `@${quote ? '"' : ""}${path}/`
+    : `${quote ? '"' : ""}${path}${quote ? '"' : ""}${/^\s/.test(after) ? "" : " "}`;
+  return { text: before + inserted + after, caret: before.length + inserted.length };
 }
 
 // ---------------------------------------------------------------------------

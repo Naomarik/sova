@@ -538,6 +538,27 @@ export async function archiveSession(path: string, archived: boolean): Promise<A
   if (archived && isSessionBusy(s.path)) {
     return { ok: false, status: 409, error: "The agent is mid-turn; abort or wait before archiving." };
   }
+  // An empty husk — no user message anywhere in the file — never shows in the archive (the list
+  // skips it), so archiving one deletes the file outright instead of marking an id whose row can
+  // never render: same bookkeeping the cleanup "husks" mode does per file. A husk WITH a stored
+  // draft is a new session the user is writing in, not an abandoned stub — it archives normally.
+  if (archived) {
+    const st = await stat(s.path).catch(() => null);
+    if (st && (await isZeroInput(s.path, st.size))) {
+      const draft = readDrafts()[s.id];
+      if (!draft || (!draft.text.trim() && !draft.attachments?.length)) {
+        await disposeHeldChat(s.path, "Session archived; its runtime was closed.");
+        await unlink(s.path);
+        cache.delete(s.path);
+        setArchived(s.id, false);
+        removeWebSession(s.id);
+        dropDrafts([s.id]);
+        removeSessionAttachments(s.id);
+        dropGroupAssignments([s.id]);
+        return { ok: true, summary: { ...s, archived: true } };
+      }
+    }
+  }
   if (s.archived !== archived) setArchived(s.id, archived);
   // Archiving is the close gesture: shut the held runtime down (running subagents die with it).
   // There is no idle timer anymore — a runtime lives until this, a reload, or server shutdown.

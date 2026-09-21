@@ -29,7 +29,8 @@ const wrapMono = { margin: 0, "overflow-wrap": "anywhere" } as const;
  *   context   the transcript's context fill from the server (ContextGauge's source)
  *   items     transcript rows (the model/thinking/mode timeline, and "compacted" for context)
  *   now       the clock relative times are measured against
- *   onArchiveChanged  after Archive/Unarchive succeeds: re-read the session list
+ *   onArchiveChanged  after Archive/Unarchive succeeds: re-read the session list, with the
+ *                     session's path and its new archived state
  *   onGroupsChanged   after the session's group changes: re-read the session list
  *   idPrefix  prefix of the section heading ids ("si", the modal's, by default), so the modal and
  *             the pane can both be open without duplicate ids
@@ -44,7 +45,7 @@ export function SessionDetails(props: {
   context: ContextInfo | null;
   items: TranscriptItem[];
   now: number;
-  onArchiveChanged?: () => void;
+  onArchiveChanged?: (path: string, archived: boolean) => void;
   onGroupsChanged?: () => void;
   idPrefix?: string;
 }) {
@@ -229,7 +230,7 @@ export function SessionDetails(props: {
                   working={Math.max(sessionWorking(s()), working())}
                   onDone={(next) => {
                     setArchivedNow(next);
-                    props.onArchiveChanged?.();
+                    props.onArchiveChanged?.(props.path, next);
                   }}
                 />
               </Show>

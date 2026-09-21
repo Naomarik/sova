@@ -162,7 +162,7 @@ export function ModeMenu(props: { control: ModeControl }) {
         data-applies={current()?.applies}
         onClick={() => (open() ? closeMenu() : void openMenu())}
       >
-        <Icon name="worker" small />
+        <Icon name="sliders" small />
         {/* Two parts, so a narrow foot ellipsizes the minor modes before the major one (§4g). */}
         <span class="mode-trigger-label">{current()?.mode ?? "Mode"}</span>
         <Show when={current()?.minorModes.length}>
@@ -224,8 +224,8 @@ export function ModeMenu(props: { control: ModeControl }) {
         </div>
 
         <p class="mode-menu-foot">
-          <span class="text-mono">strict: {current()?.strict ? "on" : "off"}</span> · This chat only. New sessions start from
-          the default; <code>/mode default</code> saves this chat's as it.
+          <span class="text-mono">strict: {current()?.strict ? "on" : "off"}</span> · Before your first message it's also the
+          new default; after, this chat only. <code>/mode default</code> saves it any time.
         </p>
       </div>
     </>

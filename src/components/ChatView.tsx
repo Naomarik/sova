@@ -78,8 +78,9 @@ export function ChatView(props: {
       each status-row trigger is aria-expanded only for its own tab. */
   paneTab?: string | null;
   /** The session pane re-reads this after its Archive/Unarchive action succeeds; the info modal
-      needs the same, or the sidebar row stays stale until its next poll. */
-  onArchiveChanged?(): void;
+      needs the same, or the sidebar row stays stale until its next poll. An archived session is
+      off the list for good, so the path and the new state go with it. */
+  onArchiveChanged?(path: string, archived: boolean): void;
   /** The same, after a group change in the info modal (Move into group): the sidebar's Groups
       region and the row's own groupId come from the session list. */
   onGroupsChanged?(): void;
@@ -627,7 +628,7 @@ export function ChatView(props: {
     try {
       await setSessionArchived(props.path, true);
       toast("Archived. Find it under Archive.");
-      props.onArchiveChanged?.();
+      props.onArchiveChanged?.(props.path, true);
       location.hash = "#/";
     } catch (err) {
       toast(`Couldn't archive this session. ${(err as Error).message}`);
@@ -793,7 +794,7 @@ export function ChatView(props: {
       <FlyoutSession.Provider value={() => props.path}>
       <Composer
         path={props.path}
-        cwd={props.summary?.().cwd ?? null}
+        cwd={props.summary?.()?.cwd ?? null}
         blocked={blocked()}
         commands={commands()}
         running={live.running}

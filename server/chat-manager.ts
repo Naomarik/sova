@@ -18,7 +18,8 @@ import {
 import type { ChatClientMessage, ChatModeResult, ChatServerMessage, ModeApplies, RewindRefusal, SlashCommand } from "../shared/protocol";
 import { decodeUsageTotal, decodeWorkers } from "./insights";
 import { readLive, readOwnLiveRecords, workerCountsOf } from "./live";
-import { appliesAfter, mergeMode, MINOR_MODES, modeApplyPlan, modeInfo, readMode, resolveChatMode, type ModePatch, type ModeState } from "./mode-state";
+import { appliesAfter, mergeMode, MINOR_MODES, modeApplyPlan, modeInfo, readMode, resolveChatMode, writeMode, type ModePatch, type ModeState } from "./mode-state";
+import { loadDefaults, saveDefaults } from "./web-defaults";
 import { toContextInfo } from "./models";
 import { contextForBranch, normalizeEntries, normalizeEntry } from "./transcript";
 import { parseLegacyMountCwd, targetOfCwd } from "./targets";
@@ -456,11 +457,23 @@ class ChatSession {
   }
 
   /**
-   * POST /api/mode?path=: merge the patch into THIS chat's mode and apply it here only. mode.json
-   * (the default for new sessions) is not touched, and no other chat hears about it.
+   * A session with no user message on its branch yet — the "new session" whose mode, model and
+   * thinking changes also save as the next new session's defaults (mode.json / web-defaults).
+   * Mode markers, model and thinking entries never count; only a sent message stops it being new.
+   */
+  private isPristine(): boolean {
+    return !this.session.sessionManager.getBranch().some((e) => e.type === "message" && e.message.role === "user");
+  }
+
+  /**
+   * POST /api/mode?path=: merge the patch into THIS chat's mode and apply it here; no other chat
+   * hears about it. In a session with no messages yet the switch is ALSO saved as the default
+   * the next new session starts from (mode.json — the same write `/mode default` makes, shared
+   * with the TUI); after the first message a switch is this chat's own, as before.
    */
   async switchMode(patch: ModePatch): Promise<ChatModeResult> {
-    await this.applyMode(mergeMode(this.modeState, patch));
+    const plan = await this.applyMode(mergeMode(this.modeState, patch));
+    if (plan === "command" && this.isPristine()) writeMode(patch);
     return { ...modeInfo(this.modeState), applies: this.modeApplies };
   }
 
@@ -469,10 +482,11 @@ class ChatSession {
    * chat's mode. The /mode handler is called directly, never sent through prompt(), so no command
    * text can reach the model; it appends the marker entry this session later restores from.
    * Resolves once the switch is in the extension's memory; the claude-heavy planner probe it then
-   * starts isn't awaited.
+   * starts isn't awaited. Returns the plan that ran ("command" = taken, "skip" = a foreign writer
+   * got it, "unsupported" = no /mode command loaded), so callers can decide what else to do.
    */
-  async applyMode(state: ModeState): Promise<void> {
-    if (this.disposed) return;
+  async applyMode(state: ModeState): Promise<"skip" | "unsupported" | "command"> {
+    if (this.disposed) return "skip"; // a disposed runtime took nothing
     const session = this.session;
     const streaming = session.isStreaming;
     let live = false;
@@ -484,7 +498,7 @@ class ChatSession {
     const plan = modeApplyPlan({
       foreign: live || this.hasForeignWrites(),
       hasModeCommand: !!this.modeCommand(),
-      pristine: !session.sessionManager.getBranch().some((e) => e.type === "message" && e.message.role === "user"),
+      pristine: this.isPristine(),
       streaming,
     });
     let applies = appliesAfter(plan, streaming);
@@ -515,6 +529,7 @@ class ChatSession {
     }
     this.modeApplies = applies;
     this.broadcast(this.modeMessage());
+    return plan;
   }
 
   commands(): ChatServerMessage {
@@ -623,6 +638,8 @@ class ChatSession {
               type: "append",
               items: [{ id: `thinking-${Date.now()}`, kind: "info", raw: { type: "thinking_level_change", thinkingLevel: after }, text: `Thinking: ${after}` }],
             });
+          // A session with no messages yet: this level is also the next new session's default.
+          if (this.isPristine()) saveDefaults({ thinking: after });
           return;
         }
         case "set_model": {
@@ -651,6 +668,8 @@ class ChatSession {
               this.broadcast({ type: "model", model: modelLabel(this.session) ?? ref });
               // setModel re-clamps the level to the new model's ladder; the pane needs that too.
               this.broadcast({ type: "thinking", level: this.session.thinkingLevel });
+              // A session with no messages yet: this model is also the next new session's default.
+              if (this.isPristine()) saveDefaults({ model: ref });
             })
             .catch(fail);
           return;
@@ -892,8 +911,29 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
     if (target) flags.set("target", target);
     const services = await createAgentSessionServices({ cwd, modelRuntime, extensionFlagValues: flags });
     for (const d of services.diagnostics) console.warn(`[chat] runtime ${d.type}: ${d.message}`);
+    // A session with no messages yet starts from the saved new-session defaults (web-defaults.ts):
+    // resolve the stored model ref against models with configured auth and let the SDK clamp the
+    // stored level to the model's ladder. Anything stale or unauthenticated is skipped, so a bad
+    // default degrades to pi's own default instead of failing the open.
+    let defaultModel: Awaited<ReturnType<typeof modelRuntime.getAvailable>>[number] | undefined;
+    let defaultThinking: ThinkingLevel | undefined;
+    if (!sessionManager.getBranch().some((e) => e.type === "message" && e.message.role === "user")) {
+      const defaults = loadDefaults();
+      if (defaults.model)
+        defaultModel = (await modelRuntime.getAvailable().catch(() => [])).find(
+          (m) => `${m.provider}/${m.id}` === defaults.model,
+        );
+      if (defaults.thinking && (THINKING_LEVELS as readonly string[]).includes(defaults.thinking))
+        defaultThinking = defaults.thinking as ThinkingLevel;
+    }
     return {
-      ...(await createAgentSessionFromServices({ services, sessionManager, sessionStartEvent })),
+      ...(await createAgentSessionFromServices({
+        services,
+        sessionManager,
+        sessionStartEvent,
+        ...(defaultModel ? { model: defaultModel } : {}),
+        ...(defaultThinking ? { thinkingLevel: defaultThinking as Parameters<AgentSession["setThinkingLevel"]>[0] } : {}), // same cast as setThinkingLevel above: our ladder has "off", the SDK's union doesn't
+      })),
       services,
       diagnostics: services.diagnostics,
     };

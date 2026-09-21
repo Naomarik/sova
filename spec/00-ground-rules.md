@@ -56,6 +56,7 @@ and `fill="none" stroke="currentColor"`.
 | `image.svg` | Tool-card image count, drop overlay. New, drawn on the system grid |
 | `pencil.svg` | Draft rows (§2): the lead of line 2, before the draft's preview. A pen at 45° with a nib, legible at `.icon-sm`. New, drawn on the system grid |
 | `gauge.svg` | Usage: the sidebar foot's Usage row. pi-web's own, drawn on the system grid |
+| `sliders.svg` | Mode: the mode trigger at the right end of the composer foot (§4g). Three tracks with an offset handle each. New, drawn on the system grid |
 | `worker.svg` | Agents: the sidebar foot's Agents row, plus the Teams and Subagents section heads (from the skill's set) |
 | `settings.svg` | Settings: the gear at the right end of the sidebar foot's Agents row, and the Settings dialog's tab rail. A cog on the system grid (the skill ships a sun-burst under this name)
 | `check-circle.svg`, `x-circle.svg`, `external.svg`, `menu.svg`, `branch.svg` | Reserved. Shipped but unused in the MVP |

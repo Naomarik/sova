@@ -179,7 +179,10 @@ export function Composer(props: {
   const onBand = (e: MediaQueryListEvent) => setKeyHint(e.matches);
   unfolded.addEventListener("change", onBand);
   onCleanup(() => unfolded.removeEventListener("change", onBand));
-  const placeholder = () => `${props.running ? "Steer the current turn…" : "Ask pi to…"}${keyHint() && !props.readOnly ? "—Enter sends, Shift+Enter adds a line" : ""}`;
+  const placeholder = () =>
+    [props.running ? "Steer the current turn…" : "",
+      keyHint() && !props.readOnly ? "Enter sends, Shift+Enter adds a line" : ""]
+      .filter(Boolean).join(" ");
   const canSend = () => !disabled() && uploading() === 0 && (text().trim().length > 0 || images().length > 0);
 
   // ---- Model indicator (§4 ".composer-foot"): this session's model and thinking level, and

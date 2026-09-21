@@ -20,8 +20,10 @@ const liveDir = join(agentDir, "sessions", "live");
 mkdirSync(sessionsDir, { recursive: true });
 mkdirSync(liveDir, { recursive: true });
 
-const { cleanupSessions } = await import("./sessions-index");
+const { archiveSession, cleanupSessions, idOf } = await import("./sessions-index");
 const { isArchived, setArchived } = await import("./archived-sessions");
+const { addWebSession, isWebSession } = await import("./web-sessions");
+const { setDraft } = await import("./drafts");
 const { canonicalPath } = await import("./paths");
 
 // A live record's pid must be alive for readLive to see it, like archived-sessions.test.ts fakes it.
@@ -176,4 +178,60 @@ test("paths: a session file that is already gone is refused, not failed", async 
   const [refusal] = r.refused ?? [];
   assert.ok(refusal, "one refusal, saying why");
   assert.match(refusal.reason, /not found/i);
+});
+
+// A header-only husk: no user message anywhere in the file (the "Untitled" row of a new session
+// that was never sent anything).
+function husk(id: string): string {
+  const path = join(sessionsDir, `2026-09-21T00-00-00-000Z_${id}.jsonl`);
+  writeFileSync(path, `${header(id)}\n`);
+  return canonicalPath(path);
+}
+
+test("archive: an empty husk is deleted outright, with every id list it was on", async () => {
+  const id = "01234567-89ab-7cde-8f01-234567890ac0";
+  const path = husk(id);
+  addWebSession(id);
+
+  const r = await archiveSession(path, true);
+
+  assert.ok(r.ok, "archiving a husk succeeds");
+  assert.ok(!existsSync(path), "the husk file is gone for good");
+  assert.equal(isArchived(id), false, "no archive mark for a file that no longer exists");
+  assert.equal(isWebSession(id), false, "the web-session id went with it");
+});
+
+test("archive: a husk with a stored draft is kept and marked, not deleted", async () => {
+  const id = "01234567-89ab-7cde-8f01-234567890ac1";
+  const path = husk(id);
+  addWebSession(id);
+  setDraft(id, "still writing this");
+
+  const r = await archiveSession(path, true);
+
+  assert.ok(r.ok);
+  assert.ok(existsSync(path), "a draft the user is writing is a session, not an abandoned stub");
+  assert.equal(isArchived(id), true, "it archives like any other session");
+});
+
+test("archive: a web session with messages is kept and marked, as before", async () => {
+  const id = "01234567-89ab-7cde-8f01-234567890ac3";
+  const path = session(id, "i exist");
+  addWebSession(id);
+
+  const r = await archiveSession(path, true);
+
+  assert.ok(r.ok);
+  assert.ok(existsSync(path));
+  assert.equal(isArchived(id), true);
+});
+
+test("archive: a husk this server didn't spawn is still refused, never deleted", async () => {
+  const id = "01234567-89ab-7cde-8f01-234567890ac2";
+  const path = husk(id); // never added to web-sessions
+
+  const r = await archiveSession(path, true);
+
+  assert.equal(r.ok, false);
+  assert.ok(existsSync(path), "an external session file is never touched");
 });

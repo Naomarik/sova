@@ -4,7 +4,7 @@ import { Portal } from "solid-js/web";
 import type { SessionInsight, SessionSummary, TeamInfo, WorkerInfo } from "../shared/protocol";
 import { createSession, fetchAgents, fetchExplanations, fetchSessionInsight, fetchUsage, listSessions, setSessionArchived } from "./lib/api";
 import { agentsHref, insightsRouteFromHash, legacyInsightsTarget } from "./lib/insights";
-import { createThenArchive, newSessionCwd } from "./lib/new-session";
+import { createThenArchive, dropArchived, newSessionCwd } from "./lib/new-session";
 import { cwdLabel } from "./lib/remote-session";
 import { createPoll } from "./lib/poll";
 import { homeFromSessionPath, shortModel } from "./lib/format";
@@ -268,6 +268,22 @@ export function App() {
   };
 
   /**
+   * An Archive/Unarchive landed (the chat's own gesture, the pane's, the info modal's). An archived
+   * session leaves the server's list — a message-less one is deleted outright — so the row this tab
+   * froze at creation has to go with it, or the sidebar keeps a row for a session that is gone.
+   * Off the dead session first: the route change unmounts its view before the refetched list can
+   * pull the summary out from under it.
+   */
+  const onArchived = (path: string, archived: boolean) => {
+    if (archived && route() === path) {
+      location.hash = "#/";
+      batch(onHash);
+    }
+    if (dropArchived(created, path, archived)) setCreatedVersion((v) => v + 1);
+    refresh();
+  };
+
+  /**
    * A bare "/new" typed in `source` (§4d): a new session in the same folder, then `source` goes to
    * the Archive. Resolves to the folder label once the new session exists, null if none was made.
    * Only web-spawned sessions can be archived; one with subagents working stays open, since
@@ -291,6 +307,8 @@ export function App() {
       toast(`Couldn't start a new session. ${out.error}`);
       return null;
     }
+    // The source was archived: drop its frozen row too, else the husk lingers beside the new one.
+    if (archivable && !out.archiveError) dropArchived(created, source, true);
     if (out.archiveError) toast(`New session started, but the previous one couldn't be archived. ${out.archiveError}`);
     else if (s?.origin === "web" && workersBusy) toast("New session started. The previous one stays open while its subagents work.");
     adoptCreated(out.session);
@@ -693,7 +711,7 @@ export function App() {
                               onShowTimeline={(only) => showTimeline(d.path, only)}
                               onRefused={onRefused}
                               onStarted={() => refresh()}
-                              onArchiveChanged={refresh}
+                              onArchiveChanged={onArchived}
                               onGroupsChanged={refresh}
                               onSettled={() => {
                                 refresh();
@@ -729,7 +747,7 @@ export function App() {
                 path={path}
                 insight={paneInsight()!.insight}
                 summary={summary() ?? undefined}
-                onArchiveChanged={refresh}
+                onArchiveChanged={onArchived}
                 onGroupsChanged={refresh}
                 chatWorkers={chatWorkers.path === path ? chatWorkers.list : null}
                 chatUsage={chatWorkers.path === path ? chatWorkers.usage : null}

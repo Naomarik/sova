@@ -21,7 +21,8 @@ const SKELETON_MS = 300;
  *   context  this chat's context fill (ContextGauge's source)
  *   items    this chat's transcript rows (for the model/thinking/mode timeline)
  *   onClose  close and return focus to the flyout trigger
- *   onArchiveChanged  after Archive/Unarchive succeeds: re-read the session list
+ *   onArchiveChanged  after Archive/Unarchive succeeds: re-read the session list, with the
+ *                     session's path and its new archived state
  *   onGroupsChanged  after a group change succeeds: re-read the session list
  */
 export function SessionInfoDialog(props: {
@@ -30,7 +31,7 @@ export function SessionInfoDialog(props: {
   summary?: () => SessionSummary | undefined;
   context?: () => ContextInfo | null;
   items?: () => TranscriptItem[];
-  onArchiveChanged?: () => void;
+  onArchiveChanged?: (path: string, archived: boolean) => void;
   onGroupsChanged?: () => void;
 }) {
   const [insight, setInsight] = createSignal<SessionInsight | null>(null);

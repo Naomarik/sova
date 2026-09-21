@@ -277,7 +277,8 @@ app.put("/api/settings/subagents", async (c) => {
 app.get("/api/mode", (c) => c.json(modeInfo(readMode())));
 
 // With ?path=<session .jsonl>: switch that one held chat, from its next message (server/chat-manager
-// applyMode), leaving the default alone. Without it: write the default (server/mode.ts).
+// applyMode); in a chat with no messages yet that switch is also saved as the default (chat-manager
+// switchMode). Without it: write the default directly (server/mode.ts).
 app.post("/api/mode", async (c) => {
   const rawPath = c.req.query("path");
   const path = rawPath === undefined ? null : resolveSessionPath(rawPath);

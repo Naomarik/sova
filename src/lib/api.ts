@@ -3,6 +3,7 @@ import type {
   ChatModeResult,
   ContextInfo,
   ExplanationInfo,
+  FileIndex,
   FolderListing,
   ModeInfo,
   ModelInfo,

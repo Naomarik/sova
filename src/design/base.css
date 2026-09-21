@@ -275,6 +275,13 @@ i.icon {
   background: currentColor;
   flex: none;
 }
+/* Optical centring. The chip's line box is asymmetric about the baseline (~9.6px
+   above, ~3.6px below at --fs-micro), and uppercase text never reaches into that
+   descender room, so a dot centred on the box paints ~1px below the letters. The
+   bottom margin is halved by `align-items: center`, lifting the dot 1px, onto the
+   cap-height centre. `.chip-count` keeps its lowercase text, whose ascender-to-
+   baseline mass the line box already centres, so it stays as it is. */
+.chip:not(.chip-count) > .chip-dot { margin-block-end: 2px; }
 .chip-success { color: var(--status-success); }
 .chip-warn    { color: var(--status-warn); }
 .chip-error   { color: var(--status-error); }
@@ -2202,7 +2209,9 @@ summary.sidebar-region-head .icon-twist { transition: transform var(--dur-fast) 
 .mode-trigger {
   flex: 0 1 auto;
   min-width: 0;
-  max-width: 200px;
+  /* No cap: the label is the fact, and a mode that fits reads in full. It still shrinks —
+     minor first — when the composer foot actually runs out of room. */
+  max-width: 100%;
   gap: var(--space-1);
   padding: 0 var(--space-2);
   font-family: var(--font-mono);

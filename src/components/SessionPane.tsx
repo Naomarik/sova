@@ -50,8 +50,9 @@ export function SessionPane(props: {
   insight: PaneInsight;
   /** App-level session list row (undefined before the list loads), for Identity. */
   summary: SessionSummary | undefined;
-  /** After Archive/Unarchive in the Session tab: re-read the session list. */
-  onArchiveChanged(): void;
+  /** After Archive/Unarchive in the Session tab: re-read the session list, with the session's
+      path and its new archived state (an archived one leaves the list). */
+  onArchiveChanged(path: string, archived: boolean): void;
   /** After a group change in the Session tab: the same list, for the Groups region. */
   onGroupsChanged(): void;
   chatWorkers: WorkerInfo[] | null;
@@ -243,7 +244,7 @@ function SessionTab(props: {
   summary: SessionSummary | undefined;
   items: TranscriptItem[] | null;
   now: number;
-  onArchiveChanged(): void;
+  onArchiveChanged(path: string, archived: boolean): void;
   onGroupsChanged(): void;
 }) {
   /** The gauge's reading; "compacted" is re-derived from the items, as in the modal. */

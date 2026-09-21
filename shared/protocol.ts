@@ -350,6 +350,20 @@ export interface FolderListing {
   truncated: boolean;
 }
 
+// GET /api/files?cwd=…            -> FileIndex   (NOT IMPLEMENTED YET: the client for the composer's
+//                                  @-mention menu landed in 6504bbe without this route, so today the
+//                                  fetch 404s and the menu shows its error state)
+// ---------------------------------------------------------------------------
+/** The @-mention file index for a session cwd: every non-ignored file under it as a "/"-separated
+    path relative to the cwd, cut at the server's cap. This is the shape the client (src/lib/files.ts,
+    Composer's FileMenu) already consumes; the server side is still to be written. */
+export interface FileIndex {
+  /** Non-ignored file paths relative to the cwd, "/"-separated. */
+  files: string[];
+  /** True when `files` was cut at the server's cap. */
+  truncated: boolean;
+}
+
 /** Longest group name, in characters, after trimming (SessionGroup.name; the server trims and
     refuses an empty or longer one with 400). The one place the limit is written down: the create
     input's maxlength and the server's rule read it from here. */

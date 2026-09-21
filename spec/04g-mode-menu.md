@@ -10,7 +10,9 @@ start a new chat or reconnect, and no other chat or terminal session moves.
 `~/.pi/agent/mode.json` is the **default for new sessions** (plus the shortcuts). A session that
 has never toggled follows it; the first toggle pins that session. `GET /api/mode` reads it and
 `POST /api/mode` without `?path=` writes it; neither touches an open chat. From a terminal,
-`/mode default` saves the current session's mode as the default.
+`/mode default` saves the current session's mode as the default. A switch in a session that has
+sent no message yet writes the default too — the chat you're still setting up is the one you're
+setting up new chats from; once it has messages, switching is that chat's alone.
 
 ## Trigger
 
@@ -25,17 +27,19 @@ chip and the info button (§4f); it carries no mode.
 <button class="button button-ghost mode-trigger" type="button" aria-haspopup="menu"
         aria-expanded="false" aria-controls="mode-menu"
         aria-label="Mode: claude-heavy · align" title="Mode: claude-heavy · align">
-  <span class="icon icon-sm" style="--icon: url(/icons/worker.svg)" aria-hidden="true"></span>
+  <span class="icon icon-sm" style="--icon: url(/icons/sliders.svg)" aria-hidden="true"></span>
   <span class="mode-trigger-label">claude-heavy</span>
   <span class="mode-trigger-label mode-trigger-minor">· align</span>   <!-- only with a minor on -->
   <span class="icon icon-sm" style="--icon: url(/icons/chevron-down.svg)" aria-hidden="true"></span>
 </button>
 ```
 
-- **Label.** This chat's major mode, then each minor mode on, joined with " · ", in mono. It caps
-  at 200px and truncates, with the full text in `title`. The minors are their own span, so they
-  ellipsize first and the major mode last. Before the chat's first `mode` message
-  arrives it reads just "Mode" and no row is checked: the default is not this chat's state.
+- **Label.** This chat's major mode, then each minor mode on, joined with " · ", in mono. It has
+  no fixed cap: whatever fits reads in full, with the full text in `title` either way. Only real
+  pressure in the foot shrinks it, and it shares that squeeze with the model indicator's 24ch cap
+  beside it. The minors are their own span, so they ellipsize first and the major mode last.
+  Before the chat's first `mode` message arrives it reads just "Mode" and no row is checked: the
+  default is not this chat's state.
 - **Name.** `aria-label` repeats the label with "Mode: " in front, so it survives when the label
   hides. A pending switch adds ", applies after this turn".
 - **Every width.** It never hides and never goes icon-only: the label is the fact. It narrows the
@@ -70,8 +74,8 @@ toggles, which is exactly what `menuitemradio` and `menuitemcheckbox` are for.
       <div class="mode-option" role="menuitemcheckbox" aria-checked="true" tabindex="-1">…align…</div>
     </div>
   </div>
-  <p class="mode-menu-foot"><span class="text-mono">strict: off</span> · This chat only. New sessions
-    start from the default; <code>/mode default</code> saves this chat's as it.</p>
+  <p class="mode-menu-foot"><span class="text-mono">strict: off</span> · Before your first message
+    it's also the new default; after, this chat only. <code>/mode default</code> saves it any time.</p>
 </div>
 ```
 

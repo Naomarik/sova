@@ -36,3 +36,12 @@ export async function createThenArchive<S>(
     return { ok: true, session, archiveError: (err as Error).message || "Unknown error." };
   }
 }
+
+/**
+ * Prunes a just-archived session from the rows this tab created (App's `created`): archiving takes
+ * the session off the server's list — a message-less one is deleted outright — so the row frozen at
+ * creation would outlive it in the sidebar. Unarchiving leaves the set alone. True when one went.
+ */
+export function dropArchived(created: { delete(path: string): boolean }, path: string, archived: boolean): boolean {
+  return archived ? created.delete(path) : false;
+}

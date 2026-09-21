@@ -181,7 +181,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Menu `aria-label` | Mode |
 | Group labels | Major mode · Minor modes |
 | Descriptions | normal: Pi as usual · claude-heavy: Orchestrate: delegate coding and planning to Claude Code workers · minors: from pi-config `MINOR_DESCRIPTIONS` |
-| Foot | strict: {on\|off} · This chat only. New sessions start from the default; `/mode default` saves this chat's as it. |
+| Foot | strict: {on\|off} · Before your first message it's also the new default; after, this chat only. `/mode default` saves it any time. |
 | Pending | **Applies after this turn.** This turn keeps the old mode, and so do messages queued during it. Your next message follows the new one. |
 | Can't switch | **This chat can't switch.** This chat can't switch: the mode extension isn't loaded here, or another program wrote this session. |
 | Save failed | **Couldn't switch the mode.** {reason}. Your mode is unchanged. |

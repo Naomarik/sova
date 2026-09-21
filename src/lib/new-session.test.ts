@@ -1,7 +1,7 @@
 // Run: npx tsx --test src/lib/new-session.test.ts
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { createThenArchive, newSessionCwd } from "./new-session";
+import { createThenArchive, dropArchived, newSessionCwd } from "./new-session";
 
 test("newSessionCwd prefers the chat's own folder", () => {
   assert.equal(newSessionCwd("/a", [{ cwd: "/b", lastActiveAt: "2026-01-02T00:00:00Z" }]), "/a");
@@ -59,4 +59,17 @@ test("createThenArchive archives nothing for a source the caller keeps", async (
   });
   assert.equal(archived, false);
   assert.deepEqual(out, { ok: true, session: "new", archiveError: null });
+});
+
+test("dropArchived prunes the archived session from the created rows", () => {
+  const created = new Map([["/a.jsonl", { path: "/a.jsonl" }], ["/b.jsonl", { path: "/b.jsonl" }]]);
+  assert.equal(dropArchived(created, "/a.jsonl", true), true);
+  assert.deepEqual([...created.keys()], ["/b.jsonl"]);
+});
+
+test("dropArchived leaves an unarchived session, and a path it never created, alone", () => {
+  const created = new Map([["/b.jsonl", { path: "/b.jsonl" }]]);
+  assert.equal(dropArchived(created, "/b.jsonl", false), false);
+  assert.equal(dropArchived(created, "/gone.jsonl", true), false);
+  assert.deepEqual([...created.keys()], ["/b.jsonl"]);
 });

@@ -28,7 +28,13 @@ after(() => {
 
 function session(id: string): string {
   const path = join(sessionsDir, `2026-09-19T00-00-00-000Z_${id}.jsonl`);
-  writeFileSync(path, `${JSON.stringify({ type: "session", version: 3, id, timestamp: "2026-09-19T00:00:00.000Z", cwd: "/tmp" })}\n`);
+  // A real session, not a husk: a header-only file is deleted outright when archived now
+  // (sessions-index), which is not what these store tests are about.
+  const lines = [
+    JSON.stringify({ type: "session", version: 3, id, timestamp: "2026-09-19T00:00:00.000Z", cwd: "/tmp" }),
+    JSON.stringify({ type: "message", id: "m1", parentId: null, timestamp: "2026-09-19T00:00:01.000Z", message: { role: "user", content: "hi" } }),
+  ];
+  writeFileSync(path, `${lines.join("\n")}\n`);
   return canonicalPath(path);
 }
 const onDisk = () => JSON.parse(readFileSync(archiveFile, "utf8")) as string[];

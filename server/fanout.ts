@@ -24,7 +24,7 @@ const CURRENT_SESSION_VERSION = 3;
 /** Enough for the header line. The leaf needs the whole file (see renderedActiveLeaf). */
 const HEAD_BYTES = 16 * 1024;
 
-const refusal = (path: string, code: BatchRefusalCode, message: string, id = ""): BatchRefusal => ({ id, path, code, message });
+const refusal = (path: string, code: BatchRefusalCode, message: string, id = "", ref?: string): BatchRefusal => ({ id, path, code, message, ...(ref ? { ref } : {}) });
 
 export type FanoutOutcome =
   | { ok: true; result: FanoutResult }
@@ -334,7 +334,11 @@ export async function runFanout(body: FanoutRequest, deps: FanoutDeps = realFano
       created.push(summary);
     } catch (err) {
       if (path) deps.discard(path); // its own debris only; nothing that succeeded is touched
-      failed.push(refusal("", "internal", `${member.ref} could not be started: ${err instanceof Error ? err.message : String(err)}`));
+      // `ref` is the only handle on a member that never existed: no session, so no id and no
+      // path. The message stays the server's bare reason — the banner composes "{model} couldn't
+      // start: {message}" itself, so prefixing the ref here would render the model twice.
+      const said = (err instanceof Error ? err.message : String(err)).trim();
+      failed.push(refusal("", "internal", said || "it could not be started", "", member.ref));
     }
   }
   // A group with no members is debris, not a result.

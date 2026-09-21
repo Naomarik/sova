@@ -553,6 +553,11 @@ export interface BatchRefusal {
   path: string; // canonical session path ("" when the file is gone)
   code: BatchRefusalCode;
   message: string;
+  /** FANOUT ONLY: the model ref (`ModelInfo.ref`) of a member that was never created, so the
+      partial-creation banner can name it. A member that does not exist has no session, so `id`
+      and `path` are both "" and this is the only handle the client has on it. Absent everywhere
+      else — on the prompt route the member always exists and `id` names it. */
+  ref?: string;
 }
 
 /** One row of the fanout dialog: a model, and how many copies of it to make. */

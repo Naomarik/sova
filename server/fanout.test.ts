@@ -173,8 +173,12 @@ test("a member that fails mid-creation loses its OWN file and nothing else", asy
   assert.ok(r.ok, "the survivors are a result, not a failure");
   assert.equal(r.result.created.length, 2);
   assert.equal(r.result.failed.length, 1);
-  assert.match(r.result.failed[0]!.message, /model refused/);
+  assert.equal(r.result.failed[0]!.message, "model refused", "the server's bare reason, for the banner to quote");
   assert.equal(r.result.failed[0]!.code, "internal");
+  // The ONLY handle on a member that was never created: no session, so no id and no path.
+  assert.equal(r.result.failed[0]!.ref, "anthropic/opus", "so the banner can name the model");
+  assert.equal(r.result.failed[0]!.id, "");
+  assert.equal(r.result.failed[0]!.path, "");
   assert.deepEqual(d.rec.discarded, [], "the throw produced no path for us to clean");
   assert.equal(d.rec.assigned.length, 2, "only the members that exist are grouped");
 });
@@ -205,4 +209,34 @@ test("a source path that is not a session file is 404, not a refusal", async () 
   const r = await runFanout(forkBody({ source: { path: "/etc/passwd", leafId: LEAF } }), d);
   assert.ok(!r.ok && r.status === 404, "the subject of the request doesn't exist");
   assert.deepEqual(d.rec.forked, []);
+});
+
+test("a member that fails its read-back is also named by ref, not by a session it never had", async () => {
+  const d = deps({ members: () => ["a"], summary: async () => null });
+  const r = await runFanout(forkBody({ members: [{ ref: "openai/gpt-5", count: 2 }] }), d);
+  assert.ok(!r.ok && r.status === 500, "no member survived, so no group is written");
+});
+
+test("every fanout failure carries a ref; a prompt-route refusal carries none", async () => {
+  const d = deps({
+    members: () => ["a"],
+    fork: async (_s, _l, member) => {
+      throw new Error(`${member.ref} is over quota`);
+    },
+  });
+  const r = await runFanout(forkBody({ members: [{ ref: "anthropic/opus", count: 1 }, { ref: "openai/gpt-5", count: 1 }] }), d);
+  assert.ok(!r.ok && r.status === 500);
+  // and when SOME survive, each failure names its own model
+  const partial = deps({
+    fork: async (_s, _l, member) => {
+      if (member.ref === "openai/gpt-5") throw new Error("over quota");
+      return "/sessions/--tmp--/ok_id1.jsonl";
+    },
+  });
+  const p = await runFanout(forkBody({ members: [{ ref: "anthropic/opus", count: 1 }, { ref: "openai/gpt-5", count: 1 }] }), partial);
+  assert.ok(p.ok);
+  assert.deepEqual(
+    p.result.failed.map((f) => [f.ref, f.message]),
+    [["openai/gpt-5", "over quota"]],
+  );
 });

@@ -9,6 +9,7 @@ import { activeTab, sessionContext, setActiveTab, toast } from "../lib/ui-state"
 import { capTitle, usageHeadline, usageTitle, usageTotal, type UsageTotalView, workerLabel, workerTeam } from "../lib/workers";
 import type { RewindControl } from "../lib/inputs";
 import { jumpToEntry } from "../lib/jump";
+import { RemotePaneStatus } from "./RemoteStatus";
 import { SessionDetails } from "./SessionDetails";
 import { SessionTimeline } from "./SessionTimeline";
 import { SubagentPane } from "./SubagentPane";
@@ -150,6 +151,8 @@ export function SessionPane(props: {
           <Icon name="chevron-right" />
         </button>
       </header>
+      {/* A remote session's connection, on every tab (only while its chat reports one). */}
+      <RemotePaneStatus path={props.path} />
       {/* Named apart from the landmark: both saying "Session detail" made a reader announce the
           same name twice, nesting into itself. */}
       <div class="tabs session-tabs" role="tablist" aria-label="Session detail tabs">

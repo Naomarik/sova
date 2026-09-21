@@ -17,6 +17,7 @@ import { ContextGauge, ContextMetaPrefix, contextDescribedBy } from "./component
 import { NewSessionDialog } from "./components/NewSessionDialog";
 import { ExplainGrid } from "./components/ExplainGallery";
 import { InsightStrip } from "./components/InsightStrip";
+import { RemoteHeadChip } from "./components/RemoteStatus";
 import { SessionPane, type PaneInsight, type TabId } from "./components/SessionPane";
 import { sessionHref, Sidebar } from "./components/Sidebar";
 import { SidebarResizer } from "./components/SidebarResizer";
@@ -585,6 +586,7 @@ export function App() {
                           )}
                         </Show>
                       </Show>
+                      <RemoteHeadChip path={d.path} onOpen={() => openPane(d.path, "session")} />
                       <Show when={s().live}>
                         <Chip tone="accent" title={`Open in pi in a terminal · pid ${s().live!.pid} · ${s().live!.status}`}>
                           TUI

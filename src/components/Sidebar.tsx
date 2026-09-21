@@ -10,6 +10,7 @@ import { home, localRunning, sessionContext, toast } from "../lib/ui-state";
 import { activeAgentCounts, activeTeamCount, sessionWorking } from "../lib/workers";
 import { ArchiveCleanup } from "./ArchiveCleanup";
 import { ContextRing } from "./ContextRing";
+import { RemoteGroupDot } from "./RemoteStatus";
 import { Banner, Chip, Icon } from "./ui";
 
 interface Group {
@@ -186,7 +187,17 @@ function GroupList(props: { groups: Group[]; selected: string | null; now: numbe
               <Icon name={remote ? "terminal" : "folder"} small />
               {/* Remote: the target's label stays whole and the folder on it truncates from the left
                   like a local path, but never as "~": the target's $HOME isn't ours. */}
-              <Show when={remote}>{(r) => <span>{label(r().target)} ·</span>}</Show>
+              <Show when={remote}>
+                {(r) => (
+                  <>
+                    <span>{label(r().target)}</span>
+                    {/* The connection as the open chat last reported it: after the label, never
+                        on a row's rail, and it never pulses, so it can't read as the live dot. */}
+                    <RemoteGroupDot target={r().target} />
+                    <span aria-hidden="true">·</span>
+                  </>
+                )}
+              </Show>
               <span class="session-group-path">
                 <bdi>{remote ? remote.remoteCwd : tildePath(group.cwd, home())}</bdi>
               </span>

@@ -6,6 +6,21 @@ import { fetchTranscriptWithContext, wsUrl } from "../lib/api";
 import { contextStateFor, usageTokens, windowOf } from "../lib/context";
 import { addPendingPrompt, applyEvent, emptyLive, runDetail, takeBackQueued, type LiveState } from "../lib/live";
 import { isObj, str } from "../lib/message";
+import {
+  closeRemoteStatus,
+  isRemoteNotice,
+  openRemoteStatus,
+  REMOTE_CHECK_TEXT,
+  REMOTE_COMMAND,
+  REMOTE_RECONNECT_TEXT,
+  REMOTE_STATUS_KEY,
+  REMOTE_STATUS_TEXT,
+  type RemoteControls,
+  remoteStatusAsker,
+  reportRemoteStatus,
+  setRemoteControls,
+} from "../lib/remote-status";
+import { remotePlaceOf } from "../lib/remote-session";
 import { createReconnectingSocket } from "../lib/socket";
 import { usageTotal, type UsageTotalView, workingSplit } from "../lib/workers";
 import type { UploadResult } from "../../shared/protocol";
@@ -122,6 +137,26 @@ export function ChatView(props: {
     clearTimeout(thinkingTimer);
   });
 
+  // A remote session's connection chips (src/lib/remote-status.ts): "checking…" until the
+  // extension's first report, and gone when this chat closes, since nothing reports after that.
+  const remote = remotePlaceOf(props.summary?.() ?? { cwd: "" });
+  if (remote) {
+    openRemoteStatus(props.path, remote.target);
+    onCleanup(() => closeRemoteStatus(props.path));
+  }
+  /** Extension notices become toasts; the remote extension's (a lost host) is a connection event,
+      said once per text a minute rather than stacked on every retry. */
+  let lastNotice = { text: "", at: 0 };
+  /** Armed by each hello; the commands message that follows it asks for the current status. */
+  const statusAsker = remoteStatusAsker(!!remote);
+  const notice = (message: string) => {
+    if (!isRemoteNotice(message)) return toast(message);
+    const text = message.split("\n", 1)[0]!.trim();
+    if (text === lastNotice.text && Date.now() - lastNotice.at < 60_000) return;
+    lastNotice = { text, at: Date.now() };
+    toast(text);
+  };
+
   const resync = async () => {
     setSyncing(true);
     try {
@@ -199,6 +234,7 @@ export function ChatView(props: {
           cancelAnimationFrame(frame);
           frame = 0;
           queue = [];
+          statusAsker.hello();
           batch(() => {
             setItems(msg.items);
             setLive(reconcile({ ...emptyLive(), running: msg.isStreaming }));
@@ -250,6 +286,9 @@ export function ChatView(props: {
           break;
         case "commands":
           setCommands(msg.commands);
+          // A runtime that outlived its last socket won't report again until something happens,
+          // and setStatus isn't replayed: ask it to re-publish (no ssh, no toast), once per hello.
+          if (statusAsker.commands(msg.commands)) socket.send({ type: "prompt", text: REMOTE_STATUS_TEXT });
           break;
         case "model":
           modelSwitched(msg.model);
@@ -282,8 +321,10 @@ export function ChatView(props: {
             socket.send({ type: "ui_response", id: msg.id, value: null });
             setCommandRows((rows) => (rows.length ? [...rows.slice(0, -1), { ...rows[rows.length - 1]!, tui: true }] : rows));
           } else if (!req.fireAndForget) setDialogs((d) => [...d, { id: msg.id, request: msg.request }]);
-          else if (req.method === "notify" && str(req.message)) toast(str(req.message)!);
-          // setStatus is TUI chrome (and ANSI-coded); nothing to show.
+          else if (req.method === "notify" && str(req.message)) notice(str(req.message)!);
+          // The remote extension's JSON status feeds the connection chips; any other setStatus
+          // (its own "remote" key included) is TUI chrome, often ANSI-coded: nothing to show.
+          else if (req.method === "setStatus" && req.statusKey === REMOTE_STATUS_KEY) reportRemoteStatus(props.path, req.statusText);
           break;
         }
         case "error":
@@ -545,6 +586,16 @@ export function ChatView(props: {
   const abort = () => {
     if (socket.send({ type: "abort" })) setLive("stopping", true);
   };
+
+  // Check-now and reconnect, offered only while this runtime has the remote extension's command.
+  // Sent straight over the socket: no "Ran" row, the chips show the answer.
+  if (remote) {
+    const controls: RemoteControls = {
+      check: () => socket.send({ type: "prompt", text: REMOTE_CHECK_TEXT }),
+      reconnect: () => socket.send({ type: "prompt", text: REMOTE_RECONNECT_TEXT }),
+    };
+    createEffect(() => setRemoteControls(props.path, commands().some((c) => c.name === REMOTE_COMMAND) ? controls : undefined));
+  }
 
   return (
     <>

@@ -40,7 +40,64 @@ unfolded (≥768)                                  folded (<768)
 - **Dialogs** follow the skill's modal pattern and become a bottom sheet under 768px
   automatically (`.modal` restyles itself).
 - **Toasts** go in one `.toast-stack` portal. Use them only for "Copied path." / "Copied output."
-  A toast is never the only record of a fact, so errors go in banners.
+  A toast is never the only record of a fact, so errors go in banners. One exception is the
+  remote extension's connection notices (below): the chips hold the fact, so the toast is just the
+  event.
+
+## Remote connection chip
+
+A session on a remote target (spec/02 "Remote sessions") shows its connection in three places,
+all fed by one source: the remote extension's `setStatus("remote-status", <JSON>)`, which the
+chat socket delivers as a fire-and-forget `ui_request`
+(`{state:"online"|"unreachable"|"unknown", host?, latencyMs?, pinned, channelState?, lastOkAt, runningMs?, error?, at}`;
+its plain `remote` status is TUI footer text and is ignored). `src/lib/remote-status.ts` parses
+it (any other shape is ignored, never guessed at) and `src/components/RemoteStatus.tsx` renders
+it.
+
+- **Only what the extension knows.** `connected` (success tone) means a real round trip
+  succeeded **within the last 2 minutes**; an older success reads `last ok · 12m ago` with a
+  neutral dot, so a stale reading is visibly old. A failure reads `unreachable` (error tone) with
+  the failure's first line. Before the first report it reads `checking…` (neutral, never green),
+  and after 30 s with no report at all, `no status`. While a command runs it reads `running 12s`
+  (ticking locally between reports); it never says "hung" or "stuck", because a hung command and a
+  slow one look the same from here. Ages are measured on the reporter's clock (`at`) plus the
+  time since the report arrived, so a browser whose clock is off can't freshen them.
+- **A rate-limited channel is not a lost host.** `channelState: "rate-limited"` means the host
+  refused the fast channel's fresh ssh login (acme-prod allows about 6 per 30 s per source IP)
+  while per-call ssh over the existing master still works. The word and the dot stay driven by
+  `lastOkAt` (`connected` if recent), never red. The channel gets its own line:
+  `rate-limited (ssh refused) · retry in 12s`, counted down on the 1 s clock from
+  `channelRetryAt` (on the reporter's clock, like the ages), then `retry on next call` once it has
+  passed or when no time was given. The pane shows it as a muted caption under the chip
+  (`Fast channel rate-limited (ssh refused) · retry in 12s`); the head chip's `title` carries the
+  same line.
+- **In the session head**, a `.chip` button just before the `TUI` chip: state word, `·`, host
+  (`user@hostname` once the extension's preflight answered; the host keeps its case inside the
+  uppercase chip). Compact: no age, except on `last ok 12m ago`, where the age is the point. `title` carries
+  latency, whether the fast channel is pinned and its state, and the last success's age and time.
+  Clicking it opens Session detail on the Session tab, where the controls are. It is a plain
+  uppercase chip, not `.chip-count`, so the narrow head's `.chip-count` rule never hides it.
+  **Absent for local sessions**, and for a remote session not open for chat here (a watched or
+  TUI-owned one): pi-web only hears the status over its own chat socket, and a chip it can't feed
+  would be a claim.
+- **In Session detail** (every tab), a row under the pane's head: the same chip as
+  `.chip.chip-count` (host keeps its case) plus the age of the last success (`· 42s ago`,
+  `· ok 5m ago`, `· never ok`) or the running time; the failure's first line under it in
+  `.text-caption.text-error`; and two small ghost buttons, **Check now** (`/remote check`, one
+  fresh round trip) and **Reconnect** (`/remote reconnect`, drop the fast channel and re-probe).
+  Both are sent as ordinary prompts over the chat socket (the server runs extension commands at
+  once, even mid-turn) with no "Ran" row, and are shown only while the runtime advertises the
+  `remote` command. While one waits, it reads `Checking…` / `Reconnecting…` and both disable,
+  until the next report lands or 20 s pass.
+- **Connection notices.** A `notify` from the extension starting with `remote:` (first loss of a
+  host, recovery) is a connection event: its first line becomes a normal non-modal toast, and the
+  same text isn't repeated within a minute, so a flapping host never stacks toasts.
+- **Lifetime.** The status lives while the chat is open in this tab and goes with it: nothing
+  reports after the socket closes, so nothing is shown. setStatus isn't replayed on `hello`, and a
+  runtime that outlived its last socket has no session start to report on, so after each `hello`
+  the `commands` message that follows (if it lists `remote`) triggers one silent `/remote status`:
+  the extension re-publishes its current status, with no ssh and no toast. Until it lands, the
+  chips read `checking…`.
 
 ## Resizing the sessions pane
 

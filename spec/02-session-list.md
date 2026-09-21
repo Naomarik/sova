@@ -117,9 +117,20 @@
   holds remote sessions and again when the set of targets it uses changes; if that fails, the name
   stands in. Search matches the target's name, label and remote folder instead of the placeholder.
 
+  **Connection dot.** While a chat on that target is open in this tab, a 6px `.chip-dot` sits
+  right after the target's label, before the `·`: success tone for `connected`, error tone for
+  `unreachable`, the label's own muted ink for `last ok`, `checking…` and `no status` — the same
+  reading as the head chip (spec/01 "Remote connection chip"), from the freshest report among
+  this tab's open chats on that target. It is `role="img"` with `aria-label="connection: <word>"`
+  and a `title` starting `Connection: <word>` then the chip's hover text. It can't be taken for
+  the live-session dot: it lives in the group label, not a row's rail, it is smaller, and it never
+  pulses. With no chat open on the target there's no dot, since nothing is reporting.
+
   ```html
   <h3 class="list-group-label" id="t-2" title="acme-prod (192.0.2.10):/home/deploy/acme-site">
-    …terminal, icon-sm… <span>acme prod ·</span>
+    …terminal, icon-sm… <span>acme prod</span>
+    <span class="chip-dot chip-success" role="img" aria-label="connection: connected" title="Connection: connected …"></span>
+    <span aria-hidden="true">·</span>
     <span class="session-group-path"><bdi>/home/deploy/acme-site</bdi></span>
     <span class="text-num">2</span>
   </h3>

@@ -307,7 +307,19 @@ member at once.
   every id must be in the group. **The route carries no images field at all** — that is what "the
   `plus` trigger is absent rather than disabled" means on the wire, not just in the composer.
 - **What comes back when it works**: `200 BatchPromptResult {sent: string[], failed: BatchRefusal[]}`.
-  `sent` is the ids that were prompted and is never empty, because a refusal is a `409` instead.
+- **`sent` means accepted, not answered, and the route does not wait for the turns.** It returns
+  as soon as every member's prompt is queued. Waiting would contradict the two things this
+  surface is built on: turns **start together** (§14b's rate-limit note exists because they do),
+  and the group composer **clears once the server accepts**. A request that resolved only when
+  five full turns had finished would hold the composer for minutes and serialize the very thing
+  the workspace exists to run in parallel — member 2 would not start until member 1 was done.
+- **So `failed` is about acceptance, not outcome.** A member that was accepted and then fails
+  reports in **its own pane**, over its own socket, where every other turn failure already
+  reports. This response never speaks for a turn it didn't wait for.
+- **`sent` is never empty.** If not one member was accepted, that is not a partial send, it is a
+  refusal: the server answers `409 {refused}` with those members instead. Otherwise the banner
+  would have to say "Sent to 0 of 5 members", and then that the 0 are answering — a sentence with
+  no meaning, and §9 deliberately has no copy for it.
   **Members are prompted in group order, not in the order the client happened to list them** — the
   order the panes are read in is the order the turns start in, so "the third one answered first"
   is about the models and not about us.
@@ -317,7 +329,8 @@ member at once.
   retry is the user's explicit subset like every other subset here.
 - **The refusal body is machine-readable and human-readable both**:
   `409 {refused: [{id, path, code, message}]}`. `id` joins against `GroupMember.id` and the
-  assignments with no lookup, `path` is what the pane routes and opens with, `code` is the closed
+  assignments with no lookup, `path` is what the pane routes and opens with — **empty for
+  `missing`**, where there is no file left to name, so nothing may build a link from it — `code` is the closed
   set the state table above names (`mid-turn` · `tui-live` · `archived` · `config` · `busy` ·
   `missing`), plus `internal` for a failure that fits none of them, and `message` is the server's
   sentence. **The banner is composed from `code` and the member's own name** (§9), never by
@@ -334,6 +347,11 @@ member at once.
   refusal is a **confirmation rather than a discovery**: the count that comes back is the count
   that was already on screen. Send is `aria-disabled` only when the client knows there is nobody
   at all to send to.
+- **The pre-check reads the group, not the disk.** It resolves members from the group's own
+  membership and whatever index the server already keeps, never by scanning the sessions
+  directory. This path is routine by design (below), and a directory walk per press of Send is a
+  cost that grows with every session the user has ever made, to answer a question about five of
+  them.
 - **All-or-nothing is a pre-check, and it says so.** The server checks **every** member — not
   up to the first bad one — and that check completes before **any** member is prompted, so a
   refusal leaves zero prompts sent and the `409` can name every blocked member at once rather

@@ -12,10 +12,11 @@ import { canonicalPath, resolveSessionPath } from "./paths";
 import { listModels, resolveContext } from "./models";
 import { markOwned } from "./write-guard";
 import { addWebSession } from "./web-sessions";
+import { draftForClient, setDraft } from "./drafts";
 import { getAgentsInsight, getSessionInsight, getUsageInsight } from "./insights";
-import { archiveSession, cleanupSessions, getSessionSummary, listCwds, listSessions } from "./sessions-index";
+import { archiveSession, cleanupSessions, getSessionSummary, idOf, listCwds, listSessions } from "./sessions-index";
 import { contextForBranch, normalizeEntries, readActiveBranch } from "./transcript";
-import { checkTmpImage, MAX_ATTACHMENT_BYTES, readTmpImage, saveUploadedImage, UploadError } from "./attachments";
+import { checkTmpImage, deleteAttachment, MAX_ATTACHMENT_BYTES, readTmpImage, saveUploadedImage, sessionAttachmentsDir, UploadError } from "./attachments";
 import { listFolders } from "./folders";
 import { findTarget, isTargetName, listRemoteFolders, listTargets, normalizeRemotePath, targetDir, targetsFile } from "./targets";
 import { isExplanationId, listExplanations, readExplanationPage } from "./explanations";
@@ -141,6 +142,36 @@ app.post("/api/sessions/cleanup", async (c) => {
   return c.json({ error: 'mode must be "husks", or "age" with minAgeDays 7 or 30' }, 400);
 });
 
+// Composer drafts, kept by pi-web beside the session (server/drafts.ts), never in its file: a
+// reload keeps what the user typed, and a never-sent new session stays listed as a draft row.
+const MAX_DRAFT_CHARS = 1_000_000;
+
+app.get("/api/sessions/draft", (c) => {
+  const path = resolveSessionPath(c.req.query("path"));
+  if (!path) return c.json({ error: "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)" }, 400);
+  if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
+  // Mutable state read at open time: a cached draft would come back missing what was just attached.
+  return c.json(draftForClient(idOf(path)), 200, { "Cache-Control": "no-store" });
+});
+
+app.put("/api/sessions/draft", async (c) => {
+  let body: { path?: unknown; text?: unknown; attachments?: unknown };
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "Expected JSON body { path, text, attachments? }" }, 400);
+  }
+  if (typeof body.text !== "string") return c.json({ error: "text must be a string" }, 400);
+  const path = resolveSessionPath(typeof body.path === "string" ? body.path : null);
+  if (!path) return c.json({ error: "Invalid or missing path (must be a .jsonl under the pi sessions dir)" }, 400);
+  if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
+  if (body.text.length > MAX_DRAFT_CHARS) return c.json({ error: "Draft too long" }, 400);
+  if (body.attachments !== undefined && !Array.isArray(body.attachments)) return c.json({ error: "attachments must be an array" }, 400);
+  // Invalid entries are dropped by the store rather than failing the whole write.
+  setDraft(idOf(path), body.text, body.attachments);
+  return c.json({ ok: true });
+});
+
 app.get("/api/cwds", async (c) => c.json(await listCwds()));
 
 // Configured remote targets with a cached, bounded reachability probe (server/targets.ts).
@@ -195,7 +226,8 @@ app.get("/api/transcript", async (c) => {
 });
 
 // Bytes of an image a user message names by path (TranscriptItem.attachments). Only image files
-// directly in /tmp, after resolving symlinks. no-store: /tmp names get reused and cleaned.
+// directly in /tmp or in a session's attachments folder, after resolving symlinks. no-store:
+// /tmp names get reused and cleaned.
 app.get("/api/attachment", async (c) => {
   const check = checkTmpImage(c.req.query("path"));
   if (!check.ok) return c.json({ error: check.error }, check.status);
@@ -208,8 +240,18 @@ app.get("/api/attachment", async (c) => {
   });
 });
 
+// Removes one composer-draft upload (a chip's remove button). Only under the attachments root:
+// /tmp holds the TUI's clipboard pastes, which are not ours to delete.
+app.delete("/api/attachment", (c) => {
+  const r = deleteAttachment(c.req.query("path"));
+  if (!r.ok) return c.json({ error: r.error }, r.status);
+  return c.json({ ok: true });
+});
+
 // A web upload becomes a /tmp file like a TUI clipboard paste; the prompt text then references
 // the path. Raw bytes + Content-Type (no multipart). 413 by middleware before we buffer.
+// With ?draft=<session path> it lands in that session's attachments folder instead, durable
+// across a reload (the draft store carries it) and after the send (the prompt names it).
 app.post(
   "/api/upload",
   bodyLimit({
@@ -218,8 +260,17 @@ app.post(
   }),
   async (c) => {
     try {
+      const draft = c.req.query("draft");
+      let dir: string | undefined;
+      if (draft !== undefined) {
+        const path = resolveSessionPath(draft);
+        const d = path ? sessionAttachmentsDir(idOf(path)) : null;
+        if (!path || !d) return c.json({ error: "Invalid ?draft= (must be a .jsonl under the pi sessions dir)" }, 400);
+        if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
+        dir = d;
+      }
       const mime = (c.req.header("Content-Type") ?? "").split(";")[0]!.trim();
-      const saved = saveUploadedImage(new Uint8Array(await c.req.arrayBuffer()), mime);
+      const saved = saveUploadedImage(new Uint8Array(await c.req.arrayBuffer()), mime, dir);
       return c.json(saved, 201);
     } catch (err) {
       if (err instanceof UploadError) return c.json({ error: err.message }, err.status);

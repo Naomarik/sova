@@ -4,7 +4,7 @@
 pi's mode extension (`pi-config/extensions/mode`) has one **major mode**, `normal` or
 `claude-heavy`, and any set of **minor modes** (today `align`). Both are **per session**: each
 chat keeps its own, persisted in that session's own `mode` entries. The menu switches them from
-the chat header, and the switch reaches **that chat only**, **from its next message**. You never
+the chat's composer, and the switch reaches **that chat only**, **from its next message**. You never
 start a new chat or reconnect, and no other chat or terminal session moves.
 
 `~/.pi/agent/mode.json` is the **default for new sessions** (plus the shortcuts). A session that
@@ -14,30 +14,41 @@ has never toggled follows it; the first toggle pins that session. `GET /api/mode
 
 ## Trigger
 
-In chat sessions it sits right after the context gauge (§4f), and it's the only menu trigger
-left in the head. A watched (TUI) session shows nothing: the TUI keeps its mode in memory, so we can't say what it's using.
+In chat sessions it sits in the composer foot (§4), at the right end: the foot reads the model
+indicator, the disabled reason, then this. It's in reach of the message it affects, next to the
+model and thinking level that also shape the next turn. A watched (TUI) session has no composer
+foot to show it in, and nothing to show anyway: the TUI keeps its mode in memory, so we can't say
+what it's using. The session head's right side keeps the context gauge, the subagents or team
+chip and the info button (§4f); it carries no mode.
 
 ```html
 <button class="button button-ghost mode-trigger" type="button" aria-haspopup="menu"
         aria-expanded="false" aria-controls="mode-menu"
         aria-label="Mode: claude-heavy · align" title="Mode: claude-heavy · align">
   <span class="icon icon-sm" style="--icon: url(/icons/worker.svg)" aria-hidden="true"></span>
-  <span class="mode-trigger-label">claude-heavy · align</span>
+  <span class="mode-trigger-label">claude-heavy</span>
+  <span class="mode-trigger-label mode-trigger-minor">· align</span>   <!-- only with a minor on -->
   <span class="icon icon-sm" style="--icon: url(/icons/chevron-down.svg)" aria-hidden="true"></span>
 </button>
 ```
 
 - **Label.** This chat's major mode, then each minor mode on, joined with " · ", in mono. It caps
-  at 200px and truncates, with the full text in `title`. Before the chat's first `mode` message
+  at 200px and truncates, with the full text in `title`. The minors are their own span, so they
+  ellipsize first and the major mode last. Before the chat's first `mode` message
   arrives it reads just "Mode" and no row is checked: the default is not this chat's state.
 - **Name.** `aria-label` repeats the label with "Mode: " in front, so it survives when the label
   hides. A pending switch adds ", applies after this turn".
-- **Narrow head.** Icon-only under 520px, and hidden under 360px (§4f).
+- **Every width.** It never hides and never goes icon-only: the label is the fact. It narrows the
+  way the model id beside it does — at 320px the minor modes shrink to an ellipsis first, then the
+  major mode, and the row never grows wider than the composer. The icons, the padding and the
+  `title` stay. In the foot it takes the model indicator's scale: a `--control-sm` row with a
+  `--tap-min` target stretched over it by a `::after`, mirrored to the right edge.
 
 ## Menu
 
-It uses the model menu's popover shell (`.model-menu`): a `[popover="auto"]` right-aligned under
-the trigger, and a bottom sheet under 768px. The list inside is an ARIA **menu**. A listbox
+It uses the model menu's popover shell (`.model-menu`): a `[popover="auto"]` right-aligned
+**above** the trigger (the composer is pinned to the pane's bottom edge, so it grows upward, like
+the composer flyout), and a bottom sheet under 768px. The list inside is an ARIA **menu**. A listbox
 doesn't fit here: there's nothing to search, and it mixes one exclusive choice with independent
 toggles, which is exactly what `menuitemradio` and `menuitemcheckbox` are for.
 
@@ -124,7 +135,11 @@ checked `--color-accent-tint`, focus `--focus-ring` inset. Foot: `--fs-caption`
 ## Rejected
 
 - **A segmented control in the composer.** It reads as a per-message option, not a per-chat
-  one, and it costs composer width at 320px.
+  one, and every mode as a segment costs composer width at 320px. The menu trigger that sits in
+  the foot now is one control whose label shrinks, so it fits.
+- **The session head.** Where the trigger used to sit, after the context gauge. It was the head's
+  one menu trigger, went icon-only under 520px and vanished under 360px, and it was a screen away
+  from the composer whose next message it changes.
 - **A settings page.** That's not first-class, and it's far from the chat it affects.
 - **`/mode` only.** It works today (the slash menu lists it), but nobody finds it, and it can't
   show the current mode.

@@ -1,4 +1,4 @@
-import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import type { ExplanationInfo, OutlineTopic, SessionOutline } from "../../shared/protocol";
 import { newestFirst } from "../lib/explain";
 import { findEntryRow, jumpToEntry } from "../lib/jump";
@@ -8,61 +8,62 @@ import { Icon } from "./ui";
 
 const STATE_CLAUSE: Partial<Record<SessionOutline["state"], string>> = {
   stale: "behind the latest messages",
-  "failed-keeping-last": "the last update failed, so this is the previous outline",
+  "failed-keeping-last": "the last update failed, so this is the previous summary",
 };
 
-function Topic(props: { topic: OutlineTopic; now: number }) {
-  // Whether the anchor is in the transcript is checked when the topic opens: it may have been
-  // compacted away, and the transcript renders after this strip.
+function Topic(props: { topic: OutlineTopic; now: number; open: boolean }) {
+  // Whether the anchor is in the transcript is checked each time the strip opens: it may have been
+  // compacted away, and the transcript renders after this strip. A topic that arrives while the
+  // strip is open mounts with `open` already true, so it is checked too.
   const [target, setTarget] = createSignal(false);
+  createEffect(() => {
+    if (props.open) setTarget(!!props.topic.entryId && !!findEntryRow(props.topic.entryId));
+  });
   const jump = () => {
     // Gone since the strip opened (compacted away): the button goes rather than scrolling nowhere.
     if (!props.topic.entryId || !jumpToEntry(props.topic.entryId)) setTarget(false);
   };
   const at = () => new Date(props.topic.at).toISOString();
   return (
-    <li>
-      <details class="outline-topic" onToggle={(e) => e.currentTarget.open && setTarget(!!props.topic.entryId && !!findEntryRow(props.topic.entryId))}>
-        <summary class="outline-topic-summary">
-          <Icon name="chevron-right" small class="icon-twist" />
-          <span class="outline-topic-heading">
-            <Show when={props.topic.manual}>
-              <span class="outline-hash" aria-hidden="true">
-                #
-              </span>
-            </Show>
-            {props.topic.heading}
-          </span>
-          <Show when={props.topic.at > 0}>
-            {/* Delta, not a clock: the same formatter the session rows use, fed the strip's shared `now`. */}
-            <span class="outline-topic-time" title={`${stampTime(at(), props.now)} · ${at()}`}>
-              {relativeTime(at(), props.now)}
+    <li class="outline-topic">
+      <div class="outline-topic-head">
+        <span class="outline-topic-heading">
+          <Show when={props.topic.manual}>
+            <span class="outline-hash" aria-hidden="true">
+              #
             </span>
           </Show>
-        </summary>
-        <Show when={props.topic.bullets.length > 0}>
-          <ul class="outline-bullets">
-            <For each={props.topic.bullets}>{(b) => <li>{b}</li>}</For>
-          </ul>
+          {props.topic.heading}
+        </span>
+        <Show when={props.topic.at > 0}>
+          {/* Delta, not a clock: the same formatter the session rows use, fed the strip's shared `now`. */}
+          <span class="outline-topic-time" title={`${stampTime(at(), props.now)} · ${at()}`}>
+            {relativeTime(at(), props.now)}
+          </span>
         </Show>
-        <Show when={target()}>
-          <button type="button" class="button button-sm button-ghost outline-jump" onClick={jump}>
-            Jump to Message
-          </button>
-        </Show>
-      </details>
+      </div>
+      <Show when={props.topic.bullets.length > 0}>
+        <ul class="outline-bullets">
+          <For each={props.topic.bullets}>{(b) => <li>{b}</li>}</For>
+        </ul>
+      </Show>
+      <Show when={target()}>
+        <button type="button" class="button button-sm button-ghost outline-jump" onClick={jump}>
+          Jump to Message
+        </button>
+      </Show>
     </li>
   );
 }
 
 /**
- * The one insight row under `.session-head`: the session's topic-outline and its /explain
- * artifacts merged into a single disclosure, so the head costs one row instead of two.
- * Collapsed it shows the "now" line and whichever counts exist; open, the overall gist, the
- * topics, a ghost button that opens the session pane's Timeline tab — the same topics as
- * chapters on one axis — and, when this session has explanations, one that opens the gallery
- * dialog. The open state is never persisted: a click away, Esc from inside, or leaving the
- * session all leave it closed again.
+ * The one insight row under `.session-head`: the session's current goal (the newest topic-outline
+ * summary) and its /explain artifacts merged into a single disclosure, so the head costs one row
+ * instead of two. Collapsed it shows the "now" line and whichever counts exist; open — one click,
+ * nothing nested — the overall gist, every topic flat with its bullets, a ghost button that opens
+ * the session pane's Timeline tab, where the past summaries live, and, when this session has
+ * explanations, one that opens the gallery dialog. The open state is never persisted: a click
+ * away, Esc from inside, or leaving the session all leave it closed again.
  *
  * With explanations but no outline the row still discloses, labelled "Explained": the gallery
  * button is what's inside. With neither, nothing renders.
@@ -78,13 +79,6 @@ export function InsightStrip(props: {
   // Not persisted: the session view is keyed, so navigating anywhere remounts this closed, while
   // an insight reload keeps a deliberate open.
   const [open, setOpen] = createSignal(false);
-  let strip: HTMLDetailsElement | undefined;
-  /** The one close path: every dismissal collapses the topics too, so the next open lands on headings. */
-  const close = () => {
-    setOpen(false);
-    // `Topic`'s onToggle only reacts on open, so closing them from here is a no-op for it.
-    for (const t of strip?.querySelectorAll<HTMLDetailsElement>("details.outline-topic[open]") ?? []) t.open = false;
-  };
   onMount(() => {
     const away = (e: PointerEvent) => {
       const target = e.target;
@@ -92,13 +86,13 @@ export function InsightStrip(props: {
       // On press, not click: the strip goes the moment you reach elsewhere. The gallery dialog is
       // portalled out of the strip, so its shell and scrim count as inside.
       if (target.closest(".outline, .modal, .scrim")) return;
-      close();
+      setOpen(false);
     };
     const esc = (e: KeyboardEvent) => {
       if (e.key !== "Escape" || e.defaultPrevented) return;
       // Only an Esc that started inside the strip is ours — the pane, Inputs and dialogs keep theirs.
       const target = e.target;
-      if (target instanceof Element && target.closest(".outline")) close();
+      if (target instanceof Element && target.closest(".outline")) setOpen(false);
     };
     document.addEventListener("pointerdown", away);
     document.addEventListener("keydown", esc);
@@ -116,10 +110,10 @@ export function InsightStrip(props: {
   const updated = () => (generated() > 0 ? new Date(generated()).toISOString() : null);
   return (
     <Show when={props.outline || items().length > 0}>
-      <details ref={strip} class="outline" open={open()} onToggle={(e) => (e.currentTarget.open ? setOpen(true) : close())}>
+      <details class="outline" open={open()} onToggle={(e) => setOpen(e.currentTarget.open)}>
         <summary class="outline-summary">
           <Icon name="chevron-right" small class="icon-twist" />
-          <span class="outline-label">{props.outline ? "Outline" : "Explained"}</span>
+          <span class="outline-label">{props.outline ? "Current goal" : "Explained"}</span>
           <Show when={updating()}>
             <span class="live-dot" />
           </Show>
@@ -194,7 +188,7 @@ export function InsightStrip(props: {
                   </Show>
                 </Show>
                 <ol class="outline-topics">
-                  <For each={o().topics}>{(t) => <Topic topic={t} now={props.now} />}</For>
+                  <For each={o().topics}>{(t) => <Topic topic={t} now={props.now} open={open()} />}</For>
                 </ol>
               </>
             )}

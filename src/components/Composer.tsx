@@ -2,23 +2,36 @@ import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Sh
 import type { SlashCommand, UploadResult } from "../../shared/protocol";
 import { enterRunsLocal, insertCommand, localCommand, rankCommands, slashMenuSuppressed, slashTokenAt, type SlashToken } from "../lib/slash";
 import { commandOptionIds, SlashMenu } from "./SlashMenu";
+import { deleteAttachment } from "../lib/api";
 import {
   ACCEPTED_TYPES,
-  acceptImages,
+  acceptFiles,
   dragHasAcceptedImage,
-  releaseImage,
-  uploadImages,
+  pendingFrom,
+  uploadAccepted,
   withImagePaths,
   type PendingImage,
   type RejectedFile,
 } from "../lib/images";
 import { modelProvider, shortModel } from "../lib/format";
 import { ensureModels, modelList, thinkingLevelsFor } from "../lib/models";
-import { announce, draftImages, drafts, openLightbox } from "../lib/ui-state";
-import { inputsText, showInputsLabel } from "../lib/input-count";
-import { showWorkersLabel, teamNote, type WorkingSplit, workersWorkingLabel } from "../lib/workers";
+import {
+  announce,
+  clearDraft,
+  draftAttachments,
+  drafts,
+  flushDrafts,
+  loadDraft,
+  openLightbox,
+  setDraftAttachments,
+  setDraftText,
+} from "../lib/ui-state";
+import { inputsText } from "../lib/input-count";
+import { showInputsOnTimelineLabel } from "../lib/timeline";
+import { showWorkersLabel, teamNote, type WorkingSplit, workersRunningLabel, workersWorkingLabel } from "../lib/workers";
 import { ComposerMenu, type ComposerMenuApi, type ThinkingControl, type UndoControl } from "./ComposerMenu";
 import type { ModelControl } from "./ModelMenu";
+import { ModeMenu, type ModeControl } from "./ModeMenu";
 import { Icon, type IconName } from "./ui";
 
 /** The session pane's element id: ONE pane, five tabs, so every trigger controls the same id. */
@@ -59,19 +72,19 @@ export function Composer(props: {
   /** The pane is open for this session on the AGENTS tab: the subagents trigger's aria-expanded.
       A pane open on another tab is not this control's disclosure, so it is not "expanded". */
   workersOpen?: boolean;
-  /** The pane is open for this session on the INPUTS tab: the inputs trigger's aria-expanded. */
+  /** The pane is open for this session on the TIMELINE tab with Inputs Only on: the inputs
+      trigger's aria-expanded, and its only authority — a tab name can't say whether the filter is on. */
   inputsOpen?: boolean;
-  /** The pane's active tab while it is open for THIS session ("session" | "inputs" | "agents" |
-      "skills" | "explain"), else null. The authority for both triggers' aria-expanded; the
-      booleans above answer only until App passes it. */
+  /** The pane's active tab while it is open for THIS session ("session" | "timeline" | "agents" |
+      "skills" | "explain"), else null. The authority for the subagents trigger's aria-expanded;
+      `workersOpen` answers only until App passes it. */
   paneTab?: string | null;
   /** Runs a bare "/new" (§4d): resolves to the new session's folder label, or null if none was made. */
   onNewSession?: () => Promise<string | null>;
-  /** Runs a bare "/tree" (§4d), and the run-status row's "N inputs" trigger: opens the Inputs tab. */
-  onShowInputs?: () => void;
-  /** Runs a bare "/timeline" (§4d): opens the session pane's Timeline tab. */
-  onShowTimeline?: () => void;
-  /** User messages on this chat's active branch; the status row's Inputs trigger, hidden at 0. */
+  /** Opens the session pane's Timeline tab: a bare "/timeline" (§4d) unfiltered; a bare "/tree" and
+      the run-status row's "N inputs" trigger with `inputsOnly`, on your own messages. */
+  onShowTimeline?: (inputsOnly?: boolean) => void;
+  /** User messages on this chat's active branch; the status row's inputs trigger, hidden at 0. */
   inputCount?: number;
   autofocus?: boolean;
   /** This session's slash commands; the "/" autocomplete is off without them. */
@@ -80,21 +93,32 @@ export function Composer(props: {
   model?: ModelControl | null;
   /** Chat sessions only: the flyout's Thinking ladder (§4b). */
   thinking?: ThinkingControl | null;
+  /** Chat sessions only: this chat's mode switch, at the right end of the foot (§4g). */
+  mode?: ModeControl | null;
   /** Opens this session's info modal from the flyout (§4h). */
   onShowInfo?: () => void;
   /** Chat sessions only: the flyout's "Undo last turn" row. */
   undo?: UndoControl | null;
-  /** `text` already names each uploaded image's path; `uploads` are for the optimistic row. */
-  onSend(text: string, steer: boolean, uploads: UploadResult[]): boolean;
+  /** `text` already names each attachment's path; `attachments` are for the optimistic row. */
+  onSend(text: string, steer: boolean, attachments: UploadResult[]): boolean;
   onAbort(): void;
   /** Queued text a Stop handed back; each new object goes ahead of the draft (TUI Esc order). */
   restored?: { text: string } | null;
 }) {
   const [text, setText] = createSignal(drafts.get(props.path) ?? "");
-  const [images, setImagesSignal] = createSignal<PendingImage[]>(draftImages.get(props.path) ?? []);
+  /** One row object per stored file, so the strip keeps its rows (and focus) as the list changes. */
+  const rows = new Map<string, PendingImage>();
+  const images = createMemo(() =>
+    draftAttachments(props.path).map((a) => {
+      const row = rows.get(a.path) ?? pendingFrom(a);
+      rows.set(a.path, row);
+      return row;
+    }),
+  );
   const [rejected, setRejected] = createSignal<RejectedFile[]>([]);
   const [drop, setDrop] = createSignal<"active" | "reject" | null>(null);
-  const [uploading, setUploading] = createSignal(false);
+  /** Attach-time uploads still out. Send waits for them: a prompt must name every file it shows. */
+  const [uploading, setUploading] = createSignal(0);
   // Slash-command autocomplete: the "/token" at the caret, the active row, and a token the
   // user dismissed with Esc (it stays closed until the caret leaves that token).
   const [slashToken, setSlashToken] = createSignal<SlashToken | null>(null);
@@ -109,21 +133,39 @@ export function Composer(props: {
   /** The flyout's handle (§4b), so the model indicator opens the same one popover. */
   const [menu, setMenu] = createSignal<ComposerMenuApi | null>(null);
 
+  /** Any local write (typing, send's clear, a restore) makes this tab's text the authority, so a
+      stored draft still on its way from the server must not replace it. */
+  let touched = false;
   const setDraft = (v: string) => {
+    touched = true;
     setText(v);
-    if (v) drafts.set(props.path, v);
-    else drafts.delete(props.path);
+    setDraftText(props.path, v);
   };
-  const setImages = (next: PendingImage[]) => {
-    setImagesSignal(next);
-    if (next.length) draftImages.set(props.path, next);
-    else draftImages.delete(props.path);
-  };
+  // Nothing in memory (a reload, or another device wrote it): seed from the stored draft. The
+  // attachments seed themselves through the store, which only takes them if this tab has none.
+  void loadDraft(props.path).then((stored) => {
+    if (stored.text && !touched && !text()) setText(stored.text);
+  });
+  let disposed = false;
+  onCleanup(() => {
+    disposed = true;
+    flushDrafts();
+  });
 
   const reason = () => props.readOnly ?? props.blocked ?? null;
   /** TUI-live, connecting, reconnecting: nothing attaches and nothing sends. */
   const disabled = () => !!reason();
-  const canSend = () => !disabled() && !uploading() && (text().trim().length > 0 || images().length > 0);
+  /** What the foot says: the state's reason, else that an attachment is still uploading. */
+  const shownReason = (): ComposerReason | null => reason() ?? (uploading() > 0 ? { icon: "clock", text: "Uploading…" } : null);
+  // The key hint lives in the placeholder, and only at unfolded width: a touch-first device has
+  // no Enter key to speak of. Live, so a resize across 768px swaps it in place.
+  const unfolded = matchMedia("(min-width: 768px)");
+  const [keyHint, setKeyHint] = createSignal(unfolded.matches);
+  const onBand = (e: MediaQueryListEvent) => setKeyHint(e.matches);
+  unfolded.addEventListener("change", onBand);
+  onCleanup(() => unfolded.removeEventListener("change", onBand));
+  const placeholder = () => `${props.running ? "Steer the current turn…" : "Ask pi to…"}${keyHint() && !props.readOnly ? "—Enter sends, Shift+Enter adds a line" : ""}`;
+  const canSend = () => !disabled() && uploading() === 0 && (text().trim().length > 0 || images().length > 0);
 
   // ---- Model indicator (§4 ".composer-foot"): this session's model and thinking level, and
   // the second trigger for the flyout that changes them. -----------------------------------
@@ -152,17 +194,18 @@ export function Composer(props: {
   };
 
   /** The subagents status row (§11 Trigger): what's working, or — once idle — what the session
-      has, so the pane stays one click away after every worker settles. Nothing while running:
-      the parent's own Working row takes that place. */
+      has, so the pane stays one click away after every worker settles. While the parent's own
+      turn runs it stays too, showing the counts without repeating "working" beside the Working
+      label; a settled-workers row is only worth offering once the parent is idle. */
   const workersRow = () => {
-    if (props.running) return null;
     const working = props.workersWorking ?? 0;
     if (working > 0)
       return {
         live: true,
-        text: workersWorkingLabel(working, props.workersSplit),
+        text: props.running ? workersRunningLabel(working, props.workersSplit) : workersWorkingLabel(working, props.workersSplit),
         label: showWorkersLabel(working, props.workersSplit),
       };
+    if (props.running) return null;
     const total = props.workersTotal ?? 0;
     if (total === 0 || !props.onShowWorkers) return null; // settled workers are only worth a row you can open
     const text = `${total} ${total === 1 ? "subagent" : "subagents"}`;
@@ -176,12 +219,12 @@ export function Composer(props: {
   const tabExpanded = (open: boolean | undefined, tab: string) =>
     props.paneTab == null ? !!open : props.paneTab === tab;
 
-  /** The status row's Inputs trigger (§4 ".run-status"): the branch's user messages, one click
-      from the pane's Inputs tab. It survives an idle session with no workers — the row shows for
-      it alone — and disappears at 0, where the empty state already speaks. */
+  /** The status row's inputs trigger (§4 ".run-status"): the branch's user messages, one click
+      from the pane's Timeline with Inputs Only on. It survives an idle session with no workers —
+      the row shows for it alone — and disappears at 0, where the empty state already speaks. */
   const inputsRow = () => {
     const n = props.inputCount ?? 0;
-    return n > 0 && props.onShowInputs ? { n, text: inputsText(n), label: showInputsLabel(n) } : null;
+    return n > 0 && props.onShowTimeline ? { n, text: inputsText(n), label: showInputsOnTimelineLabel(n) } : null;
   };
 
   // ---- Slash-command autocomplete (combobox: focus stays in the textarea) ----------------
@@ -296,14 +339,14 @@ export function Composer(props: {
     ),
   );
 
-  /** The single entry point for picker, paste, and drop. */
+  /** The single entry point for picker, paste, and drop. Each accepted file uploads now, in
+      parallel, and its row appears when it lands; the stored draft then holds it. */
   const addFiles = (files: File[], pasted = false) => {
     if (disabled() || files.length === 0) return;
-    const result = acceptImages(files, images().length, pasted);
+    const result = acceptFiles(files, images().length + uploading(), pasted);
     const said: string[] = [];
-    if (result.added.length) {
-      setImages([...images(), ...result.added]);
-      said.push(`${result.added.length} ${result.added.length === 1 ? "image" : "images"} attached.`);
+    if (result.accepted.length) {
+      said.push(`${result.accepted.length} ${result.accepted.length === 1 ? "image" : "images"} attached.`);
     }
     if (result.rejected.length) {
       setRejected([...rejected(), ...result.rejected]);
@@ -311,6 +354,19 @@ export function Composer(props: {
     }
     // One announcement: the live region only speaks its latest text.
     if (said.length) announce(said.join(" "));
+    // The path is fixed now: an upload that lands after a session switch still joins its own draft.
+    const path = props.path;
+    setUploading((n) => n + result.accepted.length);
+    for (const a of result.accepted) {
+      uploadAccepted(a, path)
+        .then((stored) => setDraftAttachments(path, [...draftAttachments(path), stored]))
+        .catch(() => {
+          if (disposed) return;
+          setRejected((r) => [...r, { id: a.id, name: a.name, reason: "Upload failed" }]);
+          announce(`${a.name} wasn't attached. Upload failed.`);
+        })
+        .finally(() => setUploading((n) => n - 1));
+    }
   };
 
   /** After Remove/Dismiss: the next item's button, else the previous one's, else the textarea. */
@@ -320,8 +376,10 @@ export function Composer(props: {
       (buttons[index] ?? buttons[index - 1] ?? input).focus();
     });
   const remove = (p: PendingImage, index: number) => {
-    releaseImage(p);
-    setImages(images().filter((x) => x.id !== p.id));
+    setDraftAttachments(props.path, draftAttachments(props.path).filter((x) => x.path !== p.path));
+    rows.delete(p.path);
+    // Best effort: a file left behind is only disk, and the draft no longer names it.
+    void deleteAttachment(p.path).catch(() => {});
     focusAfterRemoval(index);
   };
   const dismiss = (r: RejectedFile, index: number) => {
@@ -376,13 +434,14 @@ export function Composer(props: {
       return;
     }
     // "/tree" is ours as well: pi's is a TUI built-in, so it would reach the model as literal
-    // text. Here it opens the Inputs tab, where each row rewinds to before that message (§4d).
-    if (localCommand(text()) === "tree" && props.onShowInputs && images().length === 0) {
-      props.onShowInputs();
+    // text. Here it opens the Timeline on your own messages, where each row rewinds to before
+    // that message (§4d).
+    if (localCommand(text()) === "tree" && props.onShowTimeline && images().length === 0) {
+      props.onShowTimeline(true);
       setDraft("");
       input.value = "";
       setSlashToken(null);
-      announce("Inputs open.");
+      announce("Timeline open, your messages only.");
       return;
     }
     // "/timeline" is ours in the same way: pi has no such built-in, so it would reach the model as
@@ -408,21 +467,15 @@ export function Composer(props: {
       announce(`New session in ${cwd}.`);
       return;
     }
-    const pending = images();
-    setUploading(true);
-    let uploads: UploadResult[];
-    try {
-      uploads = await uploadImages(pending);
-    } catch {
-      setUploading(false);
-      announce("Couldn't upload the attached images. Nothing was sent.");
-      return;
-    }
-    setUploading(false);
-    if (props.onSend(withImagePaths(text().trim(), uploads), props.running, uploads)) {
-      pending.forEach(releaseImage);
-      setDraft("");
-      setImages([]);
+    // Every attachment is already stored (Send waits for uploads), so this only names them. The
+    // optimistic row takes each file's own name, as the transcript will once it's refetched.
+    const pending = draftAttachments(props.path);
+    const attachments = pending.map((a) => ({ ...a, name: a.path.slice(a.path.lastIndexOf("/") + 1) }));
+    if (props.onSend(withImagePaths(text().trim(), pending), props.running, attachments)) {
+      touched = true;
+      setText("");
+      clearDraft(props.path);
+      rows.clear();
       setRejected([]);
     }
     input.focus();
@@ -468,7 +521,7 @@ export function Composer(props: {
             onHover={setSlashActive}
           />
         </Show>
-        {/* One row, whichever of the three has something to say (they can coexist: the Inputs
+        {/* One row, whichever of the three has something to say (they can coexist: the inputs
             trigger sits at its right end while a turn streams, and alone when nothing runs). */}
         <Show when={props.running || workersRow() || inputsRow()}>
           <p class="run-status">
@@ -522,9 +575,9 @@ export function Composer(props: {
                   class="run-status-link"
                   style={{ "margin-left": "auto", "margin-right": 0 }}
                   aria-label={row().label}
-                  aria-expanded={tabExpanded(props.inputsOpen, "inputs") ? "true" : "false"}
+                  aria-expanded={props.inputsOpen ? "true" : "false"}
                   aria-controls={PANE_ID}
-                  onClick={() => props.onShowInputs?.()}
+                  onClick={() => props.onShowTimeline?.(true)}
                 >
                   {row().text}
                   <Icon name="chevron-right" small />
@@ -619,7 +672,7 @@ export function Composer(props: {
             class="input textarea composer-input"
             id="composer-input"
             rows={1}
-            placeholder={props.running ? "Steer the current turn…" : "Ask pi to…"}
+            placeholder={placeholder()}
             aria-describedby="composer-reason"
             aria-autocomplete={slashOpen() ? "list" : undefined}
             aria-controls={slashOpen() && slashMatches().length > 0 ? "command-listbox" : undefined}
@@ -741,7 +794,7 @@ export function Composer(props: {
             </button>
           </Show>
           <span class="composer-reason" id="composer-reason">
-            <Show when={reason()}>
+            <Show when={shownReason()}>
               {(r) => (
                 <>
                   <Icon name={r().icon} small />
@@ -750,11 +803,7 @@ export function Composer(props: {
               )}
             </Show>
           </span>
-          <Show when={!props.readOnly}>
-            <span class="composer-hint">
-              <kbd>Enter</kbd> to send · <kbd>Shift</kbd>+<kbd>Enter</kbd> for a new line
-            </span>
-          </Show>
+          <Show when={props.mode}>{(c) => <ModeMenu control={c()} />}</Show>
         </div>
       </form>
     </footer>

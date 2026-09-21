@@ -18,6 +18,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Row worker count (rail) | `{n}` + worker icon · `aria-label` and `title`: "{n} subagents working now" |
 | Row link hidden suffix | ", open in a TUI" · ", pi is replying in this session" · ", {n} subagents working now" |
 | Untitled row | Untitled (muted) |
+| Draft row (a never-sent session with a stored draft) | title Untitled (muted) · line 2: `pencil` icon, then the draft's first non-empty line, about 80 characters · image-only: `1 image` / `2 images` · accessible name and `title`: Draft: {preview} |
 | Top region head | Live & web · {n} · searching: Live & web · {hits} of {total} |
 | Archive head | Archive · {n} · searching: Archive · {hits} of {total} |
 | Archive date sections | Today · Yesterday · Last 7 days · Last 30 days · Older (each with its count) |
@@ -73,11 +74,10 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | State | Copy |
 |---|---|
 | Label (visually hidden) | Message |
-| Placeholder, idle | Ask pi to… |
-| Placeholder, streaming | Steer the current turn… |
+| Placeholder, idle | ≥768: Ask pi to…—Enter sends, Shift+Enter adds a line · <768 and read only: Ask pi to… |
+| Placeholder, streaming | ≥768: Steer the current turn…—Enter sends, Shift+Enter adds a line · <768: Steer the current turn… |
 | Buttons | `Send` · streaming: `Steer` + `Stop` · after Stop is pressed: "Stopping…" in run status |
-| Hint (≥768 only) | `Enter` to send · `Shift`+`Enter` for a new line |
-| Run status | `Working` + detail: `· thinking` / `· writing` / `· running {tool}` · stopping: `Stopping…` |
+| Run status | `Working` + detail: `· thinking` / `· writing` / `· running {tool}` · stopping: `Stopping…` · while ≥ 1 worker runs, the subagents trigger beside it with the counts only: `2 subagents` · `1 subagent · 2 team members` |
 | Reason: TUI-live | Read only while this session is open in the TUI. |
 | Reason: busy (server `code:"busy"`) | pi is busy with another turn. Send when it finishes. |
 | Reason: connecting / reconnecting / gave up | see Connection above |
@@ -125,10 +125,10 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Alt, tool result | Image from tool result {toolName} · Image {i} of {n} from tool result {toolName} |
 | Alt, pending attachment | attachment |
 | Path attachment summary | Attachment {name} · {size} |
-| Path attachment, file gone | No longer in /tmp · over the cap: Too large to show · {size} |
+| Path attachment, file gone | No longer on disk · over the cap: Too large to show · {size} |
 | Alt, path attachment | Attachment {name} in your message |
-| Path chip `aria-label` | Open image {name} · gone: Copy path {path}, no longer in /tmp |
-| Path chip, gone | · No longer in /tmp (`title`: "{path} · No longer in /tmp. Select to copy the path.") · on copy: Copied path. |
+| Path chip `aria-label` | Open image {name} · gone: Copy path {path}, no longer on disk |
+| Path chip, gone | · No longer on disk (`title`: "{path} · No longer on disk. Select to copy the path.") · on copy: Copied path. |
 | Tool card section label (paths) | Attachments · {n} |
 | Tool card section label | Images · {n} |
 | Tool card summary count | {n} (`title`: "{n} images") |
@@ -164,7 +164,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 
 | Where | Copy |
 |---|---|
-| Trigger | {mode} · {minor} … (`aria-label`/`title`: "Mode: {label}", plus ", applies after this turn" when pending) |
+| Trigger (composer foot, right end) | {mode} · {minor} …, or "Mode" before this chat's state arrives (`aria-label`/`title`: "Mode: {label}", plus ", applies after this turn" when pending) |
 | Menu `aria-label` | Mode |
 | Group labels | Major mode · Minor modes |
 | Descriptions | normal: Pi as usual · claude-heavy: Orchestrate: delegate coding and planning to Claude Code workers · minors: from pi-config `MINOR_DESCRIPTIONS` |
@@ -273,16 +273,16 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Teams empty, none live | not shown: the whole Agents page is the 0-live empty state above |
 | Subagents empty | Section omitted |
 | Aggregate chips | sidebar rail: `{n}` + worker icon · session head, linked: Team · {n} working (→ `#/agents/{teamId}`) or `{n}` + worker icon, `.session-head-working` (→ `#/agents`), its words in `title`/`aria-label`: "{n} subagents working now" |
-| Outline summary | Outline · {now} · {n} topics (1 topic) |
-| Outline state line | Updated {rel} · stale adds: " · behind the latest messages" · failed-keeping-last adds: " · the last update failed, so this is the previous outline" · updating/drafting: "Updating" + live dot |
-| Outline jump | Jump to Message |
+| Current goal summary | Current goal · {now} · {n} topics (1 topic) |
+| Current goal state line | Updated {rel} · stale adds: " · behind the latest messages" · failed-keeping-last adds: " · the last update failed, so this is the previous summary" · updating/drafting: "Updating" + live dot |
+| Current goal jump | Jump to Message |
 | Compaction | Compacted · `{tokens}` tokens summarized (no count: Compacted · earlier messages summarized) · Files read · Files changed |
 
 ## Subagents pane (§11)
 
 | Where | Copy |
 |---|---|
-| Trigger | `{n} subagents working…` (1: `1 subagent working…`) · accessible name: `{n} subagents working — show subagents` |
+| Trigger | `{n} subagents working…` (1: `1 subagent working…`) · while the parent's turn runs: the counts only, `{n} subagents` · accessible name: `{n} subagents working — show subagents` |
 | Pane | label and title: Subagents · chip: `{w} working` (omitted at 0) · Close `aria-label`: Close subagents |
 | Row meta | `{model}` · settled: `{model} · as of {HH:MM}` · idle after a failure adds: · last task failed |
 | Row status chips | Working · Starting · Idle · Stopping · Done · Failed · Stopped |
@@ -298,38 +298,29 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Pane's session-insight fetch failed (banner-warn) | **Couldn't load this session's subagents.** {message} Your workers keep running. We'll retry on our own. |
 | Transcript socket and load errors | the §11 state table: Live-watch and Connection copy above, and Main pane's transcript load error |
 
-## Inputs tab (§12)
+## Timeline tab (§13)
 
 | Where | Copy |
 |---|---|
-| Composer trigger | `{n} inputs` (1: `1 input`) · accessible name: `{n} inputs in this chat — show inputs` (1: `1 input in this chat — show input`) · absent at 0 |
-| Tab | Inputs · list `aria-label`: Your messages |
+| Tab | Timeline · list `aria-label`: Session timeline (filter on: `Session timeline, your messages only`) |
+| Filter toggle | `Inputs Only` (`aria-pressed`; pressed adds a `check` icon before the words) |
+| Current goal strip button | `Open Timeline` |
+| Composer trigger | `{n} inputs` (1: `1 input`) · accessible name: `{n} inputs in this chat — show them on the Timeline` (1: `1 input in this chat — show it on the Timeline`) · absent at 0 |
+| Row name prefix (visually hidden) | `Jump to this message: ` |
+| Images-only row | `1 image` / `{n} images` |
 | Row action | Rewind · confirming: `Rewind Here` + `Cancel` · in flight: `Rewinding…` |
 | Confirm note | This message and every reply after it leave the branch. The session file keeps them. |
 | Another rewind in flight | A rewind is already in progress. |
 | After it lands (composer) | Rewound. Your message is back in the composer. (nothing to hand back: `Rewound.`) |
 | Boundary note | Rewound to just before this message. Its text is in the composer. |
 | Abandoned rows (visually hidden) | Left behind by the rewind. |
-| Images-only row | `1 image` / `{n} images` |
 | Off: streaming | Stop the current turn first. |
 | Off: compacting | Wait for the compaction to finish. |
 | Off: TUI-live | This session is open in a terminal, so pi-web won't write to it. |
 | Off: watching, or no chat open here | Only a chat open in pi-web can rewind. |
 | Refused: not on the branch | That input is not on this chat's current branch anymore. |
-| Empty | **0 messages on this branch.** Messages you send show up here, and each can rewind the chat to just before it. |
 | Flyout row | Undo last turn · armed: `Confirm: undo last turn` · title: Rewind to before your last message; its text comes back to the composer |
 | Flyout row, off | Stop the turn first, then undo. · Wait for compaction to finish, then undo. · A rewind is already in progress. · Nothing to undo yet. |
-| Row foot | Newest first, active branch only. A row jumps to its message; Rewind takes the chat back to just before it. |
-| Jump with no row on screen (toast) | That message isn't in the transcript on screen. |
-| `/tree` | Inputs open. |
-
-## Timeline tab (§13)
-
-| Where | Copy |
-|---|---|
-| Tab | Timeline · list `aria-label`: Session timeline |
-| Outline strip button | `Open Timeline` |
-| Row name prefix (visually hidden) | `Jump to this message: ` |
 | Density line | `{n} replies · {n} tools · {duration}` — e.g. `3 replies · 14 tools · 6m`; 1: `1 reply` / `1 tool`; a clause at 0 is dropped, and the row with it |
 | Idle gap | `idle {duration}` — e.g. `idle 38m` (`duration()` in `src/lib/format.ts`, the one the density line uses) |
 | Chapter fallback | `summary time` (after the topic, in the row's meta; the clock dims with it) |
@@ -337,13 +328,16 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Marker: rewind | `Rewound to an earlier message` |
 | Marker: subagent | `{name} started` · `{name} finished` · `{name} stopped` (errored or killed) |
 | Marker: settings | `Model → {model}` · `Thinking → {level}` · `Mode → {mode}` |
+| Marker: past summary | `Goal · {now}` (no `now`: the first line of `overall`) · `title`: the snapshot's `overall` · the newest snapshot gets no row |
 | State line | Updated {relative} ago · behind the latest messages · (current: `Updated {relative} ago · current`; a summarizer running: `Updating`) — §10's words, unchanged |
 | Time `title` | `{absolute} · {relative}` — e.g. `2026-09-19T14:06:11Z · 2d ago` |
-| Row foot | Oldest first, active branch only. A row jumps to its message. |
-| Row foot, below 1280 | Oldest first, active branch only. A row jumps to its message and closes this pane. |
+| Row foot | Oldest first, active branch only. A row jumps to its message; Rewind takes the chat back to just before it. (filter on: starts `Your messages only, oldest first,`) |
+| Row foot, below 1280 | Oldest first, active branch only. A row jumps to its message and closes this pane; Rewind takes the chat back to just before it. |
 | Jump with no row on screen (toast) | That message isn't in the transcript on screen. |
 | Empty | **0 messages in this session yet.** The timeline draws itself as you and the agent work. |
+| Empty, filter on, other rows exist | **0 messages from you in this session yet.** Turn off Inputs Only to see the rest of its timeline. |
 | `/timeline` | Timeline open. |
+| `/tree` | Timeline open, your messages only. |
 
 ---
 

@@ -22,6 +22,7 @@ import {
   usageTotal,
   workerLabel,
   workersNoun,
+  workersRunningLabel,
   workersWorkingLabel,
   workerTeam,
   workerUsage,
@@ -230,6 +231,13 @@ test("workersWorkingLabel names what's actually working", () => {
   assert.equal(workersWorkingLabel(3, { members: 2, subagents: 1 }), "1 subagent · 2 team members working…");
   assert.equal(workersWorkingLabel(3, { members: 0, subagents: 3 }), "3 subagents working…");
   assert.equal(workersWorkingLabel(3, null), "3 subagents working…", "unsplittable: the plain wording");
+});
+
+test("workersRunningLabel drops the trailing wording the Working row already says", () => {
+  assert.equal(workersRunningLabel(2, { members: 2, subagents: 0, team: "Explain UX" }), "2 team members");
+  assert.equal(workersRunningLabel(3, { members: 2, subagents: 1 }), "1 subagent · 2 team members");
+  assert.equal(workersRunningLabel(1, { members: 0, subagents: 1 }), "1 subagent");
+  assert.equal(workersRunningLabel(3, null), "3 subagents", "unsplittable: the plain wording");
 });
 
 test("showWorkersLabel, teamNote and workingChipTitle follow the split", () => {

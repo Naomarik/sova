@@ -4,10 +4,13 @@
 //
 // The axis is built from the transcript itself: the user's messages (each with a density line),
 // the outline's topics as chapters at their anchored message's time, and the markers a session
-// leaves behind — compactions, subagents spawned and retired, model/thinking/mode changes.
+// leaves behind — compactions, subagents spawned and retired, model/thinking/mode changes, and
+// every past outline summary. The rewind rules (which row may act, the boundary and the rows a
+// rewind left behind) stay in inputs.ts; this module only places their rows on the axis.
 
-import type { RewindInfo, SessionOutline, TranscriptItem } from "../../shared/protocol";
+import type { OutlineSnapshot, RewindInfo, SessionOutline, TranscriptItem } from "../../shared/protocol";
 import { duration, relativeTime, thousands } from "./format";
+import { inputPreview, type RowState, type ViewRow } from "./inputs";
 import { isObj, timestampOf, toolCallArgs } from "./message";
 import { absoluteTime, firstLine, timelineEntries } from "./spend";
 
@@ -17,9 +20,10 @@ export type TimelineKind = "input" | "chapter" | "marker" | "density" | "gap";
 /**
  * What a marker row marks. A `rewind` doesn't come from the transcript — pi-web's rewind entries
  * are hidden there — so `markerRows` reads it from the insight's own `rewinds` list instead, and
- * emits one only when that list is passed in.
+ * emits one only when that list is passed in. An `outline` is a past summary of the session, from
+ * the insight's `outlines`: a marker, because it is the axis reporting, not the session speaking.
  */
-export type MarkerKind = "compaction" | "spawn" | "retire" | "change" | "rewind";
+export type MarkerKind = "compaction" | "spawn" | "retire" | "change" | "rewind" | "outline";
 
 /** The default title of a marker kind, when the row has nothing more specific to say. */
 export const MARKER_TITLE: Record<MarkerKind, string> = {
@@ -28,6 +32,7 @@ export const MARKER_TITLE: Record<MarkerKind, string> = {
   retire: "A subagent finished",
   change: "Changed the session's settings",
   rewind: "Rewound to an earlier message",
+  outline: "Goal",
 };
 
 /** One row of the axis. `at` is absent only on a gap, which marks the space between two rows. */
@@ -51,6 +56,9 @@ export interface TimelineRow {
   manual?: boolean;
   /** chapter rows only: the anchor was gone, so the time is the summary's own — not the event's. */
   flagged?: boolean;
+  /** input rows only, and only when the axis was built with a `view`: where the message stands
+      against the latest rewind (inputs.ts `viewRows`). "active" is on the branch and may rewind. */
+  state?: RowState;
 }
 
 /** Idle longer than this between two rows and the axis says so rather than pretending continuity. */
@@ -148,7 +156,7 @@ export function densityLine(turn: InputTurn): string {
 }
 
 /** The input rows of the axis, oldest first. A message with no timestamp can't be placed, so it
-    doesn't get a row — it is still in the transcript, and in the Inputs tab. */
+    doesn't get a row — it is still in the transcript. */
 export function inputRowsOf(items: readonly TranscriptItem[]): TimelineRow[] {
   return inputTurns(items)
     .filter((t) => t.at)
@@ -159,6 +167,26 @@ export function inputRowsOf(items: readonly TranscriptItem[]): TimelineRow[] {
       if (density) row.meta = density;
       return row;
     });
+}
+
+/**
+ * The input rows with their standing against the latest rewind, from inputs.ts `viewRows` — the
+ * same rows and states the Inputs tab used to list. A row the view calls boundary or abandoned
+ * keeps its place and its density while the transcript still holds it (a fetch from before the
+ * rewind); once the reload drops it, it is rebuilt from the view at its own time, with no density,
+ * since the turns it drew are off the branch too. A view row with no time can't be placed.
+ */
+export function withRewindState(rows: readonly TimelineRow[], view: readonly ViewRow[]): TimelineRow[] {
+  const byId = new Map(view.map((v) => [v.id, v]));
+  const out = rows.map((row): TimelineRow => ({ ...row, state: byId.get(row.entryId ?? "")?.state ?? "active" }));
+  const present = new Set(rows.map((r) => r.entryId));
+  for (const v of view) {
+    if (v.state === "active" || present.has(v.id) || !v.at) continue;
+    const row: TimelineRow = { key: `input:${v.id}`, kind: "input", at: v.at, entryId: v.id, title: inputPreview(v), state: v.state };
+    if (v.text.trim() && v.text.trim() !== row.title) row.full = v.text;
+    out.push(row);
+  }
+  return out;
 }
 
 // ---- Chapters -----------------------------------------------------------------------------------
@@ -280,6 +308,27 @@ export function markerRows(items: readonly TranscriptItem[], rewinds: readonly R
   return out;
 }
 
+/**
+ * The past outline summaries as markers, one line each at the time the summary was written:
+ * "Goal · {now}", with the whole line in the tooltip (the row wraps and the CSS clamps it at two
+ * lines, so a long summary needs one). `overall` is a different fact, not a longer version of
+ * `now` — it only becomes the tooltip for a snapshot that has no `now` at all, where the row shows
+ * a cut of it. The newest snapshot is left out on purpose — it is the current goal, and the strip
+ * above the chat already says it. None of them jumps: a `topic-outline` entry renders nothing in
+ * the thread, so there is nothing to land on.
+ */
+export function outlineRows(outlines: readonly OutlineSnapshot[] = []): TimelineRow[] {
+  return outlines.slice(0, -1).flatMap((o): TimelineRow[] => {
+    const now = o.now.trim();
+    const shown = now || firstLine(o.overall, 200);
+    if (!o.timestamp || !shown) return [];
+    const row: TimelineRow = { key: `marker:outline:${o.id}`, kind: "marker", marker: "outline", at: o.timestamp, title: `${MARKER_TITLE.outline} · ${shown}` };
+    const full = now || o.overall.trim();
+    if (full && full !== shown) row.full = full;
+    return [row];
+  });
+}
+
 // ---- Merging ------------------------------------------------------------------------------------
 
 const time = (row: TimelineRow): number => {
@@ -305,6 +354,18 @@ export function withGaps(rows: readonly TimelineRow[], thresholdMs = GAP_MS): Ti
   return out;
 }
 
+/** What the axis takes besides the transcript, the outline and the rewinds. */
+export interface AxisOptions {
+  /** The insight's past summaries, oldest first; the newest is left off (see `outlineRows`). */
+  outlines?: readonly OutlineSnapshot[];
+  /** inputs.ts `viewRows` for this transcript: gives every input row its `state`, and brings back
+      the rows a fresh rewind left behind. Absent, input rows carry no state. */
+  view?: readonly ViewRow[];
+  /** The "Inputs Only" filter: your own messages, their density lines, and the idle gaps
+      between them — nothing else. The gaps are measured between the rows that remain. */
+  inputsOnly?: boolean;
+}
+
 /**
  * The whole axis, oldest first: inputs, chapters and markers merged by time, idle gaps between
  * rows far apart, and each input's density line as its own row beneath it. Ties keep the order
@@ -316,8 +377,12 @@ export function timelineRows(
   outline: SessionOutline | null | undefined,
   rewinds: readonly RewindInfo[] = [],
   thresholdMs = GAP_MS,
+  opts: AxisOptions = {},
 ): TimelineRow[] {
-  const merged = [...inputRowsOf(items), ...chapterRows(outline, items), ...markerRows(items, rewinds)];
+  const inputs = opts.view ? withRewindState(inputRowsOf(items), opts.view) : inputRowsOf(items);
+  const merged = opts.inputsOnly
+    ? inputs
+    : [...inputs, ...chapterRows(outline, items), ...markerRows(items, rewinds), ...outlineRows(opts.outlines)];
   const rank = (row: TimelineRow) => {
     const i = anchorIndex(items, row.entryId);
     return i < 0 ? Number.MAX_SAFE_INTEGER : i;
@@ -333,11 +398,11 @@ export function timelineRows(
 
 // ---- The state line -----------------------------------------------------------------------------
 
-/** The outline strip's own clauses (InsightStrip.STATE_CLAUSE), so both lines read alike. */
+/** The Current goal strip's own clauses (InsightStrip.STATE_CLAUSE), so both lines read alike. */
 const STATE_CLAUSE: Partial<Record<SessionOutline["state"], string>> = {
   fresh: "current",
   stale: "behind the latest messages",
-  "failed-keeping-last": "the last update failed, so this is the previous outline",
+  "failed-keeping-last": "the last update failed, so this is the previous summary",
 };
 
 /**
@@ -353,3 +418,10 @@ export function timelineState(outline: SessionOutline | null | undefined, now: n
   const clause = STATE_CLAUSE[outline.state];
   return { text: `Updated ${relativeTime(at, now)}${clause ? ` · ${clause}` : ""}`, title: absoluteTime(at, now) };
 }
+
+// ---- Doors in ---------------------------------------------------------------------------------
+
+/** The composer's "7 inputs" trigger's accessible name: it opens the Timeline with Inputs Only on,
+    and says so. Singular throughout at one. */
+export const showInputsOnTimelineLabel = (n: number): string =>
+  `${n} ${n === 1 ? "input" : "inputs"} in this chat — show ${n === 1 ? "it" : "them"} on the Timeline`;

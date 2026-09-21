@@ -1,4 +1,4 @@
-// /tmp image paths named in transcript text (TranscriptItem.attachments, spec/04b-images.md §4b "Path
+// Image paths named in transcript text (in /tmp, or a session's attachments folder) (TranscriptItem.attachments, spec/04b-images.md §4b "Path
 // attachments"). Inline chips come in two builds that must match: an HTML string for markdown
 // (lib/markdown.ts) and a Solid component for plain text (components/PathAttachment.tsx).
 
@@ -43,8 +43,9 @@ export function stripPastedPaths(text: string): string {
   return shown.replace(/^\u0000+|\u0000+$/gm, "").replace(/\u0000+/g, " ").trim();
 }
 
-/** The one "gone" note, also used by the user-row unit. */
-export const MISSING_NOTE = "No longer in /tmp";
+/** The one "gone" note, also used by the user-row unit. Says nothing about where the file lived:
+    the same note covers a cleaned /tmp and a deleted attachments folder. */
+export const MISSING_NOTE = "No longer on disk";
 
 /** Accessible name and title for an inline chip. */
 export function chipLabels(a: TmpAttachment): { label: string; title: string } {

@@ -29,7 +29,8 @@
              accept="image/png,image/jpeg,image/gif,image/webp">
       <label class="visually-hidden" for="composer-input">Message</label>
       <textarea class="input textarea composer-input" id="composer-input" rows="1"
-                placeholder="Ask pi to…" aria-describedby="composer-reason"></textarea>
+                placeholder="Ask pi to…—Enter sends, Shift+Enter adds a line"
+                aria-describedby="composer-reason"></textarea>   <!-- ≥768; "Ask pi to…" below -->
       <div class="composer-actions">
         <button class="button button-primary" type="submit">
           <span class="icon" style="--icon: url(/icons/arrow-right.svg)" aria-hidden="true"></span><span class="button-label">Send</span>
@@ -53,7 +54,8 @@
         <span class="icon icon-sm composer-model-caret" style="--icon: url(/icons/chevron-down.svg)" aria-hidden="true"></span>
       </button>
       <span class="composer-reason" id="composer-reason"><!-- reason when disabled; else empty --></span>
-      <span class="composer-hint"><kbd>Enter</kbd> to send · <kbd>Shift</kbd>+<kbd>Enter</kbd> for a new line</span>
+      <!-- chat sessions only: the mode switch, pushed to the right edge; see §4g -->
+      <button class="button button-ghost mode-trigger" type="button" aria-haspopup="menu" …>…</button>
     </div>
   </form>
 </footer>
@@ -68,22 +70,43 @@
   - `Enter` sends.
   - `Shift+Enter` inserts a newline.
   - Ignore `Enter` while `event.isComposing` (IME).
+  - **The key hint is in the placeholder**, at 768px and up only: "Ask pi to…—Enter sends,
+    Shift+Enter adds a line", and while streaming "Steer the current turn…—Enter sends,
+    Shift+Enter adds a line". Below 768px it's the short string alone ("Ask pi to…" /
+    "Steer the current turn…"): a touch-first device has no Enter key to speak of. The band is
+    watched live, so a resize across 768px swaps the placeholder in place. A read-only composer
+    keeps the short string.
   - Empty or whitespace-only text doesn't send, and Send is `aria-disabled` with no reason text,
     because the reason is obvious.
 - **Send.** Sends `{type:"prompt"}`. Clear the textarea only after the socket accepts the message.
   Show the user bubble optimistically and resume auto-follow.
 - **While streaming.** Send stays available and its label changes to `Steer`, which sends
-  `{type:"steer"}`. The placeholder becomes "Steer the current turn…". `Stop`
+  `{type:"steer"}`. The placeholder becomes "Steer the current turn…" (plus the key hint at ≥768,
+  see Keys). `Stop`
   (`.button-destructive`, outlined, never filled, one word so the button stays narrow) sends
   `{type:"abort"}`. Show it only while streaming, after Steer. `Esc` does **not** abort, to prevent
   accidental stops.
 - **After Stop.** The status reads "Stopping…" until the turn settles. Then the run status
   disappears, and an info row says "Stopped by you at `14:08`."
 - **Focus.** Returns to the textarea after Send, Steer, or Stop.
-- **Drafts** are never discarded. The draft survives disable/enable, reconnects, and errors. Keep
-  a draft per session path in memory, so switching sessions and coming back restores it.
-- **The foot** reads left to right: the model indicator, the disabled reason, then the keyboard
-  hint pushed to the right edge.
+- **Drafts** are never discarded. The draft survives disable/enable, reconnects, and errors, and
+  it survives a reload too. Each session's draft lives in two places:
+  - **In memory, per session path.** This is the authority within a tab, so switching sessions
+    and coming back restores the draft at once.
+  - **On the server, per session.** `PUT /api/sessions/draft { path, text, attachments? }` writes it
+    to `~/.pi/agent/pi-web/drafts.json`, keyed by session id; whitespace-only text with no
+    attachments deletes the entry.
+    `GET /api/sessions/draft?path=…` returns it when the session is reopened, so a draft outlives
+    a reload and follows you to your other browsers and devices.
+
+  The stored draft is `{ text, attachments }`: pending images persist with the words, as
+  `attachments: [{ path, name, mimeType, size }]`, at most 8 per session. Each is a file already
+  uploaded into the session's attachments folder (§4b), so a reload restores the words and the
+  images. A draft is deleted only when it has neither text nor attachments. A send clears the
+  draft in both places. A draft on a session nothing was ever sent in — images alone included — also keeps that session in the list (§2).
+- **The foot** reads left to right: the model indicator, the disabled reason, then the mode switch
+  (§4g) pushed to the right edge. Both triggers stay at every width and shrink instead of
+  widening the row: the model id and the minor modes are the parts that ellipsize.
 - **Model indicator.** Chat sessions only. It says what this turn will run — the id in mono, the
   provider beside it, then `· {level}` for the thinking level — and clicking it opens the flyout
   on its **model panel**, anchored above itself, which holds exactly those two controls (§4b).
@@ -94,10 +117,10 @@
   `provider/id` is in `title`. It carries `aria-haspopup="menu"`,
   `aria-controls="composer-flyout"` and an `aria-expanded` that is true only while the flyout is
   open **and anchored to it** — clicking it again closes it; the "+" trigger keeps its own. The
-  id is the one part that shrinks, so a long ref ellipsizes rather than pushing the hint out.
+  id is the one part that shrinks, so a long ref ellipsizes rather than pushing the mode switch out.
   While the composer is disabled it still shows the model and is `aria-disabled` with a dead
-  click, like the flyout's own rows. It stays at every width — the hint goes under 768px, this
-  doesn't, because it's the only place the model is on screen.
+  click, like the flyout's own rows. It stays at every width, because it's the only place the
+  model is on screen.
 
 ## Disabled states
 
@@ -231,8 +254,7 @@ Composer ground is `--color-surface` with a top border in `--color-border`, and 
 min, `--r-md`, `--color-border-strong` border, and an accent focus border. Send is
 `.button-primary` (`--color-accent` / `--color-on-accent`). Stop is `.button-destructive`
 (`--status-error` border and label, `--status-error-bg` on hover). The reason is `--fs-caption` in
-`--color-ink-2`, and the hint is `--color-ink-muted`. The hint is hidden under 768px. The model
-indicator borrows the same pair — the id `--fs-mono` in `--color-ink-2`, everything else
+`--color-ink-2`. The model indicator borrows the pair the foot uses — the id `--fs-mono` in `--color-ink-2`, everything else
 `--fs-caption` in `--color-ink-muted` — with a `--color-sunken` fill on hover and while open, and
 a `--tap-min` target stretched over a `--control-sm` row by a `::after`.
 `.composer-inner` is centred at `--measure` plus `--space-9`, the transcript column's width, so it

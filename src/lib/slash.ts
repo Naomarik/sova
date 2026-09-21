@@ -53,7 +53,7 @@ export type LocalCommand = "subagents" | "new" | "tree" | "timeline";
  * only earns a "requires Pi's interactive TUI" notice. With arguments ("/subagents models …") it
  * is the runtime's command and goes through untouched. A bare "/new" starts a fresh session in the
  * same folder, like the TUI's own; the runtime doesn't register it. A bare "/tree" opens the
- * session pane's Inputs tab, where rows rewind the chat: pi's own "/tree" is a TUI built-in, so
+ * session pane's Timeline filtered to your messages, where rows rewind the chat: pi's own "/tree" is a TUI built-in, so
  * sent as a prompt it would reach the model as literal text. A bare "/timeline" opens the pane's
  * Timeline tab, the session's one time axis; pi has no such built-in either, so as a prompt it
  * would reach the model as literal text.

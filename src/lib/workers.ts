@@ -112,6 +112,14 @@ export function workersWorkingLabel(working: number, split: WorkingSplit | null 
   return `${parts} working…`;
 }
 
+/** The same split for the row that ALREADY says Working (the parent's own turn is running): the
+    counts alone, since "Working · 2 subagents working…" would say it twice. */
+export function workersRunningLabel(working: number, split: WorkingSplit | null | undefined): string {
+  if (!split || split.members === 0) return count(working, "subagent", "subagents");
+  const members = count(split.members, "team member", "team members");
+  return split.subagents > 0 ? `${count(split.subagents, "subagent", "subagents")} · ${members}` : members;
+}
+
 /** "1 subagent working — show subagents": the composer trigger's accessible name. */
 export const showSubagentsLabel = (n: number): string => `${n} ${n === 1 ? "subagent" : "subagents"} working — show subagents`;
 

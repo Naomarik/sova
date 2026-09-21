@@ -1,12 +1,24 @@
-// Image paths directly in /tmp, found in message text (TranscriptItem.attachments). Pure: the
-// server uses it to detect them, the client to place inline chips in plain text. No fs here.
+// Image paths found in message text (TranscriptItem.attachments): directly in /tmp, or in a
+// session's folder under pi-web's attachments root (<agent dir>/pi-web/attachments/<session id>/,
+// where composer-draft uploads live so they survive a reload). Pure: the server uses it to detect
+// them, the client to place inline chips in plain text. No fs here, and no agent dir: the client
+// doesn't know it, so an attachments path is recognised by its tail; the server's checkTmpImage
+// then decides whether it really sits under this machine's root.
 
 /** A file name directly in /tmp: no separators, no leading dot, image extension. */
 const NAME = String.raw`[A-Za-z0-9][A-Za-z0-9._-]*\.(?:png|jpe?g|webp|gif)`;
+/** A session id (sessions-index idOf: the uuidv7 after the file name's last "_"). No dots, so never "..". */
+export const SESSION_ID = String.raw`[A-Za-z0-9][A-Za-z0-9-]*`;
 /** Exactly `/tmp/<name>`, nothing more. */
 export const TMP_IMAGE_PATH = new RegExp(`^/tmp/${NAME}$`, "i");
-/** Standalone: not part of a longer path on either side; a trailing "." ends a sentence. */
-const TOKEN = String.raw`(?<![\w./-])/tmp/${NAME}(?![\w/-]|\.\w)`;
+/** Exactly `<id>/<name>`: what may follow the attachments root. */
+export const ATTACHMENT_TAIL = new RegExp(`^${SESSION_ID}/${NAME}$`, "i");
+/** Where the attachments root ends, as seen in a path (join(getAgentDir(), "pi-web", "attachments")). */
+const ROOT_TAIL = "/pi-web/attachments/";
+/** Standalone: not part of a longer path on either side; a trailing "." ends a sentence. An
+    attachments path is any absolute path ending in the root's tail, then `<id>/<name>`; "~" is
+    also refused before it, so "~/.pi/…" isn't read as "/.pi/…". */
+const TOKEN = String.raw`(?<![\w./-])(?:/tmp/${NAME}|(?<!~)(?:/[\w.-]+)*${ROOT_TAIL}${SESSION_ID}/${NAME})(?![\w/-]|\.\w)`;
 /** Names pi or pi-web write (interactive-mode handleClipboardPaste, utils/clipboard-image,
     and pi-web's POST /api/upload). */
 const PI_CLIPBOARD = /^pi-(?:clipboard|wsl-clip|web)-[0-9a-f-]{36}\.[a-z]+$/i;
@@ -62,9 +74,10 @@ function maskCode(text: string): string {
   return out.join("");
 }
 
-/** Every standalone /tmp image path outside markdown code, in order (duplicates included). */
+/** Every standalone image path (in /tmp or an attachments folder) outside markdown code, in
+    order (duplicates included). */
 export function findTmpImagePaths(text: string): TmpPathMatch[] {
-  if (!text.includes("/tmp/")) return [];
+  if (!text.includes("/tmp/") && !text.includes(ROOT_TAIL)) return [];
   const masked = maskCode(text);
   const re = new RegExp(TOKEN, "gi");
   const found: TmpPathMatch[] = [];

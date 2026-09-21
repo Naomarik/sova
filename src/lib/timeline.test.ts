@@ -1,14 +1,18 @@
 // Run: npx tsx --test src/lib/timeline.test.ts (or npm test)
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { RewindInfo, SessionOutline, TranscriptItem } from "../../shared/protocol";
+import type { OutlineSnapshot, RewindInfo, SessionOutline, TranscriptItem } from "../../shared/protocol";
+import { inputRows, rewoundAt, viewRows } from "./inputs";
 import {
   anchorTime,
   chapterRows,
   densityLine,
+  GAP_MS,
   inputTurns,
   MARKER_TITLE,
   markerRows,
+  outlineRows,
+  showInputsOnTimelineLabel,
   timelineRows,
   timelineState,
   turnPreview,
@@ -60,6 +64,7 @@ const outline = (topics: SessionOutline["topics"], over: Partial<SessionOutline>
 });
 const topic = (id: string, heading: string, entryId: string | null, atMs: number, manual = false, anchorAt?: number) => ({ id, heading, bullets: [], at: atMs, manual, entryId, anchorAt });
 const rewind = (id: string, min: number, targetId = "u1", fromLeafId = "a9"): RewindInfo => ({ id, timestamp: at(min), targetId, fromLeafId });
+const snapshot = (id: string, min: number, now = id): OutlineSnapshot => ({ id, timestamp: at(min), now, overall: `overall ${id}`, generatedAt: Date.parse(at(min)) });
 
 const kinds = (rows: TimelineRow[]) => rows.map((r) => r.kind);
 
@@ -235,6 +240,99 @@ test("timelineRows keeps two rewinds in order among the rows around them", () =>
 
 test("timelineRows of an empty transcript is empty", () => {
   assert.deepEqual(timelineRows([], null), []);
+});
+
+// ---- Outline history ----------------------------------------------------------------------------
+
+test("outlineRows draws every past summary as a goal marker, and leaves the newest to the strip", () => {
+  const rows = outlineRows([snapshot("o1", 2, "reading the pane"), snapshot("o2", 5, "writing the tab"), snapshot("o3", 9, "the current goal")]);
+  assert.deepEqual(rows.map((r) => r.title), ["Goal · reading the pane", "Goal · writing the tab"]);
+  assert.ok(!rows.some((r) => r.title.includes("the current goal")), "the newest is the strip's current goal, not a row");
+  assert.equal(rows[0]!.marker, "outline");
+  assert.equal(rows[0]!.at, at(2));
+  assert.equal(rows[0]!.full, undefined, "`overall` is another fact, never a longer version of the line");
+  assert.equal(rows[0]!.entryId, undefined, "a topic-outline entry renders nothing in the thread: no jump");
+  assert.equal(rows[0]!.key, "marker:outline:o1");
+});
+
+test("outlineRows: one snapshot is only the current goal, and none is nothing", () => {
+  assert.deepEqual(outlineRows([snapshot("o1", 2)]), []);
+  assert.deepEqual(outlineRows([]), []);
+  assert.deepEqual(outlineRows(undefined), []);
+});
+
+test("an outline with no now line falls back to the first line of its overall", () => {
+  const [row] = outlineRows([{ ...snapshot("o1", 2, ""), overall: "Built the tab.\nThen tests." }, snapshot("o2", 3)]);
+  assert.equal(row!.title, "Goal · Built the tab.");
+  assert.equal(row!.full, "Built the tab.\nThen tests.", "the row cuts it to one line, so the tooltip is the whole thing");
+});
+
+test("timelineRows merges outline snapshots in time order with everything else", () => {
+  const items = [user("u1", 0), say("a1:0", 1), compaction("c1", 6), user("u2", 8)];
+  const rows = timelineRows(items, null, [], GAP_MS, { outlines: [snapshot("o1", 4, "first"), snapshot("o2", 7, "second"), snapshot("o3", 9, "now")] });
+  assert.deepEqual(rows.map((r) => r.title), ["u1", "1 reply · 6m", "Goal · first", "Compacted · 67,401 tokens summarized", "Goal · second", "u2"]);
+});
+
+// ---- Inputs Only --------------------------------------------------------------------------------
+
+test("Inputs Only keeps your messages, their density lines and the gaps between them — nothing else", () => {
+  const items = [
+    user("u1", 0),
+    say("a1:0", 1),
+    tool("s1", 2, "agent_spawn"),
+    change("m1", 3, "Model: anthropic/claude-opus-5"),
+    compaction("c1", 30),
+    user("u2", 50),
+  ];
+  const opts = { outlines: [snapshot("o1", 20), snapshot("o2", 40)], inputsOnly: true };
+  const rows = timelineRows(items, outline([topic("t1", "A chapter", "a1", 0)]), [rewind("rw1", 25)], GAP_MS, opts);
+  assert.deepEqual(kinds(rows), ["input", "density", "gap", "input"]);
+  assert.equal(rows[1]!.title, "1 reply · 1 tool · 30m", "each input keeps its own meta line");
+  assert.equal(rows[2]!.title, "idle 50m", "the gap is measured between the rows that remain");
+  const all = timelineRows(items, outline([topic("t1", "A chapter", "a1", 0)]), [rewind("rw1", 25)], GAP_MS, { ...opts, inputsOnly: false });
+  assert.ok(all.some((r) => r.marker === "outline") && all.some((r) => r.kind === "chapter"), "off, the same session shows the rest");
+});
+
+test("Inputs Only on a session with no messages is empty", () => {
+  assert.deepEqual(timelineRows([compaction("c1", 1)], null, [], GAP_MS, { inputsOnly: true }), []);
+});
+
+// ---- Rewind state -------------------------------------------------------------------------------
+
+const inputsOf = (items: TranscriptItem[]) => inputRows(items);
+
+test("with a view, every input row carries its state; without one, none does", () => {
+  const items = [user("u1", 0), user("u2", 1)];
+  assert.equal(timelineRows(items, null)[0]!.state, undefined);
+  const rows = timelineRows(items, null, [], GAP_MS, { view: viewRows(inputsOf(items), null) });
+  assert.deepEqual(rows.map((r) => r.state), ["active", "active"]);
+});
+
+test("after a rewind the boundary and the rows it left behind come back, in time order, after the branch", () => {
+  const before = [user("u1", 0), say("a1:0", 1), user("u2", 2), say("a2:0", 3), user("u3", 4)];
+  const shadow = rewoundAt(inputsOf(before), "u2")!;
+  const after = before.slice(0, 2); // the reload: the branch now ends before u2
+  const view = viewRows(inputsOf(after), shadow);
+  const rows = timelineRows(after, null, [rewind("rw1", 6)], GAP_MS, { view });
+  assert.deepEqual(
+    rows.map((r) => `${r.title}${r.state ? `:${r.state}` : ""}`),
+    ["u1:active", "1 reply · 1m", "u2:boundary", "u3:abandoned", MARKER_TITLE.rewind],
+  );
+  assert.equal(rows[2]!.entryId, "u2", "the boundary still names its message");
+  const filtered = timelineRows(after, null, [rewind("rw1", 6)], GAP_MS, { view, inputsOnly: true });
+  assert.deepEqual(filtered.map((r) => r.state ?? r.kind), ["active", "density", "boundary", "abandoned"], "the filter keeps them: they are your messages");
+});
+
+test("a fetch from before the rewind still holds the abandoned rows: they show once, with their density", () => {
+  const before = [user("u1", 0), user("u2", 2), say("a2:0", 3)];
+  const view = viewRows(inputsOf(before), rewoundAt(inputsOf(before), "u2"));
+  const rows = timelineRows(before, null, [], GAP_MS, { view });
+  assert.deepEqual(rows.map((r) => r.state ?? r.kind), ["active", "boundary", "density"]);
+});
+
+test("the composer's inputs trigger names the Timeline, singular throughout at one", () => {
+  assert.equal(showInputsOnTimelineLabel(1), "1 input in this chat — show it on the Timeline");
+  assert.equal(showInputsOnTimelineLabel(7), "7 inputs in this chat — show them on the Timeline");
 });
 
 // ---- The state line -----------------------------------------------------------------------------

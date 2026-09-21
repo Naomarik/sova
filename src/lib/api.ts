@@ -154,13 +154,36 @@ export const fetchTranscriptWithContext = (path: string) =>
     context: r.context ?? null,
   }));
 
-/** Stores an image in /tmp like a TUI clipboard paste; the prompt text then names its path. */
-export const uploadImage = (file: File) =>
-  request<UploadResult>("/api/upload", {
+/** The composer draft stored for a session; `text: null` when there is none. The server has
+    already dropped attachments whose file is gone. */
+export const fetchDraft = (path: string) =>
+  request<{ text: string | null; attachments?: UploadResult[]; updatedAt: string | null }>(
+    `/api/sessions/draft?path=${encodeURIComponent(path)}`,
+    { cache: "no-store" },
+  ).then((r) => ({ text: r.text, attachments: r.attachments ?? [], updatedAt: r.updatedAt }));
+
+/** Stores a session's draft; blank text with no attachments deletes it. `keepalive` lets the
+    write outlive a page that is being hidden or closed. */
+export const putDraft = (path: string, text: string, attachments: UploadResult[], opts: { keepalive?: boolean } = {}) =>
+  request<{ ok: true }>("/api/sessions/draft", {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ path, text, attachments }),
+    keepalive: opts.keepalive,
+  });
+
+/** Stores an image in the session's attachments folder the moment it's attached, so it survives
+    a reload as part of the draft; the prompt text then names its path. */
+export const uploadImage = (file: File, sessionPath: string) =>
+  request<UploadResult>(`/api/upload?draft=${encodeURIComponent(sessionPath)}`, {
     method: "POST",
     headers: { "content-type": file.type },
     body: file,
   });
+
+/** Deletes a draft attachment the user removed. Only files in the attachments folder qualify. */
+export const deleteAttachment = (path: string) =>
+  request<{ ok: true }>(`/api/attachment?path=${encodeURIComponent(path)}`, { method: "DELETE" });
 
 export const fetchUsage =() => request<UsageInsight>("/api/insights/usage");
 

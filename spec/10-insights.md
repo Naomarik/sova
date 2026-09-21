@@ -21,7 +21,8 @@ while reported states (read from a session file after the fact) never pulse and 
   `data-view="session"` and show `.app-back`.
 - **Old URLs:** `#/insights` redirects to `#/usage`, and `#/insights/{teamId}` to
   `#/agents/{teamId}`, via `history.replaceState`, so no extra history entry is added.
-- **Per session:** `details.outline` sits directly under `.session-head`, above the live banner.
+- **Per session:** `details.outline` (the Current goal strip) sits directly under `.session-head`,
+  above the live banner.
   Compactions stay in the transcript, at the point where they happened (§3 items).
 - **Aggregates:** neutral count chips on session rows and in the session head.
 - **All explanations:** the landing page at `#/`, under the opening (§3). The sidebar foot has no
@@ -348,13 +349,17 @@ the session title as a link to `#/s/…` (or `cwd`, mono, when `path` is null) a
 as the title, `id` and `model` in the meta, the preview while working, and the status chip from
 the table above. When no session has solo workers, the section is omitted.
 
-## Insight strip (topic-outline and explanations)
+## Insight strip (current goal and explanations)
+
+The strip holds **only the newest topic-outline summary** — the goal the agent is on now — and
+labels it "Current goal". Every earlier summary lives on the session pane's Timeline tab (§13),
+which draws them on the session's axis; the strip keeps no history of its own.
 
 ```html
 <details class="outline">
   <summary class="outline-summary">
     <span class="icon icon-sm icon-twist" style="--icon: url(/icons/chevron-right.svg)" aria-hidden="true"></span>
-    <span class="outline-label">Outline</span>
+    <span class="outline-label">Current goal</span>
     <span class="outline-now">· Audit and intercom removal complete</span>
     <span class="outline-count">12 topics</span>
     <span class="outline-count outline-explained">· Explained 3</span>
@@ -370,16 +375,13 @@ the table above. When no session has solo workers, the section is omitted.
     <p class="outline-overall">{overall}</p>
     <p class="outline-state">Updated 3m ago · behind the latest messages</p>
     <ol class="outline-topics">
-      <li>
-        <details class="outline-topic">
-          <summary class="outline-topic-summary">
-            <span class="icon icon-sm icon-twist" style="--icon: url(/icons/chevron-right.svg)" aria-hidden="true"></span>
-            <span class="outline-topic-heading"><span class="outline-hash">#</span>Model selection and limits</span>
-            <span class="outline-topic-time">2d ago</span>
-          </summary>
-          <ul class="outline-bullets"><li>…</li></ul>
-          <button class="button button-sm button-ghost outline-jump" type="button">Jump to Message</button>
-        </details>
+      <li class="outline-topic">
+        <div class="outline-topic-head">
+          <span class="outline-topic-heading"><span class="outline-hash">#</span>Model selection and limits</span>
+          <span class="outline-topic-time">2d ago</span>
+        </div>
+        <ul class="outline-bullets"><li>…</li></ul>
+        <button class="button button-sm button-ghost outline-jump" type="button">Jump to Message</button>
       </li>
     </ol>
   </div>
@@ -388,19 +390,27 @@ the table above. When no session has solo workers, the section is omitted.
 
 - **One row, both insights.** The outline and the session's /explain artifacts share this
   single disclosure, so the session head costs one row, not two.
-- **Three steps of disclosure:**
+- **One click, nothing nested.**
   1. Closed, the strip shows the `now` line and the counts it has.
-  2. Open, it shows the gallery button (when there are explanations), `overall`, the state
-     line, and the topic headings.
-  3. Opening a topic shows its bullets and Jump. Any dismissal closes the topic with the strip,
-     so the next open is step 2 again.
+  2. Open, it shows everything: the Timeline and gallery buttons, `overall`, the state line, and
+     every topic **flat** — its heading, its time, its bullets and its Jump, with no per-topic
+     disclosure and no collapse state. The body scrolls inside `--outline-max`; it doesn't fold.
 - **Explanations.** When the session has any, the summary gains
   `<span class="outline-count outline-explained">· Explained {n}</span>` after the topic count,
   and the body opens with a ghost `Open {n} Explanations` button — the existing gallery dialog
   (`aria-haspopup="dialog"`) — followed by `Latest · {topic} · {relative time}`. This dialog is
   **unchanged** and stays session-scoped; every explanation on the machine is the landing page's
   grid instead (§3), which is a page and not a dialog.
-- **Open state.** Both levels are closed by default and **nothing is persisted** — the open state
+- **Every explain link opens in the same tab.** The gallery's cards, the landing page's grid
+  (§3), the transcript's report row and the session pane's explain row are all plain links to
+  `/explain/:id` with no `target`. In an installed app a new tab is a new window whose history
+  has one entry, so Back couldn't return to pi-web; in place, it can. `/explain/:id` stays a
+  standalone document for direct links. None of them carries the `external` icon or a "new tab"
+  suffix any more, so each link's accessible name is just what it is — the report row and the
+  pane row start with a visually hidden `Explanation: ` ahead of the topic, read as
+  "Explanation: {topic}". The `external` glyph on `Open {n} Explanations` is unrelated: that is
+  the button that opens the gallery dialog.
+- **Open state.** The strip is closed by default and **nothing is persisted** — the open state
   lives in the component alone. The session view is a keyed `<Show>` on `viewKey()` (`src/App.tsx`,
   `chat:{force}:{path}` / `watch:{why}:{path}`), so a refetch doesn't remount the strip and a
   deliberate open survives updates, while navigating to another session, another mode, or the
@@ -408,13 +418,13 @@ the table above. When no session has solo workers, the section is omitted.
   worth persisting.
 - **Dismissal.** A `pointerdown` anywhere outside the strip closes it — the transcript, the
   sidebar, the composer, the pane — on the press, not the release. Inside is everything within
-  the disclosure (the summary row, a topic and its bullets, Jump, `Open Timeline`,
+  the disclosure (the summary row, a topic's heading and bullets, Jump, `Open Timeline`,
   `Open {n} Explanations`) **and the gallery dialog it opens**, which is portalled, so a click in
   that dialog or on its scrim leaves the strip open underneath. **Esc** dismisses it only when the
   press starts inside the strip, and never calls `preventDefault` — every other Esc in the product
-  (the pane's close, Inputs' armed-rewind cancel, a dialog's own) keeps its behavior. All three
-  close paths — the summary toggle, the click-away, Esc — **collapse the open topic too**, and each
-  hands the transcript back the strip's `--outline-max` of flow.
+  (the pane's close, Inputs' armed-rewind cancel, a dialog's own) keeps its behavior. Each of the
+  three close paths — the summary toggle, the click-away, Esc — hands the transcript back the
+  strip's `--outline-max` of flow.
 - **Missing data.**
   - When `outline` is null but the session has explanations, the row still discloses: the label
     reads "Explained", the summary is `Explained · {n} · {latest topic}`, and the body holds the
@@ -424,11 +434,15 @@ the table above. When no session has solo workers, the section is omitted.
   - Leave out an empty `now` (the summary then shows only the label and count), and likewise an
     empty `overall`.
 - **Open Timeline.** A second ghost button beside the gallery one, opening the session pane on
-  its Timeline tab (§13): the same topics as chapter markers, with this session's inputs, tool
-  density and idle gaps drawn in between them. It is always there, explanations or not — the
-  outline is what the axis is built from. It shares `.outline-explained-open`, so the two sit on
+  its Timeline tab (§13): this goal's topics and every past summary's as chapter markers, with
+  this session's inputs, tool density and idle gaps drawn in between them. It is always there,
+  explanations or not — the summaries are what the axis is built from, and the Timeline is where
+  the goals before this one went. It shares `.outline-explained-open`, so the two sit on
   the body's first line and space each other.
-- **Topic details.** `.outline-hash` appears only on `manual` topics. The time is `at` in mono
+- **Topic details.** Each topic is an `li.outline-topic`: a static `.outline-topic-head` row (the
+  heading, then the time at the end), then its `.outline-bullets`, then Jump. The head row is
+  not a control — no pointer cursor, no hover underline. `.outline-hash` appears only on
+  `manual` topics. The time is `at` in mono
   24-hour format, with the date prefix when the day isn't today (§3 timestamps). **That time is
   the summary's own** — when the summarizer wrote the topic, not when the conversation it
   describes happened. It is fine in a list, which claims no order beyond its own; §13's axis
@@ -439,7 +453,10 @@ the table above. When no session has solo workers, the section is omitted.
 - **Jump to Message.**
   - It scrolls the transcript item whose entry id equals `entryId` into view, then stops
     auto-follow, so Jump to Latest appears (§3).
-  - Leave it out when `entryId` is null or the item isn't rendered (it was compacted away).
+  - Leave it out when `entryId` is null or the item isn't rendered (it was compacted away). That
+    is decided each time the strip opens, and when a topic arrives while it's open; a Jump that
+    finds its item gone since then removes itself instead of scrolling nowhere. A topic without
+    Jump still shows its heading, time and bullets.
 - **Refetching.** Refetch after a watch `append` or chat `agent_settled`, debounced. Update in
   place.
 - **Folded width.** `.outline-body` caps at 50vh instead of `--outline-max` (40vh).

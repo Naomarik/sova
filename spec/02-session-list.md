@@ -126,6 +126,38 @@
   ```
 - **Row line 1.** `SessionSummary.title`, truncated to one line; the full title goes in `title=`.
   `Untitled` renders in `--color-ink-muted`.
+- **Draft rows.** An empty husk — a session whose file holds no user message anywhere — is never
+  listed, with one exception: **a husk with a stored draft is** (§4 Drafts). The server sends it
+  with `SessionSummary.draftPreview`, the draft's first non-empty line cut to about 80 characters.
+  A draft holding only images counts too, and its preview is the count: `1 image`, `2 images`.
+  The row keeps its `Untitled` title in `--color-ink-muted`. Line 2 leads with the `pencil` icon,
+  then the preview, in place of a "now" line (a husk has no outline, so there is no topic count
+  beside it). The icon is decorative; the word "draft" is in the text, so the row's accessible
+  name and the preview's `title` both say it's a draft: `Draft: {preview}`. That is what keeps a new session you started typing in from vanishing
+  on reload. Send the draft and it becomes an ordinary row; clear it and the husk drops out of the
+  list again.
+
+  ```html
+  <li class="session-row-shell">
+    <div class="session-rail"><!-- empty: nothing is live, nothing is running --></div>
+    <a class="list-row list-row-interactive session-row" href="#/s/…">
+      <div class="list-main">
+        <p class="list-title list-title-muted" title="Untitled">Untitled</p>
+        <!-- line 2 is the draft's own first line; no topic count, no "now" line -->
+        <div class="list-line list-summary-row">
+          <span class="icon icon-sm" style="--icon: url(/icons/pencil.svg)" aria-hidden="true"></span>
+          <p class="list-summary" title="Draft: Refactor the auth module before the trip"><span class="visually-hidden">Draft: </span>Refactor the auth module before the trip</p>
+        </div>
+        <!-- an image-only draft: the same line reads "✎ 2 images" -->
+        <div class="list-line list-meta-row">…line 3, as always…</div>
+      </div>
+    </a>
+  </li>
+  ```
+
+  The pencil is pinned to the line box (`--fs-micro` × `--lh-micro` square, not `.icon-sm`'s
+  16px), never shrinks, and takes `--color-ink-muted`, so a draft row is exactly as tall as its
+  neighbours and the icon stays quieter than the preview beside it.
 - **Row line 2.** `SessionSummary.outlineNow`, the session's rolling "now" line from its latest
   `topic-outline` snapshot. Rendered only when present: `--fs-micro` in `--color-ink-2`, one line
   truncated with an ellipsis, the full text in `title=`. Sessions without one (older sessions, or
@@ -464,7 +496,8 @@ sessions in bulk. It uses `POST /api/sessions/cleanup` (`cleanupSessions` in `sr
 ```
 
 - **Actions.** `{ mode: "age", minAgeDays: 7 }`, `{ mode: "age", minAgeDays: 30 }`, and
-  `{ mode: "husks" }` (sessions nothing was ever sent in). The server decides what matches and
+  `{ mode: "husks" }` (sessions nothing was ever sent in — drafted ones included, and deleting
+  one drops its stored draft too). The server decides what matches and
   what it protects. The UI shows its numbers and never counts on its own.
 - **Hidden while searching.** Cleanup ignores the search, so a Clean Up… button under a
   filtered list would suggest it only acts on the matches.

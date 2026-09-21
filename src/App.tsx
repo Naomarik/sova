@@ -14,7 +14,6 @@ import { sessionWorking, type UsageTotalView, workingSplit } from "./lib/workers
 import { ChatView, type ChatRefusal } from "./components/ChatView";
 import { AgentsView } from "./components/AgentsView";
 import { ContextGauge, ContextMetaPrefix, contextDescribedBy } from "./components/ContextGauge";
-import { ModeMenu, type ModeControl } from "./components/ModeMenu";
 import { NewSessionDialog } from "./components/NewSessionDialog";
 import { ExplainGrid } from "./components/ExplainGallery";
 import { InsightStrip } from "./components/InsightStrip";
@@ -102,11 +101,30 @@ export function App() {
   const [listError, setListError] = createSignal<string | null>(null);
   /** Bumped on every successful list load, so views can tell a fresh list from a stale one. */
   const [listVersion, setListVersion] = createSignal(0);
+  /** Sessions we just created: shown before the list catches up, and — because a never-sent one
+      is a hidden husk — the row (and the open view's summary) it keeps while this tab lives. */
+  const created = new Map<string, SessionSummary>();
+  /** Bumped when `created` gains an entry: the Map isn't reactive, and the new row must show now. */
+  const [createdVersion, setCreatedVersion] = createSignal(0);
+  /**
+   * The open session's summary, kept when a list reload stops carrying it (see the fetcher): a
+   * never-sent session whose draft was just cleared is a hidden husk again, and emptying the
+   * composer must not pull the open view out from under the user. The view only — the sidebar
+   * stays the list's truth, so the row does go away — and the next route change drops this.
+   */
+  const [openKept, setOpenKept] = createSignal<SessionSummary | null>(null);
   // The fetcher never rejects: on failure it keeps the previous list and reports the error,
   // so reading the resource never throws.
   const [sessions, { refetch }] = createResource<SessionSummary[] | undefined>(async (_, { value }) => {
     try {
       const next = reuseUnchanged(await listSessions(), value);
+      // An open never-sent session stays readable when a later list drops it: clearing its draft to
+      // empty makes it a hidden husk again, and the view must not vanish with the row. Only then —
+      // a titled session that leaves the list really is gone, and says so. Later loads don't undo
+      // this: the summary is kept until the route moves to another session.
+      const open = pathFromHash();
+      const openNow = open ? next.find((s) => s.path === open) : undefined;
+      if (openNow) setOpenKept(openNow.title === "Untitled" ? openNow : null);
       setListError(null);
       setListVersion((v) => v + 1);
       const h = next[0] && homeFromSessionPath(next[0].path);
@@ -118,9 +136,30 @@ export function App() {
     }
   });
   const list = () => sessions.latest; // keeps the old list on screen while refreshing
+  /**
+   * The sidebar's rows: the server list plus the sessions this tab created that the server does
+   * not carry — a new session is a hidden husk until its first user message or a stored draft, so
+   * until then this is where its row comes from. A path on both lists takes the server's row
+   * (that one carries the draft preview), and clearing a draft to empty leaves the open session
+   * readable — through `created` here, or `openKept` for one this tab didn't start.
+   */
+  const sidebarSessions = createMemo(() => {
+    createdVersion();
+    const l = list();
+    if (!l || created.size === 0) return l;
+    const listed = new Set(l.map((s) => s.path));
+    const extra = [...created.values()].filter((s) => !listed.has(s.path));
+    return extra.length ? [...l, ...extra] : l;
+  });
 
   redirectLegacyInsights();
   const [route, setRoute] = createSignal<string | null>(pathFromHash());
+  createEffect(
+    on(route, (p) => {
+      const kept = openKept();
+      if (kept && kept.path !== p) setOpenKept(null);
+    }),
+  );
   const [insightsRoute, setInsightsRoute] = createSignal(insightsRouteFromHash(location.hash));
   /** Team card to scroll to on `#/agents/<teamId>`. */
   const focusTeam = () => {
@@ -136,16 +175,13 @@ export function App() {
     return items && items.length > 0 ? items : null;
   });
   const [decision, setDecision] = createSignal<Decision | null>(null);
-  /** Sessions we just created: shown before the list catches up. */
-  const created = new Map<string, SessionSummary>();
   const [creating, setCreating] = createSignal(false);
   const [chatModel, setChatModel] = createSignal<string | null>(null);
-  const [modeControl, setModeControl] = createSignal<ModeControl | null>(null);
-  /** The open chat's rewind, for the pane's Inputs tab; tagged with its path, so a pane for another
-      session never gets it. */
+  /** The open chat's rewind, for the Timeline's input rows; tagged with its path, so a pane for
+      another session never gets it. */
   const [rewindControl, setRewindControl] = createSignal<RewindControl | null>(null);
   /**
-   * The newest rewind that landed in a chat, whoever asked for it (an Inputs row, the composer's
+   * The newest rewind that landed in a chat, whoever asked for it (a Timeline row, the composer's
    * Undo last turn). `changed` is minted here and only grows, like PaneInsight.changed: the pane
    * re-reads its rows on a bump, so two rewinds to the same message still refresh. A refusal never
    * gets here, so it changes nothing. The path gates the fan-out: one session's rewind must never
@@ -178,7 +214,8 @@ export function App() {
   const summary = createMemo(() => {
     const p = route();
     if (!p) return null;
-    return list()?.find((s) => s.path === p) ?? created.get(p) ?? null;
+    const kept = openKept(); // only for the session on screen; see where it is set
+    return list()?.find((s) => s.path === p) ?? created.get(p) ?? (kept?.path === p ? kept : null);
   });
 
   /**
@@ -211,6 +248,7 @@ export function App() {
   /** Opens a session we just created: chat right away, composer focused. */
   const adoptCreated = (s: SessionSummary) => {
     created.set(s.path, s);
+    setCreatedVersion((v) => v + 1);
     setCreating(false);
     refresh();
     // Route and decision move together: "hashchange" fires later, and until then the decide
@@ -331,12 +369,20 @@ export function App() {
   };
   /** The composer's subagents row and /subagents promise the workers: Agents. */
   const toggleSubagents = (path: string) => openPane(path, "agents");
-  /** /tree and the composer's rewind entry: the Inputs tab, opened (never toggled shut). */
-  const showInputs = (path: string) => {
-    if (!paneOn(path, "inputs")) openPane(path, "inputs");
-  };
-  /** /timeline and the outline strip's button: the Timeline tab, opened (never toggled shut). */
-  const showTimeline = (path: string) => {
+  /**
+   * The Timeline's "Inputs Only" filter: the path whose pane has it on, else null. In memory, and
+   * only while the pane is open — it goes off whenever the pane closes, however it closes — so the
+   * one thing that outlives a press is the door that asked for it.
+   */
+  const [inputsOnly, setInputsOnly] = createSignal<string | null>(null);
+  createEffect(on(subagentsPath, (p) => p || setInputsOnly(null)));
+  /**
+   * The Timeline tab, opened (never toggled shut). /timeline and the outline strip's button open it
+   * unfiltered; /tree and the composer's inputs row open it on your own messages, where each row
+   * can rewind. Either way the door sets the filter, even on a pane already showing the tab.
+   */
+  const showTimeline = (path: string, only = false) => {
+    setInputsOnly(only ? path : null);
     if (!paneOn(path, "timeline")) openPane(path, "timeline");
   };
 
@@ -347,7 +393,7 @@ export function App() {
       </a>
       <div class="app" data-view={route() || insightsRoute() ? "session" : "list"}>
         <Sidebar
-          sessions={list()}
+          sessions={sidebarSessions()}
           loading={sessions.loading}
           error={listError()}
           selected={route()}
@@ -515,8 +561,6 @@ export function App() {
                         </p>
                       </div>
                       <ContextGauge path={d.path} />
-                      {/* Global mode (§4g): chat sessions only; a watched TUI keeps its own in memory. */}
-                      <Show when={d.mode === "chat" && modeControl()}>{(c) => <ModeMenu control={c()} />}</Show>
                       <Show
                         when={working() > 0}
                         fallback={
@@ -630,13 +674,11 @@ export function App() {
                                 // The sidebar row reads the list: re-read it after a switch.
                                 if (m && m !== s().model) refresh();
                               }}
-                              onModeControl={setModeControl}
                               onRewindControl={setRewindControl}
                               onRewound={noteRewound}
-                              inputsOpen={paneOn(d.path, "inputs")}
+                              inputsOpen={paneOn(d.path, "timeline") && inputsOnly() === d.path}
                               paneTab={subagentsPath() === d.path ? activeTab(d.path) : null}
-                              onShowInputs={() => showInputs(d.path)}
-                              onShowTimeline={() => showTimeline(d.path)}
+                              onShowTimeline={(only) => showTimeline(d.path, only)}
                               onRefused={onRefused}
                               onStarted={() => refresh()}
                               onArchiveChanged={refresh}
@@ -679,6 +721,8 @@ export function App() {
                 chatUsage={chatWorkers.path === path ? chatWorkers.usage : null}
                 rewind={rewindControl()?.path === path ? rewindControl()! : undefined}
                 rewound={rewound()?.path === path ? rewound()! : null}
+                inputsOnly={inputsOnly() === path}
+                onInputsOnly={(on) => setInputsOnly(on ? path : null)}
                 selected={subagents()?.selected ?? null}
                 onSelect={(id) => setSubagents({ path, selected: id })}
                 onClose={closeSubagents}

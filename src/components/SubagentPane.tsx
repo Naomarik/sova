@@ -231,8 +231,16 @@ export function SubagentPane(props: {
                       </>
                     )}
                   </Show>
-                  <MetaSep />
-                  <span>Read only</span>
+                  <Show when={w().effort}>
+                    {(e) => (
+                      <>
+                        <MetaSep />
+                        <span>
+                          effort <span class="text-mono">{e()}</span>
+                        </span>
+                      </>
+                    )}
+                  </Show>
                 </p>
               </header>
               <Show

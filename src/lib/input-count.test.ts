@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { TranscriptItem } from "../../shared/protocol";
-import { inputCount, inputsText, showInputsLabel } from "./input-count";
+import { inputCount, inputsText } from "./input-count";
 
 const item = (id: string, kind: TranscriptItem["kind"]): TranscriptItem => ({ id, kind, raw: {} });
 
@@ -27,6 +27,4 @@ test("inputCount drops with the branch: a rewind leaves fewer user rows", () => 
 test("the trigger's copy is plural-correct", () => {
   assert.equal(inputsText(1), "1 input");
   assert.equal(inputsText(7), "7 inputs");
-  assert.equal(showInputsLabel(1), "1 input in this chat — show input"); // singular throughout
-  assert.equal(showInputsLabel(7), "7 inputs in this chat — show inputs");
 });

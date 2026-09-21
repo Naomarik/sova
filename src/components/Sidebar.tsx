@@ -113,7 +113,21 @@ function SessionRow(props: { session: SessionSummary; selected: string | null; n
           <p class="list-title" classList={{ "list-title-muted": s().title === "Untitled" }} title={s().title}>
             {s().title}
           </p>
-          <Show when={s().outlineNow}>
+          {/* A never-sent session kept in the list by its stored draft: line 2 says so, in the place
+              a summary would take, so the row is as tall as its neighbours. The pencil is
+              decorative; the hidden word is what the row's accessible name says. */}
+          <Show when={s().draftPreview}>
+            {(preview) => (
+              <div class="list-line list-summary-row">
+                <Icon name="pencil" small />
+                <p class="list-summary" title={`Draft: ${preview()}`}>
+                  <span class="visually-hidden">Draft: </span>
+                  {preview()}
+                </p>
+              </div>
+            )}
+          </Show>
+          <Show when={!s().draftPreview && s().outlineNow}>
             <div class="list-line list-summary-row">
               <p class="list-summary" title={s().outlineNow}>{s().outlineNow}</p>
               <Show when={s().outlineTopics}>

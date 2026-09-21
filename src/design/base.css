@@ -1043,6 +1043,16 @@ summary.sidebar-region-head .icon-twist { transition: transform var(--dur-fast) 
   line-height: 1;
 }
 
+/* An icon leading a row line (the pencil ahead of a never-sent session's draft
+   preview) is pinned to the line box — 11px × 1.3, not .icon-sm's 16 — and
+   never shrinks, so a draft row is exactly as tall as a row with a summary. */
+.list-line > .icon {
+  flex: none;
+  width: calc(var(--fs-micro) * var(--lh-micro));
+  height: calc(var(--fs-micro) * var(--lh-micro));
+  color: var(--color-ink-muted);
+}
+
 /* The context ring on line 3 (§4f's one exception to "plain text, not a
    meter"). 12 × 12: the same box as the line's own text, so it costs the row
    no height, and at a 320px sidebar it costs the meta line 20px (12 + an 8px
@@ -1391,15 +1401,11 @@ summary.sidebar-region-head .icon-twist { transition: transform var(--dur-fast) 
   color: var(--color-ink-muted);
 }
 .composer-reason { display: inline-flex; align-items: center; gap: var(--space-2); min-width: 0; color: var(--color-ink-2); }
-.composer-hint { margin-left: auto; padding-left: var(--space-2); flex: none; }
-@media (max-width: 767px) {
-  .composer-hint { display: none; }   /* no Enter-to-send hint on touch-first width */
-}
 
 /* The model indicator (§4): this session's model and thinking level, and the
-   flyout's second trigger. First in the foot, and it stays at every width —
-   the hint goes under 768px, this doesn't. The id is the one part that
-   shrinks, so a long ref ellipsizes instead of pushing the hint out. */
+   flyout's second trigger. First in the foot, and it stays at every width.
+   The id is the one part that shrinks, so a long ref ellipsizes instead of
+   pushing the mode switch (§4g) out. */
 
 .composer-model {
   position: relative;
@@ -1897,10 +1903,11 @@ summary.sidebar-region-head .icon-twist { transition: transform var(--dur-fast) 
 }
 
 
-/* ---- MODE MENU (§4g). The global major/minor mode switch. Same popover
-   shell as the model menu (.model-menu positions it, and makes it a bottom
-   sheet under 768px); the list is a role=menu with real focus, so rows draw
-   the standard :focus-visible ring. ------------------------------------- */
+/* ---- MODE MENU (§4g). This chat's major/minor mode switch, at the right
+   end of the composer foot. Same popover shell as the model menu (.model-menu
+   sizes it, and makes it a bottom sheet under 768px), anchored ABOVE the
+   trigger like the composer flyout; the list is a role=menu with real focus,
+   so rows draw the standard :focus-visible ring. ------------------------ */
 
 .mode-trigger {
   flex: 0 1 auto;
@@ -1914,7 +1921,22 @@ summary.sidebar-region-head .icon-twist { transition: transform var(--dur-fast) 
   color: var(--color-ink-2);
 }
 .mode-trigger .icon { flex: none; color: var(--color-ink-muted); }
-.mode-trigger-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mode-trigger-label { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The minor modes give up their width long before the major mode does. */
+.mode-trigger-minor { flex-shrink: 1000; }
+/* In the foot: the model indicator's scale, mirrored to the right edge. It
+   stays at every width and never widens the row — it shrinks instead. */
+.composer-foot .mode-trigger {
+  position: relative;
+  min-height: var(--control-sm);
+  margin: 0 calc(var(--space-2) * -1) 0 auto;
+}
+/* The 44px target the caption row is too short to hold on its own. */
+.composer-foot .mode-trigger::after {
+  content: "";
+  position: absolute;
+  inset: calc((var(--tap-min) - var(--control-sm)) / -2) 0;
+}
 .mode-trigger[aria-expanded="true"] { background: var(--color-sunken); color: var(--color-ink); }
 .mode-menu > .banner { flex: none; margin: var(--space-2) var(--space-2) 0; }
 .mode-option {
@@ -1942,21 +1964,9 @@ summary.sidebar-region-head .icon-twist { transition: transform var(--dur-fast) 
   font-size: var(--fs-caption);
   color: var(--color-ink-muted);
 }
-/* Narrow head (§4f): icon-only under 520px (its name stays in aria-label);
-   gone under 360px, where the title's 72px floor can't spare 44px more. */
-@container session-head (max-width: 519px) {
-  .mode-trigger { width: var(--control-md); padding: 0; justify-content: center; }
-  .mode-trigger-label, .mode-trigger .icon + .mode-trigger-label + .icon { display: none; }
-}
-@container session-head (max-width: 359px) {
-  .mode-trigger { display: none; }
-}
-@media (max-width: 519px) {
-  .mode-trigger { width: var(--control-md); padding: 0; justify-content: center; }
-  .mode-trigger-label, .mode-trigger .icon + .mode-trigger-label + .icon { display: none; }
-}
-@media (max-width: 359px) {
-  .mode-trigger { display: none; }
+/* Anchored above. Under 768px the .model-menu sheet rules own the position. */
+@media (min-width: 768px) {
+  .mode-menu { top: auto; bottom: var(--menu-bottom, 72px); }
 }
 
 
@@ -2748,10 +2758,8 @@ a.chip:hover { color: var(--color-ink); border-color: var(--color-border-strong)
 .outline-summary:hover { background: var(--color-sunken); }
 .outline-summary:focus-visible { outline-offset: calc(var(--focus-offset) * -1); border-radius: 0; }
 .outline-summary > .icon { flex: none; }
-.outline-summary .icon-twist,
-.outline-topic-summary .icon-twist { flex: none; transition: transform var(--dur-fast) var(--ease-standard); }
-.outline[open] > .outline-summary .icon-twist,
-.outline-topic[open] > .outline-topic-summary .icon-twist { transform: rotate(90deg); }
+.outline-summary .icon-twist { flex: none; transition: transform var(--dur-fast) var(--ease-standard); }
+.outline[open] > .outline-summary .icon-twist { transform: rotate(90deg); }
 .outline-label { flex: none; font-weight: var(--fw-medium); color: var(--color-ink-2); }
 /* The one line the row is about: it takes the room and ellipsizes. */
 .outline-now {
@@ -2776,29 +2784,26 @@ a.chip:hover { color: var(--color-ink); border-color: var(--color-border-strong)
 .outline-explained-open { margin: var(--space-2) 0 var(--space-2); }
 .outline-topics { margin: 0; padding: 0; list-style: none; max-width: var(--measure); }
 .outline-topics > li + li { border-top: var(--stroke-thin) solid var(--color-border); }
-.outline-topic-summary {
+/* Flat, not a disclosure: the heading row reads, it doesn't click. */
+.outline-topic-head {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: var(--space-2);
-  min-height: var(--row-height);
-  cursor: pointer;
-  list-style: none;
+  padding: var(--space-2) 0 var(--space-1);
   color: var(--color-ink);
 }
-.outline-topic-summary::-webkit-details-marker { display: none; }
-.outline-topic-summary:hover .outline-topic-heading { text-decoration: underline; text-underline-offset: 3px; }
 .outline-topic-heading { flex: 1; min-width: 0; font-weight: var(--fw-medium); }
 .outline-hash { font-family: var(--font-mono); color: var(--color-ink-muted); margin-right: var(--space-1); }
 .outline-topic-time { flex: none; white-space: nowrap; font-family: var(--font-mono); font-size: var(--fs-mono); color: var(--color-ink-muted); }
 .outline-bullets {
   margin: 0 0 var(--space-2);
-  padding-left: calc(16px + var(--space-2) + var(--space-3));
+  padding-left: var(--space-5);
   font-size: var(--fs-caption);
   line-height: var(--lh-caption);
   color: var(--color-ink-2);
 }
 .outline-bullets > li + li { margin-top: var(--space-1); }
-.outline-jump { margin: 0 0 var(--space-2) calc(16px + var(--space-2)); }
+.outline-jump { margin: 0 0 var(--space-2); }
 
 
 /* ---- COMPACTION. The transcript's compaction row as a .disclosure. ------- */
@@ -3253,7 +3258,7 @@ a.chip:hover { color: var(--color-ink); border-color: var(--color-border-strong)
 /* Empty, no-file and no-selection states: one idea in the view, centred. */
 .subagents-empty { flex: 1; justify-content: center; padding: var(--space-6) var(--space-4); }
 
-/* --- Inputs tab (spec/12-inputs-tab.md §12) ----------------------------------------
+/* --- Input rows (spec/13-timeline.md §13, the Timeline's "Inputs Only" view) -------------
    This session's messages on one card, like the skill rows, but denser: caption
    title over a micro meta, so a long chat shows more of itself. The body is the
    jump; Rewind/Cancel sit apart at the row's end. The rewound-to row wears the

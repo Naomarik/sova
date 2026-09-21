@@ -60,6 +60,8 @@ export interface SessionSummary {
   /** Remote session: the absolute working directory on the target (the placeholder path minus
       the target dir). Set exactly when `target` is. */
   remoteCwd?: string;
+  /** Composer draft stored for this session: the draft's first non-empty line, ~80 chars. Present only on a session with no user message anywhere that has a stored draft — that is what keeps a never-sent new session in the list (sidebar). */
+  draftPreview?: string;
 }
 
 /** A configured remote target (~/.pi/agent/targets.json, GET /api/targets). Credential-free. */
@@ -192,16 +194,20 @@ export interface AlignReportInfo {
   revision: number;
 }
 
-/** An image a transcript row names by /tmp path: user messages, assistant text, info rows
-    (custom messages such as subagent reports) and tool results. */
+/** An image a transcript row names by path: user messages, assistant text, info rows (custom
+    messages such as subagent reports) and tool results. The path is `/tmp/<name>` (a TUI
+    clipboard paste, or a pi-web upload without ?draft=) or `<agent dir>/pi-web/attachments/<session
+    id>/<name>` (a composer-draft upload, durable; shared/tmp-paths.ts matches it by that tail). */
 export interface TmpAttachment {
   path: string; // absolute, as written in the message
   name: string; // basename
   mimeType: string; // from the extension
   /** Bytes on disk, when the file exists. */
   size?: number;
-  /** Servable at parse time: a regular file directly in /tmp, ≤ 20MB. false once /tmp was cleaned
-      (or when over the cap: then `size` is set). */
+  /** Servable at parse time: a regular file directly in /tmp, or in a session folder directly under
+      this server's attachments root, ≤ 20MB. false once the file is gone (/tmp cleaned, session
+      cleaned up), for an attachments-shaped path outside this root, or when over the cap (then
+      `size` is set). */
   available: boolean;
 }
 
@@ -212,9 +218,10 @@ export interface OutboundImage {
 }
 
 /** A web-uploaded image, stored like a TUI clipboard paste (POST /api/upload: raw bytes,
-    Content-Type image/png|jpeg|webp|gif -> 201). The prompt text references `path`. */
+    Content-Type image/png|jpeg|webp|gif -> 201). The prompt text references `path`. Also the
+    shape of a composer draft's `attachments` entry (GET/PUT /api/sessions/draft). */
 export interface UploadResult {
-  path: string; // /tmp/pi-web-<uuid>.<ext>
+  path: string; // /tmp/pi-web-<uuid>.<ext>, or <agent dir>/pi-web/attachments/<session id>/pi-web-<uuid>.<ext> with ?draft=
   name: string; // basename
   mimeType: string;
   size: number;
@@ -242,13 +249,25 @@ export interface UploadResult {
 //     -> { deletedCount, deletedIds: string[], skipped:{live,busy,recent,failed} }   (permanently deletes
 //     transcript files; dryRun reports candidates in deletedIds with deletedCount 0; live, mid-turn and
 //     just-written sessions are skipped and counted)
+// GET  /api/sessions/draft?path=… -> { text: string | null, attachments: UploadResult[], updatedAt: string | null }
+//                                  (the stored composer draft, ~/.pi/agent/pi-web/drafts.json; nulls and [] when
+//                                  none; attachments whose file is gone are left out. 400 bad path, 404 missing)
+// PUT  /api/sessions/draft { path, text, attachments?: UploadResult[] } -> { ok: true }   (stores it; blank text
+//                                  with no attachments deletes it. At most 8 attachments; an entry that isn't
+//                                  an existing image in /tmp or the attachments folder is dropped, not an error;
+//                                  name/mimeType/size are re-derived from the file. Never writes the session file.
+//                                  400 bad body/path, attachments not an array, or "Draft too long" (> 1,000,000
+//                                  chars), 404 missing)
 // GET  /api/transcript?path=…   -> { items: TranscriptItem[]; context: ContextInfo | null }   (active branch only)
 // GET  /api/cwds                -> string[]                          (distinct cwds, for the new-session picker)
 // GET  /api/folders?path=…&hidden=1 -> FolderListing   (subfolders for the New Session folder picker; no path = $HOME;
 //                                  400 not absolute, 403 unreadable, 404 missing or not a folder)
 // GET  /api/models              -> ModelInfo[]                       (available models; favorite=true mirrors the TUI Ctrl+P palette)
-// GET  /api/attachment?path=…   -> image bytes (TmpAttachment.path; only /tmp/<name>.png|jpg|jpeg|webp|gif, ≤ 20MB;
-//                                  400 bad shape, 403 resolves outside /tmp or too large, 404 missing)
+// GET  /api/attachment?path=…   -> image bytes (TmpAttachment.path; only /tmp/<name> or <agent dir>/pi-web/attachments/
+//                                  <session id>/<name>, .png|jpg|jpeg|webp|gif, ≤ 20MB; 400 bad shape, 403 resolves
+//                                  outside /tmp / the attachments root or too large, 404 missing)
+// DELETE /api/attachment?path=… -> { ok: true }   (removes one file under the attachments root, e.g. a composer
+//                                  chip's remove; 403 anything else, /tmp included; 400 no path; 404 missing)
 // GET  /api/mode                -> ModeInfo   (the DEFAULT for new sessions: ~/.pi/agent/mode.json; missing file → defaults)
 // POST /api/mode { mode?, minorModes? } -> ModeInfo   (writes that default only, merged into the fresh file with the
 //                                  other fields kept. No open chat changes. 400 bad body or unknown name)
@@ -416,7 +435,9 @@ export type WatchServerMessage =
 // ---------------------------------------------------------------------------
 // GET /api/insights/usage          -> UsageInsight
 // GET /api/insights/agents         -> AgentsInsight     (all live pi processes; poll ~5s)
-// POST /api/upload                -> UploadResult 201  (raw image bytes; Content-Type: image/*)
+// POST /api/upload                -> UploadResult 201  (raw image bytes; Content-Type: image/*; saved in /tmp)
+// POST /api/upload?draft=<session path> -> UploadResult 201  (same, saved durably in that session's folder
+//                                  <agent dir>/pi-web/attachments/<session id>/; 400 invalid session path, 404 no such session)
 // GET /api/insights/session?path=  -> SessionInsight    (400/404 semantics like /api/transcript)
 
 export interface UsageWindow { label: string; pct: number; resetsAt?: string; /** Raw counts when the provider exposes them (e.g. z.ai MCP calls: used/limit). */
@@ -520,6 +541,16 @@ export interface SessionOutline {
   generatedAt: number; // 0 = never
   topics: OutlineTopic[];
 }
+/** One past summary of the session: a `topic-outline` entry on the active branch, reduced to its
+    two summary lines so the Timeline can draw each one at its time. `id`/`timestamp` are the
+    entry's own (a stable row key, and a clock even when the payload's `generatedAt` is 0). */
+export interface OutlineSnapshot {
+  id: string; // the topic-outline entry's id
+  timestamp: string; // its ISO stamp
+  now: string; // the one-line "now" summary the timeline row shows
+  overall: string; // the longer paragraph, for a tooltip
+  generatedAt: number; // the payload's own clock (ms); 0 = unknown
+}
 export interface CompactionInfo {
   id: string; timestamp: string; tokensBefore: number | null; summary: string;
   readFiles: string[]; modifiedFiles: string[];
@@ -591,6 +622,12 @@ export interface SessionSkills {
 
 export interface SessionInsight {
   outline: SessionOutline | null; // null: no topic-outline entries on the active branch
+  /** Every summary the branch recorded, oldest first: one per `topic-outline` entry, minus
+      malformed ones, empty ones, and a repeat of the previous summary (the extension rewrites the
+      same text on some updates). Capped to the newest 200. Disk only: a live session's `outline`
+      can carry a broadcast newer than the last snapshot here, so the newest summary on screen may
+      not appear in this list yet. Absent when there are none, or from an older server. */
+  outlines?: OutlineSnapshot[];
   compactions: CompactionInfo[]; // active branch, oldest first
   /** The branch's rewinds, oldest first — the invisible markers pi-web leaves when the chat goes
       back before a message. Absent when the session has none, or from an older server. */

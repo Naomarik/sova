@@ -65,7 +65,7 @@ width, and it grows with the pane from unfolded up:
 `clamp(72ch, 100vw − --sidebar-width − --space-9 − 2 × --space-8, 110ch)`. That keeps 64px of
 margin on each side of the column until the 110ch cap (990px). The formula is under 72ch until
 the viewport reaches 1192px, so it grows without a jump. The banner, the composer
-(`.composer-inner`), the outline strip, and Jump to Latest follow the same token, so they stay
+(`.composer-inner`), the Current goal strip (§10), and Jump to Latest follow the same token, so they stay
 aligned with the column.
 
 | Viewport | Pane | `.transcript-inner` | Message cap | Composer |
@@ -263,8 +263,11 @@ Driven by `ChatServerMessage.event`.
   `<p class="run-status"><span class="live-dot"></span>Working<span class="run-status-detail">· running bash</span></p>`.
   The detail names the current tool, or says "· thinking" or "· writing". This is the loading
   pattern: say what's happening. The row is shared: it also carries the subagents trigger (§11)
-  and the inputs trigger (§12), and it renders whenever any of the three has something to show,
-  so an idle session with messages still has one.
+  and the inputs trigger ("7 inputs", which opens the Timeline with Inputs Only on, §13), and it
+  renders whenever any of the three has something to show,
+  so an idle session with messages still has one. While the parent's own turn runs, the subagents
+  trigger rides along with the counts alone (`Working · 2 subagents…`), because the row already
+  says it is working; once the parent settles it goes back to naming them in full (`§11`).
 - **End of turn** (`agent_settled`, or `agent_end` if that's all you get). Remove the live dots
   and the run status. Replace the optimistic items with the server's canonical ones if it sends
   them. Announce "Reply finished." in the polite live region; announce nothing per delta.
@@ -356,6 +359,11 @@ page with two parts, in this order:
   one session and keeping the 0-explanations empty state. The landing page is the *all*-scope
   view of the same rows, and it is a page, not a dialog: the sidebar foot no longer has an
   Explained row.
+- **Tiles open in the same tab.** Each tile is a plain link to `/explain/:id` with no `target`,
+  here and in the gallery alike. In an installed app (standalone display mode) a new tab is a new
+  window with one history entry, so its back button couldn't return to pi-web; navigating in place
+  keeps Back working. `/explain/:id` is still a standalone document, so a direct link opens it
+  on its own. There is no external-arrow icon and no "opens in a new tab" suffix on a tile.
 
 ## States
 

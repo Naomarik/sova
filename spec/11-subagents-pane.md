@@ -23,9 +23,10 @@ opens the pane instead of sending. The draft clears, the pane takes focus, and a
 "Subagents already open." **With arguments** — `/subagents models haiku` — it is the runtime's
 command and goes through untouched, and so does `/agents` with images attached.
 
-The subagents row was plain text: `.run-status`, shown only while the parent's turn is idle
-and at least 1 worker runs (§3 "Run status"). It becomes a control. The `<p>` stays, and a
-button takes its contents. The row is no longer only this: §12's inputs trigger sits at its
+The subagents row was plain text: `.run-status`, shown whenever at least 1 worker runs — the
+parent's own turn included (§3 "Run status") — and, once the parent is idle, also when the
+session has settled workers. It becomes a control. The `<p>` stays, and a
+button takes its contents. The row is no longer only this: §13's inputs trigger sits at its
 right end, and the row renders whenever any of streaming, workers or inputs has something:
 
 ```html
@@ -43,14 +44,15 @@ right end, and the row renders whenever any of streaming, workers or inputs has 
   control with sunken and lifts the words to ink. It never becomes a primary or secondary
   button: it's a status you can open, and the composer already has its one primary.
 - **Size.** 36px drawn with an `--r-md` fill, a 44px hit area (a `::after` 4px above and below),
-  and a net 20px of layout, so the composer doesn't jump when this row and the Working row trade
-  places. It sits 8px left of the row's edge, so the dot lines up with the Working row's dot.
+  and a net 20px of layout, so the composer doesn't jump whether this row stands alone or rides
+  beside the Working label. It sits 8px left of the row's edge, so the dot lines up with the
+  Working row's dot.
 - **The count is in the label** and changes in place. The accessible name is the visible words
   plus what the control does: "2 subagents working — show subagents".
 
 | State | Renders |
 |---|---|
-| Parent turn running | The Working row (§3), not this one. No trigger |
+| Parent turn running, ≥ 1 working | The Working row (§3) **and** this trigger beside it: live dot, the counts alone — "2 subagents" · "1 subagent · 2 team members" — labelled "2 subagents working — show subagents". Working already says what's happening, so the trigger only says how many. This is how the pane is one click away mid-turn |
 | Idle, 0 workers ever | No row, no trigger. `/agents` still opens the pane, which says so |
 | Idle, ≥ 1 working | The trigger, with the live dot: "2 subagents working…" |
 | Idle, none working, ≥ 1 settled | The trigger, **no live dot**: "2 subagents", labelled "2 subagents — show subagents". The per-worker counts and the Σ are what it's for, and they outlive the work |
@@ -58,8 +60,9 @@ right end, and the row renders whenever any of streaming, workers or inputs has 
 | Focus-visible | The 2px accent ring, at `--r-md` |
 | Pane open | `aria-expanded="true"`. **No pressed styling**: the open pane beside it is the state, and a tinted trigger would be one more accent-adjacent thing in a composer that has Send. Clicking again closes the pane |
 
-The pane doesn't need the trigger to stay open. When the parent starts a turn, the row turns
-back into Working, and the pane stays where it is.
+The pane doesn't need the trigger to stay open: it survives a turn starting or ending. While the
+parent runs, the trigger stays in the row with the counts alone, so watching the workers mid-turn
+is one click rather than a wait for the turn to settle.
 
 ## Shell: a third column
 
@@ -280,7 +283,7 @@ never the door. The browser back button doesn't close it, because the pane isn't
 
 - **Landmark.** `<aside id="session-pane" aria-label="Session detail">`, a complementary landmark.
   The id is tab-neutral, because every trigger opens the same pane on its own tab: the composer's
-  subagents row, the composer's inputs row (§12) and the head's Session details button all point
+  subagents row, the composer's inputs row (§13) and the head's Session details button all point
   their `aria-controls` at this one id. The pane is in the DOM only while open, so that reference
   dangles while it's closed — intended, and the same pattern the subagents trigger has always had.
 - **Opening** moves focus to the selected row, or the first row. With no rows, it goes to the

@@ -1,10 +1,14 @@
 // Run: npx tsx --test server/transcript.test.ts
-// Creates a few files directly in /tmp and removes them afterwards.
+// Creates a few files directly in /tmp, and an attachments root in a throwaway
+// PI_CODING_AGENT_DIR (attachmentsRoot reads it per call), and removes them afterwards.
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { after, describe, test } from "node:test";
-import { checkTmpImage, inlineTmpImages, MAX_ATTACHMENTS_PER_ROW, readTmpImage } from "./attachments";
+import { attachmentsRoot, checkTmpImage, inlineTmpImages, MAX_ATTACHMENTS_PER_ROW, readTmpImage } from "./attachments";
+import { findTmpImagePaths } from "../shared/tmp-paths";
 import { parseReport, previewLine } from "./reports";
 import { normalizeEntries, normalizeEntry } from "./transcript";
 
@@ -609,5 +613,79 @@ describe("pi 0.86.0 entries the TUI keeps out of the conversation", () => {
     const rows = normalizeEntries([system, userEntry("hi"), usage]);
     assert.deepEqual(rows.map((r) => [r.id, r.kind]), [["u1", "user"]]);
     assert.ok(rows.every((r) => r.kind !== "unknown"), "nothing renders as an unrecognized entry");
+  });
+});
+
+describe("attachments root (composer-draft uploads)", () => {
+  const agentDir = mkdtempSync(join(tmpdir(), "pi-web-transcript-test-"));
+  created.unshift(agentDir); // removed last, after the links below
+  process.env.PI_CODING_AGENT_DIR = agentDir;
+  const sid = "0199aaaa-bbbb-7ccc-8ddd-eeeeffff0000";
+  const root = join(agentDir, "pi-web", "attachments");
+  mkdirSync(join(root, sid), { recursive: true });
+  const upload = join(root, sid, `pi-web-${randomUUID()}.png`);
+  writeFileSync(upload, "png-bytes");
+  // Same tail, wrong place: another dir that merely ends in /pi-web/attachments/<id>/.
+  const lookalikeDir = join(agentDir, "other", "pi-web", "attachments", sid);
+  mkdirSync(lookalikeDir, { recursive: true });
+  const lookalike = join(lookalikeDir, "x.png");
+  writeFileSync(lookalike, "png-bytes");
+  const escape = join(root, sid, "escape.png");
+  symlinkSync(lookalike, escape);
+  const linkedSession = join(root, "linked");
+  symlinkSync(lookalikeDir, linkedSession);
+  const deep = join(root, sid, "sub");
+  mkdirSync(deep);
+  writeFileSync(join(deep, "y.png"), "x");
+
+  test("attachmentsRoot follows PI_CODING_AGENT_DIR", () => assert.equal(attachmentsRoot(), root));
+
+  test("an image in a session folder under the root is ok", () => {
+    assert.deepEqual(checkTmpImage(upload), { ok: true, realPath: upload, mimeType: "image/png", size: 9 });
+  });
+
+  test("/tmp is still recognised", () => assert.equal(checkTmpImage(clip).ok, true));
+
+  test("lookalikes outside the root, traversal and extra depth are 400", () => {
+    for (const p of [
+      lookalike,
+      `/pi-web/attachments/${sid}/x.png`,
+      `${root}/${sid}/../${sid}/${upload.split("/").pop()}`,
+      `${root}/../attachments/${sid}/x.png`,
+      `${root}/./${sid}/x.png`,
+      `${root}/${sid}/sub/y.png`,
+      `${root}/${sid}/.hidden.png`,
+      `${root}/${sid}/x.txt`,
+      `${root}/x.png`,
+      `${root}/.${sid}/x.png`,
+    ]) {
+      const r = checkTmpImage(p);
+      assert.equal(r.ok ? 0 : r.status, 400, p);
+    }
+  });
+
+  test("a symlink out of the root (file or session folder) is 403; a missing file is 404", () => {
+    assert.equal(((r) => (r.ok ? 0 : r.status))(checkTmpImage(escape)), 403);
+    assert.equal(((r) => (r.ok ? 0 : r.status))(checkTmpImage(join(linkedSession, "x.png"))), 403);
+    assert.equal(((r) => (r.ok ? 0 : r.status))(checkTmpImage(join(root, sid, "gone.png"))), 404);
+  });
+
+  test("readTmpImage reads it", async () => assert.equal((await readTmpImage(upload))?.toString(), "png-bytes"));
+
+  test("findTmpImagePaths matches the tail, keeps boundaries, order and code masking", () => {
+    const text = `a ${upload} b ${clip} \`${upload}\` ~/.pi/agent/pi-web/attachments/${sid}/z.png rel/pi-web/attachments/${sid}/z.png ${lookalike}.`;
+    assert.deepEqual(
+      findTmpImagePaths(text).map((m) => m.path),
+      [upload, clip, lookalike],
+    );
+    for (const m of findTmpImagePaths(text)) assert.equal(text.slice(m.start, m.end), m.path);
+    assert.deepEqual(findTmpImagePaths(`${root}/${sid}/sub/y.png ${root}/${sid}/x.png/more`), []);
+  });
+
+  test("inlineTmpImages: an upload path leaves user text and attaches; a lookalike is unavailable", () => {
+    const r = inlineTmpImages(`what's this?\n${upload}`, true);
+    assert.equal(r.text, "what's this?");
+    assert.deepEqual(r.attachments, [{ path: upload, name: upload.split("/").pop(), mimeType: "image/png", size: 9, available: true }]);
+    assert.equal(inlineTmpImages(`see ${lookalike}`).attachments?.[0]?.available, false);
   });
 });

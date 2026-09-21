@@ -23,9 +23,9 @@ describe("chip markup", () => {
     const html = chipHtml(gone);
     assert.match(html, /class="path-chip path-chip-missing"/);
     assert.match(html, /<span class="path-chip-name">pi-clipboard-a587….png<\/span>/);
-    assert.match(html, /<span class="path-chip-note">· No longer in \/tmp<\/span>/);
-    assert.match(html, new RegExp(`aria-label="Copy path ${path}, no longer in /tmp"`));
-    assert.match(html, new RegExp(`title="${path} · No longer in /tmp. Select to copy the path."`));
+    assert.match(html, /<span class="path-chip-note">· No longer on disk<\/span>/);
+    assert.match(html, new RegExp(`aria-label="Copy path ${path}, no longer on disk"`));
+    assert.match(html, new RegExp(`title="${path} · No longer on disk. Select to copy the path."`));
     assert.doesNotMatch(html, /data-available|aria-haspopup/);
     // The long path never shows as visible text.
     assert.equal(html.replace(/<[^>]+>/g, "").includes(path), false);
@@ -100,5 +100,32 @@ describe("pi-web uploads (/tmp/pi-web-<uuid>.<ext>)", () => {
     assert.equal(stripPastedPaths(web), "");
     assert.equal(stripPastedPaths("compare /tmp/pi-web-notauuid.png."), "compare /tmp/pi-web-notauuid.png.");
     assert.equal(stripPastedPaths(`\`${web}\``), `\`${web}\``);
+  });
+});
+
+describe("draft attachments (<agent dir>/pi-web/attachments/<sessionId>/pi-web-<uuid>.<ext>)", () => {
+  const sid = "019a1b2c-3d4e-7f80-9a1b-2c3d4e5f6a7b";
+  const att = `/home/me/.pi/agent/pi-web/attachments/${sid}/pi-web-${uuid}.png`;
+
+  test("is recognised, and stripped from a user row like a /tmp upload", () => {
+    assert.deepEqual(findTmpImagePaths(`what's wrong here?\n${att}`).map((m) => m.path), [att]);
+    assert.equal(stripPastedPaths(`what's wrong here?\n${att}`), "what's wrong here?");
+    assert.equal(stripPastedPaths(`a ${att} b\n${path}`), "a b");
+  });
+
+  test("lookalikes outside that tail stay text", () => {
+    const noSession = `/home/me/.pi/agent/pi-web/attachments/pi-web-${uuid}.png`;
+    const otherRoot = `/home/me/.pi/agent/pi-web/uploads/${sid}/pi-web-${uuid}.png`;
+    const nested = `/home/me/.pi/agent/pi-web/attachments/${sid}/deeper/pi-web-${uuid}.png`;
+    for (const p of [noSession, otherRoot, nested]) {
+      assert.deepEqual(findTmpImagePaths(`see ${p}`), [], p);
+      assert.equal(stripPastedPaths(`see ${p}`), `see ${p}`);
+    }
+  });
+
+  test("the gone note names no folder", () => {
+    const html = chipHtml({ path: att, name: `pi-web-${uuid}.png`, mimeType: "image/png", available: false });
+    assert.match(html, /<span class="path-chip-note">· No longer on disk<\/span>/);
+    assert.doesNotMatch(html, /\/tmp/);
   });
 });

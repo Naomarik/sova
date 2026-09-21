@@ -7,6 +7,8 @@ import { LIVE_DIR, SESSIONS_DIR } from "./paths";
 import { isWebSession, removeWebSession } from "./web-sessions";
 import { RECENT_WRITE_MS } from "./write-guard";
 import { isArchived, setArchived } from "./archived-sessions";
+import { draftPreview, dropDrafts, readDrafts } from "./drafts";
+import { removeSessionAttachments } from "./attachments";
 import { disposeHeldChat, getModelRuntime, isSessionBusy } from "./chat-manager";
 import { contextWindow } from "./models";
 import { parseTargetCwd } from "./targets";
@@ -430,6 +432,7 @@ export async function listSessions(): Promise<SessionSummary[]> {
   const live = readLive();
   const own = readOwnLiveRecords();
   const resolveWindow = await windowResolver();
+  const drafts = readDrafts();
   const results = await Promise.all(files.map((f) => summarize(f, resolveWindow)));
   const present = new Set(files);
   for (const k of cache.keys()) if (!present.has(k)) cache.delete(k);
@@ -440,9 +443,16 @@ export async function listSessions(): Promise<SessionSummary[]> {
     // new-session stubs don't clutter the archive (spec/02-session-list.md §2 "Archive cleanup"). Hidden
     // only when the whole file was read: a first user message beyond the head cap never hides
     // a session. cleanupSessions("husks") still finds and deletes them by path.
+    // Exception: a husk with a stored composer draft (text or images) is a new session the user
+    // is writing in, not an abandoned stub, so it is listed as a draft row (draftPreview).
+    let preview: string | undefined;
     if (s.title === "Untitled") {
       const st2 = await stat(s.path).catch(() => null);
-      if (st2 && (await isZeroInput(s.path, st2.size))) continue;
+      if (st2 && (await isZeroInput(s.path, st2.size))) {
+        const draft = drafts[s.id];
+        if (!draft || (!draft.text.trim() && !draft.attachments?.length)) continue;
+        preview = draftPreview(draft.text, draft.attachments);
+      }
     }
     const l = live.get(s.path);
     const ownRec = own.get(s.path);
@@ -454,6 +464,7 @@ export async function listSessions(): Promise<SessionSummary[]> {
       origin: isWebSession(s.id) ? "web" : "external",
       archived: isArchived(s.id),
       busy: isSessionBusy(s.path),
+      ...(preview !== undefined ? { draftPreview: preview } : {}),
     });
   }
   out.sort((a, b) => b.lastActiveAt.localeCompare(a.lastActiveAt));
@@ -551,7 +562,8 @@ export interface CleanupResult {
  * POST /api/sessions/cleanup: permanently deletes transcript files from disk — sessions older
  * than minAgeDays (by last write), or empty husks. Live, mid-turn, and just-written sessions
  * are always skipped and counted, whatever the mode; held web runtimes are disposed first,
- * like the archive gesture. The index cache and both id lists are updated per deleted file.
+ * like the archive gesture. The index cache, both id lists, the drafts and the session's attachments
+ * folder are updated per deleted file.
  */
 export async function cleanupSessions(req: CleanupRequest): Promise<CleanupResult> {
   const files = await listSessionFiles();
@@ -592,6 +604,8 @@ export async function cleanupSessions(req: CleanupRequest): Promise<CleanupResul
       cache.delete(path);
       setArchived(id, false);
       removeWebSession(id);
+      dropDrafts([id]);
+      removeSessionAttachments(id);
       deletedIds.push(id);
     } catch {
       skipped.failed++;

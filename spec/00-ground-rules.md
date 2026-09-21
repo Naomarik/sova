@@ -53,6 +53,7 @@ and `fill="none" stroke="currentColor"`.
 | `attach.svg` | Attach Images (composer). New, drawn on the system grid |
 | `command.svg` | Commands button (composer, §4d): a `/` in a rounded square. New, drawn on the system grid |
 | `image.svg` | Tool-card image count, drop overlay. New, drawn on the system grid |
+| `pencil.svg` | Draft rows (§2): the lead of line 2, before the draft's preview. A pen at 45° with a nib, legible at `.icon-sm`. New, drawn on the system grid |
 | `gauge.svg` | Usage: the sidebar foot's Usage row. pi-web's own, drawn on the system grid |
 | `worker.svg` | Agents: the sidebar foot's Agents row, plus the Teams and Subagents section heads (from the skill's set) |
 | `check-circle.svg`, `x-circle.svg`, `external.svg`, `menu.svg`, `branch.svg` | Reserved. Shipped but unused in the MVP |

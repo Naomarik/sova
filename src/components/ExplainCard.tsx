@@ -7,8 +7,8 @@ import "../explain.css";
 
 /**
  * An explanation's transcript row, in the report-row grammar (one line: label, topic). The whole
- * row is the link to its standalone page, opened in a new tab: the explainer never takes over the
- * session's own tab, and the page outlives the session.
+ * row is the link to its standalone page, opened in place (a new tab would strand an installed
+ * app's back button); the page outlives the session.
  *
  * Three states, and the difference between the last two matters:
  * - ok — the page is there; the row is a link.
@@ -55,13 +55,10 @@ export function ExplainCard(props: { explain: ExplanationInfo }) {
         <a
           class="disclosure-summary report-summary explain-card-summary"
           href={explainHref(props.explain.id)}
-          target="_blank"
-          rel="noopener"
           title={capTitle(modelTitle())}
         >
-          <span class="visually-hidden">Explanation, opens in a new tab: </span>
+          <span class="visually-hidden">Explanation: </span>
           {row()}
-          <Icon name="external" small class="explain-card-external" />
         </a>
         <Show when={props.explain.note}>{(note) => <p class="report-meta explain-card-note">{note()}</p>}</Show>
       </Show>

@@ -2,8 +2,10 @@
 // $HOME for path display, and per-session composer drafts.
 
 import { createSignal } from "solid-js";
+import { fetchDraft, putDraft } from "./api";
+import type { UploadResult } from "../../shared/protocol";
 import type { ContextState } from "./context";
-import type { PendingImage } from "./images";
+import { createDraftSaver, type DraftPayload } from "./draft-save";
 
 export interface Toast {
   id: number;
@@ -49,10 +51,115 @@ export const [sessionContext, setSessionContextMap] = createSignal<Record<string
 export const setSessionContext = (path: string, ctx: ContextState) =>
   setSessionContextMap((m) => (m[path] === ctx ? m : { ...m, [path]: ctx }));
 
-/** Composer drafts by session path. Kept in memory so switching sessions never loses one. */
+/** Composer drafts by session path. Kept in memory so switching sessions never loses one, and the
+    authority within this tab: the server copy only seeds a path this tab hasn't touched yet. */
 export const drafts = new Map<string, string>();
-/** Pending image attachments by session path, kept with the text draft. */
-export const draftImages = new Map<string, PendingImage[]>();
+
+/** The draft's uploaded attachments by session path, stored with the text. A signal, because an
+    upload can land after its composer unmounted (or remounted) and the strip must still show it. */
+const [attachmentsByPath, setAttachmentsByPath] = createSignal<Record<string, UploadResult[]>>({});
+const NO_ATTACHMENTS: UploadResult[] = [];
+export const draftAttachments = (path: string): UploadResult[] => attachmentsByPath()[path] ?? NO_ATTACHMENTS;
+
+const storeAttachments = (path: string, list: UploadResult[]) =>
+  setAttachmentsByPath((m) => {
+    if (list.length === 0 && !(path in m)) return m;
+    const next = { ...m };
+    if (list.length) next[path] = list;
+    else delete next[path];
+    return next;
+  });
+
+/** Paths whose draft this tab already knows: loaded from the server, or written here. A known path
+    never asks the server again, and a load that lands after a local write never overwrites it. */
+const draftKnown = new Set<string>();
+/** Set only while the page is being hidden, so that flush's writes can outlive the page. */
+let unloading = false;
+const draftSaver = createDraftSaver((path, d) => putDraft(path, d.text, d.attachments, { keepalive: unloading }).then(() => {}));
+
+/** The whole draft goes out on every save, so a text save never drops the attachments. */
+const scheduleSave = (path: string) =>
+  draftSaver.schedule(path, { text: drafts.get(path) ?? "", attachments: draftAttachments(path) });
+
+/** Writes the in-memory draft and schedules the server copy (debounced). */
+export function setDraftText(path: string, text: string): void {
+  draftKnown.add(path);
+  if (text) drafts.set(path, text);
+  else drafts.delete(path);
+  scheduleSave(path);
+}
+
+/** Replaces the draft's attachments and schedules the server copy through the same debounce. */
+export function setDraftAttachments(path: string, list: UploadResult[]): void {
+  draftKnown.add(path);
+  storeAttachments(path, list);
+  scheduleSave(path);
+}
+
+/** After a send: blank text and no attachments, which deletes the stored draft. The files stay,
+    since the sent prompt names them. */
+export function clearDraft(path: string): void {
+  draftKnown.add(path);
+  drafts.delete(path);
+  storeAttachments(path, []);
+  scheduleSave(path);
+}
+
+/** This tab's list first, then anything the server has that it doesn't — by path, no duplicates. */
+function mergeAttachments(local: UploadResult[], stored: UploadResult[]): UploadResult[] {
+  if (stored.length === 0) return local;
+  const seen = new Set(local.map((a) => a.path));
+  return [...local, ...stored.filter((a) => !seen.has(a.path))];
+}
+
+/** The draft for `path`: this tab's copy when it has one, else the stored one. Never rejects. */
+export async function loadDraft(path: string): Promise<DraftPayload> {
+  const local = (): DraftPayload => ({ text: drafts.get(path) ?? "", attachments: draftAttachments(path) });
+  if (draftKnown.has(path)) return local();
+  let stored: DraftPayload = { text: "", attachments: [] };
+  try {
+    const r = await fetchDraft(path);
+    stored = { text: r.text ?? "", attachments: r.attachments };
+  } catch {
+    // Unreachable server or a missing file: start empty; typing still saves.
+  }
+  if (draftKnown.has(path)) {
+    // Typed (or sent, or restored) while the request was out: the local text wins. Stored
+    // attachments still come back if this tab attached nothing, so a keystroke during the load
+    // can't cost the screenshot — the save it scheduled would otherwise store an empty list.
+    if (stored.attachments.length && draftAttachments(path).length === 0) setDraftAttachments(path, stored.attachments);
+    return local();
+  }
+  draftKnown.add(path);
+  if (stored.text) drafts.set(path, stored.text);
+  // A load may ADD an attachment, never drop one: the server copy can be behind a save still in
+  // flight, and losing a row the user can see leaves its file orphaned on disk — the worse bug.
+  // (Deleting a file goes through Remove: setDraftAttachments, or clearDraft after a send.)
+  storeAttachments(path, mergeAttachments(draftAttachments(path), stored.attachments));
+  return local();
+}
+
+/** Sends every pending draft save now. */
+export function flushDrafts(): void {
+  draftSaver.flush();
+}
+
+// A PWA that's backgrounded or closed may never run its debounce timer again: send what's pending
+// while the page is still allowed to, with keepalive so the request survives the unload.
+if (typeof window !== "undefined") {
+  const flushForUnload = () => {
+    unloading = true;
+    try {
+      draftSaver.flush();
+    } finally {
+      unloading = false;
+    }
+  };
+  window.addEventListener("pagehide", flushForUnload);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") flushForUnload();
+  });
+}
 
 export async function copyText(text: string, done: string): Promise<boolean> {
   try {

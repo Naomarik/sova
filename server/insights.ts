@@ -7,6 +7,7 @@ import type {
   ExplanationInfo,
   LiveAgentSession,
   ModelSpend,
+  OutlineSnapshot,
   OutlineTopic,
   RewindInfo,
   SessionInsight,
@@ -251,6 +252,8 @@ interface SessionFacts {
   teams: RosterTeam[];
   reports: Map<string, NonNullable<TeamMember["lastReport"]>>;
   outline: SessionOutline | null;
+  /** Every accepted topic-outline snapshot, oldest first (see addOutlineSnapshot). */
+  outlines: OutlineSnapshot[];
   compactions: CompactionInfo[];
   /** The branch's rewinds, oldest first: the markers pi-web leaves when the chat goes back before a
       message. Hidden from the transcript on purpose, so this is the only way to see one. */
@@ -356,7 +359,8 @@ const OUTLINE_STATES = new Set<SessionOutline["state"]>(["none", "drafting", "fr
 const outlineState = (v: unknown, fallback: SessionOutline["state"]): SessionOutline["state"] =>
   OUTLINE_STATES.has(v as SessionOutline["state"]) ? (v as SessionOutline["state"]) : fallback;
 
-/** Latest topic-outline snapshot (data.version 2), as the extension's OutlineStore.restore reads it. */function decodeOutline(data: unknown): SessionOutline | null {
+/** Latest topic-outline snapshot (data.version 2), as the extension's OutlineStore.restore reads it. */
+function decodeOutline(data: unknown): SessionOutline | null {
   if (!isRec(data) || data.version !== 2 || !Array.isArray(data.topics)) return null;
   const topics: OutlineTopic[] = [];
   for (const t of data.topics) {
@@ -381,6 +385,24 @@ const outlineState = (v: unknown, fallback: SessionOutline["state"]): SessionOut
     generatedAt: num(data.generatedAt) ?? 0,
     topics,
   };
+}
+
+/** How many past summaries an insight carries. Real sessions hold 6–17 snapshots; the cap only
+    bites on a pathological file, and without it every 3s insight poll would ship the whole series.
+    It drops the OLDEST ones: the timeline's recent end is the part a reader works from. */
+const OUTLINE_SNAPSHOTS_MAX = 200;
+
+/** Adds one topic-outline entry to the series, validated by decodeOutline like the latest one. A
+    malformed or older-version payload, one with no summary text, or a repeat of the previous
+    accepted summary adds nothing: the axis should show each summary once. */
+function addOutlineSnapshot(list: OutlineSnapshot[], e: Rec): void {
+  const o = decodeOutline(e.data);
+  const id = str(e.id);
+  const timestamp = str(e.timestamp);
+  if (!o || !id || !timestamp || (!o.now && !o.overall)) return;
+  const prev = list[list.length - 1];
+  if (prev && prev.now === o.now && prev.overall === o.overall) return;
+  list.push({ id, timestamp, now: o.now, overall: o.overall, generatedAt: o.generatedAt });
 }
 
 /** One explain-doc entry's data, as server/transcript.ts explainRow reads it. */
@@ -431,6 +453,7 @@ function extractFacts(text: string): SessionFacts {
   const teams = new Map<string, RosterTeam>();
   const reports: SessionFacts["reports"] = new Map();
   let outlineData: unknown;
+  const outlines: OutlineSnapshot[] = [];
   const compactions: CompactionInfo[] = [];
   const rewinds: RewindInfo[] = [];
   const explanations: ExplanationInfo[] = [];
@@ -441,7 +464,10 @@ function extractFacts(text: string): SessionFacts {
   const branch = activeBranch(entries);
   for (const e of branch) {
     if (e.type === "custom" && e.customType === TEAM_ENTRY) addTeamEntry(teams, e.data);
-    else if (e.type === "custom" && e.customType === "topic-outline") outlineData = e.data;
+    else if (e.type === "custom" && e.customType === "topic-outline") {
+      outlineData = e.data;
+      addOutlineSnapshot(outlines, e);
+    }
     else if (e.type === "custom_message" && e.customType === "subagent-complete") addReport(reports, e);
     else if (e.type === "compaction") compactions.push(decodeCompaction(e));
     else if (e.type === "custom" && e.customType === REWIND_ENTRY) {
@@ -468,6 +494,8 @@ function extractFacts(text: string): SessionFacts {
     teams: [...teams.values()],
     reports,
     outline: decodeOutline(outlineData),
+    // Deduped first, then capped, so the cap counts distinct summaries.
+    outlines: outlines.slice(-OUTLINE_SNAPSHOTS_MAX),
     compactions,
     rewinds,
     explanations,
@@ -477,7 +505,7 @@ function extractFacts(text: string): SessionFacts {
   };
 }
 
-const EMPTY_FACTS: SessionFacts = { teams: [], reports: new Map(), outline: null, compactions: [], rewinds: [], explanations: [], sessionId: null, usage: { main: zeroSpend(""), models: [] }, skills: { offered: [], used: [] } };
+const EMPTY_FACTS: SessionFacts = { teams: [], reports: new Map(), outline: null, outlines: [], compactions: [], rewinds: [], explanations: [], sessionId: null, usage: { main: zeroSpend(""), models: [] }, skills: { offered: [], used: [] } };
 
 async function sessionFacts(path: string): Promise<SessionFacts> {
   try {
@@ -761,6 +789,7 @@ export async function getSessionInsight(path: string): Promise<SessionInsight> {
   const skillsLoaded = workers && workers.length > 0 ? await workerSkills(workers) : undefined;
   return {
     outline: live ? overlayOutline(facts.outline, presence?.outline) : facts.outline,
+    ...(facts.outlines.length > 0 ? { outlines: facts.outlines } : {}),
     compactions: facts.compactions,
     ...(facts.rewinds.length > 0 ? { rewinds: facts.rewinds } : {}),
     teams: joinTeams(facts, path, workers),

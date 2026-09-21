@@ -9,7 +9,7 @@ import { isObj, str } from "../lib/message";
 import { createReconnectingSocket } from "../lib/socket";
 import { usageTotal, type UsageTotalView, workingSplit } from "../lib/workers";
 import type { UploadResult } from "../../shared/protocol";
-import { announce, drafts, hideThinking, hideTools, sessionContext, setLocalRunning, setSessionContext, toast } from "../lib/ui-state";
+import { announce, drafts, hideThinking, hideTools, sessionContext, setDraftText, setLocalRunning, setSessionContext, toast } from "../lib/ui-state";
 import { visibleCount } from "../lib/hidden-rows";
 import { inputCount } from "../lib/input-count";
 import type { RewindControl, RewindResult } from "../lib/inputs";
@@ -43,8 +43,6 @@ export function ChatView(props: {
   force: boolean;
   autofocus?: boolean;
   onModel(model: string | null): void;
-  /** Hands the header this chat's mode state (§4g); null when this view goes away. */
-  onModeControl?(control: ModeControl | null): void;
   onRefused(kind: ChatRefusal, message: string): void;
   /** A run just started here: the list's `busy` is stale until it's refetched. */
   onStarted(): void;
@@ -56,9 +54,10 @@ export function ChatView(props: {
   onShowWorkers?(): void;
   /** The pane is open for this session ON THE AGENTS TAB (the subagents trigger's aria-expanded). */
   workersOpen?: boolean;
-  /** The pane is open for this session ON THE INPUTS TAB (the inputs trigger's aria-expanded). */
+  /** The pane is open for this session on the Timeline with Inputs Only on (the inputs trigger's
+      aria-expanded). */
   inputsOpen?: boolean;
-  /** The pane's active tab while it is open for this session ("inputs", "agents", …), else null:
+  /** The pane's active tab while it is open for this session ("timeline", "agents", …), else null:
       each status-row trigger is aria-expanded only for its own tab. */
   paneTab?: string | null;
   /** The session pane re-reads this after its Archive/Unarchive action succeeds; the info modal
@@ -66,14 +65,13 @@ export function ChatView(props: {
   onArchiveChanged?(): void;
   /** A bare "/new" in the composer (§4d); resolves to the new session's folder label, or null. */
   onNewSession?(): Promise<string | null>;
-  /** A bare "/tree" in the composer (§4d): opens the session pane's Inputs tab. */
-  onShowInputs?(): void;
-  /** A bare "/timeline" in the composer (§4d): opens the session pane's Timeline tab. */
-  onShowTimeline?(): void;
-  /** Hands the Inputs tab this chat's rewind (sent over this socket); null when this view goes away. */
+  /** Opens the session pane's Timeline tab (§4d): a bare "/timeline" unfiltered; a bare "/tree" and
+      the status row's inputs trigger with `inputsOnly`, on your own messages. */
+  onShowTimeline?(inputsOnly?: boolean): void;
+  /** Hands the Timeline this chat's rewind (sent over this socket); null when this view goes away. */
   onRewindControl?(control: RewindControl | null): void;
-  /** A rewind landed on this chat, whoever asked (the Inputs tab, or the flyout's "Undo last
-      turn"): the Inputs tab must re-read the branch, or it keeps offering the abandoned rows.
+  /** A rewind landed on this chat, whoever asked (a Timeline row, or the flyout's "Undo last
+      turn"): the Timeline must re-read the branch, or it keeps offering the abandoned rows.
       Success only — a refusal changed nothing. App mints the generation counter the pane watches.
       No text: this view prefills the composer itself, and the pane rebuilds its shadow from the id. */
   onRewound?(info: { path: string; entryId: string }): void;
@@ -179,14 +177,14 @@ export function ChatView(props: {
 
   /**
    * Puts prompts the server never accepted back into the draft, so nothing typed is lost.
-   * Uploaded images come back as their /tmp paths, already part of the text.
+   * Attached images come back as their paths, already part of the text.
    */
   const restoreUnsent = () => {
     const unsent = live.entries.flatMap((e) => (e.kind === "user" && !e.confirmed ? [e] : []));
     if (unsent.length === 0) return;
     const texts = unsent.map((e) => e.text).filter(Boolean);
     const current = drafts.get(props.path);
-    if (texts.length) drafts.set(props.path, [...texts, ...(current ? [current] : [])].join("\n\n"));
+    if (texts.length) setDraftText(props.path, [...texts, ...(current ? [current] : [])].join("\n\n"));
   };
 
   const socket = createReconnectingSocket<ChatServerMessage>(wsUrl("/ws/chat", props.path, props.force), {
@@ -322,7 +320,7 @@ export function ChatView(props: {
     },
   });
 
-  // ---- Rewind (the Inputs tab and the flyout's "Undo last turn") ---------------------------
+  // ---- Rewind (the Timeline's input rows and the flyout's "Undo last turn") -----------------
   /** Requests in flight, by id: the server answers only the socket that asked. Every refusal is
       announced from here, whoever asked (the pane shows its rows an inline note instead), so the
       live region says each one exactly once and never leaves the last "Rewound." standing. */
@@ -498,8 +496,8 @@ export function ChatView(props: {
     },
     choose: chooseModel,
   };
-  props.onModeControl?.({ state: modeState, path: props.path });
-  onCleanup(() => props.onModeControl?.(null));
+  /** The composer foot's mode switch (§4g): this chat's WS "mode" state and its session file. */
+  const modeControl: ModeControl = { state: modeState, path: props.path };
 
   // Mirror this session's run state for the sidebar's Busy chip (the list refetches on settle).
   const setMine = (running: boolean | undefined) =>
@@ -521,7 +519,7 @@ export function ChatView(props: {
   });
   onCleanup(() => setMine(undefined));
 
-  const send = (text: string, steer: boolean, uploads: UploadResult[]) => {
+  const send = (text: string, steer: boolean, attachments: UploadResult[]) => {
     if (!socket.send({ type: steer ? "steer" : "prompt", text })) return false;
     // A known slash command isn't a message to the model (templates and skills expand into other
     // text, extensions may never start the agent): no optimistic bubble or running state, just a
@@ -537,7 +535,7 @@ export function ChatView(props: {
       return true;
     }
     batch(() => {
-      addPendingPrompt(setLive, text, [], uploads);
+      addPendingPrompt(setLive, text, [], attachments);
       setLive("running", true);
       setResume((n) => n + 1);
     });
@@ -706,12 +704,12 @@ export function ChatView(props: {
         inputsOpen={props.inputsOpen}
         paneTab={props.paneTab}
         onNewSession={props.onNewSession}
-        onShowInputs={props.onShowInputs}
         onShowTimeline={props.onShowTimeline}
         inputCount={inputCount(items() ?? [])}
         autofocus={props.autofocus}
         model={modelControl}
         thinking={thinkingControl}
+        mode={modeControl}
         onShowInfo={() => setShowInfo(true)}
         undo={undoControl}
         onSend={send}

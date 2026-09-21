@@ -5,13 +5,15 @@ Images show up in three places. A **user row** and a **tool-result row** can eac
 (`TranscriptItem.images`, as data URLs). The **composer** can attach images to a prompt or a
 steer (`OutboundImage[]`).
 
-Web uploads don't ride the prompt as base64. The composer sends the bytes to
-`POST /api/upload`, which stores them like a TUI clipboard paste — a fresh
-`pi-web-<uuid>.<ext>` directly in `/tmp` — and inserts the path into the prompt text. The
-user row then shows the same path-attachment unit as TUI pastes; the model sees the image by
-reading the path. `/tmp` is ephemeral (10 days on this host, gone on reboot), after which the
-unit renders "No longer in /tmp", exactly like TUI pastes. Old base64 rows keep their inline
-thumbnails.
+Web uploads don't ride the prompt as base64. The composer uploads each image **when you
+attach it**, not at send: `POST /api/upload?draft=<session path>` stores the bytes as a fresh
+`pi-web-<uuid>.<ext>` in that session's attachments folder,
+`~/.pi/agent/pi-web/attachments/<sessionId>/`. At send, the prompt text names that durable path.
+The user row then shows the same path-attachment unit as TUI pastes; the model sees the image by
+reading the path. Unlike a TUI paste in `/tmp` (10 days on this host, gone on reboot), the file
+outlives a reboot, so a sent image keeps its thumbnail in the transcript. Deleting the session
+removes its folder, and then the unit reads "No longer on disk", as a cleaned-up `/tmp` paste
+does. Old base64 rows keep their inline thumbnails.
 
 ## Thread thumbnails
 
@@ -90,7 +92,8 @@ alt. `aria-haspopup="dialog"` tells AT that it opens something.
 ## Path attachments
 
 When you paste an image into pi's terminal UI, pi writes it to `/tmp/pi-clipboard-<uuid>.png`
-(`/tmp/pi-wsl-clip-<uuid>.png` under WSL) and puts that **path in the message text**. The
+(`/tmp/pi-wsl-clip-<uuid>.png` under WSL) and puts that **path in the message text**. A pi-web
+upload does the same with a path in the session's attachments folder (above). Either way the
 image never reaches the session file. Replies, tool output and subagent reports then quote
 the same path. The server finds these paths in user, assistant-text, info (custom messages,
 such as subagent reports) and tool-result rows, and sends them as `TranscriptItem.attachments`.
@@ -118,20 +121,24 @@ else it becomes an inline chip or a tool-card section (see **Other rows** below)
     </div>
   </details>
 
-  <!-- the file is gone from /tmp: a static row, not a disclosure -->
+  <!-- the file is gone (from /tmp here): a static row, not a disclosure -->
   <div class="message-attachment message-attachment-missing" title="/tmp/pi-clipboard-fc03….png">
     <span class="icon icon-sm" style="--icon: url(/icons/image.svg)" aria-hidden="true"></span>
     <span class="disclosure-label">Attachment</span>
     <span class="message-attachment-name">pi-clipboard-fc03….png</span>
-    <span class="message-attachment-meta">· No longer in /tmp</span>
+    <span class="message-attachment-meta">· No longer on disk</span>
   </div>
 
   <div class="message-body message-text">{text without pi's path}</div>
 </article>
 ```
 
-- **Which paths.** An image file directly in `/tmp` (`.png`, `.jpg`, `.jpeg`, `.webp`, `.gif`),
-  standing alone as a word. Subfolders of `/tmp` and every other folder stay plain text.
+- **Which paths.** An image file (`.png`, `.jpg`, `.jpeg`, `.webp`, `.gif`), standing alone as a
+  word, in one of two roots: directly in `/tmp`, or directly in a session's folder under the
+  attachments root (`<agent dir>/pi-web/attachments/<sessionId>/<name>`). Subfolders of `/tmp`,
+  deeper paths under the attachments root, and every other folder stay plain text. The client
+  recognises an attachments path by its `/pi-web/attachments/<id>/` tail; the server then checks
+  it really sits under this machine's root.
 - **Only concrete names, never code.** A path counts only when its full file name is written
   out. `/tmp/pi-clipboard-*.png`, `/tmp/pi-clipboard-<uuid>.png` and `…`-shortened names are
   talk *about* the pattern, so they stay text. So does any path inside a markdown code span
@@ -141,18 +148,20 @@ else it becomes an inline chip or a tool-card section (see **Other rows** below)
 - **Cap.** At most 8 different paths per row get a unit or chip. Later ones stay text. The
   server checks each one once, and never looks at anything but the paths it found.
 - **The text.** pi's own clipboard paths come out of the bubble, since the unit stands in for
-  them. A `/tmp` image path you typed yourself stays in the text (it's part of your sentence)
+  them (a pi-web upload's name, `pi-web-<uuid>`, counts as pi's own in either root). An image
+  path you typed yourself stays in the text (it's part of your sentence)
   and still gets a unit. If nothing is left, there's no bubble (same rule as thumbnails). The
   session file, and the text the model saw, never change.
 - **Order.** Stored images, then path attachments in the order they appear, then the bubble.
   All right-aligned.
 - **Collapsed by default.** Pasted screenshots are big, and old ones are usually gone. The
   image is fetched only when you open the unit, from `GET /api/attachment`. The browser never
-  reads `/tmp` itself.
+  reads `/tmp` or the attachments folder itself.
 - **Open.** It shows the image as a single thumbnail (the `.message-images-single` rules). A
   click opens the lightbox, scoped to that one image.
-- **Gone.** `/tmp` gets cleaned, so this is the usual case for older sessions. The unit becomes a
-  static row: no twist, no request, and it says "No longer in /tmp". A file over the 20MB
+- **Gone.** `/tmp` gets cleaned, so this is the usual case for older TUI pastes; a file in the
+  attachments folder is gone only once its session is deleted. The unit becomes a static row: no
+  twist, no request, and it says "No longer on disk" — one note for both roots. A file over the 20MB
   serving cap says "Too large to show · {size}" instead.
 - **Tokens.** The row uses the disclosure summary's metrics (`--control-sm` min height,
   `--fs-caption`, `--color-ink-muted`), with the summary's hover ground hanging off the right
@@ -170,11 +179,11 @@ compact chip, never as the raw long path.
 <!-- in a reply (markdown) or an info row (subagent report), in place of the path -->
 <p>The screenshot at
   <button type="button" class="path-chip path-chip-missing" data-path-chip="/tmp/pi-clipboard-a587….png"
-          aria-label="Copy path /tmp/pi-clipboard-a587….png, no longer in /tmp"
-          title="/tmp/pi-clipboard-a587….png · No longer in /tmp. Select to copy the path.">
+          aria-label="Copy path /tmp/pi-clipboard-a587….png, no longer on disk"
+          title="/tmp/pi-clipboard-a587….png · No longer on disk. Select to copy the path.">
     <span class="icon icon-sm" style="--icon: url(/icons/image.svg)" aria-hidden="true"></span>
     <span class="path-chip-name">pi-clipboard-a587….png</span>
-    <span class="path-chip-note">· No longer in /tmp</span>
+    <span class="path-chip-note">· No longer on disk</span>
   </button>
   shows the minimap.</p>
 
@@ -190,7 +199,7 @@ compact chip, never as the raw long path.
   `title`.
 - **Available.** A click opens the lightbox on that one image. The alt and caption are
   "Attachment {name}". The cursor is `zoom-in`.
-- **Gone.** The chip adds "· No longer in /tmp" in `--fs-caption`, with the name in
+- **Gone.** The chip adds "· No longer on disk" in `--fs-caption`, with the name in
   `--color-ink-muted`. A click copies the full path ("Copied path."), and the cursor is `copy`.
 - **Where.**
   - **Replies:** chips are placed while the markdown renders, in text only, never in code.
@@ -337,8 +346,16 @@ and wraps, so it never squeezes the textarea.
   image (alt "Attachment {name}"). Esc closes it and focus returns to the preview. Tab order in
   the row is View, then Remove. Hover shows a `--color-border-strong` edge, focus the standard
   ring, and the cursor is `zoom-in`.
-- **Preview source.** Use `URL.createObjectURL(file)` and revoke it on remove and on send. Read
-  base64 (`OutboundImage.data`, no `data:` prefix) only when sending.
+- **Upload at attach.** Each accepted file uploads right away into the session's attachments
+  folder; its row appears when the upload lands, and the stored draft then names it. Several
+  upload in parallel, and one that lands after you switch sessions still joins its own
+  session's draft. An upload that fails becomes a rejected item whose reason is `Upload failed`,
+  announced as "{name} wasn't attached. Upload failed."
+- **Preview source.** The uploaded file itself, through `GET /api/attachment?path=…` — the same
+  route the transcript uses, so the preview survives a reload with the draft.
+- **Removing deletes.** Remove takes the item out of the draft and deletes its file
+  (`DELETE /api/attachment?path=…`, best effort: a failed delete leaves only an unnamed file).
+  Deleting the session removes its whole attachments folder.
 - **Size format.** `KB` under 1 MB, rounded (`240 KB`). Otherwise one decimal (`2.4 MB`).
 - **Rejected.** Rejected files stay in the list with `.attachment-rejected`: `--status-error-bg`
   ground, a `--status-error` edge, and the `alert-circle` icon instead of a preview. The meta
@@ -355,7 +372,9 @@ and wraps, so it never squeezes the textarea.
   - Send and Steer both carry the images. On a successful send, the list empties together with
     the textarea.
   - The optimistic user bubble shows the images right away.
-  - Drafts keep their attachments per session, the same as text.
+  - Drafts keep their attachments per session, durably: the draft store holds the text **and**
+    up to 8 attachments (`{ path, name, mimeType, size }`), so both survive a reload and follow
+    you to another browser (§4). A draft of images alone still lists its session (§2).
 - **Disabled composer** (TUI-live, connecting, reconnecting). The Attach images row takes the same
   `aria-disabled` and shares `aria-describedby="composer-reason"`. Paste and drop don't attach
   anything.

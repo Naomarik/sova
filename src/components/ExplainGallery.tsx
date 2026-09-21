@@ -71,7 +71,7 @@ function Tile(props: { item: ExplanationInfo; now: number; thumbs: boolean }) {
     <div class="explain-tile-body">
       <div class="explain-tile-head">
         <h3 class="explain-tile-topic">{props.item.topic}</h3>
-        <Show when={failed()} fallback={<Icon name="external" small class="explain-tile-external" />}>
+        <Show when={failed()}>
           <Chip tone="error">Failed</Chip>
         </Show>
       </div>
@@ -93,7 +93,7 @@ function Tile(props: { item: ExplanationInfo; now: number; thumbs: boolean }) {
         when={!failed()}
         fallback={<div class="card explain-tile explain-tile-failed">{body()}</div>}
       >
-        <a class="card explain-tile" href={explainHref(props.item.id)} target="_blank" rel="noopener">
+        <a class="card explain-tile" href={explainHref(props.item.id)}>
           <Show when={props.thumbs}>
             <Thumb id={props.item.id} />
           </Show>
@@ -118,8 +118,8 @@ export function ExplainGrid(props: { explanations: ExplanationInfo[]; now: numbe
 
 /**
  * Every explanation in one scope as a card grid, newest first, over whatever opened it (the
- * AlignView pattern: portal, scrim, trapFocus, Esc). Each card that has a page is one link to it
- * in a new tab — nothing here navigates this app away from the session; the rest say why not.
+ * AlignView pattern: portal, scrim, trapFocus, Esc). Each card that has a page is one link to it,
+ * opened in place so the back button returns here; the rest say why not.
  */
 export function ExplainGallery(props: { explanations: ExplanationInfo[]; scope: "session" | "all"; now: number; onClose(): void }) {
   const titleId = `explain-title-${++seq}`;

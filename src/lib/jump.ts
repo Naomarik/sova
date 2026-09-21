@@ -1,7 +1,7 @@
 // Jumping to a session entry in the transcript on screen. The thread renders each entry as
 // `<div class="entry" data-entry="<id>">`, and an assistant entry's blocks as `<id>:<i>`, so an
 // id resolves either to its own row or to the first row of the entry it belongs to. The outline
-// strip, the Skills tab and the Inputs tab all land here.
+// strip, the Skills tab and the Timeline's input rows all land here.
 
 /** How long the row we landed on stays tinted. */
 export const JUMP_HIGHLIGHT_MS = 1500;

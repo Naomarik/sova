@@ -1,4 +1,5 @@
 // Run: npx tsx --test server/insights-rewinds.test.ts
+// Also covers SessionInsight.outlines, the outline-snapshot series the Timeline draws.
 // Uses a throwaway PI_CODING_AGENT_DIR in the OS temp dir; ~/.pi is never read or written.
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -76,4 +77,58 @@ test("a session with no rewinds says nothing about them, so the payload stays le
   writeFileSync(path, `${JSON.stringify({ type: "session", version: 3, id: "01a0c0ff-0000-7000-8000-000000000001", timestamp: "2026-09-20T00:10:00.000Z", cwd: "/tmp" })}\n`);
   const insight = await getSessionInsight(canonicalPath(path));
   assert.equal("rewinds" in insight, false);
+});
+
+/**
+ * A session whose branch carries a series of topic-outline snapshots, written straight after the
+ * header so each entry's parent is the one before it. `datas` are the entries' payloads in order;
+ * entry i gets id `o<i>` and a stamp i minutes past midnight.
+ */
+function outlineSession(name: string, datas: unknown[]): string {
+  const id = `01a0c0ff-0000-7000-8000-${name.padStart(12, "0")}`;
+  const path = join(sessionsDir, `2026-09-21T00-00-00-000Z_${id}.jsonl`);
+  const line = (e: unknown) => `${JSON.stringify(e)}\n`;
+  let text = line({ type: "session", version: 3, id, timestamp: "2026-09-21T00:00:00.000Z", cwd: "/tmp" });
+  datas.forEach((data, i) => {
+    text += line({ type: "custom", id: `o${i}`, parentId: i === 0 ? null : `o${i - 1}`, timestamp: stamp(i), customType: "topic-outline", data });
+  });
+  writeFileSync(path, text);
+  return canonicalPath(path);
+}
+const stamp = (i: number) => new Date(Date.UTC(2026, 8, 21, 0, i)).toISOString();
+const snap = (now: string, overall: string, generatedAt = 0) => ({ version: 2, now, overall, generatedAt, state: "fresh", topics: [] });
+
+test("every outline snapshot on the branch lands, oldest first, with its entry's id and stamp", async () => {
+  const insight = await getSessionInsight(outlineSession("100", [snap("First", "One.", 1789990000000), snap("Second", "Two."), snap("Third", "Three.", 1789990200000)]));
+  assert.deepEqual(insight.outlines, [
+    { id: "o0", timestamp: stamp(0), now: "First", overall: "One.", generatedAt: 1789990000000 },
+    { id: "o1", timestamp: stamp(1), now: "Second", overall: "Two.", generatedAt: 0 },
+    { id: "o2", timestamp: stamp(2), now: "Third", overall: "Three.", generatedAt: 1789990200000 },
+  ]);
+  assert.equal(insight.outline!.now, "Third", "outline stays the newest snapshot");
+});
+
+test("a summary repeated by the next snapshot is kept once; a later return to it is a new row", async () => {
+  const insight = await getSessionInsight(outlineSession("101", [snap("A", "a."), snap("A", "a.", 5), snap("B", "b."), snap("A", "a.")]));
+  assert.deepEqual(insight.outlines!.map((o) => o.id), ["o0", "o2", "o3"]);
+});
+
+test("a malformed or older-version snapshot is skipped and its neighbours survive", async () => {
+  const insight = await getSessionInsight(
+    outlineSession("102", [snap("Before", "b."), { version: 1, now: "Old shape" }, "not an object", { version: 2, now: "No topics" }, snap("After", "a.")]),
+  );
+  assert.deepEqual(insight.outlines!.map((o) => [o.id, o.now]), [["o0", "Before"], ["o4", "After"]]);
+});
+
+test("the series is capped to the newest 200 distinct summaries", async () => {
+  const datas = Array.from({ length: 205 }, (_, i) => snap(`Step ${i}`, ""));
+  const outlines = (await getSessionInsight(outlineSession("103", datas))).outlines!;
+  assert.equal(outlines.length, 200);
+  assert.equal(outlines[0]!.now, "Step 5", "the oldest five are the ones dropped");
+  assert.equal(outlines.at(-1)!.now, "Step 204");
+});
+
+test("a session with no outline snapshots leaves the series out", async () => {
+  const insight = await getSessionInsight(outlineSession("104", []));
+  assert.equal("outlines" in insight, false);
 });

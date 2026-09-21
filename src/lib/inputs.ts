@@ -1,6 +1,6 @@
-// The session pane's Inputs tab: this session's user messages on the active branch, each able to
-// rewind the chat to just before it. Pure decisions only — which rows, when a row may act, the
-// two-step confirm — so the component just renders them.
+// The session pane's Timeline with "Inputs Only" on: this session's user messages on the active
+// branch, each able to rewind the chat to just before it. Pure decisions only — which rows, when a
+// row may act, the two-step confirm — so the component just renders them.
 import type { RewindRefusal, TranscriptItem } from "../../shared/protocol";
 import { timestampOf } from "./message";
 

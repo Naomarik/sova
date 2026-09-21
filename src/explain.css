@@ -18,11 +18,6 @@
 .explain-card .report-error,
 .explain-card-note { margin: 0 0 0 var(--space-5); }
 .explain-card-note { font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); overflow-wrap: anywhere; }
-.explain-card-external,
-.explain-tile-external {
-  flex: none;
-  color: var(--color-ink-muted);
-}
 
 /* ---- Session strip. Sibling of .outline under the session head, and the same row:
    base.css §Outline strip carries both, this one as the <button> form. Nothing to add. ---- */

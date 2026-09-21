@@ -6,7 +6,7 @@ import { Banner, Icon } from "./ui";
 /** This chat's last WS "mode" message: the mode of THIS chat and how a switch applies here. */
 export type ModeState = Omit<Extract<ChatServerMessage, { type: "mode" }>, "type">;
 
-/** What the chat view exposes so the header can show and switch this chat's mode. */
+/** What the chat view hands its composer so the foot can show and switch this chat's mode. */
 export interface ModeControl {
   state: Accessor<ModeState | null>;
   /** This chat's session file: POST /api/mode?path= switches this chat and no other. */
@@ -22,7 +22,7 @@ const itemId = (it: Item) => `mode-${it.kind}-${it.id}`;
 const [info, setInfo] = createSignal<ModeInfo | null>(null);
 
 /**
- * The chat header's mode switch (spec/04g-mode-menu.md §4g): a trigger plus a native popover menu. One
+ * The composer foot's mode switch (spec/04g-mode-menu.md §4g): a trigger plus a native popover menu. One
  * major mode (menuitemradio, picking closes) and any minor modes (menuitemcheckbox, toggling
  * stays open). The mode is per chat: only this chat follows, from its next message.
  */
@@ -63,7 +63,8 @@ export function ModeMenu(props: { control: ModeControl }) {
   const openMenu = async (keepError = false) => {
     if (open()) return;
     const r = trigger.getBoundingClientRect();
-    menu.style.setProperty("--menu-top", `${Math.round(r.bottom + 4)}px`);
+    // The foot is pinned to the pane's bottom edge, so the menu grows upward from the trigger.
+    menu.style.setProperty("--menu-bottom", `${Math.round(innerHeight - r.top + 4)}px`);
     menu.style.setProperty("--menu-right", `${Math.round(innerWidth - r.right)}px`);
     closedByChoice = false;
     tabbedAway = false;
@@ -162,7 +163,11 @@ export function ModeMenu(props: { control: ModeControl }) {
         onClick={() => (open() ? closeMenu() : void openMenu())}
       >
         <Icon name="worker" small />
-        <span class="mode-trigger-label">{label()}</span>
+        {/* Two parts, so a narrow foot ellipsizes the minor modes before the major one (§4g). */}
+        <span class="mode-trigger-label">{current()?.mode ?? "Mode"}</span>
+        <Show when={current()?.minorModes.length}>
+          <span class="mode-trigger-label mode-trigger-minor">· {current()!.minorModes.join(" · ")}</span>
+        </Show>
         <Icon name="chevron-down" small />
       </button>
 

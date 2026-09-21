@@ -10,7 +10,6 @@ import { capTitle, usageHeadline, usageTitle, usageTotal, type UsageTotalView, w
 import type { RewindControl } from "../lib/inputs";
 import { jumpToEntry } from "../lib/jump";
 import { SessionDetails } from "./SessionDetails";
-import { SessionInputs } from "./SessionInputs";
 import { SessionTimeline } from "./SessionTimeline";
 import { SubagentPane } from "./SubagentPane";
 import { Chip, Icon } from "./ui";
@@ -27,10 +26,9 @@ export interface PaneInsight {
   changed: number;
 }
 
-export type TabId = "session" | "inputs" | "timeline" | "agents" | "skills" | "explain";
+export type TabId = "session" | "timeline" | "agents" | "skills" | "explain";
 const TABS: readonly { id: TabId; label: string }[] = [
   { id: "session", label: "Session" },
-  { id: "inputs", label: "Inputs" },
   { id: "timeline", label: "Timeline" },
   { id: "agents", label: "Agents" },
   { id: "skills", label: "Skills" },
@@ -44,7 +42,7 @@ const isTab = (id: string | null): id is TabId => TABS.some((t) => t.id === id);
  * Agents is the subagents pane it grew out
  * of; Skills says which skills loaded and when, here and in each worker; Explain lists this
  * session's /explain pages. The tab is kept per session path; with none kept, it opens on Agents while a worker is
- * working, else on Session. Read-only throughout, except Inputs' rewind, which goes through the chat.
+ * working, else on Session. Read-only throughout, except the Timeline's rewind, which goes through the chat.
  */
 export function SessionPane(props: {
   path: string;
@@ -60,17 +58,22 @@ export function SessionPane(props: {
   onSelect(id: string): void;
   onClose(): void;
   now: number;
-  /** The open chat's rewind hook for the Inputs tab; absent while watching or before the chat opens. */
+  /** The open chat's rewind hook for the Timeline's input rows; absent while watching or before the
+      chat opens. */
   rewind?: RewindControl;
-  /** App's last successful rewind of this session, whoever started it: the Inputs tab re-reads
-      its rows on it. Never set by a refusal. */
+  /** App's last successful rewind of this session, whoever started it: the pane re-reads the
+      transcript on it, and the Timeline draws the boundary. Never set by a refusal. */
   rewound?: { path: string; entryId: string; changed: number } | null;
+  /** The Timeline's "Inputs Only" filter. App holds it for as long as the pane is open, so /tree
+      and the composer's inputs row can open the tab with it on; nothing is persisted. */
+  inputsOnly?: boolean;
+  onInputsOnly?(on: boolean): void;
   /** The tab actually showing, reported on open, on every change, and as null when the pane goes.
       The composer's triggers key `aria-expanded` off it: the kept tab alone can't answer, since a
       session nobody has tabbed shows the fallback while `activeTab` is still null. */
   onTab?(tab: TabId | null): void;
 }) {
-  // The transcript, read once for the whole pane: the Session tab, Inputs and Timeline all want
+  // The transcript, read once for the whole pane: the Session tab and the Timeline both want
   // the same rows, and a fetch per tab meant a refetch on every tab switch. It reloads when the
   // session's file moved (App's debounced insight reload) and after a rewind, whoever started it.
   const [items, setItems] = createSignal<TranscriptItem[] | null>(null);
@@ -174,25 +177,21 @@ export function SessionPane(props: {
           <Match when={tab() === "session"}>
             <SessionTab path={props.path} insight={props.insight} summary={props.summary} items={items()} now={props.now} onArchiveChanged={props.onArchiveChanged} />
           </Match>
-          <Match when={tab() === "inputs"}>
-            <SessionInputs
+          <Match when={tab() === "timeline"}>
+            <SessionTimeline
               path={props.path}
               items={items()}
+              outline={props.insight.data?.outline ?? null}
+              outlines={props.insight.data?.outlines}
+              rewinds={props.insight.data?.rewinds}
               rewound={props.rewound}
               summary={props.summary}
               rewind={props.rewind}
-              now={props.now}
-              onReload={loadItems}
-              onClose={props.onClose}
-            />
-          </Match>
-          <Match when={tab() === "timeline"}>
-            <SessionTimeline
-              items={items()}
-              outline={props.insight.data?.outline ?? null}
-              rewinds={props.insight.data?.rewinds}
+              inputsOnly={props.inputsOnly ?? false}
+              onInputsOnly={(on) => props.onInputsOnly?.(on)}
               pending={props.insight.pending}
               now={props.now}
+              onReload={loadItems}
               onClose={props.onClose}
             />
           </Match>
@@ -322,10 +321,9 @@ function ExplainRow(props: { item: ExplanationInfo; now: number }) {
           </div>
         }
       >
-        <a class="list-row list-row-interactive explain-row" href={explainHref(props.item.id)} target="_blank" rel="noopener">
-          <span class="visually-hidden">Explanation, opens in a new tab: </span>
+        <a class="list-row list-row-interactive explain-row" href={explainHref(props.item.id)}>
+          <span class="visually-hidden">Explanation: </span>
           {body()}
-          <Icon name="external" small />
         </a>
       </Show>
     </li>

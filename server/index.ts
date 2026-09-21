@@ -18,7 +18,7 @@ import { archiveSession, cleanupSessions, getSessionSummary, idOf, listCwds, lis
 import { contextForBranch, normalizeEntries, readActiveBranch } from "./transcript";
 import { checkTmpImage, deleteAttachment, MAX_ATTACHMENT_BYTES, readTmpImage, saveUploadedImage, sessionAttachmentsDir, UploadError } from "./attachments";
 import { listFolders } from "./folders";
-import { assignSession, createGroup, deleteGroup, readGroups, renameGroup } from "./session-groups";
+import { assignSession, cleanGroupLabel, createGroup, deleteGroup, GROUP_LABEL_MAX, readGroups, updateGroup } from "./session-groups";
 // The mount module is pi-runtime-free (node builtins only): isMounted parses the mount table and
 // verifyMounted bounds a real check on a path INSIDE the mount — neither ever stats the fuse path
 // synchronously, which would block the event loop on a hung mount.
@@ -163,14 +163,15 @@ app.post("/api/session-groups", async (c) => {
   return r.ok ? c.json(r.group, 201) : c.json({ error: r.error }, r.status);
 });
 
+// Name, member order and member labels: whatever the body carries, in one write.
 app.patch("/api/session-groups/:id", async (c) => {
-  let body: { name?: unknown };
+  let body: { name?: unknown; order?: unknown; labels?: unknown };
   try {
     body = await c.req.json();
   } catch {
-    return c.json({ error: "Expected JSON body { name }" }, 400);
+    return c.json({ error: "Expected JSON body { name?, order?, labels? }" }, 400);
   }
-  const r = renameGroup(c.req.param("id"), body.name);
+  const r = updateGroup(c.req.param("id"), body);
   return r.ok ? c.json(r.group) : c.json({ error: r.error }, r.status);
 });
 
@@ -180,17 +181,20 @@ app.delete("/api/session-groups/:id", (c) =>
 
 // One session into one group (or out of it, with `groupId: null`).
 app.post("/api/session-groups/assign", async (c) => {
-  let body: { path?: unknown; groupId?: unknown };
+  let body: { path?: unknown; groupId?: unknown; label?: unknown };
   try {
     body = await c.req.json();
   } catch {
     return c.json({ error: "Expected JSON body { path, groupId }" }, 400);
   }
   if (body.groupId !== null && typeof body.groupId !== "string") return c.json({ error: "groupId must be a group id or null" }, 400);
+  // Omitted keeps the label the session already had (a move between groups carries it).
+  const label = body.label === undefined ? { ok: true as const, label: undefined } : cleanGroupLabel(body.label);
+  if (!label.ok) return c.json({ error: `label must be a string of at most ${GROUP_LABEL_MAX} characters, or null` }, 400);
   const path = resolveSessionPath(typeof body.path === "string" ? body.path : null);
   if (!path) return c.json({ error: "Invalid or missing path (must be a .jsonl under the pi sessions dir)" }, 400);
   if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
-  const r = assignSession(idOf(path), body.groupId);
+  const r = assignSession(idOf(path), body.groupId, label.label);
   return r.ok ? c.json({ ok: true }) : c.json({ error: r.error }, r.status);
 });
 

@@ -61,6 +61,10 @@ export interface SessionSummary {
       a grouped session stays in its region (Live & web, or the Archive) as well. Absent when it
       belongs to none, and from an older server: treat as ungrouped. */
   groupId?: string;
+  /** The session this one was forked from: the header's `parentSession` (absolute path), and only
+      when that file still exists. Absent for every session that was not branched, and from an
+      older server. Lets a group show fork points without reading each transcript. */
+  parent?: string;
   /** Remote session: the target name from ~/.pi/agent/targets.json. Derived from `cwd`, which for a
       remote session is the local placeholder ~/.pi/agent/pi-web/targets/<target>/<remote/abs/path>.
       Absent for local sessions. */
@@ -279,12 +283,23 @@ export interface UploadResult {
 // GET  /api/session-groups    -> SessionGroup[]   (the sidebar's user-made groups, in creation order;
 //                                  ~/.pi/agent/pi-web/session-groups.json; missing file → [])
 // POST /api/session-groups { name: string } -> SessionGroup   (creates one. 400 name not 1–60 chars)
-// PATCH /api/session-groups/:id { name: string } -> SessionGroup   (renames. 400 bad name, 404 unknown)
+// PATCH /api/session-groups/:id { name?: string, order?: string[], labels?: {id: string, label: string | null}[] }
+//                                  -> SessionGroup   (renames and/or reorders and/or (re)labels members; every
+//                                  field is optional but at least one is required. `order` is session ids: the
+//                                  listed ones come first, in that order, and any member it leaves out keeps its
+//                                  relative order after them; ids that are not in the group are ignored (they race
+//                                  with assign). `labels` sets one label per session id, `null` clears it; ids not
+//                                  in the group are ignored. 400 no recognised field, bad name, order not an array
+//                                  of strings, labels not an array of {id, label}, or a label longer than 40 chars
+//                                  after trimming; 404 unknown group)
 // DELETE /api/session-groups/:id -> { ok: true }   (deletes the group and its assignments; the
 //                                  sessions themselves are untouched. 404 unknown)
-// POST /api/session-groups/assign { path, groupId: string | null } -> { ok: true }   (puts one session in
-//                                  a group, or takes it out with null. 400 bad body/path, 404 session file
-//                                  or group missing. Never writes the session file)
+// POST /api/session-groups/assign { path, groupId: string | null, label?: string | null } -> { ok: true }
+//                                  (puts one session in a group, or takes it out with null. `label` sets the
+//                                  session's label in the group it lands in, `null` clears it, and omitting it
+//                                  keeps the label it already had — a session moved between groups keeps its
+//                                  metadata. 400 bad body/path/label, 404 session file or group missing.
+//                                  Never writes the session file)
 // POST /api/sessions/archive { path, archived: boolean } -> SessionSummary   (sets/clears the archive mark; never
 //                                  writes the session file. 400 bad body/path, 404 missing, 409 archiving a live
 //                                  or non-web session)
@@ -387,6 +402,20 @@ export interface FileIndex {
     input's maxlength and the server's rule read it from here. */
 export const GROUP_NAME_MAX = 60;
 
+/** Longest member label, in characters, after trimming (GroupMember.label; the server trims and
+    refuses a longer one with 400, while an empty one clears the label). */
+export const GROUP_LABEL_MAX = 40;
+
+/** One session's presentation metadata inside a group (SessionGroup.members). Membership itself is
+    the server's assignments map — this carries only the ORDER (array position) and an optional
+    short LABEL, e.g. "sonnet ×2" on a fanout member. */
+export interface GroupMember {
+  /** Session id (`SessionSummary.id`), not a path. */
+  id: string;
+  /** Shown beside the row; absent when unset. Trimmed, 1–40 chars. */
+  label?: string;
+}
+
 /** One user-made group in the sidebar's Groups region (GET /api/session-groups). Groups hold
     sessions; they never replace a region, so a grouped session still shows in Live & web or the
     Archive. Stored in ~/.pi/agent/pi-web/session-groups.json, keyed by session id (like the archive). */
@@ -396,6 +425,11 @@ export interface SessionGroup {
   /** Shown as-is (trimmed, 1–60 chars). Duplicates are allowed: nothing keys on the name. */
   name: string;
   createdAt: string; // ISO
+  /** The group's sessions in display order, with their labels. The server always sends it — it is
+      reconciled against the assignments on every read (ids no longer in the group drop out, ids
+      missing from it are appended in id order) — and it is optional in the type only because an
+      older server, or a hand-written store file, may not carry it. */
+  members?: GroupMember[];
 }
 
 /** The mode extension's settings (pi-config/extensions/mode). One major mode, any set of minor

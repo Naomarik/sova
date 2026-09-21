@@ -622,7 +622,13 @@ can carry identical information and fail in opposite directions: `nameIsGenerate
 as *the user named it*, and the group survives; `nameEdited` absent reads as *untouched*, so
 pi-web claims the name and deletes it. Same fact, same size, one of them safe by construction.
 The name that reads most naturally is not reliably the one that fails safe, so choose the
-polarity first and the wording second. The alternative — a
+polarity first and the wording second.
+
+**Name the event, not the moment.** A rule anchored to a moment — "capture it at prefill" —
+assumes the value is written once, which is true until some mode writes it repeatedly. Anchor
+to the event instead: *whenever we write this field*. The moment form is the same mistake as
+"the last line is the last rendered entry", true until a feature existed that rewrites the tail.
+It reads as more concrete and is less durable. The alternative — a
 renamed fanout group that still dissolves, "stated loudly" somewhere — is defensible on origin,
 but it asks the user to carry a rule that only fires much later, at the moment of loss.
 

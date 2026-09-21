@@ -157,6 +157,7 @@ and a claude worker again through the server's `initialize.instructions`.
 | `exec.ts` | Spawns an argv with no local shell, with a timeout, abort handling and stdin |
 | `channel.ts` | The pinned channel: one far shell over its own ssh, length-prefixed requests, base64 + marker responses |
 | `mount.ts` | The sshfs mount: the one argv builder (the measured-safe options), the `/proc/mounts` lookup, mount/unmount/verify with honest reports. **pi-web's server imports it**, so keep it pi-runtime-free |
+| `connection.ts` | Pure, loadable by plain node. `Connection`: one session's probe, status and the choke point every far command takes — the pinned channel when idle, else per call — with the whole channel policy (lazy warm, hold after a teardown, failure cooldown, login rate-limit backoff). `Remote` in index.ts extends it; a worker's MCP server uses it directly. Both lanes run in the far cwd |
 | `check.ts` | `node check.ts entry.json [--list PATH] [--cmd …]`: validates an entry and runs it end to end through the same builder. The connection agent uses it before it writes an entry |
 | `workers.ts` | Pure. What a session hands its workers: the `remote:session` event, the MCP identity env and the worker blurb; imported by index.ts, mcp-server.ts and the subagents extension |
 | `mcp-server.ts` | The `remote` stdio MCP server a claude-code worker launches (node builtins + the pure modules; never index.ts) |

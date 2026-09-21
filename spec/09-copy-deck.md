@@ -380,6 +380,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Group composer Send | `Send to All` · in flight `Sending…` · 1 member: `Send` |
 | Group composer targets line | `{n} of {m} members` then the excluded reasons, counted: `· 1 mid-turn` · `· 2 open in a terminal` · `· 1 archived` · `· 1 can't be opened` · `· 1 busy` · `· 1 file gone`. All available: `{n} members` alone |
 | Group composer off | 0 available: Send is `aria-disabled`, reason "No member can take a message right now." · 0 members: the composer isn't rendered |
+| Refusal reason per member | rendered from `code`: `{member} is mid-turn` · `{member} is open in a terminal` · `{member} is archived` · `{member} can't be opened` · `{member} is busy` · `{member}'s file is gone` · `internal`, or a code this build doesn't know: the server's `message` verbatim, after the member's name |
 | Refusal banner | **Nothing was sent.** {n} of {m} members can't take a message right now: {member} is mid-turn, {member} is open in a terminal. Wait for them, or send to the other {k}. · buttons `Send to the Rest ({k})` · `Cancel` |
 | Partial send banner | **Sent to {k} of {n} members.** {member} was taken by another program between the check and the send, so it didn't get this message. The {k} that did are answering now. · button `Send to {member}` |
 | Sent (live region) | Sent to {n} members. (1: Sent to 1 member.) |

@@ -303,11 +303,21 @@ member at once.
   `409 {refused: [{id, path, code, message}]}`. `id` joins against `GroupMember.id` and the
   assignments with no lookup, `path` is what the pane routes and opens with, `code` is the closed
   set the state table above names (`mid-turn` · `tui-live` · `archived` · `config` · `busy` ·
-  `missing`), and `message` is the server's sentence. **The banner is composed from `code` and
-  the member's own name** (§9), never by parsing prose — so the words on screen are pi-web's and
-  stay consistent with the rest of the product. `message` is shown verbatim in exactly one case:
-  a `code` this client doesn't recognize, which is how an older client stays honest about a newer
-  server instead of silently dropping a reason.
+  `missing`), plus `internal` for a failure that fits none of them, and `message` is the server's
+  sentence. **The banner is composed from `code` and the member's own name** (§9), never by
+  parsing prose — so the words on screen are pi-web's and stay consistent with the rest of the
+  product. `message` is shown verbatim in exactly two cases, and both are the same case really:
+  when pi-web has no sentence of its own to say. `internal` is one (the server knows something we
+  have no word for, and inventing a calm generic sentence would be hiding it), and a `code` this
+  client doesn't recognize is the other, which is how an older client stays honest about a newer
+  server instead of dropping a reason on the floor.
+- **Send stays enabled when the foot already names an exclusion, and that is deliberate.** The
+  client's picture of who is available is a snapshot and can be stale in both directions — a
+  member may have finished its turn, or a terminal may have grabbed one a second ago. The server
+  is the only authority, so pressing Send is how you ask it. What the foot buys is that the
+  refusal is a **confirmation rather than a discovery**: the count that comes back is the count
+  that was already on screen. Send is `aria-disabled` only when the client knows there is nobody
+  at all to send to.
 - **All-or-nothing is a pre-check, and it says so.** The server checks **every** member — not
   up to the first bad one — and that check completes before **any** member is prompted, so a
   refusal leaves zero prompts sent and the `409` can name every blocked member at once rather

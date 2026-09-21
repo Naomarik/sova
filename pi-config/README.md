@@ -29,6 +29,7 @@ additions, the pinned third-party packages, and the extensions kept in-tree.
 | `extensions/explain/` | `/explain <topic>`: one forked subagent writes a self-contained HTML explanation into `~/.pi/agent/explanations/`, kept forever and read in pi-web |
 | `extensions/mode/` | Per-session normal ↔ claude-heavy mode switcher plus minor modes (`alt+m`, `ctrl+p` → Mode, `/mode`), orchestrating Claude Code workers with a fable/opus planner fallback |
 | `extensions/sessions/` | Live pi sessions on this machine find each other through a filesystem presence registry; ships the `pi-sessions` CLI (`bin/pi-sessions.ts`) and the record schema (`public/SCHEMA.md`) |
+| `extensions/remote/` | `--target <name>`: runs the session's tools on an ssh / AWS-SSM / docker / incus target from `targets.json`; inert without the flag. Its `argv.ts` is imported by pi-web |
 | `extensions/codefold/` | Folds long fenced code blocks in assistant messages into one band |
 | `extensions/topic-outline/` | Display-only live topic outline of the conversation, with jump-to-topic |
 | `extensions/vision-delegate/` | Lets a text-only model work with images: a `look_at_image` tool plus automatic descriptions of read results and TUI attachments, routed to a fallback vision model |
@@ -136,6 +137,7 @@ cd extensions/mode && node --test index.test.ts align.test.ts && node tests/smok
 cd extensions/command-palette && node --test test.mjs
 cd extensions/sessions && node --test test.mjs
 cd extensions/codefold && node tests/run.mjs
+cd extensions/remote && node --test argv.test.ts
 cd extensions/explain && node tests/run.mjs && node tests/smoke.mjs
 cd extensions/topic-outline && node test.mjs
 cd extensions/vision-delegate && node tests/run.mjs

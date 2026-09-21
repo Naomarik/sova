@@ -187,8 +187,12 @@ new workspace.
 - **Partial creation is reported, never swallowed.** If member 4 of 5 fails, the group exists with
   4, the workspace opens, and a `.banner.banner-warn` sits above the panes: **"4 of 5 members were
   created."** {model} couldn't start: {server message}. The 4 that exist are running; add another
-  from Add Members. · `Add Members` · `Dismiss`. Nothing is rolled back — three sessions that are
-  already answering are not garbage to clean up.
+  from Add Members. · `Add Members` · `Dismiss`. **No member that exists is rolled back** — three
+  sessions that are already answering are not garbage to clean up, and unmaking one would throw
+  away work the user can already read. What *is* cleaned up is the failed member's own debris:
+  a creation that died part-way through leaves half-written files of its own, and those are
+  unlinked, because a header with no session behind it is a row in the sidebar that opens onto
+  nothing. The line is between *a member* and *the wreckage of one that never became a member*.
 - **Total failure** keeps the dialog open with a `.field-error` and no group is created.
 
 ## The fork point in a transcript

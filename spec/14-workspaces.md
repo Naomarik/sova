@@ -288,9 +288,19 @@ member at once.
   workspace is open no pane composer's Send is `.button-primary`: a pane's Send becomes
   `.button` (secondary) with the same label and the same behavior. The accent says "this sends
   to all of them", which is the choice worth marking.
-- **It sends one request**, `POST /api/session-groups/{id}/prompt {text, members?}`, and the
-  server prompts each member. The client does not fan the request out itself: N sockets racing
-  would give N outcomes and no way to be all-or-nothing about them.
+- **It sends one request**, `POST /api/session-groups/{id}/prompt {text, members?: string[]}`,
+  and the server prompts each member. The client does not fan the request out itself: N sockets
+  racing would give N outcomes and no way to be all-or-nothing about them. `members` is **session
+  ids**, like everything else group-side, and it is only ever the subset the user chose (below).
+- **The refusal body is machine-readable and human-readable both**:
+  `409 {refused: [{id, path, code, message}]}`. `id` joins against `GroupMember.id` and the
+  assignments with no lookup, `path` is what the pane routes and opens with, `code` is the closed
+  set the state table above names (`mid-turn` · `tui-live` · `archived` · `config` · `busy` ·
+  `missing`), and `message` is the server's sentence. **The banner is composed from `code` and
+  the member's own name** (§9), never by parsing prose — so the words on screen are pi-web's and
+  stay consistent with the rest of the product. `message` is shown verbatim in exactly one case:
+  a `code` this client doesn't recognize, which is how an older client stays honest about a newer
+  server instead of silently dropping a reason.
 - **All-or-nothing is a pre-check, and it says so.** The server checks **every** member — not
   up to the first bad one — and that check completes before **any** member is prompted, so a
   refusal leaves zero prompts sent and the `409` can name every blocked member at once rather
@@ -316,8 +326,8 @@ the three beats §0 requires and one row per blocked member:
 >
 > `Send to the Rest (3)` · `Cancel`
 
-`Send to the Rest` re-sends the identical text with an explicit `members` array — the subset is
-chosen by the user in one press, never inferred by the server on the first call. The draft is
+`Send to the Rest` re-sends the identical text with an explicit `members` array of session ids —
+the subset is chosen by the user in one press, never inferred by the server on the first call. The draft is
 kept until the send succeeds, so nothing is retyped. The banner is dismissed by `Cancel`, by
 editing the text, or by a successful send.
 

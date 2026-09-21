@@ -7,6 +7,7 @@ import { ClaudeRunner, MAX_CLAUDE_INPUT_CHARS, type ClaudePermissionDecision, ty
 import { parseClaudePolicy, validateClaudeEffort, validateClaudeModel, validateClaudeTools } from "./policy.ts";
 import { discoverClaudeModels } from "./models.ts";
 import { PermissionQueue } from "./permissions.ts";
+import { registerClaudeCodeProvider } from "./provider/index.ts";
 
 function validate(spec: BackendSpec): void {
 	// The runner would otherwise fail this asynchronously, after the batch started.
@@ -99,8 +100,9 @@ export function registerClaudeCode(pi: ExtensionAPI): void {
 			return new ClaudeRunner(options as ClaudeSpawnOptions, handlers);
 		},
 	};
-	// Seam: the optional top-level Claude provider (provider/) registers itself
-	// here, flag-gated, with one call — the worker backend above is unaffected.
+	// The optional top-level Claude provider (provider/) registers itself here,
+	// flag-gated (--claude-code-provider); the worker backend above is unaffected.
+	registerClaudeCodeProvider(pi);
 	const unregister = registerBackend(pi.events, backend);
 	pi.on("session_shutdown", async () => {
 		stopped = true; unregister(); modelCache = undefined;

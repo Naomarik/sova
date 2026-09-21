@@ -14,7 +14,7 @@ test("real Claude permission emitter hides the real manager overlay and restores
 		emit(name: string, data: unknown) { for (const fn of listeners.get(name) ?? []) fn(data); },
 	};
 	events.on(BACKEND_REGISTER_EVENT, (b: any) => { backend = b; });
-	const pi: any = { events, registerTool() {}, registerCommand(name: string, command: any) { commands.set(name, command); }, registerShortcut() {}, appendEntry() {}, getActiveTools: () => [], sendMessage() {},
+	const pi: any = { events, registerFlag() {}, getFlag: () => undefined, registerProvider() {}, unregisterProvider() {}, registerTool() {}, registerCommand(name: string, command: any) { commands.set(name, command); }, registerShortcut() {}, appendEntry() {}, getActiveTools: () => [], sendMessage() {},
 		on(name: string, fn: Function) { const list = hooks.get(name) ?? []; list.push(fn); hooks.set(name, list); } };
 	registerClaudeCode(pi); registerSubagents(pi);
 	const visibility: boolean[] = [];

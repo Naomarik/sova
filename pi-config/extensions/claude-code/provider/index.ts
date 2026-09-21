@@ -141,7 +141,8 @@ export function registerProviderIfEnabled(pi: ExtensionAPI, bridge: ClaudeSessio
 	});
 	// The provider stays registered, but this session's CLI child must not.
 	pi.on("session_shutdown", (_event, ctx) => {
-		const sessionId = ctx.sessionManager.getSessionId();
+		// Hosts and test harnesses may call the hook without a session context.
+		const sessionId = ctx?.sessionManager?.getSessionId?.();
 		if (sessionId) void bridge.disposeSession?.(sessionId);
 	});
 }

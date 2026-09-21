@@ -147,7 +147,11 @@ export async function promptGroup(groupId: string, text: string, subset: string[
       await deps.send(path, text);
       sent.push(id);
     } catch (err) {
-      failed.push(refusal(id, path, codeOf(err), err instanceof Error ? err.message : String(err)));
+      // `message` is never blank: an older client that doesn't know a newer `code` shows it
+      // verbatim (spec §14), so an Error with no text must still leave a sentence behind.
+      const said = (err instanceof Error ? err.message : String(err)).trim();
+      const code = codeOf(err);
+      failed.push(refusal(id, path, code, said || SENTENCE[code]));
     }
   }
   return { ok: true, result: { sent, failed } };

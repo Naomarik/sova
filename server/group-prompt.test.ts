@@ -171,3 +171,18 @@ test("blank text is refused before the group is even looked up", async () => {
   assert.ok(!r.ok && r.status === 400);
   assert.equal(looked, false);
 });
+
+test("a failure with no message still carries a sentence", async () => {
+  // spec §14: a client that doesn't recognise a newer `code` shows `message` verbatim, so a blank
+  // one would drop the reason on the floor.
+  const d = deps({
+    members: () => ["a"],
+    send: async () => {
+      throw new Error("   ");
+    },
+  });
+  const r = await promptGroup("g1", "hi", undefined, d);
+  assert.ok(r.ok);
+  assert.equal(r.result.failed[0]!.code, "internal");
+  assert.ok(r.result.failed[0]!.message.trim().length > 0);
+});

@@ -7,7 +7,6 @@
 
 import type { BatchRefusal, FanoutRequest, ModelInfo } from "../../shared/protocol";
 import { contextStep, formatPercent, formatTokens } from "./context";
-import { shortModel } from "./format";
 
 /** One row of the plan: a model and how many of it. Array order is pane order. */
 export interface MemberRow {
@@ -188,14 +187,6 @@ export function fanoutBody(plan: {
     ? { ...target, members, source: plan.source }
     : { ...target, members, cwd: plan.fresh?.cwd ?? "", text: (plan.fresh?.text ?? "").trim() };
 }
-
-/**
- * The model a row is about, in PROSE where the provider is already established — the fit error and
- * the count announcement — §9's "Add a model" and "Doesn't fit" rows, both spec'd as `{model}`.
- *
- * Not for anything that names one row among several: see the row controls below.
- */
-export const rowModel = (ref: string): string => shortModel(ref) ?? ref;
 
 /**
  * The accessible names of a member row's own controls (§9, the "Member row" row). These carry

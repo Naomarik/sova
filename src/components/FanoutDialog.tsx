@@ -14,7 +14,6 @@ import {
   fewerLabel,
   moreLabel,
   removeLabel,
-  rowModel,
   sharedTurnLine,
   stepCount,
   totalMembers,
@@ -110,7 +109,9 @@ export function FanoutDialog(props: {
   const blocked = (): string | null => {
     if (members() === 0) return "Add at least 1 member.";
     if (overflowing().length > 0) {
-      const which = overflowing().map((f) => rowModel(f.row.ref)).join(", ");
+      // The FULL ref: this names which row to act on, and two rows differing only by provider
+      // would both answer to the short form (§9 "Doesn't fit").
+      const which = overflowing().map((f) => f.row.ref).join(", ");
       return `Remove ${which}, or lower its count, to create this fanout.`;
     }
     if (fork()) return props.source?.blocked ?? null;
@@ -170,7 +171,9 @@ export function FanoutDialog(props: {
     setRows(addModel(rows(), ref));
     setPicking(false);
     // Picking a listed model adds no row, so the count IS the feedback: say it.
-    if (before > 0) announce(`${rowModel(ref)} ×${Math.min(COUNT_MAX, before + 1)}.`);
+    // The full ref, and this is the surface that needs it most: the count change is ANNOUNCED
+    // ONLY, so nothing visible tells the user which of two same-named rows moved (§9 "Add a model").
+    if (before > 0) announce(`${ref} ×${Math.min(COUNT_MAX, before + 1)}.`);
   };
 
   return (

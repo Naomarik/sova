@@ -239,3 +239,20 @@ test("every fanout failure carries a ref; a prompt-route refusal carries none", 
     [["openai/gpt-5", "over quota"]],
   );
 });
+
+test("a creation failure with no message still carries a sentence", async () => {
+  // The ref prefix was stripped from this message so the banner doesn't render the model twice,
+  // which makes a bare reason the case most likely to arrive empty — and §14 has the client show
+  // `message` verbatim for a code it doesn't recognise, so an empty one would drop the reason.
+  const d = deps({
+    fork: async (_s, _l, member) => {
+      if (member.ref === "openai/gpt-5") throw new Error("   ");
+      return "/sessions/--tmp--/ok_id1.jsonl";
+    },
+  });
+  const r = await runFanout(forkBody({ members: [{ ref: "anthropic/opus", count: 1 }, { ref: "openai/gpt-5", count: 1 }] }), d);
+  assert.ok(r.ok);
+  const failure = r.result.failed[0]!;
+  assert.equal(failure.ref, "openai/gpt-5", "the model is still named");
+  assert.ok(failure.message.trim().length > 0, "and the reason is never blank");
+});

@@ -150,12 +150,24 @@ export function fanoutBody(plan: {
   /** The group to land in; without it a new group named `name` is created. */
   into?: { id: string } | undefined;
   name: string;
+  /**
+   * The LAST string pi-web wrote into the name field. Provenance is a comparison against this —
+   * not against a prefill snapshot, which in fresh mode is derived from an empty prompt and would
+   * classify an untouched field as user-named; and not against a re-derivation at submit time,
+   * which would be a second generator of one string. It is a record of what we wrote.
+   */
+  lastGenerated?: string | undefined;
   /** Fork mode: the source and the leaf the dialog SHOWED the user. */
   source?: { path: string; leafId: string } | undefined;
   /** Fresh mode: where the members live and the message they all start from. */
   fresh?: { cwd: string; text: string } | undefined;
 }): FanoutRequest {
-  const target = plan.into ? { groupId: plan.into.id } : { name: plan.name.trim() };
+  const name = plan.name.trim();
+  // Only a group being CREATED has a name whose provenance matters; joining one leaves its name
+  // alone, so the field would be a claim about a string this request doesn't set.
+  const target = plan.into
+    ? { groupId: plan.into.id }
+    : { name, named: name === (plan.lastGenerated ?? "").trim() ? ("generated" as const) : ("user" as const) };
   const members = plan.rows.map((r) => ({ ref: r.ref, count: r.count }));
   return plan.source
     ? { ...target, members, source: plan.source }

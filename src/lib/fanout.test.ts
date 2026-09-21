@@ -145,21 +145,48 @@ test("the body carries exactly one of name and groupId, never both", () => {
   const rows = [{ ref: "a/b", count: 2 }];
   const source = { path: "/tmp/src.jsonl", leafId: "leaf1" };
 
-  const created = fanoutBody({ rows, name: "  Fanout · x  ", source });
-  assert.deepEqual(created, { name: "Fanout · x", members: rows, source });
+  const created = fanoutBody({ rows, name: "  Fanout · x  ", lastGenerated: "Fanout · x", source });
+  assert.deepEqual(created, { name: "Fanout · x", named: "generated", members: rows, source });
   assert.equal("groupId" in created, false, "a new group is named, not addressed");
 
   const joined = fanoutBody({ rows, into: { id: "g1" }, name: "ignored", source });
   assert.deepEqual(joined, { groupId: "g1", members: rows, source });
   assert.equal("name" in joined, false, "an existing group keeps its own name");
+  assert.equal("named" in joined, false, "and provenance would be a claim about a name we aren't setting");
 });
 
 test("the body carries exactly one of source and cwd, for the same reason", () => {
   const rows = [{ ref: "a/b", count: 1 }];
-  const fresh = fanoutBody({ rows, name: "n", fresh: { cwd: "/w", text: "  go  " } });
-  assert.deepEqual(fresh, { name: "n", members: rows, cwd: "/w", text: "go" });
+  const fresh = fanoutBody({ rows, name: "n", lastGenerated: "n", fresh: { cwd: "/w", text: "  go  " } });
+  assert.deepEqual(fresh, { name: "n", named: "generated", members: rows, cwd: "/w", text: "go" });
   assert.equal("source" in fresh, false);
   const forked = fanoutBody({ rows, name: "n", source: { path: "/p", leafId: "l" } });
   assert.equal("cwd" in forked, false);
   assert.equal("text" in forked, false);
+});
+
+test("provenance is a comparison against the last string pi-web wrote, in all four cases", () => {
+  const rows = [{ ref: "a/b", count: 1 }];
+  const source = { path: "/p", leafId: "l" };
+  const named = (name: string, lastGenerated: string) =>
+    (fanoutBody({ rows, name, lastGenerated, source }) as { named?: string }).named;
+
+  // Untouched, however many times we regenerated it: the field holds our latest string.
+  assert.equal(named("Fanout · retry backoff", "Fanout · retry backoff"), "generated");
+  // Typed over.
+  assert.equal(named("Backoff experiments", "Fanout · retry backoff"), "user");
+  // Typed over, then reverted to our text: the group carries OUR name, so it is ours to remove.
+  // This is the case that distinguishes the comparison from an edit flag, which would say "user".
+  assert.equal(named("Fanout · retry backoff", "Fanout · retry backoff"), "generated");
+  // Fork mode untouched, where we write the field exactly once.
+  assert.equal(named("Fanout · ZULU", "Fanout · ZULU"), "generated");
+  // Whitespace is not authorship: the field is trimmed before it is sent, so it is trimmed here.
+  assert.equal(named("  Fanout · ZULU  ", "Fanout · ZULU"), "generated");
+});
+
+test("with no record of what we wrote, provenance falls to `user` — the safe side", () => {
+  // Absent `lastGenerated` should never claim pi-web named it: the server reads "user" as
+  // survives-when-emptied, which is litter, while a wrong "generated" deletes a name.
+  const body = fanoutBody({ rows: [{ ref: "a/b", count: 1 }], name: "Anything", source: { path: "/p", leafId: "l" } });
+  assert.equal((body as { named?: string }).named, "user");
 });

@@ -326,3 +326,43 @@ mcp-host.ts and the turn-continuation mechanism change.
 5. Is `--system-prompt-snapshot off` accepted together with `--session-id` and `--effort` under `-p`?
 6. Exact wire shapes to replay in the test fakes: the `mcp_message` envelope both ways, image content blocks on
    stream-json user input, and an MCP image result.
+
+---
+
+# As shipped (supersedes the sections above where they differ)
+
+Written before the spike verdict; three things changed once it landed and once
+provider-core defined the seam. The sections above are kept as the reasoning trail, but where
+they disagree with this section, this section is what the code does.
+
+1. **The seam is provider-core's, not the `BridgeEvent` union proposed in §4.** `stream.ts` consumes
+   `ClaudeSessionBridge.runTurn(request, signal): AsyncIterable<ClaudeFrame>`, where `ClaudeFrame` is the
+   validated CLI frame from `types.ts`. The bridge yields parsed frames and ends the iteration; stream.ts
+   builds the pi `AssistantMessage`. Simpler, and it keeps one validation boundary rather than two.
+
+2. **Tool-call correlation is by `tool_use` id, not by the JSON-RPC id.** §1 planned to mint pi's
+   `ToolCall.id` from the `tools/call` request id. That is not available: `stream.ts` creates the pi tool
+   call from the CLI's `tool_use` block, so pi echoes back the CLI's `tool_use` id. And the spike found
+   `tools/call` arrives with a BARE name and no `tool_use` id. So the bridge matches a held call to an
+   announced block by name plus argument equality, with arrival order as the tiebreak
+   (`CliSession.rematch`). This is the name+order correlation §1 hoped to avoid; argument equality makes it
+   exact in every case except two identical calls of one tool in one message, where order decides and either
+   assignment is equivalent.
+
+3. **`MCP_TOOL_TIMEOUT` is 3_600_000, not the 86_400_000 recommended in §2.** The orchestrator set the value
+   after reading the argument. The reasoning in §2 still stands — if the built-in default really is ~27.8 h
+   then this lowers it — but it is one named constant (`DEFAULT_MCP_TOOL_TIMEOUT_MS`) and overridable per
+   bridge, and `heldCallTimeoutMs` is the bound that actually matters.
+
+Also settled by the spike and now in the code: `--allowedTools mcp__pi` is mandatory (without it `dontAsk`
+auto-denies every MCP call and `tools/call` never arrives); a notification must still be answered with the
+dummy `{jsonrpc, result:{}, id:0}`; the MCP image result is flat `{type, data, mimeType}` because the CLI
+converts to the Anthropic source shape itself; and a failed tool is not a failed turn.
+
+Dropped for v1 per the orchestrator: `set_model` and `set_max_thinking_tokens` (a model or effort change
+restarts and folds instead), `sdkMcpServerManifests`, and `tools/list_changed` (a changed tool set is a
+divergence).
+
+**Usage differencing turned out to be unnecessary.** §1 planned to difference the CLI's cumulative
+`modelUsage` / `total_cost_usd`. `parseClaudeFrame` reads the per-message Anthropic passthrough usage
+instead, which is already per-turn, so there is nothing to difference and no cumulative state to keep.

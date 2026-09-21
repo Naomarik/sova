@@ -515,3 +515,21 @@ test("index is ignored for a session already in the group: assign never reorders
   assert.deepEqual(assignSession("c", "g1", undefined, 0), { ok: true });
   assert.deepEqual(membersOf("g1"), [{ id: "a" }, { id: "b" }, { id: "c" }], "PATCH {order} is the reposition, not assign");
 });
+
+test("a member's unknown fields travel with it between groups", () => {
+  // The forward-compat case passThrough exists for: a newer build's per-member field must not be
+  // dropped by an older build moving that member.
+  reset({
+    version: 1,
+    groups: [
+      { id: "g1", name: "One", createdAt: "2026-01-01T00:00:00.000Z", members: [{ id: "a", label: "opus", pinned: true, note: { by: "newer build" } }] },
+      { id: "g2", name: "Two", createdAt: "2026-01-01T00:00:00.000Z" },
+    ],
+    assignments: { a: "g1" },
+  });
+  assignSession("a", "g2");
+  assert.deepEqual(onDisk().groups[1]!.members, [{ id: "a", label: "opus", pinned: true, note: { by: "newer build" } } as never]);
+  // and an explicit label change keeps them too
+  assignSession("a", "g1", null);
+  assert.deepEqual(onDisk().groups[0]!.members, [{ id: "a", pinned: true, note: { by: "newer build" } } as never]);
+});

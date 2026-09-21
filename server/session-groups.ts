@@ -338,19 +338,23 @@ export function assignSession(sessionId: string, groupId: string | null, label?:
       else if (label !== undefined) member.label = label;
       return { ok: true };
     }
-    let carried: string | undefined;
+    // The whole member entry travels, not just its label: anything a newer build wrote on it
+    // (see passThrough) would otherwise be dropped by a move, which is the very case that work
+    // exists to cover.
+    let carried: GroupMember | undefined;
     for (const g of store.groups) {
       const at = g.members.findIndex((m) => m.id === sessionId);
       if (at < 0) continue;
-      carried ??= g.members[at]!.label;
+      carried ??= g.members[at]!;
       g.members.splice(at, 1);
     }
     if (!group) {
       delete store.assignments[sessionId];
       return { ok: true, ...(dissolveIfEmptied(store, from) ? { dissolved: true as const } : {}) };
     }
-    const kept = label === undefined ? carried : (label ?? undefined);
-    const member = { id: sessionId, ...(kept ? { label: kept } : {}) };
+    const member: GroupMember = { ...carried, id: sessionId };
+    if (label === null) delete member.label; // an explicit clear
+    else if (label !== undefined) member.label = label; // an explicit set; undefined keeps the carried one
     const at = index === undefined ? group.members.length : Math.min(index, group.members.length);
     group.members.splice(at, 0, member);
     store.assignments[sessionId] = group.id;

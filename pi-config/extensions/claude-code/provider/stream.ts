@@ -197,7 +197,15 @@ export function streamClaudeCode(
 
 			if (options?.signal?.aborted) throw abortError();
 			if (output.stopReason === "pending") {
-				// Tool calls without a terminal frame still end the message with toolUse.
+				// PRIMARY TOOL PATH, not a fallback: one CLI turn spans several pi
+				// assistant messages, so a message that calls tools ends with the
+				// iterator simply ending — the bridge is holding the CLI turn open
+				// on the tools/call, and no terminal `result` frame is expected
+				// until the whole CLI turn finishes. Do NOT tighten this into an
+				// error; that would break every tool-using turn. Pinned by
+				// "a tool turn with no terminal result ends as toolUse" in
+				// stream.test.ts. Only a message with no tool call and no stop
+				// reason is genuine protocol corruption.
 				if (sawToolCall) output.stopReason = "toolUse";
 				else throw new ClaudeProtocolError("Claude ended the turn without a stop reason");
 			}

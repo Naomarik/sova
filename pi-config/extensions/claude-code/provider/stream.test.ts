@@ -318,3 +318,28 @@ test("a compaction request with no tools streams normally", async () => {
 	assert.deepEqual(state.request?.tools, []);
 	assert.equal(state.request?.systemPrompt, undefined);
 });
+
+test("a tool turn with no terminal result ends as toolUse: the CLI turn is still open", async () => {
+	// The primary tool path. The bridge holds the CLI turn open across the
+	// held tools/call, so the iterator just ends after the tool block and no
+	// `result` frame arrives until the whole CLI turn finishes, several
+	// runTurn calls later.
+	const frames = load("tool-turn-open.ndjson");
+	assert.equal(frames.some((frame) => frame.type === "result"), false, "the fixture must not carry a terminal result");
+	const events = await collect(streamClaudeCode(fakeBridge(frames).bridge, model(), context()));
+	const terminal = last(events);
+	assert.equal(terminal.type, "done");
+	assert.equal(terminal.type === "done" && terminal.reason, "toolUse");
+	assert.equal(finalMessage(terminal).stopReason, "toolUse");
+
+	// Same turn from a bridge that also sends no message_delta/message_stop:
+	// the stop reason then comes only from the emitted tool call. Turning that
+	// into a protocol error would break every tool-using turn.
+	const bare = frames.filter((frame) => !(frame.type === "stream" && (frame.event.type === "message_delta" || frame.event.type === "message_stop")));
+	const bareEvents = await collect(streamClaudeCode(fakeBridge(bare).bridge, model(), context()));
+	const bareTerminal = last(bareEvents);
+	assert.equal(bareTerminal.type, "done");
+	assert.equal(bareTerminal.type === "done" && bareTerminal.reason, "toolUse");
+	const call = bareEvents.find((event) => event.type === "toolcall_end");
+	assert.equal(call?.type === "toolcall_end" && call.toolCall.name, "read");
+});

@@ -229,11 +229,20 @@ POST /api/session-groups/fanout
     make fanning out impossible. This field is advisory about one downstream flag, not
     load-bearing like `members` or `source`. Where we know least about which case we are in, we
     take the side whose error is litter.
+  - **A user-named fanout group is pinned at birth: the server writes `autoDissolve: false`
+    explicitly, never leaves it absent.** Absent means *this record predates the field*, which
+    the legacy rule reads as *`seed` implies dissolution* — and a user-named fanout group **has**
+    a seed, so leaving the flag off would make it indistinguishable on disk from a pre-flag
+    fanout group, and a later migration could re-infer dissolution and delete the name. That is
+    the adoption bug's exact mechanism, applied before the fact rather than after: the case that
+    must survive is the one that gets written down.
   - **Two absences point opposite ways and must not be reconciled.** Absent `named`
     describes a **client** predating the field, where a user-named group is what is at risk, so
     absence means *survives*. Absent `SessionGroup.autoDissolve` (§14) describes a **record**
     predating that field, a population containing no user-named group, so absence falls back to
-    `seed`. Different populations, one rule underneath: litter beats loss.
+    `seed`. Different populations, one rule underneath: litter beats loss. **There is no third
+    population** — a user-named group written from here on always carries an explicit `false`,
+    which is what the rule above exists to guarantee.
   - **The server never re-derives the default to check the claim** — that would put a second
     generator of the string in the server, the failure rejected above. Precedent: `source.leafId`,
     where the client reports what it showed and the server tests it against the world rather than

@@ -82,6 +82,11 @@ Claude defaults:
   after any operator rules so the configured server's tools do not prompt or
   get denied. Names are restricted to `[A-Za-z0-9_-]` and commands/args/env to
   plain strings; anything else fails the worker before launch.
+- `env` adds variables to Claude's own process, merged over the inherited
+  environment after the nested-session markers are dropped. It is for settings
+  the CLI reads only from its environment: `MCP_TOOL_TIMEOUT` (milliseconds)
+  bounds every MCP tool call, and a per-server `env` in `mcp.json` reaches that
+  server, not Claude. Names and values are validated like server `env`.
 
 Optional policy is explicit and validated before starting any batch member:
 

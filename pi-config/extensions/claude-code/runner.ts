@@ -61,6 +61,13 @@ export interface ClaudeSpawnOptions extends SpawnOptions {
 	allowedTools?: string[];
 	systemPrompt?: string;
 	executable?: string;
+	/**
+	 * Extra variables for Claude's own process, merged over the inherited
+	 * environment. For settings the CLI reads only from its environment and not
+	 * from a flag or the MCP config — `MCP_TOOL_TIMEOUT` bounds every MCP tool
+	 * call, and a per-server `env` in mcp.json reaches the server, not Claude.
+	 */
+	env?: Record<string, string>;
 	/** @internal Directory for the private system-prompt file. Default os.tmpdir(). */
 	tmpDir?: string;
 	/** Defaults to bypassPermissions; explicit restrictive modes are preserved. */
@@ -78,12 +85,16 @@ export interface ClaudeSpawnOptions extends SpawnOptions {
 export type ClaudeRunnerHandlers = WorkerHandlers;
 const MCP_SERVER_NAME = /^[A-Za-z0-9_-]+$/;
 const isPlain = (value: unknown): value is string => typeof value === "string" && !!value.trim() && !/[\x00-\x1f\x7f]/.test(value);
+/** Environment blocks are passed verbatim to a child, so names must be shell-legal and values real strings. */
+function validEnv(env: unknown): env is Record<string, string> {
+	return !!env && typeof env === "object" && !Array.isArray(env)
+		&& Object.entries(env).every(([name, value]) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(name) && typeof value === "string");
+}
 /** mcp.json entries are written verbatim, so they must be plain strings only. */
 function validMcpServers(entries: [string, unknown][]): entries is [string, { command: string; args: string[]; env?: Record<string, string> }][] {
 	return entries.every(([name, spec]) => MCP_SERVER_NAME.test(name) && !!spec && typeof spec === "object"
 		&& isPlain((spec as any).command) && Array.isArray((spec as any).args) && (spec as any).args.every((a: unknown) => typeof a === "string")
-		&& ((spec as any).env === undefined || (!!(spec as any).env && typeof (spec as any).env === "object" && !Array.isArray((spec as any).env)
-			&& Object.entries((spec as any).env).every(([k, v]) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(k) && typeof v === "string"))));
+		&& ((spec as any).env === undefined || validEnv((spec as any).env)));
 }
 interface Deferred<T> { promise: Promise<T>; resolve: (value: T) => void }
 function deferred<T>(): Deferred<T> {
@@ -278,6 +289,7 @@ export class ClaudeRunner implements Worker {
 		args.push("--tools", (o.tools ?? ["Bash", "Read", "Edit", "Write", "Glob", "Grep"]).join(","));
 		const mcpServers = Object.entries(o.mcpServers ?? {});
 		if (!validMcpServers(mcpServers)) { this.fail("Invalid mcpServers: names must be [A-Za-z0-9_-], commands/args/env plain strings"); return; }
+		if (o.env !== undefined && !validEnv(o.env)) { this.fail("Invalid env: names must be [A-Za-z_][A-Za-z0-9_]*, values strings"); return; }
 		// Non-bypass modes would prompt (or, without a host, deny) every MCP tool
 		// call; a server the parent configured is trusted like the built-ins.
 		const allowedTools = [...(o.allowedTools ?? []), ...(permissionMode === "bypassPermissions" ? [] : mcpServers.map(([name]) => `mcp__${name}`))];
@@ -315,6 +327,8 @@ export class ClaudeRunner implements Worker {
 			// do not inherit Claude's nested-session markers from the host shell.
 			const env = { ...process.env };
 			delete env.CLAUDECODE; delete env.CLAUDE_CODE_ENTRYPOINT;
+			// Last, so a caller's variable is what the CLI sees; validated above.
+			Object.assign(env, o.env);
 			const spawnOptions = { cwd: o.cwd, shell: false, detached: process.platform !== "win32", env, stdio: ["pipe", "pipe", "pipe"] };
 			this.proc = (o.spawnImpl ?? spawn)(o.executable ?? "claude", args, spawnOptions);
 		} catch (error) { this.fail(`Spawn failed: ${String(error)}`); return; }

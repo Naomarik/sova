@@ -813,6 +813,33 @@ test("mcpServers become a private mcp.json passed by path that outlives startup,
 	assert.deepEqual(readdirSync(tmp), []);
 });
 
+test("env reaches Claude's own process, wins over the inherited value, and fails closed when malformed", async (t) => {
+	// MCP_TOOL_TIMEOUT is only read from the CLI's environment: neither a flag nor
+	// the per-server mcp.json env can set it.
+	process.env.PI_CLAUDE_ENV_TEST = "inherited";
+	t.after(() => { delete process.env.PI_CLAUDE_ENV_TEST; });
+	const f = fixture({ env: { MCP_TOOL_TIMEOUT: "630000", PI_CLAUDE_ENV_TEST: "override" } }); cleanup(t, f);
+	await tick();
+	assert.equal(f.spawnOptions.env.MCP_TOOL_TIMEOUT, "630000");
+	assert.equal(f.spawnOptions.env.PI_CLAUDE_ENV_TEST, "override", "the caller's value wins over the inherited one");
+	assert.equal(f.spawnOptions.env.PATH, process.env.PATH, "the rest of the environment is still inherited");
+	assert.ok(!f.argv.some((a) => a.includes("630000")), "environment never reaches the process list");
+
+	// Nested-session markers stay deleted unless the caller names them itself.
+	process.env.CLAUDECODE = "1";
+	t.after(() => { delete process.env.CLAUDECODE; });
+	const plain = fixture({}); cleanup(t, plain);
+	await tick();
+	assert.equal(plain.spawnOptions.env.CLAUDECODE, undefined);
+
+	for (const env of [{ "A B": "1" }, { "1A": "x" }, { A: 1 }, { A: undefined }, ["A=1"], null] as any[]) {
+		const bad = fixture({ env });
+		await bad.runner.whenClosed;
+		assert.equal(bad.argv.length, 0, JSON.stringify(env));
+		assert.match(bad.runner.error!, /Invalid env/);
+	}
+});
+
 test("mcpServers that cannot be written verbatim fail closed before launch", async (t) => {
 	const { mkdtempSync, readdirSync, rmSync } = await import("node:fs");
 	const { tmpdir } = await import("node:os");

@@ -109,3 +109,57 @@ test("an unknown group is a 404 and an empty one a 400, through the real store",
   const r = await promptGroup(empty.group.id, "hi", undefined, realBatchDeps);
   assert.ok(!r.ok && r.status === 400);
 });
+
+// --- fanout landing in a HAND-MADE group, through the real store -----------------------------
+// The case the autoDissolve decoupling exists for, pinned end to end rather than inherited from
+// the store's own unit tests: a group the USER named adopts a fanout's lineage, and then keeps
+// standing when its last member leaves.
+
+test("a hand-made group adopts a fanout's seed, and SURVIVES being emptied", async () => {
+  const { runFanout, realFanoutDeps } = await import("./fanout");
+  const { readGroup } = await import("./session-groups");
+
+  const mine = createGroup("Home"); // the user typed this name
+  assert.ok(mine.ok);
+  assert.equal(mine.group.seed, undefined);
+  assert.equal(mine.group.autoDissolve, undefined, "a hand-made group is never marked dissolvable");
+
+  // Real store, real assign, real adoption; only the SDK/disk halves are faked, since creating a
+  // member would otherwise need a runtime.
+  let n = 0;
+  const created: string[] = [];
+  const r = await runFanout(
+    { members: [{ ref: "anthropic/opus", count: 1 }], source: { path: "/sessions/x.jsonl", leafId: "e9" }, groupId: mine.group.id },
+    {
+      ...realFanoutDeps,
+      knownRefs: async () => new Set(["anthropic/opus"]),
+      resolveSource: () => "/sessions/x.jsonl",
+      sourceHead: async () => ({ version: 3, leafId: "e9" }),
+      live: () => false,
+      streaming: () => false,
+      foreignWriter: () => false,
+      misconfigured: () => false,
+      fork: async () => {
+        const path = session(`01234567-89ab-7cde-8f01-2345678900c${++n}`);
+        created.push(path);
+        return path;
+      },
+    },
+  );
+
+  assert.ok(r.ok, "the fanout landed");
+  assert.equal(r.result.group.id, mine.group.id, "into the EXISTING group");
+  assert.equal(r.result.group.name, "Home", "which keeps the name the user typed");
+  assert.deepEqual(r.result.group.seed, { parentSessionPath: "/sessions/x.jsonl", leafId: "e9" }, "and gains the marker's datum");
+  // Recorded as an explicit false, not left absent: absent + seed is indistinguishable on disk
+  // from a pre-flag fanout group, and the legacy rule would then delete it.
+  assert.equal(readGroup(mine.group.id)?.autoDissolve, false, "and is explicitly marked NOT dissolvable");
+
+  // Now empty it: the member the fanout added is the only one.
+  const memberId = r.result.created[0]!.id;
+  const out = assignSession(memberId, null);
+  assert.deepEqual(out, { ok: true }, "no dissolved flag");
+  const after = readGroup(mine.group.id);
+  assert.equal(after?.name, "Home", "the group the user named is still there, empty");
+  assert.deepEqual(after?.members, []);
+});

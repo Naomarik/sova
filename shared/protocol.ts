@@ -347,7 +347,8 @@ export interface UploadResult {
 //                                  seed appends, a DIFFERING seed is 400 { error, code: "seed-conflict" } with
 //                                  nothing created, and an unknown id is 404 with nothing created.
 //                                  400 bad name, empty members, a count outside 1–9, an unknown ref, both or
-//                                  neither of source/cwd, text or cwd in fork mode, blank text in fresh mode;
+//                                  neither of name/groupId, both or neither of source/cwd, text or cwd in fork
+//                                  mode, blank text in fresh mode;
 //                                  404 a source path that resolves to no session (the subject doesn't exist —
 //                                  different from "exists but not right now"); 409 { refused: [BatchRefusal] }
 //                                  with exactly ONE entry, the source: tui-live, mid-turn, busy, config,
@@ -591,7 +592,11 @@ export interface FanoutMemberSpec {
 
 /** POST /api/session-groups/fanout. Exactly one of `source` (fork mode) and `cwd` (fresh mode). */
 export interface FanoutRequest {
-  name: string; // 1–GROUP_NAME_MAX
+  /** Name for a NEW group, 1–GROUP_NAME_MAX. Exactly one of `name` and `groupId` is required:
+      with `name` the route creates the group (and pi-web owns it, so `autoDissolve` is set); with
+      `groupId` it lands in an existing one, which keeps its own name. Sending both is a 400 —
+      ignoring one of them silently would look like a rename that did nothing. */
+  name?: string;
   members: FanoutMemberSpec[]; // array order IS pane order
   /** Fork mode: branch every member from this entry of this session. `leafId` is the leaf the
       dialog SHOWED the user, not a request for the server to find the current one. */

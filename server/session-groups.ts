@@ -301,14 +301,21 @@ export function readGroup(id: string): SessionGroup | null {
 /**
  * Give a group the seed of the fanout landing in it. Only ever called for a group that has none
  * (the caller checks, because a DIFFERING seed is a refusal rather than an overwrite): one group
- * carries one seed, since the fork marker reads it. Adoption is honest about its cost — the group
- * becomes auto-dissolving from here, the user's chosen name included.
+ * carries one seed, since the fork marker reads it.
+ *
+ * Adoption also RECORDS `autoDissolve: false`, and that is not belt-and-braces. The legacy rule
+ * reads an absent flag plus a seed as "a fanout group written before the flag existed", and an
+ * adopted group looks exactly like that from disk — seed present, flag absent. Leaving it
+ * implicit would delete a group the user named the moment its last member left, which is the
+ * whole thing the flag was split out to prevent. Only ever written when absent, so an explicit
+ * value already there still wins.
  */
 export function adoptGroupSeed(id: string, seed: GroupSeed): SessionGroup | null {
   return edit((store) => {
     const group = store.groups.find((g) => g.id === id);
     if (!group) return null;
     group.seed ??= seed; // never overwrite: the caller has already refused a mismatch
+    group.autoDissolve ??= false; // the user named this group; lineage doesn't change that
     return { ...group, members: group.members.map((m) => ({ ...m })) };
   });
 }

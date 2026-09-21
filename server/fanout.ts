@@ -274,8 +274,13 @@ export function planMembers(members: { ref: string; count: number }[]): PlannedM
 
 /** Validate the request body. Pure except for the ref list, so every 400 is testable. */
 export async function planFanout(body: FanoutRequest, deps: FanoutDeps): Promise<{ ok: true; name: string; planned: PlannedMember[] } | { ok: false; error: string }> {
-  const name = cleanGroupName(body.name);
-  if (!name) return { ok: false, error: `name must be 1–${GROUP_NAME_MAX} characters` };
+  // Exactly one of name and groupId, the same shape as source XOR cwd below: a client sending
+  // both is asking for a rename that this route will not do, and silence would look like one.
+  if (body.groupId !== undefined && (typeof body.groupId !== "string" || !body.groupId)) return { ok: false, error: "groupId must be a group id" };
+  const intoExisting = body.groupId !== undefined;
+  if (intoExisting === (body.name !== undefined)) return { ok: false, error: "exactly one of name or groupId is required" };
+  const name = intoExisting ? "" : cleanGroupName(body.name);
+  if (name === null) return { ok: false, error: `name must be 1–${GROUP_NAME_MAX} characters` };
   if (!Array.isArray(body.members) || body.members.length === 0) return { ok: false, error: "members must be a non-empty array of { ref, count }" };
   for (const m of body.members) {
     if (typeof m?.ref !== "string" || !m.ref.includes("/")) return { ok: false, error: "each member needs a ref of the form provider/model" };
@@ -294,7 +299,6 @@ export async function planFanout(body: FanoutRequest, deps: FanoutDeps): Promise
     if (typeof body.cwd !== "string" || !body.cwd) return { ok: false, error: "cwd must be an absolute path" };
     if (typeof body.text !== "string" || !body.text.trim()) return { ok: false, error: "fresh mode needs a first message" };
   }
-  if (body.groupId !== undefined && (typeof body.groupId !== "string" || !body.groupId)) return { ok: false, error: "groupId must be a group id" };
   const known = await deps.knownRefs();
   const unknown = body.members.find((m) => !known.has(m.ref));
   if (unknown) return { ok: false, error: `No such model: ${unknown.ref}` };

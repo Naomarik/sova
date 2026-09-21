@@ -281,7 +281,7 @@ test("groupId: a seedless group ADOPTS this fanout's seed and takes the members"
       return { id, name: "Handmade", createdAt: "2026-09-22T00:00:00.000Z", members: [{ id: "old" }], seed };
     },
   });
-  const r = await runFanout(forkBody({ groupId: "g-existing", members: [{ ref: "anthropic/opus", count: 2 }] }), d);
+  const r = await runFanout(forkBody({ name: undefined, groupId: "g-existing", members: [{ ref: "anthropic/opus", count: 2 }] }), d);
   assert.ok(r.ok);
   assert.deepEqual(adopted, [["g-existing", THIS_SEED]], "the group gains this fanout's lineage");
   assert.equal(r.result.group.id, "g-existing", "the EXISTING group is returned, not a new one");
@@ -300,7 +300,7 @@ test("groupId: a MATCHING seed just appends, adopting nothing", async () => {
       return null;
     },
   });
-  const r = await runFanout(forkBody({ groupId: "g-existing", members: [{ ref: "anthropic/opus", count: 1 }] }), d);
+  const r = await runFanout(forkBody({ name: undefined, groupId: "g-existing", members: [{ ref: "anthropic/opus", count: 1 }] }), d);
   assert.ok(r.ok);
   assert.deepEqual(adopted, [], "nothing to adopt: it already has this seed");
   assert.equal(r.result.group.id, "g-existing");
@@ -310,7 +310,7 @@ test("groupId: a MATCHING seed just appends, adopting nothing", async () => {
 
 test("groupId: a DIFFERING seed is refused with seed-conflict, and nothing is created", async () => {
   const d = deps({ group: () => existing({ seed: { parentSessionPath: "/sessions/--tmp--/other.jsonl", leafId: "z9" } }) });
-  const r = await runFanout(forkBody({ groupId: "g-existing" }), d);
+  const r = await runFanout(forkBody({ name: undefined, groupId: "g-existing" }), d);
   assert.ok(!r.ok && r.status === 400);
   assert.equal(r.code, "seed-conflict");
   assert.match(r.error, /one fork point/);
@@ -321,7 +321,7 @@ test("groupId: a DIFFERING seed is refused with seed-conflict, and nothing is cr
 
 test("groupId: an unknown group is 404, and nothing is created", async () => {
   const d = deps({ group: () => null });
-  const r = await runFanout(forkBody({ groupId: "no-such-group" }), d);
+  const r = await runFanout(forkBody({ name: undefined, groupId: "no-such-group" }), d);
   assert.ok(!r.ok && r.status === 404);
   assert.deepEqual(d.rec.forked, []);
   assert.deepEqual(d.rec.groups, []);
@@ -337,7 +337,7 @@ test("groupId: FRESH mode never adopts and never conflicts, and leaves the targe
       return null;
     },
   });
-  const r = await runFanout({ name: "n", members: [{ ref: "anthropic/opus", count: 1 }], cwd: "/work", text: "go", groupId: "g-existing" }, d);
+  const r = await runFanout({ members: [{ ref: "anthropic/opus", count: 1 }], cwd: "/work", text: "go", groupId: "g-existing" }, d);
   assert.ok(r.ok, "fresh mode has no seed of its own, so there is nothing to conflict with");
   assert.deepEqual(adopted, []);
   assert.deepEqual(r.result.group.seed, other, "the target keeps the seed it had");
@@ -346,9 +346,21 @@ test("groupId: FRESH mode never adopts and never conflicts, and leaves the targe
 
 test("groupId must be a non-empty string", async () => {
   for (const bad of [7, "", null]) {
-    const r = await planFanout(forkBody({ groupId: bad as never }), deps());
+    const r = await planFanout(forkBody({ name: undefined, groupId: bad as never }), deps());
     if (bad === null) continue; // null is JSON's absent-ish; the route rejects non-strings
     assert.ok(!r.ok, JSON.stringify(bad));
     assert.match(r.error, /groupId/);
   }
+});
+
+test("exactly one of name and groupId: both is a 400, neither is a 400", async () => {
+  // Silently ignoring `name` when landing in an existing group would read as a rename that
+  // didn't take — so a client asking for both is told, rather than half-served.
+  const both = await planFanout(forkBody({ groupId: "g-existing" }), deps());
+  assert.ok(!both.ok && /exactly one of name or groupId/.test(both.error));
+  const neither = await planFanout(forkBody({ name: undefined }), deps());
+  assert.ok(!neither.ok && /exactly one of name or groupId/.test(neither.error));
+  // and a name is not validated when it isn't being used
+  const ok = await planFanout(forkBody({ name: undefined, groupId: "g-existing" }), deps());
+  assert.ok(ok.ok, "landing in an existing group needs no name at all");
 });

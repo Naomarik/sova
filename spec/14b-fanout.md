@@ -224,7 +224,14 @@ POST /api/session-groups/fanout
     at all, and the negative form silently turns that into a claim. This is the enum's one
     exposure and the reason the check is written down rather than left to the absence rule (§14
     "The dangerous state must be the one a check has to assert").
-  - **Absent, or any unrecognised value, behaves as `"user"`** and sets nothing. A malformed
+  - **Absent, or any unrecognised value, behaves as `"user"`** and sets nothing — and with an
+    enum this is **automatic rather than careful**: `named === "generated"` is exact, so
+    `undefined`, `"Generated"`, `1`, `{}` and every other malformed value fall to the safe side
+    by construction. This is the enum's one advantage over a boolean that survived scrutiny. A
+    boolean's natural check is truthiness, and `if (nameIsGenerated)` is **true** for `"false"`,
+    `"yes"`, `1` and `{}` — so a body carrying `{"nameIsGenerated": "false"}` would delete a name
+    the user typed. A boolean is safe here only with `=== true`, which is a rule someone must
+    follow; the enum needs no rule. A malformed
     value must not fail the whole fanout — `named: "Generated"` with a capital G would otherwise
     make fanning out impossible. This field is advisory about one downstream flag, not
     load-bearing like `members` or `source`. Where we know least about which case we are in, we

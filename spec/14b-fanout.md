@@ -142,9 +142,14 @@ Turns start together, so one provider may answer some members with 429. pi-web d
   the shared-turn line reads "5 members, each starting empty. Every shared turn is re-sent 5
   times as they grow."
 - **The rate-limit line is always shown**, not just when it is likely. Members start their first
-  turn at the same instant and go to the same provider; some of them will be refused with 429 and
-  will say so in their own pane. We do not stagger the starts, and a preview that hid that would
-  be promising an ordering we don't implement.
+  turn as close to together as the server can accept them, and they go to the same provider; some
+  will be refused with 429 and will say so in their own pane. We do not stagger the starts on
+  purpose, and a preview that hid that would be promising an ordering we don't implement.
+  "As close to together as the server can accept them" is the honest form, and it carries a
+  requirement: **the acceptance phase is concurrent, not a loop.** Accepting members one after
+  another means the batch costs the *sum* of N runtime opens — seconds, on cold members — before
+  the composer clears, and it staggers the starts by that same sum. Neither is a rate-limit
+  warning's problem; both are the user's.
 
 ## The route
 

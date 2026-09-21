@@ -308,7 +308,10 @@ member at once.
   `plus` trigger is absent rather than disabled" means on the wire, not just in the composer.
 - **What comes back when it works**: `200 BatchPromptResult {sent: string[], failed: BatchRefusal[]}`.
 - **`sent` means accepted, not answered, and the route does not wait for the turns.** It returns
-  as soon as every member's prompt is queued. Waiting would contradict the two things this
+  as soon as every member's prompt is queued, and **it accepts them concurrently.** Accepting in
+  sequence would make a press of Send cost the sum of every member's runtime open before the
+  composer clears — the one thing the acceptance semantics were meant to avoid, reintroduced a
+  layer down. Waiting would contradict the two things this
   surface is built on: turns **start together** (§14b's rate-limit note exists because they do),
   and the group composer **clears once the server accepts**. A request that resolved only when
   five full turns had finished would hold the composer for minutes and serialize the very thing

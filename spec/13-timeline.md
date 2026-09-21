@@ -85,7 +85,7 @@ the kinds are the whole vocabulary — `input`, `chapter`, `marker`, `density`, 
 |---|---|---|---|---|
 | `input` | One message you sent, clamped to two lines (`.timeline-title`, full text in `title`) | Solid, muted | Yes | Its own message |
 | `chapter` | An outline topic, at its anchored message's time (`.timeline-chapter`, one line, ellipsized; `.outline-hash` for a `manual` topic) | Hollow, larger | Yes | The anchored message |
-| `marker` | A notable moment, in regular weight ink-2 | Hollow, small | Yes | The entry it happened on |
+| `marker` | A notable moment, in regular weight ink-2 | Hollow, small | Yes | The entry it happened on, when there is one — a rewind marker has none, so it is text |
 | `density` | What the agent did after the input above it | — | — | — |
 | `gap` | A stretch over the idle threshold | — | — | — |
 
@@ -161,6 +161,21 @@ definition, the one the abandoned turns are not on — and the marker is built f
 carries ids, not text. Inputs already shows the abandoned turns for the one turn after a rewind,
 with the text; the axis's job is to record that the branch moved.
 
+**A marker with no single message behind it is text, not a button.** The rewind marker is the
+case that exists today: the `pi-web-rewind` entry renders as nothing in the transcript, and the
+message the rewind names is the one it took away, off the active branch by construction — so a
+button there would only ever reach "That message isn't in the transcript on screen." The row
+keeps its clock, its dot and its copy ("Rewound to an earlier message") and drops the button:
+`span.timeline-body.timeline-body-static`, no `Jump to this message: ` prefix, no pointer, no
+accent on hover. It is the precedent the density and gap rows already set — nothing to land on,
+so nothing to press — and it differs from them in the one way that matters: a rewind happened at
+a time, on the axis, so it keeps the clock and the dot they don't have. A rewind is something the
+axis *reports*, not a place you can go.
+
+Every other marker still jumps to the entry it happened on, and a row whose message is gone from
+the transcript — a chapter whose anchor was compacted away — still has a button and still says so
+when it can't land. That is a jump that failed, not a row with nowhere to go.
+
 Markers are ink-2 at regular weight. They are the axis reporting, not the session speaking.
 
 ### The state line
@@ -199,6 +214,8 @@ the transcript and tints for ~1.5s (`.entry-jumped`, `JUMP_HIGHLIGHT_MS`).
   failure.
 - **Density and gap rows aren't buttons.** They describe a stretch, and a stretch has no one
   message to land on. The input above the density line is the landing, and it is one row away.
+  The rewind marker isn't a button either, for the same reason and with its clock and dot kept
+  (above, "Markers").
 
 ## Watch mode
 
@@ -225,6 +242,9 @@ with its own quirks, break `Ctrl+F`, and buy nothing measurable.
   screen reader announces the position and the count, which is the axis's whole claim.
 - **Each jump button opens with a visually hidden "Jump to this message: "**, so its name says
   what it does, not just what it contains — the Inputs rule, and the same string.
+- **A row that can't be jumped to isn't a button.** The rewind marker is a `span`, so a screen
+  reader reads it as the line of text it is and it never appears in the tab order — a control
+  that could only fail is worse announced than absent.
 - **Times are paired.** The visible clock is the 24-hour mono form (§3 timestamps); the `title`
   on `.timeline-time` carries the absolute time *and* the relative one ("2026-09-19T14:06:11Z ·
   2d ago"), so neither reading is lost. See §7 for why the clock leads here and the relative form
@@ -278,7 +298,7 @@ with its own quirks, break `Ctrl+F`, and buy nothing measurable.
 | The list | `ol.timeline` (named by `aria-label`) · `li.timeline-row[data-kind="input\|chapter\|marker\|density\|gap"]` (+ `.timeline-row-flagged`) |
 | Rail | `.timeline-dot` (`aria-hidden`); the line itself is `.timeline-row::before`, trimmed at the first and last row |
 | Time | `.timeline-time` (mono, right-aligned) `.timeline-time-flagged` |
-| Row body | `button.timeline-body` (the whole hit area and the jump) `.timeline-title` (2-line clamp) `.timeline-chapter` (+ `.outline-hash`) `.timeline-meta` |
+| Row body | `button.timeline-body` (the whole hit area and the jump) · `span.timeline-body.timeline-body-static` (a marker with nothing to land on) `.timeline-title` (2-line clamp) `.timeline-chapter` (+ `.outline-hash`) `.timeline-meta` |
 | Between rows | `.timeline-gap` |
 | Above the list | `.timeline-state` |
 | Borrowed | `.visually-hidden` (the jump prefix) · `.usage-note.text-muted` (the foot) · `.empty.subagents-empty` (the empty state) · `.entry-jumped` (the landing tint, in the transcript) · `.outline-explained-open` (the strip's `Open Timeline` button, §10) |

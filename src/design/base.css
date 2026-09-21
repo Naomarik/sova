@@ -3399,9 +3399,12 @@ a.chip:hover { color: var(--color-ink); border-color: var(--color-border-strong)
   cursor: pointer;
   border-radius: var(--r-sm);
 }
-.timeline-body:hover .timeline-title,
-.timeline-body:hover .timeline-chapter { color: var(--color-accent); }
+.timeline-body:not(.timeline-body-static):hover .timeline-title,
+.timeline-body:not(.timeline-body-static):hover .timeline-chapter { color: var(--color-accent); }
 .timeline-body:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+/* A marker with no single message behind it (a rewind) keeps the body's anatomy
+   and loses its affordance: same box, no pointer, no accent on hover. */
+.timeline-body-static { cursor: default; }
 .timeline-title {
   display: -webkit-box;
   -webkit-box-orient: vertical;

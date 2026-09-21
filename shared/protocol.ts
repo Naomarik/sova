@@ -473,6 +473,12 @@ export interface AgentsInsight {
 export interface OutlineTopic {
   id: string; heading: string; bullets: string[]; at: number; manual: boolean;
   entryId: string | null; // anchor → TranscriptItem id to scroll to
+  /** The anchored message's own timestamp (ms), as the outline snapshot recorded it. This is the
+      Timeline's chapter clock: `at` is when the summarizer last touched the topic, this is when the
+      conversation did, and unlike the transcript row it survives the anchor being compacted off the
+      branch. Absent from older servers, and on topics the live overlay invented (it has headings
+      only), which is when the timeline falls back to the summary's own time and says so. */
+  anchorAt?: number;
 }
 export interface SessionOutline {
   now: string; overall: string; lastHeading: string | null;
@@ -483,6 +489,16 @@ export interface SessionOutline {
 export interface CompactionInfo {
   id: string; timestamp: string; tokensBefore: number | null; summary: string;
   readFiles: string[]; modifiedFiles: string[];
+}
+/** One rewind on the active branch: the invisible `pi-web-rewind` entry pi-web appends after
+    navigating the tree (server/chat-manager.ts). Ids only — the turns it abandoned are, by
+    definition, not on the branch a reader can walk — so a timeline marker can say a rewind
+    happened and when, never what it took back. */
+export interface RewindInfo {
+  id: string; // the marker entry's own id
+  timestamp: string; // its ISO stamp
+  targetId: string; // the user entry the chat rewound to ("" if the write carried none)
+  fromLeafId: string; // the leaf it was on before ("" when the session had none)
 }
 /** Where a model's tokens were spent: the main thread, plain subagents, or team members. */
 export type SpendOrigin = "main" | "subagents" | "team";
@@ -542,6 +558,9 @@ export interface SessionSkills {
 export interface SessionInsight {
   outline: SessionOutline | null; // null: no topic-outline entries on the active branch
   compactions: CompactionInfo[]; // active branch, oldest first
+  /** The branch's rewinds, oldest first — the invisible markers pi-web leaves when the chat goes
+      back before a message. Absent when the session has none, or from an older server. */
+  rewinds?: RewindInfo[];
   teams: TeamInfo[]; // live-joined when the session is running, else history
   /** This session's own subagent workers, from its live record (empty when it isn't live, or
       absent from an older server). The nested subagents pane lists these. */

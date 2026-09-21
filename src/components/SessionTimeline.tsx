@@ -1,5 +1,5 @@
 import { createSignal, For, onCleanup, Show } from "solid-js";
-import type { SessionOutline, TranscriptItem } from "../../shared/protocol";
+import type { RewindInfo, SessionOutline, TranscriptItem } from "../../shared/protocol";
 import { clockTime, relativeTime } from "../lib/format";
 import { jumpToEntry } from "../lib/jump";
 import { absoluteTime } from "../lib/spend";
@@ -26,13 +26,15 @@ export function SessionTimeline(props: {
   /** The shared transcript read, from the pane; null until the first load settles. */
   items: TranscriptItem[] | null;
   outline: SessionOutline | null;
+  /** The branch's rewind markers, from the insight; absent when the session has none. */
+  rewinds?: RewindInfo[];
   /** True until the pane's insight has settled: the empty state waits for it. */
   pending: boolean;
   now: number;
   /** Closes the pane: a jump from the drawer band would otherwise land behind it. */
   onClose(): void;
 }) {
-  const rows = () => timelineRows(props.items ?? [], props.outline);
+  const rows = () => timelineRows(props.items ?? [], props.outline, props.rewinds ?? []);
   const state = () => timelineState(props.outline, props.now);
 
   // The foot line tells the reader the pane closes on a jump only where it does. Live, so a
@@ -84,6 +86,9 @@ export function SessionTimeline(props: {
  */
 function Row(props: { row: TimelineRow; now: number; onJump(entryId: string | undefined): void }) {
   const row = () => props.row;
+  /** A row with no `entryId` is about no single message — a rewind marker, whose target left the
+      branch with the turns it took back — so it is text, not a control that could only toast. */
+  const jumps = () => row().entryId !== undefined;
   /** A chapter that fell back to its summary's clock: the time is not the event's, and says so. */
   const flagged = () => row().flagged === true;
   /** The clock shows the hour; the title pairs it with the date and the delta, so a row three
@@ -111,22 +116,41 @@ function Row(props: { row: TimelineRow; now: number; onJump(entryId: string | un
           )}
         </Show>
         <span class="timeline-dot" aria-hidden="true" />
-        <button type="button" class="timeline-body" title={capTitle(row().full ?? "") || undefined} onClick={() => props.onJump(row().entryId)}>
-          <span class="visually-hidden">Jump to this message: </span>
-          {/* A chapter heading has its own class, not `.timeline-title`: one line, never two. */}
-          <span class={row().kind === "chapter" ? "timeline-chapter" : "timeline-title"}>
-            <Show when={row().manual}>
-              <span class="outline-hash" aria-hidden="true">
-                #
-              </span>
-            </Show>
-            {row().title}
-          </span>
-          {/* A flagged chapter's meta is the words "summary time": the dimmed clock alone would
-              leave the flag to colour. */}
-          <Show when={row().meta}>{(meta) => <span class="timeline-meta">{meta()}</span>}</Show>
-        </button>
+        <Show
+          when={jumps()}
+          fallback={
+            <span class="timeline-body timeline-body-static" title={capTitle(row().full ?? "") || undefined}>
+              {/* No visually-hidden prefix: it names what pressing does, and there is nothing to press. */}
+              <Body row={row()} />
+            </span>
+          }
+        >
+          <button type="button" class="timeline-body" title={capTitle(row().full ?? "") || undefined} onClick={() => props.onJump(row().entryId)}>
+            <span class="visually-hidden">Jump to this message: </span>
+            <Body row={row()} />
+          </button>
+        </Show>
       </Show>
     </li>
+  );
+}
+
+/** A row's title and meta, the same either way: only the element around them changes. */
+function Body(props: { row: TimelineRow }) {
+  return (
+    <>
+      {/* A chapter heading has its own class, not `.timeline-title`: one line, never two. */}
+      <span class={props.row.kind === "chapter" ? "timeline-chapter" : "timeline-title"}>
+        <Show when={props.row.manual}>
+          <span class="outline-hash" aria-hidden="true">
+            #
+          </span>
+        </Show>
+        {props.row.title}
+      </span>
+      {/* A flagged chapter's meta is the words "summary time": the dimmed clock alone would
+          leave the flag to colour. */}
+      <Show when={props.row.meta}>{(meta) => <span class="timeline-meta">{meta()}</span>}</Show>
+    </>
   );
 }

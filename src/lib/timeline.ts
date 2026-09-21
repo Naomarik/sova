@@ -6,7 +6,7 @@
 // the outline's topics as chapters at their anchored message's time, and the markers a session
 // leaves behind — compactions, subagents spawned and retired, model/thinking/mode changes.
 
-import type { SessionOutline, TranscriptItem } from "../../shared/protocol";
+import type { RewindInfo, SessionOutline, TranscriptItem } from "../../shared/protocol";
 import { duration, relativeTime, thousands } from "./format";
 import { isObj, timestampOf, toolCallArgs } from "./message";
 import { absoluteTime, firstLine, timelineEntries } from "./spend";
@@ -15,9 +15,9 @@ import { absoluteTime, firstLine, timelineEntries } from "./spend";
 export type TimelineKind = "input" | "chapter" | "marker" | "density" | "gap";
 
 /**
- * What a marker row marks. `rewind` has no source yet — pi-web's rewind entries are hidden from
- * the transcript and the insight payload carries no rewinds — so `markerRows` never emits one;
- * the kind and its copy exist so the renderer is ready when the server passes them through.
+ * What a marker row marks. A `rewind` doesn't come from the transcript — pi-web's rewind entries
+ * are hidden there — so `markerRows` reads it from the insight's own `rewinds` list instead, and
+ * emits one only when that list is passed in.
  */
 export type MarkerKind = "compaction" | "spawn" | "retire" | "change" | "rewind";
 
@@ -37,7 +37,8 @@ export interface TimelineRow {
   kind: TimelineKind;
   /** ISO event time. */
   at?: string;
-  /** The transcript entry the row's body jumps to; absent when nothing on screen holds it. */
+  /** The transcript entry the row's body jumps to; absent when the row is about no single
+      message — a rewind marker — which the renderer draws as text rather than a jump. */
   entryId?: string;
   title: string;
   /** The line under the title: an input's density, a marker's detail. */
@@ -171,7 +172,9 @@ export function inputRowsOf(items: readonly TranscriptItem[]): TimelineRow[] {
  */
 export function chapterRows(outline: SessionOutline | null | undefined, items: readonly TranscriptItem[]): TimelineRow[] {
   return (outline?.topics ?? []).flatMap((topic): TimelineRow[] => {
-    const anchored = anchorTime(items, topic.entryId);
+    // The snapshot's own stamp first: it survives the anchor being compacted off the branch,
+    // which is exactly when the transcript can no longer answer for it.
+    const anchored = (topic.anchorAt && topic.anchorAt > 0 ? new Date(topic.anchorAt).toISOString() : null) ?? anchorTime(items, topic.entryId);
     const at = anchored ?? (topic.at > 0 ? new Date(topic.at).toISOString() : null);
     if (!at) return [];
     const row: TimelineRow = { key: `chapter:${topic.id}`, kind: "chapter", at, title: topic.heading, manual: topic.manual };
@@ -213,9 +216,10 @@ function changeTitle(text: string): string {
  * The session's markers, oldest first: compactions, subagents spawned and retired, and the
  * model/thinking/mode changes the Session tab lists under Changes. Compactions are already
  * transcript rows, so they are read from there rather than from the insight's own list — one
- * event, one row.
+ * event, one row. Rewinds are the exception: their marker entries are hidden from the transcript,
+ * so they arrive as `rewinds` from the insight, oldest first.
  */
-export function markerRows(items: readonly TranscriptItem[]): TimelineRow[] {
+export function markerRows(items: readonly TranscriptItem[], rewinds: readonly RewindInfo[] = []): TimelineRow[] {
   const out: TimelineRow[] = [];
   for (const it of items) {
     const at = timestampOf(it.raw);
@@ -265,6 +269,14 @@ export function markerRows(items: readonly TranscriptItem[]): TimelineRow[] {
     if (!entry.at) continue;
     out.push({ key: `marker:change:${entry.id}`, kind: "marker", marker: "change", at: entry.at, entryId: entry.id, title: changeTitle(entry.text) });
   }
+  // The rewinds, in the order they arrive. A rewind marker carries no `entryId` on purpose: its
+  // `targetId` is the message the chat rewound *away* from, which by construction is no longer on
+  // the branch (server/chat-rewind.test.ts), so a jump could only ever end in "isn't in the
+  // transcript". A rewind with no stamp can't be placed on an axis, so it gets no row.
+  for (const r of rewinds) {
+    if (!r.timestamp) continue;
+    out.push({ key: `marker:rewind:${r.id}`, kind: "marker", marker: "rewind", at: r.timestamp, title: MARKER_TITLE.rewind });
+  }
   return out;
 }
 
@@ -302,9 +314,10 @@ export function withGaps(rows: readonly TimelineRow[], thresholdMs = GAP_MS): Ti
 export function timelineRows(
   items: readonly TranscriptItem[],
   outline: SessionOutline | null | undefined,
+  rewinds: readonly RewindInfo[] = [],
   thresholdMs = GAP_MS,
 ): TimelineRow[] {
-  const merged = [...inputRowsOf(items), ...chapterRows(outline, items), ...markerRows(items)];
+  const merged = [...inputRowsOf(items), ...chapterRows(outline, items), ...markerRows(items, rewinds)];
   const rank = (row: TimelineRow) => {
     const i = anchorIndex(items, row.entryId);
     return i < 0 ? Number.MAX_SAFE_INTEGER : i;

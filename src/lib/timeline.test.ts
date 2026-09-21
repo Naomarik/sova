@@ -1,7 +1,7 @@
 // Run: npx tsx --test src/lib/timeline.test.ts (or npm test)
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { SessionOutline, TranscriptItem } from "../../shared/protocol";
+import type { RewindInfo, SessionOutline, TranscriptItem } from "../../shared/protocol";
 import {
   anchorTime,
   chapterRows,
@@ -58,7 +58,8 @@ const outline = (topics: SessionOutline["topics"], over: Partial<SessionOutline>
   topics,
   ...over,
 });
-const topic = (id: string, heading: string, entryId: string | null, atMs: number, manual = false) => ({ id, heading, bullets: [], at: atMs, manual, entryId });
+const topic = (id: string, heading: string, entryId: string | null, atMs: number, manual = false, anchorAt?: number) => ({ id, heading, bullets: [], at: atMs, manual, entryId, anchorAt });
+const rewind = (id: string, min: number, targetId = "u1", fromLeafId = "a9"): RewindInfo => ({ id, timestamp: at(min), targetId, fromLeafId });
 
 const kinds = (rows: TimelineRow[]) => rows.map((r) => r.kind);
 
@@ -111,11 +112,18 @@ test("chapterRows take the anchored message's time, not the summary's", () => {
   assert.equal(row!.entryId, "a1");
 });
 
-test("a chapter whose anchor is gone falls back to the summary's time, flagged", () => {
+test("a chapter with neither a stamp nor an anchor falls back to the summary's time, flagged", () => {
   const [row] = chapterRows(outline([topic("t1", "Compacted away", "gone", Date.parse(at(40)))]), [user("u1", 5)]);
   assert.equal(row!.at, at(40));
-  assert.equal(row!.flagged, true);
+  assert.equal(row!.flagged, true, "summary clock, not the event's");
   assert.equal(row!.meta, "summary time", "the flag is in words, not only in dimmed ink");
+});
+
+test("a chapter whose anchor is gone lands on the snapshot's own stamp, unflagged", () => {
+  const [row] = chapterRows(outline([topic("t1", "Compacted away", "gone", Date.parse(at(40)), false, Date.parse(at(6)))]), [user("u1", 5)]);
+  assert.equal(row!.at, at(6), "the stamp survives the anchor being compacted off the branch");
+  assert.equal(row!.flagged, undefined);
+  assert.equal(row!.entryId, "gone", "the jump is still offered — the toast is the spec's answer");
 });
 
 test("a chapter with neither an anchor nor a time gets no row", () => {
@@ -159,9 +167,22 @@ test("a compaction with no token count still reads as one", () => {
   assert.equal(row!.title, MARKER_TITLE.compaction);
 });
 
-test("markerRows never invents a rewind: the kind exists, the source does not", () => {
+test("markerRows invents no rewind of its own: they come from the insight, not the transcript", () => {
   assert.equal(MARKER_TITLE.rewind, "Rewound to an earlier message");
   assert.deepEqual(markerRows([user("u1", 0), say("a1:0", 1)]), []);
+});
+
+test("a rewind becomes a marker at its own time, with nothing to jump to", () => {
+  const [row] = markerRows([user("u1", 0)], [rewind("rw1", 7)]);
+  assert.equal(row!.marker, "rewind");
+  assert.equal(row!.at, at(7));
+  assert.equal(row!.title, MARKER_TITLE.rewind);
+  assert.equal(row!.entryId, undefined, "its target left the branch, so a jump could only toast");
+  assert.equal(row!.key, "marker:rewind:rw1");
+});
+
+test("a rewind with no timestamp gets no row: it cannot be placed on an axis", () => {
+  assert.deepEqual(markerRows([], [{ id: "rw1", timestamp: "", targetId: "u1", fromLeafId: "a9" }]), []);
 });
 
 test("markerRows skips an entry with no timestamp: it cannot be placed on an axis", () => {
@@ -201,8 +222,15 @@ test("timelineRows sits a chapter beside its anchor, in transcript order", () =>
 });
 
 test("timelineRows gaps the quiet stretches of a whole session", () => {
-  const rows = timelineRows([user("u1", 0), say("a1:0", 1), user("u2", 40)], null, 10 * 60_000);
+  const rows = timelineRows([user("u1", 0), say("a1:0", 1), user("u2", 40)], null, [], 10 * 60_000);
   assert.deepEqual(kinds(rows), ["input", "density", "gap", "input"]);
+});
+
+test("timelineRows keeps two rewinds in order among the rows around them", () => {
+  const items = [user("u1", 0), say("a1:0", 1), user("u2", 4), say("a2:0", 5)];
+  const rows = timelineRows(items, null, [rewind("rw1", 2), rewind("rw2", 6)]);
+  assert.deepEqual(rows.map((r) => r.title), ["u1", "1 reply · 1m", MARKER_TITLE.rewind, "u2", "1 reply · 1m", MARKER_TITLE.rewind]);
+  assert.deepEqual(rows.map((r) => r.key).filter((k) => k.startsWith("marker:")), ["marker:rewind:rw1", "marker:rewind:rw2"]);
 });
 
 test("timelineRows of an empty transcript is empty", () => {

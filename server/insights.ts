@@ -8,6 +8,7 @@ import type {
   LiveAgentSession,
   ModelSpend,
   OutlineTopic,
+  RewindInfo,
   SessionInsight,
   SessionOutline,
   SessionSkills,
@@ -251,6 +252,9 @@ interface SessionFacts {
   reports: Map<string, NonNullable<TeamMember["lastReport"]>>;
   outline: SessionOutline | null;
   compactions: CompactionInfo[];
+  /** The branch's rewinds, oldest first: the markers pi-web leaves when the chat goes back before a
+      message. Hidden from the transcript on purpose, so this is the only way to see one. */
+  rewinds: RewindInfo[];
   /** The session's own id, from the header line: the parentSessionId /explain entries carry. */
   sessionId: string | null;
   /** explain-doc entries on the active branch (the store is the other half; see explanations()). */
@@ -352,8 +356,7 @@ const OUTLINE_STATES = new Set<SessionOutline["state"]>(["none", "drafting", "fr
 const outlineState = (v: unknown, fallback: SessionOutline["state"]): SessionOutline["state"] =>
   OUTLINE_STATES.has(v as SessionOutline["state"]) ? (v as SessionOutline["state"]) : fallback;
 
-/** Latest topic-outline snapshot (data.version 2), as the extension's OutlineStore.restore reads it. */
-function decodeOutline(data: unknown): SessionOutline | null {
+/** Latest topic-outline snapshot (data.version 2), as the extension's OutlineStore.restore reads it. */function decodeOutline(data: unknown): SessionOutline | null {
   if (!isRec(data) || data.version !== 2 || !Array.isArray(data.topics)) return null;
   const topics: OutlineTopic[] = [];
   for (const t of data.topics) {
@@ -365,6 +368,9 @@ function decodeOutline(data: unknown): SessionOutline | null {
       at: num(t.at) ?? 0,
       manual: t.manual === true,
       entryId: isRec(t.anchor) ? (str(t.anchor.entryId) ?? null) : null,
+      // The anchor's own clock, kept apart from `at` (the summarizer's). Optional, so a snapshot
+      // from an older extension simply has neither.
+      ...(isRec(t.anchor) && num(t.anchor.timestamp) ? { anchorAt: num(t.anchor.timestamp)! } : {}),
     });
   }
   return {
@@ -406,11 +412,27 @@ function decodeCompaction(e: Rec): CompactionInfo {
   };
 }
 
+/** The invisible custom entry a rewind appends — REWIND_ENTRY in chat-manager.ts, which owns the
+    write. The literal is spelled again rather than imported: chat-manager imports THIS module, and
+    the cycle would pull the pi SDK into every path that reads a session's facts, tests included. */
+const REWIND_ENTRY = "pi-web-rewind";
+
+/** One rewind marker, as chat-manager wrote it: ids and a stamp, no text (the abandoned turns are
+    not on this branch). An entry missing either half can't be placed on an axis, so it is dropped. */
+function decodeRewind(e: Rec): RewindInfo | null {
+  const id = str(e.id);
+  const timestamp = str(e.timestamp);
+  if (!id || !timestamp) return null;
+  const data = isRec(e.data) ? e.data : {};
+  return { id, timestamp, targetId: str(data.targetId) ?? "", fromLeafId: str(data.fromLeafId) ?? "" };
+}
+
 function extractFacts(text: string): SessionFacts {
   const teams = new Map<string, RosterTeam>();
   const reports: SessionFacts["reports"] = new Map();
   let outlineData: unknown;
   const compactions: CompactionInfo[] = [];
+  const rewinds: RewindInfo[] = [];
   const explanations: ExplanationInfo[] = [];
   const main = zeroSpend("");
   const byModel = new Map<string, ModelSpendTotal>();
@@ -422,6 +444,10 @@ function extractFacts(text: string): SessionFacts {
     else if (e.type === "custom" && e.customType === "topic-outline") outlineData = e.data;
     else if (e.type === "custom_message" && e.customType === "subagent-complete") addReport(reports, e);
     else if (e.type === "compaction") compactions.push(decodeCompaction(e));
+    else if (e.type === "custom" && e.customType === REWIND_ENTRY) {
+      const r = decodeRewind(e);
+      if (r) rewinds.push(r);
+    }
     else if (e.type === "custom" && e.customType === EXPLAIN_ENTRY) {
       const x = decodeExplanation(e.data);
       if (x) explanations.push(x);
@@ -443,6 +469,7 @@ function extractFacts(text: string): SessionFacts {
     reports,
     outline: decodeOutline(outlineData),
     compactions,
+    rewinds,
     explanations,
     sessionId: (header ? str(header.id) : undefined) ?? null,
     usage: { main, models },
@@ -450,7 +477,7 @@ function extractFacts(text: string): SessionFacts {
   };
 }
 
-const EMPTY_FACTS: SessionFacts = { teams: [], reports: new Map(), outline: null, compactions: [], explanations: [], sessionId: null, usage: { main: zeroSpend(""), models: [] }, skills: { offered: [], used: [] } };
+const EMPTY_FACTS: SessionFacts = { teams: [], reports: new Map(), outline: null, compactions: [], rewinds: [], explanations: [], sessionId: null, usage: { main: zeroSpend(""), models: [] }, skills: { offered: [], used: [] } };
 
 async function sessionFacts(path: string): Promise<SessionFacts> {
   try {
@@ -735,6 +762,7 @@ export async function getSessionInsight(path: string): Promise<SessionInsight> {
   return {
     outline: live ? overlayOutline(facts.outline, presence?.outline) : facts.outline,
     compactions: facts.compactions,
+    ...(facts.rewinds.length > 0 ? { rewinds: facts.rewinds } : {}),
     teams: joinTeams(facts, path, workers),
     workers: workers ?? [],
     ...(hasSkills(facts.skills) ? { skills: facts.skills } : {}),

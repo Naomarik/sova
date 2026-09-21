@@ -190,6 +190,7 @@ export function SessionPane(props: {
             <SessionTimeline
               items={items()}
               outline={props.insight.data?.outline ?? null}
+              rewinds={props.insight.data?.rewinds}
               pending={props.insight.pending}
               now={props.now}
               onClose={props.onClose}

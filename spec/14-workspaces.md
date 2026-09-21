@@ -24,6 +24,7 @@ a group, and no group that can't be opened as a workspace.
 | Split is one horizontal row that scrolls | No grid, no tiling, no cap on how many members a group holds. A pane never goes under 440px |
 | Every pane stays mounted, including hidden tabs | A member that streams while you read another one must not lose its turn. Tabs hide, they don't unmount |
 | One group composer, all members, all-or-nothing | A shared follow-up is a single server-side batch. If one member can't take it, none of them do, and the refusal names each one |
+| The pre-check is also what makes this surface testable for nothing | A refused batch has no side effects, so the whole refusal path — parsing, the banner, every member named in pi-web's words, `Send to the Rest`, the draft surviving — can be exercised against a real server with **zero model calls**, e.g. by a group whose members are all TUI-live. A transactional design would have something to undo on every run. Noted beside the decision because it is a property of it, not a testing trick |
 | All-or-nothing is a **pre-check**, not a transaction | The server checks every member before it prompts any of them, so the refusal is complete and nothing is half-sent by our own doing. A member lost *between* the check and the send (a TUI grabs it in the same second) makes the batch partial, and we say so — a prompt a model is already answering cannot be recalled, and claiming otherwise would be the one lie this surface can't afford |
 | Promote removes from the group; Eliminate removes and archives | Neither deletes a transcript. Both are the group's writes, never the session file's |
 | A group that a fanout created dissolves when its last member leaves | See "Emptying a group". A hand-made group survives empty, as §2 already says |
@@ -434,8 +435,30 @@ the three beats §0 requires and one row per blocked member:
 
 `Send to the Rest` re-sends the identical text with an explicit `members` array of session ids —
 the subset is chosen by the user in one press, never inferred by the server on the first call. The draft is
-kept until the send succeeds, so nothing is retyped. The banner is dismissed by `Cancel`, by
-editing the text, or by a successful send.
+kept until the send succeeds, so nothing is retyped. This banner is dismissed by `Cancel`, by
+editing the text, or by a successful send — see the rule below for why editing dismisses this
+one and not the partial.
+
+### Banners that offer, and banners that report
+
+**A banner offering to send what is in the box dies with the box. A banner reporting what
+already happened does not.** The distinction decides dismissal everywhere on this surface:
+
+| Banner | Kind | Editing the box |
+|---|---|---|
+| Refusal (`409`, nothing sent) | **Offer** — `Send to the Rest` sends what the box holds | Dismisses it. The offer was about that text, and that text just changed |
+| Partial send (`200` with `failed`) | **Report** — k members have a message and one doesn't | **Persists.** It stays true however the box reads, and it is the only record of which member missed out. It clears on a send, not a keystroke |
+| Partial creation (§14b) | **Report** — these members exist, these never started | Persists, for the same reason |
+
+Getting this wrong is quiet: a keystroke that dismisses a report destroys the only notice that a
+member is out of sync, and it looks like tidy-up rather than loss. Two consequences follow, and
+both are rules rather than details:
+
+- **Only the box's own send clears the box.** A retry from a banner must not wipe what is being
+  typed — that would be the composer destroying work in order to report success.
+- **Collapse follows the box, not the send.** Pane composers stay collapsed while the group
+  composer still holds text, because the rule (§14 "Pane composers…") is about the box being
+  non-empty, and a send that left text behind has not emptied it.
 
 ### Pane composers while the group composer is in use
 

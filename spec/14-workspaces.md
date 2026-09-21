@@ -599,7 +599,12 @@ later. Renaming to the same string changes nothing, because nothing happened —
 flag, because only the name is what it is about.
 
 This is the property the flag's name was chosen for, generalised: **it is set and cleared by the
-events that make it true or false, so nobody has to remember a rule.** The alternative — a
+events that make it true or false, so nobody has to remember a rule.** The working method that
+falls out of it, for the next field like this one: **`autoDissolve` encodes a claim — "pi-web
+owns this group" — so enumerate the events that transfer ownership, because each one is a defect
+until it clears the field.** Three were found that way and each was a separate round: adoption
+(the user's group gains lineage), the legacy fallback (an adopted group is indistinguishable on
+disk from a pre-flag fanout group), and rename (the user names it themselves). The alternative — a
 renamed fanout group that still dissolves, "stated loudly" somewhere — is defensible on origin,
 but it asks the user to carry a rule that only fires much later, at the moment of loss.
 

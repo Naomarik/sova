@@ -404,7 +404,8 @@ POST /api/session-groups/fanout
 
 - **Fork mode takes one fresh manager per member, and the source's own manager is never handed
   to any of them.** `createBranchedSession(leafId)` is not a factory: it **rebinds the manager it
-  is called on** to the new file (its persist branch sets `fileEntries`, `sessionId` and `sessionFile`). Two things follow, and both are invariants, not implementation notes:
+  is called on** to the new file — its persist branch sets `fileEntries`, `sessionId` and
+  `sessionFile` (pi **0.86.1**; this is SDK behaviour, so re-read it when the pin moves). Two things follow, and both are invariants, not implementation notes:
   - **Called N times on one manager it makes a chain, not a fan.** Call 2 would branch from
     member 1, call 3 from member 2, and every member after the first would carry the previous
     one's history. Each member is branched on its own manager, sourced from the source file.
@@ -481,7 +482,8 @@ from, immediately after it:
 ```
 
 - **One leaf id locates the row in every member**, because branching **copies entries with their
-  ids intact** — it re-parents the chain (`{...entry, parentId}` in `createBranchedSession`'s path loop)
+  ids intact** — it re-parents the chain (`{...entry, parentId}` in `createBranchedSession`'s
+  path loop, pi **0.86.1**)
   but never re-mints an id. So the entry `seed.leafId` names exists, with that id, in the source
   and in all N members, and `TranscriptItem.id` is what the client matches on. The whole marker
   rests on this; if branching ever re-minted ids, `seed.leafId` would be meaningless everywhere

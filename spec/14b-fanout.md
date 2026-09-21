@@ -160,7 +160,7 @@ that half-exists is a sidebar section the user has to clean up.
 ```ts
 POST /api/session-groups/fanout
 {
-  name: string;                               // the group's name, 1–60, GROUP_NAME_MAX
+  name?: string;                              // new group's name, 1–60 (GROUP_NAME_MAX); XOR groupId
   members: { ref: string; count: number }[];  // `ref` is ModelInfo.ref ("provider/id"); count 1–9.
                                               // Array order is pane order; repeats are the count.
   source?: { path: string; leafId: string };  // fork mode
@@ -171,9 +171,13 @@ POST /api/session-groups/fanout
 ```
 
 - **`groupId` (optional) fans out INTO an existing group** instead of making one. It is what
-  the workspace's `Add Members → Fan Out…` sends, and `name` is ignored when it is present — the
-  group already has a name, and the user is adding to it rather than renaming it. Three cases,
-  decided by the seed:
+  the workspace's `Add Members → Fan Out…` sends. **Exactly one of `name` and `groupId`**, the
+  same shape as `source` XOR `cwd` above: `name` alone creates a group and pi-web owns it
+  (`autoDissolve` set); `groupId` alone lands in that group, which keeps its own name; **both or
+  neither is a `400`**. Both is not a harmless over-send — a client that supplies a name
+  alongside a group id has asked for a rename, and accepting it silently would do nothing while
+  looking like it worked. Ignoring a field the client sent is the failure this feature has spent
+  its whole length refusing. Three cases, decided by the seed:
   - **The group has no `seed`** (hand-made, or a fresh-mode fanout): it **adopts** this fork's
     seed, and its existing members simply have no marker — which §14b already renders as no row
     rather than a guess. Adoption is **pure lineage**: the group gains fork markers and changes
@@ -249,7 +253,8 @@ POST /api/session-groups/fanout
   header version isn't current, and **`stale-leaf`** for the check above. A source path that
   doesn't resolve to a session at all is a `404`, not a refusal: the subject of the request
   doesn't exist, which is a different kind of wrong from "exists but not right now".
-- **`400`** for a bad name, an empty `members`, a `count` outside 1–9, a `ref` no provider knows,
+- **`400`** for both or neither of `name` and `groupId`, a bad name, an empty `members`, a
+  `count` outside 1–9, a `ref` no provider knows,
   blank `text` in fresh mode, or `text`/`cwd` sent in fork mode.
 - **`201`, and `created` is never empty.** If not one member could be made, nothing is created,
   the group is not written, and the response is the failure — a group with no members is not a

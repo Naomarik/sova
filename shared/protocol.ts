@@ -347,6 +347,10 @@ export interface UploadResult {
 //                                  is then that one): a target with no seed adopts this fanout's, a matching
 //                                  seed appends, a DIFFERING seed is 400 { error, code: "seed-conflict" } with
 //                                  nothing created, and an unknown id is 404 with nothing created.
+//                                  `nameIsGenerated` says whether `name` is pi-web's generated default: true
+//                                  makes the new group auto-dissolve when emptied, false or absent marks it
+//                                  user-named and explicitly NOT dissolving. Ignored with `groupId` (the target
+//                                  keeps its own name and its own flag).
 //                                  400 bad name, empty members, a count outside 1–9, an unknown ref, both or
 //                                  neither of name/groupId, both or neither of source/cwd, text or cwd in fork
 //                                  mode, blank text in fresh mode;
@@ -614,6 +618,21 @@ export interface FanoutRequest {
   cwd?: string;
   /** Fresh mode only: the first message every member gets, sent through the batch path. */
   text?: string;
+  /** Whether `name` is the default pi-web generated, rather than one the user typed over it. The
+      client holds this fact and nothing else can: the server never generated the default, so it
+      cannot tell an accepted default from an identical string typed by hand. Reported as a FACT —
+      the policy stays server-side, and `autoDissolve` is derived from this, never sent.
+      Absent or false ⇒ the user named it ⇒ the group survives being emptied, and the server
+      writes `autoDissolve: false` EXPLICITLY rather than leaving it absent (absence means "record
+      predates the field", which the legacy rule reads as seed-implies-dissolution — and a
+      user-named fanout group has a seed, so an absent flag would be indistinguishable from a
+      pre-flag fanout group and a later migration could delete the name). Absence being the safe
+      answer is deliberate: an older client that never sends this leaves litter, not lost work.
+      Derive it by comparing against the LAST string pi-web wrote into the field — not a prefill
+      snapshot, and not a re-derived default. In fresh mode the name is rewritten on every
+      keystroke of the prompt, so a prefill value classifies an untouched field as user-named, and
+      re-deriving at submit time is the second generator that sank the server-side alternative. */
+  nameIsGenerated?: boolean;
   /** Land the new members in an EXISTING group instead of creating one; the response's `group`
       is then that group. Omitted = create one named `name`. Seed rules, all checked BEFORE
       anything is created: an unknown id is 404; a target with NO seed ADOPTS this fanout's and

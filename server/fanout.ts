@@ -400,7 +400,10 @@ export async function runFanout(body: FanoutRequest, deps: FanoutDeps = realFano
     ? seed && !target.seed
       ? (deps.adoptSeed(target.id, seed) ?? target)
       : target
-    : deps.createGroup(plan.name, seed, true);
+    // pi-web may remove only what it both made AND named. The client reports which; we record the
+    // answer either way, never leaving it absent — an absent flag on a seeded group is the
+    // on-disk signature of a pre-flag fanout group, and the legacy rule would dissolve it.
+    : deps.createGroup(plan.name, seed, body.nameIsGenerated === true);
   if (!group) return { ok: false, status: 500, error: "The group could not be created" };
   created.forEach((summary, i) => deps.assign(summary.id, group.id, plan.planned[i]!.label));
 

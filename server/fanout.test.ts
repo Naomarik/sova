@@ -116,7 +116,8 @@ test("fork mode: one member per planned row, the group carries the seed, labels 
   assert.ok(r.ok);
   assert.equal(r.result.created.length, 3);
   assert.deepEqual(r.result.failed, []);
-  assert.deepEqual(d.rec.groups, [{ name: "Compare", seed: { parentSessionPath: SOURCE, leafId: LEAF }, autoDissolve: true }], "pi-web named it, so pi-web may remove it");
+  // No nameIsGenerated in this body, so the name is treated as the user's: recorded false.
+  assert.deepEqual(d.rec.groups, [{ name: "Compare", seed: { parentSessionPath: SOURCE, leafId: LEAF }, autoDissolve: false }]);
   assert.deepEqual(r.result.group.seed, { parentSessionPath: SOURCE, leafId: LEAF });
   assert.deepEqual(
     d.rec.assigned.map(([, g, label]) => [g, label]),
@@ -134,7 +135,7 @@ test("fresh mode: N independent sessions, NO seed, and the first message goes th
   assert.deepEqual(d.rec.forked, [], "no branching: there is no shared root");
   assert.equal(r.result.group.seed, undefined, "no fork point to align to");
   assert.deepEqual(d.rec.groups[0]!.seed, undefined);
-  assert.equal(d.rec.groups[0]!.autoDissolve, true, "fresh mode still named the group itself");
+  assert.equal(d.rec.groups[0]!.autoDissolve, false, "no nameIsGenerated: the name is the user's until they say otherwise");
   assert.deepEqual(d.rec.prompted, [["g1", "start here"]]);
 });
 
@@ -363,4 +364,55 @@ test("exactly one of name and groupId: both is a 400, neither is a 400", async (
   // and a name is not validated when it isn't being used
   const ok = await planFanout(forkBody({ name: undefined, groupId: "g-existing" }), deps());
   assert.ok(ok.ok, "landing in an existing group needs no name at all");
+});
+
+// --- who named the group (nameIsGenerated → autoDissolve) ------------------------------------
+// pi-web may remove only what it both MADE and NAMED. The client reports which, because the
+// server never generated the default and so cannot tell an accepted one from an identical string
+// typed by hand.
+
+test("the default accepted: pi-web named it, so the group dissolves when emptied", async () => {
+  const d = deps();
+  const r = await runFanout(forkBody({ nameIsGenerated: true }), d);
+  assert.ok(r.ok);
+  assert.equal(d.rec.groups[0]!.autoDissolve, true);
+});
+
+test("a name the user typed: recorded as NOT dissolving, explicitly", async () => {
+  const d = deps();
+  const r = await runFanout(forkBody({ nameIsGenerated: false }), d);
+  assert.ok(r.ok);
+  assert.equal(d.rec.groups[0]!.autoDissolve, false, "false, not absent");
+});
+
+test("flag ABSENT is the safe answer: an older client never costs a user their name", async () => {
+  // Absence means "client predates the field". It must not mean "pi-web named it", and it must
+  // not be left unwritten either: absent-on-disk plus a seed is the signature the legacy rule
+  // reads as a pre-flag fanout group, which would delete it.
+  const d = deps();
+  const r = await runFanout(forkBody(), d);
+  assert.ok(r.ok);
+  assert.equal(d.rec.groups[0]!.autoDissolve, false, "recorded false, so no later migration can re-infer dissolution");
+});
+
+test("a non-boolean nameIsGenerated is treated as absent, not as true", async () => {
+  const d = deps();
+  const r = await runFanout(forkBody({ nameIsGenerated: "yes" as never }), d);
+  assert.ok(r.ok);
+  assert.equal(d.rec.groups[0]!.autoDissolve, false, "only an explicit true claims the name");
+});
+
+test("the groupId path never sets the flag, whatever nameIsGenerated says", async () => {
+  const adopted: unknown[] = [];
+  const d = deps({
+    group: () => existing(),
+    adoptSeed: (id, seed) => {
+      adopted.push(id);
+      return { id, name: "Handmade", createdAt: "2026-09-22T00:00:00.000Z", members: [], seed, autoDissolve: false };
+    },
+  });
+  const r = await runFanout(forkBody({ name: undefined, groupId: "g-existing", nameIsGenerated: true }), d);
+  assert.ok(r.ok, "the flag is meaningless here: the target keeps its own name");
+  assert.deepEqual(d.rec.groups, [], "no group was created, so nothing was flagged");
+  assert.equal(r.result.group.autoDissolve, false, "the target's own value stands");
 });

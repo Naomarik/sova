@@ -9,7 +9,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter, getEventListeners } from "node:events";
 import { spawn, type ChildProcess } from "node:child_process";
-import { BUILTIN_TOOLS, type SpawnOptions, SubagentRunner } from "./runner.ts";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { BUILTIN_TOOLS, getPiInvocation, PI_PACKAGE, type SpawnOptions, SubagentRunner } from "./runner.ts";
 
 for (const exitMode of ["natural", "term", "kill"]) test(`detached pipe holder cannot hang Pi closure (${exitMode})`, { skip: process.platform === "win32", timeout: 5000 }, async (t) => {
 	const naturalExit = exitMode === "natural";
@@ -243,6 +246,32 @@ test("spawn args: model, effort, tools, no-extensions, system prompt", async () 
 	assert.ok(sysIdx !== -1 && args[sysIdx + 1].endsWith("system.md"));
 	assert.equal(h.runner.status, "running");
 	await fin(h);
+});
+
+test("getPiInvocation re-invokes argv[1] only when that script belongs to pi itself", async () => {
+	const root = await mkdtemp(path.join(tmpdir(), "pi-invocation-"));
+	try {
+		// A host that loads this extension inside its own process (pi-web's server): argv[1] exists
+		// but it is not pi, so the worker must be the real `pi` — re-running that file is what killed
+		// every pi-backend worker spawned from a pi-web-hosted session.
+		await writeFile(path.join(root, "package.json"), JSON.stringify({ name: "pi-web" }));
+		const host = path.join(root, "server.ts");
+		await writeFile(host, "");
+		assert.deepEqual(getPiInvocation(["--mode", "rpc"], host), { command: "pi", args: ["--mode", "rpc"] });
+
+		// pi itself: re-invoke this script under this runtime.
+		const piDir = path.join(root, "node_modules", "@earendil-works", "pi-coding-agent");
+		await mkdir(path.join(piDir, "dist"), { recursive: true });
+		await writeFile(path.join(piDir, "package.json"), JSON.stringify({ name: PI_PACKAGE }));
+		const cli = path.join(piDir, "dist", "cli.js");
+		await writeFile(cli, "");
+		assert.deepEqual(getPiInvocation(["--mode", "rpc"], cli), { command: process.execPath, args: [cli, "--mode", "rpc"] });
+
+		// A script that is not there at all is never re-invoked (the shipped example's own rule).
+		assert.deepEqual(getPiInvocation([], path.join(root, "gone.js")), { command: "pi", args: [] });
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
 });
 
 test("env is merged over the parent's environment only when given", async () => {

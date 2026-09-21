@@ -184,15 +184,42 @@ function emptyUsage(): AgentUsage {
 	return { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, turns: 0, contextTokens: 0 };
 }
 
+/** pi's own package name: the package `process.argv[1]` must belong to before it may be re-invoked. */
+export const PI_PACKAGE = "@earendil-works/pi-coding-agent";
+
 /**
- * Resolve how to re-invoke pi itself. Mirrors the shipped subagent example:
- * prefer re-running the current script under the current runtime, fall back to
- * a `pi` on PATH.
+ * The `name` of the package.json nearest to `script`, or null when it has none (and "" for an
+ * unreadable or nameless one). Walks up from the script's own directory.
  */
-function getPiInvocation(args: string[]): { command: string; args: string[] } {
-	const currentScript = process.argv[1];
+function owningPackageName(script: string): string | null {
+	let dir = path.dirname(path.resolve(script));
+	for (;;) {
+		try {
+			const pkg = JSON.parse(fs.readFileSync(path.join(dir, "package.json"), "utf8")) as { name?: unknown };
+			return typeof pkg.name === "string" ? pkg.name : "";
+		} catch {
+			// No package.json here (or unreadable/unparseable): keep walking up.
+		}
+		const up = path.dirname(dir);
+		if (up === dir) return null;
+		dir = up;
+	}
+}
+
+/**
+ * Resolve how to re-invoke pi itself. Mirrors the shipped subagent example: prefer re-running the
+ * current script under the current runtime, fall back to a `pi` on PATH.
+ *
+ * DIVERGENCE from the example (pi-config, deliberate): `argv[1]` is only pi when this process IS
+ * pi. pi-web loads this extension inside its own server, where argv[1] is `server/index.ts` — it
+ * exists, so the example's check accepts it, and the worker dies on that file's extensionless
+ * TypeScript imports before it ever starts (observed: `node server/index.ts --mode rpc …` →
+ * ERR_MODULE_NOT_FOUND for `./chat-manager`). So the script is re-invoked only when the package it
+ * belongs to is pi itself; every other host falls through to `pi`.
+ */
+export function getPiInvocation(args: string[], currentScript: string | undefined = process.argv[1]): { command: string; args: string[] } {
 	const isBunVirtualScript = currentScript?.startsWith("/$bunfs/root/");
-	if (currentScript && !isBunVirtualScript && fs.existsSync(currentScript)) {
+	if (currentScript && !isBunVirtualScript && fs.existsSync(currentScript) && owningPackageName(currentScript) === PI_PACKAGE) {
 		return { command: process.execPath, args: [currentScript, ...args] };
 	}
 	const execName = path.basename(process.execPath).toLowerCase();

@@ -604,7 +604,17 @@ falls out of it, for the next field like this one: **`autoDissolve` encodes a cl
 owns this group" — so enumerate the events that transfer ownership, because each one is a defect
 until it clears the field.** Three were found that way and each was a separate round: adoption
 (the user's group gains lineage), the legacy fallback (an adopted group is indistinguishable on
-disk from a pre-flag fanout group), and rename (the user names it themselves). The alternative — a
+disk from a pre-flag fanout group), and rename (the user names it themselves).
+
+**That enumeration is only half the method, and the missing half has its own failure.** Events
+catch a claim that *drifts* — one that was true when written and outlived its conditions. It
+cannot catch a claim that was **never true in one branch**: born half-false, and looking whole
+because the other branch is the common one. For those, enumerate the **inputs**: *who can supply
+this value?* For a group's name that list is short — `createGroup` (the user), `updateGroup` (the
+user), and the fanout dialog's name field, which is **pi-web's generated default OR the user's
+typing**. One input, two cases, and a flag that only ever encoded the first. Run both
+enumerations when a field encodes a claim: the events that falsify it, and the inputs that were
+never covered by it. The alternative — a
 renamed fanout group that still dissolves, "stated loudly" somewhere — is defensible on origin,
 but it asks the user to carry a rule that only fires much later, at the moment of loss.
 

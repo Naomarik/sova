@@ -15,10 +15,17 @@ export { GROUP_LABEL_MAX, GROUP_NAME_MAX };
     wire type leaves it optional for older servers and hand-written store files. */
 type StoredGroup = SessionGroup & { members: GroupMember[] };
 
+/** The version this build writes into a store it created. */
+const STORE_VERSION = 1;
+
 /** On disk: `{ version: 1, groups: [...], assignments: { <session id>: <group id> } }`. */
 interface Store {
   groups: StoredGroup[];
   assignments: Record<string, string>;
+  /** Top-level keys this build doesn't know, kept so another version's write survives ours. */
+  extra: Record<string, unknown>;
+  /** The version found in the file (ours for a new one), written back unchanged. */
+  version: number;
 }
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
@@ -43,12 +50,30 @@ export function cleanGroupLabel(raw: unknown): { ok: true; label: string | null 
 }
 
 /** One stored member entry, read leniently: anything that isn't `{ id: string }` is dropped, and a
-    label that is missing, not a string, blank or too long simply isn't there. */
+    label that is missing, not a string, blank or too long simply isn't there. Keys we don't know
+    ride along — see `passThrough`. */
 function readMember(raw: unknown): GroupMember | null {
   if (!isObj(raw) || typeof raw.id !== "string") return null;
   const label = cleanGroupLabel(raw.label);
-  return { id: raw.id, ...(label.ok && label.label ? { label: label.label } : {}) };
+  return { ...passThrough(raw, MEMBER_KEYS), id: raw.id, ...(label.ok && label.label ? { label: label.label } : {}) };
 }
+
+/**
+ * Whatever this version doesn't know about, kept verbatim. The store is written by whichever
+ * pi-web is running, and they need not be the same build: a rebuild-on-load that keeps only the
+ * fields it recognises DELETES a newer (or older) server's data on the next unrelated write —
+ * a fanout group's `seed` erased by a rename, say. So every object we rebuild carries its
+ * strangers with it, and the fields we do know are written last, over the top.
+ */
+function passThrough(raw: Record<string, unknown>, known: readonly string[]): Record<string, unknown> {
+  const rest: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(raw)) if (!known.includes(k)) rest[k] = v;
+  return rest;
+}
+
+const STORE_KEYS = ["version", "groups", "assignments"] as const;
+const GROUP_KEYS = ["id", "name", "createdAt", "members"] as const;
+const MEMBER_KEYS = ["id", "label"] as const;
 
 /**
  * Members are presentation only, so they are never the truth about membership: after reading them
@@ -81,7 +106,7 @@ function load(): Store {
   try {
     raw = JSON.parse(readFileSync(FILE, "utf8"));
   } catch {
-    return { groups: [], assignments: {} }; // missing or corrupt: start empty
+    return { groups: [], assignments: {}, extra: {}, version: STORE_VERSION }; // missing or corrupt: start empty
   }
   const v = isObj(raw) ? raw : {};
   const groups: StoredGroup[] = [];
@@ -94,6 +119,7 @@ function load(): Store {
     seen.add(id);
     const members = (Array.isArray(g.members) ? g.members : []).map(readMember).filter((m): m is GroupMember => m !== null);
     groups.push({
+      ...passThrough(g, GROUP_KEYS),
       id,
       name,
       createdAt: typeof g.createdAt === "string" ? g.createdAt : new Date(0).toISOString(),
@@ -107,14 +133,16 @@ function load(): Store {
     }
   }
   reconcile(groups, assignments);
-  return { groups, assignments };
+  // A newer writer's version number is kept as we found it: we preserve its fields, so quietly
+  // stamping the file back down to ours would be a lie about what is in it.
+  return { groups, assignments, extra: passThrough(v, STORE_KEYS), version: typeof v.version === "number" ? v.version : STORE_VERSION };
 }
 
 /** Atomic (tmp + rename), same as the archive and web-session lists: a crash never leaves a half file. */
-function save({ groups, assignments }: Store): void {
+function save({ groups, assignments, extra, version }: Store): void {
   mkdirSync(dirname(FILE), { recursive: true });
   const tmp = `${FILE}.${process.pid}.tmp`;
-  writeFileSync(tmp, JSON.stringify({ version: 1, groups, assignments }));
+  writeFileSync(tmp, JSON.stringify({ ...extra, version, groups, assignments }));
   renameSync(tmp, FILE);
 }
 

@@ -330,3 +330,34 @@ test("deleting a group takes its members with it", () => {
   assert.deepEqual(readAssignments(), { s2: "g2" });
   assert.deepEqual(onDisk().groups[0]!.members, [{ id: "s2" }]);
 });
+
+test("an unknown field written by another pi-web version survives our writes", () => {
+  // The case this protects: a fanout group's `seed` (spec/14b), written by a build that has it,
+  // must not be deleted by a build that doesn't when the user renames the group here.
+  reset({
+    futureTopLevel: { note: "from another build" },
+    version: 7,
+    groups: [
+      { id: "g1", name: "Fanout", createdAt: "2026-01-01T00:00:00.000Z", seed: { parentSessionPath: "/p.jsonl", leafId: "e9" }, members: [{ id: "a", label: "opus", pinned: true }] },
+    ],
+    assignments: { a: "g1" },
+  });
+  const r = renameGroup("g1", "Renamed");
+  assert.ok(r.ok);
+  const raw = onDisk() as unknown as { version: number; futureTopLevel: unknown; groups: Record<string, unknown>[] };
+  assert.equal(raw.groups[0]!.name, "Renamed", "the field we do know is the one that changed");
+  assert.deepEqual(raw.groups[0]!.seed, { parentSessionPath: "/p.jsonl", leafId: "e9" }, "the group's unknown field is still there");
+  assert.deepEqual(raw.groups[0]!.members, [{ pinned: true, id: "a", label: "opus" }], "and so is the member's");
+  assert.deepEqual(raw.futureTopLevel, { note: "from another build" }, "top-level too");
+  assert.equal(raw.version, 7, "a newer writer's version is not stamped back down to ours");
+  // It reaches a reader as well, so a frontend that understands it can use it.
+  assert.deepEqual((readGroups()[0] as unknown as { seed: unknown }).seed, { parentSessionPath: "/p.jsonl", leafId: "e9" });
+});
+
+test("a store we create ourselves is version 1 with nothing extra", () => {
+  rmSync(file, { force: true });
+  created("Fresh");
+  const raw = onDisk();
+  assert.deepEqual(Object.keys(raw).sort(), ["assignments", "groups", "version"]);
+  assert.equal(raw.version, 1);
+});

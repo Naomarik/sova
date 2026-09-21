@@ -239,8 +239,9 @@ POST /api/session-groups/fanout
   - **Provenance, never policy.** The client reports *this is the name pi-web generated*; the
     server decides `autoDissolve` from it. A client permitted to send `autoDissolve` itself would
     assert an ownership pi-web may not have, and an older or buggy one could assert it wrongly.
-  - **The check is pinned, not just the default**: `autoDissolve` is set **only when
-    `named === "generated"`**. Testing `named !== "user"` is the same sentence and the wrong one —
+  - **The check form is pinned, not just the absence default**: `autoDissolve` is set **only when
+    `named === "generated"`** — the enum's equivalent of `=== true` for a boolean, and the same
+    rule §14 states generally (*read it exactly, never by truthiness*). Testing `named !== "user"` is the same sentence and the wrong one —
     an absent field is not a claim of user authorship, it is a client that cannot make the claim
     at all, and the negative form silently turns that into a claim. This is the enum's one
     exposure and the reason the check is written down rather than left to the absence rule (§14

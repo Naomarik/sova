@@ -99,12 +99,15 @@ test("a REAL new message does make the fork stale, and says how to recover", asy
   assert.match(refused.message, /new last message/);
 });
 
-test("the hidden entries stack up without hiding the real leaf", async () => {
+test("hidden entries stack up without hiding the real leaf", async () => {
+  // All of these are production-shaped: a cache-warm usage row and a loadout message land
+  // parented on the reply they follow. No rewind marker here — a marker's parentage is the
+  // rewind TARGET, which would make this a different scenario entirely; that case has its own
+  // tests above, built from the real shape.
   const path = source("many", [
     { type: "usage", id: "usage-1", parentId: "a1", usage: { input: 1 } },
     { type: "message", id: "sys-1", parentId: "a1", message: { role: "system", content: [{ type: "text", text: "t" }] } },
     { type: "usage", id: "usage-2", parentId: "a1", usage: { input: 2 } },
-    { type: "custom", id: "rw-1", parentId: "a1", customType: "pi-web-rewind", data: {} },
   ]);
   assert.equal(await checkSource(path, "a1", deps), null);
 });

@@ -615,14 +615,14 @@ because the other branch is the common one. For those, enumerate the **inputs**:
 this value?* For a group's name that list is short — `createGroup` (the user), `updateGroup` (the
 user), and the fanout dialog's name field, which is **pi-web's generated default OR the user's
 typing**. One input, two cases, and a flag that only ever encoded the first — closed
-by `FanoutRequest.nameIsGenerated` (§14b), which is the client telling the server which of the
+by `FanoutRequest.named` (§14b), which is the client telling the server which of the
 two it is. Run both enumerations when a field encodes a claim: the events that falsify it, and
 the inputs that were never covered by it.
 
 **With that input closed the enumeration is complete, and completeness is the point.** Who can
 supply a group's name? `createGroup` — the user, no claim made. `updateGroup` — the user, and it
 clears the claim. The fanout dialog — pi-web's generated default *or* the user's typing, now
-distinguished by `FanoutRequest.nameIsGenerated` (§14b). There is no fourth supplier, so
+distinguished by `FanoutRequest.named` (§14b). There is no fourth supplier, so
 "pi-web may remove what it both made and named" is **literally** true rather than nearly true.
 Every round of this family lived in the gap between those two words.
 
@@ -632,9 +632,10 @@ depending on shape: **polarise a boolean so its falsehood is safe**, and **compa
 positively** (`x === "dangerous"`) rather than negatively (`x !== "safe"`). Both shapes fail the
 same way under the negative form, which is why the rule is about the check and not only about
 the type — and why a spec that names a field's absence rule should name its **check** too. Two fields
-can carry identical information and fail in opposite directions: `nameIsGenerated` absent reads
-as *the user named it*, and the group survives; `nameEdited` absent reads as *untouched*, so
-pi-web claims the name and deletes it. Same fact, same size, one of them safe by construction.
+can carry identical information and fail in opposite directions — had `named` been a boolean, the
+pair shows it exactly: `nameIsGenerated` absent reads as *the user named it*, and the group
+survives; `nameEdited` absent reads as *untouched*, so pi-web claims the name and deletes it.
+Same fact, same size, one of them safe by construction.
 The name that reads most naturally is not reliably the one that fails safe, so choose the
 polarity first and the wording second.
 

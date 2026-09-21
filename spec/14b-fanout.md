@@ -169,7 +169,7 @@ that half-exists is a sidebar section the user has to clean up.
 POST /api/session-groups/fanout
 {
   name?: string;                              // new group's name, 1–60 (GROUP_NAME_MAX); XOR groupId
-  nameIsGenerated?: boolean;                  // true = `name` is the default pi-web generated
+  named?: "generated" | "user";               // who authored `name`; absent behaves as "user"
   members: { ref: string; count: number }[];  // `ref` is ModelInfo.ref ("provider/id"); count 1–9.
                                               // Array order is pane order; repeats are the count.
   source?: { path: string; leafId: string };  // fork mode
@@ -202,7 +202,7 @@ POST /api/session-groups/fanout
     silently un-mark the rest. Both fabricate a fact the contract cannot carry — the same reason
     a marker's position is never inferred from `parent`/`parentId`. Fan out into a new group
     instead; the two groups can sit side by side.
-- **`nameIsGenerated` says whose name this is**, and it exists because the server cannot tell.
+- **`named` says whose name this is**, and it exists because the server cannot tell.
   The dialog's name field is pre-filled with a default pi-web derives and the user may type over
   it, but `name` arrives as a string and the server never generated the default — provenance is
   a fact only the client holds. Without it, typing a name into the dialog and typing the same
@@ -211,14 +211,18 @@ POST /api/session-groups/fanout
   - **Provenance, never policy.** The client reports *this is the name pi-web generated*; the
     server decides `autoDissolve` from it. A client permitted to send `autoDissolve` itself would
     assert an ownership pi-web may not have, and an older or buggy one could assert it wrongly.
-  - **The check is pinned, not just the default**: `autoDissolve` is set **only when the field is
-    present and true**. Testing for "not user-named" is the same sentence and the wrong one — an
-    absent field is not a claim of user authorship, it is a client that cannot make the claim.
-  - **Absent, or any non-boolean value, behaves as user-named** and sets nothing. A malformed
-    value must not fail the whole fanout: this field is advisory about one downstream flag, not
+  - **The check is pinned, not just the default**: `autoDissolve` is set **only when
+    `named === "generated"`**. Testing `named !== "user"` is the same sentence and the wrong one —
+    an absent field is not a claim of user authorship, it is a client that cannot make the claim
+    at all, and the negative form silently turns that into a claim. This is the enum's one
+    exposure and the reason the check is written down rather than left to the absence rule (§14
+    "The dangerous state must be the one a check has to assert").
+  - **Absent, or any unrecognised value, behaves as `"user"`** and sets nothing. A malformed
+    value must not fail the whole fanout — `named: "Generated"` with a capital G would otherwise
+    make fanning out impossible. This field is advisory about one downstream flag, not
     load-bearing like `members` or `source`. Where we know least about which case we are in, we
     take the side whose error is litter.
-  - **Two absences point opposite ways and must not be reconciled.** Absent `nameIsGenerated`
+  - **Two absences point opposite ways and must not be reconciled.** Absent `named`
     describes a **client** predating the field, where a user-named group is what is at risk, so
     absence means *survives*. Absent `SessionGroup.autoDissolve` (§14) describes a **record**
     predating that field, a population containing no user-named group, so absence falls back to

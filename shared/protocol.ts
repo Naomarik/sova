@@ -626,6 +626,12 @@ export interface FanoutRequest {
       "user", ABSENT, or any unrecognised value ⇒ the user named it ⇒ the server writes
       `autoDissolve: false` EXPLICITLY — never leaves it absent, because absent-plus-`seed` is the
       on-disk signature of a pre-flag fanout group and the legacy rule dissolves those.
+      CHECK IT POSITIVELY: `named === "generated"`. `named !== "user"` is the same sentence and
+      the wrong one — an absent field is not a claim of user authorship, it is a client that
+      cannot make the claim at all, and treating it as pi-web's deletes a name. Both spellings
+      are equally SAFE with a boolean and equally available here, but a two-valued enum makes the
+      negative form read naturally, so it is the likelier mistake and worth naming. Tests pin
+      absent and unrecognised to a recorded false so the wrong spelling fails loudly.
       TWO ABSENCES, OPPOSITE DEFAULTS, BOTH CORRECT: this field's absence means the CLIENT predates
       it, and a user-named group is what is at risk, so it falls to "user"; `SessionGroup.autoDissolve`'s
       absence means the RECORD predates it, where no user-named group can exist, so there it falls

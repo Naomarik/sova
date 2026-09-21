@@ -65,6 +65,18 @@ export function FanoutDialog(props: {
   const [mode, setMode] = createSignal<"fork" | "fresh">(props.source ? "fork" : "fresh");
   const [rows, setRows] = createSignal<MemberRow[]>([]);
   const [name, setName] = createSignal(defaultGroupName(props.source?.session.title ?? ""));
+  /**
+   * Whether the user has typed in the name field. Two things turn on it:
+   *
+   * The name is GENERATED from the fresh prompt as it is typed, so without this, writing the first
+   * message after naming the group would overwrite the name — the app throwing away the user's
+   * words to keep its own guess current.
+   *
+   * It is also the one fact only this client holds: the server receives a string and cannot tell
+   * "accepted our default" from "typed their own", because the default is generated HERE (§14b).
+   * That distinction decides whether the group is pi-web's to delete when it empties.
+   */
+  const [nameTouched, setNameTouched] = createSignal(false);
   const [text, setText] = createSignal("");
   const [cwd, setCwd] = createSignal(newSessionCwd(props.source?.session.cwd, props.sessions) ?? home() ?? "");
   const [picking, setPicking] = createSignal(false);
@@ -225,7 +237,8 @@ export function FanoutDialog(props: {
                 value={text()}
                 onInput={(e) => {
                   setText(e.currentTarget.value);
-                  if (!props.source) setName(defaultGroupName(e.currentTarget.value));
+                  // Only while the name is still ours to guess at.
+                  if (!props.source && !nameTouched()) setName(defaultGroupName(e.currentTarget.value));
                 }}
               />
             </div>
@@ -306,7 +319,10 @@ export function FanoutDialog(props: {
               maxlength={GROUP_NAME_MAX}
               placeholder="Group name"
               value={name()}
-              onInput={(e) => setName(e.currentTarget.value)}
+              onInput={(e) => {
+                setNameTouched(true);
+                setName(e.currentTarget.value);
+              }}
             />
           </div>
 

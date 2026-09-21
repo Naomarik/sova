@@ -594,7 +594,9 @@ else.
 actually changes the name falsifies the second half and clears the flag. Renaming
 "Fanout · retry backoff" to "Backoff experiments" is the plainest statement a user can make that
 they mean to keep something, and it would be a poor reading of it to delete the group weeks
-later. Renaming to the same string changes nothing, because nothing happened.
+later. Renaming to the same string changes nothing, because nothing happened — and
+**reorder and relabel never touch it**, even in the same `PATCH`. Only the name moves this
+flag, because only the name is what it is about.
 
 This is the property the flag's name was chosen for, generalised: **it is set and cleared by the
 events that make it true or false, so nobody has to remember a rule.** The alternative — a

@@ -645,6 +645,11 @@ export interface FanoutRequest {
       `nameTouched`, set by the name field's own input handler and by nothing else, and sends
       "user" when it is set. "Typed over then reverted" is therefore "user": an empty group may
       be left behind, which is litter, recoverable in one gesture.
+      THAT SIGNAL DOES TWO JOBS, and the second is invisible from the first: `nameTouched` also
+      gates whether pi-web may keep REGENERATING the field from the prompt. One decides whether we
+      may keep writing the name; the other decides whose the result is. So a change to when
+      regeneration stops silently changes who owns the name, and no test in the file being edited
+      will fail. Anyone altering either rule owns both.
       A COMPARISON CANNOT BE FIXED, which is stronger than it being wrong (spec §14b). "Typed
       over then reverted" and "typed our exact string by hand" produce the SAME STATE — field
       touched, `name` equal to what we last wrote — yet one deserves to dissolve and the other to

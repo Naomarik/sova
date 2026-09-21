@@ -609,6 +609,65 @@ test("backend validation is atomic across mixed batches and fails closed without
 	} finally { await h.close(); }
 });
 
+test("model policy disables providers and models for spawns, teams and discovery", async () => {
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagents-policy-harness-"));
+	const policyFile = path.join(dir, "settings.json");
+	const writePolicy = (providers: string[], models: string[]) =>
+		fs.writeFileSync(policyFile, JSON.stringify({ version: 1, disabledProviders: providers, disabledModels: models }));
+	const h = harness(eventBus(), { policyFile });
+	const created: any[] = [];
+	h.ctx.modelRegistry.getAvailable = () => [
+		{ provider: "test", id: "model", name: "Test Model" },
+		{ provider: "zai", id: "glm-5.3", name: "GLM" },
+	];
+	const backend = { ...fakeBackend(created), listModels: async () => [{ id: "sonnet", name: "Sonnet" }, { id: "opus", name: "Opus" }] };
+	h.bus.emit(BACKEND_REGISTER_EVENT, backend);
+	try {
+		// No policy file yet: everything is spawnable and discoverable.
+		let models = await h.call("agent_models", {});
+		assert.deepEqual(models.details.models.map((m: any) => m.id).sort(), ["opus", "sonnet", "test/model", "zai/glm-5.3"]);
+		await h.call("agent_spawn", { prompt: "control", wake: false });
+		assert.equal(h.workers.length, 1);
+
+		// Disabled pi model: explicit picks, and the inherited parent model, are rejected with a reason.
+		writePolicy([], ["test/model"]);
+		await assert.rejects(h.call("agent_spawn", { prompt: "explicit", model: "test/model", wake: false }), /test\/model is disabled as a subagent model/);
+		await assert.rejects(h.call("agent_spawn", { prompt: "inherits parent", wake: false }), /test\/model is disabled as a subagent model/);
+
+		// Disabled provider: any model of that provider is rejected, and hidden from discovery.
+		writePolicy(["zai"], []);
+		await assert.rejects(h.call("agent_spawn", { prompt: "provider gone", model: "zai/glm-5.3", wake: false }), /Provider zai is disabled/);
+		models = await h.call("agent_models", {});
+		assert.deepEqual(models.details.models.map((m: any) => m.id).sort(), ["opus", "sonnet", "test/model"]);
+
+		// Backend-level rules: a disabled backend id rejects model-less specs (their default is
+		// still that provider's model) and explicit ones; single backend models can be disabled
+		// under the "backend/model" spelling while the backend stays allowed.
+		writePolicy(["claude-code"], []);
+		await assert.rejects(h.call("agent_spawn", { prompt: "default model", backend: "claude-code", wake: false }), /Backend claude-code is disabled/);
+		await assert.rejects(h.call("agent_spawn", { prompt: "explicit model", backend: "claude-code", model: "sonnet", wake: false }), /Backend claude-code is disabled/);
+		writePolicy([], ["claude-code/opus"]);
+		await assert.rejects(h.call("agent_spawn", { prompt: "opus gone", backend: "claude-code", model: "Opus", wake: false }), /Opus is disabled/);
+		await h.call("agent_spawn", { prompt: "sonnet stays", backend: "claude-code", model: "sonnet", wake: false });
+		models = await h.call("agent_models", { backend: "claude-code" });
+		assert.deepEqual(models.details.models.map((m: any) => m.id), ["sonnet"]);
+
+		// The team path shares spawnBatch, so a disabled member model is rejected there too.
+		writePolicy([], ["claude-code/sonnet"]);
+		await assert.rejects(
+			h.call("team_create", { name: "blocked", objective: "o", members: [{ role: "r", prompt: "p", backend: "claude-code", model: "sonnet" }] }),
+			/sonnet is disabled/,
+		);
+
+		// Nothing but the two allowed controls ever started.
+		assert.equal(h.workers.length, 1);
+		assert.equal(created.length, 1);
+	} finally {
+		fs.rmSync(dir, { recursive: true, force: true });
+		await h.close();
+	}
+});
+
 for (const killThrows of [false, true]) test(`factory failure rolls back the entire mixed batch (kill throws: ${killThrows})`, async () => {
 	const h = harness();
 	const created: any[] = [];

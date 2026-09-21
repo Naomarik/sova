@@ -16,6 +16,7 @@ import { type AgentGroup, AgentsModal } from "./modal.ts";
 import { TeamModal } from "./team-modal.ts";
 import { attachTeamWidget, type TeamWidgetHandle, type TeamWidgetUi } from "./team-widget.ts";
 import { piModels, matchingModels, type CatalogModel } from "./models.ts";
+import { backendDenial, policyDenial, readPolicy } from "./policy.ts";
 import { BUILTIN_TOOLS as BUILTIN_TOOL_NAMES, SubagentRunner } from "./runner.ts";
 import { BACKEND_DIALOG_EVENT, BACKEND_DISCOVER_EVENT, BACKEND_REGISTER_EVENT, type BackendDialogEvent, type BackendRegistration, type SteerMode, type SteerResult, type Worker, type WorkerFactory } from "./contracts.ts";
 import {
@@ -271,6 +272,8 @@ export interface SubagentsOptions {
 	mailboxPollMs?: number;
 	/** Detachable workers (hosting.ts): registry root, forced enablement, host timings. */
 	hosting?: HostingOptions;
+	/** Model policy file override (policy.ts); the real one is shared with pi-web. */
+	policyFile?: string;
 }
 /** Emit to re-scan the registry and adopt this session's detached workers now. */
 export const WORKERS_ADOPT_EVENT = "subagents:workers-adopt";
@@ -630,7 +633,11 @@ export function registerSubagents(
 				const backend = backends.get(id);
 				if (id !== "pi" && !backend?.listModels) throw new Error("This backend does not expose model discovery.");
 				const choices = id === "pi" ? piModels(ctx) : await backend!.listModels!(ctx, signal);
-				for (const choice of choices) models.push({ ...choice, backend: id });
+				// User policy (policy.ts): disabled providers and models never surface as choices.
+				for (const choice of choices) {
+					if (policyDenial(readPolicy(options.policyFile), id, choice.id)) continue;
+					models.push({ ...choice, backend: id });
+				}
 			} catch (error) {
 				if (signal?.aborted) throw error;
 				errors.push({ backend: id, error: String(error) });
@@ -672,6 +679,12 @@ export function registerSubagents(
 			if (backendId !== "pi") {
 				const backend = backends.get(backendId);
 				if (!backend) throw new Error(`Unknown or unavailable backend ${backendId}; load its extension first.`);
+				// User policy first, before the backend's own validation: a disabled provider
+				// or model is rejected whichever form the request names it in — including a
+				// model-less spec, whose backend default is still that provider's model.
+				const policy = readPolicy(options.policyFile);
+				const denied = spec.model !== undefined ? policyDenial(policy, backendId, spec.model) : backendDenial(policy, backendId);
+				if (denied) throw new Error(denied);
 				backend.validate(spec, ctx);
 				const prepared = backend.prepare?.({ ...spec, cwd }, ctx) ?? {};
 				return { spec, cwd, model: spec.model, tools: spec.tools, systemPrompt: spec.systemPrompt,
@@ -682,6 +695,10 @@ export function registerSubagents(
 			const model =
 				spec.model ?? definition?.model ?? (ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined);
 			if (model !== undefined) {
+				// User policy before the registry lookup: a disabled ref is rejected even when
+				// it is stale (no longer in the registry), and the inherited parent model too.
+				const denied = policyDenial(readPolicy(options.policyFile), "pi", model);
+				if (denied) throw new Error(denied);
 				const slash = model.indexOf("/");
 				if (slash < 1 || !ctx.modelRegistry.find(model.slice(0, slash), model.slice(slash + 1))) {
 					throw new Error(`Unknown model ${model}; use agent_models to discover exact provider/model IDs from this session's registry.`);

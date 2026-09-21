@@ -233,6 +233,29 @@ of `id`, `group`, or `all: true` to stop them. `all: true` targets published
 workers; unpublished workers from a failed spawn (whose IDs were never returned)
 are already being stopped and are only reported as a count.
 
+## Model policy
+
+`~/.pi/agent/subagents/settings.json` (version 1) blocks models and providers
+from being picked as workers — in every session, TUI and webapp alike:
+
+```json
+{
+	"version": 1,
+	"disabledProviders": ["anthropic"],
+	"disabledModels": ["openai/gpt-5.2", "claude-code/opus"]
+}
+```
+
+A disabled provider blocks all of its models; `agent_models` and the
+`/subagents models` picker stop listing blocked choices, and `agent_spawn`,
+`team_create`, and `team_add` reject one with a reason — whether it was named
+explicitly, taken from an agentType definition, or inherited from the parent
+session's model. For non-pi backends the backend id doubles as the provider
+(`claude-code` above), and a model-less spec on a disabled backend is rejected
+too, since its default model is that provider's. pi-web's Settings dialog edits
+this file live; manual edits apply on the next spawn or discovery, no reload
+needed. A missing or corrupt file disables nothing.
+
 ## Status and task results
 
 Process status and task outcome are separate:

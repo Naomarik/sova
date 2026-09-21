@@ -395,6 +395,18 @@ test("flag ABSENT is the safe answer: an older client never costs a user their n
   assert.equal(d.rec.groups[0]!.autoDissolve, false, "recorded false, so no later migration can re-infer dissolution");
 });
 
+test("every malformed `named` falls to the safe side, by construction", async () => {
+  // Reviewer's table: `if (v)` is TRUE for "false", "yes", 1 and {} — the hazard a boolean field
+  // would have carried, since truthiness is what a reader writes without thinking. `=== "generated"`
+  // has no such case: anything that is not that exact token cannot claim the name.
+  for (const bad of ["false", "yes", "user ", "GENERATED", 1, 0, {}, [], true, null]) {
+    const d = deps();
+    const r = await runFanout(forkBody({ named: bad as never }), d);
+    assert.ok(r.ok, `named=${JSON.stringify(bad)} still creates`);
+    assert.equal(d.rec.groups[0]!.autoDissolve, false, `named=${JSON.stringify(bad)} must not claim the name`);
+  }
+});
+
 test("an unrecognised `named` is treated as absent, not as generated", async () => {
   const d = deps();
   const r = await runFanout(forkBody({ named: "Generated" as never }), d);

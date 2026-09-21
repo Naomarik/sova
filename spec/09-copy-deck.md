@@ -406,7 +406,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Fork note | Each member gets the whole conversation up to message {n}, then goes its own way. |
 | Create off, source mid-turn | “{title}” is mid-turn. We read the file to fork it, and we don't read it while it's being written. This enables itself when the turn finishes. |
 | Create off, unidentified writer | Another program wrote to “{title}” a moment ago. Forking waits until it stops. |
-| Create off, older session format | “{title}” is in an older session format. Forking it means reading it, and reading it migrates the whole file — we don't rewrite a session under a runtime that has it open. Open it for chat once, then fan out. |
+| Create off, older session format | “{title}” is in an older session format. Forking reads the file, and reading it rewrites the whole thing — not something to do to a session that's open. Open it for chat here once to update it, then fan out. |
 | Fresh fields | the §5 folder picker, unchanged · field label `First message` · placeholder "Ask all of them to…" |
 | Members field | label `Members` · empty: "No members yet. Add a model, then set how many of it you want." |
 | Member row | the model id in mono · the fill (below) · count buttons `aria-label` "One more {model}" / "One fewer {model}" (at 1: "Remove {model}") · remove `aria-label` "Remove {model}" |

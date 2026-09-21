@@ -411,7 +411,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Create off, older session format | “{title}” is in an older session format. Forking reads the file, and reading it rewrites the whole thing — not something to do to a session that's open. Open it for chat here once to update it, then fan out. |
 | Fresh fields | the §5 folder picker, unchanged · field label `First message` · placeholder "Ask all of them to…" |
 | Members field | label `Members` · empty: "No members yet. Add a model, then set how many of it you want." |
-| Member row | the model id in mono · the fill (below) · count buttons `aria-label` "One more {model}" / "One fewer {model}" (at 1: "Remove {model}") · remove `aria-label` "Remove {model}" |
+| Member row | the **full ref** in mono (`ModelInfo.ref`, e.g. `zai/glm-5.3`) — **never the bare model id**: two providers ship the same name (`zai/glm-5.3` and `ollama-cloud/glm-5.3` differ only by provider and bill to different subscriptions), so a row showing `glm-5.3` is two rows the user cannot tell apart · the fill (below) · count buttons `aria-label` "One more {ref}" / "One fewer {ref}" (at 1: "Remove {ref}") · remove `aria-label` "Remove {ref}" |
 | Add a model | `Add a Model` · picking a model already listed: no new row, the count goes up, and the live region says "{model} ×3." |
 | Member fill | `{tokens} of {window} · {pct}%` (§4f's formats and its 80% / 95% steps) · window unknown: "{tokens}, window unknown" · fresh prompt: "new session" |
 | Doesn't fit | This model's window is smaller than the fork. · `.field-error`: "Remove {model}, or lower its count, to create this fanout." |

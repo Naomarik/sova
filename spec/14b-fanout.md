@@ -88,6 +88,12 @@ beside each other), a bottom sheet under 768px.
 </div>
 ```
 
+- **Every row shows the full `ref`, provider included** — `zai/glm-5.3`, never `glm-5.3`. The
+  same model name is shipped by more than one provider (`ollama-cloud` also lists `glm-5.3`), and
+  they are different subscriptions with different windows and different bills. A picker that
+  showed the bare id would let a user add what looks like one model twice, and the cost preview —
+  whose whole purpose is comparing windows — would show two identical-looking rows with different
+  denominators. The `aria-label`s carry the ref for the same reason.
 - **`Add a Model`** opens the §4c model picker, unchanged, as its own panel. Picking a model that
   is already listed **increments that row** rather than adding a second one — the count is the
   repeat.

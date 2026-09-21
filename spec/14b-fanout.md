@@ -175,8 +175,10 @@ POST /api/session-groups/fanout
   group already has a name, and the user is adding to it rather than renaming it. Three cases,
   decided by the seed:
   - **The group has no `seed`** (hand-made, or a fresh-mode fanout): it **adopts** this fork's
-    seed, and its existing members simply have no marker — which §14b already renders as no row
-    rather than a guess.
+    seed, marked `adopted: true`, and its existing members simply have no marker — which §14b
+    already renders as no row rather than a guess. Adoption gives the group lineage; it does
+    **not** make it auto-dissolving (§14 "Emptying a group"), because the user's name for it is
+    not scaffolding just because a fanout later landed there.
   - **The group's `seed` matches this fork** (same `parentSessionPath` and `leafId`): the new
     members are **appended**. This is the case that makes "I want two more of these" work.
   - **The group's `seed` differs**: `400 seed-conflict`. **One group carries one seed**, because

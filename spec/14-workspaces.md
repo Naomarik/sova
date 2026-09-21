@@ -552,8 +552,8 @@ All four are writes to the group registry. None of them touches a session's JSON
 
 ### Emptying a group
 
-**A group that pi-web's own fanout created (`seed` present) is deleted by the write that removes
-its last member. A group made by hand is not.**
+**A group that pi-web's own fanout CREATED is deleted by the write that removes its last member.
+A group made by hand is not — and it does not become one by later adopting a seed.**
 
 This is the one place the two kinds of group differ, and the reason is what they are. A hand-made
 group is a name the user typed and a place they drag things into; §2 already specs it standing
@@ -574,6 +574,16 @@ same instinct one level down — it is keyed on a file being gone, never on a su
 an unreadable file keeps its group — and this extends that caution upward: bookkeeping about
 files may forget an assignment, but it may not delete something the user named. So an empty fanout group
 **is** reachable, and the workspace renders it (below) rather than pretending it can't exist.
+
+**Adoption grants lineage, not disposability.** Fanning out into a hand-made group (§14b's
+`groupId`) writes a `seed` into it so the new members get fork markers. That must **not** make
+the group auto-dissolving. The rule was never "has a seed" — it is "was scaffolding": born with
+its members in one gesture, auto-named from the prompt, meaningless without them. A group the
+user named and then fanned into is still the thing they named, and deleting it on the write that
+empties it would destroy that name on the strength of an unrelated later action. So the registry
+records which of the two a `seed` is: **`seed.adopted: true`** when an existing group took one
+on, absent when the fanout created the group. Dissolve fires on a seed that is **not** adopted.
+One bit, and it keeps both properties — markers work, and the user's name survives.
 
 The delete happens server-side, in the same write, so no second request can fail halfway — and
 **the response has to say so**, because the client cannot infer it from a member count it just

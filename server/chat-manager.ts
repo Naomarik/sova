@@ -544,6 +544,24 @@ class ChatSession {
     }
   }
 
+  /**
+   * Send one user message, exactly as the `prompt` client message does — the WS case is now a
+   * thin wrapper on this, so the group batch prompt (POST /api/session-groups/:id/prompt) writes
+   * through the same guards instead of a second, drifting copy of them. Blank text with no image
+   * is a no-op, not an error. Throws BusyError if a TUI grabbed the file or another process wrote
+   * it since we opened it: the caller decides whether that is a client error or a refusal.
+   */
+  async prompt(text: string, images?: SdkImage[]): Promise<void> {
+    // Never write if a TUI grabbed this file, or anyone else wrote it, after we opened it.
+    assertNotLive(this.path);
+    this.assertNoForeignWrites();
+    if (!text.trim() && !images) return;
+    this.flushDeferredAppends();
+    // While streaming, a plain prompt is queued as a follow-up.
+    const streamingBehavior = this.session.isStreaming ? ("followUp" as const) : undefined;
+    await this.session.prompt(text, { images, streamingBehavior });
+  }
+
   handle(client: ChatClient, msg: ChatClientMessage): void {
     const fail = (err: unknown) => {
       const code = err instanceof BusyError ? err.code : "internal";
@@ -556,16 +574,7 @@ class ChatSession {
     try {
       switch (msg.type) {
         case "prompt": {
-          // Never write if a TUI grabbed this file, or anyone else wrote it, after we opened it.
-          assertNotLive(this.path);
-          this.assertNoForeignWrites();
-          const text = String(msg.text ?? "");
-          const images = parseImages(msg.images);
-          if (!text.trim() && !images) return;
-          this.flushDeferredAppends();
-          // While streaming, a plain prompt is queued as a follow-up.
-          const streamingBehavior = this.session.isStreaming ? ("followUp" as const) : undefined;
-          this.session.prompt(text, { images, streamingBehavior }).catch(fail);
+          this.prompt(String(msg.text ?? ""), parseImages(msg.images)).catch(fail);
           return;
         }
         case "steer": {

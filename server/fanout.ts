@@ -1,0 +1,322 @@
+import { existsSync, unlinkSync, writeFileSync } from "node:fs";
+import { open } from "node:fs/promises";
+import { SessionManager } from "@earendil-works/pi-coding-agent";
+import { GROUP_NAME_MAX, type BatchRefusal, type BatchRefusalCode, type FanoutRequest, type FanoutResult, type SessionGroup, type SessionSummary } from "../shared/protocol";
+import { activeConfigFailure, heldChat } from "./chat-manager";
+import { readLive } from "./live";
+import { listModels } from "./models";
+import { canonicalPath, resolveSessionPath, sessionPathShape } from "./paths";
+import { assignSession, cleanGroupName, createGroup, deleteGroup } from "./session-groups";
+import { getSessionSummary } from "./sessions-index";
+import { addWebSession } from "./web-sessions";
+import { markOwned, recentForeignWriteAgeSec } from "./write-guard";
+import { promptGroup } from "./group-prompt";
+
+/**
+ * POST /api/session-groups/fanout (spec/14b-fanout.md): N sessions from one starting point, as
+ * one group. Fork mode branches every member from the same entry of one source; fresh mode makes
+ * N independent sessions in a folder. Nothing here is a fan-out of one runtime — see forkMember.
+ */
+
+/** The current session file format. A source in an older one is refused rather than migrated. */
+const CURRENT_SESSION_VERSION = 3;
+/** Enough for the header line; enough of the tail for the last entry. */
+const HEAD_BYTES = 16 * 1024;
+const TAIL_BYTES = 64 * 1024;
+
+const refusal = (path: string, code: BatchRefusalCode, message: string, id = ""): BatchRefusal => ({ id, path, code, message });
+
+export type FanoutOutcome =
+  | { ok: true; result: FanoutResult }
+  | { ok: false; status: 400 | 404 | 500; error: string }
+  | { ok: false; status: 409; refused: BatchRefusal[] };
+
+/** One member to make: a model ref, once. `count` in the request is expanded into repeats here,
+    so the rest of the code never has to think about counts. */
+export interface PlannedMember {
+  ref: string;
+  provider: string;
+  modelId: string;
+  /** "sonnet ×2" style label: the ref, plus its ordinal when the same ref repeats. */
+  label: string;
+}
+
+/** Everything that touches the SDK, the disk or the store, injected so the rules can be tested
+    without any of them. */
+export interface FanoutDeps {
+  /** Refs the server knows, for validating `members[].ref`. */
+  knownRefs(): Promise<Set<string>>;
+  /** The source path as this server keys sessions, or null when it is not a session file here.
+      Shape check first (no syscall), then the FULL resolve, because fanout OPENS this file —
+      sessionPathShape contains by string only (server/paths.ts). */
+  resolveSource(raw: string): string | null;
+  /** Header version and the id of the file's last entry (its leaf), or null when unreadable. */
+  sourceHead(path: string): Promise<{ version: number; leafId: string | null } | null>;
+  live(path: string): boolean;
+  streaming(path: string): boolean;
+  foreignWriter(path: string): boolean;
+  misconfigured(path: string): boolean;
+  /** Branch one member off the source at `leafId`, on a manager of its own. */
+  fork(sourcePath: string, leafId: string, member: PlannedMember): Promise<string>;
+  /** A brand new session in `cwd` for one member. */
+  fresh(cwd: string, member: PlannedMember): Promise<string>;
+  /** Remove a member's own half-written file after its creation failed. */
+  discard(path: string): void;
+  summary(path: string): Promise<SessionSummary | null>;
+  createGroup(name: string, seed?: { parentSessionPath: string; leafId: string }): SessionGroup | null;
+  deleteGroup(id: string): void;
+  assign(sessionId: string, groupId: string, label: string): void;
+  /** The stage-2 batch path, for fresh mode's first message. */
+  prompt(groupId: string, text: string): Promise<void>;
+}
+
+/** Read the header and the last entry's id without loading the whole file. */
+async function readHeadAndLeaf(path: string): Promise<{ version: number; leafId: string | null } | null> {
+  let fh;
+  try {
+    fh = await open(path, "r");
+  } catch {
+    return null;
+  }
+  try {
+    const { size } = await fh.stat();
+    const head = Buffer.alloc(Math.min(HEAD_BYTES, size));
+    await fh.read(head, 0, head.length, 0);
+    const firstLine = head.toString("utf8").split("\n", 1)[0] ?? "";
+    let header: { type?: string; version?: unknown };
+    try {
+      header = JSON.parse(firstLine);
+    } catch {
+      return null;
+    }
+    if (header?.type !== "session") return null;
+    const version = typeof header.version === "number" ? header.version : 1; // pre-versioning files
+    const from = Math.max(0, size - TAIL_BYTES);
+    const tail = Buffer.alloc(size - from);
+    await fh.read(tail, 0, tail.length, from);
+    let leafId: string | null = null;
+    for (const line of tail.toString("utf8").split("\n").reverse()) {
+      if (!line.trim()) continue;
+      try {
+        const entry = JSON.parse(line);
+        if (typeof entry?.id === "string") {
+          leafId = entry.id;
+          break;
+        }
+      } catch {
+        continue; // a torn last line: keep walking back
+      }
+    }
+    return { version, leafId };
+  } finally {
+    await fh.close();
+  }
+}
+
+export const realFanoutDeps: FanoutDeps = {
+  async knownRefs() {
+    return new Set((await listModels()).map((m) => m.ref));
+  },
+  resolveSource(raw) {
+    if (!sessionPathShape(raw)) return null;
+    const path = resolveSessionPath(raw);
+    return path && existsSync(path) ? path : null;
+  },
+  sourceHead: readHeadAndLeaf,
+  live: (path) => readLive().get(path) !== undefined,
+  streaming: (path) => {
+    const chat = heldChat(path);
+    return !!chat && chat.session.isStreaming;
+  },
+  foreignWriter: (path) => {
+    const chat = heldChat(path);
+    return chat ? chat.hasForeignWrites() : recentForeignWriteAgeSec(path) !== null;
+  },
+  misconfigured: (path) => activeConfigFailure(path) !== undefined,
+
+  /**
+   * ONE FRESH MANAGER, and never the one pi-web holds for the source. createBranchedSession
+   * REBINDS the manager it is called on to the new file (session-manager.js: it sets fileEntries,
+   * sessionId and sessionFile), so calling it twice on one manager chains member 2 off member 1
+   * instead of fanning, and calling it on the held runtime's manager would repoint a LIVE runtime
+   * at a member's file — the user's next turn would land in a member's transcript.
+   */
+  async fork(sourcePath, leafId, member) {
+    const sm = SessionManager.open(sourcePath);
+    const created = sm.createBranchedSession(leafId);
+    if (!created) throw new Error("Branching produced no session file");
+    // The manager IS the member now, so this pins the member's model, not the source's.
+    sm.appendModelChange(member.provider, member.modelId);
+    // The SDK only writes the branch immediately when it contains an assistant message; otherwise
+    // it waits for one. Write it by hand, wx, so the member exists on disk like every web session.
+    if (!existsSync(created)) {
+      const header = sm.getHeader();
+      const lines = [JSON.stringify(header), ...sm.getEntries().map((e) => JSON.stringify(e))];
+      writeFileSync(created, `${lines.join("\n")}\n`, { flag: "wx" });
+    }
+    return finishMember(created);
+  },
+
+  async fresh(cwd, member) {
+    const sm = SessionManager.create(cwd);
+    const created = sm.getSessionFile();
+    const header = sm.getHeader();
+    if (!created || !header) throw new Error("SessionManager did not produce a session file");
+    writeFileSync(created, `${JSON.stringify(header)}\n`, { flag: "wx" });
+    sm.appendModelChange(member.provider, member.modelId);
+    return finishMember(created);
+  },
+
+  discard(path) {
+    try {
+      unlinkSync(path);
+    } catch {
+      // already gone, or never written: nothing to clean up
+    }
+  },
+  summary: (path) => getSessionSummary(path),
+  createGroup(name, seed) {
+    const r = createGroup(name, seed);
+    return r.ok ? r.group : null;
+  },
+  deleteGroup: (id) => void deleteGroup(id),
+  assign: (sessionId, groupId, label) => void assignSession(sessionId, groupId, label),
+  async prompt(groupId, text) {
+    await promptGroup(groupId, text, undefined);
+  },
+};
+
+/** The bookkeeping every new member needs: our own write, and a web-owned session. */
+function finishMember(rawPath: string): string {
+  const path = canonicalPath(rawPath);
+  markOwned(path); // the fresh mtime is ours, not a foreign writer's
+  const id = idFromPath(path);
+  if (id) addWebSession(id);
+  return path;
+}
+
+const idFromPath = (path: string): string => path.replace(/\.jsonl$/, "").split("_").pop() ?? "";
+
+/** Expand `{ref, count}[]` into one entry per member, labelled, in pane order. */
+export function planMembers(members: { ref: string; count: number }[]): PlannedMember[] {
+  const total = new Map<string, number>();
+  for (const m of members) total.set(m.ref, (total.get(m.ref) ?? 0) + m.count);
+  const seen = new Map<string, number>();
+  const planned: PlannedMember[] = [];
+  for (const m of members) {
+    for (let i = 0; i < m.count; i++) {
+      const n = (seen.get(m.ref) ?? 0) + 1;
+      seen.set(m.ref, n);
+      const slash = m.ref.indexOf("/");
+      planned.push({
+        ref: m.ref,
+        provider: m.ref.slice(0, slash),
+        modelId: m.ref.slice(slash + 1),
+        // "opus" alone when it is the only one; "opus #2" when the same ref repeats.
+        label: (total.get(m.ref) ?? 1) > 1 ? `${m.ref} #${n}` : m.ref,
+      });
+    }
+  }
+  return planned;
+}
+
+/** Validate the request body. Pure except for the ref list, so every 400 is testable. */
+export async function planFanout(body: FanoutRequest, deps: FanoutDeps): Promise<{ ok: true; name: string; planned: PlannedMember[] } | { ok: false; error: string }> {
+  const name = cleanGroupName(body.name);
+  if (!name) return { ok: false, error: `name must be 1–${GROUP_NAME_MAX} characters` };
+  if (!Array.isArray(body.members) || body.members.length === 0) return { ok: false, error: "members must be a non-empty array of { ref, count }" };
+  for (const m of body.members) {
+    if (typeof m?.ref !== "string" || !m.ref.includes("/")) return { ok: false, error: "each member needs a ref of the form provider/model" };
+    if (!Number.isInteger(m?.count) || m.count < 1 || m.count > 9) return { ok: false, error: "each member's count must be an integer 1–9" };
+  }
+  const hasSource = body.source !== undefined;
+  const hasCwd = body.cwd !== undefined;
+  // Exactly one starting point: a fanout with none is not a thing the dialog can produce, and one
+  // with both is two different requests wearing one body.
+  if (hasSource === hasCwd) return { ok: false, error: "exactly one of source or cwd is required" };
+  if (hasSource) {
+    if (typeof body.source?.path !== "string" || typeof body.source?.leafId !== "string" || !body.source.leafId)
+      return { ok: false, error: "source must be { path, leafId }" };
+    if (body.text !== undefined || body.cwd !== undefined) return { ok: false, error: "text and cwd belong to fresh mode, not fork mode" };
+  } else {
+    if (typeof body.cwd !== "string" || !body.cwd) return { ok: false, error: "cwd must be an absolute path" };
+    if (typeof body.text !== "string" || !body.text.trim()) return { ok: false, error: "fresh mode needs a first message" };
+  }
+  const known = await deps.knownRefs();
+  const unknown = body.members.find((m) => !known.has(m.ref));
+  if (unknown) return { ok: false, error: `No such model: ${unknown.ref}` };
+  return { ok: true, name, planned: planMembers(body.members) };
+}
+
+/**
+ * The quiet source a fork needs. Sourcing N managers means READING the source file N times, and
+ * SessionManager.open() is not free of side effects (it appends a newline to a torn last line and
+ * may rewrite the whole file to migrate an old version) — so every writer, and every format that
+ * would provoke a rewrite, is grounds to refuse rather than proceed.
+ *
+ * No syscall here touches a session's cwd: the path is validated by shape, and the only read is
+ * the source's own JSONL under the sessions directory.
+ */
+export async function checkSource(path: string, leafId: string, deps: FanoutDeps): Promise<BatchRefusal | null> {
+  if (deps.live(path)) return refusal(path, "tui-live", "It is open in a terminal, so this server must not read it out from under that process.");
+  if (deps.streaming(path)) return refusal(path, "mid-turn", "It is mid-turn here. Wait for the turn to finish, then fan out.");
+  if (deps.foreignWriter(path)) return refusal(path, "busy", "Another process wrote to it just now.");
+  if (deps.misconfigured(path)) return refusal(path, "config", "Its working directory is gone, so it cannot be opened.");
+  const head = await deps.sourceHead(path);
+  if (!head) return refusal(path, "missing", "Its session file could not be read.");
+  // A rewrite-on-open would look like a foreign write to a runtime we hold for this session and
+  // lock the user out of their own chat, so the version is a PRECONDITION, never a recovery.
+  if (head.version !== CURRENT_SESSION_VERSION)
+    return refusal(path, "old-format", "It is in an older session format. Open it for chat once to update it, then fan out.");
+  // The client sends the leaf it showed the user; forking from a point they didn't approve would
+  // break the fork marker's only promise.
+  if (head.leafId !== leafId) return refusal(path, "stale-leaf", "It has moved on since the dialog opened. Close this and fan out again from the new last message.");
+  return null;
+}
+
+/**
+ * Create the members, then the group. Rollback boundary (confirmed with spec): a member that
+ * fails DURING creation has its own half-written file unlinked, because a header with no session
+ * behind it is a sidebar row that opens onto nothing; a member that already exists is never
+ * unmade, because it is work the user can already read.
+ */
+export async function runFanout(body: FanoutRequest, deps: FanoutDeps = realFanoutDeps): Promise<FanoutOutcome> {
+  const plan = await planFanout(body, deps);
+  if (!plan.ok) return { ok: false, status: 400, error: plan.error };
+
+  let sourcePath: string | null = null;
+  if (body.source) {
+    sourcePath = deps.resolveSource(body.source.path);
+    if (!sourcePath) return { ok: false, status: 404, error: "Session file not found" };
+    const refused = await checkSource(sourcePath, body.source.leafId, deps);
+    if (refused) return { ok: false, status: 409, refused: [refused] };
+  }
+
+  const created: SessionSummary[] = [];
+  const failed: BatchRefusal[] = [];
+  for (const member of plan.planned) {
+    let path: string | null = null;
+    try {
+      path = sourcePath ? await deps.fork(sourcePath, body.source!.leafId, member) : await deps.fresh(body.cwd!, member);
+      const summary = await deps.summary(path);
+      if (!summary) throw new Error("the new session could not be read back");
+      created.push(summary);
+    } catch (err) {
+      if (path) deps.discard(path); // its own debris only; nothing that succeeded is touched
+      failed.push(refusal("", "internal", `${member.ref} could not be started: ${err instanceof Error ? err.message : String(err)}`));
+    }
+  }
+  // A group with no members is debris, not a result.
+  if (created.length === 0) return { ok: false, status: 500, error: failed[0]?.message ?? "No member could be created" };
+
+  const seed = sourcePath ? { parentSessionPath: sourcePath, leafId: body.source!.leafId } : undefined;
+  const group = deps.createGroup(plan.name, seed);
+  if (!group) return { ok: false, status: 500, error: "The group could not be created" };
+  created.forEach((summary, i) => deps.assign(summary.id, group.id, plan.planned[i]!.label));
+
+  // Fresh mode's first message goes through the stage-2 batch path. A refusal there keeps every
+  // member: they are real, empty, grouped sessions the user can prompt with a retry.
+  if (body.text) await deps.prompt(group.id, body.text);
+
+  return { ok: true, result: { group: { ...group, ...(seed ? { seed } : {}) }, created, failed } };
+}

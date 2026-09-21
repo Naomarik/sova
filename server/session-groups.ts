@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
-import { GROUP_LABEL_MAX, GROUP_NAME_MAX, type GroupMember, type SessionGroup } from "../shared/protocol";
+import { GROUP_LABEL_MAX, GROUP_NAME_MAX, type GroupMember, type GroupSeed, type SessionGroup } from "../shared/protocol";
 
 /** The user's sidebar groups, and which session belongs to which (spec/02-session-list.md §2 "Groups").
     pi-web's own data, beside the archive and web-session id lists: the session files are never touched. */
@@ -49,6 +49,15 @@ export function cleanGroupLabel(raw: unknown): { ok: true; label: string | null 
   return label.length > GROUP_LABEL_MAX ? { ok: false } : { ok: true, label };
 }
 
+/** A stored seed, read leniently: both fields must be non-empty strings or the group is simply
+    not a fanout group (and so is never auto-dissolved). */
+function readSeed(raw: unknown): GroupSeed | null {
+  if (!isObj(raw)) return null;
+  const { parentSessionPath, leafId } = raw as { parentSessionPath?: unknown; leafId?: unknown };
+  if (typeof parentSessionPath !== "string" || !parentSessionPath || typeof leafId !== "string" || !leafId) return null;
+  return { parentSessionPath, leafId };
+}
+
 /** One stored member entry, read leniently: anything that isn't `{ id: string }` is dropped, and a
     label that is missing, not a string, blank or too long simply isn't there. Keys we don't know
     ride along — see `passThrough`. */
@@ -72,7 +81,7 @@ function passThrough(raw: Record<string, unknown>, known: readonly string[]): Re
 }
 
 const STORE_KEYS = ["version", "groups", "assignments"] as const;
-const GROUP_KEYS = ["id", "name", "createdAt", "members"] as const;
+const GROUP_KEYS = ["id", "name", "createdAt", "members", "seed"] as const;
 const MEMBER_KEYS = ["id", "label"] as const;
 
 /**
@@ -118,8 +127,10 @@ function load(): Store {
     if (!id || !name || seen.has(id)) continue;
     seen.add(id);
     const members = (Array.isArray(g.members) ? g.members : []).map(readMember).filter((m): m is GroupMember => m !== null);
+    const seed = readSeed(g.seed);
     groups.push({
       ...passThrough(g, GROUP_KEYS),
+      ...(seed ? { seed } : {}),
       id,
       name,
       createdAt: typeof g.createdAt === "string" ? g.createdAt : new Date(0).toISOString(),
@@ -170,11 +181,15 @@ export function readAssignments(): Record<string, string> {
 
 export type GroupResult = { ok: true; group: SessionGroup } | { ok: false; status: 400 | 404; error: string };
 
-/** POST /api/session-groups: a new, empty group at the end of the list. */
-export function createGroup(rawName: unknown): GroupResult {
+/**
+ * POST /api/session-groups: a new, empty group at the end of the list. `seed` is written ONLY by
+ * pi-web's own fanout (fork mode) and is what makes the group dissolve when its last member
+ * leaves; a hand-made group never gets one, so its name survives being emptied.
+ */
+export function createGroup(rawName: unknown, seed?: GroupSeed): GroupResult {
   const name = cleanGroupName(rawName);
   if (!name) return { ok: false, status: 400, error: `name must be 1–${GROUP_NAME_MAX} characters` };
-  const group: StoredGroup = { id: randomUUID(), name, createdAt: new Date().toISOString(), members: [] };
+  const group: StoredGroup = { id: randomUUID(), name, createdAt: new Date().toISOString(), members: [], ...(seed ? { seed } : {}) };
   return edit((store) => {
     store.groups.push(group);
     return { ok: true, group };
@@ -266,14 +281,9 @@ export function deleteGroup(id: string): boolean {
 
 export type AssignResult = { ok: true; dissolved?: true } | { ok: false; status: 400 | 404; error: string };
 
-/**
- * A group pi-web fanned out, recognised by the `seed` the fanout stage writes on it. The field is
- * not typed here yet (it lands with that stage), but the store already carries keys this build
- * doesn't know (see passThrough), so a `seed` written by a newer build is visible to this check
- * today — and with nothing writing one, the rule below simply never fires.
- */
+/** A group pi-web fanned out, recognised by the `seed` its fanout wrote. */
 function isFanoutGroup(group: StoredGroup): boolean {
-  return isObj((group as unknown as { seed?: unknown }).seed);
+  return group.seed !== undefined;
 }
 
 /**

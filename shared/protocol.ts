@@ -336,6 +336,21 @@ export interface UploadResult {
 //                                  no slash commands — images belong to a pane composer (spec §14).
 //                                  400 bad body, blank text, members not an array of strings, an id that is
 //                                  not a member, or the group is empty; 404 unknown group; 409 refused)
+// POST /api/session-groups/fanout FanoutRequest -> 201 FanoutResult
+//                                  (N sessions from one starting point, as one group. FORK MODE ({source}):
+//                                  every member is branched from source.leafId onto a FRESH SessionManager of
+//                                  its own — never the manager pi-web holds for the source — and the group
+//                                  gets a `seed`. FRESH MODE ({cwd, text}): N independent sessions, no shared
+//                                  root, no seed, and `text` is sent through the batch-prompt path.
+//                                  400 bad name, empty members, a count outside 1–9, an unknown ref, both or
+//                                  neither of source/cwd, text or cwd in fork mode, blank text in fresh mode;
+//                                  404 a source path that resolves to no session (the subject doesn't exist —
+//                                  different from "exists but not right now"); 409 { refused: [BatchRefusal] }
+//                                  with exactly ONE entry, the source: tui-live, mid-turn, busy, config,
+//                                  old-format (opening it would migrate-rewrite the file) or stale-leaf (the
+//                                  leaf moved since the dialog opened). A member that fails DURING creation
+//                                  has its own half-written file removed and is reported in `failed`; a member
+//                                  that already exists is never unmade)
 // POST /api/sessions/archive { path, archived: boolean } -> SessionSummary   (sets/clears the archive mark; never
 //                                  writes the session file. 400 bad body/path, 404 missing, 409 archiving a live
 //                                  or non-web session)
@@ -459,6 +474,16 @@ export interface GroupMember {
   label?: string;
 }
 
+/** Where a fanout group came from (SessionGroup.seed). Written only by POST
+    /api/session-groups/fanout in fork mode; fresh mode has no fork point to align to. */
+export interface GroupSeed {
+  /** Canonical path of the source session — the same path each member's header carries as
+      `parentSession`, and the same string that session's own `SessionSummary.path` has. */
+  parentSessionPath: string;
+  /** The entry every member was branched at: the ONLY source of a fork marker's position. */
+  leafId: string;
+}
+
 /** One user-made group in the sidebar's Groups region (GET /api/session-groups). Groups hold
     sessions; they never replace a region, so a grouped session still shows in Live & web or the
     Archive. Stored in ~/.pi/agent/pi-web/session-groups.json, keyed by session id (like the archive). */
@@ -468,6 +493,12 @@ export interface SessionGroup {
   /** Shown as-is (trimmed, 1–60 chars). Duplicates are allowed: nothing keys on the name. */
   name: string;
   createdAt: string; // ISO
+  /** Set only on a group pi-web fanned out (fork mode): where its members came from. Lineage
+      (`SessionSummary.parent`/`parentId`) says a session was forked from THAT file; only this
+      says WHERE, so the fork marker and Align to Fork are seed-only and never infer a position
+      from lineage. A hand-made group never grows one, which is what the auto-dissolve rule
+      (AssignGroupResult.dissolved) stands on. */
+  seed?: GroupSeed;
   /** The group's sessions in display order, with their labels. The server always sends it — it is
       reconciled against the assignments on every read (ids no longer in the group drop out, ids
       missing from it are appended in id order) — and it is optional in the type only because an
@@ -491,7 +522,22 @@ export interface AssignGroupResult {
     (POST /api/session-groups/:id/prompt). A closed set: the client renders its own sentence per
     code and never parses `message`. "internal" is the escape hatch, so an unexpected failure
     still carries a valid code. */
-export type BatchRefusalCode = "mid-turn" | "tui-live" | "archived" | "config" | "busy" | "missing" | "internal";
+export type BatchRefusalCode =
+  | "mid-turn"
+  | "tui-live"
+  | "archived"
+  | "config"
+  | "busy"
+  | "missing"
+  /** Fanout only: the source's header version isn't current, so opening it would rewrite the
+      file — which a runtime we hold for that session would see as a foreign write. The only
+      refusal here the user can clear themselves ("open it for chat once, then fan out"). */
+  | "old-format"
+  /** Fanout only: `source.leafId` is no longer the source's last entry. The client sends the leaf
+      it SHOWED the user; forking from a point they didn't approve would break the fork marker's
+      only promise. */
+  | "stale-leaf"
+  | "internal";
 
 /** One member the batch could not take, named four ways: `id` joins against `GroupMember.id` and
     the assignments map, `path` is what a pane routes and opens with, `code` is for logic, and
@@ -501,6 +547,37 @@ export interface BatchRefusal {
   path: string; // canonical session path ("" when the file is gone)
   code: BatchRefusalCode;
   message: string;
+}
+
+/** One row of the fanout dialog: a model, and how many copies of it to make. */
+export interface FanoutMemberSpec {
+  /** `ModelInfo.ref`, "provider/id". */
+  ref: string;
+  /** 1–9. The member appears this many times, consecutively, in pane order. */
+  count: number;
+}
+
+/** POST /api/session-groups/fanout. Exactly one of `source` (fork mode) and `cwd` (fresh mode). */
+export interface FanoutRequest {
+  name: string; // 1–GROUP_NAME_MAX
+  members: FanoutMemberSpec[]; // array order IS pane order
+  /** Fork mode: branch every member from this entry of this session. `leafId` is the leaf the
+      dialog SHOWED the user, not a request for the server to find the current one. */
+  source?: { path: string; leafId: string };
+  /** Fresh mode: the folder every member is created in. */
+  cwd?: string;
+  /** Fresh mode only: the first message every member gets, sent through the batch path. */
+  text?: string;
+}
+
+/** 201 body of the fanout. `created` is never empty: if not one member could be made, nothing is
+    created, the group is not written, and the call fails — a group with no members is debris,
+    not a result. `failed` carries the members that couldn't start, in the batch's own refusal
+    shape, and drives the partial-creation banner. Nothing already created is ever rolled back. */
+export interface FanoutResult {
+  group: SessionGroup;
+  created: SessionSummary[];
+  failed: BatchRefusal[];
 }
 
 /** 200 body of the batch prompt. `sent` MEANS ACCEPTED, NOT ANSWERED: the route returns as soon

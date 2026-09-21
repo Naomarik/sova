@@ -92,6 +92,9 @@ const SENTENCE: Record<BatchRefusalCode, string> = {
   config: "Its working directory is gone, so its runtime cannot be opened.",
   busy: "Another process wrote to it just now.",
   missing: "Its session file no longer exists.",
+  // Fanout-only, but the table is the whole code set: a caller must never meet a code with no sentence.
+  "old-format": "It is in an older session format. Open it for chat once to update it, then fan out.",
+  "stale-leaf": "It has moved on since the dialog opened. Fan out again from its new last message.",
   internal: "It could not be prompted.",
 };
 

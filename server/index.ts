@@ -20,6 +20,8 @@ import { checkTmpImage, deleteAttachment, MAX_ATTACHMENT_BYTES, readTmpImage, sa
 import { listFolders } from "./folders";
 import { assignSession, cleanGroupLabel, createGroup, deleteGroup, GROUP_LABEL_MAX, readGroups, updateGroup } from "./session-groups";
 import { promptGroup } from "./group-prompt";
+import { runFanout } from "./fanout";
+import type { FanoutRequest } from "../shared/protocol";
 // The mount module is pi-runtime-free (node builtins only): isMounted parses the mount table and
 // verifyMounted bounds a real check on a path INSIDE the mount — neither ever stats the fuse path
 // synchronously, which would block the event loop on a hung mount.
@@ -217,6 +219,20 @@ app.post("/api/session-groups/:id/prompt", async (c) => {
     return c.json({ error: "members must be an array of session ids" }, 400);
   const r = await promptGroup(c.req.param("id"), body.text, body.members as string[] | undefined);
   if (r.ok) return c.json(r.result);
+  return r.status === 409 ? c.json({ refused: r.refused }, 409) : c.json({ error: r.error }, r.status);
+});
+
+// N sessions from one starting point, as one group (spec/14b-fanout.md). Fork mode branches every
+// member from one entry of one source; fresh mode makes N independent sessions in a folder.
+app.post("/api/session-groups/fanout", async (c) => {
+  let body: FanoutRequest;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "Expected JSON body { name, members, source | cwd }" }, 400);
+  }
+  const r = await runFanout(body);
+  if (r.ok) return c.json(r.result, 201);
   return r.status === 409 ? c.json({ refused: r.refused }, 409) : c.json({ error: r.error }, r.status);
 });
 

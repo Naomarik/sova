@@ -210,7 +210,7 @@ test("the batch returns on ACCEPTANCE: member 2 is dispatched while member 1's t
   releaseFirst();
 });
 
-test("a member whose acceptance never resolves does not stop the ones behind it from being dispatched", async () => {
+test("a slow acceptance delays only the RESPONSE, never the other members' dispatch", async () => {
   const started: string[] = [];
   let releaseA!: () => void;
   const d = deps({
@@ -220,12 +220,12 @@ test("a member whose acceptance never resolves does not stop the ones behind it 
     },
   });
   const inFlight = promptGroup("g1", "ship it", undefined, d);
-  await Promise.resolve(); // let the loop reach its first await
-  assert.deepEqual(started, ["/s/a.jsonl"], "member 1's acceptance is outstanding");
+  await Promise.resolve();
+  assert.deepEqual(started, ["/s/a.jsonl", "/s/b.jsonl", "/s/c.jsonl"], "b and c did not wait behind a");
   releaseA();
   const r = await inFlight;
   assert.ok(r.ok);
-  assert.deepEqual(r.result.sent, ["a", "b", "c"], "members 2 and 3 followed once it resolved");
+  assert.deepEqual(r.result.sent, ["a", "b", "c"]);
 });
 
 test("nothing accepted is a refusal, not a partial send: 409, never 'sent to 0 of n'", async () => {
@@ -257,4 +257,42 @@ test("the pre-check asks the index only for the members it needs, and never walk
   await promptGroup("g1", "hi", ["b"], d);
   assert.deepEqual(asked, ["b"], "only the subset it is about to prompt");
   assert.equal(walked, 1, "one resolution per batch");
+});
+
+test("acceptance is CONCURRENT: every member is accepted before any of them resolves", async () => {
+  // Deterministic, no timers: each accept parks on a promise this test resolves by hand, so the
+  // assertion is "all three were CALLED while all three were still outstanding". A sequential
+  // loop cannot reach that state — it would be parked on member 1 with 2 and 3 never called.
+  const called: string[] = [];
+  const release: (() => void)[] = [];
+  const d = deps({
+    accept: (path: string) =>
+      new Promise<void>((resolve) => {
+        called.push(path);
+        release.push(resolve);
+      }),
+  });
+  const inFlight = promptGroup("g1", "ship it", undefined, d);
+  await Promise.resolve(); // one microtask: enough for a concurrent dispatch, not for a turn
+  assert.deepEqual(called, ["/s/a.jsonl", "/s/b.jsonl", "/s/c.jsonl"], "all three accepts started");
+  assert.equal(release.length, 3, "and all three are still outstanding");
+  release.forEach((r) => r());
+  const r = await inFlight;
+  assert.ok(r.ok);
+  assert.deepEqual(r.result.sent, ["a", "b", "c"], "reported in group order, not completion order");
+});
+
+test("a concurrent batch still reports failures per member, in group order", async () => {
+  const d = deps({
+    accept: async (path: string) => {
+      if (path === PATHS.b) throw new BusyError("a TUI grabbed it", "busy");
+    },
+  });
+  const r = await promptGroup("g1", "ship it", undefined, d);
+  assert.ok(r.ok);
+  assert.deepEqual(r.result.sent, ["a", "c"]);
+  assert.deepEqual(
+    r.result.failed.map((x) => [x.id, x.code]),
+    [["b", "tui-live"]],
+  );
 });

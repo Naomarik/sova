@@ -160,21 +160,27 @@ export async function promptGroup(groupId: string, text: string, subset: string[
 
   // Past this line the batch is committed: each member that fails ACCEPTANCE is reported, never
   // rolled back, and never stops the members behind it.
+  //
+  // CONCURRENTLY. Accepting a member can mean opening a runtime, so one at a time costs the SUM
+  // of N opens before the composer clears — the very serialization this route exists to avoid.
+  // Every accept is started before any of them is awaited; the results are then read in group
+  // order, so the response still reports members in the order the panes are read.
+  const outcomes = await Promise.allSettled(targets.map((id) => deps.accept(paths.get(id)!, text)));
   const sent: string[] = [];
   const failed: BatchRefusal[] = [];
-  for (const id of targets) {
-    const path = paths.get(id)!;
-    try {
-      await deps.accept(path, text);
+  targets.forEach((id, i) => {
+    const outcome = outcomes[i]!;
+    if (outcome.status === "fulfilled") {
       sent.push(id);
-    } catch (err) {
-      // `message` is never blank: an older client that doesn't know a newer `code` shows it
-      // verbatim (spec §14), so an Error with no text must still leave a sentence behind.
-      const said = (err instanceof Error ? err.message : String(err)).trim();
-      const code = codeOf(err);
-      failed.push(refusal(id, path, code, said || SENTENCE[code]));
+      return;
     }
-  }
+    // `message` is never blank: an older client that doesn't know a newer `code` shows it
+    // verbatim (spec §14), so an Error with no text must still leave a sentence behind.
+    const err = outcome.reason;
+    const said = (err instanceof Error ? err.message : String(err)).trim();
+    const code = codeOf(err);
+    failed.push(refusal(id, paths.get(id)!, code, said || SENTENCE[code]));
+  });
   // `sent` is never empty: nothing accepted is not a partial send, it is a refusal. "Sent to 0 of
   // 5 members" is a sentence with no meaning, and §9 deliberately has no copy for it.
   if (sent.length === 0) return { ok: false, status: 409, refused: failed };

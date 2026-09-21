@@ -7,6 +7,8 @@ import type { FileIndex,
   ModeInfo,
   ModelInfo,
   AssignGroupResult,
+  BatchPromptResult,
+  BatchRefusal,
   SessionGroup,
   SessionInsight,
   SessionSummary,
@@ -18,10 +20,23 @@ import type { FileIndex,
 import { type CleanupRequest, type CleanupResult, parseCleanupResult } from "./archive";
 import type { TargetInfo } from "./remote-session";
 
+/**
+ * What a batch send can come back as. The refusal is a VALUE, not a throw: it is the route's
+ * specified answer to "one of these members can't take a message", and the banner it drives is
+ * the whole point of the pre-check.
+ */
+export type BatchOutcome =
+  | { ok: true; result: BatchPromptResult }
+  | { ok: false; refused: BatchRefusal[]; error?: undefined }
+  | { ok: false; error: string; refused?: undefined };
+
 export class ApiError extends Error {
   constructor(
     message: string,
     readonly status: number,
+    /** The parsed error body, when there was one. A route whose refusal is part of its contract
+        (the batch prompt's 409) carries its detail here rather than only in the message. */
+    readonly body?: unknown,
   ) {
     super(message);
   }
@@ -36,13 +51,15 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
   }
   if (!res.ok) {
     let message = `${res.status} ${res.statusText}`;
+    let parsed: unknown;
     try {
-      const body = (await res.json()) as { error?: unknown };
+      parsed = await res.json();
+      const body = parsed as { error?: unknown };
       if (typeof body.error === "string") message = body.error;
     } catch {
       // Non-JSON error body: keep the status line.
     }
-    throw new ApiError(message, res.status);
+    throw new ApiError(message, res.status, parsed);
   }
   return (await res.json()) as T;
 }
@@ -220,6 +237,42 @@ export const assignSessionGroup = (path: string, groupId: string | null, opts?: 
       ...(opts?.index === undefined ? {} : { index: opts.index }),
     }),
   });
+
+/**
+ * The shared follow-up: one request, the server prompts every member in GROUP order.
+ *
+ * The 409 is part of this route's contract, not an exception — every member is checked before any
+ * is prompted, and one unavailable member refuses the whole batch having sent NOTHING. So it comes
+ * back as a value the caller must handle, rather than a throw it might not. `members` is the
+ * user's explicit subset ("Send to the rest"), never inferred here or on the server.
+ *
+ * `sent` means ACCEPTED, not answered: the route returns once every prompt is queued. A member
+ * that fails after acceptance reports in its own pane, over its own socket, never in this body.
+ */
+export async function promptSessionGroup(id: string, text: string, members?: string[]): Promise<BatchOutcome> {
+  try {
+    const result = await request<BatchPromptResult>(`/api/session-groups/${encodeURIComponent(id)}/prompt`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(members ? { text, members } : { text }),
+    });
+    return { ok: true, result };
+  } catch (err) {
+    const refused = err instanceof ApiError && err.status === 409 ? refusalsOf(err.body) : null;
+    if (refused) return { ok: false, refused };
+    return { ok: false, error: (err as Error).message };
+  }
+}
+
+/** The 409's members, or null when the body isn't the shape this route promises. */
+function refusalsOf(body: unknown): BatchRefusal[] | null {
+  if (typeof body !== "object" || body === null) return null;
+  const list = (body as { refused?: unknown }).refused;
+  if (!Array.isArray(list) || list.length === 0) return null;
+  return list.every((r) => typeof r === "object" && r !== null && typeof (r as BatchRefusal).code === "string")
+    ? (list as BatchRefusal[])
+    : null;
+}
 
 /** POST /api/sessions/cleanup `{ mode:"paths" }`: named session paths, e.g. one archived row. */
 export type PathsCleanupRequest = { mode: "paths"; paths: string[] };

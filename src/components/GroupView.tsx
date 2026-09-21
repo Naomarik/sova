@@ -14,12 +14,24 @@ import {
   type GroupLayoutMode,
 } from "../lib/group-layout";
 import type { RewindControl } from "../lib/inputs";
-import { loadSessionGroups, memberLabel, orderedMembers, quoted, sessionGroups, setGroupOrder, setSessionGroup, tabLabels } from "../lib/session-groups";
-import { announce, toast } from "../lib/ui-state";
+import {
+  groupNameOf,
+  loadSessionGroups,
+  memberLabel,
+  orderedMembers,
+  quoted,
+  removeGroup,
+  sessionGroups,
+  setGroupOrder,
+  setSessionGroup,
+  tabLabels,
+} from "../lib/session-groups";
+import { announce, setGroupComposerActive, toast } from "../lib/ui-state";
 import { sessionWorking, type UsageTotalView } from "../lib/workers";
 import type { PaneInsight, TabId } from "./SessionPane";
 import { sessionHref } from "./Sidebar";
 import { SessionView } from "./SessionView";
+import { GroupComposer } from "./GroupComposer";
 import { Icon } from "./ui";
 
 /**
@@ -102,6 +114,8 @@ export function GroupView(props: {
   group: SessionGroup;
   /** The group's sessions, from the session list; this puts them in the group's own order. */
   members: SessionSummary[];
+  /** Every session, for Add Members: what this group could take in. */
+  sessions: SessionSummary[];
   /** The pane the route names, or null when it names none. */
   focused: string | null;
   wiring: PaneWiring;
@@ -127,7 +141,10 @@ export function GroupView(props: {
     setViewport(window.innerWidth);
   };
   window.addEventListener("resize", onResize);
-  onCleanup(() => window.removeEventListener("resize", onResize));
+  onCleanup(() => {
+    window.removeEventListener("resize", onResize);
+    setGroupComposerActive(false); // nothing left to collapse under
+  });
 
   /** What is remembered, unless the viewport is too narrow for a row of panes. */
   const mode = (): GroupLayoutMode => (narrow() ? "tabs" : stored());
@@ -324,6 +341,42 @@ export function GroupView(props: {
     focusPane(undo.path, true);
   };
 
+  // ---- Group lifecycle (head) ---------------------------------------------
+  const [confirming, setConfirming] = createSignal(false);
+  const [adding, setAdding] = createSignal(false);
+
+  /**
+   * Dissolve is Delete group under another word (§9): same route, but here it sits above open
+   * transcripts, where "Delete" would read as deleting them. Both confirmations say the sessions
+   * stay, because that is the thing a reader needs to believe before pressing it.
+   */
+  const dissolve = async () => {
+    const n = panes().length;
+    const name = props.group.name;
+    setConfirming(false);
+    if (!(await removeGroup(id()))) return;
+    forgetPromoted(id());
+    props.wiring.onRefresh();
+    toast(
+      n === 0
+        ? `Dissolved ${quoted(name)}. It had no sessions.`
+        : `Dissolved ${quoted(name)}. Its ${n} ${n === 1 ? "session is" : "sessions are"} ungrouped.`,
+    );
+    location.hash = "#/"; // the route no longer names anything
+  };
+
+  /** Sessions this group could take in: everything that isn't already in it. */
+  const candidates = createMemo(() => props.sessions.filter((s) => s.groupId !== id()));
+
+  const add = async (session: SessionSummary) => {
+    setAdding(false);
+    const from = session.groupId ? groupNameOf(sessionGroups(), session.groupId) : null;
+    if (!(await setSessionGroup(session.path, id()))) return;
+    props.wiring.onRefresh();
+    toast(from ? `Moved ${session.title} from ${quoted(from)} to ${quoted(props.group.name)}.` : `Added ${session.title} to ${quoted(props.group.name)}.`);
+    focusPane(session.path, true);
+  };
+
   return (
     <>
       <header class="workspace-head">
@@ -367,6 +420,36 @@ export function GroupView(props: {
               Tabs
             </button>
           </div>
+        </Show>
+        <AddMembers
+          groupName={props.group.name}
+          candidates={candidates()}
+          open={adding()}
+          onOpen={setAdding}
+          onAdd={(s) => void add(s)}
+        />
+        {/* Asked in place, in the head, like the sidebar's Delete group asks in its tool row. */}
+        <Show
+          when={confirming()}
+          fallback={
+            <button type="button" class="button button-sm button-ghost" onClick={() => setConfirming(true)}>
+              Dissolve
+            </button>
+          }
+        >
+          <span class="workspace-dissolve">
+            <span class="workspace-dissolve-question">
+              {panes().length === 0
+                ? `Dissolve ${quoted(props.group.name)}? Nothing is in it.`
+                : `Dissolve ${quoted(props.group.name)}? Its ${panes().length} ${panes().length === 1 ? "session stays" : "sessions stay"} in the list.`}
+            </span>
+            <button type="button" class="button button-sm button-destructive" onClick={() => void dissolve()}>
+              Dissolve
+            </button>
+            <button type="button" class="button button-sm button-ghost" onClick={() => setConfirming(false)}>
+              Cancel
+            </button>
+          </span>
         </Show>
       </header>
 
@@ -413,10 +496,11 @@ export function GroupView(props: {
             <div class="empty">
               <Icon name="folder" class="empty-mark" />
               <p class="empty-title">{quoted(props.group.name)} has no sessions yet.</p>
-              <p class="empty-body">Drag a row onto the group in the sidebar, or use “Open beside” from a session's details.</p>
-              <a class="button empty-action" href="#/">
-                Back to Sessions
-              </a>
+              <p class="empty-body">Add some here, or drag a row onto the group in the sidebar.</p>
+              <button type="button" class="button empty-action" onClick={() => setAdding(true)}>
+                <Icon name="plus" />
+                Add Members
+              </button>
             </div>
           </div>
         }
@@ -497,6 +581,18 @@ export function GroupView(props: {
             }}
           </For>
         </div>
+        {/* One composer for the whole workspace, under the row it writes to. Not rendered with no
+            members: there is nobody to send to, and §14 says so rather than showing a dead box. */}
+        <GroupComposer
+          groupId={id()}
+          members={rows()}
+          nameOf={(sessionId) => {
+            const m = rows().find((r) => r.id === sessionId);
+            return m ? nameOf(m.path) : "This member";
+          }}
+          onSent={props.wiring.onRefresh}
+          onActive={setGroupComposerActive}
+        />
       </Show>
     </>
   );
@@ -675,6 +771,122 @@ function PaneMenu(props: {
               />
             </Show>
           </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+/**
+ * The §2 group popover in reverse (spec/14-workspaces.md "Group lifecycle"): instead of choosing a
+ * group for one session, it chooses a session for this group. Ungrouped sessions come first,
+ * because those are the ones adding costs nothing; a session already in another group is offered
+ * too, with the group it would LEAVE named on the row — adding it moves it, and one group per
+ * session is the rule that makes "this session's workspace" a fact.
+ */
+function AddMembers(props: {
+  groupName: string;
+  /** Every session not already in this group, in the list's own order. */
+  candidates: SessionSummary[];
+  open: boolean;
+  onOpen(open: boolean): void;
+  onAdd(session: SessionSummary): void;
+}) {
+  let trigger!: HTMLButtonElement;
+  let menu!: HTMLDivElement;
+  const [query, setQuery] = createSignal("");
+
+  /** Ungrouped first, then the ones a press would move out of another group. */
+  const rows = createMemo(() => {
+    const q = query().trim().toLowerCase();
+    const hits = q ? props.candidates.filter((s) => s.title.toLowerCase().includes(q) || s.cwd.toLowerCase().includes(q)) : props.candidates;
+    return [...hits.filter((s) => !s.groupId), ...hits.filter((s) => s.groupId)];
+  });
+
+  const close = () => {
+    if (menu.matches(":popover-open")) menu.hidePopover();
+  };
+  const openMenu = () => {
+    const r = trigger.getBoundingClientRect();
+    menu.style.setProperty("--menu-top", `${Math.round(r.bottom + 4)}px`);
+    menu.style.setProperty("--menu-right", `${Math.max(0, Math.round(innerWidth - r.right))}px`);
+    menu.style.top = "";
+    menu.style.bottom = "";
+    setQuery("");
+    menu.showPopover();
+    queueMicrotask(() => menu.querySelector<HTMLInputElement>("input")?.focus());
+  };
+
+  createEffect(() => {
+    if (props.open && !menu.matches(":popover-open")) openMenu();
+    if (!props.open) close();
+  });
+
+  return (
+    <>
+      <button
+        ref={trigger}
+        type="button"
+        class="button button-sm button-ghost"
+        aria-haspopup="menu"
+        aria-expanded={props.open ? "true" : "false"}
+        onClick={() => props.onOpen(!props.open)}
+      >
+        Add Members
+      </button>
+      <div
+        ref={menu}
+        class="model-menu group-menu"
+        popover="auto"
+        aria-label={`Add a session to ${quoted(props.groupName)}`}
+        onToggle={(e) => props.onOpen((e as ToggleEvent).newState === "open")}
+      >
+        <div class="model-menu-search">
+          <div class="search">
+            <Icon name="search" />
+            <input
+              class="input"
+              type="text"
+              aria-label="Search sessions"
+              placeholder="Title or folder"
+              value={query()}
+              onInput={(e) => setQuery(e.currentTarget.value)}
+            />
+          </div>
+        </div>
+        <div class="model-menu-list" role="menu" aria-label={`Add a session to ${quoted(props.groupName)}`}>
+          <Show
+            when={rows().length > 0}
+            fallback={
+              <p class="sidebar-region-note">
+                {props.candidates.length === 0 ? "Every session is already in a group." : "No session matches."}
+              </p>
+            }
+          >
+            <For each={rows()}>
+              {(session) => (
+                <div
+                  class="mode-option group-option"
+                  role="menuitem"
+                  tabindex={0}
+                  onClick={() => props.onAdd(session)}
+                  onKeyDown={(e) => {
+                    if (e.key !== "Enter" && e.key !== " ") return;
+                    e.preventDefault();
+                    props.onAdd(session);
+                  }}
+                >
+                  <span class="mode-option-text">
+                    <span class="mode-option-id">{session.title}</span>
+                    {/* Naming the group it would leave is the whole warning: adding moves it. */}
+                    <Show when={session.groupId}>
+                      <span class="mode-option-note">in {quoted(groupNameOf(sessionGroups(), session.groupId) ?? "another group")}</span>
+                    </Show>
+                  </span>
+                </div>
+              )}
+            </For>
+          </Show>
         </div>
       </div>
     </>

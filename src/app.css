@@ -237,8 +237,6 @@ html, body, #root { height: 100%; }
 }
 .workspace-pane-head > .chip { flex-shrink: 1; min-width: 0; overflow: hidden; }
 .workspace-pane-tools { flex: none; display: flex; align-items: center; gap: var(--space-1); }
-/* A menu row that explains why it is disabled (Eliminate, Move Left at the end). */
-.mode-option-note { display: block; font-size: var(--fs-caption); color: var(--color-ink-muted); }
 /* A pane is never a 720px head: the gauge takes its percent-only step here at
    every width (base.css does the same under 900px for the session head). */
 .workspace-pane-head .context-label,
@@ -249,3 +247,50 @@ html, body, #root { height: 100%; }
    layout toggle until it is used or the tab forgets it. */
 .workspace-promoted { flex: none; gap: var(--space-2); max-width: 340px; overflow: hidden; }
 .workspace-promoted > .button { flex: none; }
+
+/* The group composer (spec/14-workspaces.md "The group composer"): the workspace's
+   one primary, full width of the main column, under the pane row. */
+.group-composer { flex: none; }
+.group-composer-targets { color: var(--color-ink-2); white-space: nowrap; }
+/* Its banners sit above the row, inside the composer, so a refusal is attached
+   to the box that caused it rather than floating over the panes. */
+.group-composer .banner { margin-bottom: var(--space-2); }
+/* While the workspace is open, a pane's Send is not the accent one: §0 allows a
+   single primary in view, and the choice worth marking is "this goes to all". */
+.workspace-pane .composer .button-primary {
+  background: var(--color-surface);
+  border-color: var(--color-border-strong);
+  color: var(--color-ink);
+}
+
+/* A collapsed pane composer (§14 "Pane composers while the group composer is in
+   use"): the row keeps its full height and every control keeps its tap target —
+   what goes is the foot, which is reference rather than action. The reason stays
+   in the accessibility tree, because a disabled composer that collapses must not
+   become a Send button with no explanation. */
+/* The model indicator and the mode trigger are display:none — out of the flow AND out of the
+   accessibility tree, because an invisible control that still takes focus is worse than a hidden
+   one. The foot itself is only taken out of the flow (so it contributes no height and no flex
+   gap), which keeps the reason inside it readable to AT: `aria-describedby` still resolves. */
+.composer[data-collapsed="true"] .composer-foot > *:not(.composer-reason) { display: none; }
+.composer[data-collapsed="true"] .composer-foot {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.composer[data-collapsed="true"] .attachments { display: none; }
+/* The textarea is pinned to one line while collapsed, and released the moment it
+   takes focus — which expands the composer in the same frame. Typing is never
+   done in a box that is deciding whether to grow. */
+.composer[data-collapsed="true"] .composer-input { field-sizing: none; height: var(--control-md); }
+.composer { transition: height var(--dur-fast) var(--ease-standard); }
+@media (prefers-reduced-motion: reduce) {
+  .composer { transition: none; }
+}
+/* Dissolve, asked in place in the head (as the sidebar asks in its tool row). */
+.workspace-dissolve { display: inline-flex; align-items: center; gap: var(--space-2); flex: none; }
+.workspace-dissolve-question { font-size: var(--fs-caption); color: var(--color-ink-2); }
+/* A menu row's second line: the group a session would LEAVE, or a disabled row's reason. */
+.mode-option-note { display: block; font-size: var(--fs-caption); color: var(--color-ink-muted); }

@@ -479,7 +479,7 @@ export function App() {
               {/* A workspace: every session of one group on screen at once (#/g/<id>). */}
               <Match when={groupRoute() && openGroup()}>
                 {(group) => (
-                  <GroupView group={group()} members={groupMembers()} focused={groupRoute()!.path} wiring={wiring} />
+                  <GroupView group={group()} members={groupMembers()} sessions={list() ?? []} focused={groupRoute()!.path} wiring={wiring} />
                 )}
               </Match>
               {/* One session, the whole pane (#/s/<path>), exactly as before. */}

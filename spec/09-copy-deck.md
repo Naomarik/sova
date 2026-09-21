@@ -358,7 +358,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 
 | Where | Copy |
 |---|---|
-| Skip link | Skip to Group Composer |
+| Skip link | Skip to Group Composer · before the group composer exists: `Skip to Transcript`, targeting the focused pane |
 | Main landmark | `aria-label`: Workspace: {name} |
 | Title and meta | {name} · `{n} members` (1: `1 member`) · `·` · the cwd when every member shares one, else `{n} folders` |
 | Back | `aria-label`: Back to Sessions |
@@ -367,12 +367,12 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Promoted chip | Promoted: {title} · button `Add Back` · `title`: You took this session out of “{name}”. Add Back puts it back where it was |
 | Tab | {label or title} · `aria-label`: {label or title}, {model} (mid-turn: "…, working") |
 | Pane name | {label} · {model}, or {title} · {model} with no label · repeats of one model: {model} #1, #2, #3 · `title`: the full string, then the cwd |
-| Pane tools | `Open` (link, `title`: Open this session on its own) · `Wider` · `Narrower` · `Move Left` · `Move Right` · `Promote` · `Eliminate` (no archive available: `Remove From Group`) |
+| Pane tools | one menu: trigger `aria-label` "Pane actions · {pane name}" · rows `Open` (link, `title`: Open this session on its own) · `Wider` · `Narrower` · `Move Left` · `Move Right` · `Promote` · `Remove From Group` · `Eliminate` (absent when the session wasn't started in pi-web) |
 | Pane tool `aria-label`s | Open {label or title} · Make {label or title} wider · Make {label or title} narrower · Move {label or title} left · Move {label or title} right · Promote {label or title} · Eliminate {label or title} |
 | Promote `title` | Take it out of “{name}” and open it on its own. Nothing is archived and nothing is deleted |
 | Eliminate `title` | Take it out of “{name}” and archive it. The transcript stays; unarchiving brings it back |
 | Eliminate off | TUI-live: "This session is open in a terminal." · mid-turn: "It's mid-turn. Stop it or wait, then eliminate it." |
-| Remove From Group `title` | This session wasn't started in pi-web, so removing it is all we can do — nothing is archived |
+| Remove From Group `title` | Take it out of “{name}” and stay here. Nothing is archived and nothing is deleted · when Eliminate is absent: This session wasn't started in pi-web, so removing it is all we can do — nothing is archived |
 | Member chips | `TUI` (accent, static) · `Archived` (neutral) · `Can't open` (error) · `Busy` (warn) |
 | Member composer reasons | "This session is open in a terminal, so pi-web won't write to it." · "This session is archived. Unarchive it to send." · "This session can't be opened. The banner above says why." · "Another program is writing to this session." |
 | Member file gone | **This session's file is gone.** Its transcript was deleted outside pi-web, so there's nothing left to read. Removing it from the group is all that's left. · button `Remove From Group` |

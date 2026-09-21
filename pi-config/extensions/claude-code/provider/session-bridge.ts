@@ -845,6 +845,12 @@ export class SessionBridge implements ClaudeSessionBridge {
 		return session.runTurn(request, signal);
 	}
 
+	/**
+	 * pi session ids with a live CLI child, for diagnostics and the live smoke
+	 * test. Reading it must never be load-bearing for behaviour.
+	 */
+	activeSessionIds(): string[] { return [...this.sessions.keys()]; }
+
 	/** Called from the extension's `session_shutdown` hook. */
 	async disposeSession(piSessionId: string, reason = "pi session shut down"): Promise<void> {
 		const session = this.sessions.get(piSessionId);

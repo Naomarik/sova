@@ -12,7 +12,10 @@ reader can't tell from a stale one.
   `--skeleton-sweep`
 - **Status:** `--status-success`, `--status-warn`, `--status-error`, `--status-info`,
   `--status-success-bg`, `--status-warn-bg`, `--status-error-bg`, `--status-info-bg`
-- **Diff:** `--diff-add-bg`, `--diff-add-ink`, `--diff-del-bg`, `--diff-del-ink`, `--diff-gutter`
+- **Diff:** `--diff-add-bg`, `--diff-add-ink`, `--diff-del-bg`, `--diff-del-ink`, and
+  `--diff-gutter`, which is **reserved**: it is declared, themable, and read by nothing. The diff
+  surfaces carry their edge with a `border-left` in `--diff-add-ink` / `--diff-del-ink` (§3), and
+  there is no gutter element for it to paint. A theme may set it and see no change
 - **Type:** the whole family, because a theme may set any of it (§0). Faces: `--font-body`,
   `--font-display`, `--font-mono`. Weights: `--fw-regular`, `--fw-medium`, `--fw-semibold`,
   `--fw-display`. Size and line-height come in pairs, one per step — `--fs-display-xl` /
@@ -44,9 +47,9 @@ The 38 `--brand-*` primitives are the one deliberate omission: they are raw valu
 layer.
 
 A theme's `colors` map may set the 30 keys in the Color, Status, Diff and Elevation entries above
-plus `--scrim` and `--skeleton-sweep`, and its `typography` map may name any `--font-*`, `--fs-*`,
-`--lh-*`, `--fw-*` or `--ls-*` key listed here — whether these notes cite it elsewhere or not. §0
-has the grammar each one accepts, and the names in a theme file drop the `--color-`, `--status-`
-and `--diff-` prefixes.
+— 14 + 8 + 5 + 3, with `--scrim` and `--skeleton-sweep` among the Color ones — and its
+`typography` map may name any `--font-*`, `--fs-*`, `--lh-*`, `--fw-*` or `--ls-*` key listed
+here, whether these notes cite it elsewhere or not. §0 has the grammar each one accepts, and the
+names in a theme file drop the `--color-`, `--status-` and `--diff-` prefixes.
 
 ---

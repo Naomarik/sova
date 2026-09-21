@@ -107,7 +107,8 @@ base it extends, so you can change one color or all 30.
   `bg`, `surface`, `sunken`, `ink`, `ink-2`, `ink-muted`, `border`, `border-strong`, `accent`,
   `accent-hover`, `accent-tint`, `on-accent`, `status-{success,warn,error,info}` and their
   `-bg` fills, `diff-{add,del}-{bg,ink}`, `diff-gutter`, `shadow-1`…`shadow-3`, `scrim`,
-  `skeleton-sweep`. The last five take whole CSS values, not just colors.
+  `skeleton-sweep`. The last five take whole CSS values, not just colors. `diff-gutter` is
+  reserved — it is accepted and applied, but nothing reads it yet, so setting it changes nothing.
 - `typography` — optional: `font-body`, `font-display`, `font-mono` — font *stacks*, naming faces
   already on the machine; a theme can't ship a font file — plus any `fs-*`, `lh-*`, `fw-*` or
   `ls-*` step, so a theme that swaps the face can retune its tracking. Set tracking in `em`: it

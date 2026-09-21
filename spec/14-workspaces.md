@@ -626,8 +626,12 @@ distinguished by `FanoutRequest.nameIsGenerated` (§14b). There is no fourth sup
 "pi-web may remove what it both made and named" is **literally** true rather than nearly true.
 Every round of this family lived in the gap between those two words.
 
-**And polarise an optional flag so that its FALSEHOOD is the safe answer**, because absence is
-the state you do not control — an older client, an older record, a field nobody set. Two fields
+**The dangerous state must be the one a check has to ASSERT**, because absence is the state you
+do not control — an older client, an older record, a field nobody set. Two ways to satisfy that,
+depending on shape: **polarise a boolean so its falsehood is safe**, and **compare an enum
+positively** (`x === "dangerous"`) rather than negatively (`x !== "safe"`). Both shapes fail the
+same way under the negative form, which is why the rule is about the check and not only about
+the type — and why a spec that names a field's absence rule should name its **check** too. Two fields
 can carry identical information and fail in opposite directions: `nameIsGenerated` absent reads
 as *the user named it*, and the group survives; `nameEdited` absent reads as *untouched*, so
 pi-web claims the name and deletes it. Same fact, same size, one of them safe by construction.

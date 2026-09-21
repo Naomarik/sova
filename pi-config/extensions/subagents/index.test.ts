@@ -2109,7 +2109,9 @@ test("a remote session's workers run on the target: pi loads the remote extensio
 	h.bus.emit(BACKEND_REGISTER_EVENT, fakeBackend(created));
 	h.bus.emit(BACKEND_REGISTER_EVENT, { ...fakeBackend(created), id: "other" });
 	try {
-		await h.call("agent_spawn", { prompt: "pi task", tools: ["read", "bash"] });
+		const spawned = await h.call("agent_spawn", { prompt: "pi task", tools: ["read", "bash"] });
+		assert.match(spawned.content[0].text, /^Remote session: workers run on target box in \/srv\/app\.$/m, "the parent can see it runs the remote wiring");
+		assert.match((await h.call("agent_list")).content[0].text, /Remote session: workers run on target box in \/srv\/app\./);
 		const piWorker = h.workers[0];
 		assert.deepEqual(piWorker.extensions, [REMOTE_EXTENSION], "the remote extension, nothing else");
 		assert.deepEqual(piWorker.flags, { target: "box" });
@@ -2183,7 +2185,9 @@ test("a local session's workers are untouched by the remote wiring", async () =>
 	const created: any[] = [];
 	h.bus.emit(BACKEND_REGISTER_EVENT, fakeBackend(created));
 	try {
-		await h.call("agent_spawn", { prompt: "pi task" });
+		const spawned = await h.call("agent_spawn", { prompt: "pi task" });
+		assert.doesNotMatch(spawned.content[0].text, /Remote session/);
+		assert.doesNotMatch((await h.call("agent_list")).content[0].text, /Remote session/);
 		assert.equal(h.workers[0].flags, undefined);
 		assert.deepEqual(h.workers[0].extensions, []);
 		await h.call("agent_spawn", { prompt: "claude task", backend: "claude-code" });

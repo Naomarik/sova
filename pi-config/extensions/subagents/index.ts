@@ -394,6 +394,12 @@ export function registerSubagents(
 	});
 	pi.events?.emit(REMOTE_DISCOVER_EVENT, { version: 1 });
 	const remoteSessionFor = (ctx: ExtensionContext): RemoteSessionEvent | undefined => remoteSession ?? remoteOfPlaceholder(ctx.cwd);
+	/** One line in agent_spawn/agent_list output: the proof that this session's workers run on the target (absent in a local session). */
+	const remoteNotice = (ctx: ExtensionContext): string => {
+		const r = remoteSessionFor(ctx);
+		if (!r) return "";
+		return r.error ? `Remote session: target ${r.target} could not be loaded (${r.error}); no worker can be spawned.` : `Remote session: workers run on target ${r.target} in ${r.farCwd}.`;
+	};
 	const groups: AgentGroup[] = [];
 	const teams = new TeamStore();
 	// Worker identity records in this (owner) session file; see registry.ts.
@@ -1246,6 +1252,7 @@ export function registerSubagents(
 			return result(
 				[
 					`Started ${group.agents.length} background subagent(s) in ${groupId} (${label}). Task acceptance is asynchronous; inspect status for startup failures.`,
+					remoteNotice(ctx),
 					...group.agents.map(
 						(a) =>
 							`${a.id}  ${a.name}  ${a.status}  backend=${a.backend ?? "pi"}  model=${a.model ?? "child default"}  effort=${a.effort ?? "default"}${a.forked ? "  forked" : ""}${a.extensions.length ? `  extensions=${a.extensions.join(",")}` : ""}${a.wake ? "" : "  wake=false"}`,
@@ -1254,7 +1261,7 @@ export function registerSubagents(
 					group.agents.some((a) => a.wake)
 						? "Workers with wake (the default) start a turn for you when they settle while you are idle, so you can simply end this turn."
 						: "wake=false: results arrive with your next turn; use agent_wait if you need them sooner.",
-				].join("\n"),
+				].filter(Boolean).join("\n"),
 				{ groupId, label, spawned: group.agents.map((a) => ({ id: a.id, name: a.name, backend: a.backend ?? "pi", model: a.model })) },
 			);
 		},
@@ -1269,7 +1276,7 @@ export function registerSubagents(
 		async execute(_id, _params, _signal, _update, ctx) {
 			context(ctx);
 			return result(
-				[retentionNotice(), groups.length
+				[retentionNotice(), remoteNotice(ctx), groups.length
 					? groups
 							.map((g) =>
 								[

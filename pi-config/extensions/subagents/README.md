@@ -88,7 +88,7 @@ Agent options work both inside `agents` and in the single-worker shorthand:
   it to the chosen model's capabilities.
 - `tools`: built-in tool-name allowlist. Omitted inherits the parent's active
   built-in tool names; `[]` disables all tools.
-- `cwd`: directory, relative to the parent's cwd or absolute; `~/` is supported.
+- `cwd`: directory, relative to the parent's cwd or absolute; `~/` is supported. In a remote session (below) it is a path on the target, absolute or relative to the session's far cwd; `~` is refused there.
   A leading `@` is treated as Pi's path-mention syntax. Use `./@name` for a
   directory whose actual name begins with `@`.
 - `systemPrompt`: additional system instructions.
@@ -232,6 +232,27 @@ timing out a wait **does not kill its workers**. Use `agent_kill` with exactly o
 of `id`, `group`, or `all: true` to stop them. `all: true` targets published
 workers; unpublished workers from a failed spawn (whose IDs were never returned)
 are already being stopped and are only reported as a count.
+
+## Remote sessions
+
+When the parent runs on a remote target (pi-config's `remote` extension, `--target`; pi-web opens
+such sessions in an empty local placeholder directory), every worker runs on the target as well —
+no backend ever gets local tools against the placeholder:
+
+- pi workers load the remote extension (`-e …/remote/index.ts --target <name>`; the runner's
+  `flags` option), so their built-in tools are the remote ones under the same names. Tool
+  allowlists keep working by name.
+- claude-code workers start with `--tools ""` and the `remote` MCP server
+  (`remote/mcp-server.ts`; tools `mcp__remote__remote_bash`, `remote_read`, `remote_write`,
+  `remote_edit`, `remote_ls`, `remote_find`, `remote_grep`), plus `MCP_TOOL_TIMEOUT` in their own
+  environment so a long remote command is not cut at claude's 60 s default. Team members get the
+  `team` server beside it.
+- other backends are refused in a remote session, as is any spawn while the session's target
+  failed to load.
+
+The session is recognised from the remote extension's `remote:session` event on `pi.events`, else
+from the placeholder cwd (`<agentDir>/pi-web/targets/<name>/<far path>`). See the remote
+extension's README ("Workers").
 
 ## Model policy
 

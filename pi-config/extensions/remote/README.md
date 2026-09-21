@@ -128,6 +128,27 @@ execution.
 any other directory, the local cwd maps to the entry's `cwd` (or the far login directory), and
 `~/…` maps to the far `$HOME`.
 
+## Workers (subagents of a remote session)
+
+A remote session's subagents run on the target too — both backends, through the same argv, channel
+and far scripts as the session itself (`workers.ts` is the contract the subagents extension reads):
+
+| Backend | How |
+| --- | --- |
+| pi | The subagents extension loads this extension into the child (`-e remote/index.ts --target <name>`, `--no-channel` when the session has it), so the worker's `bash`/`read`/`write`/`edit`/`ls`/`find`/`grep` are exactly the session's. Its own channel; its own preflight over the parent's ControlMaster |
+| claude-code | The child launches `mcp-server.ts` as a stdio MCP server named `remote` (tools `mcp__remote__remote_bash`, `remote_read`, `remote_write`, `remote_edit`, `remote_ls`, `remote_find`, `remote_grep`) and starts with `--tools ""`: no built-in tool at all, so nothing can touch this machine's filesystem. The identity (`PI_REMOTE_MCP`: target name, far cwd, agent dir — never a credential) rides in the worker's private mcp.json env |
+
+How the subagents extension knows: this extension emits `remote:session` on `pi.events` at session
+start (and again on `remote:discover`), since `pi.getFlag("target")` is only answered for the
+extension that registered the flag; a placeholder cwd (`<agentDir>/pi-web/targets/<name>/<far path>`)
+is the fallback. A target that failed to load is announced with `error`, and the session then refuses
+to spawn workers at all — never a worker with local tools in an empty placeholder.
+
+A worker's `cwd` in a remote session is a FAR path (absolute, or relative to the session's far cwd;
+`~` is refused — the parent does not know the far home); its local cwd is that path's placeholder,
+created if needed. The worker is told all of this in its system prompt (`remoteWorkerInstructions`),
+and a claude worker again through the server's `initialize.instructions`.
+
 ## Files
 
 | File | What |
@@ -137,6 +158,8 @@ any other directory, the local cwd maps to the entry's `cwd` (or the far login d
 | `channel.ts` | The pinned channel: one far shell over its own ssh, length-prefixed requests, base64 + marker responses |
 | `mount.ts` | The sshfs mount: the one argv builder (the measured-safe options), the `/proc/mounts` lookup, mount/unmount/verify with honest reports. **pi-web's server imports it**, so keep it pi-runtime-free |
 | `check.ts` | `node check.ts entry.json [--list PATH] [--cmd …]`: validates an entry and runs it end to end through the same builder. The connection agent uses it before it writes an entry |
+| `workers.ts` | Pure. What a session hands its workers: the `remote:session` event, the MCP identity env and the worker blurb; imported by index.ts, mcp-server.ts and the subagents extension |
+| `mcp-server.ts` | The `remote` stdio MCP server a claude-code worker launches (node builtins + the pure modules; never index.ts) |
 | `index.ts` | The extension |
 
 ## Entry schema

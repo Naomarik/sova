@@ -368,8 +368,10 @@ export class Remote {
 	// -------------------------------------------------------------------------
 	// preflight
 
-	private static readonly PROBE = `printf '%s\\n' ${shQuote(MARKER)}; id -un; hostname; printf '%s\\n' "$HOME"; pwd`;
+	private static readonly PROBE = `printf '%s\\n' ${shQuote(MARKER)}; id -un; uname -n 2>/dev/null || echo unknown; printf '%s\\n' "$HOME"; pwd`;
 
+	/** One line per field after the marker; `uname -n` (not `hostname`, absent from minimal images)
+	    always yields a line so the positions never shift. */
 	private parseProbe(r: RunResult): FarInfo {
 		const lines = r.stdout.toString("utf8").split("\n");
 		const at = lines.lastIndexOf(MARKER);

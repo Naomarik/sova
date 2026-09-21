@@ -18,7 +18,7 @@ import { runArgv } from "./exec.ts";
 
 const PROBE = [
 	`echo "user=$(id -un)"`,
-	`echo "hostname=$(hostname)"`,
+	`echo "hostname=$(uname -n)"`,
 	`echo "home=$HOME"`,
 	`echo "pwd=$(pwd)"`,
 	`for t in docker node npm git rg pi incus; do printf '%s=%s\\n' "$t" "$(command -v "$t" || echo -)"; done`,

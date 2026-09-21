@@ -84,7 +84,7 @@ export interface TargetInfo {
   /** Display label; the name when the file sets none. */
   label: string;
   kind: "ssh" | "incus-cell" | "docker";
-  /** Cached reachability probe (`hostname` over the target, bounded): "ok" answered, "offline"
+  /** Cached reachability probe (`uname -n` over the target, bounded): "ok" answered, "offline"
       connection failed or timed out, "error" connected but the command failed, "unknown" not
       probed yet. `error` carries the reason for offline/error. */
   status?: "ok" | "offline" | "error" | "unknown";

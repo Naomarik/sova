@@ -247,7 +247,7 @@ const inflight = new Map<string, Promise<Probe>>();
 /** Cache key: the entry itself (an edited entry is a different target) plus its via chain's. */
 const probeKey = (t: Target, registry: readonly Target[]) => JSON.stringify([t, registry.find((o) => o.name === t.via) ?? null]);
 
-/** Run `hostname` on the target: cached for a TTL, concurrent callers share one run. Never throws. */
+/** Run `uname -n` on the target (`hostname` is absent from minimal images): cached for a TTL, concurrent callers share one run. Never throws. */
 export function probeTarget(target: Target, registry: readonly Target[], opts: { fresh?: boolean } = {}): Promise<Probe> {
   const key = probeKey(target, registry);
   const hit = probes.get(key);
@@ -257,7 +257,7 @@ export function probeTarget(target: Target, registry: readonly Target[], opts: {
   const p = (async (): Promise<Probe> => {
     let argv: string[];
     try {
-      argv = buildTargetArgv(target, { command: "hostname", cwd: "", registry });
+      argv = buildTargetArgv(target, { command: "uname -n", cwd: "", registry });
     } catch (err) {
       return { status: "error", error: (err as Error).message, at: Date.now() };
     }

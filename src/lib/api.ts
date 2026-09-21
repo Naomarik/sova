@@ -11,6 +11,7 @@ import type {
   SessionInsight,
   SessionSummary,
   SubagentModelPolicy,
+  ThemeList,
   TranscriptItem,
   UploadResult,
   UsageInsight,
@@ -68,6 +69,11 @@ export const getSubagentPolicy = () => request<SubagentModelPolicy>("/api/settin
 /** Replace the subagent model policy (whole object). Applies to the next spawn, everywhere. */
 export const putSubagentPolicy = (policy: SubagentModelPolicy) =>
   request<SubagentModelPolicy>("/api/settings/subagents", { method: "PUT", body: JSON.stringify(policy) });
+
+/** Every theme the app can find — the ones it ships and the ones in the user's folder — rescanned
+    per request. Never fails on an unreadable folder: that comes back as `error` with the built-ins
+    still listed (spec/12-settings-dialog.md §12). */
+export const getThemes = () => request<ThemeList>("/api/themes");
 
 /** The session cwd's file index for @-mentions: every non-ignored file under it, relative to
     it, capped (truncated flags the cap). Cached both sides; the menu refetches when stale. */

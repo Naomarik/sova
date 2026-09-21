@@ -849,6 +849,15 @@ button.list-row { width: 100%; border: 0; background: none; text-align: left; }
   border-top: var(--stroke-thin) solid var(--color-border);
   font-size: var(--fs-caption);
   color: var(--color-ink-muted);
+  /* Pinned to the foot of the scrolling panel: with 18 built-ins the list is always
+     longer than the panel, and Refresh — the thing you reach for when the 2s poll is
+     what's broken — must not be 18 rows down. The negative `bottom` cancels the
+     panel's own padding, and the surface fill is the panel's, so rows pass under it. */
+  position: sticky;
+  bottom: calc(-1 * var(--space-4));
+  margin-top: auto;
+  padding-bottom: var(--space-4);
+  background: var(--color-surface);
 }
 .settings-theme-footer code { font-family: var(--font-mono); font-size: var(--fs-mono); color: var(--color-ink-2); }
 

@@ -317,7 +317,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Tab | Themes |
 | List `aria-label` | Theme |
 | Panel intro | Applies as you pick. The choice is remembered in this browser. |
-| Row accessible name | `{name}, {base} base, {origin}` — e.g. "Catppuccin Mocha, dark base, built-in" |
+| Row accessible name | `{name}, {base} base, {source}` — e.g. "Catppuccin Mocha, dark base, built-in". Field names are `shared/protocol.ts`'s: `base`, `source` (`builtin`\|`user`), `path`, `replacesBuiltin` |
 | Row meta | `{Dark\|Light} base · {Built-in\|User}` · a user file holding a built-in's id adds a third clause: `Dark base · User · replaces the built-in` |
 | Row `title`, user themes | the file's full path — e.g. `~/.pi/agent/pi-web/themes/dracula.json` |
 | Swatch strip `aria-label` | Page, surface, accent, error, and text colors |

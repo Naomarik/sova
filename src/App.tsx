@@ -2,12 +2,13 @@ import { batch, createEffect, createMemo, createResource, createSignal, Match, o
 import { createStore, reconcile } from "solid-js/store";
 import { Portal } from "solid-js/web";
 import type { SessionInsight, SessionSummary, TeamInfo, WorkerInfo } from "../shared/protocol";
-import { createSession, fetchAgents, fetchExplanations, fetchSessionInsight, fetchUsage, listSessions, setSessionArchived } from "./lib/api";
+import { createSession, fetchAgents, fetchExplanations, fetchSessionInsight, fetchUsage, getThemes, listSessions, setSessionArchived } from "./lib/api";
 import { agentsHref, insightsRouteFromHash, legacyInsightsTarget } from "./lib/insights";
 import { createThenArchive, dropArchived, newSessionCwd } from "./lib/new-session";
 import { cwdLabel } from "./lib/remote-session";
 import { createPoll } from "./lib/poll";
 import { homeFromSessionPath, shortModel } from "./lib/format";
+import { reconcileTheme } from "./lib/theme";
 import type { RewindControl } from "./lib/inputs";
 import { activeTab, home, setActiveTab, setHome, toast } from "./lib/ui-state";
 import { sessionWorking, type UsageTotalView, workingSplit } from "./lib/workers";
@@ -171,6 +172,13 @@ export function App() {
     const r = insightsRoute();
     return r?.page === "agents" ? r.team : null;
   };
+  // The theme has been on the document since before first paint, out of the localStorage cache
+  // (main.tsx). This is the one check that it still exists: an id whose file was deleted, renamed
+  // or broken falls back to dark (§0). A fetch that fails changes nothing — an unreachable server
+  // is not a reason to lose the theme you picked.
+  void getThemes()
+    .then(reconcileTheme)
+    .catch(() => {});
   const usage = createPoll(fetchUsage, USAGE_POLL_MS);
   const agents = createPoll(fetchAgents, AGENTS_POLL_MS);
   const explanations = createPoll(fetchExplanations, EXPLAIN_POLL_MS);

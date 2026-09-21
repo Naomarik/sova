@@ -52,6 +52,14 @@ only the last of the three is the plausible mistake, and it is the one that reop
 Font stacks admit no parentheses because a stack has no use for them. A value that fails becomes a
 broken row carrying its reason (§12), and the theme it came from is not applied.
 
+**The grammar checks shape, not arguments**, so a value can pass and still not be a color:
+`rgb(0,0,0,0,0)` has an allowed name, one pair of parentheses, a legal charset and 15 characters.
+What happens then is worth knowing rather than guarding against — the custom property is set, but
+`var()` substituting it into a real property leaves that declaration invalid at computed-value
+time, so the property renders `unset` rather than falling back to the base theme's value. One
+malformed color costs one property, not the theme. Tightening the grammar to catch it would mean
+parsing arguments the contract deliberately passes through verbatim.
+
 The server does four things, in this order, when the file is read:
 
 1. **Read the file.** A file that isn't JSON stops here and becomes a broken row (§12).
@@ -63,7 +71,7 @@ The server does four things, in this order, when the file is read:
 **Step 3 cannot precede step 2.** It is the one order that's easy to write backwards and it fails
 in a misleading direction: a `"$base"` is not a color, so every theme that uses `vars` dies at
 once, with an error naming the color grammar while pointing at a value that was never a color.
-14 of the 18 shipped themes use `vars`.
+16 of the 18 shipped themes use `vars` — all but `dark` and `light`, which name no palette.
 
 Applying a theme is not the only thing that puts its strings on screen: the picker previews
 every theme it found, painting swatches and a font sample from files nobody has selected (§12).

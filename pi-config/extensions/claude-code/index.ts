@@ -99,6 +99,8 @@ export function registerClaudeCode(pi: ExtensionAPI): void {
 			return new ClaudeRunner(options as ClaudeSpawnOptions, handlers);
 		},
 	};
+	// Seam: the optional top-level Claude provider (provider/) registers itself
+	// here, flag-gated, with one call — the worker backend above is unaffected.
 	const unregister = registerBackend(pi.events, backend);
 	pi.on("session_shutdown", async () => {
 		stopped = true; unregister(); modelCache = undefined;

@@ -7,9 +7,9 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import { getAgentDir, SessionManager } from "@earendil-works/pi-coding-agent";
 import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
-import { disposeAllChats, heldChat } from "./chat-manager";
+import { disposeAllChats, getModelRuntime, heldChat, warmClaudeCodeProvider } from "./chat-manager";
 import { canonicalPath, resolveSessionPath } from "./paths";
-import { listModels, resolveContext } from "./models";
+import { claudeCodeModelCount, listModels, resolveContext } from "./models";
 import { markOwned } from "./write-guard";
 import { addWebSession } from "./web-sessions";
 import { draftForClient, setDraft } from "./drafts";
@@ -23,6 +23,8 @@ import { findTarget, isTargetName, listRemoteFolders, listTargets, normalizeRemo
 import { isExplanationId, listExplanations, readExplanationPage } from "./explanations";
 import { switchMode } from "./mode";
 import { readSubagentPolicy, writeSubagentPolicy } from "./settings";
+import { readWebSettings, writeWebSettings } from "./web-settings";
+import { claudeCliStatus } from "./claude-status";
 import { modeInfo, parseModePatch, readMode } from "./mode-state";
 import { attachWebSockets } from "./ws";
 
@@ -272,6 +274,30 @@ app.put("/api/settings/subagents", async (c) => {
   return "error" in result ? c.json({ error: result.error }, 400) : c.json(result);
 });
 
+// pi-web's own settings (server/web-settings.ts): today one experimental switch. GET reads the
+// stored value, PUT replaces it. The switch drives the `claude-code-provider` extension flag, so
+// it applies to sessions created after the change — an open chat keeps the runtime it started with.
+app.get("/api/settings", (c) => c.json(readWebSettings()));
+app.put("/api/settings", async (c) => {
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "Expected JSON body { experimental: { claudeCodeProvider } }" }, 400);
+  }
+  const result = writeWebSettings(body);
+  return "error" in result ? c.json({ error: result.error }, 400) : c.json(result);
+});
+
+// Is the Claude Code CLI actually usable? `claude --version` plus how many of its models the
+// shared runtime holds. Answering from the runtime rather than a second live probe keeps the
+// Settings dialog free of CLI spawns beyond the version check, and reports what the picker will
+// really show.
+app.get("/api/settings/claude-status", async (c) => {
+  const status = await claudeCliStatus();
+  return c.json(status.error === undefined ? { ...status, models: await claudeCodeModelCount() } : status);
+});
+
 // The mode is per session (spec/04g-mode-menu.md §4g). ~/.pi/agent/mode.json is the default new sessions
 // start from; GET reads it, POST without ?path= writes it and changes no open chat.
 app.get("/api/mode", (c) => c.json(modeInfo(readMode())));
@@ -414,6 +440,17 @@ server.on("error", (err) => {
   process.exit(1);
 });
 attachWebSockets(server);
+
+// With the experimental switch on, register the Claude Code provider now rather than when the
+// user first opens a session, so its models are in GET /api/models for the picker straight away.
+// A no-op when the switch is off, and never fatal: see warmClaudeCodeProvider.
+void (async () => {
+  try {
+    await warmClaudeCodeProvider(await getModelRuntime(), getAgentDir());
+  } catch (err) {
+    console.warn("[server] claude-code warm-up skipped:", err instanceof Error ? err.message : String(err));
+  }
+})();
 
 let shuttingDown = false;
 async function shutdown() {

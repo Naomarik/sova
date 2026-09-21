@@ -1,8 +1,13 @@
 /**
  * Strict typecheck for the provider modules.
  *
- *   node provider/typecheck.mjs            # provider sources + tests
+ *   node provider/typecheck.mjs            # every .ts in provider/
  *   node provider/typecheck.mjs stream.ts  # a subset
+ *   node provider/typecheck.mjs ../transport.ts ../runner.ts   # extension root
+ *
+ * Arguments are resolved against provider/, so relative paths reach the rest
+ * of the extension. Test files that import ../../subagents/ drag that
+ * extension's own pre-existing errors in; keep them out of a gate invocation.
  *
  * pi-config is not covered by any tsconfig: @earendil-works/* lives inside the
  * installed pi package's node_modules, so the config below is generated with

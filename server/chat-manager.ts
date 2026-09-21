@@ -74,7 +74,6 @@ export class ConfigError extends Error {
 const configFailures = new Map<string, ConfigError>();
 
 /**
-/**
  * A session stored inside a legacy sshfs mount cwd (`~/.pi/agent/mounts/<target>/…`, a feature
  * pi-web no longer has) is refused, permanently: its files are on the target, not here, and opening
  * it would silently run every tool in an empty local directory — the exact confusion the mounts'
@@ -93,6 +92,7 @@ function legacyMountFailure(path: string, cwd: string): ConfigError | undefined 
 }
 
  * The cached permanent failure for `path`, if it still applies. Exported because it is the whole
+/**
  * retry policy for permanent errors: acquireChat answers from it, and it is how a caller (or a
  * test) asks whether the condition has cleared.
  */

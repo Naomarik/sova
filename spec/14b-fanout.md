@@ -225,7 +225,12 @@ POST /api/session-groups/fanout
     discriminate them — identical fact, identical cardinality, equal borrowability — so the enum
     stands on two grounds instead: **the unsafe spelling is excluded by test, not by convention**
     (the check is pinned below, and the absence test fails on the negative form), and malformed
-    values fall to the safe side **by construction**, needing no test at all. A future shape
+    values fall to the safe side **by construction** — no rule for anyone to follow. That is a
+    claim about the shape, and it is pinned by a test enumerating malformed values anyway
+    (`"false"`, `"yes"`, `1`, `0`, `{}`, `[]`, `true`, `null`, wrong case, trailing space), each
+    asserting the group is recorded as **not** dissolving. The test is not redundant with the
+    construction: it is what would fail if the check were ever respelled negatively, which is the
+    one way this shape can be made unsafe. A future shape
     change must keep that test or take over both guarantees.
   - **Provenance, never policy.** The client reports *this is the name pi-web generated*; the
     server decides `autoDissolve` from it. A client permitted to send `autoDissolve` itself would

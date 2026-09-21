@@ -62,11 +62,11 @@ beside each other), a bottom sheet under 768px.
           <span class="fanout-row-model text-mono">anthropic/claude-opus-5</span>
           <span class="fanout-row-fill context-meta">48k of 1M · 4%</span>
           <div class="fanout-count">
-            <button class="button button-icon button-ghost button-sm" aria-label="One fewer claude-opus-5">−</button>
+            <button class="button button-icon button-ghost button-sm" aria-label="One fewer anthropic/claude-opus-5">−</button>
             <span class="text-num" aria-live="off">2</span>
-            <button class="button button-icon button-ghost button-sm" aria-label="One more claude-opus-5">+</button>
+            <button class="button button-icon button-ghost button-sm" aria-label="One more anthropic/claude-opus-5">+</button>
           </div>
-          <button class="button button-sm button-ghost" aria-label="Remove claude-opus-5">…close…</button>
+          <button class="button button-sm button-ghost" aria-label="Remove anthropic/claude-opus-5">…close…</button>
         </li>
         …
       </ul>

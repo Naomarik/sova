@@ -291,7 +291,11 @@ divergence is stated, and are confirmed by `docs/protocol-probes.md`.
   is archived / shut down (`session_shutdown`), the host exits (children are
   SIGKILLed on `exit`), or a divergence restarts it. An aborted turn keeps the
   process; the next turn restarts it if the transcript no longer extends what
-  the CLI saw.
+  the CLI saw. A host that embeds the SDK directly and calls
+  `AgentSession.dispose()` rather than disposing through `AgentSessionRuntime`
+  never emits `session_shutdown`, so that session's CLI child lives until the
+  host process exits — dispose through the runtime (pi's TUI and pi-web both
+  do).
 - Divergences from the investigation, consciously: it proposed
   `--permission-mode manual --permission-prompts host` and answering
   `can_use_tool` for every SDK tool; this build uses `dontAsk` + `--allowedTools

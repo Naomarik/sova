@@ -50,7 +50,21 @@ Binary: ~/.local/bin/claude → versions/2.1.277. One process, `--model haiku`, 
 
 Missing interrupt response from a real CLI; interruption with several host-queued follow-ups against the live CLI (covered offline only); compaction triggered automatically rather than by `/compact`; behavior on other CLI versions.
 
-# Design-B provider probes — CLI 2.1.278 (2026-09-22)
+# Provider spike (CLI 2.1.278) — 2026-09-22
+
+Design-B probes: can the CLI be driven so that **pi executes every tool**, with pi's tools reaching
+the model through one in-process MCP server the host owns?
+
+| Probe | Verdict |
+| --- | --- |
+| (a) host an in-process MCP server | **WORKS** — `initialize` with `sdkMcpServers:["pi"]`, plus `--allowedTools mcp__pi`. Fallbacks never needed. |
+| (b) system prompt | **WORKS, four ways** — `--system-prompt-file`, `--append-system-prompt-file`, `initialize.systemPrompt`, `initialize.appendSystemPrompt`. Replacing does not break tool use. |
+| (b) `--system-prompt-snapshot off` | **WORKS**, flag and `initialize.systemPromptSnapshot:false` alike; across `--resume` the host must re-send the prompt. |
+| (c) `set_model` | **WORKS** — ack'd and applied; the assistant message's `model` changes. |
+| (c) `set_max_thinking_tokens` | **ACCEPTED, no observable effect** for a non-first-party client. |
+| (d) `can_use_tool` break-early fallback | **NOT PROBED** — (a) passed, so it was never needed. |
+| (e) holding a `tools/call` | **WORKS, unbounded by default** — no default wall clock; `MCP_TOOL_TIMEOUT` imposes one, `sdkMcpServerConfigs.<name>.timeout` overrides it. |
+
 
 Binary: `/home/user/.local/share/claude/versions/2.1.278` (`~/.local/bin/claude` symlinks to it),
 `claude --version` → `2.1.278 (Claude Code)`. **The interactive `claude` is a shell ALIAS carrying
@@ -63,6 +77,8 @@ These probes answer one question: can the CLI be driven so that **pi executes ev
 tools reaching the model through one in-process MCP server the host owns? Yes, on the first variant.
 
 ## (a) Hosting an in-process MCP server — PASS with plain `sdkMcpServers`
+
+> **VERDICT: works.** Exact form: `initialize` with `sdkMcpServers:["pi"]` and `--allowedTools mcp__pi`.
 
 Argv (exact):
 
@@ -143,6 +159,9 @@ was observed, so pi may take as long as a pi tool takes.
 
 ## (b) System prompt delivery — all four routes work
 
+> **VERDICT: works, four interchangeable forms.** `--system-prompt-file` (replace) and
+> `--append-system-prompt-file`, or the flagless `initialize.systemPrompt` / `appendSystemPrompt`.
+
 One canary in a system-prompt file ("operator codename GLORFINDEL"), one in the cwd's `CLAUDE.md`
 ("project codename BARLIMAN").
 
@@ -171,6 +190,9 @@ the prompt on every resume; that is the mode to use if pi's system prompt can ch
 
 ## (c) `set_model` and `set_max_thinking_tokens` under `-p` — both accepted
 
+> **VERDICT: `set_model` works** (ack'd, applied, visible on the assistant message's `model`).
+> **`set_max_thinking_tokens` is accepted but has no observable effect** for this client.
+
 - `{subtype:"set_model", model:"sonnet"}` between two turns: `control_response subtype:"success"`,
   the next turn's `system/init` reported `claude-sonnet-5`, and the final `modelUsage` carried both
   `claude-haiku-4-5-20251001` and `claude-sonnet-5`. **Accepted and observably applied.**
@@ -187,11 +209,67 @@ the prompt on every resume; that is the mode to use if pi's system prompt can ch
 
 ## (d) can_use_tool break-early fallback — not probed
 
+> **VERDICT: not needed.**
+
 (a) passed on its first variant, so the fallback design was not needed and was not exercised.
+
+## (e) How long may the host hold a `tools/call`?
+
+> **VERDICT: unbounded by default.** No default wall clock was found; `MCP_TOOL_TIMEOUT` (ms)
+> imposes one process-wide, and `sdkMcpServerConfigs.<name>.timeout` (ms) overrides it per server.
+
+The CLI binary documents the per-server field as a "Hard wall-clock limit per call; progress
+notifications do not extend it. Values below 1000ms are ignored (falls through to MCP_TOOL_TIMEOUT
+or the default)." That matters for design B, where a pi tool may legitimately run for minutes, so
+the default was measured rather than assumed.
+
+- **200 s hold, nothing set**: `tool_use` at t=3.5 s, the host answered at t=203.5 s, the
+  tool_result was accepted and the turn finished at t=206.3 s, exit 0. *The CLI waited the full
+  200 s without complaint* — there is no default per-call limit for an SDK-hosted server at this
+  version. (Only `system/thinking_tokens` events arrived meanwhile; no keepalive is required.)
+- **`MCP_TOOL_TIMEOUT=6000`, 20 s hold**: at exactly 6 s after the call the CLI gave up and
+  synthesised `tool_result is_error=true` with `MCP server "pi" tool "echo_tool" timed out after
+  6s`. The turn then continued normally and the overall result was still `success /
+  is_error=false`. So the env var is honoured, and a timeout is a *tool* failure, not a turn or
+  transport failure. The host's late answer is simply discarded.
+- **`MCP_TOOL_TIMEOUT=6000` + `sdkMcpServerConfigs:{pi:{timeout:60000}}`, 20 s hold**: no timeout;
+  the host answered at 20 s and the turn completed. **The per-server override wins over the env
+  var** — and this is the first live confirmation that `sdkMcpServerConfigs` is accepted at all.
+
+Recommendation: the provider should not rely on the absent default. Pass
+`sdkMcpServerConfigs: {pi: {timeout: <generous ms>}}` explicitly so a stray `MCP_TOOL_TIMEOUT` in
+the user's environment cannot start truncating long pi tools.
+
+### `--system-prompt-snapshot off` as a flag
+
+`claude --help` lists `--system-prompt-snapshot <on|off>` (not hidden). Behaviour matches the
+`initialize.systemPromptSnapshot:false` field exactly: with `off`, a `--resume` that does **not**
+re-pass the prompt answered "I don't have an operator codename defined in my instructions", while
+the same resume that **did** re-pass `--append-system-prompt-file` answered GLORFINDEL.
+
+### `set_model` on the assistant message
+
+Across `Say ONE.` → `set_model sonnet` → `Say TWO.`, the `message.model` field of the streamed
+assistant messages went `claude-haiku-4-5-20251001`, `claude-haiku-4-5-20251001`,
+`claude-sonnet-5`. The switch is visible per message, not only in `system/init` and `modelUsage`.
+
+## Probe scripts
+
+`../tests/spike-*.mjs`, committed as spike artifacts. They are **not** part of
+`tests/run.mjs` (which only imports `*.test.ts`) and they spawn the real CLI, so they are run by
+hand. They share a lot of near-duplicate plumbing on purpose — each was written to answer one
+question and is kept as the evidence for this document, not as library code.
+
+| Script | Probes |
+| --- | --- |
+| `spike-mcp-host.mjs` | (a) the gate: hosting, holding, image and `isError` results |
+| `spike-system-prompt.mjs` | (b) the four prompt routes, snapshot across resume; (c) `set_model`, `set_max_thinking_tokens` |
+| `spike-prompt-sources.mjs` | (b) `CLAUDE.md` vs `--setting-sources`, replaced prompt + tool use, thinking blocks |
+| `spike-tool-timeout.mjs` | (e) the timeout wall, the env var, the per-server override, the snapshot flag |
 
 ## Still unverified
 
 Effect of `sdkMcpServerManifests` (never sent live); `mcp_set_servers` mid-session; host-initiated
 `mcp_message` notifications (e.g. `tools/list_changed`); whether `max_thinking_tokens` changes the
-budget at all; behaviour on CLI versions other than 2.1.278; a `tools/call` held long enough to hit
-any upstream request timeout (6 s proved nothing near a limit).
+budget at all; behaviour on CLI versions other than 2.1.278; whether any *upstream* (API) limit
+bounds a held call beyond the 200 s measured here.

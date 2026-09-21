@@ -208,6 +208,13 @@ POST /api/session-groups/fanout
   a fact only the client holds. Without it, typing a name into the dialog and typing the same
   name as a *rename* afterwards give opposite outcomes for identical intent, the first taking a
   name the user chose.
+  - **Why this is an enum, recorded so it is not reopened.** A boolean would be marginally
+    safer: its natural truthy check is safe, while the enum's natural *negative* check
+    (`named !== "user"`) treats absence as generated and deletes a name. The naming argument
+    that originally chose the enum does **not** discriminate the two — identical fact, identical
+    cardinality, equal borrowability. The enum stands because **the unsafe spelling is excluded
+    by test, not by convention**: the check is pinned below, and the absence test fails on the
+    negative form. A future shape change must keep that test or take over its guarantee.
   - **Provenance, never policy.** The client reports *this is the name pi-web generated*; the
     server decides `autoDissolve` from it. A client permitted to send `autoDissolve` itself would
     assert an ownership pi-web may not have, and an older or buggy one could assert it wrongly.
@@ -241,8 +248,20 @@ POST /api/session-groups/fanout
     where the default is re-derived on every prompt keystroke. **Known cost, chosen rather than
     missed:** typing over the name and then restoring our exact text still counts as naming it,
     so that group stands empty instead of dissolving.
-  - **Four cases**: untouched through many regenerations → generated · typed over → user · typed
-    then restored to our text → user (the cost above) · fork mode untouched → generated.
+  - **Four cases**: untouched through many regenerations → generated · typed over → user ·
+    **typed then restored to our text → user** · fork mode untouched → generated. The third
+    expects `user` **because the system cannot tell a revert from a deliberate identical
+    choice**, and errs toward keeping the name. Say that in the test: dissolving looks obviously
+    right when the name on the group is ours, so a reader who meets the case without the reason
+    will change it and the test will look wrong rather than the change.
+  - **Why no comparison rule can replace this.** "Typed over then reverted" and "typed our exact
+    string by hand" produce the *same state* — field touched, `name` equal to what we last wrote
+    — yet one deserves to dissolve and the other to survive. A comparison therefore cannot
+    merely err; it **cannot be fixed**, because the information that separates the two is not in
+    the value it examines. That is this feature's recurring defect in its general form: a value
+    asked a question it does not contain the answer to. `seed` could not answer *who owns this*;
+    the file's last line could not answer *what did the pane render*; `name === lastGenerated`
+    cannot answer *did the user choose these words*.
 - **`source` and `cwd` are exclusive**, and exactly one is required: a request with both, or
   neither, is a `400`. There is no third mode, and a fanout with no starting point is not a
   thing the dialog can produce.

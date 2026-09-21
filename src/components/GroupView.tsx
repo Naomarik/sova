@@ -5,6 +5,7 @@ import { shortModel } from "../lib/format";
 import { groupHref } from "../lib/group-route";
 import {
   defaultPaneWidth,
+  HEAD_MENU_WIDTH,
   movePane,
   neighbourOf,
   readMode,
@@ -125,6 +126,8 @@ export function GroupView(props: {
   // ---- Layout --------------------------------------------------------------
   const [stored, setStored] = createSignal<GroupLayoutMode>(readMode(props.group.id) ?? "split");
   const [narrow, setNarrow] = createSignal(window.innerWidth < TABS_ONLY_WIDTH);
+  /** Under this the head's tools don't fit beside the name, so they become one menu (§14). */
+  const [narrowHead, setNarrowHead] = createSignal(window.innerWidth < HEAD_MENU_WIDTH);
   const [viewport, setViewport] = createSignal(window.innerWidth);
   /** Pane widths the user stepped, in memory only: a width is a posture for the task at hand. */
   const [widths, setWidths] = createSignal<Record<string, number>>({});
@@ -138,6 +141,7 @@ export function GroupView(props: {
 
   const onResize = () => {
     setNarrow(window.innerWidth < TABS_ONLY_WIDTH);
+    setNarrowHead(window.innerWidth < HEAD_MENU_WIDTH);
     setViewport(window.innerWidth);
   };
   window.addEventListener("resize", onResize);
@@ -406,50 +410,65 @@ export function GroupView(props: {
             </span>
           )}
         </Show>
-        {/* Below the split band there is nothing to toggle: 440px of pane doesn't fit beside
-            anything, and a stored split preference is ignored rather than cleared. */}
-        <Show when={!narrow()}>
-          <div class="workspace-modes">
-            <button
-              type="button"
-              class="button button-sm button-ghost"
-              aria-pressed={mode() === "tabs"}
-              title="Show one member at a time. The others keep running."
-              onClick={() => setMode(mode() === "tabs" ? "split" : "tabs")}
-            >
-              Tabs
-            </button>
-          </div>
-        </Show>
-        <AddMembers
-          groupName={props.group.name}
-          candidates={candidates()}
-          open={adding()}
-          onOpen={setAdding}
-          onAdd={(s) => void add(s)}
-        />
-        {/* Asked in place, in the head, like the sidebar's Delete group asks in its tool row. */}
+        {/* Wide enough for the tools to stand beside the name; under 640 they become one menu,
+            because a row that sheds buttons as it narrows hides a different one at every width. */}
         <Show
-          when={confirming()}
+          when={!narrowHead()}
           fallback={
-            <button type="button" class="button button-sm button-ghost" onClick={() => setConfirming(true)}>
-              Dissolve
-            </button>
+            <HeadActions
+              groupName={props.group.name}
+              members={panes().length}
+              candidates={candidates()}
+              onAdd={(session) => void add(session)}
+              onDissolve={() => void dissolve()}
+            />
           }
         >
-          <span class="workspace-dissolve">
-            <span class="workspace-dissolve-question">
-              {panes().length === 0
-                ? `Dissolve ${quoted(props.group.name)}? Nothing is in it.`
-                : `Dissolve ${quoted(props.group.name)}? Its ${panes().length} ${panes().length === 1 ? "session stays" : "sessions stay"} in the list.`}
+          {/* Below the split band there is nothing to toggle: 440px of pane doesn't fit beside
+              anything, and a stored split preference is ignored rather than cleared. */}
+          <Show when={!narrow()}>
+            <div class="workspace-modes">
+              <button
+                type="button"
+                class="button button-sm button-ghost"
+                aria-pressed={mode() === "tabs"}
+                title="Show one member at a time. The others keep running."
+                onClick={() => setMode(mode() === "tabs" ? "split" : "tabs")}
+              >
+                Tabs
+              </button>
+            </div>
+          </Show>
+          <AddMembers
+            groupName={props.group.name}
+            candidates={candidates()}
+            open={adding()}
+            onOpen={setAdding}
+            onAdd={(s) => void add(s)}
+          />
+          {/* Asked in place, in the head, like the sidebar's Delete group asks in its tool row. */}
+          <Show
+            when={confirming()}
+            fallback={
+              <button type="button" class="button button-sm button-ghost" onClick={() => setConfirming(true)}>
+                Dissolve
+              </button>
+            }
+          >
+            <span class="workspace-dissolve">
+              <span class="workspace-dissolve-question">
+                {panes().length === 0
+                  ? `Dissolve ${quoted(props.group.name)}? Nothing is in it.`
+                  : `Dissolve ${quoted(props.group.name)}? Its ${panes().length} ${panes().length === 1 ? "session stays" : "sessions stay"} in the list.`}
+              </span>
+              <button type="button" class="button button-sm button-destructive" onClick={() => void dissolve()}>
+                Dissolve
+              </button>
+              <button type="button" class="button button-sm button-ghost" onClick={() => setConfirming(false)}>
+                Cancel
+              </button>
             </span>
-            <button type="button" class="button button-sm button-destructive" onClick={() => void dissolve()}>
-              Dissolve
-            </button>
-            <button type="button" class="button button-sm button-ghost" onClick={() => setConfirming(false)}>
-              Cancel
-            </button>
-          </span>
+          </Show>
         </Show>
       </header>
 
@@ -888,6 +907,143 @@ function AddMembers(props: {
             </For>
           </Show>
         </div>
+      </div>
+    </>
+  );
+}
+
+/**
+ * The head's tools as one menu, under 640px (spec/14-workspaces.md "Shell"). Same actions, same
+ * order, same words — only the container changes, because a row that drops controls as it narrows
+ * hides a different one at every width and the user can't learn which.
+ *
+ * Dissolve asks INSIDE the menu here, rather than in the head: at this width the head has no room
+ * for the question, and the reassurance it carries — the sessions stay in the list — is the half a
+ * reader most needs before pressing it. A confirm with its question cut off is not one.
+ */
+function HeadActions(props: {
+  groupName: string;
+  members: number;
+  candidates: SessionSummary[];
+  onAdd(session: SessionSummary): void;
+  onDissolve(): void;
+}) {
+  let trigger!: HTMLButtonElement;
+  let menu!: HTMLDivElement;
+  const [open, setOpen] = createSignal(false);
+  const [asking, setAsking] = createSignal(false);
+  const [picking, setPicking] = createSignal(false);
+
+  const close = () => {
+    if (menu.matches(":popover-open")) menu.hidePopover();
+  };
+  const openMenu = () => {
+    const r = trigger.getBoundingClientRect();
+    menu.style.setProperty("--menu-top", `${Math.round(r.bottom + 4)}px`);
+    menu.style.setProperty("--menu-right", `${Math.max(0, Math.round(innerWidth - r.right))}px`);
+    setAsking(false);
+    setPicking(false);
+    menu.showPopover();
+    queueMicrotask(() => menu.querySelector<HTMLElement>("[role=menuitem]")?.focus());
+  };
+
+  return (
+    <>
+      <button
+        ref={trigger}
+        type="button"
+        class="button button-icon button-ghost"
+        aria-haspopup="menu"
+        aria-expanded={open() ? "true" : "false"}
+        /* The word is §9's, but the name says WHICH thing it acts on: three pane composers on this
+           page already carry a "More Actions" trigger (§4b), and four identically named controls
+           are four indistinguishable ones to AT. Same shape spec blessed for the pane menu. */
+        aria-label={`More Actions · ${props.groupName}`}
+        title="More Actions"
+        onClick={() => (open() ? close() : openMenu())}
+      >
+        <Icon name="more" />
+      </button>
+      <div
+        ref={menu}
+        class="model-menu group-menu"
+        popover="auto"
+        onToggle={(e) => {
+          const isOpen = (e as ToggleEvent).newState === "open";
+          setOpen(isOpen);
+          if (!isOpen) {
+            setAsking(false);
+            setPicking(false);
+          }
+        }}
+      >
+        <Show when={asking()}>
+          <div class="group-tools">
+            <p class="group-tools-question">
+              {props.members === 0
+                ? `Dissolve ${quoted(props.groupName)}? Nothing is in it.`
+                : `Dissolve ${quoted(props.groupName)}? Its ${props.members} ${props.members === 1 ? "session stays" : "sessions stay"} in the list.`}
+            </p>
+            <button
+              type="button"
+              class="button button-sm button-destructive"
+              onClick={() => {
+                close();
+                props.onDissolve();
+              }}
+            >
+              Dissolve
+            </button>
+            <button type="button" class="button button-sm button-ghost" onClick={() => setAsking(false)}>
+              Cancel
+            </button>
+          </div>
+        </Show>
+        <Show when={picking()}>
+          <div class="model-menu-list" role="menu" aria-label={`Add a session to ${quoted(props.groupName)}`}>
+            <Show
+              when={props.candidates.length > 0}
+              fallback={<p class="sidebar-region-note">Every session is already in a group.</p>}
+            >
+              <For each={props.candidates.slice(0, 40)}>
+                {(session) => (
+                  <div
+                    class="mode-option group-option"
+                    role="menuitem"
+                    tabindex={0}
+                    onClick={() => {
+                      close();
+                      props.onAdd(session);
+                    }}
+                  >
+                    <span class="mode-option-text">
+                      <span class="mode-option-id">{session.title}</span>
+                      <Show when={session.groupId}>
+                        <span class="mode-option-note">in {quoted(groupNameOf(sessionGroups(), session.groupId) ?? "another group")}</span>
+                      </Show>
+                    </span>
+                  </div>
+                )}
+              </For>
+            </Show>
+          </div>
+        </Show>
+        <Show when={!asking() && !picking()}>
+          <div class="model-menu-list" role="menu" aria-label={`Actions for ${quoted(props.groupName)}`}>
+            <div class="mode-option group-option" role="menuitem" tabindex={0} onClick={() => setPicking(true)}>
+              <Icon name="plus" small />
+              <span class="mode-option-text">
+                <span class="mode-option-id">Add Members</span>
+              </span>
+            </div>
+            <div class="mode-option group-option" role="menuitem" tabindex={0} onClick={() => setAsking(true)}>
+              <Icon name="close" small />
+              <span class="mode-option-text">
+                <span class="mode-option-id">Dissolve</span>
+              </span>
+            </div>
+          </div>
+        </Show>
       </div>
     </>
   );

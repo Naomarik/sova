@@ -22,6 +22,8 @@ export const PANE_MAX_WIDTH = 1040;
 export const PANE_WIDTH_STEP = 120;
 /** Below this viewport width a split row has no room for two panes: the workspace is tabs only. */
 export const TABS_ONLY_WIDTH = 768;
+/** Below this the head's tools can't stand beside the group's name, and become one menu (§14). */
+export const HEAD_MENU_WIDTH = 640;
 
 const KEY = (id: string) => `pi-web:group-view-${id}`;
 

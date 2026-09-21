@@ -34,7 +34,22 @@ export function registerTranscript(path: string, el: HTMLElement | null): void {
   else transcripts.delete(path);
 }
 
-/** The transcript to search: the pane for `path` when there is one, else the one on the page. */
+/**
+ * The transcript to search: the pane for `path` when there is one, else the one on the page.
+ *
+ * This is also where a FORK POINT is read from, and that carries a contract with the server worth
+ * stating on this side of the wire too: the leaf a fanout sends (`FanoutRequest.source.leafId`) is
+ * the last entry the pane actually RENDERS, on the branch it is showing — read from these rows,
+ * never from the newest id in memory and never from the session file's last line. The server
+ * computes its own leaf the same way (`readActiveBranch` then `normalizeEntry`, server/fanout.ts),
+ * and the two only agree if this side holds up its half.
+ *
+ * A rewound session is what separates them: its last FILE line is always a `pi-web-rewind` marker,
+ * which renders as nothing and is not on the active branch at all. Send that id and the server
+ * correctly calls it stale — and the user is told to reopen and fork from a message identical to
+ * the one on screen, which is an instruction that cannot be followed. The failure lands here
+ * whoever computed it wrong.
+ */
 export function transcriptRoot(path?: string | null): HTMLElement | null {
   const el = path ? transcripts.get(path) : undefined;
   if (el?.isConnected) return el;

@@ -106,14 +106,16 @@ it runs. The timeline is a place you go to look back, not a thing that becomes t
   <p class="timeline-state">Updated 3m ago · behind the latest messages</p>
   <button type="button" class="button button-sm button-ghost" aria-pressed="false">Inputs Only</button>
 </div>
-<ol class="timeline" aria-label="Session timeline">
-  <li class="timeline-row" data-kind="chapter">
-    <span class="timeline-time" title="2026-09-19T14:06:11Z · 2d ago">14:06</span>
+<ol class="timeline" reversed aria-label="Session timeline">
+  <li class="timeline-row" data-kind="marker">
+    <span class="timeline-time" title="2026-09-19T14:58:40Z · 2d ago">14:58</span>
     <span class="timeline-dot" aria-hidden="true"></span>
-    <button type="button" class="timeline-body">
-      <span class="visually-hidden">Jump to this message: </span>
-      <span class="timeline-chapter"><span class="outline-hash">#</span>Model selection and limits</span>
-    </button>
+    <span class="timeline-body timeline-body-static" title="Reworking the watcher so a save restarts only …">
+      <span class="timeline-title">Goal · fixing the watcher restart loop</span>
+    </span>
+  </li>
+  <li class="timeline-row" data-kind="gap">
+    <span class="timeline-gap">idle 38m</span>
   </li>
   <li class="timeline-row" data-kind="input" data-input="e41f">
     <span class="timeline-time" title="2026-09-19T14:08:02Z · 2d ago">14:08</span>
@@ -134,18 +136,16 @@ it runs. The timeline is a place you go to look back, not a thing that becomes t
   <li class="timeline-row" data-kind="density">
     <span class="timeline-meta">3 replies · 14 tools · 6m</span>
   </li>
-  <li class="timeline-row" data-kind="gap">
-    <span class="timeline-gap">idle 38m</span>
-  </li>
-  <li class="timeline-row" data-kind="marker">
-    <span class="timeline-time" title="2026-09-19T14:58:40Z · 2d ago">14:58</span>
+  <li class="timeline-row" data-kind="chapter">
+    <span class="timeline-time" title="2026-09-19T14:06:11Z · 2d ago">14:06</span>
     <span class="timeline-dot" aria-hidden="true"></span>
-    <span class="timeline-body timeline-body-static" title="Reworking the watcher so a save restarts only …">
-      <span class="timeline-title">Goal · fixing the watcher restart loop</span>
-    </span>
+    <button type="button" class="timeline-body">
+      <span class="visually-hidden">Jump to this message: </span>
+      <span class="timeline-chapter"><span class="outline-hash">#</span>Model selection and limits</span>
+    </button>
   </li>
 </ol>
-<p class="usage-note text-muted">Oldest first, active branch only. A row jumps to its message; Rewind takes the chat back to just before it.</p>
+<p class="usage-note text-muted">Newest first, active branch only. A row jumps to its message; Rewind takes the chat back to just before it.</p>
 ```
 
 `ol`, not `ul`: the order is the point. Every row is `li.timeline-row` with a `data-kind`, and
@@ -156,15 +156,17 @@ the kinds are the whole vocabulary — `input`, `chapter`, `marker`, `density`, 
 | `input` | One message you sent, clamped to two lines (`.timeline-title`, full text in `title`); images-only reads "1 image" / "{n} images" | Solid, muted | Yes | Its own message | Rewind, on the active branch |
 | `chapter` | An outline topic, at its anchored message's time (`.timeline-chapter`, one line, ellipsized; `.outline-hash` for a `manual` topic) | Hollow, larger | Yes | The anchored message | — |
 | `marker` | A notable moment, in regular weight ink-2 | Hollow, small | Yes | The entry it happened on, when there is one — a rewind or a past summary has none, so it is text | — |
-| `density` | What the agent did after the input above it | — | — | — | — |
-| `gap` | A stretch over the idle threshold | — | — | — | — |
+| `density` | What the agent did after the input directly above it — an input and its density line stay together, input on top | — | — | — | — |
+| `gap` | A stretch over the idle threshold, between the two rows it separates: the later one above it, the earlier one below | — | — | — | — |
 
-**Oldest first.** The reading is the session's own direction, and a chapter that comes after
-another has to be below it or the word "after" stops meaning anything. The list opens at the top,
-and a session in progress is read by scrolling down. The old Inputs list ran newest first, so the message
-you'd most likely take back sat at the top; here it is the last input row, at the bottom. Inputs
-Only keeps that list short, and taking back the newest message doesn't need the pane at all —
-that is `Undo last turn`.
+**Newest first.** The pane opens at the top, and the top is now the live end: in a session being
+watched, new rows arrive where you are already looking, and in a long one the freshest thing is
+the thing you most often want. The axis still records the session's own direction, only read
+backwards — a row **below** another *precedes* it in time, and the foot line says so out loud.
+The order is computed chronologically (`timelineRows()`: gaps, tie-breaks, rewind standing) and
+only then turned over for rendering, group-aware (`newestFirst()`): an input keeps its density
+line directly beneath it, and a gap stays between the same two rows. The filter only hides
+rows; the direction is the tab's, so both modes run newest first.
 
 ### Fixed rhythm, stated idle
 
@@ -243,7 +245,7 @@ order, they are what the session was about at each point, which neither the chap
 not goals) nor the strip (the latest only) can say.
 
 - **The newest snapshot gets no row.** It is the current goal, and the outline strip above the
-  chat (§10) already shows it; a row repeating it at the bottom of the axis would be the same
+  chat (§10) already shows it; a row repeating it at the top of the axis would be the same
   sentence twice, one scroll apart.
 - The list is read off disk, so a live session's strip can be one broadcast newer than the
   newest snapshot here. Then the newest *on disk* is still left off, and the strip shows a newer
@@ -298,7 +300,7 @@ finished, model/thinking/mode changes and past summaries. The rows a fresh rewin
 (below) stay — they are your messages too, and the filter is what `/tree` opens.
 
 The list's name follows it: `aria-label="Session timeline, your messages only"`, and the foot line
-starts "Your messages only, oldest first,".
+starts "Your messages only, newest first,".
 
 **The state is in memory, never persisted.** The app holds it for the pane: it survives a switch
 to another tab and back, and it goes off whenever the pane closes, however it closes. The doors
@@ -364,9 +366,9 @@ On the axis, the rewound-to row stays as the **boundary** (`.input-row-boundary`
 with a focusable note, "Rewound to just before this message. Its text is in the composer.", and
 focus lands on it. The messages that left the branch stay as a **shadow** for one turn:
 `.input-row-abandoned`, muted ink, regular weight, no Rewind, and a visually hidden "Left behind
-by the rewind." They keep their own times, so on this oldest-first axis they sit **after** the
-boundary — below it — which is the same place the Inputs list put them, read in the other
-direction: beyond the line the branch now ends at, where the turns you threw away happened. The
+by the rewind." They keep their own times, so on this newest-first axis they sit **after** the
+boundary — above it — which is the same place the Inputs list put them: beyond the line the
+branch now ends at, where the turns you threw away happened. The
 boundary and the shadow go as soon as the branch shows a message the rewind didn't know about,
 which is the next send. Until then you can still see what you took back.
 
@@ -443,7 +445,7 @@ vanished in watch mode would leave a reader who used it yesterday wondering wher
 
 While watching, the state line is the only thing that moves: it is re-read with the insight, on
 the same debounce as the outline strip (after a watch `append` or `agent_settled`, §10). New
-rows arrive on the same refetch and are appended at the bottom, where the reading already ends.
+rows arrive on the same refetch, at the top, where the reading already starts.
 
 ## No virtualization
 
@@ -454,9 +456,10 @@ refetch or an armed Rewind never remounts the row under focus.
 
 ## Accessibility
 
-- **The list** is `<ol class="timeline" aria-label="Session timeline">` (filtered: "Session
+- **The list** is `<ol class="timeline" reversed aria-label="Session timeline">` (filtered: "Session
   timeline, your messages only"). An ordered list, so a screen reader announces the position and
-  the count, which is the axis's whole claim.
+  the count, which is the axis's whole claim; `reversed`, so that position counts from the
+  session's start while the rows read newest first.
 - **The filter** is one `button[aria-pressed]`, "Inputs Only": its name stays the same and the
   pressed state is announced, the way a toggle should read. The `check` icon is the visible twin
   of `aria-pressed`, not colour.
@@ -511,12 +514,11 @@ refetch or an armed Rewind never remounts the row under focus.
 - **Drawing the newest summary as a row.** The strip already says it; see "Past summaries".
 - **A horizontal axis.** The pane is a 520px column. Horizontal would need panning to read a
   long session, and every label would be rotated or truncated.
-- **Keeping a separate Inputs tab.** It listed the same messages the axis already drew, in the
-  opposite order, so the pane had two renderings of one thing and every change to one had to be
-  made twice. The one thing only it had — Rewind — moved onto the axis's input rows, and the
+- **Keeping a separate Inputs tab.** It listed the same messages the axis already drew, so the
+  pane had two renderings of one thing and every change to one had to be made twice. The one thing only it had — Rewind — moved onto the axis's input rows, and the
   filter gives back the short list.
-- **Newest first under the filter.** It would make one toggle change both what the rows are and
-  which way the axis runs. The filter only hides rows; the direction is the tab's.
+- **Newest first under the filter** (alone). Both modes run newest first, so the toggle changes
+  only what rows there are, never which way the axis runs; the direction is the tab's.
 - **Rewind on a non-input row.** The thing you take back is always a message you sent. A marker
   or a chapter would be a second, vaguer handle on the same branch.
 - **A second control for the filter** (a segmented pair, a menu, a remembered preference). One

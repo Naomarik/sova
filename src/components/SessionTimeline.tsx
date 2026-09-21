@@ -17,7 +17,7 @@ import {
 } from "../lib/inputs";
 import { jumpToEntry } from "../lib/jump";
 import { absoluteTime } from "../lib/spend";
-import { GAP_MS, timelineRows, timelineState, type TimelineRow } from "../lib/timeline";
+import { GAP_MS, newestFirst, timelineRows, timelineState, type TimelineRow } from "../lib/timeline";
 import { toast } from "../lib/ui-state";
 import { capTitle } from "../lib/workers";
 import { Icon } from "./ui";
@@ -27,7 +27,7 @@ const DRAWER = "(max-width: 1279px)";
 const isDrawer = () => window.matchMedia(DRAWER).matches;
 
 /**
- * The Timeline tab: one time axis for the whole session, oldest first. Every user message is a
+ * The Timeline tab: one time axis for the whole session, newest first. Every user message is a
  * row that jumps to it in the transcript, with a density line under it, and a Rewind that takes
  * the chat back to just before it; the outline's topics sit beside the message each is anchored
  * to; compactions, subagents spawned and retired, model/thinking/mode changes and past summaries
@@ -84,6 +84,8 @@ export function SessionTimeline(props: {
   const axis = (inputsOnly: boolean) =>
     timelineRows(props.items ?? [], props.outline, props.rewinds ?? [], GAP_MS, { outlines: props.outlines, view: view(), inputsOnly });
   const rows = createMemo(() => axis(props.inputsOnly));
+  /** The rows as the list draws them, newest first; everything that reasons stays on `rows`. */
+  const display = createMemo(() => newestFirst(rows()));
   const state = () => timelineState(props.outline, props.now);
   /** Rows keyed, so a refetch or a phase change never remounts one under focus. */
   const byKey = createMemo(() => new Map(rows().map((r) => [r.key, r])));
@@ -189,8 +191,8 @@ export function SessionTimeline(props: {
           </Show>
         }
       >
-        <ol class="timeline" aria-label={props.inputsOnly ? "Session timeline, your messages only" : "Session timeline"} ref={list}>
-          <For each={rows().map((r) => r.key)}>
+        <ol class="timeline" reversed aria-label={props.inputsOnly ? "Session timeline, your messages only" : "Session timeline"} ref={list}>
+          <For each={display().map((r) => r.key)}>
             {(key) => (
               <Show when={byKey().get(key)}>
                 {(row) => <Row row={row()} now={props.now} phase={phase()} blocked={blocked()} onStep={step} onConfirm={confirm} onJump={jump} />}
@@ -199,7 +201,7 @@ export function SessionTimeline(props: {
           </For>
         </ol>
         <p class="usage-note text-muted">
-          {props.inputsOnly ? "Your messages only, oldest first" : "Oldest first"}, active branch only. A row jumps to its message
+          {props.inputsOnly ? "Your messages only, newest first" : "Newest first"}, active branch only. A row jumps to its message
           {drawer() ? " and closes this pane" : ""}; Rewind takes the chat back to just before it.
         </p>
       </Show>

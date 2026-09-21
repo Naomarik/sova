@@ -11,6 +11,7 @@ import {
   inputTurns,
   MARKER_TITLE,
   markerRows,
+  newestFirst,
   outlineRows,
   showInputsOnTimelineLabel,
   timelineRows,
@@ -240,6 +241,56 @@ test("timelineRows keeps two rewinds in order among the rows around them", () =>
 
 test("timelineRows of an empty transcript is empty", () => {
   assert.deepEqual(timelineRows([], null), []);
+});
+
+// ---- Display order ------------------------------------------------------------------------------
+
+test("newestFirst puts the last chronological row on top", () => {
+  const rows = timelineRows([user("u1", 0), say("a1:0", 1), compaction("c1", 3), user("u2", 4, "latest")], null);
+  const shown = newestFirst(rows);
+  assert.equal(shown[0]!.title, "latest");
+  assert.deepEqual(kinds(shown), ["input", "marker", "input", "density"]);
+});
+
+test("newestFirst keeps each input's density row directly beneath it, turn after turn", () => {
+  const rows = timelineRows([user("u1", 0), say("a1:0", 1), user("u2", 4), say("a2:0", 6)], null);
+  assert.deepEqual(
+    newestFirst(rows).map((r) => r.title),
+    ["u2", "1 reply · 2m", "u1", "1 reply · 1m"],
+    "a plain reverse would float each density line above the message that caused it",
+  );
+  assert.deepEqual(newestFirst(rows).map((r) => r.key), ["input:u2", "density:input:u2", "input:u1", "density:input:u1"]);
+});
+
+test("newestFirst keeps a gap between the same two rows it separated", () => {
+  const rows = timelineRows([user("u1", 0), say("a1:0", 1), user("u2", 40)], null, [], 10 * 60_000);
+  assert.deepEqual(kinds(rows), ["input", "density", "gap", "input"]);
+  const shown = newestFirst(rows);
+  assert.deepEqual(kinds(shown), ["input", "gap", "input", "density"]);
+  assert.deepEqual([shown[0]!.title, shown[2]!.title], ["u2", "u1"], "u2 above the gap, u1 with its density below");
+});
+
+test("newestFirst turns chapters and markers over among themselves, each a group of one", () => {
+  const items = [user("u1", 0), say("a1:0", 1), compaction("c1", 6), user("u2", 8)];
+  const chapters = outline([topic("t1", "The start", "u1", 0), topic("t2", "The tests", "u2", 0)]);
+  const rows = timelineRows(items, chapters, [rewind("rw1", 7)], GAP_MS, { outlines: [snapshot("o1", 4, "first"), snapshot("o2", 7, "second"), snapshot("o3", 9, "now")] });
+  const markers = (list: TimelineRow[]) => list.filter((r) => r.kind === "marker" || r.kind === "chapter").map((r) => r.key);
+  assert.ok(markers(rows).length >= 5, "two chapters and at least three markers to turn over");
+  assert.deepEqual(markers(newestFirst(rows)), markers(rows).reverse());
+  assert.equal(newestFirst(rows).length, rows.length, "no row lost or doubled");
+});
+
+test("newestFirst of nothing is nothing, and of one row is that row", () => {
+  assert.deepEqual(newestFirst([]), []);
+  const one: TimelineRow[] = [{ key: "a", kind: "marker", at: at(0), title: "one" }];
+  assert.deepEqual(newestFirst(one), one);
+});
+
+test("newestFirst leaves the chronological list as it was", () => {
+  const rows = timelineRows([user("u1", 0), say("a1:0", 1), user("u2", 4)], null);
+  const before = rows.map((r) => r.key);
+  newestFirst(rows);
+  assert.deepEqual(rows.map((r) => r.key), before);
 });
 
 // ---- Outline history ----------------------------------------------------------------------------

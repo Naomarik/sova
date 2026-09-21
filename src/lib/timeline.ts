@@ -396,6 +396,26 @@ export function timelineRows(
   );
 }
 
+/**
+ * What the Timeline renders: the axis newest first, so the latest event is at the top. A separate
+ * function, not a flag on `timelineRows`: the chronological list stays this module's truth — the
+ * gaps, the ties and the rewind standings are all reasoned in it — and this is display order only,
+ * the same split inputs.ts makes between `viewRows` and `displayRows`.
+ *
+ * It reverses groups, not rows. A density line describes the work the input above it caused, so
+ * an input and the density row after it turn over as one and the line stays beneath its message;
+ * a plain reverse would float each one above the message it is about. Every other row — a gap,
+ * a chapter, a marker — is a group of one, so a gap still sits between the two rows it separates.
+ */
+export function newestFirst(rows: readonly TimelineRow[]): TimelineRow[] {
+  const groups: TimelineRow[][] = [];
+  rows.forEach((row, i) => {
+    if (row.kind === "density" && i > 0 && rows[i - 1]!.kind === "input") groups[groups.length - 1]!.push(row);
+    else groups.push([row]);
+  });
+  return groups.reverse().flat();
+}
+
 // ---- The state line -----------------------------------------------------------------------------
 
 /** The Current goal strip's own clauses (InsightStrip.STATE_CLAUSE), so both lines read alike. */

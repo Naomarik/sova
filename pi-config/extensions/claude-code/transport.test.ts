@@ -186,6 +186,18 @@ test("an operator allow rule keeps its place, and MCP tools are allowed only out
 	assert.ok(!argvFor().args!.includes("--allowedTools"));
 });
 
+test("a stable session id is passed only when asked for, and must be a UUID", () => {
+	const id = "886313e1-3b8a-5372-9b90-0c9aee199e5d";
+	const args = argvFor({ sessionId: id }).args!;
+	assert.deepEqual(args.slice(args.indexOf("--session-id"), args.indexOf("--session-id") + 2), ["--session-id", id]);
+	assert.equal(argvFor({ sessionId: id.toUpperCase() }).error, undefined, "the CLI's own casing rules are not tightened here");
+	for (const bad of ["", "not-a-uuid", "886313e1-3b8a-5372-9b90-0c9aee199e5", "886313e1_3b8a_5372_9b90_0c9aee199e5d", "--dangerously-skip-permissions"]) {
+		assert.deepEqual(argvFor({ sessionId: bad }), { error: "Invalid sessionId: the CLI requires a canonical UUID" }, bad);
+	}
+	// Absent by default, so a subagent worker's argv is byte-identical to before.
+	assert.ok(!argvFor().args!.includes("--session-id"));
+});
+
 test("argv validation fails closed, in the order a launcher must report it", () => {
 	for (const tool of ["--dangerously-skip-permissions", " --permission-mode", "Bash\n--foo", "Bash\x00", ""]) {
 		assert.deepEqual(argvFor({ allowedTools: [tool] }), { error: "Invalid allowedTools: flags and control characters are not allowed" });
@@ -418,6 +430,28 @@ test("request() returns the CLI's own payload, and control() reduces it to the a
 	h.child.close();
 });
 
+test("an MCP request over the control channel round-trips by request id", async () => {
+	// The contract the SDK-hosted MCP facade runs on: the CLI asks over the
+	// control channel, and the host answers by id with the JSON-RPC reply.
+	const h = harness({
+		onControlRequest: (request) => {
+			if (request.subtype !== "mcp_message") return false;
+			const message = (request.frame.request as any).message;
+			assert.equal((request.frame.request as any).server_name, "pi");
+			h.transport.respond(request.requestId, { mcp_response: { jsonrpc: "2.0", id: message.id, result: { content: [{ type: "text", text: "ok" }] } } });
+			return true;
+		},
+	});
+	h.transport.launch("claude", [], { cwd: "/tmp" });
+	h.child.out({ type: "control_request", request_id: "rpc-1", request: { subtype: "mcp_message", server_name: "pi", message: { jsonrpc: "2.0", id: 7, method: "tools/call", params: { name: "read_file" } } } });
+	await tick();
+	assert.deepEqual(h.child.writes, [{
+		type: "control_response",
+		response: { subtype: "success", request_id: "rpc-1", response: { mcp_response: { jsonrpc: "2.0", id: 7, result: { content: [{ type: "text", text: "ok" }] } } } },
+	}]);
+	h.child.close();
+});
+
 test("an owner can answer inbound control requests generically; unhandled ones are refused", async () => {
 	const seen: { requestId: string; subtype: string; payload: any }[] = [];
 	const h = harness({
@@ -429,7 +463,7 @@ test("an owner can answer inbound control requests generically; unhandled ones a
 		},
 	});
 	h.transport.launch("claude", [], { cwd: "/tmp" });
-	h.child.out({ type: "control_request", request_id: "m1", request: { subtype: "mcp_message", message: { method: "tools/list" } } });
+	h.child.out({ type: "control_request", request_id: "m1", request: { subtype: "mcp_message", server_name: "pi", message: { method: "tools/list" } } });
 	h.child.out({ type: "control_request", request_id: "x1", request: { subtype: "invented" } });
 	h.child.out({ type: "control_request", request: { subtype: "mcp_message" } });
 	await tick();

@@ -257,6 +257,8 @@ export function parseCanUseTool(e: Record<string, any>): ClaudeToolPermissionReq
 // ---------------------------------------------------------------------------
 
 export const DEFAULT_CLAUDE_TOOLS = ["Bash", "Read", "Edit", "Write", "Glob", "Grep"];
+/** The CLI requires a canonical UUID for --session-id. */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export interface ClaudeArgvOptions {
 	permissionMode: string;
 	/** Accepted permission modes; the caller owns the policy list. */
@@ -270,6 +272,12 @@ export interface ClaudeArgvOptions {
 	mcpServers?: Record<string, unknown>;
 	env?: Record<string, string>;
 	maxBudgetUsd?: number;
+	/**
+	 * A stable CLI session id (`--session-id`), so a restarted host re-attaches to
+	 * one Claude session record instead of littering new ones. Absent for
+	 * subagent workers, which let the CLI pick their session.
+	 */
+	sessionId?: string;
 }
 export type ClaudeArgvResult =
 	| { args: string[]; mcpServers: [string, ClaudeMcpServerEntry][]; error?: undefined }
@@ -288,6 +296,10 @@ export function buildClaudeArgv(o: ClaudeArgvOptions): ClaudeArgvResult {
 		"--include-partial-messages", "--replay-user-messages", "--permission-mode", o.permissionMode,
 		"--permission-prompts", o.hostPermissions ? "host" : "none", "--setting-sources", "", "--strict-mcp-config"];
 	if (o.hostPermissions) args.push("--permission-prompt-tool", "stdio");
+	if (o.sessionId !== undefined) {
+		if (!UUID.test(o.sessionId)) return { error: "Invalid sessionId: the CLI requires a canonical UUID" };
+		args.push("--session-id", o.sessionId);
+	}
 	if (o.model) args.push("--model", o.model);
 	if (o.effort) args.push("--effort", o.effort);
 	args.push("--tools", (o.tools ?? DEFAULT_CLAUDE_TOOLS).join(","));

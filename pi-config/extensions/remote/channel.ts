@@ -14,7 +14,9 @@
  * request is rejected so the caller can fall back to the per-call path. Abort and timeout also tear
  * it down: a killed command's late output would otherwise be attributed to the next request.
  *
- * Node builtins + argv.ts only (and exec.ts's RunResult type).
+ * Node builtins + argv.ts only (and exec.ts's RunResult type). It must also stay loadable by
+ * `node <file>.ts` (strip-only type stripping, how workers' MCP servers are launched): no
+ * parameter properties, enums or namespaces here, or in anything it imports.
  */
 import { type ChildProcessWithoutNullStreams, spawn as nodeSpawn } from "node:child_process";
 import { homedir } from "node:os";
@@ -193,12 +195,19 @@ export class ResponseParser {
 	private total = 0;
 	private finished = false;
 
-	constructor(
-		private readonly id: string,
-		private readonly events: ResponseParserEvents,
-		private readonly maxOutput = CHANNEL_MAX_OUTPUT,
-		private readonly separate = false,
-	) {}
+	private readonly id: string;
+	private readonly events: ResponseParserEvents;
+	private readonly maxOutput: number;
+	private readonly separate: boolean;
+
+	// Plain fields, not parameter properties: this file is loaded by children started as
+	// `node <file>.ts`, and node's strip-only type stripping rejects parameter properties.
+	constructor(id: string, events: ResponseParserEvents, maxOutput = CHANNEL_MAX_OUTPUT, separate = false) {
+		this.id = id;
+		this.events = events;
+		this.maxOutput = maxOutput;
+		this.separate = separate;
+	}
 
 	private poison(why: string): void {
 		this.finished = true;
@@ -279,13 +288,13 @@ export type ChannelErrorReason = "busy" | "not-ready" | "aborted" | "timeout" | 
 export class ChannelError extends Error {
 	/** Mid-command loss reports no exit code. */
 	readonly exitCode = null;
-	constructor(
-		readonly reason: ChannelErrorReason,
-		message: string,
-		readonly sent: boolean,
-	) {
+	readonly reason: ChannelErrorReason;
+	readonly sent: boolean;
+	constructor(reason: ChannelErrorReason, message: string, sent: boolean) {
 		super(message);
 		this.name = "ChannelError";
+		this.reason = reason;
+		this.sent = sent;
 	}
 }
 
@@ -367,6 +376,7 @@ export class Channel {
 	private current: Outstanding | undefined;
 	private parser: ResponseParser | undefined;
 	private readonly listeners = new Set<ChannelStateListener>();
+	private readonly opts: ChannelOptions;
 
 	/** A channel for a target (not started), or null when it isn't reached over ssh. */
 	static forTarget(target: Target, registry?: readonly Target[], opts: Omit<ChannelOptions, "argv"> = {}): Channel | null {
@@ -374,7 +384,8 @@ export class Channel {
 		return argv ? new Channel({ ...opts, argv }) : null;
 	}
 
-	constructor(private readonly opts: ChannelOptions) {
+	constructor(opts: ChannelOptions) {
+		this.opts = opts;
 		this.idleMs = opts.idleMs ?? CHANNEL_IDLE_MS;
 		if (opts.onState) this.listeners.add(opts.onState);
 	}

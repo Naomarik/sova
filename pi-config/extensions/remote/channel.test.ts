@@ -1,11 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { type ChildProcessWithoutNullStreams } from "node:child_process";
+import { type ChildProcessWithoutNullStreams, spawnSync } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { PassThrough } from "node:stream";
+import { fileURLToPath } from "node:url";
 import { buildTargetArgv, type Target } from "./argv.ts";
 import {
 	buildChannelArgv,
@@ -462,4 +463,24 @@ test("composeChannelScript refuses NUL and bad env names", () => {
 	assert.throws(() => composeChannelScript("a\0b"), /NUL/);
 	assert.throws(() => composeChannelScript("x", undefined, { "A-B": "1" }), /invalid environment/);
 	assert.equal(composeChannelScript("x", "~/p"), `cd -- "$HOME"/'p' || exit 1\nx`);
+});
+
+/**
+ * Workers' MCP servers are launched as `node <file>.ts` (subagents/index.ts does exactly that), which
+ * is node's STRIP-ONLY type stripping: parameter properties, enums and namespaces are syntax errors
+ * there. This module and everything it imports must stay inside that subset.
+ */
+test("channel.ts, argv.ts and exec.ts load under node's strip-only type stripping", () => {
+	const here = dirname(fileURLToPath(import.meta.url));
+	const code = `
+		const c = await import(${JSON.stringify(join(here, "channel.ts"))});
+		await import(${JSON.stringify(join(here, "argv.ts"))});
+		await import(${JSON.stringify(join(here, "exec.ts"))});
+		const e = new c.ChannelError("lost", "boom", true);
+		if (e.reason !== "lost" || e.sent !== true || e.exitCode !== null) throw new Error("ChannelError fields lost");
+		if (typeof c.Channel !== "function") throw new Error("no Channel");
+	`;
+	// --input-type=module: plain node, no loader, no transform flag.
+	const r = spawnSync(process.execPath, ["--input-type=module", "--eval", code], { encoding: "utf8" });
+	assert.equal(r.status, 0, r.stderr);
 });

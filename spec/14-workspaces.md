@@ -495,7 +495,10 @@ listing pass itself, which prunes assignments whose file has gone (deleted by ha
 Both are **bookkeeping about files that disappeared outside pi-web**, there is no client waiting
 on either to be told what happened, and a group vanishing during a background refresh is
 unexplained loss — the exact thing this spec spends its words preventing. The rule is about the
-gesture that empties a group, not about the group ever being empty. So an empty fanout group
+gesture that empties a group, not about the group ever being empty. The prune already holds the
+same instinct one level down — it is keyed on a file being gone, never on a summary failing, so
+an unreadable file keeps its group — and this extends that caution upward: bookkeeping about
+files may forget an assignment, but it may not delete something the user named. So an empty fanout group
 **is** reachable, and the workspace renders it (below) rather than pretending it can't exist.
 
 The delete happens server-side, in the same write, so no second request can fail halfway — and

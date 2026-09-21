@@ -208,6 +208,13 @@ POST /api/session-groups/fanout
   a fact only the client holds. Without it, typing a name into the dialog and typing the same
   name as a *rename* afterwards give opposite outcomes for identical intent, the first taking a
   name the user chose.
+  - **The shapes must not look like a matched pair.** `autoDissolve` and this field carry
+    **opposite absence defaults, both correct** (below), and two booleans sitting near each other
+    with opposite defaults is an invitation to "align" them — which would mean deleting names or
+    keeping litter, depending which way someone aligned. A boolean and an enum of different kinds
+    cannot be mistaken for a pair, so the asymmetry stays visible instead of looking like a bug.
+    This is the reason for the shape that survives every safety argument rather than outweighing
+    one.
   - **Why this is an enum, recorded so it is not reopened.** A boolean would be marginally
     safer: its natural truthy check is safe, while the enum's natural *negative* check
     (`named !== "user"`) treats absence as generated and deletes a name. The naming argument

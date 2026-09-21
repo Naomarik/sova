@@ -514,6 +514,11 @@ export interface SessionGroup {
       and the fork marker's datum; that inference is what would have made an adopted hand-made
       group start deleting itself. Do not re-derive dissolution from another field, and do not
       use this one to mean anything but dissolution.
+      A RENAME CLEARS IT (PATCH /api/session-groups/:id with a name that actually changes): the
+      claim above is a conjunction — pi-web made it AND named it — and renaming falsifies the
+      second half, so the group becomes the user's and stands when emptied. Renaming to the same
+      string revokes nothing, and reordering or relabelling never touch it. The flag is set and
+      cleared by the events that make it true or false, so no rule has to be remembered.
       Absent only on a group written before this field existed — then, and only then, `seed`
       implies it, since those are pi-web's own fanout groups. An explicit value always wins. */
   autoDissolve?: boolean;

@@ -348,7 +348,8 @@ export interface UploadResult {
 //                                  different from "exists but not right now"); 409 { refused: [BatchRefusal] }
 //                                  with exactly ONE entry, the source: tui-live, mid-turn, busy, config,
 //                                  old-format (opening it would migrate-rewrite the file) or stale-leaf (the
-//                                  leaf moved since the dialog opened). A member that fails DURING creation
+//                                  ACTIVE branch's last rendered entry is no longer the one the dialog showed —
+//                                  not the file's last line, which after a rewind is the abandoned branch). A member that fails DURING creation
 //                                  has its own half-written file removed and is reported in `failed`; a member
 //                                  that already exists is never unmade)
 // POST /api/sessions/archive { path, archived: boolean } -> SessionSummary   (sets/clears the archive mark; never
@@ -533,9 +534,14 @@ export type BatchRefusalCode =
       file — which a runtime we hold for that session would see as a foreign write. The only
       refusal here the user can clear themselves ("open it for chat once, then fan out"). */
   | "old-format"
-  /** Fanout only: `source.leafId` is no longer the source's last entry. The client sends the leaf
-      it SHOWED the user; forking from a point they didn't approve would break the fork marker's
-      only promise. */
+  /** Fanout only: `source.leafId` is not the source's current leaf — meaning the last entry its
+      transcript RENDERS on its ACTIVE branch, which is what the server compares against
+      (readActiveBranch + normalizeEntry, the transcript's own two rules). NOT the file's last
+      line, and the difference is not academic: after a rewind the file's TAIL is the ABANDONED
+      branch, and the entries there are ordinary visible messages. Comparing against the tail
+      refuses sources nobody has touched, and rewound sessions are the likeliest thing to fork.
+      The client sends the leaf it SHOWED the user, for the same reason: forking from a point
+      they didn't approve would break the fork marker's only promise. */
   | "stale-leaf"
   | "internal";
 

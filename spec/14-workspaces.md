@@ -654,6 +654,14 @@ because it looks like the system working. So a field with a safe absence default
 **one atomic change** — add, delete the old, update every reader and writer in the same window
 — never additively, and never "deprecate and clean up later".
 
+**A safe default does not remove a failure; it relocates one.** Everything else on this surface
+fails toward **loss** — a name deleted, a group dissolved — and absence-means-safe exists to make
+that impossible. What it produces in exchange is a failure toward **inertness**: the feature
+quietly doing nothing. That trade is usually worth taking, because litter is recoverable and loss
+is not, but it must be taken **knowingly**, because the second failure is the one the first rule
+conceals. Whenever you choose a safe default, ask what now goes unnoticed — the answer is never
+"nothing".
+
 **And the build will not remind you.** Renaming this contract's field in a scratch tree produced
 six errors in `server/` and **zero in `src/`**: TypeScript does not excess-property-check through
 a spread, so a client assembling its body as `{ ...target, … }` keeps compiling while sending a

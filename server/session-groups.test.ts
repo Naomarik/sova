@@ -604,3 +604,38 @@ test("a malformed autoDissolve is dropped, falling back to the legacy rule", () 
   assert.equal(readGroups()[0]!.autoDissolve, undefined, "not a boolean: treated as absent");
   assert.deepEqual(assignSession("a", null), { ok: true, dissolved: true }, "so the seed decides");
 });
+
+test("renaming a fanout group hands it to the user: it then survives being emptied", () => {
+  // "pi-web made it AND named it, so pi-web may remove it" — a rename falsifies the second half.
+  reset({
+    version: 1,
+    groups: [{ id: "g1", name: "Fanout · retry backoff", createdAt: "2026-01-01T00:00:00.000Z", seed: SEED, autoDissolve: true, members: [{ id: "a" }] }],
+    assignments: { a: "g1" },
+  });
+  const r = renameGroup("g1", "Backoff experiments");
+  assert.ok(r.ok);
+  assert.equal(readGroups()[0]!.autoDissolve, false, "the rename revoked pi-web's claim on it");
+  assert.deepEqual(assignSession("a", null), { ok: true }, "so emptying it does not delete it");
+  assert.deepEqual(readGroups().map((g) => g.name), ["Backoff experiments"]);
+});
+
+test("renaming to the SAME name changes nothing, including the flag", () => {
+  reset({
+    version: 1,
+    groups: [{ id: "g1", name: "Fanout · one", createdAt: "2026-01-01T00:00:00.000Z", seed: SEED, autoDissolve: true, members: [{ id: "a" }] }],
+    assignments: { a: "g1" },
+  });
+  assert.ok(renameGroup("g1", "  Fanout · one  ").ok, "trimmed to the same string: not a rename");
+  assert.equal(readGroups()[0]!.autoDissolve, true, "nothing happened, so nothing was revoked");
+  assert.deepEqual(assignSession("a", null), { ok: true, dissolved: true });
+});
+
+test("reordering or relabelling a fanout group does NOT revoke its flag", () => {
+  reset({
+    version: 1,
+    groups: [{ id: "g1", name: "Fanout · two", createdAt: "2026-01-01T00:00:00.000Z", seed: SEED, autoDissolve: true, members: [{ id: "a" }, { id: "b" }] }],
+    assignments: { a: "g1", b: "g1" },
+  });
+  updateGroup("g1", { order: ["b", "a"], labels: [{ id: "a", label: "opus" }] });
+  assert.equal(readGroups()[0]!.autoDissolve, true, "only a NAME the user typed hands it over");
+});

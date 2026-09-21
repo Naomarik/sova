@@ -258,7 +258,14 @@ export function updateGroup(id: string, patch: GroupPatch): GroupResult {
   return edit((store) => {
     const group = store.groups.find((g) => g.id === id);
     if (!group) return { ok: false, status: 404, error: "Group not found" };
-    if (name) group.name = name;
+    if (name && name !== group.name) {
+      group.name = name;
+      // A rename revokes the second half of "pi-web made it AND named it": pi-web made this one,
+      // the USER named it, and renaming something is the clearest signal there is that they mean
+      // to keep it. Set by the event rather than remembered as a rule (spec §14 spares a group
+      // whose name is the user's work, however it came by that name).
+      group.autoDissolve = false;
+    }
     if (order) {
       const byId = new Map(group.members.map((m) => [m.id, m]));
       const moved: GroupMember[] = [];
@@ -328,6 +335,13 @@ export type AssignResult = { ok: true; dissolved?: true } | { ok: false; status:
  * groupId). It used to be inferred from `seed` — but seed is lineage, and a hand-made group can
  * now adopt one, so the inference would have deleted a group the USER named. Absent means the
  * record predates the flag, and only then does `seed` imply it: those are pi-web's own fanouts.
+ * That fallback cannot misfire on an ADOPTED group, which looks identical from disk — seed
+ * present, flag absent — because `seed` was only ever written by a fanout that also CREATED the
+ * group, and the adoption path arrived in the same commit as this flag. There is no window in
+ * which an adopted group exists without an explicit flag.
+ *
+ * A RENAME clears it (updateGroup): pi-web may remove a group it both made and named, and the
+ * user renaming it falsifies the second half.
  */
 function dissolvesWhenEmpty(group: StoredGroup): boolean {
   return group.autoDissolve ?? group.seed !== undefined;

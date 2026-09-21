@@ -283,14 +283,19 @@ POST /api/session-groups/fanout
     choice**, and errs toward keeping the name. Say that in the test: dissolving looks obviously
     right when the name on the group is ours, so a reader who meets the case without the reason
     will change it and the test will look wrong rather than the change.
-  - **Why no comparison rule can replace this.** "Typed over then reverted" and "typed our exact
-    string by hand" produce the *same state* — field touched, `name` equal to what we last wrote
-    — yet one deserves to dissolve and the other to survive. A comparison therefore cannot
-    merely err; it **cannot be fixed**, because the information that separates the two is not in
-    the value it examines. That is this feature's recurring defect in its general form: a value
-    asked a question it does not contain the answer to. `seed` could not answer *who owns this*;
-    the file's last line could not answer *what did the pane render*; `name === lastGenerated`
-    cannot answer *did the user choose these words*.
+  - **The two indistinguishable cases do not need separating, and neither rule separates them.**
+    "Typed over then reverted" and "typed our exact string by hand" produce the same state —
+    field touched, `name` equal to what we last wrote — and **both end with pi-web's string on
+    the group**. No rule can tell them apart and none needs to; the candidate rules differ only
+    in which single answer they give to both. The edit event answers `user`, so the group stands
+    with our name on it. A comparison would answer `generated`, so it dissolves — which is
+    arguably the better answer on these two rows, since nothing the user authored is removed.
+    **We ship the edit event knowing that**, for the reasons in the bullet above: it is built,
+    it is what the contract mandates, and its error is litter rather than loss. This is a chosen
+    cost, not a claim that the rule is right on every row.
+    *(An earlier version of this passage claimed the two cases "deserve different answers" and
+    that a comparison therefore could not be fixed. That was false — they deserve the same
+    answer — and the argument, had it held, would have indicted the shipped rule equally.)*
 - **`source` and `cwd` are exclusive**, and exactly one is required: a request with both, or
   neither, is a `400`. There is no third mode, and a fanout with no starting point is not a
   thing the dialog can produce.

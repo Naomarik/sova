@@ -667,6 +667,10 @@ export interface FanoutRequest {
       classified "generated" and deleted. The edit flag cannot fail that way: the signal is sticky
       and set by the user's own input. So the comparison is the fragile mechanism and it fails
       toward LOSS, while the edit flag's error is an empty group left standing.
+      AND THE PROXY RUNS THE OTHER WAY from how it looks: under that gate, `name === lastWritten`
+      is true exactly when the field was never touched — so the comparison is a DERIVED READING of
+      the edit event, computed the long way and valid only while an invariant in another function
+      holds. The edit flag is the direct measurement; the comparison is its correlate.
       NOTE the tempting argument here is a retracted one (spec 9d6fe2b): that "typed over then
       reverted" and "typed our exact string by hand" are the same state deserving opposite
       answers, so no comparison can separate them. They do deserve the SAME answer — both end

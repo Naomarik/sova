@@ -393,6 +393,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Add Members popover | trigger `Add Members` · `aria-label` "Add a session to “{name}”" · rows: every ungrouped session, then the grouped ones with a muted note `in “{name}”`, then `Fan Out…` · empty: "Every session is already in a group." |
 | Add Members toasts | Added **{title}** to “{name}”. · Moved **{title}** from “{other}” to “{name}”. · failure: "Couldn't add this session. {server message}" |
 | Empty workspace | **“{name}” has no sessions yet.** Add some here, or drag a row onto the group in the sidebar. · buttons `Add Members` · `Fan Out…` |
+| Empty workspace, fanout group | **Every session in “{name}” is gone.** Their files were deleted outside pi-web. The group is all that's left of the fanout. · button `Dissolve` |
 | Member announcements (live region) | {pane name} — working. · {pane name} — replied. · {pane name} — stopped by you. · {pane name} — can't be opened. · {pane name} — open in a terminal, so it stays read-only. |
 | Pane focus keys | no visible copy · the workspace's keyboard help lives in `Move Left` / `Move Right` `title`s: "Move Left · Ctrl+Alt+Left moves focus, not the pane" |
 

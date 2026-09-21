@@ -453,6 +453,15 @@ from the prompt, and with no members left it holds nothing but a fork point nobo
 alternative — eliminating your way down to one winner, promoting it, and leaving a phantom section
 in the sidebar forever — is litter the user has to notice and clean up.
 
+**Only the assign gesture dissolves.** Two other paths can leave a fanout group empty, and
+neither of them may delete it: archive cleanup, which removes session files in bulk, and the
+listing pass itself, which prunes assignments whose file has gone (deleted by hand, or by a TUI).
+Both are **bookkeeping about files that disappeared outside pi-web**, there is no client waiting
+on either to be told what happened, and a group vanishing during a background refresh is
+unexplained loss — the exact thing this spec spends its words preventing. The rule is about the
+gesture that empties a group, not about the group ever being empty. So an empty fanout group
+**is** reachable, and the workspace renders it (below) rather than pretending it can't exist.
+
 The delete happens server-side, in the same write, so no second request can fail halfway — and
 **the response has to say so**, because the client cannot infer it from a member count it just
 changed: `POST /api/session-groups/assign` answers `{ok: true, dissolved?: true}`, with
@@ -468,7 +477,7 @@ no longer names anything.
 |---|---|
 | 1 member | Renders normally: one pane at its width, the row not scrolling, the group composer reading "1 member" and sending to that one. **It does not silently become `#/s/`** — you are one `Add Members` away from a comparison, and a view that redirects out from under you can't be built on |
 | 0 members, hand-made | `.empty` in the pane area: **"“{name}” has no sessions yet."** Add some here, or drag a row onto the group in the sidebar. · buttons `Add Members` · `Fan Out…`. The group composer is not rendered — there is nothing to send to |
-| 0 members, fanout group | Not reachable: the write that emptied it dissolved it, and the route bounced to `#/` |
+| 0 members, fanout group | Reachable, but only the long way round: every member's file was deleted outside pi-web, so no assign ever emptied it. The pane area is an `.empty`: **"Every session in “{name}” is gone."** Their files were deleted outside pi-web. The group is all that's left of the fanout. · button `Dissolve`. No `Add Members`: a fanout group's fork point points at sessions that no longer exist, and filling it with unrelated chats would make it lie about what it is |
 
 ## Announcements
 

@@ -5,7 +5,7 @@
 // it fits at all, how many will be created, and which of them didn't. The server decides what
 // happens; this decides what is said about it beforehand.
 
-import type { BatchRefusal, ModelInfo } from "../../shared/protocol";
+import type { BatchRefusal, FanoutRequest, ModelInfo } from "../../shared/protocol";
 import { contextStep, formatPercent, formatTokens } from "./context";
 import { shortModel } from "./format";
 
@@ -138,6 +138,29 @@ export const partialClosing = (created: number): string =>
   created === 1
     ? "It is running; add another from Add Members."
     : `The ${created} that exist are running; add another from Add Members.`;
+
+/**
+ * The request body, with the two exclusivity rules the route enforces stated in one place:
+ * EXACTLY ONE of `name` and `groupId` (sending both is a 400, because ignoring one would look
+ * like a rename that did nothing), and exactly one of `source` and `cwd`. Built here rather than
+ * inline so the rules are testable without a dialog.
+ */
+export function fanoutBody(plan: {
+  rows: readonly MemberRow[];
+  /** The group to land in; without it a new group named `name` is created. */
+  into?: { id: string } | undefined;
+  name: string;
+  /** Fork mode: the source and the leaf the dialog SHOWED the user. */
+  source?: { path: string; leafId: string } | undefined;
+  /** Fresh mode: where the members live and the message they all start from. */
+  fresh?: { cwd: string; text: string } | undefined;
+}): FanoutRequest {
+  const target = plan.into ? { groupId: plan.into.id } : { name: plan.name.trim() };
+  const members = plan.rows.map((r) => ({ ref: r.ref, count: r.count }));
+  return plan.source
+    ? { ...target, members, source: plan.source }
+    : { ...target, members, cwd: plan.fresh?.cwd ?? "", text: (plan.fresh?.text ?? "").trim() };
+}
 
 /** The model a row is about, for every label that names one. */
 export const rowModel = (ref: string): string => shortModel(ref) ?? ref;

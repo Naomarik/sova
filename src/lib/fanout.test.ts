@@ -8,6 +8,7 @@ import {
   createLabel,
   defaultGroupName,
   failureLines,
+  fanoutBody,
   partialClosing,
   partialTitle,
   removeModel,
@@ -138,4 +139,27 @@ test("the banner's claim and closing line agree with each other about how many e
   assert.equal(partialTitle(1, 5), "1 of 5 members was created.");
   assert.equal(partialClosing(4), "The 4 that exist are running; add another from Add Members.");
   assert.equal(partialClosing(1), "It is running; add another from Add Members.");
+});
+
+test("the body carries exactly one of name and groupId, never both", () => {
+  const rows = [{ ref: "a/b", count: 2 }];
+  const source = { path: "/tmp/src.jsonl", leafId: "leaf1" };
+
+  const created = fanoutBody({ rows, name: "  Fanout · x  ", source });
+  assert.deepEqual(created, { name: "Fanout · x", members: rows, source });
+  assert.equal("groupId" in created, false, "a new group is named, not addressed");
+
+  const joined = fanoutBody({ rows, into: { id: "g1" }, name: "ignored", source });
+  assert.deepEqual(joined, { groupId: "g1", members: rows, source });
+  assert.equal("name" in joined, false, "an existing group keeps its own name");
+});
+
+test("the body carries exactly one of source and cwd, for the same reason", () => {
+  const rows = [{ ref: "a/b", count: 1 }];
+  const fresh = fanoutBody({ rows, name: "n", fresh: { cwd: "/w", text: "  go  " } });
+  assert.deepEqual(fresh, { name: "n", members: rows, cwd: "/w", text: "go" });
+  assert.equal("source" in fresh, false);
+  const forked = fanoutBody({ rows, name: "n", source: { path: "/p", leafId: "l" } });
+  assert.equal("cwd" in forked, false);
+  assert.equal("text" in forked, false);
 });

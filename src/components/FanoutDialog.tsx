@@ -1,11 +1,12 @@
 import { createMemo, createSignal, For, onMount, Show } from "solid-js";
-import { GROUP_NAME_MAX, type BatchRefusal, type ContextInfo, type FanoutRequest, type SessionSummary } from "../../shared/protocol";
+import { GROUP_NAME_MAX, type BatchRefusal, type ContextInfo, type SessionSummary } from "../../shared/protocol";
 import { createFanout } from "../lib/api";
 import {
   addModel,
   COUNT_MAX,
   createLabel,
   defaultGroupName,
+  fanoutBody,
   type MemberRow,
   modelOf,
   removeModel,
@@ -49,6 +50,12 @@ export interface FanoutSource {
 export function FanoutDialog(props: {
   /** Present when opened from a session; absent opens in fresh mode with no source. */
   source?: FanoutSource;
+  /**
+   * Land the new members in THIS group instead of creating one (§14b "Entry points": the
+   * workspace's Add Members pre-chooses its own group, so they arrive beside the ones already
+   * there). The group keeps its name, which is why the name field goes away with it.
+   */
+  into?: { id: string; name: string };
   /** Sessions, for the fresh mode folder default. */
   sessions: SessionSummary[];
   onClose(): void;
@@ -96,9 +103,13 @@ export function FanoutDialog(props: {
     if (blocked() || creating()) return;
     setCreating(true);
     setError(null);
-    const body: FanoutRequest = fork()
-      ? { name: name().trim(), members: rows(), source: { path: props.source!.session.path, leafId: props.source!.leafId } }
-      : { name: name().trim(), members: rows(), cwd: cwd(), text: text().trim() };
+    const body = fanoutBody({
+      rows: rows(),
+      into: props.into,
+      name: name(),
+      source: fork() ? { path: props.source!.session.path, leafId: props.source!.leafId } : undefined,
+      fresh: fork() ? undefined : { cwd: cwd(), text: text() },
+    });
     const out = await createFanout(body);
     setCreating(false);
     if (out.ok) {
@@ -116,6 +127,14 @@ export function FanoutDialog(props: {
       // empty by design and the sentence is composed from the code plus the source's own title.
       const only = out.refused[0]!;
       setError(sentenceFor(only, props.source?.session.title ?? "This session"));
+      return;
+    }
+    // One group carries one seed, because the marker and Align to Fork read it: a target forked
+    // from somewhere else is refused rather than have the divergence point fabricated.
+    if (out.conflict) {
+      setError(
+        `“${props.into?.name ?? "That group"}” was forked from a different point, and a group can only mark one. Nothing was created. Fan out into a new group, or add these members to the one they came from.`,
+      );
       return;
     }
     if (out.status === 404) {
@@ -270,7 +289,14 @@ export function FanoutDialog(props: {
             </button>
           </div>
 
-          <div class="field">
+          <Show when={props.into} fallback={null}>
+            {(into) => (
+              <p class="field-hint">
+                New members land in <strong>{into().name}</strong>, beside the ones already there.
+              </p>
+            )}
+          </Show>
+          <div class="field" hidden={!!props.into}>
             <label class="field-label" for="fanout-name">
               Group name
             </label>

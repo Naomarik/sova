@@ -261,7 +261,7 @@ export function App() {
    * workspace because it can be opened from a session too, and it outlives the surface that
    * opened it — the dialog stays up while the request is in flight.
    */
-  const [fanout, setFanout] = createSignal<{ source?: FanoutSource } | null>(null);
+  const [fanout, setFanout] = createSignal<{ source?: FanoutSource; into?: { id: string; name: string } } | null>(null);
 
   // At folded width, opening a session swaps the column: move focus to its title.
   let titleEl: HTMLHeadingElement | undefined;
@@ -421,7 +421,11 @@ export function App() {
     inputsOnly,
     subagentsPath,
     onNewSession: startNewFrom,
-    onFanOut: () => setFanout({}),
+    // From a workspace: the members land in THIS group, beside the ones already there (§14b).
+    onFanOut: () => {
+      const group = openGroup();
+      setFanout(group ? { into: { id: group.id, name: group.name } } : {});
+    },
     onFanOutFrom: (source) => setFanout({ source }),
   };
 
@@ -619,6 +623,7 @@ export function App() {
           <Portal>
             <FanoutDialog
               source={open().source}
+              into={open().into}
               sessions={list() ?? []}
               onClose={() => setFanout(null)}
               onCreated={refresh}

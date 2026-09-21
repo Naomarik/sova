@@ -9,6 +9,7 @@ import type { FileIndex,
   AssignGroupResult,
   BatchPromptResult,
   BatchRefusal,
+  FanoutConflict,
   FanoutRequest,
   FanoutResult,
   SessionGroup,
@@ -37,8 +38,10 @@ export type BatchOutcome =
 /** What a fanout can come back as; the 409 is the route's answer, not an exception. */
 export type FanoutOutcome =
   | { ok: true; result: FanoutResult }
-  | { ok: false; refused: BatchRefusal[]; error?: undefined; status?: undefined }
-  | { ok: false; error: string; status: number; refused?: undefined };
+  | { ok: false; refused: BatchRefusal[]; error?: undefined; status?: undefined; conflict?: undefined }
+  /** `conflict` is the route's one coded 400 (`seed-conflict`): the client renders its own
+      sentence from the code, and `error` stays the fallback for every other 400. */
+  | { ok: false; error: string; status: number; refused?: undefined; conflict?: FanoutConflict["code"] };
 
 export class ApiError extends Error {
   constructor(
@@ -295,8 +298,16 @@ export async function createFanout(body: FanoutRequest): Promise<FanoutOutcome> 
   } catch (err) {
     const refused = err instanceof ApiError && err.status === 409 ? refusalsOf(err.body) : null;
     if (refused) return { ok: false, refused };
-    return { ok: false, error: (err as Error).message, status: err instanceof ApiError ? err.status : 0 };
+    const status = err instanceof ApiError ? err.status : 0;
+    return { ok: false, error: (err as Error).message, status, conflict: conflictOf(err) };
   }
+}
+
+/** The coded 400 this route can answer with, when it is one. */
+function conflictOf(err: unknown): FanoutConflict["code"] | undefined {
+  if (!(err instanceof ApiError) || err.status !== 400) return undefined;
+  const code = (err.body as { code?: unknown } | undefined)?.code;
+  return code === "seed-conflict" ? code : undefined;
 }
 
 /** The 409's members, or null when the body isn't the shape this route promises. */

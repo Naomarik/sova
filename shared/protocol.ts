@@ -639,11 +639,13 @@ export interface FanoutRequest {
       RECORD of what happened (the last string we wrote, or whether the user edited the field),
       never a recomputation of what the default would be now. A prefill snapshot is wrong in fresh
       mode, where the field is rewritten per keystroke and an untouched field then looks edited.
-      The two records differ in exactly two cases and each errs one way: comparing against the
-      last string we wrote calls "edited then reverted to our text" GENERATED (the name really is
-      ours) but also calls "typed our exact words by hand" generated; an edit flag calls both
-      USER, so it leaves an occasional empty group behind instead. Litter or a name, once each —
-      pick one knowingly and write the cost down.
+      CHOSEN: the edit event. pi-web's client keeps `nameTouched`, set by the name field's own
+      input handler and by nothing else, and sends "user" when it is set. The alternative —
+      comparing against the last string we wrote — errs on "typed our exact words by hand" by
+      calling it generated, and that error DELETES a name the user chose. The edit flag errs the
+      other way, on "typed over, then reverted to our default": it calls that "user", so an empty
+      group is left behind when it empties. That is a real cost, chosen deliberately rather than
+      assumed away, because litter is recoverable in one gesture and a name is not.
       POLARITY IS LOAD-BEARING FOR ANY OPTIONAL FLAG HERE, not just this one: the field must be
       the one whose FALSEHOOD, or absence, is the safe answer. `nameEdited` would have been the
       same information with the opposite failure — absent ⇒ not edited ⇒ generated ⇒ the group

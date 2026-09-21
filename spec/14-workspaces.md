@@ -350,7 +350,10 @@ All four are writes to the group registry. None of them touches a session's JSON
   lie here.
 - **Dissolve** — `DELETE /api/session-groups/{id}`, the existing route, asked in place in the
   head: "Dissolve “{name}”? Its 4 sessions stay in the list." Then route to `#/`. Sessions are
-  never touched, exactly as §2 already promises.
+  never touched, exactly as §2 already promises. **The word differs from the sidebar's on
+  purpose:** there the control is `Delete group` and it removes a row from a list of groups; here
+  it sits above 4 open transcripts, where "Delete" would read as deleting them. Same endpoint,
+  same outcome, and both confirmations say the sessions stay.
 - **Add Members** — the §2 popover radio list in reverse: a popover of ungrouped sessions,
   filtered by the same search, plus `Fan Out…` (§14b) at the end. Adding a session that is in
   another group moves it, and the row says so ("in “Home”").

@@ -28,6 +28,8 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Group section label | {name} (own case, no eyebrow), then its count · `title`: {name} |
 | Empty group | No sessions yet. Drag one here. |
 | Groups region, no groups | No groups yet. Make one, then drag a session into it. |
+| Open workspace (group tool row, §14) | `Open workspace` · `title`: Open “{name}” as a workspace — every member side by side |
+| New fanout row (§14b) | New fanout |
 | Group tool row | `Rename` · `Delete group` · asking: with sessions "Delete “{name}”? Its {n} sessions stay in the list." (1 session: "… Its 1 session stays …"), empty "Delete “{name}”? Nothing is in it." — with `Delete group` · `Cancel` |
 | Group toasts | "Added to “{name}”." · "Moved to “{name}”." · "Removed from “{name}”." · "Deleted “{name}”. Its {n} sessions are ungrouped." (1: "… Its 1 session is ungrouped.") · "Deleted “{name}”. It had no sessions." · failures: "Couldn't create the group. {server message}" · "Couldn't rename the group. …" · "Couldn't delete the group. …" · "Couldn't move this session. {server message}" |
 | Remove-from-group drop row (only while dragging a grouped row) | Remove from “{name}” |
@@ -352,5 +354,70 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | `/timeline` | Timeline open. |
 | `/tree` | Timeline open, your messages only. |
 
----
+## Workspace (§14)
 
+| Where | Copy |
+|---|---|
+| Skip link | Skip to Group Composer |
+| Main landmark | `aria-label`: Workspace: {name} |
+| Title and meta | {name} · `{n} members` (1: `1 member`) · `·` · the cwd when every member shares one, else `{n} folders` |
+| Back | `aria-label`: Back to Sessions |
+| Head buttons | `Tabs` (`aria-pressed`; pressed reads the same word) · `Align to Fork` · `Add Members` · `Dissolve` · collapsed under 640px into `More Actions` |
+| Unknown group id (toast) | That group is gone. |
+| Promoted chip | Promoted: {title} · button `Add Back` · `title`: You took this session out of “{name}”. Add Back puts it back where it was |
+| Tab | {label or title} · `aria-label`: {label or title}, {model} (mid-turn: "…, working") |
+| Pane name | {label} · {model}, or {title} · {model} with no label · repeats of one model: {model} #1, #2, #3 · `title`: the full string, then the cwd |
+| Pane tools | `Open` (link, `title`: Open this session on its own) · `Wider` · `Narrower` · `Move Left` · `Move Right` · `Promote` · `Eliminate` (no archive available: `Remove From Group`) |
+| Pane tool `aria-label`s | Open {label or title} · Make {label or title} wider · Make {label or title} narrower · Move {label or title} left · Move {label or title} right · Promote {label or title} · Eliminate {label or title} |
+| Promote `title` | Take it out of “{name}” and open it on its own. Nothing is archived and nothing is deleted |
+| Eliminate `title` | Take it out of “{name}” and archive it. The transcript stays; unarchiving brings it back |
+| Remove From Group `title` | This session wasn't started in pi-web, so removing it is all we can do — nothing is archived |
+| Member chips | `TUI` (accent, static) · `Archived` (neutral) · `Can't open` (error) · `Busy` (warn) |
+| Member composer reasons | "This session is open in a terminal, so pi-web won't write to it." · "This session is archived. Unarchive it to send." · "This session can't be opened. The banner above says why." · "Another program is writing to this session." |
+| Member file gone | **This session's file is gone.** Its transcript was deleted outside pi-web, so there's nothing left to read. Removing it from the group is all that's left. · button `Remove From Group` |
+| Group composer label and placeholder | `aria-label` "Message every member" · placeholder "Ask all {n} members…—Enter sends, Shift+Enter adds a line" (below 768: "Ask all {n} members…"; 1 member: "Ask this member…") |
+| Group composer Send | `Send to All` · in flight `Sending…` · 1 member: `Send` |
+| Group composer targets line | `{n} of {m} members` then the excluded reasons, counted: `· 1 mid-turn` · `· 2 open in a terminal` · `· 1 archived` · `· 1 can't be opened` · `· 1 busy` · `· 1 file gone`. All available: `{n} members` alone |
+| Group composer off | 0 available: Send is `aria-disabled`, reason "No member can take a message right now." · 0 members: the composer isn't rendered |
+| Refusal banner | **Nothing was sent.** {n} of {m} members can't take a message right now: {member} is mid-turn, {member} is open in a terminal. Wait for them, or send to the other {k}. · buttons `Send to the Rest ({k})` · `Cancel` |
+| Partial send banner | **Sent to {k} of {n} members.** {member} was taken by another program between the check and the send, so it didn't get this message. The {k} that did are answering now. · button `Send to {member}` |
+| Sent (live region) | Sent to {n} members. (1: Sent to 1 member.) |
+| Promote toast | Took **{title}** out of “{name}”. · failure: "Couldn't take this session out of the group. {server message}" |
+| Add Back toast | Put **{title}** back in “{name}”. |
+| Eliminate toast | Removed **{title}** and archived it. · remove-only: "Removed **{title}** from “{name}”. It wasn't started in pi-web, so nothing was archived." · with the group's last member: "Removed **{title}** and archived it. Dissolved “{name}” — nothing was left in it." · failure: "Couldn't remove this session. {server message}" · archived half failed: "Removed **{title}** from “{name}”, but couldn't archive it. {server message}" |
+| Dissolve vs Delete group | The same route (`DELETE /api/session-groups/:id`) under two words: `Delete group` in the sidebar's tool row, `Dissolve` in the workspace head, where it sits above open transcripts and "Delete" would read as deleting them (§14) |
+| Dissolve, asking in place | Dissolve “{name}”? Its {n} sessions stay in the list. (1: "… Its 1 session stays …"; 0: "Dissolve “{name}”? Nothing is in it.") · buttons `Dissolve` · `Cancel` |
+| Dissolve toast | Dissolved “{name}”. Its {n} sessions are ungrouped. (1: "… Its 1 session is ungrouped.") · "Dissolved “{name}”. It had no sessions." |
+| Add Members popover | trigger `Add Members` · `aria-label` "Add a session to “{name}”" · rows: every ungrouped session, then the grouped ones with a muted note `in “{name}”`, then `Fan Out…` · empty: "Every session is already in a group." |
+| Add Members toasts | Added **{title}** to “{name}”. · Moved **{title}** from “{other}” to “{name}”. · failure: "Couldn't add this session. {server message}" |
+| Empty workspace | **“{name}” has no sessions yet.** Add some here, or drag a row onto the group in the sidebar. · buttons `Add Members` · `Fan Out…` |
+| Member announcements (live region) | {pane name} — working. · {pane name} — replied. · {pane name} — stopped by you. · {pane name} — can't be opened. · {pane name} — open in a terminal, so it stays read-only. |
+| Pane focus keys | no visible copy · the workspace's keyboard help lives in `Move Left` / `Move Right` `title`s: "Move Left · Ctrl+Alt+Left moves focus, not the pane" |
+
+## Fanout (§14b)
+
+| Where | Copy |
+|---|---|
+| Flyout row (§4) | `Fan Out…` · `title`: Fork this session N ways and compare the answers |
+| Dialog title | Fan out |
+| Start from | field label `Start from` · radios: "Fork “{title}” at its latest message" · "A fresh prompt" |
+| Fork note | Each member gets the whole conversation up to message {n}, then goes its own way. |
+| Fork note, source mid-turn | The fork is taken from message {n}, the last one finished. The turn running now isn't included. |
+| Fresh fields | the §5 folder picker, unchanged · field label `First message` · placeholder "Ask all of them to…" |
+| Members field | label `Members` · empty: "No members yet. Add a model, then set how many of it you want." |
+| Member row | the model id in mono · the fill (below) · count buttons `aria-label` "One more {model}" / "One fewer {model}" (at 1: "Remove {model}") · remove `aria-label` "Remove {model}" |
+| Add a model | `Add a Model` · picking a model already listed: no new row, the count goes up, and the live region says "{model} ×3." |
+| Member fill | `{tokens} of {window} · {pct}%` (§4f's formats and its 80% / 95% steps) · window unknown: "{tokens}, window unknown" · fresh prompt: "new session" |
+| Doesn't fit | This model's window is smaller than the fork. · `.field-error`: "Remove {model}, or lower its count, to create this fanout." |
+| Group name | label `Group name` · default `Fanout · {first 6 words of the title or prompt}` · placeholder Group name |
+| Cost preview | `{n} members × ~{tokens} tokens re-sent every shared turn.` · fresh: `{n} members, each starting empty. Every shared turn is re-sent {n} times as they grow.` |
+| Rate-limit note | Turns start together, so one provider may answer some members with 429. pi-web doesn't stagger them. |
+| Create | `Create {n} Members` (1: `Create 1 Member`) · in flight `Creating…` · off at 0: reason "Add at least 1 member." |
+| Cancel | `Cancel` |
+| Partial creation banner | **{k} of {n} members were created.** {model} couldn't start: {server message}. The {k} that exist are running; add another from Add Members. · buttons `Add Members` · `Dismiss` |
+| Total failure | `.field-error` in the dialog: "Couldn't create this fanout. No sessions were made. {server message}" |
+| Fork marker row | Forked from {parent title} here · `{HH:MM}` · parent gone: the title as plain text, `title` "This session is no longer on disk." |
+| Align to Fork | `Align to Fork` · live region: "Aligned {n} members to the fork point." · some missing: "Aligned {k} members. {pane name} has no fork point on its branch." |
+| Fan out unavailable | the row is absent — no reply yet, a watch view, or a session open in a TUI. Nothing is disabled and nothing explains an absence |
+
+---

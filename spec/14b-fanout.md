@@ -93,7 +93,12 @@ beside each other), a bottom sheet under 768px.
   they are different subscriptions with different windows and different bills. A picker that
   showed the bare id would let a user add what looks like one model twice, and the cost preview —
   whose whole purpose is comparing windows — would show two identical-looking rows with different
-  denominators. The `aria-label`s carry the ref for the same reason.
+  denominators. The `aria-label`s carry the ref for the same reason, and so does the
+  partial-creation banner (§9), which lists failures the user has to tell apart. **The rule,
+  stated once so it need not be re-derived per surface: wherever two members could be
+  distinguished only by their provider, name the full ref.** Where something else already
+  separates them — a pane's own label, title and repeat suffix — the short form stays, because
+  there the provider is noise rather than the distinguishing fact.
 - **`Add a Model`** opens the §4c model picker, unchanged, as its own panel. Picking a model that
   is already listed **increments that row** rather than adding a second one — the count is the
   repeat.

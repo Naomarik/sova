@@ -156,7 +156,8 @@ The workspace is a third value of `.app`'s `data-view`, and it takes the whole m
           <span class="workspace-pane-name" id="pane-p1-name">control · claude-opus-5</span>
           <span class="context-gauge" title="…">…§4f…</span>
           <span class="chip chip-accent"><i class="chip-dot"></i>TUI</span>   <!-- state chips, see below -->
-          <div class="workspace-pane-tools">…Open, Wider, Narrower, Move Left, Move Right, Promote, Eliminate…</div>
+          <button class="button button-icon button-ghost workspace-pane-tools"
+                  aria-haspopup="menu" aria-label="Pane actions · control · claude-opus-5">…more…</button>
         </header>
         <div class="workspace-pane-body">…§3 transcript, with pane-scoped ids…</div>
         <footer class="composer workspace-pane-composer" data-collapsed="true">…§4, collapsed…</footer>
@@ -261,6 +262,18 @@ apply verbatim. What changes is scoping and chrome:
 - **Outside a workspace there is no scope and no suffix.** A session opened at `#/s/` renders the
   same view with bare ids, exactly as it does today, because there is nothing to disambiguate
   from. The scope is what a pane adds, not something the session view carries everywhere.
+- **The tools are one menu, not a row.** Seven controls do not fit beside a name at a 440px
+  pane, and a row that sheds controls as it narrows would hide different ones at different pane
+  widths in the same view. One `Pane actions` trigger, the skill's plain action menu, named for
+  the pane it acts on (`Pane actions · {pane name}`) so three of them on screen are three
+  different menus to AT. The labels inside are the ones below, unabbreviated.
+- **Three ways a member leaves, and each word does one thing.** `Promote` removes it and takes
+  you to it. `Remove From Group` removes it and leaves you here. `Eliminate` removes it and
+  archives it. All three are offered for a session pi-web started; for one it didn't,
+  `Eliminate` is absent rather than relabelled, because the archive half isn't available (§2
+  "Archiving") and a word that only sometimes archives is the lie this set exists to avoid.
+  `Remove From Group` is what a member you want out but not archived has always needed — without
+  it the only remove-and-stay gesture would be `Promote`, which doesn't stay.
 - **`Open`** is a link to `#/s/{path}`: the member alone, at full width, out of the workspace but
   still in the group.
 - **Scroll** is the pane's own `.pane`. Jump to Latest (§3) is per pane and sits inside it.
@@ -432,7 +445,7 @@ its text must stay visible — and a focused pane composer never collapses under
   auto-grow) and released the moment it takes focus, which expands the pane composer in the same
   frame. Typing is never done in a box that is deciding whether to grow.
 - **A collapsed composer keeps its reason as an accessible description.** `.composer-reason` is
-  hidden visually, not removed, so `aria-describedby="w2-composer-reason"` still reads "This
+  hidden visually, not removed, so `aria-describedby="composer-reason-p2"` still reads "This
   session is open in a terminal, so pi-web won't write to it." to AT. A disabled pane composer
   that collapses must not become a Send button with no explanation.
 - **`data-collapsed="true"` is the only hook**, on `.composer`, so the state is one attribute and
@@ -583,6 +596,11 @@ registered on the workspace only, so it exists nowhere else in the product.
 - `.workspace` is the `main`, labelled "Workspace: {name}". Its `h1` is the group name.
 - Panes are `role="region"` in split and `role="tabpanel"` in tabs, always named "{label or
   title} · {model}", always in DOM order = `members` order.
+- **Before the group composer exists**, the skip link points at the focused pane's transcript
+  and reads `Skip to Transcript`. The target and the name move together — a link that says
+  "Group Composer" and lands on a transcript is worse than either, and dropping the skip link
+  entirely would make the workspace the one view in the product without one. "One of N" isn't a
+  problem here: focus picks it.
 - The skip link points at the group composer, because that is the workspace's action; a skip link
   to "the transcript" would have to pick one of N.
 - Contrast: the pane head is ink-2 on sunken, the sidebar region head's pair (7.65 dark / 7.22

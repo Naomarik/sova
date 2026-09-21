@@ -13,6 +13,9 @@ export interface Poll<T> {
   pending: Accessor<boolean>;
   /** Fetch now and restart the timer (backoff reset). */
   refetch(): void;
+  /** Adopt a value obtained elsewhere (a request that returns the new state) as the latest result:
+      a fetch in flight is dropped, the error clears, and the timer restarts from now. */
+  set(value: T): void;
 }
 
 /**
@@ -75,6 +78,15 @@ export function createPoll<T extends object>(fetcher: () => Promise<T>, interval
     refetch() {
       failures = 0;
       void tick();
+    },
+    set(value) {
+      if (stopped) return;
+      ++run;
+      failures = 0;
+      setStore("value", reconcile(value, { key: "id" }) as never);
+      setError(null);
+      setPending(false);
+      schedule(intervalMs);
     },
   };
 }

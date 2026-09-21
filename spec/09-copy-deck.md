@@ -36,7 +36,6 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Archive cleanup dialog | **Delete {n} sessions?** {scope} This permanently deletes their transcript files — this can't be undone. · skipped "{n} skipped: {a} open in a TUI, {b} mid-turn, {c} just written. They stay as they are." · buttons `Delete {n} Sessions` ("Deleting…") · `Cancel` · none: **0 sessions to delete.** · `Close` |
 | Archive cleanup toasts | "Deleted {n} sessions." (+ " {skipped}.") · "Couldn't check what to delete. Nothing was deleted. {server message}" · "Couldn't delete sessions. Some may be gone; the list is refreshed. {server message}" |
 | Empty top region note | 0 sessions open in a TUI, or started here and not archived. The archive below has the rest. |
-| Refresh button `aria-label` | Refresh Sessions |
 | Loading | skeleton only, no text |
 | Error banner | **Couldn't read your sessions.** `~/.pi/agent/sessions` wasn't changed. Check the server is running, then retry. · button: `Retry` |
 | Empty (0 on disk) | **0 sessions in `~/.pi/agent/sessions`.** Start one here, or run `pi` in a terminal. It'll show up in this list. · button: `New Session` |
@@ -266,10 +265,10 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Out of credit note | This balance can't fund calls. They'll fail until it's topped up. |
 | Meter context | Resets in {2h 17m} (under 24h) · Resets {Sep 25} · reset already passed: Reset at `{HH:MM}`. New reading at the next refresh. |
 | Usage chips | Near limit · Rate-limited · Quota used · Out of credit (DeepSeek, `available:false`) |
-| Stale usage (banner-warn) | **Usage is {42m} old.** It refreshes while pi runs in a terminal. Open a pi session, or run `/usage-refresh` in one. |
-| Usage file missing (`reason:"missing"`) | **No usage data yet.** The usage-status extension writes `~/.pi/agent/cache/usage-status.json` while pi runs, and we haven't found it. |
+| Stale usage (banner-warn; only after a failed Refresh Usage) | **Usage is {42m} old.** Couldn't refresh: {message} · button: `Retry` |
+| Usage file missing (`reason:"missing"`) | **No usage data yet.** Nothing has fetched provider usage on this machine. Refresh Usage fetches it now. · button: `Refresh Usage` |
 | Usage file corrupt (`reason:"corrupt"`) | **Couldn't read usage.** `usage-status.json` isn't valid JSON right now. Nothing was changed. It's rewritten at the next refresh. · button: `Retry` |
-| Request failed | Usage: **Couldn't load usage.** · Agents: **Couldn't load agents.** Then: Nothing was changed. {server message} · button: `Retry` |
+| Request failed | Usage: **Couldn't load usage.** (poll) · **Couldn't refresh usage.** (Refresh Usage, data not stale) · Agents: **Couldn't load agents.** Then: Nothing was changed. {server message} · button: `Retry` |
 | Provider `nologin` | Not signed in. Run `claude /login` and it'll show at the next refresh. (OpenAI: `pi /login`) |
 | Provider `expired` | Sign-in expired. Run `claude /login` to renew it. (OpenAI: `pi /login`) |
 | Provider `nokey` | No Ollama Cloud key in `~/.pi/agent/auth.json`. · Z.ai: No Z.ai API key in `~/.pi/agent/auth.json`. |

@@ -280,8 +280,12 @@ Both pages share one shell: a `.session-head` and a `.insights.pane` containing
   the note go in `<code>`.
 - **Whole file.**
   - The Usage page's head meta always shows "Updated {rel}" from `fetchedAt`, or "Not read yet".
-  - When `stale` is true (more than 10 minutes old, which means no TUI pi is refreshing it),
-    add a `.banner.banner-warn` (`clock`) above the grid. The meters still render.
+  - Refresh Usage (`POST /api/insights/usage/refresh`) fetches every provider now and replaces
+    the page's data with the result; the head button is `aria-disabled` + `aria-busy` meanwhile.
+  - When `stale` is true (more than 10 minutes old) and the last Refresh Usage failed, add a
+    `.banner.banner-warn` (`clock`) above the grid with the failure and a `Retry`. Old data on
+    its own gets no banner: the head meta shows the age, and Refresh Usage fetches it. The
+    meters still render.
   - When `available` is false, replace the grid with one `.empty`. `missing` means unavailable,
     not an error. `corrupt` gets the error copy.
 

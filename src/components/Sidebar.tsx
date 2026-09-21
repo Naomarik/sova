@@ -638,16 +638,6 @@ export function Sidebar(props: {
           pi-web
         </a>
         <span class="sidebar-spacer" />
-        <button
-          type="button"
-          class="button button-icon button-ghost"
-          aria-label="Refresh Sessions"
-          title="Refresh Sessions"
-          aria-disabled={props.loading ? "true" : undefined}
-          onClick={() => !props.loading && props.onRefresh()}
-        >
-          <Icon name="refresh" />
-        </button>
         <button type="button" class="button" onClick={() => props.onNew()}>
           <Icon name="plus" />
           New Session

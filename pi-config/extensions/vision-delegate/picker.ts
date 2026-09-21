@@ -4,7 +4,7 @@
  * Pure: the caller supplies the model resolver and the parsed usage cache, so
  * the policy is testable without a registry or a filesystem.
  *
- * Usage comes from the shared cache ../usage-status.ts writes
+ * Usage comes from the shared cache ../usage-status/ writes
  * (~/.pi/agent/cache/usage-status.json). It is up to ~3 minutes stale and may be
  * absent entirely; unknown usage never blocks a candidate, it only fails to
  * rescue one. Providers outside the map (fireworks, opencode, local ollama, ...)

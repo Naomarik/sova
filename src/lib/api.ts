@@ -254,6 +254,9 @@ export const deleteAttachment = (path: string) =>
 
 export const fetchUsage =() => request<UsageInsight>("/api/insights/usage");
 
+/** Fetch every provider's usage now and rewrite the shared cache; resolves to the new insight. */
+export const refreshUsage = () => request<UsageInsight>("/api/insights/usage/refresh", { method: "POST" });
+
 export const fetchAgents = () => request<AgentsInsight>("/api/insights/agents");
 
 /** Every /explain artifact in the store, newest first (they're kept forever). */

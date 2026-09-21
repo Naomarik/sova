@@ -26,6 +26,8 @@ export function InsightsPage(props: {
   meta?: JSX.Element;
   refreshLabel: string;
   onRefresh(): void;
+  /** A refresh the button started is in flight: it's disabled and says so until it settles. */
+  refreshing?: boolean;
   /** Latest request failure; loaded data stays visible below the banner. */
   error: string | null;
   errorTitle: string;
@@ -52,8 +54,10 @@ export function InsightsPage(props: {
           type="button"
           class="button button-icon button-ghost"
           aria-label={props.refreshLabel}
-          title={props.refreshLabel}
-          onClick={() => props.onRefresh()}
+          title={props.refreshing ? "Refreshing…" : props.refreshLabel}
+          aria-disabled={props.refreshing ? "true" : undefined}
+          aria-busy={props.refreshing ? "true" : undefined}
+          onClick={() => !props.refreshing && props.onRefresh()}
         >
           <Icon name="refresh" />
         </button>
@@ -66,7 +70,7 @@ export function InsightsPage(props: {
               title={props.errorTitle}
               body={`Nothing was changed. ${props.error}`}
               action={
-                <button type="button" class="button button-sm" onClick={() => props.onRefresh()}>
+                <button type="button" class="button button-sm" aria-disabled={props.refreshing ? "true" : undefined} onClick={() => !props.refreshing && props.onRefresh()}>
                   Retry
                 </button>
               }

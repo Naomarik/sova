@@ -1,5 +1,6 @@
-import { For, Match, Show, Switch } from "solid-js";
+import { createSignal, For, Match, Show, Switch } from "solid-js";
 import type { UsageBalance, UsageInsight, UsageProvider, UsageWindow } from "../../shared/protocol";
+import { refreshUsage } from "../lib/api";
 import { clockTime, duration, relativeTime, shortDate, thousands } from "../lib/format";
 import { meterTone, money, pct, PROVIDER_NAME, providerChip, providerProblem, windowLabel } from "../lib/insights";
 import type { Poll } from "../lib/poll";
@@ -122,9 +123,21 @@ function UsageCard(props: { p: UsageProvider; now: number }) {
 }
 
 /** The page body, directly in `.insights-inner`: the h1 already names it, so no section head. */
-function UsageBody(props: { usage: Poll<UsageInsight>; now: number }) {
+function UsageBody(props: {
+  usage: Poll<UsageInsight>;
+  now: number;
+  /** Why the last Refresh Usage failed, until one succeeds. */
+  refreshError: string | null;
+  refreshing: boolean;
+  onRefresh(): void;
+}) {
   const u = () => props.usage.data();
   const age = () => props.now - (u()?.fetchedAt ?? props.now);
+  const retry = () => (
+    <button type="button" class="button button-sm" aria-disabled={props.refreshing ? "true" : undefined} onClick={() => !props.refreshing && props.onRefresh()}>
+      Retry
+    </button>
+  );
   return (
     <Switch>
       <Match when={!u() && props.usage.pending()}>
@@ -142,11 +155,7 @@ function UsageBody(props: { usage: Poll<UsageInsight>; now: number }) {
               <code>usage-status.json</code> isn't valid JSON right now. Nothing was changed. It's rewritten at the next refresh.
             </>
           }
-          action={
-            <button type="button" class="button button-sm" onClick={() => props.usage.refetch()}>
-              Retry
-            </button>
-          }
+          action={retry()}
         />
       </Match>
       <Match when={u()?.available === false}>
@@ -154,26 +163,22 @@ function UsageBody(props: { usage: Poll<UsageInsight>; now: number }) {
           <div class="empty">
             <Icon name="gauge" class="empty-mark" />
             <p class="empty-title">No usage data yet.</p>
-            <p class="empty-body">
-              The usage-status extension writes <code>~/.pi/agent/cache/usage-status.json</code> while pi runs, and we haven't found it.
-            </p>
+            <p class="empty-body">Nothing has fetched provider usage on this machine. Refresh Usage fetches it now.</p>
+            <button type="button" class="button empty-action" aria-disabled={props.refreshing ? "true" : undefined} onClick={() => !props.refreshing && props.onRefresh()}>
+              <Icon name="refresh" />
+              Refresh Usage
+            </button>
           </div>
         </div>
       </Match>
       <Match when={u()}>
         {(data) => (
           <>
-            <Show when={data().stale}>
-              <Banner
-                tone="warn"
-                icon="clock"
-                title={`Usage is ${duration(age())} old.`}
-                body={
-                  <>
-                    It refreshes while pi runs in a terminal. Open a pi session, or run <code>/usage-refresh</code> in one.
-                  </>
-                }
-              />
+            {/* Old data alone is no banner: Refresh Usage fetches it. It is one when that refresh failed. */}
+            <Show when={data().stale && props.refreshError}>
+              {(failure) => (
+                <Banner tone="warn" icon="clock" title={`Usage is ${duration(age())} old.`} body={`Couldn't refresh: ${failure()}`} action={retry()} />
+              )}
             </Show>
             <div class="insights-grid">
               <For each={data().providers}>{(p) => <UsageCard p={p} now={props.now} />}</For>
@@ -188,6 +193,23 @@ function UsageBody(props: { usage: Poll<UsageInsight>; now: number }) {
 /** `#/usage`: subscription usage limits, from the usage-status extension's cache file. */
 export function UsageView(props: { usage: Poll<UsageInsight>; now: number; titleRef(el: HTMLHeadingElement): void }) {
   const fetchedAt = () => props.usage.data()?.fetchedAt ?? null;
+  const [refreshing, setRefreshing] = createSignal(false);
+  const [refreshError, setRefreshError] = createSignal<string | null>(null);
+  /** Refresh Usage: the server fetches every provider now; the result replaces the poll's value. */
+  const refresh = async () => {
+    if (refreshing()) return;
+    setRefreshing(true);
+    try {
+      props.usage.set(await refreshUsage());
+      setRefreshError(null);
+    } catch (err) {
+      setRefreshError((err as Error).message);
+    } finally {
+      setRefreshing(false);
+    }
+  };
+  /** The stale banner carries a failed refresh over old data; the page banner carries the rest. */
+  const staleFailure = () => Boolean(props.usage.data()?.stale && refreshError());
   return (
     <InsightsPage
       title="Usage"
@@ -197,13 +219,14 @@ export function UsageView(props: { usage: Poll<UsageInsight>; now: number; title
         </Show>
       }
       refreshLabel="Refresh Usage"
-      onRefresh={() => props.usage.refetch()}
-      error={props.usage.error()}
-      errorTitle="Couldn't load usage."
+      onRefresh={() => void refresh()}
+      refreshing={refreshing()}
+      error={props.usage.error() ?? (staleFailure() ? null : refreshError())}
+      errorTitle={props.usage.error() ? "Couldn't load usage." : "Couldn't refresh usage."}
       busy={!props.usage.data() && props.usage.pending()}
       titleRef={props.titleRef}
     >
-      <UsageBody usage={props.usage} now={props.now} />
+      <UsageBody usage={props.usage} now={props.now} refreshError={refreshError()} refreshing={refreshing()} onRefresh={() => void refresh()} />
     </InsightsPage>
   );
 }

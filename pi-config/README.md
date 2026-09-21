@@ -33,7 +33,7 @@ additions, the pinned third-party packages, and the extensions kept in-tree.
 | `extensions/codefold/` | Folds long fenced code blocks in assistant messages into one band |
 | `extensions/topic-outline/` | Display-only live topic outline of the conversation, with jump-to-topic |
 | `extensions/vision-delegate/` | Lets a text-only model work with images: a `look_at_image` tool plus automatic descriptions of read results and TUI attachments, routed to a fallback vision model |
-| `extensions/usage-status.ts` | Subscription usage (Ollama Cloud, OpenAI Codex, Claude, Z.ai, DeepSeek balance) in the footer, plus a `/usage` overlay |
+| `extensions/usage-status/` | Subscription usage (Ollama Cloud, OpenAI Codex, Claude, Z.ai, DeepSeek balance) in the footer, plus a `/usage` overlay. Its `fetch.ts` (fetchers, cache, lock) is imported by pi-web |
 | `extensions/wake-nudge.ts` | Lets the model schedule one-shot wakeups |
 | `extensions/working-subagent-count.ts` | Busy subagent and team-member counts on the "Working" line and in an idle widget |
 | `install.sh` | Symlinks the config files and every `extensions/*` directory and single-file `extensions/*.ts` extension into `~/.pi/agent`, and `pi-sessions` into `~/.local/bin` |

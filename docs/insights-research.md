@@ -11,7 +11,7 @@ session JSONL (plus a fresher outline copy in the live registry for running sess
 
 ### 1. Usage limits: `~/.pi/agent/cache/usage-status.json`
 
-Writer: `~/.pi/agent/extensions/usage-status.ts` (symlink → `pi-config/extensions/usage-status.ts` in this repo).
+Writer: `~/.pi/agent/extensions/usage-status/index.ts` (symlink → `pi-config/extensions/usage-status/` in this repo).
 Written atomically (tmp + `rename`), so readers never see a partial file. No secrets in it.
 Lockfile `usage-status.json.lock` beside it: ignore it.
 

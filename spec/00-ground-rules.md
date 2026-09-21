@@ -47,7 +47,7 @@ and `fill="none" stroke="currentColor"`.
 | `attention.svg` | Composer reason when the session is read only |
 | `clock.svg` | "Reconnecting" reason; the outline strip's Open Timeline button (§13) |
 | `bell.svg` | The wake-nudge card in the transcript (§3) |
-| `refresh.svg` | Refresh Sessions: an icon button in `.sidebar-head`, before New Session, with `aria-label="Refresh Sessions"`. While fetching it's `aria-disabled` and the list keeps its rows |
+| `refresh.svg` | Refresh Usage / Refresh Agents: the icon button in the insights head (§10). While a refresh it started is in flight it's `aria-disabled` and `aria-busy`. The session list has no refresh button: it updates live |
 | `arrow-right.svg` | Send |
 | `stop.svg` | Stop (composer): a rounded square |
 | `chat.svg` | Empty-state mark (no session selected) |

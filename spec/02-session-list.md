@@ -8,7 +8,6 @@
   <div class="sidebar-head">
     <a class="brand" href="#/"><svg class="icon" aria-hidden="true">…pi-web-mark…</svg>pi-web</a>
     <span class="sidebar-spacer"></span>
-    <button class="button button-icon button-ghost" type="button" aria-label="Refresh Sessions">…refresh…</button>
     <button class="button" type="button"><svg class="icon" aria-hidden="true">…plus…</svg>New Session</button>
   </div>
 
@@ -326,7 +325,7 @@
   It doesn't count toward the "N TUI" chip either.
 - **Live count.** `N TUI` as `.chip.chip-accent.chip-count`, shown only when N ≥ 1. It sits at
   the right end of the count row under search (`.spread`), not in the head: at 320px the head
-  holds exactly brand, Refresh, and New Session. It always counts all live sessions, not just the
+  holds exactly brand and New Session. It always counts all live sessions, not just the
   filtered ones. **It does not pulse** — `.chip-live` came off it with the rail change. A count is
   a tally, not work in flight, and it was the one pulse on the screen that never stopped. The
   accent dot and the word `TUI` carry it.

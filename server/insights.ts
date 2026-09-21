@@ -26,6 +26,9 @@ import type {
   WorkerInfo,
   WorkerStatus,
 } from "../shared/protocol";
+// The usage-status extension's fetch/cache core. Part of the sanctioned pi-config import
+// surface (node builtins only, like extensions/mode/state.ts) — see CLAUDE.md.
+import { forceRefresh } from "../pi-config/extensions/usage-status/fetch.ts";
 import { hasPage, listExplanations, sortExplanations } from "./explanations";
 import { readLiveRecords, type RawLiveRecord } from "./live";
 import { modelProvider } from "./models";
@@ -36,8 +39,10 @@ import { LAST_KNOWN_REASON, lastKnownUsage, rememberUsage } from "./usage-last-k
 import { workerSkills } from "./worker-skills";
 
 // Read-only views over what the user's pi extensions leave on disk (sources and shapes:
-// docs/insights-research.md "Data sources"). Nothing here writes to ~/.pi. Every source is
-// untrusted JSON: anything malformed is skipped, and a missing source yields an empty payload.
+// docs/insights-research.md "Data sources"). The one writer is refreshUsageInsight, which
+// force-refreshes the shared usage cache through the extension's own lock protocol. Every
+// source is untrusted JSON: anything malformed is skipped, and a missing source yields an
+// empty payload.
 
 type Rec = Record<string, any>;
 
@@ -225,6 +230,27 @@ export async function getUsageInsight(): Promise<UsageInsight> {
   // there always wins, error and "na" included — that is the extension's own answer.
   const providers = absent.length === 0 ? d.providers : d.providers.map((p) => (absent.includes(p.id) ? lastKnown(p) : p));
   return { ...d, providers, stale: d.fetchedAt !== null && Date.now() - d.fetchedAt > USAGE_STALE_MS };
+}
+
+/** Single-flight: concurrent Refresh clicks share one force-fetch. */
+let usageRefreshInFlight: Promise<UsageInsight> | null = null;
+
+/**
+ * `POST /api/insights/usage/refresh`: force-refresh the shared usage cache through the
+ * extension's lock protocol — the same thing /usage-refresh does in a TUI — then serve the
+ * re-read file. Per-provider failures live in the cache's own `errors` and surface as each
+ * provider's `error`; this rejects only when the refresh machinery itself fails (another
+ * holder never publishes, or the cache can't be written).
+ */
+export async function refreshUsageInsight(): Promise<UsageInsight> {
+  usageRefreshInFlight ??= (async () => {
+    await forceRefresh();
+    usageCache = null; // the file was just rewritten; drop the memo so the read below re-parses it
+    return getUsageInsight();
+  })().finally(() => {
+    usageRefreshInFlight = null;
+  });
+  return usageRefreshInFlight;
 }
 
 /** The stored reading for a provider the cache didn't mention, or the "no data" answer as-is. */

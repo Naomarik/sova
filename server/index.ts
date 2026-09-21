@@ -13,7 +13,7 @@ import { listModels, resolveContext } from "./models";
 import { markOwned } from "./write-guard";
 import { addWebSession } from "./web-sessions";
 import { draftForClient, setDraft } from "./drafts";
-import { getAgentsInsight, getSessionInsight, getUsageInsight } from "./insights";
+import { getAgentsInsight, getSessionInsight, getUsageInsight, refreshUsageInsight } from "./insights";
 import { archiveSession, cleanupSessions, getSessionSummary, idOf, listCwds, listSessions } from "./sessions-index";
 import { contextForBranch, normalizeEntries, readActiveBranch } from "./transcript";
 import { checkTmpImage, deleteAttachment, MAX_ATTACHMENT_BYTES, readTmpImage, saveUploadedImage, sessionAttachmentsDir, UploadError } from "./attachments";
@@ -360,9 +360,17 @@ app.post(
   },
 );
 
-// Insights: read-only views of extension state (docs/insights-research.md). Missing or
-// corrupt sources come back as empty/unavailable payloads, not errors.
+// Insights: views of extension state (docs/insights-research.md). Missing or corrupt sources
+// come back as empty/unavailable payloads, not errors; the refresh route below is the one writer.
 app.get("/api/insights/usage", async (c) => c.json(await getUsageInsight()));
+
+app.post("/api/insights/usage/refresh", async (c) => {
+  try {
+    return c.json(await refreshUsageInsight());
+  } catch (err) {
+    return c.json({ error: (err as Error).message || "usage refresh failed" }, 502);
+  }
+});
 
 app.get("/api/insights/agents", async (c) => c.json(await getAgentsInsight()));
 

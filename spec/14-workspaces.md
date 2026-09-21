@@ -116,7 +116,7 @@ The workspace is a third value of `.app`'s `data-view`, and it takes the whole m
 <a class="button skip-link" href="#group-composer">Skip to Group Composer</a>
 <div class="app" data-view="workspace">
   <aside class="app-sidebar" aria-label="Sessions">…§2…</aside>
-  <main class="app-workspace" aria-label="Workspace: Fanout · retry backoff">
+  <main class="workspace" aria-label="Workspace: Fanout · retry backoff">
     <header class="workspace-head">
       <a class="button button-icon button-ghost app-back" href="#/" aria-label="Back to Sessions">…chevron-left…</a>
       <div class="workspace-head-main">
@@ -138,23 +138,23 @@ The workspace is a third value of `.app`'s `data-view`, and it takes the whole m
 
     <!-- tabs mode, and every width under 768: one strip, one pane visible -->
     <div class="workspace-tabs" role="tablist" aria-label="Members">
-      <button class="workspace-tab" role="tab" aria-selected="true" id="wtab-1" aria-controls="wpane-1">
-        <span class="workspace-tab-label">control</span>
+      <button class="workspace-tab" role="tab" aria-selected="true" id="ws-tab-p1" aria-controls="pane-p1">
+        <span class="workspace-tab-title">control</span>
         <span class="live-dot"></span>            <!-- only while that member is mid-turn -->
       </button>
       …
     </div>
 
-    <div class="workspace-panes" aria-label="Members">
-      <section class="wpane" id="wpane-1" role="region" aria-labelledby="wpane-1-name" tabindex="-1">
-        <header class="wpane-head">
-          <span class="wpane-name" id="wpane-1-name">control · claude-opus-5</span>
+    <div class="workspace-row" aria-label="Members">
+      <section class="workspace-pane" id="pane-p1" role="region" aria-labelledby="pane-p1-name" tabindex="-1">
+        <header class="workspace-pane-head">
+          <span class="workspace-pane-name" id="pane-p1-name">control · claude-opus-5</span>
           <span class="context-gauge" title="…">…§4f…</span>
           <span class="chip chip-accent"><i class="chip-dot"></i>TUI</span>   <!-- state chips, see below -->
-          <div class="wpane-tools">…Open, Wider, Narrower, Move Left, Move Right, Promote, Eliminate…</div>
+          <div class="workspace-pane-tools">…Open, Wider, Narrower, Move Left, Move Right, Promote, Eliminate…</div>
         </header>
-        <div class="wpane-body">…§3 transcript, with pane-scoped ids…</div>
-        <footer class="composer wpane-composer" data-collapsed="true">…§4, collapsed…</footer>
+        <div class="workspace-pane-body">…§3 transcript, with pane-scoped ids…</div>
+        <footer class="composer workspace-pane-composer" data-collapsed="true">…§4, collapsed…</footer>
       </section>
       …one per member…
     </div>
@@ -165,7 +165,7 @@ The workspace is a third value of `.app`'s `data-view`, and it takes the whole m
 <div class="visually-hidden" role="status" aria-live="polite"><!-- one region, every pane, prefixed --></div>
 ```
 
-- **`.app-workspace` replaces `.app-main`** in the grid's second column, at the same width and
+- **`.workspace` replaces `.app-main`** in the grid's second column, at the same width and
   with the same floor. The sidebar, the resizer (§1) and the portals are untouched; the subagents
   pane (§11) is **not** available in a workspace, because it is a per-session surface and there
   are N sessions here. A member's own `/agents` opens `#/agents`, which is cross-session already.
@@ -177,19 +177,19 @@ The workspace is a third value of `.app`'s `data-view`, and it takes the whole m
 
 ## Layout: split
 
-`.workspace-panes` is one horizontal flex row, and the row is the scroll container.
+`.workspace-row` is one horizontal flex row, and the row is the scroll container.
 
 | Property | Value | Why |
 |---|---|---|
 | Direction | `flex-direction: row`, `overflow-x: auto`, `overflow-y: hidden` | One axis of overflow. A pane never wraps to a second row, so "left of" and "right of" stay true |
-| Pane width | `flex: 0 0 var(--wpane-width)` (`clamp(440px, 34vw, 720px)`), floor `--wpane-min` (440px) | 440 is `--main-min`, the transcript's floor, for the same reason: under it the reading column stops being one |
+| Pane width | `flex: 0 0 var(--workspace-pane-width)` (`clamp(440px, 34vw, 720px)`), floor `--workspace-pane-min` (440px) | 440 is `--main-min`, the transcript's floor, for the same reason: under it the reading column stops being one |
 | Count | Uncapped | A fanout of 9 is a legitimate thing to ask for, and the row already scrolls. What protects the layout is the floor, not a cap |
 | Snap | `scroll-snap-type: x proximity` on the row, `scroll-snap-align: start` on each pane | Proximity, not mandatory: you must be able to park two panes half-and-half to read them together |
 | Gap and seam | No gap; each pane has a left border (`--color-border`), the first none | Panes are columns of one surface, not cards on a canvas. A gap here would read as N windows |
 | Scrollbar | The row's own, always at the foot of the panes and above the group composer | The one place a horizontal scrollbar is allowed in this product |
 
 - **`Wider` and `Narrower`** step that one pane's width by 120px between 440 and 1040, written to
-  a per-pane `--wpane-w` and kept in memory only. Like §1's sessions pane, nothing is persisted:
+  a per-pane `--workspace-pane-w` and kept in memory only. Like §1's sessions pane, nothing is persisted:
   a width is a posture for the task in front of you.
 - **`Move Left` / `Move Right`** swap the member with its neighbour and write the whole order
   (`PATCH /api/session-groups/{id} {order}`). The pane keeps focus and is scrolled back into view, so the
@@ -202,7 +202,7 @@ The workspace is a third value of `.app`'s `data-view`, and it takes the whole m
 
 `Tabs` is a pressed-state ghost button in the head (`aria-pressed`), remembered in
 `sessionStorage["pi-web:group-view-{id}"]` for the browser session. In tabs mode
-`.workspace-panes` shows exactly one pane at full width and the strip above names the rest.
+`.workspace-row` shows exactly one pane at full width and the strip above names the rest.
 
 - **Hidden panes stay mounted and keep streaming.** They are `hidden` (not removed), their sockets
   stay open, and their transcripts keep appending. Coming back to a tab shows the turn that
@@ -211,7 +211,7 @@ The workspace is a third value of `.app`'s `data-view`, and it takes the whole m
   its member prefix, and its tab's `.live-dot` goes out. That is the whole point of keeping it
   mounted.
 - **The strip** is a `role="tablist"` of `role="tab"` buttons; the panes are the tabpanels, so in
-  tabs mode each `.wpane` takes `role="tabpanel"` and `aria-labelledby` its tab. In split mode
+  tabs mode each `.workspace-pane` takes `role="tabpanel"` and `aria-labelledby` its tab. In split mode
   they are `role="region"` instead, named the same way, and the strip is not rendered. The role
   swap is deliberate: a tablist that names 4 panels, only one of which exists, would be a lie.
 - **Below 768px of viewport width the workspace is tabs-only.** The `Tabs` button is hidden
@@ -233,11 +233,18 @@ apply verbatim. What changes is scoping and chrome:
 - **The accessible name of the pane is that same string**, through `aria-labelledby`. Three
   regions called "Transcript" would be useless; "control · claude-opus-5" is what the user is
   actually distinguishing.
-- **Every id inside a pane is prefixed `w{n}-`**: `w2-transcript`, `w2-composer-input`,
-  `w2-composer-reason`, `w2-context-desc`, `w2-composer-flyout`. `n` is the pane's position in
-  `members`, stable for the life of the view. `aria-controls`, `aria-describedby`, `aria-labelledby`
-  and every `for` follow. Duplicated ids across panes would hand AT the first pane's composer
-  reason for all of them.
+- **Every id inside a pane is scoped by a pane id**: `composer-input-p2`, `composer-reason-p2`,
+  `context-desc-p2`, `composer-flyout-p2`, and the pane and its tab as `pane-p2` / `ws-tab-p2`.
+  `aria-controls`, `aria-describedby`, `aria-labelledby` and every `for` follow. Duplicated ids
+  across panes would hand AT the first pane's composer reason for all of them.
+- **The pane id is per session, not per position.** It is issued once per path (`p1`, `p2`, …)
+  and kept, so `Move Left` doesn't renumber every id in the view and a member that leaves and
+  comes back finds its own ids again. A positional id would be stable only until the first
+  reorder, which is a gesture this surface ships. The path itself can't be the id: it is long and
+  full of characters an id shouldn't carry.
+- **Outside a workspace there is no scope and no suffix.** A session opened at `#/s/` renders the
+  same view with bare ids, exactly as it does today, because there is nothing to disambiguate
+  from. The scope is what a pane adds, not something the session view carries everywhere.
 - **`Open`** is a link to `#/s/{path}`: the member alone, at full width, out of the workspace but
   still in the group.
 - **Scroll** is the pane's own `.pane`. Jump to Latest (§3) is per pane and sits inside it.
@@ -447,7 +454,7 @@ accessible name, byte for byte, so what AT says matches what the pane is called.
 
 | Keys | Does |
 |---|---|
-| `Ctrl+Alt+Left` / `Ctrl+Alt+Right` | Move focus to the previous / next pane: focus its `.wpane` (`tabindex="-1"`), scroll it into view, and in tabs mode select its tab. Stops at the ends, no wrap |
+| `Ctrl+Alt+Left` / `Ctrl+Alt+Right` | Move focus to the previous / next pane: focus its `.workspace-pane` (`tabindex="-1"`), scroll it into view, and in tabs mode select its tab. Stops at the ends, no wrap |
 | `Tab` | Walks into the pane and through its controls in visual order, then out to the next pane. No focus trap anywhere |
 | `Left` / `Right` in the tab strip | The tablist's own roving tabindex, as the skill's tabs specify |
 | `Esc` | Nothing new. It does not leave the workspace and it does not abort a turn (§4) |
@@ -458,7 +465,7 @@ registered on the workspace only, so it exists nowhere else in the product.
 
 ## Accessibility
 
-- `.app-workspace` is the `main`, labelled "Workspace: {name}". Its `h1` is the group name.
+- `.workspace` is the `main`, labelled "Workspace: {name}". Its `h1` is the group name.
 - Panes are `role="region"` in split and `role="tabpanel"` in tabs, always named "{label or
   title} · {model}", always in DOM order = `members` order.
 - The skip link points at the group composer, because that is the workspace's action; a skip link
@@ -476,10 +483,10 @@ registered on the workspace only, so it exists nowhere else in the product.
 
 | Need | Classes |
 |---|---|
-| Shell | `.app[data-view="workspace"]` `.app-workspace` |
+| Shell | `.app[data-view="workspace"]` `.workspace` |
 | Head | `.workspace-head` `.workspace-head-main` `.workspace-title` `.workspace-meta` `.workspace-count` `.workspace-promoted` `.workspace-align` |
-| Tabs | `.workspace-tabs[role=tablist]` `button.workspace-tab[role=tab]` `.workspace-tab-label` (+ `.live-dot`) |
-| Panes | `.workspace-panes` `.wpane` (+ `--wpane-w`) `.wpane-head` `.wpane-name` `.wpane-tools` `.wpane-body` `.wpane-composer` |
+| Tabs | `.workspace-modes` (the Split/Tabs group) `.workspace-tabs[role=tablist]` `button.workspace-tab[role=tab]` `.workspace-tab-title` (+ `.live-dot`) |
+| Panes | `.workspace-row` `.workspace-pane` (+ `.workspace-pane-focused`, and a per-pane width set inline) `.workspace-pane-head` `.workspace-pane-name` `.workspace-pane-tools` `.workspace-pane-body` `.workspace-pane-composer` |
 | Group composer | `.composer.group-composer` `.group-composer-targets` · refusal: `.banner.banner-warn` with `.banner-action` |
 | Collapsed pane composer | `.composer[data-collapsed="true"]` |
 
@@ -488,7 +495,7 @@ Everything else is reused as it stands: `.composer*`, `.transcript*`, `.chip*`, 
 
 ## Tokens
 
-`--wpane-min` (440px, the same floor and the same reason as `--main-min`), `--wpane-width`
+`--workspace-pane-min` (440px, the same floor and the same reason as `--main-min`), `--workspace-pane-width`
 (`clamp(440px, 34vw, 720px)`), plus `--color-border`, `--color-surface`, `--color-sunken`,
 `--space-2`, `--space-3`, `--space-4`, `--dur-fast`, `--ease-standard`, `--fs-caption`,
 `--control-md`, `--tap-min`, and the chip and status tokens the member states use.

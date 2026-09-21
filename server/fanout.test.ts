@@ -255,4 +255,7 @@ test("a creation failure with no message still carries a sentence", async () => 
   const failure = r.result.failed[0]!;
   assert.equal(failure.ref, "openai/gpt-5", "the model is still named");
   assert.ok(failure.message.trim().length > 0, "and the reason is never blank");
+  // The banner reads "{model} couldn't start: {message}", so the fallback must answer WHY rather
+  // than restate the clause before the colon ("opus couldn't start: it could not be started").
+  assert.doesNotMatch(failure.message, /could not be started|couldn't start/i, "no stutter against the banner's own words");
 });

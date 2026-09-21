@@ -350,7 +350,10 @@ export async function runFanout(body: FanoutRequest, deps: FanoutDeps = realFano
       // path. The message stays the server's bare reason — the banner composes "{model} couldn't
       // start: {message}" itself, so prefixing the ref here would render the model twice.
       const said = (err instanceof Error ? err.message : String(err)).trim();
-      failed.push(refusal("", "internal", said || "it could not be started", "", member.ref));
+      // The banner reads "{model} couldn't start: {message}", so everything before the colon is
+      // already pi-web's claim and the message has to answer WHY. A restatement ("it could not be
+      // started") stutters and tells the reader nothing they didn't have from the first clause.
+      failed.push(refusal("", "internal", said || "The runtime gave no reason.", "", member.ref));
     }
   }
   // A group with no members is debris, not a result.

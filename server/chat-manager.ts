@@ -91,8 +91,8 @@ function legacyMountFailure(path: string, cwd: string): ConfigError | undefined 
   return failure;
 }
 
- * The cached permanent failure for `path`, if it still applies. Exported because it is the whole
 /**
+ * The cached permanent failure for `path`, if it still applies. Exported because it is the whole
  * retry policy for permanent errors: acquireChat answers from it, and it is how a caller (or a
  * test) asks whether the condition has cleared.
  */

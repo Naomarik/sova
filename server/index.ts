@@ -233,7 +233,9 @@ app.post("/api/session-groups/fanout", async (c) => {
   }
   const r = await runFanout(body);
   if (r.ok) return c.json(r.result, 201);
-  return r.status === 409 ? c.json({ refused: r.refused }, 409) : c.json({ error: r.error }, r.status);
+  if (r.status === 409) return c.json({ refused: r.refused }, 409);
+  // One 400 carries a code (seed-conflict), so the client renders its own sentence for it.
+  return c.json({ error: r.error, ...(r.code ? { code: r.code } : {}) }, r.status);
 });
 
 // Moves a web-spawned session between the sidebar regions. Changes pi-web's own id list only.

@@ -342,6 +342,10 @@ export interface UploadResult {
 //                                  its own — never the manager pi-web holds for the source — and the group
 //                                  gets a `seed`. FRESH MODE ({cwd, text}): N independent sessions, no shared
 //                                  root, no seed, and `text` is sent through the batch-prompt path.
+//                                  `groupId` lands the members in an EXISTING group (the response's `group`
+//                                  is then that one): a target with no seed adopts this fanout's, a matching
+//                                  seed appends, a DIFFERING seed is 400 { error, code: "seed-conflict" } with
+//                                  nothing created, and an unknown id is 404 with nothing created.
 //                                  400 bad name, empty members, a count outside 1–9, an unknown ref, both or
 //                                  neither of source/cwd, text or cwd in fork mode, blank text in fresh mode;
 //                                  404 a source path that resolves to no session (the subject doesn't exist —
@@ -500,6 +504,18 @@ export interface SessionGroup {
       from lineage. A hand-made group never grows one, which is what the auto-dissolve rule
       (AssignGroupResult.dissolved) stands on. */
   seed?: GroupSeed;
+  /** Whether the group deletes itself when its last member leaves (AssignGroupResult.dissolved).
+      Set ONLY by POST /api/session-groups/fanout when it CREATES the group with a generated name
+      — pi-web made it and named it, so pi-web may remove it. NEVER set by that route's `groupId`
+      path: a group the user named is theirs and keeps standing empty, even after it adopts a
+      fanout's `seed`.
+      THIS IS THE ONE TRUTH OF DISSOLUTION. It used to be inferred from `seed`, which is lineage
+      and the fork marker's datum; that inference is what would have made an adopted hand-made
+      group start deleting itself. Do not re-derive dissolution from another field, and do not
+      use this one to mean anything but dissolution.
+      Absent only on a group written before this field existed — then, and only then, `seed`
+      implies it, since those are pi-web's own fanout groups. An explicit value always wins. */
+  autoDissolve?: boolean;
   /** The group's sessions in display order, with their labels. The server always sends it — it is
       reconciled against the assignments on every read (ids no longer in the group drop out, ids
       missing from it are appended in id order) — and it is optional in the type only because an
@@ -584,6 +600,25 @@ export interface FanoutRequest {
   cwd?: string;
   /** Fresh mode only: the first message every member gets, sent through the batch path. */
   text?: string;
+  /** Land the new members in an EXISTING group instead of creating one; the response's `group`
+      is then that group. Omitted = create one named `name`. Seed rules, all checked BEFORE
+      anything is created: an unknown id is 404; a target with NO seed ADOPTS this fanout's and
+      appends; a target whose seed EQUALS this one appends; a target whose seed DIFFERS is
+      refused with 400 { error, code: "seed-conflict" }. ONE GROUP CARRIES ONE SEED, because the
+      fork marker and Align to Fork read it — a mixed-lineage group would make the marker assert
+      a divergence point it cannot know, so the request is refused rather than the datum
+      fabricated. Fresh mode has no seed: it never adopts and never conflicts, and leaves the
+      target's seed alone. NOTE a hand-made group that adopts a seed becomes auto-dissolving
+      (AssignGroupResult.dissolved), including the name the user chose. */
+  groupId?: string;
+}
+
+/** 400 body of POST /api/session-groups/fanout when the request cannot be reconciled with the
+    group it was asked to land in. `code` is a closed set of one today; the client renders its own
+    sentence from it and `error` is the fallback. Every other 400 on this route is `{ error }`. */
+export interface FanoutConflict {
+  error: string;
+  code: "seed-conflict";
 }
 
 /** 201 body of the fanout. `created` is never empty: if not one member could be made, nothing is

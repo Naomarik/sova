@@ -21,7 +21,7 @@ interface Recorder {
   forked: string[];
   freshed: string[];
   discarded: string[];
-  groups: { name: string; seed?: unknown }[];
+  groups: { name: string; seed?: unknown; autoDissolve?: boolean }[];
   assigned: [string, string, string][];
   prompted: [string, string][];
   deleted: string[];
@@ -51,10 +51,12 @@ function deps(over: Partial<FanoutDeps> = {}): FanoutDeps & { rec: Recorder } {
     },
     discard: (path) => rec.discarded.push(path),
     summary: async (path) => summaryOf(path),
-    createGroup(name, seed) {
-      rec.groups.push({ name, seed });
+    createGroup(name, seed, autoDissolve) {
+      rec.groups.push({ name, seed, autoDissolve });
       return { id: "g1", name, createdAt: "2026-09-22T00:00:00.000Z", members: [], ...(seed ? { seed } : {}) };
     },
+    group: () => null, // no target unless a test provides one
+    adoptSeed: (id, seed) => ({ id, name: "Target", createdAt: "2026-09-22T00:00:00.000Z", members: [], seed }),
     deleteGroup: (id) => rec.deleted.push(id),
     assign: (s, g, l) => rec.assigned.push([s, g, l]),
     prompt: async (g, t) => void rec.prompted.push([g, t]),
@@ -114,7 +116,7 @@ test("fork mode: one member per planned row, the group carries the seed, labels 
   assert.ok(r.ok);
   assert.equal(r.result.created.length, 3);
   assert.deepEqual(r.result.failed, []);
-  assert.deepEqual(d.rec.groups, [{ name: "Compare", seed: { parentSessionPath: SOURCE, leafId: LEAF } }]);
+  assert.deepEqual(d.rec.groups, [{ name: "Compare", seed: { parentSessionPath: SOURCE, leafId: LEAF }, autoDissolve: true }], "pi-web named it, so pi-web may remove it");
   assert.deepEqual(r.result.group.seed, { parentSessionPath: SOURCE, leafId: LEAF });
   assert.deepEqual(
     d.rec.assigned.map(([, g, label]) => [g, label]),
@@ -132,6 +134,7 @@ test("fresh mode: N independent sessions, NO seed, and the first message goes th
   assert.deepEqual(d.rec.forked, [], "no branching: there is no shared root");
   assert.equal(r.result.group.seed, undefined, "no fork point to align to");
   assert.deepEqual(d.rec.groups[0]!.seed, undefined);
+  assert.equal(d.rec.groups[0]!.autoDissolve, true, "fresh mode still named the group itself");
   assert.deepEqual(d.rec.prompted, [["g1", "start here"]]);
 });
 
@@ -258,4 +261,94 @@ test("a creation failure with no message still carries a sentence", async () => 
   // The banner reads "{model} couldn't start: {message}", so the fallback must answer WHY rather
   // than restate the clause before the colon ("opus couldn't start: it could not be started").
   assert.doesNotMatch(failure.message, /could not be started|couldn't start/i, "no stutter against the banner's own words");
+});
+
+// --- landing in an EXISTING group (groupId) -------------------------------------------------
+// One group carries one seed, because the fork marker reads it. Every check below runs BEFORE
+// any member is made, so a refusal leaves no sessions behind — asserted on the recorder, not
+// just the response.
+
+const THIS_SEED = { parentSessionPath: SOURCE, leafId: LEAF };
+const existing = (over: Partial<{ name: string; seed: unknown }> = {}) =>
+  ({ id: "g-existing", name: "Handmade", createdAt: "2026-09-22T00:00:00.000Z", members: [{ id: "old" }], ...over }) as never;
+
+test("groupId: a seedless group ADOPTS this fanout's seed and takes the members", async () => {
+  const adopted: unknown[] = [];
+  const d = deps({
+    group: () => existing(),
+    adoptSeed: (id, seed) => {
+      adopted.push([id, seed]);
+      return { id, name: "Handmade", createdAt: "2026-09-22T00:00:00.000Z", members: [{ id: "old" }], seed };
+    },
+  });
+  const r = await runFanout(forkBody({ groupId: "g-existing", members: [{ ref: "anthropic/opus", count: 2 }] }), d);
+  assert.ok(r.ok);
+  assert.deepEqual(adopted, [["g-existing", THIS_SEED]], "the group gains this fanout's lineage");
+  assert.equal(r.result.group.id, "g-existing", "the EXISTING group is returned, not a new one");
+  assert.deepEqual(r.result.group.seed, THIS_SEED);
+  assert.deepEqual(d.rec.groups, [], "no group was created");
+  assert.equal(d.rec.assigned.length, 2);
+  assert.ok(d.rec.assigned.every(([, g]) => g === "g-existing"));
+});
+
+test("groupId: a MATCHING seed just appends, adopting nothing", async () => {
+  const adopted: unknown[] = [];
+  const d = deps({
+    group: () => existing({ seed: THIS_SEED }),
+    adoptSeed: (id, seed) => {
+      adopted.push([id, seed]);
+      return null;
+    },
+  });
+  const r = await runFanout(forkBody({ groupId: "g-existing", members: [{ ref: "anthropic/opus", count: 1 }] }), d);
+  assert.ok(r.ok);
+  assert.deepEqual(adopted, [], "nothing to adopt: it already has this seed");
+  assert.equal(r.result.group.id, "g-existing");
+  assert.deepEqual(r.result.group.seed, THIS_SEED);
+  assert.equal(d.rec.assigned.length, 1);
+});
+
+test("groupId: a DIFFERING seed is refused with seed-conflict, and nothing is created", async () => {
+  const d = deps({ group: () => existing({ seed: { parentSessionPath: "/sessions/--tmp--/other.jsonl", leafId: "z9" } }) });
+  const r = await runFanout(forkBody({ groupId: "g-existing" }), d);
+  assert.ok(!r.ok && r.status === 400);
+  assert.equal(r.code, "seed-conflict");
+  assert.match(r.error, /one fork point/);
+  assert.deepEqual(d.rec.forked, [], "refused before any member was made");
+  assert.deepEqual(d.rec.assigned, []);
+  assert.deepEqual(d.rec.groups, []);
+});
+
+test("groupId: an unknown group is 404, and nothing is created", async () => {
+  const d = deps({ group: () => null });
+  const r = await runFanout(forkBody({ groupId: "no-such-group" }), d);
+  assert.ok(!r.ok && r.status === 404);
+  assert.deepEqual(d.rec.forked, []);
+  assert.deepEqual(d.rec.groups, []);
+});
+
+test("groupId: FRESH mode never adopts and never conflicts, and leaves the target's seed alone", async () => {
+  const adopted: unknown[] = [];
+  const other = { parentSessionPath: "/sessions/--tmp--/other.jsonl", leafId: "z9" };
+  const d = deps({
+    group: () => existing({ seed: other }),
+    adoptSeed: (id, seed) => {
+      adopted.push([id, seed]);
+      return null;
+    },
+  });
+  const r = await runFanout({ name: "n", members: [{ ref: "anthropic/opus", count: 1 }], cwd: "/work", text: "go", groupId: "g-existing" }, d);
+  assert.ok(r.ok, "fresh mode has no seed of its own, so there is nothing to conflict with");
+  assert.deepEqual(adopted, []);
+  assert.deepEqual(r.result.group.seed, other, "the target keeps the seed it had");
+  assert.equal(d.rec.freshed.length, 1);
+});
+
+test("groupId must be a non-empty string", async () => {
+  for (const bad of [7, "", null]) {
+    const r = await planFanout(forkBody({ groupId: bad as never }), deps());
+    if (bad === null) continue; // null is JSON's absent-ish; the route rejects non-strings
+    assert.ok(!r.ok, JSON.stringify(bad));
+    assert.match(r.error, /groupId/);
+  }
 });

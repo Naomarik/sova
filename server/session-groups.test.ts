@@ -533,3 +533,74 @@ test("a member's unknown fields travel with it between groups", () => {
   assignSession("a", "g1", null);
   assert.deepEqual(onDisk().groups[0]!.members, [{ id: "a", pinned: true, note: { by: "newer build" } } as never]);
 });
+
+// --- what decides dissolution (autoDissolve, not seed) ---------------------------------------
+// The flag is the one truth. `seed` is lineage and the fork marker's datum; inferring deletion
+// from it is what would have made a group the USER named start deleting itself once it adopted
+// a fanout's lineage.
+
+test("a group pi-web created AND named dissolves when emptied", () => {
+  reset({
+    version: 1,
+    groups: [{ id: "g1", name: "opus ×3", createdAt: "2026-01-01T00:00:00.000Z", seed: SEED, autoDissolve: true, members: [{ id: "a" }] }],
+    assignments: { a: "g1" },
+  });
+  assert.deepEqual(assignSession("a", null), { ok: true, dissolved: true });
+  assert.deepEqual(readGroups(), []);
+});
+
+test("a HAND-MADE group that adopted a fanout's seed SURVIVES being emptied", () => {
+  // The case the flag exists for: it has lineage (so markers and Align to Fork work), and it
+  // keeps the name the user chose.
+  reset({
+    version: 1,
+    groups: [{ id: "g1", name: "My comparison", createdAt: "2026-01-01T00:00:00.000Z", seed: SEED, autoDissolve: false, members: [{ id: "a" }] }],
+    assignments: { a: "g1" },
+  });
+  assert.deepEqual(assignSession("a", null), { ok: true }, "no dissolved flag");
+  assert.deepEqual(readGroups().map((g) => g.name), ["My comparison"]);
+  assert.deepEqual(membersOf("g1"), []);
+});
+
+test("an explicit false beats a seed, and survives a round trip", () => {
+  reset({
+    version: 1,
+    groups: [{ id: "g1", name: "Named", createdAt: "2026-01-01T00:00:00.000Z", seed: SEED, autoDissolve: false, members: [{ id: "a" }] }],
+    assignments: { a: "g1" },
+  });
+  assignSession("a", null);
+  assert.equal(readGroups()[0]!.autoDissolve, false, "the flag is preserved, not dropped");
+  assert.equal((onDisk().groups[0] as { autoDissolve?: boolean }).autoDissolve, false);
+});
+
+test("legacy: a seeded group written before the flag existed still dissolves", () => {
+  // Absence means "predates the flag", and only then does seed imply dissolution — those records
+  // are pi-web's own fanout groups.
+  reset({
+    version: 1,
+    groups: [{ id: "g1", name: "Old fanout", createdAt: "2026-01-01T00:00:00.000Z", seed: SEED, members: [{ id: "a" }] }],
+    assignments: { a: "g1" },
+  });
+  assert.deepEqual(assignSession("a", null), { ok: true, dissolved: true });
+  assert.deepEqual(readGroups(), []);
+});
+
+test("a hand-made group with neither flag nor seed survives, as it always did", () => {
+  reset({
+    version: 1,
+    groups: [{ id: "g1", name: "Work", createdAt: "2026-01-01T00:00:00.000Z", members: [{ id: "a" }] }],
+    assignments: { a: "g1" },
+  });
+  assert.deepEqual(assignSession("a", null), { ok: true });
+  assert.deepEqual(readGroups().map((g) => g.name), ["Work"]);
+});
+
+test("a malformed autoDissolve is dropped, falling back to the legacy rule", () => {
+  reset({
+    version: 1,
+    groups: [{ id: "g1", name: "Odd", createdAt: "2026-01-01T00:00:00.000Z", seed: SEED, autoDissolve: "yes", members: [{ id: "a" }] }],
+    assignments: { a: "g1" },
+  });
+  assert.equal(readGroups()[0]!.autoDissolve, undefined, "not a boolean: treated as absent");
+  assert.deepEqual(assignSession("a", null), { ok: true, dissolved: true }, "so the seed decides");
+});

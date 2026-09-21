@@ -1,12 +1,12 @@
 import { existsSync, unlinkSync, writeFileSync } from "node:fs";
 import { open } from "node:fs/promises";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
-import { GROUP_NAME_MAX, type BatchRefusal, type BatchRefusalCode, type FanoutRequest, type FanoutResult, type SessionGroup, type SessionSummary } from "../shared/protocol";
+import { GROUP_NAME_MAX, type BatchRefusal, type BatchRefusalCode, type FanoutRequest, type FanoutResult, type GroupSeed, type SessionGroup, type SessionSummary } from "../shared/protocol";
 import { activeConfigFailure, heldChat } from "./chat-manager";
 import { readLive } from "./live";
 import { listModels } from "./models";
 import { canonicalPath, resolveSessionPath, sessionPathShape } from "./paths";
-import { assignSession, cleanGroupName, createGroup, deleteGroup } from "./session-groups";
+import { adoptGroupSeed, assignSession, cleanGroupName, createGroup, deleteGroup, readGroup } from "./session-groups";
 import { getSessionSummary } from "./sessions-index";
 import { addWebSession } from "./web-sessions";
 import { markOwned, recentForeignWriteAgeSec } from "./write-guard";
@@ -28,7 +28,7 @@ const refusal = (path: string, code: BatchRefusalCode, message: string, id = "",
 
 export type FanoutOutcome =
   | { ok: true; result: FanoutResult }
-  | { ok: false; status: 400 | 404 | 500; error: string }
+  | { ok: false; status: 400 | 404 | 500; error: string; code?: "seed-conflict" }
   | { ok: false; status: 409; refused: BatchRefusal[] };
 
 /** One member to make: a model ref, once. `count` in the request is expanded into repeats here,
@@ -75,7 +75,14 @@ export interface FanoutDeps {
   /** Remove a member's own half-written file after its creation failed. */
   discard(path: string): void;
   summary(path: string): Promise<SessionSummary | null>;
-  createGroup(name: string, seed?: { parentSessionPath: string; leafId: string }): SessionGroup | null;
+  /** Create the group for this fanout. `autoDissolve` is set here and ONLY here: pi-web chose
+      the name, so pi-web may remove it once emptied. The groupId path never passes it. */
+  createGroup(name: string, seed?: GroupSeed, autoDissolve?: boolean): SessionGroup | null;
+  /** One existing group by id, or null — for landing members in it rather than making one. */
+  group(id: string): SessionGroup | null;
+  /** Give a seedless group this fanout's seed. Only called after the caller has established the
+      group has none; a DIFFERING seed is refused, never overwritten. */
+  adoptSeed(id: string, seed: GroupSeed): SessionGroup | null;
   deleteGroup(id: string): void;
   assign(sessionId: string, groupId: string, label: string): void;
   /** The stage-2 batch path, for fresh mode's first message. */
@@ -218,10 +225,12 @@ export const realFanoutDeps: FanoutDeps = {
     }
   },
   summary: (path) => getSessionSummary(path),
-  createGroup(name, seed) {
-    const r = createGroup(name, seed);
+  createGroup(name, seed, autoDissolve) {
+    const r = createGroup(name, seed, autoDissolve);
     return r.ok ? r.group : null;
   },
+  group: (id) => readGroup(id),
+  adoptSeed: (id, seed) => adoptGroupSeed(id, seed),
   deleteGroup: (id) => void deleteGroup(id),
   assign: (sessionId, groupId, label) => void assignSession(sessionId, groupId, label),
   async prompt(groupId, text) {
@@ -285,6 +294,7 @@ export async function planFanout(body: FanoutRequest, deps: FanoutDeps): Promise
     if (typeof body.cwd !== "string" || !body.cwd) return { ok: false, error: "cwd must be an absolute path" };
     if (typeof body.text !== "string" || !body.text.trim()) return { ok: false, error: "fresh mode needs a first message" };
   }
+  if (body.groupId !== undefined && (typeof body.groupId !== "string" || !body.groupId)) return { ok: false, error: "groupId must be a group id" };
   const known = await deps.knownRefs();
   const unknown = body.members.find((m) => !known.has(m.ref));
   if (unknown) return { ok: false, error: `No such model: ${unknown.ref}` };
@@ -335,6 +345,25 @@ export async function runFanout(body: FanoutRequest, deps: FanoutDeps = realFano
     if (refused) return { ok: false, status: 409, refused: [refused] };
   }
 
+  // The target group, and whether it can take this fanout, are settled BEFORE anything is made:
+  // a 404 or a seed conflict must leave no sessions behind.
+  const seed: GroupSeed | undefined = sourcePath ? { parentSessionPath: sourcePath, leafId: body.source!.leafId } : undefined;
+  let target: SessionGroup | null = null;
+  if (body.groupId) {
+    target = deps.group(body.groupId);
+    if (!target) return { ok: false, status: 404, error: "Group not found" };
+    // One group carries one seed: the fork marker and Align to Fork read it, so a mixed-lineage
+    // group would make the marker assert a divergence point it cannot know. Refuse rather than
+    // fabricate. (Fresh mode has no seed of its own, so it can never conflict.)
+    if (seed && target.seed && (target.seed.parentSessionPath !== seed.parentSessionPath || target.seed.leafId !== seed.leafId))
+      return {
+        ok: false,
+        status: 400,
+        code: "seed-conflict",
+        error: `“${target.name}” was forked from a different point, and a group can only have one fork point.`,
+      };
+  }
+
   const created: SessionSummary[] = [];
   const failed: BatchRefusal[] = [];
   for (const member of plan.planned) {
@@ -359,8 +388,15 @@ export async function runFanout(body: FanoutRequest, deps: FanoutDeps = realFano
   // A group with no members is debris, not a result.
   if (created.length === 0) return { ok: false, status: 500, error: failed[0]?.message ?? "No member could be created" };
 
-  const seed = sourcePath ? { parentSessionPath: sourcePath, leafId: body.source!.leafId } : undefined;
-  const group = deps.createGroup(plan.name, seed);
+  // An existing target takes the members; a seedless one adopts this fanout's lineage first,
+  // which is also how it becomes auto-dissolving (spec §14) — the cost of the honesty.
+  // A group pi-web NAMED may dissolve when emptied; one the user named never does, even after it
+  // adopts this fanout's lineage. Adoption gives the marker its datum, not a licence to delete.
+  const group = target
+    ? seed && !target.seed
+      ? (deps.adoptSeed(target.id, seed) ?? target)
+      : target
+    : deps.createGroup(plan.name, seed, true);
   if (!group) return { ok: false, status: 500, error: "The group could not be created" };
   created.forEach((summary, i) => deps.assign(summary.id, group.id, plan.planned[i]!.label));
 
@@ -368,5 +404,5 @@ export async function runFanout(body: FanoutRequest, deps: FanoutDeps = realFano
   // member: they are real, empty, grouped sessions the user can prompt with a retry.
   if (body.text) await deps.prompt(group.id, body.text);
 
-  return { ok: true, result: { group: { ...group, ...(seed ? { seed } : {}) }, created, failed } };
+  return { ok: true, result: { group: { ...group, ...(group.seed ?? seed ? { seed: group.seed ?? seed } : {}) }, created, failed } };
 }

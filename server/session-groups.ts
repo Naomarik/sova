@@ -86,7 +86,7 @@ function passThrough(raw: Record<string, unknown>, known: readonly string[]): Re
 }
 
 const STORE_KEYS = ["version", "groups", "assignments"] as const;
-const GROUP_KEYS = ["id", "name", "createdAt", "members", "seed"] as const;
+const GROUP_KEYS = ["id", "name", "createdAt", "members", "seed", "autoDissolve"] as const;
 const MEMBER_KEYS = ["id", "label"] as const;
 
 /**
@@ -136,6 +136,7 @@ function load(): Store {
     groups.push({
       ...passThrough(g, GROUP_KEYS),
       ...(seed ? { seed } : {}),
+      ...(typeof g.autoDissolve === "boolean" ? { autoDissolve: g.autoDissolve } : {}),
       id,
       name,
       createdAt: typeof g.createdAt === "string" ? g.createdAt : new Date(0).toISOString(),
@@ -187,14 +188,22 @@ export function readAssignments(): Record<string, string> {
 export type GroupResult = { ok: true; group: SessionGroup } | { ok: false; status: 400 | 404; error: string };
 
 /**
- * POST /api/session-groups: a new, empty group at the end of the list. `seed` is written ONLY by
- * pi-web's own fanout (fork mode) and is what makes the group dissolve when its last member
- * leaves; a hand-made group never gets one, so its name survives being emptied.
+ * POST /api/session-groups: a new, empty group at the end of the list. `seed` is written only by
+ * pi-web's own fanout (fork mode) and carries lineage; `autoDissolve` is what decides whether the
+ * group is removed once emptied, and the fanout sets it only when it also chose the NAME. A group
+ * the user named survives being emptied whether or not it has lineage.
  */
-export function createGroup(rawName: unknown, seed?: GroupSeed): GroupResult {
+export function createGroup(rawName: unknown, seed?: GroupSeed, autoDissolve?: boolean): GroupResult {
   const name = cleanGroupName(rawName);
   if (!name) return { ok: false, status: 400, error: `name must be 1–${GROUP_NAME_MAX} characters` };
-  const group: StoredGroup = { id: randomUUID(), name, createdAt: new Date().toISOString(), members: [], ...(seed ? { seed } : {}) };
+  const group: StoredGroup = {
+    id: randomUUID(),
+    name,
+    createdAt: new Date().toISOString(),
+    members: [],
+    ...(seed ? { seed } : {}),
+    ...(autoDissolve !== undefined ? { autoDissolve } : {}),
+  };
   return edit((store) => {
     store.groups.push(group);
     return { ok: true, group };
@@ -284,11 +293,37 @@ export function deleteGroup(id: string): boolean {
   });
 }
 
+/** One group by id, or null. Read-only; the same reconciled shape readGroups returns. */
+export function readGroup(id: string): SessionGroup | null {
+  return load().groups.find((g) => g.id === id) ?? null;
+}
+
+/**
+ * Give a group the seed of the fanout landing in it. Only ever called for a group that has none
+ * (the caller checks, because a DIFFERING seed is a refusal rather than an overwrite): one group
+ * carries one seed, since the fork marker reads it. Adoption is honest about its cost — the group
+ * becomes auto-dissolving from here, the user's chosen name included.
+ */
+export function adoptGroupSeed(id: string, seed: GroupSeed): SessionGroup | null {
+  return edit((store) => {
+    const group = store.groups.find((g) => g.id === id);
+    if (!group) return null;
+    group.seed ??= seed; // never overwrite: the caller has already refused a mismatch
+    return { ...group, members: group.members.map((m) => ({ ...m })) };
+  });
+}
+
 export type AssignResult = { ok: true; dissolved?: true } | { ok: false; status: 400 | 404; error: string };
 
-/** A group pi-web fanned out, recognised by the `seed` its fanout wrote. */
-function isFanoutGroup(group: StoredGroup): boolean {
-  return group.seed !== undefined;
+/**
+ * Whether this group deletes itself when its last member leaves. `autoDissolve` is the ONE truth
+ * of that, and it is set only when pi-web both created AND named the group (fanout without a
+ * groupId). It used to be inferred from `seed` — but seed is lineage, and a hand-made group can
+ * now adopt one, so the inference would have deleted a group the USER named. Absent means the
+ * record predates the flag, and only then does `seed` imply it: those are pi-web's own fanouts.
+ */
+function dissolvesWhenEmpty(group: StoredGroup): boolean {
+  return group.autoDissolve ?? group.seed !== undefined;
 }
 
 /**
@@ -311,7 +346,7 @@ function dissolveIfEmptied(store: Store, groupId: string | null): boolean {
   const at = store.groups.findIndex((g) => g.id === groupId);
   if (at < 0) return false;
   const group = store.groups[at]!;
-  if (!isFanoutGroup(group)) return false;
+  if (!dissolvesWhenEmpty(group)) return false;
   if (Object.values(store.assignments).includes(groupId)) return false; // still has members
   store.groups.splice(at, 1);
   return true;

@@ -106,6 +106,12 @@ export function ChatView(props: {
   const announce = usePaneAnnounce();
   const scope = usePaneScope();
   const paneId = usePaneId();
+  /**
+   * A turn's start and end, said the way spec/09-copy-deck.md says them. In a pane the sentence
+   * follows the member's name ("control · glm-5.3 — working."), so it reads as a clause about that
+   * member; alone on the page it is the whole sentence and stands on its own.
+   */
+  const turnWord = (member: string, alone: string) => (scope.id ? member : alone);
 
   const [items, setItems] = createSignal<TranscriptItem[] | null>(null);
   const [live, setLive] = createStore<LiveState>(emptyLive());
@@ -206,7 +212,7 @@ export function ChatView(props: {
     let settled = false;
     batch(() => {
       for (const ev of events) {
-        if (isObj(ev) && ev.type === "agent_start") announce("Working.");
+        if (isObj(ev) && ev.type === "agent_start") announce(turnWord("working.", "Working."));
         // Context fill at turn end: the finished assistant message carries the final usage
         // (no extra server push). A compaction makes it stale until the next reply.
         if (isObj(ev) && ev.type === "message_end" && isObj(ev.message) && ev.message.role === "assistant") {
@@ -223,7 +229,7 @@ export function ChatView(props: {
       }
     });
     if (settled) {
-      announce("Reply finished.");
+      announce(turnWord("replied.", "Reply finished."));
       void resync();
       props.onSettled();
     }

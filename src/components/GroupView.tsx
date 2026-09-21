@@ -218,25 +218,28 @@ export function GroupView(props: {
 
   /** Takes the session out of the group — and, for Eliminate, archives it in the same gesture. */
   const detach = async (path: string, archive: boolean) => {
-    const title = summaryOf(path)?.title ?? "this session";
+    const s = summaryOf(path);
+    const title = s?.title ?? "this session";
     const next = neighbourOf(panes(), path);
     if (!(await setSessionGroup(path, null))) return;
-    let archived = false;
-    if (archive) {
+    let done: string;
+    if (!archive) {
+      // Remove-only on a session pi-web didn't start is the whole story, and says so: there was
+      // never an archive half to leave out (§9 "Eliminate toast").
+      done =
+        s?.origin === "web"
+          ? `Removed ${title} from ${quoted(props.group.name)}.`
+          : `Removed ${title} from ${quoted(props.group.name)}. It wasn't started in pi-web, so nothing was archived.`;
+    } else {
       try {
         await setSessionArchived(path, true);
-        archived = true;
-      } catch {
-        // The genuine race: a turn started between the check and the write. Say both halves.
-        const partial = `Removed ${title} from ${quoted(props.group.name)}, but couldn't archive it.`;
-        toast(partial);
-        announce(partial);
-        props.wiring.onRefresh();
-        if (next) focusPane(next, true);
-        return;
+        done = `Removed ${title} and archived it.`;
+      } catch (err) {
+        // The genuine race the pre-disabled rows can't cover: a turn started between the check and
+        // the write. Both halves, and the server's own reason for the one that failed.
+        done = `Removed ${title} from ${quoted(props.group.name)}, but couldn't archive it. ${(err as Error).message}`;
       }
     }
-    const done = archived ? `Removed ${title} and archived it.` : `Removed ${title} from ${quoted(props.group.name)}.`;
     toast(done);
     announce(done);
     props.wiring.onRefresh();
@@ -370,6 +373,7 @@ export function GroupView(props: {
                     actions={
                       <PaneMenu
                         name={nameOf(path)}
+                        groupName={props.group.name}
                         split={mode() === "split"}
                         first={panes()[0] === path}
                         last={panes()[panes().length - 1] === path}
@@ -423,8 +427,10 @@ export function GroupView(props: {
  * opens it, Eliminate takes it out and archives it, Remove From Group only takes it out.
  */
 function PaneMenu(props: {
-  /** The pane's name, so every label here says which member it acts on. */
+  /** The pane's name, so every row here says which member it acts on. */
   name: string;
+  /** The group's name, which the membership rows' titles quote. */
+  groupName: string;
   /** Width and order only mean something in the split row. */
   split: boolean;
   first: boolean;
@@ -471,13 +477,23 @@ function PaneMenu(props: {
     act();
   };
 
-  const Item = (p: { label: string; icon: JSX.Element; disabled?: string; onRun(): void; keepFocus?: boolean }) => (
+  const Item = (p: {
+    label: string;
+    /** The row's accessible name: every row says which member it acts on (§9 "Pane tool aria-labels"). */
+    aria: string;
+    title?: string;
+    icon: JSX.Element;
+    disabled?: string;
+    onRun(): void;
+    keepFocus?: boolean;
+  }) => (
     <div
       class="mode-option group-option"
       role="menuitem"
       tabindex={0}
+      aria-label={p.aria}
       aria-disabled={p.disabled ? "true" : undefined}
-      title={p.disabled || undefined}
+      title={p.disabled || p.title || undefined}
       onClick={() => !p.disabled && run(p.onRun, p.keepFocus)}
       onKeyDown={(e) => {
         if (e.key !== "Enter" && e.key !== " ") return;
@@ -512,20 +528,69 @@ function PaneMenu(props: {
       <div ref={menu} class="model-menu group-menu" popover="auto" onToggle={(e) => setOpen((e as ToggleEvent).newState === "open")}>
         <div class="model-menu-list" role="menu" aria-label={`Pane actions · ${props.name}`}>
           <div class="model-menu-group" role="group" aria-label="This pane">
-            <Item label="Open" icon={<Icon name="external" small />} keepFocus onRun={() => (location.hash = props.standaloneHref)} />
-            <Item label="Focus" icon={<Icon name="chat" small />} keepFocus onRun={props.onFocus} />
+            <Item
+              label="Open"
+              aria={`Open ${props.name}`}
+              title="Open this session on its own"
+              icon={<Icon name="external" small />}
+              keepFocus
+              onRun={() => (location.hash = props.standaloneHref)}
+            />
             <Show when={props.split}>
-              <Item label="Wider" icon={<Icon name="chevron-right" small />} onRun={props.onWider} />
-              <Item label="Narrower" icon={<Icon name="chevron-left" small />} onRun={props.onNarrower} />
-              <Item label="Move Left" icon={<Icon name="chevron-left" small />} disabled={props.first ? "It's already first." : ""} onRun={props.onLeft} />
-              <Item label="Move Right" icon={<Icon name="chevron-right" small />} disabled={props.last ? "It's already last." : ""} onRun={props.onRight} />
+              <Item label="Wider" aria={`Make ${props.name} wider`} icon={<Icon name="chevron-right" small />} onRun={props.onWider} />
+              <Item label="Narrower" aria={`Make ${props.name} narrower`} icon={<Icon name="chevron-left" small />} onRun={props.onNarrower} />
+              <Item
+                label="Move Left"
+                aria={`Move ${props.name} left`}
+                icon={<Icon name="chevron-left" small />}
+                disabled={props.first ? "It's already first." : ""}
+                onRun={props.onLeft}
+              />
+              <Item
+                label="Move Right"
+                aria={`Move ${props.name} right`}
+                icon={<Icon name="chevron-right" small />}
+                disabled={props.last ? "It's already last." : ""}
+                onRun={props.onRight}
+              />
             </Show>
+            {/* Not in §9's row list: a workspace needs a way to put the keyboard in a pane that
+                doesn't depend on reaching its composer, which a read-only member doesn't have. */}
+            <Item label="Focus" aria={`Focus ${props.name}`} icon={<Icon name="chat" small />} keepFocus onRun={props.onFocus} />
           </div>
           <div class="model-menu-group" role="group" aria-label="This session's membership">
-            <Item label="Promote" icon={<Icon name="arrow-right" small />} keepFocus onRun={props.onPromote} />
-            <Item label="Remove From Group" icon={<Icon name="close" small />} keepFocus onRun={props.onRemove} />
+            <Item
+              label="Promote"
+              aria={`Promote ${props.name}`}
+              title={`Take it out of ${quoted(props.groupName)} and open it on its own`}
+              icon={<Icon name="arrow-right" small />}
+              keepFocus
+              onRun={props.onPromote}
+            />
+            <Item
+              label="Remove From Group"
+              aria={`Remove ${props.name} from the group`}
+              title={
+                props.eliminate === null
+                  ? "This session wasn't started in pi-web, so removing it is all we can do — nothing is archived"
+                  : `Take it out of ${quoted(props.groupName)} and stay here. Nothing is archived and nothing is deleted`
+              }
+              icon={<Icon name="close" small />}
+              keepFocus
+              onRun={props.onRemove}
+            />
+            {/* Absent, not disabled, when the session wasn't started in pi-web: there is nothing
+                to archive, and it is a different gesture rather than a refusal. */}
             <Show when={props.eliminate !== null}>
-              <Item label="Eliminate" icon={<Icon name="archive" small />} disabled={props.eliminate!} keepFocus onRun={props.onEliminate} />
+              <Item
+                label="Eliminate"
+                aria={`Eliminate ${props.name}`}
+                title={`Take it out of ${quoted(props.groupName)} and archive it. The transcript stays; unarchiving brings it back`}
+                icon={<Icon name="archive" small />}
+                disabled={props.eliminate!}
+                keepFocus
+                onRun={props.onEliminate}
+              />
             </Show>
           </div>
         </div>

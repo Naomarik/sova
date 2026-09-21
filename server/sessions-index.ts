@@ -1,6 +1,6 @@
 import { statSync } from "node:fs";
 import { open, readdir, stat, unlink } from "node:fs/promises";
-import { basename, join } from "node:path";
+import { basename, isAbsolute, join, resolve } from "node:path";
 import type { SessionSummary } from "../shared/protocol";
 import { type LiveRecord, readLive, readOwnLiveRecords, workerCountsOf } from "./live";
 import { LIVE_DIR, resolveSessionPath, SESSIONS_DIR } from "./paths";
@@ -325,6 +325,23 @@ async function readHead(path: string): Promise<{ header: any; title: string | nu
   }
 }
 
+/**
+ * The header's `parentSession` — the file a branched session was forked from (SessionHeader,
+ * `dist/core/session-manager.d.ts:11`) — as an absolute path, and only while that file is still
+ * there: a fork marker that points at a deleted transcript is worse than none. Part of the cached
+ * summary, so a parent deleted after this session's last write keeps showing until it is touched.
+ */
+async function existingParent(raw: unknown): Promise<string | null> {
+  if (typeof raw !== "string" || !isAbsolute(raw)) return null;
+  const path = resolve(raw);
+  return (await stat(path).then(
+    () => true,
+    () => false,
+  ))
+    ? path
+    : null;
+}
+
 async function listSessionFiles(): Promise<string[]> {
   const files: string[] = [];
   let top;
@@ -384,6 +401,7 @@ async function summarize(path: string, resolveWindow?: WindowResolver, registry?
     const outline = await readTailOutline(path, st.size);
     const ctx = await readTailContext(path, st.size);
     const cwd = typeof h.cwd === "string" ? h.cwd : "";
+    const parent = await existingParent(h.parentSession);
     // a remote session's cwd is its target placeholder, or a directory inside its mount point;
     // the registry (one read per listing, not one per session) resolves mount-point cwds
     const remote = remoteOfCwd(cwd, registry);
@@ -397,6 +415,7 @@ async function summarize(path: string, resolveWindow?: WindowResolver, registry?
       model,
       ...(outline ? { outlineNow: outline.now, outlineAt: outline.generatedAt, outlineTopics: outline.topics } : {}),
       ...(ctx ? { context: { tokens: ctx.tokens, window: null } } : {}),
+      ...(parent ? { parent } : {}),
       ...(remote ? { target: remote.target, remoteCwd: remote.remoteCwd } : {}),
       ...(remote?.mounted ? { mounted: true } : {}),
     };

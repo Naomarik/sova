@@ -205,6 +205,12 @@ POST /api/session-groups/fanout
   "nearly" is doing real work: a turn can start and finish between the dialog opening and Create.
   Forking from a point the user didn't approve would break the fork marker's only promise, which
   is that everything above it is what they saw shared.
+- **The refusal's `id` is empty here, and that is correct.** `BatchRefusal.id` exists to join
+  against `GroupMember.id` and the assignments; a fanout's single refusal names the **source**,
+  which is not a member of anything — the group does not exist yet. So the field has nothing to
+  carry, the client renders from `code` plus the source's own title, and **nothing should build
+  a lookup on it**. Written down because an empty string in a required field reads as a bug to
+  the next person who meets it.
 - **Refusals reuse the batch vocabulary**: `409 {refused: [BatchRefusal]}` with exactly one
   entry, the source, so the client renders it with the same code-to-sentence table the group
   composer uses (§14). The codes are the source states above — `tui-live`, `mid-turn`, `busy`

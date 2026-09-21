@@ -602,9 +602,11 @@ This is the property the flag's name was chosen for, generalised: **it is set an
 events that make it true or false, so nobody has to remember a rule.** The working method that
 falls out of it, for the next field like this one: **`autoDissolve` encodes a claim — "pi-web
 owns this group" — so enumerate the events that transfer ownership, because each one is a defect
-until it clears the field.** Three were found that way and each was a separate round: adoption
-(the user's group gains lineage), the legacy fallback (an adopted group is indistinguishable on
-disk from a pre-flag fanout group), and rename (the user names it themselves).
+until it clears the field.** Four were found that way, each a separate round: adoption (the user's
+group gains lineage), the legacy fallback (an adopted group is indistinguishable on disk from a
+pre-flag fanout group), rename (the user names it themselves), and **the user typing the
+dialog's name before Create** — the same transfer as rename, one moment earlier, and the only
+one found by asking rather than by being hit.
 
 **That enumeration is only half the method, and the missing half has its own failure.** Events
 catch a claim that *drifts* — one that was true when written and outlived its conditions. It
@@ -612,9 +614,10 @@ cannot catch a claim that was **never true in one branch**: born half-false, and
 because the other branch is the common one. For those, enumerate the **inputs**: *who can supply
 this value?* For a group's name that list is short — `createGroup` (the user), `updateGroup` (the
 user), and the fanout dialog's name field, which is **pi-web's generated default OR the user's
-typing**. One input, two cases, and a flag that only ever encoded the first. Run both
-enumerations when a field encodes a claim: the events that falsify it, and the inputs that were
-never covered by it.
+typing**. One input, two cases, and a flag that only ever encoded the first — closed
+by `FanoutRequest.nameIsGenerated` (§14b), which is the client telling the server which of the
+two it is. Run both enumerations when a field encodes a claim: the events that falsify it, and
+the inputs that were never covered by it.
 
 **And polarise an optional flag so that its FALSEHOOD is the safe answer**, because absence is
 the state you do not control — an older client, an older record, a field nobody set. Two fields

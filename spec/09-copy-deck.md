@@ -419,7 +419,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Rate-limit note | Turns start together, so one provider may answer some members with 429. pi-web doesn't stagger them. |
 | Create | `Create {n} Members` (1: `Create 1 Member`) · in flight `Creating…` · off at 0: reason "Add at least 1 member." |
 | Cancel | `Cancel` |
-| Partial creation banner | **{k} of {n} members were created.** {model} couldn't start: {server message}. The {k} that exist are running; add another from Add Members. · buttons `Add Members` · `Dismiss` |
+| Partial creation banner | **{k} of {n} members were created.** {model} couldn't start: {server message}. — `{model}` is `shortModel(BatchRefusal.ref)`, never parsed out of the message; the message is the reason alone, unprefixed. The {k} that exist are running; add another from Add Members. · buttons `Add Members` · `Dismiss` |
 | Total failure | `.field-error` in the dialog: "Couldn't create this fanout. No sessions were made. {server message}" |
 | Create off, the fork point moved | “{title}” answered while this dialog was open, so the fork point you picked isn't its latest message anymore. Reopen Fan out to fork from where it is now. |
 | Source gone (404) | `.field-error`: "“{title}” isn't on disk anymore. Nothing was created." |

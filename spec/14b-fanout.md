@@ -205,6 +205,18 @@ POST /api/session-groups/fanout
   "nearly" is doing real work: a turn can start and finish between the dialog opening and Create.
   Forking from a point the user didn't approve would break the fork marker's only promise, which
   is that everything above it is what they saw shared.
+- **A member that was never created is named by `ref`, not by `id` or `path`.** `BatchRefusal`
+  carries an optional `ref` (`ModelInfo.ref`) used **only** on this route: a member whose
+  creation failed has no session, so `id` and `path` are both empty and the model is the only
+  handle on it. The partial-creation banner composes from it — `{shortModel(ref)} couldn't
+  start: {message}` — so the words stay pi-web's and the client never parses prose to find a
+  model name. Consequently `message` here is the **reason alone**, never prefixed with the ref;
+  prefixing would render the model twice. It is still never empty, and it is §9's verbatim case:
+  the server's own reason, which pi-web has no word for.
+- **Two different empty ids on this route, and they are not the same case.** A **refusal**
+  (`409`) names the *source*, which is a member of nothing — `ref` is absent there. A **failure**
+  inside a `201`'s `failed` names a member that never came into being — `ref` is present there.
+  Neither carries an id, for different reasons, and nothing should build a lookup on either.
 - **The refusal's `id` is empty here, and that is correct.** `BatchRefusal.id` exists to join
   against `GroupMember.id` and the assignments; a fanout's single refusal names the **source**,
   which is not a member of anything — the group does not exist yet. So the field has nothing to

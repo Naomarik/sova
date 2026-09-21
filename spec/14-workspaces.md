@@ -326,7 +326,15 @@ member at once.
   member whose acceptance never resolves — a runtime open that stalls, a cwd on a hung mount —
   blocks every member behind it *and* the response itself, so the composer waits forever on one
   bad member and the other four never start. Concurrent acceptance makes that member's failure
-  its own: it lands in `failed`, the rest are accepted, and the batch returns. Waiting would contradict the two things this
+  its own: it lands in `failed`, the rest are accepted, and the batch returns.
+- **One limit, stated rather than discovered later.** The response still waits for every
+  acceptance to settle, so a member whose acceptance never resolves holds the *response* open and
+  the group composer stays in flight. What it no longer holds is the other members: they were all
+  started, their turns are running, and their panes are filling. The remaining exposure is a
+  composer that doesn't clear, next to panes visibly working. We accept that rather than bound
+  the wait, because a bound would have to guess how long a cold runtime may legitimately take,
+  and cutting a member loose at the guess would report a failure for a turn that then starts
+  anyway — a worse lie than a slow button. Waiting would contradict the two things this
   surface is built on: turns **start together** (§14b's rate-limit note exists because they do),
   and the group composer **clears once the server accepts**. A request that resolved only when
   five full turns had finished would hold the composer for minutes and serialize the very thing

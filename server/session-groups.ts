@@ -292,9 +292,12 @@ function isFanoutGroup(group: StoredGroup): boolean {
  * never briefly a fanout group with nothing in it. A hand-made group is left standing: its name is
  * the user's work, and §2 already specs an empty one as a real state.
  *
- * Deliberately only here, on the assign gesture. Archive cleanup can also empty a group (by
- * deleting its last member's session file) and does NOT dissolve one: nobody is listening to that
- * call, and a bulk delete quietly removing a group as a side effect needs its own decision.
+ * Deliberately only here, on the assign GESTURE — never on "the group happens to be empty now".
+ * dropGroupAssignments prunes assignments whose session file has gone, and it runs on EVERY
+ * listing pass (sessions-index.ts, listSessions), not just archive cleanup. A rule keyed on
+ * emptiness rather than on the gesture would therefore let a background list refresh silently
+ * delete a group the user made — with nobody listening to that call to even report it. An empty
+ * fanout group is a real state instead, and the workspace offers Dissolve by hand (spec §14).
  *
  * Returns whether it dissolved, so the caller can tell the client the group it was viewing is gone.
  */

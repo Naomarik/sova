@@ -641,17 +641,18 @@ export interface FanoutRequest {
       alternative was rejected on: in fresh mode the default is rewritten on every keystroke, so a
       derivation at Create time disagrees with what the user was looking at. Same precedent as
       `source.leafId`, accepted as the leaf the DIALOG SHOWED rather than recomputed.
-      HOW THE CLIENT DERIVES IT is the client's call, but the constraint is not: it must be a
-      RECORD of what happened (the last string we wrote, or whether the user edited the field),
-      never a recomputation of what the default would be now. A prefill snapshot is wrong in fresh
-      mode, where the field is rewritten per keystroke and an untouched field then looks edited.
-      CHOSEN: the edit event. pi-web's client keeps `nameTouched`, set by the name field's own
-      input handler and by nothing else, and sends "user" when it is set. The alternative —
-      comparing against the last string we wrote — errs on "typed our exact words by hand" by
-      calling it generated, and that error DELETES a name the user chose. The edit flag errs the
-      other way, on "typed over, then reverted to our default": it calls that "user", so an empty
-      group is left behind when it empties. That is a real cost, chosen deliberately rather than
-      assumed away, because litter is recoverable in one gesture and a name is not.
+      DERIVE IT FROM THE EDIT EVENT, never by comparing strings. pi-web's client keeps
+      `nameTouched`, set by the name field's own input handler and by nothing else, and sends
+      "user" when it is set. "Typed over then reverted" is therefore "user": an empty group may
+      be left behind, which is litter, recoverable in one gesture.
+      A COMPARISON CANNOT BE FIXED, which is stronger than it being wrong (spec §14b). "Typed
+      over then reverted" and "typed our exact string by hand" produce the SAME STATE — field
+      touched, `name` equal to what we last wrote — yet one deserves to dissolve and the other to
+      survive. So no comparison merely errs; the information that separates the two is not in the
+      value it examines. That is this feature's recurring defect in general form: a value asked a
+      question it does not contain the answer to. `seed` could not answer who owns this; the
+      file's last line could not answer what the pane rendered; `name === lastGenerated` cannot
+      answer whether the user chose these words.
       POLARITY IS LOAD-BEARING FOR ANY OPTIONAL FLAG HERE, not just this one: the field must be
       the one whose FALSEHOOD, or absence, is the safe answer. `nameEdited` would have been the
       same information with the opposite failure — absent ⇒ not edited ⇒ generated ⇒ the group

@@ -349,10 +349,10 @@ they disagree with this section, this section is what the code does.
    exact in every case except two identical calls of one tool in one message, where order decides and either
    assignment is equivalent.
 
-3. **`MCP_TOOL_TIMEOUT` is 3_600_000, not the 86_400_000 recommended in §2.** The orchestrator set the value
-   after reading the argument. The reasoning in §2 still stands — if the built-in default really is ~27.8 h
-   then this lowers it — but it is one named constant (`DEFAULT_MCP_TOOL_TIMEOUT_MS`) and overridable per
-   bridge, and `heldCallTimeoutMs` is the bound that actually matters.
+3. **`MCP_TOOL_TIMEOUT` ended at 86_400_000 after all** — the value §2 argues for. It shipped briefly at
+   3_600_000 on the orchestrator's call, then `ec78a90` moved it to 24 h for exactly the reason in §2: the
+   CLI's built-in default is ~27.8 h, so a tighter value only lowers the ceiling. `heldCallTimeoutMs` is
+   still the bound that actually matters.
 
 Also settled by the spike and now in the code: `--allowedTools mcp__pi` is mandatory (without it `dontAsk`
 auto-denies every MCP call and `tools/call` never arrives); a notification must still be answered with the

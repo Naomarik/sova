@@ -291,8 +291,10 @@ member at once.
 - **It sends one request**, `POST /api/session-groups/{id}/prompt {text, members?}`, and the
   server prompts each member. The client does not fan the request out itself: N sockets racing
   would give N outcomes and no way to be all-or-nothing about them.
-- **All-or-nothing is a pre-check, and it says so.** The server checks every member first and
-  refuses the whole batch with `409` if any one is unavailable. If a member fails *after* the
+- **All-or-nothing is a pre-check, and it says so.** The server checks **every** member — not
+  up to the first bad one — and that check completes before **any** member is prompted, so a
+  refusal leaves zero prompts sent and the `409` can name every blocked member at once rather
+  than one at a time. If a member fails *after* the
   pre-check passed (a TUI grabbed it in the same second), the batch is partial and the banner
   says exactly that — we do not roll back a prompt that a model is already answering, and we do
   not pretend it didn't land.

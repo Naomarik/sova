@@ -13,7 +13,7 @@ import { draftPreview, dropDrafts, readDrafts } from "./drafts";
 import { removeSessionAttachments } from "./attachments";
 import { disposeHeldChat, getModelRuntime, isSessionBusy } from "./chat-manager";
 import { contextWindow } from "./models";
-import { loadTargets, remoteOfCwd, type Target } from "./targets";
+import { remoteOfCwd } from "./targets";
 
 type BaseSummary = Omit<SessionSummary, "live" | "workers" | "origin" | "archived" | "busy">;
 
@@ -367,7 +367,7 @@ function withWindow(entry: CacheEntry, resolveWindow?: WindowResolver): BaseSumm
   return window === ctx.window ? entry.summary : { ...entry.summary, context: { tokens: ctx.tokens, window } };
 }
 
-async function summarize(path: string, resolveWindow?: WindowResolver, registry?: readonly Target[]): Promise<BaseSummary | null> {
+async function summarize(path: string, resolveWindow?: WindowResolver): Promise<BaseSummary | null> {
   let st;
   try {
     st = await stat(path);
@@ -384,9 +384,8 @@ async function summarize(path: string, resolveWindow?: WindowResolver, registry?
     const outline = await readTailOutline(path, st.size);
     const ctx = await readTailContext(path, st.size);
     const cwd = typeof h.cwd === "string" ? h.cwd : "";
-    // a remote session's cwd is its target placeholder, or a directory inside its mount point;
-    // the registry (one read per listing, not one per session) resolves mount-point cwds
-    const remote = remoteOfCwd(cwd, registry);
+    // a remote session's cwd is its target placeholder
+    const remote = remoteOfCwd(cwd);
     const summary: BaseSummary = {
       id: h.id,
       path,
@@ -398,7 +397,6 @@ async function summarize(path: string, resolveWindow?: WindowResolver, registry?
       ...(outline ? { outlineNow: outline.now, outlineAt: outline.generatedAt, outlineTopics: outline.topics } : {}),
       ...(ctx ? { context: { tokens: ctx.tokens, window: null } } : {}),
       ...(remote ? { target: remote.target, remoteCwd: remote.remoteCwd } : {}),
-      ...(remote?.mounted ? { mounted: true } : {}),
     };
     const entry: CacheEntry = { mtimeMs: st.mtimeMs, size: st.size, summary, contextModel: ctx?.model ?? null };
     cache.set(path, entry);
@@ -446,8 +444,7 @@ export async function listSessions(): Promise<SessionSummary[]> {
   // Keyed on file existence, never on a summary succeeding: an unreadable file keeps its group.
   const liveIds = new Set(files.map(idOf));
   dropGroupAssignments(Object.keys(groups).filter((id) => !liveIds.has(id)));
-  const registry = loadTargets().targets; // one read for every summary's mount-point match
-  const results = await Promise.all(files.map((f) => summarize(f, resolveWindow, registry)));
+  const results = await Promise.all(files.map((f) => summarize(f, resolveWindow)));
   const present = new Set(files);
   for (const k of cache.keys()) if (!present.has(k)) cache.delete(k);
   const out: SessionSummary[] = [];
@@ -503,7 +500,7 @@ async function windowResolver(): Promise<WindowResolver | undefined> {
 /** One summary. `resolveWindow` is optional on purpose: without it the context gauge has no
  *  window (tests and any caller that must not spin up a ModelRuntime). */
 export async function getSessionSummary(path: string, resolveWindow?: WindowResolver): Promise<SessionSummary | null> {
-  const s = await summarize(path, resolveWindow, loadTargets().targets);
+  const s = await summarize(path, resolveWindow);
   if (!s) return null;
   const l = readLive().get(path);
   const ownRec = readOwnLiveRecords().get(path);
@@ -679,14 +676,12 @@ function isDir(p: string): boolean {
   }
 }
 
-/** Distinct existing cwds from the index, most recently used first. A cwd inside a target's
- * mount point is listed without touching it: statting a fuse path can block the whole event
- * loop while the mount hangs, and remoteOfCwd matches the configured mount blocks without statting. */
+/** Distinct existing cwds from the index, most recently used first. */
 export async function listCwds(): Promise<string[]> {
   const seen = new Set<string>();
   for (const s of await listSessions()) {
     if (!s.cwd || seen.has(s.cwd)) continue;
-    if (remoteOfCwd(s.cwd)?.mounted || isDir(s.cwd)) seen.add(s.cwd);
+    if (isDir(s.cwd)) seen.add(s.cwd);
   }
   return [...seen];
 }

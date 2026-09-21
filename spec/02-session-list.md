@@ -77,8 +77,8 @@
                   <span class="text-num">7</span></span>
               </div>
               <!-- line 3: time and model, then the context ring. A remote row opens the line with its
-                   own mark (§2 "Remote sessions"): one 6px muted dot before the time, a second 4px
-                   one when the session is mounted. Local rows open with the time, as here. -->
+                   own mark (§2 "Remote sessions"): one 6px muted dot before the time. Local rows
+                   open with the time, as here. -->
               <div class="list-line list-meta-row">
                 <p class="list-meta">2h ago · <span class="text-mono" title="anthropic/claude-opus-5">claude-opus-5</span></p>
                 <span class="context-ring {context-warn|context-error}" title="{the head's exact sentence}">
@@ -127,17 +127,13 @@
   the time: a 6px `.chip-dot` in the meta line's own muted ink — the connection dot's idiom
   without its tones, since remote-ness is a property of the row (`SessionSummary.target`/
   `remoteCwd`, per session), not of its group's first row, and a user group can mix remote rows
-  with local ones beside them. A mounted session (`SessionSummary.mounted`) adds a second,
-  smaller dot beside it, 4px and 3px away: one dot says "this runs on another host", two say
-  "…and its files are the local mount". `mounted` is only ever what the summary says — never
-  inferred from the target or from a cwd inside a mount point. `title` is
-  `Remote: name (host):/remote/path.` for a remote row, and adds "Mounted: the session's files
-  are the local mount, at <cwd>." for a mounted one. The mark never pulses and can't be taken for
+  with local ones beside them. The dot says "this runs on another host". `title` is
+  `Remote: name (host):/remote/path.`. The mark never pulses and can't be taken for
   the live dot, for the same three reasons the connection dot can't: it lives in the meta line,
   not a row's rail, it is smaller, and it never pulses. It sits at the line's left edge, so the
   right-edge column — topic chip, context ring — is untouched. Like the topic chip and the ring
   it is inert (`title` and nothing else), with one difference: the row link's accessible name ends
-  with a short hidden clause (", remote on {target}", plus ", mounted"), because which rows are
+  with a short hidden clause (", remote on {target}"), because which rows are
   remote is a fact a session is picked by, not a number watched one at a time.
 
   **Connection dot.** While a chat on that target is open in this tab, a 6px `.chip-dot` sits
@@ -300,7 +296,7 @@
     wraps (`flex-wrap: nowrap` on the wrapper, `white-space: nowrap` on the text), nothing clips,
     and the document never gains a horizontal scroll.
   - **The remote mark rides line 3's left edge.** A remote row's meta text starts after the 6px
-    dot and the line's `--space-2` gap (13px more with the mounted pair), so it runs ~236px at
+    dot and the line's `--space-2` gap, so it runs ~236px at
     320 — still wider than the title column ever was before the rail. The mark is `flex: none`,
     the text still truncates first, and no row grows: the dot sits inside the meta line's own
     line box.

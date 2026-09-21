@@ -5,7 +5,7 @@
 // from pi-config). See CLAUDE.md.
 import { type ChildProcessByStdio, spawn } from "node:child_process";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { dirname, posix, sep } from "node:path";
+import { dirname, join, posix, sep } from "node:path";
 import type { Readable } from "node:stream";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import {
@@ -18,18 +18,6 @@ import {
   targetsFilePath,
   type Target,
 } from "../pi-config/extensions/remote/argv.ts";
-// The mount module is pi-runtime-free like argv.ts (node builtins only): it owns the sshfs options,
-// the mount/unmount operations (bounded, one-line error results) and the real mounted check
-// (isMounted parses the mount table — instant, event-loop-safe; verifyMounted bounds a real
-// readdir THROUGH the mount). The server imports it the same way (see CLAUDE.md).
-import {
-  isMounted,
-  mount,
-  mountPointOf,
-  toMountLocal,
-  toMountRemote,
-  unmount,
-} from "../pi-config/extensions/remote/mount.ts";
 import type { FolderListing, TargetInfo } from "../shared/protocol";
 import { MAX_FOLDER_ENTRIES } from "./folders";
 
@@ -124,44 +112,26 @@ export function parseTargetCwd(cwd: string): { target: string; remoteCwd: string
   return { target, remoteCwd: `/${parts.join("/")}` };
 }
 
-/** A cwd inside a target's mount point → that target and the remote directory it stands for.
- *  Matched against the CONFIGURED mount blocks only: no fs access, no live check — a stat on a
- *  hung fuse path would block the event loop. */
-export function parseMountCwd(cwd: string, registry?: readonly Target[]): { target: string; remoteCwd: string } | null {
-  if (typeof cwd !== "string" || !cwd.startsWith("/")) return null;
-  for (const t of registry ?? loadTargets().targets) {
-    if (!t.mount) continue;
-    const remote = toMountRemote(t.mount, cwd);
-    if (remote !== null) return { target: t.name, remoteCwd: remote };
-  }
-  return null;
+/** The root pi-web once mounted targets under (`~/.pi/agent/mounts/<name>`). A stored cwd under
+ *  it is a session whose files live on the target, not here: opening it would silently run tools
+ *  locally in an empty directory, so chat-manager refuses it. Permanent guard. */
+export const legacyMountsRoot = () => join(getAgentDir(), "mounts");
+
+/** `<name>` when cwd is under the legacy mounts root, else null. Lexical only: no fs, no schema. */
+export function parseLegacyMountCwd(cwd: string): { target: string } | null {
+  const root = legacyMountsRoot() + sep;
+  if (typeof cwd !== "string" || !cwd.startsWith(root)) return null;
+  const [target] = cwd.slice(root.length).split(sep).filter(Boolean);
+  return isTargetName(target) ? { target } : null;
 }
 
-/** A cwd that stands for a remote directory — the target's local placeholder, or a directory
- *  inside its mount point — → that target, the remote path, and whether it is the mount. */
-export function remoteOfCwd(cwd: string, registry?: readonly Target[]): { target: string; remoteCwd: string; mounted: boolean } | null {
-  const placeholder = parseTargetCwd(cwd);
-  if (placeholder) return { ...placeholder, mounted: false };
-  const inMount = parseMountCwd(cwd, registry);
-  return inMount ? { ...inMount, mounted: true } : null;
-}
+/** A cwd that stands for a remote directory (the target's local placeholder) → that target and the remote path. */
+export const remoteOfCwd = (cwd: string): { target: string; remoteCwd: string } | null => parseTargetCwd(cwd);
 
 /** The remote target a cwd belongs to (chat-manager passes it as the `target` flag, which switches
- *  pi-config's remote extension on — placeholder and mounted sessions alike). */
+ *  pi-config's remote extension on). */
 export const targetOfCwd = (cwd: string): string | null => remoteOfCwd(cwd)?.target ?? null;
 export const remoteCwdOfCwd = (cwd: string): string | null => remoteOfCwd(cwd)?.remoteCwd ?? null;
-
-/** The local directory standing for a remote cwd INSIDE the target's mount: <mount.local> + the
- *  remote path relative to <mount.remote> — where the target's real files are visible locally, so
- *  a session created there (and every worker it spawns) works on the real files. Throws with a
- *  clear message when the target has no mount config or the remote cwd is outside the far root. */
-export function mountDir(target: Target, remoteCwd: string): string {
-  if (!target.mount) throw new Error(`Target ${target.name} has no "mount" configuration in ${targetsFile()}`);
-  const remote = normalizeRemotePath(remoteCwd);
-  const dir = remote ? toMountLocal(target.mount, remote) : null;
-  if (!dir) throw new Error(`Target ${target.name} mounts ${target.mount.remote}; remoteCwd must be inside it: ${remoteCwd}`);
-  return dir;
-}
 
 // ---------------------------------------------------------------------------
 // Running commands on a target: bounded, never throws.
@@ -280,7 +250,7 @@ function hostOf(t: Target): string | undefined {
   return inner && ssh ? `${inner} on ${ssh}` : (inner ?? ssh);
 }
 
-export function targetInfo(t: Target, probe?: Probe, mounted?: boolean): TargetInfo {
+export function targetInfo(t: Target, probe?: Probe): TargetInfo {
   const host = hostOf(t);
   return {
     name: t.name,
@@ -290,16 +260,13 @@ export function targetInfo(t: Target, probe?: Probe, mounted?: boolean): TargetI
     ...(probe?.error ? { error: probe.error } : {}),
     ...(t.cwd ? { cwd: t.cwd } : {}),
     ...(host ? { host } : {}),
-    // only when the target declares a mount: the real check's answer, not a guess
-    ...(t.mount ? { mounted: mounted === true } : {}),
   };
 }
 
 /** Longest GET /api/targets waits on a probe. A slower one reports "unknown" and lands in the cache. */
 export const LIST_WAIT_MS = 4_000;
 
-/** GET /api/targets: every valid target with its probe status (probes in parallel, each bounded)
- *  and, for a target with a mount block, its real mounted state (a bounded local check). */
+/** GET /api/targets: every valid target with its probe status (probes in parallel, each bounded). */
 export async function listTargets(waitMs = LIST_WAIT_MS): Promise<TargetInfo[]> {
   const { targets } = loadTargets();
   return Promise.all(
@@ -308,72 +275,9 @@ export async function listTargets(waitMs = LIST_WAIT_MS): Promise<TargetInfo[]> 
       const pending = new Promise<undefined>((resolve) => (timer = setTimeout(() => resolve(undefined), waitMs)));
       const probe = await Promise.race([probeTarget(t, targets), pending]);
       clearTimeout(timer);
-      // The real mounted state, no cache: isMounted parses the mount table (a procfs read,
-      // microseconds, zero fuse traffic), so an external unmount shows on the very next listing.
-      const point = t.mount ? mountPointOf(t) : undefined;
-      return targetInfo(t, probe, point !== undefined ? isMounted(point) : undefined);
+      return targetInfo(t, probe);
     }),
   );
-}
-
-// ---------------------------------------------------------------------------
-// Mounts: a target's sshfs mount. The mount module owns the sshfs options and the operations; this
-// module owns the REST state (no cache: isMounted reads the mount table, always honest) and the
-// cwd↔mount-point derivations above.
-
-/** One mount operation per target at a time: a queued toggle waits for the running one, so two
- *  sshfs never race on one mountpoint. Different targets still run in parallel. */
-const mountOps = new Map<string, Promise<unknown>>();
-const noop = () => {};
-function serializeMountOp<T>(key: string, op: () => Promise<T>): Promise<T> {
-  const prev = mountOps.get(key) ?? Promise.resolve();
-  const run = prev.then(op, op); // the previous op's outcome never blocks the next
-  mountOps.set(key, run);
-  run.then(noop, noop).then(() => {
-    if (mountOps.get(key) === run) mountOps.delete(key);
-  });
-  return run;
-}
-
-export type MountToggleResult = { ok: true; info: TargetInfo } | { ok: false; status: 400 | 404 | 502; error: string };
-
-/** POST /api/targets/:name/mount {on}: mount or unmount the target's configured mount through the
- *  mount module's operations, one at a time per target. Idempotent — already in the asked state
- *  returns the current info without running anything. Errors say what failed. Never throws. */
-export async function toggleTargetMount(name: string, on: boolean): Promise<MountToggleResult> {
-  const { targets } = loadTargets();
-  const target = isTargetName(name) ? targets.find((t) => t.name === name) : undefined;
-  if (!target) return { ok: false, status: 404, error: `Unknown target: ${name}` };
-  const point = mountPointOf(target);
-  if (point === undefined)
-    return {
-      ok: false,
-      status: 400,
-      error: `Target ${target.name} has no "mount" configuration in ${targetsFile()}; add { "mount": { "remote": "/abs/far/path", "local": "~/remote/${target.name}" } } to mount it`,
-    };
-  return serializeMountOp(name, async (): Promise<MountToggleResult> => {
-    try {
-      if (isMounted(point) === on)
-        return { ok: true, info: targetInfo(target, await probeTarget(target, targets), on) };
-      if (on) {
-        const rep = await mount(target);
-        if (!rep.ok || !isMounted(point))
-          return { ok: false, status: 502, error: `${target.name}: ${rep.error ?? "the mount is not on after mounting"}` };
-        // the sshfs handshake that just succeeded is itself proof the target answered ssh auth
-        return { ok: true, info: targetInfo(target, { status: "ok", at: Date.now() }, true) };
-      }
-      const rep = await unmount(point);
-      // A report that disagrees with the mount table is a failure, never a success.
-      if (!rep.ok || isMounted(point))
-        return { ok: false, status: 502, error: `${target.name}: ${rep.error ?? "the mount is still on after unmounting"}` };
-      if (rep.how === "lazy")
-        console.log(`[mount] ${target.name}: lazy unmount — local holders keep their open files; sshfs detaches`);
-      // the target may be unreachable with the mount off — probe honestly, that's worth showing
-      return { ok: true, info: targetInfo(target, await probeTarget(target, targets), false) };
-    } catch (err) {
-      return { ok: false, status: 502, error: `${target.name}: ${(err as Error).message}` };
-    }
-  });
 }
 
 export type RemoteFoldersResult = { ok: true; listing: FolderListing } | { ok: false; status: 400 | 404 | 502; error: string };

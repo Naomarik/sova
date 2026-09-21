@@ -88,30 +88,15 @@ export const postMode = (patch: { mode?: string; minorModes?: string[] }, path?:
     body: JSON.stringify(patch),
   });
 
-/** A local folder (string), or a folder on a configured target. `mounted: true` creates the
-    session's cwd INSIDE the target's sshfs mount (so its tools and any workers see real files
-    locally); the server refuses with 409 unless the target is actually mounted. */
-export const createSession = (where: string | { target: string; remoteCwd: string; mounted?: true }) =>
+/** A local folder (string), or a folder on a configured target. */
+export const createSession = (where: string | { target: string; remoteCwd: string }) =>
   request<SessionSummary>("/api/sessions", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify(
-      typeof where === "string"
-        ? { cwd: where }
-        : { target: where.target, remoteCwd: where.remoteCwd, ...(where.mounted ? { mounted: true as const } : {}) },
-    ),
+    body: JSON.stringify(typeof where === "string" ? { cwd: where } : { target: where.target, remoteCwd: where.remoteCwd }),
   });
 
 export const fetchTargets = () => request<TargetInfo[]>("/api/targets");
-
-/** Turn a target's configured sshfs mount on or off. Idempotent; resolves with the updated target
-    (`mounted` reflects the real mount state the server just checked). */
-export const mountTarget = (name: string, on: boolean) =>
-  request<TargetInfo>(`/api/targets/${encodeURIComponent(name)}/mount`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ on }),
-  });
 
 /** How long the UI waits on a target's folder listing before saying so (the server bounds its own probe too). */
 export const REMOTE_LIST_TIMEOUT_MS = 20_000;

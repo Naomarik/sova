@@ -24,8 +24,6 @@ test("parseRemoteStatus reads the extension's JSON and refuses anything else", (
     lastOkAt: 5,
     runningMs: undefined,
     error: "ssh: connect refused",
-    mounted: false,
-    mountPoint: undefined,
     at: 9,
   });
   assert.equal(parseRemoteStatus("⇄ box · unreachable"), null);
@@ -115,22 +113,19 @@ test("a rate-limited channel is its own line, never the chip's word or a red dot
   assert.equal(refused.error, undefined);
 });
 
-// The always-on remote chip: fed by the summary, present before any status, honest about the mount.
+// The always-on remote chip: fed by the summary, present before any status.
 const summary = {
   cwd: "/home/u/.pi/agent/pi-web/targets/box/home/deploy/site",
   target: "box",
   remoteCwd: "/home/deploy/site",
 };
 
-const identity = (s: { cwd: string; target?: string; remoteCwd?: string; mounted?: boolean }, status: object | null = null) =>
-  remoteIdentity(s, status ? entry(status) : undefined);
+const identity = (s: { cwd: string; target?: string; remoteCwd?: string }) => remoteIdentity(s);
 
 test("a summary with target/remoteCwd but no status still has the remote chip's identity", () => {
   assert.deepEqual(identity(summary), {
     target: "box",
     remoteCwd: "/home/deploy/site",
-    sessionMounted: false,
-    mountPoint: undefined,
     path: "/home/deploy/site",
   });
   // The placeholder cwd alone identifies it too: a status is never needed for the chip to exist.
@@ -139,32 +134,12 @@ test("a summary with target/remoteCwd but no status still has the remote chip's 
   assert.equal(remoteIdentity({ cwd: "/home/u/project" }), null);
 });
 
-test("a mount-mode session shows its local mount cwd, from the summary alone", () => {
-  const mounted = identity({ ...summary, cwd: "/home/u/.pi/agent/mounts/box/site", mounted: true });
-  assert.equal(mounted?.sessionMounted, true);
-  assert.equal(mounted?.path, "/home/u/.pi/agent/mounts/box/site");
-  assert.equal(mounted?.remoteCwd, "/home/deploy/site");
-  // No status: the identity is still the mounted path, and the mount point is simply unknown.
-  assert.equal(mounted?.mountPoint, undefined);
-});
-
-test("the extension's live mount point and mounted flag ride with the identity", () => {
-  const up = identity(summary, { state: "online", pinned: false, lastOkAt: T0, mounted: true, mountPoint: "/home/u/.pi/agent/mounts/box", at: T0 });
-  assert.equal(up?.mountPoint, "/home/u/.pi/agent/mounts/box");
-  assert.equal(up?.sessionMounted, false, "a plain remote session is not the same as a mounted one");
-  assert.equal(up?.path, "/home/deploy/site", "its own files are still the placeholder remote folder");
-  assert.equal(remoteView(entry({ state: "online", pinned: false, lastOkAt: T0, mounted: true, mountPoint: "/m/box", at: T0 }), T0).mounted, true);
-  assert.equal(remoteView(entry({ state: "online", pinned: false, lastOkAt: T0, mounted: true, mountPoint: "/m/box", at: T0 }), T0).mountPoint, "/m/box");
-});
-
-test("mounted is the live truth; a missing field is not a mount, and mountPoint is only where", () => {
-  const mountable = parseRemoteStatus(JSON.stringify({ state: "online", pinned: false, lastOkAt: T0, mountPoint: "/m/box", at: T0 }));
-  assert.equal(mountable?.mounted, false, "mountPoint's presence is not a mount");
-  assert.equal(mountable?.mountPoint, "/m/box", "a mountable target keeps its mount point while it is down");
-  assert.equal(remoteView(entry({ state: "online", pinned: false, lastOkAt: T0, mountPoint: "/m/box", at: T0 }), T0).mounted, false);
-  // No report at all: nothing live is known, and it is never claimed.
-  const none = identity(summary);
-  assert.equal(none?.sessionMounted, false);
-  assert.equal(none?.mountPoint, undefined);
-  assert.equal(identity(summary, { state: "online", pinned: false, lastOkAt: T0, mounted: true, at: T0 })?.mountPoint, undefined);
+test("an old extension's mount keys are ignored: the status and the view carry none", () => {
+  const s = parseRemoteStatus(JSON.stringify({ state: "online", pinned: false, lastOkAt: T0, mounted: true, mountPoint: "/m/box", at: T0 })) as unknown as Record<string, unknown> | null;
+  assert.ok(s && !("mounted" in s) && !("mountPoint" in s));
+  const v = remoteView(entry({ state: "online", pinned: false, lastOkAt: T0, mounted: true, mountPoint: "/m/box", at: T0 }), T0) as unknown as Record<string, unknown>;
+  assert.ok(!("mounted" in v) && !("mountPoint" in v));
+  // The identity is the folder on the target, whatever the local cwd looks like.
+  const id = identity({ ...summary, cwd: "/home/u/.pi/agent/mounts/box/site" });
+  assert.equal(id?.path, "/home/deploy/site");
 });

@@ -46,10 +46,10 @@ unfolded (≥768)                                  folded (<768)
 
 ## Remote session chips
 
-A session on a remote target (spec/02 "Remote sessions") carries three facts, each shown in the
-session head and in Session detail: **what it is** (the always-on remote chip), **where its files
-are** (the mount state indicator), and **whether the host still answers** (the connection chip).
-Each has its own word and its own section below; none borrows another's.
+A session on a remote target (spec/02 "Remote sessions") carries two facts, each shown in the
+session head and in Session detail: **what it is** (the always-on remote chip) and **whether the
+host still answers** (the connection chip). Each has its own word and its own section below;
+neither borrows the other's.
 
 ### The always-on remote chip
 
@@ -59,52 +59,21 @@ moment the session does — before any status arrives, and for a watched or TUI-
 no chat socket at all. A local session has none.
 
 - **What it says.** a `terminal` icon, the target's `label` from `GET /api/targets` (the name when
-  that fails or the list hasn't loaded), `·`, then the path. A mount-mode session
-  (`SessionSummary.mounted`) shows its own local mount cwd — where its files really are; every
-  other remote session shows `remoteCwd`, the folder on the target. The target's `$HOME` isn't
-  ours, so the path is never run through `~`.
+  that fails or the list hasn't loaded), `·`, then `remoteCwd`, the folder on the target. The
+  target's `$HOME` isn't ours, so the path is never run through `~`.
 - **It is identity, not liveness.** No state dot and no pulse — that is the connection chip's job,
   and the chips sit side by side so neither reads as the other. In the **session head** it is a
   plain `.chip`; in **Session detail** a `.chip.chip-count`. Either truncates the path rather than
-  pushing the chip wide, and `title` carries the full `name (host):/remote/path`, the local mount
-  location for a mount-mode session, and the mount state when one is known.
-
-### The mount state indicator
-
-Present for a mount-mode session no matter what, and for any other remote session only once the
-target's live state says the mount is **up**: the server's `TargetInfo.mounted` (a bounded check,
-refreshed by the mount toggle), else the extension's `status.mounted` for a chat here. The word is
-the honest state: `mounted` only when that check says so, `not mounted` when a mount-mode
-session's check says down, `mount` while nothing has been checked. Mounted is a **state**, not
-health — neutral tone always: a mount whose reads fail must not read healthy, and a hung mount
-can't be told from a slow one. In Session detail it also names the live mount point the extension
-reported (`mounted · /home/user/.pi/agent/mounts/box`); in the head it is a plain `.chip` (it must
-survive the narrow-head `.chip-count` rule, like the other two remote chips), with the mount point
-and the session's mount location in `title`. It is never inferred from `mountPoint`'s presence,
-which only means the target declares a mount, up or down.
-
-### The mount toggle
-
-In Session detail's controls row, beside **Check now** and **Reconnect**: it turns the target's
-sshfs mount on and off. It is shown only when the target declares a mount — `TargetInfo.mounted`
-is present (`true` up, `false` configured but down); absent means no mount config, no toggle. It
-reads **Mount** or **Unmount** by that value, becomes **Mounting…** / **Unmounting…** while the
-request is in flight, and disables then. It is a REST call
-(`POST /api/targets/:name/mount {on}`), not a chat command, so it works for a watched or
-TUI-owned session with no runtime here and one path serves the whole pane; the response is the
-updated `TargetInfo`, which is what moves the indicator. A failure is a caption under the row
-(`.text-caption.text-error`), never a toast-only: the fact stays on screen. The remote
-extension's `/remote mount` / `/remote unmount` commands still exist as the TUI surface; pi-web
-does not ride them.
+  pushing the chip wide, and `title` carries the full `name (host):/remote/path`.
 
 ### The connection chip
 
 The connection chip is fed by the remote extension's `setStatus("remote-status", <JSON>)`, which
 the chat socket delivers as a fire-and-forget `ui_request`
-(`{state:"online"|"unreachable"|"unknown", host?, latencyMs?, pinned, channelState?, lastOkAt, runningMs?, error?, mounted, mountPoint?, at}`;
+(`{state:"online"|"unreachable"|"unknown", host?, latencyMs?, pinned, channelState?, lastOkAt, runningMs?, error?, at}`;
 its plain `remote` status is TUI footer text and is ignored). `src/lib/remote-status.ts` parses it
 (any other shape is ignored, never guessed at) and `src/components/RemoteStatus.tsx` renders it.
-It says liveness only, never identity or mount state:
+It says liveness only, never identity:
 
 - **Only what the extension knows.** `connected` (success tone) means a real round trip
   succeeded **within the last 2 minutes**; an older success reads `last ok · 12m ago` with a
@@ -123,7 +92,7 @@ It says liveness only, never identity or mount state:
   passed or when no time was given. The pane shows it as a muted caption under the chip
   (`Fast channel rate-limited (ssh refused) · retry in 12s`); the head chip's `title` carries the
   same line.
-- **In the session head**, after the always-on remote chip and the mount state indicator, a `.chip`
+- **In the session head**, after the always-on remote chip, a `.chip`
   button just before the `TUI` chip: state word, `·`, host (`user@hostname` once the extension's
   preflight answered; the host keeps its case inside the uppercase chip). Compact: no age, except
   on `last ok 12m ago`, where the age is the point. `title` carries latency, whether the fast
@@ -133,16 +102,15 @@ It says liveness only, never identity or mount state:
   sessions**, and for a remote session not open for chat here (a watched or TUI-owned one): pi-web
   only hears the status over its own chat socket, and a chip it can't feed would be a claim. (The
   always-on remote chip above has no such limit — it needs no report.)
-- **In Session detail** (every tab), in the controls row under the pane's head, after the remote chip
-  and the mount state indicator: the same chip as `.chip.chip-count` (host keeps its case) plus the
+- **In Session detail** (every tab), in the controls row under the pane's head, after the remote
+  chip: the same chip as `.chip.chip-count` (host keeps its case) plus the
   age of the last success (`· 42s ago`, `· ok 5m ago`, `· never ok`) or the running time; the
   failure's first line under it in `.text-caption.text-error`; and the small ghost buttons. **Check
   now** (`/remote check`, one fresh round trip) and **Reconnect** (`/remote reconnect`, drop the
   fast channel and re-probe) are sent as ordinary prompts over the chat socket (the server runs
   extension commands at once, even mid-turn) with no "Ran" row, and are shown only while the
   runtime advertises the `remote` command; while one waits it reads `Checking…` / `Reconnecting…`
-  and both disable, until the next report lands or 20 s pass. The **mount toggle** sits with them
-  but is not a chat command (above): it works with no runtime here.
+  and both disable, until the next report lands or 20 s pass.
 - **Connection notices.** A `notify` from the extension starting with `remote:` (first loss of a
   host, recovery) is a connection event: its first line becomes a normal non-modal toast, and the
   same text isn't repeated within a minute, so a flapping host never stacks toasts.
@@ -156,40 +124,28 @@ It says liveness only, never identity or mount state:
 ## The open-failure banner
 
 A webapp-owned chat the server refuses to open answers the chat socket with `error` code `config`
-and closes it (4422): the stored working directory is gone, or its mount can't be read, and no
-reconnect can fix that by itself. The banner is one `.banner.banner-error` in the transcript's
-`.transcript-banner` slot (spec/03 "Anatomy"), and every word comes from
-`src/lib/open-failure.ts` — a pure function of the session summary, the server's error text, and,
-when a targets list is at hand, its labels (the error itself proves the target declares a mount).
-It names the concrete thing that's wrong, never a bare "can't be opened":
+and closes it (4422): the stored working directory is gone, or the session was created inside an
+sshfs mount pi-web no longer has, and no reconnect can fix that by itself. The banner is one
+`.banner.banner-error` in the transcript's `.transcript-banner` slot (spec/03 "Anatomy"), and
+every word comes from `src/lib/open-failure.ts` — a pure function of the session summary, the
+server's error text, and, when a targets list is at hand, its labels. It names the concrete thing
+that's wrong, never a bare "can't be opened":
 
-- **A declared mount that isn't up** — the cwd is inside a target's `mount.local` and the mount
-  table has no entry there (the server's reason is `no mount at {point}`). Title "This session
-  can't be opened: {label}'s mount is down." The body names the target, the remote folder, and
-  the mount point, and says that mounting is what fixes it: "…mounting {label} again brings the
-  folder back, and the session opens as it was."
-- **A mount that can't be read** (hung, unreadable, the target no longer configured): the mount
-  module's reason verbatim in the body. No Mount button — the mount is already up, and mounting
-  again can't fix a read that fails.
-- **A folder gone through an up mount** (the reason says `no such directory through the mount`):
-  the mount is up, but the folder isn't there on the target anymore. No Mount button, for the
-  same reason.
 - **A stored folder that doesn't exist** — a plain local folder, or a remote session's local
   placeholder (named as a placeholder, with the target and its remote folder beside it). The
   same reassurance every time: nothing in the session file changed; restore the folder, then
-  reconnect. A local session never mentions mounts at all.
+  reconnect.
+- **A legacy sshfs-mount session** — the cwd is under `~/.pi/agent/mounts/<target>`, where pi-web
+  once mounted targets. The server refuses it permanently ("This session was created inside an
+  sshfs mount of target {name}, a feature pi-web no longer has; its files are on the target, not
+  here. Archive this session, or start a new remote session on {name}."), and the banner shows
+  that text verbatim: opening it as a local session in an empty folder is exactly the confusion
+  the refusal exists to prevent. Archive is the way out.
 - **Anything else**: the server's text verbatim under the same title.
 
 The actions row is a `.cluster` in the banner's action slot, the first action solid and the rest
 ghost:
 
-- **Mount and reconnect** — only for the mount-down case. While the request
-  (`POST /api/targets/:name/mount {on:true}`) is in flight it reads **Mounting…** and disables.
-  On success it reconnects the chat socket: the server clears its memoized open failure as soon
-  as the mount answers, so the session opens. On failure the banner stays, and the mount module's
-  real reason ("Mount failed: acme-prod: ssh: connect to host … Connection refused") is a
-  `.text-caption.text-error` caption beside the actions — the same rule as the mount toggle's
-  caption: never a toast-only, the fact stays on screen.
 - **Reconnect** — a plain retry, for the cases where the folder came back on its own.
 - **Archive** — the Session pane's Archive gesture on the same endpoint
   (`POST /api/sessions/archive {path, archived:true}`), with the same toast and list refresh, then

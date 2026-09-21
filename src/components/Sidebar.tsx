@@ -118,7 +118,7 @@ const workingNow = (n: number) => `${n} ${n === 1 ? "subagent" : "subagents"} wo
 function SessionRow(props: { session: SessionSummary; selected: string | null; now: number; targets: TargetInfo[] }) {
   const s = () => props.session;
   /** The row's own remote mark (§2 "Remote sessions"): one row answers for itself, never its
-      group's first row, and mounted is the summary's word only — never inferred. */
+      group's first row. */
   const mark = () => remoteMarkOf(s());
   const markTitle = () => {
     const m = mark();
@@ -243,12 +243,9 @@ function SessionRow(props: { session: SessionSummary; selected: string | null; n
                   style={{ display: "inline-flex", "align-items": "center", gap: "3px", flex: "none" }}
                   title={markTitle()}
                 >
-                  {/* One dot: this runs on another host. Two: its files are the local mount, too.
-                      Never a pulse, never the rail — the live dot's home is the pill. */}
+                  {/* One dot: this runs on another host. Never a pulse, never the rail — the live
+                      dot's home is the pill. */}
                   <span class="chip-dot" style={{ width: "6px", height: "6px" }} />
-                  <Show when={m().mounted}>
-                    <span class="chip-dot" style={{ width: "4px", height: "4px" }} />
-                  </Show>
                 </span>
               )}
             </Show>

@@ -75,11 +75,6 @@ export interface Target {
 	docker?: TargetDocker;
 	/** Name of another target whose whole chain carries this one (e.g. a container on an ssh host). Ignored when this entry has its own ssh block. */
 	via?: string;
-	/**
-	 * Type only, no validation and no reader in this extension: pi-web's server (server/targets.ts
-	 * via mount.ts) still types against it until the server-side removal commit deletes both.
-	 */
-	mount?: { remote: string; local: string };
 	/** Default remote working directory (absolute). */
 	cwd?: string;
 	env?: Record<string, string>;

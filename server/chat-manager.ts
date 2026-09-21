@@ -21,10 +21,7 @@ import { readLive, readOwnLiveRecords, workerCountsOf } from "./live";
 import { appliesAfter, mergeMode, MINOR_MODES, modeApplyPlan, modeInfo, readMode, resolveChatMode, type ModePatch, type ModeState } from "./mode-state";
 import { toContextInfo } from "./models";
 import { contextForBranch, normalizeEntries, normalizeEntry } from "./transcript";
-import { findTarget, remoteOfCwd, targetOfCwd } from "./targets";
-// The mount module is pi-runtime-free (node builtins only); verifyMounted bounds a real check on a
-// path INSIDE the mount so a hung fuse path never blocks the event loop.
-import { verifyMounted } from "../pi-config/extensions/remote/mount.ts";
+import { parseLegacyMountCwd, targetOfCwd } from "./targets";
 import { ForeignWriteGuard, markOwned, recentForeignWriteAgeSec } from "./write-guard";
 
 const GUARD_POLL_MS = 3000;
@@ -77,6 +74,24 @@ export class ConfigError extends Error {
 const configFailures = new Map<string, ConfigError>();
 
 /**
+/**
+ * A session stored inside a legacy sshfs mount cwd (`~/.pi/agent/mounts/<target>/…`, a feature
+ * pi-web no longer has) is refused, permanently: its files are on the target, not here, and opening
+ * it would silently run every tool in an empty local directory — the exact confusion the mounts'
+ * removal exists to end. Lexical check only (server/targets.ts); no fs, no schema, no targets.json.
+ */
+function legacyMountFailure(path: string, cwd: string): ConfigError | undefined {
+  const legacy = parseLegacyMountCwd(cwd);
+  if (!legacy) return undefined;
+  const failure = new ConfigError(
+    `This session was created inside an sshfs mount of target ${legacy.target}, a feature pi-web no longer has; its files are on the target, not here. ` +
+      `Archive this session, or start a new remote session on ${legacy.target}.\nSession file: ${path}`,
+    cwd,
+  );
+  configFailures.set(path, failure); // permanent: no force flag makes a removed mount exist
+  return failure;
+}
+
  * The cached permanent failure for `path`, if it still applies. Exported because it is the whole
  * retry policy for permanent errors: acquireChat answers from it, and it is how a caller (or a
  * test) asks whether the condition has cleared.
@@ -84,9 +99,8 @@ const configFailures = new Map<string, ConfigError>();
 export function activeConfigFailure(path: string): ConfigError | undefined {
   const failure = configFailures.get(path);
   if (!failure) return undefined;
-  // A cwd inside a target's mount point is never statSynced here (a hung fuse path would block
-  // the event loop): acquireChat's bounded verify clears such a memo once the mount answers.
-  if (remoteOfCwd(failure.cwd)?.mounted) return failure;
+  // A legacy sshfs-mount cwd is refused for good: the empty local directory existing is the problem, not the cure.
+  if (parseLegacyMountCwd(failure.cwd)) return failure;
   if (existsSync(failure.cwd)) {
     configFailures.delete(path); // the directory came back: let the next open try for real
     return undefined;
@@ -886,21 +900,11 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
   };
   const sessionCwd = sessionManager.getCwd();
   // The runtime cannot be built against a directory that is gone. Check before doing the work, so
-  // the failure is classified (ConfigError, not "internal") and cheap to repeat. A cwd inside a
-  // target's mount point is verified through the mount module's BOUNDED check instead: existsSync
-  // would stat the fuse path, and a hung mount must never block the event loop.
+  // the failure is classified (ConfigError, not "internal") and cheap to repeat.
   if (sessionCwd) {
-    const inMount = remoteOfCwd(sessionCwd);
-    if (inMount?.mounted) {
-      const remoteTarget = findTarget(inMount.target);
-      const verified = remoteTarget
-        ? await verifyMounted(remoteTarget, sessionCwd)
-        : { ok: false as const, error: `target ${inMount.target} is not configured` };
-      if (!verified.ok)
-        throw new ConfigError(`Stored session working directory is not reachable through its mount: ${verified.error}\nSession file: ${path}`, sessionCwd);
-    } else if (!existsSync(sessionCwd)) {
-      throw new ConfigError(`Stored session working directory does not exist: ${sessionCwd}\nSession file: ${path}`, sessionCwd);
-    }
+    const legacy = legacyMountFailure(path, sessionCwd);
+    if (legacy) throw legacy;
+    if (!existsSync(sessionCwd)) throw new ConfigError(`Stored session working directory does not exist: ${sessionCwd}\nSession file: ${path}`, sessionCwd);
   }
   try {
     const runtime = await createAgentSessionRuntime(createRuntime, {
@@ -948,35 +952,22 @@ export async function acquireChat(path: string, force = false): Promise<ChatSess
     }
   }
   assertNotLive(path);
-  // The cheap pre-checks before the expensive open (model runtime, extensions, SDK session). A
-  // mounted session's cwd is a fuse path and is NEVER statSynced (a hung mount would block the
-  // whole event loop): the mount module's bounded verify decides, and clears or refreshes the memo.
+  // The cheap pre-checks before the expensive open (model runtime, extensions, SDK session).
   const cwd = storedCwd(path);
-  const inMount = cwd ? remoteOfCwd(cwd) : null;
-  if (cwd && inMount?.mounted) {
-    const remoteTarget = findTarget(inMount.target);
-    const verified = remoteTarget
-      ? await verifyMounted(remoteTarget, cwd)
-      : { ok: false as const, error: `target ${inMount.target} is not configured` };
-    if (!verified.ok) {
-      const failure = new ConfigError(`Stored session working directory is not reachable through its mount: ${verified.error}\nSession file: ${path}`, cwd);
-      configFailures.set(path, failure);
-      throw failure;
-    }
-    configFailures.delete(path); // the mount answered: any memoized failure is stale
-  } else {
-    // Permanent and already known: answer from the memo. Retrying would repeat the same SDK open and
-    // hand the client another copy of an error it cannot act on. `force` does not apply — no flag
-    // makes a deleted directory exist.
-    const known = activeConfigFailure(path);
-    if (known) throw known;
-    // Detect it cheaply on the first connect too: the header's cwd is all it takes, and the open
-    // below would otherwise build a model runtime before the SDK reached the same conclusion.
-    if (cwd && !existsSync(cwd)) {
-      const failure = new ConfigError(`Stored session working directory does not exist: ${cwd}\nSession file: ${path}`, cwd);
-      configFailures.set(path, failure);
-      throw failure;
-    }
+  // A session stored inside a legacy sshfs mount cwd is refused for good (legacyMountFailure).
+  const legacy = cwd ? legacyMountFailure(path, cwd) : undefined;
+  if (legacy) throw legacy;
+  // Permanent and already known: answer from the memo. Retrying would repeat the same SDK open and
+  // hand the client another copy of an error it cannot act on. `force` does not apply — no flag
+  // makes a deleted directory exist.
+  const known = activeConfigFailure(path);
+  if (known) throw known;
+  // Detect it cheaply on the first connect too: the header's cwd is all it takes, and the open
+  // below would otherwise build a model runtime before the SDK reached the same conclusion.
+  if (cwd && !existsSync(cwd)) {
+    const failure = new ConfigError(`Stored session working directory does not exist: ${cwd}\nSession file: ${path}`, cwd);
+    configFailures.set(path, failure);
+    throw failure;
   }
   if (!force) {
     // Shared constant with the frontend: RECENT_WRITE_MS (120s) in server/write-guard.ts.

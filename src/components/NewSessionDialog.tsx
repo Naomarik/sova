@@ -138,11 +138,7 @@ export function NewSessionDialog(props: {
     setFailed(false);
     try {
       const p = place();
-      // A target that is really mounted: create the session's cwd inside the mount, so its tools
-      // and any workers it spawns read the target's real files locally. The server refuses (409) if
-      // it is not mounted at this moment; the error lands in the field, not a toast.
-      const mounted = current()?.mounted === true;
-      props.onCreated(await createSession(where() === "local" ? cwd().trim() : { target: p.target!, remoteCwd: p.remoteCwd, ...(mounted ? { mounted: true as const } : {}) }));
+      props.onCreated(await createSession(where() === "local" ? cwd().trim() : { target: p.target!, remoteCwd: p.remoteCwd }));
     } catch (err) {
       if (err instanceof ApiError && err.status >= 400 && err.status < 500) {
         setFieldError(err.message || "That folder doesn't exist. Pick one that does.");

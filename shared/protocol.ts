@@ -68,12 +68,6 @@ export interface SessionSummary {
   /** Remote session: the absolute working directory on the target (the placeholder path minus
       the target dir). Set exactly when `target` is. */
   remoteCwd?: string;
-  /** Mounted-mode session: the cwd is inside a target's mount point (`<mount.local>`; created by
-      POST /api/sessions {target, remoteCwd, mounted:true}), so its tools and any workers it spawns
-      see the target's real files locally. `target`/`remoteCwd` are then derived from the mount
-      mapping (the remote dir the local path stands for). Absent for local sessions and remote
-      placeholder sessions. Derived from the cwd only — never a live mount check. */
-  mounted?: true;
   /** Composer draft stored for this session: the draft's first non-empty line, ~80 chars. Present only on a session with no user message anywhere that has a stored draft — that is what keeps a never-sent new session in the list (sidebar). */
   draftPreview?: string;
 }
@@ -93,12 +87,6 @@ export interface TargetInfo {
   cwd?: string;
   /** Human-readable host: user@host[:port] for ssh, the container/cell (+ via) otherwise. */
   host?: string;
-  /** The target's sshfs mount is really on: a real check through the mount module
-      (pi-config/extensions/remote/mount.ts — a mount-table read, never a stat on the fuse path,
-      which would block the event loop). Deliberately uncached: the read is cheap and always
-      honest, so an external unmount shows on the very next listing. Present only when the target
-      declares a `mount` block in targets.json. */
-  mounted?: boolean;
 }
 
 export type EntryKind =
@@ -261,18 +249,10 @@ export interface UploadResult {
 // POST /api/sessions { target, remoteCwd } -> SessionSummary   (remote session: creates the local placeholder
 //                                  ~/.pi/agent/pi-web/targets/<target>/<remoteCwd> and a session there; 400 bad body/
 //                                  non-absolute remoteCwd, 404 unknown target)
-// POST /api/sessions { target, remoteCwd, mounted: true } -> SessionSummary   (mounted session: the cwd is the
-//                                  mount path <mount.local> + the remote path relative to <mount.remote>, created if
-//                                  needed; 400 the target has no "mount" config or remoteCwd is outside the mounted
-//                                  root, 409 the target is not actually mounted. Plain {target, remoteCwd} keeps
-//                                  creating the placeholder cwd, unchanged)
 // POST /api/sessions/connect {} -> SessionSummary   (the connection agent: a new session in a fresh
 //                                  ~/.pi/agent/pi-web/connect/<ts>/ seeded with AGENTS.md from server/connect-agent-template.md)
 // GET  /api/targets             -> TargetInfo[]   (~/.pi/agent/targets.json; missing file → []; status from a cached,
 //                                  bounded probe)
-// POST /api/targets/:name/mount { on: boolean } -> TargetInfo   (mount/unmount the target's configured sshfs mount
-//                                  through the mount module, idempotent; 400 bad body or the target has no "mount"
-//                                  config, 404 unknown target, 502 the sshfs/fusermount command failed with its stderr)
 // GET  /api/targets/:name/folders?path=…&hidden=1 -> FolderListing   (subfolders on the target; paths are REMOTE;
 //                                  no path = the target's cwd, else its $HOME. 400 not absolute, 404 unknown target,
 //                                  502 unreachable / ssh failed / folder missing)

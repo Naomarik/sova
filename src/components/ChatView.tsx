@@ -2,7 +2,7 @@ import { batch, createEffect, createMemo, createSignal, For, Match, on, onCleanu
 import { createStore, reconcile } from "solid-js/store";
 import { Portal } from "solid-js/web";
 import type { ChatServerMessage, SessionSummary, SlashCommand, TeamInfo, TranscriptItem, WorkerInfo } from "../../shared/protocol";
-import { fetchTranscriptWithContext, mountTarget, setSessionArchived, wsUrl } from "../lib/api";
+import { fetchTranscriptWithContext, setSessionArchived, wsUrl } from "../lib/api";
 import { contextStateFor, usageTokens, windowOf } from "../lib/context";
 import { addPendingPrompt, applyEvent, emptyLive, runDetail, takeBackQueued, type LiveState } from "../lib/live";
 import { isObj, str } from "../lib/message";
@@ -24,8 +24,6 @@ import {
 import { remotePlaceOf } from "../lib/remote-session";
 import { createReconnectingSocket } from "../lib/socket";
 import { usageTotal, type UsageTotalView, workingSplit } from "../lib/workers";
-// The shared targets store the mounted chip reads (RemoteStatus owns it, the pane toggle patches it).
-import { patchTarget } from "./RemoteStatus";
 import type { UploadResult } from "../../shared/protocol";
 import { announce, drafts, hideThinking, hideTools, sessionContext, setDraftText, setLocalRunning, setSessionContext, toast } from "../lib/ui-state";
 import { visibleCount } from "../lib/hidden-rows";
@@ -106,11 +104,7 @@ export function ChatView(props: {
   const [errors, setErrors] = createSignal<string[]>([]);
   /** A permanent open failure (code "config"): shown once, never retried, never appended to. */
   const [configError, setConfigError] = createSignal<string | null>(null);
-  /** The open-failure banner's action state (spec/01-app-shell.md "The open-failure banner"): a
-      Mount in flight, its failure (the mount module's real reason, kept beside the actions,
-      never a toast that vanishes), and an Archive in flight. */
-  const [mounting, setMounting] = createSignal(false);
-  const [mountFailure, setMountFailure] = createSignal<string | null>(null);
+  /** The open-failure banner's action state (spec/01-app-shell.md "The open-failure banner"): an Archive in flight. */
   const [archiving, setArchiving] = createSignal(false);
   const [dialogs, setDialogs] = createSignal<{ id: string; request: unknown }[]>([]);
   const [resume, setResume] = createSignal(0);
@@ -601,8 +595,7 @@ export function ChatView(props: {
   };
 
   // Check-now and reconnect, offered only while this runtime has the remote extension's command.
-  // Sent straight over the socket: no "Ran" row, the chips show the answer. (The mount toggle is not
-  // here: it is a REST call, so it works for a session with no runtime open in this tab.)
+  // Sent straight over the socket: no "Ran" row, the chips show the answer.
   if (remote) {
     const controls: RemoteControls = {
       check: () => socket.send({ type: "prompt", text: REMOTE_CHECK_TEXT }),
@@ -615,36 +608,15 @@ export function ChatView(props: {
   /** What the banner says: derived, so the diagnosis matches the error. No targets list is
       passed: the one-shot /api/targets cache lives in RemoteStatus.tsx (module-private) and this
       banner adds no fetch of its own — the target name is the label fallback the remote chip
-      uses too, and the error text itself proves the target declares a mount. */
+      uses too. */
   const openFailure = createMemo(() => {
     const text = configError();
-    return text ? openFailureView(props.summary?.(), text, undefined, mountFailure()) : null;
+    return text ? openFailureView(props.summary?.(), text) : null;
   });
-  /** Reconnect once the folder is back on its own (or after a successful Mount below). The
-      server clears its memoized open failure as soon as the mount answers, so the retry opens. */
+  /** Reconnect once the folder is back on its own. */
   const reconnect = () => {
     setConfigError(null);
-    setMountFailure(null);
     socket.retry();
-  };
-  /** Mount and reconnect, offered only when the diagnosis is mount-down: turn the target's
-      sshfs mount on, then retry the chat socket. A failure keeps the banner and shows the
-      mount module's real reason beside the actions — never a toast that vanishes. */
-  const mountAndReconnect = async (target: string | undefined) => {
-    if (!target || mounting()) return;
-    setMounting(true);
-    setMountFailure(null);
-    try {
-      // Keep the response: it carries the target's fresh mount state, and the chip reads that
-      // shared store. Discarding it left the header saying "not mounted" right after a mount.
-      patchTarget(await mountTarget(target, true));
-      reconnect();
-    } catch (err) {
-      // Raw message: openFailureView owns the "Mount failed: " prefix (its test asserts it).
-      setMountFailure((err as Error).message);
-    } finally {
-      setMounting(false);
-    }
   };
   /** The pane's Archive gesture, on the same endpoint with the same toast and list refresh:
       moves this session to the Archive region and deletes nothing (the title says so). Then
@@ -675,41 +647,18 @@ export function ChatView(props: {
             <ConnectionBanner socket={socket} />
             {/* Permanent until the world it names changes: the diagnosis and the gestures that
                 fix it, derived in src/lib/open-failure.ts (spec/01-app-shell.md "The open-failure
-                banner"). The first action is the primary one; a failed Mount keeps its real
-                reason on screen beside the actions. */}
+                banner"). The first action is the primary one. */}
             <Show when={openFailure()} keyed>
               {(info) => (
                 <Banner
                   tone="error"
                   title={info.title}
-                  body={
-                    <>
-                      {info.detail}
-                      <Show when={info.mountError}>
-                        {(m) => (
-                          <span class="text-caption text-error" style={{ display: "block", margin: "var(--space-1) 0 0" }}>
-                            {m()}
-                          </span>
-                        )}
-                      </Show>
-                    </>
-                  }
+                  body={info.detail}
                   action={
                     <span class="cluster">
                       <For each={info.actions}>
                         {(a, i) => (
                           <Switch>
-                            <Match when={a.id === "mount"}>
-                              <button
-                                type="button"
-                                class={`button button-sm${i() === 0 ? "" : " button-ghost"}`}
-                                disabled={mounting()}
-                                title={a.title}
-                                onClick={() => void mountAndReconnect(info.target)}
-                              >
-                                {mounting() ? "Mounting…" : a.label}
-                              </button>
-                            </Match>
                             <Match when={a.id === "reconnect"}>
                               <button type="button" class={`button button-sm${i() === 0 ? "" : " button-ghost"}`} onClick={reconnect}>
                                 {a.label}

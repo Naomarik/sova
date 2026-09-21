@@ -19,11 +19,7 @@ import { contextForBranch, normalizeEntries, readActiveBranch } from "./transcri
 import { checkTmpImage, deleteAttachment, MAX_ATTACHMENT_BYTES, readTmpImage, saveUploadedImage, sessionAttachmentsDir, UploadError } from "./attachments";
 import { listFolders } from "./folders";
 import { assignSession, createGroup, deleteGroup, readGroups, renameGroup } from "./session-groups";
-// The mount module is pi-runtime-free (node builtins only): isMounted parses the mount table and
-// verifyMounted bounds a real check on a path INSIDE the mount — neither ever stats the fuse path
-// synchronously, which would block the event loop on a hung mount.
-import { isMounted, mountPointOf, verifyMounted } from "../pi-config/extensions/remote/mount.ts";
-import { findTarget, isTargetName, listRemoteFolders, listTargets, mountDir, normalizeRemotePath, remoteOfCwd, targetDir, targetsFile, toggleTargetMount } from "./targets";
+import { findTarget, isTargetName, listRemoteFolders, listTargets, normalizeRemotePath, targetDir, targetsFile } from "./targets";
 import { isExplanationId, listExplanations, readExplanationPage } from "./explanations";
 import { switchMode } from "./mode";
 import { readSubagentPolicy, writeSubagentPolicy } from "./settings";
@@ -70,12 +66,10 @@ async function createWebSession(c: Context, cwd: string) {
 }
 
 // { cwd } for a local session, or { target, remoteCwd } for a remote one: its cwd is the local
-// placeholder mirroring the remote path (server/targets.ts), created here. With mounted: true the
-// cwd is the target's MOUNT path instead (<mount.local> + the remote path relative to <mount.remote>),
-// so the session and any workers it spawns see the target's real files locally; chat-manager still
-// passes the `target` flag, so the remote extension routes bash/ls/find/grep to the far side.
+// placeholder mirroring the remote path (server/targets.ts), created here; chat-manager passes the
+// `target` flag, so the remote extension runs every tool on the far side.
 app.post("/api/sessions", async (c) => {
-  let body: { cwd?: unknown; target?: unknown; remoteCwd?: unknown; mounted?: unknown };
+  let body: { cwd?: unknown; target?: unknown; remoteCwd?: unknown };
   try {
     body = await c.req.json();
   } catch {
@@ -87,44 +81,16 @@ app.post("/api/sessions", async (c) => {
     if (!remoteCwd) return c.json({ error: "remoteCwd must be an absolute path" }, 400);
     const target = findTarget(body.target);
     if (!target) return c.json({ error: `Unknown target: ${body.target}` }, 404);
-    if (body.mounted === true) {
-      const point = mountPointOf(target);
-      if (!point) return c.json({ error: `Target ${target.name} has no "mount" configuration in ${targetsFile()}; add one to create mounted sessions` }, 400);
-      let dir: string;
-      try {
-        dir = mountDir(target, remoteCwd);
-      } catch (err) {
-        return c.json({ error: (err as Error).message }, 400);
-      }
-      if (!isMounted(point))
-        return c.json({ error: `Target ${target.name} is not mounted; turn the mount on first (POST /api/targets/${target.name}/mount)` }, 409);
-      // The remote subdir must exist on the far side, checked bounded — never a stat on the fuse
-      // path. No mkdir either: the session's cwd is the target's real directory, exactly as is.
-      const verified = await verifyMounted(target, dir);
-      if (!verified.ok) return c.json({ error: `Target ${target.name}: ${verified.error}` }, 400);
-      return createWebSession(c, dir);
-    }
     const dir = targetDir(body.target, remoteCwd);
     mkdirSync(dir, { recursive: true });
     return createWebSession(c, dir);
   }
   const cwd = typeof body.cwd === "string" ? body.cwd.trim() : "";
   if (!cwd || !isAbsolute(cwd)) return c.json({ error: "cwd must be an absolute path" }, 400);
-  // A cwd picked inside a target's mount point is verified through the mount module's bounded
-  // check: statSync would stat the fuse path, and a hung mount must never block the event loop.
-  const inMount = remoteOfCwd(cwd);
-  if (inMount?.mounted) {
-    const remoteTarget = findTarget(inMount.target);
-    const verified = remoteTarget
-      ? await verifyMounted(remoteTarget, cwd)
-      : { ok: false as const, error: `target ${inMount.target} is not configured` };
-    if (!verified.ok) return c.json({ error: `cwd: ${verified.error}` }, 400);
-  } else {
-    try {
-      if (!statSync(cwd).isDirectory()) return c.json({ error: "cwd is not a directory" }, 400);
-    } catch {
-      return c.json({ error: "cwd does not exist" }, 400);
-    }
+  try {
+    if (!statSync(cwd).isDirectory()) return c.json({ error: "cwd is not a directory" }, 400);
+  } catch {
+    return c.json({ error: "cwd does not exist" }, 400);
   }
   return createWebSession(c, cwd);
 });
@@ -282,20 +248,6 @@ app.get("/api/targets", async (c) => c.json(await listTargets()));
 app.get("/api/targets/:name/folders", async (c) => {
   const r = await listRemoteFolders(c.req.param("name"), c.req.query("path"), { hidden: c.req.query("hidden") === "1" });
   return r.ok ? c.json(r.listing) : c.json({ error: r.error }, r.status);
-});
-
-// Mount or unmount a target's configured sshfs mount (server/targets.ts), through the mount
-// module's argv builders, bounded. Idempotent; errors say what failed.
-app.post("/api/targets/:name/mount", async (c) => {
-  let body: { on?: unknown };
-  try {
-    body = await c.req.json();
-  } catch {
-    return c.json({ error: "Expected JSON body { on: boolean }" }, 400);
-  }
-  if (typeof body.on !== "boolean") return c.json({ error: "on must be true or false" }, 400);
-  const r = await toggleTargetMount(c.req.param("name"), body.on);
-  return r.ok ? c.json(r.info) : c.json({ error: r.error }, r.status);
 });
 
 // Subfolders for the New Session folder picker. Directory names only, never files (server/folders.ts).

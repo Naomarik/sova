@@ -614,7 +614,15 @@ this value?* For a group's name that list is short — `createGroup` (the user),
 user), and the fanout dialog's name field, which is **pi-web's generated default OR the user's
 typing**. One input, two cases, and a flag that only ever encoded the first. Run both
 enumerations when a field encodes a claim: the events that falsify it, and the inputs that were
-never covered by it. The alternative — a
+never covered by it.
+
+**And polarise an optional flag so that its FALSEHOOD is the safe answer**, because absence is
+the state you do not control — an older client, an older record, a field nobody set. Two fields
+can carry identical information and fail in opposite directions: `nameIsGenerated` absent reads
+as *the user named it*, and the group survives; `nameEdited` absent reads as *untouched*, so
+pi-web claims the name and deletes it. Same fact, same size, one of them safe by construction.
+The name that reads most naturally is not reliably the one that fails safe, so choose the
+polarity first and the wording second. The alternative — a
 renamed fanout group that still dissolves, "stated loudly" somewhere — is defensible on origin,
 but it asks the user to carry a rule that only fires much later, at the moment of loss.
 

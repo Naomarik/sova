@@ -185,14 +185,15 @@ export function fanoutBody(plan: {
 
 /**
  * The model a row is about, in PROSE where the provider is already established — the fit error and
- * the count announcement, which §9:415,417 both spec as `{model}`.
+ * the count announcement — §9's "Add a model" and "Doesn't fit" rows, both spec'd as `{model}`.
  *
  * Not for anything that names one row among several: see the row controls below.
  */
 export const rowModel = (ref: string): string => shortModel(ref) ?? ref;
 
 /**
- * The accessible names of a member row's own controls (§9:414). These carry the FULL ref, never
+ * The accessible names of a member row's own controls (§9, the "Member row" row). These carry
+ * the FULL ref, never
  * the bare model id, because two providers ship the same name — `zai/glm-5.3` and
  * `ollama-cloud/glm-5.3` differ only by provider and bill to different subscriptions.
  *

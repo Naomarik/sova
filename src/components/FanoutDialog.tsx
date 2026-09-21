@@ -247,7 +247,7 @@ export function FanoutDialog(props: {
                 onInput={(e) => {
                   setText(e.currentTarget.value);
                   // Only while the name is still ours to guess at. THIS SAME SIGNAL DECIDES
-                  // PROVENANCE (`nameTouched` at :79 → `named` in fanoutBody), so changing when
+                  // PROVENANCE (`nameTouched` is read by `fanoutBody` as `named`), so changing when
                   // regeneration stops also changes who owns the name — and no test in this file
                   // would fail. Anyone altering either rule owns both (§14b).
                   if (!props.source && !nameTouched()) setName(defaultGroupName(e.currentTarget.value));

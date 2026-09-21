@@ -22,6 +22,12 @@ const isInsideSessions = (p: string) => p.startsWith(SESSIONS_DIR + sep) && !p.s
  * caller on a hot path — or one that must not risk a sync stat — can check containment first and
  * decide for itself how to touch the file. Listed session paths are built from SESSIONS_DIR the
  * same way (never per-file realpath), so for a real session file this IS the canonical path.
+ *
+ * CONTAINMENT HERE IS BY SHAPE ONLY. Dropping the realpath drops the step that stops a SYMLINK
+ * inside sessions/ from pointing outside it, so this is safe for a caller that merely stats the
+ * result and reports it, and NOT safe for one that opens, reads or writes the file: anything that
+ * touches the contents must go through resolveSessionPath, which resolves the link and re-checks
+ * containment on the real path.
  */
 export function sessionPathShape(raw: string | undefined | null): string | null {
   if (!raw) return null;

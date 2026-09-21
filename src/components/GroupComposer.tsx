@@ -35,8 +35,13 @@ export function GroupComposer(props: {
   const [sending, setSending] = createSignal(false);
   /** The last 409: nothing was sent, and every blocked member is named. */
   const [refused, setRefused] = createSignal<BatchRefusal[] | null>(null);
-  /** A member lost between the pre-check and the send. Not a refusal — the others did get it. */
-  const [partial, setPartial] = createSignal<{ failed: BatchRefusal[]; sent: number } | null>(null);
+  /**
+   * A member lost between the pre-check and the send. Not a refusal — the others did get it, and
+   * this is a REPORT of something that happened rather than an offer waiting on the box. It
+   * therefore carries the text that was actually sent: the retry must hand the straggler THAT
+   * message, not whatever the box reads by then.
+   */
+  const [partial, setPartial] = createSignal<{ failed: BatchRefusal[]; sent: number; text: string } | null>(null);
   const [folded, setFolded] = createSignal(window.matchMedia(FOLDED).matches);
   window.matchMedia(FOLDED).addEventListener("change", (e) => setFolded(e.matches));
 
@@ -44,36 +49,51 @@ export function GroupComposer(props: {
   /** Nobody at all: the only state where Send is off. A stale snapshot is the server's to correct. */
   const noone = () => targets().available.length === 0;
 
-  /** Both banners go when the text changes: they describe a send of the text that was there. */
+  /**
+   * Editing dismisses the REFUSAL — it is an offer to send what is in the box, and the box just
+   * changed. The partial banner stays: it reports that k members have a message and one doesn't,
+   * which is still true however the box reads, and dropping it on a keystroke would take the only
+   * record of the straggler (and its retry) with it.
+   */
   const edit = (v: string) => {
     setText(v);
     setRefused(null);
-    setPartial(null);
   };
 
   /** The name a refusal is about, from the id the server joined it by. */
   const nameOfRefusal = (r: BatchRefusal) => props.nameOf(r.id);
 
-  const send = async (subset?: string[]) => {
-    const body = text().trim();
-    if (!body || sending() || noone()) return;
+  /**
+   * `body` is set only by the partial banner's retry, which re-sends the string captured AT SEND
+   * TIME. The box stays visible and editable while that banner is up, so reading it here would
+   * hand the straggler a different message under a label promising the same one — the exact thing
+   * a shared composer exists to prevent. An edited box is a new message to everyone, through Send.
+   */
+  const send = async (subset?: string[], body?: string) => {
+    const fromBox = body === undefined;
+    const sent = (body ?? text()).trim();
+    if (!sent || sending() || noone()) return;
     setSending(true);
-    const out = await promptSessionGroup(props.groupId, body, subset);
+    const out = await promptSessionGroup(props.groupId, sent, subset);
     setSending(false);
     if (out.ok) {
       const n = out.result.sent.length;
       setRefused(null);
       // A member that broke between the check and being queued: the others are answering, and
       // nothing is rolled back — say exactly that rather than pretending the batch failed.
-      setPartial(out.result.failed.length > 0 ? { failed: out.result.failed, sent: n } : null);
-      if (out.result.failed.length === 0) {
+      setPartial(out.result.failed.length > 0 ? { failed: out.result.failed, sent: n, text: sent } : null);
+      // Only the box's own send clears the box. A retry may run while the user is typing the next
+      // message, and wiping that would be this composer destroying work to report success.
+      if (fromBox && out.result.failed.length === 0) {
         edit("");
         input.value = "";
       }
       const said = `Sent to ${n} ${n === 1 ? "member" : "members"}.`;
       announce(said);
       props.onRefresh();
-      props.onActive(false);
+      // The panes collapse under a composer that is in use; it stops being in use only when the
+      // box is empty. A retry can land while the user is typing the next message.
+      if (!text()) props.onActive(false);
       return;
     }
     if (out.refused) {
@@ -142,7 +162,7 @@ export function GroupComposer(props: {
                 .failed.map((r) => nameOfRefusal(r))
                 .join(", ")} was taken by another program between the check and the send, so it didn't get this message. The ${p().sent} that did are answering now.`}
               action={
-                <button type="button" class="button button-sm" onClick={() => void send(p().failed.map((r) => r.id))}>
+                <button type="button" class="button button-sm" onClick={() => void send(p().failed.map((r) => r.id), p().text)}>
                   Send to {nameOfRefusal(p().failed[0]!)}
                 </button>
               }

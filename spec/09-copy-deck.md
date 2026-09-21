@@ -371,6 +371,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Pane tool `aria-label`s | Open {label or title} · Make {label or title} wider · Make {label or title} narrower · Move {label or title} left · Move {label or title} right · Promote {label or title} · Eliminate {label or title} |
 | Promote `title` | Take it out of “{name}” and open it on its own. Nothing is archived and nothing is deleted |
 | Eliminate `title` | Take it out of “{name}” and archive it. The transcript stays; unarchiving brings it back |
+| Eliminate off | TUI-live: "This session is open in a terminal." · mid-turn: "It's mid-turn. Stop it or wait, then eliminate it." |
 | Remove From Group `title` | This session wasn't started in pi-web, so removing it is all we can do — nothing is archived |
 | Member chips | `TUI` (accent, static) · `Archived` (neutral) · `Can't open` (error) · `Busy` (warn) |
 | Member composer reasons | "This session is open in a terminal, so pi-web won't write to it." · "This session is archived. Unarchive it to send." · "This session can't be opened. The banner above says why." · "Another program is writing to this session." |

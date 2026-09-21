@@ -172,8 +172,11 @@ new workspace.
   dialog's order (rows top to bottom, repeats in sequence), and `seed` set to
   `{parentSessionPath, leafId}` in fork mode. Fresh mode writes no `seed`: there is no fork point
   to align to.
-- **Members run with the topic outline off.** The server passes the flag when it opens each
-  runtime. The outline summarizer is a second model call per turn per session (§10), and N of them
+- **Members run with the topic outline off, by omission.** There is no disable flag to add, and
+  none should be invented: the outline extension only summarizes in the TUI unless its host opts
+  in, and a web chat gets one because `chat-manager` sets `topic-outline-headless: true` when it
+  opens the runtime (`server/chat-manager.ts:876`). A fanout member is opened **without** that
+  flag, so it lands in the extension's own default. The outline summarizer is a second model call per turn per session (§10), and N of them
   on a fanout is cost with no reader — the workspace is for reading the members against each
   other, and the strip is a single-session surface. It is off for the member's life, not just in
   the workspace, and the pane says so nowhere: an absent strip is not a state.

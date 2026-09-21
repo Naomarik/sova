@@ -76,6 +76,12 @@ interface SessionGroup {
   survive a promote, a dissolve and a rename, because pi-web never writes the header. Use
   `parent` to link or open (routes take paths), `parentId` to match against `GroupMember.id` and
   the assignments, which are id-keyed.
+- **Two identifier vocabularies, on purpose.** Lineage is **paths** (`seed.parentSessionPath`,
+  `SessionSummary.parent`) because a path is what the session header stores and what the routes
+  open. Membership is **ids** (`members[].id`, the assignments map, `SessionSummary.parentId`)
+  because an id is what the store keys on. Neither is converted on the way in: a value is used in
+  the vocabulary it arrives in, and the two are paired on the summary so nothing has to look one
+  up from the other.
 - **Lineage says *that*; `seed` says *where*.** `parentId` can tell you two members of a
   hand-made group came from one session; it cannot tell you which entry they diverged at, and
   without that there is no row to draw and nothing to align to. So the fork marker and
@@ -243,7 +249,7 @@ apply verbatim. What changes is scoping and chrome:
 | Ready | The chat, the composer live | Included |
 | Mid-turn | The chat, the run status row, `Steer` in its own composer (§4) | **Excluded**, reason "mid-turn". A shared prompt is not a steer |
 | Open in a TUI | A **watch** pane: read-only transcript, the `TUI` chip (accent, static), and in place of a composer the `.composer-reason` "This session is open in a terminal, so pi-web won't write to it." | Excluded, reason "open in a terminal" |
-| Archived | The chat, read normally, with a neutral `.chip` "Archived" in the pane head and its composer disabled, reason "This session is archived. Unarchive it to send." | Excluded, reason "archived". An eliminated member stays visible and readable — that is what makes elimination reversible |
+| Archived | The chat, read normally, with a neutral `.chip` "Archived" in the pane head and its composer disabled, reason "This session is archived. Unarchive it to send." **Archiving is the close gesture**: the server disposes the held runtime, so the pane's `/ws/chat` closes from the server side moments after Eliminate. That close is **expected** — the pane keeps rendering the transcript it has and shows the Archived chip, never the disconnected or busy banner a single-session view would show for the same event | Excluded, reason "archived". An eliminated member stays visible and readable — that is what makes elimination reversible |
 | Config error | The §1 open-failure banner, in the pane's own banner slot, with its own actions (Mount and reconnect · Reconnect · Archive). The transcript area keeps whatever loaded | Excluded, reason "can't be opened" |
 | Foreign-write busy | The `busy` banner the single-session view already shows, with its `Reconnect (force)` action, and the composer disabled | Excluded, reason "another program is writing to it" |
 | Gone from disk | The pane is replaced by an `.empty` inside the pane: **"This session's file is gone."** Its transcript was deleted outside pi-web. Removing it from the group is all that's left. · button `Remove From Group` | Excluded, reason "the file is gone" |
@@ -355,8 +361,16 @@ All four are writes to the group registry. None of them touches a session's JSON
   it was called and where it was. An undo that silently dropped the name you gave a member would
   not be one.
 - **Eliminate** — the same assign-to-null, plus
-  `POST /api/sessions/archive {path, archived:true}`. Two writes, one gesture, and the toast
-  names both: "Removed **{title}** and archived it." For a session pi-web did not start, the
+  `POST /api/sessions/archive {path, archived:true}`. Two writes, one gesture, and **the second
+  can refuse in three ways** (`archiveSession`, `server/sessions-index.ts:558-564`): the session
+  is open in a TUI, it wasn't started in pi-web, or it is mid-turn. Two of the three the pane
+  already knows, so it says so **before** the press rather than half-succeeding: for a TUI-live
+  or mid-turn member, Eliminate is `aria-disabled` with the reason ("This session is open in a
+  terminal." · "It's mid-turn. Stop it or wait, then eliminate it."). Removed-but-not-archived is
+  a worse outcome than a button that explains itself, and it is left for the genuine race — a
+  turn that starts between the check and the write — where §9's "Removed **{title}** from
+  “{name}”, but couldn't archive it." is the honest report. The non-web case is not a refusal to
+  route around but a different gesture, below. The toast names both writes: "Removed **{title}** and archived it." For a session pi-web did not start, the
   archive half is not available (§2 "Archiving" is web-origin only), the button reads
   `Remove From Group`, and its `title` says why: "This session wasn't started in pi-web, so
   removing it is all we can do — nothing is archived." One word for two behaviors would be the
@@ -384,7 +398,11 @@ from the prompt, and with no members left it holds nothing but a fork point nobo
 alternative — eliminating your way down to one winner, promoting it, and leaving a phantom section
 in the sidebar forever — is litter the user has to notice and clean up.
 
-The delete happens server-side, in the same write, so no second request can fail halfway. The
+The delete happens server-side, in the same write, so no second request can fail halfway — and
+**the response has to say so**, because the client cannot infer it from a member count it just
+changed: `POST /api/session-groups/assign` answers `{ok: true, dissolved?: true}`, with
+`dissolved` set only on the write that removed the last member of a `seed` group. This is a
+behavioural change to a route the frontend already calls, so it is announced like any other. The
 toast says what happened to both things at once: "Removed **{title}** and archived it. Dissolved
 “{name}” — nothing was left in it." Routing then leaves for `#/`, because the route you were on
 no longer names anything.

@@ -166,6 +166,21 @@ export const realFanoutDeps: FanoutDeps = {
    * sessionId and sessionFile), so calling it twice on one manager chains member 2 off member 1
    * instead of fanning, and calling it on the held runtime's manager would repoint a LIVE runtime
    * at a member's file — the user's next turn would land in a member's transcript.
+   *
+   * Two non-obvious reasons this is safe to do while pi-web HOLDS an idle runtime for the source,
+   * both worth stating because a plausible refactor breaks them:
+   *
+   * 1. open()'s only write to a healthy current-version file is appending "\n" to a trailing
+   *    partial line. That GROWS the file, so ForeignWriteGuard.check() takes its read-the-new-bytes
+   *    path, finds one blank line, advances its offset and returns null — no false foreign write.
+   *    A version MIGRATION is the opposite: `_rewriteFile()` trips the guard on every branch it has
+   *    (shrink, same-size-new-mtime, or grown bytes that parse as unknown ids), which would mark OUR
+   *    OWN write foreign and refuse the user's prompts until a &force=1 reconnect. That is why the
+   *    old-format check is a PRECONDITION read with our own parser, never a recovery after open().
+   * 2. A BARE SessionManager is used deliberately, not createAgentSession: the SDK appends
+   *    model_change/thinking_level_change at runtime construction (the appends openSession has to
+   *    defer), and those would land in the source before the branch is taken. Refactoring this to
+   *    createAgentSession would reintroduce exactly that, silently.
    */
   async fork(sourcePath, leafId, member) {
     const sm = SessionManager.open(sourcePath);

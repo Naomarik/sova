@@ -8,7 +8,7 @@
 
 import { createSignal } from "solid-js";
 import type { SessionGroup, SessionSummary } from "../../shared/protocol";
-import { assignSessionGroup, createSessionGroup, deleteSessionGroup, listSessionGroups, renameSessionGroup } from "./api";
+import { assignSessionGroup, createSessionGroup, deleteSessionGroup, listSessionGroups, patchSessionGroup, renameSessionGroup } from "./api";
 import { toast } from "./ui-state";
 
 /** One group and the sessions of it that the caller passed in (already the search hits). */
@@ -38,6 +38,49 @@ export function groupSections(
   return groups
     .map((group) => ({ group, sessions: byGroup.get(group.id) ?? [] }))
     .filter((section) => !searching || section.sessions.length > 0);
+}
+
+/**
+ * The group's sessions in DISPLAY order: `members` (the server's order) first, then anything the
+ * server's list doesn't mention, in the order the caller passed. Membership is the caller's list —
+ * a member id the sessions don't carry is dropped, exactly as the server reconciles its own copy.
+ * An older server sends no `members` at all, and then this is the caller's order unchanged.
+ */
+export function orderedMembers(sessions: readonly SessionSummary[], group: SessionGroup | null | undefined): SessionSummary[] {
+  const members = group?.members;
+  if (!members || members.length === 0) return [...sessions];
+  const byId = new Map(sessions.map((s) => [s.id, s]));
+  const out: SessionSummary[] = [];
+  const seen = new Set<string>();
+  for (const m of members) {
+    const s = byId.get(m.id);
+    if (s && !seen.has(s.id)) {
+      seen.add(s.id);
+      out.push(s);
+    }
+  }
+  for (const s of sessions) if (!seen.has(s.id)) out.push(s);
+  return out;
+}
+
+/** The user's own word for a session inside its group ("control"), or null when it has none. */
+export function memberLabel(group: SessionGroup | null | undefined, sessionId: string): string | null {
+  return group?.members?.find((m) => m.id === sessionId)?.label ?? null;
+}
+
+/**
+ * Writes a group's whole member order. Always the full array: the server reads `order` as "these
+ * first, in this order", so a partial list moves those members to the front.
+ */
+export async function setGroupOrder(id: string, order: string[]): Promise<boolean> {
+  try {
+    const group = await patchSessionGroup(id, { order });
+    setGroups((list) => list.map((g) => (g.id === id ? group : g)));
+    return true;
+  } catch (err) {
+    toast(`Couldn't reorder this group. ${(err as Error).message}`);
+    return false;
+  }
 }
 
 /** The name of a session's group, or null when it has none (or the group is gone). */
@@ -85,6 +128,11 @@ const [groups, setGroups] = createSignal<SessionGroup[]>([]);
 /** Every group, in creation order. Empty until `loadSessionGroups` lands (or on an older server). */
 export { groups as sessionGroups };
 
+/** Whether a load has ever finished. Until it has, "this group doesn't exist" is not yet a fact —
+    the workspace route must not bounce a group it simply hasn't heard of yet. */
+const [loaded, setLoaded] = createSignal(false);
+export { loaded as sessionGroupsLoaded };
+
 /**
  * Fetch the list. Called at startup, when the session pane's menu opens, and by the sidebar the
  * moment a session carries a group id this tab doesn't know — that is a change made in another tab
@@ -97,6 +145,7 @@ export async function loadSessionGroups(): Promise<void> {
   } catch {
     // Nothing to say: the region renders from whatever list we have.
   }
+  setLoaded(true);
 }
 
 /** Creates a group at the end of the list; null when the server refused (a toast says why). */

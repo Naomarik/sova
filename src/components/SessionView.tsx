@@ -57,6 +57,9 @@ export function SessionView(props: {
   autofocus?: boolean;
   /** Set when this view is one pane of a workspace. */
   paneId?: string;
+  /** The user's word for this member inside its group (`GroupMember.label`), when it has one:
+      the pane head shows it in place of the title, and it is what the pane is called to AT. */
+  label?: () => string | null;
   /** Leading control in the head (the single view's Back link, a pane's nothing). */
   lead?: JSX.Element;
   /** Trailing controls in the head: a pane's own menu. */
@@ -189,88 +192,121 @@ export function SessionView(props: {
   /** What's working, by kind: team members and plain subagents are different things. */
   const split = () => workingSplit(working(), insight.data?.workers, insight.data?.teams);
 
+  /** The name this pane is known by, in the head and to AT: "{label or title} · {model}". */
+  const paneName = () => {
+    const name = props.label?.() || s().title;
+    const m = shortModel(model());
+    return m ? `${name} · ${m}` : name;
+  };
+
+  /** The single-session view's head, unchanged: the whole width of the main column. */
+  const FullHead = () => (
+    <header class="session-head">
+      {props.lead}
+      <div class="session-head-main">
+        <h1 class="session-head-title" tabindex="-1" ref={props.titleRef} title={s().title} aria-describedby={contextDescribedBy(path, scope)}>
+          {s().title}
+        </h1>
+        <p class="session-head-meta">
+          <ContextMetaPrefix path={path} />
+          <span class="text-mono" title={cwdLabel(s(), null)}>
+            {cwdLabel(s(), home())}
+          </span>
+          {/* Chat sessions show the model as the picker trigger instead. */}
+          <Show when={model() && decision().mode !== "chat"}>
+            <span aria-hidden="true">·</span>
+            <span class="text-mono" title={model()!}>
+              {shortModel(model())}
+            </span>
+          </Show>
+        </p>
+      </div>
+      <ContextGauge path={path} />
+      <Show
+        when={working() > 0}
+        fallback={<Show when={!s().live && team()}>{(t) => <CountChip title={t().name}>Team · {t().members.length}</CountChip>}</Show>}
+      >
+        <Show
+          when={liveTeam()}
+          fallback={
+            <a
+              class="chip chip-count session-head-working"
+              href={agentsHref()}
+              title={subagentsWorkingNow(working())}
+              aria-label={subagentsWorkingNow(working())}
+            >
+              <span class="text-num">{working()}</span>
+              <Icon name="worker" small />
+            </a>
+          }
+        >
+          {(t) => (
+            <CountChip href={agentsHref(t().id)} title={t().name}>
+              Team · {working()} working
+            </CountChip>
+          )}
+        </Show>
+      </Show>
+      {/* The identity and mount, always there for a remote session; the connection chip beside
+          them reports liveness separately. */}
+      <RemoteChip path={path} summary={s()} />
+      <RemoteMountedChip path={path} summary={s()} />
+      <RemoteHeadChip path={path} onOpen={() => props.openPane(path, "session")} />
+      <Show when={s().live}>
+        <Chip tone="accent" title={`Open in pi in a terminal · pid ${s().live!.pid} · ${s().live!.status}`}>
+          TUI
+        </Chip>
+      </Show>
+      <button
+        type="button"
+        class="button button-icon button-ghost session-details-open"
+        aria-label="Session details"
+        title="Session details"
+        aria-controls="session-pane"
+        aria-expanded={props.paneOn(path, "session")}
+        onClick={() => props.openPane(path, "session")}
+      >
+        <Icon name="info" />
+      </button>
+    </header>
+  );
+
   return (
     <PaneScopeProvider value={scope}>
-      <header class="session-head">
-        {props.lead}
-        <div class="session-head-main">
-          <Show
-            when={props.paneId}
-            fallback={
-              <h1 class="session-head-title" tabindex="-1" ref={props.titleRef} title={s().title} aria-describedby={contextDescribedBy(path, scope)}>
-                {s().title}
-              </h1>
-            }
-          >
-            {/* One pane of a workspace: the group's name is the page's h1, so a pane heads at h2. */}
-            <h2 class="session-head-title" tabindex="-1" title={s().title} aria-describedby={contextDescribedBy(path, scope)}>
-              {s().title}
-            </h2>
+      <Show when={props.paneId} fallback={<FullHead />}>
+        {/* One pane of a workspace (spec/14-workspaces.md "A pane"): a 40px head under the
+            workspace's own, carrying only what tells this member apart — its name, its context
+            fill, its state chip, and its tools. The pane's accessible name IS this name. */}
+        <header class="workspace-pane-head">
+          <span class="workspace-pane-name" id={`pane-${props.paneId}-name`} title={paneName()}>
+            {paneName()}
+          </span>
+          <ContextGauge path={path} />
+          <RemoteChip path={path} summary={s()} />
+          <Show when={s().archived}>
+            <Chip title="Archived. Unarchive it to send.">Archived</Chip>
           </Show>
-          <p class="session-head-meta">
-            <ContextMetaPrefix path={path} />
-            <span class="text-mono" title={cwdLabel(s(), null)}>
-              {cwdLabel(s(), home())}
-            </span>
-            {/* Chat sessions show the model as the picker trigger instead — except in a pane,
-                where the composer's foot may be scrolled out of the row's narrow width. */}
-            <Show when={model() && (decision().mode !== "chat" || props.paneId)}>
-              <span aria-hidden="true">·</span>
-              <span class="text-mono" title={model()!}>
-                {shortModel(model())}
-              </span>
-            </Show>
-          </p>
-        </div>
-        <ContextGauge path={path} />
-        <Show
-          when={working() > 0}
-          fallback={<Show when={!s().live && team()}>{(t) => <CountChip title={t().name}>Team · {t().members.length}</CountChip>}</Show>}
-        >
-          <Show
-            when={liveTeam()}
-            fallback={
-              <a
-                class="chip chip-count session-head-working"
-                href={agentsHref()}
-                title={subagentsWorkingNow(working())}
-                aria-label={subagentsWorkingNow(working())}
-              >
-                <span class="text-num">{working()}</span>
-                <Icon name="worker" small />
-              </a>
-            }
-          >
-            {(t) => (
-              <CountChip href={agentsHref(t().id)} title={t().name}>
-                Team · {working()} working
-              </CountChip>
-            )}
+          <Show when={s().live}>
+            <Chip tone="accent" title={`Open in pi in a terminal · pid ${s().live!.pid} · ${s().live!.status}`}>
+              TUI
+            </Chip>
           </Show>
-        </Show>
-        {/* The identity and mount, always there for a remote session; the connection chip beside
-            them reports liveness separately. */}
-        <RemoteChip path={path} summary={s()} />
-        <RemoteMountedChip path={path} summary={s()} />
-        <RemoteHeadChip path={path} onOpen={() => props.openPane(path, "session")} />
-        <Show when={s().live}>
-          <Chip tone="accent" title={`Open in pi in a terminal · pid ${s().live!.pid} · ${s().live!.status}`}>
-            TUI
-          </Chip>
-        </Show>
-        <button
-          type="button"
-          class="button button-icon button-ghost session-details-open"
-          aria-label="Session details"
-          title="Session details"
-          aria-controls="session-pane"
-          aria-expanded={props.paneOn(path, "session")}
-          onClick={() => props.openPane(path, "session")}
-        >
-          <Icon name="info" />
-        </button>
-        {props.actions}
-      </header>
+          <div class="workspace-pane-tools">
+            <button
+              type="button"
+              class="button button-icon button-ghost session-details-open"
+              aria-label={`Session details · ${paneName()}`}
+              title="Session details"
+              aria-controls="session-pane"
+              aria-expanded={props.paneOn(path, "session")}
+              onClick={() => props.openPane(path, "session")}
+            >
+              <Icon name="info" />
+            </button>
+            {props.actions}
+          </div>
+        </header>
+      </Show>
       <InsightStrip
         path={path}
         outline={insight.data?.outline ?? null}

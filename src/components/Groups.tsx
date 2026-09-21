@@ -1,5 +1,6 @@
 import { createSignal, For, onMount, Show } from "solid-js";
 import { GROUP_NAME_MAX, type SessionSummary } from "../../shared/protocol";
+import { listSessions } from "../lib/api";
 import { createGroup, groupNameOf, loadSessionGroups, quoted, sessionGroups, setSessionGroup } from "../lib/session-groups";
 import { groupHref } from "../lib/group-route";
 import { announce, toast } from "../lib/ui-state";
@@ -64,6 +65,70 @@ export function GroupNameField(props: {
         Save
       </button>
     </form>
+  );
+}
+
+/**
+ * A session that was forked from another one (`SessionSummary.parent`) and is in no group: one
+ * press puts it and its parent in one group and opens that workspace, which is the whole point of
+ * having the lineage on the row. If the parent is already in a group, this joins that group
+ * rather than making a second one — the parent's workspace is where the comparison belongs.
+ *
+ * The session list is read on the press, not held: this is a deliberate, rare gesture, and the
+ * parent's own row (its title, and the group it is in) is the thing that has to be current.
+ */
+export function GroupWithParent(props: { session: SessionSummary; onChanged(): void }) {
+  const [busy, setBusy] = createSignal(false);
+
+  const run = async () => {
+    const parentPath = props.session.parent;
+    if (!parentPath || busy()) return;
+    setBusy(true);
+    try {
+      let list: SessionSummary[];
+      try {
+        list = await listSessions();
+      } catch (err) {
+        toast(`Couldn't read the session list. ${(err as Error).message}`);
+        return;
+      }
+      const parent = list.find((s) => s.path === parentPath);
+      if (!parent) {
+        toast("Couldn't find the session this one was forked from.");
+        return;
+      }
+      let groupId = parent.groupId ?? null;
+      if (!groupId) {
+        // Named after the parent, because that is what the group is: it and what came out of it.
+        const group = await createGroup(parent.title.trim().slice(0, GROUP_NAME_MAX) || "Fork");
+        if (!group) return;
+        groupId = group.id;
+        if (!(await setSessionGroup(parent.path, groupId))) return;
+      }
+      if (!(await setSessionGroup(props.session.path, groupId))) return;
+      props.onChanged();
+      const done = `Grouped with ${parent.title}.`;
+      toast(done);
+      announce(done);
+      location.hash = groupHref(groupId, props.session.path);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Show when={props.session.parent && !props.session.groupId}>
+      <button
+        type="button"
+        class="button"
+        aria-disabled={busy() ? "true" : undefined}
+        title="Put this session and the one it was forked from in one group, and open it as a workspace"
+        onClick={() => void run()}
+      >
+        <Icon name="folder" />
+        Group with parent
+      </button>
+    </Show>
   );
 }
 

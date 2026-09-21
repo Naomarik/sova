@@ -6,7 +6,7 @@ import { createSession, fetchAgents, fetchExplanations, fetchUsage, listSessions
 import { agentsHref, insightsRouteFromHash, legacyInsightsTarget } from "./lib/insights";
 import { transcriptRoot } from "./lib/jump";
 import { groupRouteFromHash } from "./lib/group-route";
-import { sessionGroups } from "./lib/session-groups";
+import { sessionGroups, sessionGroupsLoaded } from "./lib/session-groups";
 import { createThenArchive, newSessionCwd } from "./lib/new-session";
 import { cwdLabel } from "./lib/remote-session";
 import { createPoll } from "./lib/poll";
@@ -241,6 +241,15 @@ export function App() {
     const pane = path && groupRoute() ? paneIdFor(path) : null;
     return pane ? `transcript-${pane}` : "transcript";
   };
+  // A workspace route for a group that isn't there (deleted, or made on another server) never
+  // renders an empty frame: it says so and goes back to the list. Only once the groups have
+  // actually been read — before that, "unknown" only means "not heard of yet".
+  createEffect(() => {
+    if (!groupRoute() || !sessionGroupsLoaded() || openGroup()) return;
+    toast("That group is gone.");
+    location.hash = "#/";
+  });
+
   /** A session this tab just created opens for chat with its composer focused. */
   const [autofocusPath, setAutofocusPath] = createSignal<string | null>(null);
 
@@ -410,7 +419,7 @@ export function App() {
       <a class="button skip-link" href={`#${transcriptIdOf(focusedPath())}`}>
         Skip to Transcript
       </a>
-      <div class="app" data-view={route() || groupRoute() || insightsRoute() ? "session" : "list"}>
+      <div class="app" data-view={groupRoute() ? "workspace" : route() || insightsRoute() ? "session" : "list"}>
         <Sidebar
           sessions={sidebarSessions()}
           loading={sessions.loading}
@@ -425,7 +434,9 @@ export function App() {
           onOpenSettings={() => setSettingsOpen(true)}
         />
 
-        <main class="app-main">
+        {/* The workspace takes the whole second column, so it IS the main: no session head, and
+            its own head instead (spec/14-workspaces.md "Shell"). */}
+        <main class={groupRoute() ? "workspace" : "app-main"} aria-label={openGroup() ? `Workspace: ${openGroup()!.name}` : undefined}>
           <Show
             when={!insightsRoute()}
             fallback={
@@ -494,18 +505,6 @@ export function App() {
                   <div class="empty">
                     <p class="empty-title">Couldn't find this session.</p>
                     <p class="empty-body">It isn't in the list of sessions on disk anymore.</p>
-                    <a class="button empty-action" href="#/">
-                      Back to Sessions
-                    </a>
-                  </div>
-                </div>
-              </Match>
-              {/* A workspace whose group this tab doesn't know yet (another tab made it). */}
-              <Match when={groupRoute() && !openGroup()}>
-                <div class="center-fill">
-                  <div class="empty">
-                    <p class="empty-title">Couldn't find this group.</p>
-                    <p class="empty-body">It may have been deleted, or made on another server.</p>
                     <a class="button empty-action" href="#/">
                       Back to Sessions
                     </a>

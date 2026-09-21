@@ -171,23 +171,39 @@ export const createSessionGroup = (name: string) =>
     body: JSON.stringify({ name }),
   });
 
-export const renameSessionGroup = (id: string, name: string) =>
+/**
+ * Renames and/or reorders and/or (re)labels a group's members. Every field is optional, at least
+ * one is required, and `order` is ALWAYS the whole array of session ids: the server reads it as
+ * "these first, in this order; everything left out keeps its relative order behind them", so a
+ * one-id order would silently move that member to the front. Ids that are not in the group are
+ * ignored — they race with assign.
+ */
+export const patchSessionGroup = (id: string, patch: { name?: string; order?: string[]; labels?: { id: string; label: string | null }[] }) =>
   request<SessionGroup>(`/api/session-groups/${encodeURIComponent(id)}`, {
     method: "PATCH",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ name }),
+    body: JSON.stringify(patch),
   });
+
+export const renameSessionGroup = (id: string, name: string) => patchSessionGroup(id, { name });
+
+/** The group's members in display order (`SessionGroup.members`), as session ids. */
+export const reorderSessionGroup = (id: string, order: string[]) => patchSessionGroup(id, { order });
 
 /** Deletes the group and its assignments; the sessions themselves are untouched. */
 export const deleteSessionGroup = (id: string) =>
   request<{ ok: true }>(`/api/session-groups/${encodeURIComponent(id)}`, { method: "DELETE" });
 
-/** Puts one session in a group, or takes it out of the one it's in (`null`). */
-export const assignSessionGroup = (path: string, groupId: string | null) =>
-  request<{ ok: true }>("/api/session-groups/assign", {
+/**
+ * Puts one session in a group, or takes it out of the one it's in (`null`). `label` sets the
+ * session's label in the group it lands in, `null` clears it, and leaving it out keeps the label
+ * it already had — a session moved between groups carries its label with it.
+ */
+export const assignSessionGroup = (path: string, groupId: string | null, label?: string | null) =>
+  request<{ ok: true; dissolved?: true }>("/api/session-groups/assign", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ path, groupId }),
+    body: JSON.stringify(label === undefined ? { path, groupId } : { path, groupId, label }),
   });
 
 /** POST /api/sessions/cleanup `{ mode:"paths" }`: named session paths, e.g. one archived row. */

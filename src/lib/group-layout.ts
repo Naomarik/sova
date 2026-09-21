@@ -1,105 +1,53 @@
-// How one workspace is laid out: split (panes side by side, scrolled horizontally) or tabs (one
-// pane visible, all of them mounted so every stream keeps running). Per group, persisted in
-// localStorage under the app's `pi-web:` prefix — a VIEW preference, never membership: which
-// sessions a group holds is the server's, and only the server's.
+// How one workspace is laid out (spec/14-workspaces.md "Layout: split" / "Layout: tabs"): split
+// (panes side by side in one horizontally scrolled row) or tabs (one pane shown, all of them
+// mounted so every stream keeps running).
+//
+// What is persisted, and what isn't, is deliberate:
+//   - the layout is remembered per group for the browser session
+//     (`sessionStorage["pi-web:group-view-{id}"]`), because it is a posture, not a setting;
+//   - a pane's width is memory only, for the same reason §1's sessions pane isn't persisted;
+//   - the member ORDER is the server's (`SessionGroup.members`), never storage — it is what the
+//     group is, and every tab and every server must see the same one.
 //
 // The pure helpers here are what the tests cover; the storage wrapper never throws, because a
-// blocked or full localStorage must not break a render.
+// blocked or full sessionStorage must not break a render.
 
 export type GroupLayoutMode = "split" | "tabs";
 
 /** A pane narrower than this can't hold a transcript and a composer; the floor for every width. */
 export const PANE_MIN_WIDTH = 440;
-/** Nothing is gained past this, and one very wide pane hides its neighbours. */
-export const PANE_MAX_WIDTH = 1200;
+/** Past this one pane hides its neighbours, which is the opposite of what a workspace is for. */
+export const PANE_MAX_WIDTH = 1040;
 /** What Wider/Narrower move by. */
 export const PANE_WIDTH_STEP = 120;
 /** Below this viewport width a split row has no room for two panes: the workspace is tabs only. */
 export const TABS_ONLY_WIDTH = 768;
 
-const PREFIX = "pi-web:";
-
-function read(key: string): string | null {
-  try {
-    return localStorage.getItem(key);
-  } catch {
-    return null;
-  }
-}
-
-function write(key: string, value: string): void {
-  try {
-    localStorage.setItem(key, value);
-  } catch {
-    // The choice still holds for this page; persisting it is a convenience.
-  }
-}
-
-const modeKey = (id: string) => `${PREFIX}group-mode-${id}`;
-const widthsKey = (id: string) => `${PREFIX}group-widths-${id}`;
-const activeKey = (id: string) => `${PREFIX}group-active-${id}`;
-const orderKey = (id: string) => `${PREFIX}group-order-${id}`;
-
-/** Every pane gets the same share of the row, never below the floor and never absurdly wide. */
-export function defaultPaneWidth(available: number, panes: number): number {
-  if (!Number.isFinite(available) || available <= 0 || panes <= 0) return PANE_MIN_WIDTH;
-  return clampWidth(Math.floor(available / panes));
-}
+const KEY = (id: string) => `pi-web:group-view-${id}`;
 
 export const clampWidth = (px: number): number => Math.min(PANE_MAX_WIDTH, Math.max(PANE_MIN_WIDTH, Math.round(px)));
+
+/** The width a pane starts at: `--workspace-pane-width`, clamp(440px, 34vw, 720px), in JS. */
+export function defaultPaneWidth(viewport: number): number {
+  if (!Number.isFinite(viewport) || viewport <= 0) return PANE_MIN_WIDTH;
+  return Math.min(720, Math.max(PANE_MIN_WIDTH, Math.round(viewport * 0.34)));
+}
 
 /** Wider (+1) / Narrower (-1), clamped. Returns the current width when it can't move. */
 export const stepWidth = (current: number, direction: 1 | -1): number => clampWidth(current + direction * PANE_WIDTH_STEP);
 
-/** Stored widths by session path; anything unparseable or out of range is dropped. */
-export function parseWidths(raw: string | null): Record<string, number> {
-  if (!raw) return {};
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    return {};
-  }
-  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return {};
-  const out: Record<string, number> = {};
-  for (const [path, value] of Object.entries(parsed as Record<string, unknown>)) {
-    if (typeof value === "number" && Number.isFinite(value)) out[path] = clampWidth(value);
-  }
-  return out;
-}
-
 /**
- * The panes of a group in the order to show them: the stored order first (for the paths still in
- * the group), then anything the stored order doesn't mention, in the list's own order. A member
- * the user never moved therefore lands at the end, and a member they moved keeps its place.
+ * `list` with one item moved a step in `direction`; unchanged at either end. The result is always
+ * the WHOLE order, because that is what `PATCH {order}` means: the ids listed first, in that
+ * order, and anything left out behind them.
  */
-export function orderPanes(paths: readonly string[], stored: readonly string[]): string[] {
-  const have = new Set(paths);
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const p of stored) {
-    if (have.has(p) && !seen.has(p)) {
-      seen.add(p);
-      out.push(p);
-    }
-  }
-  for (const p of paths) {
-    if (!seen.has(p)) {
-      seen.add(p);
-      out.push(p);
-    }
-  }
-  return out;
-}
-
-/** `list` with the item at `from` moved one step in `direction`; unchanged at either end. */
-export function movePane(list: readonly string[], path: string, direction: 1 | -1): string[] {
-  const from = list.indexOf(path);
+export function movePane(list: readonly string[], id: string, direction: 1 | -1): string[] {
+  const from = list.indexOf(id);
   const to = from + direction;
   if (from < 0 || to < 0 || to >= list.length) return [...list];
   const out = [...list];
   out.splice(from, 1);
-  out.splice(to, 0, path);
+  out.splice(to, 0, id);
   return out;
 }
 
@@ -110,32 +58,20 @@ export function neighbourOf(list: readonly string[], removed: string): string | 
   return list[i + 1] ?? list[i - 1] ?? null;
 }
 
-// ---- Stored per-group preferences -----------------------------------------
-
+/** The stored layout for this group, or null when it has never been chosen here. */
 export function readMode(id: string): GroupLayoutMode | null {
-  const v = read(modeKey(id));
-  return v === "split" || v === "tabs" ? v : null;
-}
-
-export const writeMode = (id: string, mode: GroupLayoutMode): void => write(modeKey(id), mode);
-
-export const readWidths = (id: string): Record<string, number> => parseWidths(read(widthsKey(id)));
-
-export const writeWidths = (id: string, widths: Record<string, number>): void => write(widthsKey(id), JSON.stringify(widths));
-
-export const readActive = (id: string): string | null => read(activeKey(id));
-
-export const writeActive = (id: string, path: string): void => write(activeKey(id), path);
-
-export function readOrder(id: string): string[] {
-  const raw = read(orderKey(id));
-  if (!raw) return [];
   try {
-    const parsed: unknown = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.filter((p): p is string => typeof p === "string") : [];
+    const v = sessionStorage.getItem(KEY(id));
+    return v === "split" || v === "tabs" ? v : null;
   } catch {
-    return [];
+    return null;
   }
 }
 
-export const writeOrder = (id: string, order: readonly string[]): void => write(orderKey(id), JSON.stringify(order));
+export function writeMode(id: string, mode: GroupLayoutMode): void {
+  try {
+    sessionStorage.setItem(KEY(id), mode);
+  } catch {
+    // The choice still holds for this page; remembering it is a convenience.
+  }
+}

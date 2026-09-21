@@ -202,6 +202,116 @@ Protocol behavior is version-sensitive; live probes used Claude Code 2.1.276 and
 2.1.277.
 See [docs/protocol-probes.md](docs/protocol-probes.md).
 
+## Claude Code as pi models (experimental provider)
+
+The same extension can also expose the installed Claude Code CLI as ordinary pi
+models — provider `claude-code-cli`, models `claude-fable-5-1[1m]`, `opus[1m]`,
+`sonnet` and `haiku` — selectable in `/model` and in pi-web's picker, streaming,
+and running **pi's own tools**. It is opt-in and off by default:
+
+- TUI: `pi --claude-code-provider`.
+- pi-web: Settings → Experimental → "Claude Code models" (stored in the agent
+  dir's `pi-web/settings.json`; the server passes the extension flag to every
+  session opened after the change). Off means nothing is registered anywhere.
+
+The flag is read at `session_start` (pi applies caller-supplied flag values
+after extension factories run), so no CLI process starts at load, and a
+runtime shared by several pi-web sessions keeps the provider once registered.
+
+### How a turn runs
+
+One long-lived `claude -p --input-format stream-json --output-format stream-json`
+process per pi session, held in a process-global map keyed by the pi session id
+(`provider/session-bridge.ts`), launched with `--tools "" --setting-sources ""
+--strict-mcp-config --permission-mode dontAsk --permission-prompts none
+--allowedTools mcp__pi`. Its `initialize` names one SDK-hosted MCP server, `pi`,
+that the extension answers in-process over the control channel
+(`provider/mcp-host.ts`): `tools/list` is built from the tools pi hands to
+`streamSimple` each turn, so the model sees `mcp__pi__read`, `mcp__pi__bash`,
+etc. When the model calls one, the CLI's `tools/call` is **held open**; the
+provider ends pi's assistant message with `stopReason: "toolUse"`, pi executes
+the tool with its own permissions and hooks, and the next `streamSimple` call
+carries the result, which resolves the held call (text and images, `isError`
+for tool failures). The CLI never runs a tool itself: `--tools ""` plus
+`--strict-mcp-config` leave it nothing but `mcp__pi__*`, and the `--allowedTools`
+rule is what stops don't-ask mode from auto-denying them.
+
+`stream_event` frames map onto pi's `text_*`/`thinking_*`/`toolcall_*` events
+(`provider/stream.ts`); usage comes from the per-result `usage` (never the
+cumulative `total_cost_usd`). Esc / abort sends the CLI an `interrupt`. A model,
+effort, system-prompt or tool-set change between turns restarts the CLI process
+(`set_model` is probe-verified but v1 restarts for everything, see
+`provider/DESIGN-bridge.md`). Thinking levels map onto the CLI's effort ladder
+(`low`/`medium`/`high`/`xhigh`/`max`); `haiku` reports no efforts, so it has
+no thinking levels. The child gets `MCP_TOOL_TIMEOUT=86400000` so a held call
+outlives any pi tool (the CLI's own default is ~27.8 h; a stray value in the
+user's shell would otherwise truncate long tools with a synthetic timeout
+result).
+
+### Rebuild on divergence
+
+The bridge fingerprints the transcript prefix it has already sent. When pi's
+next context does not extend it — rewind, branch, compaction, a changed system
+prompt or tool set — the CLI process is restarted and the prior history is folded
+into one user message. Prior tool calls and results are flattened to prose in
+that fold: the CLI never pairs a replayed `tool_result` to a `tool_use`
+(investigation invariant 1). Compaction summaries, which pi requests through the
+same `streamSimple` without tools, count as a divergence too: they restart the
+session's process, and the next real turn restarts it again.
+
+### Limitations (read before relying on it)
+
+These match the user's earlier investigation in
+`../claude-cli/docs/investigation/INVESTIGATION.md` (CLI 2.1.278) unless a
+divergence is stated, and are confirmed by `docs/protocol-probes.md`.
+
+- **System prompt layering.** pi's system prompt is appended under Claude Code's
+  own preamble (`initialize.appendSystemPrompt`). Replacing the preamble works but
+  disables prompt caching for the whole request, so append is the default.
+  `--setting-sources ""` means the repo's `CLAUDE.md` is **not** read (pi supplies
+  the context) — a deliberate difference from running `claude` in the same
+  directory.
+- **Thinking text is redacted** under subscription auth: thinking blocks arrive
+  empty with a signature. pi shows no reasoning text for these models, and
+  thinking cannot be turned off (the lowest effort still thinks).
+- **No sampling control.** Temperature, top-p, max tokens and stop sequences do
+  not exist on the CLI; pi's settings for them are ignored.
+- **Cost shows as $0.** Subscription turns have no per-token price; the CLI's
+  own `total_cost_usd` is a list-price estimate and is not surfaced.
+- **Rebuild on divergence is lossy and cache-cold** (see above); a turn right
+  after a rewind or compaction pays a full re-send.
+- **Policy drift.** The control protocol is undocumented and version-sensitive;
+  probes cover 2.1.276–2.1.278 only. A CLI update can change frame shapes or
+  the permission handling that `--allowedTools mcp__pi` relies on; the bridge
+  fails loud rather than guessing.
+- Two retry layers (CLI-internal and pi) exist; rate limits surface as errors.
+- **Process lifetime.** One CLI process per pi session lives until the session
+  is archived / shut down (`session_shutdown`), the host exits (children are
+  SIGKILLed on `exit`), or a divergence restarts it. An aborted turn keeps the
+  process; the next turn restarts it if the transcript no longer extends what
+  the CLI saw.
+- Divergences from the investigation, consciously: it proposed
+  `--permission-mode manual --permission-prompts host` and answering
+  `can_use_tool` for every SDK tool; this build uses `dontAsk` + `--allowedTools
+  mcp__pi` so one round trip per tool call instead of two (pi's own permission
+  hooks already gate execution). It proposed `set_model` for model switches; v1
+  restarts instead, which is deterministic and shares the fold path. It proposed
+  the temp-file `--append-system-prompt-file`; this build passes
+  `initialize.appendSystemPrompt`, probe-verified after the investigation.
+
+### Testing the provider
+
+Offline: `node ~/pi-config/extensions/claude-code/tests/run.mjs` (includes
+`provider/*.test.ts` on recorded frames; no CLI). The live protocol probes and
+their scripts are in `docs/protocol-probes.md` and `tests/spike/`; they cost
+quota and are never run by the test loader. pi-web's hermetic end-to-end check:
+`npm run dev:hermetic` (PORT 4810, `PI_CODING_AGENT_DIR=<repo>/.agent`) and
+`PI_WEB_PORT=4810 npm run dev:web`, then switch the toggle on in Settings →
+Experimental and open a new session on `claude-code-cli/sonnet`. Verified
+2026-09-22 on CLI 2.1.278: a turn through pi's `read` tool, abort during a
+running `bash` tool, an image returned by `read` (PNG) described by the model,
+one `opus[1m]` turn, and archive killing the session's CLI child.
+
 ## Tests
 
 ```sh

@@ -552,8 +552,10 @@ All four are writes to the group registry. None of them touches a session's JSON
 
 ### Emptying a group
 
-**A group pi-web both created and named is deleted by the write that removes its last member.
-A group made by hand survives empty — unconditionally, whatever else later happens to it.**
+**A group whose name is the user's work stands empty. Everything else here follows from that.**
+pi-web deletes a group it both created *and* named, on the write that removes its last member;
+it never deletes one a person named — whether they typed the name when they made the group, or
+typed it later over a generated one.
 
 This is the one place the two kinds of group differ, and the reason is what they are. A hand-made
 group is a name the user typed and a place they drag things into; §2 already specs it standing
@@ -588,10 +590,25 @@ the same second use; `autoDissolve` says exactly what it controls and can proxy 
 Do not re-derive dissolution from any other field, and do not use this one to mean anything
 else.
 
+**A rename revokes it.** `autoDissolve` says "pi-web made this and named it", so a rename that
+actually changes the name falsifies the second half and clears the flag. Renaming
+"Fanout · retry backoff" to "Backoff experiments" is the plainest statement a user can make that
+they mean to keep something, and it would be a poor reading of it to delete the group weeks
+later. Renaming to the same string changes nothing, because nothing happened.
+
+This is the property the flag's name was chosen for, generalised: **it is set and cleared by the
+events that make it true or false, so nobody has to remember a rule.** The alternative — a
+renamed fanout group that still dissolves, "stated loudly" somewhere — is defensible on origin,
+but it asks the user to carry a rule that only fires much later, at the moment of loss.
+
 It is a **boolean, not a true-only flag**, because an explicit `false` has to be sayable: a
 seeded group that must survive being emptied is the case this fixes, and absence now means
 something else. **Absent** means "written before this field existed", and only then does `seed`
-imply dissolution — those older groups are pi-web's own fanouts. An explicit value always wins.
+imply dissolution — those older groups are pi-web's own fanouts, and **no adopted hand-made
+group can be among them**: `seed` is written only by a fork-mode fanout, which until the
+`groupId` path existed always created the group, and that path shipped in the same change as
+the flag. There is no window, so the fallback cannot catch a group a user named. An explicit
+value always wins.
 
 The proxy came apart at adoption. Fanning out into a hand-made group (§14b's `groupId`) writes
 a seed into it so the new members get fork markers — and keying on seed presence would have made

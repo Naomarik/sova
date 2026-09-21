@@ -262,7 +262,12 @@ POST /api/session-groups/fanout
     where the client reports what it showed and the server tests it against the world rather than
     against a recomputation of the client's own work.
   - **The client's datum is the edit event** — the name field's own input handler and nothing
-    else, so a programmatic rewrite is not a touch. **It never stores a generated default to
+    else, so a programmatic rewrite is not a touch. **One signal, two rules, neither redundant:**
+    the same edit gates **regeneration** (the default stops being re-derived once the user edits
+    it, above) and reports **provenance** (this field). They are separate questions — *may we
+    keep writing this field* and *whose is the result* — that happen to turn on the same event,
+    so removing the gate as "already covered by provenance" would reintroduce the clobber bug
+    where refining the prompt overwrites a name the user typed. **It never stores a generated default to
     compare against, and never re-derives one at submit time.** A re-derivation is a second
     generator; and in fresh mode the default changes on every keystroke of the prompt, so any
     comparison has to pick a moment, and every choice of moment is wrong in one mode — the

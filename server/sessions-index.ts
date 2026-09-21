@@ -1,6 +1,6 @@
 import { statSync } from "node:fs";
 import { open, readdir, stat, unlink } from "node:fs/promises";
-import { basename, isAbsolute, join, resolve } from "node:path";
+import { basename, join } from "node:path";
 import type { SessionSummary } from "../shared/protocol";
 import { type LiveRecord, readLive, readOwnLiveRecords, workerCountsOf } from "./live";
 import { LIVE_DIR, resolveSessionPath, SESSIONS_DIR } from "./paths";
@@ -327,19 +327,22 @@ async function readHead(path: string): Promise<{ header: any; title: string | nu
 
 /**
  * The header's `parentSession` — the file a branched session was forked from (SessionHeader,
- * `dist/core/session-manager.d.ts:11`) — as an absolute path, and only while that file is still
- * there: a fork marker that points at a deleted transcript is worse than none. Part of the cached
- * summary, so a parent deleted after this session's last write keeps showing until it is touched.
+ * `dist/core/session-manager.d.ts:11`) — as the canonical path AND the session id the group store
+ * keys on, and only while that file is still there: a fork marker that points at a deleted
+ * transcript is worse than none. resolveSessionPath is what keeps the stat safe as well as honest:
+ * it only ever yields a .jsonl inside the (always local) sessions dir, so this can never stat a
+ * session's cwd, which for a mounted target is a fuse path that would freeze the event loop.
+ * Part of the cached summary, so a parent deleted after this session's last write keeps showing
+ * until this file is touched again.
  */
-async function existingParent(raw: unknown): Promise<string | null> {
-  if (typeof raw !== "string" || !isAbsolute(raw)) return null;
-  const path = resolve(raw);
-  return (await stat(path).then(
+async function existingParent(raw: unknown): Promise<{ parent: string; parentId: string } | null> {
+  const path = resolveSessionPath(typeof raw === "string" ? raw : null);
+  if (!path) return null;
+  const there = await stat(path).then(
     () => true,
     () => false,
-  ))
-    ? path
-    : null;
+  );
+  return there ? { parent: path, parentId: idOf(path) } : null;
 }
 
 async function listSessionFiles(): Promise<string[]> {
@@ -415,7 +418,7 @@ async function summarize(path: string, resolveWindow?: WindowResolver, registry?
       model,
       ...(outline ? { outlineNow: outline.now, outlineAt: outline.generatedAt, outlineTopics: outline.topics } : {}),
       ...(ctx ? { context: { tokens: ctx.tokens, window: null } } : {}),
-      ...(parent ? { parent } : {}),
+      ...(parent ?? {}),
       ...(remote ? { target: remote.target, remoteCwd: remote.remoteCwd } : {}),
       ...(remote?.mounted ? { mounted: true } : {}),
     };

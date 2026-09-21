@@ -61,10 +61,16 @@ export interface SessionSummary {
       a grouped session stays in its region (Live & web, or the Archive) as well. Absent when it
       belongs to none, and from an older server: treat as ungrouped. */
   groupId?: string;
-  /** The session this one was forked from: the header's `parentSession` (absolute path), and only
-      when that file still exists. Absent for every session that was not branched, and from an
-      older server. Lets a group show fork points without reading each transcript. */
+  /** The session this one was forked from: the header's `parentSession`, canonicalized like every
+      other session path here (so it is byte-identical to that session's `path`), and only while
+      that file still exists and is a .jsonl inside the sessions dir. Absent for every session that
+      was not branched, and from an older server. Lets a group show fork points without reading
+      each transcript. */
   parent?: string;
+  /** The same parent as a session id (that session's `id`, read from its filename): what
+      `GroupMember.id`, the group assignments and every group route key on, so a fork marker inside
+      a group needs no path lookup. Set exactly when `parent` is. */
+  parentId?: string;
   /** Remote session: the target name from ~/.pi/agent/targets.json. Derived from `cwd`, which for a
       remote session is the local placeholder ~/.pi/agent/pi-web/targets/<target>/<remote/abs/path>.
       Absent for local sessions. */
@@ -290,15 +296,16 @@ export interface UploadResult {
 //                                  relative order after them; ids that are not in the group are ignored (they race
 //                                  with assign). `labels` sets one label per session id, `null` clears it; ids not
 //                                  in the group are ignored. 400 no recognised field, bad name, order not an array
-//                                  of strings, labels not an array of {id, label}, or a label longer than 40 chars
-//                                  after trimming; 404 unknown group)
+//                                  of strings, labels not an array of {id, label}, or a label longer than
+//                                  GROUP_LABEL_MAX characters after trimming; 404 unknown group)
 // DELETE /api/session-groups/:id -> { ok: true }   (deletes the group and its assignments; the
 //                                  sessions themselves are untouched. 404 unknown)
 // POST /api/session-groups/assign { path, groupId: string | null, label?: string | null } -> { ok: true }
 //                                  (puts one session in a group, or takes it out with null. `label` sets the
 //                                  session's label in the group it lands in, `null` clears it, and omitting it
 //                                  keeps the label it already had — a session moved between groups keeps its
-//                                  metadata. 400 bad body/path/label, 404 session file or group missing.
+//                                  metadata. 400 bad body/path or a label over GROUP_LABEL_MAX, 404 session
+//                                  file or group missing.
 //                                  Never writes the session file)
 // POST /api/sessions/archive { path, archived: boolean } -> SessionSummary   (sets/clears the archive mark; never
 //                                  writes the session file. 400 bad body/path, 404 missing, 409 archiving a live
@@ -412,7 +419,7 @@ export const GROUP_LABEL_MAX = 40;
 export interface GroupMember {
   /** Session id (`SessionSummary.id`), not a path. */
   id: string;
-  /** Shown beside the row; absent when unset. Trimmed, 1–40 chars. */
+  /** Shown beside the row; absent when unset. Trimmed, 1–GROUP_LABEL_MAX characters. */
   label?: string;
 }
 

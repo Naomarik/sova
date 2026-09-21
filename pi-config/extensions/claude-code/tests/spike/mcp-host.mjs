@@ -1,16 +1,9 @@
-// SPIKE ARTIFACT (2026-09-22, CLI 2.1.278) — evidence for docs/protocol-probes.md, not library code.
-// Run by hand; NOT picked up by tests/run.mjs (which imports only *.test.ts). It spawns the REAL
-// Claude CLI and spends subscription usage. Scratch files land in /tmp/cc-spike.
-//   node spike-<name>.mjs
+// SPIKE, not production: executed evidence for ../../docs/protocol-probes.md (CLI 2.1.278, 2026-09-22).
+// Spawns the REAL Claude CLI and spends subscription quota; run it by hand, never in a gate.
+// Out of reach of tests/run.mjs, which scans only the extension root and provider/ for *.test.ts.
+//
 // CLAUDE_BIN overrides the binary. Never invoke the `claude` shell alias: it carries
-// --dangerously-skip-permissions.
-// Probe (a): host an in-process MCP server over the CLI's control channel and prove pi can
-// execute every tool call — including holding the JSON-RPC open while the CLI waits.
-//
-//   node probe-a.mjs [variant]      variant: sdkMcpServers (default) | configs | manifests
-//
-// Never uses the `claude` shell alias (it carries --dangerously-skip-permissions): the real
-// binary only. CLAUDECODE / CLAUDE_CODE_ENTRYPOINT are stripped like models.ts does.
+// --dangerously-skip-permissions. Scratch files land in /tmp/cc-spike.
 
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";

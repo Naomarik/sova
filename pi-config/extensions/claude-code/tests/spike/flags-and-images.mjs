@@ -1,11 +1,9 @@
-// SPIKE ARTIFACT (2026-09-22, CLI 2.1.278) — evidence for docs/protocol-probes.md, not library code.
-// Run by hand; NOT picked up by tests/run.mjs. Spawns the REAL Claude CLI and spends usage.
-//   node spike-flags-and-images.mjs
-// CLAUDE_BIN overrides the binary. Never invoke the `claude` shell alias (it carries
-// --dangerously-skip-permissions).
+// SPIKE, not production: executed evidence for ../../docs/protocol-probes.md (CLI 2.1.278, 2026-09-22).
+// Spawns the REAL Claude CLI and spends subscription quota; run it by hand, never in a gate.
+// Out of reach of tests/run.mjs, which scans only the extension root and provider/ for *.test.ts.
 //
-// (5) --system-prompt-snapshot off + --session-id <uuid> + --effort accepted together under -p?
-// (6) an image content block on an INBOUND stream-json user message: which shape does the CLI take?
+// CLAUDE_BIN overrides the binary. Never invoke the `claude` shell alias: it carries
+// --dangerously-skip-permissions. Scratch files land in /tmp/cc-spike.
 
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";

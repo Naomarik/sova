@@ -90,12 +90,43 @@ dir(AGENT);
 dir(join(AGENT, "extensions"));
 dir(join(AGENT, "sessions"));
 
-// Every extension of THIS worktree: directories and the loose *.ts extensions next to them.
+// Every extension of THIS worktree: loose *.ts files, and directories that actually hold one.
+// pi's own rule (dist/core/extensions/loader.js, resolveExtensionEntries): a directory is an
+// extension only if it has package.json with a "pi.extensions" manifest, an index.ts, or an
+// index.js — anything else it skips. install.sh links every directory regardless; here we apply
+// pi's rule so .agent/extensions lists exactly what the runtime will load, and a docs-only
+// directory (claude-cli) or a loose file inside a directory (btw/btw.ts) does not masquerade as
+// an installed extension.
 const extRoot = join(PI_CONFIG, "extensions");
+
+/** pi's resolveExtensionEntries, reduced to the yes/no this script needs. */
+function isExtensionDir(dir) {
+  const manifest = join(dir, "package.json");
+  if (existsSync(manifest)) {
+    try {
+      const pi = JSON.parse(readFileSync(manifest, "utf8")).pi;
+      if (Array.isArray(pi?.extensions) && pi.extensions.some((e) => existsSync(resolve(dir, e)))) return true;
+    } catch {} // an unreadable manifest is not an entry point
+  }
+  return existsSync(join(dir, "index.ts")) || existsSync(join(dir, "index.js"));
+}
+
+const wanted = new Set();
 for (const entry of readdirSync(extRoot, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
-  const isExtension = entry.isDirectory() || (entry.isFile() && entry.name.endsWith(".ts"));
+  const path = join(extRoot, entry.name);
+  const isExtension = entry.isFile() ? entry.name.endsWith(".ts") : entry.isDirectory() && isExtensionDir(path);
   if (!isExtension) continue;
-  link(join(extRoot, entry.name), join(AGENT, "extensions", entry.name));
+  wanted.add(entry.name);
+  link(path, join(AGENT, "extensions", entry.name));
+}
+
+// Prune anything a previous run linked that is no longer an extension here, so re-running after
+// a rename or a removal leaves no dangling or stale entry behind.
+for (const name of readdirSync(join(AGENT, "extensions"))) {
+  if (wanted.has(name)) continue;
+  const stale = join(AGENT, "extensions", name);
+  if (check) problem(`stale, not an extension of ${extRoot}: ${stale}`);
+  else { assertOutsideHomePi(stale); rmSync(stale, { recursive: true, force: true }); console.log(`removed stale ${stale}`); }
 }
 
 // The model catalogue is part of the config, not of the machine: link it so the hermetic runtime
@@ -106,14 +137,14 @@ for (const name of ["models.json", "vision-delegate.json", "keybindings.json"]) 
 }
 
 const settingsPath = join(AGENT, "settings.json");
-const wanted = hermeticSettings();
+const wantedSettings = hermeticSettings();
 if (check) {
   if (!existsSync(settingsPath)) problem(`missing: ${settingsPath}`);
   else if (isLink(settingsPath)) problem(`must be a regular file, not a symlink: ${settingsPath}`);
-  else if (readFileSync(settingsPath, "utf8") !== wanted) problem(`stale (rerun without --check): ${settingsPath}`);
+  else if (readFileSync(settingsPath, "utf8") !== wantedSettings) problem(`stale (rerun without --check): ${settingsPath}`);
 } else {
   if (isLink(settingsPath)) rmSync(settingsPath);
-  writeFileSync(settingsPath, wanted);
+  writeFileSync(settingsPath, wantedSettings);
 }
 
 if (check) {

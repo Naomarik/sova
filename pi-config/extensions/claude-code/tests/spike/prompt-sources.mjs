@@ -1,12 +1,9 @@
-// SPIKE ARTIFACT (2026-09-22, CLI 2.1.278) — evidence for docs/protocol-probes.md, not library code.
-// Run by hand; NOT picked up by tests/run.mjs (which imports only *.test.ts). It spawns the REAL
-// Claude CLI and spends subscription usage. Scratch files land in /tmp/cc-spike.
-//   node spike-<name>.mjs
+// SPIKE, not production: executed evidence for ../../docs/protocol-probes.md (CLI 2.1.278, 2026-09-22).
+// Spawns the REAL Claude CLI and spends subscription quota; run it by hand, never in a gate.
+// Out of reach of tests/run.mjs, which scans only the extension root and provider/ for *.test.ts.
+//
 // CLAUDE_BIN overrides the binary. Never invoke the `claude` shell alias: it carries
-// --dangerously-skip-permissions.
-// Follow-ups: (b-CLAUDE.md) is it --setting-sources "" that suppresses CLAUDE.md?
-//             (b5-real) does a REPLACED system prompt still drive hosted MCP tool use?
-//             (c3-real) does set_max_thinking_tokens have an observable effect?
+// --dangerously-skip-permissions. Scratch files land in /tmp/cc-spike.
 
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";

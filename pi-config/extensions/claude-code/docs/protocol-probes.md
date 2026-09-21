@@ -72,8 +72,9 @@ Binary: `/home/user/.local/share/claude/versions/2.1.278` (`~/.local/bin/claude`
 `claude --version` → `2.1.278 (Claude Code)`. **The interactive `claude` is a shell ALIAS carrying
 `--dangerously-skip-permissions`; every probe spawned the real binary directly.** `CLAUDECODE` and
 `CLAUDE_CODE_ENTRYPOINT` stripped from the child env (the `models.ts` pattern), cwd `/tmp/cc-spike`,
-`--model sonnet` for tool work and `--model haiku` for the trivial questions. Scripts and full
-transcripts in `/tmp/cc-spike` (`probe-a.mjs`, `probe-bc.mjs`, `probe-d.mjs`, `*.jsonl`), out of git.
+`--model sonnet` for tool work and `--model haiku` for the trivial questions. Scripts are committed under
+`../tests/spike/`; the raw `*.jsonl` transcripts stay in `/tmp/cc-spike`, with the parts that
+matter reproduced under "Raw excerpt (probe a)" below.
 
 These probes answer one question: can the CLI be driven so that **pi executes every tool**, with pi's
 tools reaching the model through one in-process MCP server the host owns? Yes, on the first variant.
@@ -282,6 +283,240 @@ into a user message must be rewritten to `source:{type:"base64", media_type, dat
 travelling the other way, as MCP tool results, are already in the right shape and must not be
 rewritten.
 
+## Raw excerpt (probe a)
+
+Verbatim from the executed run, in order, trimmed and with nothing from the `initialize` response
+(it carries account detail). This is the whole handshake plus one held call.
+
+```jsonc
+// HOST -> CLI  initialize
+{
+  "type": "control_request",
+  "request_id": "cd1dcdef-9cc9-4479-b522-34f7b909745a",
+  "request": {
+    "subtype": "initialize",
+    "sdkMcpServers": [
+      "pi"
+    ]
+  }
+}
+
+// CLI  -> HOST  mcp_message (initialize)
+{
+  "type": "control_request",
+  "request_id": "b2938932-f408-402f-bc92-310c3d58cc88",
+  "request": {
+    "subtype": "mcp_message",
+    "server_name": "pi",
+    "message": {
+      "method": "initialize",
+      "params": {
+        "protocolVersion": "2025-11-25",
+        "capabilities": {},
+        "clientInfo": {
+          "name": "claude-code",
+          "title": "Claude Code",
+          "description": "Anthropic's agentic coding tool",
+          "websiteUrl": "https://claude.com/claude-code",
+          "version": "2.1.278"
+        }
+      },
+      "jsonrpc": "2.0",
+      "id": 0
+    }
+  }
+}
+
+// HOST -> CLI  control_response
+{
+  "type": "control_response",
+  "response": {
+    "subtype": "success",
+    "request_id": "b2938932-f408-402f-bc92-310c3d58cc88",
+    "response": {
+      "mcp_response": {
+        "jsonrpc": "2.0",
+        "id": 0,
+        "result": {
+          "protocolVersion": "2025-11-25",
+          "capabilities": {
+            "tools": {}
+          },
+          "serverInfo": {
+            "name": "pi",
+            "version": "0.0.1"
+          }
+        }
+      }
+    }
+  }
+}
+
+// CLI  -> HOST  mcp_message (notifications/initialized)
+{
+  "type": "control_request",
+  "request_id": "9d2894b6-6e02-4aa8-8717-05356887a12a",
+  "request": {
+    "subtype": "mcp_message",
+    "server_name": "pi",
+    "message": {
+      "jsonrpc": "2.0",
+      "method": "notifications/initialized"
+    }
+  }
+}
+
+// HOST -> CLI  control_response
+{
+  "type": "control_response",
+  "response": {
+    "subtype": "success",
+    "request_id": "9d2894b6-6e02-4aa8-8717-05356887a12a",
+    "response": {
+      "mcp_response": {
+        "jsonrpc": "2.0",
+        "result": {},
+        "id": 0
+      }
+    }
+  }
+}
+
+// CLI  -> HOST  mcp_message (tools/list)
+{
+  "type": "control_request",
+  "request_id": "8febdb3f-dce6-4ba8-9ac8-643d168aaa61",
+  "request": {
+    "subtype": "mcp_message",
+    "server_name": "pi",
+    "message": {
+      "method": "tools/list",
+      "jsonrpc": "2.0",
+      "id": 1
+    }
+  }
+}
+
+// HOST -> CLI  control_response
+{
+  "type": "control_response",
+  "response": {
+    "subtype": "success",
+    "request_id": "8febdb3f-dce6-4ba8-9ac8-643d168aaa61",
+    "response": {
+      "mcp_response": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "tools": [
+            {
+              "name": "pi_echo",
+              "description": "Echo text back. Use this whenever the user asks you to echo something.",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "text"
+                ]
+              }
+            },
+            {
+              "name": "pi_shot",
+              "description": "Return a tiny picture.",
+              "inputSchema": {
+                "type": "object",
+
+  … trimmed …
+
+// CLI  -> HOST  assistant tool_use block
+{
+  "type": "tool_use",
+  "id": "toolu_01ExxUaWyAidij6tq6sxtDYt",
+  "name": "mcp__pi__pi_echo",
+  "input": {
+    "text": "hello"
+  },
+  "caller": {
+    "type": "direct"
+  }
+}
+
+// CLI  -> HOST  mcp_message (tools/call)
+{
+  "type": "control_request",
+  "request_id": "0c821cc8-ce14-4e07-aeb2-3a5b668e7d8d",
+  "request": {
+    "subtype": "mcp_message",
+    "server_name": "pi",
+    "message": {
+      "method": "tools/call",
+      "params": {
+        "name": "pi_echo",
+        "arguments": {
+          "text": "hello"
+        },
+        "_meta": {
+          "claudecode/toolUseId": "toolu_01ExxUaWyAidij6tq6sxtDYt",
+          "progressToken": 2
+        }
+      },
+      "jsonrpc": "2.0",
+      "id": 2
+    }
+  }
+}
+
+// HOST -> CLI  control_response
+{
+  "type": "control_response",
+  "response": {
+    "subtype": "success",
+    "request_id": "0c821cc8-ce14-4e07-aeb2-3a5b668e7d8d",
+    "response": {
+      "mcp_response": {
+        "jsonrpc": "2.0",
+        "id": 2,
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "pi executed the tool. The secret word is ORTHANC."
+            }
+          ]
+        }
+      }
+    }
+  }
+}
+
+// CLI  -> HOST  echoed tool_result
+{
+  "tool_use_id": "toolu_01ExxUaWyAidij6tq6sxtDYt",
+  "type": "tool_result",
+  "content": [
+    {
+      "type": "text",
+      "text": "pi executed the tool. The secret word is ORTHANC."
+    }
+  ]
+}
+
+// CLI  -> HOST  assistant tool_use block
+{
+  "type": "tool_use",
+  "id": "toolu_01LY52i57JGAZyyeKTM9kUr4",
+  "name": "mcp__pi__pi_shot",
+  "input": {},
+  "caller": {
+    "type": "direct"
+  }
+}
+```
+
 ## Exact frames
 
 Inbound `tools/call` — the full frame, `_meta` included (this is where the CLI's `tool_use_id`
@@ -337,18 +572,21 @@ filler is `{"jsonrpc":"2.0","result":{},"id":0}`.
 
 ## Probe scripts
 
-`../tests/spike-*.mjs`, committed as spike artifacts. They are **not** part of
-`tests/run.mjs` (which only imports `*.test.ts`) and they spawn the real CLI, so they are run by
-hand. They share a lot of near-duplicate plumbing on purpose — each was written to answer one
-question and is kept as the evidence for this document, not as library code.
+`../tests/spike/*.mjs`, committed as the executed evidence behind this document. `tests/run.mjs`
+scans only the extension root and `provider/` for `*.test.ts`, so nothing under `tests/spike/` can
+be picked up by a gate; they spawn the real CLI and spend quota, so they are run by hand. Raw
+`*.jsonl` transcripts stay in `/tmp/cc-spike` (they carry account and path detail that does not
+belong in the repo); the excerpt below is the redacted, trimmed part that matters. They share a lot
+of near-duplicate plumbing on purpose — each answers one question and is evidence, not library
+code.
 
 | Script | Probes |
 | --- | --- |
-| `spike-mcp-host.mjs` | (a) the gate: hosting, holding, image and `isError` results |
-| `spike-system-prompt.mjs` | (b) the four prompt routes, snapshot across resume; (c) `set_model`, `set_max_thinking_tokens` |
-| `spike-prompt-sources.mjs` | (b) `CLAUDE.md` vs `--setting-sources`, replaced prompt + tool use, thinking blocks |
-| `spike-tool-timeout.mjs` | (e) the timeout wall, the env var, the per-server override, the snapshot flag |
-| `spike-flags-and-images.mjs` | (f) the flag combination, and both image directions |
+| `spike/mcp-host.mjs` | (a) the gate: hosting, holding, image and `isError` results |
+| `spike/system-prompt.mjs` | (b) the four prompt routes, snapshot across resume; (c) `set_model`, `set_max_thinking_tokens` |
+| `spike/prompt-sources.mjs` | (b) `CLAUDE.md` vs `--setting-sources`, replaced prompt + tool use, thinking blocks |
+| `spike/tool-timeout.mjs` | (e) the timeout wall, the env var, the per-server override, the snapshot flag |
+| `spike/flags-and-images.mjs` | (f) the flag combination, and both image directions |
 
 ## Still unverified
 

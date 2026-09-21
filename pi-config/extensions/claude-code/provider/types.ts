@@ -90,6 +90,8 @@ export interface ClaudeTurnRequest {
  */
 export interface ClaudeSessionBridge {
 	runTurn(request: ClaudeTurnRequest, signal?: AbortSignal): AsyncIterable<ClaudeFrame>;
+	/** Stop the CLI child that served one pi session, when pi closes it. */
+	disposeSession?(sessionId: string, reason?: string): Promise<void>;
 }
 
 /** The payload handed to `options.onPayload`; a returned replacement is applied. */

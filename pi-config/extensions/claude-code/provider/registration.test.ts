@@ -4,19 +4,25 @@
  * are involved.
  */
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { beforeEach, test } from "node:test";
 import type { ExtensionAPI, ProviderConfig, ProviderModelConfig } from "@earendil-works/pi-coding-agent";
 import type { ClaudeSessionBridge } from "./types.ts";
 import {
 	CLAUDE_PROVIDER_API_KEY,
 	CLAUDE_PROVIDER_FLAG,
 	CLAUDE_PROVIDER_ID,
+	REGISTERED_MARKER,
 	refreshClaudeModels,
 	registerProviderIfEnabled,
 	STATIC_MODELS,
 	contextWindowFor,
 	toProviderModel,
 } from "./index.ts";
+
+// Registration is deliberately once-per-process; clear that marker per test.
+beforeEach(() => {
+	delete (globalThis as unknown as Record<symbol, boolean | undefined>)[REGISTERED_MARKER];
+});
 
 const bridge: ClaudeSessionBridge = {
 	runTurn() {
@@ -89,13 +95,21 @@ test("flag on registers the provider with a literal key and static models", () =
 	assert.deepEqual(config.models?.map((model) => model.id), ["claude-fable-5-1[1m]", "opus[1m]", "sonnet", "haiku"]);
 });
 
-test("a second session start does not re-register", () => {
+test("registration happens once per process, and is never undone", () => {
 	const { pi, state, startSession } = fakePi(true);
 	registerProviderIfEnabled(pi, bridge);
 	startSession();
 	const first = state.registered.get(CLAUDE_PROVIDER_ID);
+	assert.ok(first);
+	state.registered.delete(CLAUDE_PROVIDER_ID);
 	startSession();
-	assert.equal(state.registered.get(CLAUDE_PROVIDER_ID), first);
+	assert.equal(state.registered.size, 0, "a second session_start must not register again");
+	// pi-web shares one ModelRuntime: a later flag-off session must not
+	// unregister a provider another session may be streaming through.
+	const second = fakePi(false);
+	registerProviderIfEnabled(second.pi, bridge);
+	second.startSession();
+	assert.deepEqual(second.state.unregistered, []);
 	assert.deepEqual(state.unregistered, []);
 });
 

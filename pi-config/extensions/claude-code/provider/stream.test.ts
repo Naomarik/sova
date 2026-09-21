@@ -290,3 +290,31 @@ test("thinking level maps to the CLI effort ladder, and off means no effort", ()
 	assert.equal(resolveClaudeEffort(model(), "minimal"), undefined, "the CLI has no minimal effort");
 	assert.equal(resolveClaudeEffort(model("haiku"), "high"), undefined, "haiku reports no effort levels");
 });
+
+test("redacted thinking keeps its opaque signature and emits no empty deltas", async () => {
+	const { bridge } = fakeBridge(load("redacted-thinking-turn.ndjson"));
+	const events = await collect(streamClaudeCode(bridge, model(), context()));
+	// The empty thinking deltas the subscription CLI sends produce no events.
+	assert.deepEqual(types(events), ["start", "thinking_start", "thinking_end", "text_start", "text_delta", "text_end", "done"]);
+	const message = finalMessage(last(events));
+	assert.deepEqual(message.content[0], { type: "thinking", thinking: "", thinkingSignature: "EqoBCkYIBRgCKkB0", redacted: true });
+	assert.deepEqual(message.content[1], { type: "text", text: "Done." });
+});
+
+test("a success subtype with is_error still ends as an error", async () => {
+	const { bridge } = fakeBridge(load("success-with-error-flag.ndjson"));
+	const events = await collect(streamClaudeCode(bridge, model(), context()));
+	const terminal = last(events);
+	assert.equal(terminal.type, "error");
+	assert.equal(terminal.type === "error" && terminal.reason, "error");
+	assert.equal(finalMessage(terminal).errorMessage, "Credit balance is too low");
+});
+
+test("a compaction request with no tools streams normally", async () => {
+	const { bridge, state } = fakeBridge(load("text-turn.ndjson"));
+	const bare = normalizeContext({ messages: [{ role: "user", content: "Summarize the conversation.", timestamp: 1 }] });
+	const events = await collect(streamClaudeCode(bridge, model(), bare));
+	assert.equal(last(events).type, "done");
+	assert.deepEqual(state.request?.tools, []);
+	assert.equal(state.request?.systemPrompt, undefined);
+});

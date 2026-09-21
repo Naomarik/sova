@@ -9,12 +9,15 @@
  * extension runner is built. At factory time `pi.getFlag` therefore only ever
  * reports the registered default. Registration consequently happens from
  * `session_start`, which runs after both paths have written the real value.
- * Flag off registers nothing at all; a reload that turns it off unregisters.
+ * Flag off registers nothing at all. Registration is never undone: pi-web
+ * shares one ModelRuntime across sessions, so unregistering for a later
+ * flag-off session would break a session already streaming through it.
  */
 import type { ExtensionAPI, ProviderModelConfig } from "@earendil-works/pi-coding-agent";
 import type { ThinkingLevelMap } from "@earendil-works/pi-ai";
 import { discoverClaudeModels } from "../models.ts";
 import type { BackendModel } from "../../subagents/contracts.ts";
+import { getSessionBridge } from "./session-bridge.ts";
 import { createClaudeStreamSimple } from "./stream.ts";
 import type { ClaudeSessionBridge } from "./types.ts";
 
@@ -71,7 +74,7 @@ export function toProviderModel(model: { id: string; name: string; efforts?: str
 
 /**
  * Baked-in catalog, matching the ids and names the installed CLI reports from
- * `initialize` (probed 2026-09-22, claude 2.1.276). No subprocess runs at load;
+ * `initialize` (probed 2026-09-22, claude 2.1.278). No subprocess runs at load;
  * `refreshModels` replaces this with the live list when pi allows network work.
  * The `default` alias is deliberately left out: it silently changes model.
  */
@@ -97,8 +100,24 @@ export async function refreshClaudeModels(context: { allowNetwork: boolean; sign
 }
 
 /**
- * Register the provider when `--claude-code-provider` is on. Safe to call once
- * per extension load; the returned disposer unregisters (used on reload).
+ * Registration is process-wide, not per session: pi-web shares one
+ * ModelRuntime across every hosted session, so a later session whose flag is
+ * off must never rip the provider out from under a session that is mid-turn
+ * on it. Once registered it stays registered until the process exits (a
+ * `/reload` rebuilds the extension runtime anyway). Exported for tests.
+ */
+export const REGISTERED_MARKER = Symbol.for("pi-web.claude-code.provider-registered");
+
+function alreadyRegistered(): boolean {
+	const host = globalThis as unknown as Record<symbol, boolean | undefined>;
+	if (host[REGISTERED_MARKER]) return true;
+	host[REGISTERED_MARKER] = true;
+	return false;
+}
+
+/**
+ * Register the flag at load and the provider at session_start, but only when
+ * `--claude-code-provider` is on. Flag off registers nothing at all.
  */
 export function registerProviderIfEnabled(pi: ExtensionAPI, bridge: ClaudeSessionBridge): void {
 	pi.registerFlag(CLAUDE_PROVIDER_FLAG, {
@@ -106,15 +125,10 @@ export function registerProviderIfEnabled(pi: ExtensionAPI, bridge: ClaudeSessio
 		default: false,
 		description: "Expose the local Claude Code CLI as pi models (experimental)",
 	});
-	let registered = false;
-	const sync = (): void => {
-		const enabled = pi.getFlag(CLAUDE_PROVIDER_FLAG) === true;
-		if (enabled === registered) return;
-		if (!enabled) {
-			pi.unregisterProvider(CLAUDE_PROVIDER_ID);
-			registered = false;
-			return;
-		}
+	// session_start is the first point where the caller's flag value is visible.
+	pi.on("session_start", () => {
+		if (pi.getFlag(CLAUDE_PROVIDER_FLAG) !== true) return;
+		if (alreadyRegistered()) return;
 		pi.registerProvider(CLAUDE_PROVIDER_ID, {
 			name: "Claude Code CLI",
 			baseUrl: CLAUDE_PROVIDER_BASE_URL,
@@ -124,10 +138,19 @@ export function registerProviderIfEnabled(pi: ExtensionAPI, bridge: ClaudeSessio
 			refreshModels: (context) => refreshClaudeModels(context),
 			streamSimple: createClaudeStreamSimple(bridge),
 		});
-		registered = true;
-	};
-	// session_start is the first point where the caller's flag value is visible.
-	pi.on("session_start", () => {
-		sync();
 	});
+	// The provider stays registered, but this session's CLI child must not.
+	pi.on("session_shutdown", (_event, ctx) => {
+		const sessionId = ctx.sessionManager.getSessionId();
+		if (sessionId) void bridge.disposeSession?.(sessionId);
+	});
+}
+
+/**
+ * The extension's single entry point: one import and one call in index.ts.
+ * The bridge is the process-global one; constructing it only creates the
+ * registry and its exit hooks, so no CLI process starts at extension load.
+ */
+export function registerClaudeCodeProvider(pi: ExtensionAPI): void {
+	registerProviderIfEnabled(pi, getSessionBridge());
 }

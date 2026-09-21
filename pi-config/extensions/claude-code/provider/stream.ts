@@ -149,7 +149,13 @@ export function streamClaudeCode(
 			if (!block) return;
 			delete (block as Partial<Block>).index;
 			if (block.type === "text") stream.push({ type: "text_end", contentIndex, content: block.text, partial: output });
-			else if (block.type === "thinking") stream.push({ type: "thinking_end", contentIndex, content: block.thinking, partial: output });
+			else if (block.type === "thinking") {
+				// A block that produced no text but did carry a signature is
+				// redacted thinking: keep the block so the opaque payload
+				// survives replay, and mark it as what it is.
+				if (!block.thinking && block.thinkingSignature) block.redacted = true;
+				stream.push({ type: "thinking_end", contentIndex, content: block.thinking, partial: output });
+			}
 			else {
 				const call = block as ToolCall & { partialJson?: string };
 				if (call.partialJson) {
@@ -302,6 +308,10 @@ export function streamClaudeCode(
 						block.text += event.delta.text;
 						stream.push({ type: "text_delta", contentIndex, delta: event.delta.text, partial: output });
 					} else if (event.delta.kind === "thinking" && block.type === "thinking") {
+						// Under subscription auth thinking is redacted: the deltas
+						// arrive empty and only the signature carries the payload.
+						// An empty delta is not an event worth pushing.
+						if (!event.delta.thinking) return;
 						block.thinking += event.delta.thinking;
 						stream.push({ type: "thinking_delta", contentIndex, delta: event.delta.thinking, partial: output });
 					} else if (event.delta.kind === "signature" && block.type === "thinking") {

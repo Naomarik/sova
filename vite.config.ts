@@ -5,15 +5,19 @@ import solid from "vite-plugin-solid";
 // runs elsewhere (PORT=4810 with PI_CODING_AGENT_DIR=<worktree>/.agent), so point the dev proxy
 // at the same port with PI_WEB_PORT.
 const apiPort = process.env.PI_WEB_PORT ?? "4800";
+// 127.0.0.1, not "localhost": server/index.ts binds 127.0.0.1 by default, and on a host where
+// "localhost" resolves to ::1 only (this one) every proxied /api and /ws call dies with
+// ECONNREFUSED before it reaches the server.
+const apiHost = process.env.PI_WEB_HOST ?? "127.0.0.1";
 
 export default defineConfig({
   plugins: [solid()],
   server: {
     proxy: {
-      "/api": `http://localhost:${apiPort}`,
+      "/api": `http://${apiHost}:${apiPort}`,
       // Standalone /explain pages: served by the API server, linked and iframed from the app.
-      "/explain": `http://localhost:${apiPort}`,
-      "/ws": { target: `ws://localhost:${apiPort}`, ws: true },
+      "/explain": `http://${apiHost}:${apiPort}`,
+      "/ws": { target: `ws://${apiHost}:${apiPort}`, ws: true },
     },
   },
 });

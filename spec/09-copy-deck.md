@@ -394,7 +394,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Add Members popover | trigger `Add Members` · `aria-label` "Add a session to “{name}”" · rows: every ungrouped session, then the grouped ones with a muted note `in “{name}”`, then `Fan Out…` · empty: "Every session is already in a group." |
 | Add Members toasts | Added **{title}** to “{name}”. · Moved **{title}** from “{other}” to “{name}”. · failure: "Couldn't add this session. {server message}" |
 | Empty workspace | **“{name}” has no sessions yet.** Add some here, or drag a row onto the group in the sidebar. · buttons `Add Members` · `Fan Out…` |
-| Empty workspace, fanout group | **Every session in “{name}” is gone.** Their files were deleted outside pi-web. The group is all that's left of the fanout. · button `Dissolve` |
+| Empty workspace, fanout group | **“{name}” has no sessions left.** They were removed from the group, or their files were deleted outside pi-web. Dissolving it takes the name and the fork point, and nothing else. · button `Dissolve` — **the group cannot tell the two causes apart** (it stores `seed` and members, never a reason), so the copy names both rather than picking one; parallel to the hand-made state's "no sessions **yet**" |
 | Member announcements (live region) | {pane name} — working. · {pane name} — replied. · {pane name} — stopped by you. · {pane name} — can't be opened. · {pane name} — open in a terminal, so it stays read-only. |
 | Pane focus keys | no visible copy · the workspace's keyboard help lives in `Move Left` / `Move Right` `title`s: "Move Left · Ctrl+Alt+Left moves focus, not the pane" |
 

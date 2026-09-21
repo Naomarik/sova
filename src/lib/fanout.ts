@@ -154,12 +154,16 @@ export function fanoutBody(plan: {
    * Whether the user typed in the name field. Provenance is THIS EVENT, never a comparison
    * against the string we generated (spec/14b-fanout.md).
    *
-   * A comparison cannot answer the question: "typed over then restored our exact text" and "typed
-   * our exact string by hand" produce the same state — field touched, name equal to what we last
-   * wrote — yet one should dissolve and the other should not. The information that separates them
-   * is not in the value a comparison examines, so it can't merely err, it can't be fixed. Both
-   * therefore count as naming it, and the group stands: the worst case of honouring a touch is an
-   * empty group nobody dissolves, while the worst case of ignoring one is a deleted name.
+   * Not because a comparison can't separate "typed over then restored our text" from "typed our
+   * exact string by hand": those end with pi-web's own string on the group either way, so they
+   * deserve the same answer, and both candidate rules give them one. The reason is the failure
+   * mode. A comparison is correct only while regeneration stops at the first touch — weaken that
+   * gate and `lastWritten` equals the field by construction, so it reports "generated" for a name
+   * the user typed and the group is dissolved out from under them. It fails toward LOSS. The edit
+   * event cannot fail that way; its cost is a group that stands empty until someone dissolves it
+   * by hand. And in fresh mode the default changes on every keystroke of the prompt, so a
+   * comparison must pick a moment to compare against and every choice is wrong in one mode. The
+   * event has no moment to pick.
    */
   nameTouched?: boolean;
   /** Fork mode: the source and the leaf the dialog SHOWED the user. */

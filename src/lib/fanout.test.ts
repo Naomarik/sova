@@ -174,13 +174,15 @@ test("provenance is the EDIT EVENT, in all four cases", () => {
   assert.equal(named(false), "generated", "untouched, however many times we regenerated it");
   assert.equal(named(true, "Backoff experiments"), "user", "typed over");
   // TYPED OVER, THEN RESTORED TO OUR EXACT TEXT → "user", and the reason matters more than the
-  // assertion: dissolving looks obviously right here, because the name on the group IS ours. But
-  // this state is indistinguishable from "typed our exact string by hand", which deserves to
-  // survive — the field was touched and the value equals what we last wrote in BOTH cases. No
-  // comparison can separate them, because the information isn't in the value it examines. So we
-  // err toward keeping the name: an empty group nobody dissolves costs a gesture, a deleted name
-  // costs work. A reader meeting this case without the reason will "fix" it, and the test will
-  // look wrong rather than the change.
+  // assertion. This row is NOT one that deserves to survive: the group ends up carrying pi-web's
+  // own string, so dissolving would be the better answer and what ships here is litter. It is
+  // simply what the edit event yields, and we accept that cost rather than rebuild on a
+  // comparison — which is correct only while regeneration stops at the first touch, and fails the
+  // other way: reporting "generated" for a name the user typed, and deleting it. An empty group
+  // nobody dissolves costs a gesture; a deleted name costs work.
+  // Dissolving looks obviously right to anyone who reads this row, and it IS right — so a reader
+  // who meets the case without the reason will change it, and the test will look wrong rather
+  // than the change.
   assert.equal(named(true), "user", "typed over then restored to our text still counts as naming it");
   assert.equal(named(false, "Fanout · ZULU"), "generated", "fork mode untouched, where we write the field once");
 });

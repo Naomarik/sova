@@ -82,6 +82,27 @@ Rules:
   or server shutdown.
 - Or run the server without watch (`npx tsx server/index.ts`) for the duration of server-side work.
 
+## Method
+
+Rules for working on this repo, each earned by at least two real misses on the `fanout-groups`
+branch (the full reasoning lives in that branch's commit messages and spec §14's Decisions):
+
+- **Prefer the form that cannot be accidentally satisfied** — in tests, rules, and copy alike. A
+  collision assertion beats a literal string; a behaviour name beats a property name; a sentence
+  true in every branch beats one that is merely right in the common one. The rules below are
+  instances of this one.
+
+- **A worked example is a second implementation of its rule, not documentation of it.** Review it
+  the same way you review the rule — a rule and its own example disagreed three times in one file.
+- **Reading verifies claims; running verifies neighborhoods.** Exercising a surface finds the
+  instance; enumerating the inputs finds the class. The defects that mattered were all seams —
+  invisible to a green build, found only by driving the thing.
+- **Before trusting a check, ask what it returns in the case you're trying to rule out.** A check
+  that cannot distinguish the two states isn't weak evidence — it's no evidence. And a
+  what-instrument cannot answer a when-question: greps and test counts say what's there;
+  `git show <sha>:<file>` and `git merge-base --is-ancestor` say since when. Name the commit a
+  claim is true at, and read the live tree, not an archive of it.
+
 ## pi-config mirror
 
 The public repo github.com/Naomarik/pi-config is a `git subtree split` of `pi-config/`, so it stays

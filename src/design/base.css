@@ -634,7 +634,9 @@ button.list-row { width: 100%; border: 0; background: none; text-align: left; }
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   height: 100dvh;
-  overflow: hidden;
+  /* clip, not hidden: a hidden box still scrolls programmatically, so a scrollIntoView (a
+     transcript jump) could shift the whole shell up, and nothing would scroll it back. */
+  overflow: clip;
 }
 .app-sidebar,
 .app-main {
@@ -1348,6 +1350,10 @@ summary.sidebar-region-head .icon-twist { transition: transform var(--dur-fast) 
   box-shadow: var(--shadow-2);
   animation: enter-fade var(--dur-base) var(--ease-standard);
 }
+/* `.button:active` sets `transform: translateY(1px)` and outranks this rule, so pressing the button
+   dropped the centring translate and slid it right by half its width. Re-state the centring while
+   pressed, as .lightbox-prev/.lightbox-next do. */
+.jump-latest:active { transform: translateX(-50%) translateY(1px); }
 
 
 /* ---- COMPOSER. Pinned to the bottom of .app-main. ----------------------- */
@@ -1528,6 +1534,22 @@ summary.sidebar-region-head .icon-twist { transition: transform var(--dur-fast) 
   border-radius: var(--r-sm);
 }
 .attachment-thumb { object-fit: cover; background: var(--color-surface); display: block; }
+/* The preview is a button that opens the lightbox (like .thumb): same 32px
+   shape, a hover edge, the standard ring. */
+.attachment-thumb-button {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  line-height: 0;
+  cursor: zoom-in;
+  transition: box-shadow var(--dur-fast) var(--ease-standard);
+}
+.attachment-thumb-button:hover { box-shadow: 0 0 0 var(--stroke-thin) var(--color-border-strong); }
+.attachment-thumb-button:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
 .attachment-icon { display: grid; place-items: center; color: var(--status-error); }
 .attachment-text { display: flex; flex-direction: column; min-width: 0; flex: 1; line-height: 1.25; }
 .attachment-name {
@@ -2959,6 +2981,7 @@ a.chip:hover { color: var(--color-ink); border-color: var(--color-border-strong)
 }
 .tab:hover { color: var(--color-ink); }
 .tab:focus-visible { outline: var(--focus-ring); outline-offset: calc(var(--focus-offset) * -1); }
+.tab-active,
 .tab[aria-selected="true"] { color: var(--color-ink); border-bottom-color: var(--color-accent); }
 
 .session-tabs {
@@ -2969,7 +2992,7 @@ a.chip:hover { color: var(--color-ink); border-color: var(--color-border-strong)
   scrollbar-width: thin;
 }
 .session-tabs > .tab { flex: none; }
-@container subagents (max-width: 359px) {
+@container subagents (max-width: 399px) {
   .session-tabs { gap: 0; padding: 0; }
   .session-tabs > .tab { padding: 0 var(--space-2); }
 }
@@ -3229,3 +3252,48 @@ a.chip:hover { color: var(--color-ink); border-color: var(--color-border-strong)
 
 /* Empty, no-file and no-selection states: one idea in the view, centred. */
 .subagents-empty { flex: 1; justify-content: center; padding: var(--space-6) var(--space-4); }
+
+/* --- Inputs tab (DESIGN_NOTES §12) ----------------------------------------
+   This session's messages on one card, like the skill rows, but denser: caption
+   title over a micro meta, so a long chat shows more of itself. The body is the
+   jump; Rewind/Cancel sit apart at the row's end. The rewound-to row wears the
+   accent tint as the branch's new end, and the rows it left behind go muted
+   until the next send. `.entry-jumped` is the landing tint, in the transcript. */
+.input-list { border: var(--stroke-thin) solid var(--color-border); border-radius: var(--r-lg); overflow: hidden; }
+.input-list > li { border-bottom: var(--stroke-thin) solid var(--color-border); }
+.input-list > li:last-child { border-bottom: 0; }
+.input-row { padding: var(--space-2) var(--space-3); }
+.input-row-line { display: flex; align-items: flex-start; gap: var(--space-2); }
+.input-row-body {
+  flex: 1;
+  min-width: 0;
+  display: block;
+  padding: 0;
+  border: 0;
+  background: none;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+  border-radius: var(--r-sm);
+}
+.input-row-body:hover .input-row-title { color: var(--color-accent); }
+.input-row-body:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.input-row-title {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+  font-weight: var(--fw-medium);
+  color: var(--color-ink);
+}
+.input-row-meta { display: block; margin-top: 2px; font-size: var(--fs-micro); line-height: var(--lh-micro); color: var(--color-ink-muted); }
+.input-row-actions { flex: none; display: flex; gap: var(--space-2); }
+.input-row-note { margin: var(--space-2) 0 0; font-size: var(--fs-micro); line-height: var(--lh-micro); color: var(--color-ink-2); }
+.input-row-note:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.input-row-boundary { background: var(--color-accent-tint); }
+.input-row-abandoned .input-row-title { color: var(--color-ink-muted); font-weight: var(--fw-regular); }
+
+/* Where a jump landed, for ~1.5s (src/lib/jump.ts owns the timing). */
+.entry-jumped { background: var(--color-accent-tint); border-radius: var(--r-sm); transition: background-color var(--dur-base) var(--ease-standard); }

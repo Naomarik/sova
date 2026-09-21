@@ -94,6 +94,13 @@ Pi package on disk: `/home/user/.local/share/mise/installs/node/25.2.1/lib/node_
   (`SessionEntry` union, `dist/core/session-manager.d.ts:117`).
   Cheap listing: read only the first few lines; first user `message` = title; first `model_change` = model.
   Docs: `docs/session-format.md`.
+- **pi-web writes `custom` entries with `customType: "pi-web-rewind"`** (`data: {targetId, fromLeafId}`)
+  into webapp-owned session files. `navigateTree(id, {summarize:false})` only moves the in-memory
+  leaf and `SessionManager.open()` takes the file's LAST entry as the leaf, so without this marker a
+  reload or restart reverts a rewind. It is invisible (normalizeEntry renders unknown custom types as
+  nothing; the TUI ignores it too), never LLM context, no usage. Written by `rewindSession` in
+  `server/chat-manager.ts`, parented on the new leaf; the open-time deferred appends are flushed
+  AFTER navigating (before, they would land on the abandoned branch).
 - SDK: `createAgentSession`, `createAgentSessionRuntime`, `SessionManager.open(path)/create(cwd)`,
   `ModelRuntime.create()` (no args → reuses `~/.pi/agent` auth). Events via `session.subscribe`.
   Docs: `docs/sdk.md`; examples: `examples/sdk/11-sessions.ts`, `13-session-runtime.ts`.

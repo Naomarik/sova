@@ -45,19 +45,22 @@ export function rankCommands(commands: SlashCommand[], query: string): SlashComm
 }
 
 /** A command pi-web answers itself rather than sending to the runtime. */
-export type LocalCommand = "subagents" | "new";
+export type LocalCommand = "subagents" | "new" | "tree";
 
 /**
  * The local command a message is, if any (DESIGN_NOTES §4d, §11 Trigger). A bare "/agents" or
  * "/subagents" opens the subagents pane here: the runtime's monitor is TUI-only, so forwarding it
  * only earns a "requires Pi's interactive TUI" notice. With arguments ("/subagents models …") it
  * is the runtime's command and goes through untouched. A bare "/new" starts a fresh session in the
- * same folder, like the TUI's own; the runtime doesn't register it.
+ * same folder, like the TUI's own; the runtime doesn't register it. A bare "/tree" opens the
+ * session pane's Inputs tab, where rows rewind the chat: pi's own "/tree" is a TUI built-in, so
+ * sent as a prompt it would reach the model as literal text.
  */
 export function localCommand(text: string): LocalCommand | null {
   const t = text.trim();
   if (/^\/(agents|subagents)$/.test(t)) return "subagents";
   if (t === "/new") return "new";
+  if (t === "/tree") return "tree";
   return null;
 }
 

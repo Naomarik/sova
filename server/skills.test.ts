@@ -63,6 +63,22 @@ describe("skillNameFromPath", () => {
     assert.equal(skillNameFromPath("/s/*/SKILL.md"), undefined);
     assert.deepEqual(collectSkills([call("e1", "t1", "bash", { command: "cat $d/SKILL.md" })]).used, []);
   });
+
+  test("a relative path is resolved against the session's cwd, so `..` is never a name", () => {
+    // The bug this pins: `cat ../SKILL.md` used to be reported as a skill called `..`.
+    assert.equal(skillNameFromPath("../SKILL.md"), undefined);
+    assert.equal(skillNameFromPath("./SKILL.md"), undefined);
+    assert.equal(skillNameFromPath("../SKILL.md", "/repo/pkg"), "repo");
+    assert.equal(skillNameFromPath("../../skills/playwright/SKILL.md", "/repo/pkg"), "playwright");
+    const session = {
+      type: "session",
+      id: "h",
+      timestamp: "t0",
+      cwd: "/repo/pkg",
+    };
+    const load = call("e1", "t1", "read", { path: "../skills/playwright/SKILL.md" });
+    assert.deepEqual(collectSkills([session, load]).used.map((u) => u.name), ["playwright"]);
+  });
 });
 
 describe("offered skills", () => {
@@ -182,6 +198,23 @@ describe("loaded skills", () => {
   test("bash that only names a SKILL.md is not a load: no read verb, or a search", () => {
     assert.deepEqual(collectSkills([call("e1", "t1", "bash", { command: "ls -la /home/u/.claude/skills/playwright/SKILL.md" })]).used, []);
     assert.deepEqual(collectSkills([call("e1", "t1", "bash", { command: "grep -rn 'foo' /home/u/.claude/skills/playwright/SKILL.md" })]).used, []);
+  });
+
+  test("a read verb and a path in different commands are not a load", () => {
+    // Real false positive: `head` piped one thing, `grep -rl` mentioned the file in its argument.
+    const command = `cd /repo && npx tsx /tmp/x.ts 2>&1 | head -6; f=$(grep -rl "pi-lens/SKILL.md" ~/.pi/agent/sessions/*.jsonl | head -1)`;
+    assert.deepEqual(collectSkills([call("e1", "t1", "bash", { command })]).used, []);
+  });
+
+  test("a heredoc that merely mentions a SKILL.md is not a load", () => {
+    // Real false positive: a python heredoc whose source text held `/s/alpha/SKILL.md`.
+    const command = `python3 - <<'EOF'\ns = 'cat /s/alpha/SKILL.md'\nprint(s)\nEOF`;
+    assert.deepEqual(collectSkills([call("e1", "t1", "bash", { command })]).used, []);
+  });
+
+  test("a read verb immediately before the file is a load, flags and quotes included", () => {
+    assert.deepEqual(collectSkills([call("e1", "t1", "bash", { command: "head -n 40 '/s/playwright/SKILL.md'" })]).used.map((u) => u.name), ["playwright"]);
+    assert.deepEqual(collectSkills([call("e1", "t1", "bash", { command: "cat /s/a/SKILL.md" })]).used.map((u) => u.name), ["a"]);
   });
 
   test("one bash command loading 2 skills reports both", () => {

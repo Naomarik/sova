@@ -7,6 +7,7 @@ import { agentsHref, insightsRouteFromHash, legacyInsightsTarget } from "./lib/i
 import { createThenArchive, newSessionCwd } from "./lib/new-session";
 import { createPoll } from "./lib/poll";
 import { homeFromSessionPath, shortModel, tildePath } from "./lib/format";
+import type { RewindControl } from "./lib/inputs";
 import { activeTab, home, setActiveTab, setHome, toast } from "./lib/ui-state";
 import { sessionWorking, type UsageTotalView, workingSplit } from "./lib/workers";
 import { ChatView, type ChatRefusal } from "./components/ChatView";
@@ -139,6 +140,19 @@ export function App() {
   const [creating, setCreating] = createSignal(false);
   const [chatModel, setChatModel] = createSignal<string | null>(null);
   const [modeControl, setModeControl] = createSignal<ModeControl | null>(null);
+  /** The open chat's rewind, for the pane's Inputs tab; tagged with its path, so a pane for another
+      session never gets it. */
+  const [rewindControl, setRewindControl] = createSignal<RewindControl | null>(null);
+  /**
+   * The newest rewind that landed in a chat, whoever asked for it (an Inputs row, the composer's
+   * Undo last turn). `changed` is minted here and only grows, like PaneInsight.changed: the pane
+   * re-reads its rows on a bump, so two rewinds to the same message still refresh. A refusal never
+   * gets here, so it changes nothing. The path gates the fan-out: one session's rewind must never
+   * refresh another's pane.
+   */
+  const [rewound, setRewound] = createSignal<{ path: string; entryId: string; changed: number } | null>(null);
+  const noteRewound = (info: { path: string; entryId: string }) =>
+    setRewound((prev) => ({ path: info.path, entryId: info.entryId, changed: (prev?.changed ?? 0) + 1 }));
   const [now, setNow] = createSignal(Date.now());
 
   const refresh = () => void refetch();
@@ -302,12 +316,12 @@ export function App() {
     queueMicrotask(() => (trigger ?? document.getElementById("transcript"))?.focus());
   };
   /** Whether the pane is open for `path` on `tab`: what each opener's aria-expanded reports. */
-  const paneOn = (path: string, tab: "session" | "agents") => subagentsPath() === path && activeTab(path) === tab;
+  const paneOn = (path: string, tab: "session" | "agents" | "inputs") => subagentsPath() === path && activeTab(path) === tab;
   /**
    * Each opener toggles its own tab: open on that tab closes the pane; closed, or open on the
    * other tab, opens it there. Escape and the pane's close button close it whatever the tab.
    */
-  const openPane = (path: string, tab: "session" | "agents") => {
+  const openPane = (path: string, tab: "session" | "agents" | "inputs") => {
     if (paneOn(path, tab)) return closeSubagents();
     const open = subagentsPath() === path;
     if (!open) subagentsTrigger = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -316,6 +330,10 @@ export function App() {
   };
   /** The composer's subagents row and /subagents promise the workers: Agents. */
   const toggleSubagents = (path: string) => openPane(path, "agents");
+  /** /tree and the composer's rewind entry: the Inputs tab, opened (never toggled shut). */
+  const showInputs = (path: string) => {
+    if (!paneOn(path, "inputs")) openPane(path, "inputs");
+  };
 
   return (
     <>
@@ -528,7 +546,7 @@ export function App() {
                         class="button button-icon button-ghost session-details-open"
                         aria-label="Session details"
                         title="Session details"
-                        aria-controls="subagents-pane"
+                        aria-controls="session-pane"
                         aria-expanded={paneOn(d.path, "session")}
                         onClick={() => openPane(d.path, "session")}
                       >
@@ -549,7 +567,7 @@ export function App() {
                             workersTotal={insight.data?.workers?.length ?? 0}
                             workersSplit={split()}
                             onShowWorkers={() => toggleSubagents(d.path)}
-                            workersOpen={subagentsPath() === d.path}
+                            workersOpen={paneOn(d.path, "agents")}
                             stateBanner={
                               <Switch>
                                 <Match when={w().why === "recent"}>
@@ -603,6 +621,11 @@ export function App() {
                                 if (m && m !== s().model) refresh();
                               }}
                               onModeControl={setModeControl}
+                              onRewindControl={setRewindControl}
+                              onRewound={noteRewound}
+                              inputsOpen={paneOn(d.path, "inputs")}
+                              paneTab={subagentsPath() === d.path ? activeTab(d.path) : null}
+                              onShowInputs={() => showInputs(d.path)}
                               onRefused={onRefused}
                               onStarted={() => refresh()}
                               onArchiveChanged={refresh}
@@ -618,7 +641,7 @@ export function App() {
                                 })
                               }
                               onShowWorkers={() => toggleSubagents(d.path)}
-                              workersOpen={subagentsPath() === d.path}
+                              workersOpen={paneOn(d.path, "agents")}
                               onNewSession={() => startNewFrom(d.path)}
                               teams={insight.data?.teams}
                             />
@@ -643,6 +666,8 @@ export function App() {
                 onArchiveChanged={refresh}
                 chatWorkers={chatWorkers.path === path ? chatWorkers.list : null}
                 chatUsage={chatWorkers.path === path ? chatWorkers.usage : null}
+                rewind={rewindControl()?.path === path ? rewindControl()! : undefined}
+                rewound={rewound()?.path === path ? rewound()! : null}
                 selected={subagents()?.selected ?? null}
                 onSelect={(id) => setSubagents({ path, selected: id })}
                 onClose={closeSubagents}

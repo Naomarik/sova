@@ -5,7 +5,7 @@ import { prettyJson, shortModel, stampTime, thousands, tildePath } from "../lib/
 import { isObj, str, timestampOf, toolCallArgs, toolResultView } from "../lib/message";
 import { stripPastedPaths } from "../lib/path-attachments";
 import { home } from "../lib/ui-state";
-import { isHiddenBlock, liveHiddenCounts, splitHidden, thinkingHiddenLabel, toolsHiddenLabel } from "../lib/hidden-tools";
+import { isHiddenBlock, liveHiddenCounts, splitHidden, thinkingHiddenLabel, toolsHiddenLabel } from "../lib/hidden-rows";
 import { ImageStrip } from "./ImageStrip";
 import { PathAttachment, PathText } from "./PathAttachment";
 import { ReportRow } from "./ReportRow";

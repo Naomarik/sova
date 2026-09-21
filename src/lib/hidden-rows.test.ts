@@ -1,9 +1,9 @@
-// Run: npx tsx --test src/lib/hidden-tools.test.ts (or npm test)
+// Run: npx tsx --test src/lib/hidden-rows.test.ts (or npm test)
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { EntryKind, TranscriptItem } from "../../shared/protocol";
 import { emptyLive } from "./live";
-import { liveHiddenCounts, splitHidden, thinkingHiddenLabel, toolsHiddenLabel, visibleCount, type HideKinds } from "./hidden-tools";
+import { liveHiddenCounts, splitHidden, thinkingHiddenLabel, toolsHiddenLabel, visibleCount, type HideKinds } from "./hidden-rows";
 
 const row = (id: string, kind: EntryKind, extra: Partial<TranscriptItem> = {}): TranscriptItem => ({ id, kind, raw: {}, ...extra });
 const call = (id: string, callId?: string) => row(id, "tool-call", { text: "bash", toolCallId: callId });

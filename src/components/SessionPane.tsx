@@ -7,7 +7,10 @@ import { relativeTime } from "../lib/format";
 import { absoluteTime } from "../lib/spend";
 import { activeTab, sessionContext, setActiveTab, toast } from "../lib/ui-state";
 import { capTitle, usageHeadline, usageTitle, usageTotal, type UsageTotalView, workerLabel, workerTeam } from "../lib/workers";
+import type { RewindControl } from "../lib/inputs";
+import { jumpToEntry } from "../lib/jump";
 import { SessionDetails } from "./SessionDetails";
+import { SessionInputs } from "./SessionInputs";
 import { SubagentPane } from "./SubagentPane";
 import { Chip, Icon } from "./ui";
 
@@ -23,9 +26,10 @@ export interface PaneInsight {
   changed: number;
 }
 
-type TabId = "session" | "agents" | "skills" | "explain";
+export type TabId = "session" | "inputs" | "agents" | "skills" | "explain";
 const TABS: readonly { id: TabId; label: string }[] = [
   { id: "session", label: "Session" },
+  { id: "inputs", label: "Inputs" },
   { id: "agents", label: "Agents" },
   { id: "skills", label: "Skills" },
   { id: "explain", label: "Explain" },
@@ -37,7 +41,7 @@ const isTab = (id: string | null): id is TabId => TABS.some((t) => t.id === id);
  * is the Session info modal's body (SessionDetails); Agents is the subagents pane it grew out
  * of; Skills says which skills loaded and when, here and in each worker; Explain lists this
  * session's /explain pages. The tab is kept per session path; with none kept, it opens on Agents while a worker is
- * working, else on Session. Read-only throughout.
+ * working, else on Session. Read-only throughout, except Inputs' rewind, which goes through the chat.
  */
 export function SessionPane(props: {
   path: string;
@@ -53,6 +57,15 @@ export function SessionPane(props: {
   onSelect(id: string): void;
   onClose(): void;
   now: number;
+  /** The open chat's rewind hook for the Inputs tab; absent while watching or before the chat opens. */
+  rewind?: RewindControl;
+  /** App's last successful rewind of this session, whoever started it: the Inputs tab re-reads
+      its rows on it. Never set by a refusal. */
+  rewound?: { path: string; entryId: string; changed: number } | null;
+  /** The tab actually showing, reported on open, on every change, and as null when the pane goes.
+      The composer's triggers key `aria-expanded` off it: the kept tab alone can't answer, since a
+      session nobody has tabbed shows the fallback while `activeTab` is still null. */
+  onTab?(tab: TabId | null): void;
 }) {
   const working = () => (props.chatWorkers ?? props.insight.data?.workers ?? []).filter((w) => w.working).length;
   /** The Σ the chat socket reports, else the insight's — a lifetime total either way. */
@@ -64,6 +77,9 @@ export function SessionPane(props: {
     const kept = activeTab(props.path);
     return isTab(kept) ? kept : fallback;
   };
+
+  createEffect(() => props.onTab?.(tab()));
+  onCleanup(() => props.onTab?.(null));
 
   const tabEls: HTMLButtonElement[] = [];
   let aside!: HTMLElement;
@@ -93,7 +109,7 @@ export function SessionPane(props: {
   };
 
   return (
-    <aside class="app-subagents" id="subagents-pane" aria-label="Session detail" ref={aside} onKeyDown={onKeyDown}>
+    <aside class="app-subagents" id="session-pane" aria-label="Session detail" ref={aside} onKeyDown={onKeyDown}>
       <header class="subagents-head">
         <h2 class="subagents-title">Session detail</h2>
         <Show when={working() > 0}>
@@ -110,13 +126,15 @@ export function SessionPane(props: {
           <Icon name="chevron-right" />
         </button>
       </header>
-      <div class="tabs session-tabs" role="tablist" aria-label="Session detail">
+      {/* Named apart from the landmark: both saying "Session detail" made a reader announce the
+          same name twice, nesting into itself. */}
+      <div class="tabs session-tabs" role="tablist" aria-label="Session detail tabs">
         <For each={TABS}>
           {(t, i) => (
             <button
               type="button"
               role="tab"
-              class="tab"
+              class={tab() === t.id ? "tab tab-active" : "tab"}
               id={`session-tab-${t.id}`}
               aria-selected={tab() === t.id ? "true" : "false"}
               aria-controls={tab() === t.id ? "session-tabpanel" : undefined}
@@ -134,6 +152,17 @@ export function SessionPane(props: {
         <Switch>
           <Match when={tab() === "session"}>
             <SessionTab path={props.path} insight={props.insight} summary={props.summary} now={props.now} onArchiveChanged={props.onArchiveChanged} />
+          </Match>
+          <Match when={tab() === "inputs"}>
+            <SessionInputs
+              path={props.path}
+              changed={props.insight.changed}
+              rewound={props.rewound}
+              summary={props.summary}
+              rewind={props.rewind}
+              now={props.now}
+              onClose={props.onClose}
+            />
           </Match>
           <Match when={tab() === "agents"}>
             <SubagentPane chatWorkers={props.chatWorkers} insight={props.insight} selected={props.selected} onSelect={props.onSelect} />
@@ -289,19 +318,6 @@ const HOW: Record<SessionSkillUse["how"], { word: string; title: string }> = {
   shell: { word: "inferred", title: "Read through a shell command. We infer this." },
 };
 
-/** The rendered transcript row for an entry: a tool call's own block (`<entryId>:<i>`) when the
-    transcript shows it, else the entry's first row. */
-function entryElement(entryId: string): HTMLElement | null {
-  const root = document.getElementById("transcript");
-  if (!root) return null;
-  const find = (id: string) => {
-    const esc = CSS.escape(id);
-    return root.querySelector<HTMLElement>(`[data-entry="${esc}"], [data-entry^="${esc}:"]`);
-  };
-  const wrap = find(entryId) ?? (entryId.includes(":") ? find(entryId.slice(0, entryId.indexOf(":"))) : null);
-  return (wrap?.firstElementChild as HTMLElement | null) ?? null;
-}
-
 /**
  * Which skills loaded, and when: this session's own loads, then each worker's, oldest first. Only
  * this session's rows jump — a worker's evidence is in its own transcript, which the Agents tab
@@ -320,9 +336,7 @@ function SkillsTab(props: { insight: PaneInsight; now: number; onShowWorker(id: 
   const loads = () => (own()?.used.length ?? 0) + workerLoads().reduce((n, w) => n + w.skills.used.length, 0);
 
   const jump = (entryId: string) => {
-    const el = entryElement(entryId);
-    if (!el) return toast("That entry isn't in the transcript on screen.");
-    el.scrollIntoView({ block: "center", behavior: "smooth" });
+    if (!jumpToEntry(entryId)) toast("That entry isn't in the transcript on screen.");
   };
 
   return (

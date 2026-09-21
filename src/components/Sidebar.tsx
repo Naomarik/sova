@@ -2,10 +2,10 @@ import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import type { AgentsInsight, ContextInfo, SessionSummary, UsageInsight } from "../../shared/protocol";
 import { type ArchiveGroupId, groupByArchiveDate } from "../lib/archive";
 import { relativeTime, shortModel, tildePath } from "../lib/format";
-import { activeTeams, agentsHref, type GlancePart, usageGlance, usageHref } from "../lib/insights";
+import { agentsHref, type GlancePart, usageGlance, usageHref } from "../lib/insights";
 import { isTopSession } from "../lib/regions";
 import { home, localRunning, sessionContext, toast } from "../lib/ui-state";
-import { activeAgentCounts, sessionWorking } from "../lib/workers";
+import { activeAgentCounts, activeTeamCount, sessionWorking } from "../lib/workers";
 import { ArchiveCleanup } from "./ArchiveCleanup";
 import { ContextRing } from "./ContextRing";
 import { Banner, Chip, Icon } from "./ui";
@@ -196,7 +196,7 @@ function UsageGlance(props: { parts: GlancePart[] }) {
 /** What the Agents foot row counts: live agents, the sessions holding them, then active teams. */
 function agentsParts(agents: AgentsInsight | undefined): { n: number; word: string }[] {
   const live = activeAgentCounts(agents);
-  const teams = activeTeams(agents).length;
+  const teams = activeTeamCount(agents);
   const out: { n: number; word: string }[] = [];
   if (live.agents > 0) out.push({ n: live.agents, word: live.agents === 1 ? "agent" : "agents" });
   if (live.sessions > 0) out.push({ n: live.sessions, word: live.sessions === 1 ? "session" : "sessions" });
@@ -207,7 +207,7 @@ function agentsParts(agents: AgentsInsight | undefined): { n: number; word: stri
 /** The same counts as one plain sentence, for the row's title and accessible name. */
 function agentsSentence(agents: AgentsInsight | undefined): string | undefined {
   const live = activeAgentCounts(agents);
-  const teams = activeTeams(agents).length;
+  const teams = activeTeamCount(agents);
   const clauses: string[] = [];
   if (live.agents > 0) {
     const a = `${live.agents} active ${live.agents === 1 ? "agent" : "agents"}`;

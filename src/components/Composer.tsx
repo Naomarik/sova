@@ -14,11 +14,15 @@ import {
 } from "../lib/images";
 import { modelProvider, shortModel } from "../lib/format";
 import { ensureModels, modelList, thinkingLevelsFor } from "../lib/models";
-import { announce, draftImages, drafts } from "../lib/ui-state";
+import { announce, draftImages, drafts, openLightbox } from "../lib/ui-state";
+import { inputsText, showInputsLabel } from "../lib/input-count";
 import { showWorkersLabel, teamNote, type WorkingSplit, workersWorkingLabel } from "../lib/workers";
-import { ComposerMenu, type ComposerMenuApi, type ThinkingControl } from "./ComposerMenu";
+import { ComposerMenu, type ComposerMenuApi, type ThinkingControl, type UndoControl } from "./ComposerMenu";
 import type { ModelControl } from "./ModelMenu";
 import { Icon, type IconName } from "./ui";
+
+/** The session pane's element id: ONE pane, five tabs, so every trigger controls the same id. */
+const PANE_ID = "session-pane";
 
 export interface ComposerReason {
   icon: IconName;
@@ -52,10 +56,21 @@ export function Composer(props: {
   workersSplit?: WorkingSplit | null;
   /** Makes the subagents status row a button that toggles the subagents pane. */
   onShowWorkers?: () => void;
-  /** The subagents pane is open (the row's aria-expanded). */
+  /** The pane is open for this session on the AGENTS tab: the subagents trigger's aria-expanded.
+      A pane open on another tab is not this control's disclosure, so it is not "expanded". */
   workersOpen?: boolean;
+  /** The pane is open for this session on the INPUTS tab: the inputs trigger's aria-expanded. */
+  inputsOpen?: boolean;
+  /** The pane's active tab while it is open for THIS session ("session" | "inputs" | "agents" |
+      "skills" | "explain"), else null. The authority for both triggers' aria-expanded; the
+      booleans above answer only until App passes it. */
+  paneTab?: string | null;
   /** Runs a bare "/new" (§4d): resolves to the new session's folder label, or null if none was made. */
   onNewSession?: () => Promise<string | null>;
+  /** Runs a bare "/tree" (§4d), and the run-status row's "N inputs" trigger: opens the Inputs tab. */
+  onShowInputs?: () => void;
+  /** User messages on this chat's active branch; the status row's Inputs trigger, hidden at 0. */
+  inputCount?: number;
   autofocus?: boolean;
   /** This session's slash commands; the "/" autocomplete is off without them. */
   commands?: SlashCommand[];
@@ -65,6 +80,8 @@ export function Composer(props: {
   thinking?: ThinkingControl | null;
   /** Opens this session's info modal from the flyout (§4h). */
   onShowInfo?: () => void;
+  /** Chat sessions only: the flyout's "Undo last turn" row. */
+  undo?: UndoControl | null;
   /** `text` already names each uploaded image's path; `uploads` are for the optimistic row. */
   onSend(text: string, steer: boolean, uploads: UploadResult[]): boolean;
   onAbort(): void;
@@ -148,6 +165,21 @@ export function Composer(props: {
     if (total === 0 || !props.onShowWorkers) return null; // settled workers are only worth a row you can open
     const text = `${total} ${total === 1 ? "subagent" : "subagents"}`;
     return { live: false, text, label: `${text} — show subagents` };
+  };
+
+  /** A status-row trigger is expanded only when the pane shows ITS tab — the pane open on any
+      other tab is not this control's disclosure. `paneTab` answers when App knows the tab; null
+      means "no tab stored yet", where the pane falls back to Agents-if-working-else-Session, so
+      the per-trigger boolean (which App derives from the same rule) answers instead. */
+  const tabExpanded = (open: boolean | undefined, tab: string) =>
+    props.paneTab == null ? !!open : props.paneTab === tab;
+
+  /** The status row's Inputs trigger (§4 ".run-status"): the branch's user messages, one click
+      from the pane's Inputs tab. It survives an idle session with no workers — the row shows for
+      it alone — and disappears at 0, where the empty state already speaks. */
+  const inputsRow = () => {
+    const n = props.inputCount ?? 0;
+    return n > 0 && props.onShowInputs ? { n, text: inputsText(n), label: showInputsLabel(n) } : null;
   };
 
   // ---- Slash-command autocomplete (combobox: focus stays in the textarea) ----------------
@@ -341,6 +373,16 @@ export function Composer(props: {
       announce(props.workersOpen ? "Subagents already open." : "Subagents open.");
       return;
     }
+    // "/tree" is ours as well: pi's is a TUI built-in, so it would reach the model as literal
+    // text. Here it opens the Inputs tab, where each row rewinds to before that message (§4d).
+    if (localCommand(text()) === "tree" && props.onShowInputs && images().length === 0) {
+      props.onShowInputs();
+      setDraft("");
+      input.value = "";
+      setSlashToken(null);
+      announce("Inputs open.");
+      return;
+    }
     // "/new" is ours too: a fresh session in this folder, and this one archived (§4d). Nothing
     // reaches the runtime, so no "Ran" row. The draft stays if no session was made.
     if (localCommand(text()) === "new" && props.onNewSession && images().length === 0) {
@@ -414,49 +456,70 @@ export function Composer(props: {
             onHover={setSlashActive}
           />
         </Show>
-        <Show when={props.running}>
+        {/* One row, whichever of the three has something to say (they can coexist: the Inputs
+            trigger sits at its right end while a turn streams, and alone when nothing runs). */}
+        <Show when={props.running || workersRow() || inputsRow()}>
           <p class="run-status">
-            <span class="live-dot" />
-            <Show when={!props.stopping} fallback="Stopping…">
-              Working
-              <Show when={props.detail}>
-                <span class="run-status-detail">· {props.detail}</span>
+            <Show when={props.running}>
+              <span class="live-dot" />
+              <Show when={!props.stopping} fallback="Stopping…">
+                Working
+                <Show when={props.detail}>
+                  <span class="run-status-detail">· {props.detail}</span>
+                </Show>
               </Show>
             </Show>
-          </p>
-        </Show>
-        <Show when={workersRow()}>
-          {(row) => (
-            <p class="run-status">
-              <Show
-                when={props.onShowWorkers}
-                fallback={
-                  <>
-                    <span class="live-dot" />
-                    <span title={teamNote(props.workersSplit)}>{row().text}</span>
-                  </>
-                }
-              >
-                {(show) => (
-                  <button
-                    type="button"
-                    class="run-status-link"
-                    aria-label={row().label}
-                    title={teamNote(props.workersSplit)}
-                    aria-expanded={props.workersOpen ? "true" : "false"}
-                    aria-controls="subagents-pane"
-                    onClick={() => show()()}
+            <Show when={workersRow()}>
+              {(row) => (
+                <>
+                  <Show
+                    when={props.onShowWorkers}
+                    fallback={
+                      <>
+                        <span class="live-dot" />
+                        <span title={teamNote(props.workersSplit)}>{row().text}</span>
+                      </>
+                    }
                   >
-                    <Show when={row().live}>
-                      <span class="live-dot" />
-                    </Show>
-                    {row().text}
-                    <Icon name="chevron-right" small />
-                  </button>
-                )}
-              </Show>
-            </p>
-          )}
+                    {(show) => (
+                      <button
+                        type="button"
+                        class="run-status-link"
+                        aria-label={row().label}
+                        title={teamNote(props.workersSplit)}
+                        aria-expanded={tabExpanded(props.workersOpen, "agents") ? "true" : "false"}
+                        aria-controls={PANE_ID}
+                        onClick={() => show()()}
+                      >
+                        <Show when={row().live}>
+                          <span class="live-dot" />
+                        </Show>
+                        {row().text}
+                        <Icon name="chevron-right" small />
+                      </button>
+                    )}
+                  </Show>
+                </>
+              )}
+            </Show>
+            {/* Right-aligned, so it keeps its place whatever else the row carries. */}
+            <Show when={inputsRow()}>
+              {(row) => (
+                <button
+                  type="button"
+                  class="run-status-link"
+                  style={{ "margin-left": "auto", "margin-right": 0 }}
+                  aria-label={row().label}
+                  aria-expanded={tabExpanded(props.inputsOpen, "inputs") ? "true" : "false"}
+                  aria-controls={PANE_ID}
+                  onClick={() => props.onShowInputs?.()}
+                >
+                  {row().text}
+                  <Icon name="chevron-right" small />
+                </button>
+              )}
+            </Show>
+          </p>
         </Show>
 
         <Show when={images().length > 0 || rejected().length > 0}>
@@ -464,7 +527,16 @@ export function Composer(props: {
             <For each={images()}>
               {(img, i) => (
                 <li class="attachment">
-                  <img class="attachment-thumb" src={img.previewUrl} alt="attachment" />
+                  <button
+                    type="button"
+                    class="attachment-thumb-button"
+                    aria-haspopup="dialog"
+                    aria-label={`View ${img.name}`}
+                    title={img.name}
+                    onClick={(e) => openLightbox([{ src: img.previewUrl, alt: `Attachment ${img.name}` }], 0, e.currentTarget)}
+                  >
+                    <img class="attachment-thumb" src={img.previewUrl} alt="attachment" />
+                  </button>
                   <span class="attachment-text">
                     <span class="attachment-name" title={img.name}>
                       {img.name}
@@ -508,6 +580,7 @@ export function Composer(props: {
             model={props.model}
             thinking={props.thinking}
             onShowInfo={props.onShowInfo}
+            undo={props.undo}
             onRefocus={() => input.focus()}
             onApi={setMenu}
           />

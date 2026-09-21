@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   activeAgentCounts,
+  activeTeamCount,
   capTitle,
   formatCost,
   isHostSession,
@@ -58,13 +59,14 @@ const session = (
   counts: Partial<{ working: number; waiting: number; done: number; error: number; killed: number }>,
   mode: string | null = "tui",
   embedded?: boolean,
+  teams: unknown[] = [],
 ) => ({
   mode,
   embedded,
   fresh,
   workerCounts: { total: 0, working: 0, waiting: 0, done: 0, error: 0, killed: 0, ...counts },
   workers: [], // shorter than the counts: activeAgentCounts must never read it
-  teams: [],
+  teams,
 });
 const insight = (...sessions: ReturnType<typeof session>[]) =>
   ({ at: 0, totals: { sessions: 0, working: 0, total: 0, teams: 0, teamWorking: 0, soloWorking: 0 }, sessions }) as never;
@@ -74,8 +76,13 @@ test("activeAgentCounts: nothing live without an insight", () => {
   assert.deepEqual(activeAgentCounts(insight()), { agents: 0, sessions: 0 });
 });
 
-test("activeAgentCounts counts working + still-attached waiting in a fresh host session", () => {
-  assert.deepEqual(activeAgentCounts(insight(session(true, { working: 1, waiting: 2 }))), { agents: 3, sessions: 1 });
+test("activeAgentCounts counts only workers actually working", () => {
+  assert.deepEqual(activeAgentCounts(insight(session(true, { working: 1, waiting: 2 }))), { agents: 1, sessions: 1 });
+});
+
+test("activeAgentCounts leaves out idle waiting workers and the sessions holding only them", () => {
+  assert.deepEqual(activeAgentCounts(insight(session(true, { waiting: 3 }))), { agents: 0, sessions: 0 });
+  assert.deepEqual(activeAgentCounts(insight(session(true, { working: 2, waiting: 9 }))), { agents: 2, sessions: 1 });
 });
 
 test("activeAgentCounts ignores a session whose heartbeat went stale", () => {
@@ -95,9 +102,28 @@ test("activeAgentCounts never counts settled workers", () => {
 
 test("activeAgentCounts: only sessions holding an active agent count as sessions", () => {
   const live = insight(session(true, { working: 2, waiting: 1 }), session(true, { done: 3 }));
-  assert.deepEqual(activeAgentCounts(live), { agents: 3, sessions: 1 });
-  const both = insight(session(true, { working: 2, waiting: 1 }), session(true, { waiting: 1, done: 3 }));
+  assert.deepEqual(activeAgentCounts(live), { agents: 2, sessions: 1 });
+  const both = insight(session(true, { working: 2, waiting: 1 }), session(true, { working: 2, waiting: 1, done: 3 }));
   assert.deepEqual(activeAgentCounts(both), { agents: 4, sessions: 2 });
+});
+
+/** A live record whose session claims one team. */
+const teamSession = (fresh: boolean, working: number, mode: string | null = "tui", embedded?: boolean) =>
+  session(fresh, { working }, mode, embedded, [
+    { id: "team_01", name: "t", objective: "", createdAt: 0, parentPath: null, live: true, members: [], working },
+  ]);
+
+test("activeTeamCount counts only teams with a member still working", () => {
+  assert.equal(activeTeamCount(insight(teamSession(true, 2))), 1);
+  assert.equal(activeTeamCount(insight(teamSession(true, 0))), 0);
+  assert.equal(activeTeamCount(insight(teamSession(true, 0), teamSession(true, 1))), 1);
+});
+
+test("activeTeamCount ignores stale sessions and headless worker pis", () => {
+  assert.equal(activeTeamCount(insight(teamSession(false, 1))), 0);
+  assert.equal(activeTeamCount(insight(teamSession(true, 1, "rpc"))), 0);
+  assert.equal(activeTeamCount(insight(teamSession(true, 1, "rpc", true))), 1);
+  assert.equal(activeTeamCount(undefined), 0);
 });
 
 test("sortWorkers: working first, then newest activity (else start) first", () => {

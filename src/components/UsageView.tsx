@@ -116,10 +116,6 @@ function UsageCard(props: { p: UsageProvider; now: number }) {
             </p>
           )}
         </Show>
-        {/* A kept reading: windows, or a credit provider's balance. */}
-        <Show when={props.p.error && (props.p.windows.length > 0 || props.p.balance)}>
-          <p class="usage-note">Last fetch failed: {props.p.error!.replace(/\.$/, "")}. Showing the previous reading.</p>
-        </Show>
       </div>
     </article>
   );

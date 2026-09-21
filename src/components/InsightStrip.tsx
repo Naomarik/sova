@@ -1,6 +1,7 @@
 import { createSignal, For, Show } from "solid-js";
 import type { ExplanationInfo, OutlineTopic, SessionOutline } from "../../shared/protocol";
 import { newestFirst } from "../lib/explain";
+import { findEntryRow, jumpToEntry } from "../lib/jump";
 import { relativeTime, stampTime } from "../lib/format";
 import { ExplainGallery } from "./ExplainGallery";
 import { Icon } from "./ui";
@@ -12,28 +13,18 @@ const STATE_CLAUSE: Partial<Record<SessionOutline["state"], string>> = {
   "failed-keeping-last": "the last update failed, so this is the previous outline",
 };
 
-/** The rendered transcript row for a session entry (assistant blocks are `<entryId>:<i>`). */
-function entryElement(entryId: string): HTMLElement | null {
-  const root = document.getElementById("transcript");
-  if (!root) return null;
-  const esc = CSS.escape(entryId);
-  const wrap = root.querySelector<HTMLElement>(`[data-entry="${esc}"], [data-entry^="${esc}:"]`);
-  return (wrap?.firstElementChild as HTMLElement | null) ?? null;
-}
-
 function Topic(props: { topic: OutlineTopic; now: number }) {
   // Whether the anchor is in the transcript is checked when the topic opens: it may have been
   // compacted away, and the transcript renders after this strip.
   const [target, setTarget] = createSignal(false);
   const jump = () => {
-    const el = props.topic.entryId ? entryElement(props.topic.entryId) : null;
-    if (!el) return setTarget(false);
-    el.scrollIntoView({ block: "center", behavior: "smooth" });
+    // Gone since the strip opened (compacted away): the button goes rather than scrolling nowhere.
+    if (!props.topic.entryId || !jumpToEntry(props.topic.entryId)) setTarget(false);
   };
   const at = () => new Date(props.topic.at).toISOString();
   return (
     <li>
-      <details class="outline-topic" onToggle={(e) => e.currentTarget.open && setTarget(!!props.topic.entryId && !!entryElement(props.topic.entryId))}>
+      <details class="outline-topic" onToggle={(e) => e.currentTarget.open && setTarget(!!props.topic.entryId && !!findEntryRow(props.topic.entryId))}>
         <summary class="outline-topic-summary">
           <Icon name="chevron-right" small class="icon-twist" />
           <span class="outline-topic-heading">

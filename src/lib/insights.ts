@@ -86,7 +86,7 @@ export function meterTone(w: UsageWindow): "warn" | "error" | null {
 }
 
 /**
- * Card head chip for a provider: the worst window decides; "Stale" only when no limit applies.
+ * Card head chip for a provider: the worst window decides. Null when no limit applies.
  * A credit provider (DeepSeek) has a balance and no windows, so only the funding rule can fire.
  */
 export function providerChip(p: UsageProvider): { tone?: Tone; text: string } | null {
@@ -95,7 +95,6 @@ export function providerChip(p: UsageProvider): { tone?: Tone; text: string } | 
   if (full.some((w) => !isShortWindow(w))) return { tone: "error", text: "Quota used" };
   if (full.length > 0) return { tone: "warn", text: "Rate-limited" };
   if (p.windows.some((w) => w.pct >= 80)) return { tone: "warn", text: "Near limit" };
-  if (p.error && (p.windows.length > 0 || p.balance)) return { text: "Stale" };
   return null;
 }
 
@@ -155,10 +154,9 @@ export interface GlancePart {
   /** Emphasis: set in semibold ink (no hue: the foot has no word to pair a color with). ≥ 80%
       used for a window provider; out of credit for a credit one — its only bad state. */
   high: boolean;
-  /** The reading is old: the provider's last fetch failed, or the whole file is stale. */
+  /** The whole cache file is old (`usage.stale`). A provider's own failed fetch doesn't set it. */
   stale: boolean;
-  /** Full words for the tooltip and accessible name: "Claude 7-day 47%", "DeepSeek balance $4.29",
-      "… 80% (stale)". */
+  /** Full words for the tooltip and accessible name: "Claude 7-day 47%", "DeepSeek balance $4.29". */
   full: string;
 }
 
@@ -170,19 +168,18 @@ export function usageGlance(u: UsageInsight | undefined): GlancePart[] {
   if (!u?.available) return [];
   return u.providers.flatMap((p): GlancePart[] => {
     const abbr = PROVIDER_ABBR[p.id];
-    const suffix = (stale: boolean) => (stale ? " (stale)" : "");
     if (p.state === "ok" && p.balance) {
-      const stale = u.stale || !!p.error;
+      const stale = u.stale;
       // Whole units in the row, the exact amount in the tooltip. No percentage: the only
       // emphasis a balance has is "this can't fund calls".
       const amount = moneyCompact(p.balance.total, p.balance.currency);
       const exact = money(p.balance.total, p.balance.currency);
-      return [{ id: p.id, abbr, amount, high: !p.balance.available, stale, full: `${PROVIDER_NAME[p.id]} balance ${exact}${suffix(stale)}` }];
+      return [{ id: p.id, abbr, amount, high: !p.balance.available, stale, full: `${PROVIDER_NAME[p.id]} balance ${exact}` }];
     }
     const w = glanceWindow(p);
     if (!w) return [];
-    const stale = u.stale || (!!p.error && p.windows.length > 0);
-    const full = `${PROVIDER_NAME[p.id]} ${windowLabel(w)} ${pct(w)}%${suffix(stale)}`;
+    const stale = u.stale;
+    const full = `${PROVIDER_NAME[p.id]} ${windowLabel(w)} ${pct(w)}%`;
     return [{ id: p.id, abbr, pct: pct(w), high: w.pct >= 80, stale, full }];
   });
 }

@@ -4,7 +4,7 @@ import { fetchTranscriptWithContext, wsUrl } from "../lib/api";
 import { contextFromItems, contextStateFor } from "../lib/context";
 import { createReconnectingSocket } from "../lib/socket";
 import { announce, hideThinking, hideTools, setSessionContext } from "../lib/ui-state";
-import { visibleCount } from "../lib/hidden-tools";
+import { visibleCount } from "../lib/hidden-rows";
 import type { WorkingSplit } from "../lib/workers";
 import { Composer, type ComposerReason } from "./Composer";
 import { FlyoutSession } from "./ComposerMenu";

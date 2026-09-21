@@ -287,7 +287,17 @@ export type ChatClientMessage =
   | { type: "abort" }
   | { type: "set_model"; ref: string }   // calls session.setModel; server replies {type:"model"} or error
   | { type: "set_thinking"; level: string } // calls session.setThinkingLevel (clamped to the model); server replies {type:"thinking"}
-  | { type: "ui_response"; id: string; value: unknown };
+  | { type: "ui_response"; id: string; value: unknown }
+  /** Rewind to just before a user input on the active branch (the TUI's /tree on a user message):
+      the tip moves to that message's parent and its text comes back for the composer. `id` is the
+      client's request id, echoed in the `rewound`/`rewind_refused` reply; `entryId` is the user
+      row's TranscriptItem.id. Refused while a turn streams or compacts (never auto-aborts). */
+  | { type: "rewind"; id: string; entryId: string };
+
+/** Why a rewind was refused: busy = a TUI owns the session; recent = an unknown process wrote it
+    (reconnect with force); not_on_branch = the id is unknown, not a user message, or not on the
+    active branch; cancelled = an extension cancelled the navigation; internal = anything else. */
+export type RewindRefusal = "streaming" | "compacting" | "busy" | "recent" | "not_on_branch" | "cancelled" | "internal";
 
 export interface SlashCommand {
   /** Invocation name without the leading slash, e.g. "sessions", "skill:omarchy". */
@@ -336,6 +346,14 @@ export type ChatServerMessage =
       them AFTER itself. The client drops their pending rows and puts the text back in the draft.
       Only sent when something was queued. */
   | { type: "queue_cleared"; steering: string[]; followUp: string[] }
+  /** A rewind landed. Every client of the chat first got a fresh `hello` (the new branch) and a
+      `mode` (re-resolved from it); only the requester then gets this, with the input's text for
+      its composer (images are not handed back, as in pi's /tree). A rewind to the first input
+      leaves an empty branch. */
+  | { type: "rewound"; id: string; entryId: string; editorText: string }
+  /** The rewind was refused and nothing changed; to the requester only, never as `error`.
+      `message` is user-facing copy. */
+  | { type: "rewind_refused"; id: string; entryId: string; reason: RewindRefusal; message: string }
   // Codes: "busy" = a TUI owns the session (never retry with force); "recent" = file written by an
   // unknown process, at connect or mid-chat (client may reconnect with &force=1);
   // "reloaded" = runtime reloaded by another client, or message sent to a closed runtime (reconnect);

@@ -15,7 +15,7 @@ import {
   SessionManager,
   type Theme,
 } from "@earendil-works/pi-coding-agent";
-import type { ChatClientMessage, ChatModeResult, ChatServerMessage, ModeApplies, SlashCommand } from "../shared/protocol";
+import type { ChatClientMessage, ChatModeResult, ChatServerMessage, ModeApplies, RewindRefusal, SlashCommand } from "../shared/protocol";
 import { decodeUsageTotal, decodeWorkers } from "./insights";
 import { readLive, readOwnLiveRecords, workerCountsOf } from "./live";
 import { appliesAfter, mergeMode, MINOR_MODES, modeApplyPlan, modeInfo, readMode, resolveChatMode, type ModePatch, type ModeState } from "./mode-state";
@@ -196,6 +196,70 @@ export function drainQueueThenAbort(session: Pick<AgentSession, "clearQueue" | "
   const { steering, followUp } = session.clearQueue();
   if (steering.length || followUp.length) broadcast({ type: "queue_cleared", steering, followUp });
   return session.abort();
+}
+
+/**
+ * customType of the invisible entry a rewind appends. navigateTree({summarize:false}) only moves
+ * the SessionManager's in-memory leaf, and on reopen the SDK takes the file's LAST entry as the
+ * leaf, so without a write a reload or server restart would silently put the abandoned turns back.
+ * A `custom` entry parented on the new leaf pins it: it is extension state, never LLM context
+ * (buildSessionContext skips `custom`), our transcript renders nothing for it (normalizeEntry's
+ * default for custom types), and it carries no usage, so neither totals nor context fill move.
+ */
+export const REWIND_ENTRY = "pi-web-rewind";
+
+export type RewindOutcome = { ok: true; editorText: string } | { ok: false; reason: RewindRefusal; message: string };
+
+/** The members of AgentSession a rewind uses (narrow so tests can drive it with a fake). */
+export interface RewindTarget {
+  readonly isStreaming: boolean;
+  readonly isCompacting: boolean;
+  readonly sessionManager: Pick<SessionManager, "getBranch" | "getLeafId" | "appendCustomEntry">;
+  navigateTree(targetId: string, options: { summarize: boolean }): Promise<{ editorText?: string; cancelled: boolean }>;
+}
+
+/**
+ * Rewind to just before the user input `entryId` on the active branch: navigateTree moves the leaf
+ * to that message's parent (root when it is the first input) and returns its text, then the marker
+ * above makes the move durable. `guard` runs the write guards (throws BusyError); `beforeMarker`
+ * flushes the open-time appends. Those are flushed AFTER navigating, not before: flushed first,
+ * they would land on the branch being abandoned and the new branch would lose its model/thinking
+ * entries. A refusal writes nothing.
+ */
+export async function rewindSession(session: RewindTarget, entryId: string, hooks: { guard(): void; beforeMarker(): void }): Promise<RewindOutcome> {
+  const check = (): RewindOutcome | null => {
+    try {
+      hooks.guard();
+    } catch (err) {
+      if (!(err instanceof BusyError)) throw err;
+      return { ok: false, reason: err.code === "busy" ? "busy" : "recent", message: err.message };
+    }
+    if (session.isStreaming) return { ok: false, reason: "streaming", message: "Stop the turn first, then rewind." };
+    if (session.isCompacting)
+      return { ok: false, reason: "compacting", message: "Wait for the compaction or rewind in progress to finish, then rewind." };
+    return null;
+  };
+  try {
+    const refused = check();
+    if (refused) return refused;
+    const sm = session.sessionManager;
+    const target = sm.getBranch().find((e) => e.id === entryId);
+    if (target?.type !== "message" || target.message.role !== "user")
+      return { ok: false, reason: "not_on_branch", message: "That input is not on this chat's current branch anymore." };
+    const fromLeafId = sm.getLeafId();
+    const result = await session.navigateTree(entryId, { summarize: false });
+    if (result.cancelled) return { ok: false, reason: "cancelled", message: "An extension cancelled the rewind." };
+    // navigateTree awaits extension handlers; a TUI or foreign writer that appeared meanwhile
+    // still gets no write. The in-memory leaf has moved, but that runtime is write-refused from
+    // here on and a force reconnect reloads it from disk.
+    const late = check();
+    if (late) return late;
+    hooks.beforeMarker();
+    sm.appendCustomEntry(REWIND_ENTRY, { targetId: entryId, fromLeafId });
+    return { ok: true, editorText: result.editorText ?? "" };
+  } catch (err) {
+    return { ok: false, reason: "internal", message: err instanceof Error ? err.message : String(err) };
+  }
 }
 
 /** pi SourceInfo.scope → rpc get_commands `location` ("temporary" = explicit CLI/settings path). */
@@ -570,6 +634,9 @@ class ChatSession {
             .catch(fail);
           return;
         }
+        case "rewind":
+          this.rewind(client, String(msg.id ?? ""), String(msg.entryId ?? "")).catch(fail);
+          return;
         case "ui_response": {
           const pending = this.pendingUi.get(msg.id);
           if (pending) {
@@ -584,6 +651,39 @@ class ChatSession {
     } catch (err) {
       fail(err);
     }
+  }
+
+  /**
+   * The client's rewind (rewindSession), then the refresh no SDK event does: every client gets a
+   * fresh hello (branch-based, so transcript and context fill follow the new leaf) and this chat's
+   * mode re-resolved from the new branch, as bind() does (the mode extension re-resolves on
+   * session_tree too), with the workers snapshot between them. Only the requester gets the text back.
+   */
+  private async rewind(client: ChatClient, id: string, entryId: string): Promise<void> {
+    const outcome = await rewindSession(this.session, entryId, {
+      guard: () => {
+        assertNotLive(this.path);
+        this.assertNoForeignWrites();
+      },
+      beforeMarker: () => this.flushDeferredAppends(),
+    });
+    if (!outcome.ok) {
+      client.send({ type: "rewind_refused", id, entryId, reason: outcome.reason, message: outcome.message });
+      return;
+    }
+    if (!this.foreignWrite) markOwned(this.path); // the marker entry is our write
+    if (this.disposed) return;
+    this.broadcast(this.hello());
+    // Every client's hello handler clears its worker list, and pushWorkers only sends on change,
+    // so an unchanged set would stay blank: re-send it now (attach() does the same after hello).
+    const workers = this.workersSnapshot();
+    if (workers) {
+      this.lastWorkersJson = JSON.stringify(workers);
+      this.broadcast(workers);
+    }
+    this.modeState = resolveChatMode(this.session.sessionManager.getBranch());
+    this.broadcast(this.modeMessage());
+    client.send({ type: "rewound", id, entryId, editorText: outcome.editorText });
   }
 
   broadcast(msg: ChatServerMessage): void {

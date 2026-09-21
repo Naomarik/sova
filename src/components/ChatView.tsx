@@ -1,4 +1,4 @@
-import { batch, createEffect, createSignal, For, onCleanup, Show } from "solid-js";
+import { batch, createEffect, createSignal, For, on, onCleanup, Show } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { Portal } from "solid-js/web";
 import type { ChatServerMessage, SessionSummary, SlashCommand, TeamInfo, TranscriptItem, WorkerInfo } from "../../shared/protocol";
@@ -10,9 +10,11 @@ import { createReconnectingSocket } from "../lib/socket";
 import { usageTotal, type UsageTotalView, workingSplit } from "../lib/workers";
 import type { UploadResult } from "../../shared/protocol";
 import { announce, drafts, hideThinking, hideTools, sessionContext, setLocalRunning, setSessionContext, toast } from "../lib/ui-state";
-import { visibleCount } from "../lib/hidden-tools";
+import { visibleCount } from "../lib/hidden-rows";
+import { inputCount } from "../lib/input-count";
+import type { RewindControl, RewindResult } from "../lib/inputs";
 import { Composer, type ComposerReason } from "./Composer";
-import { FlyoutSession, type ThinkingControl } from "./ComposerMenu";
+import { FlyoutSession, type ThinkingControl, type UndoControl } from "./ComposerMenu";
 import { ConnectionBanner } from "./ConnectionBanner";
 import { SessionInfoDialog } from "./SessionInfoDialog";
 import type { ModeControl, ModeState } from "./ModeMenu";
@@ -52,12 +54,27 @@ export function ChatView(props: {
   onWorkers?(workers: WorkerInfo[], usage: UsageTotalView | null): void;
   /** Toggles the subagents pane from the composer's subagents row. */
   onShowWorkers?(): void;
+  /** The pane is open for this session ON THE AGENTS TAB (the subagents trigger's aria-expanded). */
   workersOpen?: boolean;
+  /** The pane is open for this session ON THE INPUTS TAB (the inputs trigger's aria-expanded). */
+  inputsOpen?: boolean;
+  /** The pane's active tab while it is open for this session ("inputs", "agents", …), else null:
+      each status-row trigger is aria-expanded only for its own tab. */
+  paneTab?: string | null;
   /** The session pane re-reads this after its Archive/Unarchive action succeeds; the info modal
       needs the same, or the sidebar row stays stale until its next poll. */
   onArchiveChanged?(): void;
   /** A bare "/new" in the composer (§4d); resolves to the new session's folder label, or null. */
   onNewSession?(): Promise<string | null>;
+  /** A bare "/tree" in the composer (§4d): opens the session pane's Inputs tab. */
+  onShowInputs?(): void;
+  /** Hands the Inputs tab this chat's rewind (sent over this socket); null when this view goes away. */
+  onRewindControl?(control: RewindControl | null): void;
+  /** A rewind landed on this chat, whoever asked (the Inputs tab, or the flyout's "Undo last
+      turn"): the Inputs tab must re-read the branch, or it keeps offering the abandoned rows.
+      Success only — a refusal changed nothing. App mints the generation counter the pane watches.
+      No text: this view prefills the composer itself, and the pane rebuilds its shadow from the id. */
+  onRewound?(info: { path: string; entryId: string }): void;
   /** This session's teams (polled insight), so the status row can name team members as such. */
   teams?: TeamInfo[];
 }) {
@@ -96,6 +113,8 @@ export function ChatView(props: {
   /** The same message's list, so the status row can split the count against this session's teams. */
   const [workerList, setWorkerList] = createSignal<WorkerInfo[]>([]);
   const workersSplit = () => workingSplit(workersWorking(), workerList(), props.teams);
+  /** A compaction is in flight: a manual /compact runs with no turn, so `live.running` misses it. */
+  const [compacting, setCompacting] = createSignal(false);
   let modelTimer: ReturnType<typeof setTimeout> | undefined;
   let thinkingTimer: ReturnType<typeof setTimeout> | undefined;
   onCleanup(() => {
@@ -139,7 +158,11 @@ export function ChatView(props: {
           const tokens = usageTokens(ev.message.usage);
           if (tokens !== null) setSessionContext(props.path, { tokens, window: windowOf(sessionContext()[props.path]) });
         }
-        if (isObj(ev) && ev.type === "compaction_end") setSessionContext(props.path, "compacted");
+        if (isObj(ev) && ev.type === "compaction_start") setCompacting(true);
+        if (isObj(ev) && ev.type === "compaction_end") {
+          setCompacting(false);
+          setSessionContext(props.path, "compacted");
+        }
         applyEvent(setLive, ev);
         if (isObj(ev) && ev.type === "agent_settled") settled = true;
       }
@@ -179,6 +202,7 @@ export function ChatView(props: {
           batch(() => {
             setItems(msg.items);
             setLive(reconcile({ ...emptyLive(), running: msg.isStreaming }));
+            setCompacting(false);
           });
           setModel(msg.model);
           batch(() => {
@@ -207,6 +231,23 @@ export function ChatView(props: {
           }
           break;
         }
+        // A rewind landed. The server has already broadcast the new branch's hello (and mode), so
+        // the thread is reset; what's left is the rewound message, which goes ahead of the draft.
+        case "rewound": {
+          batch(() => {
+            setErrors([]); // they belonged to the turns just abandoned
+            setCommandRows([]);
+            if (msg.editorText) setRestored({ text: msg.editorText });
+          });
+          announce(msg.editorText ? "Rewound. Your message is back in the composer." : "Rewound.");
+          props.onRewound?.({ path: props.path, entryId: msg.entryId });
+          settleRewind(msg.id, { ok: true, text: msg.editorText });
+          break;
+        }
+        // settleRewind announces it: the pane shows the same message inline on its row.
+        case "rewind_refused":
+          settleRewind(msg.id, { ok: false, reason: msg.reason, message: msg.message });
+          break;
         case "commands":
           setCommands(msg.commands);
           break;
@@ -278,6 +319,71 @@ export function ChatView(props: {
       }
     },
   });
+
+  // ---- Rewind (the Inputs tab and the flyout's "Undo last turn") ---------------------------
+  /** Requests in flight, by id: the server answers only the socket that asked. Every refusal is
+      announced from here, whoever asked (the pane shows its rows an inline note instead), so the
+      live region says each one exactly once and never leaves the last "Rewound." standing. */
+  const rewinds = new Map<string, (result: RewindResult) => void>();
+  let rewindSeq = 0;
+  /** How many are waiting, reactively: the flyout's Undo row greys out while one is in flight. */
+  const [rewindsPending, setRewindsPending] = createSignal(0);
+  const settleRewind = (id: string, result: RewindResult) => {
+    const waiting = rewinds.get(id);
+    if (waiting && !result.ok) announce(result.message);
+    waiting?.(result);
+    rewinds.delete(id);
+    setRewindsPending(rewinds.size);
+  };
+  /** A dropped connection takes its answers with it; the reconnect's hello shows what happened. */
+  const dropRewinds = () => {
+    for (const id of [...rewinds.keys()])
+      settleRewind(id, { ok: false, reason: "disconnected", message: "The connection dropped. Check the thread, then try again." });
+  };
+  createEffect(on(socket.status, (status) => status !== "open" && dropRewinds(), { defer: true }));
+  onCleanup(dropRewinds);
+  const rewindBlocked = (): "streaming" | "compacting" | null => (compacting() ? "compacting" : live.running ? "streaming" : null);
+  const rewind = (entryId: string): Promise<RewindResult> => {
+    // The server refuses these too; answering here saves the round trip. Never auto-abort.
+    const block = rewindBlocked();
+    const refuse = (reason: "streaming" | "compacting" | "disconnected", message: string): RewindResult => {
+      announce(message);
+      return { ok: false, reason, message };
+    };
+    if (block === "streaming") return Promise.resolve(refuse(block, "Stop the turn first, then rewind."));
+    if (block === "compacting") return Promise.resolve(refuse(block, "Wait for compaction to finish, then rewind."));
+    const id = `rewind-${++rewindSeq}`;
+    return new Promise((resolve) => {
+      if (!socket.send({ type: "rewind", id, entryId }))
+        return resolve(refuse("disconnected", "Not connected. Try again once it reconnects."));
+      rewinds.set(id, resolve);
+      setRewindsPending(rewinds.size);
+    });
+  };
+  props.onRewindControl?.({ path: props.path, blocked: rewindBlocked, rewind });
+  onCleanup(() => props.onRewindControl?.(null));
+  /** The flyout's "Undo last turn": a rewind to just before the newest user message on the branch. */
+  const lastInput = () => {
+    const list = items() ?? [];
+    for (let i = list.length - 1; i >= 0; i--) if (list[i]!.kind === "user") return list[i]!.id;
+    return null;
+  };
+  const undoControl: UndoControl = {
+    blocked: () => {
+      const reason = blocked();
+      if (reason) return reason.text;
+      const block = rewindBlocked();
+      if (block === "streaming") return "Stop the turn first, then undo.";
+      if (block === "compacting") return "Wait for compaction to finish, then undo.";
+      if (rewindsPending() > 0) return "A rewind is already in progress.";
+      return lastInput() ? null : "Nothing to undo yet.";
+    },
+    run: () => {
+      const id = lastInput();
+      // One rewind at a time: a second confirm before the reply would abandon two turns.
+      if (id && rewindsPending() === 0) void rewind(id).then((r) => !r.ok && toast(r.message));
+    },
+  };
 
   const answer = (id: string, value: unknown) => {
     socket.send({ type: "ui_response", id, value });
@@ -595,11 +701,16 @@ export function ChatView(props: {
         workersSplit={workersSplit()}
         onShowWorkers={props.onShowWorkers}
         workersOpen={props.workersOpen}
+        inputsOpen={props.inputsOpen}
+        paneTab={props.paneTab}
         onNewSession={props.onNewSession}
+        onShowInputs={props.onShowInputs}
+        inputCount={inputCount(items() ?? [])}
         autofocus={props.autofocus}
         model={modelControl}
         thinking={thinkingControl}
         onShowInfo={() => setShowInfo(true)}
+        undo={undoControl}
         onSend={send}
         onAbort={abort}
         restored={restored()}

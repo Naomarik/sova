@@ -23,6 +23,7 @@
  *   renderer does not classify this route at all.
  */
 
+import { posix } from "node:path";
 import type { SessionSkillOffer, SessionSkills, SessionSkillUse } from "../shared/protocol";
 
 type Rec = Record<string, unknown>;
@@ -33,12 +34,41 @@ const str = (v: unknown): string | undefined => (typeof v === "string" ? v : und
 /** pi's own parser for an expanded skill command, anchored at the start of the user row. */
 const SKILL_BLOCK_RE = /^<skill name="([^"]+)" location="([^"]+)">\n([\s\S]*?)\n<\/skill>(?:\n\n([\s\S]+))?/;
 
-/** Any argument naming a SKILL.md file. */
-const SKILL_PATH_RE = /[^\s"'`|;&)]+SKILL\.md/g;
+/** Commands that read a file: the first word of a command segment. */
+const READ_VERBS = new Set(["cat", "bat", "batcat", "less", "more", "head", "tail", "sed", "awk", "strings"]);
 
-/** A bash mention only counts as a load when the command reads a file rather than merely naming one.
-    Search verbs (grep, rg) are deliberately out: finding a SKILL.md is not loading it. */
-const READ_VERB_RE = /(^|[\s|;&(])(cat|bat|batcat|less|more|head|tail|sed|awk|strings)\s/;
+/** A heredoc's body is text a command writes, not a command being run: `python3 - <<'EOF' … EOF`. */
+const stripHeredocs = (command: string): string => command.replace(/<<-?\s*(['"]?)([A-Za-z_][A-Za-z0-9_]*)\1[\s\S]*?^\s*\2\s*$/gm, " ");
+
+/**
+ * The SKILL.md files a shell command actually READS.
+ *
+ * Deliberately narrow, because this route is inferred rather than recorded and the pane must never
+ * claim a load when a command merely mentioned a file. Two real false positives from this machine's
+ * own sessions shaped the rules: `… | head -6; grep -rl "x/SKILL.md"` matched a read verb and a path
+ * from two different commands, and a python heredoc whose source text contained `/s/alpha/SKILL.md`
+ * matched as if it were the command line. So: one command segment at a time, the path must be the
+ * argument the read verb reads, and heredoc bodies are not commands.
+ */
+export function shellSkillPaths(command: string): string[] {
+  const out: string[] = [];
+  for (const segment of stripHeredocs(command).split(/[|;&\n]+/)) {
+    const tokens = segment.trim().split(/\s+/).filter(Boolean);
+    for (let i = 0; i < tokens.length; i++) {
+      if (!READ_VERBS.has(tokens[i]!)) continue;
+      // Skip flags, then take consecutive file arguments: `cat a/SKILL.md b/SKILL.md` reads both.
+      for (let j = i + 1; j < tokens.length; j++) {
+        const token = tokens[j]!.replace(/^['"]|['"]$/g, "");
+        // Skip flags and a flag's own argument (`head -n 40 FILE`), then take consecutive file
+        // arguments: `cat a/SKILL.md b/SKILL.md` reads both.
+        if (token.startsWith("-") || /^\d+$/.test(token)) continue;
+        if (!/SKILL\.md$/.test(token)) break;
+        out.push(token);
+      }
+    }
+  }
+  return out;
+}
 
 const ENTITIES: Record<string, string> = { "&lt;": "<", "&gt;": ">", "&quot;": '"', "&apos;": "'", "&#39;": "'", "&amp;": "&" };
 
@@ -77,9 +107,16 @@ export function parseSkillSection(section: string): { name: string; description?
     command like `cat $dir/SKILL.md` must not become a skill called `$dir`. */
 const NOT_A_SKILL_NAME = /[$*?{}[\]\s"'`]/;
 
-/** pi's read renderer names a skill after the directory holding its SKILL.md (`…/playwright/SKILL.md`). */
-export function skillNameFromPath(path: string): string | undefined {
-  const parts = path.split("/").filter(Boolean);
+/**
+ * pi's read renderer names a skill after the directory holding its SKILL.md (`…/playwright/SKILL.md`).
+ *
+ * A relative path is resolved against the cwd the transcript records before the name is taken, so
+ * `cat ../SKILL.md` in `/repo/pkg` names `repo` (the directory that file is really in) instead of
+ * `..`. `.` and `..` can never come back as a name, whatever the path was.
+ */
+export function skillNameFromPath(path: string, cwd?: string): string | undefined {
+  const raw = !path.startsWith("/") && cwd ? `${cwd}/${path}` : path;
+  const parts = posix.normalize(raw).split("/").filter((s) => s && s !== "." && s !== "..");
   if (parts.length < 2) return undefined;
   const name = parts[parts.length - 2];
   return name && !NOT_A_SKILL_NAME.test(name) ? name : undefined;
@@ -125,7 +162,7 @@ function use(name: string, entryId: string, at: string | undefined, how: Session
 }
 
 /** One tool call's skill evidence, if it is a skill load at all. */
-function usesFromToolCall(name: string, args: unknown, entryId: string, at: string | undefined): SessionSkillUse[] {
+function usesFromToolCall(name: string, args: unknown, entryId: string, at: string | undefined, cwd: string | undefined): SessionSkillUse[] {
   const tool = name.toLowerCase();
   const a = isRec(args) ? args : {};
   // An explicit invocation (Claude Code): {skill, args}.
@@ -140,16 +177,15 @@ function usesFromToolCall(name: string, args: unknown, entryId: string, at: stri
     // pi spells the argument `path`; a Claude Code Read tool spells it `file_path`.
     const path = str(a.path) ?? str(a.file_path) ?? "";
     if (!/SKILL\.md$/.test(path)) return [];
-    const skill = skillNameFromPath(path);
+    const skill = skillNameFromPath(path, cwd);
     return skill ? [use(skill, entryId, at, "read", { location: path })] : [];
   }
-  // The bash route, inferred: only when the command reads a file, and one event per skill named.
+  // The bash route, inferred: only when a command really reads a SKILL.md.
   if (tool === "bash") {
     const command = str(a.command) ?? str(a.cmd) ?? "";
-    if (!READ_VERB_RE.test(command)) return [];
     const paths = new Map<string, string>();
-    for (const path of command.match(SKILL_PATH_RE) ?? []) {
-      const skill = skillNameFromPath(path);
+    for (const path of shellSkillPaths(command)) {
+      const skill = skillNameFromPath(path, cwd);
       if (skill && !paths.has(skill)) paths.set(skill, path);
     }
     return [...paths].map(([skill, path]) => use(skill, entryId, at, "shell", { location: path }));
@@ -165,10 +201,15 @@ export function collectSkills(entries: readonly unknown[]): SessionSkills {
   const offered: SessionSkillOffer[] = [];
   const open = new Map<string, SessionSkillOffer>();
   const used: SessionSkillUse[] = [];
+  /** The directory relative paths resolve against: pi's header carries it, and so does every
+      Claude Code line. Without it a relative SKILL.md path cannot be named honestly. */
+  let cwd: string | undefined;
 
   for (const entry of entries) {
     if (!isRec(entry)) continue;
     const at = str(entry.timestamp);
+    const thisCwd = str(entry.cwd);
+    if (thisCwd) cwd = thisCwd;
     // pi entries carry `id`; a Claude Code line carries `uuid`, which is what its transcript rows
     // are keyed by (`claude-transcript.ts`), so a jump target resolves on both backends.
     const id = str(entry.id) ?? str(entry.uuid) ?? "";
@@ -208,7 +249,7 @@ export function collectSkills(entries: readonly unknown[]): SessionSkills {
         const name = str(block.name);
         if (!name) return;
         const args = isRec(block.arguments) ? block.arguments : block.input;
-        used.push(...usesFromToolCall(name, args, `${id}:${i}`, at));
+        used.push(...usesFromToolCall(name, args, `${id}:${i}`, at, cwd));
       });
     }
   }

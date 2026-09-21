@@ -19,8 +19,8 @@ test("providerChip: a balance that can't fund calls reads 'Out of credit'", () =
   assert.equal(providerChip(deepseek(true)), null);
 });
 
-test("providerChip: a kept balance behind a failed fetch is Stale, but out of credit wins", () => {
-  assert.deepEqual(providerChip({ ...deepseek(true), error: "deepseek HTTP 500" }), { text: "Stale" });
+test("providerChip: a kept balance behind a failed fetch gets no chip, and out of credit still wins", () => {
+  assert.equal(providerChip({ ...deepseek(true), error: "deepseek HTTP 500" }), null);
   assert.deepEqual(providerChip({ ...deepseek(false), error: "deepseek HTTP 500" }), { tone: "error", text: "Out of credit" });
 });
 
@@ -101,7 +101,7 @@ test("usageGlance: a rounded balance in the row, the exact one in the tooltip", 
   assert.equal(part.full, "DeepSeek balance $4.99");
 });
 
-test("usageGlance: out of credit is the balance's emphasis, and staleness reads like the others", () => {
+test("usageGlance: out of credit is the balance's emphasis, and only an old file is stale", () => {
   const usage = (p: UsageProvider, stale = false): UsageInsight => ({
     available: true,
     fetchedAt: 1789796008254,
@@ -111,8 +111,8 @@ test("usageGlance: out of credit is the balance's emphasis, and staleness reads 
   });
   assert.equal(usageGlance(usage(deepseek(false)))[0]!.high, true);
   const kept = usageGlance(usage({ ...deepseek(true), error: "deepseek HTTP 500" }))[0]!;
-  assert.equal(kept.stale, true);
-  assert.equal(kept.full, "DeepSeek balance $4.29 (stale)");
+  assert.equal(kept.stale, false);
+  assert.equal(kept.full, "DeepSeek balance $4.29");
   assert.equal(kept.amount, "$4");
   assert.equal(usageGlance(usage(deepseek(true), true))[0]!.stale, true);
 });

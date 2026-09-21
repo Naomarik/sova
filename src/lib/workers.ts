@@ -5,20 +5,32 @@ import { formatTokens } from "./context";
     `workers` is top-level from newer servers; older ones only set it under `live`. */
 export const sessionWorking = (s: Pick<SessionSummary, "workers" | "live">): number => (s.workers ?? s.live?.workers)?.working ?? 0;
 
-/** Live agents right now: every worker in a fresh host session whose status isn't settled
-    (working + still-attached waiting), and how many sessions hold at least one. */
+/** Live agents right now: workers actually working in a fresh host session, and how many sessions
+    hold at least one. Idle is not active: a `waiting` worker is steerable but settled (SCHEMA.md),
+    so it counts for nothing here. */
 export function activeAgentCounts(a: AgentsInsight | undefined): { agents: number; sessions: number } {
   let agents = 0;
   let sessions = 0;
   for (const s of a?.sessions ?? []) {
     if (!s.fresh || !isHostSession(s)) continue;
     // From the counts, not `workers`: the array drops evicted workers, the counts never do.
-    const active = s.workerCounts.working + s.workerCounts.waiting;
+    const active = s.workerCounts.working;
     if (active <= 0) continue;
     agents += active;
     sessions++;
   }
   return { agents, sessions };
+}
+
+/** Teams the Agents foot row counts: a fresh host session's teams with at least one member still
+    working. A team whose members are all idle is listed on the Agents page, but not counted here. */
+export function activeTeamCount(a: AgentsInsight | undefined): number {
+  let teams = 0;
+  for (const s of a?.sessions ?? []) {
+    if (!s.fresh || !isHostSession(s)) continue;
+    teams += s.teams.filter((t) => t.working > 0).length;
+  }
+  return teams;
 }
 
 /** "1 subagent working…" / "3 subagents working…" */

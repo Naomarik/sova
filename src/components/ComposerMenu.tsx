@@ -1,6 +1,7 @@
 import { createContext, createMemo, createSignal, Index, Match, onCleanup, onMount, Show, Switch, useContext, type Accessor } from "solid-js";
 import { modelProvider, shortModel } from "../lib/format";
 import { ensureModels, thinkingLevelsFor } from "../lib/models";
+import { confirmActivate, confirmReset } from "../lib/confirm-step";
 import { hideThinking, hideTools, setHideThinking, setHideTools } from "../lib/ui-state";
 import { ModelPicker, type ModelControl } from "./ModelMenu";
 import { Icon, type IconName } from "./ui";
@@ -14,6 +15,13 @@ export interface ThinkingControl {
   /** Why changing is blocked right now (agent running, composer disabled), else null. */
   blocked: Accessor<string | null>;
   choose(level: string): void;
+}
+
+/** What the chat view exposes so the flyout can rewind to just before the last user message. */
+export interface UndoControl {
+  /** Why it can't run now ("Stop first…", nothing to undo, composer disabled), else null. */
+  blocked: Accessor<string | null>;
+  run(): void;
 }
 
 /** The flyout's three panels: the "+" button's root menu, the indicator's model panel, and the
@@ -60,7 +68,8 @@ interface Row {
 /**
  * The composer's flyout (DESIGN_NOTES §4b): one native popover anchored ABOVE whatever opened
  * it, in the model menu's visual family, with three panels. The ghost `plus` button opens the
- * **menu** panel (Attach images, Commands, Hide tool calls, Hide thinking, Session info); the
+ * **menu** panel (Attach images, Commands, Hide tool calls, Hide thinking, Session info, and in
+ * chats Undo last turn); the
  * composer's model indicator (§4) opens the **model** panel (the Model row and this model's
  * Thinking ladder); the Model row opens the §4c **picker**, which comes back to the model panel.
  * Ctrl/⌘+P opens the picker.
@@ -80,6 +89,8 @@ export function ComposerMenu(props: {
   thinking?: ThinkingControl | null;
   /** Opens the per-session info modal (§4h). */
   onShowInfo?: () => void;
+  /** Chat sessions only: "Undo last turn", a two-step row (the first click arms it). */
+  undo?: UndoControl | null;
   /** Puts focus back in the textarea after a choice. */
   onRefocus(): void;
   /** Called once on mount with the handle the composer's model indicator opens this menu by. */
@@ -95,6 +106,9 @@ export function ComposerMenu(props: {
   const [anchor, setAnchor] = createSignal<HTMLElement | null>(null);
   const [panel, setPanel] = createSignal<FlyoutPanel>("menu");
   const [active, setActive] = createSignal(0);
+  /** "Undo last turn" was activated once; the next activation runs it. It never outlives one
+      opening of the flyout (disarmed on both open and close), and one arming runs at most once. */
+  const [undoArmed, setUndoArmed] = createSignal(false);
   const session = useContext(FlyoutSession);
 
   const levels = createMemo(() => (props.thinking ? thinkingLevelsFor(props.model?.model()) : []));
@@ -161,6 +175,29 @@ export function ComposerMenu(props: {
           props.onShowInfo?.();
         },
       });
+    // Last, after its own separator: the only row here that changes the session.
+    const undo = props.undo;
+    if (undo) {
+      const why = undo.blocked();
+      out.push({
+        id: "undo",
+        role: "menuitem",
+        icon: "refresh",
+        label: undoArmed() && !why ? "Confirm: undo last turn" : "Undo last turn",
+        disabled: !!why,
+        title: why ?? "Rewind to before your last message; its text comes back to the composer",
+        run: () => {
+          // Two steps, inline (no modal): the first activation arms the row and keeps the flyout
+          // open. Disarming BEFORE running means a double click (or Enter then a click) re-arms
+          // instead of rewinding twice.
+          const step = confirmActivate(undoArmed(), !!why);
+          setUndoArmed(step.armed);
+          if (!step.run) return;
+          close(true);
+          undo.run();
+        },
+      });
+    }
     return out;
   });
 
@@ -363,6 +400,7 @@ export function ComposerMenu(props: {
         onToggle={(e) => {
           const isOpen = (e as ToggleEvent).newState === "open";
           setOpen(isOpen);
+          setUndoArmed(confirmReset().armed); // open or close: never an arming from last time
           if (isOpen) return;
           setPanel("menu"); // the panel, like the query, doesn't survive a close
           const from = anchor() ?? trigger;
@@ -421,6 +459,10 @@ export function ComposerMenu(props: {
               <Show when={pick((r) => r.id.startsWith("hide-") || r.id === "info").length > 0}>
                 <div class="composer-flyout-sep" role="separator" />
                 <Index each={pick((r) => r.id.startsWith("hide-") || r.id === "info")}>{(x) => <Item r={x().r} index={x().index} />}</Index>
+              </Show>
+              <Show when={pick((r) => r.id === "undo").length > 0}>
+                <div class="composer-flyout-sep" role="separator" />
+                <Index each={pick((r) => r.id === "undo")}>{(x) => <Item r={x().r} index={x().index} />}</Index>
               </Show>
             </div>
           </Match>

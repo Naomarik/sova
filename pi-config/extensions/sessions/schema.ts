@@ -40,6 +40,8 @@ export const MAX_WORKERS = 40;
 /** WorkerEntry.sessionFile/sessionId caps (same as session.sessionFile/sessionId). */
 export const WORKER_SESSION_FILE_MAX = 1024;
 export const WORKER_SESSION_ID_MAX = 64;
+/** WorkerEntry.effort cap: level names are short ("off", "medium", "xhigh", "max"). */
+export const WORKER_EFFORT_MAX = 32;
 /** Records dated further in the future than this are treated as garbage. */
 const FUTURE_SKEW_MS = 5 * 60_000;
 
@@ -77,6 +79,8 @@ export interface WorkerEntry {
   sessionFile?: string;
   /** Backend session id (Claude's session id for claude-code workers). */
   sessionId?: string;
+  /** Thinking/effort level the worker was spawned with; absent when the writer didn't publish one. */
+  effort?: string;
   startedAt?: number;
   lastActivity?: number;
   endedAt?: number;
@@ -203,6 +207,8 @@ function parseWorker(value: unknown): WorkerEntry | undefined {
     // Truncating a path/id would point elsewhere: empty or over-limit ⇒ dropped.
     sessionFile: whole(value.sessionFile, WORKER_SESSION_FILE_MAX),
     sessionId: whole(value.sessionId, WORKER_SESSION_ID_MAX),
+    // A truncated level would name a different one: same drop-don't-truncate rule.
+    effort: whole(value.effort, WORKER_EFFORT_MAX),
     startedAt: num(value.startedAt) ? value.startedAt : undefined,
     lastActivity: num(value.lastActivity) ? value.lastActivity : undefined,
     endedAt: num(value.endedAt) ? value.endedAt : undefined,

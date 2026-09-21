@@ -459,6 +459,10 @@ export function registerSubagents(
 			// Transcript path and backend session id only, never the transcript itself.
 			...(typeof a.sessionFile === "string" && a.sessionFile ? { sessionFile: a.sessionFile } : {}),
 			...(typeof a.sessionId === "string" && a.sessionId ? { sessionId: a.sessionId } : {}),
+			// The thinking/effort level it was spawned with (pi: explicit, else the parent's at spawn,
+			// then the child's own reported level; claude-code: resolved, "medium" by default).
+			// Absent when the manager never learned one, e.g. a re-adopted worker spawned without it.
+			...(typeof a.effort === "string" && a.effort ? { effort: a.effort } : {}),
 			...teamField(a.id),
 			...timestamps(a),
 			...(a.taskOutcome === "success" || a.taskOutcome === "error" || a.taskOutcome === "aborted"

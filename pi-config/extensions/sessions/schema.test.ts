@@ -78,6 +78,21 @@ test("worker sessionFile/sessionId: kept whole, invalid values dropped per field
   assert.equal(p.workers[2].sessionId, "s".repeat(64));
 });
 
+test("worker effort: kept whole, invalid values dropped, absent stays absent", () => {
+  const v2 = example("v2");
+  const r = parseLiveRecord(clone(v2), NOW)!;
+  assert.equal(r.presence!.workers[0].effort, "high");
+  assert.equal(r.presence!.workers[1].effort, "medium");
+  assert.ok(!("effort" in r.presence!.workers[2]), "a record written before effort existed still decodes without it");
+  const bad = clone(v2);
+  Object.assign(bad.presence.workers[0], { effort: "e".repeat(33) });
+  Object.assign(bad.presence.workers[1], { effort: 3 });
+  Object.assign(bad.presence.workers[2], { effort: "" });
+  const p = parseLiveRecord(bad, NOW)!.presence!;
+  assert.equal(p.workers.length, 3, "an invalid effort never rejects the worker or the record");
+  for (const w of p.workers) assert.ok(!("effort" in w), w.id);
+});
+
 test("activity.error only survives in the error state; invalid target is dropped, presence kept", () => {
   const v2 = example("v2");
   v2.presence.activity.error = "boom";

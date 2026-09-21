@@ -106,7 +106,7 @@ enforce them, and the reference reader enforces them again.
 
 **WorkerEntry**: `id` ✔ (150), `name` ✔ (120), `status` ✔ (80, free text),
 `model` (100), `preview` (180), `backend` (32, v2), `sessionFile` (1024, v2, optional),
-`sessionId` (64, v2, optional), `startedAt`/`lastActivity`/`endedAt`
+`sessionId` (64, v2, optional), `effort` (32, v2, optional), `startedAt`/`lastActivity`/`endedAt`
 (ms epoch, v2), `outcome` (`success`|`error`|`aborted`, v2), `usage` (WorkerUsage, v2).
 `sessionFile` is the absolute path of that worker's own transcript JSONL, never its
 contents (same rule as `session.sessionFile`); consumers may read it but must never
@@ -114,6 +114,11 @@ write to it. `sessionId` is the worker's backend session id (for `claude-code`
 workers, the Claude session id; those have no `sessionFile`). Both are additive:
 empty or over-limit values are dropped rather than truncated, and a reader that
 ignores them behaves exactly as before.
+`effort` is the thinking/effort level the worker was spawned with (`pi`: the explicit
+level, else the parent's at spawn, then the child's own reported one; `claude-code`:
+the resolved effort, `medium` by default). It is free text, not an enum, since the
+levels are backend-specific. Same rule: empty or over-limit ⇒ dropped, never truncated;
+absent means the writer didn't publish one (records written before it existed).
 Worker status is normalized to `starting|running|waiting|stopping|done|error|killed`,
 and common aliases map onto those (`busy` ⇒ running, `completed` ⇒ done, …).
 **Unknown ⇒ `running`**. `waiting` means steerable/idle. It does not mean the worker succeeded.

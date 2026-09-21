@@ -1,7 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { WORKER_OUTCOMES, WORKER_SESSION_FILE_MAX, WORKER_SESSION_ID_MAX, type WorkerEntry, type WorkerUsage, type WorkerUsageTotal } from "./schema.ts";
+import { WORKER_EFFORT_MAX, WORKER_OUTCOMES, WORKER_SESSION_FILE_MAX, WORKER_SESSION_ID_MAX, type WorkerEntry, type WorkerUsage, type WorkerUsageTotal } from "./schema.ts";
 
-/** schema.ts WorkerEntry: the v1 summary plus optional backend/session/timing/outcome/usage. */
+/** schema.ts WorkerEntry: the v1 summary plus optional backend/session/effort/timing/outcome/usage. */
 export type WorkerSummary = WorkerEntry;
 export type { WorkerUsage, WorkerUsageTotal };
 
@@ -58,6 +58,7 @@ function decodeSnapshot(data: unknown): WorkersSnapshot | undefined {
 			...(typeof w.backend === "string" ? { backend: w.backend } : {}),
 			...(bounded(w.sessionFile, WORKER_SESSION_FILE_MAX) ? { sessionFile: w.sessionFile } : {}),
 			...(bounded(w.sessionId, WORKER_SESSION_ID_MAX) ? { sessionId: w.sessionId } : {}),
+			...(bounded(w.effort, WORKER_EFFORT_MAX) ? { effort: w.effort } : {}),
 			...(time(w.startedAt) ? { startedAt: w.startedAt } : {}),
 			...(time(w.lastActivity) ? { lastActivity: w.lastActivity } : {}),
 			...(time(w.endedAt) ? { endedAt: w.endedAt } : {}),
@@ -83,7 +84,8 @@ function decodeSnapshot(data: unknown): WorkersSnapshot | undefined {
  * notably "waiting" means steerable, not necessarily successful. Workers may
  * also carry optional backend, sessionFile (absolute path of the worker's own
  * transcript JSONL, ≤ 1024 chars; never its contents, and consumers must not
- * write to it), sessionId (backend session id, ≤ 64 chars), startedAt/
+ * write to it), sessionId (backend session id, ≤ 64 chars), effort (the thinking/effort
+ * level the worker was spawned with, ≤ 32 chars), startedAt/
  * lastActivity/endedAt (ms epoch), outcome ("success"|"error"|"aborted") and
  * usage (cumulative input/output/cacheRead/cacheWrite counts, plus cost in USD
  * when the backend reports one — counts only, never text);

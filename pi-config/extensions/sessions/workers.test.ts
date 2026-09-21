@@ -159,6 +159,18 @@ test("additive fields pass through; invalid values are omitted without rejecting
 	}
 	h.snapshot([{ ...worker("running"), sessionFile: "/" + "x".repeat(1023), sessionId: 7 as unknown as string }]);
 	assert.deepEqual(changes.at(-1), [{ ...worker("running"), sessionFile: "/" + "x".repeat(1023) }]);
+	// Spawned effort: a valid level is copied; non-string, empty or over-limit is dropped; absent stays absent.
+	h.snapshot([{ ...worker("running"), effort: "xhigh" }]);
+	assert.deepEqual(changes.at(-1), [{ ...worker("running"), effort: "xhigh" }]);
+	for (const effort of [7, "", "e".repeat(33), { level: "high" }]) {
+		h.events.emit(WORKERS_SNAPSHOT_EVENT, { version: 1, workers: [{ ...worker("waiting"), effort }] });
+		assert.deepEqual(changes.at(-1), [worker("waiting")], JSON.stringify(effort));
+		h.snapshot([worker("running")]);
+	}
+	h.snapshot([{ ...worker("running"), effort: "e".repeat(32) }]);
+	assert.equal(changes.at(-1)![0].effort, "e".repeat(32));
+	h.snapshot([worker("waiting")]);
+	assert.ok(!("effort" in changes.at(-1)![0]), "an older manager's worker stays without effort");
 	h.fire("session_shutdown");
 });
 

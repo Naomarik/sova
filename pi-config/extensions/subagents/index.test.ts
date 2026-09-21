@@ -179,12 +179,12 @@ test("worker snapshots answer before startup and publish bounded background stat
 		await h.call("agent_spawn", { prompt: "background task", wake: false });
 		const a = h.workers[0];
 		assert.deepEqual(snapshots.at(-1).workers, [{ id: a.id, name: a.name,
-			status: "running", model: "test/model", preview: "No response yet.", backend: "pi" }]);
+			status: "running", model: "test/model", preview: "No response yet.", backend: "pi", effort: "high" }]);
 		// Additive presence fields come straight from the Worker; unset/invalid values are omitted.
 		Object.assign(a, { startedAt: 1_000, lastActivity: 2_000, endedAt: Number.NaN, taskOutcome: "bogus", pid: 4242 });
 		request();
 		assert.deepEqual(snapshots.at(-1).workers[0], { id: a.id, name: a.name, status: "running", model: "test/model",
-			preview: "No response yet.", backend: "pi", startedAt: 1_000, lastActivity: 2_000 });
+			preview: "No response yet.", backend: "pi", effort: "high", startedAt: 1_000, lastActivity: 2_000 });
 		for (const [taskOutcome, outcome] of [["success", "success"], ["error", "error"], ["aborted", "aborted"], [undefined, undefined]]) {
 			a.taskOutcome = taskOutcome;
 			request();
@@ -200,11 +200,18 @@ test("worker snapshots answer before startup and publish bounded background stat
 		request();
 		assert.deepEqual(snapshots.at(-1).workers[0], { id: a.id, name: a.name, status: "running", model: "test/model",
 			preview: "No response yet.", backend: "pi", sessionFile: "/tmp/sessions/worker.jsonl", sessionId: "0199-worker",
-			startedAt: 1_000, lastActivity: 2_000 });
+			effort: "high", startedAt: 1_000, lastActivity: 2_000 });
 		Object.assign(a, { sessionFile: "", sessionId: 42 });
 		request();
 		for (const key of ["sessionFile", "sessionId"]) assert.ok(!(key in snapshots.at(-1).workers[0]), key);
 		Object.assign(a, { sessionFile: undefined, sessionId: undefined });
+		// The effort it was spawned with (inherited from the parent here); empty, non-string or unknown ⇒ omitted.
+		for (const effort of ["", 7, undefined]) {
+			a.effort = effort;
+			request();
+			assert.ok(!("effort" in snapshots.at(-1).workers[0]), String(effort));
+		}
+		a.effort = "high";
 		// Privacy: cwd, pid, and task text never cross the bus.
 		for (const key of ["cwd", "pid", "task", "prompt"]) assert.ok(!(key in snapshots.at(-1).workers[0]), key);
 		assert.ok(!JSON.stringify(snapshots.at(-1)).includes("background task"));
@@ -237,6 +244,21 @@ test("worker snapshots answer before startup and publish bounded background stat
 		await closing;
 		await new Promise(resolve => setTimeout(resolve, 150));
 		assert.equal(snapshots.length, count);
+	} finally { off(); await h.close(); }
+});
+
+test("worker snapshots carry the effort each worker was spawned with", async () => {
+	const h = harness();
+	const snapshots: any[] = [];
+	const off = h.bus.on("subagents:workers-snapshot", data => snapshots.push(data));
+	try {
+		await h.start();
+		await h.call("agent_spawn", { prompt: "low effort task", effort: "low", wake: false });
+		await h.call("agent_spawn", { prompt: "inheriting task", wake: false });
+		h.bus.emit("subagents:workers-request", { version: 1 });
+		const [explicit, inherited] = snapshots.at(-1).workers;
+		assert.equal(explicit.effort, "low", "an explicit spawn effort is published as-is");
+		assert.equal(inherited.effort, "high", "an unset one publishes the parent level it inherited");
 	} finally { off(); await h.close(); }
 });
 

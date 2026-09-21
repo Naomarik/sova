@@ -70,9 +70,14 @@ function readMember(raw: unknown): GroupMember | null {
 /**
  * Whatever this version doesn't know about, kept verbatim. The store is written by whichever
  * pi-web is running, and they need not be the same build: a rebuild-on-load that keeps only the
- * fields it recognises DELETES a newer (or older) server's data on the next unrelated write —
- * a fanout group's `seed` erased by a rename, say. So every object we rebuild carries its
- * strangers with it, and the fields we do know are written last, over the top.
+ * fields it recognises DELETES a newer (or older) server's data on the next unrelated write.
+ * So every object we rebuild carries its strangers with it, and the fields we do know are
+ * written last, over the top.
+ *
+ * The consequence, which is why this is worth keeping when someone is tempted to simplify it
+ * away: a fanout group's `seed` written by a newer build would be erased by an older build
+ * RENAMING the group, and with it that group's fork markers and Align to Fork — silently, with
+ * nothing erroring, and nobody would trace the loss back to a rename (spec §14 "Data").
  */
 function passThrough(raw: Record<string, unknown>, known: readonly string[]): Record<string, unknown> {
   const rest: Record<string, unknown> = {};

@@ -333,7 +333,11 @@ member at once.
   `missing`**, where there is no file left to name, so nothing may build a link from it — `code` is the closed
   set the state table above names (`mid-turn` · `tui-live` · `archived` · `config` · `busy` ·
   `missing`), plus `internal` for a failure that fits none of them, and `message` is the server's
-  sentence. **The banner is composed from `code` and the member's own name** (§9), never by
+  sentence, and **`message` is never empty** — a refusal whose underlying error carried no text
+  falls back to that code's own sentence server-side. That guarantee is load-bearing rather than
+  tidy: `message` is what an older client shows when it meets a code it doesn't know, so an empty
+  one would drop the reason on the floor in exactly the case the fallback exists for.
+  **The banner is composed from `code` and the member's own name** (§9), never by
   parsing prose — so the words on screen are pi-web's and stay consistent with the rest of the
   product. `message` is shown verbatim in exactly two cases, and both are the same case really:
   when pi-web has no sentence of its own to say. `internal` is one (the server knows something we

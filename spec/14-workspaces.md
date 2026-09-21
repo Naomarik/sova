@@ -552,8 +552,8 @@ All four are writes to the group registry. None of them touches a session's JSON
 
 ### Emptying a group
 
-**A group that pi-web's own fanout CREATED is deleted by the write that removes its last member.
-A group made by hand is not — and it does not become one by later adopting a seed.**
+**A group pi-web both created and named is deleted by the write that removes its last member.
+A group made by hand survives empty — unconditionally, whatever else later happens to it.**
 
 This is the one place the two kinds of group differ, and the reason is what they are. A hand-made
 group is a name the user typed and a place they drag things into; §2 already specs it standing
@@ -575,15 +575,22 @@ an unreadable file keeps its group — and this extends that caution upward: boo
 files may forget an assignment, but it may not delete something the user named. So an empty fanout group
 **is** reachable, and the workspace renders it (below) rather than pretending it can't exist.
 
-**Adoption grants lineage, not disposability.** Fanning out into a hand-made group (§14b's
-`groupId`) writes a `seed` into it so the new members get fork markers. That must **not** make
-the group auto-dissolving. The rule was never "has a seed" — it is "was scaffolding": born with
-its members in one gesture, auto-named from the prompt, meaningless without them. A group the
-user named and then fanned into is still the thing they named, and deleting it on the write that
-empties it would destroy that name on the strength of an unrelated later action. So the registry
-records which of the two a `seed` is: **`seed.adopted: true`** when an existing group took one
-on, absent when the fanout created the group. Dissolve fires on a seed that is **not** adopted.
-One bit, and it keeps both properties — markers work, and the user's name survives.
+**`seed` is not the test, and never was a good proxy for one.** A seed says where a fork came
+from — it is marker data, nothing more. Dissolution turns on a different question: *did anyone
+type this name?* So the group carries an explicit flag, set **only** when a fanout creates a
+group and generates its name (`generated: true`, backend's spelling), and **that flag is the
+one truth of dissolution**. Nothing else confers it and nothing removes it.
+
+The proxy came apart at adoption. Fanning out into a hand-made group (§14b's `groupId`) writes
+a seed into it so the new members get fork markers — and keying on seed presence would have made
+that group auto-dissolving, destroying a name the user typed on the strength of an unrelated
+later fanout. That name is the exact property this rule exists to protect, so the case that
+breaks the proxy is also the case that matters most.
+
+**Adoption therefore changes nothing about dissolution**, and needs no warning in the fanout
+dialog: there is nothing to warn about. A hand-made group gains fork markers and keeps every
+other property it had, which is what a user would assume without being told. A warning would be
+the interface apologising for a rule we chose not to have.
 
 The delete happens server-side, in the same write, so no second request can fail halfway — and
 **the response has to say so**, because the client cannot infer it from a member count it just

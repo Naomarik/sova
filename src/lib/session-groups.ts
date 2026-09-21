@@ -9,6 +9,7 @@
 import { createSignal } from "solid-js";
 import type { SessionGroup, SessionSummary } from "../../shared/protocol";
 import { assignSessionGroup, createSessionGroup, deleteSessionGroup, listSessionGroups, patchSessionGroup, renameSessionGroup } from "./api";
+import { shortModel } from "./format";
 import { toast } from "./ui-state";
 
 /** One group and the sessions of it that the caller passed in (already the search hits). */
@@ -61,6 +62,34 @@ export function orderedMembers(sessions: readonly SessionSummary[], group: Sessi
   }
   for (const s of sessions) if (!seen.has(s.id)) out.push(s);
   return out;
+}
+
+/**
+ * What each tab SHOWS (spec/14-workspaces.md "A pane"). A tab's job is to tell one member from
+ * another inside this group, and a title often can't: every member of a fork shares the source's
+ * title, so a strip of five tabs reading "Retry with jitter" names nothing. The rule is the first
+ * thing that distinguishes it — the label if the user set one, else the model (with a repeat
+ * suffix when that model is in the group more than once) whenever members share a title, else the
+ * title. Returned in the members' own order, one per member.
+ */
+export function tabLabels(members: readonly { title: string; model?: string | null; label?: string | null }[]): string[] {
+  const titles = new Map<string, number>();
+  const models = new Map<string, number>();
+  for (const m of members) {
+    titles.set(m.title, (titles.get(m.title) ?? 0) + 1);
+    const model = shortModel(m.model);
+    if (model) models.set(model, (models.get(model) ?? 0) + 1);
+  }
+  // Numbered over the whole group, not over the title-sharers, so a member's suffix doesn't move
+  // when an unrelated member joins or leaves.
+  const seen = new Map<string, number>();
+  return members.map((m) => {
+    const model = shortModel(m.model);
+    const nth = model ? (seen.set(model, (seen.get(model) ?? 0) + 1), seen.get(model)!) : 0;
+    if (m.label) return m.label;
+    if ((titles.get(m.title) ?? 0) > 1 && model) return (models.get(model) ?? 0) > 1 ? `${model} #${nth}` : model;
+    return m.title;
+  });
 }
 
 /** The user's own word for a session inside its group ("control"), or null when it has none. */

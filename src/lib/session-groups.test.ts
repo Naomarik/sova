@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { SessionGroup, SessionSummary } from "../../shared/protocol";
-import { GROUP_DRAG_TYPE, dragHasRow, groupDragPath, groupNameOf, groupSections, memberLabel, orderedMembers, quoted, setGroupDragData } from "./session-groups";
+import { GROUP_DRAG_TYPE, dragHasRow, groupDragPath, groupNameOf, groupSections, memberLabel, orderedMembers, quoted, tabLabels, setGroupDragData } from "./session-groups";
 
 const group = (id: string, name: string): SessionGroup => ({ id, name, createdAt: "2026-09-20T00:00:00.000Z" });
 const session = (id: string, groupId?: string): SessionSummary =>
@@ -91,4 +91,36 @@ test("memberLabel reads the group's label for a session, and nothing for one wit
   assert.equal(memberLabel(labelled, "gone"), null);
   assert.equal(memberLabel(WORK, "a"), null);
   assert.equal(memberLabel(null, "a"), null);
+});
+
+test("a tab shows the title when titles already tell members apart", () => {
+  assert.deepEqual(
+    tabLabels([
+      { title: "Retry backoff", model: "zai/glm-5.3" },
+      { title: "Cache warming", model: "zai/glm-5.3" },
+    ]),
+    ["Retry backoff", "Cache warming"],
+  );
+});
+
+test("members sharing a title fall back to the model, numbered only when it repeats", () => {
+  assert.deepEqual(
+    tabLabels([
+      { title: "Retry with jitter", model: "zai/glm-5.3" },
+      { title: "Retry with jitter", model: "zai/glm-5.3" },
+      { title: "Retry with jitter", model: "anthropic/claude-opus-5" },
+    ]),
+    ["glm-5.3 #1", "glm-5.3 #2", "claude-opus-5"],
+  );
+});
+
+test("a label wins over both, and a member with no model keeps its title", () => {
+  assert.deepEqual(
+    tabLabels([
+      { title: "Retry with jitter", model: "zai/glm-5.3", label: "control" },
+      { title: "Retry with jitter", model: "zai/glm-5.3" },
+      { title: "Retry with jitter", model: null },
+    ]),
+    ["control", "glm-5.3 #2", "Retry with jitter"],
+  );
 });

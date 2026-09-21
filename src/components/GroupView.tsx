@@ -14,7 +14,7 @@ import {
   type GroupLayoutMode,
 } from "../lib/group-layout";
 import type { RewindControl } from "../lib/inputs";
-import { memberLabel, orderedMembers, quoted, setGroupOrder, setSessionGroup } from "../lib/session-groups";
+import { memberLabel, orderedMembers, quoted, setGroupOrder, setSessionGroup, tabLabels } from "../lib/session-groups";
 import { announce, toast } from "../lib/ui-state";
 import { sessionWorking, type UsageTotalView } from "../lib/workers";
 import type { PaneInsight, TabId } from "./SessionPane";
@@ -129,6 +129,13 @@ export function GroupView(props: {
     const model = shortModel(s?.model);
     return model ? `${name} · ${model}` : name;
   };
+
+  /** What each tab shows: the first thing that tells this member apart inside the group. */
+  const tabText = createMemo(() => {
+    const list = rows().map((m) => ({ title: m.title, model: m.model, label: memberLabel(props.group, m.id) }));
+    const text = tabLabels(list);
+    return new Map(rows().map((m, i) => [m.path, text[i] ?? m.title]));
+  });
 
   /**
    * The focused pane. The route names it, but moving between panes only replaces the URL (it is
@@ -291,6 +298,7 @@ export function GroupView(props: {
                 aria-controls={`pane-${paneIdFor(path)}`}
                 tabindex={active() === path ? 0 : -1}
                 title={nameOf(path)}
+                aria-label={`${labelOf(path) || summaryOf(path)?.title}${shortModel(summaryOf(path)?.model) ? `, ${shortModel(summaryOf(path)?.model)}` : ""}`}
                 onClick={() => focusPane(path, true)}
                 onKeyDown={(e) => {
                   if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
@@ -302,7 +310,7 @@ export function GroupView(props: {
                   document.getElementById(`ws-tab-${paneIdFor(next)}`)?.focus();
                 }}
               >
-                <span class="workspace-tab-title">{labelOf(path) || summaryOf(path)?.title}</span>
+                <span class="workspace-tab-title">{tabText().get(path)}</span>
                 {/* The one sign of a pane that is mounted but not shown: a member mid-turn. */}
                 <Show when={running(summaryOf(path))}>
                   <span class="live-dot" />
@@ -342,7 +350,11 @@ export function GroupView(props: {
                   id={`pane-${paneId}`}
                   classList={{ "workspace-pane-focused": active() === path }}
                   role={mode() === "tabs" ? "tabpanel" : "region"}
-                  aria-labelledby={mode() === "tabs" ? `ws-tab-${paneId}` : `pane-${paneId}-name`}
+                  /* Named the same in both modes, never by its tab: the live region's prefix IS
+                     this string, and a name assembled differently per mode makes that prefix
+                     byte-for-byte right in one of them and merely similar in the other. The tab's
+                     aria-controls already ties the two together. */
+                  aria-label={nameOf(path)}
                   tabindex="-1"
                   hidden={mode() === "tabs" && active() !== path}
                   style={mode() === "split" ? { "--workspace-pane-w": `${widthOf(path)}px` } : undefined}

@@ -19,13 +19,68 @@ With `--target <name>`, these tools are replaced by versions that run on the tar
 | Tool | How |
 | --- | --- |
 | `bash`, and `!` / `!!` commands (`user_bash`) | `BashOperations` → the target argv. The far command runs in its own session under a watchdog, so abort or timeout kills it on the far side too |
-| `read`, `write`, `edit` | Operations: `cat`, `cat >` (content on stdin), `mkdir -p`, `test -r` |
-| `ls`, `find` | Operations: one listing per directory for `ls`; far `find` with fd-like glob semantics, skipping `.git` and `node_modules` |
+| `read`, `write`, `edit` | Operations: one far command each: `read` = the existence/readability check folded into `cat` (`ENOENT: no such file on …` / `EACCES: not readable on …`), `write` = `mkdir -p` + `cat >` (content on stdin), `edit` = that read + that write. Writes and edits are serialized per **far** file in pi's `withFileMutationQueue` |
+| `ls`, `find` | Operations: one far command per `ls` (the kind check and the listing together); far `find` with fd-like glob semantics, skipping `.git` and `node_modules` |
 | `grep` | Re-registered whole (`GrepOperations` can't run a search): far `rg` when installed, else `grep -rnI` |
 
+**The pinned channel** (`channel.ts`). After the preflight answers, a long-lived far shell is
+started in the background over its own ssh connection, so its setup (~1.6 s) never lands on a tool
+call. File operations (`read`, `edit`'s read, `ls`, `find`, `grep`) run there when it is idle; a
+second call while it is busy, anything with stdin (`write`), scripts over 100 KB, and `bash` spawn
+their own ssh as before. It closes after 120 s idle; 2 failures within 60 s turn it off for 60 s.
+Off entirely with `PI_REMOTE_CHANNEL=0` or `--no-channel`.
+
+Every channel open is a fresh ssh login on its own TCP connection, and hosts rate-limit those
+(acme-prod: ~6 new logins per 30 s per source IP, a sliding window shared by the master, the
+channel, per-call fallbacks and your own shells; over it, fresh logins get `Connection refused`
+while the existing master keeps working). So the channel spends logins sparingly:
+
+1. It is warmed once and kept. After an abort, timeout or poison teardown it is reopened only by
+   the next tool call **and** no sooner than 30 s after the teardown (an idle close just waits for
+   the next call).
+2. A start refused with `Connection refused` is the host's rate limit, not a channel fault: it
+   doesn't count toward the 2-failures rule; the channel backs off 45 s, with no retry loop.
+3. During the backoff every call goes per call through the existing master, and the channel is
+   tried again only by the first tool call after the backoff. `/remote reconnect` bypasses it once.
+4. The status says so: `channelState: "rate-limited"`, `channelRetryAt`, `pinned: false`, `error`
+   = ssh's line; `state` stays `online` (per call works); the footer adds `· ssh rate-limited`.
+
+Budget: one master login plus one channel login per session leaves ~4 fresh logins per 30 s for
+everything else from this machine (other sessions, the folder browser, `check.ts`, your shells).
+
+Three deliberate departures from the obvious design, for the next reader:
+
+- **`bash` never rides the channel.** `dispatch()` in `index.ts` sends anything with `onData`,
+  `input` or `holdStdin` per call. A streaming tool result must not be reordered or attributed to
+  the wrong request; a write payload must not travel inside the request framing; and the meaning of
+  exit code 255 stays clean (per call it is ssh's "unreachable", over the channel it is the
+  command's own code, see the `viaChannel` check in `run()`). The channel is a fast lane for the
+  short, idempotent file operations, not a second bash transport.
+- **The far script goes to a private temp file, not `sh -c "$script"`.** One argv string is capped
+  at 128 KB on Linux, and a script can carry write content; the loop writes each request into a
+  `mktemp -d` directory and runs `sh <file>`, removing the directory on exit, HUP, PIPE and TERM.
+- **The channel has its own watchdog instead of `argv.ts`'s `hangupGuard`.** The guard watches its
+  own stdin for EOF, which inside the loop is `/dev/null` (fires at once) or the request stream
+  (would eat the next request). The loop's watchdog reads the channel's stdin only while a command
+  runs, when the client sends nothing, so it wakes only when the ssh client dies and then kills the
+  command's process group. It is reaped before the terminator is printed.
+
+Measured on acme-prod (RTT ~117 ms): a file op costs ~135 ms over the channel against ~255 ms
+per call over a warm ControlMaster; `bash` and `write` are unchanged. Over one representative turn
+(read, edit, ls, grep, two bash calls) the channel captures three of eight ssh spawns.
+
+**Status.** Two `setStatus` keys, always together: `remote`, the footer line
+(`⇄ <label> · user@hostname`, `· unreachable`, `· ssh rate-limited`, `· pinned`), and
+`remote-status`, JSON for pi-web's connection chip: `{state: "online"|"unreachable"|"unknown",
+target, host?, latencyMs?, pinned, channelState?: "off"|"warming"|"idle"|"busy"|"dead"|"rate-limited",
+channelRetryAt?, lastOkAt, runningMs?, error?, at}`. Re-published
+on session start, every probe and call outcome, every channel transition, and every 5 s while a
+command runs (`runningMs`). `/remote check` runs a fresh per-call probe; `/remote reconnect` drops the
+channel and re-probes; `/remote status` only re-publishes both keys from the current state (no
+ssh, no channel, no toast), for a client that reconnected to a live session. A first loss and a recovery also toast (`remote: …`).
+
 `before_agent_start` sets the prompt's cwd to the far cwd and adds a `remote-target` section,
-using prompt sections rather than replacing the prompt. The footer status shows
-`⇄ <label> · user@hostname`.
+using prompt sections rather than replacing the prompt.
 
 **Fail fast, fail closed.** A bounded preflight (`id -un; hostname; $HOME; pwd`) runs at session
 start. ssh always runs with `BatchMode=yes` and `ConnectTimeout=10`. An unreachable target makes
@@ -44,6 +99,7 @@ any other directory, the local cwd maps to the entry's `cwd` (or the far login d
 | --- | --- |
 | `argv.ts` | Pure, node-builtins-only. The entry schema, validation, the one argv builder (`buildTargetArgv`), the folder listing (`buildListDirsArgv`), quoting, and the placeholder path helpers. **pi-web's server imports it**, so keep it pi-runtime-free |
 | `exec.ts` | Spawns an argv with no local shell, with a timeout, abort handling and stdin |
+| `channel.ts` | The pinned channel: one far shell over its own ssh, length-prefixed requests, base64 + marker responses |
 | `check.ts` | `node check.ts entry.json [--list PATH] [--cmd …]`: validates an entry and runs it end to end through the same builder. The connection agent uses it before it writes an entry |
 | `index.ts` | The extension |
 
@@ -72,8 +128,11 @@ runs a path like `/tmp/it's/$(touch …/pwned)` through both layers and asserts 
 ## Tests
 
 ```sh
-cd extensions/remote && node --test argv.test.ts
+npx tsx --test pi-config/extensions/remote/*.test.ts
 ```
+
+`index.test.ts` counts far invocations per tool (read 1, edit 2, write 1, ls 1) with a fake runner
+that executes the far command locally, and runs the real channel loop under a local `sh`.
 
 When a proof run drives a model against a live target: Name exact paths. Never tell the model to read whatever find/ls returned; list freely, then read only a named file you have judged non-secret.
 

@@ -612,11 +612,17 @@ export function GroupView(props: {
                 </div>
               }
             >
+              {/* Seed + no members. The group knows those two facts and NOTHING about why, so the
+                  copy must not pick a cause: this is reachable by deletion outside pi-web AND by a
+                  user-named group whose members were removed or promoted, files intact. The old
+                  wording asserted the first, which is a falsehood in the second — and the datum
+                  that would separate them doesn't exist anywhere in the group. */}
               <div class="empty">
                 <Icon name="folder" class="empty-mark" />
-                <p class="empty-title">Every session in {quoted(props.group.name)} is gone.</p>
+                <p class="empty-title">{quoted(props.group.name)} has no sessions left.</p>
                 <p class="empty-body">
-                  Their files were deleted outside pi-web. The group is all that's left of the fanout.
+                  They were removed from the group, or their files were deleted outside pi-web. The group is
+                  all that's left of the fanout.
                 </p>
                 <button type="button" class="button empty-action button-destructive" onClick={() => void dissolve()}>
                   Dissolve

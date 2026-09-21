@@ -64,6 +64,8 @@ the model through one in-process MCP server the host owns?
 | (c) `set_max_thinking_tokens` | **ACCEPTED, no observable effect** for a non-first-party client. |
 | (d) `can_use_tool` break-early fallback | **NOT PROBED** — (a) passed, so it was never needed. |
 | (e) holding a `tools/call` | **WORKS, unbounded by default** — no default wall clock; `MCP_TOOL_TIMEOUT` imposes one, `sdkMcpServerConfigs.<name>.timeout` overrides it. |
+| (f) `--system-prompt-snapshot off` + `--session-id` + `--effort` | **ALL THREE ACCEPTED** together; the requested UUID is honoured. |
+| (f) image blocks | **Direction-specific.** Inbound user message needs `source:{type:"base64",…}`; the MCP shape `{data, mimeType}` is **fatal** on input but correct as a tool result. |
 
 
 Binary: `/home/user/.local/share/claude/versions/2.1.278` (`~/.local/bin/claude` symlinks to it),
@@ -253,6 +255,86 @@ Across `Say ONE.` → `set_model sonnet` → `Say TWO.`, the `message.model` fie
 assistant messages went `claude-haiku-4-5-20251001`, `claude-haiku-4-5-20251001`,
 `claude-sonnet-5`. The switch is visible per message, not only in `system/init` and `modelUsage`.
 
+## (f) Flag combination and image directions
+
+> **VERDICT (5): all three accepted together.** `--system-prompt-snapshot off --session-id <uuid>
+> --effort <low|high>` started cleanly under `-p`, exit 0, and the requested UUID was honoured
+> verbatim (`system/init.session_id` and `result.session_id` both echoed it).
+>
+> **VERDICT (6): the two image shapes are NOT interchangeable, and getting it wrong kills the
+> process.** Inbound user messages need the Anthropic shape; MCP tool results use the MCP shape.
+
+- **Inbound, Anthropic shape — WORKS.** A user message whose content was
+  `[{type:"image", source:{type:"base64", media_type:"image/png", data:<b64>}}, {type:"text", …}]`
+  was accepted, replayed back verbatim by `--replay-user-messages`, and a solid-red 24×24 PNG was
+  correctly described as "Red".
+- **Inbound, MCP shape — FATAL.** The same message sent as
+  `[{type:"image", data:<b64>, mimeType:"image/png"}, …]` produced
+  `result {subtype:"error_during_execution", is_error:true, num_turns:0, duration_ms:0}` with no
+  user replay and **exit 1** — the process ends. There is no soft rejection to recover from.
+- **Outbound (a tool result), MCP shape — WORKS**, and the CLI converts it: the server returns
+  `{type:"image", data, mimeType}` and the echoed tool_result carries
+  `{type:"image", source:{type:"base64", media_type, data}}` (see (a)).
+
+This matters directly for the bridge: pi's own `ImageContent` is `{type:"image", data, mimeType}`
+(pi-ai `dist/types.d.ts:256`), i.e. **the shape the CLI refuses on input**. Any pi image forwarded
+into a user message must be rewritten to `source:{type:"base64", media_type, data}` first; images
+travelling the other way, as MCP tool results, are already in the right shape and must not be
+rewritten.
+
+## Exact frames
+
+Inbound `tools/call` — the full frame, `_meta` included (this is where the CLI's `tool_use_id`
+lives, so a call can be correlated with its assistant block without guessing):
+
+```json
+{
+  "type": "control_request",
+  "request_id": "0c821cc8-ce14-4e07-aeb2-3a5b668e7d8d",
+  "request": {
+    "subtype": "mcp_message",
+    "server_name": "pi",
+    "message": {
+      "jsonrpc": "2.0",
+      "id": 2,
+      "method": "tools/call",
+      "params": {
+        "name": "pi_echo",
+        "arguments": { "text": "hello" },
+        "_meta": {
+          "claudecode/toolUseId": "toolu_01ExxUaWyAidij6tq6sxtDYt",
+          "progressToken": 2
+        }
+      }
+    }
+  }
+}
+```
+
+The host's reply to it:
+
+```json
+{
+  "type": "control_response",
+  "response": {
+    "subtype": "success",
+    "request_id": "0c821cc8-ce14-4e07-aeb2-3a5b668e7d8d",
+    "response": {
+      "mcp_response": {
+        "jsonrpc": "2.0",
+        "id": 2,
+        "result": { "content": [{ "type": "text", "text": "…" }] }
+      }
+    }
+  }
+}
+```
+
+A host-initiated `mcp_message` (server → CLI, e.g. a notification) uses the same envelope with the
+host's own `request_id`, and the CLI acknowledges it with a bare `{subtype:"success", request_id}`
+carrying no `mcp_response`. A **notification** arriving from the CLI still needs an answer, and the
+filler is `{"jsonrpc":"2.0","result":{},"id":0}`.
+
 ## Probe scripts
 
 `../tests/spike-*.mjs`, committed as spike artifacts. They are **not** part of
@@ -266,6 +348,7 @@ question and is kept as the evidence for this document, not as library code.
 | `spike-system-prompt.mjs` | (b) the four prompt routes, snapshot across resume; (c) `set_model`, `set_max_thinking_tokens` |
 | `spike-prompt-sources.mjs` | (b) `CLAUDE.md` vs `--setting-sources`, replaced prompt + tool use, thinking blocks |
 | `spike-tool-timeout.mjs` | (e) the timeout wall, the env var, the per-server override, the snapshot flag |
+| `spike-flags-and-images.mjs` | (f) the flag combination, and both image directions |
 
 ## Still unverified
 

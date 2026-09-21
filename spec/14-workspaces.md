@@ -427,7 +427,11 @@ All four are writes to the group registry. None of them touches a session's JSON
   was called and where it was. An undo that silently dropped the name you gave a member, or put
   it back in a different place, would not be one.
   - **One write, not two.** `Add Back` sends `assign {path, groupId, label, index}` — position
-    included — so the restore cannot half-succeed. This is the one gesture where atomicity is
+    included, `0` being first and anything at or past the end landing at the end — so the restore
+    cannot half-succeed. `index` works here precisely because a promoted session has **left** the
+    group: assign is a position no-op for a member already in its target, and moving one that is
+    already there is `PATCH {order}`'s job, not assign's. One route changes membership, the other
+    changes arrangement. This is the one gesture where atomicity is
     worth a field: it is the undo for Promote, and an undo that partly works is worse than one
     that fails cleanly and says so.
   - **Against a server that doesn't take `index`** the field is ignored and the member lands at

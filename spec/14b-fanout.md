@@ -100,6 +100,14 @@ beside each other), a bottom sheet under 768px.
   a suffix in the pane name: `claude-opus-5 #1`, `#2`, `#3`, numbered in member order.
 - **The group name** defaults to `Fanout · {first 6 words of the source's title, or of the fresh
   prompt}`, trimmed to 60. It is a plain text field, duplicates allowed, exactly as §2's rename.
+- **The default stops being offered the moment the user edits it.** In fresh mode the default is
+  derived from the first message *as it is typed*, so it is re-derived on every keystroke of the
+  prompt — but **only while the field is still ours to guess at**. Once the user has typed in it,
+  the name is theirs and nothing regenerates over it. Without that stop, refining the prompt
+  after naming the group silently replaces the name with a guess, which is this feature's whole
+  recurring defect one level down: a generated value with no event wired to *the user has taken
+  this over*. The trigger is **the field being edited**, not the string differing from what we
+  would generate — someone who types the default by hand still owns it.
 - **The primary counts what it will do**: `Create 5 Members`, `Creating…` while in flight, and
   `aria-disabled` with a reason when the total is 0 or a row can't fit (below).
 

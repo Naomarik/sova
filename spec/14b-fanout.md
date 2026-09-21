@@ -162,6 +162,10 @@ new workspace.
   migration). So fanout needs a quiet source: not TUI-live, not mid-turn here, and not inside the
   recent-write window an unidentified writer leaves (`RECENT_WRITE_MS`, `server/write-guard.ts`).
   Each of the three has its own words in States below, and none of them is a silent failure.
+  **The checks that establish it add no synchronous fs call to the event loop**: a source's path
+  is validated by shape alone (`sessionPathShape`, no syscalls) and its existence by one async
+  stat on a local JSONL under the sessions directory. Nothing in this feature ever stats a
+  session's `cwd`, which for a mounted target is a fuse path that can hang the whole server.
 - **The source is not a member.** It is not modified, not rewound and not assigned to the group:
   it stays where it is, and `parentSession` in each member's header — the source's path, written
   by the SDK — is the only link back.

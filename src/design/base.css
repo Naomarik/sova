@@ -572,6 +572,12 @@ button.list-row { width: 100%; border: 0; background: none; text-align: left; }
   border-top: var(--stroke-thin) solid var(--color-border);
 }
 .modal-spacer { flex: 1; }
+
+/* The Settings dialog needs its tab rail beside the panel, so it takes a wider
+   variant (spec/07: recorded deviation — the skill's modal caps at 520px).
+   Declared before the folded block so the sheet can win the width back. */
+.modal-wide { width: min(760px, calc(100vw - var(--space-8))); }
+
 /* Folded: the same markup arrives as a sheet, inside the thumb arc. An overlay
    is window chrome, so this asks the window. */
 @media (max-width: 767px) {
@@ -583,9 +589,184 @@ button.list-row { width: 100%; border: 0; background: none; text-align: left; }
     border-radius: var(--r-xl) var(--r-xl) 0 0;
     border-bottom: 0;
   }
+  /* The wide modal keeps the same full-bleed sheet frame. */
+  .modal-wide { width: auto; }
+}
+
+/* The sheet's grip: folded only. An affordance, never a control (spec/12). */
+.sheet-grip { display: none; }
+@media (max-width: 767px) {
+  .sheet-grip {
+    display: block;
+    flex: none;
+    width: 36px;
+    height: 4px;
+    margin: var(--space-3) auto 0;
+    border-radius: var(--r-full);
+    background: var(--color-border-strong);
+  }
+  .sheet-grip + .modal-head { padding-top: var(--space-2); }
 }
 
 @keyframes enter-fade { from { opacity: 0; } to { opacity: 1; } }
+
+
+/* ---- TOGGLE (switch). The skill's Toggle, switch variant only: a native input
+   hidden inside its label row, so the whole 44px row is the target and keyboard
+   and screen readers come free. The box may sit after the row's text, hence `~`. */
+
+.toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-height: var(--tap-min);
+  cursor: pointer;
+  font-size: var(--fs-body);
+}
+.toggle input { position: absolute; opacity: 0; width: 0; height: 0; }
+.toggle-box {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  border: var(--stroke-icon) solid var(--color-border-strong);
+  border-radius: var(--r-xs);
+  background: var(--color-surface);
+}
+.toggle-switch .toggle-box {
+  width: 40px;
+  height: 24px;
+  border-radius: var(--r-full);
+  background: var(--color-sunken);
+  border-color: transparent;
+  position: relative;
+  transition: background-color var(--dur-fast) var(--ease-standard);
+}
+.toggle-switch .toggle-box::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: var(--r-full);
+  background: var(--color-ink-muted);
+  transition: transform var(--dur-fast) var(--ease-standard),
+              background-color var(--dur-fast) var(--ease-standard);
+}
+.toggle input:checked ~ .toggle-box { background: var(--color-accent); border-color: var(--color-accent); }
+.toggle-switch input:checked ~ .toggle-box { background: var(--color-accent); border-color: transparent; }
+.toggle-switch input:checked ~ .toggle-box::after { transform: translateX(16px); background: var(--color-on-accent); }
+.toggle input:focus-visible ~ .toggle-box { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.toggle input:disabled ~ .toggle-box { opacity: .42; }
+.toggle input:disabled ~ * { cursor: default; }
+
+
+/* ---- SETTINGS DIALOG. A left tab rail and one panel; the subagent model
+   policy lists provider rows with their models indented under them. The rail
+   is the structure further settings screens slot into (spec/12). ---------- */
+
+.settings-body {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr);
+  flex: 1;
+  min-height: 320px;
+  overflow: hidden;
+}
+/* The rail carries no fill of its own: the panel is the only surface, and the
+   active tab's tint has to read against it in both themes. A sunken rail put
+   light-theme tint within a hair of the rail's own fill. */
+.settings-tabs {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  border-right: var(--stroke-thin) solid var(--color-border);
+}
+.settings-tab {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--tap-min);
+  padding: 0 var(--space-3);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--color-ink-2);
+  font-size: var(--fs-body);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-standard),
+              color var(--dur-fast) var(--ease-standard);
+}
+.settings-tab .icon { flex: none; color: var(--color-ink-muted); transition: color var(--dur-fast) var(--ease-standard); }
+.settings-tab:hover { background: var(--color-sunken); color: var(--color-ink); }
+.settings-tab:hover .icon { color: var(--color-ink-2); }
+.settings-tab[aria-selected="true"] { background: var(--color-accent-tint); color: var(--color-ink); font-weight: var(--fw-medium); }
+.settings-tab[aria-selected="true"] .icon { color: var(--color-ink-2); }
+/* Inset ring: a positive offset clips against the rail and the folded strip. */
+.settings-tab:focus-visible { outline: var(--focus-ring); outline-offset: calc(var(--focus-offset) * -1); }
+
+.settings-panel {
+  padding: var(--space-4);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.settings-intro { margin: 0; font-size: var(--fs-caption); color: var(--color-ink-2); }
+
+.settings-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.settings-list > li { border-bottom: var(--stroke-thin) solid var(--color-border); }
+.settings-list > li:last-child { border-bottom: 0; }
+
+/* Provider row: the group head, with its own switch. The name takes the app's
+   group-label voice (mono, semibold, its own case); the count is its meta. */
+.settings-provider {
+  padding: var(--space-1) var(--space-2);
+  margin: 0 calc(-1 * var(--space-2));   /* the hover fill bleeds into the panel padding */
+  border-radius: var(--r-sm);
+}
+.settings-provider-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.settings-provider-name { font-family: var(--font-mono); font-size: var(--fs-mono); font-weight: var(--fw-semibold); color: var(--color-ink); }
+.settings-provider-meta { font-size: var(--fs-caption); color: var(--color-ink-muted); }
+
+/* Models sit under their provider behind one guide rule — depth is the rule's
+   job, not the indent's, so the name keeps its width. */
+.settings-models {
+  list-style: none;
+  margin: 0 0 var(--space-1) var(--space-2);
+  padding: 0 0 0 var(--space-2);
+  border-left: var(--stroke-thin) solid var(--color-border);
+}
+.settings-model {
+  min-height: var(--tap-min);
+  padding-right: var(--space-2);
+  margin-right: calc(-1 * var(--space-2));
+  border-radius: var(--r-sm);
+}
+.settings-model-main { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.settings-model-name { font-size: var(--fs-body); color: var(--color-ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.settings-model-ref { font-family: var(--font-mono); font-size: var(--fs-mono); color: var(--color-ink-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Every row is a target; hovering one names it. */
+.settings-provider:hover,
+.settings-model:hover { background: var(--color-sunken); }
+
+/* Folded: the rail becomes a horizontal tab strip above the panel, inside the
+   sheet. It keeps the active tint (the strip has no fill to fight), and gains
+   a 44px target to match the rail. */
+@media (max-width: 767px) {
+  .settings-body { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); }
+  .settings-tabs {
+    flex-direction: row;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-4);
+    border-right: 0;
+    border-bottom: var(--stroke-thin) solid var(--color-border);
+  }
+}
+
 
 
 /* ---- CHAT THREAD. Tool turns are mono and quieter than either speaker. --- */
@@ -2229,6 +2410,15 @@ summary.sidebar-region-head .icon-twist { transition: transform var(--dur-fast) 
 @media (max-width: 767px) {
   .command-menu-foot { display: none; }
 }
+
+/* ---- FILE MENU. The @-mention autocomplete (§04h): the command menu's
+   twin — same anchor, same rows. A directory's name carries its "/" and a
+   chevron in the badge column; the location column carries the path so
+   far, so a two-deep pick still reads as one path. ----------------------- */
+
+.file-option-slash,
+.file-option-chevron { color: var(--color-ink-muted); }
+.file-option-chevron { justify-self: end; }
 /* The flyout replaced Attach + Commands with one 44px button (§4b), so the
    row no longer has to drop a control at 320px: at a 288px composer while
    streaming the textarea still keeps 132px. */
@@ -2721,6 +2911,19 @@ summary.sidebar-region-head .icon-twist { transition: transform var(--dur-fast) 
   font-size: var(--fs-caption);
 }
 .insights-row[aria-current="page"] { background: var(--color-accent-tint); color: var(--color-ink); }
+/* The Agents row and the Settings gear share one line: the glance link keeps its
+   width, the gear sits at the row's right end, clear of the text it follows. */
+.sidebar-foot-row { display: flex; align-items: stretch; }
+.sidebar-foot-link { flex: 1; min-width: 0; }
+.sidebar-settings {
+  flex: none;
+  align-self: center;
+  margin-right: var(--space-2);
+  border-color: transparent;
+  background: transparent;
+  color: var(--color-ink-muted);
+}
+.sidebar-settings:hover { background: var(--color-sunken); color: var(--color-ink); }
 
 /* Usage glance: "C 47%  O 95%  OL 80%  Z 0%", one segment per provider.
    Never wraps (4 × 100% ≈ 210px fits the 320px sidebar); clips as a guard.

@@ -26,6 +26,7 @@ import { isMounted, mountPointOf, verifyMounted } from "../pi-config/extensions/
 import { findTarget, isTargetName, listRemoteFolders, listTargets, mountDir, normalizeRemotePath, remoteOfCwd, targetDir, targetsFile, toggleTargetMount } from "./targets";
 import { isExplanationId, listExplanations, readExplanationPage } from "./explanations";
 import { switchMode } from "./mode";
+import { readSubagentPolicy, writeSubagentPolicy } from "./settings";
 import { modeInfo, parseModePatch, readMode } from "./mode-state";
 import { attachWebSockets } from "./ws";
 
@@ -209,11 +210,13 @@ app.post("/api/sessions/archive", async (c) => {
   return r.ok ? c.json(r.summary) : c.json({ error: r.error }, r.status);
 });
 
-// Permanently deletes transcript files from disk: sessions older than 7 or 30 days, or empty
-// zero-input husks. dryRun reports what would go (deletedIds) without deleting. Live, mid-turn
-// and just-written sessions are always skipped and counted in the response.
+// Permanently deletes transcript files from disk: sessions older than 7 or 30 days, empty
+// zero-input husks, or the named sessions of paths mode (spec/02-session-list.md §2 "Deleting one
+// session" — one archived row at a time). dryRun reports what would go (deletedIds) without
+// deleting. Live, mid-turn and just-written sessions are always skipped and counted in the response;
+// paths mode also refuses anything without the archive mark, with the reason per path.
 app.post("/api/sessions/cleanup", async (c) => {
-  let body: { mode?: unknown; minAgeDays?: unknown; dryRun?: unknown };
+  let body: { mode?: unknown; minAgeDays?: unknown; paths?: unknown; dryRun?: unknown };
   try {
     body = await c.req.json();
   } catch {
@@ -223,7 +226,20 @@ app.post("/api/sessions/cleanup", async (c) => {
   if (body.mode === "age" && (body.minAgeDays === 7 || body.minAgeDays === 30))
     return c.json(await cleanupSessions({ mode: "age", minAgeDays: body.minAgeDays, dryRun }));
   if (body.mode === "husks") return c.json(await cleanupSessions({ mode: "husks", dryRun }));
-  return c.json({ error: 'mode must be "husks", or "age" with minAgeDays 7 or 30' }, 400);
+  if (body.mode === "paths") {
+    if (!Array.isArray(body.paths) || body.paths.length === 0 || body.paths.length > 100 || !body.paths.every((p) => typeof p === "string"))
+      return c.json({ error: "paths must be 1–100 session paths" }, 400);
+    // Each path validated exactly like the archive route's, so nothing outside the sessions dir
+    // reaches the delete loop.
+    const paths: string[] = [];
+    for (const raw of body.paths) {
+      const path = resolveSessionPath(raw);
+      if (!path) return c.json({ error: "Invalid or missing path (must be a .jsonl under the pi sessions dir)" }, 400);
+      paths.push(path);
+    }
+    return c.json(await cleanupSessions({ mode: "paths", paths, dryRun }));
+  }
+  return c.json({ error: 'mode must be "husks", "paths", or "age" with minAgeDays 7 or 30' }, 400);
 });
 
 // Composer drafts, kept by pi-web beside the session (server/drafts.ts), never in its file: a
@@ -289,6 +305,20 @@ app.get("/api/folders", async (c) => {
 });
 
 app.get("/api/models", async (c) => c.json(await listModels()));
+
+// The subagent model policy (spec/12-settings-dialog.md §12): GET reads it (empty = nothing
+// disabled), PUT replaces the whole policy. The subagents extension picks the file up per spawn.
+app.get("/api/settings/subagents", (c) => c.json(readSubagentPolicy()));
+app.put("/api/settings/subagents", async (c) => {
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "Expected JSON body { disabledProviders, disabledModels }" }, 400);
+  }
+  const result = writeSubagentPolicy(body);
+  return "error" in result ? c.json({ error: result.error }, 400) : c.json(result);
+});
 
 // The mode is per session (spec/04g-mode-menu.md §4g). ~/.pi/agent/mode.json is the default new sessions
 // start from; GET reads it, POST without ?path= writes it and changes no open chat.

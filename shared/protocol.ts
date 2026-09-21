@@ -289,9 +289,13 @@ export interface UploadResult {
 //                                  writes the session file. 400 bad body/path, 404 missing, 409 archiving a live
 //                                  or non-web session)
 // POST /api/sessions/cleanup { mode:"age", minAgeDays:7|30, dryRun? } | { mode:"husks", dryRun? }
-//     -> { deletedCount, deletedIds: string[], skipped:{live,busy,recent,failed} }   (permanently deletes
-//     transcript files; dryRun reports candidates in deletedIds with deletedCount 0; live, mid-turn and
-//     just-written sessions are skipped and counted)
+//     | { mode:"paths", paths: string[] (1–100, each validated like the archive route's path), dryRun? }
+//     -> { deletedCount, deletedIds: string[], skipped:{live,busy,recent,failed}, refused?:[{path,reason}] }
+//     (permanently deletes transcript files; dryRun reports candidates in deletedIds with deletedCount
+//     0; live, mid-turn and just-written sessions are skipped and counted. paths mode deletes named
+//     session files, only ones carrying the archive mark — an unarchived session is refused with a
+//     reason to archive it first, as is anything outside the sessions dir, gone, or unreadable; each
+//     refusal is returned in refused with its reason. refused is paths-mode-only, additive)
 // GET  /api/sessions/draft?path=… -> { text: string | null, attachments: UploadResult[], updatedAt: string | null }
 //                                  (the stored composer draft, ~/.pi/agent/pi-web/drafts.json; nulls and [] when
 //                                  none; attachments whose file is gone are left out. 400 bad path, 404 missing)
@@ -323,6 +327,20 @@ export interface UploadResult {
     vs the model's contextWindow from models-store.json. null when no assistant message yet or
     window unknown. Live-updates via the assistant usage in passthrough events at turn end. */
 export interface ContextInfo { tokens: number; window: number | null }
+
+// GET /api/settings/subagents    -> SubagentModelPolicy (empty lists when nothing is disabled)
+// PUT /api/settings/subagents    -> SubagentModelPolicy (replaces the whole policy; 400 bad body)
+// ---------------------------------------------------------------------------
+/** Which providers and models are blocked from being picked as subagents or team members
+    (Settings dialog §12). Storage and enforcement live in the subagents extension
+    (pi-config/extensions/subagents/policy.ts), which reads the same file per spawn — TUI
+    sessions included. Providers are lowercase names ("anthropic", or a backend id like
+    "claude-code"); models are "provider/modelId" refs. */
+export interface SubagentModelPolicy {
+  disabledProviders: string[];
+  disabledModels: string[];
+}
+
 
 export interface ModelInfo {
   /** "provider/modelId" — the canonical ref used in set_model. */

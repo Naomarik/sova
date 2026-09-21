@@ -3,7 +3,7 @@ import { open, readdir, stat, unlink } from "node:fs/promises";
 import { basename, join } from "node:path";
 import type { SessionSummary } from "../shared/protocol";
 import { type LiveRecord, readLive, readOwnLiveRecords, workerCountsOf } from "./live";
-import { LIVE_DIR, SESSIONS_DIR } from "./paths";
+import { LIVE_DIR, resolveSessionPath, SESSIONS_DIR } from "./paths";
 import { isWebSession, removeWebSession } from "./web-sessions";
 import { parseWakeNudge } from "../shared/wake";
 import { RECENT_WRITE_MS } from "./write-guard";
@@ -566,39 +566,58 @@ export async function isZeroInput(path: string, size: number): Promise<boolean> 
 
 export type CleanupRequest =
   | { mode: "age"; minAgeDays: number; dryRun: boolean }
-  | { mode: "husks"; dryRun: boolean };
+  | { mode: "husks"; dryRun: boolean }
+  | { mode: "paths"; paths: string[]; dryRun: boolean };
 
 export interface CleanupResult {
   /** Files deleted; 0 on a dry run (deletedIds then holds the candidates). */
   deletedCount: number;
   deletedIds: string[];
   skipped: { live: number; busy: number; recent: number; failed: number };
+  /** paths mode only: every path refused with why — nothing deleted for it, and not counted in
+   *  skipped, which stays the live/busy/recent/failed vocabulary. */
+  refused?: { path: string; reason: string }[];
 }
 
 /**
  * POST /api/sessions/cleanup: permanently deletes transcript files from disk — sessions older
- * than minAgeDays (by last write), or empty husks. Live, mid-turn, and just-written sessions
- * are always skipped and counted, whatever the mode; held web runtimes are disposed first,
- * like the archive gesture. The index cache, both id lists, the drafts and the session's attachments
- * folder are updated per deleted file.
+ * than minAgeDays (by last write), empty husks, or (mode "paths") the named session files. Live,
+ * mid-turn, and just-written sessions are always skipped and counted, whatever the mode; held web
+ * runtimes are disposed first, like the archive gesture. The index cache, both id lists, the drafts
+ * and the session's attachments folder are updated per deleted file.
+ *
+ * paths mode is the irreversible second step after archiving: only files carrying the archive
+ * mark are deleted, and every path is re-validated with resolveSessionPath (the same validation
+ * the route and the archive gesture apply), so a path outside the sessions dir is refused. The
+ * rest is refused with the reason in `refused` too: an unarchived session (archive it first), a
+ * file that's gone, and a file whose header doesn't parse — never delete what can't be read as
+ * a pi session.
  */
 export async function cleanupSessions(req: CleanupRequest): Promise<CleanupResult> {
-  const files = await listSessionFiles();
+  const targets = req.mode === "paths" ? req.paths : await listSessionFiles();
   const live = readLive();
   const now = Date.now();
   const cutoff = req.mode === "age" ? now - req.minAgeDays * 86_400_000 : 0;
   const skipped = { live: 0, busy: 0, recent: 0, failed: 0 };
   const deletedIds: string[] = [];
+  const refusals: { path: string; reason: string }[] = [];
   /** Ids whose file is really gone, so their group assignment goes too (one write after the loop). */
   const forgotten: string[] = [];
-  for (const path of files) {
+  for (const target of targets) {
+    // paths mode re-validates what the route already checked, so a direct caller gets the same rule.
+    const path = req.mode === "paths" ? resolveSessionPath(target) : target;
+    if (!path) {
+      refusals.push({ path: target, reason: "Not a session file under the pi sessions dir." });
+      continue;
+    }
     let st;
     try {
       st = await stat(path);
     } catch {
+      if (req.mode === "paths") refusals.push({ path, reason: "Session file not found." });
       continue;
     }
-    const matches = req.mode === "age" ? st.mtimeMs < cutoff : await isZeroInput(path, st.size);
+    const matches = req.mode === "age" ? st.mtimeMs < cutoff : req.mode === "husks" ? await isZeroInput(path, st.size) : true;
     if (!matches) continue;
     if (live.has(path)) {
       skipped.live++;
@@ -608,9 +627,21 @@ export async function cleanupSessions(req: CleanupRequest): Promise<CleanupResul
       skipped.busy++;
       continue;
     }
+    if (req.mode === "paths" && !isArchived(idOf(path))) {
+      refusals.push({ path, reason: "Not archived — archive it first, then delete it." });
+      continue;
+    }
     if (now - st.mtimeMs < RECENT_WRITE_MS) {
       skipped.recent++;
       continue;
+    }
+    if (req.mode === "paths") {
+      // Never delete what doesn't read as a pi session: the same header check a summary makes.
+      const head = await readHead(path).catch(() => null);
+      if (!head || typeof head.header.id !== "string") {
+        refusals.push({ path, reason: "Couldn't read its transcript, so nothing was deleted." });
+        continue;
+      }
     }
     const id = idOf(path);
     if (req.dryRun) {
@@ -632,7 +663,12 @@ export async function cleanupSessions(req: CleanupRequest): Promise<CleanupResul
     }
   }
   dropGroupAssignments(forgotten);
-  return { deletedCount: req.dryRun ? 0 : deletedIds.length, deletedIds, skipped };
+  return {
+    deletedCount: req.dryRun ? 0 : deletedIds.length,
+    deletedIds,
+    skipped,
+    ...(req.mode === "paths" ? { refused: refusals } : {}),
+  };
 }
 
 function isDir(p: string): boolean {

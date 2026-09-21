@@ -93,4 +93,5 @@ and in the codebase point at the file whose number matches.
 | [09-copy-deck.md](09-copy-deck.md) | §9 · Copy deck | All user-facing strings. |
 | [10-insights.md](10-insights.md) | §10 · Insights | Sidebar foot, Usage and Agents pages, team and subagent cards, insight strip. |
 | [11-subagents-pane.md](11-subagents-pane.md) | §11 · Subagents pane | The subagents side pane. |
+| [12-settings-dialog.md](12-settings-dialog.md) | §12 · Settings dialog | The gear in the sidebar foot, the tabbed modal it opens, and the subagent model policy screen. |
 | [13-timeline.md](13-timeline.md) | §13 · Timeline tab | The session on one time axis: chapters, inputs, density lines, markers, idle gaps — and the Inputs Only filter, whose rows rewind the chat. |

@@ -76,7 +76,9 @@
                 <span class="chip chip-count session-topics" title="7 topics in this session">
                   <span class="text-num">7</span></span>
               </div>
-              <!-- line 3: time and model, then the context ring -->
+              <!-- line 3: time and model, then the context ring. A remote row opens the line with its
+                   own mark (§2 "Remote sessions"): one 6px muted dot before the time, a second 4px
+                   one when the session is mounted. Local rows open with the time, as here. -->
               <div class="list-line list-meta-row">
                 <p class="list-meta">2h ago · <span class="text-mono" title="anthropic/claude-opus-5">claude-opus-5</span></p>
                 <span class="context-ring {context-warn|context-error}" title="{the head's exact sentence}">
@@ -112,11 +114,31 @@
 - **Remote sessions.** A session on a remote target (`SessionSummary.target`/`remoteCwd`, else a
   `cwd` under `~/.pi/agent/pi-web/targets/<target>/…`, which mirrors the remote folder) never shows
   that local placeholder. Its group label reads `terminal` icon, the target's `label` (else its
-  name) and `·`, then the remote folder as-is: the target's `$HOME` isn't ours, so no `~`. The
-  target part never truncates; the folder truncates from the left like a local path. `title` is
+  name) and `·`, then the remote folder as-is: the target's `$HOME` isn't ours, so no `~` — but
+  only while every row in the group runs at that one target and folder (`groupRemotePlaceOf` in
+  `src/lib/remote-mark.ts`). A mixed group keeps the plain folder label — the `cwd` itself, `title`
+  and all — and claims nothing about its rows, whose own marks say where each one runs. The target
+  part never truncates; the folder truncates from the left like a local path. `title` is
   `name (host):/remote/path`. Labels come from `GET /api/targets`, fetched only when the list
   holds remote sessions and again when the set of targets it uses changes; if that fails, the name
   stands in. Search matches the target's name, label and remote folder instead of the placeholder.
+
+  **Row remote mark.** Every remote row carries its own mark on line 3, at the left edge before
+  the time: a 6px `.chip-dot` in the meta line's own muted ink — the connection dot's idiom
+  without its tones, since remote-ness is a property of the row (`SessionSummary.target`/
+  `remoteCwd`, per session), not of its group's first row, and a user group can mix remote rows
+  with local ones beside them. A mounted session (`SessionSummary.mounted`) adds a second,
+  smaller dot beside it, 4px and 3px away: one dot says "this runs on another host", two say
+  "…and its files are the local mount". `mounted` is only ever what the summary says — never
+  inferred from the target or from a cwd inside a mount point. `title` is
+  `Remote: name (host):/remote/path.` for a remote row, and adds "Mounted: the session's files
+  are the local mount, at <cwd>." for a mounted one. The mark never pulses and can't be taken for
+  the live dot, for the same three reasons the connection dot can't: it lives in the meta line,
+  not a row's rail, it is smaller, and it never pulses. It sits at the line's left edge, so the
+  right-edge column — topic chip, context ring — is untouched. Like the topic chip and the ring
+  it is inert (`title` and nothing else), with one difference: the row link's accessible name ends
+  with a short hidden clause (", remote on {target}", plus ", mounted"), because which rows are
+  remote is a fact a session is picked by, not a number watched one at a time.
 
   **Connection dot.** While a chat on that target is open in this tab, a 6px `.chip-dot` sits
   right after the target's label, before the `·`: success tone for `connected`, error tone for
@@ -127,9 +149,8 @@
   the live-session dot: it lives in the group label, not a row's rail, it is smaller, and it never
   pulses. With no chat open on the target there's no dot, since nothing is reporting. The
   always-on remote chip (spec/01 "Remote session chips") lives in the session head and Session
-  detail, not here: the group label already names the target and remote folder on every row, so
-  the sidebar's one remote mark is the connection dot, and it stays the only one that needs a live
-  report.
+  detail, not here: a uniform group's label and every remote row's own mark already say what and
+  where, so the connection dot stays the sidebar's one mark that needs a live report.
 
   ```html
   <h3 class="list-group-label" id="t-2" title="acme-prod (192.0.2.10):/home/deploy/acme-site">
@@ -187,7 +208,9 @@
   the line is what it rides on.
 - **Row line 3.** Relative `lastActiveAt` ("just now", "4m ago", "2h ago", "yesterday", "Mar 4"),
   then ` · `, then the model in mono. Show only the part after the first `/` and put the full
-  `provider/model` in `title`. If `model` is null, omit the separator and the model.
+  `provider/model` in `title`. If `model` is null, omit the separator and the model. A remote row
+  opens the line with its remote mark ("Remote sessions" above); the time follows the line's own
+  gap.
 
   The line ends with the **context ring** (§4f): a 12px ring whose arc is the share of the window
   the last reply left filled, `.context-warn` at ≥80% and `.context-error` at ≥95% — the same
@@ -276,6 +299,11 @@
     ellipses at the chip's left edge and a 30-character model id ellipses at the ring's. Nothing
     wraps (`flex-wrap: nowrap` on the wrapper, `white-space: nowrap` on the text), nothing clips,
     and the document never gains a horizontal scroll.
+  - **The remote mark rides line 3's left edge.** A remote row's meta text starts after the 6px
+    dot and the line's `--space-2` gap (13px more with the mounted pair), so it runs ~236px at
+    320 — still wider than the title column ever was before the rail. The mark is `flex: none`,
+    the text still truncates first, and no row grows: the dot sits inside the meta line's own
+    line box.
   - **No row grew.** A title + summary + meta row measures **77.14px** with the additions and
     **77.14px** without them, and `.list-main` is **60.14px** either way: the chip is pinned to
     the summary's own 14.3px line box and the 12px ring is shorter than the meta line's 19.38px.
@@ -656,6 +684,34 @@ sessions in bulk. It uses `POST /api/sessions/cleanup` (`cleanupSessions` in `sr
 - **Width.** One button fits any sidebar width. At 320px the picker is the usual bottom sheet
   and the scope lines wrap rather than ellipsize, since the cut-off part ("30 days") is the point.
 
+### Deleting one session
+
+The bulk actions never name a row, so one bad session would sit in the Archive forever. The
+picker's second half fixes that: below the three bulk actions, when any session carries the
+archive mark, the line "Or pick one archived session to delete for good." and one `.cleanup-choice`
+row per archived, not-live session — newest first, titled with the session's own title, its meta
+the relative time, its accessible name `Delete “{title}”`. The bulk actions stay the first focus.
+Hidden while the Archive holds no archived row (the operator's order: archive first, delete
+after).
+
+- **Request.** `{ mode: "paths", paths: string[] }` — 1 to 100 paths, each validated exactly like
+  the archive route's `path` (`resolveSessionPath`), so a path outside the sessions dir is a 400
+  before anything runs. The UI always sends exactly one.
+- **Guard.** Only sessions carrying the archive mark are deletable this way; that's the order of
+  operations (§2 "Archiving"), and it's what stops a mis-click from destroying live work. An
+  unarchived session is refused with the reason "Not archived — archive it first, then delete it."
+  The bulk rules apply unchanged: live, mid-turn and just-written sessions are skipped and counted
+  in `skipped`, and a file whose header doesn't parse, one that's already gone, or a path outside
+  the sessions dir is refused rather than deleted. Refusals come back in the response's additive
+  `refused: [{ path, reason }]` (absent for age and husks), one entry per refused path.
+- **Flow.** The same dry-run-then-confirm flow as the bulk actions, through the same dialog: for
+  one path the scope line reads "One archived session: “{title}”." and the irreversibility line is
+  singular — "This permanently deletes its transcript file — this can't be undone." Refusals show
+  as muted captions (`“{title}”: {reason}`), and the toast appends their reasons; with 0 candidates
+  and a refusal the body says "Nothing was deleted."
+- **After.** The list refreshes like the bulk path, and the open session's deletion navigates to
+  `#/` for the same reason (a transcript that can no longer load).
+
 ## Search
 
 - **Matching.** Case-insensitive substring match on `title`, `cwd`, and `model`, filtered on the
@@ -764,7 +820,10 @@ word never does.
   where the head's gauge states both the sentence and, through `#context-desc`, the number
   (§4f) — and the outline strip (§10) names the topics. A sighted pointer user gets the same
   sentence on hover; a touch user gets it on long-press, the platform's own `title` gesture. The
-  rail's own precedent applies here too: this is the sidebar, and nowhere else.
+  rail's own precedent applies here too: this is the sidebar, and nowhere else. The row's remote
+  mark follows the same precedent with one exception, stated under "Remote sessions": its fact
+  rides the row link's accessible name as a short clause, so a screen-reader user hears which
+  rows are remote — the one fact the list is scanned for once a group mixes them.
 - **The cost, stated.** A sighted touch user still sees a coloured dot and no word until they tap
   it or open the session (§3's `.run-status` and the head say which it is). The toast is a second
   gesture and it isn't discoverable — nothing on the row says the dot can be tapped. We accept

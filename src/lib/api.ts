@@ -9,11 +9,12 @@ import type {
   SessionGroup,
   SessionInsight,
   SessionSummary,
+  SubagentModelPolicy,
   TranscriptItem,
   UploadResult,
   UsageInsight,
 } from "../../shared/protocol";
-import { type CleanupRequest, parseCleanupResult } from "./archive";
+import { type CleanupRequest, type CleanupResult, parseCleanupResult } from "./archive";
 import type { TargetInfo } from "./remote-session";
 
 export class ApiError extends Error {
@@ -59,6 +60,18 @@ export const listFolders = (path?: string, hidden = false) => {
 };
 
 export const listModels = () => request<ModelInfo[]>("/api/models");
+
+/** Which models and providers are blocked from being spawned as subagents or team members. */
+export const getSubagentPolicy = () => request<SubagentModelPolicy>("/api/settings/subagents");
+
+/** Replace the subagent model policy (whole object). Applies to the next spawn, everywhere. */
+export const putSubagentPolicy = (policy: SubagentModelPolicy) =>
+  request<SubagentModelPolicy>("/api/settings/subagents", { method: "PUT", body: JSON.stringify(policy) });
+
+/** The session cwd's file index for @-mentions: every non-ignored file under it, relative to
+    it, capped (truncated flags the cap). Cached both sides; the menu refetches when stale. */
+export const fetchFileIndex = (cwd: string) =>
+  request<FileIndex>(`/api/files?cwd=${encodeURIComponent(cwd)}`);
 
 /** The default for new sessions, and what exists (GET /api/mode). */
 export const getMode = () => request<ModeInfo>("/api/mode");
@@ -177,17 +190,40 @@ export const assignSessionGroup = (path: string, groupId: string | null) =>
     body: JSON.stringify({ path, groupId }),
   });
 
+/** POST /api/sessions/cleanup `{ mode:"paths" }`: named session paths, e.g. one archived row. */
+export type PathsCleanupRequest = { mode: "paths"; paths: string[] };
+
+/** One cleanup response, read leniently (`parseCleanupResult`), plus what paths mode refused. */
+export interface CleanupResponse extends CleanupResult {
+  /** paths mode: one entry per refused path with its reason; null when none, or not sent. */
+  refused: { path: string; reason: string }[] | null;
+}
+
+/** Reads the paths mode's refusal list leniently; anything else reads as null. */
+const refusedEntries = (raw: unknown): CleanupResponse["refused"] => {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return null;
+  const list = (raw as Record<string, unknown>).refused;
+  if (!Array.isArray(list)) return null;
+  const out: { path: string; reason: string }[] = [];
+  for (const e of list) {
+    if (typeof e !== "object" || e === null || Array.isArray(e)) continue;
+    const o = e as Record<string, unknown>;
+    if (typeof o.path === "string" && typeof o.reason === "string") out.push({ path: o.path, reason: o.reason });
+  }
+  return out;
+};
+
 /**
- * Deletes archive sessions by age or empty "husks" (spec/02-session-list.md §2 "Archive cleanup"). With
- * `dryRun` nothing is deleted and the result says what would be. Read leniently: the server may
- * send fewer fields.
+ * Deletes archive sessions by age or empty "husks" (spec/02-session-list.md §2 "Archive cleanup"), or
+ * the named, ARCHIVED sessions of `paths` mode. With `dryRun` nothing is deleted and the result says
+ * what would be. Read leniently: the server may send fewer fields.
  */
-export const cleanupSessions = (req: CleanupRequest, dryRun: boolean) =>
+export const cleanupSessions = (req: CleanupRequest | PathsCleanupRequest, dryRun: boolean): Promise<CleanupResponse> =>
   request<unknown>("/api/sessions/cleanup", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ ...req, dryRun }),
-  }).then(parseCleanupResult);
+  }).then((raw) => ({ ...parseCleanupResult(raw), refused: refusedEntries(raw) }));
 
 export const fetchTranscript = (path: string) =>
   request<{ items: TranscriptItem[] }>(`/api/transcript?path=${encodeURIComponent(path)}`).then((r) => r.items);

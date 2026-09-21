@@ -2,6 +2,8 @@ import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Sh
 import type { SlashCommand, UploadResult } from "../../shared/protocol";
 import { enterRunsLocal, insertCommand, localCommand, rankCommands, slashMenuSuppressed, slashTokenAt, type SlashToken } from "../lib/slash";
 import { commandOptionIds, SlashMenu } from "./SlashMenu";
+import { cachedFileIndex, ensureFileIndex, insertMention, mentionEntries, mentionQueryParts, mentionTokenAt, type MentionToken } from "../lib/files";
+import { FileMenu, mentionOptionIds, type FileMenuStatus } from "./FileMenu";
 import { deleteAttachment } from "../lib/api";
 import {
   ACCEPTED_TYPES,
@@ -90,6 +92,9 @@ export function Composer(props: {
   autofocus?: boolean;
   /** This session's slash commands; the "/" autocomplete is off without them. */
   commands?: SlashCommand[];
+  /** This chat's working directory — the @ file menu's root. Null (watch-only composers, a
+      session whose summary hasn't landed) keeps the @ menu off. */
+  cwd?: string | null;
   /** Chat sessions only: the flyout's model picker (§4c). */
   model?: ModelControl | null;
   /** Chat sessions only: the flyout's Thinking ladder (§4b). */
@@ -127,6 +132,15 @@ export function Composer(props: {
   const [slashDismissed, setSlashDismissed] = createSignal<string | null>(null);
   /** Identity of a token's text: Esc keeps it closed until this changes. */
   const tokenKey = (t: SlashToken) => `${t.start}:${t.query}`;
+  // @-mention autocomplete: the slash menu's twin (§04h), one level of the session cwd at a time.
+  const [mentionToken, setMentionToken] = createSignal<MentionToken | null>(null);
+  const [mentionActive, setMentionActive] = createSignal(0);
+  const [mentionDismissed, setMentionDismissed] = createSignal<string | null>(null);
+  /** Why the last index fetch failed; kept until the menu next opens. */
+  const [mentionError, setMentionError] = createSignal<string | null>(null);
+  /** Bumped when an index fetch settles, so the derivation memos re-read the index cache. */
+  const [indexTick, setIndexTick] = createSignal(0);
+  const mentionKey = (t: MentionToken) => `${t.start}:${t.query}`;
   let input!: HTMLTextAreaElement;
   let picker: HTMLInputElement | undefined;
   let list: HTMLUListElement | undefined;
@@ -271,6 +285,95 @@ export function Composer(props: {
     updateSlash(); // the caret now sits after "/name ", outside any token
   };
 
+  // ---- @-mention autocomplete (combobox: focus stays in the textarea) -------------------
+  const mentionMatches = createMemo(() => {
+    indexTick(); // a fetch settling bumps this, so the derivation re-runs
+    const token = mentionToken();
+    const idx = props.cwd ? cachedFileIndex(props.cwd) : null;
+    return token && idx ? mentionEntries(idx.files, token.query) : [];
+  });
+  const mentionIds = createMemo(() => mentionOptionIds(mentionMatches()));
+  const mentionTruncated = createMemo(() => {
+    indexTick();
+    return props.cwd ? cachedFileIndex(props.cwd)?.truncated : undefined;
+  });
+  const mentionStatus = createMemo<FileMenuStatus>(() => {
+    indexTick();
+    if (!props.cwd) return { state: "error", error: "No working directory yet — the @ menu needs the session's folder." };
+    const error = mentionError();
+    if (error) return { state: "error", error };
+    return cachedFileIndex(props.cwd) ? { state: "ready" } : { state: "loading" };
+  });
+  /** Never while disabled. Streaming is fine: a completed path is ordinary prompt text. */
+  const mentionOpen = () => {
+    const token = mentionToken();
+    return !!token && !disabled() && !!props.cwd && mentionDismissed() !== mentionKey(token);
+  };
+  /** Re-reads the token under the caret; call after input, clicks, and caret keys. */
+  const updateMention = () => {
+    const token = mentionTokenAt(input.value, input.selectionStart ?? 0);
+    const prev = mentionToken();
+    if (token?.start !== prev?.start || token?.query !== prev?.query) setMentionActive(0);
+    if (!token || mentionKey(token) !== mentionDismissed()) setMentionDismissed(null);
+    setMentionToken(token);
+  };
+  const pickMention = (index: number) => {
+    const token = mentionToken();
+    const entry = mentionMatches()[index];
+    if (!token || !entry) return;
+    const next = insertMention(input.value, token, entry);
+    setDraft(next.text);
+    input.value = next.text;
+    input.setSelectionRange(next.caret, next.caret);
+    input.focus();
+    updateMention(); // after a directory pick the caret sits right after "/", still in the token
+  };
+  /** One fetch attempt per menu opening; a failure stays until the menu closes and reopens. */
+  let mentionFetched = false;
+  createEffect(() => {
+    const token = mentionToken();
+    if (!token) {
+      mentionFetched = false;
+      return;
+    }
+    if (mentionFetched || (props.cwd && cachedFileIndex(props.cwd))) return;
+    const cwd = props.cwd;
+    if (!cwd) return;
+    mentionFetched = true;
+    setMentionError(null);
+    void ensureFileIndex(cwd)
+      .then(
+        () => setIndexTick((t) => t + 1),
+        (err) => {
+          if (disposed) return;
+          setMentionError(err instanceof Error ? err.message : String(err));
+          setIndexTick((t) => t + 1);
+        },
+      );
+  });
+
+  /** The open menu's listbox id and active row id, whichever menu that is (only one can be open). */
+  const listboxControls = () =>
+    slashOpen()
+      ? slashMatches().length > 0
+        ? "command-listbox"
+        : null
+      : mentionOpen()
+        ? mentionMatches().length > 0
+          ? "file-listbox"
+          : null
+        : null;
+  const listboxActive = () =>
+    slashOpen()
+      ? slashMatches().length > 0
+        ? (slashIds()[slashActive()] ?? null)
+        : null
+      : mentionOpen()
+        ? mentionMatches().length > 0
+          ? (mentionIds()[mentionActive()] ?? null)
+          : null
+        : null;
+
   // ---- Commands button: opens the same menu by inserting "/" at the caret ----------------
   /** The "/" (and the space before it) the button inserted; removed if closed untouched. */
   let buttonSlash: { at: number; space: boolean } | null = null;
@@ -336,6 +439,25 @@ export function Composer(props: {
         const wait = 1000 - (Date.now() - lastAnnounced);
         if (wait <= 0) say();
         else announceTimer = setTimeout(say, wait);
+      },
+    ),
+  );
+  // The @ menu's own count, through the same throttle (only one menu can be open at a time).
+  let mentionAnnounceTimer: ReturnType<typeof setTimeout> | undefined;
+  onCleanup(() => clearTimeout(mentionAnnounceTimer));
+  createEffect(
+    on(
+      () => (mentionOpen() ? (mentionStatus().state === "ready" ? mentionMatches().length : null) : null),
+      (n) => {
+        clearTimeout(mentionAnnounceTimer);
+        if (n === null) return;
+        const say = () => {
+          lastAnnounced = Date.now();
+          announce(n === 0 ? "0 files match." : `${n} ${n === 1 ? "file" : "files"} available.`);
+        };
+        const wait = 1000 - (Date.now() - lastAnnounced);
+        if (wait <= 0) say();
+        else mentionAnnounceTimer = setTimeout(say, wait);
       },
     ),
   );
@@ -524,6 +646,21 @@ export function Composer(props: {
             onHover={setSlashActive}
           />
         </Show>
+        {/* Its twin: whichever token the caret is in, only one can be open. */}
+        <Show when={mentionOpen()}>
+          <FileMenu
+            entries={mentionMatches()}
+            ids={mentionIds()}
+            active={mentionActive()}
+            segment={mentionQueryParts(mentionToken()?.query ?? "").segment}
+            dir={mentionQueryParts(mentionToken()?.query ?? "").dir}
+            status={mentionStatus()}
+            truncated={mentionTruncated()}
+            root={props.cwd ?? undefined}
+            onPick={pickMention}
+            onHover={setMentionActive}
+          />
+        </Show>
         {/* One row, whichever of the three has something to say (they can coexist: the inputs
             trigger sits at its right end while a turn streams, and alone when nothing runs). */}
         <Show when={props.running || workersRow() || inputsRow()}>
@@ -677,23 +814,31 @@ export function Composer(props: {
             rows={1}
             placeholder={placeholder()}
             aria-describedby="composer-reason"
-            aria-autocomplete={slashOpen() ? "list" : undefined}
-            aria-controls={slashOpen() && slashMatches().length > 0 ? "command-listbox" : undefined}
-            aria-activedescendant={slashOpen() && slashMatches().length > 0 ? slashIds()[slashActive()] : undefined}
+            aria-autocomplete={slashOpen() || mentionOpen() ? "list" : undefined}
+            aria-controls={listboxControls() ?? undefined}
+            aria-activedescendant={listboxActive() ?? undefined}
             value={text()}
             disabled={!!props.readOnly}
             onInput={(e) => {
               buttonSlash = null; // typed: the "/" is the user's now
               setDraft(e.currentTarget.value);
               updateSlash();
+              updateMention();
             }}
-            onClick={updateSlash}
+            onClick={() => {
+              updateSlash();
+              updateMention();
+            }}
             onKeyUp={(e) => {
-              if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) updateSlash();
+              if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) {
+                updateSlash();
+                updateMention();
+              }
             }}
             onBlur={() => {
               dropButtonSlash(); // closing by blur undoes an untouched button "/" too
               setSlashToken(null);
+              setMentionToken(null);
             }}
             onPaste={(e) => {
               const files = [...(e.clipboardData?.files ?? [])];
@@ -725,6 +870,33 @@ export function Composer(props: {
                   setSlashDismissed(token ? tokenKey(token) : null);
                   dropButtonSlash(); // a "/" the Commands button added, untouched, goes away
                   updateSlash();
+                  return;
+                }
+              }
+              if (mentionOpen() && !e.isComposing) {
+                const hasMatches = mentionMatches().length > 0;
+                if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                  if (!hasMatches) return;
+                  e.preventDefault();
+                  const n = mentionMatches().length;
+                  setMentionActive((i) => (i + (e.key === "ArrowDown" ? 1 : -1) + n) % n);
+                  return;
+                }
+                // Enter and Tab both complete (§04h): the next Enter, menu closed, sends. With no
+                // match, Enter falls through and sends the typed text as-is.
+                if ((e.key === "Enter" && !e.shiftKey) || e.key === "Tab") {
+                  if (hasMatches) {
+                    e.preventDefault();
+                    pickMention(mentionActive());
+                    return;
+                  }
+                  if (e.key === "Tab") return; // nothing to complete: Tab moves focus as usual
+                }
+                if (e.key === "Escape") {
+                  e.preventDefault();
+                  const token = mentionToken();
+                  setMentionDismissed(token ? mentionKey(token) : null);
+                  updateMention();
                   return;
                 }
               }

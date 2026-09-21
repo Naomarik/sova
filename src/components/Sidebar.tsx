@@ -6,6 +6,7 @@ import { type ArchiveGroupId, groupByArchiveDate, sessionsWord } from "../lib/ar
 import { relativeTime, shortModel, tildePath } from "../lib/format";
 import { agentsHref, type GlancePart, usageGlance, usageHref } from "../lib/insights";
 import { isTopSession } from "../lib/regions";
+import { groupRemotePlaceOf, remoteMarkOf, remoteMarkSuffix, remoteMarkTitle } from "../lib/remote-mark";
 import { remotePlaceOf, type TargetInfo } from "../lib/remote-session";
 import {
   createGroup,
@@ -114,8 +115,15 @@ const workingNow = (n: number) => `${n} ${n === 1 ? "subagent" : "subagents"} wo
  * out of the tab order on purpose (a long list must not add two tab stops per row), so the link
  * keeps the same state in its accessible name that the old right-hand chips exposed.
  */
-function SessionRow(props: { session: SessionSummary; selected: string | null; now: number }) {
+function SessionRow(props: { session: SessionSummary; selected: string | null; now: number; targets: TargetInfo[] }) {
   const s = () => props.session;
+  /** The row's own remote mark (§2 "Remote sessions"): one row answers for itself, never its
+      group's first row, and mounted is the summary's word only — never inferred. */
+  const mark = () => remoteMarkOf(s());
+  const markTitle = () => {
+    const m = mark();
+    return m ? remoteMarkTitle(m, props.targets.find((t) => t.name === m.place.target)?.host) : "";
+  };
   // Busy (§2): this tab's own run wins over the last fetched list; Live wins over both.
   const isBusy = () => !s().live && !!(localRunning()[s().path] ?? s().busy);
   const tuiTitle = () => `Open in a TUI · pid ${s().live!.pid} · ${s().live!.status}`;
@@ -228,6 +236,22 @@ function SessionRow(props: { session: SessionSummary; selected: string | null; n
             </div>
           </Show>
           <div class="list-line list-meta-row">
+            <Show when={mark()}>
+              {(m) => (
+                <span
+                  class="text-muted"
+                  style={{ display: "inline-flex", "align-items": "center", gap: "3px", flex: "none" }}
+                  title={markTitle()}
+                >
+                  {/* One dot: this runs on another host. Two: its files are the local mount, too.
+                      Never a pulse, never the rail — the live dot's home is the pill. */}
+                  <span class="chip-dot" style={{ width: "6px", height: "6px" }} />
+                  <Show when={m().mounted}>
+                    <span class="chip-dot" style={{ width: "4px", height: "4px" }} />
+                  </Show>
+                </span>
+              )}
+            </Show>
             <p class="list-meta">
               {relativeTime(s().lastActiveAt, props.now)}
               <Show when={s().model}>
@@ -248,6 +272,9 @@ function SessionRow(props: { session: SessionSummary; selected: string | null; n
           <span class="visually-hidden">, pi is replying in this session</span>
         </Show>
         <Show when={working()}>{(n) => <span class="visually-hidden">, {workingNow(n())}</span>}</Show>
+        {/* Remote-ness is a fact a row is picked by, so it rides the link's name — the same deal the
+            rail's state gets, and the one the topic chip and the ring deliberately don't. */}
+        <Show when={mark()}>{(m) => <span class="visually-hidden">{remoteMarkSuffix(m())}</span>}</Show>
       </a>
     </li>
   );
@@ -260,8 +287,9 @@ function GroupList(props: { groups: Group[]; selected: string | null; now: numbe
   return (
     <For each={props.groups}>
       {(group, gi) => {
-        // A remote session's cwd is a local placeholder mirroring the remote folder (§2 "Remote sessions").
-        const remote = remotePlaceOf(group.sessions[0] ?? { cwd: group.cwd });
+        // The label's remote form is the group's only while every row runs at one target and folder
+        // (§2 "Remote sessions"): a mixed group keeps the plain folder label and its rows' marks speak.
+        const remote = groupRemotePlaceOf(group.sessions, group.cwd);
         const host = () => (remote ? props.targets.find((t) => t.name === remote.target)?.host : undefined);
         const label = (name: string) => props.targets.find((t) => t.name === name)?.label || name;
         return (
@@ -293,7 +321,7 @@ function GroupList(props: { groups: Group[]; selected: string | null; now: numbe
             </Dynamic>
             <ul class="list">
               <For each={group.sessions}>
-                {(s) => <SessionRow session={s} selected={props.selected} now={props.now} />}
+                {(s) => <SessionRow session={s} selected={props.selected} now={props.now} targets={props.targets} />}
               </For>
             </ul>
           </section>
@@ -493,6 +521,8 @@ export function Sidebar(props: {
   agents: AgentsInsight | undefined;
   /** The insights page that's open (`#/usage` or `#/agents`), for aria-current on its foot row. */
   insightsPage: "usage" | "agents" | null;
+  /** Opens the Settings dialog from the foot's gear. */
+  onOpenSettings(): void;
 }) {
   const [query, setQuery] = createSignal("");
   const [showSkeleton, setShowSkeleton] = createSignal(false);
@@ -854,18 +884,29 @@ export function Sidebar(props: {
             <UsageGlance parts={glance()} />
           </span>
         </a>
-        <a
-          class="list-row list-row-interactive insights-row"
-          href={agentsHref()}
-          aria-current={props.insightsPage === "agents" ? "page" : undefined}
-          title={agentsSentence(props.agents)}
-          aria-label={agentsSentence(props.agents)}
-        >
-          <Icon name="worker" />
-          <span class="insights-row-text">
-            <AgentsGlance agents={props.agents} />
-          </span>
-        </a>
+        <div class="sidebar-foot-row">
+          <a
+            class="list-row list-row-interactive insights-row sidebar-foot-link"
+            href={agentsHref()}
+            aria-current={props.insightsPage === "agents" ? "page" : undefined}
+            title={agentsSentence(props.agents)}
+            aria-label={agentsSentence(props.agents)}
+          >
+            <Icon name="worker" />
+            <span class="insights-row-text">
+              <AgentsGlance agents={props.agents} />
+            </span>
+          </a>
+          <button
+            type="button"
+            class="button button-icon sidebar-settings"
+            title="Settings"
+            aria-label="Settings"
+            onClick={() => props.onOpenSettings()}
+          >
+            <Icon name="settings" small />
+          </button>
+        </div>
       </div>
     </aside>
   );

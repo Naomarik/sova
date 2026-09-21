@@ -66,7 +66,11 @@ function ensureTargets() {
 const targetInfoOf = (name: string) => targets().find((t) => t.name === name);
 const targetLabel = (name: string) => targetInfoOf(name)?.label || name;
 const targetHost = (name: string) => targetInfoOf(name)?.host;
-const patchTarget = (t: TargetInfo) => setTargets((list) => list.map((x) => (x.name === t.name ? t : x)));
+/** Replace one target's cached record with a fresh one — the mount endpoints return it.
+    **Exported because every mount action must update this same store.** A caller that discards
+    the response leaves the mounted chip showing a stale "not mounted" after a successful mount
+    (the open-failure banner's Mount-and-reconnect did exactly that). */
+export const patchTarget = (t: TargetInfo) => setTargets((list) => list.map((x) => (x.name === t.name ? t : x)));
 
 /** The target's live mount state: the server's bounded check (fresh, and refreshed by the mount
     toggle), else the extension's report for this chat. `undefined` when nothing is known (or the

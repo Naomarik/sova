@@ -153,6 +153,51 @@ It says liveness only, never identity or mount state:
   the extension re-publishes its current status, with no ssh and no toast. Until it lands, the
   connection chip reads `checking…` (the always-on remote chip never waits).
 
+## The open-failure banner
+
+A webapp-owned chat the server refuses to open answers the chat socket with `error` code `config`
+and closes it (4422): the stored working directory is gone, or its mount can't be read, and no
+reconnect can fix that by itself. The banner is one `.banner.banner-error` in the transcript's
+`.transcript-banner` slot (spec/03 "Anatomy"), and every word comes from
+`src/lib/open-failure.ts` — a pure function of the session summary, the server's error text, and,
+when a targets list is at hand, its labels (the error itself proves the target declares a mount).
+It names the concrete thing that's wrong, never a bare "can't be opened":
+
+- **A declared mount that isn't up** — the cwd is inside a target's `mount.local` and the mount
+  table has no entry there (the server's reason is `no mount at {point}`). Title "This session
+  can't be opened: {label}'s mount is down." The body names the target, the remote folder, and
+  the mount point, and says that mounting is what fixes it: "…mounting {label} again brings the
+  folder back, and the session opens as it was."
+- **A mount that can't be read** (hung, unreadable, the target no longer configured): the mount
+  module's reason verbatim in the body. No Mount button — the mount is already up, and mounting
+  again can't fix a read that fails.
+- **A folder gone through an up mount** (the reason says `no such directory through the mount`):
+  the mount is up, but the folder isn't there on the target anymore. No Mount button, for the
+  same reason.
+- **A stored folder that doesn't exist** — a plain local folder, or a remote session's local
+  placeholder (named as a placeholder, with the target and its remote folder beside it). The
+  same reassurance every time: nothing in the session file changed; restore the folder, then
+  reconnect. A local session never mentions mounts at all.
+- **Anything else**: the server's text verbatim under the same title.
+
+The actions row is a `.cluster` in the banner's action slot, the first action solid and the rest
+ghost:
+
+- **Mount and reconnect** — only for the mount-down case. While the request
+  (`POST /api/targets/:name/mount {on:true}`) is in flight it reads **Mounting…** and disables.
+  On success it reconnects the chat socket: the server clears its memoized open failure as soon
+  as the mount answers, so the session opens. On failure the banner stays, and the mount module's
+  real reason ("Mount failed: acme-prod: ssh: connect to host … Connection refused") is a
+  `.text-caption.text-error` caption beside the actions — the same rule as the mount toggle's
+  caption: never a toast-only, the fact stays on screen.
+- **Reconnect** — a plain retry, for the cases where the folder came back on its own.
+- **Archive** — the Session pane's Archive gesture on the same endpoint
+  (`POST /api/sessions/archive {path, archived:true}`), with the same toast and list refresh, then
+  a route to the landing page (`#/`, the back link's href): the session on screen can't be opened,
+  so the gesture leaves it. It moves the session to the Archive region — nothing is deleted, and
+  unarchiving brings it back; the button's `title` says so. Absent when the summary says the
+  session is already archived or wasn't started in pi-web, exactly like the pane's button.
+
 ## Resizing the sessions pane
 
 The divider between the two columns is draggable. `.pane-resizer` is a child of `.app` (the

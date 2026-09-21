@@ -15,6 +15,7 @@ import { ChatView, type ChatRefusal } from "./components/ChatView";
 import { AgentsView } from "./components/AgentsView";
 import { ContextGauge, ContextMetaPrefix, contextDescribedBy } from "./components/ContextGauge";
 import { NewSessionDialog } from "./components/NewSessionDialog";
+import { SettingsDialog } from "./components/SettingsDialog";
 import { ExplainGrid } from "./components/ExplainGallery";
 import { InsightStrip } from "./components/InsightStrip";
 import { RemoteChip, RemoteHeadChip, RemoteMountedChip } from "./components/RemoteStatus";
@@ -180,6 +181,8 @@ export function App() {
   });
   const [decision, setDecision] = createSignal<Decision | null>(null);
   const [creating, setCreating] = createSignal(false);
+  /** The Settings modal, opened from the sidebar foot's gear. */
+  const [settingsOpen, setSettingsOpen] = createSignal(false);
   const [chatModel, setChatModel] = createSignal<string | null>(null);
   /** The open chat's rewind, for the Timeline's input rows; tagged with its path, so a pane for
       another session never gets it. */
@@ -407,6 +410,7 @@ export function App() {
           insightsPage={insightsRoute()?.page ?? null}
           onRefresh={refresh}
           onNew={() => setCreating(true)}
+          onOpenSettings={() => setSettingsOpen(true)}
         />
 
         <main class="app-main">
@@ -754,6 +758,11 @@ export function App() {
             onCancel={() => setCreating(false)}
             onCreated={adoptCreated}
           />
+        </Portal>
+      </Show>
+      <Show when={settingsOpen()}>
+        <Portal>
+          <SettingsDialog onClose={() => setSettingsOpen(false)} />
         </Portal>
       </Show>
       <GlobalRegions />

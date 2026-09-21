@@ -1,10 +1,14 @@
 import { createSignal, For, onMount, Show } from "solid-js";
 import { Portal } from "solid-js/web";
 import type { SessionSummary } from "../../shared/protocol";
-import { cleanupSessions } from "../lib/api";
-import { type CleanupRequest, type CleanupResult, cleanupCandidates, cleanupScope, sessionsWord, skippedText } from "../lib/archive";
+import { type CleanupResponse, type PathsCleanupRequest, cleanupSessions } from "../lib/api";
+import { type CleanupRequest, cleanupCandidates, cleanupScope, sessionsWord, skippedText } from "../lib/archive";
+import { relativeTime } from "../lib/format";
 import { announce, toast } from "../lib/ui-state";
 import { Icon, trapFocus } from "./ui";
+
+/** Anything the cleanup endpoint accepts; `paths` is the delete-one-archived-session mode. */
+type AnyCleanup = CleanupRequest | PathsCleanupRequest;
 
 const ACTIONS: { req: CleanupRequest; label: string; name: string }[] = [
   { req: { mode: "age", minAgeDays: 7 }, label: "Older Than 7 Days", name: "Delete Sessions Older Than 7 Days" },
@@ -12,17 +16,22 @@ const ACTIONS: { req: CleanupRequest; label: string; name: string }[] = [
   { req: { mode: "husks" }, label: "Empty Sessions", name: "Delete Empty Sessions" },
 ];
 
-const sameReq = (a: CleanupRequest, b: CleanupRequest) =>
-  a.mode === b.mode && (a.mode === "husks" || a.minAgeDays === (b as typeof a).minAgeDays);
+const sameReq = (a: AnyCleanup, b: AnyCleanup): boolean => {
+  if (a.mode !== b.mode) return false;
+  if (a.mode === "age" && b.mode === "age") return a.minAgeDays === b.minAgeDays;
+  if (a.mode === "paths" && b.mode === "paths") return a.paths.join("\n") === b.paths.join("\n");
+  return true; // both husks
+};
 
 /**
- * The Archive's Clean Up… button (spec/02-session-list.md §2 "Archive cleanup"): it opens a picker of the
- * actions; each asks the server for a dry run, confirms with its real numbers, then deletes and
- * refreshes the list.
+ * The Archive's Clean Up… button (spec/02-session-list.md §2 "Archive cleanup"): it opens a picker of
+ * the actions; each asks the server for a dry run, confirms with its real numbers, then deletes and
+ * refreshes the list. The picker also lists the Archive's own rows one at a time (§2 "Deleting one
+ * session"), through the same dry-run-then-confirm flow.
  */
 export function ArchiveCleanup(props: { sessions: SessionSummary[]; selected: string | null; onDeleted(): void }) {
-  const [checking, setChecking] = createSignal<CleanupRequest | null>(null);
-  const [preview, setPreview] = createSignal<{ req: CleanupRequest; result: CleanupResult } | null>(null);
+  const [checking, setChecking] = createSignal<AnyCleanup | null>(null);
+  const [preview, setPreview] = createSignal<{ req: AnyCleanup; result: CleanupResponse } | null>(null);
   const [picking, setPicking] = createSignal(false);
   let trigger!: HTMLButtonElement;
 
@@ -32,7 +41,13 @@ export function ArchiveCleanup(props: { sessions: SessionSummary[]; selected: st
     trigger.focus();
   };
 
-  const check = async (req: CleanupRequest) => {
+  /** The rows the server will actually delete one of: the archive mark, and not open in a TUI. */
+  const archived = () =>
+    [...props.sessions]
+      .filter((s) => s.archived && !s.live)
+      .sort((a, b) => b.lastActiveAt.localeCompare(a.lastActiveAt));
+
+  const check = async (req: AnyCleanup) => {
     if (checking() || preview()) return;
     setChecking(req);
     try {
@@ -47,10 +62,11 @@ export function ArchiveCleanup(props: { sessions: SessionSummary[]; selected: st
     }
   };
 
-  const done = (result: CleanupResult) => {
+  const done = (result: CleanupResponse) => {
     setPreview(null);
     const skipped = skippedText(result);
-    const text = `Deleted ${sessionsWord(result.deletedCount)}.${skipped ? ` ${skipped}.` : ""}`;
+    const refusals = result.refused?.length ? ` ${result.refused.map((r) => r.reason).join(" ")}` : "";
+    const text = `Deleted ${sessionsWord(result.deletedCount)}.${skipped ? ` ${skipped}.` : ""}${refusals}`;
     toast(text);
     announce(text);
     // The open session's file is gone: leave it rather than show a transcript that can't load.
@@ -81,13 +97,25 @@ export function ArchiveCleanup(props: { sessions: SessionSummary[]; selected: st
       </div>
       <Show when={picking()}>
         <Portal>
-          <CleanupPicker checking={checking()} onPick={(req) => void check(req)} onCancel={() => !checking() && setPicking(false)} />
+          <CleanupPicker
+            checking={checking()}
+            sessions={archived()}
+            onPick={(req) => void check(req)}
+            onCancel={() => !checking() && setPicking(false)}
+          />
         </Portal>
       </Show>
       <Show when={preview()}>
         {(p) => (
           <Portal>
-            <CleanupDialog req={p().req} preview={p().result} onCancel={() => setPreview(null)} onDone={done} onFailed={failed} />
+            <CleanupDialog
+              req={p().req}
+              preview={p().result}
+              sessions={props.sessions}
+              onCancel={() => setPreview(null)}
+              onDone={done}
+              onFailed={failed}
+            />
           </Portal>
         )}
       </Show>
@@ -96,7 +124,7 @@ export function ArchiveCleanup(props: { sessions: SessionSummary[]; selected: st
 }
 
 /** Step one: which cleanup. Rows are plain buttons; every one is aria-disabled while a dry run checks. */
-function CleanupPicker(props: { checking: CleanupRequest | null; onPick(req: CleanupRequest): void; onCancel(): void }) {
+function CleanupPicker(props: { checking: AnyCleanup | null; sessions: SessionSummary[]; onPick(req: AnyCleanup): void; onCancel(): void }) {
   let first!: HTMLButtonElement;
   onMount(() => first.focus());
 
@@ -153,6 +181,38 @@ function CleanupPicker(props: { checking: CleanupRequest | null; onPick(req: Cle
               }}
             </For>
           </ul>
+          {/* One at a time (spec/02-session-list.md §2 "Deleting one session"): the Archive's own
+              rows, newest first; only ones the server can delete. Hidden when there are none. */}
+          <Show when={props.sessions.length > 0}>
+            <p class="message-text cleanup-intro">Or pick one archived session to delete for good.</p>
+            <ul class="list cleanup-choices">
+              <For each={props.sessions}>
+                {(s, i) => {
+                  const busy = () => props.checking !== null && sameReq(props.checking, { mode: "paths", paths: [s.path] });
+                  return (
+                    <li>
+                      <button
+                        type="button"
+                        class="list-row list-row-interactive cleanup-choice"
+                        aria-label={`Delete “${s.title}”`}
+                        aria-describedby={`cleanup-pick-one-${i()}`}
+                        aria-disabled={props.checking ? "true" : undefined}
+                        onClick={() => !props.checking && props.onPick({ mode: "paths", paths: [s.path] })}
+                      >
+                        <span class="list-main">
+                          <span class="list-title">{s.title}</span>
+                          <span class="list-meta" id={`cleanup-pick-one-${i()}`}>
+                            {busy() ? "Checking…" : relativeTime(s.lastActiveAt)}
+                          </span>
+                        </span>
+                        <Icon name="chevron-right" small />
+                      </button>
+                    </li>
+                  );
+                }}
+              </For>
+            </ul>
+          </Show>
         </div>
         <div class="modal-foot">
           <span class="modal-spacer" />
@@ -166,10 +226,11 @@ function CleanupPicker(props: { checking: CleanupRequest | null; onPick(req: Cle
 }
 
 function CleanupDialog(props: {
-  req: CleanupRequest;
-  preview: CleanupResult;
+  req: AnyCleanup;
+  preview: CleanupResponse;
+  sessions: SessionSummary[];
   onCancel(): void;
-  onDone(result: CleanupResult): void;
+  onDone(result: CleanupResponse): void;
   onFailed(err: unknown): void;
 }) {
   const n = () => cleanupCandidates(props.preview);
@@ -178,6 +239,20 @@ function CleanupDialog(props: {
   let cancelButton!: HTMLButtonElement;
   // Destructive: focus starts on Cancel, never on Delete.
   onMount(() => cancelButton.focus());
+
+  /** A refused or named path as the user knows it: the row's title, else the file's name. */
+  const nameOf = (path: string): string => {
+    const s = props.sessions.find((x) => x.path === path);
+    return `“${s?.title ?? path.split("/").pop() ?? path}”`;
+  };
+  /** What the request targets; for `paths` the named session(s) themselves. */
+  const scope = () => {
+    if (props.req.mode !== "paths") return cleanupScope(props.req);
+    const [one] = props.req.paths;
+    return one !== undefined
+      ? `One archived session: ${nameOf(one)}.`
+      : `${props.req.paths.length} archived sessions.`;
+  };
 
   const cancel = () => !pending() && props.onCancel();
   const confirm = async () => {
@@ -210,13 +285,31 @@ function CleanupDialog(props: {
           </h2>
         </div>
         <div class="modal-body" id="cleanup-body">
-          <p class="message-text">{cleanupScope(props.req)}</p>
-          <Show when={n() > 0} fallback={<p class="message-text">Nothing matches right now, so nothing was changed.</p>}>
-            <p class="message-text">This permanently deletes their transcript files — this can't be undone.</p>
+          <p class="message-text">{scope()}</p>
+          <Show
+            when={n() > 0}
+            fallback={
+              <p class="message-text">
+                {props.preview.refused?.length ? "Nothing was deleted." : "Nothing matches right now, so nothing was changed."}
+              </p>
+            }
+          >
+            <p class="message-text">
+              {props.req.mode === "paths" && props.req.paths.length === 1
+                ? "This permanently deletes its transcript file — this can't be undone."
+                : "This permanently deletes their transcript files — this can't be undone."}
+            </p>
           </Show>
           <Show when={skipped()}>
             <p class="text-caption text-muted">{skipped()}. They stay as they are.</p>
           </Show>
+          <For each={props.preview.refused ?? []}>
+            {(r) => (
+              <p class="text-caption text-muted">
+                {nameOf(r.path)}: {r.reason}
+              </p>
+            )}
+          </For>
         </div>
         <div class="modal-foot">
           <Show when={n() > 0}>

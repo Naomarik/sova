@@ -326,8 +326,11 @@ export interface UploadResult {
 //                                  (file exists, not TUI-live, not archived, no active config failure, not
 //                                  mid-turn here, no foreign/recent writer), and if any one fails the whole
 //                                  batch is refused with 409 { refused: BatchRefusal[] } having sent NOTHING.
-//                                  A member that breaks after that check is a partial send, reported in
-//                                  `failed`, never rolled back. `members` is the user's explicit subset
+//                                  Returns on ACCEPTANCE, not completion: as soon as every member's prompt
+//                                  is queued, never waiting for the turns. A member that breaks between the
+//                                  check and being queued is reported in `failed`, never rolled back; one
+//                                  that fails after being accepted reports in its own pane. Nothing accepted
+//                                  at all is a 409, not a "sent to 0 of n". `members` is the user's explicit subset
 //                                  ("Send to the rest"), never inferred server-side: given, every id must be
 //                                  in the group, and only those are checked and prompted. No attachments and
 //                                  no slash commands — images belong to a pane composer (spec §14).
@@ -493,12 +496,14 @@ export interface BatchRefusal {
   message: string;
 }
 
-/** 200 body of the batch prompt: what actually went out. `failed` is only ever populated by a
-    member that broke AFTER the pre-check passed (a TUI grabbed it in the same second) — a partial
-    send, reported, never rolled back. A pre-check refusal sends nothing and answers 409
-    { refused } instead, so `sent` here is never empty. */
+/** 200 body of the batch prompt. `sent` MEANS ACCEPTED, NOT ANSWERED: the route returns as soon
+    as every member's prompt is queued and never waits for the turns, because they are meant to
+    run in parallel and waiting would serialize them. A member accepted and then failing reports
+    in its OWN pane, over its own socket — this response never speaks for a turn it didn't wait
+    for. `failed` is therefore about acceptance only: a member that broke between the pre-check
+    and being queued. `sent` is never empty; nothing accepted is a refusal (409 { refused }). */
 export interface BatchPromptResult {
-  sent: string[]; // session ids, in the order they were prompted
+  sent: string[]; // session ids, in the order they were accepted
   failed: BatchRefusal[];
 }
 

@@ -572,6 +572,19 @@ export async function archiveSession(path: string, archived: boolean): Promise<A
   return { ok: true, summary: { ...s, archived } };
 }
 
+/**
+ * Session id → path, from the listing cache this server already keeps — no disk access at all.
+ * Warm after any listing (the sidebar refreshes constantly); empty on a cold start, which is why
+ * the one caller falls back to a real walk only for ids it cannot find here, rather than paying
+ * for a directory scan on every press of Send (spec/14-workspaces.md §14 "The pre-check reads
+ * the group, not the disk").
+ */
+export function indexedSessionPaths(): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const [path, entry] of cache) out.set(entry.summary.id, path);
+  return out;
+}
+
 /** The session id of a session file: the uuidv7 after the last "_" of its name. */
 export function idOf(path: string): string {
   return basename(path, ".jsonl").split("_").pop() ?? "";

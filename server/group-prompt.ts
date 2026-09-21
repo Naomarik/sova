@@ -3,7 +3,7 @@ import { isArchived } from "./archived-sessions";
 import { acquireChat, activeConfigFailure, BusyError, ConfigError, heldChat } from "./chat-manager";
 import { readLive } from "./live";
 import { readAssignments, readGroups } from "./session-groups";
-import { idOf, listSessionFiles } from "./sessions-index";
+import { idOf, indexedSessionPaths, listSessionFiles } from "./sessions-index";
 import { recentForeignWriteAgeSec } from "./write-guard";
 
 /**
@@ -14,14 +14,22 @@ import { recentForeignWriteAgeSec } from "./write-guard";
  * All-or-nothing is a PRE-CHECK, not a transaction: a member that breaks between the check and
  * its send (a TUI grabs it in the same second) makes the batch partial, and we say so. A prompt a
  * model is already answering cannot be recalled, and nothing here pretends otherwise.
+ *
+ * `sent` MEANS ACCEPTED, NOT ANSWERED. The route returns as soon as every member's prompt is
+ * queued and never waits for the turns: the SDK's prompt() resolves on turn completion, so
+ * awaiting them would run five turns end to end — serializing the one thing a workspace exists to
+ * run in parallel, and holding the composer for minutes. A member that is accepted and then fails
+ * reports in ITS OWN PANE, over its own socket, where every other turn failure already reports;
+ * this response never speaks for a turn it didn't wait for (spec §14, 5f2419d).
  */
 
 /** Everything the batch touches, injected so the logic is testable without an SDK runtime. */
 export interface BatchDeps {
   /** The group's members in display order, or null when there is no such group. */
   members(groupId: string): string[] | null;
-  /** Session id → path, for every session file that exists. */
-  paths(): Promise<Map<string, string>>;
+  /** Session id → path. `ids` is what the caller needs resolved, so an implementation can answer
+      from a cache and only touch the disk when one of them is missing from it. */
+  paths(ids: readonly string[]): Promise<Map<string, string>>;
   /** Open in a TUI (or any other pi process). */
   live(path: string): boolean;
   archived(id: string): boolean;
@@ -32,8 +40,9 @@ export interface BatchDeps {
   /** Another process has written this file: the held runtime saw a foreign line, or nobody holds
       it and it was written inside RECENT_WRITE_MS by a writer we can't identify. */
   foreignWriter(path: string): boolean;
-  /** Actually send, through the same guards as a /ws/chat prompt. */
-  send(path: string, text: string): Promise<void>;
+  /** ACCEPT the prompt, through the same guards as a /ws/chat prompt: resolves once the turn is
+      queued, never when it finishes. Rejects only for an acceptance failure. */
+  accept(path: string, text: string): Promise<void>;
 }
 
 export const realBatchDeps: BatchDeps = {
@@ -43,8 +52,14 @@ export const realBatchDeps: BatchDeps = {
     // members is reconciled against the assignments on every read, so it IS the membership.
     return (group.members ?? []).map((m) => m.id);
   },
-  async paths() {
-    const map = new Map<string, string>();
+  async paths(ids) {
+    // The index the server already keeps, first: a directory walk per press of Send costs more
+    // the more sessions the user has ever made, to answer a question about five of them.
+    const known = indexedSessionPaths();
+    if (ids.every((id) => known.has(id))) return known;
+    // Something isn't in the cache (a cold start, or a session made since the last listing):
+    // one walk, rather than calling a live session missing.
+    const map = new Map(known);
     for (const path of await listSessionFiles()) map.set(idOf(path), path);
     return map;
   },
@@ -59,9 +74,12 @@ export const realBatchDeps: BatchDeps = {
     const chat = heldChat(path);
     return chat ? chat.hasForeignWrites() : recentForeignWriteAgeSec(path) !== null;
   },
-  async send(path, text) {
+  async accept(path, text) {
     const chat = await acquireChat(path);
-    await chat.prompt(text);
+    // Guards throw here, synchronously, and that is the acceptance failure. The turn itself is
+    // deliberately NOT awaited: its failure belongs in that member's own pane.
+    const turn = chat.acceptPrompt(text);
+    void turn.catch((err) => chat.reportTurnFailure(err));
   },
 };
 
@@ -129,7 +147,7 @@ export async function promptGroup(groupId: string, text: string, subset: string[
     targets = members.filter((id) => wanted.has(id)); // group order, not the client's
   }
 
-  const paths = await deps.paths();
+  const paths = await deps.paths(targets);
   const refused: BatchRefusal[] = [];
   for (const id of targets) {
     const r = check(id, paths.get(id), deps);
@@ -137,14 +155,14 @@ export async function promptGroup(groupId: string, text: string, subset: string[
   }
   if (refused.length > 0) return { ok: false, status: 409, refused }; // nothing sent
 
-  // Past this line the batch is committed: each send that fails is reported, never rolled back,
-  // and never stops the members behind it.
+  // Past this line the batch is committed: each member that fails ACCEPTANCE is reported, never
+  // rolled back, and never stops the members behind it.
   const sent: string[] = [];
   const failed: BatchRefusal[] = [];
   for (const id of targets) {
     const path = paths.get(id)!;
     try {
-      await deps.send(path, text);
+      await deps.accept(path, text);
       sent.push(id);
     } catch (err) {
       // `message` is never blank: an older client that doesn't know a newer `code` shows it
@@ -154,5 +172,8 @@ export async function promptGroup(groupId: string, text: string, subset: string[
       failed.push(refusal(id, path, code, said || SENTENCE[code]));
     }
   }
+  // `sent` is never empty: nothing accepted is not a partial send, it is a refusal. "Sent to 0 of
+  // 5 members" is a sentence with no meaning, and §9 deliberately has no copy for it.
+  if (sent.length === 0) return { ok: false, status: 409, refused: failed };
   return { ok: true, result: { sent, failed } };
 }

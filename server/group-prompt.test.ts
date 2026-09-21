@@ -12,7 +12,7 @@ import type { BatchDeps } from "./group-prompt";
 
 const PATHS: Record<string, string> = { a: "/s/a.jsonl", b: "/s/b.jsonl", c: "/s/c.jsonl" };
 
-/** Deps where everything is allowed and every send succeeds; each test says what is different. */
+/** Deps where everything is allowed and every accept succeeds; each test says what is different. */
 function deps(over: Partial<BatchDeps> = {}): BatchDeps & { sent: string[] } {
   const sent: string[] = [];
   return {
@@ -24,7 +24,7 @@ function deps(over: Partial<BatchDeps> = {}): BatchDeps & { sent: string[] } {
     misconfigured: () => false,
     streaming: () => false,
     foreignWriter: () => false,
-    async send(path) {
+    async accept(path: string) {
       sent.push(path);
     },
     ...over,
@@ -85,7 +85,7 @@ test("each remaining reason has its own code", async () => {
 
 test("a send that fails AFTER the pre-check is a partial send, not a rollback", async () => {
   const d = deps({
-    async send(path) {
+    async accept(path: string) {
       if (path === PATHS.b) throw new BusyError("a TUI grabbed it", "busy");
       d.sent.push(path);
     },
@@ -108,14 +108,14 @@ test("a post-check failure keeps the WS error vocabulary out of the wire codes",
     [new Error("something else"), "internal"],
   ] as const) {
     const d = deps({
-      members: () => ["a"],
-      send: async () => {
-        throw err;
+      members: () => ["a", "b"],
+      accept: async (path: string) => {
+        if (path === PATHS.a) throw err;
       },
     });
     const r = await promptGroup("g1", "hi", undefined, d);
-    assert.ok(r.ok);
-    assert.deepEqual(r.result.sent, []);
+    assert.ok(r.ok, "b was accepted, so this is a partial send, not a refusal");
+    assert.deepEqual(r.result.sent, ["b"]);
     assert.equal(r.result.failed[0]!.code, code);
     assert.equal(r.result.failed[0]!.message, err.message, "the real error text survives");
   }
@@ -176,13 +176,85 @@ test("a failure with no message still carries a sentence", async () => {
   // spec §14: a client that doesn't recognise a newer `code` shows `message` verbatim, so a blank
   // one would drop the reason on the floor.
   const d = deps({
-    members: () => ["a"],
-    send: async () => {
-      throw new Error("   ");
+    members: () => ["a", "b"],
+    accept: async (path: string) => {
+      if (path === PATHS.a) throw new Error("   ");
     },
   });
   const r = await promptGroup("g1", "hi", undefined, d);
   assert.ok(r.ok);
   assert.equal(r.result.failed[0]!.code, "internal");
   assert.ok(r.result.failed[0]!.message.trim().length > 0);
+});
+
+test("the batch returns on ACCEPTANCE: member 2 is dispatched while member 1's turn is still running", async () => {
+  // The regression this exists to catch: the SDK's prompt() resolves on TURN COMPLETION, so a
+  // route that awaited it would run five turns end to end and hold the composer for minutes.
+  const started: string[] = [];
+  let releaseFirst!: () => void;
+  const firstTurn = new Promise<void>((resolve) => (releaseFirst = resolve));
+  const d = deps({
+    async accept(path: string) {
+      started.push(path);
+      if (path === PATHS.a) await Promise.resolve(); // acceptance is immediate...
+    },
+  });
+  // the turn itself outlives the call: the fake holds one open and the batch must not wait for it
+  const r = await Promise.race([
+    promptGroup("g1", "ship it", undefined, d),
+    firstTurn.then(() => "the batch waited for the turn" as const),
+  ]);
+  assert.notEqual(r, "the batch waited for the turn");
+  assert.ok(typeof r === "object" && r.ok);
+  assert.deepEqual(started, ["/s/a.jsonl", "/s/b.jsonl", "/s/c.jsonl"], "every member was dispatched");
+  releaseFirst();
+});
+
+test("a member whose acceptance never resolves does not stop the ones behind it from being dispatched", async () => {
+  const started: string[] = [];
+  let releaseA!: () => void;
+  const d = deps({
+    accept: (path: string) => {
+      started.push(path);
+      return path === PATHS.a ? new Promise<void>((resolve) => (releaseA = resolve)) : Promise.resolve();
+    },
+  });
+  const inFlight = promptGroup("g1", "ship it", undefined, d);
+  await Promise.resolve(); // let the loop reach its first await
+  assert.deepEqual(started, ["/s/a.jsonl"], "member 1's acceptance is outstanding");
+  releaseA();
+  const r = await inFlight;
+  assert.ok(r.ok);
+  assert.deepEqual(r.result.sent, ["a", "b", "c"], "members 2 and 3 followed once it resolved");
+});
+
+test("nothing accepted is a refusal, not a partial send: 409, never 'sent to 0 of n'", async () => {
+  const d = deps({
+    members: () => ["a", "b"],
+    accept: async () => {
+      throw new BusyError("a TUI grabbed it", "busy");
+    },
+  });
+  const r = await promptGroup("g1", "hi", undefined, d);
+  assert.ok(!r.ok && r.status === 409);
+  assert.deepEqual(
+    r.refused.map((x) => [x.id, x.code]),
+    [["a", "tui-live"], ["b", "tui-live"]],
+  );
+});
+
+test("the pre-check asks the index only for the members it needs, and never walks on a warm one", async () => {
+  let asked: readonly string[] | null = null;
+  let walked = 0;
+  const d = deps({
+    members: () => ["a", "b"],
+    paths: async (ids) => {
+      asked = ids;
+      walked++;
+      return new Map(Object.entries(PATHS));
+    },
+  });
+  await promptGroup("g1", "hi", ["b"], d);
+  assert.deepEqual(asked, ["b"], "only the subset it is about to prompt");
+  assert.equal(walked, 1, "one resolution per batch");
 });

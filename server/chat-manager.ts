@@ -545,21 +545,35 @@ class ChatSession {
   }
 
   /**
-   * Send one user message, exactly as the `prompt` client message does — the WS case is now a
-   * thin wrapper on this, so the group batch prompt (POST /api/session-groups/:id/prompt) writes
-   * through the same guards instead of a second, drifting copy of them. Blank text with no image
-   * is a no-op, not an error. Throws BusyError if a TUI grabbed the file or another process wrote
-   * it since we opened it: the caller decides whether that is a client error or a refusal.
+   * ACCEPT one user message: the write guards run NOW and throw on refusal, and the turn itself
+   * runs on. Returns the in-flight turn so a caller can attach failure handling — it is NOT
+   * something to await before answering a request, because the SDK's `prompt()` resolves on TURN
+   * COMPLETION (agent-session.js:937 runs the whole agent loop), so awaiting N of them in a row
+   * runs N turns end to end. Acceptance is everything up to handing the text to the SDK: a TUI
+   * owning the file, a foreign writer, a closed runtime. Blank text with no image is a no-op.
    */
-  async prompt(text: string, images?: SdkImage[]): Promise<void> {
+  acceptPrompt(text: string, images?: SdkImage[]): Promise<void> {
     // Never write if a TUI grabbed this file, or anyone else wrote it, after we opened it.
     assertNotLive(this.path);
     this.assertNoForeignWrites();
-    if (!text.trim() && !images) return;
+    if (!text.trim() && !images) return Promise.resolve();
     this.flushDeferredAppends();
     // While streaming, a plain prompt is queued as a follow-up.
     const streamingBehavior = this.session.isStreaming ? ("followUp" as const) : undefined;
-    await this.session.prompt(text, { images, streamingBehavior });
+    return this.session.prompt(text, { images, streamingBehavior });
+  }
+
+  /** Accept a prompt AND wait for the turn. The /ws/chat path, where the socket reports the
+      turn's own failure to the one client that asked for it. */
+  async prompt(text: string, images?: SdkImage[]): Promise<void> {
+    await this.acceptPrompt(text, images);
+  }
+
+  /** Report a failure into this session's own pane(s) — where every other turn failure already
+      reports. Used for a turn nobody is awaiting (the group batch dispatches and returns). */
+  reportTurnFailure(err: unknown): void {
+    const code = err instanceof BusyError ? err.code : "internal";
+    this.broadcast({ type: "error", code, message: err instanceof Error ? err.message : String(err) });
   }
 
   handle(client: ChatClient, msg: ChatClientMessage): void {

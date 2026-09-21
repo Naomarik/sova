@@ -65,6 +65,11 @@ interface SessionGroup {
   characters (`GROUP_LABEL_MAX`), optional, and it never replaces the title: the pane head shows
   the label first and the title under it. A member with no label shows the title alone. A label
   survives a move between groups, because it describes the session, not the group.
+- **A field this build doesn't know is kept, not dropped.** The store preserves unrecognized keys
+  on a group through a rename or a reassign, so a `seed` written by a newer pi-web survives an
+  older one touching the same group. Without that, the fork markers and `Align to Fork` of a
+  fanout would quietly disappear the first time an older build renamed the group — the kind of
+  loss nobody would connect to its cause.
 - **Membership is still the assignments map.** `members` is reconciled against it on read: an id
   that left the group drops out, an id the array never learned about is appended. A workspace
   therefore cannot show a member that isn't assigned, whatever the store says.
@@ -396,10 +401,20 @@ All four are writes to the group registry. None of them touches a session's JSON
   header keeps a `Promoted: {title}` chip with `Add Back` for as long as the workspace stays
   mounted in this tab, so a promote made by mistake is one press from undone. The chip is not
   persisted: it is an undo for the gesture, not a record of it. **It carries the member's label
-  and position**, because ungrouping drops the member entry: `Add Back` sends
-  `assign {path, groupId, label}` and then the order it was in, so the pane comes back named what
-  it was called and where it was. An undo that silently dropped the name you gave a member would
-  not be one.
+  and position**, because ungrouping drops the member entry: the pane comes back named what it
+  was called and where it was. An undo that silently dropped the name you gave a member, or put
+  it back in a different place, would not be one.
+  - **One write, not two.** `Add Back` sends `assign {path, groupId, label, index}` — position
+    included — so the restore cannot half-succeed. This is the one gesture where atomicity is
+    worth a field: it is the undo for Promote, and an undo that partly works is worse than one
+    that fails cleanly and says so.
+  - **Against a server that doesn't take `index`** the field is ignored and the member lands at
+    the end of the group, which is exactly when §9's "It's at the end." is true. The fallback
+    copy is for that case, not for a race.
+  - **If a follow-up `PATCH {order}` is ever sent instead, it carries the WHOLE array.** `order`
+    means "the listed ids first, in that order; everything left out keeps its relative order
+    behind them", so `order: ["restored-id"]` puts the member **first** — a wrong answer that
+    looks deliberate. Same rule as `Move Left` / `Move Right`: always the full order.
 - **Eliminate** — the same assign-to-null, plus
   `POST /api/sessions/archive {path, archived:true}`. Two writes, one gesture, and **the second
   can refuse in three ways** (`archiveSession`, `server/sessions-index.ts:558-564`): the session

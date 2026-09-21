@@ -2170,6 +2170,10 @@ test("the placeholder cwd alone identifies a remote session when the remote exte
 		h.bus.emit(REMOTE_SESSION_EVENT, { version: 1, target: "box", farCwd: "/srv/app", channelOff: true });
 		await h.call("agent_spawn", { prompt: "pi task 2" });
 		assert.deepEqual(h.workers[1].flags, { target: "box", "no-channel": true });
+		// Announced before the preflight resolved the far cwd (a CLI `pi --target` from a plain dir): refused, never local.
+		h.bus.emit(REMOTE_SESSION_EVENT, { version: 1, target: "box" });
+		await assert.rejects(h.call("agent_spawn", { prompt: "t" }), /far working directory is not known yet/);
+		assert.match((await h.call("agent_list")).content[0].text, /far working directory not resolved yet/);
 		h.bus.emit(REMOTE_SESSION_EVENT, { version: 1, target: "box", error: 'no target named "box"' });
 		await assert.rejects(h.call("agent_spawn", { prompt: "t" }), /could not be loaded \(no target named "box"\)/);
 		assert.equal(h.workers.length, 2);

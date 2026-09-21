@@ -389,7 +389,9 @@ export function registerSubagents(
 	const unregisterRemoteListener = pi.events?.on(REMOTE_SESSION_EVENT, (data: unknown) => {
 		const e = data as RemoteSessionEvent | undefined;
 		if (!e || e.version !== 1 || typeof e.target !== "string" || !e.target.trim()) return;
-		if (e.error === undefined && (typeof e.farCwd !== "string" || !e.farCwd.startsWith("/"))) return;
+		// A far cwd the extension has not resolved yet (before its preflight answers) is kept as
+		// "remote, unresolved": spawns refuse until the next announcement carries it.
+		if (e.farCwd !== undefined && (typeof e.farCwd !== "string" || !e.farCwd.startsWith("/"))) return;
 		remoteSession = e;
 	});
 	pi.events?.emit(REMOTE_DISCOVER_EVENT, { version: 1 });
@@ -398,7 +400,8 @@ export function registerSubagents(
 	const remoteNotice = (ctx: ExtensionContext): string => {
 		const r = remoteSessionFor(ctx);
 		if (!r) return "";
-		return r.error ? `Remote session: target ${r.target} could not be loaded (${r.error}); no worker can be spawned.` : `Remote session: workers run on target ${r.target} in ${r.farCwd}.`;
+		if (r.error) return `Remote session: target ${r.target} could not be loaded (${r.error}); no worker can be spawned.`;
+		return r.farCwd ? `Remote session: workers run on target ${r.target} in ${r.farCwd}.` : `Remote session: target ${r.target}, far working directory not resolved yet; spawns refuse until it is.`;
 	};
 	const groups: AgentGroup[] = [];
 	const teams = new TeamStore();
@@ -733,6 +736,7 @@ export function registerSubagents(
 		// Validate the whole batch before starting any child.
 		const remote = remoteSessionFor(ctx);
 		if (remote?.error) throw new Error(`This session's remote target "${remote.target}" could not be loaded (${remote.error}); a worker would have no tools. Fix the target first.`);
+		if (remote && !remote.farCwd) throw new Error(`This session runs on remote target "${remote.target}" but its far working directory is not known yet (the target's preflight has not answered); retry in a few seconds, or /remote check.`);
 		const prepared = specs.map((spec) => {
 			if (!spec.prompt.trim()) throw new Error("Task must not be blank.");
 			const backendId = spec.backend ?? "pi";

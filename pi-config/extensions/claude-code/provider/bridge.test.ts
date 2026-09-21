@@ -610,3 +610,106 @@ test("the process-global bridge hooks only `exit`, never SIGINT/SIGTERM, and exi
 	bridge.killAllNow();
 	await resetSessionBridge();
 });
+
+// ---------------------------------------------------------------------------
+// Session cwd
+// ---------------------------------------------------------------------------
+
+test("the child is spawned in the pi session's cwd, not the host process's", { timeout: 8000 }, async () => {
+	const { bridge, children } = harness();
+	bridge.setSessionCwd("pi-session-1", "/tmp/session-one");
+	await collectAfter(bridge.runTurn(request([user("hi")])), async () => {
+		const cli = await child(children, 1);
+		await cli.waitFor((f) => f.request?.subtype === "initialize");
+		await cli.handshake();
+		cli.emitFrame({ type: "result", subtype: "success", is_error: false, result: "ok" });
+	});
+	assert.equal(children[0]!.cwd, "/tmp/session-one");
+	assert.notEqual(children[0]!.cwd, process.cwd());
+	await bridge.disposeAll();
+});
+
+test("each pi session's child gets its own cwd", { timeout: 8000 }, async () => {
+	const { bridge, children } = harness();
+	bridge.setSessionCwd("s1", "/tmp/one");
+	bridge.setSessionCwd("s2", "/tmp/two");
+	let n = 0;
+	for (const id of ["s1", "s2"]) {
+		n += 1;
+		const index = n;
+		await collectAfter(bridge.runTurn(request([user("hi")], { sessionId: id })), async () => {
+			const cli = await child(children, index);
+			await cli.waitFor((f) => f.request?.subtype === "initialize");
+			await cli.handshake();
+			cli.emitFrame({ type: "result", subtype: "success", is_error: false, result: "ok" });
+		});
+	}
+	assert.deepEqual(children.map((c) => c.cwd), ["/tmp/one", "/tmp/two"]);
+	await bridge.disposeAll();
+});
+
+test("a cwd change restarts the child, like a model change", { timeout: 8000 }, async () => {
+	const { bridge, children } = harness();
+	bridge.setSessionCwd("pi-session-1", "/tmp/before");
+	const first = [user("hi")];
+	await collectAfter(bridge.runTurn(request(first)), async () => {
+		const cli = await child(children, 1);
+		await cli.waitFor((f) => f.request?.subtype === "initialize");
+		await cli.handshake();
+		cli.emitFrame({ type: "result", subtype: "success", is_error: false, result: "ok" });
+	});
+
+	// A cwd is fixed at spawn, so the only honest response is a new child.
+	bridge.setSessionCwd("pi-session-1", "/tmp/after");
+	await collectAfter(bridge.runTurn(request([...first, user("again")])), async () => {
+		const cli = await child(children, 2);
+		await cli.waitFor((f) => f.request?.subtype === "initialize");
+		await cli.handshake();
+		cli.emitFrame({ type: "result", subtype: "success", is_error: false, result: "ok" });
+	});
+
+	assert.equal(children.length, 2, "a cwd change must restart the child");
+	assert.equal(children[1]!.cwd, "/tmp/after");
+	await bridge.disposeAll();
+});
+
+// ---------------------------------------------------------------------------
+// Compaction
+// ---------------------------------------------------------------------------
+
+/**
+ * What pi's compaction actually sends, from `buildSummarizationContext` in
+ * 0.86.1: its own summarization system prompt, NO tools, and a single user
+ * message holding the transcript to summarize. It is not an extension of the
+ * conversation, so it cannot reuse the conversation's child.
+ */
+test("a compaction summary costs two restarts: one for the summary, one to resume", { timeout: 8000 }, async () => {
+	const { bridge, children } = harness();
+	const finish = async (n: number) => {
+		const cli = await child(children, n);
+		await cli.waitFor((f) => f.request?.subtype === "initialize");
+		await cli.handshake();
+		cli.emitFrame({ type: "result", subtype: "success", is_error: false, result: "ok" });
+	};
+
+	const conversation = [user("one"), user("two")];
+	await collectAfter(bridge.runTurn(request(conversation)), () => finish(1));
+	assert.equal(children.length, 1);
+
+	// The summarization request: same pi session, different everything else.
+	const summary = request([user("Summarize the conversation so far.")], {
+		systemPrompt: "You are a conversation summarizer.",
+		tools: [],
+	});
+	await collectAfter(bridge.runTurn(summary), () => finish(2));
+	assert.equal(children.length, 2, "the summary request cannot reuse the conversation's child");
+
+	// The next real turn carries the compacted transcript, which is not an
+	// extension of what child 2 saw either.
+	const compacted = request([user("<summary of the conversation>"), user("three")]);
+	await collectAfter(bridge.runTurn(compacted), () => finish(3));
+	assert.equal(children.length, 3, "resuming after compaction restarts again");
+
+	assert.equal(children[1]!.argv.filter((a) => a === "--session-id").length, 1);
+	await bridge.disposeAll();
+});

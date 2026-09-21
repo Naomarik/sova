@@ -366,3 +366,41 @@ divergence).
 **Usage differencing turned out to be unnecessary.** §1 planned to difference the CLI's cumulative
 `modelUsage` / `total_cost_usd`. `parseClaudeFrame` reads the per-message Anthropic passthrough usage
 instead, which is already per-turn, so there is nothing to difference and no cumulative state to keep.
+
+## Session cwd (decided)
+
+The CLI child is spawned in **the pi session's** working directory, not the host process's. The session's cwd
+is recorded by the extension at `session_start` (`ctx.cwd`) through `SessionBridge.setSessionCwd(sessionId,
+cwd)` and kept in a map beside the session registry — `ClaudeTurnRequest` carries no cwd, and one process
+serves many sessions in different directories. `process.cwd()` remains only as the last fallback for a
+session that never announced one.
+
+The recording call sits **before** the once-per-process registration guard in `session_start`. Registration
+happens once; cwd recording has to happen for every session, and the guard's early return would skip all but
+the first.
+
+**A cwd change restarts the child**, the same rule as a model, effort, system-prompt or tool-set change, and
+for a stronger reason than any of those: a process's working directory is fixed at spawn and no control
+request moves a running CLI. Carrying on in the old directory would leave the model with a false sense of
+where it is. `cwd` is therefore part of `turnMeta`, so the existing fingerprint machinery handles it with no
+special case.
+
+## Compaction costs two restarts (measured, not inferred)
+
+Asked and answered offline with the fake child (`bridge.test.ts`, "a compaction summary costs two restarts").
+**Yes — a compaction summary restarts the CLI child twice**, and the test counts the children rather than
+reasoning about it.
+
+Why, from `buildSummarizationContext` in 0.86.1: the summarization request carries its own system prompt, an
+empty tool set, and a single user message holding the text to summarize. It is not an extension of the
+conversation, so:
+
+1. the summary request diverges (different system prompt, no tools) → restart, and
+2. the next real turn carries the compacted transcript, which is not an extension of what the summary child
+   saw either → restart again.
+
+Accepted for v1. It is correct, just wasteful: three children across a compaction boundary where one would
+do, and the prompt cache is lost twice. The obvious improvement is to route requests that are clearly not
+conversation turns — no tools, a foreign system prompt — to a short-lived child of their own instead of
+evicting the session's, which would cut it to zero restarts for the summary and one for the resume. Not done
+here because it needs a way to recognize such a request that does not amount to guessing.

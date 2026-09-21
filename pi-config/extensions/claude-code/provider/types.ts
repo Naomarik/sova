@@ -92,6 +92,12 @@ export interface ClaudeSessionBridge {
 	runTurn(request: ClaudeTurnRequest, signal?: AbortSignal): AsyncIterable<ClaudeFrame>;
 	/** Stop the CLI child that served one pi session, when pi closes it. */
 	disposeSession?(sessionId: string, reason?: string): Promise<void>;
+	/**
+	 * Tell the bridge which directory a pi session runs in, so its CLI child is
+	 * spawned there. A child's cwd is fixed at spawn, so a later change restarts
+	 * it (cwd is part of the turn fingerprint).
+	 */
+	setSessionCwd?(sessionId: string, cwd: string): void;
 }
 
 /** The payload handed to `options.onPayload`; a returned replacement is applied. */

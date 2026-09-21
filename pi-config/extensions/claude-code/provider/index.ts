@@ -126,8 +126,13 @@ export function registerProviderIfEnabled(pi: ExtensionAPI, bridge: ClaudeSessio
 		description: "Expose the local Claude Code CLI as pi models (experimental)",
 	});
 	// session_start is the first point where the caller's flag value is visible.
-	pi.on("session_start", () => {
+	pi.on("session_start", (_event, ctx) => {
 		if (pi.getFlag(CLAUDE_PROVIDER_FLAG) !== true) return;
+		// Before the registration guard on purpose: registration happens once per
+		// process, but every session must record its own directory, and later
+		// sessions would be skipped by the early return below.
+		const sessionId = ctx?.sessionManager?.getSessionId?.();
+		if (sessionId && ctx?.cwd) bridge.setSessionCwd?.(sessionId, ctx.cwd);
 		if (alreadyRegistered()) return;
 		pi.registerProvider(CLAUDE_PROVIDER_ID, {
 			name: "Claude Code CLI",

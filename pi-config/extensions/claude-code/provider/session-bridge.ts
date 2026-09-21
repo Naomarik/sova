@@ -202,10 +202,15 @@ export function isPrefix(recorded: readonly string[], next: readonly string[]): 
 	return recorded.every((hash, i) => hash === next[i]);
 }
 
-/** Identity of everything outside the message list that would invalidate the CLI's state. */
-function turnMeta(request: ClaudeTurnRequest): string {
+/**
+ * Identity of everything outside the message list that would invalidate the
+ * CLI's state. `cwd` is in here because a child's working directory is fixed at
+ * spawn: there is no control request that moves a running CLI, so the only
+ * honest response to a session that changed directory is a restart.
+ */
+function turnMeta(request: ClaudeTurnRequest, cwd: string): string {
 	const tools = request.tools.map((tool) => `${tool.name}\u0001${tool.description}\u0001${JSON.stringify(tool.parameters ?? {})}`).join("\u0002");
-	return sha(request.model, request.effort ?? "", request.systemPrompt ?? "", tools);
+	return sha(request.model, request.effort ?? "", request.systemPrompt ?? "", tools, cwd);
 }
 
 // ---------------------------------------------------------------------------
@@ -364,6 +369,8 @@ function deepEqual(a: unknown, b: unknown): boolean {
 class CliSession {
 	readonly piSessionId: string;
 	lastUsed = Date.now();
+	/** The pi session's working directory; the child is spawned in it. */
+	cwd: string;
 	private readonly options: SessionBridgeOptions;
 	private readonly timings: SessionBridgeTimings;
 	private readonly limits: SessionBridgeLimits;
@@ -394,9 +401,10 @@ class CliSession {
 	private restarting = false;
 	private failure?: string;
 
-	constructor(piSessionId: string, options: SessionBridgeOptions) {
+	constructor(piSessionId: string, options: SessionBridgeOptions, cwd: string) {
 		this.piSessionId = piSessionId;
 		this.options = options;
+		this.cwd = cwd;
 		this.timings = { ...TIMINGS, ...options.timings };
 		this.limits = { ...LIMITS, ...options.limits };
 	}
@@ -429,7 +437,7 @@ class CliSession {
 			if (plan.restart) await this.restart(request, plan.reason);
 			this.deliver(request, plan);
 			this.recorded = next;
-			this.meta = turnMeta(request);
+			this.meta = turnMeta(request, this.cwd);
 			yield* queue.drain();
 		} finally {
 			if (turn.onAbort && signal) signal.removeEventListener("abort", turn.onAbort);
@@ -451,8 +459,8 @@ class CliSession {
 		if (!this.started || !this.transport || this.transport.isClosed() || this.transport.hasExited()) {
 			return { restart: true, reason: "no live CLI process", results: [], user: undefined };
 		}
-		if (this.meta !== undefined && this.meta !== turnMeta(request)) {
-			return { restart: true, reason: "model, effort, system prompt or tool set changed", results: [], user: undefined };
+		if (this.meta !== undefined && this.meta !== turnMeta(request, this.cwd)) {
+			return { restart: true, reason: "model, effort, system prompt, tool set or cwd changed", results: [], user: undefined };
 		}
 		if (!isPrefix(this.recorded, next)) {
 			return { restart: true, reason: "transcript diverged (rewind, branch, compaction or foreign append)", results: [], user: undefined };
@@ -556,7 +564,7 @@ class CliSession {
 		this.transport = transport;
 
 		transport.launch(this.options.executable ?? "claude", args, {
-			cwd: this.options.cwd ?? process.cwd(),
+			cwd: this.cwd,
 			env: {
 				...this.options.env,
 				MCP_TOOL_TIMEOUT: String(this.options.mcpToolTimeoutMs ?? DEFAULT_MCP_TOOL_TIMEOUT_MS),
@@ -826,6 +834,13 @@ function toMcpResult(result: Extract<Message, { role: "toolResult" }>): McpToolR
 
 export class SessionBridge implements ClaudeSessionBridge {
 	private readonly sessions = new Map<string, CliSession>();
+	/**
+	 * pi session id -> that session's working directory, recorded by the
+	 * extension at session_start. Kept beside the session map rather than on the
+	 * request because `ClaudeTurnRequest` has no cwd and one process serves many
+	 * sessions with different directories.
+	 */
+	private readonly cwds = new Map<string, string>();
 	private readonly options: SessionBridgeOptions;
 	private readonly limits: SessionBridgeLimits;
 
@@ -834,11 +849,30 @@ export class SessionBridge implements ClaudeSessionBridge {
 		this.limits = { ...LIMITS, ...options.limits };
 	}
 
+	/**
+	 * Record a pi session's working directory. Called from the extension's
+	 * session_start handler; without it the child would fall back to the host
+	 * process's cwd, which is only right by accident.
+	 */
+	setSessionCwd(sessionId: string, cwd: string): void {
+		if (!sessionId || !cwd) return;
+		this.cwds.set(sessionId, cwd);
+		const session = this.sessions.get(sessionId);
+		// A live session adopts it now; the change restarts the child on its next
+		// turn, because cwd is part of the turn fingerprint.
+		if (session) session.cwd = cwd;
+	}
+
+	/** The cwd a session's child should run in, best known to worst. */
+	private cwdFor(sessionId: string): string {
+		return this.cwds.get(sessionId) ?? this.options.cwd ?? process.cwd();
+	}
+
 	runTurn(request: ClaudeTurnRequest, signal?: AbortSignal): AsyncIterable<ClaudeFrame> {
 		const key = request.sessionId ?? "default";
 		let session = this.sessions.get(key);
 		if (!session) {
-			session = new CliSession(key, this.options);
+			session = new CliSession(key, this.options, this.cwdFor(key));
 			this.sessions.set(key, session);
 		}
 		this.reapIdle(key);
@@ -853,6 +887,7 @@ export class SessionBridge implements ClaudeSessionBridge {
 
 	/** Called from the extension's `session_shutdown` hook. */
 	async disposeSession(piSessionId: string, reason = "pi session shut down"): Promise<void> {
+		this.cwds.delete(piSessionId);
 		const session = this.sessions.get(piSessionId);
 		if (!session) return;
 		this.sessions.delete(piSessionId);

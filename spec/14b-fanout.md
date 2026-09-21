@@ -184,7 +184,11 @@ POST /api/session-groups/fanout
   transcript is no longer showing. Reading the file backwards finds `a1`; the user was shown
   `u1`. The branch has to be walked by `parentId` from the file's last entry, the same rule
   `activeBranch` already applies, and a tail window cannot stand in for it: after a rewind the
-  chain leaves the window immediately.
+  chain leaves the window immediately. **Named, so it cannot be paraphrased into a tail walk:**
+  `readActiveBranch(path)` (`server/transcript.ts:349`, which is `activeBranch` at `:35` over the
+  parsed file), then the last entry on it with `normalizeEntry(entry).length > 0`. Both halves
+  are required and neither substitutes for the other — the filter alone returns the abandoned
+  branch's last *visible* message, which is an ordinary reply and passes any hidden-entry test.
 - **The rendered half, separately.** The two
   are routinely different, and comparing against the raw last line turns this check into a false
   refusal. The transcript hides several entry kinds — top-level `usage` rows (cache warming

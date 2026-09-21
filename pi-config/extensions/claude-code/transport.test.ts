@@ -397,6 +397,64 @@ test("control requests correlate by id: success, rejection, timeout and extra fi
 	h.child.close();
 });
 
+test("request() returns the CLI's own payload, and control() reduces it to the ack", async () => {
+	const h = harness();
+	h.transport.launch("claude", [], { cwd: "/tmp" });
+	const listed = h.transport.request("mcp_message", { server_name: "pi", message: { method: "tools/list" } });
+	const frame = h.child.writes[0];
+	assert.deepEqual(frame.request, { subtype: "mcp_message", server_name: "pi", message: { method: "tools/list" } });
+	h.child.out({ type: "control_response", response: { request_id: frame.request_id, subtype: "success", response: { tools: [{ name: "read_file" }] } } });
+	assert.deepEqual(await listed, { ack: true, response: { tools: [{ name: "read_file" }] }, error: undefined });
+	// A rejection carries its message; a payload-less success has no response.
+	const denied = h.transport.request("set_model", { model: "nope" });
+	h.child.out({ type: "control_response", response: { request_id: h.child.writes[1].request_id, subtype: "error", error: "unknown model" } });
+	assert.deepEqual(await denied, { ack: false, response: undefined, error: "unknown model" });
+	const bare = h.transport.request("interrupt");
+	h.child.out({ type: "control_response", response: { request_id: h.child.writes[2].request_id, subtype: "success", response: "not an object" } });
+	assert.deepEqual(await bare, { ack: true, response: undefined, error: undefined });
+	// Silence is still no known response, for the payload API too.
+	assert.deepEqual(await h.transport.request("initialize"), { ack: undefined });
+	assert.equal(await h.transport.control("initialize"), undefined);
+	h.child.close();
+});
+
+test("an owner can answer inbound control requests generically; unhandled ones are refused", async () => {
+	const seen: { requestId: string; subtype: string; payload: any }[] = [];
+	const h = harness({
+		onControlRequest: (request) => {
+			seen.push({ requestId: request.requestId, subtype: request.subtype, payload: (request.frame.request as any)?.message });
+			if (request.subtype !== "mcp_message") return false;
+			h.transport.respond(request.requestId, { result: { tools: [] } });
+			return true;
+		},
+	});
+	h.transport.launch("claude", [], { cwd: "/tmp" });
+	h.child.out({ type: "control_request", request_id: "m1", request: { subtype: "mcp_message", message: { method: "tools/list" } } });
+	h.child.out({ type: "control_request", request_id: "x1", request: { subtype: "invented" } });
+	h.child.out({ type: "control_request", request: { subtype: "mcp_message" } });
+	await tick();
+	assert.deepEqual(seen, [
+		{ requestId: "m1", subtype: "mcp_message", payload: { method: "tools/list" } },
+		{ requestId: "x1", subtype: "invented", payload: undefined },
+	], "a frame without a request id is never dispatched");
+	assert.deepEqual(h.child.writes[0], { type: "control_response", response: { subtype: "success", request_id: "m1", response: { result: { tools: [] } } } });
+	assert.deepEqual(h.child.writes[1], { type: "control_response", response: { subtype: "error", request_id: "x1", error: "Unsupported host control request" } });
+	assert.equal(h.child.writes.length, 2);
+	// The raw feed still sees every inbound frame, before the answering dispatch.
+	assert.equal(h.events.filter((e) => e.type === "control_request").length, 3);
+	h.child.close();
+});
+
+test("without the hook the transport answers nothing by itself, leaving the policy to onEvent", async () => {
+	const h = harness();
+	h.transport.launch("claude", [], { cwd: "/tmp" });
+	h.child.out({ type: "control_request", request_id: "p1", request: { subtype: "can_use_tool", tool_name: "Bash" } });
+	await tick();
+	assert.deepEqual(h.child.writes, [], "the worker runner keeps its own can_use_tool policy");
+	assert.equal(h.events.length, 1);
+	h.child.close();
+});
+
 test("stdout framing survives split UTF-8, CRLF, blank lines and a final unterminated record", async () => {
 	const h = harness();
 	h.transport.launch("claude", [], { cwd: "/tmp" });

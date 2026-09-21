@@ -77,6 +77,17 @@ export type ClaudeStreamEvent =
 
 /** false is a correlated rejection; undefined means no known response. */
 export type ControlAck = boolean | undefined;
+/**
+ * A correlated control response with its payload. `ack` carries the same
+ * three-valued answer as ControlAck (undefined = no known response, which every
+ * caller must treat as fail-closed); `response` is the CLI's own payload, which
+ * round-trips (tools/list, mcp_message) need.
+ */
+export interface ClaudeControlResult {
+	ack: ControlAck;
+	response?: Record<string, any>;
+	error?: string;
+}
 
 /** One stdio MCP server entry, in the shape Claude Code's mcp.json expects. */
 export interface ClaudeMcpServerEntry { command: string; args: string[]; env?: Record<string, string> }
@@ -214,6 +225,13 @@ export function mcpServerFailure(event: any, configured: readonly string[]): str
 	return undefined;
 }
 
+/** An inbound host control_request, dispatched to an owner that registers for it. */
+export interface ClaudeInboundRequest {
+	requestId: string;
+	subtype: string;
+	/** The whole frame: MCP envelopes carry their payload under `request`. */
+	frame: ClaudeControlRequestEvent;
+}
 /** An incoming `can_use_tool` host permission request, without any host identity. */
 export interface ClaudeToolPermissionRequest {
 	requestId: string;
@@ -374,6 +392,15 @@ export type SpawnImpl = (command: string, args: string[], options: any) => Child
 export interface ClaudeTransportHooks {
 	/** Every decoded record, including control_response (already correlated). */
 	onEvent(event: ClaudeStreamEvent): void;
+	/**
+	 * Optional second dispatch for inbound control_requests, after onEvent: for
+	 * an owner that answers the control channel generically (MCP over
+	 * control_request, for instance). Return true once the request has been
+	 * answered with respond()/respondError(); returning false refuses it as
+	 * unsupported. Omit the hook to handle control_requests in onEvent alone —
+	 * the worker runner does, keeping its own can_use_tool policy.
+	 */
+	onControlRequest?(request: ClaudeInboundRequest): boolean;
 	/** Decoded stderr text. Not called once closed. */
 	onStderr?(text: string): void;
 	/** Oversize or malformed record: the stream cannot be trusted any more. */
@@ -424,7 +451,7 @@ export class ClaudeTransport {
 	private buffer = "";
 	private decoder = new StringDecoder("utf8");
 	private stderrDecoder = new StringDecoder("utf8");
-	private controls = new Map<string, { resolve: (ok: ControlAck) => void; timer: ReturnType<typeof setTimeout> }>();
+	private controls = new Map<string, { resolve: (result: ClaudeControlResult) => void; timer: ReturnType<typeof setTimeout> }>();
 	private timers = new Set<ReturnType<typeof setTimeout>>();
 	/** Pending while an interrupt is unanswered. */
 	private interruptPromise?: Promise<ControlAck>;
@@ -486,16 +513,21 @@ export class ClaudeTransport {
 	sendUser(uuid: string, text: string): boolean {
 		return this.send({ type: "user", uuid, message: { role: "user", content: [{ type: "text", text }] } });
 	}
-	/** A correlated control request (initialize, interrupt, set_model, …). */
-	control(subtype: string, fields?: Record<string, unknown>): Promise<ControlAck> {
+	/** A correlated control request, answered with the CLI's own payload. */
+	request(subtype: string, fields?: Record<string, unknown>): Promise<ClaudeControlResult> {
 		const request_id = randomUUID();
 		return new Promise((resolve) => {
-			const timer = setTimeout(() => { this.controls.delete(request_id); resolve(undefined); }, this.timings.requestTimeoutMs);
+			const unanswered = () => resolve({ ack: undefined });
+			const timer = setTimeout(() => { this.controls.delete(request_id); unanswered(); }, this.timings.requestTimeoutMs);
 			this.controls.set(request_id, { resolve, timer });
 			if (!this.send({ type: "control_request", request_id, request: { subtype, ...fields } })) {
-				clearTimeout(timer); this.controls.delete(request_id); resolve(undefined);
+				clearTimeout(timer); this.controls.delete(request_id); unanswered();
 			}
 		});
+	}
+	/** request(), reduced to its acknowledgment (initialize, interrupt, set_model, …). */
+	control(subtype: string, fields?: Record<string, unknown>): Promise<ControlAck> {
+		return this.request(subtype, fields).then((result) => result.ack);
 	}
 	/** Answer an incoming host control request. */
 	respond(requestId: string, response: unknown): boolean {
@@ -550,11 +582,22 @@ export class ClaudeTransport {
 			const pending = this.controls.get(response?.request_id);
 			if (pending) {
 				this.controls.delete(response.request_id); clearTimeout(pending.timer);
-				// Intentionally discard private initialize account/capability metadata.
-				pending.resolve(response.subtype === "success" ? true : response.subtype === "error" ? false : undefined);
+				// The payload is handed to the caller that asked for it; the worker
+				// runner takes only the ack, discarding private initialize metadata.
+				pending.resolve({
+					ack: response.subtype === "success" ? true : response.subtype === "error" ? false : undefined,
+					response: record(response.response) ? response.response : undefined,
+					error: typeof response.error === "string" ? response.error : undefined,
+				});
 			}
 		}
 		this.hooks.onEvent(e as ClaudeStreamEvent);
+		if (e.type === "control_request" && this.hooks.onControlRequest && typeof e.request_id === "string") {
+			const subtype = typeof e.request?.subtype === "string" ? e.request.subtype : "";
+			if (!this.hooks.onControlRequest({ requestId: e.request_id, subtype, frame: e as ClaudeControlRequestEvent })) {
+				this.respondError(e.request_id, "Unsupported host control request");
+			}
+		}
 	}
 
 	/** Interrupt (through beforeEof) → EOF → SIGTERM → SIGKILL, then a bounded pipe drain. */
@@ -602,7 +645,7 @@ export class ClaudeTransport {
 		this.closed = true; this.processAlive = false;
 		clearTimeout(this.pipeDrainTimer); this.pipeDrainTimer = undefined;
 		this.buffer = "";
-		for (const entry of this.controls.values()) { clearTimeout(entry.timer); entry.resolve(undefined); }
+		for (const entry of this.controls.values()) { clearTimeout(entry.timer); entry.resolve({ ack: undefined }); }
 		this.controls.clear();
 		for (const timer of this.timers) clearTimeout(timer);
 		this.timers.clear();

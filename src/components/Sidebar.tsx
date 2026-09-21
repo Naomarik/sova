@@ -535,6 +535,8 @@ export function Sidebar(props: {
   insightsPage: "usage" | "agents" | null;
   /** Opens the Settings dialog from the foot's gear. */
   onOpenSettings(): void;
+  /** "New fanout": the dialog with no source, a fresh prompt N ways (§14b "Entry points"). */
+  onFanOut(): void;
 }) {
   const [query, setQuery] = createSignal("");
   const [showSkeleton, setShowSkeleton] = createSignal(false);
@@ -784,10 +786,17 @@ export function Sidebar(props: {
               <Show
                 when={newGroupField()}
                 fallback={
-                  <button type="button" class="list-row list-row-interactive group-new" onClick={() => setNewGroupField(true)}>
-                    <Icon name="plus" small />
-                    <span class="list-title">New group</span>
-                  </button>
+                  <>
+                    <button type="button" class="list-row list-row-interactive group-new" onClick={() => setNewGroupField(true)}>
+                      <Icon name="plus" small />
+                      <span class="list-title">New group</span>
+                    </button>
+                    {/* Beside it, the other way to get a group: make its members too (§14b). */}
+                    <button type="button" class="list-row list-row-interactive group-new" onClick={props.onFanOut}>
+                      <span class="icon icon-sm" style={{ "--icon": "url(/icons/branch.svg)" }} aria-hidden="true" />
+                      <span class="list-title">New fanout</span>
+                    </button>
+                  </>
                 }
               >
                 <div class="group-field-row">

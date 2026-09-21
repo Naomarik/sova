@@ -461,6 +461,7 @@ export function App() {
           onRefresh={refresh}
           onNew={() => setCreating(true)}
           onOpenSettings={() => setSettingsOpen(true)}
+          onFanOut={() => setFanout({})}
         />
 
         {/* The workspace takes the whole second column, so it IS the main: no session head, and

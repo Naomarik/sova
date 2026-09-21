@@ -482,6 +482,8 @@ export function GroupView(props: {
               groupName={props.group.name}
               members={panes().length}
               candidates={candidates()}
+              seeded={!!props.group.seed}
+              onAlign={alignToFork}
               onAdd={(session) => void add(session)}
               onFanOut={props.wiring.onFanOut}
               onDissolve={() => void dissolve()}
@@ -502,6 +504,15 @@ export function GroupView(props: {
                 Tabs
               </button>
             </div>
+          </Show>
+          {/* Absent for a group pi-web didn't fan out: there is nothing to align to, and gate #10
+              forbids inferring a fork point from lineage. A hand-made group that ADOPTS a seed
+              gains this button, which §9 notes is adoption's one visible trace. */}
+          <Show when={props.group.seed}>
+            <button type="button" class="button button-sm button-ghost workspace-align" onClick={alignToFork}>
+              <span class="icon icon-sm" style={{ "--icon": "url(/icons/branch.svg)" }} aria-hidden="true" />
+              Align to Fork
+            </button>
           </Show>
           <AddMembers
             groupName={props.group.name}
@@ -1067,7 +1078,10 @@ function HeadActions(props: {
   groupName: string;
   members: number;
   candidates: SessionSummary[];
+  /** The group has a fork point, so Align to Fork is offered — same rule as the wide head. */
+  seeded: boolean;
   onAdd(session: SessionSummary): void;
+  onAlign(): void;
   onFanOut(): void;
   onDissolve(): void;
 }) {
@@ -1173,6 +1187,22 @@ function HeadActions(props: {
         </Show>
         <Show when={!asking() && !picking()}>
           <div class="model-menu-list" role="menu" aria-label={`Actions for ${quoted(props.groupName)}`}>
+            <Show when={props.seeded}>
+              <div
+                class="mode-option group-option"
+                role="menuitem"
+                tabindex={0}
+                onClick={() => {
+                  close();
+                  props.onAlign();
+                }}
+              >
+                <span class="icon icon-sm" style={{ "--icon": "url(/icons/branch.svg)" }} aria-hidden="true" />
+                <span class="mode-option-text">
+                  <span class="mode-option-id">Align to Fork</span>
+                </span>
+              </div>
+            </Show>
             <div class="mode-option group-option" role="menuitem" tabindex={0} onClick={() => setPicking(true)}>
               <Icon name="plus" small />
               <span class="mode-option-text">

@@ -621,8 +621,8 @@ export function GroupView(props: {
                 <Icon name="folder" class="empty-mark" />
                 <p class="empty-title">{quoted(props.group.name)} has no sessions left.</p>
                 <p class="empty-body">
-                  They were removed from the group, or their files were deleted outside pi-web. The group is
-                  all that's left of the fanout.
+                  They were removed from the group, or their files were deleted outside pi-web. Dissolving it
+                  takes the name and the fork point, and nothing else.
                 </p>
                 <button type="button" class="button empty-action button-destructive" onClick={() => void dissolve()}>
                   Dissolve

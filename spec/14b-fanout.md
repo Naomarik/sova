@@ -262,6 +262,12 @@ from, immediately after it:
 </p>
 ```
 
+- **One leaf id locates the row in every member**, because branching **copies entries with their
+  ids intact** — it re-parents the chain (`{...entry, parentId}`, `session-manager.js:1136-1141`)
+  but never re-mints an id. So the entry `seed.leafId` names exists, with that id, in the source
+  and in all N members, and `TranscriptItem.id` is what the client matches on. The whole marker
+  rests on this; if branching ever re-minted ids, `seed.leafId` would be meaningless everywhere
+  except the source, and the symptom would be markers silently vanishing rather than an error.
 - **It is a rendered marker, not an entry.** Nothing is written into the session file for it: the
   client draws it at `seed.leafId` on every member. A marker that needed a write would need the
   write guards, and the fact it states is already in the group registry.

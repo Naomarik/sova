@@ -102,6 +102,9 @@ branch (the full reasoning lives in that branch's commit messages and spec §14'
   what-instrument cannot answer a when-question: greps and test counts say what's there;
   `git show <sha>:<file>` and `git merge-base --is-ancestor` say since when. Name the commit a
   claim is true at, and read the live tree, not an archive of it.
+- **A frame that is confirming itself feels exactly like a frame that is correct.** When a class
+  is salient, every event reads into it and the pattern-match feels like recognition; a count of
+  instances is an instrument like any other and must be measured, not repeated.
 
 ## pi-config mirror
 

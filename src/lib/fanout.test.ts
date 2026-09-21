@@ -9,9 +9,12 @@ import {
   defaultGroupName,
   failureLines,
   fanoutBody,
+  fewerLabel,
+  moreLabel,
   partialClosing,
   partialTitle,
   removeModel,
+  removeLabel,
   rowFill,
   sharedTurnLine,
   stepCount,
@@ -194,4 +197,17 @@ test("a caller that reports no touch at all is treated as untouched, not as user
   // population from a client saying "nobody touched it".
   const body = fanoutBody({ rows: [{ ref: "a/b", count: 1 }], name: "Fanout · x", source: { path: "/p", leafId: "l" } });
   assert.equal((body as { named?: string }).named, "generated");
+});
+
+test("a member row's controls are named by the FULL ref, because two providers ship one model name", () => {
+  // The hazard this pins: `zai/glm-5.3` and `ollama-cloud/glm-5.3` are two rows, two subscriptions,
+  // and one bare model id. The row's visible text is the full ref, so a sighted user can tell them
+  // apart; the accessible name is the only signal a screen-reader user has, and shortModel would
+  // announce both as "One more glm-5.3". §9:414 requires the ref for exactly this reason.
+  assert.equal(moreLabel("zai/glm-5.3"), "One more zai/glm-5.3");
+  assert.notEqual(moreLabel("zai/glm-5.3"), moreLabel("ollama-cloud/glm-5.3"));
+  assert.equal(removeLabel("ollama-cloud/glm-5.3"), "Remove ollama-cloud/glm-5.3");
+  // At 1 the − button removes the row, so it says so — the same string as the remove button.
+  assert.equal(fewerLabel("zai/glm-5.3", 1), "Remove zai/glm-5.3");
+  assert.equal(fewerLabel("zai/glm-5.3", 2), "One fewer zai/glm-5.3");
 });

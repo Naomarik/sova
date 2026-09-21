@@ -11,6 +11,9 @@ import {
   modelOf,
   removeModel,
   rowFill,
+  fewerLabel,
+  moreLabel,
+  removeLabel,
   rowModel,
   sharedTurnLine,
   stepCount,
@@ -271,7 +274,7 @@ export function FanoutDialog(props: {
                         <button
                           type="button"
                           class="button button-icon button-ghost button-sm"
-                          aria-label={row.count === 1 ? `Remove ${rowModel(row.ref)}` : `One fewer ${rowModel(row.ref)}`}
+                          aria-label={fewerLabel(row.ref, row.count)}
                           onClick={() => setRows(stepCount(rows(), row.ref, -1))}
                         >
                           −
@@ -282,7 +285,7 @@ export function FanoutDialog(props: {
                         <button
                           type="button"
                           class="button button-icon button-ghost button-sm"
-                          aria-label={`One more ${rowModel(row.ref)}`}
+                          aria-label={moreLabel(row.ref)}
                           aria-disabled={row.count >= COUNT_MAX ? "true" : undefined}
                           onClick={() => setRows(stepCount(rows(), row.ref, 1))}
                         >
@@ -292,7 +295,7 @@ export function FanoutDialog(props: {
                       <button
                         type="button"
                         class="button button-sm button-ghost"
-                        aria-label={`Remove ${rowModel(row.ref)}`}
+                        aria-label={removeLabel(row.ref)}
                         onClick={() => setRows(removeModel(rows(), row.ref))}
                       >
                         <Icon name="close" small />

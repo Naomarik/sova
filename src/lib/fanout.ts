@@ -183,8 +183,28 @@ export function fanoutBody(plan: {
     : { ...target, members, cwd: plan.fresh?.cwd ?? "", text: (plan.fresh?.text ?? "").trim() };
 }
 
-/** The model a row is about, for every label that names one. */
+/**
+ * The model a row is about, in PROSE where the provider is already established — the fit error and
+ * the count announcement, which §9:415,417 both spec as `{model}`.
+ *
+ * Not for anything that names one row among several: see the row controls below.
+ */
 export const rowModel = (ref: string): string => shortModel(ref) ?? ref;
+
+/**
+ * The accessible names of a member row's own controls (§9:414). These carry the FULL ref, never
+ * the bare model id, because two providers ship the same name — `zai/glm-5.3` and
+ * `ollama-cloud/glm-5.3` differ only by provider and bill to different subscriptions.
+ *
+ * The row's visible text is already the full ref, so a sighted user can tell two such rows apart.
+ * The accessible name is the only signal a screen-reader user has, and `shortModel` would collapse
+ * both rows to "One more glm-5.3" — two identical announcements for two different subscriptions.
+ * Here rather than inline so the strings are pinned by a test: the defect they prevent is
+ * invisible on screen, so nothing else would fail when it regresses.
+ */
+export const moreLabel = (ref: string): string => `One more ${ref}`;
+export const fewerLabel = (ref: string, count: number): string => (count === COUNT_MIN ? `Remove ${ref}` : `One fewer ${ref}`);
+export const removeLabel = (ref: string): string => `Remove ${ref}`;
 
 /** The catalog entry for a ref, when the list has one. */
 export const modelOf = (models: readonly ModelInfo[] | undefined, ref: string): ModelInfo | undefined =>

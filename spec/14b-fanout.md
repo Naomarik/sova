@@ -108,6 +108,10 @@ beside each other), a bottom sheet under 768px.
   recurring defect one level down: a generated value with no event wired to *the user has taken
   this over*. The trigger is **the field being edited**, not the string differing from what we
   would generate — someone who types the default by hand still owns it.
+  **That same edit also decides provenance** (`named`, below), so changing *when regeneration
+  stops* silently changes *who owns the name* — and no test in this file would fail. One decides
+  whether we may keep writing the field; the other decides whose the result is. Anyone altering
+  either rule owns both.
 - **The primary counts what it will do**: `Create 5 Members`, `Creating…` while in flight, and
   `aria-disabled` with a reason when the total is 0 or a row can't fit (below).
 

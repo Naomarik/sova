@@ -631,7 +631,12 @@ do not control — an older client, an older record, a field nobody set. Two way
 depending on shape: **polarise a boolean so its falsehood is safe**, and **compare an enum
 positively** (`x === "dangerous"`) rather than negatively (`x !== "safe"`). Both shapes fail the
 same way under the negative form, which is why the rule is about the check and not only about
-the type — and why a spec that names a field's absence rule should name its **check** too. Two fields
+the type — and why a spec that names a field's absence rule should name its **check** too.
+**Read it exactly, never by truthiness:** a JSON body is not a typed value, and `"false"`,
+`"yes"`, `1` and `{}` are all truthy, so `if (flag)` claims the dangerous state for four inputs
+that never asserted it. `=== true` for a boolean, `=== "the-dangerous-value"` for an enum. An
+absence rule alone does not cover this, because absence and `"false"` take different paths
+through the same careless check. Two fields
 can carry identical information and fail in opposite directions — had `named` been a boolean, the
 pair shows it exactly: `nameIsGenerated` absent reads as *the user named it*, and the group
 survives; `nameEdited` absent reads as *untouched*, so pi-web claims the name and deletes it.

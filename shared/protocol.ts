@@ -53,6 +53,30 @@ export interface SessionSummary {
       ~/.pi/agent/pi-web/archived-sessions.json). Only moves it between regions; it opens as before,
       and a live one still shows on top. Absent from older servers: treat as false. */
   archived: boolean;
+  /** Remote session: the target name from ~/.pi/agent/targets.json. Derived from `cwd`, which for a
+      remote session is the local placeholder ~/.pi/agent/pi-web/targets/<target>/<remote/abs/path>.
+      Absent for local sessions. */
+  target?: string;
+  /** Remote session: the absolute working directory on the target (the placeholder path minus
+      the target dir). Set exactly when `target` is. */
+  remoteCwd?: string;
+}
+
+/** A configured remote target (~/.pi/agent/targets.json, GET /api/targets). Credential-free. */
+export interface TargetInfo {
+  name: string;
+  /** Display label; the name when the file sets none. */
+  label: string;
+  kind: "ssh" | "incus-cell" | "docker";
+  /** Cached reachability probe (`hostname` over the target, bounded): "ok" answered, "offline"
+      connection failed or timed out, "error" connected but the command failed, "unknown" not
+      probed yet. `error` carries the reason for offline/error. */
+  status?: "ok" | "offline" | "error" | "unknown";
+  error?: string;
+  /** The target's default remote working directory, when configured. */
+  cwd?: string;
+  /** Human-readable host: user@host[:port] for ssh, the container/cell (+ via) otherwise. */
+  host?: string;
 }
 
 export type EntryKind =
@@ -201,6 +225,16 @@ export interface UploadResult {
 //
 // GET  /api/sessions            -> SessionSummary[]
 // POST /api/sessions { cwd }    -> SessionSummary   (creates a NEW empty webapp-owned session)
+// POST /api/sessions { target, remoteCwd } -> SessionSummary   (remote session: creates the local placeholder
+//                                  ~/.pi/agent/pi-web/targets/<target>/<remoteCwd> and a session there; 400 bad body/
+//                                  non-absolute remoteCwd, 404 unknown target)
+// POST /api/sessions/connect {} -> SessionSummary   (the connection agent: a new session in a fresh
+//                                  ~/.pi/agent/pi-web/connect/<ts>/ seeded with AGENTS.md from server/connect-agent-template.md)
+// GET  /api/targets             -> TargetInfo[]   (~/.pi/agent/targets.json; missing file → []; status from a cached,
+//                                  bounded probe)
+// GET  /api/targets/:name/folders?path=…&hidden=1 -> FolderListing   (subfolders on the target; paths are REMOTE;
+//                                  no path = the target's cwd, else its $HOME. 400 not absolute, 404 unknown target,
+//                                  502 unreachable / ssh failed / folder missing)
 // POST /api/sessions/archive { path, archived: boolean } -> SessionSummary   (sets/clears the archive mark; never
 //                                  writes the session file. 400 bad body/path, 404 missing, 409 archiving a live
 //                                  or non-web session)

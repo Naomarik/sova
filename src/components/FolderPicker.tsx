@@ -1,7 +1,8 @@
 import { createEffect, createMemo, createSignal, For, on, onMount, Show } from "solid-js";
 import type { FolderListing } from "../../shared/protocol";
-import { ApiError, listFolders } from "../lib/api";
+import { ApiError, fetchTargetFolders, listFolders } from "../lib/api";
 import { tildePath } from "../lib/format";
+import { remoteCrumbs, remoteParent } from "../lib/remote-session";
 import { home, setHome } from "../lib/ui-state";
 import { Icon, trapFocus } from "./ui";
 
@@ -26,8 +27,16 @@ const LIST_ID = "ns-picker-list";
  * Opening focuses the panel itself, never the filter, so a phone doesn't raise its keyboard. The
  * panel or the filter drives the listbox through aria-activedescendant; typing on the panel moves
  * into the filter.
+ * With `remote` it browses that target instead (§5 "Remote"): paths are the target's, so crumbs start
+ * at "/" and nothing is shown relative to our $HOME; no path means the target's configured folder.
  */
-export function FolderPicker(props: { start: string; recents: string[]; onPick(path: string): void; onClose(): void }) {
+export function FolderPicker(props: {
+  start: string;
+  recents: string[];
+  remote?: { target: string; name: string };
+  onPick(path: string): void;
+  onClose(): void;
+}) {
   const [view, setView] = createSignal<View>({ kind: "folder", path: props.start || undefined });
   const [hidden, setHidden] = createSignal(false);
   const [load, setLoad] = createSignal<Load>({ state: "loading" });
@@ -43,9 +52,10 @@ export function FolderPicker(props: { start: string; recents: string[]; onPick(p
     const my = ++seq;
     setLoad({ state: "loading" });
     try {
-      const listing = await listFolders(path, showHidden);
+      const r = props.remote;
+      const listing = r ? await fetchTargetFolders(r.target, path, showHidden) : await listFolders(path, showHidden);
       if (my !== seq) return; // a newer navigation won
-      if (path === undefined && !home()) setHome(listing.path);
+      if (!r && path === undefined && !home()) setHome(listing.path);
       setAt(listing.path);
       setLoad({ state: "ok", listing });
       props.onPick(listing.path);
@@ -70,12 +80,13 @@ export function FolderPicker(props: { start: string; recents: string[]; onPick(p
     const v = view();
     if (v.kind === "recent") return setView({ kind: "folder", path: at() ?? undefined });
     const l = load();
-    const parent = l.state === "ok" ? l.listing.parent : at() && at() !== "/" ? at()!.replace(/\/[^/]*$/, "") || "/" : null;
+    const parent = l.state === "ok" ? l.listing.parent : at() ? remoteParent(at()!) : null;
     if (parent) open(parent);
   };
 
   const allRows = createMemo<Row[]>(() => {
-    if (view().kind === "recent") return props.recents.map((p, i) => ({ id: `ns-pr-${i}`, label: tildePath(p, home()), path: p }));
+    if (view().kind === "recent")
+      return props.recents.map((p, i) => ({ id: `ns-pr-${i}`, label: props.remote ? p : tildePath(p, home()), path: p }));
     const l = load();
     return l.state === "ok" ? l.listing.entries.map((e, i) => ({ id: `ns-pf-${i}`, label: e.name, path: e.path, symlink: e.symlink })) : [];
   });
@@ -94,6 +105,7 @@ export function FolderPicker(props: { start: string; recents: string[]; onPick(p
   const crumbs = createMemo(() => {
     const p = at();
     if (view().kind === "recent" || !p) return [];
+    if (props.remote) return remoteCrumbs(p);
     const h = home();
     const inHome = !!h && (p === h || p.startsWith(`${h}/`));
     const out = [{ label: inHome ? "~" : "/", path: inHome ? h! : "/" }];
@@ -109,12 +121,21 @@ export function FolderPicker(props: { start: string; recents: string[]; onPick(p
   const note = (): string | null => {
     const q = filter().trim();
     if (view().kind === "recent") {
-      if (allRows().length === 0) return "No recent folders yet. Sessions you start add theirs here.";
+      if (allRows().length === 0)
+        return props.remote ? `No recent folders on ${props.remote.name} yet.` : "No recent folders yet. Sessions you start add theirs here.";
       return q && rows().length === 0 ? `0 of ${allRows().length} match “${q}”.` : null;
     }
     const l = load();
-    if (l.state === "loading") return "Loading folders…";
+    if (l.state === "loading") return props.remote ? `Asking ${props.remote.name} for its folders…` : "Loading folders…";
     if (l.state === "error") {
+      const r = props.remote;
+      if (r) {
+        if (l.status === 403) return `pi-web can't read this folder on ${r.name}. Pick another one.`;
+        if (l.status === 404) return `This folder doesn't exist on ${r.name}. Pick another one.`;
+        // 502 covers both "unreachable" and "no such folder": the server's message says which.
+        if (l.status === 504 || l.status === 0) return `Couldn't reach ${r.name}. ${l.message}`;
+        return `Couldn't list this folder on ${r.name}. ${l.message}`;
+      }
       if (l.status === 403) return "pi-web can't read this folder. Pick another one.";
       if (l.status === 404) return "This folder doesn't exist. Pick another one.";
       return `Couldn't list this folder. ${l.message}`;
@@ -182,7 +203,7 @@ export function FolderPicker(props: { start: string; recents: string[]; onPick(p
       class="folder-picker"
       id="ns-picker"
       role="group"
-      aria-label="Choose a folder"
+      aria-label={props.remote ? `Choose a folder on ${props.remote.name}` : "Choose a folder"}
       tabindex="-1"
       aria-activedescendant={activeRow()?.id}
       ref={(el) => {
@@ -232,8 +253,13 @@ export function FolderPicker(props: { start: string; recents: string[]; onPick(p
             </ol>
           </Show>
         </nav>
-        <button type="button" class="button button-ghost" onClick={() => setView({ kind: "folder", path: undefined })}>
-          Home
+        <button
+          type="button"
+          class="button button-ghost"
+          title={props.remote ? `The folder ${props.remote.name} is set to start in` : undefined}
+          onClick={() => setView({ kind: "folder", path: undefined })}
+        >
+          {props.remote ? "Start" : "Home"}
         </button>
         <button
           type="button"

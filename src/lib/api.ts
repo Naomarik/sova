@@ -13,6 +13,7 @@ import type {
   UsageInsight,
 } from "../../shared/protocol";
 import { type CleanupRequest, parseCleanupResult } from "./archive";
+import type { TargetInfo } from "./remote-session";
 
 export class ApiError extends Error {
   constructor(
@@ -73,11 +74,54 @@ export const postMode = (patch: { mode?: string; minorModes?: string[] }, path?:
     body: JSON.stringify(patch),
   });
 
-export const createSession = (cwd: string) =>
+/** A local folder (string), or a folder on a configured target. */
+export const createSession = (where: string | { target: string; remoteCwd: string }) =>
   request<SessionSummary>("/api/sessions", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ cwd }),
+    body: JSON.stringify(typeof where === "string" ? { cwd: where } : { target: where.target, remoteCwd: where.remoteCwd }),
+  });
+
+export const fetchTargets = () => request<TargetInfo[]>("/api/targets");
+
+/** How long the UI waits on a target's folder listing before saying so (the server bounds its own probe too). */
+export const REMOTE_LIST_TIMEOUT_MS = 20_000;
+
+/**
+ * Subfolders of `path` on a target (no path: the server's default, the target's cwd or $HOME).
+ * Read leniently: the server may send the local FolderListing shape or `{path, dirs}`.
+ */
+export async function fetchTargetFolders(target: string, path?: string, hidden = false): Promise<FolderListing> {
+  const q = new URLSearchParams();
+  if (path) q.set("path", path);
+  if (hidden) q.set("hidden", "1");
+  const qs = q.toString();
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), REMOTE_LIST_TIMEOUT_MS);
+  try {
+    const raw = await request<Partial<FolderListing> & { dirs?: string[] }>(
+      `/api/targets/${encodeURIComponent(target)}/folders${qs ? `?${qs}` : ""}`,
+      { signal: ctrl.signal },
+    );
+    const at = raw.path ?? path ?? "/";
+    const join = (name: string) => (at === "/" ? `/${name}` : `${at.replace(/\/+$/, "")}/${name}`);
+    const entries = raw.entries ?? (raw.dirs ?? []).map((name) => ({ name, path: join(name) }));
+    const parent = raw.parent !== undefined ? raw.parent : at === "/" ? null : at.replace(/\/+$/, "").replace(/\/[^/]*$/, "") || "/";
+    return { path: at, parent, entries, truncated: !!raw.truncated };
+  } catch (err) {
+    if (ctrl.signal.aborted) throw new ApiError(`No answer within ${REMOTE_LIST_TIMEOUT_MS / 1000}s.`, 504);
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Spawns the connection agent: a seeded session that probes, verifies and writes a new target. */
+export const connectTarget = () =>
+  request<SessionSummary>("/api/sessions/connect", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: "{}",
   });
 
 /** Moves a web-spawned session to the Archive region (true) or back to the top (false). */

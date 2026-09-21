@@ -1,11 +1,11 @@
-import { existsSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import type { Server } from "node:http";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
-import { SessionManager } from "@earendil-works/pi-coding-agent";
-import { Hono } from "hono";
+import { getAgentDir, SessionManager } from "@earendil-works/pi-coding-agent";
+import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { disposeAllChats, heldChat } from "./chat-manager";
 import { canonicalPath, resolveSessionPath } from "./paths";
@@ -17,6 +17,7 @@ import { archiveSession, cleanupSessions, getSessionSummary, listCwds, listSessi
 import { contextForBranch, normalizeEntries, readActiveBranch } from "./transcript";
 import { checkTmpImage, MAX_ATTACHMENT_BYTES, readTmpImage, saveUploadedImage, UploadError } from "./attachments";
 import { listFolders } from "./folders";
+import { findTarget, isTargetName, listRemoteFolders, listTargets, normalizeRemotePath, targetDir, targetsFile } from "./targets";
 import { isExplanationId, listExplanations, readExplanationPage } from "./explanations";
 import { switchMode } from "./mode";
 import { modeInfo, parseModePatch, readMode } from "./mode-state";
@@ -26,6 +27,8 @@ const PORT = process.env.PORT ? Number(process.env.PORT) : 4800; // PORT=0: an e
 // Loopback by default; set HOST=0.0.0.0 to deliberately expose on the LAN.
 const HOST = process.env.HOST || "127.0.0.1";
 const DIST_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..", "dist");
+/** AGENTS.md for the connection agent (owned by pi-config's remote extension team; read per request). */
+const CONNECT_TEMPLATE = fileURLToPath(new URL("./connect-agent-template.md", import.meta.url));
 
 // Embedded pi runtimes / extensions must never take the server down.
 process.on("uncaughtException", (err) => console.error("[uncaughtException]", err));
@@ -42,20 +45,8 @@ app.get("/api/health", (c) => c.json({ ok: true }));
 
 app.get("/api/sessions", async (c) => c.json(await listSessions()));
 
-app.post("/api/sessions", async (c) => {
-  let body: { cwd?: unknown };
-  try {
-    body = await c.req.json();
-  } catch {
-    return c.json({ error: "Expected JSON body { cwd }" }, 400);
-  }
-  const cwd = typeof body.cwd === "string" ? body.cwd.trim() : "";
-  if (!cwd || !isAbsolute(cwd)) return c.json({ error: "cwd must be an absolute path" }, 400);
-  try {
-    if (!statSync(cwd).isDirectory()) return c.json({ error: "cwd is not a directory" }, 400);
-  } catch {
-    return c.json({ error: "cwd does not exist" }, 400);
-  }
+/** Create a new empty webapp-owned session in `cwd` (an existing absolute directory) → 201 SessionSummary. */
+async function createWebSession(c: Context, cwd: string) {
   const sm = SessionManager.create(resolve(cwd));
   const rawPath = sm.getSessionFile();
   const header = sm.getHeader();
@@ -69,6 +60,52 @@ app.post("/api/sessions", async (c) => {
   const summary = await getSessionSummary(path);
   if (!summary) return c.json({ error: "Failed to read back new session" }, 500);
   return c.json(summary, 201);
+}
+
+// { cwd } for a local session, or { target, remoteCwd } for a remote one: its cwd is the local
+// placeholder mirroring the remote path (server/targets.ts), created here.
+app.post("/api/sessions", async (c) => {
+  let body: { cwd?: unknown; target?: unknown; remoteCwd?: unknown };
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "Expected JSON body { cwd } or { target, remoteCwd }" }, 400);
+  }
+  if (body.target !== undefined) {
+    if (!isTargetName(body.target)) return c.json({ error: "target must be a target name" }, 400);
+    const remoteCwd = normalizeRemotePath(typeof body.remoteCwd === "string" ? body.remoteCwd.trim() : "");
+    if (!remoteCwd) return c.json({ error: "remoteCwd must be an absolute path" }, 400);
+    if (!findTarget(body.target)) return c.json({ error: `Unknown target: ${body.target}` }, 404);
+    const dir = targetDir(body.target, remoteCwd);
+    mkdirSync(dir, { recursive: true });
+    return createWebSession(c, dir);
+  }
+  const cwd = typeof body.cwd === "string" ? body.cwd.trim() : "";
+  if (!cwd || !isAbsolute(cwd)) return c.json({ error: "cwd must be an absolute path" }, 400);
+  try {
+    if (!statSync(cwd).isDirectory()) return c.json({ error: "cwd is not a directory" }, 400);
+  } catch {
+    return c.json({ error: "cwd does not exist" }, 400);
+  }
+  return createWebSession(c, cwd);
+});
+
+// The connection agent: a new session in a fixed seed dir whose AGENTS.md (the remote-runtime
+// template, re-copied on every spawn) teaches it to probe, verify and write a targets.json entry.
+app.post("/api/sessions/connect", async (c) => {
+  let template: string;
+  try {
+    template = readFileSync(CONNECT_TEMPLATE, "utf8");
+  } catch {
+    return c.json({ error: `connect-agent template missing: ${CONNECT_TEMPLATE}` }, 500);
+  }
+  const dir = join(getAgentDir(), "pi-web", "connect");
+  mkdirSync(dir, { recursive: true });
+  const agents = template.replaceAll("{{TARGETS_FILE}}", targetsFile()).replaceAll("{{AGENT_DIR}}", getAgentDir());
+  const tmp = join(dir, `AGENTS.md.${process.pid}.tmp`);
+  writeFileSync(tmp, agents);
+  renameSync(tmp, join(dir, "AGENTS.md"));
+  return createWebSession(c, dir);
 });
 
 // Moves a web-spawned session between the sidebar regions. Changes pi-web's own id list only.
@@ -105,6 +142,16 @@ app.post("/api/sessions/cleanup", async (c) => {
 });
 
 app.get("/api/cwds", async (c) => c.json(await listCwds()));
+
+// Configured remote targets with a cached, bounded reachability probe (server/targets.ts).
+app.get("/api/targets", async (c) => c.json(await listTargets()));
+
+// The folder picker's Remote tab: subfolders on a target, over its argv builder. Never hangs: 502 on
+// an unreachable target, with the reason.
+app.get("/api/targets/:name/folders", async (c) => {
+  const r = await listRemoteFolders(c.req.param("name"), c.req.query("path"), { hidden: c.req.query("hidden") === "1" });
+  return r.ok ? c.json(r.listing) : c.json({ error: r.error }, r.status);
+});
 
 // Subfolders for the New Session folder picker. Directory names only, never files (server/folders.ts).
 app.get("/api/folders", async (c) => {

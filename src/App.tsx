@@ -5,8 +5,9 @@ import type { SessionInsight, SessionSummary, TeamInfo, WorkerInfo } from "../sh
 import { createSession, fetchAgents, fetchExplanations, fetchSessionInsight, fetchUsage, listSessions, setSessionArchived } from "./lib/api";
 import { agentsHref, insightsRouteFromHash, legacyInsightsTarget } from "./lib/insights";
 import { createThenArchive, newSessionCwd } from "./lib/new-session";
+import { cwdLabel } from "./lib/remote-session";
 import { createPoll } from "./lib/poll";
-import { homeFromSessionPath, shortModel, tildePath } from "./lib/format";
+import { homeFromSessionPath, shortModel } from "./lib/format";
 import type { RewindControl } from "./lib/inputs";
 import { activeTab, home, setActiveTab, setHome, toast } from "./lib/ui-state";
 import { sessionWorking, type UsageTotalView, workingSplit } from "./lib/workers";
@@ -248,7 +249,7 @@ export function App() {
     if (out.archiveError) toast(`New session started, but the previous one couldn't be archived. ${out.archiveError}`);
     else if (s?.origin === "web" && workersBusy) toast("New session started. The previous one stays open while its subagents work.");
     adoptCreated(out.session);
-    return tildePath(cwd, home());
+    return cwdLabel(out.session, home());
   };
 
   const openChat = (force: boolean) => {
@@ -501,8 +502,8 @@ export function App() {
                         </h1>
                         <p class="session-head-meta">
                           <ContextMetaPrefix path={d.path} />
-                          <span class="text-mono" title={s().cwd}>
-                            {tildePath(s().cwd, home())}
+                          <span class="text-mono" title={cwdLabel(s(), null)}>
+                            {cwdLabel(s(), home())}
                           </span>
                           {/* Chat sessions show the model as the picker trigger instead. */}
                           <Show when={model() && d.mode !== "chat"}>
@@ -620,7 +621,7 @@ export function App() {
                             <ChatView
                               path={d.path}
                               summary={() => s()}
-                              cwdLabel={tildePath(s().cwd, home())}
+                              cwdLabel={cwdLabel(s(), home())}
                               author={author()}
                               force={c().force}
                               autofocus={c().autofocus}

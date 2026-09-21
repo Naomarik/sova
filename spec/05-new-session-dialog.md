@@ -132,6 +132,99 @@ chosen here. Start that session from a TUI.
   resize, a phone's keyboard opening included, never closes the dialog or the picker. Both are
   in-flow and have no resize handling.
 
+### Remote
+
+Above the Folder field, a `.tabs` strip (`role="tablist"`, `aria-label="Where pi runs"`):
+**This Computer** (`folder`) and **Remote** (`terminal`). Selection follows ←/→/Home/End, like the
+session pane's tabs. The dialog opens on Remote when the prefill is a remote session's placeholder
+(below), with that target and folder chosen. Switching tabs closes the picker and clears the field
+error; each tab keeps its own choice.
+
+```html
+<div class="tabs" role="tablist" aria-label="Where pi runs">
+  <button type="button" role="tab" class="tab" id="ns-tab-local" aria-selected="false" tabindex="-1">…folder… This Computer</button>
+  <button type="button" role="tab" class="tab tab-active" id="ns-tab-remote" aria-selected="true" tabindex="0">…terminal… Remote</button>
+</div>
+<div class="stack" role="tabpanel" id="ns-tabpanel" aria-labelledby="ns-tab-remote">
+  <div class="field">
+    <span class="field-label" id="ns-targets">Target</span>
+    <ul class="list folder-list" role="listbox" aria-labelledby="ns-targets">
+      <li class="list-row list-row-interactive" role="option" tabindex="0" aria-selected="true" title="192.0.2.10 · ssh">
+        …terminal… <span class="list-title truncate">acme prod</span>
+        <span class="folder-picker-link truncate">192.0.2.10</span>
+        <span class="chip chip-success"><i class="chip-dot"></i>Reachable</span>  <!-- chip-error "Offline" / plain "Not checked" -->
+      </li>
+    </ul>
+  </div>
+  <div class="field">
+    <label class="field-label" for="ns-rcwd">Folder on acme prod</label>
+    <button type="button" class="input input-mono folder-field" id="ns-rcwd" aria-expanded="false" aria-controls="ns-picker"
+            aria-describedby="ns-rcwd-hint ns-cwd-error">
+      <span class="folder-field-value truncate">/home/deploy/acme-site</span> …chevron-down…
+    </button>
+    <span class="field-hint" id="ns-rcwd-hint">pi's tools run in this folder on 192.0.2.10. Its transcript stays here.</span>
+    <span class="field-error" id="ns-cwd-error"></span>
+  </div>
+  <!-- open: the same .folder-picker, browsing the target -->
+  <div class="field">
+    <span class="field-label" id="ns-rrecent">Recent remote folders</span>
+    <ul class="list folder-list" role="listbox" aria-labelledby="ns-rrecent">
+      <li class="list-row list-row-interactive" role="option" tabindex="0" title="acme-prod:/home/deploy/acme-site">
+        …terminal… <span class="list-title truncate">/home/deploy/acme-site</span> <span class="folder-picker-link">acme prod</span>
+      </li>
+    </ul>
+  </div>
+  <div class="field">
+    <span class="field-hint" id="ns-connect-hint">A new host? An agent asks for its address, checks it answers, and adds it to your targets.</span>
+    <div><button type="button" class="button" aria-describedby="ns-connect-hint">…plus… Connect a New Target…</button></div>
+  </div>
+</div>
+```
+
+- **Targets.** `GET /api/targets`, fetched the first time the Remote tab shows. Each row shows the
+  `label` (else the name), the `host` (else the `kind`) as a muted caption, and the server's last
+  probe as a chip: `ok` → success "Reachable", `error`/`offline` → error "Offline" (its `error` in
+  `title`), anything else → plain "Checking…". The server answers within 4 s and reports a probe
+  still running as `unknown`, so the dialog asks again every 6 s, three times at most, then says
+  "Not checked". While loading: "Loading targets…" as a hint. The
+  wait is capped at 10 s, then the error below shows instead. A failed read shows `.field-error`
+  "Couldn't read the targets. {message}". None configured: the hint "No targets yet. They live in
+  `~/.pi/agent/targets.json`, and the connection agent can write one for you." The Connect button
+  is there in every one of these states.
+- **An offline target stays pickable.** The probe is a cached guess, and the host may be back. Its
+  Folder hint says so instead: "The last check couldn't reach {target}: {error}. Browsing tries
+  again." Browsing then says what happened, never an empty list.
+- **Picking a target** clears the folder. The Folder field reads "Choose a folder on {target}"
+  until one is chosen, and Create Session stays `aria-disabled` until both are.
+- **Browsing** reuses the picker with these differences: `GET /api/targets/:name/folders?path=`
+  lists the target's subfolders (no path: the folder the target is set to start in). Crumbs
+  always start at `/`, since the target's `$HOME` isn't ours, and **no remote path is ever shown
+  with `~`**. The Home button reads **Start** and opens the target's start folder. Recent lists
+  this target's recent folders. The client gives up after 20 s ("Couldn't reach {target}. No answer
+  within 20s."), so "Asking {target} for its folders…" always ends.
+- **Recent remote folders.** No endpoint of their own. A remote session's local cwd is a
+  placeholder that mirrors the remote folder, `~/.pi/agent/pi-web/targets/<target>/<remote path>`,
+  so the recents from `GET /api/cwds` already hold them. The Remote tab lists those (up to 20,
+  newest first, the remote path with the target beside it), and This Computer's recents leave them
+  out. Click or Enter/Space picks target and folder at once, and double-click also submits.
+- **Submitting** posts `{target, remoteCwd}` instead of `{cwd}`. Errors behave as on This Computer.
+- **Connect a New Target…** posts `POST /api/sessions/connect` and hands the returned session over
+  like a created one: the dialog closes, the new chat opens, and the composer takes focus. While
+  pending it reads "Starting…" and is `aria-disabled` (Create Session too). A failure shows a
+  `.banner.banner-error` at the top of the panel: "Couldn't start the connection agent. {message}"
+  and the dialog stays.
+
+**Picker states, remote** (the local table below otherwise applies):
+
+| State | Note |
+|---|---|
+| Loading | Asking {target} for its folders… |
+| 403 | pi-web can't read this folder on {target}. Pick another one. |
+| 404 | This folder doesn't exist on {target}. Pick another one. |
+| 400, 502 (unreachable, or no such folder: the message says which) | Couldn't list this folder on {target}. {server message} |
+| Client timeout (20 s), server gone | Couldn't reach {target}. {message} |
+| Recent, none yet | No recent folders on {target} yet. |
+
 **Picker states** (in `.folder-picker-note`, `aria-live="polite"`; empty when there's nothing to
 say):
 

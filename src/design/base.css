@@ -2401,7 +2401,7 @@ summary.sidebar-region-head .icon-twist { transition: transform var(--dur-fast) 
 }
 .folder-crumbs li { display: flex; align-items: center; }
 .folder-crumbs li + li::before { content: "/"; color: var(--color-ink-muted); }
-.folder-crumbs-root + li::before { content: none; }  /* "/" already reads as the separator */
+.folder-crumbs .folder-crumbs-root + li::before { content: none; }  /* "/" already reads as the separator; scoped to outrank `li + li` */
 .folder-crumb {
   min-width: var(--tap-min);
   min-height: var(--tap-min);

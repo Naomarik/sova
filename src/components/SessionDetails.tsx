@@ -1,9 +1,10 @@
 import { createEffect, createSignal, For, on, Show, type JSX } from "solid-js";
 import type { CompactionInfo, ContextInfo, ModelSpend, SessionInsight, SessionSummary, TokenUsage, TranscriptItem } from "../../shared/protocol";
 import { contextSentence, contextStateFor, formatTokens } from "../lib/context";
-import { compactModel, relativeTime, thousands, tildePath } from "../lib/format";
+import { compactModel, relativeTime, thousands } from "../lib/format";
 import { absoluteTime, anyCost, firstLine, originLabel, spendRows, timelineEntries } from "../lib/spend";
 import { setSessionArchived } from "../lib/api";
+import { cwdLabel } from "../lib/remote-session";
 import { resumeCommand } from "../lib/session-command";
 import { copyText, home, toast } from "../lib/ui-state";
 import { formatCost, sessionWorking, usageHeadline, usageTitle, usageTotal } from "../lib/workers";
@@ -192,8 +193,8 @@ export function SessionDetails(props: {
                 </span>
               </Fact>
               <Fact label="Folder">
-                <span class="text-mono" style={wrapMono} title={s().cwd}>
-                  {tildePath(s().cwd, home())}
+                <span class="text-mono" style={wrapMono} title={cwdLabel(s(), null)}>
+                  {cwdLabel(s(), home())}
                 </span>
               </Fact>
               <Fact label="Created">

@@ -24,10 +24,14 @@ live-watch sessions that are open in the CLI/TUI, spawn new sessions.
   teams/snapshots, topic-outline state, command-palette `model-favorites.json`, mode `mode.json` =
   the DEFAULT mode for new sessions; the active mode is per session, in the session's own `mode`
   custom entry, and pi-web restores it with `restoreActive` from `state.ts`).
-  Not covered by pi-web's tsconfig, with one exception: `server/mode-state.ts` imports
-  `pi-config/extensions/mode/state.ts` and `minor.ts` (hence `allowImportingTsExtensions`), so an
-  edit to either can break pi-web's typecheck. Keep both pi-runtime-free (node builtins and each
-  other only), and import nothing else from pi-config. The web mode switch calls that extension's
+  Not covered by pi-web's tsconfig, with two exceptions: `server/mode-state.ts` imports
+  `pi-config/extensions/mode/state.ts` and `minor.ts` (hence `allowImportingTsExtensions`), and
+  `server/targets.ts` imports `pi-config/extensions/remote/argv.ts` (the target schema,
+  validation and the single argv builder that both the `remote` extension and the web server use to
+  run a command on a target), so an edit to any of the three can break pi-web's typecheck. Keep
+  them pi-runtime-free (node builtins and, for the mode pair, each other only), and import nothing
+  else from pi-config. `argv.ts` is also the quoting boundary: every path that reaches a far shell is
+  single-quote-escaped there, and callers spawn its argv without a local shell. The web mode switch calls that extension's
   `/mode` command handler directly (`ChatSession.applyMode`), so its arguments are a contract too.
   Tests run per extension (see `pi-config/README.md`). `pi-config/install.sh` must stay standalone,
   needing nothing outside `pi-config/`.

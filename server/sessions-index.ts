@@ -9,6 +9,7 @@ import { RECENT_WRITE_MS } from "./write-guard";
 import { isArchived, setArchived } from "./archived-sessions";
 import { disposeHeldChat, getModelRuntime, isSessionBusy } from "./chat-manager";
 import { contextWindow } from "./models";
+import { parseTargetCwd } from "./targets";
 
 type BaseSummary = Omit<SessionSummary, "live" | "workers" | "origin" | "archived" | "busy">;
 
@@ -377,16 +378,19 @@ async function summarize(path: string, resolveWindow?: WindowResolver): Promise<
     const model = (await readTailModel(path, st.size)) ?? head.model;
     const outline = await readTailOutline(path, st.size);
     const ctx = await readTailContext(path, st.size);
+    const cwd = typeof h.cwd === "string" ? h.cwd : "";
+    const remote = parseTargetCwd(cwd); // a remote session's cwd is its target placeholder
     const summary: BaseSummary = {
       id: h.id,
       path,
-      cwd: typeof h.cwd === "string" ? h.cwd : "",
+      cwd,
       title: head.title || "Untitled",
       createdAt: typeof h.timestamp === "string" ? h.timestamp : new Date(st.birthtimeMs || st.mtimeMs).toISOString(),
       lastActiveAt: new Date(st.mtimeMs).toISOString(),
       model,
       ...(outline ? { outlineNow: outline.now, outlineAt: outline.generatedAt, outlineTopics: outline.topics } : {}),
       ...(ctx ? { context: { tokens: ctx.tokens, window: null } } : {}),
+      ...(remote ? { target: remote.target, remoteCwd: remote.remoteCwd } : {}),
     };
     const entry: CacheEntry = { mtimeMs: st.mtimeMs, size: st.size, summary, contextModel: ctx?.model ?? null };
     cache.set(path, entry);

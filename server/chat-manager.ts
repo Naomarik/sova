@@ -21,6 +21,7 @@ import { readLive, readOwnLiveRecords, workerCountsOf } from "./live";
 import { appliesAfter, mergeMode, MINOR_MODES, modeApplyPlan, modeInfo, readMode, resolveChatMode, type ModePatch, type ModeState } from "./mode-state";
 import { toContextInfo } from "./models";
 import { contextForBranch, normalizeEntries, normalizeEntry } from "./transcript";
+import { targetOfCwd } from "./targets";
 import { ForeignWriteGuard, markOwned, recentForeignWriteAgeSec } from "./write-guard";
 
 const GUARD_POLL_MS = 3000;
@@ -864,11 +865,12 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
   const createRuntime: CreateAgentSessionRuntimeFactory = async ({ cwd, sessionManager, sessionStartEvent }) => {
     // topic-outline only summarizes in the TUI unless its host opts in; opt in so web chats get
     // outlines. Boolean flag: the SDK sets it true whatever the value. Workers never get it.
-    const services = await createAgentSessionServices({
-      cwd,
-      modelRuntime,
-      extensionFlagValues: new Map([["topic-outline-headless", true]]),
-    });
+    // A remote session (cwd = a target placeholder, server/targets.ts) also gets the string flag
+    // `target`, which switches pi-config's remote extension on for that target.
+    const flags = new Map<string, boolean | string>([["topic-outline-headless", true]]);
+    const target = targetOfCwd(cwd);
+    if (target) flags.set("target", target);
+    const services = await createAgentSessionServices({ cwd, modelRuntime, extensionFlagValues: flags });
     for (const d of services.diagnostics) console.warn(`[chat] runtime ${d.type}: ${d.message}`);
     return {
       ...(await createAgentSessionFromServices({ services, sessionManager, sessionStartEvent })),

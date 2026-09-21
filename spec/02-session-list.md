@@ -108,6 +108,22 @@
   Long paths truncate **from the left**, because the leaf folder is what people scan for. The
   `rtl` + `<bdi>` pair in `.session-group-path` handles this. Labels stick to the top while their
   group scrolls.
+- **Remote sessions.** A session on a remote target (`SessionSummary.target`/`remoteCwd`, else a
+  `cwd` under `~/.pi/agent/pi-web/targets/<target>/…`, which mirrors the remote folder) never shows
+  that local placeholder. Its group label reads `terminal` icon, the target's `label` (else its
+  name) and `·`, then the remote folder as-is: the target's `$HOME` isn't ours, so no `~`. The
+  target part never truncates; the folder truncates from the left like a local path. `title` is
+  `name (host):/remote/path`. Labels come from `GET /api/targets`, fetched only when the list
+  holds remote sessions and again when the set of targets it uses changes; if that fails, the name
+  stands in. Search matches the target's name, label and remote folder instead of the placeholder.
+
+  ```html
+  <h3 class="list-group-label" id="t-2" title="acme-prod (192.0.2.10):/home/deploy/acme-site">
+    …terminal, icon-sm… <span>acme prod ·</span>
+    <span class="session-group-path"><bdi>/home/deploy/acme-site</bdi></span>
+    <span class="text-num">2</span>
+  </h3>
+  ```
 - **Row line 1.** `SessionSummary.title`, truncated to one line; the full title goes in `title=`.
   `Untitled` renders in `--color-ink-muted`.
 - **Row line 2.** `SessionSummary.outlineNow`, the session's rolling "now" line from its latest

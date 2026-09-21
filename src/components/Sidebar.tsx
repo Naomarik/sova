@@ -1,9 +1,11 @@
-import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
+import { createMemo, createResource, createSignal, For, onCleanup, Show } from "solid-js";
 import type { AgentsInsight, ContextInfo, SessionSummary, UsageInsight } from "../../shared/protocol";
+import { fetchTargets } from "../lib/api";
 import { type ArchiveGroupId, groupByArchiveDate } from "../lib/archive";
 import { relativeTime, shortModel, tildePath } from "../lib/format";
 import { agentsHref, type GlancePart, usageGlance, usageHref } from "../lib/insights";
 import { isTopSession } from "../lib/regions";
+import { remotePlaceOf, type TargetInfo } from "../lib/remote-session";
 import { home, localRunning, sessionContext, toast } from "../lib/ui-state";
 import { activeAgentCounts, activeTeamCount, sessionWorking } from "../lib/workers";
 import { ArchiveCleanup } from "./ArchiveCleanup";
@@ -152,25 +154,38 @@ function SessionRow(props: { session: SessionSummary; selected: string | null; n
 }
 
 /** Sessions grouped by folder, newest first: the markup of spec/02-session-list.md §2 "Anatomy". */
-function GroupList(props: { groups: Group[]; selected: string | null; now: number; idPrefix: string }) {
+function GroupList(props: { groups: Group[]; selected: string | null; now: number; idPrefix: string; targets: TargetInfo[] }) {
   return (
     <For each={props.groups}>
-      {(group, gi) => (
-        <section class="session-group" aria-labelledby={`${props.idPrefix}-${gi()}`}>
-          <h3 class="list-group-label" id={`${props.idPrefix}-${gi()}`} title={group.cwd}>
-            <Icon name="folder" small />
-            <span class="session-group-path">
-              <bdi>{tildePath(group.cwd, home())}</bdi>
-            </span>
-            <span class="text-num">{group.sessions.length}</span>
-          </h3>
-          <ul class="list">
-            <For each={group.sessions}>
-              {(s) => <SessionRow session={s} selected={props.selected} now={props.now} />}
-            </For>
-          </ul>
-        </section>
-      )}
+      {(group, gi) => {
+        // A remote session's cwd is a local placeholder mirroring the remote folder (§2 "Remote sessions").
+        const remote = remotePlaceOf(group.sessions[0] ?? { cwd: group.cwd });
+        const host = () => (remote ? props.targets.find((t) => t.name === remote.target)?.host : undefined);
+        const label = (name: string) => props.targets.find((t) => t.name === name)?.label || name;
+        return (
+          <section class="session-group" aria-labelledby={`${props.idPrefix}-${gi()}`}>
+            <h3
+              class="list-group-label"
+              id={`${props.idPrefix}-${gi()}`}
+              title={remote ? `${remote.target}${host() ? ` (${host()})` : ""}:${remote.remoteCwd}` : group.cwd}
+            >
+              <Icon name={remote ? "terminal" : "folder"} small />
+              {/* Remote: the target's label stays whole and the folder on it truncates from the left
+                  like a local path, but never as "~": the target's $HOME isn't ours. */}
+              <Show when={remote}>{(r) => <span>{label(r().target)} ·</span>}</Show>
+              <span class="session-group-path">
+                <bdi>{remote ? remote.remoteCwd : tildePath(group.cwd, home())}</bdi>
+              </span>
+              <span class="text-num">{group.sessions.length}</span>
+            </h3>
+            <ul class="list">
+              <For each={group.sessions}>
+                {(s) => <SessionRow session={s} selected={props.selected} now={props.now} />}
+              </For>
+            </ul>
+          </section>
+        );
+      }}
     </For>
   );
 }
@@ -267,9 +282,20 @@ export function Sidebar(props: {
   });
 
   const all = () => props.sessions ?? [];
+  // Labels for remote groups: refetched only when the set of targets the list uses changes.
+  const usedTargets = createMemo(
+    () => [...new Set(all().map((s) => remotePlaceOf(s)?.target).filter(Boolean))].sort().join("\n") || false,
+  );
+  const [targetsRes] = createResource(usedTargets, () => fetchTargets().catch(() => [] as TargetInfo[]));
+  const targets = () => targetsRes.latest ?? [];
   const hits = createMemo(() => {
     const q = query().trim().toLowerCase();
-    return q ? all().filter((s) => `${s.title} ${s.cwd} ${s.model ?? ""}`.toLowerCase().includes(q)) : all();
+    // A remote session is found by its target and remote folder, not by its placeholder path.
+    const where = (s: SessionSummary) => {
+      const r = remotePlaceOf(s);
+      return r ? `${r.target} ${targets().find((t) => t.name === r.target)?.label ?? ""} ${r.remoteCwd}` : s.cwd;
+    };
+    return q ? all().filter((s) => `${s.title} ${where(s)} ${s.model ?? ""}`.toLowerCase().includes(q)) : all();
   });
   // Pane rule: live, or web-spawned and not archived, stays on top (src/lib/regions.ts).
   const isTop = isTopSession;
@@ -455,7 +481,7 @@ export function Sidebar(props: {
               when={topHits().length > 0}
               fallback={<p class="sidebar-region-note">0 sessions open in a TUI, or started here and not archived. The archive below has the rest.</p>}
             >
-              <GroupList groups={topGroups()} selected={props.selected} now={props.now} idPrefix="t" />
+              <GroupList groups={topGroups()} selected={props.selected} now={props.now} idPrefix="t" targets={targets()} />
             </Show>
           </section>
         </Show>
@@ -477,7 +503,7 @@ export function Sidebar(props: {
                     <span class="archive-date-name">{d.label}</span>
                     <span class="text-num">{d.items.length}</span>
                   </summary>
-                  <GroupList groups={d.groups} selected={props.selected} now={props.now} idPrefix={`a-${d.id}`} />
+                  <GroupList groups={d.groups} selected={props.selected} now={props.now} idPrefix={`a-${d.id}`} targets={targets()} />
                 </details>
               )}
             </For>

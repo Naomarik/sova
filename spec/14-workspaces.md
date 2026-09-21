@@ -322,7 +322,11 @@ member at once.
   as soon as every member's prompt is queued, and **it accepts them concurrently.** Accepting in
   sequence would make a press of Send cost the sum of every member's runtime open before the
   composer clears — the one thing the acceptance semantics were meant to avoid, reintroduced a
-  layer down. Waiting would contradict the two things this
+  layer down. **And slowness is the mild failure.** A sequential `await` has no isolation: one
+  member whose acceptance never resolves — a runtime open that stalls, a cwd on a hung mount —
+  blocks every member behind it *and* the response itself, so the composer waits forever on one
+  bad member and the other four never start. Concurrent acceptance makes that member's failure
+  its own: it lands in `failed`, the rest are accepted, and the batch returns. Waiting would contradict the two things this
   surface is built on: turns **start together** (§14b's rate-limit note exists because they do),
   and the group composer **clears once the server accepts**. A request that resolved only when
   five full turns had finished would hold the composer for minutes and serialize the very thing

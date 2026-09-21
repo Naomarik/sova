@@ -35,7 +35,7 @@ export function mentionTokenAt(text: string, caret: number): MentionToken | null
       continue;
     }
     if (!inQuote && ch === "@") {
-      const before = i >= 2 ? text[i - 2] : "";
+      const before = i >= 2 ? (text[i - 2] ?? "") : "";
       if (before === "" || /\s/.test(before)) start = i - 1;
       break;
     }
@@ -81,7 +81,7 @@ export function mentionQueryParts(query: string): { dir: string; segment: string
  * prefix on the name; hidden entries (".env") only match once the segment starts with ".".
  */
 export function mentionEntries(files: readonly string[], query: string): MentionEntry[] {
-  const { dirPrefix, segment } = mentionQueryParts(query);
+  const { dir: dirPrefix, segment } = mentionQueryParts(query);
   const lower = segment.toLowerCase();
   const seen = new Set<string>();
   const out: MentionEntry[] = [];

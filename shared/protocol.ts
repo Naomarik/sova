@@ -370,6 +370,18 @@ export interface FolderListing {
   truncated: boolean;
 }
 
+/** The composer's @-mention file index for a cwd (spec/04h-file-mentions.md): the cwd's
+    non-ignored files as relative paths, cut at the server's cap. BASELINE STUB on this branch:
+    the client landed at 345a38f without the protocol type or the GET /api/files route, so until
+    the real shape lands, the stub keeps typecheck green and the mention menu shows its error
+    state (fetch 404s) exactly as any failed folder read would. */
+export interface FileIndex {
+  /** Non-ignored file paths relative to the cwd, "/"-separated. */
+  files: string[];
+  /** True when `files` was cut at the server's cap. */
+  truncated?: boolean;
+}
+
 /** Longest group name, in characters, after trimming (SessionGroup.name; the server trims and
     refuses an empty or longer one with 400). The one place the limit is written down: the create
     input's maxlength and the server's rule read it from here. */

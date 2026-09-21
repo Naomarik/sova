@@ -67,10 +67,10 @@ export function FileMenu(props: {
               when={props.status.state === "loading"}
               fallback={
                 <Show
-                  when={props.status.state === "error"}
+                  when={props.status.state === "error" ? props.status : null}
                   fallback={<>Nothing in {props.dir || "."} matches “{props.segment}”.</>}
                 >
-                  {props.status.error}
+                  {(err) => err().error}
                 </Show>
               }
             >

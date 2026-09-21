@@ -844,7 +844,7 @@ export function ChatView(props: {
       <FlyoutSession.Provider value={() => props.path}>
       <Composer
         path={props.path}
-        cwd={props.summary?.().cwd ?? null}
+        cwd={props.summary?.()?.cwd ?? null}
         blocked={blocked()}
         commands={commands()}
         running={live.running}

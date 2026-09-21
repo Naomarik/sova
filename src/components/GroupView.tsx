@@ -8,6 +8,7 @@ import {
   movePane,
   neighbourOf,
   orderPanes,
+  readActive,
   readMode,
   readOrder,
   readWidths,
@@ -46,7 +47,7 @@ export function paneIdFor(path: string): string {
 }
 
 /** The composer of a pane, for the focus moves: the one control a workspace hands the keyboard to. */
-const composerOf = (path: string) => document.getElementById(`composer-input-${paneIdFor(path)}`);
+const composerOf = (path: string) => document.getElementById(`composer-input-${paneIdFor(path)}`) as HTMLTextAreaElement | null;
 
 /** What SessionView needs from App, forwarded through the workspace unchanged. */
 export interface PaneWiring {
@@ -126,18 +127,28 @@ export function GroupView(props: {
     return model ? `${titleOf(path)} · ${model}` : titleOf(path);
   };
 
+  /**
+   * The focused pane. The route names it, but moving between panes only replaces the URL (it is
+   * not history), and replaceState fires no hashchange — so the choice lives here, seeded from the
+   * route, then from what this group last had open, and finally from the first pane. Without that
+   * the focus would follow the session list's order, which changes whenever a session replies.
+   */
+  const [wanted, setWanted] = createSignal<string | null>(props.focused ?? readActive(props.group.id));
+  createEffect(on(() => props.focused, (p) => p && setWanted(p), { defer: true }));
+  createEffect(on(id, (gid) => setWanted(readActive(gid)), { defer: true }));
   const active = createMemo(() => {
     const list = panes();
-    const wanted = props.focused;
-    return wanted && list.includes(wanted) ? wanted : (list[0] ?? null);
+    const at = wanted();
+    return at && list.includes(at) ? at : (list[0] ?? null);
   });
 
   // The route always names the focused pane, so a reload (and a copied link) comes back to it.
   // replaceState, not a new hash: moving between panes is not history.
   createEffect(() => {
     const at = active();
-    if (at && at !== props.focused) history.replaceState(history.state, "", groupHref(id(), at));
-    if (at) writeActive(id(), at);
+    if (!at) return;
+    if (at !== props.focused) history.replaceState(history.state, "", groupHref(id(), at));
+    writeActive(id(), at);
   });
 
   /**
@@ -147,29 +158,23 @@ export function GroupView(props: {
    */
   const focusPane = (path: string, moveFocus: boolean) => {
     if (!path) return;
-    history.replaceState(history.state, "", groupHref(id(), path));
-    setRouteFocus(path);
+    setWanted(path);
     if (!moveFocus) return;
     queueMicrotask(() => {
-      const el = composerOf(path) ?? document.getElementById(`pane-${paneIdFor(path)}`);
+      // A read-only session (TUI-owned, or another writer) has a disabled composer, which takes no
+      // focus at all: the pane's own region does, so the keyboard still lands in the right pane.
+      const composer = composerOf(path);
+      const el = composer && !composer.disabled ? composer : document.getElementById(`pane-${paneIdFor(path)}`);
       el?.focus();
       announce(`${labelOf(path)} focused.`);
     });
   };
-  // App reads the hash; replaceState fires no hashchange, so the pane in focus is also held here.
-  const [routeFocus, setRouteFocus] = createSignal<string | null>(null);
-  createEffect(on(() => props.focused, (p) => setRouteFocus(p)));
-  const focusedPane = createMemo(() => {
-    const list = panes();
-    const wanted = routeFocus() ?? props.focused;
-    return wanted && list.includes(wanted) ? wanted : (list[0] ?? null);
-  });
 
   /** Ctrl+Alt+←/→: the pane row's roving focus. */
   const onKeyDown = (e: KeyboardEvent) => {
     if (!e.ctrlKey || !e.altKey || (e.key !== "ArrowLeft" && e.key !== "ArrowRight")) return;
     const list = panes();
-    const at = list.indexOf(focusedPane() ?? "");
+    const at = list.indexOf(active() ?? "");
     const next = list[at + (e.key === "ArrowRight" ? 1 : -1)];
     if (!next) return;
     e.preventDefault();
@@ -312,14 +317,14 @@ export function GroupView(props: {
                 <section
                   class="workspace-pane"
                   id={`pane-${paneId}`}
-                  classList={{ "workspace-pane-focused": focusedPane() === path }}
+                  classList={{ "workspace-pane-focused": active() === path }}
                   role={mode() === "tabs" ? "tabpanel" : "region"}
                   aria-label={mode() === "tabs" ? undefined : labelOf(path)}
                   aria-labelledby={mode() === "tabs" ? `ws-tab-${paneId}` : undefined}
                   tabindex="-1"
                   hidden={hidden()}
                   style={mode() === "split" ? { flex: `0 0 ${widthOf(path)}px` } : undefined}
-                  onFocusIn={() => focusedPane() !== path && focusPane(path, false)}
+                  onFocusIn={() => active() !== path && focusPane(path, false)}
                 >
                   <SessionView
                     path={path}

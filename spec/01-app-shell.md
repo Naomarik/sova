@@ -44,15 +44,67 @@ unfolded (≥768)                                  folded (<768)
   remote extension's connection notices (below): the chips hold the fact, so the toast is just the
   event.
 
-## Remote connection chip
+## Remote session chips
 
-A session on a remote target (spec/02 "Remote sessions") shows its connection in three places,
-all fed by one source: the remote extension's `setStatus("remote-status", <JSON>)`, which the
-chat socket delivers as a fire-and-forget `ui_request`
-(`{state:"online"|"unreachable"|"unknown", host?, latencyMs?, pinned, channelState?, lastOkAt, runningMs?, error?, at}`;
-its plain `remote` status is TUI footer text and is ignored). `src/lib/remote-status.ts` parses
-it (any other shape is ignored, never guessed at) and `src/components/RemoteStatus.tsx` renders
-it.
+A session on a remote target (spec/02 "Remote sessions") carries three facts, each shown in the
+session head and in Session detail: **what it is** (the always-on remote chip), **where its files
+are** (the mount state indicator), and **whether the host still answers** (the connection chip).
+Each has its own word and its own section below; none borrows another's.
+
+### The always-on remote chip
+
+The identity of a remote session, and the one chip that does not wait for a report: it is built
+from `SessionSummary.target`/`remoteCwd` (else a `cwd` under the placeholder), so it exists the
+moment the session does — before any status arrives, and for a watched or TUI-owned session with
+no chat socket at all. A local session has none.
+
+- **What it says.** a `terminal` icon, the target's `label` from `GET /api/targets` (the name when
+  that fails or the list hasn't loaded), `·`, then the path. A mount-mode session
+  (`SessionSummary.mounted`) shows its own local mount cwd — where its files really are; every
+  other remote session shows `remoteCwd`, the folder on the target. The target's `$HOME` isn't
+  ours, so the path is never run through `~`.
+- **It is identity, not liveness.** No state dot and no pulse — that is the connection chip's job,
+  and the chips sit side by side so neither reads as the other. In the **session head** it is a
+  plain `.chip`; in **Session detail** a `.chip.chip-count`. Either truncates the path rather than
+  pushing the chip wide, and `title` carries the full `name (host):/remote/path`, the local mount
+  location for a mount-mode session, and the mount state when one is known.
+
+### The mount state indicator
+
+Present for a mount-mode session no matter what, and for any other remote session only once the
+target's live state says the mount is **up**: the server's `TargetInfo.mounted` (a bounded check,
+refreshed by the mount toggle), else the extension's `status.mounted` for a chat here. The word is
+the honest state: `mounted` only when that check says so, `not mounted` when a mount-mode
+session's check says down, `mount` while nothing has been checked. Mounted is a **state**, not
+health — neutral tone always: a mount whose reads fail must not read healthy, and a hung mount
+can't be told from a slow one. In Session detail it also names the live mount point the extension
+reported (`mounted · /home/user/.pi/agent/mounts/box`); in the head it is a plain `.chip` (it must
+survive the narrow-head `.chip-count` rule, like the other two remote chips), with the mount point
+and the session's mount location in `title`. It is never inferred from `mountPoint`'s presence,
+which only means the target declares a mount, up or down.
+
+### The mount toggle
+
+In Session detail's controls row, beside **Check now** and **Reconnect**: it turns the target's
+sshfs mount on and off. It is shown only when the target declares a mount — `TargetInfo.mounted`
+is present (`true` up, `false` configured but down); absent means no mount config, no toggle. It
+reads **Mount** or **Unmount** by that value, becomes **Mounting…** / **Unmounting…** while the
+request is in flight, and disables then. It is a REST call
+(`POST /api/targets/:name/mount {on}`), not a chat command, so it works for a watched or
+TUI-owned session with no runtime here and one path serves the whole pane; the response is the
+updated `TargetInfo`, which is what moves the indicator. A failure is a caption under the row
+(`.text-caption.text-error`), never a toast-only: the fact stays on screen. The remote
+extension's `/remote mount` / `/remote unmount` commands still exist as the TUI surface; pi-web
+does not ride them.
+
+### The connection chip
+
+The connection chip is fed by the remote extension's `setStatus("remote-status", <JSON>)`, which
+the chat socket delivers as a fire-and-forget `ui_request`
+(`{state:"online"|"unreachable"|"unknown", host?, latencyMs?, pinned, channelState?, lastOkAt, runningMs?, error?, mounted, mountPoint?, at}`;
+its plain `remote` status is TUI footer text and is ignored). `src/lib/remote-status.ts` parses it
+(any other shape is ignored, never guessed at) and `src/components/RemoteStatus.tsx` renders it.
+It says liveness only, never identity or mount state:
 
 - **Only what the extension knows.** `connected` (success tone) means a real round trip
   succeeded **within the last 2 minutes**; an older success reads `last ok · 12m ago` with a
@@ -71,24 +123,26 @@ it.
   passed or when no time was given. The pane shows it as a muted caption under the chip
   (`Fast channel rate-limited (ssh refused) · retry in 12s`); the head chip's `title` carries the
   same line.
-- **In the session head**, a `.chip` button just before the `TUI` chip: state word, `·`, host
-  (`user@hostname` once the extension's preflight answered; the host keeps its case inside the
-  uppercase chip). Compact: no age, except on `last ok 12m ago`, where the age is the point. `title` carries
-  latency, whether the fast channel is pinned and its state, and the last success's age and time.
-  Clicking it opens Session detail on the Session tab, where the controls are. It is a plain
-  uppercase chip, not `.chip-count`, so the narrow head's `.chip-count` rule never hides it.
-  **Absent for local sessions**, and for a remote session not open for chat here (a watched or
-  TUI-owned one): pi-web only hears the status over its own chat socket, and a chip it can't feed
-  would be a claim.
-- **In Session detail** (every tab), a row under the pane's head: the same chip as
-  `.chip.chip-count` (host keeps its case) plus the age of the last success (`· 42s ago`,
-  `· ok 5m ago`, `· never ok`) or the running time; the failure's first line under it in
-  `.text-caption.text-error`; and two small ghost buttons, **Check now** (`/remote check`, one
-  fresh round trip) and **Reconnect** (`/remote reconnect`, drop the fast channel and re-probe).
-  Both are sent as ordinary prompts over the chat socket (the server runs extension commands at
-  once, even mid-turn) with no "Ran" row, and are shown only while the runtime advertises the
-  `remote` command. While one waits, it reads `Checking…` / `Reconnecting…` and both disable,
-  until the next report lands or 20 s pass.
+- **In the session head**, after the always-on remote chip and the mount state indicator, a `.chip`
+  button just before the `TUI` chip: state word, `·`, host (`user@hostname` once the extension's
+  preflight answered; the host keeps its case inside the uppercase chip). Compact: no age, except
+  on `last ok 12m ago`, where the age is the point. `title` carries latency, whether the fast
+  channel is pinned and its state, and the last success's age and time. Clicking it opens Session
+  detail on the Session tab, where the controls are. It is a plain uppercase chip, not
+  `.chip-count`, so the narrow head's `.chip-count` rule never hides it. **Absent for local
+  sessions**, and for a remote session not open for chat here (a watched or TUI-owned one): pi-web
+  only hears the status over its own chat socket, and a chip it can't feed would be a claim. (The
+  always-on remote chip above has no such limit — it needs no report.)
+- **In Session detail** (every tab), in the controls row under the pane's head, after the remote chip
+  and the mount state indicator: the same chip as `.chip.chip-count` (host keeps its case) plus the
+  age of the last success (`· 42s ago`, `· ok 5m ago`, `· never ok`) or the running time; the
+  failure's first line under it in `.text-caption.text-error`; and the small ghost buttons. **Check
+  now** (`/remote check`, one fresh round trip) and **Reconnect** (`/remote reconnect`, drop the
+  fast channel and re-probe) are sent as ordinary prompts over the chat socket (the server runs
+  extension commands at once, even mid-turn) with no "Ran" row, and are shown only while the
+  runtime advertises the `remote` command; while one waits it reads `Checking…` / `Reconnecting…`
+  and both disable, until the next report lands or 20 s pass. The **mount toggle** sits with them
+  but is not a chat command (above): it works with no runtime here.
 - **Connection notices.** A `notify` from the extension starting with `remote:` (first loss of a
   host, recovery) is a connection event: its first line becomes a normal non-modal toast, and the
   same text isn't repeated within a minute, so a flapping host never stacks toasts.
@@ -97,7 +151,7 @@ it.
   runtime that outlived its last socket has no session start to report on, so after each `hello`
   the `commands` message that follows (if it lists `remote`) triggers one silent `/remote status`:
   the extension re-publishes its current status, with no ssh and no toast. Until it lands, the
-  chips read `checking…`.
+  connection chip reads `checking…` (the always-on remote chip never waits).
 
 ## Resizing the sessions pane
 

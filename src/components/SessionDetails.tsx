@@ -6,9 +6,11 @@ import { absoluteTime, anyCost, firstLine, originLabel, spendRows, timelineEntri
 import { setSessionArchived } from "../lib/api";
 import { cwdLabel } from "../lib/remote-session";
 import { resumeCommand } from "../lib/session-command";
+import { groupNameOf, sessionGroups } from "../lib/session-groups";
 import { copyText, home, toast } from "../lib/ui-state";
 import { formatCost, sessionWorking, usageHeadline, usageTitle, usageTotal } from "../lib/workers";
 import { Banner, CopyButton, Icon } from "./ui";
+import { MoveToGroupMenu } from "./Groups";
 
 /** Long machine facts wrap instead of widening the sheet. */
 const wrapMono = { margin: 0, "overflow-wrap": "anywhere" } as const;
@@ -28,6 +30,7 @@ const wrapMono = { margin: 0, "overflow-wrap": "anywhere" } as const;
  *   items     transcript rows (the model/thinking/mode timeline, and "compacted" for context)
  *   now       the clock relative times are measured against
  *   onArchiveChanged  after Archive/Unarchive succeeds: re-read the session list
+ *   onGroupsChanged   after the session's group changes: re-read the session list
  *   idPrefix  prefix of the section heading ids ("si", the modal's, by default), so the modal and
  *             the pane can both be open without duplicate ids
  */
@@ -42,6 +45,7 @@ export function SessionDetails(props: {
   items: TranscriptItem[];
   now: number;
   onArchiveChanged?: () => void;
+  onGroupsChanged?: () => void;
   idPrefix?: string;
 }) {
   const id = (section: string) => `${props.idPrefix ?? "si"}-${section}-label`;
@@ -205,6 +209,7 @@ export function SessionDetails(props: {
               </Fact>
               <Fact label="Origin">{s().origin === "web" ? "Started here" : "Started in a terminal"}</Fact>
               <Fact label="Archived">{archived() ? "Yes" : "No"}</Fact>
+              <Fact label="Group">{groupNameOf(sessionGroups(), s().groupId) ?? "None"}</Fact>
               <Show when={live()}>
                 {(l) => (
                   <Fact label="Live">
@@ -213,9 +218,11 @@ export function SessionDetails(props: {
                 )}
               </Show>
             </dl>
-            {/* Archiving is ours to define only for sessions pi-web started. */}
-            <Show when={s().origin === "web"}>
-              <div class="cluster">
+            {/* Archiving is ours to define only for sessions pi-web started (it closes their
+                runtime); grouping is pi-web's own bookkeeping for any session. */}
+            <div class="cluster">
+              <MoveToGroupMenu session={s()} onChanged={() => props.onGroupsChanged?.()} />
+              <Show when={s().origin === "web"}>
                 <ArchiveAction
                   session={s()}
                   archived={archived()}
@@ -225,8 +232,8 @@ export function SessionDetails(props: {
                     props.onArchiveChanged?.();
                   }}
                 />
-              </div>
-            </Show>
+              </Show>
+            </div>
           </section>
         )}
       </Show>

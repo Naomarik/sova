@@ -6,6 +6,7 @@
 
 import { createSignal } from "solid-js";
 import { duration } from "./format";
+import { remotePlaceOf } from "./remote-session";
 
 export type RemoteState = "online" | "unreachable" | "unknown";
 /** "rate-limited": the host refused the channel's fresh ssh login; per-call ssh (the master) still works. */
@@ -26,6 +27,12 @@ export interface RemoteStatus {
   runningMs?: number;
   /** First line of the last failure's message. */
   error?: string;
+  /** The target's sshfs mount is up. Only ever the extension's report: a missing field (or no
+      report at all) means not mounted, and a mount whose reads fail is still "mounted" here —
+      liveness is the connection chip's job. */
+  mounted?: boolean;
+  /** Where the mount lives locally, when the extension reports one. Shown only while `mounted`. */
+  mountPoint?: string;
   /** Epoch ms this status was produced (running time ticks on from here between reports). */
   at?: number;
 }
@@ -59,6 +66,8 @@ export function parseRemoteStatus(raw: unknown): RemoteStatus | null {
     lastOkAt: num(o.lastOkAt) ?? 0,
     runningMs: num(o.runningMs),
     error: error && firstLine(error),
+    mounted: o.mounted === true,
+    mountPoint: text(o.mountPoint),
     at: num(o.at),
   };
 }
@@ -178,6 +187,9 @@ export interface RemoteView {
   channel?: string;
   /** The hover text: latency, the fast channel, the last success. */
   title: string;
+  /** The mount is up (and `mountPoint` where it is), only ever what the extension reported. */
+  mounted: boolean;
+  mountPoint?: string;
 }
 
 const CHANNEL_WORDS: Record<ChannelState, string> = {
@@ -195,6 +207,7 @@ export function remoteView(entry: RemoteEntry, now = Date.now()): RemoteView {
     const silent = now - entry.since >= REMOTE_SILENT_MS;
     return {
       word: silent ? "no status" : "checking…",
+      mounted: false,
       title: silent
         ? `No status from the remote extension in ${duration(now - entry.since)}. Nothing is known about ${entry.target}.`
         : `Waiting for the first report on ${entry.target}.`,
@@ -226,7 +239,15 @@ export function remoteView(entry: RemoteEntry, now = Date.now()): RemoteView {
   );
   lines.push(s.lastOkAt > 0 ? `Last successful call ${age}, at ${new Date(s.lastOkAt).toLocaleTimeString()}` : "No successful call yet");
   if (running) lines.push(`A command has been ${running}`);
-  const base = { host: s.host, age, running, channel, title: lines.join("\n") };
+  const base = {
+    host: s.host,
+    age,
+    running,
+    channel,
+    mounted: s.mounted === true,
+    mountPoint: s.mountPoint,
+    title: lines.join("\n"),
+  };
   switch (s.state) {
     case "unreachable":
       if (s.error) base.title = `${s.error}\n${base.title}`;
@@ -241,3 +262,44 @@ export function remoteView(entry: RemoteEntry, now = Date.now()): RemoteView {
 
 /** A notify from the remote extension (its text starts "remote:"): a connection event, not a generic error. */
 export const isRemoteNotice = (message: string) => /^remote\b/i.test(message.trim());
+
+// ---- The always-on remote chip -------------------------------------------------------------------
+
+/**
+ * What the always-on remote chip says: this session is remote, and where its files live. Built from
+ * the summary's own `target`/`remoteCwd` (else the placeholder cwd), so it exists the moment the
+ * session does — before any status, and for a watched or TUI-owned session with no chat socket at
+ * all. It is identity, never liveness or mount health: `sessionMounted` is `SessionSummary.mounted`
+ * (the cwd lives inside a target's mount, derived from the cwd only), and `mountPoint` is a live
+ * fact only the extension can report.
+ */
+export interface RemoteIdentity {
+  target: string;
+  /** Absolute path on the target. Never run through tildePath: the target's $HOME isn't ours. */
+  remoteCwd: string;
+  /** `SessionSummary.mounted`: this session's cwd is inside the target's mount. Never a live check. */
+  sessionMounted: boolean;
+  /** The live mount point the extension reported for this chat, when it did. */
+  mountPoint?: string;
+  /** What the chip shows: the session's own local cwd for a mounted session (where its files really
+      are), else the folder on the target. */
+  path: string;
+}
+
+/** The identity of a remote session, or null for an ordinary local one. `entry` is optional: the
+    chip exists without it, and then nothing live is known. */
+export function remoteIdentity(
+  s: { cwd: string; target?: string; remoteCwd?: string; mounted?: boolean },
+  entry?: RemoteEntry,
+): RemoteIdentity | null {
+  const place = remotePlaceOf(s);
+  if (!place) return null;
+  const sessionMounted = s.mounted === true;
+  return {
+    target: place.target,
+    remoteCwd: place.remoteCwd,
+    sessionMounted,
+    mountPoint: entry?.status?.mountPoint,
+    path: sessionMounted ? s.cwd : place.remoteCwd,
+  };
+}

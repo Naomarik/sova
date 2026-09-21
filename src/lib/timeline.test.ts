@@ -45,6 +45,13 @@ const compaction = (id: string, min: number, summary = "Read the pane, wrote the
   text: `Compacted (${tokensBefore} tokens): ${summary}`,
   raw: { type: "compaction", timestamp: at(min), summary, tokensBefore },
 });
+const wake = (id: string, min: number, reason?: string): TranscriptItem => ({
+  id,
+  kind: "wake",
+  text: `[wake_nudge ${id}] Scheduled wakeup fired (set 1m ago).\nReason: ${reason ?? "(none)"}\nContinue.`,
+  wake: { id, ...(reason ? { reason } : {}) },
+  raw: { type: "message", timestamp: at(min) },
+});
 const change = (id: string, min: number, text: string): TranscriptItem => ({ id, kind: "info", text, raw: { type: "model_change", timestamp: at(min) } });
 const report = (id: string, min: number, name: string, outcome: string): TranscriptItem => ({
   id,
@@ -106,6 +113,25 @@ test("densityLine drops the clauses that are zero, and is empty when all of them
   assert.equal(densityLine(alone!), "");
   const [quiet] = inputTurns([user("u1", 0), say("a1:0", 0)]);
   assert.equal(densityLine(quiet!), "1 reply", "same second: no elapsed clause");
+});
+
+test("inputTurns anchors a fired wake nudge as its own turn, previewed by its reason", () => {
+  const turns = inputTurns([user("u1", 0), say("a1:0", 1), wake("n1", 5, "check the build"), say("a2:0", 6)]);
+  assert.deepEqual(turns.map((t) => t.id), ["u1", "n1"]);
+  assert.equal(turnPreview(turns[1]!), "check the build");
+  assert.equal(turns[1]!.replies, 1);
+});
+
+test("inputTurns falls back to the nudge's own title when it carries no reason", () => {
+  const [, n] = inputTurns([user("u1", 0), wake("n1", 1)]);
+  assert.equal(turnPreview(n!), "Wake nudge n1");
+});
+
+test("inputRows lists a fired wake nudge alongside ordinary inputs, text kept raw", () => {
+  const rows = inputRows([user("u1", 0), wake("n1", 1, "check the build")]);
+  assert.deepEqual(rows.map((r) => r.id), ["u1", "n1"]);
+  assert.equal(rows[1]!.preview, "check the build");
+  assert.equal(rows[1]!.text, wake("n1", 1, "check the build").text);
 });
 
 // ---- Chapters -----------------------------------------------------------------------------------

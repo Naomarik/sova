@@ -3,6 +3,8 @@
 // row may act, the two-step confirm — so the component just renders them.
 import type { RewindRefusal, TranscriptItem } from "../../shared/protocol";
 import { timestampOf } from "./message";
+import { isTurnStart } from "./turn";
+import { wakeTitle } from "../../shared/wake";
 
 export type { RewindRefusal };
 
@@ -34,14 +36,20 @@ export interface InputRow {
   at: string | undefined;
 }
 
-/** The user rows of a transcript, oldest first. */
+/** The user rows of a transcript, oldest first: ordinary inputs and fired wake nudges alike
+    (isTurnStart) — a wake nudge is a real user message. `text` stays the row's raw text (what a
+    rewind hands back) unchanged; `preview` is what the row shows, which for a wake nudge is its
+    reason, else "Wake nudge n1", never the tagged message's first line. */
 export function inputRows(items: readonly TranscriptItem[]): InputRow[] {
   return items
-    .filter((it) => it.kind === "user")
+    .filter(isTurnStart)
     .map((it) => {
       const text = it.text ?? "";
-      const first = text.trim().split("\n", 1)[0] ?? "";
-      return { id: it.id, preview: first.replace(/\s+/g, " ").trim(), text, images: it.images?.length ?? 0, at: timestampOf(it.raw) };
+      const preview =
+        it.kind === "wake" && it.wake
+          ? (it.wake.reason ?? wakeTitle(it.wake))
+          : (text.trim().split("\n", 1)[0] ?? "").replace(/\s+/g, " ").trim();
+      return { id: it.id, preview, text, images: it.images?.length ?? 0, at: timestampOf(it.raw) };
     });
 }
 

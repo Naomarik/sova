@@ -1,6 +1,7 @@
 import type { TranscriptItem } from "../../shared/protocol";
 import type { LiveBlock, LiveState } from "./live";
 import { toolResultView } from "./message";
+import { isTurnStart } from "./turn";
 
 /** Which kinds a session hides: "Hide tool calls" and "Hide thinking", independent of each other. */
 export interface HideKinds {
@@ -46,7 +47,7 @@ export function splitHidden(items: TranscriptItem[], hide: HideKinds): HiddenSpl
   for (const it of items) {
     if (!isHidden(it, hide)) {
       shown.push(it);
-      if (it.kind === "user") openFrom = hidden.length;
+      if (isTurnStart(it)) openFrom = hidden.length;
       continue;
     }
     hidden.push(it);

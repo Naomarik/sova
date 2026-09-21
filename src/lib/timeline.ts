@@ -13,6 +13,8 @@ import { duration, relativeTime, thousands } from "./format";
 import { inputPreview, type RowState, type ViewRow } from "./inputs";
 import { isObj, timestampOf, toolCallArgs } from "./message";
 import { absoluteTime, firstLine, timelineEntries } from "./spend";
+import { isTurnStart } from "./turn";
+import { wakeTitle } from "../../shared/wake";
 
 /** A row's shape on the axis; the `data-kind` the stylesheet keys off. */
 export type TimelineKind = "input" | "chapter" | "marker" | "density" | "gap";
@@ -108,14 +110,18 @@ export interface InputTurn {
 export function inputTurns(items: readonly TranscriptItem[]): InputTurn[] {
   const out: InputTurn[] = [];
   items.forEach((it, index) => {
-    if (it.kind !== "user") return;
+    if (!isTurnStart(it)) return;
     const text = it.text ?? "";
     const at = timestampOf(it.raw);
+    const preview =
+      it.kind === "wake" && it.wake
+        ? (it.wake.reason ?? wakeTitle(it.wake))
+        : (text.trim().split("\n", 1)[0] ?? "").replace(/\s+/g, " ").trim();
     const turn: InputTurn = {
       id: it.id,
       at,
       index,
-      preview: (text.trim().split("\n", 1)[0] ?? "").replace(/\s+/g, " ").trim(),
+      preview,
       text,
       images: it.images?.length ?? 0,
       replies: 0,
@@ -126,7 +132,7 @@ export function inputTurns(items: readonly TranscriptItem[]): InputTurn[] {
     let last = NaN;
     for (let i = index + 1; i < items.length; i++) {
       const next = items[i]!;
-      if (next.kind === "user") break;
+      if (isTurnStart(next)) break;
       if (next.kind === "assistant-text") turn.replies++;
       else if (next.kind === "tool-call") turn.tools++;
       const stamp = timestampOf(next.raw);

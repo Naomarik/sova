@@ -207,6 +207,17 @@ export function SubagentPane(props: {
                 </Show>
                 <p class="subagents-view-meta meta-line">
                   <span class="text-mono">{w().id}</span>
+                  {/* The provider leads (§11 "The meta line ranks its facts"): the route that
+                      serves the model — never the part that clips. `claude code` for that
+                      backend, a pi ref's prefix or a catalog lookup otherwise. */}
+                  <Show when={w().provider}>
+                    {(p) => (
+                      <>
+                        <MetaSep />
+                        <span>{p()}</span>
+                      </>
+                    )}
+                  </Show>
                   <Show when={compactModel(w().model)}>
                     {(m) => (
                       <>
@@ -216,10 +227,6 @@ export function SubagentPane(props: {
                         </span>
                       </>
                     )}
-                  </Show>
-                  <Show when={w().backend === "claude-code"}>
-                    <MetaSep />
-                    <span>Claude Code</span>
                   </Show>
                   <Show when={watched() ?? workerUsage(w())}>
                     {(u) => (
@@ -294,30 +301,40 @@ function StatusChip(props: { worker: WorkerInfo; liveSource: boolean }) {
   );
 }
 
-/** `{model}` · `{tokens}` · as of `{HH:MM}` (settled) · last task failed (idle after a failure).
-    A `.meta-line`: too little room clips the model id, never the count beside it. */
+/** `{provider}` · `{model}` · `{tokens}` · as of `{HH:MM}` (settled) · last task failed (idle
+    after a failure). A `.meta-line`: too little room clips the model id, never the provider or the
+    count beside it. */
 function WorkerMeta(props: { worker: WorkerInfo; liveSource: boolean; class: string }) {
+  const provider = () => props.worker.provider;
   const model = () => compactModel(props.worker.model);
   const usage = () => workerUsage(props.worker);
   const failed = () => memberStatus({ worker: props.worker } as TeamMember, props.liveSource).failed;
   /** Without a live source every row reads "as of" its last update. */
   const at = () => asOf(props.worker) ?? (props.liveSource ? undefined : props.worker.lastActivity);
   const iso = (t: number) => new Date(t).toISOString();
-  const lead = () => model() || usage();
+  const lead = () => provider() || model() || usage();
   return (
     <Show when={lead() || at() !== undefined || failed()}>
       <span class={`${props.class} meta-line`}>
+        <Show when={provider()}>
+          {(p) => <span>{p()}</span>}
+        </Show>
         <Show when={model()}>
           {(m) => (
-            <span class="text-mono meta-line-shrink" title={props.worker.model ?? undefined}>
-              {m()}
-            </span>
+            <>
+              <Show when={provider()}>
+                <MetaSep />
+              </Show>
+              <span class="text-mono meta-line-shrink" title={props.worker.model ?? undefined}>
+                {m()}
+              </span>
+            </>
           )}
         </Show>
         <Show when={usage()}>
           {(u) => (
             <>
-              <Show when={model()}>
+              <Show when={provider() || model()}>
                 <MetaSep />
               </Show>
               <span class="text-mono" title={usageTitle(u())}>

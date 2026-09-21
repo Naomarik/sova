@@ -5,13 +5,15 @@ import type { SessionSummary } from "../shared/protocol";
 import { type LiveRecord, readLive, readOwnLiveRecords, workerCountsOf } from "./live";
 import { LIVE_DIR, SESSIONS_DIR } from "./paths";
 import { isWebSession, removeWebSession } from "./web-sessions";
+import { parseWakeNudge } from "../shared/wake";
 import { RECENT_WRITE_MS } from "./write-guard";
 import { isArchived, setArchived } from "./archived-sessions";
+import { dropGroupAssignments, readAssignments } from "./session-groups";
 import { draftPreview, dropDrafts, readDrafts } from "./drafts";
 import { removeSessionAttachments } from "./attachments";
 import { disposeHeldChat, getModelRuntime, isSessionBusy } from "./chat-manager";
 import { contextWindow } from "./models";
-import { parseTargetCwd } from "./targets";
+import { loadTargets, remoteOfCwd, type Target } from "./targets";
 
 type BaseSummary = Omit<SessionSummary, "live" | "workers" | "origin" | "archived" | "busy">;
 
@@ -294,7 +296,7 @@ async function readHead(path: string): Promise<{ header: any; title: string | nu
         if (e.type === "message") {
           const msg = e.message ?? {};
           if (!model && msg.role === "assistant" && msg.provider && msg.model) model = `${msg.provider}/${msg.model}`;
-          if (msg.role === "user" && title === null) title = oneLine(userText(msg.content));
+          if (msg.role === "user" && title === null && !parseWakeNudge(userText(msg.content))) title = oneLine(userText(msg.content));
         }
         if (title !== null && model) return { header, title, model };
       }
@@ -307,13 +309,14 @@ async function readHead(path: string): Promise<{ header: any; title: string | nu
         try {
           const e = JSON.parse(pending);
           if (!header && e?.type === "session") header = e;
-          else if (header && e?.type === "message" && e.message?.role === "user") title = oneLine(userText(e.message.content));
+          else if (header && e?.type === "message" && e.message?.role === "user" && !parseWakeNudge(userText(e.message.content)))
+            title = oneLine(userText(e.message.content));
         } catch {
           // partial line: ignore
         }
       } else if (header) {
         const t = titleFromPartial(pending);
-        if (t !== null) title = oneLine(t);
+        if (t !== null && !parseWakeNudge(t)) title = oneLine(t);
       }
     }
     return header ? { header, title, model } : null;
@@ -364,7 +367,7 @@ function withWindow(entry: CacheEntry, resolveWindow?: WindowResolver): BaseSumm
   return window === ctx.window ? entry.summary : { ...entry.summary, context: { tokens: ctx.tokens, window } };
 }
 
-async function summarize(path: string, resolveWindow?: WindowResolver): Promise<BaseSummary | null> {
+async function summarize(path: string, resolveWindow?: WindowResolver, registry?: readonly Target[]): Promise<BaseSummary | null> {
   let st;
   try {
     st = await stat(path);
@@ -381,7 +384,9 @@ async function summarize(path: string, resolveWindow?: WindowResolver): Promise<
     const outline = await readTailOutline(path, st.size);
     const ctx = await readTailContext(path, st.size);
     const cwd = typeof h.cwd === "string" ? h.cwd : "";
-    const remote = parseTargetCwd(cwd); // a remote session's cwd is its target placeholder
+    // a remote session's cwd is its target placeholder, or a directory inside its mount point;
+    // the registry (one read per listing, not one per session) resolves mount-point cwds
+    const remote = remoteOfCwd(cwd, registry);
     const summary: BaseSummary = {
       id: h.id,
       path,
@@ -393,6 +398,7 @@ async function summarize(path: string, resolveWindow?: WindowResolver): Promise<
       ...(outline ? { outlineNow: outline.now, outlineAt: outline.generatedAt, outlineTopics: outline.topics } : {}),
       ...(ctx ? { context: { tokens: ctx.tokens, window: null } } : {}),
       ...(remote ? { target: remote.target, remoteCwd: remote.remoteCwd } : {}),
+      ...(remote?.mounted ? { mounted: true } : {}),
     };
     const entry: CacheEntry = { mtimeMs: st.mtimeMs, size: st.size, summary, contextModel: ctx?.model ?? null };
     cache.set(path, entry);
@@ -433,7 +439,15 @@ export async function listSessions(): Promise<SessionSummary[]> {
   const own = readOwnLiveRecords();
   const resolveWindow = await windowResolver();
   const drafts = readDrafts();
-  const results = await Promise.all(files.map((f) => summarize(f, resolveWindow)));
+  const groups = readAssignments();
+  // An assignment whose session file is gone — deleted by hand, or by a TUI — can never match a row
+  // again, so pi-web's own bookkeeping is pruned on the way past. Archive cleanup prunes the ids it
+  // deletes; this catches every other writer, and only writes when something is actually dead.
+  // Keyed on file existence, never on a summary succeeding: an unreadable file keeps its group.
+  const liveIds = new Set(files.map(idOf));
+  dropGroupAssignments(Object.keys(groups).filter((id) => !liveIds.has(id)));
+  const registry = loadTargets().targets; // one read for every summary's mount-point match
+  const results = await Promise.all(files.map((f) => summarize(f, resolveWindow, registry)));
   const present = new Set(files);
   for (const k of cache.keys()) if (!present.has(k)) cache.delete(k);
   const out: SessionSummary[] = [];
@@ -463,6 +477,7 @@ export async function listSessions(): Promise<SessionSummary[]> {
       workers: l?.workers ?? (ownRec ? workerCountsOf(ownRec.rec) : undefined),
       origin: isWebSession(s.id) ? "web" : "external",
       archived: isArchived(s.id),
+      ...(groups[s.id] !== undefined ? { groupId: groups[s.id] } : {}),
       busy: isSessionBusy(s.path),
       ...(preview !== undefined ? { draftPreview: preview } : {}),
     });
@@ -488,10 +503,11 @@ async function windowResolver(): Promise<WindowResolver | undefined> {
 /** One summary. `resolveWindow` is optional on purpose: without it the context gauge has no
  *  window (tests and any caller that must not spin up a ModelRuntime). */
 export async function getSessionSummary(path: string, resolveWindow?: WindowResolver): Promise<SessionSummary | null> {
-  const s = await summarize(path, resolveWindow);
+  const s = await summarize(path, resolveWindow, loadTargets().targets);
   if (!s) return null;
   const l = readLive().get(path);
   const ownRec = readOwnLiveRecords().get(path);
+  const groupId = readAssignments()[s.id];
   return {
     ...s,
     ...outlineOverlay(s, l),
@@ -499,6 +515,7 @@ export async function getSessionSummary(path: string, resolveWindow?: WindowReso
     workers: l?.workers ?? (ownRec ? workerCountsOf(ownRec.rec) : undefined),
     origin: isWebSession(s.id) ? "web" : "external",
     archived: isArchived(s.id),
+    ...(groupId !== undefined ? { groupId } : {}),
     busy: isSessionBusy(s.path),
   };
 }
@@ -572,6 +589,8 @@ export async function cleanupSessions(req: CleanupRequest): Promise<CleanupResul
   const cutoff = req.mode === "age" ? now - req.minAgeDays * 86_400_000 : 0;
   const skipped = { live: 0, busy: 0, recent: 0, failed: 0 };
   const deletedIds: string[] = [];
+  /** Ids whose file is really gone, so their group assignment goes too (one write after the loop). */
+  const forgotten: string[] = [];
   for (const path of files) {
     let st;
     try {
@@ -607,10 +626,12 @@ export async function cleanupSessions(req: CleanupRequest): Promise<CleanupResul
       dropDrafts([id]);
       removeSessionAttachments(id);
       deletedIds.push(id);
+      forgotten.push(id);
     } catch {
       skipped.failed++;
     }
   }
+  dropGroupAssignments(forgotten);
   return { deletedCount: req.dryRun ? 0 : deletedIds.length, deletedIds, skipped };
 }
 
@@ -622,9 +643,14 @@ function isDir(p: string): boolean {
   }
 }
 
-/** Distinct existing cwds from the index, most recently used first. */
+/** Distinct existing cwds from the index, most recently used first. A cwd inside a target's
+ * mount point is listed without touching it: statting a fuse path can block the whole event
+ * loop while the mount hangs, and remoteOfCwd matches the configured mount blocks without statting. */
 export async function listCwds(): Promise<string[]> {
   const seen = new Set<string>();
-  for (const s of await listSessions()) if (s.cwd && !seen.has(s.cwd) && isDir(s.cwd)) seen.add(s.cwd);
+  for (const s of await listSessions()) {
+    if (!s.cwd || seen.has(s.cwd)) continue;
+    if (remoteOfCwd(s.cwd)?.mounted || isDir(s.cwd)) seen.add(s.cwd);
+  }
   return [...seen];
 }

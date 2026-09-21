@@ -28,6 +28,7 @@ import type {
 } from "../shared/protocol";
 import { hasPage, listExplanations, sortExplanations } from "./explanations";
 import { readLiveRecords, type RawLiveRecord } from "./live";
+import { modelProvider } from "./models";
 import { resolveSessionPath } from "./paths";
 import { collectSkills, hasSkills } from "./skills";
 import { activeBranch, parseLines } from "./transcript";
@@ -578,6 +579,10 @@ function decodeWorker(w: unknown): WorkerInfo | null {
   const backend = str(w.backend);
   const preview = str(w.preview);
   if (model) out.model = model;
+  // The provider leads the pane's meta line: `claude code` for that backend (its own sub/route),
+  // else the model's own provider from its ref or pi's cached catalogs. Unknown: no provider.
+  const provider = backend === "claude-code" ? "claude code" : modelProvider(model);
+  if (provider) out.provider = provider;
   if (effort) out.effort = effort;
   if (backend) out.backend = backend;
   if (preview) out.preview = preview;

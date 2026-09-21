@@ -1,15 +1,31 @@
-import { createMemo, createResource, createSignal, For, onCleanup, Show } from "solid-js";
-import type { AgentsInsight, ContextInfo, SessionSummary, UsageInsight } from "../../shared/protocol";
+import { createEffect, createMemo, createResource, createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { Dynamic } from "solid-js/web";
+import type { AgentsInsight, ContextInfo, SessionGroup, SessionSummary, UsageInsight } from "../../shared/protocol";
 import { fetchTargets } from "../lib/api";
-import { type ArchiveGroupId, groupByArchiveDate } from "../lib/archive";
+import { type ArchiveGroupId, groupByArchiveDate, sessionsWord } from "../lib/archive";
 import { relativeTime, shortModel, tildePath } from "../lib/format";
 import { agentsHref, type GlancePart, usageGlance, usageHref } from "../lib/insights";
 import { isTopSession } from "../lib/regions";
 import { remotePlaceOf, type TargetInfo } from "../lib/remote-session";
-import { home, localRunning, sessionContext, toast } from "../lib/ui-state";
+import {
+  createGroup,
+  dragHasRow,
+  groupDragPath,
+  groupNameOf,
+  groupSections,
+  loadSessionGroups,
+  quoted,
+  removeGroup,
+  renameGroup,
+  sessionGroups,
+  setGroupDragData,
+  setSessionGroup,
+} from "../lib/session-groups";
+import { announce, home, localRunning, sessionContext, toast } from "../lib/ui-state";
 import { activeAgentCounts, activeTeamCount, sessionWorking } from "../lib/workers";
 import { ArchiveCleanup } from "./ArchiveCleanup";
 import { ContextRing } from "./ContextRing";
+import { GroupNameField } from "./Groups";
 import { RemoteGroupDot } from "./RemoteStatus";
 import { Banner, Chip, Icon } from "./ui";
 
@@ -33,6 +49,60 @@ function groupByCwd(sessions: SessionSummary[]): Group[] {
 const ARCHIVE_KEY = "pi-web:archive-open";
 /** One key per Archive date section, same "1"/"0" values as ARCHIVE_KEY. */
 const archiveDateKey = (id: ArchiveGroupId) => `pi-web:archive-date-open-${id}`;
+/** One key per group section; unlike the Archive's dates, a group opens by default — it is the
+    user's own curation, and a collapsed group would hide the sessions they just filed away. */
+const groupOpenKey = (id: string) => `pi-web:group-open-${id}`;
+
+/**
+ * The row being dragged, and the drop target under the pointer. Module state, because one drag
+ * spans the row that started it and the group sections it passes over, and a tab can only drag
+ * one thing at a time. `groupId` is where the row is now, which is what decides whether a drop
+ * moves it or does nothing.
+ */
+const [dragging, setDragging] = createSignal<{ path: string; groupId: string | null } | null>(null);
+const [dropTarget, setDropTarget] = createSignal<string | "remove" | null>(null);
+
+/** Whether a drag over `element` has left it: a dragleave fires whenever the pointer crosses into
+    a child, so the drop state must only clear once the pointer is outside the whole target. */
+const leftTarget = (e: DragEvent, el: HTMLElement) => !(e.relatedTarget instanceof Node) || !el.contains(e.relatedTarget);
+
+/** Which group sections are open, and which of their inline controls is showing. Module state for
+    the same reason as the drag: a group's section is rebuilt whenever the session list refreshes
+    (every few seconds), and an open group, or a rename in progress, must survive that. */
+const [openGroups, setOpenGroups] = createSignal<Record<string, boolean>>({});
+const [editingGroup, setEditingGroup] = createSignal<string | null>(null);
+const [confirmingGroup, setConfirmingGroup] = createSignal<string | null>(null);
+/** The "New group" row has turned into its name field. */
+const [newGroupField, setNewGroupField] = createSignal(false);
+
+/** Open by default (unlike the Archive's dates): a group is the user's own curation, so hiding it
+    would hide the sessions they just filed. The choice persists in sessionStorage, as the Archive's does. */
+const groupOpen = (id: string) => openGroups()[id] ?? sessionStorage.getItem(groupOpenKey(id)) !== "0";
+const onGroupToggle = (id: string, e: Event & { currentTarget: HTMLDetailsElement }) => {
+  const open = e.currentTarget.open;
+  if (open === groupOpen(id)) return; // our own `open` update, not the user's
+  setOpenGroups((m) => ({ ...m, [id]: open }));
+  sessionStorage.setItem(groupOpenKey(id), open ? "1" : "0");
+};
+
+/**
+ * Drops the dragged row into `groupId` (`null` takes it out of the group it is in). Says what
+ * happened through the toast stack and the polite region, and returns whether the list should be
+ * re-read. A drop back where the row already is does nothing at all.
+ */
+async function applyDrop(groupId: string | null): Promise<boolean> {
+  const from = dragging();
+  setDragging(null);
+  setDropTarget(null);
+  if (!from || from.groupId === groupId) return false;
+  const before = from.groupId ? groupNameOf(sessionGroups(), from.groupId) : null;
+  const after = groupId ? groupNameOf(sessionGroups(), groupId) : null;
+  if (!(await setSessionGroup(from.path, groupId))) return false;
+  const done = groupId === null ? `Removed from ${before ? quoted(before) : "its group"}.` : `${before ? "Moved" : "Added"} to ${quoted(after ?? "the group")}.`;
+  toast(done);
+  announce(done);
+  return true;
+}
 
 export const sessionHref = (path: string) => `#/s/${encodeURIComponent(path)}`;
 
@@ -60,7 +130,21 @@ function SessionRow(props: { session: SessionSummary; selected: string | null; n
     return fromList && fromList.window ? fromList : null;
   };
   return (
-    <li class="session-row-shell" classList={{ "session-row-shell-current": props.selected === s().path }}>
+    <li
+      class="session-row-shell"
+      classList={{ "session-row-shell-current": props.selected === s().path, "session-row-dragging": dragging()?.path === s().path }}
+      // The row itself is the drag source (the link inside is not: a browser drags links natively,
+      // and that drag carries a URL, not a session). §2 "Groups": drag a row onto a group section.
+      draggable="true"
+      onDragStart={(e) => {
+        setGroupDragData(e, s().path);
+        setDragging({ path: s().path, groupId: s().groupId ?? null });
+      }}
+      onDragEnd={() => {
+        setDragging(null);
+        setDropTarget(null);
+      }}
+    >
       <div class="session-rail">
         {/* At most one state: live wins over busy. TUI is static now; Busy is what pulses. */}
         <Show when={s().live}>
@@ -108,6 +192,7 @@ function SessionRow(props: { session: SessionSummary; selected: string | null; n
       <a
         class="list-row list-row-interactive session-row"
         href={sessionHref(s().path)}
+        draggable={false}
         aria-current={props.selected === s().path ? "page" : undefined}
       >
         <div class="list-main">
@@ -168,8 +253,10 @@ function SessionRow(props: { session: SessionSummary; selected: string | null; n
   );
 }
 
-/** Sessions grouped by folder, newest first: the markup of spec/02-session-list.md §2 "Anatomy". */
-function GroupList(props: { groups: Group[]; selected: string | null; now: number; idPrefix: string; targets: TargetInfo[] }) {
+/** Sessions grouped by folder, newest first: the markup of spec/02-session-list.md §2 "Anatomy".
+    `level` is the heading level a folder label takes: h3 directly under a region, h4 inside a
+    group, where the group's own label already sits at h3. */
+function GroupList(props: { groups: Group[]; selected: string | null; now: number; idPrefix: string; targets: TargetInfo[]; level?: 4 }) {
   return (
     <For each={props.groups}>
       {(group, gi) => {
@@ -179,7 +266,8 @@ function GroupList(props: { groups: Group[]; selected: string | null; now: numbe
         const label = (name: string) => props.targets.find((t) => t.name === name)?.label || name;
         return (
           <section class="session-group" aria-labelledby={`${props.idPrefix}-${gi()}`}>
-            <h3
+            <Dynamic
+              component={props.level === 4 ? "h4" : "h3"}
               class="list-group-label"
               id={`${props.idPrefix}-${gi()}`}
               title={remote ? `${remote.target}${host() ? ` (${host()})` : ""}:${remote.remoteCwd}` : group.cwd}
@@ -202,7 +290,7 @@ function GroupList(props: { groups: Group[]; selected: string | null; now: numbe
                 <bdi>{remote ? remote.remoteCwd : tildePath(group.cwd, home())}</bdi>
               </span>
               <span class="text-num">{group.sessions.length}</span>
-            </h3>
+            </Dynamic>
             <ul class="list">
               <For each={group.sessions}>
                 {(s) => <SessionRow session={s} selected={props.selected} now={props.now} />}
@@ -212,6 +300,125 @@ function GroupList(props: { groups: Group[]; selected: string | null; now: numbe
         );
       }}
     </For>
+  );
+}
+
+/**
+ * One user-made group: a collapsible section above Live & web that holds the same folder groups and
+ * rows as every other region (spec/02-session-list.md §2 "Groups"). It keeps its own Rename and Delete, and
+ * it is a drop target while a row is being dragged. An empty group stays visible — that is what a
+ * group is when the user makes it, and dragging a row in is how it fills.
+ */
+function GroupBlock(props: {
+  /** The group itself: its identity is what keeps this section mounted across list polls (§2 "Groups"). */
+  group: SessionGroup;
+  /** The rows it holds right now, from the sidebar's search-hit list. */
+  sessions: SessionSummary[];
+  selected: string | null;
+  now: number;
+  targets: TargetInfo[];
+  onChanged(): void;
+}) {
+  const group = () => props.group;
+  const count = () => props.sessions.length;
+  const over = () => dropTarget() === group().id;
+
+  const deleteGroup = async () => {
+    const n = count();
+    const name = group().name;
+    setConfirmingGroup(null);
+    if (!(await removeGroup(group().id))) return;
+    toast(
+      n === 0
+        ? `Deleted ${quoted(name)}. It had no sessions.`
+        : `Deleted ${quoted(name)}. Its ${sessionsWord(n)} ${n === 1 ? "is" : "are"} ungrouped.`,
+    );
+    props.onChanged(); // the rows it held carry a groupId that is gone
+  };
+
+  return (
+    <details
+      class="group-section"
+      classList={{ "group-section-drop": over() }}
+      open={groupOpen(group().id)}
+      onToggle={(e) => onGroupToggle(group().id, e)}
+      onDragOver={(e) => {
+        if (!dragHasRow(e)) return;
+        e.preventDefault();
+        if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+        if (!over()) setDropTarget(group().id);
+      }}
+      onDragLeave={(e) => {
+        if (over() && leftTarget(e, e.currentTarget)) setDropTarget(null);
+      }}
+      onDrop={(e) => {
+        e.preventDefault();
+        if (groupDragPath(e)) void applyDrop(group().id).then((changed) => changed && props.onChanged());
+      }}
+    >
+      <summary class="list-group-label group-label" title={group().name}>
+        <Icon name="chevron-right" small class="icon-twist" />
+        <Icon name="folder" small />
+        <span class="group-name">
+          <bdi>{group().name}</bdi>
+        </span>
+        <span class="text-num">{count()}</span>
+      </summary>
+      <Show when={count() > 0} fallback={<p class="sidebar-region-note">No sessions yet. Drag one here.</p>}>
+        <GroupList
+          groups={groupByCwd(props.sessions)}
+          selected={props.selected}
+          now={props.now}
+          idPrefix={`g-${group().id}`}
+          targets={props.targets}
+          level={4}
+        />
+      </Show>
+      {/* Rename and Delete in place, in the section's own quiet tool row (as the Archive does
+          with Cleanup): a button inside a <summary> would fight the section's own toggle. */}
+      <div class="group-tools">
+        <Show
+          when={editingGroup() === group().id}
+          fallback={
+            <Show
+              when={confirmingGroup() === group().id}
+              fallback={
+                <>
+                  <button type="button" class="button button-sm button-ghost" onClick={() => setEditingGroup(group().id)}>
+                    Rename
+                  </button>
+                  <button type="button" class="button button-sm button-ghost" onClick={() => setConfirmingGroup(group().id)}>
+                    Delete group
+                  </button>
+                </>
+              }
+            >
+              <p class="group-tools-question">
+                {count() === 0
+                  ? `Delete ${quoted(group().name)}? Nothing is in it.`
+                  : `Delete ${quoted(group().name)}? Its ${sessionsWord(count())} stay${count() === 1 ? "s" : ""} in the list.`}
+              </p>
+              <button type="button" class="button button-sm button-destructive" onClick={() => void deleteGroup()}>
+                Delete group
+              </button>
+              <button type="button" class="button button-sm button-ghost" onClick={() => setConfirmingGroup(null)}>
+                Cancel
+              </button>
+            </Show>
+          }
+        >
+          <GroupNameField
+            label={`Rename ${quoted(group().name)}`}
+            initial={group().name}
+            onDone={(name) => {
+              setEditingGroup(null);
+              if (name !== group().name) void renameGroup(group().id, name);
+            }}
+            onCancel={() => setEditingGroup(null)}
+          />
+        </Show>
+      </div>
+    </details>
   );
 }
 
@@ -291,6 +498,8 @@ export function Sidebar(props: {
   const [showSkeleton, setShowSkeleton] = createSignal(false);
   const skeletonTimer = setTimeout(() => setShowSkeleton(true), 300);
   let search!: HTMLInputElement;
+  // The tab's copy of the group list: the pane's region and the session pane's menu share it.
+  onMount(() => void loadSessionGroups());
 
   // "/" anywhere outside a text field focuses search.
   const onKey = (e: KeyboardEvent) => {
@@ -334,6 +543,30 @@ export function Sidebar(props: {
     return groupByArchiveDate(sorted, new Date(props.now)).map((d) => ({ ...d, groups: groupByCwd(d.items) }));
   });
   const archiveTotal = () => all().filter((s) => !isTop(s)).length;
+
+  // Groups (§2 "Groups"): the user's own sections, above every region. They cut across regions — a
+  // group can hold a TUI-live session and an archived one — so they read the whole search-hit list,
+  // not one region's slice.
+  const searching = () => !!query().trim();
+  const sections = createMemo(() => groupSections(hits(), sessionGroups(), searching()));
+  /** A group's rows, from the same hit list the sections were built from. */
+  const rowsOf = (id: string) => hits().filter((s) => s.groupId === id);
+  /** With no query the region always stands: it holds the "New group" row, the feature's front
+      door. While searching it appears only when a group has a match — or when a row is in flight
+      and needs its "Remove from …" target, which a fruitless search would otherwise hide. */
+  const groupsShown = () => !searching() || sections().length > 0 || !!dragging()?.groupId;
+
+  // A groupId this tab doesn't know means the local group list is behind (another tab, another
+  // server): without this the row would silently vanish from the Groups region until a reload.
+  // Asked once per newly seen id, so a stale id can't turn into a poll of its own.
+  let askedGroups = new Set<string>();
+  createEffect(() => {
+    const known = new Set(sessionGroups().map((g) => g.id));
+    const missing = new Set((hits().map((s) => s.groupId).filter((id): id is string => !!id && !known.has(id))));
+    if (missing.size === 0 || [...missing].every((id) => askedGroups.has(id))) return;
+    askedGroups = new Set([...askedGroups, ...missing]);
+    void loadSessionGroups();
+  });
 
   // Collapsed by default; the user's own choice persists for the tab (spec/02-session-list.md §2 "Regions").
   const [storedOpen, setStoredOpen] = createSignal(sessionStorage.getItem(ARCHIVE_KEY) === "1");
@@ -491,6 +724,74 @@ export function Sidebar(props: {
               Clear Search
             </button>
           </div>
+        </Show>
+
+        {/* The user's own groups, above every region (§2 "Groups"): the same rows and folder
+            groups as below, plus the two controls that make a group and name it. */}
+        <Show when={groupsShown()}>
+          <section class="sidebar-region sidebar-groups" aria-labelledby="r-groups">
+            <h2 class="sidebar-region-head" id="r-groups">
+              Groups{" "}
+              <span class="sidebar-region-count">
+                · {searching() ? `${sections().length} of ${sessionGroups().length}` : sessionGroups().length}
+              </span>
+            </h2>
+            {/* Making a group is the region's one action, and it stays where it is: the field
+                replaces the row in place, so nothing moves while the user types. */}
+            <Show when={!searching()}>
+              <Show
+                when={newGroupField()}
+                fallback={
+                  <button type="button" class="list-row list-row-interactive group-new" onClick={() => setNewGroupField(true)}>
+                    <Icon name="plus" small />
+                    <span class="list-title">New group</span>
+                  </button>
+                }
+              >
+                <div class="group-field-row">
+                  <GroupNameField
+                    label="New group name"
+                    onDone={(name) => {
+                      setNewGroupField(false);
+                      void createGroup(name);
+                    }}
+                    onCancel={() => setNewGroupField(false)}
+                  />
+                </div>
+              </Show>
+            </Show>
+            <Show when={!searching() && sessionGroups().length === 0}>
+              <p class="sidebar-region-note">No groups yet. Make one, then drag a session into it.</p>
+            </Show>
+            <For each={sections().map((s) => s.group)}>
+              {(group) => (
+                <GroupBlock group={group} sessions={rowsOf(group.id)} selected={props.selected} now={props.now} targets={targets()} onChanged={props.onRefresh} />
+              )}
+            </For>
+            {/* Only while a grouped row is in flight: dropping here takes it out of its group. */}
+            <Show when={dragging()?.groupId}>
+              <div
+                class="group-remove"
+                classList={{ "group-remove-over": dropTarget() === "remove" }}
+                onDragOver={(e) => {
+                  if (!dragHasRow(e)) return;
+                  e.preventDefault();
+                  if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+                  if (dropTarget() !== "remove") setDropTarget("remove");
+                }}
+                onDragLeave={(e) => {
+                  if (dropTarget() === "remove" && leftTarget(e, e.currentTarget)) setDropTarget(null);
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  if (groupDragPath(e)) void applyDrop(null).then((changed) => changed && props.onRefresh());
+                }}
+              >
+                <Icon name="close" small />
+                Remove from {quoted(groupNameOf(sessionGroups(), dragging()?.groupId ?? undefined) ?? "its group")}
+              </div>
+            </Show>
+          </section>
         </Show>
 
         {/* Hidden when a search empties it; kept with a note when there's simply nothing on top. */}

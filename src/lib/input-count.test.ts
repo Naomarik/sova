@@ -28,3 +28,8 @@ test("the trigger's copy is plural-correct", () => {
   assert.equal(inputsText(1), "1 input");
   assert.equal(inputsText(7), "7 inputs");
 });
+
+test("inputCount counts a fired wake nudge as an input too", () => {
+  const items = [item("a", "user"), item("b", "assistant-text"), item("c", "wake"), item("d", "tool-call")];
+  assert.equal(inputCount(items), 2);
+});

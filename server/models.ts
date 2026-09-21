@@ -20,6 +20,38 @@ function storeWindow(provider: string, id: string): number | null {
   }
 }
 
+/** Cached per model id: `models-store.json` changes rarely, and a worker listing asks per row. */
+const providerCache = new Map<string, string | null>();
+
+/**
+ * The provider that serves a model, for the subagents pane's meta line (which leads with it). A ref
+ * keeps its own prefix (`zai/glm-5.3` → `zai`); a bare id is looked up in pi's cached catalogs
+ * (`models-store.json`), which is what a worker's live record usually carries. Lower-case. Unknown,
+ * empty and absent all give null: callers show no provider rather than guess one.
+ */
+export function modelProvider(ref: string | null | undefined): string | null {
+  const v = (ref ?? "").trim();
+  if (!v) return null;
+  const slash = v.indexOf("/"); // provider has no "/", model ids may
+  if (slash > 0) return v.slice(0, slash).toLowerCase();
+  const hit = providerCache.get(v);
+  if (hit !== undefined) return hit;
+  let found: string | null = null;
+  try {
+    const store = JSON.parse(readFileSync(MODELS_STORE_FILE, "utf8")) as Record<string, { models?: { id?: unknown }[] } | undefined>;
+    for (const [provider, entry] of Object.entries(store)) {
+      if (entry?.models?.some((m) => m?.id === v)) {
+        found = provider.toLowerCase();
+        break;
+      }
+    }
+  } catch {
+    // No catalog cached: no provider, never a guess.
+  }
+  providerCache.set(v, found);
+  return found;
+}
+
 /**
  * contextWindow for "provider/id": the SDK model registry first (includes custom models.json
  * providers such as ollama-cloud), then models-store.json. Cached per ref; unknown → null.

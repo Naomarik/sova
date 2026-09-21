@@ -28,11 +28,21 @@ live-watch sessions that are open in the CLI/TUI, spawn new sessions.
   `pi-config/extensions/mode/state.ts` and `minor.ts` (hence `allowImportingTsExtensions`), and
   `server/targets.ts` imports `pi-config/extensions/remote/argv.ts` (the target schema,
   validation and the single argv builder that both the `remote` extension and the web server use to
-  run a command on a target), so an edit to any of the three can break pi-web's typecheck. Keep
+  run a command on a target) and `pi-config/extensions/remote/mount.ts` (the ONE sshfs mount module:
+  `mountArgv`/`mount`/`unmount`/`verifyMounted`/`isMounted`; `server/chat-manager.ts` imports it
+  too, for its hung-mount guard), so an edit to any of the four can break pi-web's typecheck. Keep
   them pi-runtime-free (node builtins and, for the mode pair, each other only), and import nothing
   else from pi-config. `argv.ts` is also the quoting boundary: every path that reaches a far shell is
   single-quote-escaped there, and callers spawn its argv without a local shell. The web mode switch calls that extension's
   `/mode` command handler directly (`ChatSession.applyMode`), so its arguments are a contract too.
+  **sshfs mounts** (a remote target's optional `mount: {remote, local}` config): every mount is
+  created by `remote/mount.ts` with `reconnect` and the ServerAlive pair — a hung fuse mount
+  blocks the syscall, and pi-web checks session cwds with sync fs calls **on the server's event
+  loop**, so a bare `statSync`/`existsSync` into a hung mount freezes the whole webapp. Never
+  bare-stat a path under a target's mount point: `isMounted` (a /proc read, never touches the
+  mount) first, then the bounded child-process `verifyMounted`. The watcher does NOT watch
+  `pi-config/extensions/remote/**`, so edits there (argv.ts, mount.ts) don't restart the running
+  server — it keeps the old code until its next restart.
   Tests run per extension (see `pi-config/README.md`). `pi-config/install.sh` must stay standalone,
   needing nothing outside `pi-config/`.
 

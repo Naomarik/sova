@@ -299,6 +299,11 @@ messages. Every other row goes: chapters, compactions, rewind markers, subagents
 finished, model/thinking/mode changes and past summaries. The rows a fresh rewind left behind
 (below) stay — they are your messages too, and the filter is what `/tree` opens.
 
+**A fired wake nudge is an `input` row too** (§3 "wake" — it's a real user message under the
+hood, just rendered as a card in the thread). Its title is its reason, or "Wake nudge n1" when
+the nudge carried none — never the tagged message's first line. It gets the same density line
+and Rewind as any other input; nothing else distinguishes it on this axis.
+
 The list's name follows it: `aria-label="Session timeline, your messages only"`, and the foot line
 starts "Your messages only, newest first,".
 

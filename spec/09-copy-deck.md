@@ -22,6 +22,16 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Top region head | Live & web · {n} · searching: Live & web · {hits} of {total} |
 | Archive head | Archive · {n} · searching: Archive · {hits} of {total} |
 | Archive date sections | Today · Yesterday · Last 7 days · Last 30 days · Older (each with its count) |
+| Groups region head (§2 "Groups") | Groups · {n} where n = **groups** · searching: Groups · {matching groups} of {all groups} |
+| New group row | New group |
+| Group name field (New group, Rename) | placeholder Group name · `aria-label` "New group name" / "Rename “{name}”" · button `Save` · Enter saves, blur saves, Escape cancels |
+| Group section label | {name} (own case, no eyebrow), then its count · `title`: {name} |
+| Empty group | No sessions yet. Drag one here. |
+| Groups region, no groups | No groups yet. Make one, then drag a session into it. |
+| Group tool row | `Rename` · `Delete group` · asking: with sessions "Delete “{name}”? Its {n} sessions stay in the list." (1 session: "… Its 1 session stays …"), empty "Delete “{name}”? Nothing is in it." — with `Delete group` · `Cancel` |
+| Group toasts | "Added to “{name}”." · "Moved to “{name}”." · "Removed from “{name}”." · "Deleted “{name}”. Its {n} sessions are ungrouped." (1: "… Its 1 session is ungrouped.") · "Deleted “{name}”. It had no sessions." · failures: "Couldn't create the group. {server message}" · "Couldn't rename the group. …" · "Couldn't delete the group. …" · "Couldn't move this session. {server message}" |
+| Remove-from-group drop row (only while dragging a grouped row) | Remove from “{name}” |
+| Move into group (session pane, §3) | trigger `Move into group` · `title`: Move into group / In the group “{name}” · rows: No group, then every group, `New group…` · Identity fact: Group: {name} / None · popover failure: "Couldn't move this session." then "This session's group is unchanged." |
 | Archive cleanup toolbar | eyebrow "Delete" · buttons `Older Than 7 Days` · `Older Than 30 Days` · `Empty Sessions` (`aria-label` "Delete Sessions Older Than 7 Days", …) · pending "Checking…" |
 | Archive cleanup dialog | **Delete {n} sessions?** {scope} This permanently deletes their transcript files — this can't be undone. · skipped "{n} skipped: {a} open in a TUI, {b} mid-turn, {c} just written. They stay as they are." · buttons `Delete {n} Sessions` ("Deleting…") · `Cancel` · none: **0 sessions to delete.** · `Close` |
 | Archive cleanup toasts | "Deleted {n} sessions." (+ " {skipped}.") · "Couldn't check what to delete. Nothing was deleted. {server message}" · "Couldn't delete sessions. Some may be gone; the list is refreshed. {server message}" |
@@ -50,6 +60,9 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Report row, closed | {id} · {name} · chip · {first line} (hidden prefix "Report from ", or "Message: " without an agent) |
 | Report chips | Failed · Stopped · Aborted · Success · Done · Starting · Running · Waiting · Stopping |
 | Report, open | Error: {message} · Session `{path}` · No output. · Truncated at 4000 characters. Use agent_transcript for the rest. |
+| Wake nudge card, closed | `Wake nudge {id}` · {reason, or blank} · `fired {HH:MM}` (· `{late} late`, only when overdue) |
+| Wake nudge card, open | the fired message, verbatim, all four lines |
+| Wake nudge in Inputs Only / the Timeline | {reason}, or `Wake nudge {id}` when it carries none |
 
 ## Live-watch
 
@@ -284,9 +297,9 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 |---|---|
 | Trigger | `{n} subagents working…` (1: `1 subagent working…`) · while the parent's turn runs: the counts only, `{n} subagents` · accessible name: `{n} subagents working — show subagents` |
 | Pane | label and title: Subagents · chip: `{w} working` (omitted at 0) · Close `aria-label`: Close subagents |
-| Row meta | `{model}` · settled: `{model} · as of {HH:MM}` · idle after a failure adds: · last task failed |
+| Row meta | `{provider}` · `{model}` · settled: `{model} · as of {HH:MM}` · idle after a failure adds: · last task failed (the provider leads: `claude code`, `zai`, …) |
 | Row status chips | Working · Starting · Idle · Stopping · Done · Failed · Stopped |
-| View head meta | `{id}` · `{model}` · Read only (a claude-code worker adds · Claude Code before Read only) |
+| View head meta | `{id}` · `{provider}` · `{model}` · Read only (a claude-code worker's provider reads `claude code`) |
 | Transcript section `aria-label` | {name} transcript |
 | No workers | **0 subagents in this session.** Workers it starts show up here while they run. |
 | None selected | **{n} subagents, {w} working.** Pick one to read its transcript. |

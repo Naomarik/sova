@@ -14,11 +14,11 @@ import { join } from "node:path";
 const agentDir = mkdtempSync(join(tmpdir(), "pi-remote-agent-"));
 process.env.PI_CODING_AGENT_DIR = agentDir;
 
-const { createEditToolDefinition, createLsToolDefinition, createReadToolDefinition, createWriteToolDefinition } = await import("@earendil-works/pi-coding-agent");
-const { placeholderRoot } = await import("./argv.ts");
+const { createBashToolDefinition, createEditToolDefinition, createLsToolDefinition, createReadToolDefinition, createWriteToolDefinition } = await import("@earendil-works/pi-coding-agent");
+const { placeholderDir, placeholderRoot } = await import("./argv.ts");
 const { CHANNEL_PROGRAM } = await import("./channel.ts");
 const { runArgv } = await import("./exec.ts");
-const { channelOver, mutating, Remote } = await import("./index.ts");
+const { channelOver, mutating, Remote, remoteGrep } = await import("./index.ts");
 type RemoteDeps = import("./index.ts").RemoteDeps;
 type ChannelLike = import("./index.ts").ChannelLike;
 type RunOptions = import("./exec.ts").RunOptions;
@@ -422,5 +422,178 @@ test("the real channel loop, locally: reads ride it with zero spawns; errors kee
 	const r = await remote.run("echo out; echo warn >&2");
 	assert.deepEqual([r.stdout.toString(), r.stderr], ["out\n", "warn\n"], "stderr stays out of the output parsed");
 	assert.equal(calls.length, 0);
+	done();
+});
+
+// ---------------------------------------------------------------------------
+// mounted mode: read/write/edit through the mount; bash/ls/find/grep remote; no channel
+
+/**
+ * A mounted-session scaffold: a "far" tree (the fake exec runs far commands locally with the
+ * synthetic root /srv/app rewritten to it), a plain local dir standing in as the mount point
+ * (the isMounted dep decides whether it counts as mounted), a dir outside the mount, and the
+ * invocation counter. No network.
+ */
+function mountedRemote(isMounted: RemoteDeps["isMounted"], opts: { channel?: RemoteDeps["channel"] } = {}) {
+	const far = mkdtempSync(join(tmpdir(), "pi-remote-far-"));
+	const mountPoint = mkdtempSync(join(tmpdir(), "pi-mount-"));
+	const localCwd = join(mountPoint, "work");
+	const outside = mkdtempSync(join(tmpdir(), "pi-mount-outside-"));
+	mkdirSync(join(far, "work"));
+	mkdirSync(localCwd);
+	writeFileSync(join(far, "work", "far-only.txt"), "far view\n");
+	writeFileSync(join(localCwd, "a.txt"), "local view\n");
+	writeFileSync(join(outside, "f.txt"), "host view\n");
+	const calls: string[] = [];
+	const exec = async (argv: readonly string[], o?: RunOptions) => {
+		calls.push(argv[argv.length - 1]!);
+		return runArgv(["sh", "-c", (argv[argv.length - 1] as string).replaceAll("/srv/app", far)], o);
+	};
+	const remote = new Remote(
+		{ name: "t", kind: "ssh", ssh: { host: "example.invalid" }, cwd: "/srv/app", mount: { remote: "/srv/app", local: mountPoint } },
+		[],
+		localCwd,
+		{ exec, isMounted, ...opts },
+	);
+	const done = () => {
+		remote.dispose();
+		for (const d of [far, mountPoint, outside]) rmSync(d, { recursive: true, force: true });
+	};
+	return { far, mountPoint, localCwd, outside, calls, remote, done };
+}
+
+test("mounted mode: read/write/edit local through the mount; bash, ls, find, grep remote; no channel", async () => {
+	const ch = fakeChannel();
+	const { far, mountPoint, localCwd, outside, calls, remote, done } = mountedRemote(() => true, { channel: ch.factory });
+	const info = await remote.preflight();
+	assert.equal(remote.mountedMode, true);
+	assert.equal(info.cwd, `${far}/work`, "the far cwd is derived through the mount mapping, not the placeholder");
+	assert.equal(remote.toFar(join(localCwd, "a.txt")), "/srv/app/work/a.txt");
+	calls.length = 0;
+
+	// read → LOCAL: the mount's copy, zero far invocations.
+	const read = createReadToolDefinition(localCwd, { operations: remote.readOps() });
+	assert.equal(text(await read.execute("1", { path: "a.txt" }, undefined, undefined, undefined as never)), "local view\n");
+	// write → LOCAL (parents through the mount).
+	const write = createWriteToolDefinition(localCwd, { operations: remote.writeOps() });
+	await write.execute("2", { path: "new/d.txt", content: "made" }, undefined, undefined, undefined as never);
+	assert.equal(readFileSync(join(localCwd, "new/d.txt"), "utf8"), "made");
+	// edit → LOCAL.
+	const edit = createEditToolDefinition(localCwd, { operations: remote.editOps() });
+	await edit.execute("3", { path: "a.txt", edits: [{ oldText: "local", newText: "LOCAL" }] }, undefined, undefined, undefined as never);
+	assert.equal(readFileSync(join(localCwd, "a.txt"), "utf8"), "LOCAL view\n");
+	assert.equal(readFileSync(join(far, "work", "far-only.txt"), "utf8"), "far view\n", "the far tree untouched by the local tools");
+	assert.equal(calls.length, 0, "read/write/edit cost zero far invocations in mounted mode");
+
+	// bash → REMOTE, always: the cwd maps through the mount config and the host's shell runs there.
+	const bash = createBashToolDefinition(localCwd, { operations: remote.bashOps() });
+	const b = await bash.execute("4", { command: "pwd" }, undefined, undefined, undefined as never);
+	assert.ok(text(b).includes(`${far}/work`), `bash ran on the host: ${text(b)}`);
+	assert.equal(calls.length, 1);
+	// ls → REMOTE: it lists the far tree, not the mount's local dir.
+	const ls = createLsToolDefinition(localCwd, { operations: remote.lsOps() });
+	assert.equal(text(await ls.execute("5", { path: "." }, undefined, undefined, undefined as never)), "far-only.txt");
+	// find → REMOTE.
+	assert.deepEqual(await remote.findOps().glob("*.txt", localCwd, { ignore: [], limit: 10 }), ["far-only.txt"]);
+	// grep → REMOTE.
+	const g = await remoteGrep(remote).execute("6", { pattern: "far view" }, undefined);
+	assert.match(text(g), /far-only\.txt:1: far view/);
+	assert.equal(calls.length, 4, "exactly the four remote tools spawned; nothing for read/write/edit");
+
+	// The channel is never built in mounted mode (fuse provides the fast lane; a channel would
+	// cost a second ssh login).
+	assert.equal(ch.made.length, 0);
+	const s = remote.status();
+	assert.deepEqual([s.mounted, s.mountPoint, s.pinned, s.channelState], [true, mountPoint, false, "off"]);
+	assert.deepEqual(
+		Object.keys(s).sort(),
+		["at", "channelState", "host", "lastOkAt", "latencyMs", "mountPoint", "mounted", "pinned", "state", "target"],
+		"mounted and mountPoint are added; the other fields unchanged",
+	);
+
+	// An absolute path OUTSIDE the mount still means the host, exactly as today.
+	assert.equal((await remote.readOps().readFile(join(outside, "f.txt"))).toString(), "host view\n");
+	assert.equal(calls.length, 5);
+	done();
+});
+
+test("mounted mode with the mount gone: file tools fail closed; the remote tools still run", async () => {
+	let up = true;
+	const { localCwd, outside, calls, remote, done } = mountedRemote(() => up);
+	await remote.preflight();
+	calls.length = 0;
+	const read = remote.readOps();
+	await read.access(join(localCwd, "a.txt")); // works while the mount is up
+	up = false;
+	await assert.rejects(read.access(join(localCwd, "a.txt")), /the sshfs mount for target t at .* is gone; remount it \(\/remote mount\)/);
+	await assert.rejects(read.readFile(join(localCwd, "a.txt")), /is gone/);
+	await assert.rejects(remote.writeOps().writeFile(join(localCwd, "x.txt"), "y"), /is gone/);
+	await assert.rejects(remote.editOps().readFile(join(localCwd, "a.txt")), /is gone/);
+	// paths outside the mount, and the remote tools, are unaffected:
+	assert.equal((await read.readFile(join(outside, "f.txt"))).toString(), "host view\n");
+	assert.equal((await remote.bashOps().exec("true", localCwd, { onData: () => {} })).exitCode, 0);
+	assert.equal(calls.length, 2);
+	// …and the mount coming back heals the file tools with no re-registration:
+	up = true;
+	assert.equal((await read.readFile(join(localCwd, "a.txt"))).toString(), "local view\n");
+	done();
+});
+
+test("a mount-configured target, placeholder cwd: today's behavior exactly, channel and all", async () => {
+	const far = mkdtempSync(join(tmpdir(), "pi-remote-far-"));
+	const mountPoint = mkdtempSync(join(tmpdir(), "pi-mount-"));
+	const cwd = placeholderDir(agentDir, "t", far);
+	mkdirSync(cwd, { recursive: true });
+	writeFileSync(join(cwd, "a.txt"), "x");
+	writeFileSync(join(far, "a.txt"), "x"); // the copy the fake far side serves
+	const calls: string[] = [];
+	const exec = async (argv: readonly string[], o?: RunOptions) => {
+		calls.push(argv[argv.length - 1]!);
+		return runArgv(["sh", "-c", argv[argv.length - 1]!], o);
+	};
+	const ch = fakeChannel();
+	const remote = new Remote(
+		{ name: "t", kind: "ssh", ssh: { host: "example.invalid" }, cwd: far, mount: { remote: "/srv/app", local: mountPoint } },
+		[],
+		cwd,
+		{ exec, channel: ch.factory, isMounted: () => true },
+	);
+	try {
+		assert.equal(remote.mountedMode, false, "the cwd decides the mode, not the target's mount");
+		await remote.preflight();
+		calls.length = 0;
+		const read = createReadToolDefinition(cwd, { operations: remote.readOps() });
+		assert.equal(text(await read.execute("1", { path: "a.txt" }, undefined, undefined, undefined as never)), "x");
+		assert.deepEqual([calls.length, ch.made[0]!.runs], [0, 1], "read stays remote (over the channel), the target's mount being up changes nothing");
+		await sleep(0);
+		assert.equal(ch.made.length, 1, "the channel warms exactly as today");
+		// the status is TARGET-level: mounted reflects the live table whatever this session's cwd is.
+		const s = remote.status();
+		assert.equal(s.mounted, true);
+		assert.equal(s.mountPoint, mountPoint);
+		// a session whose cwd is inside the mount point with the mount DOWN at start is not mounted
+		// mode either: it keeps today's remote routing.
+		const down = new Remote(
+			{ name: "t", kind: "ssh", ssh: { host: "example.invalid" }, cwd: "/srv/app", mount: { remote: "/srv/app", local: mountPoint } },
+			[],
+			join(mountPoint, "work"),
+			{ exec, isMounted: () => false },
+		);
+		assert.equal(down.mountedMode, false);
+		assert.equal(down.status().mounted, false, "…but the status reports the real table: not mounted");
+		down.dispose();
+	} finally {
+		remote.dispose();
+		rmSync(far, { recursive: true, force: true });
+		rmSync(mountPoint, { recursive: true, force: true });
+	}
+});
+
+test("a plain target's status: mounted false, no mountPoint, the rest as before", async () => {
+	const { remote, done } = await setup();
+	const s = remote.status();
+	assert.equal(s.mounted, false);
+	assert.equal(s.mountPoint, undefined);
+	assert.ok(!("mountPoint" in s));
 	done();
 });

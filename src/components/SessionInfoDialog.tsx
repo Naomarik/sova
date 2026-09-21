@@ -22,6 +22,7 @@ const SKELETON_MS = 300;
  *   items    this chat's transcript rows (for the model/thinking/mode timeline)
  *   onClose  close and return focus to the flyout trigger
  *   onArchiveChanged  after Archive/Unarchive succeeds: re-read the session list
+ *   onGroupsChanged  after a group change succeeds: re-read the session list
  */
 export function SessionInfoDialog(props: {
   path: string;
@@ -30,6 +31,7 @@ export function SessionInfoDialog(props: {
   context?: () => ContextInfo | null;
   items?: () => TranscriptItem[];
   onArchiveChanged?: () => void;
+  onGroupsChanged?: () => void;
 }) {
   const [insight, setInsight] = createSignal<SessionInsight | null>(null);
   const [error, setError] = createSignal<string | null>(null);
@@ -107,6 +109,7 @@ export function SessionInfoDialog(props: {
             items={props.items?.() ?? []}
             now={now()}
             onArchiveChanged={props.onArchiveChanged}
+            onGroupsChanged={props.onGroupsChanged}
           />
         </div>
 

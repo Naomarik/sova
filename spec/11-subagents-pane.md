@@ -147,6 +147,8 @@ below an 885px window, and folded is always stacked.
       <span class="subagent-row-name">designer</span>
       <span class="subagent-row-status"><span class="chip chip-accent chip-live"><i class="chip-dot"></i>Working</span></span>
       <span class="subagent-row-meta meta-line">
+        <span>claude code</span>
+        <span class="meta-line-sep" aria-hidden="true">·</span>
         <span class="text-mono meta-line-shrink" title="anthropic/claude-opus-5[1m]">opus-5 1M</span>
         <span class="meta-line-sep" aria-hidden="true">·</span>
         <span class="text-mono" title="18.4k in · 5.3k out · 242k cache read · 32.1k cache write · $0.41">23.7k</span>
@@ -162,10 +164,14 @@ below an 885px window, and folded is always stacked.
   the meta. Line 3 is the preview, mono and one line, **only while working**. Every line
   ellipsizes; the full preview goes in the row's `title`.
 - **The meta line ranks its facts** (`.meta-line`, shared with the transcript view's meta). It is
-  a nowrap flex row: the tokens, the "as of" time and "last task failed" keep their room, and the
-  **model id is the only part that shrinks** (`.meta-line-shrink`, ellipsized, 3ch floor). A
-  number that's been clipped is worse than a name that has, and the model is the one fact already
-  known from elsewhere. Separators are `.meta-line-sep` dots, `aria-hidden`.
+  a nowrap flex row and **leads with the provider** — the route that serves the model
+  (`WorkerInfo.provider`): `claude code` for that backend, else the model ref's own provider, else
+  the one pi's cached catalogs give for a bare id. The provider, the tokens, the "as of" time and
+  "last task failed" keep their room, and the **model id is the only part that shrinks**
+  (`.meta-line-shrink`, ellipsized, 3ch floor). A number that's been clipped is worse than a name
+  that has, the model is the one fact already known from elsewhere, and a provider that clipped
+  would be the least useful half of `zai · glm-5.3`. A worker whose provider can't be derived shows
+  none: the pane never guesses one. Separators are `.meta-line-sep` dots, `aria-hidden`.
 - **Model ids are shortened for display**: no provider, no dated build, a dotted version, and the
   context variant spelled out — `anthropic/claude-haiku-4-5-20251001` → `haiku-4.5`,
   `claude-opus-5[1m]` → `opus-5 1M`. An id that matches none of that is left as it is
@@ -175,13 +181,13 @@ below an 885px window, and folded is always stacked.
 
   | Worker | Chip | Meta |
   |---|---|---|
-  | `running` | `.chip.chip-accent.chip-live` Working | `{model}` · `{tokens}` (the preview line carries the now) |
-  | `starting` | `.chip.chip-accent.chip-live` Starting | `{model}` |
-  | `waiting` | `.chip` + dot, Idle | `{model}` · `{tokens}` · as of `{HH:MM}` · after a failure: · last task failed |
-  | `stopping` | `.chip` + dot, Stopping | `{model}` · `{tokens}` |
-  | `done` | `.chip.chip-success` Done | `{model}` · `{tokens}` · as of `{HH:MM}` |
-  | `error` | `.chip.chip-error` Failed | `{model}` · `{tokens}` · as of `{HH:MM}` |
-  | `killed` | `.chip` + dot, Stopped | `{model}` · `{tokens}` · as of `{HH:MM}` |
+  | `running` | `.chip.chip-accent.chip-live` Working | `{provider}` · `{model}` · `{tokens}` (the preview line carries the now) |
+  | `starting` | `.chip.chip-accent.chip-live` Starting | `{provider}` · `{model}` |
+  | `waiting` | `.chip` + dot, Idle | `{provider}` · `{model}` · `{tokens}` · as of `{HH:MM}` · after a failure: · last task failed |
+  | `stopping` | `.chip` + dot, Stopping | `{provider}` · `{model}` · `{tokens}` |
+  | `done` | `.chip.chip-success` Done | `{provider}` · `{model}` · `{tokens}` · as of `{HH:MM}` |
+  | `error` | `.chip.chip-error` Failed | `{provider}` · `{model}` · `{tokens}` · as of `{HH:MM}` |
+  | `killed` | `.chip` + dot, Stopped | `{provider}` · `{model}` · `{tokens}` · as of `{HH:MM}` |
 
   **Tokens** are that worker's own running total (input + output, mono, the same §4f format and
   the same split-and-cost `title` as the head's Σ). A worker that has spent nothing yet shows
@@ -210,7 +216,7 @@ webapp never writes to it (CLAUDE.md: no file locking).
   <header class="subagents-view-head">
     <h3 class="subagents-view-title">designer</h3>
     <span class="chip chip-accent chip-live"><i class="chip-dot"></i>Working</span>
-    <p class="subagents-view-meta meta-line"><span class="text-mono">ag_03</span> <span class="meta-line-sep" aria-hidden="true">·</span> <span class="text-mono meta-line-shrink" title="anthropic/claude-opus-5">opus-5</span> <span class="meta-line-sep" aria-hidden="true">·</span> <span class="text-mono" title="18.4k in · 5.3k out · 242k cache read · 32.1k cache write · $0.41">23.7k tokens</span> <span class="meta-line-sep" aria-hidden="true">·</span> <span>Read only</span></p>
+    <p class="subagents-view-meta meta-line"><span class="text-mono">ag_03</span> <span class="meta-line-sep" aria-hidden="true">·</span> <span>anthropic</span> <span class="meta-line-sep" aria-hidden="true">·</span> <span class="text-mono meta-line-shrink" title="anthropic/claude-opus-5">opus-5</span> <span class="meta-line-sep" aria-hidden="true">·</span> <span class="text-mono" title="18.4k in · 5.3k out · 242k cache read · 32.1k cache write · $0.41">23.7k tokens</span> <span class="meta-line-sep" aria-hidden="true">·</span> <span>Read only</span></p>
   </header>
   <section class="subagents-transcript pane" tabindex="0" aria-label="designer transcript">
     <div class="subagents-banner stack-2">…banners, or nothing…</div>
@@ -222,7 +228,8 @@ webapp never writes to it (CLAUDE.md: no file locking).
 
 - **Sub-header.** `.subagents-view-head` names the worker on surface above the scroll region, so
   it never scrolls away (sticky by construction, not by `position: sticky`). The title is body
-  semibold, then the same status chip as the row, then a meta line: id and model in mono, the
+  semibold, then the same status chip as the row, then a meta line: the id in mono, then the
+  provider, then the model, the
   worker's tokens, then "Read only". The token number here is the **open transcript's own**
   total, counted from the file as it is tailed (`/ws/watch` sends it with every `snapshot` and
   `append`), so it ticks while you watch instead of waiting for the next worker snapshot; it
@@ -259,7 +266,8 @@ selection, above).
 
 A worker on the claude-code backend writes no pi session file; it writes its own Claude Code
 transcript at `~/.claude/projects/<cwd-slug>/<sessionId>.jsonl`, and the live record gives us the
-session id (`WorkerInfo.sessionId`). The viewer opens `/ws/watch?claude=<uuid>` instead of
+session id (`WorkerInfo.sessionId`). Its meta line's provider reads `claude code`: this backend
+names its own route rather than an LLM provider. The viewer opens `/ws/watch?claude=<uuid>` instead of
 `?path=`; the server finds the file by scanning the project dirs (id must be a UUID, the resolved
 file must stay inside `~/.claude/projects`; `server/claude-transcript.ts`) and tails it read-only
 like any other. CC's JSONL is normalized into the same `TranscriptItem` rows, each carrying a

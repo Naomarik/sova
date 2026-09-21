@@ -6,6 +6,8 @@ import { isObj, str, timestampOf, toolCallArgs, toolResultView } from "../lib/me
 import { stripPastedPaths } from "../lib/path-attachments";
 import { home } from "../lib/ui-state";
 import { isHiddenBlock, liveHiddenCounts, splitHidden, thinkingHiddenLabel, toolsHiddenLabel } from "../lib/hidden-rows";
+import { isTurnStart } from "../lib/turn";
+import { parseWakeNudge } from "../../shared/wake";
 import { ImageStrip } from "./ImageStrip";
 import { PathAttachment, PathText } from "./PathAttachment";
 import { ReportRow } from "./ReportRow";
@@ -15,6 +17,7 @@ import { alignOf, latestAlignId } from "../lib/align";
 import { explainOf } from "../lib/explain";
 import { Markdown } from "./Markdown";
 import { ToolCard, type ToolStatus } from "./ToolCard";
+import { WakeCard } from "./WakeCard";
 import { Banner, Chip, Icon } from "./ui";
 
 function Stamp(props: { iso?: string }) {
@@ -245,9 +248,9 @@ export function HistoryItems(props: {
     return ids;
   });
   const latestAlign = createMemo(() => latestAlignId(props.items));
-  // Only calls after the last user message can still be in flight.
+  // Only calls after the last user message (or wake nudge — isTurnStart) can still be in flight.
   const lastUserIndex = createMemo(() => {
-    for (let i = props.items.length - 1; i >= 0; i--) if (props.items[i]!.kind === "user") return i;
+    for (let i = props.items.length - 1; i >= 0; i--) if (isTurnStart(props.items[i]!)) return i;
     return -1;
   });
   const openFrom = () => props.openFrom ?? lastUserIndex() + 1;
@@ -261,6 +264,9 @@ export function HistoryItems(props: {
             <Switch fallback={<Unknown raw={item.raw} />}>
               <Match when={item.kind === "user"}>
                 <UserTurn text={item.text ?? ""} time={timestampOf(item.raw)} images={item.images} attachments={item.attachments} />
+              </Match>
+              <Match when={item.kind === "wake" && item.wake}>
+                {(wake) => <WakeCard nudge={wake()} text={item.text ?? ""} time={timestampOf(item.raw)} />}
               </Match>
               <Match when={item.kind === "assistant-text"}>
                 <AssistantText
@@ -412,12 +418,19 @@ export function LiveEntries(props: { live: LiveState; author: string; hideTools?
           <Switch>
             <Match when={entry.kind === "user" && entry}>
               {(e) => (
-                <UserTurn
-                  text={e().attachments ? stripPastedPaths(e().text) : e().text}
-                  pending={!e().confirmed}
-                  images={e().images}
-                  attachments={e().attachments}
-                />
+                <Show
+                  when={parseWakeNudge(e().text)}
+                  fallback={
+                    <UserTurn
+                      text={e().attachments ? stripPastedPaths(e().text) : e().text}
+                      pending={!e().confirmed}
+                      images={e().images}
+                      attachments={e().attachments}
+                    />
+                  }
+                >
+                  {(wake) => <WakeCard nudge={wake()} text={e().text} />}
+                </Show>
               )}
             </Match>
             <Match when={entry.kind === "assistant" && entry}>

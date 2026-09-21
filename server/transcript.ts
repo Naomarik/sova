@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import type { AlignReportInfo, EntryKind, ExplanationInfo, TranscriptItem } from "../shared/protocol";
+import { parseWakeNudge } from "../shared/wake";
 import { inlineTmpImages } from "./attachments";
 import { isReport, parseReport, previewLine } from "./reports";
 
@@ -119,6 +120,13 @@ function normalizeMessage(entry: Entry, id: string, state?: { model?: string }):
   const m = entry.message ?? {};
   switch (m.role) {
     case "user": {
+      const raw = contentText(m.content, false);
+      const wake = parseWakeNudge(raw);
+      if (wake) {
+        const it = item(id, "wake", entry, raw);
+        it.wake = wake;
+        return [it];
+      }
       const it = item(id, "user", entry, undefined, undefined, contentImages(m.content));
       const { text, attachments } = inlineTmpImages(contentText(m.content, false), true);
       if (text !== undefined) it.text = text;

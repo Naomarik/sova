@@ -197,6 +197,28 @@ describe("normalizeEntry (user rows)", () => {
     assert.equal(it?.attachments?.[0]?.available, false);
   });
 
+  test("a tagged user message becomes a wake row, its text intact and its fields parsed", () => {
+    const text = [
+      "[wake_nudge n4] Scheduled wakeup fired (set 4m17s ago).",
+      "Overdue by 3m17s (pi was not running).",
+      "Reason: check the deploy",
+      "Continue the pending work; re-schedule if still not ready. Prioritize any newer user message.",
+    ].join("\n");
+    const entry = userEntry(text);
+    const before = JSON.stringify(entry);
+    const [it] = normalizeEntry(entry);
+    assert.equal(it?.kind, "wake");
+    assert.equal(it?.text, text);
+    assert.deepEqual(it?.wake, { id: "n4", late: "3m17s", reason: "check the deploy" });
+    assert.equal(JSON.stringify(it?.raw), before);
+  });
+
+  test("an ordinary user message stays kind user, even one that mentions wake_nudge later on", () => {
+    const [it] = normalizeEntry(userEntry("can you use wake_nudge here?\n[wake_nudge n1] not the first line"));
+    assert.equal(it?.kind, "user");
+    assert.equal(it?.wake, undefined);
+  });
+
   test("assistant text keeps its text and gets attachments per block", () => {
     const entry = {
       type: "message",

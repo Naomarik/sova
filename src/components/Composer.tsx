@@ -27,6 +27,7 @@ import {
   setDraftText,
 } from "../lib/ui-state";
 import { inputsText } from "../lib/input-count";
+import { dragHasRow } from "../lib/session-groups";
 import { showInputsOnTimelineLabel } from "../lib/timeline";
 import { showWorkersLabel, teamNote, type WorkingSplit, workersRunningLabel, workersWorkingLabel } from "../lib/workers";
 import { ComposerMenu, type ComposerMenuApi, type ThinkingControl, type UndoControl } from "./ComposerMenu";
@@ -387,9 +388,11 @@ export function Composer(props: {
     focusAfterRemoval(images().length + index);
   };
 
-  // Stray drops anywhere else must not navigate the tab to the image.
+  // Stray drops anywhere else must not navigate the tab to the image — and a dragged session row
+  // (§2 "Groups") must not type its path into the composer: that drag carries a text/plain fallback
+  // so a drop outside the app is still readable. Both events, or the text lands anyway.
   const guard = (e: DragEvent) => {
-    if (e.dataTransfer?.types.includes("Files")) e.preventDefault();
+    if (e.dataTransfer?.types.includes("Files") || dragHasRow(e)) e.preventDefault();
   };
   window.addEventListener("dragover", guard);
   window.addEventListener("drop", guard);

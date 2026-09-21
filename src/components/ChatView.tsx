@@ -28,6 +28,7 @@ import { announce, drafts, hideThinking, hideTools, sessionContext, setDraftText
 import { visibleCount } from "../lib/hidden-rows";
 import { inputCount } from "../lib/input-count";
 import type { RewindControl, RewindResult } from "../lib/inputs";
+import { isTurnStart } from "../lib/turn";
 import { Composer, type ComposerReason } from "./Composer";
 import { FlyoutSession, type ThinkingControl, type UndoControl } from "./ComposerMenu";
 import { ConnectionBanner } from "./ConnectionBanner";
@@ -78,6 +79,9 @@ export function ChatView(props: {
   /** The session pane re-reads this after its Archive/Unarchive action succeeds; the info modal
       needs the same, or the sidebar row stays stale until its next poll. */
   onArchiveChanged?(): void;
+  /** The same, after a group change in the info modal (Move into group): the sidebar's Groups
+      region and the row's own groupId come from the session list. */
+  onGroupsChanged?(): void;
   /** A bare "/new" in the composer (§4d); resolves to the new session's folder label, or null. */
   onNewSession?(): Promise<string | null>;
   /** Opens the session pane's Timeline tab (§4d): a bare "/timeline" unfiltered; a bare "/tree" and
@@ -406,7 +410,7 @@ export function ChatView(props: {
   /** The flyout's "Undo last turn": a rewind to just before the newest user message on the branch. */
   const lastInput = () => {
     const list = items() ?? [];
-    for (let i = list.length - 1; i >= 0; i--) if (list[i]!.kind === "user") return list[i]!.id;
+    for (let i = list.length - 1; i >= 0; i--) if (isTurnStart(list[i]!)) return list[i]!.id;
     return null;
   };
   const undoControl: UndoControl = {
@@ -588,7 +592,8 @@ export function ChatView(props: {
   };
 
   // Check-now and reconnect, offered only while this runtime has the remote extension's command.
-  // Sent straight over the socket: no "Ran" row, the chips show the answer.
+  // Sent straight over the socket: no "Ran" row, the chips show the answer. (The mount toggle is not
+  // here: it is a REST call, so it works for a session with no runtime open in this tab.)
   if (remote) {
     const controls: RemoteControls = {
       check: () => socket.send({ type: "prompt", text: REMOTE_CHECK_TEXT }),
@@ -773,6 +778,7 @@ export function ChatView(props: {
           path={props.path}
           summary={props.summary}
           onArchiveChanged={props.onArchiveChanged}
+          onGroupsChanged={props.onGroupsChanged}
           items={() => items() ?? []}
           context={() => {
             const state = sessionContext()[props.path];

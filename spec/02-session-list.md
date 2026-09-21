@@ -29,6 +29,7 @@
   </div>
 
   <nav class="sidebar-list pane" aria-label="Session list">
+    <!-- First region: the user's own groups (§2 "Groups"), omitted here for length. -->
     <section class="session-group" aria-labelledby="g-1">
       <h2 class="list-group-label" id="g-1" title="/home/user/webapps/pi-web">
         <svg class="icon icon-sm" aria-hidden="true">…folder…</svg>
@@ -120,11 +121,15 @@
   **Connection dot.** While a chat on that target is open in this tab, a 6px `.chip-dot` sits
   right after the target's label, before the `·`: success tone for `connected`, error tone for
   `unreachable`, the label's own muted ink for `last ok`, `checking…` and `no status` — the same
-  reading as the head chip (spec/01 "Remote connection chip"), from the freshest report among
+  reading as the head chip (spec/01 "Remote session chips"), from the freshest report among
   this tab's open chats on that target. It is `role="img"` with `aria-label="connection: <word>"`
   and a `title` starting `Connection: <word>` then the chip's hover text. It can't be taken for
   the live-session dot: it lives in the group label, not a row's rail, it is smaller, and it never
-  pulses. With no chat open on the target there's no dot, since nothing is reporting.
+  pulses. With no chat open on the target there's no dot, since nothing is reporting. The
+  always-on remote chip (spec/01 "Remote session chips") lives in the session head and Session
+  detail, not here: the group label already names the target and remote folder on every row, so
+  the sidebar's one remote mark is the connection dot, and it stays the only one that needs a live
+  report.
 
   ```html
   <h3 class="list-group-label" id="t-2" title="acme-prod (192.0.2.10):/home/deploy/acme-site">
@@ -308,9 +313,117 @@
 - **Refreshing** (polling or a WS nudge). Update rows in place and never re-show the skeleton.
   Keep scroll position and focus. If the focused row moves, it stays focused.
 
+## Groups
+
+Groups are the user's **own** sections, above every other region: named folders they make and file
+sessions into by dragging a row onto one. They live server-side in
+`~/.pi/agent/pi-web/session-groups.json` (`server/session-groups.ts`), keyed by session id like the
+archive, so every tab and every pi-web server sees the same groups and clearing browser storage
+loses nothing. `GET /api/session-groups` lists them; the other routes are in `shared/protocol.ts`.
+
+**A group is additive.** It never moves a session out of its region or out of its own place in the
+list: a grouped session still shows under Live & web (or in the Archive), so the same row can
+appear in a group and below it at once. A session belongs to **at most one** group.
+
+### Anatomy
+
+```html
+<section class="sidebar-region sidebar-groups" aria-labelledby="r-groups">
+  <h2 class="sidebar-region-head" id="r-groups">Groups <span class="sidebar-region-count">· 2</span></h2>
+
+  <!-- The region's one action. It replaces nothing, so it never moves: hidden while searching. -->
+  <button type="button" class="list-row list-row-interactive group-new">
+    <svg class="icon icon-sm" aria-hidden="true">…plus…</svg>
+    <span class="list-title">New group</span>
+  </button>
+  <!-- While it (or a Rename) is being typed: the field sits exactly where the row was. -->
+  <div class="group-field-row">
+    <form class="group-field" aria-label="New group name">
+      <input class="input" type="text" maxlength="60" placeholder="Group name" aria-label="New group name">
+      <button type="submit" class="button button-sm">Save</button>
+    </form>
+  </div>
+
+  <!-- One group: a <details>, like an Archive date section. -->
+  <details class="group-section" open>
+    <summary class="list-group-label group-label" title="Work">
+      <svg class="icon icon-sm icon-twist" aria-hidden="true">…chevron-right…</svg>
+      <svg class="icon icon-sm" aria-hidden="true">…folder…</svg>
+      <span class="group-name"><bdi>Work</bdi></span>
+      <span class="text-num">4</span>
+    </summary>
+    <section class="session-group" aria-labelledby="g-…">
+      <h4 class="list-group-label" id="g-…">…folder, path, count…</h4>
+      <ul class="list">…session rows, exactly as everywhere else…</ul>
+    </section>
+    <!-- The group's own controls, quiet and last, as the Archive's cleanup row is. -->
+    <div class="group-tools">
+      <button class="button button-sm button-ghost" type="button">Rename</button>
+      <button class="button button-sm button-ghost" type="button">Delete group</button>
+    </div>
+  </details>
+
+  <!-- A group with no sessions: the note, and still a drop target. -->
+  <p class="sidebar-region-note">No sessions yet. Drag one here.</p>
+
+  <!-- Only while a grouped row is in flight. -->
+  <div class="group-remove"><svg class="icon icon-sm" aria-hidden="true">…close…</svg> Remove from “Work”</div>
+</section>
+```
+
+- **Placement.** Above Live & web, below the search field. The region is always rendered — with no
+groups it holds the `New group` row and the note "No groups yet. Make one, then drag a session
+into it." — because that row is the feature's front door, the way the top region keeps its head
+when it is empty.
+- **Order.** Groups keep their creation order, so a rename or a new group never shuffles the list.
+Within a group, rows and folder groups follow the usual rule (newest `lastActiveAt` first), and
+the folder labels are `h4`, one level under the group's own label.
+- **Count.** The region head counts **groups**: each section's own count sits beside its name.
+(Live & web and the Archive count sessions instead; those regions are lists of sessions, this one
+is a list of groups.) While searching it reads `· {matching groups} of {all groups}`.
+- **A group is a `<details>`**, like an Archive date section, but **open by default** — it is the
+user's own curation, and a collapsed group would hide the sessions they just filed. The choice is
+remembered in `sessionStorage["pi-web:group-open-{id}"]` for the browser session.
+- **Empty.** An empty group stays visible with `0` and "No sessions yet. Drag one here.": it is
+what a group is when the user makes it, and a drop target is what fills it. While a search is on,
+a group with no matching session is left out entirely.
+- **Creating.** `New group` turns that row into the name field (focused), so the section never
+moves. The field saves on Enter, saves what is there when it loses focus, and cancels on Escape or
+when empty. `POST /api/session-groups`, then the group appears open and empty at the end.
+- **Renaming.** Rename in the group's tool row swaps that row for the same field, pre-filled. The
+name is trimmed, 1–60 characters, and duplicates are allowed (nothing keys on a name).
+`PATCH /api/session-groups/:id`.
+- **Deleting.** Delete group asks in place, in the tool row — "Delete “Work”? Its 4 sessions stay
+in the list." (empty: "Delete “Work”? Nothing is in it.") — with `Delete group` and `Cancel`. It
+removes the group and its assignments and never touches a session file. `DELETE
+/api/session-groups/:id`; toast: "Deleted “Work”. Its 4 sessions are ungrouped."
+- **Dragging.** A session row is a drag source (the link inside is not — a browser drags links
+natively, and that drag carries a URL). Dropping it on a group's label or body files it there;
+dropping it on another group moves it; a drop on the group it is already in does nothing. While a
+**grouped** row is in flight, one dashed `Remove from “Work”` row appears at the end of the region
+to drop it out. The source row dims for the length of the drag. A drop says what happened through
+`.toast` and the polite region: "Added to “Work”." · "Moved to “Home”." · "Removed from “Home”."
+- **Without a pointer**, and on touch, drag is not available: the session pane's `Move into group`
+control (§3, the Session tab and the info modal) is the same change, as a popover radio list
+(`role="menuitemradio"`, one row per group plus `No group`) with `New group…` at the end, which
+creates the group and moves the session in one step. The Identity list shows the current group.
+- **Search.** Groups are filtered by the same query as everything else, over the whole list rather
+than one region's slice, and the region disappears when no group matches.
+
+**Accessibility.** The region is a `section` labelled by its `h2`. The group label is a
+`<summary>` and deliberately **not** a heading: headings inside `<summary>` are exposed
+inconsistently (the same rule the Archive's summary follows), so the folder labels inside a group
+are `h4` and the outline reads region → folder with one level deliberately skipped rather than a
+heading nobody can rely on. The label is a `<summary>`, so Enter or
+Space opens and closes the section and AT announces expanded or collapsed; Rename and Delete live
+in the tool row instead, because a button inside a `<summary>` fights the section's toggle. The
+`Remove from …` row is a drop target only, not a control: the popover path is what a keyboard
+uses. Contrast is the region head's (ink-2 on sunken, 7.65 dark / 7.22 light); the drop state adds
+the accent tint and a dashed accent edge, never a pulse.
+
 ## Regions: top and Archive
 
-`SessionSummary.origin` and `archived` divide the list into two regions (`isTopSession` in
+`SessionSummary.origin` and `archived` divide the sessions into two regions (`isTopSession` in
 `src/lib/regions.ts`):
 
 - **Top region:** sessions where `live !== null || (origin === "web" && !archived)`, meaning
@@ -318,7 +431,9 @@
 - **Archive:** every other session. A server that sends no `archived` counts as not archived.
 
 Both regions use exactly the same folder groups and rows described above. Each region groups by
-`cwd` independently, so one folder can appear in both.
+`cwd` independently, so one folder can appear in both. The Groups region above them is a third
+region that cuts across these two: a session in a group keeps its row here as well, so a folder —
+and a session — can appear in all three at once.
 
 ```html
 <nav class="sidebar-list pane" aria-label="Session list">

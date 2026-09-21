@@ -889,6 +889,108 @@ summary.sidebar-region-head .icon-twist { transition: transform var(--dur-fast) 
   color: var(--color-ink-muted);
 }
 
+/* ---- GROUPS (§2 "Groups"). The user's own sections, the pane's first region: a
+   "New group" row, then one <details> per group with the same summary/body grammar
+   as an Archive date section, each a drop target while a row is being dragged.
+   A group is additive, so its rows keep every other region's shape. -------------- */
+
+/* The region's one action, wearing a list row. Quieter than a session row on purpose:
+   it makes a group, it isn't one. */
+.group-new { color: var(--color-ink-2); }
+.group-new .list-title { color: inherit; font-weight: var(--fw-regular); }
+.group-new .icon { flex: none; color: var(--color-ink-muted); }
+
+/* The name field (New group, Rename) sits where a row or a tool button was, so a
+   section doesn't jump when it appears. */
+.group-field-row { padding: var(--space-2) var(--space-4); }
+.group-tools .group-field { padding: var(--space-2) var(--space-4); }
+.group-field { display: flex; align-items: center; gap: var(--space-2); }
+.group-field .input { flex: 1; min-width: 0; }
+
+.group-section + .group-section { border-top: var(--stroke-thin) solid var(--color-border); }
+.group-label {
+  min-height: var(--row-height);
+  padding-top: 0;
+  padding-bottom: 0;
+  /* A group's name is the user's own words: no eyebrow casing on it, unlike the
+     region head above. */
+  font-size: var(--fs-mono);
+  font-weight: var(--fw-semibold);
+  text-transform: none;
+  letter-spacing: 0;
+  cursor: pointer;
+  list-style: none;
+  transition: color var(--dur-fast) var(--ease-standard);
+}
+.group-label::-webkit-details-marker { display: none; }
+.group-label:hover { color: var(--color-ink); }
+.group-label:focus-visible { outline-offset: calc(var(--focus-offset) * -1); border-radius: 0; }
+.group-label .icon-twist { transition: transform var(--dur-fast) var(--ease-standard); }
+.group-section[open] > .group-label .icon-twist { transform: rotate(90deg); }
+/* The name takes the room and ellipsizes; the count closes the head
+   (.list-group-label > .text-num). */
+.group-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* The group's own controls: one quiet row at the end of the section, as the Archive's
+   cleanup row is. A button inside the summary would fight the section's own toggle. */
+.group-tools {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  border-top: var(--stroke-thin) solid var(--color-border);
+}
+.group-tools-question {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: var(--fs-caption);
+  color: var(--color-ink-2);
+}
+
+/* Drop target: the same language the composer uses for an image drop — tint plus a
+   dashed accent edge. The words stay words; nothing here pulses. */
+.group-section-drop > .group-label {
+  background: var(--color-accent-tint);
+  color: var(--color-ink);
+  box-shadow: inset 0 0 0 var(--stroke-icon) var(--color-accent);
+}
+/* Takes the dragged row out of its group. It exists only while a grouped row is in
+   flight, so it never costs the pane a row. */
+.group-remove {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--row-height);
+  margin: var(--space-2) var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border: var(--stroke-icon) dashed var(--color-border);
+  border-radius: var(--r-md);
+  font-size: var(--fs-caption);
+  color: var(--color-ink-2);
+}
+.group-remove .icon { flex: none; color: var(--color-ink-muted); }
+.group-remove-over {
+  border-color: var(--color-accent);
+  background: var(--color-accent-tint);
+  color: var(--color-ink);
+}
+.group-remove-over .icon { color: var(--color-ink); }
+/* The row in flight: the source dims, so the group that lights up is the only live thing. */
+.session-row-dragging { opacity: .5; }
+
+/* The Move into group menu (§2 "Groups"): the mode menu's shell and rows (§4g), with one
+   group per line, a check on the current one, and a plus on "New group…". */
+.group-option { align-items: center; }
+.group-option-icon { flex: none; color: var(--color-ink-muted); }
+/* The Session tab sits near the bottom of a tall window: with no room below the trigger,
+   the menu grows upward instead. Under 768px the sheet rules own the position either way. */
+@media (min-width: 768px) {
+  .group-menu-up { top: auto; bottom: var(--menu-bottom, 72px); }
+}
+
 /* ---- SESSION ROW. The row's state lives in a fixed LEFT rail, wordless, so
    every title starts on one edge and no chip eats the width the title needs.
    `.session-row-shell` is the flex row around the rail and the link: it owns
@@ -1256,6 +1358,13 @@ summary.sidebar-region-head .icon-twist { transition: transform var(--dur-fast) 
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  color: var(--color-ink-muted);
+}
+/* WakeCard's fired time + lateness, where a tool card has its status chip. */
+.toolcard-wake-time {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono);
   color: var(--color-ink-muted);
 }
 .toolcard-body {

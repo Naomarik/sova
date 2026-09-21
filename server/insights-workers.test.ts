@@ -43,6 +43,25 @@ test("decodeWorkers carries the worker's sessionFile/sessionId, dropping non-str
   assert.equal(bad.name, "bad");
 });
 
+test("decodeWorkers names each worker's provider: the ref's, the catalog's, or claude code", () => {
+  // A bare id resolves through pi's cached catalogs — models-store.json in this throwaway dir.
+  writeFileSync(join(agentDir, "models-store.json"), JSON.stringify({ zai: { models: [{ id: "glm-5.3" }] } }));
+  const byId = new Map(
+    decodeWorkers({ workers: [
+      { id: "ag_11", name: "ref", status: "running", backend: "pi", model: "zai/glm-5.4" },
+      { id: "ag_12", name: "bare", status: "running", backend: "pi", model: "glm-5.3" },
+      { id: "ag_13", name: "cc", status: "waiting", backend: "claude-code", model: "opus[1m]" },
+      { id: "ag_14", name: "unknown", status: "waiting", backend: "pi", model: "made-up-model" },
+      { id: "ag_15", name: "none", status: "waiting", backend: "pi" },
+    ] }).map((w) => [w.id, w]),
+  );
+  assert.equal(byId.get("ag_11")!.provider, "zai", "a ref keeps its own prefix");
+  assert.equal(byId.get("ag_12")!.provider, "zai", "a bare id comes from the cached catalog");
+  assert.equal(byId.get("ag_13")!.provider, "claude code", "the claude-code backend names its own route");
+  assert.equal(byId.get("ag_14")!.provider, undefined, "an unknown model gets no provider, never a guess");
+  assert.equal(byId.get("ag_15")!.provider, undefined, "no model, no provider");
+});
+
 test("getSessionInsight returns this session's own live workers", async () => {
   const own = session("own-workers");
   writeFileSync(join(liveDir, `p${process.pid}-aaaaaaaa.json`), JSON.stringify({

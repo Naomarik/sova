@@ -5,7 +5,7 @@ import { Lightbox } from "./Lightbox";
 
 export type IconName =
   | "alert-circle" | "archive" | "arrow-right" | "attach" | "command" | "image" | "attention" | "chat" | "check" | "chevron-down" | "chevron-left"
-  | "chevron-right" | "clock" | "close" | "copy" | "external" | "file" | "folder" | "info" | "more" | "stop"
+  | "chevron-right" | "bell" | "clock" | "close" | "copy" | "external" | "file" | "folder" | "info" | "more" | "stop"
   | "pencil" | "plus" | "refresh" | "search" | "terminal" | "gauge" | "worker";
 
 /** A shipped SVG as a mask over currentColor (base.css `span.icon`). Decorative unless labelled. */

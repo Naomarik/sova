@@ -3,6 +3,9 @@
  * Do not change a shape without telling the other side (team_msg).
  */
 
+import type { WakeInfo } from "./wake";
+export type { WakeInfo };
+
 export interface SessionSummary {
   /** Session id from the JSONL header line. */
   id: string;
@@ -53,6 +56,11 @@ export interface SessionSummary {
       ~/.pi/agent/pi-web/archived-sessions.json). Only moves it between regions; it opens as before,
       and a live one still shows on top. Absent from older servers: treat as false. */
   archived: boolean;
+  /** The user's group for this session (`SessionGroup.id`, POST /api/session-groups/assign; ids
+      persist in ~/.pi/agent/pi-web/session-groups.json). One group at most, and purely additive:
+      a grouped session stays in its region (Live & web, or the Archive) as well. Absent when it
+      belongs to none, and from an older server: treat as ungrouped. */
+  groupId?: string;
   /** Remote session: the target name from ~/.pi/agent/targets.json. Derived from `cwd`, which for a
       remote session is the local placeholder ~/.pi/agent/pi-web/targets/<target>/<remote/abs/path>.
       Absent for local sessions. */
@@ -60,6 +68,12 @@ export interface SessionSummary {
   /** Remote session: the absolute working directory on the target (the placeholder path minus
       the target dir). Set exactly when `target` is. */
   remoteCwd?: string;
+  /** Mounted-mode session: the cwd is inside a target's mount point (`<mount.local>`; created by
+      POST /api/sessions {target, remoteCwd, mounted:true}), so its tools and any workers it spawns
+      see the target's real files locally. `target`/`remoteCwd` are then derived from the mount
+      mapping (the remote dir the local path stands for). Absent for local sessions and remote
+      placeholder sessions. Derived from the cwd only — never a live mount check. */
+  mounted?: true;
   /** Composer draft stored for this session: the draft's first non-empty line, ~80 chars. Present only on a session with no user message anywhere that has a stored draft — that is what keeps a never-sent new session in the list (sidebar). */
   draftPreview?: string;
 }
@@ -79,10 +93,19 @@ export interface TargetInfo {
   cwd?: string;
   /** Human-readable host: user@host[:port] for ssh, the container/cell (+ via) otherwise. */
   host?: string;
+  /** The target's sshfs mount is really on: a real check through the mount module
+      (pi-config/extensions/remote/mount.ts — a mount-table read, never a stat on the fuse path,
+      which would block the event loop). Deliberately uncached: the read is cheap and always
+      honest, so an external unmount shows on the very next listing. Present only when the target
+      declares a `mount` block in targets.json. */
+  mounted?: boolean;
 }
 
 export type EntryKind =
   | "user"
+  | "wake" // a fired wake-nudge (pi-config/extensions/wake-nudge.ts): a real role:"user" message
+           // tagged "[wake_nudge n1] …"; counts as an input everywhere, but renders as a machine
+           // row (WakeCard), never a "You" bubble. See `wake` and shared/wake.ts.
   | "assistant-text"
   | "thinking"
   | "tool-call"
@@ -111,6 +134,9 @@ export interface TranscriptItem {
   attachments?: TmpAttachment[];
   /** kind "report" only: the parsed message. `text` holds the same body. */
   report?: ReportInfo;
+  /** kind "wake" only: the parsed wake-nudge (shared/wake.ts `parseWakeNudge`). `text` holds the
+      whole fired message exactly as sent — the card's body shows it verbatim. */
+  wake?: WakeInfo;
   /** "provider/model" that produced this row: the assistant message's own provider/model,
       else the nearest prior model_change on the branch. Set on assistant-text, thinking and
       tool-call rows; absent on other kinds and entries with neither (renderers fall back to
@@ -235,13 +261,30 @@ export interface UploadResult {
 // POST /api/sessions { target, remoteCwd } -> SessionSummary   (remote session: creates the local placeholder
 //                                  ~/.pi/agent/pi-web/targets/<target>/<remoteCwd> and a session there; 400 bad body/
 //                                  non-absolute remoteCwd, 404 unknown target)
+// POST /api/sessions { target, remoteCwd, mounted: true } -> SessionSummary   (mounted session: the cwd is the
+//                                  mount path <mount.local> + the remote path relative to <mount.remote>, created if
+//                                  needed; 400 the target has no "mount" config or remoteCwd is outside the mounted
+//                                  root, 409 the target is not actually mounted. Plain {target, remoteCwd} keeps
+//                                  creating the placeholder cwd, unchanged)
 // POST /api/sessions/connect {} -> SessionSummary   (the connection agent: a new session in a fresh
 //                                  ~/.pi/agent/pi-web/connect/<ts>/ seeded with AGENTS.md from server/connect-agent-template.md)
 // GET  /api/targets             -> TargetInfo[]   (~/.pi/agent/targets.json; missing file → []; status from a cached,
 //                                  bounded probe)
+// POST /api/targets/:name/mount { on: boolean } -> TargetInfo   (mount/unmount the target's configured sshfs mount
+//                                  through the mount module, idempotent; 400 bad body or the target has no "mount"
+//                                  config, 404 unknown target, 502 the sshfs/fusermount command failed with its stderr)
 // GET  /api/targets/:name/folders?path=…&hidden=1 -> FolderListing   (subfolders on the target; paths are REMOTE;
 //                                  no path = the target's cwd, else its $HOME. 400 not absolute, 404 unknown target,
 //                                  502 unreachable / ssh failed / folder missing)
+// GET  /api/session-groups    -> SessionGroup[]   (the sidebar's user-made groups, in creation order;
+//                                  ~/.pi/agent/pi-web/session-groups.json; missing file → [])
+// POST /api/session-groups { name: string } -> SessionGroup   (creates one. 400 name not 1–60 chars)
+// PATCH /api/session-groups/:id { name: string } -> SessionGroup   (renames. 400 bad name, 404 unknown)
+// DELETE /api/session-groups/:id -> { ok: true }   (deletes the group and its assignments; the
+//                                  sessions themselves are untouched. 404 unknown)
+// POST /api/session-groups/assign { path, groupId: string | null } -> { ok: true }   (puts one session in
+//                                  a group, or takes it out with null. 400 bad body/path, 404 session file
+//                                  or group missing. Never writes the session file)
 // POST /api/sessions/archive { path, archived: boolean } -> SessionSummary   (sets/clears the archive mark; never
 //                                  writes the session file. 400 bad body/path, 404 missing, 409 archiving a live
 //                                  or non-web session)
@@ -307,6 +350,22 @@ export interface FolderListing {
   entries: { name: string; path: string; symlink?: true }[];
   /** More than 500 subfolders: `entries` holds the first 500 in sort order. */
   truncated: boolean;
+}
+
+/** Longest group name, in characters, after trimming (SessionGroup.name; the server trims and
+    refuses an empty or longer one with 400). The one place the limit is written down: the create
+    input's maxlength and the server's rule read it from here. */
+export const GROUP_NAME_MAX = 60;
+
+/** One user-made group in the sidebar's Groups region (GET /api/session-groups). Groups hold
+    sessions; they never replace a region, so a grouped session still shows in Live & web or the
+    Archive. Stored in ~/.pi/agent/pi-web/session-groups.json, keyed by session id (like the archive). */
+export interface SessionGroup {
+  /** Stable uuid; what `SessionSummary.groupId` and every route below take. */
+  id: string;
+  /** Shown as-is (trimmed, 1–60 chars). Duplicates are allowed: nothing keys on the name. */
+  name: string;
+  createdAt: string; // ISO
 }
 
 /** The mode extension's settings (pi-config/extensions/mode). One major mode, any set of minor
@@ -475,6 +534,12 @@ export interface TokenUsageTotal extends TokenUsage { workers: number }
 export interface WorkerInfo {
   id: string; name: string; status: WorkerStatus; working: boolean;
   model?: string; backend?: string; preview?: string;
+  /** Who serves this worker's model, lower-case, leading the pane's meta line: the ref's own
+      provider (`zai` for `zai/glm-5.3`), a bare id's provider from pi's cached catalogs, or
+      `claude code` for a claude-code worker (its own sub/route). Derived server-side in
+      server/insights.ts; absent when nothing can be derived — the pane then shows no provider
+      rather than guessing. */
+  provider?: string;
   /** This worker's thinking/effort level as it was spawned with (pi: explicit or the parent's
       level then; claude-code: its effort, or absent for the backend default). Absent when the
       writer didn't publish it (older pi-config). */

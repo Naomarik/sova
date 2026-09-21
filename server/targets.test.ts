@@ -196,3 +196,99 @@ test("listTargets never waits past its cap: a slow probe reports unknown now and
   assert.ok(Date.now() - t0 < 900);
   assert.equal((await T.listTargets(5000))[0]?.status, "ok"); // the same run finishes and is cached
 });
+
+// ---------------------------------------------------------------------------
+// Mounts: a target's "mount" block. The sshfs module (pi-config/extensions/remote/mount.ts) has
+// its own suite; these pin the SERVER's use of it — the cwd derivations, the state reported from
+// the real check, and the route contract. No network, no fuse: nothing is actually mounted.
+
+const mntRoot = join(agentDir, "remote-mnt"); // absolute local mountpoint inside the throwaway dir
+const mthost = {
+  name: "mthost",
+  label: "mt host",
+  kind: "ssh",
+  ssh: { user: "u", host: "example.invalid" }, // .invalid: fails fast, never reachable
+  cwd: "/srv/app",
+  mount: { remote: "/srv/app", local: mntRoot },
+} as const;
+
+test("mountDir: <mount.local> + the remote path relative to <mount.remote>, or a clear refusal", () => {
+  T.writeTargets([mthost as never, local as never]);
+  const target = T.findTarget("mthost")!;
+  assert.equal(T.mountDir(target, "/srv/app"), mntRoot); // the mount root itself
+  assert.equal(T.mountDir(target, "/srv/app/"), mntRoot);
+  assert.equal(T.mountDir(target, "/srv/app/sites/x"), join(mntRoot, "sites", "x")); // a nested folder
+  assert.equal(T.mountDir(target, "/srv/app/x/../y"), join(mntRoot, "y")); // dot-dot resolves inside the far root
+  assert.throws(() => T.mountDir(target, "/srv/app/x/../../y"), /inside it/); // ...but can climb out of it: refused
+  assert.throws(() => T.mountDir(target, "/srv/app/.."), /inside it/);
+  assert.throws(() => T.mountDir(target, "/"), /inside it/);
+  assert.throws(() => T.mountDir(target, "/home/deploy/x"), /inside it/);
+  assert.throws(() => T.mountDir(local as never, "/srv/app"), /no "mount" configuration/);
+});
+
+test("remoteOfCwd: a cwd inside the mount point maps back to the target and remote path", () => {
+  const target = T.findTarget("mthost")!;
+  const nested = T.mountDir(target, "/srv/app/sites/x");
+  assert.deepEqual(T.remoteOfCwd(nested), { target: "mthost", remoteCwd: "/srv/app/sites/x", mounted: true });
+  assert.deepEqual(T.remoteOfCwd(mntRoot), { target: "mthost", remoteCwd: "/srv/app", mounted: true });
+  assert.equal(T.targetOfCwd(nested), "mthost"); // chat-manager's `target` flag covers mounted sessions
+  assert.equal(T.remoteOfCwd(`${mntRoot}-other/x`), null); // a sibling prefix is never a match
+  assert.equal(T.remoteOfCwd("/home/user/webapps/pi-web"), null);
+  const placeholder = T.targetDir("mthost", "/srv/app");
+  assert.deepEqual(T.remoteOfCwd(placeholder), { target: "mthost", remoteCwd: "/srv/app", mounted: false });
+});
+
+test("mounted is the mount module's real check, not a stat: an existing unmounted directory reads false", async () => {
+  mkdirSync(mntRoot, { recursive: true }); // exists on disk, but nothing is mounted over it
+  const infos = await T.listTargets(0); // don't wait on probes; the mount check is local and bounded
+  const info = infos.find((i) => i.name === "mthost")!;
+  assert.equal(info.mounted, false); // a bare existence check would have said true
+  assert.equal("mounted" in (infos.find((i) => i.name === "here") ?? {}), false); // no mount block: no field
+  const off = await T.toggleTargetMount("mthost", false); // idempotent: already off, nothing runs
+  assert.ok(off.ok);
+  assert.equal(off.info.mounted, false);
+  const refuse = await T.toggleTargetMount("here", true); // no mount config: refused before anything runs
+  assert.ok(!refuse.ok && refuse.status === 400);
+  assert.match(refuse.error, /no "mount" configuration/);
+  assert.deepEqual(await T.toggleTargetMount("nope", true), { ok: false, status: 404, error: "Unknown target: nope" });
+});
+
+process.env.PORT = "0"; // an ephemeral port: this file never touches 4800/5173
+const { app, server } = await import("./index");
+after(() => server.close());
+
+test("POST /api/sessions: a placeholder request is unchanged; mounted requests are refused honestly", async () => {
+  const post = (body: unknown) =>
+    app.request("/api/sessions", { method: "POST", body: JSON.stringify(body), headers: { "content-type": "application/json" } });
+  const r = await post({ target: "here", remoteCwd: "/srv/app" });
+  assert.equal(r.status, 201);
+  const s = (await r.json()) as { cwd: string; target?: string; remoteCwd?: string; mounted?: boolean };
+  assert.equal(s.cwd, T.targetDir("here", "/srv/app")); // the placeholder path, exactly as before
+  assert.ok(existsSync(s.cwd)); // created, exactly as before
+  assert.equal(s.target, "here");
+  assert.equal(s.remoteCwd, "/srv/app");
+  assert.equal(s.mounted, undefined); // a placeholder session is not a mounted session
+  const notMounted = await post({ target: "mthost", remoteCwd: "/srv/app", mounted: true }); // nothing is mounted here
+  assert.equal(notMounted.status, 409);
+  assert.match((await notMounted.json()).error, /not mounted/);
+  const noCfg = await post({ target: "here", remoteCwd: "/srv/app", mounted: true });
+  assert.equal(noCfg.status, 400);
+  assert.match((await noCfg.json()).error, /no "mount" configuration/);
+  const outside = await post({ target: "mthost", remoteCwd: "/home/deploy", mounted: true });
+  assert.equal(outside.status, 400);
+  assert.match((await outside.json()).error, /inside it/);
+  const plain = await post({ target: "mthost", remoteCwd: "/home/deploy" }); // placeholders have no root to be inside
+  assert.equal(plain.status, 201);
+  const s2 = (await plain.json()) as { cwd: string };
+  assert.equal(s2.cwd, T.targetDir("mthost", "/home/deploy"));
+  // { cwd } with the folder picked inside a mount point: verified through the mount module's
+  // bounded check (never a stat on the fuse path); off → 400 with its reason. Nothing is mounted
+  // in this suite, so the verify answers "not mounted" — proving the guard runs at all.
+  const inMount = await post({ cwd: join(mntRoot, "sites") });
+  assert.equal(inMount.status, 400);
+  assert.match((await inMount.json()).error, /cwd/);
+  // a plain local cwd keeps its exact behavior: stat, then create
+  const localCwd = await post({ cwd: scratch });
+  assert.equal(localCwd.status, 201);
+  assert.equal(((await localCwd.json()) as { cwd: string }).cwd, scratch);
+});

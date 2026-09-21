@@ -17,7 +17,7 @@ import { ContextGauge, ContextMetaPrefix, contextDescribedBy } from "./component
 import { NewSessionDialog } from "./components/NewSessionDialog";
 import { ExplainGrid } from "./components/ExplainGallery";
 import { InsightStrip } from "./components/InsightStrip";
-import { RemoteHeadChip } from "./components/RemoteStatus";
+import { RemoteChip, RemoteHeadChip, RemoteMountedChip } from "./components/RemoteStatus";
 import { SessionPane, type PaneInsight, type TabId } from "./components/SessionPane";
 import { sessionHref, Sidebar } from "./components/Sidebar";
 import { SidebarResizer } from "./components/SidebarResizer";
@@ -63,7 +63,10 @@ const sameSummary = (a: SessionSummary, b: SessionSummary) =>
   a.live?.status === b.live?.status &&
   a.live?.workers?.working === b.live?.workers?.working &&
   a.live?.workers?.total === b.live?.workers?.total &&
-  a.archived === b.archived;
+  a.archived === b.archived &&
+  // A group change touches neither the file nor the title: without this the row keeps its old
+  // object and a session just dragged into a group would never leave Live & web.
+  a.groupId === b.groupId;
 
 /** Keeps the previous object for unchanged rows so <For> updates the list in place (focus survives). */
 function reuseUnchanged(next: SessionSummary[], prev: SessionSummary[] | undefined): SessionSummary[] {
@@ -586,6 +589,10 @@ export function App() {
                           )}
                         </Show>
                       </Show>
+                      {/* The identity and mount, always there for a remote session; the connection
+                          chip beside them reports liveness separately. */}
+                      <RemoteChip path={d.path} summary={s()} />
+                      <RemoteMountedChip path={d.path} summary={s()} />
                       <RemoteHeadChip path={d.path} onOpen={() => openPane(d.path, "session")} />
                       <Show when={s().live}>
                         <Chip tone="accent" title={`Open in pi in a terminal · pid ${s().live!.pid} · ${s().live!.status}`}>
@@ -684,6 +691,7 @@ export function App() {
                               onRefused={onRefused}
                               onStarted={() => refresh()}
                               onArchiveChanged={refresh}
+                              onGroupsChanged={refresh}
                               onSettled={() => {
                                 refresh();
                                 reloadInsight();
@@ -719,6 +727,7 @@ export function App() {
                 insight={paneInsight()!.insight}
                 summary={summary() ?? undefined}
                 onArchiveChanged={refresh}
+                onGroupsChanged={refresh}
                 chatWorkers={chatWorkers.path === path ? chatWorkers.list : null}
                 chatUsage={chatWorkers.path === path ? chatWorkers.usage : null}
                 rewind={rewindControl()?.path === path ? rewindControl()! : undefined}

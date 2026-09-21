@@ -52,6 +52,8 @@ export function SessionPane(props: {
   summary: SessionSummary | undefined;
   /** After Archive/Unarchive in the Session tab: re-read the session list. */
   onArchiveChanged(): void;
+  /** After a group change in the Session tab: the same list, for the Groups region. */
+  onGroupsChanged(): void;
   chatWorkers: WorkerInfo[] | null;
   /** The chat runtime's session-lifetime token Σ; null while watching or before the first one. */
   chatUsage: UsageTotalView | null;
@@ -151,8 +153,9 @@ export function SessionPane(props: {
           <Icon name="chevron-right" />
         </button>
       </header>
-      {/* A remote session's connection, on every tab (only while its chat reports one). */}
-      <RemotePaneStatus path={props.path} />
+      {/* A remote session's identity, mount and connection, on every tab (the identity chip even
+          before its chat reports one). */}
+      <RemotePaneStatus path={props.path} summary={props.summary} />
       {/* Named apart from the landmark: both saying "Session detail" made a reader announce the
           same name twice, nesting into itself. */}
       <div class="tabs session-tabs" role="tablist" aria-label="Session detail tabs">
@@ -178,7 +181,15 @@ export function SessionPane(props: {
       <div class="session-panel" role="tabpanel" id="session-tabpanel" aria-labelledby={`session-tab-${tab()}`}>
         <Switch>
           <Match when={tab() === "session"}>
-            <SessionTab path={props.path} insight={props.insight} summary={props.summary} items={items()} now={props.now} onArchiveChanged={props.onArchiveChanged} />
+            <SessionTab
+              path={props.path}
+              insight={props.insight}
+              summary={props.summary}
+              items={items()}
+              now={props.now}
+              onArchiveChanged={props.onArchiveChanged}
+              onGroupsChanged={props.onGroupsChanged}
+            />
           </Match>
           <Match when={tab() === "timeline"}>
             <SessionTimeline
@@ -233,6 +244,7 @@ function SessionTab(props: {
   items: TranscriptItem[] | null;
   now: number;
   onArchiveChanged(): void;
+  onGroupsChanged(): void;
 }) {
   /** The gauge's reading; "compacted" is re-derived from the items, as in the modal. */
   const context = () => {
@@ -255,6 +267,7 @@ function SessionTab(props: {
         items={props.items ?? []}
         now={props.now}
         onArchiveChanged={props.onArchiveChanged}
+        onGroupsChanged={props.onGroupsChanged}
         idPrefix="sp"
       />
     </div>

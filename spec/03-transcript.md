@@ -168,6 +168,47 @@ at the tool-call's position. A result with no matching call gets its own card wi
 - **Visibility.** Cards stay collapsed, but the summary row is always visible. The skill says tool
   turns are never hidden, since the record of what ran is the trust mechanism.
 
+**wake.** A fired wake-nudge (pi-config's `wake_nudge` tool): under the hood a real `role:"user"`
+message tagged `[wake_nudge n1] …` (shared/wake.ts `parseWakeNudge`), but it never reads as "You" —
+a machine event fired the turn, not the person. Same `.toolcard` shell as tool-call/tool-result
+(collapsed by default, left-aligned), with a bell where a tool card has its tool icon.
+
+```html
+<details class="toolcard">
+  <summary class="toolcard-summary">
+    <svg class="icon icon-sm icon-twist" aria-hidden="true">…chevron-right…</svg>
+    <svg class="icon icon-sm" aria-hidden="true">…bell…</svg>
+    <span class="toolcard-name">Wake nudge n1</span>
+    <span class="toolcard-arg" title="check the build">check the build</span>
+    <span class="toolcard-wake-time">fired 14:06 · 3m17s late</span>
+  </summary>
+  <div class="toolcard-body">
+    <div class="toolcard-section">
+      <pre class="toolcard-output">{the fired message, all four lines, exactly as sent}</pre>
+    </div>
+  </div>
+</details>
+```
+
+- **Name.** Always "Wake nudge {id}" (`shared/wake.ts` `wakeTitle`), never the raw tag.
+- **Arg slot.** The parsed reason (`WakeInfo.reason`), muted, truncated with an ellipsis, full text
+  in `title`. Empty when the extension wrote `Reason: (none)`.
+- **Fired time.** Muted, `fired {HH:MM}` from the entry's own timestamp, same clock as every other
+  row. `· {late} late` only when the fire was overdue (the extension's "Overdue by …" line);
+  omitted for an on-time fire.
+- **Open.** The whole message exactly as it was sent — all four lines (the fire line, the optional
+  overdue line, the reason line, the standing instruction) — in mono, never rewritten or hidden.
+- **Counts as an input.** A wake row is on every list that counts "your messages": the composer's
+  "N inputs" trigger, the Timeline's Inputs Only view (where it shows the reason, or "Wake nudge
+  n1" with none — §13), rewind targets, and the "calls after the last user message" scan that
+  decides whether an open tool call may still be running. Only its rendering differs from an
+  ordinary user row.
+- **Never hidden, never titles the session.** "Hide tool calls" leaves wake rows alone, and a wake
+  row never joins a hidden-tool-call group (it isn't a tool row). The session list never titles a
+  session from a wake message — it waits for the next real one.
+- **AT.** No author line, and the accessible name never says "You": the native `<summary>`'s own
+  text ("Wake nudge n1 …") is what's announced.
+
 **info.** Model changes, compaction, labels, and branch summaries.
 
 ```html

@@ -1,4 +1,4 @@
-import { createMemo, createSignal, For, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import type { BatchRefusal, SessionSummary } from "../../shared/protocol";
 import { promptSessionGroup } from "../lib/api";
 import { composerPlaceholder, refusalBody, refusalSentence, targetsLine, targetsOf } from "../lib/group-prompt";
@@ -42,8 +42,19 @@ export function GroupComposer(props: {
    * message, not whatever the box reads by then.
    */
   const [partial, setPartial] = createSignal<{ failed: BatchRefusal[]; sent: number; text: string } | null>(null);
+  /** Whether the caret is in this box. Half of "in use"; the other half is holding text. */
+  const [focused, setFocused] = createSignal(false);
   const [folded, setFolded] = createSignal(window.matchMedia(FOLDED).matches);
   window.matchMedia(FOLDED).addEventListener("change", (e) => setFolded(e.matches));
+
+  /**
+   * "In use" is focused OR holding text (spec §14), derived in ONE place. It used to be pushed
+   * from three — focus, blur, and the send — and they disagreed: a send cleared the box while the
+   * caret was still in it, so the panes expanded under a composer the user was still typing in and
+   * collapsed again on the next keystroke. A rule with three call sites is three chances to state
+   * it differently.
+   */
+  createEffect(() => props.onActive(focused() || !!text()));
 
   const targets = createMemo(() => targetsOf(props.members));
   /** Nobody at all: the only state where Send is off. A stale snapshot is the server's to correct. */
@@ -91,9 +102,6 @@ export function GroupComposer(props: {
       const said = `Sent to ${n} ${n === 1 ? "member" : "members"}.`;
       announce(said);
       props.onRefresh();
-      // The panes collapse under a composer that is in use; it stops being in use only when the
-      // box is empty. A retry can land while the user is typing the next message.
-      if (!text()) props.onActive(false);
       return;
     }
     if (out.refused) {
@@ -181,12 +189,9 @@ export function GroupComposer(props: {
             rows={1}
             placeholder={composerPlaceholder(props.members.length, folded())}
             aria-describedby="group-composer-reason"
-            onInput={(e) => {
-              edit(e.currentTarget.value);
-              props.onActive(!!e.currentTarget.value);
-            }}
-            onFocus={() => props.onActive(true)}
-            onBlur={() => props.onActive(!!text())}
+            onInput={(e) => edit(e.currentTarget.value)}
+            onFocus={() => setFocused(true)}
+            onBlur={() => setFocused(false)}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
                 e.preventDefault();

@@ -167,11 +167,11 @@ test("a hand-made group adopts a fanout's seed, and SURVIVES being emptied", asy
 // --- who named it decides whether it dissolves, through the real store -----------------------
 
 /** Run a fork-mode fanout with the real store, faking only the SDK/disk halves. */
-async function fanoutInto(nameIsGenerated: boolean | undefined, name: string, tag: string) {
+async function fanoutInto(named: "generated" | "user" | undefined, name: string, tag: string) {
   const { runFanout, realFanoutDeps } = await import("./fanout");
   let n = 0;
   return runFanout(
-    { name, members: [{ ref: "anthropic/opus", count: 1 }], source: { path: "/sessions/x.jsonl", leafId: "e9" }, ...(nameIsGenerated === undefined ? {} : { nameIsGenerated }) },
+    { name, members: [{ ref: "anthropic/opus", count: 1 }], source: { path: "/sessions/x.jsonl", leafId: "e9" }, ...(named === undefined ? {} : { named }) },
     {
       ...realFanoutDeps,
       knownRefs: async () => new Set(["anthropic/opus"]),
@@ -189,13 +189,13 @@ async function fanoutInto(nameIsGenerated: boolean | undefined, name: string, ta
 test("a name the user typed survives being emptied; the accepted default does not", async () => {
   const { readGroup } = await import("./session-groups");
 
-  const mine = await fanoutInto(false, "Backoff experiments", "d0");
+  const mine = await fanoutInto("user", "Backoff experiments", "d0");
   assert.ok(mine.ok);
   assert.equal(readGroup(mine.result.group.id)?.autoDissolve, false, "recorded false, not absent");
   assert.deepEqual(assignSession(mine.result.created[0]!.id, null), { ok: true }, "no dissolve");
   assert.equal(readGroup(mine.result.group.id)?.name, "Backoff experiments", "the name they typed is still there");
 
-  const theirs = await fanoutInto(true, "Fanout · retry backoff", "d1");
+  const theirs = await fanoutInto("generated", "Fanout · retry backoff", "d1");
   assert.ok(theirs.ok);
   assert.equal(readGroup(theirs.result.group.id)?.autoDissolve, true);
   assert.deepEqual(assignSession(theirs.result.created[0]!.id, null), { ok: true, dissolved: true }, "pi-web named it, pi-web removes it");

@@ -287,6 +287,14 @@ POST /api/session-groups/fanout
   on a fanout is cost with no reader — the workspace is for reading the members against each
   other, and the strip is a single-session surface. It is off for the member's life, not just in
   the workspace, and the pane says so nowhere: an absent strip is not a state.
+- **`failed` is a list, and the banner reads like one.** A fanout of `opus ×3, glm ×2` can fail
+  two or three ways at once, so the banner takes the same shape the group composer's refusal
+  already uses — the count, then one line per failure naming its model and its reason. Two
+  banners side by side in different grammars would read as an oversight rather than a
+  distinction. Repeats that failed identically collapse with a count (`2 × claude-opus-5`); the
+  same model failing two ways gets two lines, because the reasons are the information.
+  **No member numbers.** `failed` carries no index into the plan, so which repeat of `opus ×3`
+  failed is not knowable here — and `claude-opus-5 #2` would be a guess dressed as a fact.
 - **Partial creation is reported, never swallowed.** If member 4 of 5 fails, the group exists with
   4, the workspace opens, and a `.banner.banner-warn` sits above the panes: **"4 of 5 members were
   created."** {model} couldn't start: {server message}. The 4 that exist are running; add another

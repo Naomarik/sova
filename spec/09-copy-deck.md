@@ -402,7 +402,8 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Dialog title | Fan out |
 | Start from | field label `Start from` · radios: "Fork “{title}” at its latest message" · "A fresh prompt" |
 | Fork note | Each member gets the whole conversation up to message {n}, then goes its own way. |
-| Fork note, source mid-turn | The fork is taken from message {n}, the last one finished. The turn running now isn't included. |
+| Create off, source mid-turn | “{title}” is mid-turn. We read the file to fork it, and we don't read it while it's being written. This enables itself when the turn finishes. |
+| Create off, unidentified writer | Another program wrote to “{title}” a moment ago. Forking waits until it stops. |
 | Fresh fields | the §5 folder picker, unchanged · field label `First message` · placeholder "Ask all of them to…" |
 | Members field | label `Members` · empty: "No members yet. Add a model, then set how many of it you want." |
 | Member row | the model id in mono · the fill (below) · count buttons `aria-label` "One more {model}" / "One fewer {model}" (at 1: "Remove {model}") · remove `aria-label` "Remove {model}" |

@@ -144,13 +144,27 @@ Turns start together, so one provider may answer some members with 429. pi-web d
 `POST /api/session-groups/fanout` — one request, one response, and the client navigates to the
 new workspace.
 
-- **Fork mode** branches from the source's **current leaf** with
-  `SessionManager.createBranchedSession`, once per member, then opens each new file with its own
-  `SessionManager.open`. `open()` mutates the manager it is called on, so it is **never** run
-  against the runtime pi-web is holding for the source session — each member gets a fresh manager,
-  and the source keeps its own, untouched. The source session is not modified, not rewound, and
-  not made a member: it stays where it is, and `parentSession` in each member's header is the only
-  link back.
+- **Fork mode takes one fresh manager per member, and the source's own manager is never handed
+  to any of them.** `createBranchedSession(leafId)` is not a factory: it **rebinds the manager it
+  is called on** to the new file (`session-manager.js:1180-1184` sets `fileEntries`, `sessionId`
+  and `sessionFile`). Two things follow, and both are invariants, not implementation notes:
+  - **Called N times on one manager it makes a chain, not a fan.** Call 2 would branch from
+    member 1, call 3 from member 2, and every member after the first would carry the previous
+    one's history. Each member is branched on its own manager, sourced from the source file.
+  - **It is never called on the manager pi-web holds for the source.** That call would silently
+    repoint the live source runtime at a member's file, and the source's next persist would write
+    the turn the user is sitting in into a member's transcript. This is a stronger rule than the
+    one `open()` needs, and it binds the common case: the flyout fans out from a session pi-web
+    is holding a runtime for.
+- **The source file is read, never written, and only while nobody is writing it.** Sourcing N
+  managers means reading that file N times, and the read is not itself free of side effects
+  (`open()` appends a newline to a trailing partial line and may rewrite the file on a version
+  migration). So fanout needs a quiet source: not TUI-live, not mid-turn here, and not inside the
+  recent-write window an unidentified writer leaves (`RECENT_WRITE_MS`, `server/write-guard.ts`).
+  Each of the three has its own words in States below, and none of them is a silent failure.
+- **The source is not a member.** It is not modified, not rewound and not assigned to the group:
+  it stays where it is, and `parentSession` in each member's header — the source's path, written
+  by the SDK — is the only link back.
 - **Fresh mode** is N × `POST /api/sessions`' own path: create in the chosen folder, write the
   header immediately, hand the first message to each independently. No branch, no parent, no
   shared id.
@@ -209,8 +223,9 @@ afterwards, and the next incoming token scrolls a followed pane as usual.
 |---|---|
 | Dialog opened with no models yet | The Members list is one line of hint text, "No members yet. Add a model, then set how many of it you want." Create is `aria-disabled` with the reason "Add at least 1 member." |
 | Source has no assistant reply | `Fan Out…` is not in the flyout. Nothing to fork, and a disabled row would invite a question with no answer |
-| Source mid-turn | The dialog opens and says which leaf it will use: "The fork is taken from message 34, the last one finished. The turn running now isn't included." Creating mid-turn is allowed — the branch point is already written |
-| Source is TUI-live | `Fan Out…` is absent. Forking reads the file, but the leaf pi-web can see is not the one the terminal is about to write, and a fork from a stale leaf is a silently wrong comparison |
+| Source mid-turn | The dialog **opens and is fully usable** — pick models, set counts, name the group — and Create is `aria-disabled` with the reason "“{title}” is mid-turn. We read the file to fork it, and we don't read it while it's being written. This enables itself when the turn finishes." It does enable itself, in place, with no re-open: setting a fanout up during the turn you are waiting on is the natural thing to do |
+| Source has an unidentified writer | The same shape, reason "Another program wrote to “{title}” a moment ago. Forking waits until it stops." The same window `/ws/chat` refuses on (`RECENT_WRITE_MS`), for the same reason: we don't read a file mid-write |
+| Source is TUI-live | `Fan Out…` is absent. Two reasons, either sufficient: pi-web never touches a file a terminal owns, and the leaf pi-web can see is not the one the terminal is about to write, so the fork would be from a stale point — a silently wrong comparison |
 | A model has no window on record | Its row shows tokens alone; Create stays available |
 | A model's window is smaller than the fork | `.context-error` on the row plus its own line; Create disabled until the row is removed or the count is 0 |
 | Creating | `Creating…`, the dialog stays up and its fields disable. No progress bar: N creations finish in one response |

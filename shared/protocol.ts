@@ -553,10 +553,15 @@ export interface BatchRefusal {
   path: string; // canonical session path ("" when the file is gone)
   code: BatchRefusalCode;
   message: string;
-  /** FANOUT ONLY: the model ref (`ModelInfo.ref`) of a member that was never created, so the
-      partial-creation banner can name it. A member that does not exist has no session, so `id`
-      and `path` are both "" and this is the only handle the client has on it. Absent everywhere
-      else — on the prompt route the member always exists and `id` names it. */
+  /** FANOUT ONLY, and only in a 201's `failed`: the model ref (`ModelInfo.ref`) of a member that
+      was never created, so the partial-creation banner can name it. Such a member has no session,
+      so `id` and `path` are both "" and this is the only handle the client has on it.
+      TWO DIFFERENT EMPTY IDS LIVE ON THIS ROUTE and they are not the same case: a 409 refusal
+      names the SOURCE, which is a member of nothing and carries no `ref`; a `failed` entry names
+      a member that never came into being and does carry one. Neither has an id, for different
+      reasons, and nothing should build a lookup on either. Absent on the prompt route entirely —
+      there the member always exists and `id` names it, so a `ref` would be a second way to say
+      the same thing, and the two would drift. */
   ref?: string;
 }
 

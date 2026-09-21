@@ -313,6 +313,17 @@ export function assignSession(sessionId: string, groupId: string | null, label?:
     const group = groupId === null ? null : store.groups.find((g) => g.id === groupId);
     if (groupId !== null && !group) return { ok: false, status: 404, error: "Group not found" };
     const from = store.assignments[sessionId] ?? null; // the group this session is leaving, if any
+    // Already in the target group: a re-assign must not silently reorder it. Drag-and-drop can
+    // drop a grouped row back onto its own section, and a double-fire sends the same assign twice;
+    // either one moving the member to the end would rewrite an order the user arranged by hand.
+    // Only the label changes (when the body carried one).
+    if (group && from === group.id) {
+      const member = group.members.find((m) => m.id === sessionId);
+      if (!member) group.members.push({ id: sessionId, ...(label ? { label } : {}) }); // reconcile normally prevents this
+      else if (label === null) delete member.label;
+      else if (label !== undefined) member.label = label;
+      return { ok: true };
+    }
     let carried: string | undefined;
     for (const g of store.groups) {
       const at = g.members.findIndex((m) => m.id === sessionId);
@@ -327,7 +338,8 @@ export function assignSession(sessionId: string, groupId: string | null, label?:
     const kept = label === undefined ? carried : (label ?? undefined);
     group.members.push({ id: sessionId, ...(kept ? { label: kept } : {}) });
     store.assignments[sessionId] = group.id;
-    // A move out of a fanout group empties it just as surely as an unassign does.
+    // A move out of a fanout group empties it just as surely as an unassign does (never the
+    // same-group case: that returned above).
     return { ok: true, ...(dissolveIfEmptied(store, from) ? { dissolved: true as const } : {}) };
   });
 }

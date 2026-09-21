@@ -186,7 +186,7 @@ app.post("/api/session-groups/assign", async (c) => {
   try {
     body = await c.req.json();
   } catch {
-    return c.json({ error: "Expected JSON body { path, groupId }" }, 400);
+    return c.json({ error: "Expected JSON body { path, groupId, label? }" }, 400);
   }
   if (body.groupId !== null && typeof body.groupId !== "string") return c.json({ error: "groupId must be a group id or null" }, 400);
   // Omitted keeps the label the session already had (a move between groups carries it).

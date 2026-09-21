@@ -445,3 +445,32 @@ test("archive cleanup empties a fanout group WITHOUT dissolving it (deliberate, 
   assert.deepEqual(readGroups().map((g) => g.id), ["g1"], "no client is listening to that call");
   assert.deepEqual(membersOf("g1"), []);
 });
+
+test("re-assigning a session to the group it is already in does not reorder it", () => {
+  // §2's drag-and-drop can drop a grouped row back onto its own section, and a double-fire sends
+  // the same assign twice: neither may rewrite an order the user arranged by hand.
+  reset({
+    version: 1,
+    groups: [{ id: "g1", name: "Work", createdAt: "2026-01-01T00:00:00.000Z", members: [{ id: "a", label: "opus" }, { id: "b" }, { id: "c" }] }],
+    assignments: { a: "g1", b: "g1", c: "g1" },
+  });
+  assert.deepEqual(assignSession("a", "g1"), { ok: true });
+  assert.deepEqual(membersOf("g1"), [{ id: "a", label: "opus" }, { id: "b" }, { id: "c" }], "position and label both untouched");
+  assignSession("a", "g1", "sonnet ×2"); // a label change still lands, still in place
+  assert.deepEqual(membersOf("g1"), [{ id: "a", label: "sonnet ×2" }, { id: "b" }, { id: "c" }]);
+  assignSession("a", "g1", null); // and clearing it
+  assert.deepEqual(membersOf("g1"), [{ id: "a" }, { id: "b" }, { id: "c" }]);
+});
+
+test("a session moved to a DIFFERENT group still arrives at the end", () => {
+  reset({
+    version: 1,
+    groups: [
+      { id: "g1", name: "One", createdAt: "2026-01-01T00:00:00.000Z", members: [{ id: "a", label: "opus" }] },
+      { id: "g2", name: "Two", createdAt: "2026-01-01T00:00:00.000Z", members: [{ id: "b" }] },
+    ],
+    assignments: { a: "g1", b: "g2" },
+  });
+  assert.deepEqual(assignSession("a", "g2"), { ok: true });
+  assert.deepEqual(membersOf("g2"), [{ id: "b" }, { id: "a", label: "opus" }]);
+});

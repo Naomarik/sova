@@ -139,10 +139,50 @@ Turns start together, so one provider may answer some members with 429. pi-web d
   will say so in their own pane. We do not stagger the starts, and a preview that hid that would
   be promising an ordering we don't implement.
 
-## What creation does
+## The route
 
-`POST /api/session-groups/fanout` — one request, one response, and the client navigates to the
-new workspace.
+One request, one response, and the client navigates to the new workspace. Nothing here is a
+second round trip: the group, its members and their assignments are one write, because a fanout
+that half-exists is a sidebar section the user has to clean up.
+
+```ts
+POST /api/session-groups/fanout
+{
+  name: string;                               // the group's name, 1–60, GROUP_NAME_MAX
+  members: { ref: string; count: number }[];  // `ref` is ModelInfo.ref ("provider/id"); count 1–9.
+                                              // Array order is pane order; repeats are the count.
+  source?: { path: string; leafId: string };  // fork mode
+  cwd?: string;                               // fresh mode
+  text?: string;                              // fresh mode: the first message every member gets
+}
+-> 201 { group: SessionGroup; created: SessionSummary[]; failed: BatchRefusal[] }
+```
+
+- **`source` and `cwd` are exclusive**, and exactly one is required: a request with both, or
+  neither, is a `400`. There is no third mode, and a fanout with no starting point is not a
+  thing the dialog can produce.
+- **The client sends the leaf it showed the user.** `source.leafId` is the entry the dialog named
+  ("up to message 34"), not a request for the server to find the current one. If it no longer is
+  the source's leaf, the server refuses. The other refusals make this nearly unreachable — the
+  leaf can only move if something wrote, and every writer is already grounds to refuse — but
+  "nearly" is doing real work: a turn can start and finish between the dialog opening and Create.
+  Forking from a point the user didn't approve would break the fork marker's only promise, which
+  is that everything above it is what they saw shared.
+- **Refusals reuse the batch vocabulary**: `409 {refused: [BatchRefusal]}` with exactly one
+  entry, the source, so the client renders it with the same code-to-sentence table the group
+  composer uses (§14). The codes are the source states above — `tui-live`, `mid-turn`, `busy`
+  (an unidentified recent writer), plus two this route adds: **`old-format`** for a source whose
+  header version isn't current, and **`stale-leaf`** for the check above. A source path that
+  doesn't resolve to a session at all is a `404`, not a refusal: the subject of the request
+  doesn't exist, which is a different kind of wrong from "exists but not right now".
+- **`400`** for a bad name, an empty `members`, a `count` outside 1–9, a `ref` no provider knows,
+  blank `text` in fresh mode, or `text`/`cwd` sent in fork mode.
+- **`201`, and `created` is never empty.** If not one member could be made, nothing is created,
+  the group is not written, and the response is the failure — a group with no members is not a
+  result, it is debris. `failed` carries the members that couldn't start, in the batch's own
+  refusal shape, and drives the partial-creation banner below.
+
+## What creation does
 
 - **Fork mode takes one fresh manager per member, and the source's own manager is never handed
   to any of them.** `createBranchedSession(leafId)` is not a factory: it **rebinds the manager it
@@ -245,6 +285,7 @@ afterwards, and the next incoming token scrolls a followed pane as usual.
 | Source mid-turn | The dialog **opens and is fully usable** — pick models, set counts, name the group — and Create is `aria-disabled` with the reason "“{title}” is mid-turn. We read the file to fork it, and we don't read it while it's being written. This enables itself when the turn finishes." It does enable itself, in place, with no re-open: setting a fanout up during the turn you are waiting on is the natural thing to do |
 | Source has an unidentified writer | The same shape, reason "Another program wrote to “{title}” a moment ago. Forking waits until it stops." The same window `/ws/chat` refuses on (`RECENT_WRITE_MS`), for the same reason: we don't read a file mid-write |
 | Source is in an older session format | Create is `aria-disabled`, reason "“{title}” is in an older session format. Forking reads the file, and reading it rewrites the whole thing — not something to do to a session that's open. Open it for chat here once to update it, then fan out." The header's `version` is already read to list the session, so this costs nothing to check and it is the one refusal the user can clear themselves in one gesture |
+| The fork point moved while the dialog was open | Create is `aria-disabled`, reason "“{title}” answered while this dialog was open, so the fork point you picked isn't its latest message anymore. Reopen Fan out to fork from where it is now." The server refuses it too (`stale-leaf`), so a client that missed the change still can't fork from a point the user never saw |
 | Source is TUI-live | `Fan Out…` is absent. Two reasons, either sufficient: pi-web never touches a file a terminal owns, and the leaf pi-web can see is not the one the terminal is about to write, so the fork would be from a stale point — a silently wrong comparison |
 | A model has no window on record | Its row shows tokens alone; Create stays available |
 | A model's window is smaller than the fork | `.context-error` on the row plus its own line; Create disabled until the row is removed or the count is 0 |

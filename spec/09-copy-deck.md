@@ -420,6 +420,8 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Cancel | `Cancel` |
 | Partial creation banner | **{k} of {n} members were created.** {model} couldn't start: {server message}. The {k} that exist are running; add another from Add Members. · buttons `Add Members` · `Dismiss` |
 | Total failure | `.field-error` in the dialog: "Couldn't create this fanout. No sessions were made. {server message}" |
+| Create off, the fork point moved | “{title}” answered while this dialog was open, so the fork point you picked isn't its latest message anymore. Reopen Fan out to fork from where it is now. |
+| Source gone (404) | `.field-error`: "“{title}” isn't on disk anymore. Nothing was created." |
 | Fork marker row | Forked from {parent title} here · `{HH:MM}` · parent gone: the title as plain text, `title` "This session is no longer on disk." |
 | Align to Fork | `Align to Fork` · live region: "Aligned {n} members to the fork point." · some missing: "Aligned {k} members. {pane name} has no fork point on its branch." |
 | Fan out unavailable | the row is absent — no reply yet, a watch view, or a session open in a TUI. Nothing is disabled and nothing explains an absence |

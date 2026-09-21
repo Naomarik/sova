@@ -42,7 +42,7 @@ export function SettingsDialog(props: { onClose(): void }) {
     if (s) setClaudeCodeOn(s.experimental.claudeCodeProvider);
   });
   // Only probed when the tab is open: it spawns `claude --version` on the server.
-  const [cliStatus] = createResource(
+  const [cliStatus, { refetch: refetchCliStatus }] = createResource(
     () => tab() === "experimental",
     (open) => (open ? getClaudeCliStatus() : undefined),
   );
@@ -69,6 +69,11 @@ export function SettingsDialog(props: { onClose(): void }) {
     try {
       await putWebSettings({ experimental: { claudeCodeProvider: !before } });
       void refetchSettings();
+      // Turning it on registers the provider server-side, so the count in the status line is
+      // already out of date by the time the PUT returns. Without this the line keeps saying
+      // "no models are registered yet — start a session, or restart the server" while the
+      // picker has them, which is worse than no status line at all.
+      void refetchCliStatus();
     } catch (err) {
       setClaudeCodeOn(before);
       setSettingsError(err instanceof Error ? err.message : String(err));
@@ -186,7 +191,10 @@ export function SettingsDialog(props: { onClose(): void }) {
               )}
             </For>
           </nav>
-          <div class="settings-panel" role="tabpanel" id="settings-panel-subagents" aria-labelledby="settings-tab-subagents">
+          {/* ONE panel for every tab: .settings-body is a two-column grid (base.css), so a
+              second sibling panel would become a third grid item and squeeze the content into a
+              sliver. The panel identifies itself as whichever tab is active. */}
+          <div class="settings-panel" role="tabpanel" id={`settings-panel-${tab()}`} aria-labelledby={`settings-tab-${tab()}`}>
             <Show when={tab() === "subagents"}>
               <p class="settings-intro">
                 Choose which models and providers subagents and team members can use. Changes apply to the
@@ -289,8 +297,6 @@ export function SettingsDialog(props: { onClose(): void }) {
                 </Show>
               </Show>
             </Show>
-          </div>
-          <div class="settings-panel" role="tabpanel" id="settings-panel-experimental" aria-labelledby="settings-tab-experimental">
             <Show when={tab() === "experimental"}>
               <p class="settings-intro">
                 Unfinished features. They can change or disappear, and they apply to sessions you start

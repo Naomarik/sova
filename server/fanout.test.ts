@@ -212,14 +212,13 @@ test("a source path that is not a session file is 404, not a refusal", async () 
 });
 
 test("a member that fails its read-back is also named by ref, not by a session it never had", async () => {
-  const d = deps({ members: () => ["a"], summary: async () => null });
+  const d = deps({ summary: async () => null });
   const r = await runFanout(forkBody({ members: [{ ref: "openai/gpt-5", count: 2 }] }), d);
   assert.ok(!r.ok && r.status === 500, "no member survived, so no group is written");
 });
 
 test("every fanout failure carries a ref; a prompt-route refusal carries none", async () => {
   const d = deps({
-    members: () => ["a"],
     fork: async (_s, _l, member) => {
       throw new Error(`${member.ref} is over quota`);
     },

@@ -247,6 +247,11 @@ export function GroupView(props: {
   const [wanted, setWanted] = createSignal<string | null>(props.focused);
   createEffect(on(() => props.focused, (p) => p && setWanted(p), { defer: true }));
   createEffect(on(id, () => setWanted(null), { defer: true }));
+  // The list poll eventually shows an out-of-band change (a dissolve or rename from another
+  // client); a workspace mount or group switch is the one moment we KNOW the user is about to read
+  // the group, so the groups are re-read right then rather than left to the poll's grace period —
+  // a renamed head or a dead route id lingering past navigation reads as a bug, not staleness.
+  createEffect(on(id, () => void loadSessionGroups()));
   const active = createMemo(() => {
     const list = panes();
     const at = wanted();

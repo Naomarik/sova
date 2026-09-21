@@ -30,10 +30,11 @@ import { readFileSync } from "node:fs";
 import { mkdir, readdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, posix, resolve, sep } from "node:path";
-import { awsSsmProxyCommand, type Target, type TargetMount } from "./argv.ts";
+import { awsSsmProxyCommand, type Target } from "./argv.ts";
 import { type RunOptions, type RunResult, runArgv } from "./exec.ts";
 
-export type { TargetMount };
+/** The entry's `mount` block; the schema no longer exports it (this module goes with the server's mount support). */
+export type TargetMount = NonNullable<Target["mount"]>;
 
 // ---------------------------------------------------------------------------
 // the measured-safe mount options

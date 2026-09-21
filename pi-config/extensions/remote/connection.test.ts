@@ -150,10 +150,11 @@ test("bash(): streams, runs in the far cwd by default, and reports the far exit 
 	done();
 });
 
-test("status(): no mount unless a subclass says so, and the probe fills host", async () => {
+test("status(): the connection's own fields, and the probe fills host", async () => {
 	const { c, done } = await setup();
 	const s = c.status();
-	assert.deepEqual([s.state, s.mounted, s.mountPoint, s.pinned], ["online", false, undefined, false]);
+	assert.deepEqual([s.state, s.pinned], ["online", false]);
+	assert.ok(!("mounted" in s) && !("mountPoint" in s), "no mount keys: sshfs support is gone");
 	assert.ok(s.host && s.host.includes("@"), s.host);
 	assert.ok(s.lastOkAt > 0);
 	done();

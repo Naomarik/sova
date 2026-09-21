@@ -69,49 +69,14 @@ Measured on acme-prod (RTT ~117 ms): a file op costs ~135 ms over the channel ag
 per call over a warm ControlMaster; `bash` and `write` are unchanged. Over one representative turn
 (read, edit, ls, grep, two bash calls) the channel captures three of eight ssh spawns.
 
-**Mounted mode** (`mount.ts`). An entry with a `mount` block (`{"remote": "/abs/far/path",
-"local": "~/…"}`) can be mounted over sshfs: `/remote mount` (or pi-web's toggle, which calls the
-same code). A session whose cwd is inside the mount point is a **mounted session**, decided once
-at session start:
-
-| Tool | Mounted mode |
-| --- | --- |
-| `read`, `write`, `edit` | **local**, through the mount — every tool shares one view and pi's own per-file mutation queue applies natively |
-| `bash`, `ls`, `find`, `grep` | **remote, always** — a recursive search through fuse measured 135 s vs 14 ms far side |
-| the channel | **never built** — fuse provides the fast lane; a channel would cost a second ssh login |
-
-Paths inside the mount point map to `mount.remote` + suffix (so is the session's far cwd). An
-absolute path outside the mount still means the host, as today. If the mount goes down mid-session,
-file tools fail closed with a clear error (`the sshfs mount … is gone; remount it`) — never a silent
-ENOENT from the empty mount-point dir. Placeholder sessions and CLI sessions with a cwd outside
-the mount point behave exactly as without a mount config, and mounting later does not re-route
-them.
-
-Every mount carries `reconnect,ServerAliveInterval=15,ServerAliveCountMax=3` (mount.ts's
-SSHFS_MOUNT_OPTIONS, asserted in mount.test.ts): without them a dead host turns a `stat` on the
-mount into an event-loop freeze — the caller is often pi-web's server. `isMounted` checks
-`/proc/mounts` (never a stat of the fuse path); `verifyMounted` reads through the mount on
-fs/promises inside a timeout race, so a mount that exists but doesn't answer is never reported as
-success. `unmount` runs `fusermount3 -u`, retries briefly on EBUSY, then falls back to the lazy
-`-u -z` (measured: a local process holding an fd through the mount — e.g. an open node_modules —
-leaves plain `-u` busy; lazy detaches and the mount leaves the table at once), and reports what
-the table actually says.
-
-**Mount-point placement.** Prefer `~/.pi/agent/mounts/<name>`: the mount must NOT live where
-other tools casually traverse — a module-resolving process that walks into `~/remote/…` under
-$HOME held the mount open and made it EBUSY.
-
 **Status.** Two `setStatus` keys, always together: `remote`, the footer line
 (`⇄ <label> · user@hostname`, `· unreachable`, `· ssh rate-limited`, `· pinned`), and
 `remote-status`, JSON for pi-web's connection chip: `{state: "online"|"unreachable"|"unknown",
-target, host?, latencyMs?, pinned, mounted, mountPoint?, channelState?: "off"|"warming"|"idle"|"busy"|"dead"|"rate-limited",
-channelRetryAt?, lastOkAt, runningMs?, error?, at}`. `mounted` is a live `/proc/mounts` lookup
-target-level (true in every session of the target, whatever its cwd); `mountPoint` is present iff
-the entry has a mount config, mounted or not. Re-published
+target, host?, latencyMs?, pinned, channelState?: "off"|"warming"|"idle"|"busy"|"dead"|"rate-limited",
+channelRetryAt?, lastOkAt, runningMs?, error?, at}`. Re-published
 on session start, every probe and call outcome, every channel transition, and every 5 s while a
 command runs (`runningMs`). `/remote check` runs a fresh per-call probe; `/remote reconnect` drops the
-channel and re-probes; `/remote mount`/`/remote unmount` toggle the target's sshfs mount (safe to
-call twice; both re-publish the status); `/remote status` only re-publishes both keys from the current state (no
+channel and re-probes; `/remote status` only re-publishes both keys from the current state (no
 ssh, no channel, no toast), for a client that reconnected to a live session. A first loss and a recovery also toast (`remote: …`).
 
 `before_agent_start` sets the prompt's cwd to the far cwd and adds a `remote-target` section,
@@ -156,7 +121,6 @@ and a claude worker again through the server's `initialize.instructions`.
 | `argv.ts` | Pure, node-builtins-only. The entry schema, validation, the one argv builder (`buildTargetArgv`), the folder listing (`buildListDirsArgv`), quoting, and the placeholder path helpers. **pi-web's server imports it**, so keep it pi-runtime-free |
 | `exec.ts` | Spawns an argv with no local shell, with a timeout, abort handling and stdin |
 | `channel.ts` | The pinned channel: one far shell over its own ssh, length-prefixed requests, base64 + marker responses |
-| `mount.ts` | The sshfs mount: the one argv builder (the measured-safe options), the `/proc/mounts` lookup, mount/unmount/verify with honest reports. **pi-web's server imports it**, so keep it pi-runtime-free |
 | `connection.ts` | Pure, loadable by plain node. `Connection`: one session's probe, status and the choke point every far command takes — the pinned channel when idle, else per call — with the whole channel policy (lazy warm, hold after a teardown, failure cooldown, login rate-limit backoff). `Remote` in index.ts extends it; a worker's MCP server uses it directly. Both lanes run in the far cwd |
 | `check.ts` | `node check.ts entry.json [--list PATH] [--cmd …]`: validates an entry and runs it end to end through the same builder. The connection agent uses it before it writes an entry |
 | `workers.ts` | Pure. What a session hands its workers: the `remote:session` event, the MCP identity env and the worker blurb; imported by index.ts, mcp-server.ts and the subagents extension |
@@ -171,15 +135,13 @@ and a claude worker again through the server's `initialize.instructions`.
   "proxy": { "type": "aws-ssm", "profile": "p", "region": "eu-central-1", "pushKey": "ec2-instance-connect" },
   "incus": { "sudo": true, "sandbox": "foldai-sandbox", "cell": "foldai-cell-abc", "uid": 70000, "gid": 70000 },
   "docker": { "container": "web", "user": "app" },
-  "via": "other-target", "cwd": "/home/deploy/acme-site", "env": { "TERM": "dumb" },
-  "mount": { "remote": "/home/deploy/acme-site", "local": "~/.pi/agent/mounts/acme-prod" } }
+  "via": "other-target", "cwd": "/home/deploy/acme-site", "env": { "TERM": "dumb" } }
 ```
 
 `kind` names the environment. `"ssh"` is the plain host, `"incus-cell"` uses the `incus` block, and
 `"docker"` uses the `docker` block. The transport is derived: an `ssh` block means ssh; otherwise a
-`via` entry nests inside that target; otherwise the command runs on this machine. `mount` needs
-the target's own ssh block — refused at use by `mountArgv`, never by validation (a validation
-failure would drop the whole entry, mount and all). The file is
+`via` entry nests inside that target; otherwise the command runs on this machine. Unknown keys are
+ignored (a `mount` block left over from the removed sshfs feature does not invalidate its entry). The file is
 credential-free: key paths and profile names only. ssh always gets `ControlMaster=auto`,
 `ControlPath=~/.ssh/cm-%C` and `ControlPersist=10m` (a cold login can cost over 1.5 s), after the
 entry's own `options`, so the entry's options win.
@@ -194,12 +156,8 @@ runs a path like `/tmp/it's/$(touch …/pwned)` through both layers and asserts 
 npx tsx --test pi-config/extensions/remote/*.test.ts
 ```
 
-`mount.test.ts` needs no network either: the argv, the real `/proc/mounts`, and fake sshfs/fusermount3
-seams for the reporting.
-
 `index.test.ts` counts far invocations per tool (read 1, edit 2, write 1, ls 1) with a fake runner
-that executes the far command locally, and runs the real channel loop under a local `sh`; the
-mounted-mode tests run the same fake against a scaffolded mount point (the `isMounted` dep swapped).
+that executes the far command locally, and runs the real channel loop under a local `sh`.
 
 When a proof run drives a model against a live target: Name exact paths. Never tell the model to read whatever find/ls returned; list freely, then read only a named file you have judged non-secret.
 

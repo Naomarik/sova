@@ -7,7 +7,7 @@
  * Hand-rolled JSON-RPC (initialize, ping, tools/list, tools/call and the two notifications)
  * exactly like subagents/member-mcp.ts, so the child needs no dependency beyond node: the
  * runtime runs this .ts file directly. It must never import ./index.ts: that is the pi
- * extension (pi runtime, tool registration, mount branches); only the pi-free modules
+ * extension (pi runtime, tool registration); only the pi-free modules
  * (workers/argv/far/connection, and channel/exec through them) may be loaded here.
  *
  * Fail closed: without a valid identity the process exits without serving, and a target that

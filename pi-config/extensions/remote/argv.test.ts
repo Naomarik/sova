@@ -212,17 +212,8 @@ test("validateTarget and parseTargetsFile", () => {
 	assert.deepEqual(validateTarget({ ...prod, name: "a.b..c" }), []);
 	assert.match(validateTarget({ ...prod, env: { "A B": "x" } }).join(), /env/);
 	assert.deepEqual(validateTarget({ name: "c", kind: "docker", docker: { container: "c" }, via: "acme-prod" }), []);
-	// mount block: remote is a far absolute path, local is ~/… or absolute, no NUL. A mount on a
-	// target without its own ssh block is NOT a validation error — mountArgv refuses it at use
-	// (validation failures would drop the whole entry, mount and all).
-	assert.deepEqual(validateTarget({ ...prod, mount: { remote: "/home/deploy/acme-site", local: "~/.pi/agent/mounts/acme-prod" } }), []);
-	assert.deepEqual(validateTarget({ ...prod, mount: { remote: "/", local: "/mnt/x" } }), []);
-	assert.match(validateTarget({ ...prod, mount: { remote: "relative/path", local: "~/m" } }).join(), /mount.remote must be an absolute path/);
-	assert.match(validateTarget({ ...prod, mount: { remote: "/r\0", local: "~/m" } }).join(), /mount.remote/);
-	assert.match(validateTarget({ ...prod, mount: { remote: "/r", local: "relative" } }).join(), /mount.local must be ~\/… or an absolute path/);
-	assert.match(validateTarget({ ...prod, mount: { remote: "/r" } }).join(), /mount.local/);
-	assert.match(validateTarget({ ...prod, mount: "x" }).join(), /mount must be an object/);
-	assert.deepEqual(validateTarget({ name: "d", kind: "docker", docker: { container: "c" }, mount: { remote: "/r", local: "~/m" } }), [], "valid here; mountArgv refuses it at use");
+	// Unknown keys are ignored, never an error: a lingering `mount` block from before sshfs support was removed keeps its entry valid.
+	assert.deepEqual(validateTarget({ ...prod, mount: { remote: "/home/deploy/acme-site", local: "~/.pi/agent/mounts/acme-prod" } } as never), []);
 	const parsed = parseTargetsFile(JSON.stringify({ version: 1, targets: [prod, prod, { name: "bad", kind: "ssh" }] }));
 	assert.deepEqual(parsed.targets.map((t) => t.name), ["acme-prod"]);
 	assert.deepEqual(parsed.invalid.map((i) => i.name), ["acme-prod", "bad"]);

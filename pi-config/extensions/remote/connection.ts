@@ -4,7 +4,7 @@
  * ssh, with the channel's whole policy (lazy warm, hold after a teardown, failure cooldown, login
  * rate-limit backoff) in one place.
  *
- * This is index.ts's `Remote` minus everything local: no cwd, no path mapping, no mount, no pi tool
+ * This is index.ts's `Remote` minus everything local: no cwd, no path mapping, no pi tool
  * operations. `Remote extends Connection` adds those; remote/mcp-server.ts (the workers' MCP server)
  * uses Connection directly, which is why this file must stay:
  *  - pi-runtime-free — node builtins, argv.ts, exec.ts and channel.ts only, NEVER
@@ -13,7 +13,7 @@
  *    properties, enums or namespaces.
  *
  * The far working directory is given once, by the caller (`farCwd`): the extension derives it from
- * the session's local cwd (placeholder or mount), a worker's MCP server gets it in its identity.
+ * the session's local cwd (the placeholder), a worker's MCP server gets it in its identity.
  */
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -78,14 +78,6 @@ export interface RemoteStatus {
 	latencyMs?: number;
 	/** The pinned channel is up (idle or busy): the next idle call skips the ssh setup. */
 	pinned: boolean;
-	/**
-	 * TARGET-level: a mount of this target exists at mountPoint — a live /proc/mounts lookup, never
-	 * a stat of the fuse path. True in every session of the target, whatever its cwd. Filled by the
-	 * `mountStatus()` hook, which only the extension's `Remote` overrides (a worker has no mount).
-	 */
-	mounted: boolean;
-	/** The target's configured mount point (~/… expanded), present iff the entry has a mount config — mounted or not. */
-	mountPoint?: string;
 	/** "rate-limited": the host refused the channel's login; calls go per call through the master until channelRetryAt. */
 	channelState?: ChannelState | "rate-limited";
 	/** Epoch ms after which the next tool call may try the channel again; set only while rate-limited. */
@@ -121,7 +113,7 @@ export interface ConnectionDeps {
 	exec?: (argv: readonly string[], opts?: RunOptions) => Promise<RunResult>;
 	/**
 	 * The pinned channel: a factory, or `false` for none (the `--no-channel` kill switch, a target
-	 * with no ssh hop, mounted mode). Omitted = the target's own channel, built here.
+	 * with no ssh hop). Omitted = the target's own channel, built here.
 	 */
 	channel?: ChannelFactory | false;
 	/** The clock (default Date.now); tests move it. */
@@ -242,25 +234,17 @@ export class Connection {
 	// -------------------------------------------------------------------------
 	// status
 
-	/** Mount state for the status; only the extension's Remote knows about mounts. */
-	protected mountStatus(): { mounted: boolean; mountPoint?: string } {
-		return { mounted: false };
-	}
-
 	status(): RemoteStatus {
 		const now = this.now();
 		const failed = !!this.failure && !this.info;
 		const channelState: RemoteStatus["channelState"] = this.rateLimited ? "rate-limited" : (this.channel?.state ?? (this.makeChannel ? "off" : undefined));
-		const mount = this.mountStatus();
 		const s: RemoteStatus = {
 			state: failed ? "unreachable" : this.info ? "online" : "unknown",
 			target: this.target.name,
 			pinned: channelState === "idle" || channelState === "busy",
-			mounted: mount.mounted,
 			lastOkAt: this.lastOkAt,
 			at: now,
 		};
-		if (mount.mountPoint) s.mountPoint = mount.mountPoint;
 		if (this.info) s.host = `${this.info.user}@${this.info.hostname}`;
 		if (this.latencyMs !== undefined) s.latencyMs = this.latencyMs;
 		if (channelState) s.channelState = channelState;
@@ -413,13 +397,8 @@ export class Connection {
 	// -------------------------------------------------------------------------
 	// the pinned channel
 
-	/** Subclass veto (mounted mode: fuse is already the fast lane, a second ssh login buys nothing). */
-	protected channelAllowed(): boolean {
-		return true;
-	}
-
 	private channelUsable(): boolean {
-		return !!this.makeChannel && this.channelAllowed() && this.isSsh && this.now() >= this.channelSkipUntil;
+		return !!this.makeChannel && this.isSsh && this.now() >= this.channelSkipUntil;
 	}
 
 	/** Idle close delay for the channel (0 = never; workers pass 0). Applies to the live one too. */

@@ -17,17 +17,16 @@
  * Every file operation goes through `Remote.run()`: the pinned channel (channel.ts) when it is up
  * and idle, else a per-call ssh. That transport — the probe, the status, the channel policy — is
  * `Connection` (connection.ts), which `Remote` extends and the workers' MCP server (mcp-server.ts)
- * shares; this file is the local half: path mapping, mount, and pi's tool operations. The connection
+ * shares; this file is the local half: path mapping and pi's tool operations. The connection
  * status goes out as a pair of setStatus keys: `remote` (prose, the TUI status bar) and
  * `remote-status` (RemoteStatus JSON, pi-web's chip).
  *
  * The session announces itself on `pi.events` (REMOTE_SESSION_EVENT, workers.ts) so the subagents
  * extension can put this session's workers on the target too: our flag is invisible to it.
  */
-import { constants as fsConstants, readFileSync } from "node:fs";
-import { access, mkdir, readFile, writeFile } from "node:fs/promises";
+import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { posix, resolve as resolveLocal, sep } from "node:path";
+import { posix, resolve as resolveLocal } from "node:path";
 import {
 	type BashOperations,
 	createBashToolDefinition,
@@ -61,7 +60,6 @@ import {
 	type RemoteStatus,
 } from "./connection.ts";
 import type { RunResult } from "./exec.ts";
-import { isMounted, mount, mountPointOf, toMountRemote, unmount } from "./mount.ts";
 import { REMOTE_DISCOVER_EVENT, REMOTE_SESSION_EVENT, type RemoteSessionEvent } from "./workers.ts";
 
 export { channelOver, describeTarget, type ChannelLike, type ChannelState, type FarInfo, type RemoteStatus } from "./connection.ts";
@@ -100,82 +98,34 @@ function loadTarget(name: string): { target?: Target; registry: Target[]; error?
 	}
 }
 
-/** Everything Remote needs beyond a Connection: the mount check the extension's status shows. */
-export interface RemoteDeps extends ConnectionDeps {
-	/** The live mount-table check (default mount.ts isMounted); tests swap it. */
-	isMounted?: (localPath: string) => boolean;
-}
+/** Everything Remote needs beyond a Connection: nothing today; the extension's dep type, kept for its callers and tests. */
+export type RemoteDeps = ConnectionDeps;
 
 /**
- * A session's Connection plus everything local: the placeholder/mount path mapping and pi's tool
+ * A session's Connection plus everything local: the placeholder path mapping and pi's tool
  * operations. The transport, the probe, the status and the channel policy all live in Connection
  * (connection.ts), which the workers' MCP server shares.
  */
 export class Remote extends Connection {
 	readonly localCwd: string;
 	readonly root: string;
-	/** The target's configured local mount point (~/… expanded); undefined without a mount config. */
-	readonly mountPoint?: string;
-	/**
-	 * Mounted mode, decided once at session start: the cwd is inside the mount point AND a real
-	 * mount sits there. read/write/edit then serve paths inside the mount from the local fs
-	 * (through fuse); bash/ls/find/grep stay remote; the channel is never built. A mount toggled
-	 * later does not re-route this session — a placeholder session on a mounted target stays
-	 * byte-identical to today.
-	 */
-	readonly mountedMode: boolean;
-	private readonly isMountedNow: (localPath: string) => boolean;
 
 	constructor(target: Target, registry: Target[], localCwd: string, deps: RemoteDeps = {}) {
 		// Everything the far cwd depends on is computed before super(): `this` is off limits until then.
 		const agentDir = deps.agentDir ?? getAgentDir();
 		const root = placeholderRoot(agentDir, target.name);
-		const mountPoint = mountPointOf(target);
-		const inMount = !!mountPoint && (localCwd === mountPoint || localCwd.startsWith(mountPoint + sep));
-		const mountedMode = inMount && (deps.isMounted ?? isMounted)(mountPoint!);
-		/** The far cwd known without a round trip (a path inside the mount, the placeholder, or the entry's cwd). */
-		const farCwd = inMount
-			? (toMountRemote(target.mount!, localCwd) ?? target.cwd)
-			: localCwd === root || localCwd.startsWith(root + "/")
-				? toRemotePath(localCwd, root)
-				: target.cwd;
+		/** The far cwd known without a round trip (the placeholder, or the entry's cwd). */
+		const farCwd = localCwd === root || localCwd.startsWith(root + "/") ? toRemotePath(localCwd, root) : target.cwd;
 		// `channel` keeps the extension's older meaning here — omitted = none (the --no-channel kill
 		// switch passes nothing); only direct Connection users (the workers' MCP server) get the
 		// target's channel by default.
 		super(target, registry, farCwd, { ...deps, agentDir, channel: deps.channel ?? false });
 		this.localCwd = localCwd;
 		this.root = root;
-		this.mountPoint = mountPoint;
-		this.mountedMode = mountedMode;
-		this.isMountedNow = deps.isMounted ?? isMounted;
 	}
 
-	/** The live mount-table check for the target's mount point (never a stat of the fuse path). */
-	private mountedNow(): boolean {
-		return !!this.mountPoint && this.isMountedNow(this.mountPoint);
-	}
-
-	protected override mountStatus(): { mounted: boolean; mountPoint?: string } {
-		return this.mountPoint ? { mounted: this.mountedNow(), mountPoint: this.mountPoint } : { mounted: false };
-	}
-
-	/**
-	 * Mounted mode never pins a channel: fuse already provides the fast lane for file operations,
-	 * and it would cost a second ssh login per session for nothing.
-	 */
-	protected override channelAllowed(): boolean {
-		return !this.mountedMode;
-	}
-
-	/** Local path (as pi resolved it) → far path. */
+	/** Local path (as pi resolved it) → far path: the placeholder mapping, then cwd-relative, then `~`. */
 	toFar(p: string): string {
-		// The mount mapping first, whether the mount is up or not: a path inside the mount point is
-		// mount.remote + suffix — that is the far path the remote tools (bash/ls/find/grep) and the
-		// far-side cwd use. Placeholder and cwd-relative mappings follow.
-		if (this.target.mount) {
-			const far = toMountRemote(this.target.mount, p);
-			if (far !== null) return far;
-		}
 		if (p === this.root || p.startsWith(this.root + "/")) return toRemotePath(p, this.root);
 		const farCwd = this.farInfo?.cwd ?? this.farCwd;
 		if (farCwd && (p === this.localCwd || p.startsWith(this.localCwd + "/"))) return farCwd + p.slice(this.localCwd.length);
@@ -218,34 +168,18 @@ export class Remote extends Connection {
 	}
 
 	/**
-	 * Where one resolved file path is served from. Mounted sessions serve paths inside the mount
-	 * point from the local fs (through fuse), so every tool shares one view and pi's own per-file
-	 * mutation queue keys on the local path; a path under the mount point with the mount GONE fails
-	 * closed — never a silent ENOENT from the empty mount-point dir, never a silent wrong-machine
-	 * read. Everything else runs far as today (an absolute path outside the mount means the host).
-	 */
-	private localThroughMount(p: string): boolean {
-		if (!this.mountedMode || !this.target.mount || toMountRemote(this.target.mount, p) === null) return false;
-		if (!this.mountedNow()) throw new Error(`the sshfs mount for target ${this.target.name} at ${this.mountPoint} is gone; remount it (/remote mount)`);
-		return true;
-	}
-
-	/**
 	 * pi's read and edit call access() then readFile() at once. access() starts the one fetch (so its
 	 * errors keep the shape pi wraps them in) and readFile() takes the result. A fetch left behind by
 	 * an aborted call expires after PREFETCH_TTL_MS; a readFile with nothing prefetched fetches itself.
-	 * Mounted mode answers both from the local fs instead (through the mount).
 	 */
 	private prefetchOps(writable: boolean): Pick<ReadOperations, "access" | "readFile"> {
 		const prefetched = new Map<string, { data: Buffer; at: number }>();
 		return {
 			access: async (p) => {
-				if (this.localThroughMount(p)) return access(p, writable ? fsConstants.R_OK | fsConstants.W_OK : fsConstants.R_OK);
 				prefetched.delete(p);
 				prefetched.set(p, { data: await this.fetch(p, undefined, writable), at: Date.now() });
 			},
 			readFile: async (p) => {
-				if (this.localThroughMount(p)) return readFile(p);
 				const hit = prefetched.get(p);
 				prefetched.delete(p);
 				if (hit && Date.now() - hit.at < PREFETCH_TTL_MS) return hit.data;
@@ -261,16 +195,12 @@ export class Remote extends Connection {
 	writeOps(): WriteOperations {
 		return {
 			// mkdir -p and the write in one far command: pi calls mkdir(dir) then writeFile(path), and
-			// the parent is always dirname(path), so mkdir costs nothing on its own. Mounted mode
-			// writes through the mount instead — mkdir too (the parent has to exist far side).
+			// the parent is always dirname(path), so mkdir costs nothing on its own.
 			writeFile: async (p, content) => {
-				if (this.localThroughMount(p)) return writeFile(p, content, "utf8");
 				const far = this.toFar(p);
 				await this.run(`mkdir -p -- ${shPath(posix.dirname(far))} && cat > ${shPath(far)}`, { input: content });
 			},
-			mkdir: async (dir) => {
-				if (this.localThroughMount(dir)) await mkdir(dir, { recursive: true });
-			},
+			mkdir: async () => {},
 		};
 	}
 
@@ -498,8 +428,8 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.registerCommand("remote", {
-		description: "Remote target connection: `/remote check` (fresh probe), `/remote reconnect` (drop the channel and re-probe), `/remote mount`/`unmount` (the target's sshfs mount) or `/remote status` (re-publish the status)",
-		getArgumentCompletions: (prefix) => ["check", "reconnect", "status", "mount", "unmount"].filter((c) => c.startsWith(prefix.trim())).map((c) => ({ value: c, label: c })),
+		description: "Remote target connection: `/remote check` (fresh probe), `/remote reconnect` (drop the channel and re-probe) or `/remote status` (re-publish the status)",
+		getArgumentCompletions: (prefix) => ["check", "reconnect", "status"].filter((c) => c.startsWith(prefix.trim())).map((c) => ({ value: c, label: c })),
 		handler: async (args, ctx) => {
 			const r = remote;
 			const sub = args.trim() || "check";
@@ -509,35 +439,8 @@ export default function (pi: ExtensionAPI) {
 				if (ctx.hasUI) ctx.ui.notify(loadError ? `remote: ${loadError}` : "remote: this session has no --target", loadError ? "error" : "info");
 				return;
 			}
-			if (sub === "mount" || sub === "unmount") {
-				const mp = r.mountPoint;
-				if (!mp || !r.target.mount) {
-					if (ctx.hasUI)
-						ctx.ui.notify(
-							`remote: ${r.label} has no mount configured — add "mount": {"remote": "/abs/far/path", "local": "~/.pi/agent/mounts/${r.target.name}"} to its entry in ${targetsFilePath(getAgentDir())}`,
-							"error",
-						);
-					return;
-				}
-				// Toggle the TARGET's mount (any session of it can). This session's routing was fixed at
-				// start, so a placeholder session stays placeholder; the fresh status pair (mounted,
-				// mountPoint) publishes right after, whatever happened.
-				if (sub === "mount") {
-					const rep = await mount(r.target);
-					r.emit();
-					if (!ctx.hasUI) return;
-					if (!rep.ok) return ctx.ui.notify(`remote: ${rep.error}`, "error");
-					return ctx.ui.notify(`remote: ${r.label} mounted ${rep.remote} at ${rep.mountPoint}${rep.already ? " (already mounted)" : ""}`, "info");
-				}
-				const rep = await unmount(mp);
-				r.emit();
-				if (!ctx.hasUI) return;
-				if (!rep.ok) return ctx.ui.notify(`remote: ${rep.error}`, "error");
-				ctx.ui.notify(`remote: ${mp} unmounted${rep.how === "lazy" ? " lazily (a local process was still holding it)" : ""}`, "info");
-				return;
-			}
 			if (sub !== "check" && sub !== "reconnect") {
-				if (ctx.hasUI) ctx.ui.notify("usage: /remote check | /remote reconnect | /remote status | /remote mount | /remote unmount", "error");
+				if (ctx.hasUI) ctx.ui.notify("usage: /remote check | /remote reconnect | /remote status", "error");
 				return;
 			}
 			const s = sub === "check" ? await r.check() : await r.reconnect();
@@ -575,16 +478,9 @@ export default function (pi: ExtensionAPI) {
 		const cwd = ctx.cwd;
 		pi.registerTool(createBashToolDefinition(cwd, { operations: r.bashOps() }));
 		pi.registerTool(createReadToolDefinition(cwd, { operations: r.readOps() }));
-		// Mounted mode: read/write/edit serve paths inside the mount from the local fs (the ops
-		// branch per call), so pi's own per-file queue keys on the local path — no far-path mutation
-		// key. Otherwise exactly today: remote fetch/write, serialized per FAR file.
-		if (r.mountedMode) {
-			pi.registerTool(createWriteToolDefinition(cwd, { operations: r.writeOps() }));
-			pi.registerTool(createEditToolDefinition(cwd, { operations: r.editOps() }));
-		} else {
-			pi.registerTool(mutating(createWriteToolDefinition(cwd, { operations: r.writeOps() }), r, cwd));
-			pi.registerTool(mutating(createEditToolDefinition(cwd, { operations: r.editOps() }), r, cwd));
-		}
+		// write/edit: remote fetch/write, serialized per FAR file (see `mutating`).
+		pi.registerTool(mutating(createWriteToolDefinition(cwd, { operations: r.writeOps() }), r, cwd));
+		pi.registerTool(mutating(createEditToolDefinition(cwd, { operations: r.editOps() }), r, cwd));
 		pi.registerTool(createFindToolDefinition(cwd, { operations: r.findOps() }));
 		// ls stats every entry; the ops' cache must be per call, so build the definition per call.
 		const lsBase = createLsToolDefinition(cwd);
@@ -598,7 +494,7 @@ export default function (pi: ExtensionAPI) {
 			...(target.label ? { label: target.label } : {}),
 			...(channelOff ? { channelOff: true } : {}),
 		});
-		// What we know without a round trip (the placeholder or mount mapping, else the entry's cwd);
+		// What we know without a round trip (the placeholder mapping, else the entry's cwd);
 		// `farCwd` stays absent when even that is unknown, which readers treat as "remote, unresolved".
 		announce(session(r.farCwd));
 		// The preflight answers → noteOk → the channel starts warming in the background.
@@ -629,13 +525,9 @@ export default function (pi: ExtensionAPI) {
 		try {
 			const info = await r.ready();
 			opts.cwd = info.cwd;
-			opts.sections["remote-target"] = r.mountedMode
-				? `All tools run on the remote target "${r.label}" (${describeTarget(r.target)}; host ${info.hostname}, user ${info.user}); the far working directory is ${info.cwd}, and that is the path style to use for it. ` +
-					`This session's files are a local sshfs mount: ${r.mountPoint} here is the target's ${r.target.mount!.remote} (so ${r.mountPoint}/x is ${r.target.mount!.remote}/x on the target). ` +
-					`read, write and edit operate on that local mount; bash, ls, find and grep execute on the target itself — give them the target's paths. ` +
-					`Never run a recursive search over the mount from this machine: it walks every file through ssh (rg -l over one tree measured 22 s here vs 14 ms on the target) — search with bash/find/grep, which run there.`
-				: `All tools (bash, read, write, edit, ls, find, grep, and the user's ! commands) run on the remote target "${r.label}" ` +
-					`(${describeTarget(r.target)}; host ${info.hostname}, user ${info.user}) in ${info.cwd}, not on this machine; use that machine's paths.`;
+			opts.sections["remote-target"] =
+				`All tools (bash, read, write, edit, ls, find, grep, and the user's ! commands) run on the remote target "${r.label}" ` +
+				`(${describeTarget(r.target)}; host ${info.hostname}, user ${info.user}) in ${info.cwd}, not on this machine; use that machine's paths.`;
 		} catch (e) {
 			opts.sections["remote-target"] = `All tools run on the remote target "${r.label}" (${describeTarget(r.target)}), which is currently unreachable: ${(e as Error).message}`;
 		}

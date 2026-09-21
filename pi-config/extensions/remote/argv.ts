@@ -60,20 +60,6 @@ export interface TargetDocker {
 export type TargetKind = "ssh" | "incus-cell" | "docker";
 export const TARGET_KINDS: readonly TargetKind[] = ["ssh", "incus-cell", "docker"];
 
-/**
- * An sshfs mount of the target: `remote` (the far path) exposed at `local` (`~/…` or absolute,
- * expanded locally). Keep `local` where other tools don't casually traverse — a module-resolving
- * process that walks into the mount holds it open (EBUSY unmounts); `~/.pi/agent/mounts/<name>`
- * is the recommendation. A `mount` block on a target without its own ssh block is valid but
- * unmountable: mountArgv refuses it at use, not here (validateTarget failures drop the whole entry).
- */
-export interface TargetMount {
-	/** The far absolute path the mount exposes. */
-	remote: string;
-	/** The local mount point: `~/…` or absolute. */
-	local: string;
-}
-
 export interface Target {
 	/** Unique id: [A-Za-z0-9._-]+ and not all dots; used in paths and the `--target` flag. */
 	name: string;
@@ -89,8 +75,11 @@ export interface Target {
 	docker?: TargetDocker;
 	/** Name of another target whose whole chain carries this one (e.g. a container on an ssh host). Ignored when this entry has its own ssh block. */
 	via?: string;
-	/** sshfs mount of this target (see TargetMount); read/write/edit can then run through the mount. */
-	mount?: TargetMount;
+	/**
+	 * Type only, no validation and no reader in this extension: pi-web's server (server/targets.ts
+	 * via mount.ts) still types against it until the server-side removal commit deletes both.
+	 */
+	mount?: { remote: string; local: string };
 	/** Default remote working directory (absolute). */
 	cwd?: string;
 	env?: Record<string, string>;
@@ -175,13 +164,6 @@ export function validateTarget(t: unknown): string[] {
 	if (x.docker !== undefined) {
 		if (typeof x.docker.container !== "string" || !WORD_RE.test(x.docker.container)) errs.push("docker.container is missing or malformed");
 		if (x.docker.user !== undefined && (typeof x.docker.user !== "string" || !WORD_RE.test(x.docker.user))) errs.push("docker.user is malformed");
-	}
-	if (x.mount !== undefined) {
-		if (!x.mount || typeof x.mount !== "object") errs.push("mount must be an object");
-		else {
-			if (typeof x.mount.remote !== "string" || !x.mount.remote.startsWith("/") || x.mount.remote.includes("\0")) errs.push("mount.remote must be an absolute path");
-			if (typeof x.mount.local !== "string" || !(x.mount.local.startsWith("/") || x.mount.local === "~" || x.mount.local.startsWith("~/")) || x.mount.local.includes("\0")) errs.push("mount.local must be ~/… or an absolute path");
-		}
 	}
 	if (x.cwd !== undefined && (typeof x.cwd !== "string" || !(x.cwd.startsWith("/") || x.cwd === "~" || x.cwd.startsWith("~/")))) errs.push("cwd must be absolute (or ~/…)");
 	if (x.env !== undefined) {

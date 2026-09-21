@@ -192,7 +192,9 @@ from, immediately after it:
   source whose file is missing renders the title as plain text with `title` "This session is no
   longer on disk."
 - **A member with no marker** — the leaf id isn't on its branch anymore, because the member was
-  rewound past it (§13) — simply has no row. We never guess at a position.
+  rewound past it (§13) — simply has no row. We never guess at a position. The same holds for a forked
+  session in a hand-made group: `SessionSummary.parentId` proves the lineage, but nothing records
+  the leaf, and a marker in the wrong place is a false claim about what is shared.
 
 **`Align to Fork`** in the workspace head scrolls **every** pane, split or tabs, so its fork
 marker sits at the top of the pane's scroll region, and announces "Aligned 5 members to the fork

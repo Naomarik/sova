@@ -71,9 +71,17 @@ interface SessionGroup {
 - **`seed.leafId`** is the entry every member was forked from. It is what the fork-point marker
   and `Align to Fork` (§14b) point at, and it is the one thing that makes a fanout group
   different from a folder of unrelated chats.
-- **`SessionSummary.parent`** is the session header's `parentSession` path, or absent. It is
-  read-only lineage: it survives a promote, a dissolve, and a rename, because pi-web never
-  writes the header.
+- **`SessionSummary.parent` and `parentId`** are the session header's `parentSession`, as a
+  canonical path and as the session id, set together or not at all. Read-only lineage: they
+  survive a promote, a dissolve and a rename, because pi-web never writes the header. Use
+  `parent` to link or open (routes take paths), `parentId` to match against `GroupMember.id` and
+  the assignments, which are id-keyed.
+- **Lineage says *that*; `seed` says *where*.** `parentId` can tell you two members of a
+  hand-made group came from one session; it cannot tell you which entry they diverged at, and
+  without that there is no row to draw and nothing to align to. So the fork marker and
+  `Align to Fork` (§14b) are `seed` features, and a group pi-web didn't fan out has neither —
+  even when every member is visibly a fork. A marker placed at a guessed position would be worse
+  than no marker.
 
 ## Routes
 

@@ -68,8 +68,13 @@ export interface SessionSummary {
       each transcript. */
   parent?: string;
   /** The same parent as a session id (that session's `id`, read from its filename): what
-      `GroupMember.id`, the group assignments and every group route key on, so a fork marker inside
-      a group needs no path lookup. Set exactly when `parent` is. */
+      `GroupMember.id`, the group assignments and every group route key on. Set exactly when
+      `parent` is. Use `parent` to link or open (routes take paths), `parentId` to match.
+      LINEAGE ONLY, and the distinction matters: this pair says a session was forked from THAT
+      file, never at WHICH entry. A fork marker needs the leaf it diverged at, which only a group
+      pi-web fanned out carries (`seed`), so a marker position must never be inferred from here —
+      a marker in the wrong place is a false claim about which part of the transcript is shared
+      (spec/14-workspaces.md "Data", spec/14b-fanout.md "The fork point in a transcript"). */
   parentId?: string;
   /** Remote session: the target name from ~/.pi/agent/targets.json. Derived from `cwd`, which for a
       remote session is the local placeholder ~/.pi/agent/pi-web/targets/<target>/<remote/abs/path>.

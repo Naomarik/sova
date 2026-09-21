@@ -24,6 +24,7 @@ a group, and no group that can't be opened as a workspace.
 | Split is one horizontal row that scrolls | No grid, no tiling, no cap on how many members a group holds. A pane never goes under 440px |
 | Every pane stays mounted, including hidden tabs | A member that streams while you read another one must not lose its turn. Tabs hide, they don't unmount |
 | One group composer, all members, all-or-nothing | A shared follow-up is a single server-side batch. If one member can't take it, none of them do, and the refusal names each one |
+| All-or-nothing is a **pre-check**, not a transaction | The server checks every member before it prompts any of them, so the refusal is complete and nothing is half-sent by our own doing. A member lost *between* the check and the send (a TUI grabs it in the same second) makes the batch partial, and we say so — a prompt a model is already answering cannot be recalled, and claiming otherwise would be the one lie this surface can't afford |
 | Promote removes from the group; Eliminate removes and archives | Neither deletes a transcript. Both are the group's writes, never the session file's |
 | A group that a fanout created dissolves when its last member leaves | See "Emptying a group". A hand-made group survives empty, as §2 already says |
 | Announcements and DOM ids are pane-scoped | Three panes finishing in the same second must read as three facts, each naming its member |

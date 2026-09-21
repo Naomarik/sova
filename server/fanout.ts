@@ -41,8 +41,17 @@ export interface PlannedMember {
   label: string;
 }
 
-/** Everything that touches the SDK, the disk or the store, injected so the rules can be tested
-    without any of them. */
+/**
+ * Everything that touches the SDK, the disk or the store, injected so the rules can be tested
+ * without any of them.
+ *
+ * EACH COMMENT BELOW IS A SPECIFICATION, not a description: it is what a fake gets written
+ * against. A wrong one is self-certifying — this interface's `sourceHead` once promised "the id
+ * of the file's last entry", and any fake honouring that would have reinstated the rewound-source
+ * bug with the whole suite green. Where the real behaviour is the SDK's or the disk's, prefer a
+ * test that drives the real thing (server/fanout-branch.test.ts) over one more fake that can only
+ * agree with us.
+ */
 export interface FanoutDeps {
   /** Refs the server knows, for validating `members[].ref`. */
   knownRefs(): Promise<Set<string>>;

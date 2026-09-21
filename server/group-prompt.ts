@@ -23,7 +23,15 @@ import { recentForeignWriteAgeSec } from "./write-guard";
  * this response never speaks for a turn it didn't wait for (spec §14, 5f2419d).
  */
 
-/** Everything the batch touches, injected so the logic is testable without an SDK runtime. */
+/**
+ * Everything the batch touches, injected so the logic is testable without an SDK runtime.
+ *
+ * Each comment below is the specification a fake is written against, so it has to say what the
+ * real implementation DOES, not what the caller wants. `accept` is the one that matters here: it
+ * resolves when the prompt is QUEUED, and a fake that resolved on "the turn finished" — or an
+ * eager one that hides how long acceptance takes — conceals the serialization this route exists
+ * to avoid. The tests make the stub's RESOLUTION the thing under test for exactly that reason.
+ */
 export interface BatchDeps {
   /** The group's members in display order, or null when there is no such group. */
   members(groupId: string): string[] | null;

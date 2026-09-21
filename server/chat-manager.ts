@@ -94,6 +94,16 @@ export async function warmClaudeCodeProvider(modelRuntime: ModelRuntime, cwd: st
     });
     // The registration now lives in the shared runtime; the session itself must not outlive the
     // warm-up, or every extension's session_start side effects (timers, live records) would.
+    //
+    // Shut the extensions down BEFORE disposing, which is what AgentSessionRuntime.dispose does
+    // (agent-session-runtime.js:296 — emitSessionShutdownEvent, then session.dispose). A bare
+    // session.dispose() skips session_shutdown, and extensions that armed a timer at session_start
+    // then fire it against a disposed session: the sessions extension's focus-discovery timeout
+    // did exactly that, throwing "This extension ctx is stale after session replacement or reload"
+    // as an unhandledRejection on every warm-up.
+    if (session.extensionRunner.hasHandlers("session_shutdown")) {
+      await session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" });
+    }
     session.dispose();
   } catch (err) {
     console.warn(`[chat] claude-code warm-up failed: ${err instanceof Error ? err.message : String(err)}`);

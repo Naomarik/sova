@@ -318,7 +318,7 @@ export function SettingsDialog(props: { onClose(): void }) {
                       <span class="settings-provider-name">Claude Code as first-class models</span>
                       <span class="settings-provider-meta">
                         Runs on your Claude subscription through the Claude Code CLI. pi executes every
-                        tool, so its permissions and your mode still apply.
+                        tool, so its permissions and your mode still apply. Applies to new sessions.
                       </span>
                     </span>
                     <span class="toggle-box" />

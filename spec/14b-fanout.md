@@ -279,10 +279,12 @@ POST /api/session-groups/fanout
     so that group stands empty instead of dissolving.
   - **Four cases**: untouched through many regenerations → generated · typed over → user ·
     **typed then restored to our text → user** · fork mode untouched → generated. The third
-    expects `user` **because the system cannot tell a revert from a deliberate identical
-    choice**, and errs toward keeping the name. Say that in the test: dissolving looks obviously
-    right when the name on the group is ours, so a reader who meets the case without the reason
-    will change it and the test will look wrong rather than the change.
+    expects `user` **because that is what the edit event yields, and we accepted its cost rather
+    than rebuild** — not because that row deserves to survive. It does not: the group ends up
+    carrying pi-web's own string, so dissolving would be the better answer and the outcome here
+    is litter (see above). Say exactly that in the test. Dissolving looks obviously right to
+    anyone who reads this row, and it *is* right — so a reader who meets the case without the
+    reason will change it and the test will look wrong rather than the change.
   - **The two indistinguishable cases do not need separating, and neither rule separates them.**
     "Typed over then reverted" and "typed our exact string by hand" produce the same state —
     field touched, `name` equal to what we last wrote — and **both end with pi-web's string on

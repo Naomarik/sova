@@ -364,6 +364,10 @@ appear in a group and below it at once. A session belongs to **at most one** gro
     <svg class="icon icon-sm" aria-hidden="true">…plus…</svg>
     <span class="list-title">New group</span>
   </button>
+  <button type="button" class="list-row list-row-interactive group-new">
+    <svg class="icon icon-sm" aria-hidden="true">…branch…</svg>
+    <span class="list-title">New fanout</span>
+  </button>
   <!-- While it (or a Rename) is being typed: the field sits exactly where the row was. -->
   <div class="group-field-row">
     <form class="group-field" aria-label="New group name">
@@ -386,6 +390,7 @@ appear in a group and below it at once. A session belongs to **at most one** gro
     </section>
     <!-- The group's own controls, quiet and last, as the Archive's cleanup row is. -->
     <div class="group-tools">
+      <a class="button button-sm button-ghost" href="#/g/…">Open workspace</a>
       <button class="button button-sm button-ghost" type="button">Rename</button>
       <button class="button button-sm button-ghost" type="button">Delete group</button>
     </div>
@@ -414,10 +419,23 @@ user's own curation, and a collapsed group would hide the sessions they just fil
 remembered in `sessionStorage["pi-web:group-open-{id}"]` for the browser session.
 - **Empty.** An empty group stays visible with `0` and "No sessions yet. Drag one here.": it is
 what a group is when the user makes it, and a drop target is what fills it. While a search is on,
-a group with no matching session is left out entirely.
+a group with no matching session is left out entirely. A **fanout** group never reaches this
+state: it dissolves itself on the write that empties it (§14 "Emptying a group").
 - **Creating.** `New group` turns that row into the name field (focused), so the section never
 moves. The field saves on Enter, saves what is there when it loses focus, and cancels on Escape or
 when empty. `POST /api/session-groups`, then the group appears open and empty at the end.
+- **Opening it as a workspace.** `Open workspace` is the first control in the tool row, and it
+links to `#/g/{id}` — the group's members side by side, each a whole chat, with one composer that
+writes to all of them (§14). It is in the tool row rather than on the label because the label is a
+`<summary>`, and a link inside one fights the section's toggle exactly as a button does. The
+section is still the place you file sessions into; the workspace is the place you read them in.
+While that workspace is open, the group's `<summary>` takes `aria-current="true"` and its name
+takes the selected row's tint, so the sidebar says which group you are inside.
+- **Fanning out.** `New fanout`, under `New group`, opens the §14b dialog: it makes the group and
+its members in one gesture, from a fresh prompt, and lands in the workspace. A group made this way
+is an ordinary group here — it holds ordinary sessions, and the only difference is that it
+dissolves itself when its last member leaves (§14 "Emptying a group"), because its name and its
+fork point mean nothing without them.
 - **Renaming.** Rename in the group's tool row swaps that row for the same field, pre-filled. The
 name is trimmed, 1–60 characters, and duplicates are allowed (nothing keys on a name).
 `PATCH /api/session-groups/:id`.

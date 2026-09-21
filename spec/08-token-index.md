@@ -18,7 +18,9 @@ Every token these notes reference, all defined in `src/design/tokens.css`:
 - **Radius:** `--r-xs`, `--r-sm`, `--r-md`, `--r-lg`, `--r-xl`, `--r-full`
 - **Stroke and size:** `--stroke-thin`, `--stroke-icon`, `--tap-min`, `--row-height`,
   `--control-sm`, `--control-md`, `--sidebar-width`, `--composer-max`, `--tool-output-max`,
-  `--outline-max`, `--main-min`, `--subagents-width`, `--subagents-list-width`
+  `--outline-max`, `--main-min`, `--subagents-width`, `--subagents-list-width`, `--wpane-min`
+  (440px, the workspace pane floor — the same number and the same reason as `--main-min`, §14),
+  `--wpane-width` (`clamp(440px, 34vw, 720px)`)
 - **Elevation:** `--shadow-1`, `--shadow-2`, `--shadow-3`
 - **Focus and motion:** `--focus-ring`, `--focus-width`, `--focus-offset`, `--focus-color`,
   `--dur-fast`, `--dur-base`, `--ease-standard`

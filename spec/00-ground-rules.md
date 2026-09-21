@@ -58,7 +58,8 @@ and `fill="none" stroke="currentColor"`.
 | `gauge.svg` | Usage: the sidebar foot's Usage row. pi-web's own, drawn on the system grid |
 | `worker.svg` | Agents: the sidebar foot's Agents row, plus the Teams and Subagents section heads (from the skill's set) |
 | `settings.svg` | Settings: the gear at the right end of the sidebar foot's Agents row, and the Settings dialog's tab rail. A cog on the system grid (the skill ships a sun-burst under this name)
-| `check-circle.svg`, `x-circle.svg`, `external.svg`, `menu.svg`, `branch.svg` | Reserved. Shipped but unused in the MVP |
+| `branch.svg` | The fork-point row in a forked member's transcript, the `Align to Fork` button, and the sidebar's `New fanout` row (§14, §14b) |
+| `check-circle.svg`, `x-circle.svg`, `external.svg`, `menu.svg` | Reserved. Shipped but unused in the MVP |
 
 `/favicon.svg` is the mark on dark paper. Link it from `index.html`:
 `<link rel="icon" href="/favicon.svg" type="image/svg+xml">`.

@@ -25,6 +25,10 @@ unfolded (≥768)                                  folded (<768)
 <!-- Portals (render at the body, never inside a .pane): scrim + modal, .toast-stack, live region -->
 ```
 
+- **A third view.** `data-view` has a third value, `workspace` (§14): the main column is
+  `.app-workspace` instead of `.app-main`, holding N panes and one group composer. The sidebar,
+  the resizer and the portals are unchanged, the second column keeps the same width and floor,
+  and below 768px the workspace is the one column, tabs-only.
 - **Columns.** `.app` is `height: 100dvh`. At 768px and up the grid is `--sidebar-width` (320px)
   plus `1fr`, with a border between the columns. Below 768px it's one column, and `data-view`
   decides which one shows: `list` when no session is selected, `session` when one is. The shell
@@ -34,6 +38,10 @@ unfolded (≥768)                                  folded (<768)
   independent scroll region. The page itself never scrolls.
 - **Routing.** Keep the selected session in the URL, e.g. `#/s/<encodeURIComponent(path)>`. That
   way reload and back work, and the folded back button is `history.back()` or a link to `#/`.
+  The other routes follow the same rule: `#/usage` and `#/agents` (§10), and a group opened as a
+  workspace at `#/g/<id>` (split) or `#/g/<id>/<encodeURIComponent(path)>` (one member focused,
+  §14). `#/s/` never changes meaning: it is one session, alone, grouped or not. An unknown group
+  id routes to `#/` with a toast rather than rendering an empty frame.
 - **No rail and no bottom bar.** pi-web has one destination, so there's no nav to place. This is
   a deliberate departure from the skill's three-pane desktop shell: the ≥1120 `desktop` band adds
   nothing here.

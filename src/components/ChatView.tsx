@@ -25,7 +25,7 @@ import { UiDialog } from "./UiDialog";
 
 export type ChatRefusal = "busy" | "recent";
 
-/** ui_request kinds UiDialog can show (DESIGN_NOTES §6); anything else needs the terminal UI. */
+/** ui_request kinds UiDialog can show (spec/06-extension-dialogs.md §6); anything else needs the terminal UI. */
 const UI_DIALOG_METHODS = ["select", "confirm", "input", "editor"];
 
 /**
@@ -68,6 +68,8 @@ export function ChatView(props: {
   onNewSession?(): Promise<string | null>;
   /** A bare "/tree" in the composer (§4d): opens the session pane's Inputs tab. */
   onShowInputs?(): void;
+  /** A bare "/timeline" in the composer (§4d): opens the session pane's Timeline tab. */
+  onShowTimeline?(): void;
   /** Hands the Inputs tab this chat's rewind (sent over this socket); null when this view goes away. */
   onRewindControl?(control: RewindControl | null): void;
   /** A rewind landed on this chat, whoever asked (the Inputs tab, or the flyout's "Undo last
@@ -406,7 +408,7 @@ export function ChatView(props: {
     return null;
   };
 
-  // ---- Model switching (DESIGN_NOTES §4c) ------------------------------------------------
+  // ---- Model switching (spec/04c-model-menu.md §4c) ------------------------------------------------
   const idOf = (ref: string) => ref.slice(ref.indexOf("/") + 1);
   /** Server messages are free text; map the known ones to the spec's copy. */
   const switchErrorBody = (message: string, code?: string) => {
@@ -450,7 +452,7 @@ export function ChatView(props: {
     clearTimeout(modelTimer);
     modelTimer = setTimeout(() => modelFailed("The server didn't confirm the switch."), 15_000);
   };
-  // ---- Thinking level (DESIGN_NOTES §4b "Thinking") --------------------------------------
+  // ---- Thinking level (spec/04b-images.md §4b "Thinking") --------------------------------------
   /** The server sends free text here too; map the two refusals it can answer with. */
   const thinkingErrorBody = (message: string) => {
     if (message.startsWith("Cannot change thinking while the agent is running"))
@@ -705,6 +707,7 @@ export function ChatView(props: {
         paneTab={props.paneTab}
         onNewSession={props.onNewSession}
         onShowInputs={props.onShowInputs}
+        onShowTimeline={props.onShowTimeline}
         inputCount={inputCount(items() ?? [])}
         autofocus={props.autofocus}
         model={modelControl}

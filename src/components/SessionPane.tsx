@@ -11,6 +11,7 @@ import type { RewindControl } from "../lib/inputs";
 import { jumpToEntry } from "../lib/jump";
 import { SessionDetails } from "./SessionDetails";
 import { SessionInputs } from "./SessionInputs";
+import { SessionTimeline } from "./SessionTimeline";
 import { SubagentPane } from "./SubagentPane";
 import { Chip, Icon } from "./ui";
 
@@ -26,10 +27,11 @@ export interface PaneInsight {
   changed: number;
 }
 
-export type TabId = "session" | "inputs" | "agents" | "skills" | "explain";
+export type TabId = "session" | "inputs" | "timeline" | "agents" | "skills" | "explain";
 const TABS: readonly { id: TabId; label: string }[] = [
   { id: "session", label: "Session" },
   { id: "inputs", label: "Inputs" },
+  { id: "timeline", label: "Timeline" },
   { id: "agents", label: "Agents" },
   { id: "skills", label: "Skills" },
   { id: "explain", label: "Explain" },
@@ -37,8 +39,9 @@ const TABS: readonly { id: TabId; label: string }[] = [
 const isTab = (id: string | null): id is TabId => TABS.some((t) => t.id === id);
 
 /**
- * The session detail pane (DESIGN_NOTES §11): a head, a tab strip, and one tab's panel. Session
- * is the Session info modal's body (SessionDetails); Agents is the subagents pane it grew out
+ * The session detail pane (spec/11-subagents-pane.md §11): a head, a tab strip, and one tab's panel. Session
+ * is the Session info modal's body (SessionDetails); Timeline is the session's one time axis;
+ * Agents is the subagents pane it grew out
  * of; Skills says which skills loaded and when, here and in each worker; Explain lists this
  * session's /explain pages. The tab is kept per session path; with none kept, it opens on Agents while a worker is
  * working, else on Session. Read-only throughout, except Inputs' rewind, which goes through the chat.
@@ -67,6 +70,24 @@ export function SessionPane(props: {
       session nobody has tabbed shows the fallback while `activeTab` is still null. */
   onTab?(tab: TabId | null): void;
 }) {
+  // The transcript, read once for the whole pane: the Session tab, Inputs and Timeline all want
+  // the same rows, and a fetch per tab meant a refetch on every tab switch. It reloads when the
+  // session's file moved (App's debounced insight reload) and after a rewind, whoever started it.
+  const [items, setItems] = createSignal<TranscriptItem[] | null>(null);
+  let run = 0;
+  const loadItems = async () => {
+    const mine = ++run;
+    try {
+      const next = await fetchTranscript(props.path);
+      if (mine === run) setItems(next);
+    } catch {
+      // The rows on screen stay; the next change to the file retries.
+    }
+  };
+  createEffect(on(() => props.insight.changed, () => void loadItems()));
+  createEffect(on(() => props.rewound?.changed, (changed) => changed && props.rewound?.path === props.path && void loadItems(), { defer: true }));
+  onCleanup(() => run++);
+
   const working = () => (props.chatWorkers ?? props.insight.data?.workers ?? []).filter((w) => w.working).length;
   /** The Σ the chat socket reports, else the insight's — a lifetime total either way. */
   const total = () => props.chatUsage ?? usageTotal(props.insight.data);
@@ -151,15 +172,25 @@ export function SessionPane(props: {
       <div class="session-panel" role="tabpanel" id="session-tabpanel" aria-labelledby={`session-tab-${tab()}`}>
         <Switch>
           <Match when={tab() === "session"}>
-            <SessionTab path={props.path} insight={props.insight} summary={props.summary} now={props.now} onArchiveChanged={props.onArchiveChanged} />
+            <SessionTab path={props.path} insight={props.insight} summary={props.summary} items={items()} now={props.now} onArchiveChanged={props.onArchiveChanged} />
           </Match>
           <Match when={tab() === "inputs"}>
             <SessionInputs
               path={props.path}
-              changed={props.insight.changed}
+              items={items()}
               rewound={props.rewound}
               summary={props.summary}
               rewind={props.rewind}
+              now={props.now}
+              onReload={loadItems}
+              onClose={props.onClose}
+            />
+          </Match>
+          <Match when={tab() === "timeline"}>
+            <SessionTimeline
+              items={items()}
+              outline={props.insight.data?.outline ?? null}
+              pending={props.insight.pending}
               now={props.now}
               onClose={props.onClose}
             />
@@ -189,26 +220,17 @@ export function SessionPane(props: {
 // ---- Session ----------------------------------------------------------------------------------
 
 /**
- * The Session info modal's body, fed from App's shared insight (no fetch of its own) and this
- * tab's own transcript read, which the Timeline and the context sentence need.
+ * The Session info modal's body, fed from App's shared insight and the pane's shared transcript
+ * read, which the Changes list and the context sentence need — no fetch of its own.
  */
-function SessionTab(props: { path: string; insight: PaneInsight; summary: SessionSummary | undefined; now: number; onArchiveChanged(): void }) {
-  const [items, setItems] = createSignal<TranscriptItem[] | null>(null);
-
-  let run = 0;
-  const load = async () => {
-    const mine = ++run;
-    try {
-      const next = await fetchTranscript(props.path);
-      if (mine === run) setItems(next);
-    } catch {
-      // Secondary: without items the Timeline stays hidden; the next change to the file retries.
-    }
-  };
-  // On open, then whenever the session's file moved (App's debounced insight reload).
-  createEffect(on(() => props.insight.changed, () => void load()));
-  onCleanup(() => run++);
-
+function SessionTab(props: {
+  path: string;
+  insight: PaneInsight;
+  summary: SessionSummary | undefined;
+  items: TranscriptItem[] | null;
+  now: number;
+  onArchiveChanged(): void;
+}) {
   /** The gauge's reading; "compacted" is re-derived from the items, as in the modal. */
   const context = () => {
     const c = sessionContext()[props.path];
@@ -227,7 +249,7 @@ function SessionTab(props: { path: string; insight: PaneInsight; summary: Sessio
         skeleton={props.insight.pending}
         summary={props.summary}
         context={context()}
-        items={items() ?? []}
+        items={props.items ?? []}
         now={props.now}
         onArchiveChanged={props.onArchiveChanged}
         idPrefix="sp"

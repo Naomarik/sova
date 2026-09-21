@@ -2,7 +2,7 @@ import { For, Show } from "solid-js";
 import { openLightbox } from "../lib/ui-state";
 
 /**
- * Thumbnails on a user row or in a tool card (DESIGN_NOTES §4b). One image keeps its own shape;
+ * Thumbnails on a user row or in a tool card (spec/04b-images.md §4b). One image keeps its own shape;
  * two or more are square tiles. Each opens the lightbox at that image, scoped to this row.
  * `where` completes the alt text: "in your message" or "from tool result read". `noun` replaces
  * "Image" in it (a path attachment: "Attachment pi-clipboard-….png").

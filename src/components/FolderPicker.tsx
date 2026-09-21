@@ -21,7 +21,7 @@ interface Row {
 const LIST_ID = "ns-picker-list";
 
 /**
- * The New Session folder picker (DESIGN_NOTES §5): an in-place panel under the Folder field.
+ * The New Session folder picker (spec/05-new-session-dialog.md §5): an in-place panel under the Folder field.
  * The folder being browsed IS the choice: every folder you open is reported through `onPick`.
  * Opening focuses the panel itself, never the filter, so a phone doesn't raise its keyboard. The
  * panel or the filter drives the listbox through aria-activedescendant; typing on the panel moves

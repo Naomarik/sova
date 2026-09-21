@@ -1,12 +1,10 @@
-import { createSignal, For, Show } from "solid-js";
+import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import type { ExplanationInfo, OutlineTopic, SessionOutline } from "../../shared/protocol";
 import { newestFirst } from "../lib/explain";
 import { findEntryRow, jumpToEntry } from "../lib/jump";
 import { relativeTime, stampTime } from "../lib/format";
 import { ExplainGallery } from "./ExplainGallery";
 import { Icon } from "./ui";
-
-const OPEN_KEY = "pi-web:outline-open:";
 
 const STATE_CLAUSE: Partial<Record<SessionOutline["state"], string>> = {
   stale: "behind the latest messages",
@@ -61,15 +59,54 @@ function Topic(props: { topic: OutlineTopic; now: number }) {
  * The one insight row under `.session-head`: the session's topic-outline and its /explain
  * artifacts merged into a single disclosure, so the head costs one row instead of two.
  * Collapsed it shows the "now" line and whichever counts exist; open, the overall gist, the
- * topics, and — when this session has explanations — a ghost button that opens the gallery
- * dialog. The open state is kept per session for the tab.
+ * topics, a ghost button that opens the session pane's Timeline tab — the same topics as
+ * chapters on one axis — and, when this session has explanations, one that opens the gallery
+ * dialog. The open state is never persisted: a click away, Esc from inside, or leaving the
+ * session all leave it closed again.
  *
  * With explanations but no outline the row still discloses, labelled "Explained": the gallery
  * button is what's inside. With neither, nothing renders.
  */
-export function InsightStrip(props: { path: string; outline: SessionOutline | null; explanations: ExplanationInfo[] | undefined; now: number }) {
+export function InsightStrip(props: {
+  outline: SessionOutline | null;
+  explanations: ExplanationInfo[] | undefined;
+  now: number;
+  /** Opens the session pane's Timeline tab, where these topics are chapters on the session's axis. */
+  onOpenTimeline?(): void;
+}) {
   const [galleryOpen, setGalleryOpen] = createSignal(false);
-  const key = () => OPEN_KEY + props.path;
+  // Not persisted: the session view is keyed, so navigating anywhere remounts this closed, while
+  // an insight reload keeps a deliberate open.
+  const [open, setOpen] = createSignal(false);
+  let strip: HTMLDetailsElement | undefined;
+  /** The one close path: every dismissal collapses the topics too, so the next open lands on headings. */
+  const close = () => {
+    setOpen(false);
+    // `Topic`'s onToggle only reacts on open, so closing them from here is a no-op for it.
+    for (const t of strip?.querySelectorAll<HTMLDetailsElement>("details.outline-topic[open]") ?? []) t.open = false;
+  };
+  onMount(() => {
+    const away = (e: PointerEvent) => {
+      const target = e.target;
+      if (!open() || !(target instanceof Element)) return;
+      // On press, not click: the strip goes the moment you reach elsewhere. The gallery dialog is
+      // portalled out of the strip, so its shell and scrim count as inside.
+      if (target.closest(".outline, .modal, .scrim")) return;
+      close();
+    };
+    const esc = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      // Only an Esc that started inside the strip is ours — the pane, Inputs and dialogs keep theirs.
+      const target = e.target;
+      if (target instanceof Element && target.closest(".outline")) close();
+    };
+    document.addEventListener("pointerdown", away);
+    document.addEventListener("keydown", esc);
+    onCleanup(() => {
+      document.removeEventListener("pointerdown", away);
+      document.removeEventListener("keydown", esc);
+    });
+  });
   const items = () => newestFirst(props.explanations ?? []);
   const latest = () => items()[0];
   const topics = () => props.outline?.topics.length ?? 0;
@@ -79,11 +116,7 @@ export function InsightStrip(props: { path: string; outline: SessionOutline | nu
   const updated = () => (generated() > 0 ? new Date(generated()).toISOString() : null);
   return (
     <Show when={props.outline || items().length > 0}>
-      <details
-        class="outline"
-        open={sessionStorage.getItem(key()) === "1"}
-        onToggle={(e) => sessionStorage.setItem(key(), e.currentTarget.open ? "1" : "0")}
-      >
+      <details ref={strip} class="outline" open={open()} onToggle={(e) => (e.currentTarget.open ? setOpen(true) : close())}>
         <summary class="outline-summary">
           <Icon name="chevron-right" small class="icon-twist" />
           <span class="outline-label">{props.outline ? "Outline" : "Explained"}</span>
@@ -117,6 +150,14 @@ export function InsightStrip(props: { path: string; outline: SessionOutline | nu
           </Show>
         </summary>
         <div class="outline-body">
+          {/* Beside the gallery button and laid out by the same class: one ghost button rule for
+              the two openers this body carries. */}
+          <Show when={props.onOpenTimeline}>
+            <button type="button" class="button button-sm button-ghost outline-explained-open" onClick={() => props.onOpenTimeline?.()}>
+              <Icon name="clock" small />
+              Open Timeline
+            </button>
+          </Show>
           <Show when={items().length > 0}>
             <button
               type="button"

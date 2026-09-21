@@ -1,6 +1,5 @@
-import { createEffect, createSignal, For, on, onCleanup, Show } from "solid-js";
+import { createEffect, createSignal, For, on, Show } from "solid-js";
 import type { SessionSummary, TranscriptItem } from "../../shared/protocol";
-import { fetchTranscript } from "../lib/api";
 import { relativeTime } from "../lib/format";
 import {
   displayRows,
@@ -24,7 +23,7 @@ import { toast } from "../lib/ui-state";
 import { capTitle } from "../lib/workers";
 import { absoluteTime } from "../lib/spend";
 
-/** Below the column band (DESIGN_NOTES §11) the pane is a drawer over the transcript, so a jump
+/** Below the column band (spec/11-subagents-pane.md §11) the pane is a drawer over the transcript, so a jump
     would land behind it. */
 const isDrawer = () => window.matchMedia("(max-width: 1279px)").matches;
 
@@ -39,8 +38,9 @@ const isDrawer = () => window.matchMedia("(max-width: 1279px)").matches;
  */
 export function SessionInputs(props: {
   path: string;
-  /** App's insight `changed` counter: bumped when the session's file moved. */
-  changed: number;
+  /** The pane's shared transcript read: null until the first load settles. The pane reloads it
+      when the session's file moved and after a rewind, so this tab makes no fetch of its own. */
+  items: TranscriptItem[] | null;
   /** App's last successful rewind, from any origin: the pane's own rows, the composer's undo,
       /tree. `changed` moves once per rewind, and never on a refusal. App gates it on the path;
       we check it again here, since a refresh aimed at another chat would drop rows that are live. */
@@ -48,26 +48,15 @@ export function SessionInputs(props: {
   summary: SessionSummary | undefined;
   rewind: RewindControl | undefined;
   now: number;
+  /** Asks the pane to re-read the transcript, for the one path that has no `rewound` to do it. */
+  onReload?(): void;
   /** Closes the pane: a jump from the drawer band would otherwise land behind it. */
   onClose(): void;
 }) {
-  const [items, setItems] = createSignal<TranscriptItem[] | null>(null);
   const [shadow, setShadow] = createSignal<Rewound | null>(null);
   const [phase, setPhase] = createSignal<RewindPhase>(IDLE);
 
-  let run = 0;
-  const load = async () => {
-    const mine = ++run;
-    try {
-      const next = await fetchTranscript(props.path);
-      if (mine === run) setItems(next);
-    } catch {
-      // The rows on screen stay; the next change to the file retries.
-    }
-  };
-  createEffect(on(() => props.changed, () => void load()));
-  onCleanup(() => run++);
-
+  const items = () => props.items;
   const live = () => inputRows(items() ?? []);
   /** Oldest first: the order a rewind reasons in (everything after the target is abandoned). */
   const rows = () => viewRows(live(), shadow());
@@ -80,15 +69,16 @@ export function SessionInputs(props: {
   });
 
   /** One rewind, one refresh, whoever started it: App's signal is the only thing that rebuilds
-      the shadow and re-reads the rows. A refusal never bumps `changed`, so it refreshes nothing. */
+      the shadow, and the pane re-reads the rows off the same signal. A refusal never bumps
+      `changed`, so it refreshes nothing. */
   createEffect(
     on(
       () => props.rewound?.changed,
       (changed) => {
         const ev = props.rewound;
         if (!changed || !ev || ev.path !== props.path) return;
+        // The rows come back with the pane's own reload, on the same signal.
         setShadow(rewoundAt(rows().filter((r) => r.state === "active"), ev.entryId) ?? shadow());
-        void load();
       },
       { defer: true },
     ),
@@ -125,7 +115,7 @@ export function SessionInputs(props: {
     // and reading that as unwired would refetch twice for that first one.
     if (result.ok && props.rewound === undefined) {
       setShadow(rewoundAt(rows().filter((r) => r.state === "active"), p.id) ?? shadow());
-      void load();
+      props.onReload?.();
     }
   };
 

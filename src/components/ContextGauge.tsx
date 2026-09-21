@@ -25,7 +25,7 @@ function fullText(s: ContextInfo | "compacted"): string {
 export const contextDescribedBy = (path: string) => (stateOf(path) ? "context-desc" : undefined);
 
 /**
- * The head's context readout (DESIGN_NOTES §4f): plain text, never a bar, never animated. All
+ * The head's context readout (spec/04f-context-window.md §4f): plain text, never a bar, never animated. All
  * visible copies are aria-hidden; AT gets the one #context-desc sentence. CSS collapses it by the
  * head's width (full → percent → moves to the meta line).
  */

@@ -1,4 +1,4 @@
-// Markdown for assistant-text (DESIGN_NOTES §4e). markdown-it with html:false, so any HTML in
+// Markdown for assistant-text (spec/04e-markdown.md §4e). markdown-it with html:false, so any HTML in
 // model output is escaped text, never rendered. Every tag we emit ourselves is built from
 // escaped parts. highlight.js runs on its `common` set plus a few extras, never auto-detect.
 

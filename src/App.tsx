@@ -17,7 +17,7 @@ import { ModeMenu, type ModeControl } from "./components/ModeMenu";
 import { NewSessionDialog } from "./components/NewSessionDialog";
 import { ExplainGrid } from "./components/ExplainGallery";
 import { InsightStrip } from "./components/InsightStrip";
-import { SessionPane, type PaneInsight } from "./components/SessionPane";
+import { SessionPane, type PaneInsight, type TabId } from "./components/SessionPane";
 import { sessionHref, Sidebar } from "./components/Sidebar";
 import { SidebarResizer } from "./components/SidebarResizer";
 import { UsageView } from "./components/UsageView";
@@ -316,12 +316,12 @@ export function App() {
     queueMicrotask(() => (trigger ?? document.getElementById("transcript"))?.focus());
   };
   /** Whether the pane is open for `path` on `tab`: what each opener's aria-expanded reports. */
-  const paneOn = (path: string, tab: "session" | "agents" | "inputs") => subagentsPath() === path && activeTab(path) === tab;
+  const paneOn = (path: string, tab: TabId) => subagentsPath() === path && activeTab(path) === tab;
   /**
    * Each opener toggles its own tab: open on that tab closes the pane; closed, or open on the
    * other tab, opens it there. Escape and the pane's close button close it whatever the tab.
    */
-  const openPane = (path: string, tab: "session" | "agents" | "inputs") => {
+  const openPane = (path: string, tab: TabId) => {
     if (paneOn(path, tab)) return closeSubagents();
     const open = subagentsPath() === path;
     if (!open) subagentsTrigger = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -333,6 +333,10 @@ export function App() {
   /** /tree and the composer's rewind entry: the Inputs tab, opened (never toggled shut). */
   const showInputs = (path: string) => {
     if (!paneOn(path, "inputs")) openPane(path, "inputs");
+  };
+  /** /timeline and the outline strip's button: the Timeline tab, opened (never toggled shut). */
+  const showTimeline = (path: string) => {
+    if (!paneOn(path, "timeline")) openPane(path, "timeline");
   };
 
   return (
@@ -553,7 +557,12 @@ export function App() {
                         <Icon name="info" />
                       </button>
                     </header>
-                    <InsightStrip path={d.path} outline={insight.data?.outline ?? null} explanations={insight.data?.explanations} now={now()} />
+                    <InsightStrip
+                      outline={insight.data?.outline ?? null}
+                      explanations={insight.data?.explanations}
+                      now={now()}
+                      onOpenTimeline={() => showTimeline(d.path)}
+                    />
 
                     <Switch>
                       <Match when={d.mode === "watch" && d}>
@@ -626,6 +635,7 @@ export function App() {
                               inputsOpen={paneOn(d.path, "inputs")}
                               paneTab={subagentsPath() === d.path ? activeTab(d.path) : null}
                               onShowInputs={() => showInputs(d.path)}
+                              onShowTimeline={() => showTimeline(d.path)}
                               onRefused={onRefused}
                               onStarted={() => refresh()}
                               onArchiveChanged={refresh}

@@ -12,7 +12,7 @@ This is a monorepo:
 | `server/` | Node backend: Hono REST and `ws`, with the pi SDK embedded |
 | `src/` | SolidJS + TypeScript frontend (Vite) |
 | `shared/protocol.ts` | REST/WS wire contract between the two |
-| `public/`, `src/design/`, `DESIGN_NOTES.md` | Design tokens, fonts, icons, UX spec |
+| `public/`, `src/design/`, `spec/` | Design tokens, fonts, icons, UX spec |
 | `docs/` | Research and feasibility notes |
 | `pi-config/` | pi settings, keybindings, model catalog and custom extensions, symlinked into `~/.pi/agent` by `pi-config/install.sh`. It is also published on its own (see [pi-config public mirror](#pi-config-public-mirror)) |
 | `.claude/skills/` | Claude Code skills for agents working in this repo: `fold-ai-dev-design` (the design system, copied from foldaidev, tracked on purpose) and `playwright` (browser driving) |

@@ -89,7 +89,7 @@ export const setSessionArchived = (path: string, archived: boolean) =>
   });
 
 /**
- * Deletes archive sessions by age or empty "husks" (DESIGN_NOTES §2 "Archive cleanup"). With
+ * Deletes archive sessions by age or empty "husks" (spec/02-session-list.md §2 "Archive cleanup"). With
  * `dryRun` nothing is deleted and the result says what would be. Read leniently: the server may
  * send fewer fields.
  */

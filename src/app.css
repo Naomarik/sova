@@ -10,7 +10,7 @@ html, body, #root { height: 100%; }
 
 .list-title-muted { color: var(--color-ink-muted); }
 
-/* Skeleton shapes from DESIGN_NOTES §3 "Loading transcript". */
+/* Skeleton shapes from spec/03-transcript.md §3 "Loading transcript". */
 .skeleton-bubble { align-self: flex-end; width: 40%; height: var(--row-height); }
 .skeleton-w92 { width: 92%; }
 .skeleton-w78 { width: 78%; }
@@ -26,7 +26,7 @@ html, body, #root { height: 100%; }
 /* Card-shaped skeleton for the insights grid. */
 .skeleton-card { height: 120px; border-radius: var(--r-lg); }
 
-/* Archive date sections (DESIGN_NOTES §2 "Archive by date"): each a <details> whose summary is
+/* Archive date sections (spec/02-session-list.md §2 "Archive by date"): each a <details> whose summary is
    the eyebrow label (twist, name, count), collapsed by default; a rule between sections. */
 .archive-date + .archive-date { border-top: var(--stroke-thin) solid var(--color-border); }
 .archive-date-label {

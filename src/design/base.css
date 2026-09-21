@@ -7,12 +7,12 @@
 
    Part A · element defaults, scrollbars, code, focus
    Part B · system components, ported from fold-ai-dev.css (v1.8.0) — only the
-            ones DESIGN_NOTES.md uses; same class names, same rules
+            ones spec/overview.md uses; same class names, same rules
    Part C · pi-web components (app shell, session list, transcript, composer)
    Part D · utilities
 
    Naming stays flat and hyphenated: .component, .component-variant.
-   Every class here is described in DESIGN_NOTES.md.
+   Every class here is described in spec/overview.md.
    ============================================================================= */
 
 
@@ -1379,7 +1379,7 @@ summary.sidebar-region-head .icon-twist { transition: transform var(--dur-fast) 
   padding: var(--space-2) var(--space-3);
   resize: none;
   overflow-y: auto;
-  field-sizing: content;          /* native auto-grow where supported; JS fallback per DESIGN_NOTES */
+  field-sizing: content;          /* native auto-grow where supported; JS fallback per spec/04-composer.md */
 }
 .composer-actions { display: flex; align-items: flex-end; gap: var(--space-2); flex: none; }
 .composer-foot {
@@ -2257,7 +2257,7 @@ summary.sidebar-region-head .icon-twist { transition: transform var(--dur-fast) 
 /* Syntax theme (highlight.js classes). Roles, not decoration: never the
    accent (skill: a keyword is not an action). Hues come from the status
    tokens but only ever appear inside code, so they never read as status.
-   All ≥4.5:1 on --color-sunken in both themes (DESIGN_NOTES §4e). */
+   All ≥4.5:1 on --color-sunken in both themes (spec/04e-markdown.md §4e). */
 .hljs-keyword, .hljs-literal, .hljs-selector-tag, .hljs-doctag,
 .hljs-meta .hljs-keyword                  { color: var(--color-ink); font-weight: var(--fw-semibold); }
 .hljs-built_in, .hljs-type, .hljs-class   { color: var(--color-ink); font-weight: var(--fw-medium); }
@@ -2495,7 +2495,7 @@ summary.sidebar-region-head .icon-twist { transition: transform var(--dur-fast) 
 
 /* =============================================================================
    INSIGHTS — usage limits (#/usage), teams + subagents (#/agents), the per-session
-   outline strip and the compaction row. DESIGN_NOTES §10.
+   outline strip and the compaction row. spec/10-insights.md §10.
    ============================================================================= */
 
 /* ---- CARD parts (the skill's; pi-web had only the base card). ------------ */
@@ -2820,7 +2820,7 @@ a.chip:hover { color: var(--color-ink); border-color: var(--color-border-strong)
 /* =============================================================================
    SUBAGENTS PANE — this session's workers, beside the session pane: a worker
    list on the left, the selected worker's read-only transcript on the right.
-   Opened from the composer's "2 subagents working…" row. DESIGN_NOTES §11.
+   Opened from the composer's "2 subagents working…" row. spec/11-subagents-pane.md §11.
    ============================================================================= */
 
 /* ---- TRIGGER. The composer's subagents row, made a control. It keeps the
@@ -3253,7 +3253,7 @@ a.chip:hover { color: var(--color-ink); border-color: var(--color-border-strong)
 /* Empty, no-file and no-selection states: one idea in the view, centred. */
 .subagents-empty { flex: 1; justify-content: center; padding: var(--space-6) var(--space-4); }
 
-/* --- Inputs tab (DESIGN_NOTES §12) ----------------------------------------
+/* --- Inputs tab (spec/12-inputs-tab.md §12) ----------------------------------------
    This session's messages on one card, like the skill rows, but denser: caption
    title over a micro meta, so a long chat shows more of itself. The body is the
    jump; Rewind/Cancel sit apart at the row's end. The rewound-to row wears the
@@ -3294,6 +3294,157 @@ a.chip:hover { color: var(--color-ink); border-color: var(--color-border-strong)
 .input-row-note:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
 .input-row-boundary { background: var(--color-accent-tint); }
 .input-row-abandoned .input-row-title { color: var(--color-ink-muted); font-weight: var(--fw-regular); }
+
+/* --- Timeline tab (spec/13-timeline.md §13) ----------------------------------------
+   The whole session on one axis, beside Inputs: a mono clock in the left column,
+   a rail with a dot down the middle, and the row's words on the right. The rhythm
+   is fixed — a quiet hour and a busy one are the same height — so the rail is a
+   reading order, not a chart; idle time is a row that says how long it was.
+   Three colors do the work the spacing doesn't: an input is a solid muted dot, a
+   chapter is a larger hollow one, a marker a small hollow one on the border ink.
+   No accent on the dots: the budget (§0) keeps it for the primary, live and focus,
+   and shape already separates the three. Row padding matches .input-row, so the
+   two tabs scroll at the same pace. */
+.timeline {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  /* Rail geometry, local to this block: the clock column, the rail column, and
+     the y the dot centres on, measured from a row's content-box top (half a
+     caption line). */
+  --timeline-time: 5ch;
+  --timeline-rail: 14px;
+  --timeline-dot-y: 9px;
+}
+.timeline-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: var(--timeline-time) var(--timeline-rail) minmax(0, 1fr);
+  column-gap: var(--space-2);
+  align-items: start;
+  padding: var(--space-2) var(--space-2) var(--space-2) 0;
+}
+/* The rail: one hairline per row, joined end to end, trimmed to the first and
+   last dot so the axis starts and stops where the session does. */
+.timeline-row::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--timeline-time) + var(--space-2) + var(--timeline-rail) / 2);
+  width: var(--stroke-thin);
+  margin-left: calc(var(--stroke-thin) / -2);
+  background: var(--color-border);
+}
+.timeline-row:first-child::before { top: calc(var(--space-2) + var(--timeline-dot-y)); }
+.timeline-row:last-child::before { bottom: calc(100% - var(--space-2) - var(--timeline-dot-y)); }
+
+.timeline-dot {
+  position: relative;               /* over the rail */
+  grid-column: 2;
+  justify-self: center;
+  box-sizing: border-box;
+  width: 7px;
+  height: 7px;
+  margin-top: calc(var(--timeline-dot-y) - 3.5px);
+  border-radius: var(--r-full);
+  background: var(--color-ink-muted);
+}
+.timeline-row[data-kind="chapter"] .timeline-dot {
+  width: 11px;
+  height: 11px;
+  margin-top: calc(var(--timeline-dot-y) - 5.5px);
+  background: var(--color-surface);
+  border: var(--stroke-icon) solid var(--color-ink-muted);
+}
+.timeline-row[data-kind="marker"] .timeline-dot {
+  background: var(--color-surface);
+  border: var(--stroke-thin) solid var(--color-border-strong);
+}
+/* Density and gap rows carry no dot: they describe the stretch between two
+   points rather than a point, and a dot would claim a moment they don't have. */
+.timeline-row[data-kind="density"],
+.timeline-row[data-kind="gap"] { padding-top: 0; }
+/* A density line belongs to the input above it, so the two sit as one block. */
+.timeline-row:has(+ .timeline-row[data-kind="density"]) { padding-bottom: 0; }
+.timeline-row[data-kind="density"] .timeline-dot,
+.timeline-row[data-kind="gap"] .timeline-dot { display: none; }
+
+/* The clock, right-aligned against the rail, mono so the digits line up down
+   the axis. Flagged = a chapter falling back to the summary's own time. */
+.timeline-time {
+  grid-column: 1;
+  justify-self: end;
+  margin-top: 1px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono);
+  line-height: var(--lh-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--color-ink-2);
+}
+.timeline-time-flagged { color: var(--color-ink-muted); }
+
+/* The body is the whole row's hit area and the jump, following .input-row-body:
+   no chrome of its own, the title takes the hover. */
+.timeline-body {
+  grid-column: 3;
+  min-width: 0;
+  display: block;
+  padding: 0;
+  border: 0;
+  background: none;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+  border-radius: var(--r-sm);
+}
+.timeline-body:hover .timeline-title,
+.timeline-body:hover .timeline-chapter { color: var(--color-accent); }
+.timeline-body:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.timeline-title {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+  font-weight: var(--fw-medium);
+  color: var(--color-ink);
+}
+/* A chapter heading is one line and never wraps twice: it is a marker in the
+   axis, not a message. Its `#` is the outline's own .outline-hash. */
+.timeline-chapter {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+  font-weight: var(--fw-semibold);
+  color: var(--color-ink);
+}
+.timeline-row-flagged .timeline-chapter { font-weight: var(--fw-medium); }
+/* On a density row the meta is the row: it stands in the body's column itself. */
+.timeline-row > .timeline-meta { grid-column: 3; margin-top: 0; }
+.timeline-meta { display: block; margin-top: 2px; font-size: var(--fs-micro); line-height: var(--lh-micro); color: var(--color-ink-muted); }
+/* Marker rows are meta all the way down: they report, they don't headline. */
+.timeline-row[data-kind="marker"] .timeline-title { font-weight: var(--fw-regular); color: var(--color-ink-2); }
+/* A stretch with nothing in it. Muted micro, hung on the rail's own column so
+   the eye reads it as a break in the line rather than another entry. */
+.timeline-gap {
+  grid-column: 3;
+  padding: var(--space-1) 0;
+  font-size: var(--fs-micro);
+  line-height: var(--lh-micro);
+  color: var(--color-ink-muted);
+}
+/* The state line above the list, word for word the outline strip's. */
+.timeline-state { margin: 0 0 var(--space-3); font-size: var(--fs-caption); color: var(--color-ink-muted); }
+
+/* Two ghost buttons can share the outline body's first line (Explanations,
+   Timeline); they keep the body's top rhythm and space each other. */
+.outline-explained-open + .outline-explained-open { margin-left: var(--space-2); }
 
 /* Where a jump landed, for ~1.5s (src/lib/jump.ts owns the timing). */
 .entry-jumped { background: var(--color-accent-tint); border-radius: var(--r-sm); transition: background-color var(--dur-base) var(--ease-standard); }

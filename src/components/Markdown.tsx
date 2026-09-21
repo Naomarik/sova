@@ -5,7 +5,7 @@ import { activatePathChip } from "../lib/path-attachments";
 import { announce, openLightbox } from "../lib/ui-state";
 
 /**
- * An assistant-text body rendered as markdown (DESIGN_NOTES §4e). The HTML comes only from
+ * An assistant-text body rendered as markdown (spec/04e-markdown.md §4e). The HTML comes only from
  * renderMarkdown, which escapes all model text (markdown-it html:false). While `streaming`, the
  * whole text is re-rendered at most once per animation frame, and an open fence shows as an
  * unhighlighted code block. `attachments` turns those /tmp image paths in prose into chips.

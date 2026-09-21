@@ -363,6 +363,9 @@ the table above. When no session has solo workers, the section is omitted.
     <button class="button button-sm button-ghost outline-explained-open" type="button" aria-haspopup="dialog">
       <span class="icon icon-sm" style="--icon: url(/icons/external.svg)" aria-hidden="true"></span>Open 3 Explanations
     </button>
+    <button class="button button-sm button-ghost outline-explained-open" type="button" aria-controls="session-pane">
+      <span class="icon icon-sm" style="--icon: url(/icons/clock.svg)" aria-hidden="true"></span>Open Timeline
+    </button>
     <p class="outline-state">Latest · Why the watcher restarts · 2h ago</p>
     <p class="outline-overall">{overall}</p>
     <p class="outline-state">Updated 3m ago · behind the latest messages</p>
@@ -389,15 +392,29 @@ the table above. When no session has solo workers, the section is omitted.
   1. Closed, the strip shows the `now` line and the counts it has.
   2. Open, it shows the gallery button (when there are explanations), `overall`, the state
      line, and the topic headings.
-  3. Opening a topic shows its bullets and Jump.
+  3. Opening a topic shows its bullets and Jump. Any dismissal closes the topic with the strip,
+     so the next open is step 2 again.
 - **Explanations.** When the session has any, the summary gains
   `<span class="outline-count outline-explained">· Explained {n}</span>` after the topic count,
   and the body opens with a ghost `Open {n} Explanations` button — the existing gallery dialog
   (`aria-haspopup="dialog"`) — followed by `Latest · {topic} · {relative time}`. This dialog is
   **unchanged** and stays session-scoped; every explanation on the machine is the landing page's
   grid instead (§3), which is a page and not a dialog.
-- **Open state.** Both levels are closed by default. Persist the strip's open state per session
-  path in `sessionStorage`. Open states survive updates.
+- **Open state.** Both levels are closed by default and **nothing is persisted** — the open state
+  lives in the component alone. The session view is a keyed `<Show>` on `viewKey()` (`src/App.tsx`,
+  `chat:{force}:{path}` / `watch:{why}:{path}`), so a refetch doesn't remount the strip and a
+  deliberate open survives updates, while navigating to another session, another mode, or the
+  landing page remounts it closed. It should never stay open on nav away, so there is nothing
+  worth persisting.
+- **Dismissal.** A `pointerdown` anywhere outside the strip closes it — the transcript, the
+  sidebar, the composer, the pane — on the press, not the release. Inside is everything within
+  the disclosure (the summary row, a topic and its bullets, Jump, `Open Timeline`,
+  `Open {n} Explanations`) **and the gallery dialog it opens**, which is portalled, so a click in
+  that dialog or on its scrim leaves the strip open underneath. **Esc** dismisses it only when the
+  press starts inside the strip, and never calls `preventDefault` — every other Esc in the product
+  (the pane's close, Inputs' armed-rewind cancel, a dialog's own) keeps its behavior. All three
+  close paths — the summary toggle, the click-away, Esc — **collapse the open topic too**, and each
+  hands the transcript back the strip's `--outline-max` of flow.
 - **Missing data.**
   - When `outline` is null but the session has explanations, the row still discloses: the label
     reads "Explained", the summary is `Explained · {n} · {latest topic}`, and the body holds the
@@ -406,8 +423,17 @@ the table above. When no session has solo workers, the section is omitted.
     have neither, and an empty strip on each of them is noise.
   - Leave out an empty `now` (the summary then shows only the label and count), and likewise an
     empty `overall`.
+- **Open Timeline.** A second ghost button beside the gallery one, opening the session pane on
+  its Timeline tab (§13): the same topics as chapter markers, with this session's inputs, tool
+  density and idle gaps drawn in between them. It is always there, explanations or not — the
+  outline is what the axis is built from. It shares `.outline-explained-open`, so the two sit on
+  the body's first line and space each other.
 - **Topic details.** `.outline-hash` appears only on `manual` topics. The time is `at` in mono
-  24-hour format, with the date prefix when the day isn't today (§3 timestamps).
+  24-hour format, with the date prefix when the day isn't today (§3 timestamps). **That time is
+  the summary's own** — when the summarizer wrote the topic, not when the conversation it
+  describes happened. It is fine in a list, which claims no order beyond its own; §13's axis
+  can't use it, and replaces it with the anchored message's time, falling back to this one,
+  flagged, when the anchor is gone.
 - **`updating` / `drafting`.** Put a `.live-dot` after `.outline-label` (a summarizer is running
   now), and the state line reads "Updating".
 - **Jump to Message.**

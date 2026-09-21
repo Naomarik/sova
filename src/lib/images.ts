@@ -1,4 +1,4 @@
-// Image attachments (DESIGN_NOTES §4b): validating picked/pasted/dropped files, blob previews,
+// Image attachments (spec/04b-images.md §4b): validating picked/pasted/dropped files, blob previews,
 // and uploading them at send time. Like pi's TUI, the prompt then names each file's /tmp path
 // and the model reads it with the read tool; no base64 goes over the socket.
 

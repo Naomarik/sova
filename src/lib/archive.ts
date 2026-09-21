@@ -1,5 +1,5 @@
 /**
- * The Archive's date sections and cleanup results (DESIGN_NOTES §2 "Archive by date" and
+ * The Archive's date sections and cleanup results (spec/02-session-list.md §2 "Archive by date" and
  * "Archive cleanup"). Pure, so it runs under tsx --test.
  */
 

@@ -433,7 +433,7 @@ export async function listSessions(): Promise<SessionSummary[]> {
   for (const s of results) {
     if (!s) continue;
     // Empty husks — no user message anywhere in the file — are never listed, so abandoned
-    // new-session stubs don't clutter the archive (DESIGN_NOTES §2 "Archive cleanup"). Hidden
+    // new-session stubs don't clutter the archive (spec/02-session-list.md §2 "Archive cleanup"). Hidden
     // only when the whole file was read: a first user message beyond the head cap never hides
     // a session. cleanupSessions("husks") still finds and deletes them by path.
     if (s.title === "Untitled") {

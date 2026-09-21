@@ -6,7 +6,7 @@ import { ImageStrip } from "./ImageStrip";
 import { Icon } from "./ui";
 
 /**
- * An image a user message or tool result names by path (DESIGN_NOTES §4b "Path attachments").
+ * An image a user message or tool result names by path (spec/04b-images.md §4b "Path attachments").
  * Collapsed; the image is requested only once opened. A file /tmp no longer has is a plain row
  * that says so.
  */

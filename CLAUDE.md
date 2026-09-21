@@ -9,7 +9,7 @@ live-watch sessions that are open in the CLI/TUI, spawn new sessions.
 - `shared/protocol.ts` — the REST/WS wire contract. Change only with team coordination.
 - `server/` — Node backend: Hono (REST) + `ws` (2 WS endpoints), embeds the pi SDK. Owned by **backend**.
 - `src/` — SolidJS + TS frontend (Vite, vite-plugin-solid; HMR = live reload). Owned by **frontend**, except `src/design/`.
-- `src/design/`, `DESIGN_NOTES.md`, `public/` — design tokens, base CSS, fonts/icons, UX spec. Owned by **designer**.
+- `src/design/`, `spec/`, `public/` — design tokens, base CSS, fonts/icons, UX spec. Owned by **designer**.
 - `.claude/skills/` — project skills, registered for pi by `.pi/settings.json` (`"skills": ["../.claude/skills"]`;
   the folder is also trusted in `~/.pi/agent/trust.json`, or pi prompts each session).
   `fold-ai-dev-design/` — the design system skill (copied from foldaidev). READ IT.

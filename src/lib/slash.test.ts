@@ -80,3 +80,20 @@ test("/tree with arguments is an ordinary send, not a local command", () => {
   assert.equal(enterRunsLocal("/tree --depth 2", "Enter", false), false); // Enter sends it
   assert.equal(slashMenuSuppressed("/tree --depth 2"), false); // and the "/" menu stays available
 });
+
+test("localCommand claims a bare /timeline, and leaves the rest to the runtime", () => {
+  assert.equal(localCommand("/timeline"), "timeline");
+  assert.equal(localCommand("  /timeline\n"), "timeline");
+  assert.equal(localCommand("/timeline of the session"), null);
+  assert.equal(localCommand("/timelines"), null);
+  assert.equal(localCommand("timeline"), null);
+});
+
+test("enterRunsLocal and slashMenuSuppressed treat a bare /timeline like /tree", () => {
+  assert.equal(enterRunsLocal("/timeline", "Enter", false), true);
+  assert.equal(enterRunsLocal("/timeline", "Enter", true), false);
+  assert.equal(enterRunsLocal("/timeline show me", "Enter", false), false);
+  assert.equal(slashMenuSuppressed("/timeline"), true);
+  assert.equal(slashMenuSuppressed("/timelines"), false);
+  assert.equal(slashMenuSuppressed("/time"), false);
+});

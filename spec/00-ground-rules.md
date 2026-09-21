@@ -45,7 +45,7 @@ and `fill="none" stroke="currentColor"`.
 | `info.svg` | Info rows, info banners |
 | `alert-circle.svg` | Error banners, warn banners |
 | `attention.svg` | Composer reason when the session is read only |
-| `clock.svg` | "Reconnecting" reason |
+| `clock.svg` | "Reconnecting" reason; the outline strip's Open Timeline button (§13) |
 | `refresh.svg` | Refresh Sessions: an icon button in `.sidebar-head`, before New Session, with `aria-label="Refresh Sessions"`. While fetching it's `aria-disabled` and the list keeps its rows |
 | `arrow-right.svg` | Send |
 | `stop.svg` | Stop (composer): a rounded square |

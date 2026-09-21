@@ -9,7 +9,7 @@ import { Banner, Icon, trapFocus } from "./ui";
 const MAX_RECENT = 20;
 
 /**
- * Asks for a folder, creates an empty webapp-owned session, and hands it back (DESIGN_NOTES §5).
+ * Asks for a folder, creates an empty webapp-owned session, and hands it back (spec/05-new-session-dialog.md §5).
  * The folder is chosen, never typed: the Folder field opens the folder picker in place.
  */
 export function NewSessionDialog(props: {

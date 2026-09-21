@@ -1,4 +1,4 @@
-// Context-window fill for the session head (DESIGN_NOTES context meter). Mirrors the server's
+// Context-window fill for the session head (spec/04f-context-window.md context meter). Mirrors the server's
 // rule (server/transcript.ts contextForBranch): input + cacheRead + cacheWrite of the LAST
 // assistant message with usage on the branch; a compaction after it makes that stale → null.
 

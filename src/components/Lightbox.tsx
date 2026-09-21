@@ -3,7 +3,7 @@ import { lightbox, setLightbox } from "../lib/ui-state";
 import { Icon } from "./ui";
 
 /**
- * Full-size image viewer (DESIGN_NOTES §4b "Lightbox"): one native <dialog> opened with
+ * Full-size image viewer (spec/04b-images.md §4b "Lightbox"): one native <dialog> opened with
  * showModal(), so it sits in the top layer with the page inert behind it and Esc for free.
  * Arrow keys step through one row's images, wrapping. Focus returns to the opening thumb.
  */

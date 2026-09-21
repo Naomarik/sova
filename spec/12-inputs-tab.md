@@ -7,7 +7,8 @@ text comes back to the composer so it can be edited and sent again. It is pi's `
 message, cut down to the one thing people use it for: "take that back and let me say it better."
 
 It is its own tab, not a section of Session, because it's the one place in the pane that
-writes. Everything else there is read-only.
+writes. Everything else there is read-only — including **Timeline** ([13-timeline.md](13-timeline.md) §13),
+which sits beside it and draws the same messages on a time axis: its rows jump, and only jump.
 
 ## Opening it
 
@@ -58,7 +59,7 @@ trigger compares it with its own (`"agents"` for subagents, `"inputs"` here).
 | Closed | `false` | `false` |
 | Open on Agents | `true` | `false` |
 | Open on Inputs | `false` | `true` |
-| Open on Session, Skills or Explain | `false` | `false` |
+| Open on Session, Timeline, Skills or Explain | `false` | `false` |
 
 That last row looks odd — the pane is plainly open and both controls say collapsed — but
 `aria-expanded` answers "did *this* control's content open?", and neither one's did. Saying true

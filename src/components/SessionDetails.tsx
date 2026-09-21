@@ -13,7 +13,7 @@ import { Banner, CopyButton, Icon } from "./ui";
 const wrapMono = { margin: 0, "overflow-wrap": "anywhere" } as const;
 
 /**
- * What a session is and what it has spent (DESIGN_NOTES §4h), read-only: the body of the Session
+ * What a session is and what it has spent (spec/04-composer.md §4h), read-only: the body of the Session
  * info modal and the session pane's Session tab, one implementation for both. Its parent owns
  * the data and the scroll box; this renders sections as siblings for a flex column with gaps.
  *
@@ -274,12 +274,13 @@ export function SessionDetails(props: {
         </details>
       </Show>
 
-      {/* 7 · Timeline. Model, thinking and mode changes, in the order they happened. */}
+      {/* 7 · Changes. Model, thinking and mode changes, in the order they happened. The pane's
+          Timeline tab is the session's whole axis; this stays the settings history. */}
       <Show when={timeline().length > 0}>
         <details class="disclosure">
           <summary class="disclosure-summary">
             <Icon name="chevron-right" small class="icon-twist" />
-            <span class="disclosure-label">Timeline</span>
+            <span class="disclosure-label">Changes</span>
             <span class="disclosure-preview">
               · {timeline().length} {timeline().length === 1 ? "change" : "changes"}
             </span>
@@ -313,7 +314,7 @@ export function SessionDetails(props: {
 }
 
 /**
- * Archive/Unarchive for a web-spawned session (DESIGN_NOTES §2 "Archiving"). Archiving closes the
+ * Archive/Unarchive for a web-spawned session (spec/02-session-list.md §2 "Archiving"). Archiving closes the
  * session's runtime, so it's refused while the session is live in a TUI (it would stay on top
  * anyway) and while its subagents work (they'd stop with it); unarchiving always works.
  */

@@ -14,7 +14,7 @@
      <html data-theme="dark">    dark
      <html data-theme="light">   light (full, equal token set)
    Deviation from the skill, which follows prefers-color-scheme when no
-   data-theme is set. Requested for this product; see DESIGN_NOTES.md §0.
+   data-theme is set. Requested for this product; see spec/00-ground-rules.md §0.
    ============================================================================= */
 
 
@@ -258,7 +258,7 @@
   --control-md: 44px;
   --control-lg: 52px;
 
-  /* pi-web layout sizes (extension — see DESIGN_NOTES.md §1). */
+  /* pi-web layout sizes (extension — see spec/01-app-shell.md §1). */
   --sidebar-width: 320px;
   --composer-max:  40vh;  /* textarea auto-grow ceiling */
   --tool-output-max: 320px;
@@ -295,7 +295,7 @@
   --measure:       72ch;
 }
 
-/* Reading column from unfolded up (DESIGN_NOTES §3 "Column width"): it grows
+/* Reading column from unfolded up (spec/03-transcript.md §3 "Column width"): it grows
    with the transcript pane, keeping 2 × space-8 of margin around the column
    (measure + space-9), from 72ch to a 110ch cap. It stays 72ch until the
    pane is wide enough, so nothing jumps, and folded never sees this rule.

@@ -377,8 +377,8 @@ error (keep last data + error `Banner` with Retry). Exact copy comes from the de
 
 ## UX
 
-_Author: designer. Proposal for review; written against `DESIGN_NOTES.md` §0–§9 and the
-fold-ai-dev skill v1.8.0. Nothing in `DESIGN_NOTES.md` / `src/design/` changes until the gate._
+_Author: designer. Proposal for review; written against `spec/overview.md` §0–§9 and the
+fold-ai-dev skill v1.8.0. Nothing in `spec/overview.md` / `src/design/` changes until the gate._
 
 ### What the data lets us say honestly (drives the copy)
 
@@ -636,7 +636,7 @@ label "Compacted", preview "· {tokensBefore} tokens summarized" (comma thousand
 
 ### Resolutions (designer, after green light)
 
-**Canonical spec is now `DESIGN_NOTES.md` §10 (+ §9 "Insights" copy, class index, §7, §8).**
+**Canonical spec is now `spec/10-insights.md` §10 (+ §9 "Insights" copy, class index, §7, §8).**
 Where this draft differs, §10 wins. Summary of what changed from the draft above:
 
 1. **Live worker status** — backend ships a live source (the sessions live records,

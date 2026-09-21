@@ -546,7 +546,7 @@ export function ThreadScroller(props: {
   );
 }
 
-/** Placeholder shaped like what lands (DESIGN_NOTES §3); nothing shows for the first 300ms. */
+/** Placeholder shaped like what lands (spec/03-transcript.md §3); nothing shows for the first 300ms. */
 export function TranscriptSkeleton() {
   const [show, setShow] = createSignal(false);
   const t = setTimeout(() => setShow(true), 300);

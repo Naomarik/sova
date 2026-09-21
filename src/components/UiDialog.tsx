@@ -3,7 +3,7 @@ import { isObj, str } from "../lib/message";
 import { trapFocus } from "./ui";
 
 /**
- * An extension dialog bridged from the server (DESIGN_NOTES §6). `onAnswer(value)` sends
+ * An extension dialog bridged from the server (spec/06-extension-dialogs.md §6). `onAnswer(value)` sends
  * ui_response: a string for select/input/editor, true for confirm, null to cancel (the server
  * then applies the extension's default, which is false for confirm).
  */

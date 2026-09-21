@@ -1,4 +1,4 @@
-// Reading the session files of claude-code subagents (DESIGN_NOTES §11 "Subagents").
+// Reading the session files of claude-code subagents (spec/11-subagents-pane.md §11 "Subagents").
 //
 // A worker on the claude-code backend has no pi session file; it writes its own Claude Code
 // transcript at ~/.claude/projects/<cwd-slug>/<sessionId>.jsonl. The live record gives us only

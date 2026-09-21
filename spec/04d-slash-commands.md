@@ -197,7 +197,9 @@ and again when the count changes, at most once a second. When there are none, an
   the result. Once the whole text is a bare local command the menu closes, and Enter runs it
   rather than inserting a match (`/new` would otherwise pick `btw:new`); a partial token like
   `/ne` still opens it. Anything with arguments belongs to the runtime and goes through
-  untouched.
+  untouched. **Bare `/tree` (§12) and bare `/timeline` (§13)** open the session pane on Inputs
+  and on Timeline the same way — draft cleared, no row in the thread — but the runtime registers
+  neither, so neither appears in the menu, and either one with arguments is an ordinary message.
 - **`/new`.** Bare `/new` is a local command too, as in the TUI: it creates an empty session in
   the chat's folder, opens it with the composer focused, and archives the session it left (only
   once the new one exists). A session that isn't web-spawned, or whose subagents are working,

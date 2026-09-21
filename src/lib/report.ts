@@ -1,4 +1,4 @@
-// Report rows (DESIGN_NOTES §3 "report"): the status chip and the one collapsed line.
+// Report rows (spec/03-transcript.md §3 "report"): the status chip and the one collapsed line.
 
 import type { ReportInfo } from "../../shared/protocol";
 import type { Tone } from "../components/ui";

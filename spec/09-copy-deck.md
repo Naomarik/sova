@@ -323,5 +323,27 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Jump with no row on screen (toast) | That message isn't in the transcript on screen. |
 | `/tree` | Inputs open. |
 
+## Timeline tab (§13)
+
+| Where | Copy |
+|---|---|
+| Tab | Timeline · list `aria-label`: Session timeline |
+| Outline strip button | `Open Timeline` |
+| Row name prefix (visually hidden) | `Jump to this message: ` |
+| Density line | `{n} replies · {n} tools · {duration}` — e.g. `3 replies · 14 tools · 6m`; 1: `1 reply` / `1 tool`; a clause at 0 is dropped, and the row with it |
+| Idle gap | `idle {duration}` — e.g. `idle 38m` (`duration()` in `src/lib/format.ts`, the one the density line uses) |
+| Chapter fallback | `summary time` (after the topic, in the row's meta; the clock dims with it) |
+| Marker: compaction | `Compacted · {n} tokens summarized` |
+| Marker: rewind | `Rewound to an earlier message` |
+| Marker: subagent | `{name} started` · `{name} finished` · `{name} stopped` (errored or killed) |
+| Marker: settings | `Model → {model}` · `Thinking → {level}` · `Mode → {mode}` |
+| State line | Updated {relative} ago · behind the latest messages · (current: `Updated {relative} ago · current`; a summarizer running: `Updating`) — §10's words, unchanged |
+| Time `title` | `{absolute} · {relative}` — e.g. `2026-09-19T14:06:11Z · 2d ago` |
+| Row foot | Oldest first, active branch only. A row jumps to its message. |
+| Row foot, below 1280 | Oldest first, active branch only. A row jumps to its message and closes this pane. |
+| Jump with no row on screen (toast) | That message isn't in the transcript on screen. |
+| Empty | **0 messages in this session yet.** The timeline draws itself as you and the agent work. |
+| `/timeline` | Timeline open. |
+
 ---
 

@@ -114,7 +114,7 @@ app.get("/api/folders", async (c) => {
 
 app.get("/api/models", async (c) => c.json(await listModels()));
 
-// The mode is per session (DESIGN_NOTES §4g). ~/.pi/agent/mode.json is the default new sessions
+// The mode is per session (spec/04g-mode-menu.md §4g). ~/.pi/agent/mode.json is the default new sessions
 // start from; GET reads it, POST without ?path= writes it and changes no open chat.
 app.get("/api/mode", (c) => c.json(modeInfo(readMode())));
 

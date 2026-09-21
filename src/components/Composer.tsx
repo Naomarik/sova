@@ -34,7 +34,7 @@ const size = (bytes: number) =>
   bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 
 /**
- * Prompt input (DESIGN_NOTES §4, §4b). Enter sends, Shift+Enter adds a newline. While `running`,
+ * Prompt input (spec/04-composer.md §4, §4b). Enter sends, Shift+Enter adds a newline. While `running`,
  * Send becomes Steer and a small Stop appears after it. `readOnly` disables the textarea and hides Send;
  * `blocked` keeps typing allowed but makes Send and Attach aria-disabled, with the reason read
  * out. Images attach by picker, paste, or drop. Text and images are a per-session draft that
@@ -69,6 +69,8 @@ export function Composer(props: {
   onNewSession?: () => Promise<string | null>;
   /** Runs a bare "/tree" (§4d), and the run-status row's "N inputs" trigger: opens the Inputs tab. */
   onShowInputs?: () => void;
+  /** Runs a bare "/timeline" (§4d): opens the session pane's Timeline tab. */
+  onShowTimeline?: () => void;
   /** User messages on this chat's active branch; the status row's Inputs trigger, hidden at 0. */
   inputCount?: number;
   autofocus?: boolean;
@@ -381,6 +383,16 @@ export function Composer(props: {
       input.value = "";
       setSlashToken(null);
       announce("Inputs open.");
+      return;
+    }
+    // "/timeline" is ours in the same way: pi has no such built-in, so it would reach the model as
+    // literal text. Here it opens the Timeline tab, the session's one time axis (§4d).
+    if (localCommand(text()) === "timeline" && props.onShowTimeline && images().length === 0) {
+      props.onShowTimeline();
+      setDraft("");
+      input.value = "";
+      setSlashToken(null);
+      announce("Timeline open.");
       return;
     }
     // "/new" is ours too: a fresh session in this folder, and this one archived (§4d). Nothing

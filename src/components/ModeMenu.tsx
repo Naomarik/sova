@@ -22,7 +22,7 @@ const itemId = (it: Item) => `mode-${it.kind}-${it.id}`;
 const [info, setInfo] = createSignal<ModeInfo | null>(null);
 
 /**
- * The chat header's mode switch (DESIGN_NOTES §4g): a trigger plus a native popover menu. One
+ * The chat header's mode switch (spec/04g-mode-menu.md §4g): a trigger plus a native popover menu. One
  * major mode (menuitemradio, picking closes) and any minor modes (menuitemcheckbox, toggling
  * stays open). The mode is per chat: only this chat follows, from its next message.
  */

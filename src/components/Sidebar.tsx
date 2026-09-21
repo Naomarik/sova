@@ -151,7 +151,7 @@ function SessionRow(props: { session: SessionSummary; selected: string | null; n
   );
 }
 
-/** Sessions grouped by folder, newest first: the markup of DESIGN_NOTES §2 "Anatomy". */
+/** Sessions grouped by folder, newest first: the markup of spec/02-session-list.md §2 "Anatomy". */
 function GroupList(props: { groups: Group[]; selected: string | null; now: number; idPrefix: string }) {
   return (
     <For each={props.groups}>
@@ -284,7 +284,7 @@ export function Sidebar(props: {
   });
   const archiveTotal = () => all().filter((s) => !isTop(s)).length;
 
-  // Collapsed by default; the user's own choice persists for the tab (DESIGN_NOTES §2 "Regions").
+  // Collapsed by default; the user's own choice persists for the tab (spec/02-session-list.md §2 "Regions").
   const [storedOpen, setStoredOpen] = createSignal(sessionStorage.getItem(ARCHIVE_KEY) === "1");
   /** Forced open while searching, when the top is empty, or when the open session is archived. */
   const forcedOpen = () =>

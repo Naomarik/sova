@@ -16,7 +16,7 @@ const sameReq = (a: CleanupRequest, b: CleanupRequest) =>
   a.mode === b.mode && (a.mode === "husks" || a.minAgeDays === (b as typeof a).minAgeDays);
 
 /**
- * The Archive's Clean Up… button (DESIGN_NOTES §2 "Archive cleanup"): it opens a picker of the
+ * The Archive's Clean Up… button (spec/02-session-list.md §2 "Archive cleanup"): it opens a picker of the
  * actions; each asks the server for a dry run, confirms with its real numbers, then deletes and
  * refreshes the list.
  */

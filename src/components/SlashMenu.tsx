@@ -19,7 +19,7 @@ export function commandOptionIds(commands: SlashCommand[]): string[] {
 }
 
 /**
- * The composer's slash-command listbox (DESIGN_NOTES §4d). The textarea keeps focus and points
+ * The composer's slash-command listbox (spec/04d-slash-commands.md §4d). The textarea keeps focus and points
  * at the active row with aria-activedescendant (combobox pattern); this renders the rows and
  * reports picks. Rows insert on mousedown so the textarea never loses focus.
  */

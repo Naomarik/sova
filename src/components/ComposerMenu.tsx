@@ -66,7 +66,7 @@ interface Row {
 }
 
 /**
- * The composer's flyout (DESIGN_NOTES §4b): one native popover anchored ABOVE whatever opened
+ * The composer's flyout (spec/04b-images.md §4b): one native popover anchored ABOVE whatever opened
  * it, in the model menu's visual family, with three panels. The ghost `plus` button opens the
  * **menu** panel (Attach images, Commands, Hide tool calls, Hide thinking, Session info, and in
  * chats Undo last turn); the

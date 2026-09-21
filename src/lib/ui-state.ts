@@ -73,7 +73,7 @@ export interface LightboxState {
   opener: HTMLElement | null;
 }
 
-/** The one image viewer (DESIGN_NOTES "Lightbox"); null when closed. */
+/** The one image viewer (spec/04b-images.md "Lightbox"); null when closed. */
 export const [lightbox, setLightbox] = createSignal<LightboxState | null>(null);
 
 export const openLightbox = (images: LightboxState["images"], index: number, opener: HTMLElement | null) =>

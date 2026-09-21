@@ -18,7 +18,7 @@ const optionId = (ref: string) => `mo-${ref.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
 const PAGE = 8;
 
 /**
- * The model picker (DESIGN_NOTES §4c): a combobox input over a listbox, shown as the composer
+ * The model picker (spec/04c-model-menu.md §4c): a combobox input over a listbox, shown as the composer
  * flyout's second panel (§4b). Mounting focuses the listbox, never the input, so a phone doesn't
  * raise its keyboard; typing there moves into the input. The keyboard position is
  * aria-activedescendant. The list comes from the shared cache (`src/lib/models.ts`) and refreshes

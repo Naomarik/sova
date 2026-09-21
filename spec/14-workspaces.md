@@ -235,9 +235,20 @@ apply verbatim. What changes is scoping and chrome:
   (§4f, the percent-only step — a pane is never a 720px head), its state chip, and the tools.
   The name is `{label} · {model}` when a label exists, else `{title} · {model}`, truncated, with
   the full string in `title`.
-- **The accessible name of the pane is that same string**, through `aria-labelledby`. Three
-  regions called "Transcript" would be useless; "control · claude-opus-5" is what the user is
-  actually distinguishing.
+- **The accessible name of the pane is that same string, in both modes.** The pane carries
+  `aria-label="{label or title} · {model}"` whether it is a `region` or a `tabpanel` — it is not
+  labelled by its tab. Pointing a tabpanel at its tab is the usual convention, and here it breaks
+  something that matters more: the live region's prefix **is** the pane's accessible name
+  (Announcements), so a name assembled differently in tabs than in split makes the prefix
+  byte-for-byte right in one mode and merely similar in the other. `aria-controls` on the tab
+  already ties the two together. Three regions called "Transcript" would be useless; "control ·
+  claude-opus-5" is what the user is actually distinguishing.
+- **A tab's visible text has to distinguish it inside this group**, which the title alone often
+  won't: every member of a fork **shares** the source's title, so a strip of 5 tabs reading
+  "Retry with jitter" five times names nothing. The rule is the first of these that tells members
+  apart — the `label` if one is set, else the model with its repeat suffix (`glm-5.3 #2`) when
+  members share a title, else the title. The tab's accessible name stays the full
+  `{label or title}, {model}` (§9) at every width.
 - **Every id inside a pane is scoped by a pane id**: `composer-input-p2`, `composer-reason-p2`,
   `context-desc-p2`, `composer-flyout-p2`, and the pane and its tab as `pane-p2` / `ws-tab-p2`.
   `aria-controls`, `aria-describedby`, `aria-labelledby` and every `for` follow. Duplicated ids

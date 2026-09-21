@@ -120,9 +120,9 @@ Turns start together, so one provider may answer some members with 429. pi-web d
 - **Per member, against that model's own window.** The starting fill is the source's context at
   the fork point — `ContextInfo.tokens` for the branch (§4f) — and the denominator is the
   member's model window, not the source's. That denominator is **`ModelInfo.contextWindow` from
-  `GET /api/models`**, absent or null when no catalog knows the model — the two are the same
-  picture here (an older server that never sends the field, and a newer one that doesn't know
-  this model's window), and both render as tokens alone. It has to come from the models
+  `GET /api/models`**, **absent** when no catalog knows the model — the field is optional, the
+  same convention `ContextInfo.window` states, and an older server that never sends it looks the
+  same as a newer one that doesn't know this model. Both render as tokens alone. It has to come from the models
   list because the client is asking about models no session here has ever run: `ContextInfo.window`
   only ever describes a session's *current* model, so it can say nothing about a candidate. Without
   a per-model window the preview loses the one comparison it exists to make — that the same 48k is

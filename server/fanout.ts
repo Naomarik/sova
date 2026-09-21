@@ -1,5 +1,5 @@
 import { existsSync, unlinkSync, writeFileSync } from "node:fs";
-import { open, type FileHandle } from "node:fs/promises";
+import { open } from "node:fs/promises";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { GROUP_NAME_MAX, type BatchRefusal, type BatchRefusalCode, type FanoutRequest, type FanoutResult, type SessionGroup, type SessionSummary } from "../shared/protocol";
 import { activeConfigFailure, heldChat } from "./chat-manager";
@@ -11,7 +11,7 @@ import { getSessionSummary } from "./sessions-index";
 import { addWebSession } from "./web-sessions";
 import { markOwned, recentForeignWriteAgeSec } from "./write-guard";
 import { promptGroup } from "./group-prompt";
-import { normalizeEntry } from "./transcript";
+import { normalizeEntry, readActiveBranch } from "./transcript";
 
 /**
  * POST /api/session-groups/fanout (spec/14b-fanout.md): N sessions from one starting point, as
@@ -21,12 +21,8 @@ import { normalizeEntry } from "./transcript";
 
 /** The current session file format. A source in an older one is refused rather than migrated. */
 const CURRENT_SESSION_VERSION = 3;
-/** Enough for the header line; enough of the tail for the last rendered entry. A source whose
-    recent tail is all hidden entries (a long run of cache-warm usage, say) gets one widened pass
-    before we give up, so the bound never manufactures a refusal on a healthy file. */
+/** Enough for the header line. The leaf needs the whole file (see renderedActiveLeaf). */
 const HEAD_BYTES = 16 * 1024;
-const TAIL_BYTES = 64 * 1024;
-const WIDE_TAIL_BYTES = 4 * 1024 * 1024;
 
 const refusal = (path: string, code: BatchRefusalCode, message: string, id = ""): BatchRefusal => ({ id, path, code, message });
 
@@ -95,45 +91,39 @@ async function readHeadAndLeaf(path: string): Promise<{ version: number; leafId:
     }
     if (header?.type !== "session") return null;
     const version = typeof header.version === "number" ? header.version : 1; // pre-versioning files
-    let leafId = await renderedLeaf(fh, size, TAIL_BYTES);
-    // Nothing rendered in the window, but there was more file behind it: look properly before
-    // calling a healthy source stale.
-    if (leafId === null && size > TAIL_BYTES) leafId = await renderedLeaf(fh, size, WIDE_TAIL_BYTES);
-    return { version, leafId };
+    // The version comes from the bounded head read above; the leaf needs the active branch.
+    return { version, leafId: await renderedActiveLeaf(path) };
   } finally {
     await fh.close();
   }
 }
 
 /**
- * The id of the last entry pi-web would RENDER, reading back from the end of `window` bytes.
+ * The id of the last entry pi-web would RENDER ON THE ACTIVE BRANCH — which is what the dialog
+ * showed, and therefore the only thing `source.leafId` can honestly be compared against.
  *
- * Not simply the last line with an id: the client sends the leaf the DIALOG SHOWED, and the file
- * routinely ends in something the transcript hides — a top-level `usage` entry (cache warming is
- * on by default), a `role:"system"` loadout message, or a `pi-web-rewind` marker, which by
- * construction is the last line of EVERY rewound session. Comparing against those refuses an
- * untouched source as "stale", and tells the user to reopen and fork from a new last message that
- * looks identical to the one they already had — an instruction that cannot be followed.
+ * TWO ways the file's last line is the wrong answer, and both are ordinary:
+ * 1. HIDDEN ENTRIES. The transcript draws nothing for a top-level `usage` row (cache warming is
+ *    on by default), a `role:"system"` loadout message, or pi-web's own `pi-web-rewind` marker.
+ * 2. THE ABANDONED BRANCH. After a rewind, the file's TAIL is the branch that was left behind —
+ *    ordinary, visible messages — while the active branch hangs off the rewind marker. Walking
+ *    back from end-of-file returns the abandoned leaf, so every rewound source would be refused
+ *    as stale. Rewound sessions are the ones most likely to be forked, too: the user has just
+ *    navigated to the point they want to branch from.
  *
- * The hide rules are the transcript's own (`normalizeEntry` yields no rows for a hidden entry),
- * reused rather than restated, so this can never drift from what the pane actually draws.
+ * So: the ACTIVE branch (transcript.ts's own parentId walk, the same one the pane renders), then
+ * its last entry that normalizeEntry yields a row for. Both rules are the transcript's, reused —
+ * a second copy of "what pi-web shows" is precisely what drifted here the first time.
+ *
+ * This reads the whole file. Fanout is a rare, deliberate user action and the transcript path
+ * does the same read to draw the pane; correctness first.
  */
-async function renderedLeaf(fh: FileHandle, size: number, window: number): Promise<string | null> {
-  const from = Math.max(0, size - window);
-  const buf = Buffer.alloc(size - from);
-  await fh.read(buf, 0, buf.length, from);
-  const lines = buf.toString("utf8").split("\n");
-  if (from > 0) lines.shift(); // the window almost certainly cut the first line in half
-  for (const line of lines.reverse()) {
-    if (!line.trim()) continue;
-    let entry: { id?: unknown };
-    try {
-      entry = JSON.parse(line);
-    } catch {
-      continue; // a torn line, or a writer mid-append: keep walking back
-    }
-    if (typeof entry?.id !== "string") continue;
-    if (normalizeEntry(entry as Parameters<typeof normalizeEntry>[0]).length === 0) continue; // hidden: not a leaf the user saw
+async function renderedActiveLeaf(path: string): Promise<string | null> {
+  const branch = await readActiveBranch(path);
+  for (let i = branch.length - 1; i >= 0; i--) {
+    const entry = branch[i]!;
+    if (typeof entry.id !== "string") continue;
+    if (normalizeEntry(entry).length === 0) continue; // hidden: not a leaf the user saw
     return entry.id;
   }
   return null;

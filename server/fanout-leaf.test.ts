@@ -39,10 +39,51 @@ test("a usage entry appended after the last reply does not make the fork stale",
   assert.equal(refused, null, "the leaf the dialog showed is still a1");
 });
 
-test("a rewound session — whose last line is ALWAYS the rewind marker — is not stale", async () => {
-  const path = source("rewound", [{ type: "custom", id: "rw-1", parentId: "a1", customType: "pi-web-rewind", data: { targetId: "u1", fromLeafId: "a1" } }]);
+// A rewind, exactly as server/chat-manager.ts writes it: a `custom` entry, customType
+// "pi-web-rewind", data {targetId, fromLeafId}, PARENTED ON THE NEW LEAF. That parentage is the
+// whole mechanism — SessionManager.open takes the file's last entry as the leaf, so the marker is
+// what makes the rewind survive a reload, and it is what the active-branch walk follows.
+const rewind = (id: string, newLeafId: string, fromLeafId: string) => ({
+  type: "custom",
+  id,
+  parentId: newLeafId,
+  customType: "pi-web-rewind",
+  data: { targetId: newLeafId, fromLeafId },
+});
+
+test("a rewound source is not stale: the leaf is the active branch's, not the file tail's", async () => {
+  // u1 → a1 is the branch the user LEFT. They rewound to u1, so the file ends with the marker and
+  // the abandoned assistant reply a1 sits above it. Walking back from end-of-file lands on a1 —
+  // the abandoned leaf — while the dialog showed u1.
+  const path = source("rewound", [rewind("rw-1", "u1", "a1")]);
+  assert.equal(await checkSource(path, "u1", deps), null, "the active leaf is accepted");
   const refused = await checkSource(path, "a1", deps);
-  assert.equal(refused, null, "the marker is invisible in the transcript, so it is not the leaf");
+  assert.equal(refused?.code, "stale-leaf", "and the ABANDONED leaf is correctly refused");
+});
+
+test("abandoned VISIBLE entries after a marker don't become the leaf", async () => {
+  // Rewind to u1, continue (u2 → a2), then rewind to u1 again. The second marker is last in file
+  // order; u2/a2 are ordinary visible messages sitting after the first marker, and abandoned.
+  const path = source("rewound-twice", [
+    rewind("rw-1", "u1", "a1"),
+    { type: "message", id: "u2", parentId: "rw-1", message: { role: "user", content: [{ type: "text", text: "again" }] } },
+    { type: "message", id: "a2", parentId: "u2", message: { role: "assistant", content: [{ type: "text", text: "sure" }] } },
+    rewind("rw-2", "u1", "a2"),
+  ]);
+  assert.equal(await checkSource(path, "u1", deps), null, "still the active leaf");
+  for (const abandoned of ["a1", "a2", "u2"]) {
+    assert.equal((await checkSource(path, abandoned, deps))?.code, "stale-leaf", `${abandoned} is abandoned`);
+  }
+});
+
+test("after a rewind and a NEW reply, the leaf is that reply", async () => {
+  const path = source("rewound-continued", [
+    rewind("rw-1", "u1", "a1"),
+    { type: "message", id: "u2", parentId: "rw-1", message: { role: "user", content: [{ type: "text", text: "again" }] } },
+    { type: "message", id: "a2", parentId: "u2", message: { role: "assistant", content: [{ type: "text", text: "sure" }] } },
+  ]);
+  assert.equal(await checkSource(path, "a2", deps), null);
+  assert.equal((await checkSource(path, "a1", deps))?.code, "stale-leaf", "the abandoned reply is not the leaf");
 });
 
 test("a system loadout message after the reply does not make the fork stale", async () => {

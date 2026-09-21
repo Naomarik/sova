@@ -26,6 +26,7 @@ import { announce, home, localRunning, sessionContext, toast } from "../lib/ui-s
 import { activeAgentCounts, activeTeamCount, sessionWorking } from "../lib/workers";
 import { ArchiveCleanup } from "./ArchiveCleanup";
 import { ContextRing } from "./ContextRing";
+import { groupHref } from "../lib/group-route";
 import { GroupNameField } from "./Groups";
 import { RemoteGroupDot } from "./RemoteStatus";
 import { Banner, Chip, Icon } from "./ui";
@@ -412,6 +413,17 @@ function GroupBlock(props: {
               when={confirmingGroup() === group().id}
               fallback={
                 <>
+                  {/* The workspace: every session of this group on screen at once (#/g/<id>).
+                      Purely additive — the rows above still open one session at a time. */}
+                  <a
+                    class="button button-sm button-ghost"
+                    href={groupHref(group().id)}
+                    title={`Open ${quoted(group().name)} as a workspace`}
+                    aria-disabled={count() === 0 ? "true" : undefined}
+                  >
+                    <Icon name="external" small />
+                    Open workspace
+                  </a>
                   <button type="button" class="button button-sm button-ghost" onClick={() => setEditingGroup(group().id)}>
                     Rename
                   </button>

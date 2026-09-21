@@ -222,6 +222,9 @@ export function SessionDetails(props: {
                 runtime); grouping is pi-web's own bookkeeping for any session. */}
             <div class="cluster">
               <MoveToGroupMenu session={s()} onChanged={() => props.onGroupsChanged?.()} />
+              {/* The same assignment, read as a place to work: file it and open that group's
+                  workspace with this session focused. */}
+              <MoveToGroupMenu session={s()} onChanged={() => props.onGroupsChanged?.()} variant="beside" />
               <Show when={s().origin === "web"}>
                 <ArchiveAction
                   session={s()}

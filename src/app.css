@@ -84,3 +84,96 @@ html, body, #root { height: 100%; }
    Bottom gap as margin, not padding: `overflow: hidden` clips at the padding box, so bottom
    padding is a window the clamped third line leaks a sliced half-glyph through. */
 .subagents-group-objective { padding: 0 var(--space-4); margin-bottom: var(--space-2); }
+
+
+/* ---- WORKSPACE (#/g/<id>). A group's sessions on screen at once: `split`
+   lays the panes out in one horizontally scrolled row, `tabs` shows one at a
+   time while all of them stay mounted (hidden, so their streams keep running).
+   Token values only, like the rest of this file; if these shapes settle, they
+   belong in base.css with the rest of the app shell. --------------------- */
+
+.workspace { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+
+.workspace-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 56px;
+  padding: var(--space-2) var(--space-3) var(--space-2) var(--space-4);
+  border-bottom: var(--stroke-thin) solid var(--color-border);
+  background: var(--color-surface);
+  flex: none;
+}
+.workspace-head-main { flex: 1; min-width: 0; }
+.workspace-title {
+  margin: 0;
+  font-size: var(--fs-heading-s);
+  line-height: var(--lh-heading-s);
+  font-weight: var(--fw-semibold);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.workspace-meta { margin: 0; font-size: var(--fs-caption); color: var(--color-ink-muted); }
+.workspace-modes { flex: none; }
+
+/* Tabs: one row of session names above the panes; the live dot is the only sign
+   a mounted-but-hidden pane is running. */
+.workspace-tabs {
+  flex: none;
+  display: flex;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  overflow-x: auto;
+  border-bottom: var(--stroke-thin) solid var(--color-border);
+  background: var(--color-surface);
+}
+.workspace-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  max-width: 220px;
+  padding: var(--space-1) var(--space-3);
+  border: var(--stroke-thin) solid transparent;
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--color-ink-2);
+  font: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.workspace-tab-title { overflow: hidden; text-overflow: ellipsis; }
+.workspace-tab:hover { background: var(--color-sunken); }
+.workspace-tab[aria-selected="true"] {
+  background: var(--color-sunken);
+  border-color: var(--color-border);
+  color: var(--color-ink);
+  font-weight: var(--fw-semibold);
+}
+
+/* The pane row. Split scrolls sideways and snaps to pane edges; tabs is a plain
+   column, since all but one pane are hidden. */
+.workspace-row { flex: 1; min-height: 0; display: flex; }
+.workspace-row[data-mode="split"] {
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x proximity;
+}
+.workspace-row[data-mode="tabs"] > .workspace-pane { flex: 1; min-width: 0; }
+
+.workspace-pane {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  scroll-snap-align: start;
+}
+.workspace-row[data-mode="split"] > .workspace-pane + .workspace-pane {
+  border-left: var(--stroke-thin) solid var(--color-border);
+}
+/* Which pane the keyboard is in: a quiet inner rule, never a second focus ring. */
+.workspace-row[data-mode="split"] > .workspace-pane-focused {
+  box-shadow: inset 0 2px 0 0 var(--color-accent);
+}
+.workspace-pane:focus-visible { outline: var(--focus-ring); outline-offset: calc(var(--focus-offset) * -1); }

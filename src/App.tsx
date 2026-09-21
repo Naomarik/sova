@@ -1,39 +1,30 @@
 import { batch, createEffect, createMemo, createResource, createSignal, Match, on, onCleanup, Show, Switch } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { Portal } from "solid-js/web";
-import type { SessionInsight, SessionSummary, TeamInfo, WorkerInfo } from "../shared/protocol";
-import { createSession, fetchAgents, fetchExplanations, fetchSessionInsight, fetchUsage, listSessions, setSessionArchived } from "./lib/api";
+import type { SessionSummary, WorkerInfo } from "../shared/protocol";
+import { createSession, fetchAgents, fetchExplanations, fetchUsage, listSessions, setSessionArchived } from "./lib/api";
 import { agentsHref, insightsRouteFromHash, legacyInsightsTarget } from "./lib/insights";
 import { transcriptRoot } from "./lib/jump";
+import { groupRouteFromHash } from "./lib/group-route";
+import { sessionGroups } from "./lib/session-groups";
 import { createThenArchive, newSessionCwd } from "./lib/new-session";
 import { cwdLabel } from "./lib/remote-session";
 import { createPoll } from "./lib/poll";
-import { homeFromSessionPath, shortModel } from "./lib/format";
+import { homeFromSessionPath } from "./lib/format";
 import type { RewindControl } from "./lib/inputs";
 import { activeTab, home, setActiveTab, setHome, toast } from "./lib/ui-state";
-import { sessionWorking, type UsageTotalView, workingSplit } from "./lib/workers";
-import { ChatView, type ChatRefusal } from "./components/ChatView";
+import { sessionWorking, type UsageTotalView } from "./lib/workers";
 import { AgentsView } from "./components/AgentsView";
-import { ContextGauge, ContextMetaPrefix, contextDescribedBy } from "./components/ContextGauge";
 import { NewSessionDialog } from "./components/NewSessionDialog";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { ExplainGrid } from "./components/ExplainGallery";
-import { InsightStrip } from "./components/InsightStrip";
-import { RemoteChip, RemoteHeadChip, RemoteMountedChip } from "./components/RemoteStatus";
+import { GroupView, paneIdFor, type PaneWiring } from "./components/GroupView";
 import { SessionPane, type PaneInsight, type TabId } from "./components/SessionPane";
+import { SessionView } from "./components/SessionView";
 import { sessionHref, Sidebar } from "./components/Sidebar";
 import { SidebarResizer } from "./components/SidebarResizer";
 import { UsageView } from "./components/UsageView";
-import { WatchView } from "./components/WatchView";
-import { Banner, Chip, CountChip, GlobalRegions, Icon } from "./components/ui";
-
-/** Why a session is open read-only. */
-type WatchWhy = "tui" | "recent";
-
-/** How the open session is shown. Decided once when it's opened, then changed only by events. */
-type Decision =
-  | { path: string; mode: "chat"; force: boolean; autofocus?: boolean }
-  | { path: string; mode: "watch"; why: WatchWhy; ageSec?: number; listVersion: number };
+import { GlobalRegions, Icon } from "./components/ui";
 
 function pathFromHash(): string | null {
   const m = /^#\/s\/(.+)$/.exec(location.hash);
@@ -80,9 +71,6 @@ function reuseUnchanged(next: SessionSummary[], prev: SessionSummary[] | undefin
   });
 }
 
-/** While a session is watched, poll the list so live status (and TUI exit) shows up on its own. */
-const WATCH_POLL_MS = 10_000;
-
 /** While a run is in flight, re-read the list often enough that the Busy chip clears itself when
     the run settles in a session nobody is looking at. Idle costs nothing: the interval only
     exists while something is busy. */
@@ -93,16 +81,7 @@ const USAGE_POLL_MS = 60_000;
 const AGENTS_POLL_MS = 5_000;
 /** The explanations store only changes when a /explain subagent finishes; the sidebar row can wait. */
 const EXPLAIN_POLL_MS = 60_000;
-/** Session insight (outline, teams) reloads this long after the session's file last changed. */
-const SESSION_INSIGHT_DEBOUNCE_MS = 1500;
-/** While the session pane is open, its worker status and file paths refresh this often. */
-const PANE_INSIGHT_POLL_MS = 3000;
-
 const folded = () => window.matchMedia("(max-width: 767px)").matches;
-
-/** The compact worker chip says its count in words for AT and on hover: "3 subagents working now". */
-const subagentsWorkingNow = (n: number) => `${n} ${n === 1 ? "subagent" : "subagents"} working now`;
-
 export function App() {
   const [listError, setListError] = createSignal<string | null>(null);
   /** Bumped on every successful list load, so views can tell a fresh list from a stale one. */
@@ -166,6 +145,7 @@ export function App() {
       if (kept && kept.path !== p) setOpenKept(null);
     }),
   );
+  const [groupRoute, setGroupRoute] = createSignal(groupRouteFromHash(location.hash));
   const [insightsRoute, setInsightsRoute] = createSignal(insightsRouteFromHash(location.hash));
   /** Team card to scroll to on `#/agents/<teamId>`. */
   const focusTeam = () => {
@@ -180,14 +160,22 @@ export function App() {
     const items = explanations.data();
     return items && items.length > 0 ? items : null;
   });
-  const [decision, setDecision] = createSignal<Decision | null>(null);
   const [creating, setCreating] = createSignal(false);
   /** The Settings modal, opened from the sidebar foot's gear. */
   const [settingsOpen, setSettingsOpen] = createSignal(false);
-  const [chatModel, setChatModel] = createSignal<string | null>(null);
-  /** The open chat's rewind, for the Timeline's input rows; tagged with its path, so a pane for
-      another session never gets it. */
-  const [rewindControl, setRewindControl] = createSignal<RewindControl | null>(null);
+  /** Each open chat's rewind, for the Timeline's input rows. By path: a workspace has several
+      chats open at once, and the pane must get the one whose session it is showing. */
+  const [rewindControls, setRewindControls] = createSignal<Record<string, RewindControl>>({});
+  const setRewindControl = (path: string, control: RewindControl | null) =>
+    setRewindControls((m) => {
+      if (!control) {
+        if (!(path in m)) return m;
+        const next = { ...m };
+        delete next[path];
+        return next;
+      }
+      return { ...m, [path]: control };
+    });
   /**
    * The newest rewind that landed in a chat, whoever asked for it (a Timeline row, the composer's
    * Undo last turn). `changed` is minted here and only grows, like PaneInsight.changed: the pane
@@ -208,6 +196,7 @@ export function App() {
   const onHash = () => {
     redirectLegacyInsights();
     setRoute(pathFromHash());
+    setGroupRoute(groupRouteFromHash(location.hash));
     setInsightsRoute(insightsRouteFromHash(location.hash));
   };
   window.addEventListener("focus", onFocus);
@@ -219,30 +208,41 @@ export function App() {
     clearInterval(tick);
   });
 
-  const summary = createMemo(() => {
-    const p = route();
-    if (!p) return null;
+  /** The session-list row for a path: the list's, else one this tab created, else the kept one. */
+  const summaryOf = (p: string): SessionSummary | undefined => {
     const kept = openKept(); // only for the session on screen; see where it is set
-    return list()?.find((s) => s.path === p) ?? created.get(p) ?? (kept?.path === p ? kept : null);
+    return list()?.find((s) => s.path === p) ?? created.get(p) ?? (kept?.path === p ? kept : undefined);
+  };
+
+  /** The session everything session-shaped is about: the open one, or a workspace's focused pane. */
+  const focusedPath = () => route() ?? groupRoute()?.path ?? null;
+  const summary = createMemo(() => {
+    const p = focusedPath();
+    return (p ? summaryOf(p) : undefined) ?? null;
   });
-
-  /**
-   * Default for a freshly opened session: TUI-owned → read-only; else try chat without force.
-   * The server is the authority on unknown writers: it refuses with code "recent" (before hello,
-   * so nothing can be sent) and we fall back to read-only with Chat Anyway.
-   */
-  const defaultDecision = (s: SessionSummary): Decision =>
-    s.live ? { path: s.path, mode: "watch", why: "tui", listVersion: listVersion() } : { path: s.path, mode: "chat", force: false };
-
-  // Decide once per opened session, as soon as its summary is known.
-  createEffect(() => {
+  /** The group the route names, once its name is known; the workspace needs the group itself. */
+  const openGroup = createMemo(() => {
+    const id = groupRoute()?.id;
+    return id ? (sessionGroups().find((g) => g.id === id) ?? null) : null;
+  });
+  /** The group's sessions, in the list's order (newest first); membership is the list's alone. */
+  const groupMembers = createMemo(() => {
+    const id = groupRoute()?.id;
+    return id ? (list() ?? []).filter((s) => s.groupId === id) : [];
+  });
+  /** Every session mounted right now: the open one, or every pane of the workspace. */
+  const openPaths = createMemo<string[]>(() => {
     const p = route();
-    const s = summary();
-    if (!p) return setDecision(null);
-    if (!s || decision()?.path === p) return;
-    setChatModel(null);
-    setDecision(defaultDecision(s));
+    if (p) return [p];
+    return groupRoute() ? groupMembers().map((s) => s.path) : [];
   });
+  /** The id of the transcript the skip link jumps to: a pane's in a workspace, else the bare one. */
+  const transcriptIdOf = (path: string | null) => {
+    const pane = path && groupRoute() ? paneIdFor(path) : null;
+    return pane ? `transcript-${pane}` : "transcript";
+  };
+  /** A session this tab just created opens for chat with its composer focused. */
+  const [autofocusPath, setAutofocusPath] = createSignal<string | null>(null);
 
   // At folded width, opening a session swaps the column: move focus to its title.
   let titleEl: HTMLHeadingElement | undefined;
@@ -261,10 +261,12 @@ export function App() {
     refresh();
     // Route and decision move together: "hashchange" fires later, and until then the decide
     // effect would pair this decision with the old route and replace it, autofocus and all.
+    // Route and autofocus move together: "hashchange" fires later, and the view mounts from the
+    // route — it must already know this session is one to open for chat, composer focused.
     location.hash = sessionHref(s.path);
     batch(() => {
+      setAutofocusPath(s.path);
       onHash();
-      setDecision({ path: s.path, mode: "chat", force: false, autofocus: true });
     });
   };
 
@@ -282,7 +284,7 @@ export function App() {
       setCreating(true);
       return null;
     }
-    const workersBusy = (s ? sessionWorking(s) > 0 : false) || (chatWorkers.path === source && chatWorkers.list.some((w) => w.working));
+    const workersBusy = (s ? sessionWorking(s) > 0 : false) || !!chatWorkers[source]?.list.some((w) => w.working);
     const archivable = s?.origin === "web" && !workersBusy;
     const out = await createThenArchive(cwd, archivable ? source : null, {
       create: createSession,
@@ -298,38 +300,6 @@ export function App() {
     return cwdLabel(out.session, home());
   };
 
-  const openChat = (force: boolean) => {
-    const d = decision();
-    if (d) setDecision({ path: d.path, mode: "chat", force, autofocus: true });
-  };
-  const onRefused = (kind: ChatRefusal) => {
-    const d = decision();
-    if (!d) return;
-    refresh();
-    const s = summary();
-    const age = s ? Math.round((Date.now() - Date.parse(s.lastActiveAt)) / 1000) : NaN;
-    setDecision({
-      path: d.path,
-      mode: "watch",
-      why: kind === "busy" ? "tui" : "recent",
-      ageSec: Number.isFinite(age) && age >= 0 ? age : undefined,
-      listVersion: listVersion(),
-    });
-  };
-
-  // Remount the view (and its socket) when the session, mode, or force flag changes.
-  const viewKey = createMemo(() => {
-    const d = decision();
-    if (!d || !summary()) return null;
-    return d.mode === "chat" ? `chat:${d.force}:${d.path}` : `watch:${d.why}:${d.path}`;
-  });
-
-  createEffect(() => {
-    if (decision()?.mode !== "watch") return;
-    const t = setInterval(refresh, WATCH_POLL_MS);
-    onCleanup(() => clearInterval(t));
-  });
-
   /** Any row claiming a run in flight (the sidebar's Busy chip's fallback source). */
   const anyBusy = createMemo(() => (list() ?? []).some((s) => s.busy));
   createEffect(() => {
@@ -342,18 +312,31 @@ export function App() {
 
   // ---- Subagents pane: open for one session path, closed whenever the route changes ----------
   const [subagents, setSubagents] = createSignal<{ path: string; selected: string | null } | null>(null);
-  /** The open chat's live workers (WS "workers"), reconciled by id so pane rows keep identity,
-      with the runtime's session-lifetime token Σ beside them. */
-  const [chatWorkers, setChatWorkers] = createStore<{ path: string | null; list: WorkerInfo[]; usage: UsageTotalView | null }>(
-    { path: null, list: [], usage: null },
-  );
-  createEffect(on(route, () => setSubagents(null), { defer: true }));
-  /** The session view's insight store, published for the pane (a sibling of <main>). */
-  const [paneInsight, setPaneInsight] = createSignal<{ path: string; insight: PaneInsight } | null>(null);
-  /** The pane's session: open, for the session on screen. */
+  /** Each open chat's live workers (WS "workers"), reconciled by id so pane rows keep identity,
+      with the runtime's session-lifetime token Σ beside them. By path: a workspace runs several. */
+  const [chatWorkers, setChatWorkers] = createStore<Record<string, { list: WorkerInfo[]; usage: UsageTotalView | null } | undefined>>({});
+  const noteWorkers = (path: string, workers: WorkerInfo[] | null, usage: UsageTotalView | null) =>
+    batch(() => {
+      if (!workers) return setChatWorkers(path, undefined);
+      if (!chatWorkers[path]) setChatWorkers(path, { list: [], usage: null });
+      setChatWorkers(path, "list", reconcile(workers, { key: "id" }));
+      setChatWorkers(path, "usage", usage);
+    });
+  createEffect(on(() => location.hash.replace(/\/[^/]*$/, ""), () => setSubagents(null), { defer: true }));
+  /** Each mounted session view's insight store, published for the pane (a sibling of <main>). */
+  const [paneInsights, setPaneInsights] = createSignal<Record<string, PaneInsight>>({});
+  const noteInsight = (path: string, insight: PaneInsight | null) =>
+    setPaneInsights((m) => {
+      if (insight) return { ...m, [path]: insight };
+      if (!(path in m)) return m;
+      const next = { ...m };
+      delete next[path];
+      return next;
+    });
+  /** The pane's session: open, and one of the sessions on screen. */
   const subagentsPath = () => {
     const p = subagents()?.path;
-    return p && p === route() && viewKey() ? p : null;
+    return p && openPaths().includes(p) ? p : null;
   };
   let subagentsTrigger: HTMLElement | null = null;
   const closeSubagents = () => {
@@ -395,12 +378,39 @@ export function App() {
     if (!paneOn(path, "timeline")) openPane(path, "timeline");
   };
 
+  /**
+   * Everything a session view needs from the app shell, in one object so the single view and a
+   * workspace's panes are wired identically. The two live values are getters, so reading them
+   * inside a view tracks them.
+   */
+  const wiring: PaneWiring = {
+    get listVersion() {
+      return listVersion();
+    },
+    get now() {
+      return now();
+    },
+    onRefresh: refresh,
+    onInsight: noteInsight,
+    onWorkers: noteWorkers,
+    onRewindControl: setRewindControl,
+    onRewound: noteRewound,
+    paneOn,
+    openPane,
+    toggleSubagents,
+    showTimeline,
+    inputsOnly,
+    subagentsPath,
+    onNewSession: startNewFrom,
+  };
+
   return (
     <>
-      <a class="button skip-link" href="#transcript">
+      {/* In a workspace the transcripts are the panes': the link points at the focused one. */}
+      <a class="button skip-link" href={`#${transcriptIdOf(focusedPath())}`}>
         Skip to Transcript
       </a>
-      <div class="app" data-view={route() || insightsRoute() ? "session" : "list"}>
+      <div class="app" data-view={route() || groupRoute() || insightsRoute() ? "session" : "list"}>
         <Sidebar
           sessions={sidebarSessions()}
           loading={sessions.loading}
@@ -435,309 +445,119 @@ export function App() {
               </Switch>
             }
           >
-            <Show
-              when={viewKey()}
-              keyed
-              fallback={
-                <Show
-                  when={!route() || !list()}
-                  fallback={
-                    <div class="center-fill">
-                      <div class="empty">
-                        <p class="empty-title">Couldn't find this session.</p>
-                        <p class="empty-body">It isn't in the list of sessions on disk anymore.</p>
-                        <a class="button empty-action" href="#/">
-                          Back to Sessions
+            <Switch>
+              {/* A workspace: every session of one group on screen at once (#/g/<id>). */}
+              <Match when={groupRoute() && openGroup()}>
+                {(group) => (
+                  <GroupView group={group()} members={groupMembers()} focused={groupRoute()!.path} wiring={wiring} />
+                )}
+              </Match>
+              {/* One session, the whole pane (#/s/<path>), exactly as before. */}
+              <Match when={route() && summary() ? route()! : null} keyed>
+                {(path) => {
+                  // The list can stop carrying this row for an instant; the view keeps the last
+                  // summary it had rather than tearing itself down under the user.
+                  let last = summaryOf(path)!;
+                  const summaryNow = () => (last = summaryOf(path) ?? last);
+                  return (
+                    <SessionView
+                      path={path}
+                      summary={summaryNow}
+                      autofocus={autofocusPath() === path}
+                      titleRef={(el) => (titleEl = el)}
+                      lead={
+                        <a class="button button-icon button-ghost app-back" href="#/" aria-label="Back to Sessions">
+                          <Icon name="chevron-left" />
                         </a>
-                      </div>
-                    </div>
-                  }
-                >
-                  <div class="welcome">
-                    <div class="welcome-head">
-                      <div class="empty">
-                        <Icon name="chat" class="empty-mark" />
-                        <p class="empty-title">
-                          <Show when={list()} fallback="Loading sessions.">
-                            {list()!.length} sessions across {folderCount()} folders.
-                          </Show>
-                        </p>
-                        <p class="empty-body">Pick one to read it, or start a new one.</p>
-                        <button type="button" class="button empty-action" onClick={() => setCreating(true)}>
-                          <Icon name="plus" />
-                          New Session
-                        </button>
-                      </div>
-                    </div>
-                    <Show when={explained()}>
-                      {(list) => (
-                        <section class="explain-section" aria-labelledby="explain-section-title">
-                          <h2 class="explain-section-head" id="explain-section-title">
-                            Explained <span class="text-num">{list().length}</span>
-                          </h2>
-                          <ExplainGrid explanations={list()} now={now()} />
-                        </section>
-                      )}
-                    </Show>
-                  </div>
-                </Show>
-              }
-            >
-              {(_key) => {
-                const d = decision()!;
-                const s = () => summary() ?? created.get(d.path)!;
-                const model = () => (d.mode === "chat" ? chatModel() ?? s().model : s().model);
-                const author = () => shortModel(model()) ?? "pi";
-
-                // Outline, teams and workers of this session; reloaded (debounced) when its file
-                // changes, and polled while the session pane is open for it — the one poller of
-                // this endpoint. The pane reads this same store.
-                const [insight, setInsight] = createStore<PaneInsight>({ data: null, error: null, pending: true, changed: 0 });
-                let insightRun = 0;
-                /** Set when the file changed; the next load to land says so through `changed`. */
-                let fileMoved = false;
-                const loadInsight = async () => {
-                  const mine = ++insightRun;
-                  try {
-                    const next = await fetchSessionInsight(d.path);
-                    if (mine !== insightRun) return;
-                    // Keyed by id so open topics stay open when a newer outline lands.
-                    batch(() => {
-                      setInsight("data", reconcile(next, { key: "id" }));
-                      setInsight("error", null);
-                    });
-                  } catch (err) {
-                    // Secondary to the transcript: keep the last outline, the next change retries.
-                    if (mine !== insightRun) return;
-                    setInsight("error", (err as Error).message);
-                  }
-                  batch(() => {
-                    setInsight("pending", false);
-                    if (fileMoved) setInsight("changed", (n) => n + 1);
-                    fileMoved = false;
-                  });
-                };
-                let insightTimer: ReturnType<typeof setTimeout> | undefined;
-                const reloadInsight = () => {
-                  clearTimeout(insightTimer);
-                  insightTimer = setTimeout(() => {
-                    fileMoved = true;
-                    void loadInsight();
-                  }, SESSION_INSIGHT_DEBOUNCE_MS);
-                };
-                onCleanup(() => {
-                  clearTimeout(insightTimer);
-                  insightRun++;
-                });
-                void loadInsight();
-                createEffect(() => {
-                  if (subagentsPath() !== d.path) return;
-                  void loadInsight();
-                  const t = setInterval(() => document.hidden || void loadInsight(), PANE_INSIGHT_POLL_MS);
-                  onCleanup(() => clearInterval(t));
-                });
-                const pane = { path: d.path, insight };
-                setPaneInsight(pane);
-                onCleanup(() => setPaneInsight((p) => (p === pane ? null : p)));
-                const working = () => sessionWorking(s());
-                /** The busiest live team: where the head chip links. */
-                const liveTeam = () =>
-                  (insight.data?.teams ?? []).filter((t) => t.live).reduce<TeamInfo | null>((b, t) => (!b || t.working > b.working ? t : b), null);
-                const team = () => insight.data?.teams[0] ?? null;
-                /** What's working, by kind: team members and plain subagents are different things. */
-                const split = () => workingSplit(working(), insight.data?.workers, insight.data?.teams);
-                return (
-                  <>
-                    <header class="session-head">
-                      <a class="button button-icon button-ghost app-back" href="#/" aria-label="Back to Sessions">
-                        <Icon name="chevron-left" />
-                      </a>
-                      <div class="session-head-main">
-                        <h1 class="session-head-title" tabindex="-1" ref={titleEl} title={s().title} aria-describedby={contextDescribedBy(d.path)}>
-                          {s().title}
-                        </h1>
-                        <p class="session-head-meta">
-                          <ContextMetaPrefix path={d.path} />
-                          <span class="text-mono" title={cwdLabel(s(), null)}>
-                            {cwdLabel(s(), home())}
-                          </span>
-                          {/* Chat sessions show the model as the picker trigger instead. */}
-                          <Show when={model() && d.mode !== "chat"}>
-                            <span aria-hidden="true">·</span>
-                            <span class="text-mono" title={model()!}>
-                              {shortModel(model())}
-                            </span>
-                          </Show>
-                        </p>
-                      </div>
-                      <ContextGauge path={d.path} />
-                      <Show
-                        when={working() > 0}
-                        fallback={
-                          <Show when={!s().live && team()}>
-                            {(t) => <CountChip title={t().name}>Team · {t().members.length}</CountChip>}
-                          </Show>
-                        }
-                      >
-                        <Show
-                          when={liveTeam()}
-                          fallback={
-                            <a class="chip chip-count session-head-working" href={agentsHref()} title={subagentsWorkingNow(working())} aria-label={subagentsWorkingNow(working())}>
-                              <span class="text-num">{working()}</span>
-                              <Icon name="worker" small />
-                            </a>
-                          }
-                        >
-                          {(t) => (
-                            <CountChip href={agentsHref(t().id)} title={t().name}>
-                              Team · {working()} working
-                            </CountChip>
-                          )}
-                        </Show>
-                      </Show>
-                      {/* The identity and mount, always there for a remote session; the connection
-                          chip beside them reports liveness separately. */}
-                      <RemoteChip path={d.path} summary={s()} />
-                      <RemoteMountedChip path={d.path} summary={s()} />
-                      <RemoteHeadChip path={d.path} onOpen={() => openPane(d.path, "session")} />
-                      <Show when={s().live}>
-                        <Chip tone="accent" title={`Open in pi in a terminal · pid ${s().live!.pid} · ${s().live!.status}`}>
-                          TUI
-                        </Chip>
-                      </Show>
-                      <button
-                        type="button"
-                        class="button button-icon button-ghost session-details-open"
-                        aria-label="Session details"
-                        title="Session details"
-                        aria-controls="session-pane"
-                        aria-expanded={paneOn(d.path, "session")}
-                        onClick={() => openPane(d.path, "session")}
-                      >
-                        <Icon name="info" />
-                      </button>
-                    </header>
-                    <InsightStrip
-                      path={d.path}
-                      outline={insight.data?.outline ?? null}
-                      explanations={insight.data?.explanations}
-                      now={now()}
-                      onOpenTimeline={() => showTimeline(d.path)}
+                      }
+                      listVersion={wiring.listVersion}
+                      now={wiring.now}
+                      onRefresh={wiring.onRefresh}
+                      onInsight={wiring.onInsight}
+                      onWorkers={wiring.onWorkers}
+                      onRewindControl={wiring.onRewindControl}
+                      onRewound={wiring.onRewound}
+                      paneOn={wiring.paneOn}
+                      openPane={wiring.openPane}
+                      toggleSubagents={wiring.toggleSubagents}
+                      showTimeline={wiring.showTimeline}
+                      inputsOnly={wiring.inputsOnly}
+                      subagentsPath={wiring.subagentsPath}
+                      onNewSession={wiring.onNewSession}
                     />
-
-                    <Switch>
-                      <Match when={d.mode === "watch" && d}>
-                        {(w) => (
-                          <WatchView
-                            path={d.path}
-                            author={author()}
-                            streaming={!!s().live}
-                            onAppend={reloadInsight}
-                            workersWorking={working()}
-                            workersTotal={insight.data?.workers?.length ?? 0}
-                            workersSplit={split()}
-                            onShowWorkers={() => toggleSubagents(d.path)}
-                            workersOpen={paneOn(d.path, "agents")}
-                            stateBanner={
-                              <Switch>
-                                <Match when={w().why === "recent"}>
-                                  <Banner
-                                    tone="warn"
-                                    title="Another pi process may be writing this session."
-                                    body={`${w().ageSec !== undefined ? `It changed ${w().ageSec}s ago` : "It changed"} from a process we can't identify, and no TUI claims it, so we only read it. Chatting here would put 2 writers on one file.`}
-                                    action={
-                                      <button type="button" class="button button-sm" onClick={() => openChat(true)}>
-                                        Chat Anyway
-                                      </button>
-                                    }
-                                  />
-                                </Match>
-                                <Match when={!s().live && listVersion() > w().listVersion}>
-                                  <Banner
-                                    tone="info"
-                                    title="The TUI closed this session."
-                                    body="You can chat in it here now."
-                                    action={
-                                      <button type="button" class="button button-sm" onClick={() => openChat(false)}>
-                                        Open for Chat
-                                      </button>
-                                    }
-                                  />
-                                </Match>
-                              </Switch>
-                            }
-                            readOnly={
-                              w().why === "recent"
-                                ? { icon: "attention", text: "Read only while another process may be writing this file." }
-                                : { icon: "attention", text: "Read only while this session is open in the TUI." }
-                            }
-                          />
-                        )}
-                      </Match>
-                      <Match when={d.mode === "chat" && d}>
-                        {(c) => {
-                          onCleanup(() => setChatWorkers({ path: null, list: [], usage: null }));
-                          return (
-                            <ChatView
-                              path={d.path}
-                              summary={() => s()}
-                              cwdLabel={cwdLabel(s(), home())}
-                              author={author()}
-                              force={c().force}
-                              autofocus={c().autofocus}
-                              onModel={(m) => {
-                                setChatModel(m);
-                                // The sidebar row reads the list: re-read it after a switch.
-                                if (m && m !== s().model) refresh();
-                              }}
-                              onRewindControl={setRewindControl}
-                              onRewound={noteRewound}
-                              inputsOpen={paneOn(d.path, "timeline") && inputsOnly() === d.path}
-                              paneTab={subagentsPath() === d.path ? activeTab(d.path) : null}
-                              onShowTimeline={(only) => showTimeline(d.path, only)}
-                              onRefused={onRefused}
-                              onStarted={() => refresh()}
-                              onArchiveChanged={refresh}
-                              onGroupsChanged={refresh}
-                              onSettled={() => {
-                                refresh();
-                                reloadInsight();
-                              }}
-                              onWorkers={(w, usage) =>
-                                batch(() => {
-                                  setChatWorkers("path", d.path);
-                                  setChatWorkers("list", reconcile(w, { key: "id" }));
-                                  setChatWorkers("usage", usage);
-                                })
-                              }
-                              onShowWorkers={() => toggleSubagents(d.path)}
-                              workersOpen={paneOn(d.path, "agents")}
-                              onNewSession={() => startNewFrom(d.path)}
-                              teams={insight.data?.teams}
-                            />
-                          );
-                        }}
-                      </Match>
-                    </Switch>
-                  </>
-                );
-              }}
-            </Show>
+                  );
+                }}
+              </Match>
+              {/* A route naming a session the list doesn't have (deleted, or renamed on disk). */}
+              <Match when={route() && list() && !summary()}>
+                <div class="center-fill">
+                  <div class="empty">
+                    <p class="empty-title">Couldn't find this session.</p>
+                    <p class="empty-body">It isn't in the list of sessions on disk anymore.</p>
+                    <a class="button empty-action" href="#/">
+                      Back to Sessions
+                    </a>
+                  </div>
+                </div>
+              </Match>
+              {/* A workspace whose group this tab doesn't know yet (another tab made it). */}
+              <Match when={groupRoute() && !openGroup()}>
+                <div class="center-fill">
+                  <div class="empty">
+                    <p class="empty-title">Couldn't find this group.</p>
+                    <p class="empty-body">It may have been deleted, or made on another server.</p>
+                    <a class="button empty-action" href="#/">
+                      Back to Sessions
+                    </a>
+                  </div>
+                </div>
+              </Match>
+              <Match when={!route() && !groupRoute()}>
+                <div class="welcome">
+                  <div class="welcome-head">
+                    <div class="empty">
+                      <Icon name="chat" class="empty-mark" />
+                      <p class="empty-title">
+                        <Show when={list()} fallback="Loading sessions.">
+                          {list()!.length} sessions across {folderCount()} folders.
+                        </Show>
+                      </p>
+                      <p class="empty-body">Pick one to read it, or start a new one.</p>
+                      <button type="button" class="button empty-action" onClick={() => setCreating(true)}>
+                        <Icon name="plus" />
+                        New Session
+                      </button>
+                    </div>
+                  </div>
+                  <Show when={explained()}>
+                    {(list) => (
+                      <section class="explain-section" aria-labelledby="explain-section-title">
+                        <h2 class="explain-section-head" id="explain-section-title">
+                          Explained <span class="text-num">{list().length}</span>
+                        </h2>
+                        <ExplainGrid explanations={list()} now={now()} />
+                      </section>
+                    )}
+                  </Show>
+                </div>
+              </Match>
+            </Switch>
           </Show>
         </main>
 
         <Show when={subagentsPath()} keyed>
           {(path) => (
-            <Show when={paneInsight()?.path === path}>
+            <Show when={paneInsights()[path]}>
+              {(insight) => (
               <SessionPane
                 path={path}
-                insight={paneInsight()!.insight}
-                summary={summary() ?? undefined}
+                insight={insight()}
+                summary={summaryOf(path)}
                 onArchiveChanged={refresh}
                 onGroupsChanged={refresh}
-                chatWorkers={chatWorkers.path === path ? chatWorkers.list : null}
-                chatUsage={chatWorkers.path === path ? chatWorkers.usage : null}
-                rewind={rewindControl()?.path === path ? rewindControl()! : undefined}
+                chatWorkers={chatWorkers[path]?.list ?? null}
+                chatUsage={chatWorkers[path]?.usage ?? null}
+                rewind={rewindControls()[path]}
                 rewound={rewound()?.path === path ? rewound()! : null}
                 inputsOnly={inputsOnly() === path}
                 onInputsOnly={(on) => setInputsOnly(on ? path : null)}
@@ -746,6 +566,7 @@ export function App() {
                 onClose={closeSubagents}
                 now={now()}
               />
+              )}
             </Show>
           )}
         </Show>

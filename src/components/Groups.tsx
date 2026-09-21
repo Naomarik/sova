@@ -1,6 +1,7 @@
 import { createSignal, For, onMount, Show } from "solid-js";
 import { GROUP_NAME_MAX, type SessionSummary } from "../../shared/protocol";
 import { createGroup, groupNameOf, loadSessionGroups, quoted, sessionGroups, setSessionGroup } from "../lib/session-groups";
+import { groupHref } from "../lib/group-route";
 import { announce, toast } from "../lib/ui-state";
 import { Banner, Icon } from "./ui";
 
@@ -86,7 +87,15 @@ export function MoveToGroupMenu(props: {
   session: SessionSummary;
   /** After a change: the app re-reads the session list, which is what carries the new groupId. */
   onChanged(): void;
+  /**
+   * "move" (the default) files the session and stays where it is. "beside" is the same gesture
+   * read as a place to work: it files the session and then opens that group's workspace with this
+   * session the focused pane. Choosing the group it is already in just opens the workspace, and
+   * "No group" isn't offered — there is no workspace to open.
+   */
+  variant?: "move" | "beside";
 }) {
+  const beside = () => props.variant === "beside";
   const uid = `move-to-group-${++seq}`;
   let trigger!: HTMLButtonElement;
   let menu!: HTMLDivElement;
@@ -102,7 +111,8 @@ export function MoveToGroupMenu(props: {
   const current = () => props.session.groupId ?? null;
   const currentName = () => groupNameOf(sessionGroups(), props.session.groupId ?? undefined);
   /** The radio rows in keyboard order: "No group" first, then each group in creation order. */
-  const rows = (): Row[] => [{ id: null, name: "No group" }, ...sessionGroups().map((g) => ({ id: g.id, name: g.name }))];
+  const rows = (): Row[] =>
+    beside() ? sessionGroups().map((g) => ({ id: g.id, name: g.name })) : [{ id: null, name: "No group" }, ...sessionGroups().map((g) => ({ id: g.id, name: g.name }))];
   /** Only the radio rows are a radiogroup; the "New group…" item follows them in the tab order. */
   const items = () => [...menu.querySelectorAll<HTMLElement>("[role^=menuitem]")];
   const rowIndex = () => (current() === null ? 0 : rows().findIndex((r) => r.id === current()));
@@ -150,6 +160,8 @@ export function MoveToGroupMenu(props: {
       closedByChoice = true;
       closeMenu();
       trigger.focus();
+      // Already in this group: there is nothing to change, but "Open beside" still opens it.
+      if (beside() && id) location.hash = groupHref(id, props.session.path);
       return;
     }
     setBusy(true);
@@ -167,6 +179,7 @@ export function MoveToGroupMenu(props: {
       toast(done);
       announce(done);
       props.onChanged();
+      if (beside() && id) location.hash = groupHref(id, props.session.path);
     } else {
       setError("This session's group is unchanged.");
     }
@@ -236,11 +249,17 @@ export function MoveToGroupMenu(props: {
         aria-haspopup="menu"
         aria-expanded={open() ? "true" : "false"}
         aria-controls={uid}
-        title={currentName() ? `In the group ${quoted(currentName()!)}` : "Move into group"}
+        title={
+          beside()
+            ? "Open this session in a group's workspace, beside the sessions already in it"
+            : currentName()
+              ? `In the group ${quoted(currentName()!)}`
+              : "Move into group"
+        }
         onClick={() => (open() ? closeMenu() : openMenu())}
       >
-        <Icon name="folder" />
-        Move into group
+        <Icon name={beside() ? "external" : "folder"} />
+        {beside() ? "Open beside" : "Move into group"}
         <Icon name="chevron-down" small />
       </button>
 
@@ -258,9 +277,16 @@ export function MoveToGroupMenu(props: {
         onFocusOut={onFocusOut}
       >
         <Show when={error()}>{(m) => <Banner tone="error" title="Couldn't move this session." body={m()} />}</Show>
+        <Show when={beside() && sessionGroups().length === 0 && !creating()}>
+          <p class="sidebar-region-note">No groups yet. Make one to open this session beside another.</p>
+        </Show>
         {/* The mode menu's shape (§4g): one role=menu list, role=group sections inside it. While the
             name field is showing there is no menu at all — a form is not menu content. */}
-        <div class="model-menu-list" role={creating() ? undefined : "menu"} aria-label={creating() ? undefined : "Move into group"}>
+        <div
+          class="model-menu-list"
+          role={creating() ? undefined : "menu"}
+          aria-label={creating() ? undefined : beside() ? "Open beside" : "Move into group"}
+        >
           <Show
             when={!creating()}
             fallback={

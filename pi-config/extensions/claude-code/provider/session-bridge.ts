@@ -49,9 +49,11 @@ import {
  * `heldCallTimeoutMs` below, not this; this is only the CLI-side backstop.
  *
  * Do not set a per-server `timeout` alongside it — any value >= 1000 overrides
- * this one, so it would only add a second limit to keep in sync.
+ * this one, so it would only add a second limit to keep in sync. 24 h: the
+ * CLI's own built-in default is about 27.8 h (its `ko()` resolver, read from
+ * the 2.1.278 binary), so a tighter value would only lower the ceiling.
  */
-export const DEFAULT_MCP_TOOL_TIMEOUT_MS = 3_600_000;
+export const DEFAULT_MCP_TOOL_TIMEOUT_MS = 86_400_000;
 
 export interface SessionBridgeTimings {
 	/** Control-request deadline (initialize, interrupt). */
@@ -366,6 +368,16 @@ class CliSession {
 	private readonly timings: SessionBridgeTimings;
 	private readonly limits: SessionBridgeLimits;
 	private transport?: ClaudeTransport;
+
+	/** Process-exit path only: nothing async runs then, so signal the group directly. */
+	killNow(): void {
+		const pid = this.transport?.pid;
+		if (!pid || this.transport?.isClosed()) return;
+		try {
+			if (process.platform !== "win32") process.kill(-pid, "SIGKILL");
+			else this.transport?.child?.kill("SIGKILL");
+		} catch { /* already gone */ }
+	}
 	private host?: PiMcpHost;
 	private turn?: TurnState;
 	/** Held `tools/call`s keyed by the CLI tool_use id pi will echo back. */
@@ -847,6 +859,12 @@ export class SessionBridge implements ClaudeSessionBridge {
 		await Promise.all(sessions.map((session) => session.teardown(reason)));
 	}
 
+	/** Synchronous SIGKILL of every live child group; for the host's `exit` event only. */
+	killAllNow(): void {
+		for (const session of this.sessions.values()) session.killNow();
+		this.sessions.clear();
+	}
+
 	/** Keep only a bounded number of idle children; a busy one is never reaped. */
 	private reapIdle(keep: string): void {
 		const idle = [...this.sessions.entries()]
@@ -881,10 +899,12 @@ export function getSessionBridge(options: SessionBridgeOptions = {}): SessionBri
 	if (!registry.hooked) {
 		registry.hooked = true;
 		const bridge = registry.bridge;
-		const stop = () => { void bridge.disposeAll("host process exiting"); };
-		process.once("exit", stop);
-		process.once("SIGINT", stop);
-		process.once("SIGTERM", stop);
+		// `exit` only: nothing asynchronous runs during it, so the children are
+		// signalled directly. No SIGINT/SIGTERM listeners — any listener on those
+		// disables Node's default exit, and a host without its own handler (the pi
+		// TUI, a headless SDK script) would then swallow the first Ctrl-C. Hosts
+		// reach the graceful path through session_shutdown -> disposeSession.
+		process.once("exit", () => bridge.killAllNow());
 	}
 	return registry.bridge;
 }

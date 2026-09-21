@@ -12,7 +12,7 @@ import { PassThrough, Writable } from "node:stream";
 import { test } from "node:test";
 import { Type, type Message, type Tool } from "@earendil-works/pi-ai";
 import {
-	claudeSessionId, foldHistory, isPrefix, SessionBridge, transcriptFingerprint, uuidv5,
+	claudeSessionId, foldHistory, getSessionBridge, isPrefix, resetSessionBridge, SessionBridge, transcriptFingerprint, uuidv5,
 } from "./session-bridge.ts";
 import type { ClaudeFrame, ClaudeTurnRequest } from "./types.ts";
 
@@ -246,7 +246,7 @@ test("argv, env and the MCP handshake match the spike's recorded shapes", { time
 	assert.deepEqual(cli.argv.slice(cli.argv.indexOf("--allowedTools"), cli.argv.indexOf("--allowedTools") + 2), ["--allowedTools", "mcp__pi"]);
 	assert.equal(cli.argv[cli.argv.indexOf("--session-id") + 1], claudeSessionId("pi-session-1"));
 	assert.equal(cli.argv[cli.argv.indexOf("--permission-mode") + 1], "dontAsk");
-	assert.equal(cli.env.MCP_TOOL_TIMEOUT, "3600000");
+	assert.equal(cli.env.MCP_TOOL_TIMEOUT, "86400000");
 	assert.equal(cli.env.CLAUDECODE, undefined);
 	assert.equal(cli.env.CLAUDE_CODE_ENTRYPOINT, undefined);
 
@@ -595,3 +595,18 @@ async function collectAfter(frames: AsyncIterable<ClaudeFrame>, drive: () => Pro
 	await drive();
 	return collecting;
 }
+
+test("the process-global bridge hooks only `exit`, never SIGINT/SIGTERM, and exit kills children synchronously", async () => {
+	await resetSessionBridge();
+	const sigint = process.listenerCount("SIGINT");
+	const sigterm = process.listenerCount("SIGTERM");
+	const exits = process.listenerCount("exit");
+	const bridge = getSessionBridge();
+	assert.equal(getSessionBridge(), bridge, "one registry per process");
+	assert.equal(process.listenerCount("SIGINT"), sigint, "a SIGINT listener would disable Node's default exit");
+	assert.equal(process.listenerCount("SIGTERM"), sigterm);
+	assert.equal(process.listenerCount("exit"), exits + 1);
+	// killAllNow is synchronous and safe with no live children.
+	bridge.killAllNow();
+	await resetSessionBridge();
+});

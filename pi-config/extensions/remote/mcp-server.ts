@@ -76,8 +76,6 @@ export interface RunOptions {
 	input?: Buffer | string;
 	timeoutMs?: number;
 	signal?: AbortSignal;
-	/** Safe to run again after a transport failure that may already have been delivered. */
-	idempotent?: boolean;
 }
 export interface BashOptions {
 	timeoutSec: number;
@@ -90,8 +88,6 @@ export interface TransportResult {
 	stderr: string;
 	timedOut: boolean;
 	aborted: boolean;
-	/** The channel had died and was re-opened for this call; worth telling the model once. */
-	reconnected?: boolean;
 }
 
 export interface McpTool {
@@ -275,7 +271,6 @@ function formatResult(result: TransportResult, options: { label?: string; keepTa
 	if (result.exitCode !== 0) notes.push(`exit code ${result.exitCode ?? "none (killed)"}`);
 	if (out.truncated || err.truncated) notes.push(`output truncated to ${MAX_OUTPUT_BYTES / 1024} KB (${options.keepTail ? "start" : "end"} dropped)`);
 	if (lines.truncated) notes.push("long lines truncated");
-	if (result.reconnected) notes.push("reconnected to the target");
 	if (!parts.length && !notes.length) notes.push("no output, exit code 0");
 	const prefix = options.label ? `${options.label}: ` : "";
 	const trailer = notes.length ? `\n\n[${prefix}${notes.join("; ")}]` : "";
@@ -400,6 +395,13 @@ export function createRemoteMcpServer(id: RemoteMcpIdentity, deps: RemoteMcpDeps
 	/** Every failure the transport can raise becomes prose naming the target: this stderr is invisible. */
 	const describeFailure = (error: unknown): string => {
 		const message = error instanceof Error ? error.message : String(error);
+		// A failed probe is cached for 15s and `ready()` — the first thing every tool does —
+		// rethrows it verbatim, so an immediate retry returns this same text in milliseconds.
+		// Unsaid, that reads as flakiness and invites a retry loop. Only the unreachable case
+		// holds: a refused login backs the channel off while per-call ssh keeps working.
+		if (message.includes("is unreachable:")) {
+			return `${message} (this target is held down for up to 15s after a failed probe; retrying sooner returns this same error — wait, or tell the user)`;
+		}
 		return `Could not reach ${id.label ?? id.target}: ${message}`;
 	};
 	const run = (command: string, options: RunOptions): Promise<TransportResult> =>
@@ -428,7 +430,7 @@ export function createRemoteMcpServer(id: RemoteMcpIdentity, deps: RemoteMcpDeps
 				const path = await far(str(params, "path"), signal);
 				const offset = int(params, "offset", 1, Number.MAX_SAFE_INTEGER, 1)!;
 				const limit = int(params, "limit", 1, Number.MAX_SAFE_INTEGER);
-				const result = await run(readScript(path, offset, limit), { signal, idempotent: true });
+				const result = await run(readScript(path, offset, limit), { signal });
 				const guard = guardMessage(result, path, "read");
 				if (guard) return guard;
 				if (result.exitCode !== 0) return formatResult(result, { label: "read" });
@@ -455,7 +457,7 @@ export function createRemoteMcpServer(id: RemoteMcpIdentity, deps: RemoteMcpDeps
 				if (!oldText) throw new ParamError("oldText must not be empty; use remote_write to create a file.");
 				// Read, replace here, write back: no far-side interpreter is assumed to exist.
 				return serializePath(path, async () => {
-					const current = await run(slurpScript(path), { signal, idempotent: true });
+					const current = await run(slurpScript(path), { signal });
 					const guard = guardMessage(current, path, "edit");
 					if (guard) return guard;
 					if (current.exitCode !== 0) return formatResult(current, { label: "edit" });
@@ -473,7 +475,7 @@ export function createRemoteMcpServer(id: RemoteMcpIdentity, deps: RemoteMcpDeps
 			case "remote_ls": {
 				const path = await far(optionalStr(params, "path"), signal);
 				const limit = int(params, "limit", 1, MAX_LIMIT, DEFAULT_LIMIT)!;
-				const result = await run(lsScript(path, limit), { signal, idempotent: true });
+				const result = await run(lsScript(path, limit), { signal });
 				const guard = guardMessage(result, path, "ls");
 				if (guard) return guard;
 				if (result.exitCode !== 0) return formatResult(result, { label: "ls" });
@@ -483,7 +485,7 @@ export function createRemoteMcpServer(id: RemoteMcpIdentity, deps: RemoteMcpDeps
 				const pattern = str(params, "pattern");
 				const path = await far(optionalStr(params, "path"), signal);
 				const limit = int(params, "limit", 1, MAX_LIMIT, DEFAULT_LIMIT)!;
-				const result = await run(findScript(path, pattern, limit), { signal, idempotent: true });
+				const result = await run(findScript(path, pattern, limit), { signal });
 				const guard = guardMessage(result, path, "find");
 				if (guard) return guard;
 				if (result.exitCode !== 0) return formatResult(result, { label: "find" });
@@ -500,7 +502,7 @@ export function createRemoteMcpServer(id: RemoteMcpIdentity, deps: RemoteMcpDeps
 					literal: bool(params, "literal"),
 					context: int(params, "context", 1, 20),
 					filesOnly: bool(params, "filesOnly"),
-				}, limit), { signal, idempotent: true });
+				}, limit), { signal });
 				const guard = guardMessage(result, path, "grep");
 				if (guard) return guard;
 				// grep and rg exit 1 when nothing matched: not an error for a search tool.
@@ -517,7 +519,7 @@ export function createRemoteMcpServer(id: RemoteMcpIdentity, deps: RemoteMcpDeps
 		if (!lines.length) return ok(empty);
 		const over = lines.length > limit;
 		const body = clipLines(clipHead(lines.slice(0, limit).join("\n")).text);
-		const notes = [...(over ? [`${limit} ${overflow}`] : []), ...(body.truncated ? ["long lines truncated"] : []), ...(result.reconnected ? ["reconnected to the target"] : [])];
+		const notes = [...(over ? [`${limit} ${overflow}`] : []), ...(body.truncated ? ["long lines truncated"] : [])];
 		return ok(`${body.text}${notes.length ? `\n\n[${notes.join("; ")}]` : ""}`);
 	}
 

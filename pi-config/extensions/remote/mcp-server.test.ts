@@ -37,7 +37,7 @@ function scratch(t: any): string {
 
 /** A far side that is this machine: the script runs under `sh -c`, rooted at the identity's cwd. */
 function localTransport(farCwd: string, home = "/far/home") {
-	const calls: { command: string; cwd?: string; input?: string; idempotent?: boolean }[] = [];
+	const calls: { command: string; cwd?: string; input?: string }[] = [];
 	const sh = (command: string, cwd: string | undefined, input: Buffer | string | undefined, merge: boolean): Promise<TransportResult> =>
 		new Promise((resolve) => {
 			const child = execFile("/bin/sh", ["-c", command], { cwd: cwd ?? farCwd, encoding: "buffer", maxBuffer: 64 * 1024 * 1024 }, (error, stdout, stderr) => {
@@ -58,7 +58,7 @@ function localTransport(farCwd: string, home = "/far/home") {
 		disposed: 0,
 		async home() { return home; },
 		async run(command, options) {
-			calls.push({ command, cwd: options.cwd, input: options.input === undefined ? undefined : String(options.input), idempotent: options.idempotent });
+			calls.push({ command, cwd: options.cwd, input: options.input === undefined ? undefined : String(options.input) });
 			return sh(command, options.cwd, options.input, false);
 		},
 		async bash(command, cwd, options) {
@@ -309,6 +309,18 @@ test("an unreachable target fails closed, names itself, and never falls back to 
 	const again = await callTool(server, "remote_ls");
 	assert.ok(again.isError);
 	assert.equal(attempts, 2, "a failed open is not cached; the next call tries again");
+
+	// Connection's own wording ("Target "t" (…) is unreachable: <ssh/aws stderr>") already names
+	// the target, so it must not be prefixed again — and it is the case Connection holds down for
+	// 15s, rethrowing this identical text, which the model has to be told or it retries into it.
+	const held = createRemoteMcpServer(identity(dir), {
+		connect: () => { throw new Error('Target "t" (ec2-user@10.0.0.1) is unreachable: channel exited (code 255): Connection closed by UNKNOWN port 65535'); },
+	});
+	const holdText = (await callTool(held, "remote_ls")).text;
+	assert.match(holdText, /^Target "t" \(ec2-user@10\.0\.0\.1\) is unreachable: channel exited/, "no doubled 'Could not reach … is unreachable'");
+	assert.ok(!holdText.includes("Could not reach"), holdText);
+	assert.match(holdText, /held down for up to 15s after a failed probe; retrying sooner returns this same error/);
+	assert.match(holdText, /Connection closed by UNKNOWN port 65535/, "ssh's own words survive the added clause");
 });
 
 test("notifications/cancelled aborts that request id and nothing else", async (t) => {

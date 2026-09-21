@@ -361,7 +361,11 @@ from, immediately after it:
 marker sits at the top of the pane's scroll region, and announces "Aligned 5 members to the fork
 point." A pane with no marker is left where it is and is named in the announcement: "Aligned 4
 members. control has no fork point on its branch." The button is absent for a group with no
-`seed`, because there is nothing to align to. It is a scroll, not a state: nothing is pinned
+`seed`, because there is nothing to align to — and **present for one that adopted a seed later**
+(`groupId`, above), which is the one visible trace adoption leaves. A hand-made group that has
+been fanned into gains fork markers on the new members and this button; it keeps its name, its
+members and everything else. That is the whole of what adoption does, and it is why the dialog
+says nothing: the change is an added capability, not a changed rule. It is a scroll, not a state: nothing is pinned
 afterwards, and the next incoming token scrolls a followed pane as usual.
 
 ## States

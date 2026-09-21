@@ -215,13 +215,18 @@ POST /api/session-groups/fanout
     cannot be mistaken for a pair, so the asymmetry stays visible instead of looking like a bug.
     This is the reason for the shape that survives every safety argument rather than outweighing
     one.
-  - **Why this is an enum, recorded so it is not reopened.** A boolean would be marginally
-    safer: its natural truthy check is safe, while the enum's natural *negative* check
-    (`named !== "user"`) treats absence as generated and deletes a name. The naming argument
-    that originally chose the enum does **not** discriminate the two — identical fact, identical
-    cardinality, equal borrowability. The enum stands because **the unsafe spelling is excluded
-    by test, not by convention**: the check is pinned below, and the absence test fails on the
-    negative form. A future shape change must keep that test or take over its guarantee.
+  - **Why this is an enum, recorded so it is not reopened.** Each shape has one unsafe
+    spelling, and they are not equivalent. The enum's is the negative check
+    (`named !== "user"`), which treats **absence** as generated. A boolean's is truthiness —
+    `if (nameIsGenerated)` is **true** for `"false"`, `"yes"`, `1` and `{}`, so it mishandles
+    **malformed input**, and only `=== true` is safe. The difference is that the enum's exposure
+    ends at absence, which a single test pins, while the boolean's is open-ended over every
+    value a JSON body can carry. The naming argument that originally chose the enum does **not**
+    discriminate them — identical fact, identical cardinality, equal borrowability — so the enum
+    stands on two grounds instead: **the unsafe spelling is excluded by test, not by convention**
+    (the check is pinned below, and the absence test fails on the negative form), and malformed
+    values fall to the safe side **by construction**, needing no test at all. A future shape
+    change must keep that test or take over both guarantees.
   - **Provenance, never policy.** The client reports *this is the name pi-web generated*; the
     server decides `autoDissolve` from it. A client permitted to send `autoDissolve` itself would
     assert an ownership pi-web may not have, and an older or buggy one could assert it wrongly.

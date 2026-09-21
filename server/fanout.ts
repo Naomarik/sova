@@ -1,5 +1,5 @@
 import { existsSync, unlinkSync, writeFileSync } from "node:fs";
-import { open } from "node:fs/promises";
+import { open, type FileHandle } from "node:fs/promises";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { GROUP_NAME_MAX, type BatchRefusal, type BatchRefusalCode, type FanoutRequest, type FanoutResult, type SessionGroup, type SessionSummary } from "../shared/protocol";
 import { activeConfigFailure, heldChat } from "./chat-manager";
@@ -11,6 +11,7 @@ import { getSessionSummary } from "./sessions-index";
 import { addWebSession } from "./web-sessions";
 import { markOwned, recentForeignWriteAgeSec } from "./write-guard";
 import { promptGroup } from "./group-prompt";
+import { normalizeEntry } from "./transcript";
 
 /**
  * POST /api/session-groups/fanout (spec/14b-fanout.md): N sessions from one starting point, as
@@ -20,9 +21,12 @@ import { promptGroup } from "./group-prompt";
 
 /** The current session file format. A source in an older one is refused rather than migrated. */
 const CURRENT_SESSION_VERSION = 3;
-/** Enough for the header line; enough of the tail for the last entry. */
+/** Enough for the header line; enough of the tail for the last rendered entry. A source whose
+    recent tail is all hidden entries (a long run of cache-warm usage, say) gets one widened pass
+    before we give up, so the bound never manufactures a refusal on a healthy file. */
 const HEAD_BYTES = 16 * 1024;
 const TAIL_BYTES = 64 * 1024;
+const WIDE_TAIL_BYTES = 4 * 1024 * 1024;
 
 const refusal = (path: string, code: BatchRefusalCode, message: string, id = ""): BatchRefusal => ({ id, path, code, message });
 
@@ -91,26 +95,48 @@ async function readHeadAndLeaf(path: string): Promise<{ version: number; leafId:
     }
     if (header?.type !== "session") return null;
     const version = typeof header.version === "number" ? header.version : 1; // pre-versioning files
-    const from = Math.max(0, size - TAIL_BYTES);
-    const tail = Buffer.alloc(size - from);
-    await fh.read(tail, 0, tail.length, from);
-    let leafId: string | null = null;
-    for (const line of tail.toString("utf8").split("\n").reverse()) {
-      if (!line.trim()) continue;
-      try {
-        const entry = JSON.parse(line);
-        if (typeof entry?.id === "string") {
-          leafId = entry.id;
-          break;
-        }
-      } catch {
-        continue; // a torn last line: keep walking back
-      }
-    }
+    let leafId = await renderedLeaf(fh, size, TAIL_BYTES);
+    // Nothing rendered in the window, but there was more file behind it: look properly before
+    // calling a healthy source stale.
+    if (leafId === null && size > TAIL_BYTES) leafId = await renderedLeaf(fh, size, WIDE_TAIL_BYTES);
     return { version, leafId };
   } finally {
     await fh.close();
   }
+}
+
+/**
+ * The id of the last entry pi-web would RENDER, reading back from the end of `window` bytes.
+ *
+ * Not simply the last line with an id: the client sends the leaf the DIALOG SHOWED, and the file
+ * routinely ends in something the transcript hides — a top-level `usage` entry (cache warming is
+ * on by default), a `role:"system"` loadout message, or a `pi-web-rewind` marker, which by
+ * construction is the last line of EVERY rewound session. Comparing against those refuses an
+ * untouched source as "stale", and tells the user to reopen and fork from a new last message that
+ * looks identical to the one they already had — an instruction that cannot be followed.
+ *
+ * The hide rules are the transcript's own (`normalizeEntry` yields no rows for a hidden entry),
+ * reused rather than restated, so this can never drift from what the pane actually draws.
+ */
+async function renderedLeaf(fh: FileHandle, size: number, window: number): Promise<string | null> {
+  const from = Math.max(0, size - window);
+  const buf = Buffer.alloc(size - from);
+  await fh.read(buf, 0, buf.length, from);
+  const lines = buf.toString("utf8").split("\n");
+  if (from > 0) lines.shift(); // the window almost certainly cut the first line in half
+  for (const line of lines.reverse()) {
+    if (!line.trim()) continue;
+    let entry: { id?: unknown };
+    try {
+      entry = JSON.parse(line);
+    } catch {
+      continue; // a torn line, or a writer mid-append: keep walking back
+    }
+    if (typeof entry?.id !== "string") continue;
+    if (normalizeEntry(entry as Parameters<typeof normalizeEntry>[0]).length === 0) continue; // hidden: not a leaf the user saw
+    return entry.id;
+  }
+  return null;
 }
 
 export const realFanoutDeps: FanoutDeps = {

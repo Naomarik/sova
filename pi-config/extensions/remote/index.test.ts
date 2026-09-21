@@ -19,6 +19,9 @@ const { placeholderDir, placeholderRoot } = await import("./argv.ts");
 const { CHANNEL_PROGRAM } = await import("./channel.ts");
 const { runArgv } = await import("./exec.ts");
 const { channelOver, mutating, Remote, remoteGrep } = await import("./index.ts");
+const remoteExtension = (await import("./index.ts")).default;
+const { REMOTE_DISCOVER_EVENT, REMOTE_SESSION_EVENT } = await import("./workers.ts");
+type RemoteSessionEvent = import("./workers.ts").RemoteSessionEvent;
 type RemoteDeps = import("./index.ts").RemoteDeps;
 type ChannelLike = import("./index.ts").ChannelLike;
 type RunOptions = import("./exec.ts").RunOptions;
@@ -596,4 +599,90 @@ test("a plain target's status: mounted false, no mountPoint, the rest as before"
 	assert.equal(s.mountPoint, undefined);
 	assert.ok(!("mountPoint" in s));
 	done();
+});
+
+
+/**
+ * A minimal ExtensionAPI: enough for the default export's session_start, and an event bus we can
+ * watch. `ssh` is a shim on PATH that runs the far command here, so the preflight really answers.
+ */
+function fakePi(flags: Record<string, string | boolean>) {
+	const events: RemoteSessionEvent[] = [];
+	const listeners = new Map<string, ((data: unknown) => void)[]>();
+	const hooks = new Map<string, (event: unknown, ctx: unknown) => unknown>();
+	const pi = {
+		registerFlag: () => {},
+		registerCommand: () => {},
+		registerTool: () => {},
+		getFlag: (name: string) => flags[name],
+		on: (name: string, fn: (event: unknown, ctx: unknown) => unknown) => void hooks.set(name, fn),
+		events: {
+			on: (name: string, fn: (data: unknown) => void) => {
+				listeners.set(name, [...(listeners.get(name) ?? []), fn]);
+				return () => {};
+			},
+			emit: (name: string, data: unknown) => {
+				if (name === REMOTE_SESSION_EVENT) events.push(data as RemoteSessionEvent);
+				for (const fn of listeners.get(name) ?? []) fn(data);
+			},
+		},
+	};
+	return { pi, events, start: (cwd: string) => hooks.get("session_start")!({}, { cwd, hasUI: false }) };
+}
+
+/** An `ssh` on PATH that runs the far command (argv's last word) on this machine. */
+function sshShim(dir: string): () => void {
+	const bin = join(dir, "ssh");
+	writeFileSync(bin, '#!/bin/sh\nfor a in "$@"; do last=$a; done\nexec sh -c "$last"\n');
+	chmodSync(bin, 0o755);
+	const before = process.env.PATH;
+	process.env.PATH = `${dir}:${before}`;
+	return () => void (process.env.PATH = before);
+}
+
+test("the session announces its target on the bus: the static far cwd, then the probe's, and on demand", async () => {
+	const far = mkdtempSync(join(tmpdir(), "pi-remote-far-"));
+	const shimDir = mkdtempSync(join(tmpdir(), "pi-remote-bin-"));
+	const restore = sshShim(shimDir);
+	writeFileSync(
+		join(agentDir, "targets.json"),
+		JSON.stringify({ version: 1, targets: [{ name: "box", label: "the box", kind: "ssh", ssh: { host: "example.invalid" }, cwd: far }] }),
+	);
+	try {
+		// A placeholder cwd, as pi-web opens one: the far cwd is known before any round trip.
+		const local = placeholderDir(agentDir, "box", far);
+		mkdirSync(local, { recursive: true });
+		const { pi, events, start } = fakePi({ target: "box", "no-channel": true });
+		remoteExtension(pi as never);
+		await start(local);
+		assert.deepEqual(events, [{ version: 1, target: "box", farCwd: far, label: "the box", channelOff: true }], "announced before the probe");
+
+		// The probe's own pwd lands as a second announcement (same content here; it is the authority).
+		await sleep(50);
+		assert.equal(events.length, 2, JSON.stringify(events));
+		assert.equal(events[1]!.farCwd, far);
+
+		// Anyone loading later just asks.
+		pi.events.emit(REMOTE_DISCOVER_EVENT, { version: 1 });
+		assert.equal(events.length, 3);
+		assert.deepEqual(events[2], events[1]);
+	} finally {
+		restore();
+		rmSync(shimDir, { recursive: true, force: true });
+		rmSync(far, { recursive: true, force: true });
+	}
+});
+
+test("a target that will not load is announced as an error, so workers refuse too", async () => {
+	writeFileSync(join(agentDir, "targets.json"), JSON.stringify({ version: 1, targets: [] }));
+	const { pi, events, start } = fakePi({ target: "ghost" });
+	remoteExtension(pi as never);
+	await start(tmpdir());
+	assert.equal(events.length, 1);
+	assert.equal(events[0]!.target, "ghost");
+	assert.match(events[0]!.error ?? "", /no target named "ghost"/);
+	assert.equal(events[0]!.farCwd, undefined);
+	// …and it keeps answering that on demand.
+	pi.events.emit(REMOTE_DISCOVER_EVENT, { version: 1 });
+	assert.equal(events.length, 2);
 });

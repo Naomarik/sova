@@ -635,8 +635,19 @@ export interface FanoutRequest {
       alternative was rejected on: in fresh mode the default is rewritten on every keystroke, so a
       derivation at Create time disagrees with what the user was looking at. Same precedent as
       `source.leafId`, accepted as the leaf the DIALOG SHOWED rather than recomputed.
-      Clients derive it by comparing against the LAST string pi-web wrote into the field — not a
-      prefill snapshot, which in fresh mode classifies an untouched field as user-named. */
+      HOW THE CLIENT DERIVES IT is the client's call, but the constraint is not: it must be a
+      RECORD of what happened (the last string we wrote, or whether the user edited the field),
+      never a recomputation of what the default would be now. A prefill snapshot is wrong in fresh
+      mode, where the field is rewritten per keystroke and an untouched field then looks edited.
+      The two records differ in exactly two cases and each errs one way: comparing against the
+      last string we wrote calls "edited then reverted to our text" GENERATED (the name really is
+      ours) but also calls "typed our exact words by hand" generated; an edit flag calls both
+      USER, so it leaves an occasional empty group behind instead. Litter or a name, once each —
+      pick one knowingly and write the cost down.
+      POLARITY IS LOAD-BEARING FOR ANY OPTIONAL FLAG HERE, not just this one: the field must be
+      the one whose FALSEHOOD, or absence, is the safe answer. `nameEdited` would have been the
+      same information with the opposite failure — absent ⇒ not edited ⇒ generated ⇒ the group
+      deletes itself — which is the unsafe default wearing an innocent name. */
   named?: "generated" | "user";
   /** Land the new members in an EXISTING group instead of creating one; the response's `group`
       is then that group. Omitted = create one named `name`. Seed rules, all checked BEFORE

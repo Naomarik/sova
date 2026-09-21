@@ -642,7 +642,10 @@ export interface FanoutRequest {
       TWO ABSENCES, OPPOSITE DEFAULTS, BOTH CORRECT: this field's absence means the CLIENT predates
       it, and a user-named group is what is at risk, so it falls to "user"; `SessionGroup.autoDissolve`'s
       absence means the RECORD predates it, where no user-named group can exist, so there it falls
-      to seed-implies-dissolution. Do not "align" them.
+      to seed-implies-dissolution. Do not "align" them — and note that the SHAPES differ on purpose
+      for the same reason: a boolean beside a boolean with opposite absence defaults invites exactly
+      that alignment, while a boolean beside an enum cannot be mistaken for a matched pair. The
+      difference in kind is what keeps the difference in meaning visible.
       THE SERVER MUST NOT VALIDATE THIS BY RE-DERIVING THE DEFAULT. Generating the name here to
       compare would be a second generator of one string, which is the ground the server-side
       alternative was rejected on: in fresh mode the default is rewritten on every keystroke, so a

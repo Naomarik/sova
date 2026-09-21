@@ -232,7 +232,12 @@ POST /api/session-groups/fanout
     where the client reports what it showed and the server tests it against the world rather than
     against a recomputation of the client's own work.
   - **The client's datum is the edit event** — the name field's own input handler and nothing
-    else, so a programmatic rewrite is not a touch. That is what makes it correct in fresh mode,
+    else, so a programmatic rewrite is not a touch. **It never stores a generated default to
+    compare against, and never re-derives one at submit time.** A re-derivation is a second
+    generator; and in fresh mode the default changes on every keystroke of the prompt, so any
+    comparison has to pick a moment, and every choice of moment is wrong in one mode — the
+    first is wrong in fresh, the last is wrong if the rule is ever read as the first. The event
+    has no moment to pick. That is what makes it correct in fresh mode,
     where the default is re-derived on every prompt keystroke. **Known cost, chosen rather than
     missed:** typing over the name and then restoring our exact text still counts as naming it,
     so that group stands empty instead of dissolving.

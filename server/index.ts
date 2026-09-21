@@ -182,7 +182,7 @@ app.delete("/api/session-groups/:id", (c) =>
 
 // One session into one group (or out of it, with `groupId: null`).
 app.post("/api/session-groups/assign", async (c) => {
-  let body: { path?: unknown; groupId?: unknown; label?: unknown };
+  let body: { path?: unknown; groupId?: unknown; label?: unknown; index?: unknown };
   try {
     body = await c.req.json();
   } catch {
@@ -192,10 +192,13 @@ app.post("/api/session-groups/assign", async (c) => {
   // Omitted keeps the label the session already had (a move between groups carries it).
   const label = body.label === undefined ? { ok: true as const, label: undefined } : cleanGroupLabel(body.label);
   if (!label.ok) return c.json({ error: `label must be a string of at most ${GROUP_LABEL_MAX} characters, or null` }, 400);
+  // Where in the target group's order it lands; omitted (or past the end) means the end.
+  if (body.index !== undefined && (typeof body.index !== "number" || !Number.isInteger(body.index) || body.index < 0))
+    return c.json({ error: "index must be a non-negative integer" }, 400);
   const path = resolveSessionPath(typeof body.path === "string" ? body.path : null);
   if (!path) return c.json({ error: "Invalid or missing path (must be a .jsonl under the pi sessions dir)" }, 400);
   if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
-  const r = assignSession(idOf(path), body.groupId, label.label);
+  const r = assignSession(idOf(path), body.groupId, label.label, body.index as number | undefined);
   // dissolved is set only when this write emptied a fanout group, which the server then deleted.
   return r.ok ? c.json({ ok: true, ...(r.dissolved ? { dissolved: true } : {}) }) : c.json({ error: r.error }, r.status);
 });

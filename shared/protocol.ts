@@ -305,16 +305,21 @@ export interface UploadResult {
 //                                  GROUP_LABEL_MAX characters after trimming; 404 unknown group)
 // DELETE /api/session-groups/:id -> { ok: true }   (deletes the group and its assignments; the
 //                                  sessions themselves are untouched. 404 unknown)
-// POST /api/session-groups/assign { path, groupId: string | null, label?: string | null } -> AssignGroupResult
+// POST /api/session-groups/assign { path, groupId: string | null, label?: string | null, index?: number }
+//                                  -> AssignGroupResult
 //                                  (puts one session in a group, or takes it out with null. When this write
 //                                  removes the LAST member of a group carrying `seed` (one pi-web fanned out),
 //                                  that group is deleted in the same atomic write and the response carries
 //                                  dissolved: true. A hand-made group is left standing empty. `label` sets the
 //                                  session's label in the group it lands in, `null` clears it, and omitting it
 //                                  keeps the label it already had — a session moved between groups keeps its
-//                                  metadata. 400 bad body/path or a label over GROUP_LABEL_MAX, 404 session
-//                                  file or group missing.
-//                                  Never writes the session file)
+//                                  metadata. `index` is where it lands in the target group's member order:
+//                                  0 first, at/past the end or omitted = the end, so Add Back restores label
+//                                  AND place in one write that cannot half-succeed. `index` is ignored with
+//                                  groupId null, and ignored when the session is already in that group —
+//                                  assign never reorders in place; PATCH { order } is the reposition.
+//                                  400 bad body/path, a label over GROUP_LABEL_MAX, or a negative/non-integer
+//                                  index; 404 session file or group missing. Never writes the session file)
 // POST /api/session-groups/:id/prompt { text: string, members?: string[] (session ids) } -> BatchPromptResult
 //                                  (the shared follow-up: prompts every member of the group, in member order.
 //                                  ALL-OR-NOTHING PRE-CHECK — every member is checked before any is prompted

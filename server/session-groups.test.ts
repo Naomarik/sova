@@ -474,3 +474,44 @@ test("a session moved to a DIFFERENT group still arrives at the end", () => {
   assert.deepEqual(assignSession("a", "g2"), { ok: true });
   assert.deepEqual(membersOf("g2"), [{ id: "b" }, { id: "a", label: "opus" }]);
 });
+
+test("assign with index lands the member at that position, so Add Back is one write", () => {
+  reset({
+    version: 1,
+    groups: [
+      { id: "g1", name: "Fanout", createdAt: "2026-01-01T00:00:00.000Z", members: [{ id: "a" }, { id: "b" }, { id: "c" }] },
+      { id: "g2", name: "Elsewhere", createdAt: "2026-01-01T00:00:00.000Z" },
+    ],
+    assignments: { a: "g1", b: "g1", c: "g1", promoted: "g2" },
+  });
+  // Promote took `promoted` out at position 1; Add Back restores label AND place in one call.
+  assert.deepEqual(assignSession("promoted", "g1", "sonnet ×2", 1), { ok: true });
+  assert.deepEqual(membersOf("g1"), [{ id: "a" }, { id: "promoted", label: "sonnet ×2" }, { id: "b" }, { id: "c" }]);
+});
+
+test("index 0 lands first; past the end, and omitted, land at the end", () => {
+  const three = () => ({
+    version: 1,
+    groups: [{ id: "g1", name: "G", createdAt: "2026-01-01T00:00:00.000Z", members: [{ id: "a" }, { id: "b" }] }],
+    assignments: { a: "g1", b: "g1" },
+  });
+  reset(three());
+  assignSession("x", "g1", undefined, 0);
+  assert.deepEqual(membersOf("g1"), [{ id: "x" }, { id: "a" }, { id: "b" }]);
+  reset(three());
+  assignSession("x", "g1", undefined, 99);
+  assert.deepEqual(membersOf("g1"), [{ id: "a" }, { id: "b" }, { id: "x" }]);
+  reset(three());
+  assignSession("x", "g1");
+  assert.deepEqual(membersOf("g1"), [{ id: "a" }, { id: "b" }, { id: "x" }]);
+});
+
+test("index is ignored for a session already in the group: assign never reorders in place", () => {
+  reset({
+    version: 1,
+    groups: [{ id: "g1", name: "G", createdAt: "2026-01-01T00:00:00.000Z", members: [{ id: "a" }, { id: "b" }, { id: "c" }] }],
+    assignments: { a: "g1", b: "g1", c: "g1" },
+  });
+  assert.deepEqual(assignSession("c", "g1", undefined, 0), { ok: true });
+  assert.deepEqual(membersOf("g1"), [{ id: "a" }, { id: "b" }, { id: "c" }], "PATCH {order} is the reposition, not assign");
+});

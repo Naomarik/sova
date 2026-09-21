@@ -305,8 +305,12 @@ function dissolveIfEmptied(store: Store, groupId: string | null): boolean {
  * The member entry travels with the session: a move carries its label to the end of the new group
  * unless `label` says otherwise (a string sets it, `null` clears it, `undefined` keeps it). Being
  * taken out of every group drops the entry, label and all — there is nowhere to keep it.
+ *
+ * `index` lands the member at a position instead of the end, so Add Back (the undo for Promote)
+ * restores label AND place in one write and cannot half-succeed (spec §14 "One write, not two").
+ * Past the end, or omitted, means the end.
  */
-export function assignSession(sessionId: string, groupId: string | null, label?: string | null): AssignResult {
+export function assignSession(sessionId: string, groupId: string | null, label?: string | null, index?: number): AssignResult {
   return edit((store) => {
     // The target is checked BEFORE anything moves: a refusal still writes the store back, and it
     // must write it back unchanged.
@@ -336,7 +340,9 @@ export function assignSession(sessionId: string, groupId: string | null, label?:
       return { ok: true, ...(dissolveIfEmptied(store, from) ? { dissolved: true as const } : {}) };
     }
     const kept = label === undefined ? carried : (label ?? undefined);
-    group.members.push({ id: sessionId, ...(kept ? { label: kept } : {}) });
+    const member = { id: sessionId, ...(kept ? { label: kept } : {}) };
+    const at = index === undefined ? group.members.length : Math.min(index, group.members.length);
+    group.members.splice(at, 0, member);
     store.assignments[sessionId] = group.id;
     // A move out of a fanout group empties it just as surely as an unassign does (never the
     // same-group case: that returned above).

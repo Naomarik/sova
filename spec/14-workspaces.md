@@ -517,7 +517,7 @@ All four are writes to the group registry. None of them touches a session's JSON
     looks deliberate. Same rule as `Move Left` / `Move Right`: always the full order.
 - **Eliminate** — the same assign-to-null, plus
   `POST /api/sessions/archive {path, archived:true}`. Two writes, one gesture, and **the second
-  can refuse in three ways** (`archiveSession`, `server/sessions-index.ts:558-564`): the session
+  can refuse in three ways** (`archiveSession` in `server/sessions-index.ts`): the session
   is open in a TUI, it wasn't started in pi-web, or it is mid-turn. Two of the three the pane
   already knows, so it says so **before** the press rather than half-succeeding: for a TUI-live
   or mid-turn member, Eliminate is `aria-disabled` with the reason ("This session is open in a

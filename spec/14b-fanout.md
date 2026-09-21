@@ -348,8 +348,7 @@ POST /api/session-groups/fanout
   `u1`. The branch has to be walked by `parentId` from the file's last entry, the same rule
   `activeBranch` already applies, and a tail window cannot stand in for it: after a rewind the
   chain leaves the window immediately. **Named, so it cannot be paraphrased into a tail walk:**
-  `readActiveBranch(path)` (`server/transcript.ts:349`, which is `activeBranch` at `:35` over the
-  parsed file), then the last entry on it with `normalizeEntry(entry).length > 0`. Both halves
+  `readActiveBranch(path)` (`server/transcript.ts`, which is `activeBranch` over the parsed file), then the last entry on it with `normalizeEntry(entry).length > 0`. Both halves
   are required and neither substitutes for the other — the filter alone returns the abandoned
   branch's last *visible* message, which is an ordinary reply and passes any hidden-entry test.
 - **The rendered half, separately.** Even on a session nobody has rewound, the last *line* and
@@ -405,8 +404,7 @@ POST /api/session-groups/fanout
 
 - **Fork mode takes one fresh manager per member, and the source's own manager is never handed
   to any of them.** `createBranchedSession(leafId)` is not a factory: it **rebinds the manager it
-  is called on** to the new file (`session-manager.js:1180-1184` sets `fileEntries`, `sessionId`
-  and `sessionFile`). Two things follow, and both are invariants, not implementation notes:
+  is called on** to the new file (its persist branch sets `fileEntries`, `sessionId` and `sessionFile`). Two things follow, and both are invariants, not implementation notes:
   - **Called N times on one manager it makes a chain, not a fan.** Call 2 would branch from
     member 1, call 3 from member 2, and every member after the first would carry the previous
     one's history. Each member is branched on its own manager, sourced from the source file.
@@ -446,7 +444,7 @@ POST /api/session-groups/fanout
 - **Members run with the topic outline off, by omission.** There is no disable flag to add, and
   none should be invented: the outline extension only summarizes in the TUI unless its host opts
   in, and a web chat gets one because `chat-manager` sets `topic-outline-headless: true` when it
-  opens the runtime (`server/chat-manager.ts:876`). A fanout member is opened **without** that
+  opens the runtime (`createRuntime` in `server/chat-manager.ts`). A fanout member is opened **without** that
   flag, so it lands in the extension's own default. The outline summarizer is a second model call per turn per session (§10), and N of them
   on a fanout is cost with no reader — the workspace is for reading the members against each
   other, and the strip is a single-session surface. It is off for the member's life, not just in
@@ -483,7 +481,7 @@ from, immediately after it:
 ```
 
 - **One leaf id locates the row in every member**, because branching **copies entries with their
-  ids intact** — it re-parents the chain (`{...entry, parentId}`, `session-manager.js:1136-1141`)
+  ids intact** — it re-parents the chain (`{...entry, parentId}` in `createBranchedSession`'s path loop)
   but never re-mints an id. So the entry `seed.leafId` names exists, with that id, in the source
   and in all N members, and `TranscriptItem.id` is what the client matches on. The whole marker
   rests on this; if branching ever re-minted ids, `seed.leafId` would be meaningless everywhere

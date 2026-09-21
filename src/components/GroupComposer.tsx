@@ -24,8 +24,9 @@ export function GroupComposer(props: {
   members: SessionSummary[];
   /** The pane name of a member, for every sentence that has to say which one. */
   nameOf(id: string): string;
-  /** A send landed: the list's `busy` is stale until it is re-read. */
-  onSent(): void;
+  /** Re-read the session list: after a send its `busy` is stale, and after a 400 the membership
+      this composer is counting from is the thing that was wrong. */
+  onRefresh(): void;
   /** Focused or holding text — what collapses the pane composers under it. */
   onActive(active: boolean): void;
 }) {
@@ -71,7 +72,7 @@ export function GroupComposer(props: {
       }
       const said = `Sent to ${n} ${n === 1 ? "member" : "members"}.`;
       announce(said);
-      props.onSent();
+      props.onRefresh();
       props.onActive(false);
       return;
     }
@@ -82,6 +83,14 @@ export function GroupComposer(props: {
       setRefused(out.refused);
       // No announce() here: the banner is a role=status, so it speaks for itself. Saying it twice
       // in one region reads as two events, and the second one is a summary of the first.
+      return;
+    }
+    // 400 means the server disagreed about WHO is in the group — a member left between the list
+    // this composer counted and the press. The server's sentence names a session id, which is not
+    // a thing the user can read, so say what happened and re-read the list that was wrong.
+    if (out.status === 400) {
+      props.onRefresh();
+      toast("The group changed while that was on screen. Check who's in it, then send again.");
       return;
     }
     toast(`Couldn't send to this group. ${out.error}`);

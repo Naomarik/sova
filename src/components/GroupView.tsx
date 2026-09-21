@@ -609,7 +609,7 @@ export function GroupView(props: {
             const m = rows().find((r) => r.id === sessionId);
             return m ? nameOf(m.path) : "This member";
           }}
-          onSent={props.wiring.onRefresh}
+          onRefresh={props.wiring.onRefresh}
           onActive={setGroupComposerActive}
         />
       </Show>

@@ -27,8 +27,10 @@ import type { TargetInfo } from "./remote-session";
  */
 export type BatchOutcome =
   | { ok: true; result: BatchPromptResult }
-  | { ok: false; refused: BatchRefusal[]; error?: undefined }
-  | { ok: false; error: string; refused?: undefined };
+  | { ok: false; refused: BatchRefusal[]; error?: undefined; status?: undefined }
+  /** `status` so a caller can tell "the group changed under me" (400) from "the server is gone"
+      (0) — the first is recoverable by re-reading the list, the second isn't. */
+  | { ok: false; error: string; status: number; refused?: undefined };
 
 export class ApiError extends Error {
   constructor(
@@ -260,7 +262,7 @@ export async function promptSessionGroup(id: string, text: string, members?: str
   } catch (err) {
     const refused = err instanceof ApiError && err.status === 409 ? refusalsOf(err.body) : null;
     if (refused) return { ok: false, refused };
-    return { ok: false, error: (err as Error).message };
+    return { ok: false, error: (err as Error).message, status: err instanceof ApiError ? err.status : 0 };
   }
 }
 

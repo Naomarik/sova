@@ -98,8 +98,11 @@ function readFavorites(): Set<string> {
 /** Models with configured auth (what the palette lists without a scoped-model setting). */
 export async function listModels(): Promise<ModelInfo[]> {
   const favorites = readFavorites();
-  const models = await (await getModelRuntime()).getAvailable();
-  return models.map((m) => toModelInfo(m, favorites));
+  const runtime = await getModelRuntime();
+  const models = await runtime.getAvailable();
+  // The window comes from the same cached resolver ContextInfo.window uses, so a model's window
+  // reads identically whether it is asked about here or through a session's gauge.
+  return models.map((m) => toModelInfo(m, favorites, contextWindow(`${m.provider}/${m.id}`, runtime)));
 }
 
 /**
@@ -110,6 +113,8 @@ export async function listModels(): Promise<ModelInfo[]> {
 export function toModelInfo(
   m: { provider: string; id: string; reasoning?: boolean; thinkingLevelMap?: Record<string, string | null>; input?: ("text" | "image")[] },
   favorites: Set<string>,
+  /** Tokens, from the cached resolver; null/undefined when neither source knows the model. */
+  window?: number | null,
 ): ModelInfo {
   const ref = `${m.provider}/${m.id}`;
   const info: ModelInfo = {
@@ -120,6 +125,7 @@ export function toModelInfo(
     thinkingLevels: supportedThinkingLevels(m),
   };
   if (Array.isArray(m.input)) info.input = m.input;
+  if (typeof window === "number" && window > 0) info.contextWindow = window;
   return info;
 }
 

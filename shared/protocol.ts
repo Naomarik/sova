@@ -408,6 +408,13 @@ export interface ModelInfo {
       models.json provider that omits it); treat unknown as text-only. Vision is
       `input?.includes("image")`, derived client-side — there is no separate flag. */
   input?: ("text" | "image")[];
+  /** The model's context window in tokens: the SDK model registry first (custom models.json
+      providers included), then models-store.json — the same cached resolver ContextInfo.window
+      uses. Absent when neither source knows it, the same convention as ContextInfo.window, so a
+      cost preview shows "unknown" rather than assuming a default. This is the MODEL's window,
+      independent of any session, which is what lets the fanout dialog compare candidate rows;
+      ContextInfo.window cannot, because it describes one session's current model. */
+  contextWindow?: number;
 }
 
 /** One folder's subfolders (GET /api/folders). Directories only, never files: a symlink is listed

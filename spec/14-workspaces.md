@@ -654,6 +654,15 @@ because it looks like the system working. So a field with a safe absence default
 **one atomic change** — add, delete the old, update every reader and writer in the same window
 — never additively, and never "deprecate and clean up later".
 
+**And the build will not remind you.** Renaming this contract's field in a scratch tree produced
+six errors in `server/` and **zero in `src/`**: TypeScript does not excess-property-check through
+a spread, so a client assembling its body as `{ ...target, … }` keeps compiling while sending a
+field the server no longer reads. The function's return annotation looks like protection and
+isn't. So the atomicity rule is not a preference backed by a red build — **the red build only
+appears on one side**, and the silent side is the one that decides whether the feature does
+anything. The durable remedy is to make the client's construction excess-checked, which turns
+this class of rename into a compile error at both ends; until then the rule is the only guard.
+
 **Name the event, not the moment.** A rule anchored to a moment — "capture it at prefill" —
 assumes the value is written once, which is true until some mode writes it repeatedly. Anchor
 to the event instead: *whenever we write this field*. The moment form is the same mistake as

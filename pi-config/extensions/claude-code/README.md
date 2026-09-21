@@ -265,9 +265,11 @@ These match the user's earlier investigation in
 `../claude-cli/docs/investigation/INVESTIGATION.md` (CLI 2.1.278) unless a
 divergence is stated, and are confirmed by `docs/protocol-probes.md`.
 
-- **System prompt layering.** pi's system prompt is appended under Claude Code's
-  own preamble (`initialize.appendSystemPrompt`). Replacing the preamble works but
-  disables prompt caching for the whole request, so append is the default.
+- **System prompt.** pi's system prompt REPLACES Claude Code's own preamble
+  (`initialize.systemPrompt`, with `systemPromptSnapshot: false` so every turn
+  carries the current prompt). The investigation measured that the `--system-prompt`
+  flag disables prompt caching; through the initialize field, live turns still
+  reported cache reads on a fresh process, so the cleaner prompt was kept.
   `--setting-sources ""` means the repo's `CLAUDE.md` is **not** read (pi supplies
   the context) — a deliberate difference from running `claude` in the same
   directory.
@@ -297,7 +299,7 @@ divergence is stated, and are confirmed by `docs/protocol-probes.md`.
   hooks already gate execution). It proposed `set_model` for model switches; v1
   restarts instead, which is deterministic and shares the fold path. It proposed
   the temp-file `--append-system-prompt-file`; this build passes
-  `initialize.appendSystemPrompt`, probe-verified after the investigation.
+  `initialize.systemPrompt` (replace), probe-verified after the investigation.
 
 ### Testing the provider
 

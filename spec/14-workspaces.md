@@ -301,13 +301,15 @@ member at once.
   ids**, like everything else group-side, and it is only ever the subset the user chose (below);
   every id must be in the group. **The route carries no images field at all** — that is what "the
   `plus` trigger is absent rather than disabled" means on the wire, not just in the composer.
-- **What comes back when it works**: `200 BatchPromptResult {sent: string[], failed: Refusal[]}`.
+- **What comes back when it works**: `200 BatchPromptResult {sent: string[], failed: BatchRefusal[]}`.
   `sent` is the ids that were prompted and is never empty, because a refusal is a `409` instead.
   **Members are prompted in group order, not in the order the client happened to list them** — the
   order the panes are read in is the order the turns start in, so "the third one answered first"
   is about the models and not about us.
   `failed` carries only a member that broke *after* the pre-check passed, which is the partial
-  send below; it is normally empty.
+  send below; it is normally empty. Each entry is a full `BatchRefusal`, so the banner's
+  `Send to {member}` is the same route again with `members: [id]` — no new endpoint, and the
+  retry is the user's explicit subset like every other subset here.
 - **The refusal body is machine-readable and human-readable both**:
   `409 {refused: [{id, path, code, message}]}`. `id` joins against `GroupMember.id` and the
   assignments with no lookup, `path` is what the pane routes and opens with, `code` is the closed

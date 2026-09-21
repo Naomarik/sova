@@ -290,11 +290,26 @@ POST /api/session-groups/fanout
     field touched, `name` equal to what we last wrote — and **both end with pi-web's string on
     the group**. No rule can tell them apart and none needs to; the candidate rules differ only
     in which single answer they give to both. The edit event answers `user`, so the group stands
-    with our name on it. A comparison would answer `generated`, so it dissolves — which is
-    arguably the better answer on these two rows, since nothing the user authored is removed.
-    **We ship the edit event knowing that**, for the reasons in the bullet above: it is built,
-    it is what the contract mandates, and its error is litter rather than loss. This is a chosen
-    cost, not a claim that the rule is right on every row.
+    with our name on it. A comparison would answer `generated`, so it dissolves — the nicer
+    outcome on these two rows, since nothing the user authored is removed.
+  - **We ship the edit event anyway, and not only because it is built: the comparison is the
+    fragile mechanism, and it fails toward LOSS.** A comparison is only correct while
+    regeneration stops at the first touch — otherwise pi-web keeps rewriting the field after the
+    user has typed, `lastWritten` equals the field by construction, and it reports `generated`
+    for a group **the user named**, deleting that name when the group empties. So the comparison
+    does not replace the edit flag; it **runs on top of it** and adds a second datum whose
+    correctness depends on an invariant living in another function. The edit flag cannot fail
+    that way: the touch is sticky and set by the user's own input, so it stays true however many
+    times anything else writes the field. And the dependency is not hypothetical — that gate
+    landed late, as a fix for exactly the bug where the generator overwrote a typed name. Before
+    it, the comparison would have misclassified user-named groups for the whole life of the
+    feature, and nothing in the rule would have said so.
+  - **Which inverts the proxy question.** Under the gate, `submitted === lastWritten` is true
+    exactly when the user did not touch the field — a reading of the touch, computed the long way
+    round and valid only while a separate invariant holds. **The edit flag is the direct
+    measurement; the comparison is the correlate.** The nicer outcome on two rare rows is not
+    worth a mechanism that can silently delete a name, so the litter above is a chosen cost
+    against a known alternative, not a concession to inertia.
     *(An earlier version of this passage claimed the two cases "deserve different answers" and
     that a comparison therefore could not be fixed. That was false — they deserve the same
     answer — and the argument, had it held, would have indicted the shipped rule equally.)*

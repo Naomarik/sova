@@ -175,7 +175,17 @@ POST /api/session-groups/fanout
   thing the dialog can produce.
 - **The client sends the leaf it showed the user.** `source.leafId` is the entry the dialog named
   ("up to message 34"), not a request for the server to find the current one.
-- **"The leaf" means the last entry pi-web would RENDER, not the last line of the file.** The two
+- **"The leaf" means the last entry pi-web would render ON THE ACTIVE BRANCH** — the branch the
+  transcript is showing, which after a rewind is **not** the file's tail. Both halves are load
+  bearing, and the branch half is the one a fanout meets most: you rewind to the point you want
+  to branch at, then fork, so a rewound source is the *likely* source rather than an exotic one.
+  After a rewind the file holds `[… u1, a1, marker]` with the marker parented on `u1` (the
+  rewind target), so the active branch ends at `u1` while the file ends at `a1` — an entry the
+  transcript is no longer showing. Reading the file backwards finds `a1`; the user was shown
+  `u1`. The branch has to be walked by `parentId` from the file's last entry, the same rule
+  `activeBranch` already applies, and a tail window cannot stand in for it: after a rewind the
+  chain leaves the window immediately.
+- **The rendered half, separately.** The two
   are routinely different, and comparing against the raw last line turns this check into a false
   refusal. The transcript hides several entry kinds — top-level `usage` rows (cache warming
   writes them and is **on by default**, so a source can easily end with one), `message` entries

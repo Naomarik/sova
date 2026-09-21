@@ -626,6 +626,13 @@ export interface FanoutRequest {
       "user", ABSENT, or any unrecognised value ⇒ the user named it ⇒ the server writes
       `autoDissolve: false` EXPLICITLY — never leaves it absent, because absent-plus-`seed` is the
       on-disk signature of a pre-flag fanout group and the legacy rule dissolves those.
+      IF THIS FIELD IS EVER REPLACED, THE REPLACEMENT MUST LAND ATOMICALLY — contract, server,
+      client and tests in one change. An ADDITIVE migration fails silently and in the direction
+      that looks healthy: a client still sending `named` while the server reads a new field sees
+      absent, absent means "the user named it", so NO group is ever marked auto-dissolving, none
+      is ever removed, and nothing errors anywhere. The safe-absence rule that exists to prevent
+      lost names is exactly what would hide the feature being dead. Delete the old field in the
+      same commit that adds the new one.
       CHECK IT POSITIVELY: `named === "generated"`. `named !== "user"` is the same sentence and
       the wrong one — an absent field is not a claim of user authorship, it is a client that
       cannot make the claim at all, and treating it as pi-web's deletes a name. Both spellings

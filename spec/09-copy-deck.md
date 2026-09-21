@@ -310,6 +310,30 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Pane's session-insight fetch failed (banner-warn) | **Couldn't load this session's subagents.** {message} Your workers keep running. We'll retry on our own. |
 | Transcript socket and load errors | the §11 state table: Live-watch and Connection copy above, and Main pane's transcript load error |
 
+## Settings · Themes (§12)
+
+| Where | Copy |
+|---|---|
+| Tab | Themes |
+| List `aria-label` | Theme |
+| Panel intro | Applies as you pick. The choice is remembered in this browser. |
+| Row accessible name | `{name}, {base} base, {origin}` — e.g. "Catppuccin Mocha, dark base, built-in" |
+| Row meta | `{Dark\|Light} base · {Built-in\|User}` · a user file holding a built-in's id adds a third clause: `Dark base · User · replaces the built-in` |
+| Row `title`, user themes | the file's full path — e.g. `~/.pi/agent/pi-web/themes/dracula.json` |
+| Swatch strip `aria-label` | Page, surface, accent, error, and text colors |
+| Font sample | `Aa 0x1F` — `Aa` in the theme's body face, `0x1F` in its mono face |
+| Broken row, name slot | `{filename}` in mono — e.g. `sunset.json` |
+| Broken row, meta slot | `We couldn't read this theme. {reason}` — `{reason}` is the parser's own message, quoted as it comes: "We couldn't read this theme. Expected double-quoted property name in JSON at position 15 (line 3 column 1)." V8 names a line for most syntax errors and not for all, so the copy never promises one |
+| Broken row, meta slot — a value we won't emit | `{key} is {value}. A color is a hex value, or one call to rgb, rgba, hsl, hsla, oklch, oklab, lab, lch, color-mix, or color.` — e.g. "accent is image-set(…). A color is a hex value, or one call to rgb, rgba, hsl, hsla, oklch, oklab, lab, lch, color-mix, or color." The accepted list is the one in §0, and stays in step with it |
+| …the same, other key families | shadows: `{key} is {value}. A shadow takes lengths, an optional inset, and a color.` (`scrim` and `skeleton-sweep` use the color message) · font stacks: `{key} is {value}. A font stack takes names, quotes, and commas — no parentheses.` · sizes: `{key} is {value}. That takes a px or em length, or 0.` · `lh-*`: `…takes a plain number.` · `fw-*`: `…takes a number from 100 to 900.` |
+| Broken row, hidden suffix | `, can't be used` |
+| Footer | Drop a `.json` file in `~/.pi/agent/pi-web/themes/` and it shows up here. |
+| Footer action | `Refresh` (icon `refresh.svg`; `aria-busy` while a refresh it started is in flight) |
+| Folder unreadable (banner) | We couldn't read `~/.pi/agent/pi-web/themes/`. Your own themes aren't listed; the built-in ones still work. Retry or check the folder's permissions. |
+| Missing theme fell back (banner) | `{id}` isn't there anymore, so you're back on Dark. |
+| Loading | skeleton rows — no copy |
+
+
 ## Timeline tab (§13)
 
 | Where | Copy |

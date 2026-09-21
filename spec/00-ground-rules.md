@@ -4,8 +4,84 @@
 ## Theme
 
 Dark is the default. `<html>` with no attribute renders dark; `<html data-theme="light">` renders
-the full light set. MVP ships no theme toggle. If one is added later, persist it in
-`localStorage` and set the attribute before first paint.
+the full light set. Those two blocks in `src/design/tokens.css` are the bases every theme stands
+on.
+
+A theme is one JSON file: `themes/<id>.json` for the ones shipped with the app,
+`~/.pi/agent/pi-web/themes/<id>.json` for the ones you drop in. It carries
+`"$schema": "pi-web-theme/v1"`, a `name`, an `extends` of `dark` or `light`, an optional `vars`
+map of named values its own later keys can reference as `"$name"`, a `colors` map keyed by the
+semantic tokens without their `--color-` / `--status-` / `--diff-` prefix, and an optional
+`typography` map (`font-body`, `font-display`, `font-mono`, `fs-*`, `lh-*`, `fw-*`, `ls-*` — a
+theme that swaps the face can adjust its tracking to match). Every key is optional: what a theme
+omits comes from the base it extends, so a three-key file is a valid theme. Values land verbatim
+on the custom property they name — the authored string, never a re-serialized one.
+
+**Every value is validated against what is allowed, never against a list of what isn't.**
+`shared/theme.ts` holds the executable definition and is the only canonical copy; this is the rule
+it implements, and nothing anywhere enumerates rejected spellings — a list of those is one CSS
+function behind the next thing that learns to fetch.
+
+| Keys | What passes |
+|---|---|
+| The 27 color keys — `bg`, `surface`, `sunken`, `ink`, `ink-2`, `ink-muted`, `border`, `border-strong`, `accent`, `accent-hover`, `accent-tint`, `on-accent`, the four `status-*` and their four `-bg` fills, the five `diff-*`, **`scrim`, and `skeleton-sweep`** | One of two shapes. **A hex value** — `#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa` — which carries no parentheses at all. Or **one call**: a name from `rgb`, `rgba`, `hsl`, `hsla`, `oklch`, `oklab`, `lab`, `lch`, `color-mix`, `color`, then `(`, then arguments, then `)`, with no second `(` anywhere in the value. Either shape: charset `A-Za-z0-9 #%(),./+-`, 120 characters |
+| `shadow-1`…`shadow-3` | The same charset, 200 characters — a shadow is a list of lengths, an optional `inset`, and a color. `box-shadow` takes no image, so the open form is safe here and only here |
+| `font-body`, `font-display`, `font-mono` | A stack: quotes and commas, **no parentheses at all**, 200 characters |
+| `fs-*`, `ls-*` | A `px` or `em` length, or a bare `0` |
+| `lh-*` | A unitless positive number |
+| `fw-*` | An integer from 100 to 900 |
+
+The point of the shape is what it excludes without naming it. A theme's `bg` reaches `background`
+at 107 sites in `base.css`, and `background` takes an image, so a value that can spell `url(…)` is
+an outbound request from the reader's browser with nothing broken and nothing escaped.
+
+`scrim` is a color key for the same reason, and it is the one that isn't obvious: it paints
+`background` at three sites (`base.css` 551, 2091, 2276), so an open charset would let it fetch
+exactly as `bg` would. `skeleton-sweep` sits inside a `linear-gradient` color stop, where a `url()`
+is invalid and couldn't fetch — it takes the color rule anyway, because every value it has ever
+held is one `rgba()` call and a key that could be stricter should be.
+
+Three clauses do that work and each stops something different. **The name list** is what refuses
+`url`, `image-set`, `src`, and everything else that fetches — not the charset, which happily
+spells `url(//host/x.png)`: a protocol-relative URL needs no colon and resolves against the
+page's own scheme. **The single `(`** is what refuses nesting, and nesting is how `var()` would
+otherwise reach a value defined outside the file — `rgb(var(--x))` has an allowed name and a legal
+charset, and is a substitution. **The charset and the length** catch the rest. A check that keeps
+only the last of the three is the plausible mistake, and it is the one that reopens `url()`.
+
+Font stacks admit no parentheses because a stack has no use for them. A value that fails becomes a
+broken row carrying its reason (§12), and the theme it came from is not applied.
+
+The server does four things, in this order, when the file is read:
+
+1. **Read the file.** A file that isn't JSON stops here and becomes a broken row (§12).
+2. **Resolve `$name`.** Every reference becomes the value it names. Nothing downstream sees a `$`.
+3. **Validate**, every key family against the table above — allowed shapes, never rejected
+   spellings.
+4. **Emit**, the authored string onto the custom property it names.
+
+**Step 3 cannot precede step 2.** It is the one order that's easy to write backwards and it fails
+in a misleading direction: a `"$base"` is not a color, so every theme that uses `vars` dies at
+once, with an error naming the color grammar while pointing at a value that was never a color.
+14 of the 18 shipped themes use `vars`.
+
+Applying a theme is not the only thing that puts its strings on screen: the picker previews
+every theme it found, painting swatches and a font sample from files nobody has selected (§12).
+Parse time is the one point upstream of all of them, so a file that fails becomes a broken row
+and its values never reach a DOM node, selected or not.
+
+`--focus-color` and `--focus-ring` are not theme keys and are never written. They resolve through
+`var(--color-accent)` in `tokens.css`, which is how a theme's own accent reaches the focus ring;
+emitting them would freeze the ring at the base theme's accent.
+
+18 themes ship: `dark` and `light`, which reproduce the two token blocks exactly, and 16 palette
+themes (Dracula, three Tokyo Nights, four Catppuccins, four Monokais, four Nords) which set
+color only and keep Inter and JetBrains Mono. A user file whose id matches a built-in replaces
+it.
+
+The choice is made in Settings → Themes (§12), persists in `localStorage` under `pi-web:theme`,
+and is applied — custom properties written, `data-theme` set to the theme's base — before first
+paint. An id that no longer resolves falls back to `dark`.
 
 ## Icons
 

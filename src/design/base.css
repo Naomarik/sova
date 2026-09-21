@@ -40,6 +40,7 @@ body {
   font-size: var(--fs-body);
   line-height: var(--lh-body);
   font-weight: var(--fw-regular);
+  letter-spacing: var(--ls-body);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -55,7 +56,7 @@ h1 { font-size: var(--fs-display-xl); line-height: var(--lh-display-xl);
 h2 { font-size: var(--fs-heading-m);  line-height: var(--lh-heading-m);
      letter-spacing: var(--ls-heading); font-weight: var(--fw-semibold); }
 h3, h4 { font-size: var(--fs-heading-s); line-height: var(--lh-heading-s);
-     letter-spacing: -.01em; font-weight: var(--fw-semibold); }
+     letter-spacing: var(--ls-heading-s); font-weight: var(--fw-semibold); }
 
 p { margin: 0 0 var(--space-4); }
 p:last-child { margin-bottom: 0; }
@@ -262,7 +263,7 @@ i.icon {
   color: var(--color-ink-2);
   font-family: var(--font-mono);
   font-size: var(--fs-micro);
-  letter-spacing: .05em;
+  letter-spacing: var(--ls-mono-caps);
   text-transform: uppercase;
   line-height: 1.2;
   white-space: nowrap;
@@ -774,6 +775,83 @@ button.list-row { width: 100%; border: 0; background: none; text-align: left; }
   }
 }
 
+/* ---- SETTINGS · THEMES. The second settings tab: one radio row per theme,
+   each carrying the evidence for the choice — a 5-swatch strip in the theme's
+   own colors and a sample in its own faces, so the row is the preview. The
+   swatches are inline-styled by the frontend (they are the only place in the
+   product that paints a color the current theme doesn't own); everything
+   around them is token-built (spec/12). ---------------------------------- */
+
+.settings-theme-list { display: flex; flex-direction: column; gap: var(--space-1); }
+
+.settings-theme-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  width: 100%;
+  min-height: var(--tap-min);
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--color-ink);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-standard);
+}
+.settings-theme-row:hover { background: var(--color-sunken); }
+.settings-theme-row:focus-visible { outline: var(--focus-ring); outline-offset: calc(var(--focus-offset) * -1); }
+/* Selected is a fill plus a 1.5px edge — the tint alone would be a color-only
+   state change, and the accent edge is what survives a contrast setting. */
+.settings-theme-row[aria-checked="true"] {
+  background: var(--color-accent-tint);
+  box-shadow: inset 0 0 0 var(--stroke-icon) var(--color-accent);
+}
+
+.settings-theme-name { font-size: var(--fs-body); font-weight: var(--fw-medium); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.settings-theme-meta { grid-column: 1; font-size: var(--fs-caption); color: var(--color-ink-muted); }
+
+.settings-theme-swatches { grid-column: 2; grid-row: 1 / span 2; display: flex; gap: var(--space-1); }
+.settings-theme-swatch {
+  width: 20px;
+  height: 20px;
+  border-radius: var(--r-full);
+  /* An inset ring, so a swatch the same color as the panel still reads as a dot
+     and the 20px box stays 20px. */
+  box-shadow: inset 0 0 0 var(--stroke-icon) var(--color-border-strong);
+}
+
+/* The sample renders in the theme's own faces: the frontend sets --theme-font-body
+   and --theme-font-mono on the row, and a palette theme that ships no typography
+   simply falls back to the app's. */
+.settings-theme-font-sample {
+  grid-column: 1;
+  font-family: var(--theme-font-body, var(--font-body));
+  font-size: var(--fs-caption);
+  color: var(--color-ink-2);
+}
+.settings-theme-font-sample .mono { font-family: var(--theme-font-mono, var(--font-mono)); font-size: var(--fs-mono); }
+
+/* A file we could read but not use. The row stays in the list carrying its own
+   error — a theme that vanishes when it breaks is a theme you can't fix. */
+.settings-theme-broken { cursor: default; color: var(--color-ink-2); }
+.settings-theme-broken:hover { background: none; }
+.settings-theme-broken .settings-theme-name { font-family: var(--font-mono); font-size: var(--fs-mono); font-weight: var(--fw-regular); }
+.settings-theme-broken .settings-theme-meta { color: var(--status-error); }
+
+.settings-theme-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: var(--stroke-thin) solid var(--color-border);
+  font-size: var(--fs-caption);
+  color: var(--color-ink-muted);
+}
+.settings-theme-footer code { font-family: var(--font-mono); font-size: var(--fs-mono); color: var(--color-ink-2); }
+
 
 
 /* ---- CHAT THREAD. Tool turns are mono and quieter than either speaker. --- */
@@ -972,7 +1050,7 @@ html.is-resizing * {
   font-family: var(--font-display);
   font-weight: var(--fw-display);
   font-size: var(--fs-heading-s);
-  letter-spacing: -.03em;
+  letter-spacing: var(--ls-wordmark);
   color: var(--color-ink);
   text-decoration: none;
   white-space: nowrap;
@@ -2154,7 +2232,7 @@ summary.sidebar-region-head .icon-twist { transition: transform var(--dur-fast) 
   font-family: var(--font-mono);
   font-size: var(--fs-micro);
   line-height: var(--lh-micro);
-  letter-spacing: .05em;
+  letter-spacing: var(--ls-mono-caps);
   text-transform: uppercase;
   color: var(--color-ink-muted);
 }
@@ -2453,7 +2531,7 @@ summary.sidebar-region-head .icon-twist { transition: transform var(--dur-fast) 
   margin: var(--space-4) 0 var(--space-2);
   font-size: var(--fs-heading-s);
   line-height: var(--lh-heading-s);
-  letter-spacing: -.01em;
+  letter-spacing: var(--ls-heading-s);
   font-weight: var(--fw-semibold);
 }
 .md h3, .md h4, .md h5, .md h6 {

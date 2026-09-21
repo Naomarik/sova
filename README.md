@@ -13,6 +13,7 @@ This is a monorepo:
 | `src/` | SolidJS + TypeScript frontend (Vite) |
 | `shared/protocol.ts` | REST/WS wire contract between the two |
 | `public/`, `src/design/`, `spec/` | Design tokens, fonts, icons, UX spec |
+| `themes/` | The built-in themes, one JSON file each (see [Themes](#themes)) |
 | `docs/` | Research and feasibility notes |
 | `pi-config/` | pi settings, keybindings, model catalog and custom extensions, symlinked into `~/.pi/agent` by `pi-config/install.sh`. It is also published on its own (see [pi-config public mirror](#pi-config-public-mirror)) |
 | `.claude/skills/` | Claude Code skills for agents working in this repo: `fold-ai-dev-design` (the design system, copied from foldaidev, tracked on purpose) and `playwright` (browser driving) |
@@ -72,6 +73,81 @@ extensions. `PI_CODING_AGENT_DIR=/tmp/somewhere` points pi and the server at a s
 directory for experiments, though some extensions still read fixed `~/.pi/agent` paths (for
 example `usage-status` reads `~/.pi/agent/auth.json`). `CLAUDE.md` has the rules for not
 corrupting sessions a TUI owns.
+
+## Themes
+
+A theme is one JSON file. The 18 that ship live in `themes/`; yours go in
+`~/.pi/agent/pi-web/themes/`, and the file's name is the theme's id. Pick one in
+**Settings → Themes**; the choice is kept in `localStorage` under `pi-web:theme` and applied
+before the first paint.
+
+```json
+{
+  "$schema": "pi-web-theme/v1",
+  "name": "Desk Lamp",
+  "extends": "dark",
+  "vars": { "amber": "#ffb454" },
+  "colors": {
+    "accent": "$amber",
+    "accent-hover": "#ffc46e",
+    "accent-tint": "#3a2f1c"
+  }
+}
+```
+
+That is a whole theme: three keys over the dark base. Anything a file leaves out comes from the
+base it extends, so you can change one color or all 30.
+
+- `name` — 1–40 characters, what the picker shows.
+- `extends` — `dark` (default) or `light`. It decides the base you overlay and the `data-theme`
+  the document gets.
+- `vars` — optional named values. A later key uses one by writing `"$name"` as its whole value;
+  a var may reference an earlier var.
+- `colors` — the semantic tokens without their `--color-` / `--status-` / `--diff-` prefix:
+  `bg`, `surface`, `sunken`, `ink`, `ink-2`, `ink-muted`, `border`, `border-strong`, `accent`,
+  `accent-hover`, `accent-tint`, `on-accent`, `status-{success,warn,error,info}` and their
+  `-bg` fills, `diff-{add,del}-{bg,ink}`, `diff-gutter`, `shadow-1`…`shadow-3`, `scrim`,
+  `skeleton-sweep`. The last five take whole CSS values, not just colors.
+- `typography` — optional: `font-body`, `font-display`, `font-mono` — font *stacks*, naming faces
+  already on the machine; a theme can't ship a font file — plus any `fs-*`, `lh-*`, `fw-*` or
+  `ls-*` step, so a theme that swaps the face can retune its tracking. Set tracking in `em`: it
+  scales with the size it applies to, these steps run from 11px to 40px, and every shipped value
+  is an `em` or a bare `0`. The 16 palette themes leave typography out and keep Inter and
+  JetBrains Mono.
+
+Values are written onto custom properties as they stand, so every one is checked when the file
+is read, against what's allowed rather than a list of what isn't:
+
+- **Colors** — a hex value, or one call to `rgb`, `rgba`, `hsl`, `hsla`, `oklch`, `oklab`, `lab`,
+  `lch`, `color-mix`, or `color`. One set of parentheses, no nesting. A color reaches a
+  `background`, and a background can load an image, so the grammar is the thing that stops a
+  theme file from fetching.
+- **Shadows** — lengths, an optional `inset`, and a color. `scrim` and `skeleton-sweep` are colors
+  and follow the color rule above.
+- **Font stacks** — quotes and commas, no parentheses.
+- **Sizes** — `fs-*` and `ls-*` take a `px` or `em` length or a bare `0`, `lh-*` a plain number,
+  `fw-*` 100 to 900.
+
+`shared/theme.ts` is the definition that actually runs. A value that fails makes the file a broken
+row with the reason on it, and the theme isn't applied. The focus ring has no key of its own: it
+follows whatever `accent` you set.
+
+**Built-in:** `dark`, `light` (the two token blocks, exactly) · `dracula` · `tokyo-night`
+(Storm), `tokyo-night-moon`, `tokyo-night-day` · `catppuccin-mocha`, `catppuccin-macchiato`,
+`catppuccin-frappe`, `catppuccin-latte` · `monokai-pro`, `monokai-classic`, `monokai-machine`,
+`monokai-ristretto` · `nord-classic`, `nord-frost`, `nord-aurora`, `nord-light`. Every one of
+them clears WCAG AA on each text pair and 3:1 on control borders, in both the page and card
+contexts. Give a file of your own the id of a built-in and yours wins — the picker marks that row
+`replaces the built-in`, so an overridden theme is never a mystery.
+
+**If a theme makes the app unreadable, you can always get back.** The picker renders in the theme
+you're wearing, so a `typography` value far outside the scale can leave you unable to read the row
+that would switch you off it. Delete or fix the file: an id that no longer resolves falls back to
+Dark. Clearing the `pi-web:theme` key in `localStorage` does the same.
+
+**Drop-in is live.** Save a file while the Themes tab is open and it appears within 2 seconds —
+no restart, no rebuild. Editing the theme you're wearing re-applies it on the same beat, which
+is the fastest way to tune one.
 
 ## Tests
 

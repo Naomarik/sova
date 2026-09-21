@@ -19,6 +19,7 @@ import { contextForBranch, normalizeEntries, readActiveBranch } from "./transcri
 import { checkTmpImage, deleteAttachment, MAX_ATTACHMENT_BYTES, readTmpImage, saveUploadedImage, sessionAttachmentsDir, UploadError } from "./attachments";
 import { listFolders } from "./folders";
 import { assignSession, cleanGroupLabel, createGroup, deleteGroup, GROUP_LABEL_MAX, readGroups, updateGroup } from "./session-groups";
+import { promptGroup } from "./group-prompt";
 // The mount module is pi-runtime-free (node builtins only): isMounted parses the mount table and
 // verifyMounted bounds a real check on a path INSIDE the mount — neither ever stats the fuse path
 // synchronously, which would block the event loop on a hung mount.
@@ -196,6 +197,23 @@ app.post("/api/session-groups/assign", async (c) => {
   if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
   const r = assignSession(idOf(path), body.groupId, label.label);
   return r.ok ? c.json({ ok: true }) : c.json({ error: r.error }, r.status);
+});
+
+// The group workspace's shared follow-up: one request, N sessions, all-or-nothing (spec §14).
+// The pre-check refuses the whole batch before a single member is prompted.
+app.post("/api/session-groups/:id/prompt", async (c) => {
+  let body: { text?: unknown; members?: unknown };
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "Expected JSON body { text, members? }" }, 400);
+  }
+  if (typeof body.text !== "string") return c.json({ error: "text must be a string" }, 400);
+  if (body.members !== undefined && (!Array.isArray(body.members) || body.members.some((m) => typeof m !== "string")))
+    return c.json({ error: "members must be an array of session ids" }, 400);
+  const r = await promptGroup(c.req.param("id"), body.text, body.members as string[] | undefined);
+  if (r.ok) return c.json(r.result);
+  return r.status === 409 ? c.json({ refused: r.refused }, 409) : c.json({ error: r.error }, r.status);
 });
 
 // Moves a web-spawned session between the sidebar regions. Changes pi-web's own id list only.

@@ -347,7 +347,7 @@ async function existingParent(raw: unknown): Promise<{ parent: string; parentId:
   return there ? { parent: path, parentId: idOf(path) } : null;
 }
 
-async function listSessionFiles(): Promise<string[]> {
+export async function listSessionFiles(): Promise<string[]> {
   const files: string[] = [];
   let top;
   try {

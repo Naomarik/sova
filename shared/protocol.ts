@@ -307,6 +307,19 @@ export interface UploadResult {
 //                                  metadata. 400 bad body/path or a label over GROUP_LABEL_MAX, 404 session
 //                                  file or group missing.
 //                                  Never writes the session file)
+// POST /api/session-groups/:id/prompt { text: string, members?: string[] (session ids) } -> BatchPromptResult
+//                                  (the shared follow-up: prompts every member of the group, in member order.
+//                                  ALL-OR-NOTHING PRE-CHECK — every member is checked before any is prompted
+//                                  (file exists, not TUI-live, not archived, no active config failure, not
+//                                  mid-turn here, no foreign/recent writer), and if any one fails the whole
+//                                  batch is refused with 409 { refused: BatchRefusal[] } having sent NOTHING.
+//                                  A member that breaks after that check is a partial send, reported in
+//                                  `failed`, never rolled back. `members` is the user's explicit subset
+//                                  ("Send to the rest"), never inferred server-side: given, every id must be
+//                                  in the group, and only those are checked and prompted. No attachments and
+//                                  no slash commands — images belong to a pane composer (spec §14).
+//                                  400 bad body, blank text, members not an array of strings, an id that is
+//                                  not a member, or the group is empty; 404 unknown group; 409 refused)
 // POST /api/sessions/archive { path, archived: boolean } -> SessionSummary   (sets/clears the archive mark; never
 //                                  writes the session file. 400 bad body/path, 404 missing, 409 archiving a live
 //                                  or non-web session)
@@ -437,6 +450,31 @@ export interface SessionGroup {
       missing from it are appended in id order) — and it is optional in the type only because an
       older server, or a hand-written store file, may not carry it. */
   members?: GroupMember[];
+}
+
+/** Why one member of a group batch prompt cannot be prompted right now
+    (POST /api/session-groups/:id/prompt). A closed set: the client renders its own sentence per
+    code and never parses `message`. "internal" is the escape hatch, so an unexpected failure
+    still carries a valid code. */
+export type BatchRefusalCode = "mid-turn" | "tui-live" | "archived" | "config" | "busy" | "missing" | "internal";
+
+/** One member the batch could not take, named four ways: `id` joins against `GroupMember.id` and
+    the assignments map, `path` is what a pane routes and opens with, `code` is for logic, and
+    `message` is the server's human sentence (a fallback, not the UI copy). */
+export interface BatchRefusal {
+  id: string; // session id
+  path: string; // canonical session path ("" when the file is gone)
+  code: BatchRefusalCode;
+  message: string;
+}
+
+/** 200 body of the batch prompt: what actually went out. `failed` is only ever populated by a
+    member that broke AFTER the pre-check passed (a TUI grabbed it in the same second) — a partial
+    send, reported, never rolled back. A pre-check refusal sends nothing and answers 409
+    { refused } instead, so `sent` here is never empty. */
+export interface BatchPromptResult {
+  sent: string[]; // session ids, in the order they were prompted
+  failed: BatchRefusal[];
 }
 
 /** The mode extension's settings (pi-config/extensions/mode). One major mode, any set of minor

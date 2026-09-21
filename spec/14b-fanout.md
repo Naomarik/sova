@@ -189,9 +189,9 @@ POST /api/session-groups/fanout
   parsed file), then the last entry on it with `normalizeEntry(entry).length > 0`. Both halves
   are required and neither substitutes for the other — the filter alone returns the abandoned
   branch's last *visible* message, which is an ordinary reply and passes any hidden-entry test.
-- **The rendered half, separately.** The two
-  are routinely different, and comparing against the raw last line turns this check into a false
-  refusal. The transcript hides several entry kinds — top-level `usage` rows (cache warming
+- **The rendered half, separately.** Even on a session nobody has rewound, the last *line* and
+  the last *rendered* entry are routinely different, and comparing against the raw last line
+  turns this check into a false refusal. The transcript hides several entry kinds — top-level `usage` rows (cache warming
   writes them and is **on by default**, so a source can easily end with one), `message` entries
   with `role:"system"`, and pi-web's own invisible `pi-web-rewind` marker, which by construction
   is the last line of every rewound session. In each case the file's last line carries an id the

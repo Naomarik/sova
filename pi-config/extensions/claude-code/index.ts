@@ -100,10 +100,12 @@ export function registerClaudeCode(pi: ExtensionAPI): void {
 			return new ClaudeRunner(options as ClaudeSpawnOptions, handlers);
 		},
 	};
+	const unregister = registerBackend(pi.events, backend);
 	// The optional top-level Claude provider (provider/) registers itself here,
 	// flag-gated (--claude-code-provider); the worker backend above is unaffected.
+	// After the backend, so a provider-side load failure cannot cost the session
+	// its Claude workers too.
 	registerClaudeCodeProvider(pi);
-	const unregister = registerBackend(pi.events, backend);
 	pi.on("session_shutdown", async () => {
 		stopped = true; unregister(); modelCache = undefined;
 		promptQueue.dispose();

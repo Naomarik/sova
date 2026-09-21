@@ -407,7 +407,19 @@ member at once.
   stay in the pane composers, where their target is one session. The `plus` trigger is absent
   here rather than present-and-disabled.
 - **Sent text appears in every included pane at once**, optimistically, as that pane's user
-  bubble — the same optimistic rule §4 gives. The group composer clears once the server accepts.
+  bubble — the same optimistic rule §4 gives.
+- **The composer clears on a clean send, and keeps the text on a partial one.** "Clears once the
+  server accepts" describes the ordinary case: `failed` empty, everyone got it, nothing left to
+  do. When `failed` is non-empty the text stays in the box, because the banner offering the
+  retry can be dismissed and the message must not go with it — k members have it and one
+  doesn't, and that is the worst moment to make someone retype from memory.
+- **But the retry sends the text as it was SENT, not as the box now reads.** `Send to {member}`
+  re-sends the exact string captured at send time. This is the one rule that cannot bend: a
+  group composer exists so that every member gets *the same message*, and a retry that picked up
+  an edited box would hand the straggler a different one under a label promising the same. So
+  the box is a convenience — visible, editable, and never the source of the retry. If the user
+  edits it and presses Send to All instead, that is a new message to everyone, which is exactly
+  what it looks like.
 - **Enter sends, Shift+Enter adds a line**, the same keys, and the same IME rule.
 
 ### Refusal

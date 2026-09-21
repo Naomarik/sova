@@ -136,6 +136,12 @@ export interface SpawnOptions {
 	wake?: boolean;
 	/** Extension sources (path, npm:, git:) loaded into the child with `-e`, on top of `--no-extensions`. */
 	extensions?: string[];
+	/**
+	 * Extension CLI flags for the child (`--<name> <value>`, or `--<name>` for `true`), after the `-e`
+	 * sources: pi matches them against the flags those extensions register (an unmatched flag is a
+	 * startup error). The remote extension's `target` is the one use today.
+	 */
+	flags?: Record<string, string | true>;
 	/** Parent session file to fork: the child starts with the parent's full message history. */
 	forkSession?: string;
 	/** Extra environment for the child, merged over the parent's (team member identity for member.ts). */
@@ -519,6 +525,15 @@ export class SubagentRunner implements Worker {
 		if (!options.allowNestedExtensions) args.push("--no-extensions");
 		// `-e` still loads after `--no-extensions`: discovery is off, explicit sources are on.
 		for (const source of options.extensions ?? []) args.push("-e", source);
+		for (const [name, value] of Object.entries(options.flags ?? {})) {
+			if (!/^[a-z][a-z0-9-]*$/.test(name) || (value !== true && (typeof value !== "string" || /[\x00-\x1f\x7f]/.test(value)))) {
+				this.taskOutcome = "error";
+				this.fail(`Invalid extension flag --${name}`);
+				return null;
+			}
+			args.push(`--${name}`);
+			if (value !== true) args.push(value);
+		}
 		// A fork copies the parent's session file into a new one; the parent's file is never written by the child.
 		if (options.forkSession) args.push("--fork", options.forkSession);
 

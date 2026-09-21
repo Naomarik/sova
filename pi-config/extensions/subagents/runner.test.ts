@@ -2050,3 +2050,18 @@ test("transcript: write/edit tool items carry a render-only +/− summary; text 
 		assert.ok(!("summary" in tools[2]), "items without a summary keep their original shape");
 	} finally { await fin(h); }
 });
+
+test("extension flags follow the -e sources as --name value / --name; a malformed flag fails the worker before spawn", async () => {
+	const h = makeRunner({ extensions: ["/x/remote/index.ts"], flags: { target: "box", "no-channel": true } });
+	await boot(h.child);
+	const args = h.spawnCalls[0].args;
+	const e = args.indexOf("-e");
+	assert.deepEqual(args.slice(e, e + 5), ["-e", "/x/remote/index.ts", "--target", "box", "--no-channel"]);
+	assert.ok(args.indexOf("--target") > args.indexOf("--no-extensions"));
+	await fin(h);
+	const bad = makeRunner({ flags: { "Bad Name": "x" } });
+	await flush();
+	assert.equal(bad.spawnCalls.length, 0);
+	assert.equal(bad.runner.status, "error");
+	assert.match(bad.runner.error ?? "", /Invalid extension flag --Bad Name/);
+});

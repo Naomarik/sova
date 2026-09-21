@@ -5,7 +5,9 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import * as os from "node:os";
-import { MEMBER_EXTENSION, MEMBER_MCP, registerSubagents, boundedText, installedPackageDir, type SubagentsOptions } from "./index.ts";
+import { MEMBER_EXTENSION, MEMBER_MCP, REMOTE_EXTENSION, REMOTE_MCP, REMOTE_MCP_TOOL_TIMEOUT_MS, registerSubagents, boundedText, installedPackageDir, type SubagentsOptions } from "./index.ts";
+import { placeholderDir } from "../remote/argv.ts";
+import { REMOTE_MCP_ENV, REMOTE_MCP_SERVER_NAME, REMOTE_SESSION_EVENT, decodeRemoteMcpIdentity } from "../remote/workers.ts";
 import { SubagentRunner } from "./runner.ts";
 import { MEMBER_ENV, awaitResponse, decodeMemberContext, memberPaths, readInbox, requestId, writeRequest, type MailboxRequest } from "./mailbox.ts";
 
@@ -2084,4 +2086,109 @@ test("the mailbox root is created only for teams, and an owned root is removed o
 		await h2.close();
 		assert.ok(fs.existsSync(injected));
 	} finally { fs.rmSync(injected, { recursive: true, force: true }); }
+});
+
+// ── Remote sessions: every worker runs on the target ──────────────────────
+
+/** A remote session, as the remote extension announces it (or as the placeholder cwd implies it). */
+function remoteHarness(agentDir: string, announce: boolean) {
+	const h = teamHarness();
+	if (announce) h.bus.emit(REMOTE_SESSION_EVENT, { version: 1, target: "box", farCwd: "/srv/app", label: "The box" });
+	// The session's local cwd is the placeholder for /srv/app on target "box".
+	h.ctx.cwd = placeholderDir(agentDir, "box", "/srv/app");
+	fs.mkdirSync(h.ctx.cwd, { recursive: true });
+	return h;
+}
+
+test("a remote session's workers run on the target: pi loads the remote extension with --target, claude gets the remote MCP server and no built-in tools", async () => {
+	const agentDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagents-remote-agent-"));
+	const prev = process.env.PI_CODING_AGENT_DIR;
+	process.env.PI_CODING_AGENT_DIR = agentDir;
+	const h = remoteHarness(agentDir, true);
+	const created: any[] = [];
+	h.bus.emit(BACKEND_REGISTER_EVENT, fakeBackend(created));
+	h.bus.emit(BACKEND_REGISTER_EVENT, { ...fakeBackend(created), id: "other" });
+	try {
+		await h.call("agent_spawn", { prompt: "pi task", tools: ["read", "bash"] });
+		const piWorker = h.workers[0];
+		assert.deepEqual(piWorker.extensions, [REMOTE_EXTENSION], "the remote extension, nothing else");
+		assert.deepEqual(piWorker.flags, { target: "box" });
+		assert.equal(piWorker.cwd, h.ctx.cwd, "the session's placeholder is the local cwd");
+		assert.deepEqual(piWorker.tools, ["read", "bash"], "the allowlist is unchanged; the runner restricts by exclusion when extensions are present");
+		assert.equal(piWorker.mcpServers, undefined);
+
+		await h.call("agent_spawn", { prompt: "claude task", backend: "claude-code", tools: ["Read"], systemPrompt: "be terse", cwd: "sub/dir" });
+		const claude = created[0];
+		assert.deepEqual(claude.tools, [], "every built-in tool is gone (--tools \"\")");
+		assert.equal(claude.extensions.length, 0);
+		assert.deepEqual(claude.env, { MCP_TOOL_TIMEOUT: String(REMOTE_MCP_TOOL_TIMEOUT_MS) }, "claude's own env carries only the MCP deadline");
+		assert.deepEqual(Object.keys(claude.mcpServers), [REMOTE_MCP_SERVER_NAME]);
+		const server = claude.mcpServers.remote;
+		assert.deepEqual([server.command, server.args], [process.execPath, [REMOTE_MCP]]);
+		const identity = decodeRemoteMcpIdentity(server.env[REMOTE_MCP_ENV])!;
+		assert.deepEqual(identity, { version: 1, target: "box", farCwd: "/srv/app/sub/dir", agentDir, label: "The box" }, "a relative worker cwd is resolved on the target");
+		assert.equal(claude.cwd, placeholderDir(agentDir, "box", "/srv/app/sub/dir"), "its local cwd is the placeholder of that far directory");
+		assert.ok(fs.statSync(claude.cwd).isDirectory(), "created so the CLI can start there");
+		assert.match(claude.systemPrompt, /^be terse\n\n/);
+		assert.match(claude.systemPrompt, /remote target "The box \(box\)" in \/srv\/app\/sub\/dir/);
+		assert.match(claude.systemPrompt, /no local file or shell tools/);
+		assert.equal(claude.model, "sonnet", "the backend's own preparation is kept");
+
+		// A team member of a remote session gets both servers; a pi member both extensions.
+		await h.call("team_create", { name: "Crew", objective: "o", members: [{ role: "lead", prompt: "t", orchestrator: true }, { role: "writer", prompt: "w", backend: "claude-code" }] });
+		const lead = h.workers.find((w: any) => w.id === "ag_03");
+		assert.deepEqual(lead.extensions, [REMOTE_EXTENSION, MEMBER_EXTENSION]);
+		assert.deepEqual(lead.flags, { target: "box" });
+		const writer = created[1];
+		assert.deepEqual(Object.keys(writer.mcpServers).sort(), [REMOTE_MCP_SERVER_NAME, "team"]);
+		assert.equal(decodeRemoteMcpIdentity(writer.mcpServers.remote.env[REMOTE_MCP_ENV])!.farCwd, "/srv/app");
+		assert.ok(decodeMemberContext(writer.mcpServers.team.env[MEMBER_ENV]));
+
+		// A cwd the parent cannot resolve, and a backend without remote tooling, are refused before any worker starts.
+		await assert.rejects(h.call("agent_spawn", { prompt: "t", cwd: "~/x" }), /absolute path on the target/);
+		await assert.rejects(h.call("agent_spawn", { prompt: "t", backend: "other" }), /cannot run workers of a remote session/);
+		assert.equal(h.workers.length + created.length, 4);
+	} finally {
+		await h.close();
+		if (prev === undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR = prev;
+		fs.rmSync(agentDir, { recursive: true, force: true });
+	}
+});
+
+test("the placeholder cwd alone identifies a remote session when the remote extension has not announced it; a target that failed to load refuses workers", async () => {
+	const agentDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagents-remote-agent-"));
+	const prev = process.env.PI_CODING_AGENT_DIR;
+	process.env.PI_CODING_AGENT_DIR = agentDir;
+	const h = remoteHarness(agentDir, false);
+	try {
+		await h.call("agent_spawn", { prompt: "pi task" });
+		assert.deepEqual(h.workers[0].extensions, [REMOTE_EXTENSION]);
+		assert.deepEqual(h.workers[0].flags, { target: "box" });
+		// The announcement wins over the placeholder, and carries what the placeholder cannot say.
+		h.bus.emit(REMOTE_SESSION_EVENT, { version: 1, target: "box", farCwd: "/srv/app", channelOff: true });
+		await h.call("agent_spawn", { prompt: "pi task 2" });
+		assert.deepEqual(h.workers[1].flags, { target: "box", "no-channel": true });
+		h.bus.emit(REMOTE_SESSION_EVENT, { version: 1, target: "box", error: 'no target named "box"' });
+		await assert.rejects(h.call("agent_spawn", { prompt: "t" }), /could not be loaded \(no target named "box"\)/);
+		assert.equal(h.workers.length, 2);
+	} finally {
+		await h.close();
+		if (prev === undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR = prev;
+		fs.rmSync(agentDir, { recursive: true, force: true });
+	}
+});
+
+test("a local session's workers are untouched by the remote wiring", async () => {
+	const h = harness();
+	const created: any[] = [];
+	h.bus.emit(BACKEND_REGISTER_EVENT, fakeBackend(created));
+	try {
+		await h.call("agent_spawn", { prompt: "pi task" });
+		assert.equal(h.workers[0].flags, undefined);
+		assert.deepEqual(h.workers[0].extensions, []);
+		await h.call("agent_spawn", { prompt: "claude task", backend: "claude-code" });
+		assert.equal(created[0].mcpServers, undefined);
+		assert.equal(created[0].env, undefined);
+		assert.equal(created[0].tools, undefined, "the backend's default tool list applies");
+	} finally { await h.close(); }
 });

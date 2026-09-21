@@ -45,6 +45,16 @@ import {
 import { MCP_SERVER_NAME } from "./member-mcp.ts";
 import { WorkerRegistryRecorder } from "./registry.ts";
 import { WorkerHosting, detachRequested, type HostingOptions } from "./hosting.ts";
+import { placeholderDir, placeholderRoot, toRemotePath } from "../remote/argv.ts";
+import {
+	REMOTE_DISCOVER_EVENT,
+	REMOTE_MCP_ENV,
+	REMOTE_MCP_SERVER_NAME,
+	REMOTE_SESSION_EVENT,
+	encodeRemoteMcpIdentity,
+	remoteWorkerInstructions,
+	type RemoteSessionEvent,
+} from "../remote/workers.ts";
 
 const MAX_LIVE = 12;
 const MAX_BATCH = 8;
@@ -197,6 +207,21 @@ export const MEMBER_EXTENSION = path.join(SELF_DIR, "member.ts");
  * run under the current runtime, which executes .ts files directly.
  */
 export const MEMBER_MCP = path.join(SELF_DIR, "member-mcp.ts");
+/**
+ * The remote extension (a sibling directory, never under SELF_DIR). A pi worker of a remote
+ * session loads it with `-e` and `--target <name>`, so its bash/read/write/edit/ls/find/grep run
+ * on the target exactly as the parent's do; a claude-code worker gets the same through the
+ * `remote` stdio MCP server (mcp-server.ts, tools mcp__remote__remote_*) and no local tools.
+ */
+const REMOTE_DIR = realpathOr(path.join(SELF_DIR, "..", "remote"));
+export const REMOTE_EXTENSION = path.join(REMOTE_DIR, "index.ts");
+export const REMOTE_MCP = path.join(REMOTE_DIR, "mcp-server.ts");
+/**
+ * claude bounds every MCP tool call with MCP_TOOL_TIMEOUT (ms) read from ITS OWN process env
+ * (a per-server env in mcp.json is ignored; default 60 s, too short for a remote build).
+ * remote_bash's 600 s maximum plus margin; the server enforces its own per-tool deadlines below it.
+ */
+export const REMOTE_MCP_TOOL_TIMEOUT_MS = 630_000;
 
 function realpathOr(p: string): string {
 	try {
@@ -286,6 +311,26 @@ function resolvePath(value: string, cwd: string): string {
 	);
 }
 
+/**
+ * The remote session a placeholder cwd stands for: <agentDir>/pi-web/targets/<name>/<far/abs/path>
+ * (server/targets.ts opens remote sessions there). Undefined for any other directory.
+ */
+function remoteOfPlaceholder(cwd: string): RemoteSessionEvent | undefined {
+	const root = path.dirname(placeholderRoot(getAgentDir(), "x"));
+	if (!cwd.startsWith(root + path.sep)) return undefined;
+	const name = cwd.slice(root.length + 1).split(path.sep)[0];
+	if (!name || !/^(?!\.+$)[A-Za-z0-9._-]+$/.test(name)) return undefined;
+	return { version: 1, target: name, farCwd: toRemotePath(cwd, placeholderRoot(getAgentDir(), name)) };
+}
+
+/** A worker's far working directory in a remote session: the spec's cwd (absolute, or relative to the session's far cwd), else the session's. */
+function remoteFarCwd(specCwd: string | undefined, sessionFarCwd: string): string {
+	if (specCwd === undefined) return sessionFarCwd;
+	const raw = specCwd.startsWith("@") ? specCwd.slice(1) : specCwd;
+	if (raw === "~" || raw.startsWith("~/")) throw new Error(`In a remote session a worker cwd must be an absolute path on the target (got ${specCwd}); ~ is the target's home, which the parent does not know here.`);
+	return path.posix.normalize(raw.startsWith("/") ? raw : path.posix.join(sessionFarCwd, raw));
+}
+
 function loadDefinition(name: string): { systemPrompt: string; model?: string } {
 	if (!/^[a-zA-Z0-9_-][a-zA-Z0-9_.-]*$/.test(name)) throw new Error("Invalid agentType name.");
 	const file = path.join(getAgentDir(), "agents", `${name}.md`);
@@ -337,6 +382,18 @@ export function registerSubagents(
 	});
 	const discoverBackends = () => pi.events?.emit(BACKEND_DISCOVER_EVENT, { version: 1 });
 	discoverBackends();
+	// A remote session (pi-config's remote extension, `--target`): its workers must run on the
+	// target too. The extension announces the session on the event bus (its flag is invisible
+	// to other extensions); the placeholder cwd is the fallback for any load order.
+	let remoteSession: RemoteSessionEvent | undefined;
+	const unregisterRemoteListener = pi.events?.on(REMOTE_SESSION_EVENT, (data: unknown) => {
+		const e = data as RemoteSessionEvent | undefined;
+		if (!e || e.version !== 1 || typeof e.target !== "string" || !e.target.trim()) return;
+		if (e.error === undefined && (typeof e.farCwd !== "string" || !e.farCwd.startsWith("/"))) return;
+		remoteSession = e;
+	});
+	pi.events?.emit(REMOTE_DISCOVER_EVENT, { version: 1 });
+	const remoteSessionFor = (ctx: ExtensionContext): RemoteSessionEvent | undefined => remoteSession ?? remoteOfPlaceholder(ctx.cwd);
 	const groups: AgentGroup[] = [];
 	const teams = new TeamStore();
 	// Worker identity records in this (owner) session file; see registry.ts.
@@ -668,14 +725,33 @@ export function registerSubagents(
 				`Live-agent cap is ${MAX_LIVE} (${live().length} alive, including idle workers). Kill some first.`,
 			);
 		// Validate the whole batch before starting any child.
+		const remote = remoteSessionFor(ctx);
+		if (remote?.error) throw new Error(`This session's remote target "${remote.target}" could not be loaded (${remote.error}); a worker would have no tools. Fix the target first.`);
 		const prepared = specs.map((spec) => {
 			if (!spec.prompt.trim()) throw new Error("Task must not be blank.");
 			const backendId = spec.backend ?? "pi";
-			const cwd = resolvePath(spec.cwd ?? ctx.cwd, ctx.cwd);
+			// Remote session: the worker's cwd is a FAR path; its local cwd is the placeholder that
+			// stands for it (created if the spec names another far directory), which exists but is
+			// empty — the worker never gets local file tools for it.
+			const farCwd = remote ? remoteFarCwd(spec.cwd, remote.farCwd!) : undefined;
+			const cwd = remote ? (farCwd === remote.farCwd ? ctx.cwd : placeholderDir(getAgentDir(), remote.target, farCwd!)) : resolvePath(spec.cwd ?? ctx.cwd, ctx.cwd);
+			if (remote && cwd !== ctx.cwd) fs.mkdirSync(cwd, { recursive: true });
 			let cwdStat: fs.Stats;
 			try { cwdStat = fs.statSync(cwd); }
 			catch (error) { throw new Error(`Cannot access working directory ${cwd}: ${(error as Error).message}`); }
 			if (!cwdStat.isDirectory()) throw new Error(`Not a directory: ${cwd}`);
+			// What a remote session's worker carries: pi loads the remote extension with the flag;
+			// claude launches the `remote` MCP server, loses every built-in tool (`--tools ""`) and is
+			// told so in its system prompt.
+			const flags = remote ? { target: remote.target, ...(remote.channelOff ? { "no-channel": true as const } : {}) } : undefined;
+			const remoteMcp = remote
+				? {
+					command: process.execPath,
+					args: [REMOTE_MCP],
+					env: { [REMOTE_MCP_ENV]: encodeRemoteMcpIdentity({ version: 1, target: remote.target, farCwd: farCwd!, agentDir: getAgentDir(), ...(remote.label ? { label: remote.label } : {}), ...(remote.channelOff ? { channel: false } : {}) }) },
+				}
+				: undefined;
+			const remoteInstructions = remote ? remoteWorkerInstructions({ target: remote.target, farCwd: farCwd!, ...(remote.label ? { label: remote.label } : {}) }) : undefined;
 			if (backendId !== "pi") {
 				const backend = backends.get(backendId);
 				if (!backend) throw new Error(`Unknown or unavailable backend ${backendId}; load its extension first.`);
@@ -686,9 +762,18 @@ export function registerSubagents(
 				const denied = spec.model !== undefined ? policyDenial(policy, backendId, spec.model) : backendDenial(policy, backendId);
 				if (denied) throw new Error(denied);
 				backend.validate(spec, ctx);
-				const prepared = backend.prepare?.({ ...spec, cwd }, ctx) ?? {};
-				return { spec, cwd, model: spec.model, tools: spec.tools, systemPrompt: spec.systemPrompt,
-					extensions: undefined, forkSession: undefined, backend, prepared };
+				let prepared = backend.prepare?.({ ...spec, cwd }, ctx) ?? {};
+				if (remote) {
+					if (backendId !== "claude-code") throw new Error(`Backend ${backendId} cannot run workers of a remote session (only pi and claude-code have remote tooling).`);
+					prepared = {
+						...prepared,
+						tools: [],
+						systemPrompt: [prepared.systemPrompt ?? spec.systemPrompt, remoteInstructions].filter(Boolean).join("\n\n"),
+						env: { MCP_TOOL_TIMEOUT: String(REMOTE_MCP_TOOL_TIMEOUT_MS) },
+					};
+				}
+				return { spec, cwd, model: spec.model, tools: remote ? [] : spec.tools, systemPrompt: spec.systemPrompt,
+					extensions: undefined, forkSession: undefined, backend, prepared, flags: undefined, remoteMcp };
 			}
 			if (spec.backendOptions !== undefined) throw new Error("backendOptions are not supported by the pi backend.");
 			const definition = spec.agentType !== undefined ? loadDefinition(spec.agentType) : undefined;
@@ -709,9 +794,10 @@ export function registerSubagents(
 			const tools = spec.tools ?? pi.getActiveTools().filter((name) => BUILTIN_TOOLS.has(name));
 			// Team members load the member tools (and nothing else from this
 			// package); ad hoc workers keep the user-facing source validation.
-			const extensions = request.team
+			const own = request.team
 				? [MEMBER_EXTENSION]
 				: spec.extensions?.map((source) => resolveExtensionSource(source, ctx.cwd));
+			const extensions = remote ? [REMOTE_EXTENSION, ...(own ?? [])] : own;
 			let forkSession: string | undefined;
 			if (spec.fork) {
 				forkSession = ctx.sessionManager.getSessionFile();
@@ -728,6 +814,8 @@ export function registerSubagents(
 				extensions,
 				forkSession,
 				systemPrompt: [definition?.systemPrompt, spec.systemPrompt].filter(Boolean).join("\n\n") || undefined,
+				flags,
+				remoteMcp: undefined,
 			};
 		});
 		const groupId = `run_${String(++groupCounter).padStart(2, "0")}`;
@@ -741,7 +829,7 @@ export function registerSubagents(
 		const launched: string[] = [];
 		const earlySettled = new Set<Worker>();
 		try {
-			for (const [index, { spec, cwd, model, tools, systemPrompt, extensions, forkSession, backend, prepared: backendPrepared }] of prepared.entries()) {
+			for (const [index, { spec, cwd, model, tools, systemPrompt, extensions, forkSession, backend, prepared: backendPrepared, flags, remoteMcp }] of prepared.entries()) {
 				for (let i = 0; i < (spec.count ?? 1); i++) {
 					const base = spec.name ?? spec.agentType ?? "agent";
 					const id = `ag_${String(++counter).padStart(2, "0")}`;
@@ -770,6 +858,12 @@ export function registerSubagents(
 							...(teamMember ? { team: { teamId: request.team!.teamId, role: teamMember.role, ...(teamMember.orchestrator ? { orchestrator: true } : {}) } } : {}),
 						})
 						: {};
+					// A claude worker's servers: the session's `remote` server (remote sessions), and the
+					// member's `team` server (team members) — a member of a remote session gets both.
+					const mcpServers = {
+						...(remoteMcp ? { [REMOTE_MCP_SERVER_NAME]: remoteMcp } : {}),
+						...(env && tooling === "mcp" ? { [MCP_SERVER_NAME]: { command: process.execPath, args: [MEMBER_MCP], env } } : {}),
+					};
 					const runner = (backend?.create ?? createRunner)(
 						{
 							model,
@@ -779,10 +873,11 @@ export function registerSubagents(
 							extensions,
 							forkSession,
 							backendOptions: spec.backendOptions,
+							...(flags ? { flags } : {}),
 							...backendPrepared,
 							backend: spec.backend ?? "pi",
 							...(env && tooling === "pi" ? { env } : {}),
-							...(env && tooling === "mcp" ? { mcpServers: { [MCP_SERVER_NAME]: { command: process.execPath, args: [MEMBER_MCP], env } } } : {}),
+							...(Object.keys(mcpServers).length ? { mcpServers } : {}),
 							...hosted,
 							id,
 							groupId,
@@ -1838,6 +1933,7 @@ export function registerSubagents(
 		unregisterAdoptListener?.();
 		publishWorkers();
 		unregisterBackendListener?.();
+		unregisterRemoteListener?.();
 		unregisterDialogListener?.();
 		backends.clear();
 		activeCtx = undefined;

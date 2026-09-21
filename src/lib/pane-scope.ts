@@ -16,7 +16,12 @@ import { announce } from "./ui-state";
 export interface PaneScope {
   /** Suffix for this pane's DOM ids, or null in the single-session view (ids stay bare). */
   id: string | null;
-  /** Short name for this pane in announcements ("Sonnet"), or null for none. */
+  /**
+   * What this pane is CALLED — the pane's accessible name, byte for byte ("control · opus-5"),
+   * or null in the single-session view. The prefix has to be that exact string: what AT says when
+   * a turn finishes must match what it says the pane is, and the model alone is not a name when
+   * two panes run the same model.
+   */
   label: () => string | null;
 }
 
@@ -39,13 +44,14 @@ export function usePaneId(): (base: string) => string {
 }
 
 /**
- * `announce`, prefixed with the pane's label inside a workspace. One region, many panes: without
- * the prefix "Reply finished." names no session.
+ * `announce`, prefixed with the pane's name inside a workspace. One polite region serves the whole
+ * page, so three panes finishing in the same second must read as three facts: "control · opus-5 —
+ * Reply finished." The dash is the separator because the name itself contains " · ".
  */
 export function usePaneAnnounce(): (text: string) => void {
   const scope = usePaneScope();
   return (text) => {
-    const label = scope.label();
-    announce(label ? `${label} · ${text}` : text);
+    const name = scope.label();
+    announce(name ? `${name} — ${text}` : text);
   };
 }

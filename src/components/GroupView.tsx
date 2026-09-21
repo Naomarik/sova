@@ -167,12 +167,17 @@ export function GroupView(props: {
       const composer = composerOf(path);
       (composer && !composer.disabled ? composer : section)?.focus();
       section?.scrollIntoView({ inline: "nearest", block: "nearest" });
-      announce(`${nameOf(path)} focused.`);
+      announce(`${nameOf(path)} — focused.`);
     });
   };
 
-  /** Ctrl+Alt+←/→ walks the row. Alt+Arrow is browser history and Ctrl+Arrow is word navigation
-      in every one of the N textareas on screen, so this is the binding left; it exists only here. */
+  /**
+   * Ctrl+Alt+←/→ walks the row. Alt+Arrow is browser history and Ctrl+Arrow is word navigation in
+   * every one of the N textareas on screen, so this is the binding left. It is registered while a
+   * workspace is mounted and torn down with it, so it exists nowhere else in the product — on the
+   * window rather than the row, because the press is just as meaningful with the focus still in
+   * the workspace head or on a tab.
+   */
   const onKeyDown = (e: KeyboardEvent) => {
     if (!e.ctrlKey || !e.altKey || (e.key !== "ArrowLeft" && e.key !== "ArrowRight")) return;
     const list = panes();
@@ -181,13 +186,15 @@ export function GroupView(props: {
     e.preventDefault();
     focusPane(next, true);
   };
+  window.addEventListener("keydown", onKeyDown);
+  onCleanup(() => window.removeEventListener("keydown", onKeyDown));
 
   // ---- Pane actions --------------------------------------------------------
   const widthOf = (path: string) => widths()[path] ?? defaultPaneWidth(viewport());
   const resize = (path: string, direction: 1 | -1) => {
     const next = stepWidth(widthOf(path), direction);
     setWidths((m) => ({ ...m, [path]: next }));
-    announce(`${nameOf(path)} ${direction === 1 ? "wider" : "narrower"}, ${next} pixels.`);
+    announce(`${nameOf(path)} — ${direction === 1 ? "wider" : "narrower"}, ${next} pixels.`);
   };
 
   /** Move Left / Move Right send the WHOLE order — that is what `PATCH {order}` means. */
@@ -197,7 +204,7 @@ export function GroupView(props: {
     const order = movePane(rows().map((m) => m.id), s.id, direction);
     const at = order.indexOf(s.id);
     if (!(await setGroupOrder(id(), order))) return;
-    announce(`${nameOf(path)} moved ${direction === 1 ? "right" : "left"}, position ${at + 1} of ${order.length}.`);
+    announce(`${nameOf(path)} — moved ${direction === 1 ? "right" : "left"}, position ${at + 1} of ${order.length}.`);
     // The thing you moved is the thing you are still looking at.
     queueMicrotask(() => document.getElementById(`pane-${paneIdFor(path)}`)?.scrollIntoView({ inline: "nearest", block: "nearest" }));
   };
@@ -321,7 +328,7 @@ export function GroupView(props: {
           </div>
         }
       >
-        <div class="workspace-row" data-mode={mode()} aria-label="Members" onKeyDown={onKeyDown}>
+        <div class="workspace-row" data-mode={mode()} aria-label="Members">
           <For each={panes()}>
             {(path) => {
               const paneId = paneIdFor(path);

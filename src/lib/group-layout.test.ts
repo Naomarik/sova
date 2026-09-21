@@ -36,7 +36,8 @@ test("Move Left/Right walks one step, returns the whole order, and does nothing 
   assert.deepEqual(movePane(["a", "b"], "gone", 1), ["a", "b"]);
 });
 
-test("removing a pane hands focus to its right-hand neighbour, else its left", () => {
+// The focus move itself is the workspace's; this asserts only which pane it picks.
+test("neighbourOf picks the removed pane's right-hand neighbour, else its left", () => {
   assert.equal(neighbourOf(["a", "b", "c"], "b"), "c");
   assert.equal(neighbourOf(["a", "b"], "b"), "a");
   assert.equal(neighbourOf(["a"], "a"), null);

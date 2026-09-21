@@ -132,7 +132,7 @@ export function SessionView(props: {
   const model = () => (decision().mode === "chat" ? (chatModel() ?? s().model) : s().model);
   const author = () => shortModel(model()) ?? "pi";
   /** This pane's scope: its id for every DOM id below, its model for what it announces. */
-  const scope: PaneScope = { id: props.paneId ?? null, label: () => (props.paneId ? author() : null) };
+  const scope: PaneScope = { id: props.paneId ?? null, label: () => (props.paneId ? paneName() : null) };
 
   // Outline, teams and workers of this session; reloaded (debounced) when its file changes, and
   // polled while the session pane is open for it — the one poller of this endpoint. The pane

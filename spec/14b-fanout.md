@@ -127,9 +127,9 @@ Two facts, stated plainly, because the whole gesture multiplies both: how full e
 and what every shared turn costs from then on.
 
 ```
-claude-opus-5 ×2      48k of 1M · 4%
-glm-5.3 ×2            48k of 200k · 24%
-haiku-4.5             48k of 200k · 24%
+anthropic/claude-opus-5 ×2    48k of 1M · 4%
+zai/glm-5.3 ×2                48k of 200k · 24%
+anthropic/haiku-4.5           48k of 200k · 24%
 
 5 members × ~48k tokens re-sent every shared turn.
 Turns start together, so one provider may answer some members with 429. pi-web doesn't stagger them.

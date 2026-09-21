@@ -577,20 +577,41 @@ export function GroupView(props: {
         when={panes().length > 0}
         fallback={
           <div class="center-fill">
-            <div class="empty">
-              <Icon name="folder" class="empty-mark" />
-              <p class="empty-title">{quoted(props.group.name)} has no sessions yet.</p>
-              <p class="empty-body">Add some here, or drag a row onto the group in the sidebar.</p>
-              <div class="cluster">
-                <button type="button" class="button empty-action" onClick={() => setAdding(true)}>
-                  <Icon name="plus" />
-                  Add Members
-                </button>
-                <button type="button" class="button" onClick={props.wiring.onFanOut}>
-                  Fan Out…
+            {/* Two empty states, and the difference is whether this group ever HAD members. A
+                fanout group with none left did not fail to fill: its sessions were deleted
+                outside pi-web, and "no sessions yet" would be the wrong story about the same
+                screen. `seed` is the only thing that tells them apart — a group pi-web fanned
+                out, or a hand-made one that adopted lineage. */}
+            <Show
+              when={props.group.seed}
+              fallback={
+                <div class="empty">
+                  <Icon name="folder" class="empty-mark" />
+                  <p class="empty-title">{quoted(props.group.name)} has no sessions yet.</p>
+                  <p class="empty-body">Add some here, or drag a row onto the group in the sidebar.</p>
+                  <div class="cluster">
+                    <button type="button" class="button empty-action" onClick={() => setAdding(true)}>
+                      <Icon name="plus" />
+                      Add Members
+                    </button>
+                    <button type="button" class="button" onClick={props.wiring.onFanOut}>
+                      Fan Out…
+                    </button>
+                  </div>
+                </div>
+              }
+            >
+              <div class="empty">
+                <Icon name="folder" class="empty-mark" />
+                <p class="empty-title">Every session in {quoted(props.group.name)} is gone.</p>
+                <p class="empty-body">
+                  Their files were deleted outside pi-web. The group is all that's left of the fanout.
+                </p>
+                <button type="button" class="button empty-action button-destructive" onClick={() => void dissolve()}>
+                  Dissolve
                 </button>
               </div>
-            </div>
+            </Show>
           </div>
         }
       >

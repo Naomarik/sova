@@ -6,7 +6,7 @@ import { createSession, fetchAgents, fetchExplanations, fetchUsage, listSessions
 import { agentsHref, insightsRouteFromHash, legacyInsightsTarget } from "./lib/insights";
 import { transcriptRoot } from "./lib/jump";
 import { groupRouteFromHash } from "./lib/group-route";
-import { sessionGroups, sessionGroupsLoaded } from "./lib/session-groups";
+import { loadSessionGroups, sessionGroups, sessionGroupsLoaded } from "./lib/session-groups";
 import { createThenArchive, newSessionCwd } from "./lib/new-session";
 import { cwdLabel } from "./lib/remote-session";
 import { createPoll } from "./lib/poll";
@@ -244,11 +244,29 @@ export function App() {
     const pane = path && groupRoute() ? paneIdFor(path) : null;
     return pane ? `transcript-${pane}` : "transcript";
   };
-  // A workspace route for a group that isn't there (deleted, or made on another server) never
-  // renders an empty frame: it says so and goes back to the list. Only once the groups have
-  // actually been read — before that, "unknown" only means "not heard of yet".
+  /**
+   * A workspace route for a group that isn't there never renders an empty frame: it says so and
+   * goes back to the list. But "this tab hasn't heard of it" is not "it doesn't exist" — a group
+   * made in another tab, or on another server, is unknown here until the list is re-read. So an
+   * unknown id buys one reload first, and only a second miss is a verdict. Without that, pasting
+   * a workspace link from another tab bounces with a sentence that is false.
+   *
+   * The sidebar guards the same case the same way for a row whose `groupId` it doesn't know.
+   */
+  const rechecked = new Set<string>();
   createEffect(() => {
-    if (!groupRoute() || !sessionGroupsLoaded() || openGroup()) return;
+    const id = groupRoute()?.id;
+    // Read the LIST, not the memo over it: `openGroup()` is null both before and after a reload
+    // that doesn't find the group, and a memo whose value doesn't change notifies nobody — so
+    // depending on it here meant the verdict never ran and the route sat on an empty frame,
+    // which is the one thing §14 says routing must never do.
+    const known = sessionGroups().some((g) => g.id === id);
+    if (!id || !sessionGroupsLoaded() || known) return;
+    if (!rechecked.has(id)) {
+      rechecked.add(id);
+      void loadSessionGroups();
+      return;
+    }
     toast("That group is gone.");
     location.hash = "#/";
   });

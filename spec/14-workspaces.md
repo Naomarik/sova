@@ -644,6 +644,16 @@ Same fact, same size, one of them safe by construction.
 The name that reads most naturally is not reliably the one that fails safe, so choose the
 polarity first and the wording second.
 
+**A safe absence default means the field cannot be migrated additively.** The property that
+protects you from an old client — absence reads as the harmless answer — is the same property
+that hides a half-finished migration. Add a replacement field beside the old one and the client
+still sends the old; the server reads the new one, sees absence, applies the safe default, and
+**the feature goes quietly inert**: nothing errors, nothing is destroyed, and the behaviour the
+field existed to produce simply never happens. That is the failure shape hardest to notice,
+because it looks like the system working. So a field with a safe absence default is replaced in
+**one atomic change** — add, delete the old, update every reader and writer in the same window
+— never additively, and never "deprecate and clean up later".
+
 **Name the event, not the moment.** A rule anchored to a moment — "capture it at prefill" —
 assumes the value is written once, which is true until some mode writes it repeatedly. Anchor
 to the event instead: *whenever we write this field*. The moment form is the same mistake as

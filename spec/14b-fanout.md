@@ -170,6 +170,21 @@ POST /api/session-groups/fanout
 -> 201 { group: SessionGroup; created: SessionSummary[]; failed: BatchRefusal[] }
 ```
 
+- **`groupId` (optional) fans out INTO an existing group** instead of making one. It is what
+  the workspace's `Add Members → Fan Out…` sends, and `name` is ignored when it is present — the
+  group already has a name, and the user is adding to it rather than renaming it. Three cases,
+  decided by the seed:
+  - **The group has no `seed`** (hand-made, or a fresh-mode fanout): it **adopts** this fork's
+    seed, and its existing members simply have no marker — which §14b already renders as no row
+    rather than a guess.
+  - **The group's `seed` matches this fork** (same `parentSessionPath` and `leafId`): the new
+    members are **appended**. This is the case that makes "I want two more of these" work.
+  - **The group's `seed` differs**: `400 seed-conflict`. **One group carries one seed**, because
+    the fork marker and `Align to Fork` read exactly one leaf; a group holding two lineages would
+    have to either mark members against a point they never diverged at, or pick one lineage and
+    silently un-mark the rest. Both fabricate a fact the contract cannot carry — the same reason
+    a marker's position is never inferred from `parent`/`parentId`. Fan out into a new group
+    instead; the two groups can sit side by side.
 - **`source` and `cwd` are exclusive**, and exactly one is required: a request with both, or
   neither, is a `400`. There is no third mode, and a fanout with no starting point is not a
   thing the dialog can produce.

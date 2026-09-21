@@ -1167,9 +1167,13 @@ summary.sidebar-region-head .icon-twist { transition: transform var(--dur-fast) 
 .group-option { align-items: center; }
 .group-option-icon { flex: none; color: var(--color-ink-muted); }
 /* The Session tab sits near the bottom of a tall window: with no room below the trigger,
-   the menu grows upward instead. Under 768px the sheet rules own the position either way. */
+   the menu grows upward instead. Under 768px the sheet rules own the position either way.
+   COMPOUND ON PURPOSE: `.model-menu` (below) sets `inset: auto; top: var(--menu-top)` at the
+   same specificity and LATER in the file, so a bare `.group-menu-up` loses the cascade and the
+   upward anchor silently never applies. The menu carries both classes, so `.model-menu.group-menu-up`
+   wins on specificity rather than on source order — which keeps working if either rule moves. */
 @media (min-width: 768px) {
-  .group-menu-up { top: auto; bottom: var(--menu-bottom, 72px); }
+  .model-menu.group-menu-up { top: auto; bottom: var(--menu-bottom, 72px); }
 }
 
 /* ---- SESSION ROW. The row's state lives in a fixed LEFT rail, wordless, so

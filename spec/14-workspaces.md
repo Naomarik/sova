@@ -261,7 +261,7 @@ apply verbatim. What changes is scoping and chrome:
 | Ready | The chat, the composer live | Included |
 | Mid-turn | The chat, the run status row, `Steer` in its own composer (§4) | **Excluded**, reason "mid-turn". A shared prompt is not a steer |
 | Open in a TUI | A **watch** pane: read-only transcript, the `TUI` chip (accent, static), and in place of a composer the `.composer-reason` "This session is open in a terminal, so pi-web won't write to it." | Excluded, reason "open in a terminal" |
-| Archived | The chat, read normally, with a neutral `.chip` "Archived" in the pane head and its composer disabled, reason "This session is archived. Unarchive it to send." **Archiving is the close gesture**: the server disposes the held runtime, so the pane's `/ws/chat` closes from the server side moments after Eliminate. That close is **expected** — the pane keeps rendering the transcript it has and shows the Archived chip, never the disconnected or busy banner a single-session view would show for the same event | Excluded, reason "archived". An eliminated member stays visible and readable — that is what makes elimination reversible |
+| Archived **while still a member** — archived from its own pane, or from anywhere else, without leaving the group | The chat, read normally, with a neutral `.chip` "Archived" in the pane head and its composer disabled, reason "This session is archived. Unarchive it to send." **Archiving is the close gesture**: the server disposes the held runtime, so this pane's `/ws/chat` closes from the server side while the pane is still mounted. That close is **expected** — the pane keeps rendering the transcript it has and shows the Archived chip, never the disconnected or busy banner a single-session view would show for the same event. This is the only state in which that happens; an **eliminated** session is not a member and has no pane (see Eliminate) | Excluded, reason "archived" |
 | Config error | The §1 open-failure banner, in the pane's own banner slot, with its own actions (Mount and reconnect · Reconnect · Archive). The transcript area keeps whatever loaded | Excluded, reason "can't be opened" |
 | Foreign-write busy | The `busy` banner the single-session view already shows, with its `Reconnect (force)` action, and the composer disabled | Excluded, reason "another program is writing to it" |
 | Gone from disk (the session file, checked by shape plus one async stat — never a sync stat, and never the member's `cwd`) | The pane is replaced by an `.empty` inside the pane: **"This session's file is gone."** Its transcript was deleted outside pi-web. Removing it from the group is all that's left. · button `Remove From Group` | Excluded, reason "the file is gone" |
@@ -425,7 +425,17 @@ All four are writes to the group registry. None of them touches a session's JSON
   a worse outcome than a button that explains itself, and it is left for the genuine race — a
   turn that starts between the check and the write — where §9's "Removed **{title}** from
   “{name}”, but couldn't archive it." is the honest report. The non-web case is not a refusal to
-  route around but a different gesture, below. The toast names both writes: "Removed **{title}** and archived it." For a session pi-web did not start, the
+  route around but a different gesture, below.
+  - **The pane goes.** An eliminated session is no longer a member, so it leaves the workspace on
+    the next list refresh. It does not linger greyed out: a pane is a member, and a view that
+    kept showing one that isn't would be the workspace disagreeing with the group.
+  - **What "reversible" means, exactly.** Nothing is destroyed: the transcript is intact, the
+    session is readable at `#/s/{path}`, and it sits in the Archive. Getting it back is two
+    deliberate gestures — Unarchive, then `Add Members` — and there is no undo chip, unlike
+    Promote. Promote gets one because it also navigates you away, so a mis-click moves the ground
+    under you; Eliminate leaves you exactly where you were, looking at the members you kept.
+
+  The toast names both writes: "Removed **{title}** and archived it." For a session pi-web did not start, the
   archive half is not available (§2 "Archiving" is web-origin only), the button reads
   `Remove From Group`, and its `title` says why: "This session wasn't started in pi-web, so
   removing it is all we can do — nothing is archived." One word for two behaviors would be the
@@ -482,7 +492,12 @@ no longer names anything.
 ## Announcements
 
 **One polite live region for the whole workspace**, at the body like every other portal, and
-**every message names its member first**:
+**every message names its member first**. The prefix is **the pane's accessible name, the same
+string its `aria-label` carries** — `{label or title} · {model}` — not the model alone and not
+anything recomputed: a prefix naming something that isn't on screen is worse than no prefix,
+because it sounds like a different pane. The separator between name and fact is **an em dash**,
+not the `·` the name already contains, so "Retry with jitter · opus-5 — replied." reads as a
+name and a fact rather than three things in a list:
 
 - "control · claude-opus-5 — replied."
 - "glm-5.3 #2 — working."

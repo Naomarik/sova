@@ -57,6 +57,15 @@ const forgetPromoted = (groupId: string) =>
     return next;
   });
 
+/**
+ * The pane the workspace has focused, for the app shell outside it — the skip link's target, and
+ * which session the shell treats as "the one on screen". It can't be read off the route: moving
+ * between panes only REPLACES the URL (focus is not history), and replaceState fires no
+ * hashchange, so a route-derived answer would name the pane you left.
+ */
+const [workspaceFocus, setWorkspaceFocus] = createSignal<string | null>(null);
+export { workspaceFocus };
+
 /** Whether a member is mid-turn: what the tab's live dot and Eliminate's refusal both read. */
 const running = (s: SessionSummary | undefined) => !!s && (s.busy || sessionWorking(s) > 0);
 
@@ -170,8 +179,10 @@ export function GroupView(props: {
   // The route always names the focused pane, so a reload (and a copied link) comes back to it.
   createEffect(() => {
     const at = active();
+    setWorkspaceFocus(at);
     if (at && at !== props.focused) history.replaceState(history.state, "", groupHref(id(), at));
   });
+  onCleanup(() => setWorkspaceFocus(null));
 
   /**
    * Focus moves the user asked for (a tab, the pane menu, Ctrl+Alt+←/→) put the keyboard in that

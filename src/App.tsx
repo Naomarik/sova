@@ -18,7 +18,7 @@ import { AgentsView } from "./components/AgentsView";
 import { NewSessionDialog } from "./components/NewSessionDialog";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { ExplainGrid } from "./components/ExplainGallery";
-import { GroupView, paneIdFor, type PaneWiring } from "./components/GroupView";
+import { GroupView, paneIdFor, workspaceFocus, type PaneWiring } from "./components/GroupView";
 import { SessionPane, type PaneInsight, type TabId } from "./components/SessionPane";
 import { SessionView } from "./components/SessionView";
 import { sessionHref, Sidebar } from "./components/Sidebar";
@@ -215,7 +215,9 @@ export function App() {
   };
 
   /** The session everything session-shaped is about: the open one, or a workspace's focused pane. */
-  const focusedPath = () => route() ?? groupRoute()?.path ?? null;
+  // In a workspace the focused pane is the workspace's own state, not the route's: moving between
+  // panes replaces the URL without a hashchange, so `groupRoute()` names the pane you left.
+  const focusedPath = () => route() ?? workspaceFocus() ?? groupRoute()?.path ?? null;
   const summary = createMemo(() => {
     const p = focusedPath();
     return (p ? summaryOf(p) : undefined) ?? null;
@@ -415,8 +417,25 @@ export function App() {
 
   return (
     <>
-      {/* In a workspace the transcripts are the panes': the link points at the focused one. */}
-      <a class="button skip-link" href={`#${transcriptIdOf(focusedPath())}`}>
+      {/*
+        In a workspace the transcripts are the panes': the link points at the focused one, and its
+        name and target move together (spec/14-workspaces.md "Accessibility").
+
+        The press is handled rather than followed, because in this app the hash IS the route: letting
+        the browser navigate to "#transcript" would replace `#/s/<path>` and drop the reader onto the
+        session list — out of the very transcript they asked to skip into. Focusing the region is what
+        the link means anyway; the `href` stays so it is still a link, and still announced as one.
+      */}
+      <a
+        class="button skip-link"
+        href={`#${transcriptIdOf(focusedPath())}`}
+        onClick={(e) => {
+          const el = document.getElementById(transcriptIdOf(focusedPath()));
+          if (!el) return; // nothing rendered to skip to: leave the browser to it
+          e.preventDefault();
+          el.focus();
+        }}
+      >
         Skip to Transcript
       </a>
       <div class="app" data-view={groupRoute() ? "workspace" : route() || insightsRoute() ? "session" : "list"}>

@@ -80,7 +80,8 @@ export function GroupComposer(props: {
       // the user for.
       setPartial(null);
       setRefused(out.refused);
-      announce(`Nothing was sent. ${out.refused.length} ${out.refused.length === 1 ? "member" : "members"} can't take a message right now.`);
+      // No announce() here: the banner is a role=status, so it speaks for itself. Saying it twice
+      // in one region reads as two events, and the second one is a summary of the first.
       return;
     }
     toast(`Couldn't send to this group. ${out.error}`);

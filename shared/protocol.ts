@@ -321,6 +321,54 @@ export interface SubagentModelPolicy {
   disabledModels: string[];
 }
 
+// GET /api/themes                -> ThemeList (built-ins + the user's folder, rescanned per request;
+//                                  never fails: an unreadable folder comes back as `error` with the
+//                                  built-ins still listed)
+// ---------------------------------------------------------------------------
+/** A theme's resolved custom properties: theme key (`bg`, `ink-2`, `status-success`, `shadow-1`,
+    `font-body`, `fs-body`, …) → the authored string, VERBATIM. shared/theme.ts CSS_PROPERTY maps
+    each key to the custom property it lands on; `--focus-color` and `--focus-ring` are never in
+    here (they track the accent through var(), spec/00-ground-rules.md §0). */
+export type ThemeTokens = Record<string, string>;
+
+/** One row of Settings → Themes (spec/12-settings-dialog.md §12). The server has already read,
+    deref'd (`$name`) and validated the file, so every string here is safe to paint — which is
+    what lets a row preview swatches and a font sample from a file nobody selected. */
+export interface ThemeInfo {
+  /** The file's basename without `.json`; what localStorage stores under `pi-web:theme`. */
+  id: string;
+  /** The file's `name`. Empty on a broken row, where §12 shows the filename instead. */
+  name: string;
+  /** Where the file came from. A user file whose id matches a built-in replaces it. */
+  source: "builtin" | "user";
+  /** Absolute path of the file. §12 puts a user row's path in its `title`. */
+  path: string;
+  /** The base it extends: `data-theme` is set to this before its tokens are written. */
+  base: "dark" | "light";
+  /** The base's tokens overlaid by this theme's own — complete, so applying it needs no lookup.
+      A broken row (`error` set) is never worn and gets no base fill: it carries only what it
+      authored and we accepted, which is empty when the file never parsed. */
+  tokens: ThemeTokens;
+  /** Everything we declined to take from the file, in file order, each one a §12 reason line:
+      a value we won't emit, an unknown key, a `$name` that didn't resolve. */
+  warnings: string[];
+  /** Set when the theme can't be worn: the file isn't JSON (the parser's own message), it has
+      no name, or it holds a value we won't emit. §12 draws these as disabled rows. */
+  error?: string;
+  /** True on a user file that took a built-in's id — §12 says so in the row's meta line. */
+  replacesBuiltin?: boolean;
+}
+
+/** GET /api/themes. Built-ins first (`dark`, `light`, then the rest by id), user themes after. */
+export interface ThemeList {
+  /** The folder a dropped-in theme goes in, absolute — §12 names it in the footer. */
+  dir: string;
+  themes: ThemeInfo[];
+  /** Why the user folder couldn't be read, when it couldn't. The built-ins are listed anyway:
+      the app's own themes don't depend on it (§12). A missing folder is not an error. */
+  error?: string;
+}
+
 
 export interface ModelInfo {
   /** "provider/modelId" — the canonical ref used in set_model. */

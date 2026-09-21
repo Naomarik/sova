@@ -23,6 +23,7 @@ import { findTarget, isTargetName, listRemoteFolders, listTargets, normalizeRemo
 import { isExplanationId, listExplanations, readExplanationPage } from "./explanations";
 import { switchMode } from "./mode";
 import { readSubagentPolicy, writeSubagentPolicy } from "./settings";
+import { listThemes } from "./themes";
 import { modeInfo, parseModePatch, readMode } from "./mode-state";
 import { attachWebSockets } from "./ws";
 
@@ -271,6 +272,12 @@ app.put("/api/settings/subagents", async (c) => {
   const result = writeSubagentPolicy(body);
   return "error" in result ? c.json({ error: result.error }, 400) : c.json(result);
 });
+
+// Every theme we can find (spec/12-settings-dialog.md §12): the 18 shipped ones plus whatever is in
+// ~/.pi/agent/pi-web/themes/, rescanned per request. Read-only — the choice is the browser's, kept
+// in localStorage (§0), so there is nothing here to write. Never fails: a file we can't use comes
+// back as a row carrying its reason, and an unreadable folder as `error` beside the built-ins.
+app.get("/api/themes", (c) => c.json(listThemes()));
 
 // The mode is per session (spec/04g-mode-menu.md §4g). ~/.pi/agent/mode.json is the default new sessions
 // start from; GET reads it, POST without ?path= writes it and changes no open chat.

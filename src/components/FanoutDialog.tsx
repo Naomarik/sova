@@ -75,6 +75,11 @@ export function FanoutDialog(props: {
    * It is also the one fact only this client holds: the server receives a string and cannot tell
    * "accepted our default" from "typed their own", because the default is generated HERE (§14b).
    * That distinction decides whether the group is pi-web's to delete when it empties.
+   *
+   * ONE SIGNAL, TWO RULES, NEITHER REDUNDANT: it gates regeneration (the input handler below) and
+   * it reports provenance (`named`, via fanoutBody). Deleting it does not merely break a
+   * comparison somewhere else — there is no comparison and no second signal — it breaks
+   * provenance directly, and every fanout group becomes user-named in a way nothing reports.
    */
   const [nameTouched, setNameTouched] = createSignal(false);
   const [text, setText] = createSignal("");
@@ -238,7 +243,10 @@ export function FanoutDialog(props: {
                 value={text()}
                 onInput={(e) => {
                   setText(e.currentTarget.value);
-                  // Only while the name is still ours to guess at.
+                  // Only while the name is still ours to guess at. THIS SAME SIGNAL DECIDES
+                  // PROVENANCE (`nameTouched` at :79 → `named` in fanoutBody), so changing when
+                  // regeneration stops also changes who owns the name — and no test in this file
+                  // would fail. Anyone altering either rule owns both (§14b).
                   if (!props.source && !nameTouched()) setName(defaultGroupName(e.currentTarget.value));
                 }}
               />

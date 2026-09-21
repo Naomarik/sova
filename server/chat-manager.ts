@@ -92,6 +92,9 @@ export async function warmClaudeCodeProvider(modelRuntime: ModelRuntime, cwd: st
       mode: "rpc",
       onError: (err) => console.warn(`[chat] claude-code warm-up extension error (${err.extensionPath}): ${err.error}`),
     });
+    // The registration now lives in the shared runtime; the session itself must not outlive the
+    // warm-up, or every extension's session_start side effects (timers, live records) would.
+    session.dispose();
   } catch (err) {
     console.warn(`[chat] claude-code warm-up failed: ${err instanceof Error ? err.message : String(err)}`);
   }

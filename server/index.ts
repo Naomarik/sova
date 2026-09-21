@@ -286,7 +286,17 @@ app.put("/api/settings", async (c) => {
     return c.json({ error: "Expected JSON body { experimental: { claudeCodeProvider } }" }, 400);
   }
   const result = writeWebSettings(body);
-  return "error" in result ? c.json({ error: result.error }, 400) : c.json(result);
+  if ("error" in result) return c.json({ error: result.error }, 400);
+  // Turning the switch on registers the provider now, so the very next GET /api/models offers the
+  // Claude Code models without a server restart. Best-effort, like the startup warm-up.
+  if (result.experimental.claudeCodeProvider) {
+    try {
+      await warmClaudeCodeProvider(await getModelRuntime(), getAgentDir());
+    } catch (err) {
+      console.warn("[server] claude-code warm-up skipped:", err instanceof Error ? err.message : String(err));
+    }
+  }
+  return c.json(result);
 });
 
 // Is the Claude Code CLI actually usable? `claude --version` plus how many of its models the

@@ -174,7 +174,18 @@ POST /api/session-groups/fanout
   neither, is a `400`. There is no third mode, and a fanout with no starting point is not a
   thing the dialog can produce.
 - **The client sends the leaf it showed the user.** `source.leafId` is the entry the dialog named
-  ("up to message 34"), not a request for the server to find the current one. If it no longer is
+  ("up to message 34"), not a request for the server to find the current one.
+- **"The leaf" means the last entry pi-web would RENDER, not the last line of the file.** The two
+  are routinely different, and comparing against the raw last line turns this check into a false
+  refusal. The transcript hides several entry kinds — top-level `usage` rows (cache warming
+  writes them and is **on by default**, so a source can easily end with one), `message` entries
+  with `role:"system"`, and pi-web's own invisible `pi-web-rewind` marker, which by construction
+  is the last line of every rewound session. In each case the file's last line carries an id the
+  dialog never displayed and the user never saw, so a raw comparison refuses a fork that is
+  perfectly current. The failure is worse than a spurious error: `stale-leaf`'s copy tells the
+  user to reopen and fork from the new last message, and reopening shows them the same last
+  message it showed before. An instruction that cannot be followed is the one thing a refusal
+  must never be. If it no longer is
   the source's leaf, the server refuses. The other refusals make this nearly unreachable — the
   leaf can only move if something wrote, and every writer is already grounds to refuse — but
   "nearly" is doing real work: a turn can start and finish between the dialog opening and Create.

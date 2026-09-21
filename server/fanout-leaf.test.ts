@@ -1,5 +1,15 @@
 // Run: npx tsx --test server/fanout-leaf.test.ts
-// The leaf a fanout compares against is the last entry pi-web would RENDER, not the last line.
+// The leaf a fanout compares against is the last entry pi-web would RENDER ON THE ACTIVE BRANCH,
+// not the last line of the file.
+//
+// RULE FOR THIS FILE, learned the hard way twice: when a test's subject is a FILE SHAPE, derive
+// the fixture from the code that WRITES that shape, never from the shape the assertion needs.
+// Both earlier versions of these tests were green against files production cannot produce — a
+// rewind marker parented on the reply instead of the target (appendCustomEntry takes parentId
+// from the leaf, which navigateTree has already moved), and an assertion feeding the ABANDONED
+// entry as the leaf the dialog showed. Two errors that cancelled, so the suite certified
+// branch-awareness the code did not have. Every marker below comes from the `rewind` helper,
+// which mirrors server/chat-manager.ts rewindSession.
 // Real files, real reader: the bug these cover is that the file routinely ends in something the
 // transcript hides, and comparing against THAT refuses an untouched source as stale — telling the
 // user to fork from a "new last message" that looks exactly like the one they already had.

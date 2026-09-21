@@ -14,7 +14,7 @@ import {
   type GroupLayoutMode,
 } from "../lib/group-layout";
 import type { RewindControl } from "../lib/inputs";
-import { memberLabel, orderedMembers, quoted, setGroupOrder, setSessionGroup, tabLabels } from "../lib/session-groups";
+import { loadSessionGroups, memberLabel, orderedMembers, quoted, sessionGroups, setGroupOrder, setSessionGroup, tabLabels } from "../lib/session-groups";
 import { announce, toast } from "../lib/ui-state";
 import { sessionWorking, type UsageTotalView } from "../lib/workers";
 import type { PaneInsight, TabId } from "./SessionPane";
@@ -41,6 +41,21 @@ export function paneIdFor(path: string): string {
 
 /** The composer of a pane, for the focus moves. A disabled (read-only) one takes no focus. */
 const composerOf = (path: string) => document.getElementById(`composer-input-${paneIdFor(path)}`) as HTMLTextAreaElement | null;
+
+/**
+ * The last Promote, per group: what the head's `Promoted: {title}` chip offers to undo. Module
+ * state, so walking to the promoted session and back still finds the offer — that walk is when
+ * a promote made by mistake is noticed. Never persisted: it is an undo for the gesture, not a
+ * record of it, so a reload drops it (spec/14-workspaces.md "Group lifecycle").
+ */
+const [promoted, setPromoted] = createSignal<Record<string, { path: string; id: string; title: string; label: string | null; index: number }>>({});
+const forgetPromoted = (groupId: string) =>
+  setPromoted((m) => {
+    if (!(groupId in m)) return m;
+    const next = { ...m };
+    delete next[groupId];
+    return next;
+  });
 
 /** Whether a member is mid-turn: what the tab's live dot and Eliminate's refusal both read. */
 const running = (s: SessionSummary | undefined) => !!s && (s.busy || sessionWorking(s) > 0);
@@ -221,7 +236,8 @@ export function GroupView(props: {
     const s = summaryOf(path);
     const title = s?.title ?? "this session";
     const next = neighbourOf(panes(), path);
-    if (!(await setSessionGroup(path, null))) return;
+    const result = await setSessionGroup(path, null);
+    if (!result) return;
     let done: string;
     if (!archive) {
       // Remove-only on a session pi-web didn't start is the whole story, and says so: there was
@@ -240,19 +256,61 @@ export function GroupView(props: {
         done = `Removed ${title} from ${quoted(props.group.name)}, but couldn't archive it. ${(err as Error).message}`;
       }
     }
+    // The server deleted this group in the same write (its last member left a fanout group), so
+    // the route no longer names anything: say both things at once and leave.
+    if (result.dissolved) done += ` Dissolved ${quoted(props.group.name)} — nothing was left in it.`;
     toast(done);
     announce(done);
     props.wiring.onRefresh();
+    if (result.dissolved) {
+      forgetPromoted(id());
+      location.hash = "#/";
+      return;
+    }
     if (next) focusPane(next, true);
   };
 
   /** Promote: the member you picked is the answer, so it leaves the group and opens on its own. */
   const promote = async (path: string) => {
-    const title = summaryOf(path)?.title ?? "this session";
-    if (!(await setSessionGroup(path, null))) return;
+    const s = summaryOf(path);
+    const title = s?.title ?? "this session";
+    // Captured BEFORE the write, because ungrouping drops the member entry: without the label and
+    // the place, Add Back would put the pane back nameless and at the end.
+    const undo = { path, id: s?.id ?? "", title, label: labelOf(path), index: panes().indexOf(path) };
+    const result = await setSessionGroup(path, null);
+    if (!result) return;
+    setPromoted((m) => ({ ...m, [id()]: undo }));
     props.wiring.onRefresh();
-    toast(`Removed ${title} from ${quoted(props.group.name)}.`);
+    let done = `Took ${title} out of ${quoted(props.group.name)}.`;
+    if (result.dissolved) done += ` Dissolved ${quoted(props.group.name)} — nothing was left in it.`;
+    toast(done);
+    if (result.dissolved) forgetPromoted(id());
     location.hash = sessionHref(path);
+  };
+
+  /**
+   * Undo the last Promote: one write that restores the member's label AND its place, because a
+   * restore that half-works is worse than one that fails cleanly. A server that ignores `index`
+   * lands it at the end, which the toast then says rather than claiming a place it didn't get.
+   */
+  const addBack = async () => {
+    const undo = promoted()[id()];
+    if (!undo) return;
+    const result = await setSessionGroup(undo.path, id(), { label: undo.label ?? undefined, index: undo.index });
+    if (!result) {
+      toast(`Couldn't put this session back. ${quoted(props.group.name)} is unchanged.`);
+      return;
+    }
+    forgetPromoted(id());
+    props.wiring.onRefresh();
+    // The server's own answer, not a guess: where did it actually land?
+    await loadSessionGroups();
+    const at = sessionGroups().find((g) => g.id === id())?.members?.findIndex((m) => m.id === undo.id);
+    const back = `Put ${undo.title} back in ${quoted(props.group.name)}.`;
+    const done = at !== undefined && at >= 0 && at !== undo.index ? `${back} It's at the end.` : back;
+    toast(done);
+    announce(done);
+    focusPane(undo.path, true);
   };
 
   return (
@@ -271,6 +329,19 @@ export function GroupView(props: {
             </span>
           </p>
         </div>
+        {/* An undo for the gesture that just emptied a pane, for as long as this tab remembers
+            it. It carries the label and the position, so the pane comes back named what it was
+            called and where it was. */}
+        <Show when={promoted()[id()]}>
+          {(undo) => (
+            <span class="chip chip-count workspace-promoted" title={`${undo().title} was taken out of ${quoted(props.group.name)}`}>
+              Promoted: {undo().title}
+              <button type="button" class="button button-sm button-ghost" onClick={() => void addBack()}>
+                Add Back
+              </button>
+            </span>
+          )}
+        </Show>
         {/* Below the split band there is nothing to toggle: 440px of pane doesn't fit beside
             anything, and a stored split preference is ignored rather than cleared. */}
         <Show when={!narrow()}>

@@ -6,6 +6,7 @@ import type { FileIndex,
   FolderListing,
   ModeInfo,
   ModelInfo,
+  AssignGroupResult,
   SessionGroup,
   SessionInsight,
   SessionSummary,
@@ -195,15 +196,29 @@ export const deleteSessionGroup = (id: string) =>
   request<{ ok: true }>(`/api/session-groups/${encodeURIComponent(id)}`, { method: "DELETE" });
 
 /**
- * Puts one session in a group, or takes it out of the one it's in (`null`). `label` sets the
- * session's label in the group it lands in, `null` clears it, and leaving it out keeps the label
- * it already had — a session moved between groups carries its label with it.
+ * Puts one session in a group, or takes it out of the one it's in (`null`).
+ *
+ * `label` sets the session's label in the group it lands in, `null` clears it, and leaving it out
+ * keeps the label it already had — a session moved between groups carries its metadata with it.
+ * `index` is where it lands in the member order (0 first, omitted or past the end = the end), so
+ * an undo restores the label AND the place in one write that can't half-succeed. It is ignored
+ * when ungrouping, and ignored for a session already in that group: assign never reorders in
+ * place, `PATCH {order}` is the reposition.
+ *
+ * `dissolved` comes back only when this write removed the last member of a group pi-web fanned
+ * out, which deletes it in the same atomic write — the client cannot infer that from a count it
+ * just changed.
  */
-export const assignSessionGroup = (path: string, groupId: string | null, label?: string | null) =>
-  request<{ ok: true; dissolved?: true }>("/api/session-groups/assign", {
+export const assignSessionGroup = (path: string, groupId: string | null, opts?: { label?: string | null; index?: number }) =>
+  request<AssignGroupResult>("/api/session-groups/assign", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify(label === undefined ? { path, groupId } : { path, groupId, label }),
+    body: JSON.stringify({
+      path,
+      groupId,
+      ...(opts?.label === undefined ? {} : { label: opts.label }),
+      ...(opts?.index === undefined ? {} : { index: opts.index }),
+    }),
   });
 
 /** POST /api/sessions/cleanup `{ mode:"paths" }`: named session paths, e.g. one archived row. */

@@ -244,3 +244,8 @@ html, body, #root { height: 100%; }
 .workspace-pane-head .context-label,
 .workspace-pane-head .context-value { display: none; }
 .workspace-pane-head .context-pct { display: inline; }
+
+/* The Promoted chip: an undo for the gesture, sitting in the head beside the
+   layout toggle until it is used or the tab forgets it. */
+.workspace-promoted { flex: none; gap: var(--space-2); max-width: 340px; overflow: hidden; }
+.workspace-promoted > .button { flex: none; }

@@ -673,6 +673,30 @@ test("the session announces its target on the bus: the static far cwd, then the 
 	}
 });
 
+test("a plain-dir session with no far cwd yet: farCwd is omitted, then filled by the preflight", async () => {
+	// The CLI case: no placeholder, no mount, and the entry has no cwd — nothing to announce until
+	// the far side answers. Readers (subagents) refuse spawns while farCwd is missing, so the
+	// second announcement is what unblocks them.
+	const shimDir = mkdtempSync(join(tmpdir(), "pi-remote-bin-"));
+	const restore = sshShim(shimDir);
+	writeFileSync(join(agentDir, "targets.json"), JSON.stringify({ version: 1, targets: [{ name: "box", kind: "ssh", ssh: { host: "example.invalid" } }] }));
+	try {
+		const { pi, events, start } = fakePi({ target: "box", "no-channel": true });
+		remoteExtension(pi as never);
+		await start(mkdtempSync(join(tmpdir(), "pi-remote-plain-")));
+		assert.deepEqual(events, [{ version: 1, target: "box", channelOff: true }], "nothing known before the probe: no farCwd at all");
+		assert.equal("farCwd" in events[0]!, false);
+
+		await sleep(50);
+		assert.equal(events.length, 2);
+		// No cwd anywhere means no `cd`, so the far side's pwd is where the far command ran.
+		assert.equal(events[1]!.farCwd, process.cwd());
+	} finally {
+		restore();
+		rmSync(shimDir, { recursive: true, force: true });
+	}
+});
+
 test("a target that will not load is announced as an error, so workers refuse too", async () => {
 	writeFileSync(join(agentDir, "targets.json"), JSON.stringify({ version: 1, targets: [] }));
 	const { pi, events, start } = fakePi({ target: "ghost" });

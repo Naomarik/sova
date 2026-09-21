@@ -619,6 +619,13 @@ by `FanoutRequest.nameIsGenerated` (§14b), which is the client telling the serv
 two it is. Run both enumerations when a field encodes a claim: the events that falsify it, and
 the inputs that were never covered by it.
 
+**With that input closed the enumeration is complete, and completeness is the point.** Who can
+supply a group's name? `createGroup` — the user, no claim made. `updateGroup` — the user, and it
+clears the claim. The fanout dialog — pi-web's generated default *or* the user's typing, now
+distinguished by `FanoutRequest.nameIsGenerated` (§14b). There is no fourth supplier, so
+"pi-web may remove what it both made and named" is **literally** true rather than nearly true.
+Every round of this family lived in the gap between those two words.
+
 **And polarise an optional flag so that its FALSEHOOD is the safe answer**, because absence is
 the state you do not control — an older client, an older record, a field nobody set. Two fields
 can carry identical information and fail in opposite directions: `nameIsGenerated` absent reads

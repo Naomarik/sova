@@ -169,6 +169,7 @@ that half-exists is a sidebar section the user has to clean up.
 POST /api/session-groups/fanout
 {
   name?: string;                              // new group's name, 1–60 (GROUP_NAME_MAX); XOR groupId
+  nameIsGenerated?: boolean;                  // true = `name` is the default pi-web generated
   members: { ref: string; count: number }[];  // `ref` is ModelInfo.ref ("provider/id"); count 1–9.
                                               // Array order is pane order; repeats are the count.
   source?: { path: string; leafId: string };  // fork mode
@@ -201,6 +202,38 @@ POST /api/session-groups/fanout
     silently un-mark the rest. Both fabricate a fact the contract cannot carry — the same reason
     a marker's position is never inferred from `parent`/`parentId`. Fan out into a new group
     instead; the two groups can sit side by side.
+- **`nameIsGenerated` says whose name this is**, and it exists because the server cannot tell.
+  The dialog's name field is pre-filled with a default pi-web derives and the user may type over
+  it, but `name` arrives as a string and the server never generated the default — provenance is
+  a fact only the client holds. Without it, typing a name into the dialog and typing the same
+  name as a *rename* afterwards give opposite outcomes for identical intent, the first taking a
+  name the user chose.
+  - **Provenance, never policy.** The client reports *this is the name pi-web generated*; the
+    server decides `autoDissolve` from it. A client permitted to send `autoDissolve` itself would
+    assert an ownership pi-web may not have, and an older or buggy one could assert it wrongly.
+  - **The check is pinned, not just the default**: `autoDissolve` is set **only when the field is
+    present and true**. Testing for "not user-named" is the same sentence and the wrong one — an
+    absent field is not a claim of user authorship, it is a client that cannot make the claim.
+  - **Absent, or any non-boolean value, behaves as user-named** and sets nothing. A malformed
+    value must not fail the whole fanout: this field is advisory about one downstream flag, not
+    load-bearing like `members` or `source`. Where we know least about which case we are in, we
+    take the side whose error is litter.
+  - **Two absences point opposite ways and must not be reconciled.** Absent `nameIsGenerated`
+    describes a **client** predating the field, where a user-named group is what is at risk, so
+    absence means *survives*. Absent `SessionGroup.autoDissolve` (§14) describes a **record**
+    predating that field, a population containing no user-named group, so absence falls back to
+    `seed`. Different populations, one rule underneath: litter beats loss.
+  - **The server never re-derives the default to check the claim** — that would put a second
+    generator of the string in the server, the failure rejected above. Precedent: `source.leafId`,
+    where the client reports what it showed and the server tests it against the world rather than
+    against a recomputation of the client's own work.
+  - **The client's datum is the edit event** — the name field's own input handler and nothing
+    else, so a programmatic rewrite is not a touch. That is what makes it correct in fresh mode,
+    where the default is re-derived on every prompt keystroke. **Known cost, chosen rather than
+    missed:** typing over the name and then restoring our exact text still counts as naming it,
+    so that group stands empty instead of dissolving.
+  - **Four cases**: untouched through many regenerations → generated · typed over → user · typed
+    then restored to our text → user (the cost above) · fork mode untouched → generated.
 - **`source` and `cwd` are exclusive**, and exactly one is required: a request with both, or
   neither, is a `400`. There is no third mode, and a fanout with no starting point is not a
   thing the dialog can produce.

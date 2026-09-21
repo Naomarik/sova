@@ -577,9 +577,21 @@ files may forget an assignment, but it may not delete something the user named. 
 
 **`seed` is not the test, and never was a good proxy for one.** A seed says where a fork came
 from — it is marker data, nothing more. Dissolution turns on a different question: *did anyone
-type this name?* So the group carries an explicit flag, set **only** when a fanout creates a
-group and generates its name (`generated: true`, backend's spelling), and **that flag is the
-one truth of dissolution**. Nothing else confers it and nothing removes it.
+type this name?* So the group carries an explicit flag, **`autoDissolve`**, set only when a
+fanout creates a group and generates its name — pi-web made it and named it, so pi-web may
+remove it — and **that flag is the one truth of dissolution**. Nothing else confers it.
+
+**It is named for the behaviour, not the property, and that is the point.** This whole
+correction exists because a field describing one thing (`seed`, lineage) was used to decide an
+unrelated thing (deletion). A name like `scaffold` would describe a property again and invite
+the same second use; `autoDissolve` says exactly what it controls and can proxy for nothing.
+Do not re-derive dissolution from any other field, and do not use this one to mean anything
+else.
+
+It is a **boolean, not a true-only flag**, because an explicit `false` has to be sayable: a
+seeded group that must survive being emptied is the case this fixes, and absence now means
+something else. **Absent** means "written before this field existed", and only then does `seed`
+imply dissolution — those older groups are pi-web's own fanouts. An explicit value always wins.
 
 The proxy came apart at adoption. Fanning out into a hand-made group (§14b's `groupId`) writes
 a seed into it so the new members get fork markers — and keying on seed presence would have made

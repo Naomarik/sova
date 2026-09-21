@@ -655,7 +655,11 @@ the interface apologising for a rule we chose not to have.
 The delete happens server-side, in the same write, so no second request can fail halfway — and
 **the response has to say so**, because the client cannot infer it from a member count it just
 changed: `POST /api/session-groups/assign` answers `{ok: true, dissolved?: true}`, with
-`dissolved` set only on the write that removed the last member of a `seed` group. This is a
+`dissolved` set only on the write that removed the last member of a group that dissolves itself
+(`SessionGroup.autoDissolve`). **Not a `seed` group** — that was the rule before the two were
+decoupled, and it is precisely the case the decoupling exists for: a hand-made group that adopts
+a fanout's seed must keep standing empty, because its name is the user's work whether they typed
+it at creation or at rename. This is a
 behavioural change to a route the frontend already calls, so it is announced like any other. The
 toast says what happened to both things at once: "Removed **{title}** and archived it. Dissolved
 “{name}” — nothing was left in it." Routing then leaves for `#/`, because the route you were on

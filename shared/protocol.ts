@@ -660,14 +660,19 @@ export interface FanoutRequest {
       may keep writing the name; the other decides whose the result is. So a change to when
       regeneration stops silently changes who owns the name, and no test in the file being edited
       will fail. Anyone altering either rule owns both.
-      A COMPARISON CANNOT BE FIXED, which is stronger than it being wrong (spec §14b). "Typed
-      over then reverted" and "typed our exact string by hand" produce the SAME STATE — field
-      touched, `name` equal to what we last wrote — yet one deserves to dissolve and the other to
-      survive. So no comparison merely errs; the information that separates the two is not in the
-      value it examines. That is this feature's recurring defect in general form: a value asked a
-      question it does not contain the answer to. `seed` could not answer who owns this; the
-      file's last line could not answer what the pane rendered; `name === lastGenerated` cannot
-      answer whether the user chose these words.
+      WHY NOT A COMPARISON (`name === the last string we wrote`): it is correct ONLY while
+      regeneration stops at the first touch. That gate lives in another function; weaken it, add a
+      second writer, and regeneration keeps firing after the user types — the field then holds our
+      latest guess, the comparison equals it by construction, and a group the USER named is
+      classified "generated" and deleted. The edit flag cannot fail that way: the signal is sticky
+      and set by the user's own input. So the comparison is the fragile mechanism and it fails
+      toward LOSS, while the edit flag's error is an empty group left standing.
+      NOTE the tempting argument here is a retracted one (spec 9d6fe2b): that "typed over then
+      reverted" and "typed our exact string by hand" are the same state deserving opposite
+      answers, so no comparison can separate them. They do deserve the SAME answer — both end
+      with our string on the group — and if that argument held it would indict the edit flag
+      equally, since it also gives both rows one answer. Do not defend this rule with it; the
+      fragility above is the live reason.
       POLARITY IS LOAD-BEARING FOR ANY OPTIONAL FLAG HERE, not just this one: the field must be
       the one whose FALSEHOOD, or absence, is the safe answer. `nameEdited` would have been the
       same information with the opposite failure — absent ⇒ not edited ⇒ generated ⇒ the group

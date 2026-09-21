@@ -145,7 +145,7 @@ test("the body carries exactly one of name and groupId, never both", () => {
   const rows = [{ ref: "a/b", count: 2 }];
   const source = { path: "/tmp/src.jsonl", leafId: "leaf1" };
 
-  const created = fanoutBody({ rows, name: "  Fanout · x  ", lastGenerated: "Fanout · x", source });
+  const created = fanoutBody({ rows, name: "  Fanout · x  ", source });
   assert.deepEqual(created, { name: "Fanout · x", named: "generated", members: rows, source });
   assert.equal("groupId" in created, false, "a new group is named, not addressed");
 
@@ -157,7 +157,7 @@ test("the body carries exactly one of name and groupId, never both", () => {
 
 test("the body carries exactly one of source and cwd, for the same reason", () => {
   const rows = [{ ref: "a/b", count: 1 }];
-  const fresh = fanoutBody({ rows, name: "n", lastGenerated: "n", fresh: { cwd: "/w", text: "  go  " } });
+  const fresh = fanoutBody({ rows, name: "n", fresh: { cwd: "/w", text: "  go  " } });
   assert.deepEqual(fresh, { name: "n", named: "generated", members: rows, cwd: "/w", text: "go" });
   assert.equal("source" in fresh, false);
   const forked = fanoutBody({ rows, name: "n", source: { path: "/p", leafId: "l" } });
@@ -165,28 +165,31 @@ test("the body carries exactly one of source and cwd, for the same reason", () =
   assert.equal("text" in forked, false);
 });
 
-test("provenance is a comparison against the last string pi-web wrote, in all four cases", () => {
+test("provenance is the EDIT EVENT, in all four cases", () => {
   const rows = [{ ref: "a/b", count: 1 }];
   const source = { path: "/p", leafId: "l" };
-  const named = (name: string, lastGenerated: string) =>
-    (fanoutBody({ rows, name, lastGenerated, source }) as { named?: string }).named;
+  const named = (nameTouched: boolean, name = "Fanout · retry backoff") =>
+    (fanoutBody({ rows, name, nameTouched, source }) as { named?: string }).named;
 
-  // Untouched, however many times we regenerated it: the field holds our latest string.
-  assert.equal(named("Fanout · retry backoff", "Fanout · retry backoff"), "generated");
-  // Typed over.
-  assert.equal(named("Backoff experiments", "Fanout · retry backoff"), "user");
-  // Typed over, then reverted to our text: the group carries OUR name, so it is ours to remove.
-  // This is the case that distinguishes the comparison from an edit flag, which would say "user".
-  assert.equal(named("Fanout · retry backoff", "Fanout · retry backoff"), "generated");
-  // Fork mode untouched, where we write the field exactly once.
-  assert.equal(named("Fanout · ZULU", "Fanout · ZULU"), "generated");
-  // Whitespace is not authorship: the field is trimmed before it is sent, so it is trimmed here.
-  assert.equal(named("  Fanout · ZULU  ", "Fanout · ZULU"), "generated");
+  assert.equal(named(false), "generated", "untouched, however many times we regenerated it");
+  assert.equal(named(true, "Backoff experiments"), "user", "typed over");
+  // TYPED OVER, THEN RESTORED TO OUR EXACT TEXT → "user", and the reason matters more than the
+  // assertion: dissolving looks obviously right here, because the name on the group IS ours. But
+  // this state is indistinguishable from "typed our exact string by hand", which deserves to
+  // survive — the field was touched and the value equals what we last wrote in BOTH cases. No
+  // comparison can separate them, because the information isn't in the value it examines. So we
+  // err toward keeping the name: an empty group nobody dissolves costs a gesture, a deleted name
+  // costs work. A reader meeting this case without the reason will "fix" it, and the test will
+  // look wrong rather than the change.
+  assert.equal(named(true), "user", "typed over then restored to our text still counts as naming it");
+  assert.equal(named(false, "Fanout · ZULU"), "generated", "fork mode untouched, where we write the field once");
 });
 
-test("with no record of what we wrote, provenance falls to `user` — the safe side", () => {
-  // Absent `lastGenerated` should never claim pi-web named it: the server reads "user" as
-  // survives-when-emptied, which is litter, while a wrong "generated" deletes a name.
-  const body = fanoutBody({ rows: [{ ref: "a/b", count: 1 }], name: "Anything", source: { path: "/p", leafId: "l" } });
-  assert.equal((body as { named?: string }).named, "user");
+test("a caller that reports no touch at all is treated as untouched, not as user-named", () => {
+  // The dialog always passes the flag; a caller that doesn't is describing a field nobody edited,
+  // which is the generated default. The SERVER's absence default is the opposite ("user") and
+  // correctly so — there, absence means the CLIENT can't make the claim, which is a different
+  // population from a client saying "nobody touched it".
+  const body = fanoutBody({ rows: [{ ref: "a/b", count: 1 }], name: "Fanout · x", source: { path: "/p", leafId: "l" } });
+  assert.equal((body as { named?: string }).named, "generated");
 });

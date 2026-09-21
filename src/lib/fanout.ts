@@ -151,12 +151,17 @@ export function fanoutBody(plan: {
   into?: { id: string } | undefined;
   name: string;
   /**
-   * The LAST string pi-web wrote into the name field. Provenance is a comparison against this —
-   * not against a prefill snapshot, which in fresh mode is derived from an empty prompt and would
-   * classify an untouched field as user-named; and not against a re-derivation at submit time,
-   * which would be a second generator of one string. It is a record of what we wrote.
+   * Whether the user typed in the name field. Provenance is THIS EVENT, never a comparison
+   * against the string we generated (spec/14b-fanout.md).
+   *
+   * A comparison cannot answer the question: "typed over then restored our exact text" and "typed
+   * our exact string by hand" produce the same state — field touched, name equal to what we last
+   * wrote — yet one should dissolve and the other should not. The information that separates them
+   * is not in the value a comparison examines, so it can't merely err, it can't be fixed. Both
+   * therefore count as naming it, and the group stands: the worst case of honouring a touch is an
+   * empty group nobody dissolves, while the worst case of ignoring one is a deleted name.
    */
-  lastGenerated?: string | undefined;
+  nameTouched?: boolean;
   /** Fork mode: the source and the leaf the dialog SHOWED the user. */
   source?: { path: string; leafId: string } | undefined;
   /** Fresh mode: where the members live and the message they all start from. */
@@ -167,7 +172,7 @@ export function fanoutBody(plan: {
   // alone, so the field would be a claim about a string this request doesn't set.
   const target = plan.into
     ? { groupId: plan.into.id }
-    : { name, named: name === (plan.lastGenerated ?? "").trim() ? ("generated" as const) : ("user" as const) };
+    : { name, named: plan.nameTouched ? ("user" as const) : ("generated" as const) };
   const members = plan.rows.map((r) => ({ ref: r.ref, count: r.count }));
   return plan.source
     ? { ...target, members, source: plan.source }

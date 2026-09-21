@@ -77,15 +77,6 @@ export function FanoutDialog(props: {
    * That distinction decides whether the group is pi-web's to delete when it empties.
    */
   const [nameTouched, setNameTouched] = createSignal(false);
-  /**
-   * The last string WE wrote into the name field — what provenance is compared against
-   * (`FanoutRequest.named`). It is not the same signal as `nameTouched` and neither replaces the
-   * other: the touch gates whether we may keep writing the field (§14b's regeneration rule), this
-   * records what we wrote last so a name typed over and then reverted is recognised as ours again.
-   * They interlock — regeneration stopping at the first touch is what freezes this at the value a
-   * revert would restore.
-   */
-  const [lastGenerated, setLastGenerated] = createSignal(defaultGroupName(props.source?.session.title ?? ""));
   const [text, setText] = createSignal("");
   const [cwd, setCwd] = createSignal(newSessionCwd(props.source?.session.cwd, props.sessions) ?? home() ?? "");
   const [picking, setPicking] = createSignal(false);
@@ -128,7 +119,7 @@ export function FanoutDialog(props: {
       rows: rows(),
       into: props.into,
       name: name(),
-      lastGenerated: lastGenerated(),
+      nameTouched: nameTouched(),
       source: fork() ? { path: props.source!.session.path, leafId: props.source!.leafId } : undefined,
       fresh: fork() ? undefined : { cwd: cwd(), text: text() },
     });
@@ -248,11 +239,7 @@ export function FanoutDialog(props: {
                 onInput={(e) => {
                   setText(e.currentTarget.value);
                   // Only while the name is still ours to guess at.
-                  if (!props.source && !nameTouched()) {
-                    const next = defaultGroupName(e.currentTarget.value);
-                    setLastGenerated(next);
-                    setName(next);
-                  }
+                  if (!props.source && !nameTouched()) setName(defaultGroupName(e.currentTarget.value));
                 }}
               />
             </div>

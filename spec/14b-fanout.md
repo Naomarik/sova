@@ -166,6 +166,11 @@ new workspace.
   is validated by shape alone (`sessionPathShape`, no syscalls) and its existence by one async
   stat on a local JSONL under the sessions directory. Nothing in this feature ever stats a
   session's `cwd`, which for a mounted target is a fuse path that can hang the whole server.
+  **The cheap check is for looking, not for opening.** Shape validation contains by string, which
+  a symlink inside the sessions directory can walk out of; fanout then *opens* the source file, so
+  the path it opens is resolved the full way (`resolveSessionPath`) exactly as every other route
+  that opens a session does. The two are not interchangeable: one decides what to report, the
+  other decides what to read.
 - **The source is not a member.** It is not modified, not rewound and not assigned to the group:
   it stays where it is, and `parentSession` in each member's header — the source's path, written
   by the SDK — is the only link back.

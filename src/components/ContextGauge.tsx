@@ -2,6 +2,7 @@ import { Show } from "solid-js";
 import type { ContextInfo } from "../../shared/protocol";
 import { contextSentence, contextStep, formatPercent, formatTokens } from "../lib/context";
 import { sessionContext } from "../lib/ui-state";
+import { paneScopedId, usePaneId, type PaneScope } from "../lib/pane-scope";
 import { Icon } from "./ui";
 
 /** The shown state for a session, or null when there's nothing to show (no reply yet / unknown). */
@@ -21,8 +22,10 @@ function fullText(s: ContextInfo | "compacted"): string {
   return s.window ? `${formatTokens(s.tokens)} / ${formatTokens(s.window)} · ${formatPercent(s.tokens, s.window)}%` : formatTokens(s.tokens);
 }
 
-/** `aria-describedby` for the session title: only while a context sentence exists. */
-export const contextDescribedBy = (path: string) => (stateOf(path) ? "context-desc" : undefined);
+/** `aria-describedby` for the session title: only while a context sentence exists. The sentence
+    is the gauge's, so in a workspace it carries that pane's id like every other. */
+export const contextDescribedBy = (path: string, scope?: PaneScope) =>
+  stateOf(path) ? (scope ? paneScopedId(scope, "context-desc") : "context-desc") : undefined;
 
 /**
  * The head's context readout (spec/04f-context-window.md §4f): plain text, never a bar, never animated. All
@@ -30,6 +33,7 @@ export const contextDescribedBy = (path: string) => (stateOf(path) ? "context-de
  * head's width (full → percent → moves to the meta line).
  */
 export function ContextGauge(props: { path: string }) {
+  const paneId = usePaneId();
   return (
     <Show when={stateOf(props.path)}>
       {(s) => (
@@ -51,7 +55,7 @@ export function ContextGauge(props: { path: string }) {
               {shortText(s())}
             </span>
           </span>
-          <span class="visually-hidden" id="context-desc">
+          <span class="visually-hidden" id={paneId("context-desc")}>
             {contextSentence(s())}
           </span>
         </>

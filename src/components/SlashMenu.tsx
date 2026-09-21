@@ -1,5 +1,6 @@
 import { createEffect, createMemo, For, on, Show } from "solid-js";
 import type { SlashCommand } from "../../shared/protocol";
+import { usePaneId } from "../lib/pane-scope";
 
 const SOURCE_LABEL: Record<SlashCommand["source"], string> = {
   extension: "ext",
@@ -7,14 +8,17 @@ const SOURCE_LABEL: Record<SlashCommand["source"], string> = {
   skill: "skill",
 };
 
-/** `cmd-` + the name with anything outside [a-z0-9-] as "-", suffixed when two names collide. */
-export function commandOptionIds(commands: SlashCommand[]): string[] {
+/** `cmd-` + the name with anything outside [a-z0-9-] as "-", suffixed when two names collide, and
+    by the pane's id when the composer is one of a workspace's (aria-activedescendant resolves
+    against the whole document, so two open menus must not mint the same row id). */
+export function commandOptionIds(commands: SlashCommand[], paneId?: string | null): string[] {
+  const tail = paneId ? `-${paneId}` : "";
   const seen = new Map<string, number>();
   return commands.map((c) => {
     const base = `cmd-${c.name.toLowerCase().replace(/[^a-z0-9-]/g, "-")}`;
     const n = seen.get(base) ?? 0;
     seen.set(base, n + 1);
-    return n === 0 ? base : `${base}-${n + 1}`;
+    return (n === 0 ? base : `${base}-${n + 1}`) + tail;
   });
 }
 
@@ -38,10 +42,11 @@ export function SlashMenu(props: {
     ),
   );
   const count = createMemo(() => props.commands.length);
+  const paneId = usePaneId();
 
   return (
-    <div class="command-menu" id="command-menu">
-      <p class="command-menu-head" id="command-menu-head" aria-hidden="true">
+    <div class="command-menu" id={paneId("command-menu")}>
+      <p class="command-menu-head" id={paneId("command-menu-head")} aria-hidden="true">
         Commands · {count()}
       </p>
       <Show
@@ -52,7 +57,7 @@ export function SlashMenu(props: {
           </p>
         }
       >
-        <div class="command-list" id="command-listbox" role="listbox" aria-label="Commands">
+        <div class="command-list" id={paneId("command-listbox")} role="listbox" aria-label="Commands">
           <For each={props.commands}>
             {(cmd, i) => (
               <div

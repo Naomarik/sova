@@ -3,7 +3,8 @@ import type { TranscriptItem, WatchServerMessage } from "../../shared/protocol";
 import { fetchTranscriptWithContext, wsUrl } from "../lib/api";
 import { contextFromItems, contextStateFor } from "../lib/context";
 import { createReconnectingSocket } from "../lib/socket";
-import { announce, hideThinking, hideTools, setSessionContext } from "../lib/ui-state";
+import { hideThinking, hideTools, setSessionContext } from "../lib/ui-state";
+import { usePaneAnnounce } from "../lib/pane-scope";
 import { visibleCount } from "../lib/hidden-rows";
 import type { WorkingSplit } from "../lib/workers";
 import { Composer, type ComposerReason } from "./Composer";
@@ -39,6 +40,7 @@ export function WatchView(props: {
   onShowWorkers?(): void;
   workersOpen?: boolean;
 }) {
+  const announce = usePaneAnnounce();
   const [items, setItems] = createSignal<TranscriptItem[] | null>(null);
   const [error, setError] = createSignal<string | null>(null);
   const [lastUpdate, setLastUpdate] = createSignal<string | null>(null);
@@ -95,6 +97,7 @@ export function WatchView(props: {
   return (
     <>
       <ThreadScroller
+        path={props.path}
         count={visibleCount(items() ?? [], { tools: hideTools(props.path), thinking: hideThinking(props.path) })}
         busy={!items()}
         banner={

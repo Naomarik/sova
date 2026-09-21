@@ -4,6 +4,7 @@ import { Portal } from "solid-js/web";
 import type { SessionInsight, SessionSummary, TeamInfo, WorkerInfo } from "../shared/protocol";
 import { createSession, fetchAgents, fetchExplanations, fetchSessionInsight, fetchUsage, listSessions, setSessionArchived } from "./lib/api";
 import { agentsHref, insightsRouteFromHash, legacyInsightsTarget } from "./lib/insights";
+import { transcriptRoot } from "./lib/jump";
 import { createThenArchive, newSessionCwd } from "./lib/new-session";
 import { cwdLabel } from "./lib/remote-session";
 import { createPoll } from "./lib/poll";
@@ -356,10 +357,11 @@ export function App() {
   };
   let subagentsTrigger: HTMLElement | null = null;
   const closeSubagents = () => {
+    const was = subagentsPath();
     setSubagents(null);
     const trigger = subagentsTrigger?.isConnected ? subagentsTrigger : document.querySelector<HTMLElement>(".run-status-link");
     subagentsTrigger = null;
-    queueMicrotask(() => (trigger ?? document.getElementById("transcript"))?.focus());
+    queueMicrotask(() => (trigger ?? transcriptRoot(was))?.focus());
   };
   /** Whether the pane is open for `path` on `tab`: what each opener's aria-expanded reports. */
   const paneOn = (path: string, tab: TabId) => subagentsPath() === path && activeTab(path) === tab;
@@ -616,6 +618,7 @@ export function App() {
                       </button>
                     </header>
                     <InsightStrip
+                      path={d.path}
                       outline={insight.data?.outline ?? null}
                       explanations={insight.data?.explanations}
                       now={now()}

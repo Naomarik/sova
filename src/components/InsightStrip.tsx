@@ -1,7 +1,7 @@
 import { createEffect, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import type { ExplanationInfo, OutlineTopic, SessionOutline } from "../../shared/protocol";
 import { newestFirst } from "../lib/explain";
-import { findEntryRow, jumpToEntry } from "../lib/jump";
+import { findEntryRow, jumpToEntry, transcriptRoot } from "../lib/jump";
 import { relativeTime, stampTime } from "../lib/format";
 import { ExplainGallery } from "./ExplainGallery";
 import { Icon } from "./ui";
@@ -11,17 +11,17 @@ const STATE_CLAUSE: Partial<Record<SessionOutline["state"], string>> = {
   "failed-keeping-last": "the last update failed, so this is the previous summary",
 };
 
-function Topic(props: { topic: OutlineTopic; now: number; open: boolean }) {
+function Topic(props: { topic: OutlineTopic; now: number; open: boolean; path: string }) {
   // Whether the anchor is in the transcript is checked each time the strip opens: it may have been
   // compacted away, and the transcript renders after this strip. A topic that arrives while the
   // strip is open mounts with `open` already true, so it is checked too.
   const [target, setTarget] = createSignal(false);
   createEffect(() => {
-    if (props.open) setTarget(!!props.topic.entryId && !!findEntryRow(props.topic.entryId));
+    if (props.open) setTarget(!!props.topic.entryId && !!findEntryRow(props.topic.entryId, transcriptRoot(props.path)));
   });
   const jump = () => {
     // Gone since the strip opened (compacted away): the button goes rather than scrolling nowhere.
-    if (!props.topic.entryId || !jumpToEntry(props.topic.entryId)) setTarget(false);
+    if (!props.topic.entryId || !jumpToEntry(props.topic.entryId, props.path)) setTarget(false);
   };
   const at = () => new Date(props.topic.at).toISOString();
   return (
@@ -69,6 +69,8 @@ function Topic(props: { topic: OutlineTopic; now: number; open: boolean }) {
  * button is what's inside. With neither, nothing renders.
  */
 export function InsightStrip(props: {
+  /** The session this strip summarises: which transcript a topic's jump lands in. */
+  path: string;
   outline: SessionOutline | null;
   explanations: ExplanationInfo[] | undefined;
   now: number;
@@ -188,7 +190,7 @@ export function InsightStrip(props: {
                   </Show>
                 </Show>
                 <ol class="outline-topics">
-                  <For each={o().topics}>{(t) => <Topic topic={t} now={props.now} open={open()} />}</For>
+                  <For each={o().topics}>{(t) => <Topic topic={t} now={props.now} open={open()} path={props.path} />}</For>
                 </ol>
               </>
             )}

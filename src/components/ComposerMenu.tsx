@@ -4,6 +4,7 @@ import { ensureModels, thinkingLevelsFor } from "../lib/models";
 import { confirmActivate, confirmReset } from "../lib/confirm-step";
 import { hideThinking, hideTools, setHideThinking, setHideTools } from "../lib/ui-state";
 import { ModelPicker, type ModelControl } from "./ModelMenu";
+import { usePaneId } from "../lib/pane-scope";
 import { Icon, type IconName } from "./ui";
 
 /** What the chat view exposes so the flyout can show and change this session's thinking level. */
@@ -96,6 +97,7 @@ export function ComposerMenu(props: {
   /** Called once on mount with the handle the composer's model indicator opens this menu by. */
   onApi?: (api: ComposerMenuApi) => void;
 }) {
+  const paneId = usePaneId();
   let trigger!: HTMLButtonElement;
   let menu!: HTMLDivElement;
   let closedByChoice = false; // focus handling is the choice's, not the trigger's
@@ -342,13 +344,13 @@ export function ComposerMenu(props: {
     <div
       class="mode-option composer-flyout-item"
       role={p.r.role}
-      id={`composer-flyout-${p.r.id}`}
+      id={paneId(`composer-flyout-${p.r.id}`)}
       tabindex={active() === p.index ? 0 : -1}
       aria-checked={p.r.role !== "menuitem" ? (p.r.checked ? "true" : "false") : undefined}
       aria-haspopup={p.r.chevron ? "true" : undefined}
       aria-disabled={p.r.disabled ? "true" : undefined}
       aria-busy={p.r.busy ? "true" : undefined}
-      aria-describedby={p.r.describe ? "composer-reason" : undefined}
+      aria-describedby={p.r.describe ? paneId("composer-reason") : undefined}
       title={p.r.title}
       onClick={() => {
         setActive(p.index);
@@ -381,12 +383,12 @@ export function ComposerMenu(props: {
         ref={trigger}
         type="button"
         class="button button-icon button-ghost composer-menu-trigger"
-        id="composer-menu-trigger"
+        id={paneId("composer-menu-trigger")}
         aria-label="More Actions"
         title="More Actions"
         aria-haspopup="menu"
         aria-expanded={open() && anchor() === trigger ? "true" : "false"}
-        aria-controls="composer-flyout"
+        aria-controls={paneId("composer-flyout")}
         onClick={() => (open() ? close() : openMenu("menu"))}
       >
         <Icon name="plus" />
@@ -395,7 +397,7 @@ export function ComposerMenu(props: {
       <div
         ref={menu}
         class="model-menu composer-flyout"
-        id="composer-flyout"
+        id={paneId("composer-flyout")}
         popover="auto"
         onToggle={(e) => {
           const isOpen = (e as ToggleEvent).newState === "open";
@@ -444,8 +446,8 @@ export function ComposerMenu(props: {
               <Index each={pick((r) => r.id === "model")}>{(x) => <Item r={x().r} index={x().index} />}</Index>
               <Show when={pick((r) => r.role === "menuitemradio").length > 0}>
                 <div class="composer-flyout-sep" role="separator" />
-                <div class="model-menu-group" role="group" aria-labelledby="composer-flyout-thinking">
-                  <div class="list-group-label" id="composer-flyout-thinking">
+                <div class="model-menu-group" role="group" aria-labelledby={paneId("composer-flyout-thinking")}>
+                  <div class="list-group-label" id={paneId("composer-flyout-thinking")}>
                     Thinking
                   </div>
                   <Index each={pick((r) => r.role === "menuitemradio")}>{(x) => <Item r={x().r} index={x().index} />}</Index>

@@ -35,7 +35,7 @@ export function registerTranscript(path: string, el: HTMLElement | null): void {
 }
 
 /** The transcript to search: the pane for `path` when there is one, else the one on the page. */
-export function transcriptRoot(path?: string | null): ParentNode | null {
+export function transcriptRoot(path?: string | null): HTMLElement | null {
   const el = path ? transcripts.get(path) : undefined;
   if (el?.isConnected) return el;
   return document.getElementById("transcript");

@@ -144,7 +144,7 @@ export function SessionTimeline(props: {
   onCleanup(() => query.removeEventListener("change", onBand));
 
   const jump = (entryId: string | undefined) => {
-    if (!entryId || !jumpToEntry(entryId)) return toast("That message isn't in the transcript on screen.");
+    if (!entryId || !jumpToEntry(entryId, props.path)) return toast("That message isn't in the transcript on screen.");
     if (isDrawer()) props.onClose();
   };
 

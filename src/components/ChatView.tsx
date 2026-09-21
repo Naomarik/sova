@@ -27,7 +27,8 @@ import { usageTotal, type UsageTotalView, workingSplit } from "../lib/workers";
 // The shared targets store the mounted chip reads (RemoteStatus owns it, the pane toggle patches it).
 import { patchTarget } from "./RemoteStatus";
 import type { UploadResult } from "../../shared/protocol";
-import { announce, drafts, hideThinking, hideTools, sessionContext, setDraftText, setLocalRunning, setSessionContext, toast } from "../lib/ui-state";
+import { drafts, hideThinking, hideTools, sessionContext, setDraftText, setLocalRunning, setSessionContext, toast } from "../lib/ui-state";
+import { usePaneAnnounce, usePaneId } from "../lib/pane-scope";
 import { visibleCount } from "../lib/hidden-rows";
 import { inputCount } from "../lib/input-count";
 import type { RewindControl, RewindResult } from "../lib/inputs";
@@ -100,6 +101,11 @@ export function ChatView(props: {
   /** This session's teams (polled insight), so the status row can name team members as such. */
   teams?: TeamInfo[];
 }) {
+  // One status region for the whole page: inside a workspace every sentence from this chat says
+  // which pane it came from, and every DOM id below carries the pane's id.
+  const announce = usePaneAnnounce();
+  const paneId = usePaneId();
+
   const [items, setItems] = createSignal<TranscriptItem[] | null>(null);
   const [live, setLive] = createStore<LiveState>(emptyLive());
   const [syncing, setSyncing] = createSignal(false);
@@ -667,6 +673,7 @@ export function ChatView(props: {
   return (
     <>
       <ThreadScroller
+        path={props.path}
         count={visibleCount(items() ?? [], { tools: hideTools(props.path), thinking: hideThinking(props.path) }) + live.entries.length}
         resume={resume()}
         busy={!items()}
@@ -884,7 +891,7 @@ export function ChatView(props: {
           }}
           onClose={() => {
             setShowInfo(false);
-            queueMicrotask(() => document.getElementById("composer-menu-trigger")?.focus());
+            queueMicrotask(() => document.getElementById(paneId("composer-menu-trigger"))?.focus());
           }}
         />
       </Show>

@@ -5,6 +5,8 @@ import { prettyJson, shortModel, stampTime, thousands, tildePath } from "../lib/
 import { isObj, str, timestampOf, toolCallArgs, toolResultView } from "../lib/message";
 import { stripPastedPaths } from "../lib/path-attachments";
 import { home } from "../lib/ui-state";
+import { registerTranscript } from "../lib/jump";
+import { usePaneId } from "../lib/pane-scope";
 import { isHiddenBlock, liveHiddenCounts, splitHidden, thinkingHiddenLabel, toolsHiddenLabel } from "../lib/hidden-rows";
 import { isTurnStart } from "../lib/turn";
 import { parseWakeNudge } from "../../shared/wake";
@@ -494,7 +496,10 @@ export function ThreadScroller(props: {
   count: number;
   resume?: number;
   busy?: boolean;
+  /** The session shown here: what a jump from the outline, Skills or Timeline looks up. */
+  path?: string;
 }) {
+  const paneId = usePaneId();
   let el!: HTMLElement;
   let follow = true;
   const [away, setAway] = createSignal<number | null>(null); // count when the user scrolled away
@@ -531,13 +536,18 @@ export function ThreadScroller(props: {
     <div class="transcript-wrap">
       <section
         class="transcript pane"
-        id="transcript"
+        id={paneId("transcript")}
         aria-label="Transcript"
         aria-busy={props.busy ? "true" : undefined}
         tabindex="0"
         ref={(node) => {
           el = node;
           observer.observe(node, { childList: true, subtree: true, characterData: true });
+          if (props.path) {
+            const path = props.path;
+            registerTranscript(path, node);
+            onCleanup(() => registerTranscript(path, null));
+          }
           queueMicrotask(toBottom);
         }}
         onScroll={onScroll}

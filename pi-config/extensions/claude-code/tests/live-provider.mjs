@@ -1,7 +1,7 @@
 // Opt-in live test: one real Claude Code turn driven through pi as a provider.
 //
 // This is the end-to-end claim the unit tests cannot make. It runs a headless
-// pi session against the hermetic agent dir, selects claude-code-cli/sonnet,
+// pi session against a fresh temp agent dir and cwd, selects claude-code-cli/sonnet,
 // and asks the model to use PI'S OWN `read` tool. Everything the model can
 // reach is served by the in-process MCP facade, so a successful tool call
 // proves the whole path: initialize.sdkMcpServers -> tools/list -> a held
@@ -11,17 +11,24 @@
 // session_shutdown takes it away, by looking for the derived --session-id in
 // /proc rather than trusting the bridge's own bookkeeping.
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { jiti } from "../../subagents/tests/runtime.mjs";
 
 if (!process.argv.includes("--live")) throw Error("Pass --live to authorize real Claude requests.");
 
-const WORKTREE = "/home/user/webapps/pi-web-claude";
-const AGENT_DIR = path.join(WORKTREE, ".agent");
+const EXTENSION_ENTRY = fileURLToPath(new URL("../index.ts", import.meta.url));
+const AGENT_DIR = mkdtempSync(path.join(tmpdir(), "pi-claude-live-agent-"));
+const CWD = mkdtempSync(path.join(tmpdir(), "pi-claude-live-"));
 const PI_SESSION_TOOL = "read";
-const TARGET = "notes/baseline-red.md";
-const EXPECTED = readFileSync(path.join(WORKTREE, TARGET), "utf8").split("\n")[0];
+// The test writes its own fixture and holds the expected line itself, so the
+// assertion never depends on reading back the file the model is asked to read.
+const EXPECTED = "Red baseline: 4d7a1c";
+mkdirSync(path.join(CWD, "notes"));
+const TARGET = path.join(CWD, "notes/baseline-red.md");
+writeFileSync(TARGET, `${EXPECTED}\nsecond line, not the answer\n`);
 
 const pi = await jiti.import("@earendil-works/pi-coding-agent");
 const { claudeSessionId, getSessionBridge } = await jiti.import(new URL("../provider/session-bridge.ts", import.meta.url).pathname);
@@ -48,12 +55,12 @@ const timings = {};
 const mark = (name) => { timings[name] = Date.now() - started; };
 
 // Only the extension under test is loaded. Auto-discovery would also start the
-// other extensions in .agent/extensions, and some of them (sessions) keep
+// other extensions in the agent dir, and some of them (sessions) keep
 // background timers that touch a stale ctx after dispose and crash the harness
 // for reasons that have nothing to do with the provider.
 const resourceLoaderOptions = {
 	noExtensions: true,
-	additionalExtensionPaths: [path.join(WORKTREE, "pi-config/extensions/claude-code/index.ts")],
+	additionalExtensionPaths: [EXTENSION_ENTRY],
 };
 
 // The real host path, and the one pi-web uses: AgentSessionRuntime is what
@@ -75,7 +82,7 @@ const createRuntime = async ({ cwd, sessionManager, sessionStartEvent }) => {
 };
 
 const runtime = await pi.createAgentSessionRuntime(createRuntime, {
-	cwd: WORKTREE,
+	cwd: CWD,
 	agentDir: AGENT_DIR,
 	sessionManager: pi.SessionManager.inMemory(),
 });
@@ -164,7 +171,10 @@ const bridge = getSessionBridge();
 assert.deepEqual(bridge.activeSessionIds(), [sessionId], "the bridge registry does not hold exactly this pi session");
 
 // 3. The answer came back through the resumed CLI turn.
-assert.match(assistantText, /Red baseline/, `assistant text did not contain the file's first line (${JSON.stringify(EXPECTED)})`);
+// Derived from EXPECTED, never re-spelled: a hand-written fragment here would keep
+// passing after the fixture line changes, and would test a different string than the one
+// the test wrote.
+assert.ok(assistantText.includes(EXPECTED), `assistant text did not contain the fixture's first line (${JSON.stringify(EXPECTED)})`);
 
 // 4. session_shutdown takes the child away. runtime.dispose() emits the hook
 // and then disposes the session, exactly as pi-web's chat manager does.

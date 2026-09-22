@@ -10,7 +10,7 @@ import { randomUUID } from "node:crypto";
 import { deflateSync } from "node:zlib";
 import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
 
-const CLAUDE = process.env.CLAUDE_BIN ?? "/home/user/.local/bin/claude";
+const CLAUDE = process.env.CLAUDE_BIN ?? "claude";
 const CWD = "/tmp/cc-spike/proj";
 const LOG = `/tmp/cc-spike/probe-f-${Date.now()}.jsonl`;
 writeFileSync(LOG, "");

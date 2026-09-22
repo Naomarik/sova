@@ -9,7 +9,7 @@ import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
 
-const CLAUDE = process.env.CLAUDE_BIN ?? "/home/user/.local/bin/claude";
+const CLAUDE = process.env.CLAUDE_BIN ?? "claude";
 const CWD = "/tmp/cc-spike/proj";
 const LOG = `/tmp/cc-spike/probe-bc-${Date.now()}.jsonl`;
 writeFileSync(LOG, "");

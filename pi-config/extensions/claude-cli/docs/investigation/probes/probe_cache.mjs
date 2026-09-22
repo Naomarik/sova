@@ -3,7 +3,7 @@ import fs from "node:fs";
 const mode=process.argv[2]; // "replace" | "append"
 const sp=fs.readFileSync("/tmp/bigsp.txt","utf8");
 const flag = mode==="replace" ? ["--system-prompt",sp] : ["--append-system-prompt",sp];
-const p=spawn("/home/user/.local/bin/claude",["-p","--input-format","stream-json","--output-format","stream-json","--verbose",
+const p=spawn(process.env.CLAUDE_BIN ?? "claude",["-p","--input-format","stream-json","--output-format","stream-json","--verbose",
  "--model","haiku",...flag,"--setting-sources","","--strict-mcp-config","--tools","",
  "--permission-mode","manual","--permission-prompts","none","--no-session-persistence"],
  {cwd:"/tmp",stdio:["pipe","pipe","pipe"]});

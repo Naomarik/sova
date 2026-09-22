@@ -3,7 +3,7 @@ const args=["-p","--input-format","stream-json","--output-format","stream-json",
  "--model","haiku","--system-prompt","You are a tool-using assistant.",
  "--setting-sources","","--strict-mcp-config","--tools","",
  "--permission-mode","manual","--permission-prompts","none","--allowedTools","mcp__pi","--no-session-persistence"];
-const p=spawn("/home/user/.local/bin/claude",args,{cwd:"/tmp",stdio:["pipe","pipe","pipe"]});
+const p=spawn(process.env.CLAUDE_BIN ?? "claude",args,{cwd:"/tmp",stdio:["pipe","pipe","pipe"]});
 const w=(o)=>p.stdin.write(JSON.stringify(o)+"\n");
 let buf="",initDone=false;
 p.stderr.on("data",d=>console.log("STDERR:",String(d).slice(0,300)));

@@ -10,7 +10,7 @@ import { randomUUID } from "node:crypto";
 import { appendFileSync, writeFileSync } from "node:fs";
 
 const VARIANT = process.argv[2] ?? "sdkMcpServers";
-const CLAUDE = process.env.CLAUDE_BIN ?? "/home/user/.local/bin/claude";
+const CLAUDE = process.env.CLAUDE_BIN ?? "claude";
 const SERVER = "pi";
 const HOLD_MS = 6000;
 const LOG = `/tmp/cc-spike/probe-a-${VARIANT}-${Date.now()}.jsonl`;

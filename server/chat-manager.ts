@@ -894,6 +894,24 @@ export function recordedModelForEmptyBranch(
   return model && modelRuntime.hasConfiguredAuth(model.provider) ? model : undefined;
 }
 
+/** A branch's resolved context, as buildSessionContext() reports it. */
+type BranchContext = ReturnType<SessionManager["buildSessionContext"]>;
+
+/**
+ * Whether the runtime's construction-time model append only restates what the branch already
+ * records. The SDK appends the model it was built with for a session with no messages
+ * (sdk.js:261), and a fanout member's file was written with exactly that model at creation — so
+ * deferring it lands a second identical `model_change` on the first prompt, and transcript.ts
+ * renders one `Model:` row per entry: every member's pane would open with the same row twice.
+ * Both halves of the condition are load-bearing. With messages on the branch that append is the
+ * SDK's own resume record, and a pair that differs from the recorded one is a real change (the
+ * fallback default after an unauthenticated recorded model) — those must still be written.
+ */
+export function restatesRecordedModel(context: BranchContext, provider: string, modelId: string): boolean {
+  if (context.messages.length > 0 || !context.model) return false;
+  return context.model.provider === provider && context.model.modelId === modelId;
+}
+
 async function openSession(path: string, onDisposed: () => void): Promise<ChatSession> {
   if (!existsSync(path)) throw new Error(`Session file not found: ${path}`);
   const modelRuntime = await getModelRuntime();
@@ -904,18 +922,12 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
   const deferred: Array<() => void> = [];
   const appendModelChange = sessionManager.appendModelChange;
   const appendThinkingLevelChange = sessionManager.appendThinkingLevelChange;
-  // One construction-time append must NOT be deferred: the model the runtime was built with, for
-  // a session whose branch already records that same model and has no messages. The SDK appends it
-  // unconditionally for a message-less session (sdk.js:261), and a fanout member's file is written
-  // with exactly that model at creation — so deferring it would land a second identical
-  // `model_change` on the first prompt and put two identical `Model:` rows at the top of every
-  // member's transcript (transcript.ts renders one row per entry). The fact is already on the
-  // branch, which is why dropping this one restatement loses nothing. Only a message-less branch
-  // whose recorded model is the one just resolved can reach it: every other shape is queued.
+  // Everything is deferred except the one append restatesRecordedModel names — see its comment
+  // for why that restatement must be dropped rather than queued. Reading the context once, before
+  // the runtime exists, is what lets the filter answer without touching the file.
   const openContext = sessionManager.buildSessionContext();
-  const restatedModel = openContext.messages.length === 0 ? openContext.model : null;
   sessionManager.appendModelChange = (...args: Parameters<typeof appendModelChange>) => {
-    if (restatedModel && args[0] === restatedModel.provider && args[1] === restatedModel.modelId) return "";
+    if (restatesRecordedModel(openContext, args[0], args[1])) return "";
     deferred.push(() => appendModelChange.apply(sessionManager, args));
     return "";
   };

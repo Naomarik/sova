@@ -9,7 +9,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ModelRuntime, SessionManager } from "@earendil-works/pi-coding-agent";
-import { recordedModelForEmptyBranch } from "./chat-manager";
+import { recordedModelForEmptyBranch, restatesRecordedModel } from "./chat-manager";
 
 type Recorded = { provider: string; modelId: string } | null;
 type Message = { role: string };
@@ -51,4 +51,24 @@ test("a message-less session that records nothing (every other new session) answ
   // POST /api/sessions writes a header only: its model is chosen at the first prompt, and this
   // helper must not invent one earlier.
   assert.equal(recordedModelForEmptyBranch(manager([], null), runtime({ "zai/glm-5.3": GLM }, ["zai"])), undefined);
+});
+
+/** The branch context the two helpers read, as buildSessionContext() would report it. */
+const context = (messages: Message[], model: Recorded) => manager(messages, model).buildSessionContext();
+
+test("only a message-less branch that already records that exact model calls the append a restatement", () => {
+  const recorded = context([], { provider: "zai", modelId: "glm-5.3" });
+  // The shape a fanout member opens as: dropping this is the point — the alternative is the same
+  // `Model:` row twice in every pane, because transcript.ts renders one row per entry.
+  assert.equal(restatesRecordedModel(recorded, "zai", "glm-5.3"), true, "the recorded pair, once");
+  // A different pair is a real change and must be written: the fallback default that follows an
+  // unauthenticated recorded model, and a different model of the same provider.
+  assert.equal(restatesRecordedModel(recorded, "ollama-cloud", "deepseek-v4.1-flash"), false, "the default is not a restatement");
+  assert.equal(restatesRecordedModel(recorded, "zai", "glm-4.7"), false, "nor is a sibling model of the same provider");
+  // With messages on the branch that append is the SDK's own resume record: queued as before,
+  // which is what keeps this filter from reaching every ordinary session open.
+  assert.equal(restatesRecordedModel(context([{ role: "user" }], { provider: "zai", modelId: "glm-5.3" }), "zai", "glm-5.3"), false, "a message-ful branch keeps its append");
+  // Header-only and nothing recorded: the default append must land, which is how such a session
+  // comes to record a model at all.
+  assert.equal(restatesRecordedModel(context([], null), "ollama-cloud", "deepseek-v4.1-flash"), false, "nothing recorded, nothing restated");
 });

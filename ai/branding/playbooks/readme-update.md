@@ -1,63 +1,62 @@
-# Playbook: update the README after a change
+# Playbook: update the README
 
-> Part of [Sova branding](../overview.md). For editing `README.md` when a feature lands, changes,
-> or goes away. It is a checklist, not a template; the README's existing shape is the template.
+> Part of [Sova branding](../overview.md). The README is a product front door, not an
+> operational manual. Preserve the reader's time, not the previous document's structure.
 
-## Before you write
+## Purpose and shape
 
-1. Name the revision. `git rev-parse --short HEAD`. If your change isn't committed yet, say so
-   in your report; the README describes the tree it ships in.
-2. Confirm the feature the way [truth-sources.md](../truth-sources.md) says: route or socket
-   message, component, and a look at the screen. The spec section that describes it is context,
-   not evidence.
-3. Read the README section you're touching and the sections that link to it. The README is
-   short on purpose and every paragraph carries a fact; find the one your change makes wrong.
-4. **Check the name.** The product is Sova, the package is `sova`, and the repository is
-   [Naomarik/sova](https://github.com/Naomarik/sova). But the state directory
-   `~/.pi/agent/pi-web/`, the `pi-web:*` browser keys and the `pi-web-theme/v1` schema are not
-   migrated; leave those old names where they are the true ones. See
-   [naming.md](../naming.md) for the ledger.
+A busy developer should understand the payoff and find the install command in seconds.
+Aim for **300–400 words**, in this order:
 
-## What the README is
+1. Existing logo, benefit-led headline, and a short explanation of what Sova adds to pi.
+2. One published installer command, followed by “then `sova`” and the local URL.
+3. Around 5 scannable features, written as useful outcomes rather than component names.
+4. A brief, honest single-user, authentication, and provider-network note.
+5. Links to setup, customization, development, and license details.
 
-One page a pi user reads to decide whether to run this and how. It has a fixed order: what it is,
-setup, running, the few features that need explaining (models, themes), tests, environment and
-secrets, the pi-config mirror. It does not have a feature list, a roadmap, screenshots, or a
-changelog, and it should not grow one for your change.
+Parallel sessions, comparison, branching, and continuity are reasons to try the product.
+Lead with those—not the acronym, architecture, defensive qualifications, or a feature audit.
+Calm and concrete does not mean reluctant to explain why the tool is useful.
 
-## Rules
+## Before writing
 
-- **Change the sentence that is now false.** Don't add a paragraph next to it.
-- **A new feature gets a section only if a user needs instructions.** Models and Themes have
-  sections because a user configures them. A new panel that just appears needs one sentence in
-  the opening paragraph at most, or nothing.
-- **Say the limit with the feature.** "It is for one local user." "Read-only here." If your
-  feature has an edge, the README says it in the same sentence or the next.
-- **Digits, code spans, en-US, sentence case.** As [voice.md](../voice.md).
-- **Keep the tables as tables.** The path table and the env-var table are the README's index.
-  A new path or variable goes in as a row, in the existing order.
-- **Don't mention the spec section number.** Readers of the README don't have the spec open.
-  Link to a file only when the reader will open it (an extension README, `CLAUDE.md`).
-- **Don't write "now".** "Now supports" is false in a month. State the fact.
-- **Never touch `CLAUDE.md` or an `AGENTS.md` from this playbook.** Those are agent instructions
-  with their own owner.
+- Record the revision and check the worktree. Verify claims against implementation, not just the
+  spec or an older README; use [truth-sources.md](../truth-sources.md). Report what was actually
+  checked, distinguishing code inspection from browser testing.
+- Check both ends of a capability: backend and UI. Mark extension-dependent functionality as
+  optional, and link its setup instructions.
+- Read the installer. A command that installs but does not launch must not be described as
+  running the app. Keep the published release URL unless a new release has actually shipped.
+- Check current names against code. New state uses `sova`; legacy `pi-web` spellings remain for
+  compatibility. Do not repeat old migration plans as current facts.
 
-## After you write
+## Editing rules
 
-- Read the changed section aloud to the reader in [identity.md](../identity.md): another pi
-  user on their own machine. Every sentence should be something they can check.
-- `grep -n` for the old wording elsewhere in the README, `pi-config/README.md`, and the extension
-  READMEs. The mirror publishes `pi-config/`; don't leave a contradiction there. Note that
-  `pi-config/` names the app in places too and is owned elsewhere — flag it, don't edit it from
-  here.
-- Report which sentences changed and at which revision you verified them.
+- Replace weak copy instead of appending explanations. A new feature may replace a weaker bullet;
+  it does not automatically earn a section.
+- Put login, PATH troubleshooting, protected phone access, runtime settings, and removal in
+  [Getting started](../../../docs/getting-started.md).
+- Put themes, model policy, and extension setup in
+  [Customization](../../../docs/customization.md); put build and test details in
+  [Development](../../../CONTRIBUTING.md).
+- Keep decisive limits close: terminal watching is read-only; subagents and remote tools need
+  extensions. Link detailed prerequisites instead of repeating them in every bullet.
+- Do not promise no network traffic, offline agents, or safe public access without authentication.
+- Use the existing logo. No invented badges, screenshots, testimonials, or performance claims.
+- Keep revision evidence in the change report, not in the product pitch.
+- Never edit `CLAUDE.md` or `AGENTS.md`, or add automatic branding instructions there.
+  These branding documents remain opt-in guidance.
+
+## Before publishing
+
+Check relative links and anchors, command spelling, installer availability, and copy consistency.
+Review the diff for credentials, personal paths, transcript excerpts, and other private data.
+Report the README word count and the checks performed. Flag stale statements in separately owned
+extension documentation rather than expanding the change into that subtree.
 
 ## Example
 
-A change lands that makes a theme file appear in the picker without a restart.
-
-Wrong: add a "Live reload" section with three paragraphs.
-
-Right: find "Drop-in is live" under Themes, check that it's still true, adjust the number if the
-poll interval changed, and leave it. If it is new, add two sentences where the drop-in directory
-is introduced, with the interval as a digit.
+A theme refresh improvement belongs in the customization guide. Update its existing refresh
+sentence after checking the implementation; don't add 3 paragraphs to the README. If themes become
+one of the strongest reasons to use Sova, give them a concise benefit-led bullet in place of a
+less useful one—not a configuration tutorial above the install command.

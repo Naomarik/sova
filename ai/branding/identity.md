@@ -5,15 +5,17 @@
 
 ## One line
 
-A local web app for reading, watching, and continuing your pi sessions.
+Run pi sessions side by side. Stop juggling terminals.
+
+Sova stands for Sessions, Orchestration, Viewing & Agents.
 
 ## One paragraph
 
 Sova runs on your own machine next to the pi coding agent and reads the same `~/.pi/agent` the
 terminal does. It lists every session on the machine, shows any transcript, watches a session
-that's open in a TUI as it runs, and lets you chat in the sessions it started itself. Nothing
-leaves the machine unless you point it at a remote target you own. It is one person's tool for
-one person's agent.
+that's open in a TUI as it runs, and gives web chats parallel workspaces, branching, and steering.
+Model requests go to your configured provider; tools and extensions may also use the network.
+It is one person's tool for one person's agent.
 
 ## Who it is for
 
@@ -38,7 +40,7 @@ and focus. Status carries a word, never a hue alone. Failures are stated once, p
 was and wasn't changed.
 
 **It is honest about scope.** Local, single-user, no authentication. The README says to keep the
-port behind a firewall because that is the truth of it.
+app behind authenticated access before exposing it beyond the machine.
 
 ## What it is not
 

@@ -212,8 +212,14 @@ export const realFanoutDeps: FanoutDeps = {
     const created = sm.getSessionFile();
     const header = sm.getHeader();
     if (!created || !header) throw new Error("SessionManager did not produce a session file");
-    writeFileSync(created, `${JSON.stringify(header)}\n`, { flag: "wx" });
+    // The member's model must be IN this hand-write, so it is appended BEFORE it: the SDK's
+    // _persist drops every append to a session with no assistant message while the manager has
+    // not flushed — and a file written by hand is, to the manager, exactly that. Appending after
+    // the write leaves the model_change in memory only and the member's file never records its
+    // model (fork() escaped the bug because append-then-write-all is its order). getEntries()
+    // excludes the header, so [header, ...entries] is the whole file.
     sm.appendModelChange(member.provider, member.modelId);
+    writeFileSync(created, `${[JSON.stringify(header), ...sm.getEntries().map((e) => JSON.stringify(e))].join("\n")}\n`, { flag: "wx" });
     return finishMember(created);
   },
 

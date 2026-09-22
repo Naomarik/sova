@@ -870,6 +870,30 @@ export function isSessionBusy(path: string): boolean {
   return !!chat && !chat.disposed && chat.session.isStreaming;
 }
 
+/** A model as the runtime resolves it, without naming pi-ai's `Model` (not re-exported by the SDK entry). */
+type ResolvedModel = NonNullable<ReturnType<ModelRuntime["getModel"]>>;
+
+/**
+ * The model a MESSAGE-LESS session records for itself, for openSession to pass as
+ * `createAgentSessionFromServices`' `model`. The SDK restores a session's recorded model only
+ * when the branch already has messages (sdk.js gates the restore on `messages.length > 0`), and
+ * a fresh fanout member is created with a model_change and nothing else — so without this, its
+ * runtime resolves the server default and the member's first turn runs a model nobody chose.
+ * Once the branch has messages the SDK does this itself, which is why the message-less case is
+ * the only one answered here. The two guards are the SDK's own restore guards (getModel, then
+ * hasConfiguredAuth): on either failure the answer is undefined and the SDK falls back —
+ * binding a member's model must never fail the open.
+ */
+export function recordedModelForEmptyBranch(
+  sessionManager: Pick<SessionManager, "buildSessionContext">,
+  modelRuntime: Pick<ModelRuntime, "getModel" | "hasConfiguredAuth">,
+): ResolvedModel | undefined {
+  const context = sessionManager.buildSessionContext();
+  if (context.messages.length > 0 || !context.model) return undefined;
+  const model = modelRuntime.getModel(context.model.provider, context.model.modelId);
+  return model && modelRuntime.hasConfiguredAuth(model.provider) ? model : undefined;
+}
+
 async function openSession(path: string, onDisposed: () => void): Promise<ChatSession> {
   if (!existsSync(path)) throw new Error(`Session file not found: ${path}`);
   const modelRuntime = await getModelRuntime();
@@ -880,7 +904,18 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
   const deferred: Array<() => void> = [];
   const appendModelChange = sessionManager.appendModelChange;
   const appendThinkingLevelChange = sessionManager.appendThinkingLevelChange;
+  // One construction-time append must NOT be deferred: the model the runtime was built with, for
+  // a session whose branch already records that same model and has no messages. The SDK appends it
+  // unconditionally for a message-less session (sdk.js:261), and a fanout member's file is written
+  // with exactly that model at creation — so deferring it would land a second identical
+  // `model_change` on the first prompt and put two identical `Model:` rows at the top of every
+  // member's transcript (transcript.ts renders one row per entry). The fact is already on the
+  // branch, which is why dropping this one restatement loses nothing. Only a message-less branch
+  // whose recorded model is the one just resolved can reach it: every other shape is queued.
+  const openContext = sessionManager.buildSessionContext();
+  const restatedModel = openContext.messages.length === 0 ? openContext.model : null;
   sessionManager.appendModelChange = (...args: Parameters<typeof appendModelChange>) => {
+    if (restatedModel && args[0] === restatedModel.provider && args[1] === restatedModel.modelId) return "";
     deferred.push(() => appendModelChange.apply(sessionManager, args));
     return "";
   };
@@ -902,8 +937,12 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
     if (target) flags.set("target", target);
     const services = await createAgentSessionServices({ cwd, modelRuntime, extensionFlagValues: flags });
     for (const d of services.diagnostics) console.warn(`[chat] runtime ${d.type}: ${d.message}`);
+    // A message-less session that records its own model — a fanout member, whose file is written
+    // with its model at creation — binds it here (see recordedModelForEmptyBranch); every other
+    // shape answers undefined and the SDK resolves exactly as before.
+    const model = recordedModelForEmptyBranch(sessionManager, modelRuntime);
     return {
-      ...(await createAgentSessionFromServices({ services, sessionManager, sessionStartEvent })),
+      ...(await createAgentSessionFromServices({ services, sessionManager, sessionStartEvent, model })),
       services,
       diagnostics: services.diagnostics,
     };

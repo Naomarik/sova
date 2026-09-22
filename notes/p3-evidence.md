@@ -71,15 +71,15 @@ honour `PI_CODING_AGENT_DIR` would close it. Not touched here: shared file, anot
    → all 400, stored file unchanged
 ```
 
-## Item 2 — screenshots (uncommitted, absolute paths)
+## Item 2 — screenshots (captured during the pass, not retained)
 
-- `/home/user/webapps/pi-web-claude/notes/screenshots/01-experimental-off.png`
-  Settings → Experimental, toggle OFF, status line
+The three captures below were taken against a live instance and are described rather than
+committed, so this repository ships no screenshots of real sessions.
+
+- Settings → Experimental, toggle OFF, status line
   *"Claude Code CLI 2.1.278 (Claude Code) found. Switch on to add its models."*
-- `/home/user/webapps/pi-web-claude/notes/screenshots/02-experimental-on.png`
-  Same tab, toggle ON, status line *"… · 4 models in the picker."*
-- `/home/user/webapps/pi-web-claude/notes/screenshots/03-model-picker-on.png`
-  A new session's model picker filtered to "claude": `claude-fable-5-1[1m]`, `haiku`, `opus[1m]`,
+- Same tab, toggle ON, status line *"… · 4 models in the picker."*
+- A new session's model picker filtered to "claude": `claude-fable-5-1[1m]`, `haiku`, `opus[1m]`,
   `sonnet`, each tagged VISION / claude-code-cli.
 
 No chat turn was run.

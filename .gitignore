@@ -2,5 +2,35 @@ node_modules/
 dist/
 *.log
 .playwright-port
-.env
 .agent/
+
+# credential material never belongs in the repo
+.env
+.env.*
+!.env.example
+auth.json
+llmkeys
+*.key
+*.pem
+*.p12
+*.pfx
+id_rsa*
+id_ecdsa*
+id_ed25519*
+.npmrc
+.netrc
+.pgpass
+*credential*
+*secret*
+
+# local, per-machine overrides and runtime state
+*.local
+*.local.json
+trust.json
+models-store.json
+model-favorites.json
+tmp/
+
+# OS cruft
+.DS_Store
+Thumbs.db

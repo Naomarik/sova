@@ -47,7 +47,7 @@ test("parseTargets: bad JSON or envelope is a file error; bad entries are skippe
     r.targets.map((t) => t.name),
     ["acme-prod"],
   );
-  assert.deepEqual(r.invalid.map((i) => i.name).sort(), ["..", "nohost", "acme-prod", "x y"]);
+  assert.deepEqual(r.invalid.map((i) => i.name).sort(), ["..", "acme-prod", "nohost", "x y"]);
   assert.ok(r.invalid.every((i) => i.errors.length > 0));
 });
 

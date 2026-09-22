@@ -12,7 +12,7 @@ function harness() {
 		emit(name: string, data: any) { for (const fn of listeners.get(name) ?? []) fn(data); },
 	};
 	events.on(BACKEND_REGISTER_EVENT, b => registrations.push(b));
-	registerClaudeCode({ events, on: (name: string, hook: Function) => hooks.set(name, hook) } as any);
+	registerClaudeCode({ events, registerFlag() {}, getFlag: () => undefined, registerProvider() {}, unregisterProvider() {}, on: (name: string, hook: Function) => hooks.set(name, hook) } as any);
 	return { events, hooks, registrations };
 }
 test("Claude extension registers versioned backend and handles discovery until shutdown", async () => {

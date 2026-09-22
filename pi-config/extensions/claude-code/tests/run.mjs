@@ -3,6 +3,9 @@ import { readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { jiti } from '../../subagents/tests/runtime.mjs';
 const root = fileURLToPath(new URL('../', import.meta.url));
-for (const file of readdirSync(root).filter(f => f.endsWith('.test.ts')).sort()) {
-  await jiti.import(root + file);
+// The extension root plus the one-level subdirectories that hold tests.
+for (const dir of [root, root + 'provider/']) {
+  for (const file of readdirSync(dir).filter(f => f.endsWith('.test.ts')).sort()) {
+    await jiti.import(dir + file);
+  }
 }

@@ -1,6 +1,6 @@
 import { createEffect, createMemo, createResource, createSignal, For, onMount, Show } from "solid-js";
 import type { ModelInfo, ThemeInfo } from "../../shared/protocol";
-import { getSubagentPolicy, getThemes, putSubagentPolicy } from "../lib/api";
+import { getClaudeCliStatus, getSubagentPolicy, getThemes, getWebSettings, putSubagentPolicy, putWebSettings } from "../lib/api";
 import { tildePath } from "../lib/format";
 import { ensureModels } from "../lib/models";
 import { createPoll } from "../lib/poll";
@@ -8,10 +8,11 @@ import { activeThemeId, applyTheme, droppedThemeId, reconcileTheme } from "../li
 import { home } from "../lib/ui-state";
 import { Banner, Icon, trapFocus } from "./ui";
 
-/** The tab rail. Two screens; the rail is the structure further settings slot into. */
+/** The tab rail. Three screens; the rail is the structure further settings slot into. */
 const TABS = [
   { id: "subagents", label: "Subagent models", icon: "worker" as const },
   { id: "themes", label: "Themes", icon: "sliders" as const },
+  { id: "experimental", label: "Experimental", icon: "terminal" as const },
 ] as const;
 type TabId = (typeof TABS)[number]["id"];
 
@@ -36,6 +37,56 @@ export function SettingsDialog(props: { onClose(): void }) {
     setProvidersOff(p.disabledProviders.map((x) => x.toLowerCase()));
     setModelsOff(p.disabledModels.map((x) => x.toLowerCase()));
   });
+  const [webSettings, { refetch: refetchSettings }] = createResource(() => getWebSettings());
+  /** The switch as the user has set it: the stored value, then optimistic toggles. */
+  const [claudeCodeOn, setClaudeCodeOn] = createSignal(false);
+  const [settingsError, setSettingsError] = createSignal<string | null>(null);
+  const [savingSettings, setSavingSettings] = createSignal(false);
+  createEffect(() => {
+    const s = webSettings();
+    if (s) setClaudeCodeOn(s.experimental.claudeCodeProvider);
+  });
+  // Only probed when the tab is open: it spawns `claude --version` on the server.
+  const [cliStatus, { refetch: refetchCliStatus }] = createResource(
+    () => tab() === "experimental",
+    (open) => (open ? getClaudeCliStatus() : undefined),
+  );
+
+  /** One line of truth about the CLI, so the switch is never the only thing the user has to go on. */
+  const statusLine = () => {
+    if (cliStatus.loading) return "Checking for the Claude Code CLI…";
+    const status = cliStatus();
+    if (!status) return "";
+    if (status.error) return `Claude Code CLI: ${status.error}`;
+    const count = status.models ?? 0;
+    if (!claudeCodeOn()) return `Claude Code CLI ${status.version} found. Switch on to add its models.`;
+    return count > 0
+      ? `Claude Code CLI ${status.version} · ${count} ${count === 1 ? "model" : "models"} in the picker.`
+      : `Claude Code CLI ${status.version} found, but no models are registered yet — start a session, or restart the server.`;
+  };
+
+  /** Save the switch; put it back and say so if the write fails. */
+  const toggleClaudeCode = async () => {
+    const before = claudeCodeOn();
+    setClaudeCodeOn(!before);
+    setSettingsError(null);
+    setSavingSettings(true);
+    try {
+      await putWebSettings({ experimental: { claudeCodeProvider: !before } });
+      void refetchSettings();
+      // Turning it on registers the provider server-side, so the count in the status line is
+      // already out of date by the time the PUT returns. Without this the line keeps saying
+      // "no models are registered yet — start a session, or restart the server" while the
+      // picker has them, which is worse than no status line at all.
+      void refetchCliStatus();
+    } catch (err) {
+      setClaudeCodeOn(before);
+      setSettingsError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSavingSettings(false);
+    }
+  };
+
   let firstTab: HTMLButtonElement | undefined;
   onMount(() => firstTab?.focus());
 
@@ -145,6 +196,9 @@ export function SettingsDialog(props: { onClose(): void }) {
               )}
             </For>
           </nav>
+          {/* One panel per tab, each mounted only while its tab is active. .settings-body is a
+              two-column grid (base.css): two panels rendered at once would become a third grid
+              item and squeeze the content into a sliver, which the <Show> guards prevent. */}
           <Show when={tab() === "subagents"}>
             <div class="settings-panel" role="tabpanel" id="settings-panel-subagents" aria-labelledby="settings-tab-subagents">
               <p class="settings-intro">
@@ -254,6 +308,46 @@ export function SettingsDialog(props: { onClose(): void }) {
           <Show when={tab() === "themes"}>
             <div class="settings-panel" role="tabpanel" id="settings-panel-themes" aria-labelledby="settings-tab-themes">
               <ThemesPanel />
+            </div>
+          </Show>
+          {/* Same lifecycle as the other panels: mounted only while its tab is, so the settings
+              and CLI-status resources are read when the tab opens. */}
+          <Show when={tab() === "experimental"}>
+            <div class="settings-panel" role="tabpanel" id="settings-panel-experimental" aria-labelledby="settings-tab-experimental">
+              <p class="settings-intro">
+                Unfinished features. They can change or disappear, and they apply to sessions you start
+                after switching them on — chats already open keep the setup they began with.
+              </p>
+              <Show when={settingsError()}>
+                {(message) => (
+                  <Banner
+                    tone="error"
+                    title="Couldn't save the change"
+                    body={`The setting on the server didn't update, so the previous choice stands. ${message()}`}
+                  />
+                )}
+              </Show>
+              <ul class="settings-list">
+                <li>
+                  <label class="toggle toggle-switch settings-provider">
+                    <input
+                      type="checkbox"
+                      checked={claudeCodeOn()}
+                      disabled={savingSettings() || webSettings.loading}
+                      onChange={() => void toggleClaudeCode()}
+                    />
+                    <span class="settings-provider-main">
+                      <span class="settings-provider-name">Claude Code as first-class models</span>
+                      <span class="settings-provider-meta">
+                        Runs on your Claude subscription through the Claude Code CLI. pi executes every
+                        tool, so its permissions and your mode still apply. Applies to new sessions.
+                      </span>
+                    </span>
+                    <span class="toggle-box" />
+                  </label>
+                  <p class="settings-intro">{statusLine()}</p>
+                </li>
+              </ul>
             </div>
           </Show>
         </div>

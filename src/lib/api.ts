@@ -1,6 +1,7 @@
 import type {
   AgentsInsight,
   ChatModeResult,
+  ClaudeCliStatus,
   ContextInfo,
   ExplanationInfo,
   FileIndex,
@@ -15,6 +16,7 @@ import type {
   TranscriptItem,
   UploadResult,
   UsageInsight,
+  WebSettings,
 } from "../../shared/protocol";
 import { type CleanupRequest, type CleanupResult, parseCleanupResult } from "./archive";
 import type { TargetInfo } from "./remote-session";
@@ -74,6 +76,16 @@ export const putSubagentPolicy = (policy: SubagentModelPolicy) =>
     per request. Never fails on an unreadable folder: that comes back as `error` with the built-ins
     still listed (spec/12-settings-dialog.md §12). */
 export const getThemes = () => request<ThemeList>("/api/themes");
+
+/** pi-web's own settings (GET /api/settings). Today: the experimental Claude Code switch. */
+export const getWebSettings = () => request<WebSettings>("/api/settings");
+
+/** Replace pi-web's settings. Applies to sessions created after the change, not to open ones. */
+export const putWebSettings = (settings: WebSettings) =>
+  request<WebSettings>("/api/settings", { method: "PUT", body: JSON.stringify(settings) });
+
+/** Whether the Claude Code CLI is usable, for the Experimental tab's status line. */
+export const getClaudeCliStatus = () => request<ClaudeCliStatus>("/api/settings/claude-status");
 
 /** The session cwd's file index for @-mentions: every non-ignored file under it, relative to
     it, capped (truncated flags the cap). Cached both sides; the menu refetches when stale. */

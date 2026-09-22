@@ -1,6 +1,7 @@
 import { spawn, type ChildProcess, type SpawnOptions } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { StringDecoder } from "node:string_decoder";
+import { buildDiscoveryArgv, claudeEnv } from "./transport.ts";
 import type { BackendModel } from "../subagents/contracts.ts";
 
 /** Test seams; production callers need only pass an optional abort signal. */
@@ -72,16 +73,11 @@ export async function discoverClaudeModels(
 	for (const value of [timeoutMs, eofGraceMs, termGraceMs, pipeDrainMs, maxLineBytes, maxOutputBytes]) {
 		if (!Number.isSafeInteger(value) || value <= 0) throw new Error("Discovery limits/timings must be positive integers");
 	}
-	const env = { ...process.env };
-	delete env.CLAUDECODE;
-	delete env.CLAUDE_CODE_ENTRYPOINT;
+	const env = claudeEnv();
 	let child: ChildProcess;
 	try {
-		child = (options.spawnImpl ?? spawn)(options.executable ?? "claude", [
-			"-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose",
-			"--tools", "", "--setting-sources", "", "--strict-mcp-config",
-			"--permission-mode", "dontAsk", "--permission-prompts", "none",
-		], { shell: false, detached: process.platform !== "win32", env, stdio: ["pipe", "pipe", "pipe"] });
+		child = (options.spawnImpl ?? spawn)(options.executable ?? "claude", buildDiscoveryArgv(),
+			{ shell: false, detached: process.platform !== "win32", env, stdio: ["pipe", "pipe", "pipe"] });
 	} catch { throw new Error("Could not spawn Claude for model discovery"); }
 	let markClosed!: () => void;
 	const closure = new Promise<void>((resolve) => { markClosed = resolve; });

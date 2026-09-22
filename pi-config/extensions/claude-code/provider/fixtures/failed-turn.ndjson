@@ -1,0 +1,5 @@
+{"type":"system","subtype":"init","session_id":"sess-4"}
+{"type":"stream_event","event":{"type":"message_start","message":{"usage":{"input_tokens":9,"output_tokens":0}}}}
+{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}}
+{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Partial"}}}
+{"type":"result","subtype":"error_during_execution","is_error":true,"result":"Claude API error: overloaded_error"}

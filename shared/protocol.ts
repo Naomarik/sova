@@ -369,6 +369,32 @@ export interface ThemeList {
   error?: string;
 }
 
+// GET /api/settings              -> WebSettings
+// PUT /api/settings              -> WebSettings (400 bad body; only the keys below are accepted)
+// GET /api/settings/claude-status -> ClaudeCliStatus
+// ---------------------------------------------------------------------------
+/** pi-web's own settings, stored in <agentDir>/pi-web/settings.json (server/web-settings.ts).
+    Nothing outside pi-web reads this file, so it is not a cross-process contract the way the
+    subagent policy is. */
+export interface WebSettings {
+  experimental: {
+    /** Offer the Claude Code CLI's models as first-class pi models. Default off. Drives the
+        `claude-code-provider` extension flag, so it takes effect for sessions created after the
+        change, not for ones already open. */
+    claudeCodeProvider: boolean;
+  };
+}
+
+/** Whether the Claude Code CLI is usable, for the Experimental tab's status line. `version` is
+    what `claude --version` printed; `models` counts the claude-code-cli models currently
+    registered with the runtime (0 while the toggle is off). `error` is set when the CLI could not
+    be run at all — the two fields are then absent. */
+export interface ClaudeCliStatus {
+  version?: string;
+  models?: number;
+  error?: string;
+}
+
 
 export interface ModelInfo {
   /** "provider/modelId" — the canonical ref used in set_model. */

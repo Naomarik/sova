@@ -127,13 +127,26 @@ const tools: Tool[] = [
 	{ name: "bash", description: "Run a command", parameters: Type.Object({ command: Type.String() }) },
 ];
 
-function harness() {
+/**
+ * `refuseSessionId` makes the first N children behave like a CLI handed a
+ * `--session-id` that already exists: one line on stderr, exit 1, and no answer
+ * to `initialize`.
+ */
+function harness({ refuseSessionId = 0 }: { refuseSessionId?: number } = {}) {
 	const children: FakeClaude[] = [];
 	const bridge = new SessionBridge({
 		cwd: "/tmp/pi-bridge-test",
 		spawnImpl: ((command: string, argv: string[], options: any) => {
 			const child = new FakeClaude(command, argv, options, 5000 + children.length);
 			children.push(child);
+			if (children.length <= refuseSessionId) {
+				const id = argv[argv.indexOf("--session-id") + 1];
+				child.autoInitialize = false;
+				setTimeout(() => {
+					child.stderr.write(`Error: Session ID ${id} is already in use.\n`);
+					child.exit(1);
+				}, 0);
+			}
 			return child as any;
 		}) as any,
 		signalGroupImpl: (pid) => {
@@ -201,6 +214,13 @@ test("uuidv5 matches the RFC 4122 vector and is stable per pi session", () => {
 	assert.match(id, /^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
 	assert.equal(id, claudeSessionId("pi-session-1"));
 	assert.notEqual(id, claudeSessionId("pi-session-2"));
+	// Launch 0 is the bare name, so an existing session's first child keeps its
+	// id; every later launch needs one of its own, since --session-id creates a
+	// record and the CLI refuses an id it already wrote.
+	assert.equal(id, claudeSessionId("pi-session-1", 0));
+	const later = [1, 2, 3].map((n) => claudeSessionId("pi-session-1", n));
+	assert.equal(new Set([id, ...later]).size, 4);
+	assert.equal(later[0], claudeSessionId("pi-session-1", 1));
 });
 
 test("the fingerprint is cumulative, so appends are prefixes and edits are not", () => {
@@ -266,6 +286,27 @@ test("argv, env and the MCP handshake match the spike's recorded shapes", { time
 	cli.emitFrame({ type: "result", subtype: "success", is_error: false, result: "done" });
 	await pending;
 	await collect({ [Symbol.asyncIterator]: () => frames } as AsyncIterable<ClaudeFrame>);
+	await bridge.disposeAll();
+});
+
+/**
+ * The bug this guards: `--session-id` CREATES a record, so once any child had
+ * died (an API 500 ends one) every relaunch on a stable id was refused before
+ * `initialize`, and the pi session was dead for good — "Claude did not answer
+ * initialize" on every later turn, model switch included.
+ */
+test("a --session-id the CLI already wrote is probed past, not retried forever", { timeout: 8000 }, async () => {
+	const { bridge, children } = harness({ refuseSessionId: 2 });
+	await collectAfter(bridge.runTurn(request([user("hi")])), async () => {
+		const cli = await child(children, 3);
+		await cli.waitFor((f) => f.request?.subtype === "initialize");
+		await cli.handshake();
+		cli.emitFrame({ type: "result", subtype: "success", is_error: false, result: "ok" });
+	});
+
+	assert.equal(children.length, 3, "each refusal costs one spawn and no more");
+	const ids = children.map((c) => c.argv[c.argv.indexOf("--session-id") + 1]);
+	assert.deepEqual(ids, [0, 1, 2].map((n) => claudeSessionId("pi-session-1", n)));
 	await bridge.disposeAll();
 });
 

@@ -51,9 +51,21 @@ The same global holds a once-only flag for the process exit hooks (`exit`, `SIGI
 
 ### CLI session identity
 
-`--session-id = uuidv5(NAMESPACE_URL, "pi:" + piSessionId)`, NAMESPACE_URL =
-`6ba7b811-9dad-11d1-80b4-00c04fd430c8`. Stable across pi-web restarts, so a restarted server re-attaches to the
-same Claude session record instead of littering new ones.
+`--session-id = uuidv5(NAMESPACE_URL, "pi:" + piSessionId)` for a pi session's FIRST child, and
+`"pi:" + piSessionId + "#" + launch` for each one after it. NAMESPACE_URL =
+`6ba7b811-9dad-11d1-80b4-00c04fd430c8`.
+
+One id per pi session was the original design, and it was wrong: `--session-id` **creates** a record, it never
+re-attaches to one. Handed an id that exists, the CLI prints `Error: Session ID <id> is already in use.` on
+stderr and exits 1 without answering `initialize`. With a stable id, the first child's death (an API 500 is
+enough) therefore killed the pi session permanently — every later turn failed with "Claude did not answer
+initialize", a model switch included. Deriving the id from the pi session keeps the records attributable
+without making a relaunch impossible.
+
+The launch counter lives in the bridge, so a new pi-web process starts back at 0 and walks forward past the
+records the previous one left: `spawnFresh` treats that stderr line as a collision, bumps the counter and
+spawns again, up to `SESSION_ID_PROBES` (32) times. Each collision costs one fast-failing spawn (~150 ms); any
+other handshake failure still throws on the first attempt.
 
 No `uuid` dependency is available (pi-config extensions are node-builtins-only), so uuidv5 is implemented over
 `node:crypto` SHA-1: `sha1(namespaceBytes ‖ utf8(name))`, first 16 bytes, `b[6] = (b[6] & 0x0f) | 0x50`,

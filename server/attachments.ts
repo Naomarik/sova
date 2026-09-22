@@ -3,6 +3,7 @@ import { closeSync, constants, linkSync, lstatSync, mkdirSync, openSync, realpat
 import { open } from "node:fs/promises";
 import { basename, dirname, extname, join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { stateRoot, unlegacyStatePath } from "./state-root";
 import type { TmpAttachment } from "../shared/protocol";
 import { ATTACHMENT_TAIL, findTmpImagePaths, isPiClipboardName, SESSION_ID, TMP_IMAGE_PATH } from "../shared/tmp-paths";
 
@@ -13,11 +14,16 @@ import { ATTACHMENT_TAIL, findTmpImagePaths, isPiClipboardName, SESSION_ID, TMP_
 
 const TMP_DIR = "/tmp";
 
-/** pi-web's durable attachments: a composer-draft upload lands in `<root>/<session id>/`, so a
+/** Sova's durable attachments: a composer-draft upload lands in `<root>/<session id>/`, so a
     reload keeps it with the draft text (server/drafts.ts), and the path the prompt names stays
     readable after the send (the transcript renders it; /tmp gets cleaned). Per call, not at
-    load: PI_CODING_AGENT_DIR is read by getAgentDir each time, which the tests rely on. */
-export const attachmentsRoot = () => join(getAgentDir(), "pi-web", "attachments");
+    load: PI_CODING_AGENT_DIR is read by getAgentDir each time, which the tests rely on.
+
+    RENAME BRIDGE: transcripts stored before the rebrand name `<agent dir>/pi-web/attachments/…`
+    paths forever. The state move renamed the directory, never the transcripts, so serving and
+    deleting re-anchor those paths at the new root (`unlegacyStatePath`, called at the top of
+    checkTmpImage/deleteAttachment). New uploads land under the new root with `sova-<uuid>` names. */
+export const attachmentsRoot = () => join(stateRoot(), "attachments");
 
 /** One session's folder. The id must be a plain id (no separators or dots), or null. */
 export function sessionAttachmentsDir(sessionId: string): string | null {
@@ -87,7 +93,7 @@ export function saveUploadedImage(bytes: Uint8Array, declaredMime: string, dir: 
     }
   }
   for (let attempt = 0; attempt < 5; attempt++) {
-    const name = `pi-web-${randomUUID()}${ext}`;
+    const name = `sova-${randomUUID()}${ext}`; // legacy `pi-web-…` names keep parsing (shared/tmp-paths)
     const part = join(dir, `.${name}.part`);
     const finalPath = join(dir, name);
     try {
@@ -146,6 +152,11 @@ const under = (p: string, root: string | null) => (root && p.startsWith(`${root}
  */
 export function checkTmpImage(p: unknown): TmpImageCheck {
   if (typeof p !== "string" || p.length > 1024) return badShape();
+  // pre-rebrand transcripts name the old root; the files moved with the rename
+  return checkImagePath(unlegacyStatePath(p));
+}
+
+function checkImagePath(p: string): TmpImageCheck {
   const inTmp = p.length <= 255 && TMP_IMAGE_PATH.test(p);
   let r: { root: string; real: string | null } | null = null;
   if (!inTmp) {
@@ -188,6 +199,11 @@ function badShape(): TmpImageCheck {
  */
 export function deleteAttachment(p: unknown): { ok: true } | { ok: false; status: 400 | 403 | 404; error: string } {
   if (typeof p !== "string" || !p) return { ok: false, status: 400, error: "Missing ?path=" };
+  // composer chips on old transcripts still name the moved file: re-anchor, then the rules below
+  return deleteCheckedAttachment(unlegacyStatePath(p));
+}
+
+function deleteCheckedAttachment(p: string): { ok: true } | { ok: false; status: 400 | 403 | 404; error: string } {
   const r = roots();
   const tail = under(p, r.root) ?? under(p, r.real);
   if (tail === null || !ATTACHMENT_TAIL.test(tail)) return { ok: false, status: 403, error: "Only files in the attachments folder can be deleted" };

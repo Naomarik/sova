@@ -213,7 +213,9 @@ test("(d) validation runs after resolution, never before", () => {
 
 test("(e) a user file taking a built-in id replaces it, in place, and says so", () => {
   clearUserThemes();
-  dropUserTheme("dracula", { $schema: "pi-web-theme/v1", name: "Dracula (mine)", extends: "light", colors: { accent: "#ff0000" } });
+  // Both spellings are accepted and neither warns: a theme written before the rename and one
+  // written after it are equally valid, forever (the file on disk is the user's, never rewritten).
+  dropUserTheme("dracula", { $schema: "sova-theme/v1", name: "Dracula (mine)", extends: "light", colors: { accent: "#ff0000" } });
   dropUserTheme("sunset", { $schema: "pi-web-theme/v1", name: "Sunset", extends: "dark", colors: { bg: "#2b1a12" } });
   const { themes, dir } = listThemes();
   assert.equal(dir, userDir);
@@ -230,6 +232,9 @@ test("(e) a user file taking a built-in id replaces it, in place, and says so", 
 
   const sunset = themes.find((t) => t.id === "sunset")!;
   assert.equal(sunset.source, "user");
+  // The $schema each was written with is inert: no warning for either spelling.
+  assert.deepEqual(dracula.warnings ?? [], [], "sova-theme/v1 is the current spelling");
+  assert.deepEqual(sunset.warnings ?? [], [], "pi-web-theme/v1 still loads silently");
   assert.equal(sunset.replacesBuiltin, undefined);
   assert.equal(themes.at(-1)!.id, "sunset", "a user theme that replaces nothing comes last");
   assert.ok(themes.findIndex((t) => t.id === "dracula") < themes.findIndex((t) => t.id === "sunset"));
@@ -296,14 +301,14 @@ test("(f) an unknown key is inert, not fatal", () => {
 
 test("(f) an unreadable user folder keeps the built-ins listed and reports why", () => {
   clearUserThemes();
-  writeFileSync(join(agentDir, "pi-web", "themes-file"), "not a folder");
+  writeFileSync(join(agentDir, "sova", "themes-file"), "not a folder");
   const prev = process.env.PI_CODING_AGENT_DIR;
   try {
     // A path whose "themes" is a file, not a directory: readdir fails with something other than
     // ENOENT, which is the case §12's banner exists for.
     const scratch = mkdtempSync(join(tmpdir(), "pi-web-themes-file-"));
-    mkdirSync(join(scratch, "pi-web"), { recursive: true });
-    writeFileSync(join(scratch, "pi-web", "themes"), "not a folder");
+    mkdirSync(join(scratch, "sova"), { recursive: true });
+    writeFileSync(join(scratch, "sova", "themes"), "not a folder");
     process.env.PI_CODING_AGENT_DIR = scratch;
     const r = listThemes();
     assert.ok(r.error, "the folder's failure is reported");

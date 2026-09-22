@@ -8,7 +8,7 @@ import { relativeTime, shortModel } from "./format";
 export const THUMB_WIDTH = 1280;
 
 /**
- * The theme the app is wearing. pi-web is dark unless `<html data-theme="light">` (tokens.css
+ * The theme the app is wearing. Sova is dark unless `<html data-theme="light">` (tokens.css
  * §3), so this reads the element, not prefers-color-scheme.
  */
 export const appTheme = (): "dark" | "light" => (document.documentElement.dataset.theme === "light" ? "light" : "dark");

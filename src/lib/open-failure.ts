@@ -33,7 +33,7 @@ export interface OpenFailureSession {
   /** Remote session: its target, and the folder on it. */
   target?: string;
   remoteCwd?: string;
-  /** Archiving is pi-web's gesture for sessions it started and hasn't archived (the pane's rule). */
+  /** Archiving is Sova's gesture for sessions it started and hasn't archived (the pane's rule). */
   origin?: "web" | "external";
   archived?: boolean;
 }

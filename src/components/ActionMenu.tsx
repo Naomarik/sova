@@ -65,6 +65,9 @@ export function ActionMenu(props: {
   icon?: IconName;
   /** Extra classes on the trigger, for a head that reveals it on hover. */
   class?: string;
+  /** A toolbar trigger says what it opens in words: the icon-only "⋯" is the default, and this
+      turns it into a labelled button with a chevron, like every other menu trigger with room. */
+  text?: string;
   /**
    * The trigger lives inside a `<summary>`. Two things follow, and both are load-bearing:
    *
@@ -235,7 +238,7 @@ export function ActionMenu(props: {
       <button
         ref={trigger}
         type="button"
-        class={`button button-icon button-ghost${props.class ? ` ${props.class}` : ""}`}
+        class={`button${props.text ? "" : " button-icon button-ghost"}${props.class ? ` ${props.class}` : ""}`}
         aria-haspopup="menu"
         aria-expanded={open() ? "true" : "false"}
         aria-label={props.label}
@@ -247,6 +250,14 @@ export function ActionMenu(props: {
         onKeyDown={stop}
       >
         <Icon name={props.icon ?? "more"} />
+        <Show when={props.text}>
+          {(text) => (
+            <>
+              {text()}
+              <Icon name="chevron-down" small />
+            </>
+          )}
+        </Show>
       </button>
       <Show when={props.contain} fallback={panel}>
         <Portal>{panel}</Portal>

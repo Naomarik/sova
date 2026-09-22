@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>pi-web logo candidates · round 2 · Fable</title>
+<style>
+  /* Standalone on purpose: one file, no build, opens from disk. Values are copied from
+     src/design/tokens.css (dark and light blocks); the fonts are the bundled ones, with a
+     system fallback so the page still reads if the relative path breaks. */
+  @font-face { font-family: "Inter"; src: url("../../../../../public/fonts/Inter-Variable.woff2") format("woff2"); font-weight: 100 900; font-display: block; }
+  @font-face { font-family: "JetBrains Mono"; src: url("../../../../../public/fonts/JetBrainsMono-Variable.woff2") format("woff2"); font-weight: 100 800; font-display: block; }
+  :root { --bg:#1E1E26; --surface:#2C2C38; --ink:#F2F2F6; --ink-2:#B8B8C6; --muted:#9A9AA8; --border:#3B3B49; --accent:#8E88FF; --tint:#2B2650; --on-accent:#1E1E26; }
+  [data-theme="light"] { --bg:#F2F2F7; --surface:#FFFFFF; --ink:#17171C; --ink-2:#4A4A57; --muted:#656572; --border:#E3E3E9; --accent:#4A43D8; --tint:#E8E6FA; --on-accent:#FFFFFF; }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); color: var(--ink); font: 400 14.5px/1.55 Inter, system-ui, sans-serif; }
+  body { margin: 0; padding: 32px 24px 64px; }
+  .page { max-width: 1120px; margin: 0 auto; }
+  h1 { font-size: 29px; line-height: 1.12; font-weight: 640; letter-spacing: -0.02em; margin: 0 0 8px; }
+  h2 { font-size: 20px; line-height: 1.25; font-weight: 600; margin: 0; }
+  .intro { color: var(--ink-2); max-width: 72ch; margin: 0 0 32px; }
+  .intro code, .ledger code { font: 500 12.5px/1.5 "JetBrains Mono", monospace; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px; margin-bottom: 24px; }
+  .card header { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+  .chip { display: inline-flex; align-items: center; height: 22px; padding: 0 10px; border-radius: 999px; background: var(--tint); color: var(--accent); font-size: 11px; font-weight: 600; letter-spacing: 0.06em; }
+  .ledger { color: var(--muted); font-size: 12.5px; }
+  .hero { display: flex; justify-content: center; padding: 8px 0 20px; }
+  .panels { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 767px) { .panels { grid-template-columns: 1fr; } }
+  .panel { background: var(--bg); color: var(--ink); border: 1px solid var(--border); border-radius: 8px; padding: 20px; display: grid; gap: 20px; }
+  .lockup { display: inline-flex; align-items: center; gap: 10px; }
+  .lockup .mark { --s: 32px; }
+  .word { font-family: Inter, system-ui, sans-serif; font-weight: 640; font-size: 26px; line-height: 1; letter-spacing: -0.03em; color: var(--ink); }
+  .mark { display: inline-block; width: var(--s, 32px); height: var(--s, 32px); line-height: 0; }
+  .mark svg { width: 100%; height: 100%; display: block; }
+  .mark.accent { color: var(--accent); }
+  .mark.ink { color: var(--ink); }
+  .sizes { display: flex; align-items: flex-end; gap: 24px; flex-wrap: wrap; }
+  figure { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  figcaption { font: 400 11px/1.3 "JetBrains Mono", monospace; color: var(--muted); }
+  figure.on-accent .mark { color: var(--on-accent); background: var(--accent); border-radius: 8px; padding: 6px; width: 44px; height: 44px; }
+  .notes { margin-top: 16px; max-width: 72ch; }
+  .notes p { margin: 0 0 8px; }
+  .muted { color: var(--ink-2); }
+  .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 24px; }
+  @media (max-width: 767px) { .grid { grid-template-columns: 1fr 1fr; } }
+  .grid a { display: grid; justify-items: center; gap: 10px; padding: 16px 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; color: var(--ink); text-decoration: none; font-size: 12.5px; }
+  .grid a span:last-child { color: var(--muted); }
+  footer { color: var(--muted); font-size: 12.5px; max-width: 72ch; }
+  footer code { font: 400 12.5px/1.5 "JetBrains Mono", monospace; }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>Logo candidates, round 2</h1>
+  <p class="intro">4 new letter marks for the 2 names on the table, 2 each, drawn after the first round's
+  <em>Ligature</em> (T joined to I in one stroke) was picked as the direction. None of these is a variant of it:
+  each name gets one continuous-stroke ligature and one negative-space monogram, and every mark says which
+  letters it is made of. Every mark is one <code>currentColor</code> SVG on a 32-unit grid, shown here in the
+  accent as the sidebar head would use it, in ink, and reversed on the accent, at the 3 sizes the product needs.
+  The wordmark is Inter 640 at &minus;0.03em, per the design skill's Logo section, and the two panels are
+  the dark and light token sets. The name is still provisional; see <code>../../../naming.md</code>.</p>
+  <div class="grid">
+    <a href="#sova-counter"><span class="mark accent" style="--s:48px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="SOVA"> <path fill="currentColor" fill-rule="evenodd" d="M16 2a14 14 0 1 0 0 28 14 14 0 0 0 0-28ZM22.5 11.5A6.5 6.5 0 1 0 16 18a2.5 2.5 0 1 1-2.5 2.5 2 2 0 0 0-4 0A6.5 6.5 0 1 0 16 14a2.5 2.5 0 1 1 2.5-2.5 2 2 0 0 0 4 0Z"/> </svg></span><span>1. Counter</span><span>SOVA · S cut from O</span></a>
+    <a href="#sova-arm"><span class="mark accent" style="--s:48px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="SOVA"> <path fill="none" stroke="currentColor" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" d="M4 6l8 20 8-20 8 20M14.6 19.5h10.8"/> </svg></span><span>2. Arm</span><span>SOVA · V into A</span></a>
+    <a href="#tavi-frame"><span class="mark accent" style="--s:48px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="TAVI"> <path fill="none" stroke="currentColor" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" d="M5 27 16 5.5 27 27M9.4 18.5h13.2M16 18.5V27"/> </svg></span><span>3. Frame</span><span>TAVI · A and T</span></a>
+    <a href="#tavi-inset"><span class="mark accent" style="--s:48px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="TAVI"> <path fill="currentColor" fill-rule="evenodd" d="M7.12 4.5h17.76a3 3 0 0 1 2.62 4.47l-8.88 15.86a3 3 0 0 1-5.24 0L4.5 8.97A3 3 0 0 1 7.12 4.5ZM11 8a2 2 0 0 0 0 4h3v5.5a2 2 0 0 0 4 0V12h3a2 2 0 0 0 0-4Z"/> </svg></span><span>4. Inset</span><span>TAVI · T cut from V</span></a>
+  </div>
+  <section class="card" id="sova-counter">
+    <header>
+      <span class="chip">SOVA</span>
+      <h2>1. Counter</h2>
+      <span class="ledger">S cut from O · negative space · <code>sova-counter.svg</code></span>
+    </header>
+    <div class="hero"><span class="mark accent" style="--s:96px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="SOVA"> <path fill="currentColor" fill-rule="evenodd" d="M16 2a14 14 0 1 0 0 28 14 14 0 0 0 0-28ZM22.5 11.5A6.5 6.5 0 1 0 16 18a2.5 2.5 0 1 1-2.5 2.5 2 2 0 0 0-4 0A6.5 6.5 0 1 0 16 14a2.5 2.5 0 1 1 2.5-2.5 2 2 0 0 0 4 0Z"/> </svg></span></div>
+    <div class="panels">
+    <div class="panel" data-theme="dark">
+      <div class="lockup"><span class="mark accent"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="SOVA"> <path fill="currentColor" fill-rule="evenodd" d="M16 2a14 14 0 1 0 0 28 14 14 0 0 0 0-28ZM22.5 11.5A6.5 6.5 0 1 0 16 18a2.5 2.5 0 1 1-2.5 2.5 2 2 0 0 0-4 0A6.5 6.5 0 1 0 16 14a2.5 2.5 0 1 1 2.5-2.5 2 2 0 0 0 4 0Z"/> </svg></span><span class="word">sova</span></div>
+      <div class="sizes">
+        <figure><span class="mark accent" style="--s:16px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="SOVA"> <path fill="currentColor" fill-rule="evenodd" d="M16 2a14 14 0 1 0 0 28 14 14 0 0 0 0-28ZM22.5 11.5A6.5 6.5 0 1 0 16 18a2.5 2.5 0 1 1-2.5 2.5 2 2 0 0 0-4 0A6.5 6.5 0 1 0 16 14a2.5 2.5 0 1 1 2.5-2.5 2 2 0 0 0 4 0Z"/> </svg></span><figcaption>16</figcaption></figure>
+        <figure><span class="mark accent" style="--s:24px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="SOVA"> <path fill="currentColor" fill-rule="evenodd" d="M16 2a14 14 0 1 0 0 28 14 14 0 0 0 0-28ZM22.5 11.5A6.5 6.5 0 1 0 16 18a2.5 2.5 0 1 1-2.5 2.5 2 2 0 0 0-4 0A6.5 6.5 0 1 0 16 14a2.5 2.5 0 1 1 2.5-2.5 2 2 0 0 0 4 0Z"/> </svg></span><figcaption>24</figcaption></figure>
+        <figure><span class="mark accent" style="--s:32px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="SOVA"> <path fill="currentColor" fill-rule="evenodd" d="M16 2a14 14 0 1 0 0 28 14 14 0 0 0 0-28ZM22.5 11.5A6.5 6.5 0 1 0 16 18a2.5 2.5 0 1 1-2.5 2.5 2 2 0 0 0-4 0A6.5 6.5 0 1 0 16 14a2.5 2.5 0 1 1 2.5-2.5 2 2 0 0 0 4 0Z"/> </svg></span><figcaption>32</figcaption></figure>
+        <figure><span class="mark ink" style="--s:32px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="SOVA"> <path fill="currentColor" fill-rule="evenodd" d="M16 2a14 14 0 1 0 0 28 14 14 0 0 0 0-28ZM22.5 11.5A6.5 6.5 0 1 0 16 18a2.5 2.5 0 1 1-2.5 2.5 2 2 0 0 0-4 0A6.5 6.5 0 1 0 16 14a2.5 2.5 0 1 1 2.5-2.5 2 2 0 0 0 4 0Z"/> </svg></span><figcaption>ink</figcaption></figure>
+        <figure class="on-accent"><span class="mark" style="--s:32px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="SOVA"> <path fill="currentColor" fill-rule="evenodd" d="M16 2a14 14 0 1 0 0 28 14 14 0 0 0 0-28ZM22.5 11.5A6.5 6.5 0 1 0 16 18a2.5 2.5 0 1 1-2.5 2.5 2 2 0 0 0-4 0A6.5 6.5 0 1 0 16 14a2.5 2.5 0 1 1 2.5-2.5 2 2 0 0 0 4 0Z"/> </svg></span><figcaption>on accent</figcaption></figure>
+      </div>
+    </div>
+    <div class="panel" data-theme="light">
+      <div class="lockup"><span class="mark accent"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="SOVA"> <path fill="currentColor" fill-rule="evenodd" d="M16 2a14 14 0 1 0 0 28 14 14 0 0 0 0-28ZM22.5 11.5A6.5 6.5 0 1 0 16 18a2.5 2.5 0 1 1-2.5 2.5 2 2 0 0 0-4 0A6.5 6.5 0 1 0 16 14a2.5 2.5 0 1 1 2.5-2.5 2 2 0 0 0 4 0Z"/> </svg></span><span class="word">sova</span></div>
+      <div class="sizes">
+        <figure><span class="mark accent" style="--s:16px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="SOVA"> <path fill="currentColor" fill-rule="evenodd" d="M16 2a14 14 0 1 0 0 28 14 14 0 0 0 0-28ZM22.5 11.5A6.5 6.5 0 1 0 16 18a2.5 2.5 0 1 1-2.5 2.5 2 2 0 0 0-4 0A6.5 6.5 0 1 0 16 14a2.5 2.5 0 1 1 2.5-2.5 2 2 0 0 0 4 0Z"/> </svg></span><figcaption>16</figcaption></figure>
+        <figure><span class="mark accent" style="--s:24px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="SOVA"> <path fill="currentColor" fill-rule="evenodd" d="M16 2a14 14 0 1 0 0 28 14 14 0 0 0 0-28ZM22.5 11.5A6.5 6.5 0 1 0 16 18a2.5 2.5 0 1 1-2.5 2.5 2 2 0 0 0-4 0A6.5 6.5 0 1 0 16 14a2.5 2.5 0 1 1 2.5-2.5 2 2 0 0 0 4 0Z"/> </svg></span><figcaption>24</figcaption></figure>
+        <figure><span class="mark accent" style="--s:32px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="SOVA"> <path fill="currentColor" fill-rule="evenodd" d="M16 2a14 14 0 1 0 0 28 14 14 0 0 0 0-28ZM22.5 11.5A6.5 6.5 0 1 0 16 18a2.5 2.5 0 1 1-2.5 2.5 2 2 0 0 0-4 0A6.5 6.5 0 1 0 16 14a2.5 2.5 0 1 1 2.5-2.5 2 2 0 0 0 4 0Z"/> </svg></span><figcaption>32</figcaption></figure>
+        <figure><span class="mark ink" style="--s:32px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="SOVA"> <path fill="currentColor" fill-rule="evenodd" d="M16 2a14 14 0 1 0 0 28 14 14 0 0 0 0-28ZM22.5 11.5A6.5 6.5 0 1 0 16 18a2.5 2.5 0 1 1-2.5 2.5 2 2 0 0 0-4 0A6.5 6.5 0 1 0 16 14a2.5 2.5 0 1 1 2.5-2.5 2 2 0 0 0 4 0Z"/> </svg></span><figcaption>ink</figcaption></figure>
+        <figure class="on-accent"><span class="mark" style="--s:32px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="SOVA"> <path fill="currentColor" fill-rule="evenodd" d="M16 2a14 14 0 1 0 0 28 14 14 0 0 0 0-28ZM22.5 11.5A6.5 6.5 0 1 0 16 18a2.5 2.5 0 1 1-2.5 2.5 2 2 0 0 0-4 0A6.5 6.5 0 1 0 16 14a2.5 2.5 0 1 1 2.5-2.5 2 2 0 0 0 4 0Z"/> </svg></span><figcaption>on accent</figcaption></figure>
+      </div>
+    </div>
+    </div>
+    <div class="notes">
+      <p>The S is the O's counter. A solid disc for the second letter, and the first letter taken out of it, so the two initials of the name share one piece of ink. The S is two three-quarter circles, which is the only S that stays round at 32 units.</p>
+      <p class="muted">The cut is 4 units wide and the rim never drops below 3, so at 16 the S is a 2px channel with a 1.5px wall around it. It is a coin, and a letter in a coin is a well-worn device; what it has over the others is that this one is a real S, not a glyph stamped on.</p>
+    </div>
+  </section>
+  <section class="card" id="sova-arm">
+    <header>
+      <span class="chip">SOVA</span>
+      <h2>2. Arm</h2>
+      <span class="ledger">V into A · shared stroke · <code>sova-arm.svg</code></span>
+    </header>
+    <div class="hero"><span class="mark accent" style="--s:96px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="SOVA"> <path fill="none" stroke="currentColor" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" d="M4 6l8 20 8-20 8 20M14.6 19.5h10.8"/> </svg></span></div>
+    <div class="panels">
+    <div class="panel" data-theme="dark">
+      <div class="lockup"><span class="mark accent"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="SOVA"> <path fill="none" stroke="currentColor" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" d="M4 6l8 20 8-20 8 20M14.6 19.5h10.8"/> </svg></span><span class="word">sova</span></div>
+      <div class="sizes">
+        <figure><span class="mark accent" style="--s:16px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="SOVA"> <path fill="none" stroke="currentColor" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" d="M4 6l8 20 8-20 8 20M14.6 19.5h10.8"/> </svg></span><figcaption>16</figcaption></figure>
+        <figure><span class="mark accent" style="--s:24px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="SOVA"> <path fill="none" stroke="currentColor" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" d="M4 6l8 20 8-20 8 20M14.6 19.5h10.8"/> </svg></span><figcaption>24</figcaption></figure>
+        <figure><span class="mark accent" style="--s:32px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="SOVA"> <path fill="none" stroke="currentColor" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" d="M4 6l8 20 8-20 8 20M14.6 19.5h10.8"/> </svg></span><figcaption>32</figcaption></figure>
+        <figure><span class="mark ink" style="--s:32px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="SOVA"> <path fill="none" stroke="currentColor" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" d="M4 6l8 20 8-20 8 20M14.6 19.5h10.8"/> </svg></span><figcaption>ink</figcaption></figure>
+        <figure class="on-accent"><span class="mark" style="--s:32px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="SOVA"> <path fill="none" stroke="currentColor" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" d="M4 6l8 20 8-20 8 20M14.6 19.5h10.8"/> </svg></span><figcaption>on accent</figcaption></figure>
+      </div>
+    </div>
+    <div class="panel" data-theme="light">
+      <div class="lockup"><span class="mark accent"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="SOVA"> <path fill="none" stroke="currentColor" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" d="M4 6l8 20 8-20 8 20M14.6 19.5h10.8"/> </svg></span><span class="word">sova</span></div>
+      <div class="sizes">
+        <figure><span class="mark accent" style="--s:16px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="SOVA"> <path fill="none" stroke="currentColor" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" d="M4 6l8 20 8-20 8 20M14.6 19.5h10.8"/> </svg></span><figcaption>16</figcaption></figure>
+        <figure><span class="mark accent" style="--s:24px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="SOVA"> <path fill="none" stroke="currentColor" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" d="M4 6l8 20 8-20 8 20M14.6 19.5h10.8"/> </svg></span><figcaption>24</figcaption></figure>
+        <figure><span class="mark accent" style="--s:32px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="SOVA"> <path fill="none" stroke="currentColor" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" d="M4 6l8 20 8-20 8 20M14.6 19.5h10.8"/> </svg></span><figcaption>32</figcaption></figure>
+        <figure><span class="mark ink" style="--s:32px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="SOVA"> <path fill="none" stroke="currentColor" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" d="M4 6l8 20 8-20 8 20M14.6 19.5h10.8"/> </svg></span><figcaption>ink</figcaption></figure>
+        <figure class="on-accent"><span class="mark" style="--s:32px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="SOVA"> <path fill="none" stroke="currentColor" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" d="M4 6l8 20 8-20 8 20M14.6 19.5h10.8"/> </svg></span><figcaption>on accent</figcaption></figure>
+      </div>
+    </div>
+    </div>
+    <div class="notes">
+      <p>The last two letters in one polyline: the V's right arm keeps going and becomes the A's left leg, then the A's crossbar closes it. Three strokes, one turn each, and the crossbar is the only horizontal in the mark.</p>
+      <p class="muted">At a glance it is a W with a bar, and it takes the name beside it to settle into VA. The peaks are 8 units apart and the 4.5 stroke holds at 16; the A's upper counter is 5 units tall, which is the floor for a counter at that size.</p>
+    </div>
+  </section>
+  <section class="card" id="tavi-frame">
+    <header>
+      <span class="chip">TAVI</span>
+      <h2>3. Frame</h2>
+      <span class="ledger">A and T · one crossbar · <code>tavi-frame.svg</code></span>
+    </header>
+    <div class="hero"><span class="mark accent" style="--s:96px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="TAVI"> <path fill="none" stroke="currentColor" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" d="M5 27 16 5.5 27 27M9.4 18.5h13.2M16 18.5V27"/> </svg></span></div>
+    <div class="panels">
+    <div class="panel" data-theme="dark">
+      <div class="lockup"><span class="mark accent"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="TAVI"> <path fill="none" stroke="currentColor" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" d="M5 27 16 5.5 27 27M9.4 18.5h13.2M16 18.5V27"/> </svg></span><span class="word">tavi</span></div>
+      <div class="sizes">
+        <figure><span class="mark accent" style="--s:16px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="TAVI"> <path fill="none" stroke="currentColor" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" d="M5 27 16 5.5 27 27M9.4 18.5h13.2M16 18.5V27"/> </svg></span><figcaption>16</figcaption></figure>
+        <figure><span class="mark accent" style="--s:24px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="TAVI"> <path fill="none" stroke="currentColor" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" d="M5 27 16 5.5 27 27M9.4 18.5h13.2M16 18.5V27"/> </svg></span><figcaption>24</figcaption></figure>
+        <figure><span class="mark accent" style="--s:32px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="TAVI"> <path fill="none" stroke="currentColor" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" d="M5 27 16 5.5 27 27M9.4 18.5h13.2M16 18.5V27"/> </svg></span><figcaption>32</figcaption></figure>
+        <figure><span class="mark ink" style="--s:32px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="TAVI"> <path fill="none" stroke="currentColor" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" d="M5 27 16 5.5 27 27M9.4 18.5h13.2M16 18.5V27"/> </svg></span><figcaption>ink</figcaption></figure>
+        <figure class="on-accent"><span class="mark" style="--s:32px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="TAVI"> <path fill="none" stroke="currentColor" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" d="M5 27 16 5.5 27 27M9.4 18.5h13.2M16 18.5V27"/> </svg></span><figcaption>on accent</figcaption></figure>
+      </div>
+    </div>
+    <div class="panel" data-theme="light">
+      <div class="lockup"><span class="mark accent"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="TAVI"> <path fill="none" stroke="currentColor" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" d="M5 27 16 5.5 27 27M9.4 18.5h13.2M16 18.5V27"/> </svg></span><span class="word">tavi</span></div>
+      <div class="sizes">
+        <figure><span class="mark accent" style="--s:16px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="TAVI"> <path fill="none" stroke="currentColor" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" d="M5 27 16 5.5 27 27M9.4 18.5h13.2M16 18.5V27"/> </svg></span><figcaption>16</figcaption></figure>
+        <figure><span class="mark accent" style="--s:24px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="TAVI"> <path fill="none" stroke="currentColor" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" d="M5 27 16 5.5 27 27M9.4 18.5h13.2M16 18.5V27"/> </svg></span><figcaption>24</figcaption></figure>
+        <figure><span class="mark accent" style="--s:32px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="TAVI"> <path fill="none" stroke="currentColor" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" d="M5 27 16 5.5 27 27M9.4 18.5h13.2M16 18.5V27"/> </svg></span><figcaption>32</figcaption></figure>
+        <figure><span class="mark ink" style="--s:32px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="TAVI"> <path fill="none" stroke="currentColor" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" d="M5 27 16 5.5 27 27M9.4 18.5h13.2M16 18.5V27"/> </svg></span><figcaption>ink</figcaption></figure>
+        <figure class="on-accent"><span class="mark" style="--s:32px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="TAVI"> <path fill="none" stroke="currentColor" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" d="M5 27 16 5.5 27 27M9.4 18.5h13.2M16 18.5V27"/> </svg></span><figcaption>on accent</figcaption></figure>
+      </div>
+    </div>
+    </div>
+    <div class="notes">
+      <p>The A's crossbar is the T's bar, and the T's stem drops from it to the baseline between the legs. Two letters that share one horizontal, drawn symmetric so the mark has a base and a peak.</p>
+      <p class="muted">It reads as A first and T second; the stem is what makes it a monogram rather than a letter. It is the only one of the four that is a single upright shape, which is what the sidebar head wants at 24.</p>
+    </div>
+  </section>
+  <section class="card" id="tavi-inset">
+    <header>
+      <span class="chip">TAVI</span>
+      <h2>4. Inset</h2>
+      <span class="ledger">T cut from V · negative space · <code>tavi-inset.svg</code></span>
+    </header>
+    <div class="hero"><span class="mark accent" style="--s:96px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="TAVI"> <path fill="currentColor" fill-rule="evenodd" d="M7.12 4.5h17.76a3 3 0 0 1 2.62 4.47l-8.88 15.86a3 3 0 0 1-5.24 0L4.5 8.97A3 3 0 0 1 7.12 4.5ZM11 8a2 2 0 0 0 0 4h3v5.5a2 2 0 0 0 4 0V12h3a2 2 0 0 0 0-4Z"/> </svg></span></div>
+    <div class="panels">
+    <div class="panel" data-theme="dark">
+      <div class="lockup"><span class="mark accent"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="TAVI"> <path fill="currentColor" fill-rule="evenodd" d="M7.12 4.5h17.76a3 3 0 0 1 2.62 4.47l-8.88 15.86a3 3 0 0 1-5.24 0L4.5 8.97A3 3 0 0 1 7.12 4.5ZM11 8a2 2 0 0 0 0 4h3v5.5a2 2 0 0 0 4 0V12h3a2 2 0 0 0 0-4Z"/> </svg></span><span class="word">tavi</span></div>
+      <div class="sizes">
+        <figure><span class="mark accent" style="--s:16px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="TAVI"> <path fill="currentColor" fill-rule="evenodd" d="M7.12 4.5h17.76a3 3 0 0 1 2.62 4.47l-8.88 15.86a3 3 0 0 1-5.24 0L4.5 8.97A3 3 0 0 1 7.12 4.5ZM11 8a2 2 0 0 0 0 4h3v5.5a2 2 0 0 0 4 0V12h3a2 2 0 0 0 0-4Z"/> </svg></span><figcaption>16</figcaption></figure>
+        <figure><span class="mark accent" style="--s:24px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="TAVI"> <path fill="currentColor" fill-rule="evenodd" d="M7.12 4.5h17.76a3 3 0 0 1 2.62 4.47l-8.88 15.86a3 3 0 0 1-5.24 0L4.5 8.97A3 3 0 0 1 7.12 4.5ZM11 8a2 2 0 0 0 0 4h3v5.5a2 2 0 0 0 4 0V12h3a2 2 0 0 0 0-4Z"/> </svg></span><figcaption>24</figcaption></figure>
+        <figure><span class="mark accent" style="--s:32px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="TAVI"> <path fill="currentColor" fill-rule="evenodd" d="M7.12 4.5h17.76a3 3 0 0 1 2.62 4.47l-8.88 15.86a3 3 0 0 1-5.24 0L4.5 8.97A3 3 0 0 1 7.12 4.5ZM11 8a2 2 0 0 0 0 4h3v5.5a2 2 0 0 0 4 0V12h3a2 2 0 0 0 0-4Z"/> </svg></span><figcaption>32</figcaption></figure>
+        <figure><span class="mark ink" style="--s:32px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="TAVI"> <path fill="currentColor" fill-rule="evenodd" d="M7.12 4.5h17.76a3 3 0 0 1 2.62 4.47l-8.88 15.86a3 3 0 0 1-5.24 0L4.5 8.97A3 3 0 0 1 7.12 4.5ZM11 8a2 2 0 0 0 0 4h3v5.5a2 2 0 0 0 4 0V12h3a2 2 0 0 0 0-4Z"/> </svg></span><figcaption>ink</figcaption></figure>
+        <figure class="on-accent"><span class="mark" style="--s:32px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="TAVI"> <path fill="currentColor" fill-rule="evenodd" d="M7.12 4.5h17.76a3 3 0 0 1 2.62 4.47l-8.88 15.86a3 3 0 0 1-5.24 0L4.5 8.97A3 3 0 0 1 7.12 4.5ZM11 8a2 2 0 0 0 0 4h3v5.5a2 2 0 0 0 4 0V12h3a2 2 0 0 0 0-4Z"/> </svg></span><figcaption>on accent</figcaption></figure>
+      </div>
+    </div>
+    <div class="panel" data-theme="light">
+      <div class="lockup"><span class="mark accent"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="TAVI"> <path fill="currentColor" fill-rule="evenodd" d="M7.12 4.5h17.76a3 3 0 0 1 2.62 4.47l-8.88 15.86a3 3 0 0 1-5.24 0L4.5 8.97A3 3 0 0 1 7.12 4.5ZM11 8a2 2 0 0 0 0 4h3v5.5a2 2 0 0 0 4 0V12h3a2 2 0 0 0 0-4Z"/> </svg></span><span class="word">tavi</span></div>
+      <div class="sizes">
+        <figure><span class="mark accent" style="--s:16px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="TAVI"> <path fill="currentColor" fill-rule="evenodd" d="M7.12 4.5h17.76a3 3 0 0 1 2.62 4.47l-8.88 15.86a3 3 0 0 1-5.24 0L4.5 8.97A3 3 0 0 1 7.12 4.5ZM11 8a2 2 0 0 0 0 4h3v5.5a2 2 0 0 0 4 0V12h3a2 2 0 0 0 0-4Z"/> </svg></span><figcaption>16</figcaption></figure>
+        <figure><span class="mark accent" style="--s:24px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="TAVI"> <path fill="currentColor" fill-rule="evenodd" d="M7.12 4.5h17.76a3 3 0 0 1 2.62 4.47l-8.88 15.86a3 3 0 0 1-5.24 0L4.5 8.97A3 3 0 0 1 7.12 4.5ZM11 8a2 2 0 0 0 0 4h3v5.5a2 2 0 0 0 4 0V12h3a2 2 0 0 0 0-4Z"/> </svg></span><figcaption>24</figcaption></figure>
+        <figure><span class="mark accent" style="--s:32px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="TAVI"> <path fill="currentColor" fill-rule="evenodd" d="M7.12 4.5h17.76a3 3 0 0 1 2.62 4.47l-8.88 15.86a3 3 0 0 1-5.24 0L4.5 8.97A3 3 0 0 1 7.12 4.5ZM11 8a2 2 0 0 0 0 4h3v5.5a2 2 0 0 0 4 0V12h3a2 2 0 0 0 0-4Z"/> </svg></span><figcaption>32</figcaption></figure>
+        <figure><span class="mark ink" style="--s:32px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="TAVI"> <path fill="currentColor" fill-rule="evenodd" d="M7.12 4.5h17.76a3 3 0 0 1 2.62 4.47l-8.88 15.86a3 3 0 0 1-5.24 0L4.5 8.97A3 3 0 0 1 7.12 4.5ZM11 8a2 2 0 0 0 0 4h3v5.5a2 2 0 0 0 4 0V12h3a2 2 0 0 0 0-4Z"/> </svg></span><figcaption>ink</figcaption></figure>
+        <figure class="on-accent"><span class="mark" style="--s:32px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="TAVI"> <path fill="currentColor" fill-rule="evenodd" d="M7.12 4.5h17.76a3 3 0 0 1 2.62 4.47l-8.88 15.86a3 3 0 0 1-5.24 0L4.5 8.97A3 3 0 0 1 7.12 4.5ZM11 8a2 2 0 0 0 0 4h3v5.5a2 2 0 0 0 4 0V12h3a2 2 0 0 0 0-4Z"/> </svg></span><figcaption>on accent</figcaption></figure>
+      </div>
+    </div>
+    </div>
+    <div class="notes">
+      <p>A solid V, and the T taken out of it. The first letter is the negative space of the third, so the two most different letterforms in the name, a bar-and-stem and a wedge, sit in one silhouette.</p>
+      <p class="muted">The walls stay above 3 units everywhere, and at 16 the T is a 2px bar and a 2px stem inside a 14px wedge. It borrows the outline of a road sign, which is candidly its risk; the rounded corners and the T keep it on this side of that.</p>
+    </div>
+  </section>
+  <footer>
+    <p>Sources are the 4 <code>.svg</code> files beside this page; this file inlines them so the color can
+    reach them. The two negative-space marks are single evenodd paths, so there are no masks and no ids to
+    collide when they are inlined many times on one page. Nothing in the app reads any of this. The first
+    round in <code>../../fable/</code> is unchanged. Drawn 2026-09-22 against the design skill at v1.8.0.</p>
+  </footer>
+</div>
+</body>
+</html>

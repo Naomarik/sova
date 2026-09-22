@@ -10,7 +10,7 @@ the result.
 → Explaining "…" in a subagent (forked, web search on). It lands in
   ~/.pi/agent/explanations/how-our-worker-hosting-survives-a-relo-mfq2p1/ and is announced here.
 …
-→ ~/.pi/agent/explanations/how-our-worker-hosting-survives-a-relo-mfq2p1/index.html — viewable in pi-web.
+→ ~/.pi/agent/explanations/how-our-worker-hosting-survives-a-relo-mfq2p1/index.html — viewable in Sova.
 ```
 
 Installed globally through this symlink:
@@ -21,10 +21,10 @@ Installed globally through this symlink:
 
 `install.sh` links every `extensions/*/` directory, so nothing extension-specific
 is needed. Run `/reload` to pick up changes. The command works in the TUI and in
-pi-web's embedded runtimes (extension commands appear in the web composer's slash
+Sova's embedded runtimes (extension commands appear in the web composer's slash
 menu on their own).
 
-**Nothing here ever opens a browser.** The page is read in pi-web — a thread row,
+**Nothing here ever opens a browser.** The page is read in Sova — a thread row,
 the per-session strip, the gallery — or by opening the file yourself. A background
 worker throwing a window at you is exactly what this avoids.
 
@@ -68,12 +68,12 @@ zai/glm-5.3 · Sep 20, 2026`. The parent injects the model and the date into the
 child's prompt as literals, so the child stamps them rather than guessing its own
 model id. It lives in the header, not a footer, because that is where a reader of
 the full page (desktop or phone) sees it — and the title block is kept inside the
-first ~200px so it also lands high in pi-web's scaled thumbnail, which conveys
+first ~200px so it also lands high in Sova's scaled thumbnail, which conveys
 layout rather than text. The model is delivered legibly by the gallery's own tile
 caption, not by the byline inside the thumbnail.
 
 The theme script is the **only** script on the page, and it may only override
-colours. pi-web's gallery renders the stored file in an `<iframe sandbox="">`,
+colours. Sova's gallery renders the stored file in an `<iframe sandbox="">`,
 which runs no JavaScript at all and may refuse external subresources outright, so
 `@media (prefers-color-scheme: dark)` has to produce a correct page on its own and
 nothing may depend on a script running. Images are inline `<svg>` or `data:` URIs.
@@ -143,11 +143,11 @@ recorded.
 
 Then the parent agent is woken with a short `explain-complete` custom message and
 told to answer in at most two sentences: the store path, and that it is viewable
-in pi-web.
+in Sova.
 
 That message is `display: false` deliberately. Its text is addressed to the agent
 ("reply in at most two sentences…"), and a displayed custom message renders as a
-transcript row in pi and pi-web alike — which put our own prompt plumbing on
+transcript row in pi and Sova alike — which put our own prompt plumbing on
 screen between the explanation card and the agent's reply. Custom messages
 participate in LLM context regardless of `display`, so the wake is unaffected,
 and the user still sees the `explain-doc` entry and the answer.

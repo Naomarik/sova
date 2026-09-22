@@ -11,10 +11,13 @@
 
 import { createSignal } from "solid-js";
 import type { SessionSummary } from "../../shared/protocol";
+import { dualGet, dualSet } from "./storage-keys";
 
 /** §12 "General": the count lives in localStorage, like the theme. It is this browser's, not the
     machine's — there is no server endpoint for it, and the server list is unchanged by it. */
-export const RECENT_COUNT_KEY = "pi-web:recent-count";
+export const RECENT_COUNT_KEY = "sova:recent-count";
+/** The pre-rebrand spelling, read and mirrored while the rename bridge is open (storage-keys.ts). */
+export const LEGACY_RECENT_COUNT_KEY = "pi-web:recent-count";
 
 /** Enough rows to be worth a region, few enough that Groups and Live & web stay above the fold. */
 export const DEFAULT_RECENT_COUNT = 5;
@@ -109,7 +112,7 @@ export function recentSessions(sessions: readonly SessionSummary[], count: unkno
 
 function readStoredCount(): number {
   try {
-    return normalizeRecentCount(localStorage.getItem(RECENT_COUNT_KEY));
+    return normalizeRecentCount(dualGet(localStorage, RECENT_COUNT_KEY, LEGACY_RECENT_COUNT_KEY));
   } catch {
     // A blocked or full localStorage means the default, never a broken boot.
     return DEFAULT_RECENT_COUNT;
@@ -126,7 +129,7 @@ export function setRecentCount(value: unknown): number {
   const n = normalizeRecentCount(value);
   setCount(n);
   try {
-    localStorage.setItem(RECENT_COUNT_KEY, String(n));
+    dualSet(localStorage, RECENT_COUNT_KEY, LEGACY_RECENT_COUNT_KEY, String(n));
   } catch {
     // Persistence is a convenience; the choice still holds for this page.
   }

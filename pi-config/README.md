@@ -8,7 +8,7 @@ additions, the pinned third-party packages, and the extensions kept in-tree.
 > **Mirror.** The public repository
 > [Naomarik/pi-config](https://github.com/Naomarik/pi-config) is a
 > `git subtree split` mirror of the `pi-config/` directory of a private
-> monorepo (the pi-web app, which embeds pi and reads some of these
+> monorepo (the Sova app, which embeds pi and reads some of these
 > extensions' files). Development happens there, and changes reach this
 > repository as ordinary fast-forward pushes. Everything in this
 > directory is self-contained: clone the mirror and `install.sh` works
@@ -26,15 +26,15 @@ additions, the pinned third-party packages, and the extensions kept in-tree.
 | `extensions/claude-code/` | `claude-code` worker backend for the subagent tools, driving the installed Claude Code CLI |
 | `extensions/command-palette/` | `Ctrl+P` palette over models, sessions, settings, extension commands and skills |
 | `extensions/extension-toggle/` | `/extensions` to switch extensions on and off in-session |
-| `extensions/explain/` | `/explain <topic>`: one forked subagent writes a self-contained HTML explanation into `~/.pi/agent/explanations/`, kept forever and read in pi-web |
-| `extensions/model-policy/` | The shared model policy (`model-policy.json`): which providers and models may be used at all, and which of them subagents may be given. Written by pi-web's Settings → Models tab; this extension enforces the global half in the TUI |
+| `extensions/explain/` | `/explain <topic>`: one forked subagent writes a self-contained HTML explanation into `~/.pi/agent/explanations/`, kept forever and read in Sova |
+| `extensions/model-policy/` | The shared model policy (`model-policy.json`): which providers and models may be used at all, and which of them subagents may be given. Written by Sova's Settings → Models tab; this extension enforces the global half in the TUI |
 | `extensions/mode/` | Per-session normal ↔ claude-heavy mode switcher plus minor modes (`alt+m`, `ctrl+p` → Mode, `/mode`), orchestrating Claude Code workers with a fable/opus planner fallback |
 | `extensions/sessions/` | Live pi sessions on this machine find each other through a filesystem presence registry; ships the `pi-sessions` CLI (`bin/pi-sessions.ts`) and the record schema (`public/SCHEMA.md`) |
-| `extensions/remote/` | `--target <name>`: runs the session's tools on an ssh / AWS-SSM / docker / incus target from `targets.json`; inert without the flag. Its `argv.ts` is imported by pi-web |
+| `extensions/remote/` | `--target <name>`: runs the session's tools on an ssh / AWS-SSM / docker / incus target from `targets.json`; inert without the flag. Its `argv.ts` is imported by Sova |
 | `extensions/codefold/` | Folds long fenced code blocks in assistant messages into one band |
 | `extensions/topic-outline/` | Display-only live topic outline of the conversation, with jump-to-topic |
 | `extensions/vision-delegate/` | Lets a text-only model work with images: a `look_at_image` tool plus automatic descriptions of read results and TUI attachments, routed to a fallback vision model |
-| `extensions/usage-status/` | Subscription usage (Ollama Cloud, OpenAI Codex, Claude, Z.ai, DeepSeek balance) in the footer, plus a `/usage` overlay. Its `fetch.ts` (fetchers, cache, lock) is imported by pi-web |
+| `extensions/usage-status/` | Subscription usage (Ollama Cloud, OpenAI Codex, Claude, Z.ai, DeepSeek balance) in the footer, plus a `/usage` overlay. Its `fetch.ts` (fetchers, cache, lock) is imported by Sova |
 | `extensions/wake-nudge.ts` | Lets the model schedule one-shot wakeups |
 | `extensions/working-subagent-count.ts` | Busy subagent and team-member counts on the "Working" line and in an idle widget |
 | `install.sh` | Symlinks the config files and every `extensions/*` directory and single-file `extensions/*.ts` extension into `~/.pi/agent`, and `pi-sessions` into `~/.local/bin` |
@@ -78,7 +78,7 @@ pi            # installs missing pinned packages on first start
 ```
 
 The clone can live anywhere. `install.sh` resolves its own location, and the
-links it creates point at the real path of the checkout. If you have the pi-web
+links it creates point at the real path of the checkout. If you have the Sova
 monorepo, run `pi-config/install.sh` from there instead; it is the same script.
 
 For each of `settings.json`, `keybindings.json`, `models.json`,

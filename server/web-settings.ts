@@ -1,18 +1,18 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { stateRoot } from "./state-root";
 import type { WebSettings } from "../shared/protocol";
 
 /**
- * pi-web's own settings — the ones that belong to the webapp rather than to pi or to an
+ * Sova's own settings — the ones that belong to the webapp rather than to pi or to an
  * extension's shared file. Today that is one experimental switch (Claude Code as first-class
  * models). Unlike server/settings.ts, whose file shape is a contract with the subagents
- * extension, nothing outside pi-web reads this one.
+ * extension, nothing outside Sova reads this one.
  *
  * It lives under the agent dir, so PI_CODING_AGENT_DIR (the hermetic .agent) isolates it the
  * same way it isolates sessions and web-sessions.json.
  */
-const FILE = join(getAgentDir(), "pi-web", "settings.json");
+const FILE = join(stateRoot(), "settings.json");
 
 /** Everything off: what a missing, unreadable or foreign-shaped file reads as. */
 const DEFAULTS: WebSettings = { experimental: { claudeCodeProvider: false } };

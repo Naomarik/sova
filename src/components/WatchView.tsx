@@ -1,16 +1,28 @@
 import { createEffect, createSignal, onCleanup, Show, type JSX } from "solid-js";
-import type { TranscriptItem, WatchServerMessage } from "../../shared/protocol";
-import { fetchTranscriptWithContext, wsUrl } from "../lib/api";
+import type { SessionSummary, TranscriptItem, WatchServerMessage } from "../../shared/protocol";
+import { createFork, fetchTranscriptWithContext, wsUrl } from "../lib/api";
 import { contextFromItems, contextStateFor } from "../lib/context";
 import { createReconnectingSocket } from "../lib/socket";
-import { hideThinking, hideTools, setSessionContext } from "../lib/ui-state";
+import { copyText, hideThinking, hideTools, setSessionContext, toast } from "../lib/ui-state";
+import { openCreated, stageFork } from "../lib/fork-stage";
 import { usePaneAnnounce } from "../lib/pane-scope";
 import { visibleCount } from "../lib/hidden-rows";
 import type { WorkingSplit } from "../lib/workers";
 import { Composer, type ComposerReason } from "./Composer";
 import { FlyoutSession } from "./ComposerMenu";
 import { ConnectionBanner } from "./ConnectionBanner";
-import { type ForkMarker, HistoryItems, ThreadScroller, TranscriptSkeleton } from "./Thread";
+import { type ForkMarker, HistoryItems, type MessageActionsProvider, ThreadScroller, TranscriptSkeleton } from "./Thread";
+import type { MessageActionItem } from "./MessageActions";
+import {
+  actionReason,
+  actionsFor,
+  COPIED,
+  copyable,
+  forkRefusalText,
+  forkSentence,
+  type ActionState,
+  type MessageStrip,
+} from "../lib/message-actions";
 import { Banner } from "./ui";
 
 /** SR announcements of appended entries are throttled to one per this interval. */
@@ -41,6 +53,8 @@ export function WatchView(props: {
   workersOpen?: boolean;
   /** Where this member was forked from, when it is one (spec/14b). */
   fork?: ForkMarker;
+  /** A session this view just created (a Fork): the app adopts and opens it (see ChatView). */
+  onCreated?(session: SessionSummary): void;
 }) {
   const announce = usePaneAnnounce();
   const [items, setItems] = createSignal<TranscriptItem[] | null>(null);
@@ -73,6 +87,66 @@ export function WatchView(props: {
       if (unannounced > 0) announce(`${unannounced} new ${unannounced === 1 ? "entry" : "entries"}.`);
       unannounced = 0;
     }, ANNOUNCE_MS);
+  };
+
+  // ---- Per-message actions, read-only ------------------------------------------------------
+  /**
+   * Watching is reading, so Copy works exactly as it does in a chat — the text is on the screen
+   * and nothing owns the clipboard. Fork works too: it READS this session into a new one, and the
+   * only thing that stops it is another process writing the file. Rewind and Regenerate would
+   * write here, so they carry their reason rather than disappearing — a control that vanishes in
+   * one view and exists in another teaches nothing about why.
+   */
+  const [actionNote, setActionNote] = createSignal<{ entryId: string; text: string } | null>(null);
+  const [forking, setForking] = createSignal(false);
+  const watchState = (wake = false): ActionState => ({
+    chat: false,
+    live: props.streaming,
+    streaming: false,
+    compacting: false,
+    pending: forking(),
+    paused: null,
+    wake,
+  });
+
+  const forkFrom = async (strip: MessageStrip) => {
+    if (forking()) return;
+    setActionNote(null);
+    setForking(true);
+    try {
+      const out = await createFork({ path: props.path, entryId: strip.entryId, position: strip.role === "user" ? "before" : "at" });
+      if (!out.ok) {
+        const text = forkRefusalText(out.code, out.message);
+        setActionNote({ entryId: strip.entryId, text });
+        announce(text);
+        return;
+      }
+      const target = out.session.path;
+      // What actually landed in the new composer decides what we say landed there.
+      const sentence = forkSentence(await stageFork(target, out.editor));
+      setActionNote(null);
+      toast(sentence);
+      announce(sentence);
+      openCreated(out.session, props.onCreated);
+    } finally {
+      setForking(false);
+    }
+  };
+
+  const watchActions: MessageActionsProvider = {
+    items(strip) {
+      return actionsFor(strip.role, { copyable: copyable(strip) }).map((kind): MessageActionItem => {
+        switch (kind) {
+          case "copy":
+            return { kind, reason: null, run: async () => void (await copyText(strip.text, COPIED)) };
+          case "fork":
+            return { kind, reason: actionReason("fork", watchState()), run: () => forkFrom(strip) };
+          default:
+            return { kind, reason: actionReason(kind, watchState(!!strip.fromWake)), run: () => {} };
+        }
+      });
+    },
+    note: (entryId) => (actionNote()?.entryId === entryId ? actionNote()!.text : null),
   };
 
   const socket = createReconnectingSocket<WatchServerMessage>(wsUrl("/ws/watch", props.path), {
@@ -136,7 +210,15 @@ export function WatchView(props: {
                 </div>
               }
             >
-              <HistoryItems items={list()} author={props.author} streaming={props.streaming} hideTools={hideTools(props.path)} hideThinking={hideThinking(props.path)} fork={props.fork} />
+              <HistoryItems
+                items={list()}
+                author={props.author}
+                streaming={props.streaming}
+                hideTools={hideTools(props.path)}
+                hideThinking={hideThinking(props.path)}
+                fork={props.fork}
+                actions={watchActions}
+              />
             </Show>
           )}
         </Show>

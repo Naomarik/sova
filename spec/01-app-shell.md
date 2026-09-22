@@ -1,5 +1,5 @@
 # 01 · App shell
-> Part of the pi-web design spec · [overview](overview.md)
+> Part of the Sova design spec · [overview](overview.md)
 
 ```
 unfolded (≥768)                                  folded (<768)
@@ -42,7 +42,7 @@ unfolded (≥768)                                  folded (<768)
   workspace at `#/g/<id>` (split) or `#/g/<id>/<encodeURIComponent(path)>` (one member focused,
   §14). `#/s/` never changes meaning: it is one session, alone, grouped or not. An unknown group
   id routes to `#/` with a toast rather than rendering an empty frame.
-- **No rail and no bottom bar.** pi-web has one destination, so there's no nav to place. This is
+- **No rail and no bottom bar.** Sova has one destination, so there's no nav to place. This is
   a deliberate departure from the skill's three-pane desktop shell: the ≥1120 `desktop` band adds
   nothing here.
 - **Dialogs** follow the skill's modal pattern and become a bottom sheet under 768px
@@ -107,7 +107,7 @@ It says liveness only, never identity:
   channel is pinned and its state, and the last success's age and time. Clicking it opens Session
   detail on the Session tab, where the controls are. It is a plain uppercase chip, not
   `.chip-count`, so the narrow head's `.chip-count` rule never hides it. **Absent for local
-  sessions**, and for a remote session not open for chat here (a watched or TUI-owned one): pi-web
+  sessions**, and for a remote session not open for chat here (a watched or TUI-owned one): Sova
   only hears the status over its own chat socket, and a chip it can't feed would be a claim. (The
   always-on remote chip above has no such limit — it needs no report.)
 - **In Session detail** (every tab), in the controls row under the pane's head, after the remote
@@ -133,7 +133,7 @@ It says liveness only, never identity:
 
 A webapp-owned chat the server refuses to open answers the chat socket with `error` code `config`
 and closes it (4422): the stored working directory is gone, or the session was created inside an
-sshfs mount pi-web no longer has, and no reconnect can fix that by itself. The banner is one
+sshfs mount Sova no longer has, and no reconnect can fix that by itself. The banner is one
 `.banner.banner-error` in the transcript's `.transcript-banner` slot (spec/03 "Anatomy"), and
 every word comes from `src/lib/open-failure.ts` — a pure function of the session summary, the
 server's error text, and, when a targets list is at hand, its labels. It names the concrete thing
@@ -143,9 +143,9 @@ that's wrong, never a bare "can't be opened":
   placeholder (named as a placeholder, with the target and its remote folder beside it). The
   same reassurance every time: nothing in the session file changed; restore the folder, then
   reconnect.
-- **A legacy sshfs-mount session** — the cwd is under `~/.pi/agent/mounts/<target>`, where pi-web
+- **A legacy sshfs-mount session** — the cwd is under `~/.pi/agent/mounts/<target>`, where Sova
   once mounted targets. The server refuses it permanently ("This session was created inside an
-  sshfs mount of target {name}, a feature pi-web no longer has; its files are on the target, not
+  sshfs mount of target {name}, a feature Sova no longer has; its files are on the target, not
   here. Archive this session, or start a new remote session on {name}."), and the banner shows
   that text verbatim: opening it as a local session in an empty folder is exactly the confusion
   the refusal exists to prevent. Archive is the way out.
@@ -160,7 +160,7 @@ ghost:
   a route to the landing page (`#/`, the back link's href): the session on screen can't be opened,
   so the gesture leaves it. It moves the session to the Archive region — nothing is deleted, and
   unarchiving brings it back; the button's `title` says so. Absent when the summary says the
-  session is already archived or wasn't started in pi-web, exactly like the pane's button.
+  session is already archived or wasn't started in Sova, exactly like the pane's button.
 
 ## Resizing the sessions pane
 

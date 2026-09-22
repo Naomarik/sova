@@ -6,7 +6,7 @@ loaded into.
 
 ## The file
 
-`~/.pi/agent/model-policy.json`, written by pi-web's **Settings → Models** tab:
+`~/.pi/agent/model-policy.json`, written by Sova's **Settings → Models** tab:
 
 ```json
 {
@@ -43,7 +43,7 @@ Nothing becomes globally disabled by that migration.
 | Subagents and teams | Discovery hides them, and `agent_spawn`/team creation refuses them — explicit, agentType-defined, or inherited from the parent | `../subagents/policy.ts` |
 | topic-outline | A disabled summarizer backend is refused **at the call**, and the next one in the chain takes the outline | `../topic-outline/summarizers/policy-gate.ts` |
 | vision-delegate | A disabled vision fallback is skipped, with its reason | `../vision-delegate/picker.ts` |
-| pi-web | The model picker lists only enabled models; the chat socket refuses `set_model`, and a chat already on a disabled model refuses to send | `server/model-policy.ts` |
+| Sova | The model picker lists only enabled models; the chat socket refuses `set_model`, and a chat already on a disabled model refuses to send | `server/model-policy.ts` |
 
 The six boundaries this extension holds, and why those (checked against pi 0.86.1's own control
 flow, and against a real `pi --mode rpc` session pointed at a fake provider):

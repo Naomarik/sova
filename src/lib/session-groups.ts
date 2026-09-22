@@ -1,5 +1,6 @@
 // Session groups (spec/02-session-list.md §2 "Groups"): the user's own grouping of sessions, shown as a
-// region above Live & web. Server-side (~/.pi/agent/pi-web/session-groups.json), so every tab and
+// region above Live & web. Server-side (~/.pi/agent/sova/session-groups.json — the state root moved
+// from the legacy pi-web/ spelling with the rename), so every tab and
 // server sees the same groups, and purely additive: a grouped session keeps its place in Live &
 // web or the Archive. A session is in at most one group.
 //
@@ -155,27 +156,31 @@ export const quoted = (name: string) => `“${name}”`;
 // ---------------------------------------------------------------------------
 
 /** The session path is carried under this type, so the composer's image drop (which reads files)
-    and this drag never mistake each other for one of their own. */
-export const GROUP_DRAG_TYPE = "application/x-pi-web-session";
+    and this drag never mistake each other for one of their own. `LEGACY_GROUP_DRAG_TYPE` is the
+    pre-rebrand spelling: drags write BOTH and drops/dragovers accept either, so a drag started by
+    an old build of this app (another window not yet reloaded) still lands. */
+export const GROUP_DRAG_TYPE = "application/x-sova-session";
+export const LEGACY_GROUP_DRAG_TYPE = "application/x-pi-web-session";
 
-/** Marks a drag as "this row wants a group": the path under its own type, a readable fallback
+/** Marks a drag as "this row wants a group": the path under both our types, a readable fallback
     under text/plain (a drag out of the window, a drop on anything else). */
 export function setGroupDragData(e: DragEvent, path: string): void {
   if (!e.dataTransfer) return;
   e.dataTransfer.setData(GROUP_DRAG_TYPE, path);
+  e.dataTransfer.setData(LEGACY_GROUP_DRAG_TYPE, path);
   e.dataTransfer.setData("text/plain", path);
   e.dataTransfer.effectAllowed = "move";
 }
 
 /** The session path a drop carries, or null when the drag is something else (files, text). */
 export function groupDragPath(e: DragEvent): string | null {
-  const path = e.dataTransfer?.getData(GROUP_DRAG_TYPE);
+  const path = e.dataTransfer?.getData(GROUP_DRAG_TYPE) || e.dataTransfer?.getData(LEGACY_GROUP_DRAG_TYPE);
   return path ? path : null;
 }
 
 /** Whether this drag event carries one of our rows (a dragover can't read the data, only the types). */
 export function dragHasRow(e: DragEvent): boolean {
-  return !!e.dataTransfer?.types.includes(GROUP_DRAG_TYPE);
+  return !!e.dataTransfer && (e.dataTransfer.types.includes(GROUP_DRAG_TYPE) || e.dataTransfer.types.includes(LEGACY_GROUP_DRAG_TYPE));
 }
 
 // ---------------------------------------------------------------------------

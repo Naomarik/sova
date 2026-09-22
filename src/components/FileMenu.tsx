@@ -1,5 +1,5 @@
 import { createEffect, createMemo, For, on, Show } from "solid-js";
-import type { MentionEntry } from "../lib/files";
+import type { MentionEntry, MentionIndexStatus } from "../lib/files";
 import { Icon } from "./ui";
 
 /** `file-` + the name with anything outside [a-z0-9-] as "-", suffixed when two names collide.
@@ -15,8 +15,9 @@ export function mentionOptionIds(entries: MentionEntry[]): string[] {
   });
 }
 
-/** What the listbox is showing besides entries: still reading the folder, or why it can't. */
-export type FileMenuStatus = { state: "loading" } | { state: "error"; error: string } | { state: "ready" };
+/** What the listbox is showing besides entries: still reading the folder, or why it can't. The
+    shape lives in lib/files.ts, where the rule that derives it is tested. */
+export type FileMenuStatus = MentionIndexStatus;
 
 /**
  * The composer's @-mention listbox (spec/04h-file-mentions.md), the slash menu's twin: focus
@@ -33,7 +34,10 @@ export function FileMenu(props: {
   /** The directory being listed relative to the session cwd; "" is the cwd itself. */
   dir: string;
   status: FileMenuStatus;
-  /** The index was cut at the server's cap, so rare files may be missing (shown in the head). */
+  /** The index is partial: files AND folders are missing from it, at any depth. The server has
+      five ways to get there — the file cap, its directory queue, its depth limit, git's output
+      cap and the clock — and the head says none of them, because which bound ran out first is
+      not something the reader can act on. Said in the head. */
   truncated?: boolean;
   /** The absolute session cwd, in the head's title. */
   root?: string;
@@ -53,7 +57,7 @@ export function FileMenu(props: {
       <p class="command-menu-head" id="file-menu-head" aria-hidden="true">
         Files · {count()}
         <Show when={props.truncated}>
-          <span class="file-menu-truncated" title="Large folder — rare files may be missing from the list">
+          <span class="file-menu-truncated" title="This list is incomplete — some files and folders are missing from it.">
             {" "}
             · partial
           </span>

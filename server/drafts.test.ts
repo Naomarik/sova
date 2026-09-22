@@ -11,9 +11,10 @@ process.env.PI_CODING_AGENT_DIR = agentDir; // before the modules below compute 
 const sessionsDir = join(agentDir, "sessions", "--tmp-drafts-test--");
 mkdirSync(sessionsDir, { recursive: true });
 mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
-const draftsFile = join(agentDir, "pi-web", "drafts.json");
+const draftsFile = join(agentDir, "sova", "drafts.json");
 
 const { draftForClient, draftPreview, dropDrafts, getDraft, readDrafts, setDraft } = await import("./drafts");
+const { isPiClipboardName } = await import("../shared/tmp-paths");
 const { cleanupSessions, listSessions } = await import("./sessions-index");
 const { canonicalPath } = await import("./paths");
 const { attachmentsRoot, deleteAttachment, saveUploadedImage, sessionAttachmentsDir } = await import("./attachments");
@@ -125,11 +126,16 @@ test("cleanupSessions: deleting a husk drops its draft", async () => {
   assert.equal(getDraft("keeper")?.text, "stays");
 });
 
-test("attachments: an upload lands in the session's folder with the pi-web-<uuid> name", () => {
+test("attachments: an upload lands in the session's folder with the sova-<uuid> name", () => {
   const a = upload("up-1");
-  assert.equal(a.path, join(agentDir, "pi-web", "attachments", "up-1", a.name));
-  assert.equal(attachmentsRoot(), join(agentDir, "pi-web", "attachments"));
-  assert.match(a.name, /^pi-web-[0-9a-f-]{36}\.png$/);
+  assert.equal(a.path, join(agentDir, "sova", "attachments", "up-1", a.name));
+  assert.equal(attachmentsRoot(), join(agentDir, "sova", "attachments"));
+  assert.match(a.name, /^sova-[0-9a-f-]{36}\.png$/);
+  // RENAME BRIDGE: new uploads are sova-named, but a chip saved before the rename is still a
+  // generated reference — it must keep being labelled and stripped as one, not shown as a name
+  // the user typed. Both spellings answer to isPiClipboardName, forever.
+  assert.equal(isPiClipboardName(a.name), true);
+  assert.equal(isPiClipboardName(`pi-web-${a.name.slice("sova-".length)}`), true, "pre-rename upload names stay generated names");
   assert.deepEqual({ mimeType: a.mimeType, size: a.size }, { mimeType: "image/png", size: PNG.length });
   assert.equal(sessionAttachmentsDir("../escape"), null);
   assert.equal(sessionAttachmentsDir("a/b"), null);

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { ALIGN_INSTRUCTIONS } from "./minor.ts";
 import {
 	ALIGN_ENTRY_TYPE,
 	clampScroll,
@@ -389,4 +390,16 @@ test("clampScroll/viewport keep the window inside the content", () => {
 	assert.deepEqual(viewport(lines, 5, 0), []);
 	assert.deepEqual(viewport([], 5, 10), []);
 	assert.deepEqual(viewport(lines.slice(0, 2), 1, 10), [0, 1]);
+});
+
+// The instruction block is a second implementation of the shape align.ts parses: parse its own template.
+test("the align instructions' template numbers questions where the viewer keeps them", () => {
+	const parsed = parseAlignBlock(ALIGN_INSTRUCTIONS);
+	assert.ok(parsed, "the instruction template parses as an alignment block");
+	assert.ok(parsed.questions.length >= 2, "the template shows more than one question");
+	for (const [index, question] of parsed.questions.entries()) {
+		// The number the user sees is part of the question text, so it survives checklist rendering.
+		assert.ok(question.text.startsWith(`**${index + 1}. `), `question ${index + 1} is labelled in its text: ${question.text}`);
+		assert.equal(question.n, index + 1);
+	}
 });

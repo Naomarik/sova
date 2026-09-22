@@ -114,6 +114,33 @@ export function insertMention(text: string, token: MentionToken, entry: MentionE
 /** How long a fetched index stays fresh; the server keeps its own copy for the same span. */
 export const INDEX_TTL_MS = 30_000;
 
+/** An index fetch that failed, and the cwd it failed for. The cwd is the point: a composer whose
+    session moved to another folder must not keep showing the old folder's error, and must not
+    count the old folder's attempt as this folder's one try. */
+export interface MentionIndexError {
+  cwd: string;
+  message: string;
+}
+
+/** What the @ menu shows besides entries: still reading the folder, or why it can't. */
+export type MentionIndexStatus = { state: "loading" } | { state: "error"; error: string } | { state: "ready" };
+
+/** Said when the session has no cwd yet, so there is no folder to read. */
+export const NO_CWD_MESSAGE = "No working directory yet — the @ menu needs the session's folder.";
+
+/** The menu's status for one cwd: an error belonging to another cwd is not this folder's news. */
+export function mentionIndexStatus(args: { cwd: string | null | undefined; cached: boolean; error: MentionIndexError | null }): MentionIndexStatus {
+  if (!args.cwd) return { state: "error", error: NO_CWD_MESSAGE };
+  if (args.error && args.error.cwd === args.cwd) return { state: "error", error: args.error.message };
+  return args.cached ? { state: "ready" } : { state: "loading" };
+}
+
+/** Whether the open menu should fetch: one attempt per cwd per opening. A cwd switch re-arms it,
+    so a menu left open across the switch refetches instead of showing the folder it left. */
+export function shouldFetchIndex(args: { cwd: string | null | undefined; cached: boolean; fetchedFor: string | null }): boolean {
+  return !!args.cwd && !args.cached && args.fetchedFor !== args.cwd;
+}
+
 const cache = new Map<string, { index: FileIndex; at: number }>();
 
 /** The session cwd's fresh index, or null when none was fetched (or it has gone stale). */

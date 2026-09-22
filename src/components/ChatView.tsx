@@ -2,9 +2,24 @@ import { batch, createEffect, createMemo, createSignal, For, Match, on, onCleanu
 import { createStore, reconcile } from "solid-js/store";
 import { Portal } from "solid-js/web";
 import type { ChatServerMessage, ContextInfo, SessionSummary, SlashCommand, TeamInfo, TranscriptItem, WorkerInfo } from "../../shared/protocol";
-import { fetchTranscriptWithContext, setSessionArchived, wsUrl } from "../lib/api";
+import { createFork, fetchTranscriptWithContext, setSessionArchived, wsUrl } from "../lib/api";
 import { contextStateFor, usageTokens, windowOf } from "../lib/context";
-import { addPendingPrompt, applyEvent, emptyLive, runDetail, takeBackQueued, type LiveState } from "../lib/live";
+import {
+  addPendingPrompt,
+  applyEvent,
+  applyQueue,
+  emptyLive,
+  markDelivered,
+  markQueued,
+  markRemoved,
+  newClientId,
+  queuedText,
+  runDetail,
+  takeBackQueued,
+  unsentRows,
+  type LiveState,
+  type LiveUserState,
+} from "../lib/live";
 import { isObj, str } from "../lib/message";
 import { ensureModelPolicy, modelEnabled, modelPolicy } from "../lib/model-policy";
 import { openFailureView } from "../lib/open-failure";
@@ -26,21 +41,51 @@ import { remotePlaceOf } from "../lib/remote-session";
 import { createReconnectingSocket } from "../lib/socket";
 import { usageTotal, type UsageTotalView, workingSplit } from "../lib/workers";
 import type { UploadResult } from "../../shared/protocol";
-import { drafts, hideThinking, hideTools, sessionContext, setDraftText, setLocalRunning, setSessionContext, toast } from "../lib/ui-state";
+import {
+  copyText,
+  drafts,
+  hideThinking,
+  hideTools,
+  rememberSend,
+  sentHere,
+  sessionContext,
+  setDraftText,
+  setLocalRunning,
+  setSessionContext,
+  toast,
+} from "../lib/ui-state";
+import { stageFork } from "../lib/fork-stage";
 import { usePaneAnnounce, usePaneId, usePaneScope } from "../lib/pane-scope";
 import { visibleCount } from "../lib/hidden-rows";
 import { inputCount } from "../lib/input-count";
 import { messageCount } from "../lib/message-count";
 import type { RewindControl, RewindResult } from "../lib/inputs";
+import type { RewindRefusal } from "../../shared/protocol";
+import {
+  ACTION_LABEL,
+  actionReason,
+  actionsFor,
+  COPIED,
+  copyable,
+  forkRefusalText,
+  forkSentence,
+  queueGoneEffect,
+  queueRemoveReason,
+  queueRemoveRefusalText,
+  type ActionState,
+  type MessageStrip,
+} from "../lib/message-actions";
+import type { MessageActionItem } from "./MessageActions";
 import { isTurnStart } from "../lib/turn";
 import { entryIdOf } from "../lib/jump";
 import { Composer, type ComposerReason } from "./Composer";
+import { openCreated } from "../lib/fork-stage";
 import { FlyoutSession, type ThinkingControl, type UndoControl } from "./ComposerMenu";
 import { ConnectionBanner } from "./ConnectionBanner";
 import { SessionInfoDialog } from "./SessionInfoDialog";
 import type { ModeControl, ModeState } from "./ModeMenu";
 import type { ModelControl } from "./ModelMenu";
-import { type ForkMarker, HistoryItems, InfoRow, LiveEntries, ThreadScroller, TranscriptSkeleton, TurnError } from "./Thread";
+import { type ForkMarker, HistoryItems, InfoRow, LiveEntries, type MessageActionsProvider, ThreadScroller, TranscriptSkeleton, TurnError } from "./Thread";
 import { Banner, Icon } from "./ui";
 import { UiDialog } from "./UiDialog";
 
@@ -95,6 +140,11 @@ export function ChatView(props: {
   onShowTimeline?(inputsOnly?: boolean): void;
   /** Hands the Timeline this chat's rewind (sent over this socket); null when this view goes away. */
   onRewindControl?(control: RewindControl | null): void;
+  /** A session this view just created (a Fork): the app adopts it — registers it so the route
+      resolves before the list refetch lands, refreshes the sidebar, and opens it with the composer
+      focused. Writing `location.hash` instead lands on "Couldn't find this session." until the
+      list catches up, which is what the end-to-end pass caught. */
+  onCreated?(session: SessionSummary): void;
   /** A rewind landed on this chat, whoever asked (a Timeline row, or the flyout's "Undo last
       turn"): the Timeline must re-read the branch, or it keeps offering the abandoned rows.
       Success only — a refusal changed nothing. App mints the generation counter the pane watches.
@@ -199,7 +249,7 @@ export function ChatView(props: {
   const [commands, setCommands] = createSignal<SlashCommand[]>([]);
   /** The global mode and how it applies to this chat (WS "mode"). */
   const [modeState, setModeState] = createSignal<ModeState | null>(null);
-  /** Local "Ran /name args" rows; `tui` marks one that asked for a UI pi-web can't show. */
+  /** Local "Ran /name args" rows; `tui` marks one that asked for a UI Sova can't show. */
   const [commandRows, setCommandRows] = createSignal<{ label: string; tui: boolean }[]>([]);
   /** Subagents working now (WS "workers"); 0 until the first one arrives. */
   const [workersWorking, setWorkersWorking] = createSignal(0);
@@ -298,12 +348,27 @@ export function ChatView(props: {
    * Attached images come back as their paths, already part of the text.
    */
   const restoreUnsent = () => {
-    const unsent = live.entries.flatMap((e) => (e.kind === "user" && !e.confirmed ? [e] : []));
-    if (unsent.length === 0) return;
-    const texts = unsent.map((e) => e.text).filter(Boolean);
+    // Skips anything a `queue_item_gone` already spoke for: a failed hand-off broadcasts the
+    // departure AND an `error` whose code ("busy"/"recent") lands here, without closing the
+    // socket, so a row restored by both would be prepended into the draft twice.
+    const rows = unsentRows(live, handedBack);
+    if (rows.length === 0) return;
+    for (const r of rows) if (r.id) handedBack.add(r.id);
     const current = drafts.get(props.path);
-    if (texts.length) setDraftText(props.path, [...texts, ...(current ? [current] : [])].join("\n\n"));
+    setDraftText(props.path, [...rows.map((r) => r.text), ...(current ? [current] : [])].join("\n\n"));
   };
+
+  /** Ids a `queue_item_gone` has spoken for, so a later snapshot can't be read as evidence about
+      them. Which messages THIS TAB sent lives in `sentHere`/`rememberSend` (sessionStorage), so a
+      reload between the send and its failure doesn't leave the text with nobody willing to
+      restore it. */
+  const claimed = new Set<string>();
+  /** Ids whose text has already gone back to the composer, so the two paths that can both speak
+      for one message — a failed departure and the refusal `error` that accompanies it — hand it
+      back exactly once, in whichever order they arrive. */
+  const handedBack = new Set<string>();
+  /** Items pi has queued work beside: their Remove never comes back (see SHARED_QUEUE_REASON). */
+  const [sharedQueue, setSharedQueue] = createSignal<string[]>([]);
 
   const socket = createReconnectingSocket<ChatServerMessage>(wsUrl("/ws/chat", props.path, props.force), {
     onOpen(isReconnect) {
@@ -350,6 +415,96 @@ export function ChatView(props: {
           }
           break;
         }
+        // A regenerate landed. Like a rewind, the new branch's hello has already reset the thread;
+        // unlike a rewind, the message goes back to the model, not to the composer — so the draft
+        // is not touched at all.
+        case "regenerated":
+          batch(() => {
+            setErrors([]); // they belonged to the turns just abandoned
+            setTurnError(null);
+            setCommandRows([]);
+          });
+          setActionNote(null);
+          announce("Regenerating from your message.");
+          props.onRewound?.({ path: props.path, entryId: msg.userEntryId || msg.entryId });
+          settleRequest(msg.id, { ok: true });
+          break;
+        case "regenerate_refused":
+          noteOn(msg.entryId, msg.message);
+          settleRequest(msg.id, { ok: false, reason: msg.reason, message: msg.message });
+          break;
+        // The server has our message: it is queued, not merely sent. Until this lands, the row says
+        // "Sending…" and offers no Remove — nothing is known to hold it.
+        case "send_ack":
+          if (msg.queued) markQueued(setLive, msg.clientId);
+          break;
+        case "queue":
+          // A snapshot minted before a departure reached us must not resurrect that row: the
+          // broadcast is the authority, the snapshot only lists what is still held.
+          applyQueue(setLive, msg.items.filter((it) => !claimed.has(it.id)));
+          break;
+        /**
+         * A message left the queue, broadcast to EVERY client of the chat with the reason it left.
+         * This — not the absence of an id from the next snapshot — is what moves a row, because
+         * absence is equally true of a delivery, a Stop, a refusal and another tab's removal.
+         *
+         * "dropped" is the one that would otherwise hang: an extension `input` handler swallowed
+         * the message (the model-policy extension does this when the session's model is off), so
+         * no message_start will ever come for it. The row goes and the text comes back, in the tab
+         * that sent it — the only tab with anywhere to put it.
+         */
+        case "queue_item_gone": {
+          const effect = queueGoneEffect(msg.reason);
+          // The text to hand back, from the message when it carries one and otherwise from the row
+          // we are about to remove. A "dropped" message has no other carrier — no message_start,
+          // no queue_cleared, no ack — so if the broadcast ever stops carrying a body, reading our
+          // own row keeps the user's words instead of losing them silently.
+          const text = msg.text || queuedText(live, msg.itemId);
+          // One departure, one restore: a duplicate of this message (a reconnect, a re-send) must
+          // not paste the same text into the draft twice.
+          const first = !claimed.has(msg.itemId);
+          claimed.add(msg.itemId);
+          if (effect.row === "delivered") markDelivered(setLive, msg.itemId);
+          else markRemoved(setLive, msg.itemId);
+          if (first && effect.restore && text && sentHere(props.path, msg.itemId) && !handedBack.has(msg.itemId)) {
+            handedBack.add(msg.itemId);
+            setRestored({ text });
+            announce(
+              msg.reason === "dropped"
+                ? "That message was handled without being sent. It's back in the composer."
+                : "That message couldn't be sent. It's back in the composer.",
+            );
+          } else if (msg.reason === "removed" && !removing().includes(msg.itemId)) {
+            // Somebody else's tab (or another window of ours) took it back: say so here too, but
+            // stay quiet when our own removal is in flight — its ack is about to say it better.
+            announce("Removed from the queue.");
+          }
+          break;
+        }
+        /**
+         * The requester's own ack for ITS removal. It settles the request and nothing else: a
+         * Delete is a DISCARD, so the message does NOT come back to the composer. That is the
+         * whole difference between Delete and Stop — Stop takes the queue back to be edited and
+         * re-sent (`queue_cleared` owns that restore), Delete says this message should never be
+         * sent, and silently re-pasting it into the draft would undo the user's gesture.
+         *
+         * The `text` on this message names what the server removed; it is not an instruction to
+         * put it anywhere. The row itself already left with the broadcast above.
+         */
+        case "queue_removed":
+          markRemoved(setLive, msg.itemId);
+          announce("Removed from the queue.");
+          settleRequest(msg.id, { ok: true });
+          break;
+        case "queue_remove_refused": {
+          const words = queueRemoveRefusalText(msg.reason, msg.message);
+          // Not a retry state: this message can never be taken back on its own from here.
+          if (msg.reason === "shared_queue") setSharedQueue((l) => (l.includes(msg.itemId) ? l : [...l, msg.itemId]));
+          // "consumed" is the one refusal that also changes what the row IS: the agent took it.
+          if (msg.reason === "consumed") markDelivered(setLive, msg.itemId);
+          settleRequest(msg.id, { ok: false, reason: msg.reason, message: words });
+          break;
+        }
         // A rewind landed. The server has already broadcast the new branch's hello (and mode), so
         // the thread is reset; what's left is the rewound message, which goes ahead of the draft.
         case "rewound": {
@@ -361,12 +516,12 @@ export function ChatView(props: {
           });
           announce(msg.editorText ? "Rewound. Your message is back in the composer." : "Rewound.");
           props.onRewound?.({ path: props.path, entryId: msg.entryId });
-          settleRewind(msg.id, { ok: true, text: msg.editorText });
+          settleRequest(msg.id, { ok: true, text: msg.editorText });
           break;
         }
-        // settleRewind announces it: the pane shows the same message inline on its row.
+        // settleRequest announces it: the pane shows the same message inline on its row.
         case "rewind_refused":
-          settleRewind(msg.id, { ok: false, reason: msg.reason, message: msg.message });
+          settleRequest(msg.id, { ok: false, reason: msg.reason, message: msg.message });
           break;
         case "commands":
           setCommands(msg.commands);
@@ -455,45 +610,96 @@ export function ChatView(props: {
     },
   });
 
-  // ---- Rewind (the Timeline's input rows and the flyout's "Undo last turn") -----------------
-  /** Requests in flight, by id: the server answers only the socket that asked. Every refusal is
-      announced from here, whoever asked (the pane shows its rows an inline note instead), so the
-      live region says each one exactly once and never leaves the last "Rewound." standing. */
-  const rewinds = new Map<string, (result: RewindResult) => void>();
-  let rewindSeq = 0;
-  /** How many are waiting, reactively: the flyout's Undo row greys out while one is in flight. */
-  const [rewindsPending, setRewindsPending] = createSignal(0);
-  const settleRewind = (id: string, result: RewindResult) => {
-    const waiting = rewinds.get(id);
-    if (waiting && !result.ok) announce(result.message);
-    waiting?.(result);
-    rewinds.delete(id);
-    setRewindsPending(rewinds.size);
+  // ---- Session requests: rewind, regenerate, remove a queued message ------------------------
+  /**
+   * Every request this socket makes that the server answers by id, in ONE map. The server answers
+   * only the socket that asked, so a reply that names an id nobody here is waiting for is somebody
+   * else's or an echo, and is ignored. Every refusal is announced from here, whoever asked (the
+   * Timeline row and the message strip show the same sentence inline), so the live region says
+   * each one exactly once.
+   */
+  type RequestKind = "rewind" | "regenerate" | "queue_remove";
+  /** What a request settles as. `text` is a rewind's message, on its way to the composer. */
+  type ActionResult = { ok: true; text?: string } | { ok: false; reason: string; message: string };
+  const requests = new Map<string, { kind: RequestKind; resolve: (result: ActionResult) => void }>();
+  let requestSeq = 0;
+  /** How many of each kind are waiting, reactively: a strip greys its own action while one is out,
+      and the flyout's Undo row greys out while a rewind is. */
+  const [pending, setPending] = createSignal<Record<RequestKind, number>>({ rewind: 0, regenerate: 0, queue_remove: 0 });
+  const countPending = () => {
+    const n: Record<RequestKind, number> = { rewind: 0, regenerate: 0, queue_remove: 0 };
+    for (const r of requests.values()) n[r.kind]++;
+    setPending(n);
+  };
+  const settleRequest = (id: string, result: ActionResult) => {
+    const waiting = requests.get(id);
+    if (!waiting) return;
+    if (!result.ok) announce(result.message);
+    requests.delete(id);
+    countPending();
+    waiting.resolve(result);
   };
   /** A dropped connection takes its answers with it; the reconnect's hello shows what happened. */
-  const dropRewinds = () => {
-    for (const id of [...rewinds.keys()])
-      settleRewind(id, { ok: false, reason: "disconnected", message: "The connection dropped. Check the thread, then try again." });
+  const dropRequests = () => {
+    for (const id of [...requests.keys()])
+      settleRequest(id, { ok: false, reason: "disconnected", message: "The connection dropped. Check the thread, then try again." });
   };
-  createEffect(on(socket.status, (status) => status !== "open" && dropRewinds(), { defer: true }));
-  onCleanup(dropRewinds);
+  createEffect(on(socket.status, (status) => status !== "open" && dropRequests(), { defer: true }));
+  onCleanup(dropRequests);
+  const refuseHere = (reason: string, message: string): ActionResult => {
+    announce(message);
+    return { ok: false, reason, message };
+  };
+  /** Sends a request and waits for its answer. The id is minted here, so no caller can collide. */
+  const ask = (kind: RequestKind, message: Record<string, unknown>): Promise<ActionResult> => {
+    const id = `${kind}-${++requestSeq}`;
+    return new Promise((resolve) => {
+      if (!socket.send({ ...message, id })) return resolve(refuseHere("disconnected", "Not connected. Try again once it reconnects."));
+      requests.set(id, { kind, resolve });
+      countPending();
+    });
+  };
+  /** How many rewinds are out — the flyout's Undo row reads this. */
+  const rewindsPending = () => pending().rewind;
+  /**
+   * A refusal code from a server that may be newer than this build: anything it doesn't know is
+   * "internal", which is what the copy for an unrecognized failure already says.
+   *
+   * This list MIRRORS `RewindRefusal` and has to grow with it. "queued" is the one that shows why:
+   * `steer()` awaits the extension input handlers before the message is queued, so a message can
+   * still be on its way out after the turn it meant to interrupt has ended — `isStreaming` false,
+   * something genuinely pending — and a rewind allowed in that window delivers it into the NEW
+   * branch. The client cannot detect that state, which is exactly why it must not be folded into
+   * `rewindBlocked()`: the server refuses and the WORDS SHOWN ARE THE SERVER'S `message`, not
+   * anything derived from this code, so a stale entry here mislabels the reason without ever
+   * changing the sentence the user reads.
+   */
+  const asRewindRefusal = (reason: string): RewindRefusal | "disconnected" => {
+    const known: (RewindRefusal | "disconnected")[] = [
+      "streaming",
+      "compacting",
+      "busy",
+      "recent",
+      "not_on_branch",
+      "cancelled",
+      "queued",
+      "internal",
+      "disconnected",
+    ];
+    return known.find((k) => k === reason) ?? "internal";
+  };
   const rewindBlocked = (): "streaming" | "compacting" | null => (compacting() ? "compacting" : live.running ? "streaming" : null);
-  const rewind = (entryId: string): Promise<RewindResult> => {
+  const rewind = async (entryId: string): Promise<RewindResult> => {
     // The server refuses these too; answering here saves the round trip. Never auto-abort.
     const block = rewindBlocked();
-    const refuse = (reason: "streaming" | "compacting" | "disconnected", message: string): RewindResult => {
+    const refuse = (reason: "streaming" | "compacting", message: string): RewindResult => {
       announce(message);
       return { ok: false, reason, message };
     };
-    if (block === "streaming") return Promise.resolve(refuse(block, "Stop the turn first, then rewind."));
-    if (block === "compacting") return Promise.resolve(refuse(block, "Wait for compaction to finish, then rewind."));
-    const id = `rewind-${++rewindSeq}`;
-    return new Promise((resolve) => {
-      if (!socket.send({ type: "rewind", id, entryId }))
-        return resolve(refuse("disconnected", "Not connected. Try again once it reconnects."));
-      rewinds.set(id, resolve);
-      setRewindsPending(rewinds.size);
-    });
+    if (block === "streaming") return refuse(block, "Stop the turn first, then rewind.");
+    if (block === "compacting") return refuse(block, "Wait for compaction to finish, then rewind.");
+    const result = await ask("rewind", { type: "rewind", entryId });
+    return result.ok ? { ok: true, text: result.text ?? "" } : { ok: false, reason: asRewindRefusal(result.reason), message: result.message };
   };
   props.onRewindControl?.({ path: props.path, blocked: rewindBlocked, rewind });
   onCleanup(() => props.onRewindControl?.(null));
@@ -518,6 +724,143 @@ export function ChatView(props: {
       // One rewind at a time: a second confirm before the reply would abandon two turns.
       if (id && rewindsPending() === 0) void rewind(id).then((r) => !r.ok && toast(r.message));
     },
+  };
+
+  // ---- Per-message actions (spec/03-transcript.md "Message actions") ------------------------
+  /**
+   * The last refusal, kept on the message it was about. The announcement already said it once
+   * (settleRequest); this is the record on the row, so a user who looked away still finds out why
+   * nothing happened. One at a time: a second attempt anywhere replaces it.
+   */
+  const [actionNote, setActionNote] = createSignal<{ entryId: string; text: string } | null>(null);
+  const noteOn = (entryId: string | undefined, text: string) => setActionNote(entryId && text ? { entryId, text } : null);
+  /** A fork is a REST request, not a socket one: its own in-flight flag. */
+  const [forking, setForking] = createSignal(false);
+  /** Queued messages with a removal out, by id, so only that row greys. */
+  const [removing, setRemoving] = createSignal<string[]>([]);
+
+  /** What every strip in this chat is judged by. Reactive by construction: a turn starting, a
+      compaction, a model switch or a reconnect re-enables the actions in place. */
+  const actionState = (kind: "rewind" | "regenerate" | "fork", wake = false): ActionState => ({
+    chat: true,
+    live: false, // a ChatView only exists for a session Sova may write to
+    streaming: live.running,
+    compacting: compacting(),
+    // Rewind and Regenerate both move the branch on the same runtime, and the server has no
+    // mutex between them: one in flight blocks the other, not just another of its own kind.
+    pending: kind === "fork" ? forking() : pending().rewind + pending().regenerate > 0,
+    paused: blocked()?.text ?? null,
+    wake,
+  });
+
+  /** Regenerate: the server walks back to the user message that started this reply, rewinds to
+      just before it and re-prompts its stored text and images with the session's CURRENT model.
+      The composer is never touched — what you are half-way through typing is not part of this. */
+  const regenerate = async (entryId: string) => {
+    setActionNote(null);
+    const result = await ask("regenerate", { type: "regenerate", entryId });
+    if (result.ok) focusComposer();
+    else noteOn(entryId, result.message);
+  };
+
+  /**
+   * Where focus goes once a branch move lands: the composer. The strip that was pressed is gone —
+   * a rewind takes its message off the branch and a regenerate resets the thread to a fresh hello
+   * — and the composer is where the next thing happens (a rewind has just put the message there).
+   * Without this, a keyboard user is dropped on <body> and has to Tab from the top of the pane.
+   */
+  const focusComposer = () => queueMicrotask(() => document.getElementById(paneId("composer-input"))?.focus());
+
+  /** Rewind from a message's own strip: the same request the Timeline makes, with the refusal
+      kept on this row as well as announced. */
+  const rewindFrom = async (entryId: string) => {
+    setActionNote(null);
+    const result = await rewind(entryId);
+    if (result.ok) focusComposer();
+    else noteOn(entryId, result.message);
+  };
+
+  /**
+   * Fork: a new session holding this branch up to here — "before" a message of yours (pi's /fork:
+   * its text and attachments land in the new composer, unsent), "at" a reply (pi's /clone). The
+   * new session opens; nothing here changes, and nothing there is sent.
+   */
+  const forkFrom = async (strip: MessageStrip) => {
+    if (forking()) return;
+    setActionNote(null);
+    setForking(true);
+    try {
+      const out = await createFork({ path: props.path, entryId: strip.entryId, position: strip.role === "user" ? "before" : "at" });
+      if (!out.ok) {
+        const text = forkRefusalText(out.code, out.message);
+        noteOn(strip.entryId, text);
+        announce(text);
+        return;
+      }
+      const target = out.session.path;
+      // What actually landed in the new composer decides what we say landed there.
+      const sentence = forkSentence(await stageFork(target, out.editor));
+      noteOn(strip.entryId, "");
+      toast(sentence);
+      announce(sentence);
+      openCreated(out.session, props.onCreated);
+    } finally {
+      setForking(false);
+    }
+  };
+
+  /** What each delivered message offers here. Copy is ours alone; the rest are requests with a
+      reason when they can't act, never a button that quietly does nothing. */
+  const chatActions: MessageActionsProvider = {
+    items(strip) {
+      return actionsFor(strip.role, { copyable: copyable(strip) }).map((kind): MessageActionItem => {
+        switch (kind) {
+          case "copy":
+            return { kind, reason: null, run: async () => void (await copyText(strip.text, COPIED)) };
+          case "fork":
+            return { kind, reason: actionReason("fork", actionState("fork")), run: () => forkFrom(strip) };
+          case "rewind":
+            return { kind, reason: actionReason("rewind", actionState("rewind")), run: () => rewindFrom(strip.entryId) };
+          case "regenerate":
+            return {
+              kind,
+              reason: actionReason("regenerate", actionState("regenerate", !!strip.fromWake)),
+              run: () => regenerate(strip.entryId),
+            };
+        }
+      });
+    },
+    note: (entryId) => (actionNote()?.entryId === entryId ? actionNote()!.text : null),
+  };
+
+  /** A message of ours that hasn't been delivered: one Remove, by the id the server knows it by.
+      A row with no id (sent before this build, or by a client that minted none) offers nothing —
+      there is no truthful way to name it to the server. */
+  const queueActions = (row: { id?: string; state: LiveUserState; text: string }): MessageActionItem[] => {
+    const id = row.id;
+    if (!id) return [];
+    return [
+      {
+        kind: "remove",
+        label: ACTION_LABEL.remove,
+        reason: queueRemoveReason({ state: row.state, pending: removing().includes(id), chat: true, sharedQueue: sharedQueue().includes(id) }),
+        run: () => removeQueued(id),
+      },
+    ];
+  };
+
+  const removeQueued = async (id: string) => {
+    if (removing().includes(id)) return;
+    setRemoving((l) => [...l, id]);
+    try {
+      // The answer does the work, and it comes in two halves: `queue_item_gone` is broadcast, so
+      // the row leaves every tab including this one, while `queue_removed` is ours alone and only
+      // settles this request and hands the text to this composer. A refusal says why, and for
+      // "consumed" leaves the row as the delivered message it turned out to be.
+      await ask("queue_remove", { type: "queue_remove", itemId: id });
+    } finally {
+      setRemoving((l) => l.filter((x) => x !== id));
+    }
   };
 
   const answer = (id: string, value: unknown) => {
@@ -691,7 +1034,11 @@ export function ChatView(props: {
       announce(offModel);
       return false;
     }
-    if (!socket.send({ type: steer ? "steer" : "prompt", text })) return false;
+    // The id this message is known by from here on: the server echoes it in `send_ack`, lists it
+    // in the queue snapshot, and takes it back by it. Minted per send, so two identical messages
+    // are still two messages — which is what makes removing the middle one of three possible.
+    const clientId = newClientId();
+    if (!socket.send({ type: steer ? "steer" : "prompt", text, clientId })) return false;
     // A known slash command isn't a message to the model (templates and skills expand into other
     // text, extensions may never start the agent): no optimistic bubble or running state, just a
     // local "Ran" row, whether sent idle or as a steer mid-turn (pi runs it either way).
@@ -705,8 +1052,9 @@ export function ChatView(props: {
       });
       return true;
     }
+    rememberSend(props.path, clientId);
     batch(() => {
-      addPendingPrompt(setLive, text, [], attachments);
+      addPendingPrompt(setLive, text, [], attachments, clientId);
       setLive("running", true);
       setResume((n) => n + 1);
     });
@@ -872,8 +1220,22 @@ export function ChatView(props: {
         <Show when={items()} fallback={<TranscriptSkeleton />}>
           {(list) => (
             <>
-              <HistoryItems items={list()} author={props.author} streaming={live.running} hideTools={hideTools(props.path)} hideThinking={hideThinking(props.path)} fork={props.fork} />
-              <LiveEntries live={live} author={props.author} hideTools={hideTools(props.path)} hideThinking={hideThinking(props.path)} />
+              <HistoryItems
+                items={list()}
+                author={props.author}
+                streaming={live.running}
+                hideTools={hideTools(props.path)}
+                hideThinking={hideThinking(props.path)}
+                fork={props.fork}
+                actions={chatActions}
+              />
+              <LiveEntries
+                live={live}
+                author={props.author}
+                hideTools={hideTools(props.path)}
+                hideThinking={hideThinking(props.path)}
+                queueActions={queueActions}
+              />
               <For each={modelRows()}>
                 {(ref) => (
                   <InfoRow>

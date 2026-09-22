@@ -1,9 +1,16 @@
-# pi-web
+# Sova
 
 A local web app for the [pi coding agent](https://pi.dev) (`@earendil-works/pi-coding-agent`,
-pinned **0.86.1**), plus the pi configuration and extensions it runs with. The app lists every pi
+pinned **0.86.1**), plus the pi configuration and extensions it runs with. Sova lists every pi
 session on the machine, shows transcripts, chats in sessions it owns, live-watches sessions open in
-a pi TUI (read-only), and spawns new sessions. It is for one local user.
+a pi TUI (read-only), and spawns new sessions. It is for one local user. The name is an acronym:
+**S**essions, **O**rchestration, **V**iewing & **A**gents.
+
+This repo was named pi-web until the 2026-09 rebrand. The package, the repository
+([Naomarik/sova](https://github.com/Naomarik/sova)), the app's visible name, the state directory and
+the browser keys are all Sova now; what is still spelled `pi-web` is the compatibility that reads
+data written before the rename. See
+[name, repository, and on-disk paths](#name-repository-and-on-disk-paths) for the exact state.
 
 This is a monorepo:
 
@@ -15,9 +22,33 @@ This is a monorepo:
 | `public/`, `src/design/`, `spec/` | Design tokens, fonts, icons, UX spec |
 | `themes/` | The built-in themes, one JSON file each (see [Themes](#themes)) |
 | `docs/` | Research and feasibility notes |
+| `ai/branding/` | Brand notes: the name, voice, and the rename ledger. Nothing in the app reads it |
 | `pi-config/` | pi settings, keybindings, model catalog and custom extensions, symlinked into `~/.pi/agent` by `pi-config/install.sh`. It is also published on its own (see [pi-config public mirror](#pi-config-public-mirror)) |
 | `.claude/skills/` | Claude Code skills for agents working in this repo: `fold-ai-dev-design` (the design system, copied from foldaidev, tracked on purpose) and `playwright` (browser driving) |
 | `CLAUDE.md` | Architecture, ownership and pi SDK facts for coding agents. Read it before changing the server |
+
+## Name, repository, and on-disk paths
+
+The rename landed on 2026-09-22. Each row says what is true at this revision, so a reader doesn't
+move a file or a key that is still in use, and doesn't delete a `pi-web` spelling that something
+written before the rename still depends on.
+
+| Surface | Name | State |
+| --- | --- | --- |
+| Product, package | `Sova` / `sova` in `package.json` | Done |
+| Repository | [Naomarik/sova](https://github.com/Naomarik/sova) | Done; the old `Naomarik/pi-web` URL redirects |
+| Clone location | `~/webapps/sova` | Done. Sessions recorded against `~/webapps/pi-web` keep that cwd forever — `<state root>/path-map.json` maps it at the open, file-index and folder-listing boundaries (`server/path-map.ts`) |
+| State directory | `~/.pi/agent/sova/` | Done: the directory was MOVED (atomic rename, backup kept), so `web-sessions.json`, `session-groups.json`, `archived-sessions.json`, `drafts.json`, `defaults.json`, `attachments/`, `themes/`, `targets/` and `usage-last-known.json` live at the new root only. Absolute `~/.pi/agent/pi-web/...` paths embedded in transcripts and session headers still resolve, through `unlegacyStatePath` (`server/state-root.ts`) |
+| Browser keys | `sova:theme`, `sova:typography`, `sova:recent-count`, `sova:archive-*`, `sova:group-view-*`, `sova:folder-open-*` | Done: the new key is written, the legacy `pi-web:` one is read and mirrored so an open tab and a rollback both keep working (`src/lib/storage-keys.ts`) |
+| Theme schema | `sova-theme/v1`, and the legacy `pi-web-theme/v1` accepted | Reader done (`shared/theme.ts`). The shipped `themes/*.json` still carry the old `$schema` id, as do user themes already on disk — cosmetic, and both ids load |
+| Session markers | `pi-web-rewind`, `pi-web-fanout-member` (`custom` entries) | **Never renamed** as writes: they go into existing transcripts, and a rollback must be able to read them. Both spellings are accepted on read |
+
+Two consequences worth saying out loud. The compatibility above is not decoration: transcripts are
+never rewritten, so every `pi-web` spelling that survives is load-bearing for data already on disk —
+removing one silently orphans it. And `~/.pi/agent/settings.json`, `models.json`, `keybindings.json`
+and `vision-delegate.json` are absolute symlinks into the worktree, so after any move of it (the
+`~/webapps/pi-web` → `~/webapps/sova` one included) `pi-config/install.sh` must be re-run or the live
+TUI loses its config; `pi-config/install.sh --check` verifies the links without changing anything.
 
 ## Fresh machine setup
 
@@ -34,8 +65,8 @@ npm install -g @earendil-works/pi-coding-agent@0.86.1
 
 # 2. This repo
 gh auth login                       # private repo; the token is kept in the OS keyring
-gh repo clone Naomarik/pi-web ~/webapps/pi-web
-cd ~/webapps/pi-web
+gh repo clone Naomarik/sova ~/webapps/sova
+cd ~/webapps/sova
 npm install                         # the server embeds its own pi 0.86.1 from node_modules
 
 # 3. pi config and extensions -> ~/.pi/agent (and pi-sessions -> ~/.local/bin, which must be on PATH)
@@ -65,8 +96,11 @@ claude                                           # log in once in the CLI itself
 | `npm start` | Server without watch. It also serves `dist/` when a build exists, so after a build the app runs on :4800 alone |
 | `npm run typecheck` | `tsc --noEmit`; must pass. It does not cover `pi-config/` |
 
-Open <http://localhost:5173> in development. The server has no authentication and binds every
-interface (`*:4800`), so keep port 4800 behind a firewall.
+Open <http://localhost:5173> in development. The server has no authentication of its own, so what
+protects it is the interface it listens on: it binds **loopback only** (`127.0.0.1:4800`) unless
+`HOST` says otherwise (`server/index.ts`). Setting `HOST=0.0.0.0` exposes an unauthenticated app
+that can read any file and run any command the user can — only do it behind something that
+authenticates, and keep 4800 firewalled.
 
 The embedded pi reads and writes the same `~/.pi/agent` as the TUI: your real sessions, auth and
 extensions. `PI_CODING_AGENT_DIR=/tmp/somewhere` points pi and the server at a scratch agent
@@ -95,9 +129,11 @@ for the file, the readers, and what is out of reach.
 ## Themes
 
 A theme is one JSON file. The 18 that ship live in `themes/`; yours go in
-`~/.pi/agent/pi-web/themes/`, and the file's name is the theme's id. Pick one in
-**Settings → Themes**; the choice is kept in `localStorage` under `pi-web:theme` and applied
-before the first paint.
+`~/.pi/agent/sova/themes/`, and the file's name is the theme's id. (The folder moved with the
+state directory on 2026-09-22; see
+[name, repository, and on-disk paths](#name-repository-and-on-disk-paths).) Pick one in
+**Settings → Themes**; the choice is kept in `localStorage` under `sova:theme` — the pre-rebrand
+`pi-web:theme` is still read and mirrored — and applied before the first paint.
 
 ```json
 {
@@ -162,7 +198,7 @@ contexts. Give a file of your own the id of a built-in and yours wins — the pi
 **If a theme makes the app unreadable, you can always get back.** The picker renders in the theme
 you're wearing, so a `typography` value far outside the scale can leave you unable to read the row
 that would switch you off it. Delete or fix the file: an id that no longer resolves falls back to
-Dark. Clearing the `pi-web:theme` key in `localStorage` does the same.
+Dark. Clearing the `sova:theme` key in `localStorage` (and the legacy `pi-web:theme`) does the same.
 
 **Drop-in is live.** Save a file while the Themes tab is open and it appears within 2 seconds —
 no restart, no rebuild. Editing the theme you're wearing re-applies it on the same beat, which
@@ -216,12 +252,12 @@ Ollama expects. It expects Ollama at `localhost:11434`.
 | --- | --- |
 | `sessions/` | Session transcripts (JSONL). `sessions/live/*.json` is the live-session registry |
 | `models-store.json` | Model catalog cache |
-| `model-favorites.json` | Command-palette favorites (pi-web reads it) |
+| `model-favorites.json` | Command-palette favorites (Sova reads it) |
 | `mode.json` | Current mode from the `mode` extension |
 | `topic-outline.json` | topic-outline settings (optional; defaults apply without it) |
 | `trust.json` | Trusted-project list |
-| `cache/usage-status.json` | Subscription usage cache (pi-web's insights read it) |
-| `pi-web/web-sessions.json` | Which sessions pi-web created |
+| `cache/usage-status.json` | Subscription usage cache (Sova's insights read it) |
+| `sova/web-sessions.json` | Which sessions Sova created (the whole `sova/` state directory, renamed from `pi-web/` on 2026-09-22) |
 | `npm/`, `git/` | Packages pi installs from `settings.json` |
 | `skills/` | Machine-local skills (here: symlinks to the Omarchy skill and `~/.agents/skills/opentui`). Nothing in this repo depends on them |
 | `tmp/` | Scratch state |

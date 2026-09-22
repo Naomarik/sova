@@ -1,5 +1,5 @@
 # 12 · Settings dialog
-> Part of the pi-web design spec · [overview](overview.md)
+> Part of the Sova design spec · [overview](overview.md)
 
 The sidebar foot's Agents row ends in a gear. It opens the Settings modal: a left tab rail and
 one panel, wider than the product's question-asking modals because two panes have to fit beside
@@ -35,7 +35,7 @@ can change the dialog's size by being long or short.
 
 ## General
 
-The first tab: how **this browser** draws pi-web. Nothing here is written to the machine — no
+The first tab: how **this browser** draws Sova. Nothing here is written to the machine — no
 policy file, no server endpoint — which is the line between this screen and Models, where a
 switch is a rule every session obeys. The panel says so in one line, because "settings" in a tool
 with a shared config file is otherwise an open question.
@@ -63,7 +63,7 @@ places is a count that disagrees in one of them.
 
 The second tab, and the one that is not about this browser at all. The policy behind this screen
 is shared: `~/.pi/agent/model-policy.json`, written here and read by
-**every** session, pi-web and TUI alike, per model change, per turn and per spawn. It answers two
+**every** session, Sova and TUI alike, per model change, per turn and per spawn. It answers two
 questions about every provider and every model:
 
 - **Enabled** — may it be used at all. Off is a prohibition, not a filter: the model leaves this
@@ -113,33 +113,44 @@ read, an error banner offers Retry and touches nothing.
 ## Themes
 
 The third tab. It lists every theme the app can find — the ones shipped with it and the ones
-you dropped in yourself — as a radiogroup: one row per theme, one of them checked, arrow keys
-move the choice the way they do in the rail.
+you dropped in yourself — as a radiogroup of **cards in a grid**, one of them checked. The grid
+follows the panel's width: 3 cards across at the unfolded panel, 2 in the folded sheet, so 18
+themes are 6 rows rather than 18 and the footer is a screen away instead of a page. Arrow keys
+move the choice the way they do in the rail, across the grid: Left and Right step one card and
+wrap, Up and Down step one row and stop at the top and bottom edges, Home and End go to the
+first and last card. The column count is read off the rendered cards, never restated from the
+stylesheet, so any panel width agrees with itself.
 
-A row is the preview. It carries the theme's name, a meta line reading its base and where it
+A card is the preview. It carries the theme's name, a meta line reading its base and where it
 came from (`Dark base · Built-in`, `Light base · User`), a strip of 5 swatches painted in the
 theme's own `bg`, `surface`, `accent`, `status-error`, and `ink`, and the sample `Aa 0x1F` set
-in the theme's own body and mono faces — `Aa` in one, `0x1F` in the other, because a theme may
-change either. Both the swatches and the sample render values out of a file the user may never
+in the faces that theme **would actually render in** — `Aa` in the body face, `0x1F` in the mono
+face, each being the Typography pick below if there is one, else the theme's own, else the
+default. A sample in a face the page wouldn't show is a preview of nothing. Both the swatches and
+the sample render values out of a file the user may never
 have chosen, which is why those values are checked when the file is read rather than when a
-theme is applied (§0): by the time a row draws, there is nothing left to sanitize. A user file that took a built-in's id says so — `Dark base · User · replaces
+theme is applied (§0): by the time a card draws, there is nothing left to sanitize. A user file that took a built-in's id says so — `Dark base · User · replaces
 the built-in` — because a Dracula that isn't ours is the one surprise this folder can spring, and
-the row is where it should be legible rather than in a log. Every user row carries its file's full
+the card is where it should be legible rather than in a log. Every user card carries its file's full
 path in `title`. The swatches are the only place in the product that paints a color the current
 theme doesn't own; each is a 20px dot with a 1.5px `--color-border-strong` ring, so a swatch the
 same color as the panel is still a dot.
 
+The checked card is the tint plus a 1.5px accent edge plus a check mark in its corner: the mark
+is what says "selected" in shape, because the tint and the edge alone are a color-only state.
+
 **Choosing applies immediately.** There is no Save and no preview mode: the row you check is the
 theme the window is wearing before your finger leaves the key, because a theme you have to
 commit to is a theme you can't compare. The choice is the id, and it persists in `localStorage`
-under `pi-web:theme`, read and applied before first paint (§0) so a reload never flashes the
+under `sova:theme` (legacy `pi-web:theme` read and mirrored), read and applied before first paint (§0) so a reload never flashes the
 default first. A stored id that no longer resolves — the file was deleted or renamed — falls back
 to `dark`, and the list shows `dark` checked.
 
-**A theme file we can't use stays in the list.** It renders as a disabled row, its filename in
-mono where the name would be and its reason where the meta line would be. The row can't be
-checked, and it never replaces the theme you're wearing. A theme that vanishes when it breaks is
-a theme you can't fix.
+**A theme file we can't use stays in the list.** It renders as a disabled card spanning the
+whole row — a reason is a sentence and needs the width — its filename in
+mono where the name would be and its reason where the meta line would be. The card can't be
+checked, arrow keys step over it, and it never replaces the theme you're wearing. A theme that
+vanishes when it breaks is a theme you can't fix.
 
 Two things go wrong, and they read differently. **A file that doesn't parse** carries the
 parser's own message — "Expected double-quoted property name in JSON at position 15 (line 3
@@ -151,7 +162,33 @@ the value, and the shapes that would have worked — "a hex value, or one call t
 says *invalid* sends you looking for a typo in a value that hasn't got one; the fix is almost
 always a spelling we don't take, so the copy names the ones we do (§0).
 
-The footer names the folder — `~/.pi/agent/pi-web/themes/` in mono — and carries a Refresh
+### Typography
+
+Under the grid, above the footer: the fonts **this browser** puts over whichever theme is on.
+Two closed lists, each a native select so a phone gets its own picker — **Text**, which sets the
+body and the display face together (the sidebar, messages, headings; a separate heading face is
+not a choice worth a control), and **Code**, which sets the mono face (paths, ids, diffs, fenced
+blocks). Every option is a face bundled with the app, so a pick is always a font that exists on
+this device, offline: Inter, Source Sans 3, Atkinson Hyperlegible Next, IBM Plex Sans, and Noto
+Sans for Text; JetBrains Mono, Fira Code, IBM Plex Mono, and Source Code Pro for Code. There is no
+field for a font of your own — a face that isn't bundled is a face the phone hasn't got.
+
+The first option in each list is **Theme default**, and it is the initial state: the theme's own
+faces, which for every shipped theme are Inter and JetBrains Mono. Picking Inter or JetBrains
+Mono explicitly is a different thing from Theme default — a theme that names some other face in
+its file loses to an explicit pick and wins over Theme default. The pick is over the theme, not
+part of it: switching themes keeps it, and it persists in `localStorage["pi-web:typography"]`
+as catalogue ids (§0). **Use Theme Fonts** takes both picks off and is disabled while there are
+none; `?theme=default` takes them off too.
+
+It applies as you pick, like the theme. The preview under the two lists — a heading, two lines
+of prose, and a two-line mono block whose lines are the same length so a column that stopped
+aligning is visible — inherits the page's own faces rather than rendering the option, so it can
+never show a font the page wouldn't. When a pick is on, one line under the preview names both
+faces. IBM Plex Mono is the one static family in the catalogue: its hint says that medium and
+display text render one step heavier (the scale's 530 and 640 resolve to its 600 and 700).
+
+The footer names the folder — `~/.pi/agent/sova/themes/` in mono — and carries a Refresh
 action. The list is fetched when the dialog opens and re-fetched every 2s while this tab is
 visible, so a file you save in another window appears without a click; Refresh is there for the
 moment you don't want to wait 2 seconds, and for the case where the watch is the thing that's

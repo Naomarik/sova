@@ -1,0 +1,642 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>pi-web logo candidates · K3, round 2</title>
+<style>
+  /* Standalone on purpose: one file, no build, opens from disk. Values are copied from
+     src/design/tokens.css (dark and light blocks); the fonts are the bundled ones. */
+  @font-face { font-family: "Inter"; src: url("../../../../../public/fonts/Inter-Variable.woff2") format("woff2"); font-weight: 100 900; font-display: block; }
+  @font-face { font-family: "JetBrains Mono"; src: url("../../../../../public/fonts/JetBrainsMono-Variable.woff2") format("woff2"); font-weight: 100 800; font-display: block; }
+  :root { --bg:#1E1E26; --surface:#2C2C38; --ink:#F2F2F6; --ink-2:#B8B8C6; --muted:#9A9AA8; --border:#3B3B49; --accent:#8E88FF; --tint:#2B2650; --on-accent:#1E1E26; }
+  [data-theme="light"] { --bg:#F2F2F7; --surface:#FFFFFF; --ink:#17171C; --ink-2:#4A4A57; --muted:#656572; --border:#E3E3E9; --accent:#4A43D8; --tint:#E8E6FA; --on-accent:#FFFFFF; }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); color: var(--ink); font: 400 14.5px/1.55 Inter, system-ui, sans-serif; }
+  body { margin: 0; padding: 32px 24px 64px; }
+  .page { max-width: 1120px; margin: 0 auto; }
+  h1 { font-size: 29px; line-height: 1.12; font-weight: 640; letter-spacing: -0.02em; margin: 0 0 8px; }
+  h2 { font-size: 20px; line-height: 1.25; font-weight: 600; margin: 0; }
+  .intro { color: var(--ink-2); max-width: 72ch; margin: 0 0 32px; }
+  .intro code, .ledger code { font: 500 12.5px/1.5 "JetBrains Mono", monospace; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px; margin-bottom: 24px; }
+  .card header { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+  .chip { display: inline-flex; align-items: center; height: 22px; padding: 0 10px; border-radius: 999px; background: var(--tint); color: var(--accent); font-size: 11px; font-weight: 600; letter-spacing: 0.06em; }
+  .ledger { color: var(--muted); font-size: 12.5px; }
+  .panels { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 767px) { .panels { grid-template-columns: 1fr; } }
+  .panel { background: var(--bg); color: var(--ink); border: 1px solid var(--border); border-radius: 8px; padding: 20px; display: grid; gap: 20px; }
+  .lockup { display: inline-flex; align-items: center; gap: 10px; }
+  .lockup .mark { --s: 32px; }
+  .word { font-family: Inter, system-ui, sans-serif; font-weight: 640; font-size: 26px; line-height: 1; letter-spacing: -0.03em; color: var(--ink); }
+  .mark { display: inline-block; width: var(--s, 32px); height: var(--s, 32px); line-height: 0; }
+  .mark svg { width: 100%; height: 100%; display: block; }
+  .mark.accent { color: var(--accent); }
+  .mark.ink { color: var(--ink); }
+  .sizes { display: flex; align-items: flex-end; gap: 24px; flex-wrap: wrap; }
+  figure { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  figcaption { font: 400 11px/1.3 "JetBrains Mono", monospace; color: var(--muted); }
+  figure.on-accent .mark { color: var(--on-accent); background: var(--accent); border-radius: 8px; padding: 6px; width: 44px; height: 44px; }
+  .notes { margin-top: 16px; max-width: 72ch; }
+  .notes p { margin: 0 0 8px; }
+  .muted { color: var(--ink-2); }
+  footer { color: var(--muted); font-size: 12.5px; max-width: 72ch; }
+  footer code { font: 400 12.5px/1.5 "JetBrains Mono", monospace; }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>Logo candidates, round 2</h1>
+  <p class="intro">Round 2, set K3: 4 letter-based ligatures, 2 for SOVA and 2 for TAVI, drawn after the
+  round-1 favourite (<code>../fable/tavi-ligature.svg</code> — T joined to I in one stroke) was chosen. This
+  set explores the same family without repeating it: connected initials, shared stems, a letter in negative
+  space, continuous geometry. No owls, no branch-and-node icons, and none of the four is a redress of the
+  round-1 marks (mine included). Every mark is one <code>currentColor</code> SVG on a 32-unit grid, shown in
+  the accent as the sidebar head would use it, in ink, and reversed on the accent, at the 3 sizes the product
+  needs. The wordmark is Inter 640 at &minus;0.03em; the two panels are the dark and light token sets. The
+  product name is still provisional — see <code>../../naming.md</code>.</p>
+
+  <section class="card" id="sova-cascade">
+    <header>
+      <span class="chip">SOVA</span>
+      <h2>1. Cascade</h2>
+      <span class="ledger">S pours into V · one stroke · currentColor · <code>sova-cascade.svg</code></span>
+    </header>
+    <div class="panels">
+    <div class="panel" data-theme="dark">
+      <div class="lockup"><span class="mark accent"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="SOVA">
+  <!-- SOVA · CASCADE — one continuous stroke draws the S, and where the S's top
+       terminal turns over, the same line pours down and rises again as the V.
+       The first consonant ends where the middle letter begins. The V is also
+       the one letter both candidate names carry. Single colour, currentColor,
+       no detached parts. -->
+  <path fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"
+        d="M25.5 7 L21.5 24 L15 6.5 C13.6 4.4 9.3 4.7 7.8 7.3 C6.5 9.7 7.8 11.8 10.6 12.8 C13.6 13.9 15.5 15.7 15.3 18.3 C15.1 21.4 12 23.6 8.8 22.8 C7.2 22.4 6.1 21.5 5.5 20.3"/>
+</svg></span><span class="word">sova</span></div>
+      <div class="sizes">
+        <figure><span class="mark accent" style="--s:16px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="SOVA">
+  <!-- SOVA · CASCADE — one continuous stroke draws the S, and where the S's top
+       terminal turns over, the same line pours down and rises again as the V.
+       The first consonant ends where the middle letter begins. The V is also
+       the one letter both candidate names carry. Single colour, currentColor,
+       no detached parts. -->
+  <path fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"
+        d="M25.5 7 L21.5 24 L15 6.5 C13.6 4.4 9.3 4.7 7.8 7.3 C6.5 9.7 7.8 11.8 10.6 12.8 C13.6 13.9 15.5 15.7 15.3 18.3 C15.1 21.4 12 23.6 8.8 22.8 C7.2 22.4 6.1 21.5 5.5 20.3"/>
+</svg></span><figcaption>16</figcaption></figure>
+        <figure><span class="mark accent" style="--s:24px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="SOVA">
+  <!-- SOVA · CASCADE — one continuous stroke draws the S, and where the S's top
+       terminal turns over, the same line pours down and rises again as the V.
+       The first consonant ends where the middle letter begins. The V is also
+       the one letter both candidate names carry. Single colour, currentColor,
+       no detached parts. -->
+  <path fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"
+        d="M25.5 7 L21.5 24 L15 6.5 C13.6 4.4 9.3 4.7 7.8 7.3 C6.5 9.7 7.8 11.8 10.6 12.8 C13.6 13.9 15.5 15.7 15.3 18.3 C15.1 21.4 12 23.6 8.8 22.8 C7.2 22.4 6.1 21.5 5.5 20.3"/>
+</svg></span><figcaption>24</figcaption></figure>
+        <figure><span class="mark accent" style="--s:32px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="SOVA">
+  <!-- SOVA · CASCADE — one continuous stroke draws the S, and where the S's top
+       terminal turns over, the same line pours down and rises again as the V.
+       The first consonant ends where the middle letter begins. The V is also
+       the one letter both candidate names carry. Single colour, currentColor,
+       no detached parts. -->
+  <path fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"
+        d="M25.5 7 L21.5 24 L15 6.5 C13.6 4.4 9.3 4.7 7.8 7.3 C6.5 9.7 7.8 11.8 10.6 12.8 C13.6 13.9 15.5 15.7 15.3 18.3 C15.1 21.4 12 23.6 8.8 22.8 C7.2 22.4 6.1 21.5 5.5 20.3"/>
+</svg></span><figcaption>32</figcaption></figure>
+        <figure><span class="mark ink" style="--s:32px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="SOVA">
+  <!-- SOVA · CASCADE — one continuous stroke draws the S, and where the S's top
+       terminal turns over, the same line pours down and rises again as the V.
+       The first consonant ends where the middle letter begins. The V is also
+       the one letter both candidate names carry. Single colour, currentColor,
+       no detached parts. -->
+  <path fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"
+        d="M25.5 7 L21.5 24 L15 6.5 C13.6 4.4 9.3 4.7 7.8 7.3 C6.5 9.7 7.8 11.8 10.6 12.8 C13.6 13.9 15.5 15.7 15.3 18.3 C15.1 21.4 12 23.6 8.8 22.8 C7.2 22.4 6.1 21.5 5.5 20.3"/>
+</svg></span><figcaption>ink</figcaption></figure>
+        <figure class="on-accent"><span class="mark" style="--s:32px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="SOVA">
+  <!-- SOVA · CASCADE — one continuous stroke draws the S, and where the S's top
+       terminal turns over, the same line pours down and rises again as the V.
+       The first consonant ends where the middle letter begins. The V is also
+       the one letter both candidate names carry. Single colour, currentColor,
+       no detached parts. -->
+  <path fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"
+        d="M25.5 7 L21.5 24 L15 6.5 C13.6 4.4 9.3 4.7 7.8 7.3 C6.5 9.7 7.8 11.8 10.6 12.8 C13.6 13.9 15.5 15.7 15.3 18.3 C15.1 21.4 12 23.6 8.8 22.8 C7.2 22.4 6.1 21.5 5.5 20.3"/>
+</svg></span><figcaption>on accent</figcaption></figure>
+      </div>
+    </div>
+    <div class="panel" data-theme="light">
+      <div class="lockup"><span class="mark accent"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="SOVA">
+  <!-- SOVA · CASCADE — one continuous stroke draws the S, and where the S's top
+       terminal turns over, the same line pours down and rises again as the V.
+       The first consonant ends where the middle letter begins. The V is also
+       the one letter both candidate names carry. Single colour, currentColor,
+       no detached parts. -->
+  <path fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"
+        d="M25.5 7 L21.5 24 L15 6.5 C13.6 4.4 9.3 4.7 7.8 7.3 C6.5 9.7 7.8 11.8 10.6 12.8 C13.6 13.9 15.5 15.7 15.3 18.3 C15.1 21.4 12 23.6 8.8 22.8 C7.2 22.4 6.1 21.5 5.5 20.3"/>
+</svg></span><span class="word">sova</span></div>
+      <div class="sizes">
+        <figure><span class="mark accent" style="--s:16px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="SOVA">
+  <!-- SOVA · CASCADE — one continuous stroke draws the S, and where the S's top
+       terminal turns over, the same line pours down and rises again as the V.
+       The first consonant ends where the middle letter begins. The V is also
+       the one letter both candidate names carry. Single colour, currentColor,
+       no detached parts. -->
+  <path fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"
+        d="M25.5 7 L21.5 24 L15 6.5 C13.6 4.4 9.3 4.7 7.8 7.3 C6.5 9.7 7.8 11.8 10.6 12.8 C13.6 13.9 15.5 15.7 15.3 18.3 C15.1 21.4 12 23.6 8.8 22.8 C7.2 22.4 6.1 21.5 5.5 20.3"/>
+</svg></span><figcaption>16</figcaption></figure>
+        <figure><span class="mark accent" style="--s:24px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="SOVA">
+  <!-- SOVA · CASCADE — one continuous stroke draws the S, and where the S's top
+       terminal turns over, the same line pours down and rises again as the V.
+       The first consonant ends where the middle letter begins. The V is also
+       the one letter both candidate names carry. Single colour, currentColor,
+       no detached parts. -->
+  <path fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"
+        d="M25.5 7 L21.5 24 L15 6.5 C13.6 4.4 9.3 4.7 7.8 7.3 C6.5 9.7 7.8 11.8 10.6 12.8 C13.6 13.9 15.5 15.7 15.3 18.3 C15.1 21.4 12 23.6 8.8 22.8 C7.2 22.4 6.1 21.5 5.5 20.3"/>
+</svg></span><figcaption>24</figcaption></figure>
+        <figure><span class="mark accent" style="--s:32px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="SOVA">
+  <!-- SOVA · CASCADE — one continuous stroke draws the S, and where the S's top
+       terminal turns over, the same line pours down and rises again as the V.
+       The first consonant ends where the middle letter begins. The V is also
+       the one letter both candidate names carry. Single colour, currentColor,
+       no detached parts. -->
+  <path fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"
+        d="M25.5 7 L21.5 24 L15 6.5 C13.6 4.4 9.3 4.7 7.8 7.3 C6.5 9.7 7.8 11.8 10.6 12.8 C13.6 13.9 15.5 15.7 15.3 18.3 C15.1 21.4 12 23.6 8.8 22.8 C7.2 22.4 6.1 21.5 5.5 20.3"/>
+</svg></span><figcaption>32</figcaption></figure>
+        <figure><span class="mark ink" style="--s:32px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="SOVA">
+  <!-- SOVA · CASCADE — one continuous stroke draws the S, and where the S's top
+       terminal turns over, the same line pours down and rises again as the V.
+       The first consonant ends where the middle letter begins. The V is also
+       the one letter both candidate names carry. Single colour, currentColor,
+       no detached parts. -->
+  <path fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"
+        d="M25.5 7 L21.5 24 L15 6.5 C13.6 4.4 9.3 4.7 7.8 7.3 C6.5 9.7 7.8 11.8 10.6 12.8 C13.6 13.9 15.5 15.7 15.3 18.3 C15.1 21.4 12 23.6 8.8 22.8 C7.2 22.4 6.1 21.5 5.5 20.3"/>
+</svg></span><figcaption>ink</figcaption></figure>
+        <figure class="on-accent"><span class="mark" style="--s:32px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="SOVA">
+  <!-- SOVA · CASCADE — one continuous stroke draws the S, and where the S's top
+       terminal turns over, the same line pours down and rises again as the V.
+       The first consonant ends where the middle letter begins. The V is also
+       the one letter both candidate names carry. Single colour, currentColor,
+       no detached parts. -->
+  <path fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"
+        d="M25.5 7 L21.5 24 L15 6.5 C13.6 4.4 9.3 4.7 7.8 7.3 C6.5 9.7 7.8 11.8 10.6 12.8 C13.6 13.9 15.5 15.7 15.3 18.3 C15.1 21.4 12 23.6 8.8 22.8 C7.2 22.4 6.1 21.5 5.5 20.3"/>
+</svg></span><figcaption>on accent</figcaption></figure>
+      </div>
+    </div></div>
+    <div class="notes">
+      <p>One line, no breaks: the S is drawn from its top terminal, and exactly there the same stroke turns over and pours down into the V. The S's exit is the V's entry — the first consonant and the middle letter in a single gesture. The V happens to be the one letter both candidate names carry, and it lands on the mark's highest and farthest point.</p>
+      <p class="muted">Curved S against straight V gives the mark its rhythm: soft in, sharp out. At 16px it reads as a two-letter monogram rather than as letters spelled out, which is honest to what it is. Stroke 4, round caps and joins, no detached part to lose.</p>
+    </div>
+  </section>
+
+  <section class="card" id="sova-passage">
+    <header>
+      <span class="chip">SOVA</span>
+      <h2>2. Passage</h2>
+      <span class="ledger">S cut through O · negative space · currentColor · <code>sova-passage.svg</code></span>
+    </header>
+    <div class="panels">
+    <div class="panel" data-theme="dark">
+      <div class="lockup"><span class="mark accent"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="SOVA">
+  <!-- SOVA · PASSAGE — the O is a solid disc and the S is the opening cut clean
+       through it: the word's first letter as a channel of bare surface inside
+       its second. Every terminal of the S stays inside the disc, so the letter
+       floats in the solid. The mask cuts true transparency — the channel shows
+       whatever the mark sits on. Single colour, currentColor. The mask id is
+       prefixed so the file can be inlined beside other marks. -->
+  <mask id="k3r2-sova-passage--i13">
+    <rect width="32" height="32" fill="#fff"/>
+    <path d="M19.8 8.9 C17.8 7.4 13.9 7.5 12.5 9.5 C11.3 11.2 12.3 13 14.3 13.8 C16.9 14.7 18.7 16 18.5 18.3 C18.3 21 15.6 23 12.7 22.4 C11.4 22.1 10.4 21.4 9.9 20.5"
+          fill="none" stroke="#000" stroke-width="3.8" stroke-linecap="round"/>
+  </mask>
+  <circle fill="currentColor" cx="16" cy="16" r="11.5" mask="url(#k3r2-sova-passage--i13)"/>
+</svg></span><span class="word">sova</span></div>
+      <div class="sizes">
+        <figure><span class="mark accent" style="--s:16px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="SOVA">
+  <!-- SOVA · PASSAGE — the O is a solid disc and the S is the opening cut clean
+       through it: the word's first letter as a channel of bare surface inside
+       its second. Every terminal of the S stays inside the disc, so the letter
+       floats in the solid. The mask cuts true transparency — the channel shows
+       whatever the mark sits on. Single colour, currentColor. The mask id is
+       prefixed so the file can be inlined beside other marks. -->
+  <mask id="k3r2-sova-passage--i14">
+    <rect width="32" height="32" fill="#fff"/>
+    <path d="M19.8 8.9 C17.8 7.4 13.9 7.5 12.5 9.5 C11.3 11.2 12.3 13 14.3 13.8 C16.9 14.7 18.7 16 18.5 18.3 C18.3 21 15.6 23 12.7 22.4 C11.4 22.1 10.4 21.4 9.9 20.5"
+          fill="none" stroke="#000" stroke-width="3.8" stroke-linecap="round"/>
+  </mask>
+  <circle fill="currentColor" cx="16" cy="16" r="11.5" mask="url(#k3r2-sova-passage--i14)"/>
+</svg></span><figcaption>16</figcaption></figure>
+        <figure><span class="mark accent" style="--s:24px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="SOVA">
+  <!-- SOVA · PASSAGE — the O is a solid disc and the S is the opening cut clean
+       through it: the word's first letter as a channel of bare surface inside
+       its second. Every terminal of the S stays inside the disc, so the letter
+       floats in the solid. The mask cuts true transparency — the channel shows
+       whatever the mark sits on. Single colour, currentColor. The mask id is
+       prefixed so the file can be inlined beside other marks. -->
+  <mask id="k3r2-sova-passage--i15">
+    <rect width="32" height="32" fill="#fff"/>
+    <path d="M19.8 8.9 C17.8 7.4 13.9 7.5 12.5 9.5 C11.3 11.2 12.3 13 14.3 13.8 C16.9 14.7 18.7 16 18.5 18.3 C18.3 21 15.6 23 12.7 22.4 C11.4 22.1 10.4 21.4 9.9 20.5"
+          fill="none" stroke="#000" stroke-width="3.8" stroke-linecap="round"/>
+  </mask>
+  <circle fill="currentColor" cx="16" cy="16" r="11.5" mask="url(#k3r2-sova-passage--i15)"/>
+</svg></span><figcaption>24</figcaption></figure>
+        <figure><span class="mark accent" style="--s:32px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="SOVA">
+  <!-- SOVA · PASSAGE — the O is a solid disc and the S is the opening cut clean
+       through it: the word's first letter as a channel of bare surface inside
+       its second. Every terminal of the S stays inside the disc, so the letter
+       floats in the solid. The mask cuts true transparency — the channel shows
+       whatever the mark sits on. Single colour, currentColor. The mask id is
+       prefixed so the file can be inlined beside other marks. -->
+  <mask id="k3r2-sova-passage--i16">
+    <rect width="32" height="32" fill="#fff"/>
+    <path d="M19.8 8.9 C17.8 7.4 13.9 7.5 12.5 9.5 C11.3 11.2 12.3 13 14.3 13.8 C16.9 14.7 18.7 16 18.5 18.3 C18.3 21 15.6 23 12.7 22.4 C11.4 22.1 10.4 21.4 9.9 20.5"
+          fill="none" stroke="#000" stroke-width="3.8" stroke-linecap="round"/>
+  </mask>
+  <circle fill="currentColor" cx="16" cy="16" r="11.5" mask="url(#k3r2-sova-passage--i16)"/>
+</svg></span><figcaption>32</figcaption></figure>
+        <figure><span class="mark ink" style="--s:32px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="SOVA">
+  <!-- SOVA · PASSAGE — the O is a solid disc and the S is the opening cut clean
+       through it: the word's first letter as a channel of bare surface inside
+       its second. Every terminal of the S stays inside the disc, so the letter
+       floats in the solid. The mask cuts true transparency — the channel shows
+       whatever the mark sits on. Single colour, currentColor. The mask id is
+       prefixed so the file can be inlined beside other marks. -->
+  <mask id="k3r2-sova-passage--i17">
+    <rect width="32" height="32" fill="#fff"/>
+    <path d="M19.8 8.9 C17.8 7.4 13.9 7.5 12.5 9.5 C11.3 11.2 12.3 13 14.3 13.8 C16.9 14.7 18.7 16 18.5 18.3 C18.3 21 15.6 23 12.7 22.4 C11.4 22.1 10.4 21.4 9.9 20.5"
+          fill="none" stroke="#000" stroke-width="3.8" stroke-linecap="round"/>
+  </mask>
+  <circle fill="currentColor" cx="16" cy="16" r="11.5" mask="url(#k3r2-sova-passage--i17)"/>
+</svg></span><figcaption>ink</figcaption></figure>
+        <figure class="on-accent"><span class="mark" style="--s:32px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="SOVA">
+  <!-- SOVA · PASSAGE — the O is a solid disc and the S is the opening cut clean
+       through it: the word's first letter as a channel of bare surface inside
+       its second. Every terminal of the S stays inside the disc, so the letter
+       floats in the solid. The mask cuts true transparency — the channel shows
+       whatever the mark sits on. Single colour, currentColor. The mask id is
+       prefixed so the file can be inlined beside other marks. -->
+  <mask id="k3r2-sova-passage--i18">
+    <rect width="32" height="32" fill="#fff"/>
+    <path d="M19.8 8.9 C17.8 7.4 13.9 7.5 12.5 9.5 C11.3 11.2 12.3 13 14.3 13.8 C16.9 14.7 18.7 16 18.5 18.3 C18.3 21 15.6 23 12.7 22.4 C11.4 22.1 10.4 21.4 9.9 20.5"
+          fill="none" stroke="#000" stroke-width="3.8" stroke-linecap="round"/>
+  </mask>
+  <circle fill="currentColor" cx="16" cy="16" r="11.5" mask="url(#k3r2-sova-passage--i18)"/>
+</svg></span><figcaption>on accent</figcaption></figure>
+      </div>
+    </div>
+    <div class="panel" data-theme="light">
+      <div class="lockup"><span class="mark accent"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="SOVA">
+  <!-- SOVA · PASSAGE — the O is a solid disc and the S is the opening cut clean
+       through it: the word's first letter as a channel of bare surface inside
+       its second. Every terminal of the S stays inside the disc, so the letter
+       floats in the solid. The mask cuts true transparency — the channel shows
+       whatever the mark sits on. Single colour, currentColor. The mask id is
+       prefixed so the file can be inlined beside other marks. -->
+  <mask id="k3r2-sova-passage--i19">
+    <rect width="32" height="32" fill="#fff"/>
+    <path d="M19.8 8.9 C17.8 7.4 13.9 7.5 12.5 9.5 C11.3 11.2 12.3 13 14.3 13.8 C16.9 14.7 18.7 16 18.5 18.3 C18.3 21 15.6 23 12.7 22.4 C11.4 22.1 10.4 21.4 9.9 20.5"
+          fill="none" stroke="#000" stroke-width="3.8" stroke-linecap="round"/>
+  </mask>
+  <circle fill="currentColor" cx="16" cy="16" r="11.5" mask="url(#k3r2-sova-passage--i19)"/>
+</svg></span><span class="word">sova</span></div>
+      <div class="sizes">
+        <figure><span class="mark accent" style="--s:16px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="SOVA">
+  <!-- SOVA · PASSAGE — the O is a solid disc and the S is the opening cut clean
+       through it: the word's first letter as a channel of bare surface inside
+       its second. Every terminal of the S stays inside the disc, so the letter
+       floats in the solid. The mask cuts true transparency — the channel shows
+       whatever the mark sits on. Single colour, currentColor. The mask id is
+       prefixed so the file can be inlined beside other marks. -->
+  <mask id="k3r2-sova-passage--i20">
+    <rect width="32" height="32" fill="#fff"/>
+    <path d="M19.8 8.9 C17.8 7.4 13.9 7.5 12.5 9.5 C11.3 11.2 12.3 13 14.3 13.8 C16.9 14.7 18.7 16 18.5 18.3 C18.3 21 15.6 23 12.7 22.4 C11.4 22.1 10.4 21.4 9.9 20.5"
+          fill="none" stroke="#000" stroke-width="3.8" stroke-linecap="round"/>
+  </mask>
+  <circle fill="currentColor" cx="16" cy="16" r="11.5" mask="url(#k3r2-sova-passage--i20)"/>
+</svg></span><figcaption>16</figcaption></figure>
+        <figure><span class="mark accent" style="--s:24px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="SOVA">
+  <!-- SOVA · PASSAGE — the O is a solid disc and the S is the opening cut clean
+       through it: the word's first letter as a channel of bare surface inside
+       its second. Every terminal of the S stays inside the disc, so the letter
+       floats in the solid. The mask cuts true transparency — the channel shows
+       whatever the mark sits on. Single colour, currentColor. The mask id is
+       prefixed so the file can be inlined beside other marks. -->
+  <mask id="k3r2-sova-passage--i21">
+    <rect width="32" height="32" fill="#fff"/>
+    <path d="M19.8 8.9 C17.8 7.4 13.9 7.5 12.5 9.5 C11.3 11.2 12.3 13 14.3 13.8 C16.9 14.7 18.7 16 18.5 18.3 C18.3 21 15.6 23 12.7 22.4 C11.4 22.1 10.4 21.4 9.9 20.5"
+          fill="none" stroke="#000" stroke-width="3.8" stroke-linecap="round"/>
+  </mask>
+  <circle fill="currentColor" cx="16" cy="16" r="11.5" mask="url(#k3r2-sova-passage--i21)"/>
+</svg></span><figcaption>24</figcaption></figure>
+        <figure><span class="mark accent" style="--s:32px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="SOVA">
+  <!-- SOVA · PASSAGE — the O is a solid disc and the S is the opening cut clean
+       through it: the word's first letter as a channel of bare surface inside
+       its second. Every terminal of the S stays inside the disc, so the letter
+       floats in the solid. The mask cuts true transparency — the channel shows
+       whatever the mark sits on. Single colour, currentColor. The mask id is
+       prefixed so the file can be inlined beside other marks. -->
+  <mask id="k3r2-sova-passage--i22">
+    <rect width="32" height="32" fill="#fff"/>
+    <path d="M19.8 8.9 C17.8 7.4 13.9 7.5 12.5 9.5 C11.3 11.2 12.3 13 14.3 13.8 C16.9 14.7 18.7 16 18.5 18.3 C18.3 21 15.6 23 12.7 22.4 C11.4 22.1 10.4 21.4 9.9 20.5"
+          fill="none" stroke="#000" stroke-width="3.8" stroke-linecap="round"/>
+  </mask>
+  <circle fill="currentColor" cx="16" cy="16" r="11.5" mask="url(#k3r2-sova-passage--i22)"/>
+</svg></span><figcaption>32</figcaption></figure>
+        <figure><span class="mark ink" style="--s:32px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="SOVA">
+  <!-- SOVA · PASSAGE — the O is a solid disc and the S is the opening cut clean
+       through it: the word's first letter as a channel of bare surface inside
+       its second. Every terminal of the S stays inside the disc, so the letter
+       floats in the solid. The mask cuts true transparency — the channel shows
+       whatever the mark sits on. Single colour, currentColor. The mask id is
+       prefixed so the file can be inlined beside other marks. -->
+  <mask id="k3r2-sova-passage--i23">
+    <rect width="32" height="32" fill="#fff"/>
+    <path d="M19.8 8.9 C17.8 7.4 13.9 7.5 12.5 9.5 C11.3 11.2 12.3 13 14.3 13.8 C16.9 14.7 18.7 16 18.5 18.3 C18.3 21 15.6 23 12.7 22.4 C11.4 22.1 10.4 21.4 9.9 20.5"
+          fill="none" stroke="#000" stroke-width="3.8" stroke-linecap="round"/>
+  </mask>
+  <circle fill="currentColor" cx="16" cy="16" r="11.5" mask="url(#k3r2-sova-passage--i23)"/>
+</svg></span><figcaption>ink</figcaption></figure>
+        <figure class="on-accent"><span class="mark" style="--s:32px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="SOVA">
+  <!-- SOVA · PASSAGE — the O is a solid disc and the S is the opening cut clean
+       through it: the word's first letter as a channel of bare surface inside
+       its second. Every terminal of the S stays inside the disc, so the letter
+       floats in the solid. The mask cuts true transparency — the channel shows
+       whatever the mark sits on. Single colour, currentColor. The mask id is
+       prefixed so the file can be inlined beside other marks. -->
+  <mask id="k3r2-sova-passage--i24">
+    <rect width="32" height="32" fill="#fff"/>
+    <path d="M19.8 8.9 C17.8 7.4 13.9 7.5 12.5 9.5 C11.3 11.2 12.3 13 14.3 13.8 C16.9 14.7 18.7 16 18.5 18.3 C18.3 21 15.6 23 12.7 22.4 C11.4 22.1 10.4 21.4 9.9 20.5"
+          fill="none" stroke="#000" stroke-width="3.8" stroke-linecap="round"/>
+  </mask>
+  <circle fill="currentColor" cx="16" cy="16" r="11.5" mask="url(#k3r2-sova-passage--i24)"/>
+</svg></span><figcaption>on accent</figcaption></figure>
+      </div>
+    </div></div>
+    <div class="notes">
+      <p>The O is a solid disc and the S is the opening through it — the word's first letter as a channel of bare surface inside its second. The S never touches the edge; both of its terminals float inside the solid, so the letter is a passage, not a notch. The cut is true transparency: whatever the mark sits on shows through.</p>
+      <p class="muted">The only filled mark of the four, so it balances the three line marks in a sidebar row. Construction: one disc, one 3.8-unit masked stroke — the mask id is namespaced for inlining. At 16px the channel is about 2px wide and still reads as an S, which is the constraint that fixed its width.</p>
+    </div>
+  </section>
+
+  <section class="card" id="tavi-tandem">
+    <header>
+      <span class="chip">TAVI</span>
+      <h2>3. Tandem</h2>
+      <span class="ledger">A and V share one leg · one stroke · currentColor · <code>tavi-tandem.svg</code></span>
+    </header>
+    <div class="panels">
+    <div class="panel" data-theme="dark">
+      <div class="lockup"><span class="mark accent"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="TAVI">
+  <!-- TAVI · TANDEM — the A and the V, the pair naming.md singles out, drawn
+       tandem: the A's right leg is the V's left leg. One zigzag stroke goes
+       up, down, up through both letters; only the A's crossbar is laid across.
+       Two letters, three strokes' worth of diagonal, nothing repeated.
+       Single colour, currentColor, no detached parts. -->
+  <path fill="none" stroke="currentColor" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"
+        d="M5.75 25.25 L12.25 6.75 L18.75 25.25 L26.25 6.75 M8.85 16.45 H15.35"/>
+</svg></span><span class="word">tavi</span></div>
+      <div class="sizes">
+        <figure><span class="mark accent" style="--s:16px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="TAVI">
+  <!-- TAVI · TANDEM — the A and the V, the pair naming.md singles out, drawn
+       tandem: the A's right leg is the V's left leg. One zigzag stroke goes
+       up, down, up through both letters; only the A's crossbar is laid across.
+       Two letters, three strokes' worth of diagonal, nothing repeated.
+       Single colour, currentColor, no detached parts. -->
+  <path fill="none" stroke="currentColor" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"
+        d="M5.75 25.25 L12.25 6.75 L18.75 25.25 L26.25 6.75 M8.85 16.45 H15.35"/>
+</svg></span><figcaption>16</figcaption></figure>
+        <figure><span class="mark accent" style="--s:24px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="TAVI">
+  <!-- TAVI · TANDEM — the A and the V, the pair naming.md singles out, drawn
+       tandem: the A's right leg is the V's left leg. One zigzag stroke goes
+       up, down, up through both letters; only the A's crossbar is laid across.
+       Two letters, three strokes' worth of diagonal, nothing repeated.
+       Single colour, currentColor, no detached parts. -->
+  <path fill="none" stroke="currentColor" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"
+        d="M5.75 25.25 L12.25 6.75 L18.75 25.25 L26.25 6.75 M8.85 16.45 H15.35"/>
+</svg></span><figcaption>24</figcaption></figure>
+        <figure><span class="mark accent" style="--s:32px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="TAVI">
+  <!-- TAVI · TANDEM — the A and the V, the pair naming.md singles out, drawn
+       tandem: the A's right leg is the V's left leg. One zigzag stroke goes
+       up, down, up through both letters; only the A's crossbar is laid across.
+       Two letters, three strokes' worth of diagonal, nothing repeated.
+       Single colour, currentColor, no detached parts. -->
+  <path fill="none" stroke="currentColor" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"
+        d="M5.75 25.25 L12.25 6.75 L18.75 25.25 L26.25 6.75 M8.85 16.45 H15.35"/>
+</svg></span><figcaption>32</figcaption></figure>
+        <figure><span class="mark ink" style="--s:32px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="TAVI">
+  <!-- TAVI · TANDEM — the A and the V, the pair naming.md singles out, drawn
+       tandem: the A's right leg is the V's left leg. One zigzag stroke goes
+       up, down, up through both letters; only the A's crossbar is laid across.
+       Two letters, three strokes' worth of diagonal, nothing repeated.
+       Single colour, currentColor, no detached parts. -->
+  <path fill="none" stroke="currentColor" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"
+        d="M5.75 25.25 L12.25 6.75 L18.75 25.25 L26.25 6.75 M8.85 16.45 H15.35"/>
+</svg></span><figcaption>ink</figcaption></figure>
+        <figure class="on-accent"><span class="mark" style="--s:32px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="TAVI">
+  <!-- TAVI · TANDEM — the A and the V, the pair naming.md singles out, drawn
+       tandem: the A's right leg is the V's left leg. One zigzag stroke goes
+       up, down, up through both letters; only the A's crossbar is laid across.
+       Two letters, three strokes' worth of diagonal, nothing repeated.
+       Single colour, currentColor, no detached parts. -->
+  <path fill="none" stroke="currentColor" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"
+        d="M5.75 25.25 L12.25 6.75 L18.75 25.25 L26.25 6.75 M8.85 16.45 H15.35"/>
+</svg></span><figcaption>on accent</figcaption></figure>
+      </div>
+    </div>
+    <div class="panel" data-theme="light">
+      <div class="lockup"><span class="mark accent"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="TAVI">
+  <!-- TAVI · TANDEM — the A and the V, the pair naming.md singles out, drawn
+       tandem: the A's right leg is the V's left leg. One zigzag stroke goes
+       up, down, up through both letters; only the A's crossbar is laid across.
+       Two letters, three strokes' worth of diagonal, nothing repeated.
+       Single colour, currentColor, no detached parts. -->
+  <path fill="none" stroke="currentColor" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"
+        d="M5.75 25.25 L12.25 6.75 L18.75 25.25 L26.25 6.75 M8.85 16.45 H15.35"/>
+</svg></span><span class="word">tavi</span></div>
+      <div class="sizes">
+        <figure><span class="mark accent" style="--s:16px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="TAVI">
+  <!-- TAVI · TANDEM — the A and the V, the pair naming.md singles out, drawn
+       tandem: the A's right leg is the V's left leg. One zigzag stroke goes
+       up, down, up through both letters; only the A's crossbar is laid across.
+       Two letters, three strokes' worth of diagonal, nothing repeated.
+       Single colour, currentColor, no detached parts. -->
+  <path fill="none" stroke="currentColor" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"
+        d="M5.75 25.25 L12.25 6.75 L18.75 25.25 L26.25 6.75 M8.85 16.45 H15.35"/>
+</svg></span><figcaption>16</figcaption></figure>
+        <figure><span class="mark accent" style="--s:24px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="TAVI">
+  <!-- TAVI · TANDEM — the A and the V, the pair naming.md singles out, drawn
+       tandem: the A's right leg is the V's left leg. One zigzag stroke goes
+       up, down, up through both letters; only the A's crossbar is laid across.
+       Two letters, three strokes' worth of diagonal, nothing repeated.
+       Single colour, currentColor, no detached parts. -->
+  <path fill="none" stroke="currentColor" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"
+        d="M5.75 25.25 L12.25 6.75 L18.75 25.25 L26.25 6.75 M8.85 16.45 H15.35"/>
+</svg></span><figcaption>24</figcaption></figure>
+        <figure><span class="mark accent" style="--s:32px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="TAVI">
+  <!-- TAVI · TANDEM — the A and the V, the pair naming.md singles out, drawn
+       tandem: the A's right leg is the V's left leg. One zigzag stroke goes
+       up, down, up through both letters; only the A's crossbar is laid across.
+       Two letters, three strokes' worth of diagonal, nothing repeated.
+       Single colour, currentColor, no detached parts. -->
+  <path fill="none" stroke="currentColor" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"
+        d="M5.75 25.25 L12.25 6.75 L18.75 25.25 L26.25 6.75 M8.85 16.45 H15.35"/>
+</svg></span><figcaption>32</figcaption></figure>
+        <figure><span class="mark ink" style="--s:32px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="TAVI">
+  <!-- TAVI · TANDEM — the A and the V, the pair naming.md singles out, drawn
+       tandem: the A's right leg is the V's left leg. One zigzag stroke goes
+       up, down, up through both letters; only the A's crossbar is laid across.
+       Two letters, three strokes' worth of diagonal, nothing repeated.
+       Single colour, currentColor, no detached parts. -->
+  <path fill="none" stroke="currentColor" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"
+        d="M5.75 25.25 L12.25 6.75 L18.75 25.25 L26.25 6.75 M8.85 16.45 H15.35"/>
+</svg></span><figcaption>ink</figcaption></figure>
+        <figure class="on-accent"><span class="mark" style="--s:32px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="TAVI">
+  <!-- TAVI · TANDEM — the A and the V, the pair naming.md singles out, drawn
+       tandem: the A's right leg is the V's left leg. One zigzag stroke goes
+       up, down, up through both letters; only the A's crossbar is laid across.
+       Two letters, three strokes' worth of diagonal, nothing repeated.
+       Single colour, currentColor, no detached parts. -->
+  <path fill="none" stroke="currentColor" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"
+        d="M5.75 25.25 L12.25 6.75 L18.75 25.25 L26.25 6.75 M8.85 16.45 H15.35"/>
+</svg></span><figcaption>on accent</figcaption></figure>
+      </div>
+    </div></div>
+    <div class="notes">
+      <p>The pair naming.md singles out: the A's right leg is the V's left leg. One zigzag runs up, down, up through both letters, and the only added stroke is the A's crossbar laid between the two diagonals it joins. Two letters on three diagonals — nothing drawn twice.</p>
+      <p class="muted">All straight lines on quarter-unit coordinates, the crispest of the set at every size. Stroke 4.5, matching the round-1 favourite's weight. At 16px the crossbar fuses with the legs and the silhouette carries the letter sense, the same trade the fable ligature makes with its hook.</p>
+    </div>
+  </section>
+
+  <section class="card" id="tavi-totem">
+    <header>
+      <span class="chip">TAVI</span>
+      <h2>4. Totem</h2>
+      <span class="ledger">T posted on the A's apex · shared vertex · currentColor · <code>tavi-totem.svg</code></span>
+    </header>
+    <div class="panels">
+    <div class="panel" data-theme="dark">
+      <div class="lockup"><span class="mark accent"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="TAVI">
+  <!-- TAVI · TOTEM — the word's opening pair composed vertically: the T posts
+       onto the A and the two share a single vertex, the stem's round cap
+       leaving a small joint where it meets the apex. Symmetric about the
+       centre axis, so it sits level in a square well. Single colour,
+       currentColor, no detached parts. -->
+  <path fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"
+        d="M8 7 H24 M16 7 V13 M6 25 L16 13 L26 25 M10.5 19.6 H21.5"/>
+</svg></span><span class="word">tavi</span></div>
+      <div class="sizes">
+        <figure><span class="mark accent" style="--s:16px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="TAVI">
+  <!-- TAVI · TOTEM — the word's opening pair composed vertically: the T posts
+       onto the A and the two share a single vertex, the stem's round cap
+       leaving a small joint where it meets the apex. Symmetric about the
+       centre axis, so it sits level in a square well. Single colour,
+       currentColor, no detached parts. -->
+  <path fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"
+        d="M8 7 H24 M16 7 V13 M6 25 L16 13 L26 25 M10.5 19.6 H21.5"/>
+</svg></span><figcaption>16</figcaption></figure>
+        <figure><span class="mark accent" style="--s:24px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="TAVI">
+  <!-- TAVI · TOTEM — the word's opening pair composed vertically: the T posts
+       onto the A and the two share a single vertex, the stem's round cap
+       leaving a small joint where it meets the apex. Symmetric about the
+       centre axis, so it sits level in a square well. Single colour,
+       currentColor, no detached parts. -->
+  <path fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"
+        d="M8 7 H24 M16 7 V13 M6 25 L16 13 L26 25 M10.5 19.6 H21.5"/>
+</svg></span><figcaption>24</figcaption></figure>
+        <figure><span class="mark accent" style="--s:32px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="TAVI">
+  <!-- TAVI · TOTEM — the word's opening pair composed vertically: the T posts
+       onto the A and the two share a single vertex, the stem's round cap
+       leaving a small joint where it meets the apex. Symmetric about the
+       centre axis, so it sits level in a square well. Single colour,
+       currentColor, no detached parts. -->
+  <path fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"
+        d="M8 7 H24 M16 7 V13 M6 25 L16 13 L26 25 M10.5 19.6 H21.5"/>
+</svg></span><figcaption>32</figcaption></figure>
+        <figure><span class="mark ink" style="--s:32px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="TAVI">
+  <!-- TAVI · TOTEM — the word's opening pair composed vertically: the T posts
+       onto the A and the two share a single vertex, the stem's round cap
+       leaving a small joint where it meets the apex. Symmetric about the
+       centre axis, so it sits level in a square well. Single colour,
+       currentColor, no detached parts. -->
+  <path fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"
+        d="M8 7 H24 M16 7 V13 M6 25 L16 13 L26 25 M10.5 19.6 H21.5"/>
+</svg></span><figcaption>ink</figcaption></figure>
+        <figure class="on-accent"><span class="mark" style="--s:32px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="TAVI">
+  <!-- TAVI · TOTEM — the word's opening pair composed vertically: the T posts
+       onto the A and the two share a single vertex, the stem's round cap
+       leaving a small joint where it meets the apex. Symmetric about the
+       centre axis, so it sits level in a square well. Single colour,
+       currentColor, no detached parts. -->
+  <path fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"
+        d="M8 7 H24 M16 7 V13 M6 25 L16 13 L26 25 M10.5 19.6 H21.5"/>
+</svg></span><figcaption>on accent</figcaption></figure>
+      </div>
+    </div>
+    <div class="panel" data-theme="light">
+      <div class="lockup"><span class="mark accent"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="TAVI">
+  <!-- TAVI · TOTEM — the word's opening pair composed vertically: the T posts
+       onto the A and the two share a single vertex, the stem's round cap
+       leaving a small joint where it meets the apex. Symmetric about the
+       centre axis, so it sits level in a square well. Single colour,
+       currentColor, no detached parts. -->
+  <path fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"
+        d="M8 7 H24 M16 7 V13 M6 25 L16 13 L26 25 M10.5 19.6 H21.5"/>
+</svg></span><span class="word">tavi</span></div>
+      <div class="sizes">
+        <figure><span class="mark accent" style="--s:16px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="TAVI">
+  <!-- TAVI · TOTEM — the word's opening pair composed vertically: the T posts
+       onto the A and the two share a single vertex, the stem's round cap
+       leaving a small joint where it meets the apex. Symmetric about the
+       centre axis, so it sits level in a square well. Single colour,
+       currentColor, no detached parts. -->
+  <path fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"
+        d="M8 7 H24 M16 7 V13 M6 25 L16 13 L26 25 M10.5 19.6 H21.5"/>
+</svg></span><figcaption>16</figcaption></figure>
+        <figure><span class="mark accent" style="--s:24px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="TAVI">
+  <!-- TAVI · TOTEM — the word's opening pair composed vertically: the T posts
+       onto the A and the two share a single vertex, the stem's round cap
+       leaving a small joint where it meets the apex. Symmetric about the
+       centre axis, so it sits level in a square well. Single colour,
+       currentColor, no detached parts. -->
+  <path fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"
+        d="M8 7 H24 M16 7 V13 M6 25 L16 13 L26 25 M10.5 19.6 H21.5"/>
+</svg></span><figcaption>24</figcaption></figure>
+        <figure><span class="mark accent" style="--s:32px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="TAVI">
+  <!-- TAVI · TOTEM — the word's opening pair composed vertically: the T posts
+       onto the A and the two share a single vertex, the stem's round cap
+       leaving a small joint where it meets the apex. Symmetric about the
+       centre axis, so it sits level in a square well. Single colour,
+       currentColor, no detached parts. -->
+  <path fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"
+        d="M8 7 H24 M16 7 V13 M6 25 L16 13 L26 25 M10.5 19.6 H21.5"/>
+</svg></span><figcaption>32</figcaption></figure>
+        <figure><span class="mark ink" style="--s:32px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="TAVI">
+  <!-- TAVI · TOTEM — the word's opening pair composed vertically: the T posts
+       onto the A and the two share a single vertex, the stem's round cap
+       leaving a small joint where it meets the apex. Symmetric about the
+       centre axis, so it sits level in a square well. Single colour,
+       currentColor, no detached parts. -->
+  <path fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"
+        d="M8 7 H24 M16 7 V13 M6 25 L16 13 L26 25 M10.5 19.6 H21.5"/>
+</svg></span><figcaption>ink</figcaption></figure>
+        <figure class="on-accent"><span class="mark" style="--s:32px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="TAVI">
+  <!-- TAVI · TOTEM — the word's opening pair composed vertically: the T posts
+       onto the A and the two share a single vertex, the stem's round cap
+       leaving a small joint where it meets the apex. Symmetric about the
+       centre axis, so it sits level in a square well. Single colour,
+       currentColor, no detached parts. -->
+  <path fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"
+        d="M8 7 H24 M16 7 V13 M6 25 L16 13 L26 25 M10.5 19.6 H21.5"/>
+</svg></span><figcaption>on accent</figcaption></figure>
+      </div>
+    </div></div>
+    <div class="notes">
+      <p>The opening pair composed vertically instead of along a line: the T posts onto the A and the two letters share a single vertex. The stem's round cap survives inside the apex as the joint where they meet. The mark is symmetric about the centre axis, so it sits level in a square well at any size.</p>
+      <p class="muted">Deliberately opposite in layout to the round-1 favourite, which flows horizontally; this one stacks. Stroke 4, the crossbar wide enough that the A keeps its letter sense at 24px. Nothing detached; the whole mark is one connected shape.</p>
+    </div>
+  </section>
+  <footer>
+    <p>Sources are the 4 <code>.svg</code> files beside this page; this file inlines them so the colour can
+    reach them (the one masked mark carries a per-instance id suffix, so no id repeats in this document).
+    Nothing in the app reads any of this. Drawn 2026-09-23 against the design skill at v1.8.0. Round-1 sets
+    are unchanged; other round-2 sets sit beside this one and were not consulted.</p>
+  </footer>
+</div>
+</body>
+</html>

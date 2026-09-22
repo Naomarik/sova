@@ -30,7 +30,7 @@ After each settled run (debounced, one run at a time, skipped when nothing chang
    `ctx.modelRegistry.complete()` (Pi's own auth resolution).
 
 Each backend is checked against the user's model policy **at the moment it is called**
-(`summarizers/policy-gate.ts`, over `~/.pi/agent/model-policy.json`): one turned off in pi-web's
+(`summarizers/policy-gate.ts`, over `~/.pi/agent/model-policy.json`): one turned off in Sova's
 Settings → Models is never called, and the chain moves to the next. The check is per call, not per
 session, so turning a model off stops the next summary rather than waiting for a reload. The chain
 counts the denial as a failure, so a backend turned back on rejoins after its backoff.

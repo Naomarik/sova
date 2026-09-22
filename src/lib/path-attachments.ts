@@ -25,7 +25,7 @@ export function shortName(name: string): string {
 const baseName = (path: string) => path.slice(path.lastIndexOf("/") + 1);
 
 /**
- * A user row's display text without the paths pi (or pi-web's upload) inserted, since the
+ * A user row's display text without the paths pi (or Sova's upload) inserted, since the
  * attachment unit stands in for them; typed paths stay. Client twin of the server's
  * inlineTmpImages(text, true), so an optimistic row reads the same after the refetch.
  */

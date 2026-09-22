@@ -1,5 +1,5 @@
 # 04 · Composer
-> Part of the pi-web design spec · [overview](overview.md)
+> Part of the Sova design spec · [overview](overview.md)
 
 ## Anatomy
 
@@ -94,7 +94,7 @@
   - **In memory, per session path.** This is the authority within a tab, so switching sessions
     and coming back restores the draft at once.
   - **On the server, per session.** `PUT /api/sessions/draft { path, text, attachments? }` writes it
-    to `~/.pi/agent/pi-web/drafts.json`, keyed by session id; whitespace-only text with no
+    to `~/.pi/agent/sova/drafts.json`, keyed by session id; whitespace-only text with no
     attachments deletes the entry.
     `GET /api/sessions/draft?path=…` returns it when the session is reopened, so a draft outlives
     a reload and follows you to your other browsers and devices.

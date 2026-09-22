@@ -255,7 +255,7 @@ export function SubagentPane(props: {
                 keyed
                 fallback={
                   <div class="empty subagents-empty">
-                    <p class="empty-title">Its transcript isn't available in pi-web.</p>
+                    <p class="empty-title">Its transcript isn't available in Sova.</p>
                     <p class="empty-body">
                       <code>{label(w())}</code>{" "}
                       {w().backend === "claude-code"

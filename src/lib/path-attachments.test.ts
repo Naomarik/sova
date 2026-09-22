@@ -77,7 +77,7 @@ describe("findTmpImagePaths (plain-text rows split on it)", () => {
   });
 });
 
-describe("pi-web uploads (/tmp/pi-web-<uuid>.<ext>)", () => {
+describe("legacy pi-web uploads (/tmp/pi-web-<uuid>.<ext>)", () => {
   const web = `/tmp/pi-web-${uuid}.png`;
 
   test("short name keeps the prefix and 4 uuid characters", () => {
@@ -103,7 +103,7 @@ describe("pi-web uploads (/tmp/pi-web-<uuid>.<ext>)", () => {
   });
 });
 
-describe("draft attachments (<agent dir>/pi-web/attachments/<sessionId>/pi-web-<uuid>.<ext>)", () => {
+describe("legacy draft attachments (<agent dir>/pi-web/attachments/<sessionId>/pi-web-<uuid>.<ext>)", () => {
   const sid = "019a1b2c-3d4e-7f80-9a1b-2c3d4e5f6a7b";
   const att = `/home/me/.pi/agent/pi-web/attachments/${sid}/pi-web-${uuid}.png`;
 

@@ -1,4 +1,4 @@
-/* pi-web glue that base.css doesn't cover. Token values only. */
+/* Sova glue that base.css doesn't cover. Token values only. */
 
 html, body, #root { height: 100%; }
 

@@ -1,4 +1,4 @@
-# pi-web insights — research
+# Sova insights — research
 
 ## Data sources
 
@@ -84,7 +84,7 @@ Teams are persisted only here (`teams.ts` `decodeTeamEntry`). No registry file, 
 
 ```jsonc
 {"type":"custom","customType":"subagents-team-v1","id":"…","parentId":"…","timestamp":"…","data":
-  {"version":1,"op":"create","team":{"id":"team_02","name":"pi-web-insights","objective":"…","createdAt":1789796000145},
+  {"version":1,"op":"create","team":{"id":"team_02","name":"sova-insights","objective":"…","createdAt":1789796000145},
    "members":[{"workerId":"ag_08","role":"lead","ownedPaths":[],"orchestrator":true,
                "backend":"claude-code","model":"opus[1m]","groupId":"run_05","addedAt":1789796000145}]}}
 {"type":"custom","customType":"subagents-team-v1","data":{"version":1,"op":"add","teamId":"team_01","members":[…]}}
@@ -162,7 +162,7 @@ export interface UsageProvider {
 }
 // A provider KEY missing from the cache we just read means an older pi session (holding a
 // pre-deepseek extension in memory) rewrote it at schemaVersion 2. The server then serves that
-// provider's LAST KNOWN reading from ~/.pi/agent/pi-web/usage-last-known.json (server/usage-
+// provider's LAST KNOWN reading from ~/.pi/agent/sova/usage-last-known.json (server/usage-
 // last-known.ts: ok readings that carry windows or a balance, never an error), capped at 24h,
 // with error = "an older pi session is rewriting the cache (run /reload in it)" — which the UI
 // already renders as "Stale" + "Showing the previous reading". A key that IS present always
@@ -249,10 +249,10 @@ As implemented (`server/insights.ts`, `server/live.ts` `readLiveRecords`):
   shows "n/a"). `error` is set whenever `errors.<provider>` is, even with windows (= previous reading).
 - **An absent provider key falls back to the last known reading (24h cap).** The cache is shared,
   and a pi session started before a provider existed keeps rewriting it from the extension it has
-  in memory (`schemaVersion` 2, no `deepseek` key) — the fix in those TUIs is `/reload`, but pi-web
+  in memory (`schemaVersion` 2, no `deepseek` key) — the fix in those TUIs is `/reload`, but Sova
   must not report a provider it read minutes ago as "no data". `server/usage-last-known.ts` persists
   every `state:"ok"` reading that carries windows or a balance to
-  `~/.pi/agent/pi-web/usage-last-known.json` (written only when a stored reading changed, never with
+  `~/.pi/agent/sova/usage-last-known.json` (written only when a stored reading changed, never with
   an `error`); `getUsageInsight()` reuses one for any provider whose key is `undefined` in the cache,
   younger than **24 h**, and sets `error` to `an older pi session is rewriting the cache (run /reload
   in it)`. Only key absence triggers it: a key that says `error`/`na` is the extension's own answer
@@ -384,7 +384,7 @@ fold-ai-dev skill v1.8.0. Nothing in `spec/overview.md` / `src/design/` changes 
 
 | Surface | Source on disk | What we can claim | What we can't |
 |---|---|---|---|
-| Usage | `~/.pi/agent/cache/usage-status.json`, plus our own `~/.pi/agent/pi-web/usage-last-known.json` | Per-provider % used per window; Claude reset times; DeepSeek's prepaid credit balance (and whether it can fund calls); file age (`fetchedAt`); per-provider fetch failure (`errors.X`, previous value kept); a reading up to **24 h** old for a provider whose key an older pi session dropped from the cache — labelled as the previous reading, with "run /reload in it" | OpenAI/Ollama reset times (not in the cache). Any percentage, quota or reset for DeepSeek — it has no usage API, only a balance. Anything fresher than the last pi refresh (it only refreshes while some pi runs); anything at all for a provider we have never read (no key, empty store: "no data") |
+| Usage | `~/.pi/agent/cache/usage-status.json`, plus our own `~/.pi/agent/sova/usage-last-known.json` | Per-provider % used per window; Claude reset times; DeepSeek's prepaid credit balance (and whether it can fund calls); file age (`fetchedAt`); per-provider fetch failure (`errors.X`, previous value kept); a reading up to **24 h** old for a provider whose key an older pi session dropped from the cache — labelled as the previous reading, with "run /reload in it" | OpenAI/Ollama reset times (not in the cache). Any percentage, quota or reset for DeepSeek — it has no usage API, only a balance. Anything fresher than the last pi refresh (it only refreshes while some pi runs); anything at all for a provider we have never read (no key, empty store: "no data") |
 | Teams | `subagents-team-v1` entries in the **parent** JSONL (roster) + the parent's live record (`sessions/live/*.json`, `presence.workers[]`) while it runs + `subagent-complete` messages | Roster (role, id, model, orchestrator); **live** status per member while the parent runs; **last reported** settle state once it doesn't | Status of an ended team beyond its last report. Workers die with the parent pi, so a team is only *active* while its parent is live |
 | Working subagents | live records' `presence.workerCounts` / `workers[]` (backend `/api/insights/agents`) | Live working/idle counts per running pi, heartbeat-fresh ≤15s; solo vs team via the JSONL join | Anything for pi processes that aren't running; a record with a stale heartbeat is "unknown", not "idle" |
 | Outline | last `topic-outline` custom entry (v2) | `now`, `overall`, topics (heading, ≤3 bullets, anchor entryId, manual), state `fresh`/`stale`/`failed-keeping-last`, `generatedAt` | — |
@@ -402,7 +402,7 @@ workers as reported too ("as of" = heartbeat time), never as working.
    third sidebar region would scroll away under 48 rows and mix non-session data into the
    session list, and a toggled overlay over main hides the transcript it summarizes — a
    pinned `.sidebar-foot` is always visible, sits in the folded thumb arc, and needs no rail
-   (pi-web has one destination, §7).
+   (Sova has one destination, §7).
 2. **Per-session outline = a collapsible `details.outline` strip directly under
    `.session-head`**, above the live banner and transcript. Not a side panel (the ≥1120 band
    stays unused, §7, and one markup must work at 475px) and not a popover (a popover is never
@@ -462,7 +462,7 @@ workers as reported too ("as of" = heartbeat time), never as working.
     `.meter-context` with the non-zero granted/topped-up parts. No bar, no percentage, no reset.
   - Context (third term): Claude only — "Resets in 2h 17m" under 24h, else "Resets Sep 25";
     absolute `11:50` / ISO in `title`. OpenAI/Ollama: no context line. Never estimate a reset.
-  - Fill: **`--color-ink-muted`**, not accent (deviation: pi-web's accent is reserved for
+  - Fill: **`--color-ink-muted`**, not accent (deviation: Sova's accent is reserved for
     primary/live/focus, §0). ≥80% fill `--status-warn`; at 100% `--status-error`. Fill color
     always pairs with the head chip word, never alone. Fill never animates.
 - **Card chip** (worst window decides; vocabulary per skill "Model availability"):
@@ -487,12 +487,12 @@ workers as reported too ("as of" = heartbeat time), never as working.
 ```html
 <article class="card team-card" id="team_02" aria-labelledby="t-team_02">
   <header class="card-head">
-    <h3 class="card-title" id="t-team_02">pi-web-insights</h3>
+    <h3 class="card-title" id="t-team_02">sova-insights</h3>
     <span class="text-mono text-caption">team_02</span>
     <span class="chip">Ended</span>                           <!-- ended only -->
   </header>
   <div class="card-body">
-    <p class="team-objective">Add "insights" facilities to the pi-web app…</p>   <!-- 2-line clamp, full in title -->
+    <p class="team-objective">Add "insights" facilities to the Sova app…</p>   <!-- 2-line clamp, full in title -->
     <ul class="list team-members">
       <li class="list-row team-member">
         <div class="list-main">

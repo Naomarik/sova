@@ -1,8 +1,8 @@
 /**
  * Remote targets: the entry schema of ~/.pi/agent/targets.json and the ONE argv builder every
- * caller uses to run a command on a target (the remote extension's tools, pi-web's folder browser).
+ * caller uses to run a command on a target (the remote extension's tools, Sova's folder browser).
  *
- * Pure and pi-runtime-free (node builtins only): pi-web's server imports this file, so keep it
+ * Pure and pi-runtime-free (node builtins only): Sova's server imports this file, so keep it
  * that way. Nothing here spawns; callers pass the argv to `spawn(argv[0], argv.slice(1))` with no
  * local shell.
  *
@@ -340,8 +340,16 @@ export function parseListDirsOutput(stdout: string): { path: string; dirs: strin
 // ---------------------------------------------------------------------------
 // local placeholder cwd
 
-/** Local directory standing in for a remote cwd: <agentDir>/pi-web/targets/<name>/<remote/abs/path>. */
+/** Local directory standing in for a remote cwd: <agentDir>/sova/targets/<name>/<remote/abs/path>.
+ *  Renamed with the product (the pi-web state root moved to sova/); sessions stored before the
+ *  rename carry the legacy root in their headers, so parsers accept BOTH spellings —
+ *  legacyPlaceholderRoot exists for exactly those reads (never for new writes). */
 export function placeholderRoot(agentDir: string, name: string): string {
+	return join(agentDir, "sova", "targets", name);
+}
+
+/** The pre-rebrand placeholder root: read-side only (old session headers, old worker spawn cwds). */
+export function legacyPlaceholderRoot(agentDir: string, name: string): string {
 	return join(agentDir, "pi-web", "targets", name);
 }
 

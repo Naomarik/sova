@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-label="SOVA">
+  <!-- SOVA, concept 1: the owl as a silhouette. One filled head with tufted brow;
+       the eyes and beak are negative space. currentColor, one shape, even-odd. -->
+  <path fill="currentColor" fill-rule="evenodd" d="M4 11.5 10 5l6 4.5L22 5l6 6.5V24a7 7 0 0 1-7 7H11a7 7 0 0 1-7-7Z
+    M11.5 13.25a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z
+    M20.5 13.25a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z
+    M16 21.5l-2.6 4.5h5.2Z"/>
+</svg>

@@ -16,9 +16,21 @@
 import { createSignal } from "solid-js";
 import type { ThemeList, ThemeTokens } from "../../shared/protocol";
 import { CSS_PROPERTY, DEFAULT_THEME_ID, type ThemeBase } from "../../shared/theme";
+import {
+  LEGACY_TYPOGRAPHY_KEY,
+  NO_TYPOGRAPHY,
+  parseTypography,
+  serializeTypography,
+  TYPOGRAPHY_KEY,
+  type Typography,
+  typographyProperties,
+} from "./typography";
+import { dualGet, dualRemove, dualSet } from "./storage-keys";
 
-/** §0: the choice persists here. */
-export const THEME_KEY = "pi-web:theme";
+/** §0: the choice persists here. `LEGACY_THEME_KEY` is the pre-rebrand spelling: while the
+    rename bridge is open, reads fall back to it and writes mirror to it (storage-keys.ts). */
+export const THEME_KEY = "sova:theme";
+export const LEGACY_THEME_KEY = "pi-web:theme";
 
 /** What we keep so the next load can paint the theme with no network. The id is the choice —
     the tokens are a cache of what the server said it resolved to, re-checked against the list
@@ -43,11 +55,83 @@ export { droppedThemeId };
     theme outlives it. `removeProperty` on one that was never set is a no-op. */
 const ALL_PROPERTIES = Object.values(CSS_PROPERTY);
 
+/**
+ * The Typography choice (§12 "Typography", `typography.ts` for the catalogue): the faces this
+ * browser puts OVER whatever theme it wears. It is painted here, after the theme's tokens, on
+ * every apply and clear — that ordering is the precedence rule (pick > theme > default), and it
+ * has to live in the one function that writes the properties, or a theme switch would take a
+ * font pick off with the previous theme's keys.
+ */
+const [typography, setTypographySignal] = createSignal<Typography>(NO_TYPOGRAPHY);
+export { typography };
+
+/** The theme currently on the document, so a typography change can repaint it. Null is the
+    built-in dark with nothing written. */
+let worn: StoredTheme | null = null;
+
+/** The stored choice, validated against the catalogue (an id that names nothing is no choice). */
+export function readStoredTypography(): Typography {
+  try {
+    return parseTypography(dualGet(localStorage, TYPOGRAPHY_KEY, LEGACY_TYPOGRAPHY_KEY));
+  } catch {
+    return NO_TYPOGRAPHY;
+  }
+}
+
+function writeStoredTypography(t: Typography): void {
+  try {
+    const raw = serializeTypography(t);
+    if (raw === null) dualRemove(localStorage, TYPOGRAPHY_KEY, LEGACY_TYPOGRAPHY_KEY);
+    else dualSet(localStorage, TYPOGRAPHY_KEY, LEGACY_TYPOGRAPHY_KEY, raw);
+  } catch {
+    // Persistence is a convenience; the faces still hold for this page.
+  }
+}
+
+/** The one painter. Theme tokens first, then the pick on top: a kind left on Theme default
+    writes nothing, so the theme's own face (or tokens.css's) is what stays. */
+function paint(theme: StoredTheme | null): void {
+  const root = document.documentElement;
+  // Clear first: the theme being taken off may have set a key this one doesn't, and a leftover
+  // would be a value from a theme nobody is wearing.
+  for (const property of ALL_PROPERTIES) root.style.removeProperty(property);
+  if (theme) {
+    for (const [key, value] of Object.entries(theme.tokens)) {
+      const property = CSS_PROPERTY[key];
+      if (property) root.style.setProperty(property, value); // verbatim, as authored
+    }
+    root.setAttribute("data-theme", theme.base);
+  } else {
+    root.removeAttribute("data-theme");
+  }
+  for (const [property, value] of Object.entries(typographyProperties(typography()))) root.style.setProperty(property, value);
+  setMetaThemeColor(theme?.tokens.bg ?? DEFAULT_THEME_COLOR);
+  worn = theme;
+}
+
+/**
+ * Change one or both faces. A kind set to null goes back to the theme's own face — which is a
+ * repaint of the theme, not a `removeProperty`, because the theme may have set that key itself.
+ * Applies immediately and persists; called from Settings → Themes → Typography.
+ */
+export function setTypography(patch: Partial<Typography>): Typography {
+  const next: Typography = { ...typography(), ...patch };
+  setTypographySignal(next);
+  writeStoredTypography(next);
+  paint(worn);
+  return next;
+}
+
+/** Use Theme Fonts, and the `?theme=default` escape hatch: no pick at all, key removed. */
+export function clearTypography(): void {
+  setTypography({ text: null, mono: null });
+}
+
 /** `dark`'s `bg` as index.html ships it — what the chrome color goes back to. */
 const DEFAULT_THEME_COLOR = "#1E1E26";
 
 /** The browser chrome color, so a themed page doesn't sit under the default theme's bar. */
-function setMetaThemeColor(value: string | undefined): void {
+function setMetaThemeColor(value: string): void {
   const meta = document.querySelector('meta[name="theme-color"]');
   if (meta && value) meta.setAttribute("content", value);
 }
@@ -55,7 +139,7 @@ function setMetaThemeColor(value: string | undefined): void {
 /** The stored choice, or null when there is none (or storage is blocked, or it's not ours). */
 export function readStoredTheme(): StoredTheme | null {
   try {
-    const raw = localStorage.getItem(THEME_KEY);
+    const raw = dualGet(localStorage, THEME_KEY, LEGACY_THEME_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<StoredTheme>;
     if (typeof parsed?.id !== "string" || !parsed.id) return null;
@@ -70,7 +154,7 @@ export function readStoredTheme(): StoredTheme | null {
 
 function writeStoredTheme(theme: StoredTheme): void {
   try {
-    localStorage.setItem(THEME_KEY, JSON.stringify(theme));
+    dualSet(localStorage, THEME_KEY, LEGACY_THEME_KEY, JSON.stringify(theme));
   } catch {
     // Persistence is a convenience; the theme still holds for this page.
   }
@@ -82,16 +166,7 @@ function writeStoredTheme(theme: StoredTheme): void {
  * choice cached. Called before first paint from `main.tsx` and again on every pick.
  */
 export function applyTheme(theme: StoredTheme): void {
-  const root = document.documentElement;
-  // Clear first: the theme being taken off may have set a key this one doesn't, and a leftover
-  // would be a value from a theme nobody is wearing.
-  for (const property of ALL_PROPERTIES) root.style.removeProperty(property);
-  for (const [key, value] of Object.entries(theme.tokens)) {
-    const property = CSS_PROPERTY[key];
-    if (property) root.style.setProperty(property, value); // verbatim, as authored
-  }
-  root.setAttribute("data-theme", theme.base);
-  setMetaThemeColor(theme.tokens.bg);
+  paint(theme);
   setActiveThemeId(theme.id);
   setDroppedThemeId(null);
   writeStoredTheme(theme);
@@ -100,13 +175,10 @@ export function applyTheme(theme: StoredTheme): void {
 /** Back to the built-in dark: every written property removed, the cache dropped, and no
     `data-theme` attribute at all — no attribute is what `tokens.css` renders dark under. */
 export function clearTheme(): void {
-  const root = document.documentElement;
-  for (const property of ALL_PROPERTIES) root.style.removeProperty(property);
-  root.removeAttribute("data-theme");
-  setMetaThemeColor(DEFAULT_THEME_COLOR);
+  paint(null);
   setActiveThemeId(DEFAULT_THEME_ID);
   try {
-    localStorage.removeItem(THEME_KEY);
+    dualRemove(localStorage, THEME_KEY, LEGACY_THEME_KEY);
   } catch {
     // Nothing to undo: the properties are already off.
   }
@@ -116,8 +188,10 @@ export function clearTheme(): void {
     on its default dark. Nothing is fetched here — a flash of the default is exactly what §0
     forbids, and a reconcile against the server happens after boot (App.tsx). */
 export function applyStoredTheme(): void {
+  setTypographySignal(readStoredTypography());
   const stored = readStoredTheme();
   if (stored) applyTheme(stored);
+  else paint(null); // no theme, but the font pick still has to be on before first paint
 }
 
 /** Two token maps hold the same values — the poll's answer against what we're wearing. */

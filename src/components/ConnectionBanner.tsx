@@ -24,7 +24,7 @@ export function ConnectionBanner(props: { socket: ReconnectingSocket; watch?: bo
       <Match when={props.socket.status() === "failed"}>
         <Banner
           tone="error"
-          title="Lost the connection to the pi-web server."
+          title="Lost the connection to the Sova server."
           body={
             <>
               Nothing in the session changed. Check <code>npm run dev:server</code> is running, then retry.

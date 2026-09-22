@@ -1,5 +1,5 @@
 /* =============================================================================
-   pi-web — base.css
+   Sova — base.css
    Loads AFTER tokens.css. Consumes tokens only — no raw hex in this file.
 
      import "./design/tokens.css";
@@ -8,7 +8,7 @@
    Part A · element defaults, scrollbars, code, focus
    Part B · system components, ported from fold-ai-dev.css (v1.8.0) — only the
             ones spec/overview.md uses; same class names, same rules
-   Part C · pi-web components (app shell, session list, transcript, composer)
+   Part C · Sova components (app shell, session list, transcript, composer)
    Part D · utilities
 
    Naming stays flat and hyphenated: .component, .component-variant.
@@ -862,20 +862,29 @@ button.list-row { width: 100%; border: 0; background: none; text-align: left; }
   .model-policy-provider .model-policy-meta { display: none; }
 }
 
-/* ---- SETTINGS · THEMES. The second settings tab: one radio row per theme,
-   each carrying the evidence for the choice — a 5-swatch strip in the theme's
-   own colors and a sample in its own faces, so the row is the preview. The
-   swatches are inline-styled by the frontend (they are the only place in the
-   product that paints a color the current theme doesn't own); everything
-   around them is token-built (spec/12). ---------------------------------- */
+/* ---- SETTINGS · THEMES. The Themes tab: one radio card per theme, in a grid
+   that follows the panel's width (3 across at the unfolded panel, 2 folded —
+   auto-fill asks the list's own box, so no container is needed). Each card
+   carries the evidence for the choice — a 5-swatch strip in the theme's own
+   colors and a sample in the faces it would actually render in, pick included
+   (spec/12). The swatches are inline-styled by the frontend (they are the only
+   place in the product that paints a color the current theme doesn't own);
+   everything around them is token-built. --------------------------------- */
 
-.settings-theme-list { display: flex; flex-direction: column; gap: var(--space-1); }
+.settings-theme-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: var(--space-2);
+}
+/* While the list loads: card-shaped, in the same grid, so nothing jumps. */
+.settings-theme-skeleton { height: 104px; }
 
 .settings-theme-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: var(--space-1) var(--space-3);
+  grid-template-rows: auto auto auto auto;
+  align-items: start;
+  gap: var(--space-1) var(--space-2);
   width: 100%;
   min-height: var(--tap-min);
   padding: var(--space-2) var(--space-3);
@@ -896,10 +905,29 @@ button.list-row { width: 100%; border: 0; background: none; text-align: left; }
   box-shadow: inset 0 0 0 var(--stroke-icon) var(--color-accent);
 }
 
-.settings-theme-name { font-size: var(--fs-body); font-weight: var(--fw-medium); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.settings-theme-meta { grid-column: 1; font-size: var(--fs-caption); color: var(--color-ink-muted); }
+/* Two lines before the ellipsis: "Catppuccin Macchiato" is two words, and a card is
+   narrower than the row was. */
+.settings-theme-name {
+  grid-column: 1;
+  grid-row: 1;
+  min-width: 0;
+  font-size: var(--fs-body);
+  font-weight: var(--fw-medium);
+  line-height: var(--lh-body);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow-wrap: anywhere;
+}
+.settings-theme-meta { grid-column: 1 / -1; grid-row: 2; font-size: var(--fs-caption); color: var(--color-ink-muted); }
 
-.settings-theme-swatches { grid-column: 2; grid-row: 1 / span 2; display: flex; gap: var(--space-1); }
+/* The selected mark: the tint and the accent edge say it in color; the check
+   says it in shape. Hidden, not removed, so the name column never reflows. */
+.settings-theme-check { grid-column: 2; grid-row: 1; display: inline-flex; align-items: center; height: calc(var(--fs-body) * var(--lh-body)); color: var(--color-accent); visibility: hidden; }
+.settings-theme-row[aria-checked="true"] .settings-theme-check { visibility: visible; }
+
+.settings-theme-swatches { grid-column: 1 / -1; grid-row: 3; display: flex; gap: var(--space-1); margin-top: var(--space-1); }
 .settings-theme-swatch {
   width: 20px;
   height: 20px;
@@ -913,7 +941,8 @@ button.list-row { width: 100%; border: 0; background: none; text-align: left; }
    and --theme-font-mono on the row, and a palette theme that ships no typography
    simply falls back to the app's. */
 .settings-theme-font-sample {
-  grid-column: 1;
+  grid-column: 1 / -1;
+  grid-row: 4;
   font-family: var(--theme-font-body, var(--font-body));
   font-size: var(--fs-caption);
   color: var(--color-ink-2);
@@ -922,7 +951,8 @@ button.list-row { width: 100%; border: 0; background: none; text-align: left; }
 
 /* A file we could read but not use. The row stays in the list carrying its own
    error — a theme that vanishes when it breaks is a theme you can't fix. */
-.settings-theme-broken { cursor: default; color: var(--color-ink-2); }
+/* A broken file's reason is a sentence: the card takes the whole row for it. */
+.settings-theme-broken { grid-column: 1 / -1; cursor: default; color: var(--color-ink-2); }
 .settings-theme-broken:hover { background: none; }
 .settings-theme-broken .settings-theme-name { font-family: var(--font-mono); font-size: var(--fs-mono); font-weight: var(--fw-regular); }
 .settings-theme-broken .settings-theme-meta { color: var(--status-error); }
@@ -947,6 +977,89 @@ button.list-row { width: 100%; border: 0; background: none; text-align: left; }
   background: var(--color-surface);
 }
 .settings-theme-footer code { font-family: var(--font-mono); font-size: var(--fs-mono); color: var(--color-ink-2); }
+
+/* ---- SETTINGS · TYPOGRAPHY. Under the theme grid: two closed lists (Text,
+   Code) over a preview that inherits the live root faces, so it is the page's
+   own rendering rather than a picture of an option (spec/12). ------------ */
+
+.settings-type {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding-top: var(--space-4);
+  border-top: var(--stroke-thin) solid var(--color-border);
+}
+.settings-type-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
+.settings-type-title {
+  margin: 0;
+  font-size: var(--fs-heading-s);
+  line-height: var(--lh-heading-s);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--ls-heading-s);
+}
+/* Side by side from ~2 fields' worth of width; stacked under that (the folded sheet). */
+.settings-type-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--space-3); }
+
+.settings-type-preview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border: var(--stroke-thin) solid var(--color-border);
+  border-radius: var(--r-lg);
+  background: var(--color-bg);
+  min-width: 0;
+}
+.settings-type-preview-heading {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--fs-heading-s);
+  line-height: var(--lh-heading-s);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--ls-heading-s);
+  color: var(--color-ink);
+}
+.settings-type-preview-body { margin: 0; font-size: var(--fs-body); line-height: var(--lh-body); color: var(--color-ink-2); }
+.settings-type-preview-code {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono);
+  line-height: var(--lh-mono);
+  color: var(--color-ink);
+  white-space: pre;
+  overflow-x: auto;
+}
+
+/* ---- SELECT. A native select, 44px, appearance reset; the caret is drawn
+   by the wrapper and never a control (skill: select). Short closed lists get
+   the platform picker on a phone for free. -------------------------------- */
+
+.select-wrap { position: relative; }
+.select {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  height: var(--control-md);
+  padding: 0 var(--space-6) 0 var(--space-3);
+  border: var(--stroke-icon) solid var(--color-border-strong);
+  border-radius: var(--r-md);
+  background: var(--color-surface);
+  color: var(--color-ink);
+  font-size: var(--fs-body);
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease-standard);
+}
+.select:hover { border-color: var(--color-ink-muted); }
+.select:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.select-caret {
+  position: absolute;
+  right: var(--space-3);
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+  color: var(--color-ink-muted);
+  font-size: var(--fs-caption);
+}
 
 
 
@@ -1554,6 +1667,84 @@ a.group-option { color: inherit; text-decoration: none; }
 }
 .session-rail-count:hover { color: var(--color-ink); }
 .session-rail-count .icon { width: 11px; height: 11px; }
+
+/* ---- SELECTING SEVERAL SESSIONS (spec/02 §2). A press held on a row turns the
+   list into a picker: the rail — the column that already carries a row's state —
+   carries its checkbox, and the toolbar that acts on the picked rows sits INSIDE
+   the sidebar, above the list, where a thumb can reach it with the rows still on
+   screen. Nothing here is hover-only: every control is visible the whole time the
+   mode is on. ------------------------------------------------------------- */
+
+/* A held press must not also scroll-lock or text-select the row it is held on,
+   and a vertical drag of the list has to keep working: pan-y says both. */
+.session-row-shell { touch-action: pan-y; }
+.session-row-shell-selecting {
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;    /* iOS: the hold is ours, not the OS callout's */
+}
+/* The 30px rail is a gutter the eye skips; a checkbox is a target a thumb aims
+   at, so in selection mode — and only then — the gutter becomes a 44px column. */
+.session-row-shell-selecting .session-rail { width: var(--control-md); }
+.session-select {
+  width: 100%;
+  min-height: var(--control-md);
+  justify-content: center;
+  margin-top: calc(var(--space-2) * -1);   /* centres the box on the title's line */
+}
+/* A tick, not just a filled square: the shared .toggle-box is the switch's box
+   here, so the checkbox's own mark is drawn where it is used. Never hue alone. */
+.session-select .toggle-box { position: relative; }
+.session-select input:checked ~ .toggle-box::after {
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: 1px;
+  width: 4px;
+  height: 9px;
+  border: solid var(--color-on-accent);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+/* Picked outranks hover, and reads as the current row's sibling rather than its
+   twin: the same tint, with the accent said again on the left edge. */
+.session-row-shell-selected,
+.session-row-shell-selected:hover,
+.session-row-shell-selected:focus-within { background: var(--color-accent-tint); }
+.session-row-shell-selected { box-shadow: inset 2px 0 0 var(--color-accent); }
+
+/* The toolbar: a band between the search and the list, so it never floats over
+   the rows it is about. It stacks rather than scrolls sideways — at 320px four
+   controls do not fit on one line, and a control off the edge is a control that
+   isn't there. */
+.sidebar-select-bar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: var(--stroke-thin) solid var(--color-border);
+  background: var(--color-sunken);
+}
+.sidebar-select-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+.sidebar-select-count { margin: 0; font-size: var(--fs-caption); color: var(--color-ink-muted); }
+.sidebar-select-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+/* Small buttons, full-size targets — Cancel included: the band is a touch
+   surface first, and Cancel is the control a mis-hold reaches for. */
+.sidebar-select-bar .button { min-height: var(--control-md); }
+.sidebar-select-note { margin: 0; font-size: var(--fs-caption); color: var(--color-ink-muted); }
+.sidebar-select-rename { display: flex; flex-direction: column; gap: var(--space-1); }
+.session-title-field { width: 100%; }
+.session-title-field .input { flex: 1; min-width: 0; }
 
 /* The link keeps the title block; the shell owns ground, divider and tint. */
 .session-row {
@@ -3088,7 +3279,7 @@ a.group-option { color: inherit; text-decoration: none; }
    outline strip and the compaction row. spec/10-insights.md §10.
    ============================================================================= */
 
-/* ---- CARD parts (the skill's; pi-web had only the base card). ------------ */
+/* ---- CARD parts (the skill's; Sova had only the base card). ------------ */
 
 .card-head {
   display: flex;
@@ -3125,7 +3316,7 @@ a.group-option { color: inherit; text-decoration: none; }
 
 
 /* ---- METER. Number first, bar second, never a bar alone. The fill is a
-   neutral, not the accent: pi-web spends accent on primary / live / focus
+   neutral, not the accent: Sova spends accent on primary / live / focus
    only (§0). Warn and error fills always sit under a chip that says the word. */
 
 .meter { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
@@ -4049,3 +4240,113 @@ a.chip:hover { color: var(--color-ink); border-color: var(--color-border-strong)
 
 /* Where a jump landed, for ~1.5s (src/lib/jump.ts owns the timing). */
 .entry-jumped { background: var(--color-accent-tint); border-radius: var(--r-sm); transition: background-color var(--dur-base) var(--ease-standard); }
+
+/* ---- MESSAGE ACTIONS (spec/03 "Message actions"). One quiet strip under each
+   delivered message — Copy · Fork · Rewind/Regenerate — and one Remove under a
+   message still waiting in the queue.
+
+   QUIET UNTIL ASKED FOR, and asked for by every input: the strip is hidden with
+   OPACITY, never `display` — it is in the DOM, in the accessibility tree, tabbable
+   and its height is reserved, so a message never moves when one appears. A mouse
+   reveals it by being anywhere over the message region (`.entry`, the whole row);
+   a keyboard reveals it by focusing into it (`:focus-within`, reached by Tab while
+   invisible); touch reveals it by a tap on the message, which src/lib/message-reveal.ts
+   records as `[data-actions-revealed]` on the same host and keeps until a tap lands
+   elsewhere. A hidden strip is `pointer-events: none`, which is what makes the first
+   tap safe: it is hit-tested against the row, so it can never fire an action nobody
+   could see. `.message-actions-open` holds the strip open through the states that
+   outlive a pointer — an armed confirm, Copy's check, a refusal.
+
+   Revealed, the ink is a semantic colour at full opacity, never alpha over the page —
+   `--color-ink-muted` is 4.7:1 or better on every surface a message sits on (paper,
+   white, sunken and the user bubble's tint, both themes), where 0.6 alpha measured
+   2.4:1 and failed the 3:1 a glyph needs. Each button is a full 44px target
+   horizontally and reaches 44px vertically through ::after, so the row stays 36px
+   tall and messages keep their rhythm; the targets never overlap, being 44 wide with
+   the strip's own gap between them. ---------------------------------------------- */
+
+.message-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  max-width: min(100%, var(--measure));
+  min-height: var(--control-sm);
+  margin-top: calc(var(--space-1) * -1);
+  opacity: 0;
+  /* The one thing hiding takes away: a hidden strip cannot be pressed. */
+  pointer-events: none;
+  transition: opacity var(--dur-fast) var(--ease-standard);
+}
+/* Under a message of yours, which reads from the end like its own head. */
+.message-actions-end { justify-content: flex-end; }
+
+/* A queued message is not an `.entry`, so it brings its own hover region (Thread.tsx). */
+.message-actions-host { display: contents; }
+
+/* Hover is a mouse's door only. On a coarse pointer Chromium leaves :hover stuck on whatever
+   was last tapped, which would both reveal the wrong strip and arm a button under the same
+   finger — touch goes through [data-actions-revealed] instead. */
+@media (hover: hover) and (pointer: fine) {
+  .entry:hover > .message-actions,
+  .message-actions-host:hover > .message-actions { opacity: 1; pointer-events: auto; }
+}
+.entry[data-actions-revealed] > .message-actions,
+.message-actions-host[data-actions-revealed] > .message-actions,
+.message-actions:focus-within,
+.message-actions-open { opacity: 1; pointer-events: auto; }
+
+.message-action {
+  position: relative;
+  width: var(--tap-min);
+  min-height: var(--control-sm);
+  color: var(--color-ink-muted);
+  transition: color var(--dur-fast) var(--ease-standard);
+}
+/* Center an explicit 44px target: percentage/inset sizing uses the padding box, so
+   extending a bordered 36px button by 4px per side only reaches 42px. */
+.message-action::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  right: 0;
+  left: 0;
+  height: var(--tap-min);
+  transform: translateY(-50%);
+}
+.entry:hover > .message-actions .message-action,
+.message-actions:hover .message-action,
+.message-actions:focus-within .message-action,
+.message-action:focus-visible {
+  color: var(--color-ink-2);
+}
+/* A coarse pointer has no hover to deepen with, so it starts at the deeper ink. */
+@media (hover: none), (pointer: coarse) {
+  .message-action { color: var(--color-ink-2); }
+}
+
+/* The armed step: what the confirm is about, then the two answers. */
+.message-actions-armed { gap: var(--space-2); }
+.message-actions-note {
+  flex: 1 1 18ch;
+  min-width: 0;
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+  color: var(--color-ink-2);
+}
+/* A refusal stays on the row after the announcement, so looking away doesn't lose it. It takes
+   its own line, and reads from the same edge as the message it is about. */
+.message-actions-refusal { flex-basis: 100%; color: var(--status-error); }
+.message-actions-end .message-actions-note { text-align: right; }
+
+/* A message of yours that hasn't been delivered says which it is, with a dot AND
+   the word: "Sending…" while nothing is known to hold it, "Queued" once the
+   server says it does. */
+.message-pending { display: inline-flex; align-items: center; gap: var(--space-1); }
+.message-pending::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: var(--r-full);
+  background: currentColor;
+}

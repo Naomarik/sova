@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-label="SOVA Sentinel mark (concept)">
+  <!-- SOVA · SENTINEL — a single disc cut into a watchful owl: the top edge is
+       dipped into two ear tufts, the eyes are punched through as holes, and the
+       beak is a notch bitten up from the bottom edge. All expression is negative
+       space; the face appears on any surface the mark sits on. Single colour. -->
+  <path fill="currentColor" fill-rule="evenodd"
+        d="M6.711 8.636 L16 11.2 L25.289 8.636
+           A12.5 12.5 0 0 1 18 29.34 L16 25.6 L14 29.34
+           A12.5 12.5 0 0 1 6.711 8.636 Z
+           M8.7 15.8 a2.8 2.8 0 1 0 5.6 0 a2.8 2.8 0 1 0 -5.6 0
+           M17.7 15.8 a2.8 2.8 0 1 0 5.6 0 a2.8 2.8 0 1 0 -5.6 0"/>
+</svg>

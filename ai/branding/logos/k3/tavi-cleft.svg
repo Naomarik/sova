@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-label="TAVI Cleft mark (concept)">
+  <!-- TAVI · CLEFT — a solid geometric T split by a negative-space branch: a
+       channel rises from the baseline and forks at mid-height, both arms exiting
+       through the crossbar. The void is the branch; the letter stays whole.
+       The mask cuts true transparency, so the cleft shows whatever surface
+       the mark sits on. Single colour, currentColor. -->
+  <mask id="cleft">
+    <rect width="32" height="32" fill="#fff"/>
+    <path d="M16 25.2 V15.8 L13.6 4.6 M16 15.8 L18.4 4.6" fill="none"
+          stroke="#000" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+  </mask>
+  <path fill="currentColor" mask="url(#cleft)"
+        d="M7 6 H25 V11.5 H19 V26 H13 V11.5 H7 Z"/>
+</svg>

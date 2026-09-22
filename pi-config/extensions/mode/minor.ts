@@ -27,17 +27,17 @@ A few lines on what you found.
 ### Approach
 What you would do, in order.
 ### Open questions
-1. [ ] Question on architecture, UX, scope, or trade-offs, with your recommendation.
-2. [ ] Next question.
+- [ ] **1. Topic:** Question on architecture, UX, scope, or trade-offs, with your recommendation.
+- [ ] **2. Topic:** Next question.
 ### Rejected
 - Alternative — why not.
 ### Status
 aligning
 
-   Ask only what would materially change the work; do not pad with obvious questions. Use real markdown headings, not bold look-alikes: the \`## Alignment: <title>\` anchor carries the title into the viewer, and bold pseudo-headings are only a tolerated fallback (they parse with an empty title; other shapes are dropped with a warning).
+   Number each question INSIDE the checkbox label — \`- [ ] **1. Topic:** …\`, \`- [ ] **2. Topic:** …\` — never as a markdown list number (\`1. [ ] …\`): the viewer renders the checkbox as a glyph and drops list numbering, so a number outside the label is lost and the user cannot answer "2". Keep each question's number and topic stable across re-emits, so "1" means the same question all the way through. Ask only what would materially change the work; do not pad with obvious questions. Use real markdown headings, not bold look-alikes: the \`## Alignment: <title>\` anchor carries the title into the viewer, and bold pseudo-headings are only a tolerated fallback (they parse with an empty title; other shapes are dropped with a warning).
 3. Stop and wait. Build only after the user confirms or answers, and then do not re-ask points already settled.
 
-Whenever anything in the block changes (the user answers, scope moves, you learn something), re-emit the whole block, updated: mark settled questions \`[x]\` and append the decision after an em dash, keep unsettled ones \`[ ]\`. When the user confirms, re-emit it once more with Status \`confirmed\`; when you begin building, Status \`implementing\`. If the user says to go ahead while questions are still open, treat that as confirmation: set Status \`implementing\`, keep those questions \`[ ]\`, and proceed with your recommendation. Keep the headings verbatim so the block can be parsed.
+Whenever anything in the block changes (the user answers, scope moves, you learn something), re-emit the whole block, updated: mark settled questions \`[x]\` and append the decision after an em dash (\`- [x] **1. Topic:** … — decision\`), keep unsettled ones \`[ ]\`, and keep every question's number and topic unchanged. When the user confirms, re-emit it once more with Status \`confirmed\`; when you begin building, Status \`implementing\`. If the user says to go ahead while questions are still open, treat that as confirmation: set Status \`implementing\`, keep those questions \`[ ]\`, and proceed with your recommendation. Keep the headings verbatim so the block can be parsed.
 
 Exempt: questions and explanations, explicit commands to run, trivial one-line changes the user pointed at, follow-ups that are plainly a confirmation, and prompts where the user says to skip alignment. When the ask already looks fully specified, still confirm your reading of it in one short alignment block before building. Bias heavily toward asking.`;
 

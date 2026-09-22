@@ -10,7 +10,7 @@
  *
  *   unset | "inline"   DEFAULT. Workers are plain child processes of this
  *                      process, exactly as before hosting existed: no host
- *                      process, no socket, no ~/.pi/agent/pi-web/workers
+ *                      process, no socket, no ~/.pi/agent/sova/workers
  *                      registry, no worker-registry session entries, no
  *                      adoption; session_shutdown kills every worker.
  *   "host"             Each new worker runs under its own detached host with
@@ -20,7 +20,7 @@
  *
  * Detach vs kill (host transport only) — read at session_shutdown:
  *
- *   globalThis[Symbol.for("pi-web:detach-workers")] === true
+ *   globalThis[Symbol.for("sova:detach-workers" or legacy "pi-web:detach-workers")] === true
  *     the embedding process (pi-web) is exiting: shutdown DETACHES hosted
  *     workers (registry state "detached", hosts keep running).
  *   anything else
@@ -31,6 +31,7 @@ import * as fs from "node:fs";
 import type { Worker } from "./contracts.ts";
 import {
 	DEFAULT_WORKERS_ROOT,
+	defaultWorkersRoot,
 	acquireLock,
 	archive,
 	ensurePrivateDir,
@@ -59,21 +60,27 @@ import {
 	type TransportOptions,
 } from "./host-transport.ts";
 
-/** Set by the embedding process (pi-web); see the module comment. */
-export const DETACH_WORKERS = Symbol.for("pi-web:detach-workers");
+/** Set by the embedding process (Sova); see the module comment. Both spellings are honoured
+ *  through the rename bridge: new first, legacy fallback — either side may move first. */
+export const DETACH_WORKERS = Symbol.for("sova:detach-workers");
+export const LEGACY_DETACH_WORKERS = Symbol.for("pi-web:detach-workers");
 export const TRANSPORT_ENV = "PI_WORKER_TRANSPORT";
 export type WorkerTransport = "inline" | "host";
 const SAVE_DELAY_MS = 250;
 const SENT_TAIL_BYTES = 1024 * 1024;
 const ADOPTABLE = new Set(["starting", "running", "detached"]);
 
-export const detachRequested = (): boolean => (globalThis as Record<symbol, unknown>)[DETACH_WORKERS] === true;
+export const detachRequested = (): boolean => {
+	const g = globalThis as Record<symbol, unknown>;
+	return g[DETACH_WORKERS] === true || g[LEGACY_DETACH_WORKERS] === true;
+};
 export const workerTransport = (env: NodeJS.ProcessEnv = process.env): WorkerTransport =>
 	env[TRANSPORT_ENV]?.trim().toLowerCase() === "host" ? "host" : "inline";
 export const hostingRequested = (env: NodeJS.ProcessEnv = process.env): boolean => workerTransport(env) === "host";
 
 export interface HostingOptions {
-	/** Registry root. Default ~/.pi/agent/pi-web/workers, created lazily. */
+	/** Registry root. Default defaultWorkersRoot() — ~/.pi/agent/sova/workers, or the legacy
+	    pi-web/workers when only that exists yet. Created lazily. */
 	root?: string;
 	/** Force hosting on/off (tests); default: PI_WORKER_TRANSPORT === "host", read at each call. */
 	enabled?: boolean;
@@ -142,7 +149,7 @@ export class WorkerHosting {
 
 	constructor(options: HostingOptions = {}) {
 		this.options = options;
-		this.root = options.root ?? DEFAULT_WORKERS_ROOT;
+		this.root = options.root ?? defaultWorkersRoot(); // new root when present, else legacy, else new
 	}
 
 	setOwner(id: string | undefined, file: string | undefined): void {

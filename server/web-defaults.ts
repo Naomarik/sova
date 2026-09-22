@@ -1,16 +1,16 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { stateRoot } from "./state-root";
 
 /**
  * New-session defaults for model + thinking level: what a session with NO messages yet starts
  * from (server/chat-manager createRuntime), saved when the user changes either in a session that
  * is still "new" (chat-manager isPristine — no user message on the branch). Modes are NOT stored
  * here: their default is the mode extension's own mode.json (server/mode-state.ts), shared with
- * the TUI. Same file rules as web-sessions.ts: pi-web's own dir, atomic tmp+rename, re-read
+ * the TUI. Same file rules as web-sessions.ts: Sova's own dir, atomic tmp+rename, re-read
  * before every write so two servers merge instead of clobbering.
  */
-const defaultsFile = () => join(getAgentDir(), "pi-web", "defaults.json");
+const defaultsFile = () => join(stateRoot(), "defaults.json");
 
 /** On disk: `{ version: 1, model?: "provider/id", thinking?: level }`. Corrupt or unknown fields
  *  are dropped on read — a broken default must degrade to pi's own default, never fail an open. */

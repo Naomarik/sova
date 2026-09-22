@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-label="TAVI">
+  <!-- TAVI · TANDEM — the A and the V, the pair naming.md singles out, drawn
+       tandem: the A's right leg is the V's left leg. One zigzag stroke goes
+       up, down, up through both letters; only the A's crossbar is laid across.
+       Two letters, three strokes' worth of diagonal, nothing repeated.
+       Single colour, currentColor, no detached parts. -->
+  <path fill="none" stroke="currentColor" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"
+        d="M5.75 25.25 L12.25 6.75 L18.75 25.25 L26.25 6.75 M8.85 16.45 H15.35"/>
+</svg>

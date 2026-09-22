@@ -59,12 +59,12 @@ test("Archive is offered only for unarchived web sessions, like the pane's butto
 
 test("a legacy sshfs-mount cwd refusal is shown verbatim with the way back: Archive is the fix", () => {
   const legacy =
-    "This session was created inside an sshfs mount of target acme-prod, a feature pi-web no longer has; its files are on the target, not here. " +
+    "This session was created inside an sshfs mount of target acme-prod, a feature Sova no longer has; its files are on the target, not here. " +
     `Archive this session, or start a new remote session on acme-prod.\nSession file: ${FILE}`;
   const v = openFailureView({ cwd: "/home/user/.pi/agent/mounts/acme-prod", origin: "web" }, legacy);
   assert.equal(v.kind, "unknown");
   assert.equal(v.title, "This session can't be opened.");
-  assert.ok(v.detail.includes("a feature pi-web no longer has"));
+  assert.ok(v.detail.includes("a feature Sova no longer has"));
   assert.ok(v.detail.includes("start a new remote session on acme-prod"));
   assert.deepEqual(ids(v.actions), ["reconnect", "archive"]);
 });

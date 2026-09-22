@@ -45,7 +45,7 @@ import {
 import { MCP_SERVER_NAME } from "./member-mcp.ts";
 import { WorkerRegistryRecorder } from "./registry.ts";
 import { WorkerHosting, detachRequested, type HostingOptions } from "./hosting.ts";
-import { placeholderDir, placeholderRoot, toRemotePath } from "../remote/argv.ts";
+import { legacyPlaceholderRoot, placeholderDir, placeholderRoot, toRemotePath } from "../remote/argv.ts";
 import {
 	REMOTE_DISCOVER_EVENT,
 	REMOTE_MCP_ENV,
@@ -302,7 +302,7 @@ export interface SubagentsOptions {
 	mailboxPollMs?: number;
 	/** Detachable workers (hosting.ts): registry root, forced enablement, host timings. */
 	hosting?: HostingOptions;
-	/** Model policy file override (policy.ts); the real one is shared with pi-web. */
+	/** Model policy file override (policy.ts); the real one is shared with Sova. */
 	policyFile?: string;
 }
 /** Emit to re-scan the registry and adopt this session's detached workers now. */
@@ -317,15 +317,20 @@ function resolvePath(value: string, cwd: string): string {
 }
 
 /**
- * The remote session a placeholder cwd stands for: <agentDir>/pi-web/targets/<name>/<far/abs/path>
- * (server/targets.ts opens remote sessions there). Undefined for any other directory.
+ * The remote session a placeholder cwd stands for: <agentDir>/sova/targets/<name>/<far/abs/path>
+ * (server/targets.ts opens remote sessions there), or the legacy pi-web/targets spelling from
+ * before the rename — an old header or an old spawn.json cwd must keep reading as REMOTE, never as
+ * a local directory. Undefined for any other directory.
  */
 function remoteOfPlaceholder(cwd: string): RemoteSessionEvent | undefined {
-	const root = path.dirname(placeholderRoot(getAgentDir(), "x"));
-	if (!cwd.startsWith(root + path.sep)) return undefined;
-	const name = cwd.slice(root.length + 1).split(path.sep)[0];
-	if (!name || !/^(?!\.+$)[A-Za-z0-9._-]+$/.test(name)) return undefined;
-	return { version: 1, target: name, farCwd: toRemotePath(cwd, placeholderRoot(getAgentDir(), name)) };
+	for (const rootOf of [placeholderRoot, legacyPlaceholderRoot]) {
+		const root = path.dirname(rootOf(getAgentDir(), "x"));
+		if (!cwd.startsWith(root + path.sep)) continue;
+		const name = cwd.slice(root.length + 1).split(path.sep)[0];
+		if (!name || !/^(?!\.+$)[A-Za-z0-9._-]+$/.test(name)) return undefined;
+		return { version: 1, target: name, farCwd: toRemotePath(cwd, rootOf(getAgentDir(), name)) };
+	}
+	return undefined;
 }
 
 /** A worker's far working directory in a remote session: the spec's cwd (absolute, or relative to the session's far cwd), else the session's. */

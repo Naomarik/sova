@@ -15,7 +15,9 @@ import {
   SessionManager,
   type Theme,
 } from "@earendil-works/pi-coding-agent";
-import type { ChatClientMessage, ChatModeResult, ChatServerMessage, ModeApplies, RewindRefusal, SlashCommand } from "../shared/protocol";
+import type { ChatClientMessage, ChatModeResult, ChatServerMessage, ModeApplies, QueueItem, RegenerateRefusal, RewindRefusal, SlashCommand } from "../shared/protocol";
+import { parseWakeNudge } from "../shared/wake";
+import { type QueueImage, type QueueKind, WebQueue, type WebQueueItem } from "./queue";
 import { decodeUsageTotal, decodeWorkers } from "./insights";
 import { readLive, readOwnLiveRecords, workerCountsOf } from "./live";
 import { appliesAfter, mergeMode, MINOR_MODES, modeApplyPlan, modeInfo, readMode, resolveChatMode, writeMode, type ModePatch, type ModeState } from "./mode-state";
@@ -23,7 +25,7 @@ import { loadDefaults, saveDefaults } from "./web-defaults";
 import { modelAllowed, modelDenial, readModelPolicy } from "./model-policy";
 import { toContextInfo } from "./models";
 import { contextForBranch, normalizeEntries, normalizeEntry } from "./transcript";
-import { parseLegacyMountCwd, targetOfCwd } from "./targets";
+import { mappedNewCwd, parseLegacyMountCwd, targetOfCwd } from "./targets";
 import { claudeCodeProviderEnabled } from "./web-settings";
 import { ForeignWriteGuard, markOwned, recentForeignWriteAgeSec } from "./write-guard";
 
@@ -162,7 +164,7 @@ const configFailures = new Map<string, ConfigError>();
 
 /**
  * A session stored inside a legacy sshfs mount cwd (`~/.pi/agent/mounts/<target>/…`, a feature
- * pi-web no longer has) is refused, permanently: its files are on the target, not here, and opening
+ * Sova no longer has) is refused, permanently: its files are on the target, not here, and opening
  * it would silently run every tool in an empty local directory — the exact confusion the mounts'
  * removal exists to end. Lexical check only (server/targets.ts); no fs, no schema, no targets.json.
  */
@@ -170,7 +172,7 @@ function legacyMountFailure(path: string, cwd: string): ConfigError | undefined 
   const legacy = parseLegacyMountCwd(cwd);
   if (!legacy) return undefined;
   const failure = new ConfigError(
-    `This session was created inside an sshfs mount of target ${legacy.target}, a feature pi-web no longer has; its files are on the target, not here. ` +
+    `This session was created inside an sshfs mount of target ${legacy.target}, a feature Sova no longer has; its files are on the target, not here. ` +
       `Archive this session, or start a new remote session on ${legacy.target}.\nSession file: ${path}`,
     cwd,
   );
@@ -179,7 +181,23 @@ function legacyMountFailure(path: string, cwd: string): ConfigError | undefined 
 }
 
 /**
- * The cached permanent failure for `path`, if it still applies. Exported because it is the whole
+ * Where an open must happen: the stored cwd rebased across the rename (state root via
+ * unlegacyStatePath, the repo rename via path-map.json — mappedNewCwd composes both). The stored
+ * cwd is the session's history and is never rewritten; `openCwd` is what exists after those moves,
+ * and what the runtime is built with — tools then run in the MOVED folder, which is the same
+ * folder. A remote placeholder under the old root is still just an identity (its classification is
+ * targets.parseTargetCwd's, upstream of here). Throws the ConfigError with the STORED cwd: that is
+ * the name the user knows, and the banner's restore advice is about it.
+ */
+export function resolveOpenCwd(path: string, sessionCwd: string): string {
+  const legacy = legacyMountFailure(path, sessionCwd);
+  if (legacy) throw legacy;
+  const openCwd = mappedNewCwd(sessionCwd);
+  if (!existsSync(openCwd)) throw new ConfigError(`Stored session working directory does not exist: ${sessionCwd}\nSession file: ${path}`, sessionCwd);
+  return openCwd;
+}
+
+/** The cached permanent failure for `path`, if it still applies. Exported because it is the whole
  * retry policy for permanent errors: acquireChat answers from it, and it is how a caller (or a
  * test) asks whether the condition has cleared.
  */
@@ -188,7 +206,9 @@ export function activeConfigFailure(path: string): ConfigError | undefined {
   if (!failure) return undefined;
   // A legacy sshfs-mount cwd is refused for good: the empty local directory existing is the problem, not the cure.
   if (parseLegacyMountCwd(failure.cwd)) return failure;
-  if (existsSync(failure.cwd)) {
+  // Renames clear the memo too: the stored path may be gone for good while the state-root rebase or
+  // the path map points at the directory it became.
+  if (existsSync(mappedNewCwd(failure.cwd))) {
     configFailures.delete(path); // the directory came back: let the next open try for real
     return undefined;
   }
@@ -300,8 +320,18 @@ function parseImages(raw: unknown): SdkImage[] | undefined {
  * (restoreQueuedMessagesToEditor). abort() leaves the queue intact, so the next prompt would
  * send itself first and the stale steer right behind it. Nothing is written to the session file.
  */
-export function drainQueueThenAbort(session: Pick<AgentSession, "clearQueue" | "abort">, broadcast: (msg: ChatServerMessage) => void): Promise<void> {
-  const { steering, followUp } = session.clearQueue();
+export async function drainQueueThenAbort(
+  session: Pick<AgentSession, "clearQueue" | "abort">,
+  broadcast: (msg: ChatServerMessage) => void,
+  /** pi-web's own queue, when the chat has one: it drains BOTH its held items and the SDK's (it
+      calls `clearQueue()` itself), so Stop keeps meaning "nothing queued survives this". Absent
+      leaves the original SDK-only behaviour, which is what a bare session still gets. */
+  queue?: { drain(): Promise<{ steering: string[]; followUp: string[] }> },
+): Promise<void> {
+  // Awaited: the queue's own drain waits out a hand-off parked in an extension `input` handler,
+  // so Stop cannot clear "nothing", hand back no text, and then let that message be delivered
+  // after the user pressed Stop.
+  const { steering, followUp } = queue ? await queue.drain() : session.clearQueue();
   if (steering.length || followUp.length) broadcast({ type: "queue_cleared", steering, followUp });
   return session.abort();
 }
@@ -314,7 +344,12 @@ export function drainQueueThenAbort(session: Pick<AgentSession, "clearQueue" | "
  * (buildSessionContext skips `custom`), our transcript renders nothing for it (normalizeEntry's
  * default for custom types), and it carries no usage, so neither totals nor context fill move.
  */
+/** RENAME BRIDGE: rewinds keep being WRITTEN under the legacy name until the bridge closes — a
+    rollback must never meet a marker old code can't read. Reads accept either spelling
+    (REWIND_ENTRIES), and the flip to writing "sova-rewind" is a one-line change made after the
+    compatibility window closes (MIGRATION.md §bridge-closure). */
 export const REWIND_ENTRY = "pi-web-rewind";
+export const REWIND_ENTRIES: ReadonlySet<string> = new Set([REWIND_ENTRY, "sova-rewind"]);
 
 /**
  * customType of the invisible entry fanout writes into every member at creation (server/fanout.ts,
@@ -326,13 +361,15 @@ export const REWIND_ENTRY = "pi-web-rewind";
  * flag threaded through acquireChat that a restart would forget. Same shape as REWIND_ENTRY:
  * never LLM context, no usage, rendered nowhere (normalizeEntry's default for custom types).
  */
-export const FANOUT_MEMBER_ENTRY = "pi-web-fanout-member";
+export const FANOUT_MEMBER_ENTRY = "pi-web-fanout-member"; // write name kept legacy during the bridge, like REWIND_ENTRY
+/** Accepted spellings on read: the legacy write above, plus the post-bridge "sova-fanout-member". */
+export const FANOUT_MEMBER_ENTRIES: ReadonlySet<string> = new Set([FANOUT_MEMBER_ENTRY, "sova-fanout-member"]);
 
 /** Whether a session file is a fanout member, by the marker its creation wrote. The predicate
  *  openSession keys the outline exception on; exported for the test that pins the marker's
  *  round trip through the file. */
 export function isFanoutMember(sm: Pick<SessionManager, "getEntries">): boolean {
-  return sm.getEntries().some((e) => e.type === "custom" && e.customType === FANOUT_MEMBER_ENTRY);
+  return sm.getEntries().some((e) => e.type === "custom" && FANOUT_MEMBER_ENTRIES.has(e.customType ?? ""));
 }
 
 export type RewindOutcome = { ok: true; editorText: string } | { ok: false; reason: RewindRefusal; message: string };
@@ -353,7 +390,11 @@ export interface RewindTarget {
  * they would land on the branch being abandoned and the new branch would lose its model/thinking
  * entries. A refusal writes nothing.
  */
-export async function rewindSession(session: RewindTarget, entryId: string, hooks: { guard(): void; beforeMarker(): void }): Promise<RewindOutcome> {
+export async function rewindSession(
+  session: RewindTarget,
+  entryId: string,
+  hooks: { guard(): void; beforeMarker(): void; queued(): boolean },
+): Promise<RewindOutcome> {
   const check = (): RewindOutcome | null => {
     try {
       hooks.guard();
@@ -364,6 +405,14 @@ export async function rewindSession(session: RewindTarget, entryId: string, hook
     if (session.isStreaming) return { ok: false, reason: "streaming", message: "Stop the turn first, then rewind." };
     if (session.isCompacting)
       return { ok: false, reason: "compacting", message: "Wait for the compaction or rewind in progress to finish, then rewind." };
+    // NOT covered by the isStreaming check above, and this is the point of having it separately:
+    // `steer()` awaits the extension `input` handlers before it queues anything, so a message can
+    // still be on its way out after the turn it was meant to interrupt has ended. Moving the leaf
+    // now would deliver it into the NEW branch on the next run — the abandoned message reappearing
+    // on the branch the user rewound TO. `hooks.queued` answers for pi-web's own queue AND the
+    // SDK's, ours or an extension's: all three land the same way.
+    if (hooks.queued())
+      return { ok: false, reason: "queued", message: "A message is still on its way out. Wait for it to send, or press Stop, then rewind." };
     return null;
   };
   try {
@@ -387,6 +436,84 @@ export async function rewindSession(session: RewindTarget, entryId: string, hook
   } catch (err) {
     return { ok: false, reason: "internal", message: err instanceof Error ? err.message : String(err) };
   }
+}
+
+/** A session entry as the branch hands it over; only the fields the rules below read are named. */
+interface BranchEntry {
+  id?: unknown;
+  type?: unknown;
+  message?: { role?: unknown; content?: unknown };
+}
+
+/** What a regenerate resolved to: the user input to replay, exactly as the file stores it. */
+export type RegenerateTarget =
+  | { ok: true; userId: string; text: string; images?: QueueImage[] }
+  | { ok: false; reason: RegenerateRefusal; message: string };
+
+/**
+ * The user message whose turn `entryId` belongs to, on the ACTIVE branch, plus its stored content.
+ *
+ * Pure, so the whole rule is testable without an SDK. Three things it settles:
+ *
+ * - Block ids. The transcript emits one row per assistant content block, `<entryId>:<n>` (and
+ *   `<entryId>:stop`), so the id a client rendered is usually not an entry id. An id that is not
+ *   on the branch is retried once with everything after its first ":" removed. Entry ids are
+ *   uuids and carry no colon, so this can only ever rescue a block id.
+ * - Direction. It walks BACKWARD to the nearest `role:"user"` message, so regenerating from any
+ *   row of a turn — the reply, a tool call, the "Aborted" line — redoes the same turn.
+ * - What gets replayed: the entry's OWN stored text and its OWN stored `ImageContent` blocks, not
+ *   the display text. `TranscriptItem.text` has pi's clipboard paths stripped for rendering; the
+ *   model was given them, so a replay that used the display text would send a different message.
+ */
+export function resolveRegenerate(branch: readonly BranchEntry[], entryId: string): RegenerateTarget {
+  const notOnBranch = (message: string): RegenerateTarget => ({ ok: false, reason: "not_on_branch", message });
+  let index = branch.findIndex((e) => e.id === entryId);
+  if (index === -1 && entryId.includes(":")) {
+    const stem = entryId.slice(0, entryId.indexOf(":"));
+    index = branch.findIndex((e) => e.id === stem);
+  }
+  if (index === -1) return notOnBranch("That reply is not on this chat's current branch anymore.");
+  const isUser = (e: BranchEntry) => e.type === "message" && e.message?.role === "user";
+  // Regenerating your own message is Rewind — it hands the text back so you can change it. Saying
+  // so here keeps the two gestures from quietly becoming one that resends without asking.
+  if (isUser(branch[index]!)) return notOnBranch("That is your own message; rewind to it to edit and send it again.");
+  for (let i = index; i >= 0; i--) {
+    const entry = branch[i]!;
+    if (!isUser(entry)) continue;
+    const content = entry.message?.content;
+    const text = typeof content === "string" ? content : textBlocks(content);
+    const images = imageBlocks(content);
+    if (!text.trim() && !images) return notOnBranch("The message that started that turn has nothing left to send.");
+    // A WAKE NUDGE is a role:"user" message pi-web's own scheduler wrote, rendered as its own card
+    // (kind "wake"). Replaying it would put the "[wake_nudge …] Scheduled wakeup fired (set 4m17s
+    // ago)" preamble back on the branch as if the user had typed it, with an elapsed time that is
+    // now a lie. Nothing here is the user's message, so there is nothing to send again.
+    if (parseWakeNudge(text))
+      return { ok: false, reason: "wake", message: "That reply answered a scheduled wake-up, not a message you sent, so there is nothing to send again." };
+    return { ok: true, userId: String(entry.id), text, ...(images ? { images } : {}) };
+  }
+  return notOnBranch("Nothing on this branch started that reply, so there is nothing to run again.");
+}
+
+/** Text blocks of a stored message, joined as pi stores them. */
+function textBlocks(content: unknown): string {
+  if (!Array.isArray(content)) return "";
+  return content
+    .filter((b) => b?.type === "text" && typeof b.text === "string")
+    .map((b) => b.text as string)
+    .join("\n");
+}
+
+/** Stored ImageContent blocks, in order, or undefined when there are none. */
+function imageBlocks(content: unknown): QueueImage[] | undefined {
+  if (!Array.isArray(content)) return undefined;
+  const out: QueueImage[] = [];
+  for (const b of content) {
+    if (b?.type === "image" && typeof b.data === "string" && typeof b.mimeType === "string") {
+      out.push({ type: "image", data: b.data, mimeType: b.mimeType });
+    }
+  }
+  return out.length ? out : undefined;
 }
 
 /** pi SourceInfo.scope → rpc get_commands `location` ("temporary" = explicit CLI/settings path). */
@@ -419,6 +546,11 @@ interface PendingUi {
   resolve: (value: unknown) => void;
 }
 
+/** SDK events after which pi-web's queue re-reads the SDK's own queue lengths. `agent_settled` and
+    `agent_end` are here because a turn that ends with our queue non-empty must start the next one;
+    without them the queue would wait for an event that never comes. */
+const QUEUE_WAKE_EVENTS = new Set(["queue_update", "message_start", "turn_end", "agent_settled", "agent_end"]);
+
 /** One embedded pi runtime for one session file, shared by all connected chat clients. */
 class ChatSession {
   readonly clients = new Set<ChatClient>();
@@ -442,6 +574,63 @@ class ChatSession {
    * here is only a placeholder until bind() runs.
    */
   modeState: ModeState = readMode();
+
+  /**
+   * pi-web's own outgoing queue (server/queue.ts). Every message that would have gone straight
+   * into the SDK's queue goes here first, and exactly one of ours is inside the SDK at a time —
+   * which is what makes a single queued message removable at all (the SDK can only clear the lot).
+   * A message sent to an IDLE session never enters it: there is nothing to queue behind.
+   */
+  readonly queue: WebQueue = new WebQueue({
+    sdk: {
+      // The REAL queues, through public API: `AgentSession.agent` is public
+      // (agent-session.d.ts:196) and so is `hasQueuedMessages()` (pi-agent-core agent.d.ts:96).
+      // Nothing private is read, and nothing is mutated — `Agent.steeringQueue.messages.length`
+      // would answer per kind, but it is private in the types and reading it is the reach-in this
+      // design was chosen to avoid.
+      //
+      // Delivery is read from THESE, not from getSteeringMessages(): that mirror is spliced on
+      // `message_start`, which is later than the loop's drain, and the splice is skipped entirely
+      // for empty text — so an image-only send never leaves it and a mirror-watching queue stalls
+      // for the session's life. server/queue.ts's header has the full account.
+      hasQueued: () => this.session.agent.hasQueuedMessages(),
+      // The mirror, read ONLY as a change detector against our own earlier reading of it
+      // (server/queue.ts sdkHolds). `peekQueuedMessages()` would answer more precisely, but it is
+      // NOT in the pi-agent-core copy pi-web resolves — 0.86.1 nested under pi-coding-agent has it
+      // in neither the .d.ts nor the .js, whatever a different install of the package may show.
+      mirrorTotal: () => this.session.getSteeringMessages().length + this.session.getFollowUpMessages().length,
+      mirrorFor: (kind) => (kind === "steer" ? this.session.getSteeringMessages() : this.session.getFollowUpMessages()).length,
+      // Same public pair; a read of the live array's current contents, never a copy anyone mutates.
+      mirrorHas: (kind, text) => (kind === "steer" ? this.session.getSteeringMessages() : this.session.getFollowUpMessages()).includes(text),
+    },
+    streaming: () => this.session.isStreaming,
+    clearSdkQueue: () => this.session.clearQueue(),
+    guard: () => {
+      assertNotLive(this.path);
+      this.assertNoForeignWrites();
+    },
+    wake: () => this.wakeQueuedRun(),
+    handOff: (item, streaming) => this.handOffQueued(item, streaming),
+    // Broadcast, never addressed: a second tab on this chat has the same pending rows and must
+    // learn why one left, including a removal it did not make. The text rides along for every
+    // reason but "delivered", so whichever client wants to offer it back to a composer can.
+    onGone: (item, reason) =>
+      this.broadcast({ type: "queue_item_gone", itemId: item.id, reason, ...(reason === "delivered" ? {} : { text: item.text }) }),
+    onChange: (items) => this.broadcast({ type: "queue", items }),
+    onHandOffError: (item, err) => {
+      const code = err instanceof BusyError ? err.code : "internal";
+      const message = err instanceof Error ? err.message : String(err);
+      // Named to its sender when it had one, so the right composer gets its draft back.
+      //
+      // NO SYNTHETIC `queue_cleared` HERE. This used to send one "because that is the message the
+      // client already restores from", which predates `queue_item_gone` — and with both in flight
+      // the client restored the same text TWICE, prepending it into the draft twice with a blank
+      // line between. `queue_item_gone{reason:"failed"}` is now the single departure signal, which
+      // also makes "failed" and "dropped" symmetric, and leaves `queue_cleared` meaning Stop and
+      // nothing else.
+      this.broadcast({ type: "error", code, message, ...(item.origin === "client" ? { clientId: item.id } : {}) });
+    },
+  });
 
   constructor(
     readonly path: string,
@@ -468,6 +657,106 @@ class ChatSession {
       }
     }
     if (this.foreignWrite) throw new BusyError(this.busyMessage(), "recent");
+  }
+
+  /**
+   * Give ONE queued message to the SDK. The queue calls this and nothing else does.
+   *
+   * It resolves when the message has been ACCEPTED, never when its turn ends. That distinction is
+   * the whole reason the idle branch is not awaited: `AgentSession.prompt()` on an idle session
+   * runs the entire agent loop before resolving (agent-session.js:937), so awaiting it would stall
+   * the queue for the length of the run and the next item would only be handed over minutes later.
+   *
+   * The guards run HERE, at the moment of the write, not at enqueue time: a TUI can grab the file,
+   * or the user can turn a model off, while messages sit in the queue.
+   */
+  private async handOffQueued(item: WebQueueItem, streaming: boolean): Promise<void> {
+    assertNotLive(this.path);
+    this.assertNoForeignWrites();
+    this.assertModelAllowed();
+    this.flushDeferredAppends();
+    const images = item.images as Parameters<AgentSession["steer"]>[1];
+    if (!streaming) {
+      // Idle: this starts a turn. Its own failure belongs in this session's pane, like every other
+      // turn nobody is awaiting, and must not be reported as a hand-off failure (which would hand
+      // the text back to the composer for a message that HAS been sent).
+      this.session.prompt(item.text, { images }).catch((err) => {
+        this.reportTurnFailure(err);
+        // A turn that never started emits no event, so nothing would wake the queue and every
+        // item behind this one would sit there for ever. Wake it explicitly.
+        this.queue.onSdkEvent();
+      });
+      return;
+    }
+    // steer() throws on extension commands; prompt() runs them immediately (even mid-stream) and
+    // otherwise queues with the same skill/template expansion. Same split as the direct path.
+    if (item.kind === "steer" && !item.text.startsWith("/")) {
+      await this.session.steer(item.text, images);
+      return;
+    }
+    await this.session.prompt(item.text, { images, streamingBehavior: item.kind });
+  }
+
+  /**
+   * Whether ANY message is still on its way out: held in pi-web's queue, mid-hand-off, or sitting
+   * in the SDK's own queues (including an extension's follow-up, which resurrects on a rewound
+   * branch exactly as ours would).
+   *
+   * `hasQueuedMessages()` is the REAL queue, deliberately, not `pendingMessageCount`: that is the
+   * mirror sum, and the mirror keeps empty-text entries for ever — so one image-only send would
+   * make every later rewind refuse for the life of the session.
+   */
+  hasPendingSends(): boolean {
+    return this.queue.size > 0 || this.session.agent.hasQueuedMessages();
+  }
+
+  /**
+   * Run what the SDK is ALREADY holding, adding nothing of our own.
+   *
+   * `Agent.continue()` is public (pi-agent-core agent.d.ts:113) and does exactly this: with the
+   * last message an assistant one it DRAINS the steering queue (else the follow-up queue) and runs
+   * those messages, passing `skipInitialSteeringPoll` so it cannot double-drain (agent.js:252-262).
+   * That ordering is the whole reason it is used instead of handing our own next message over: a
+   * plain `prompt()` would start the run with OUR message and only poll the steering queue after
+   * the first assistant turn, delivering the message that was queued FIRST second.
+   *
+   * Nothing is deleted and nothing is declared delivered — the messages are DELIVERED, which is
+   * what they were queued for, and the ordinary `message_start` bookkeeping follows.
+   *
+   * Not awaited: `continue()` resolves at turn end. Guarded on `hasQueuedMessages()` so it is never
+   * called with an empty queue, where it would either continue the transcript on its own or throw.
+   */
+  /** Set while a wake's run is being started, so events arriving mid-wake cannot stack another. */
+  private waking = false;
+
+  private wakeQueuedRun(): void {
+    if (this.disposed || this.session.isStreaming) return;
+    if (!this.session.agent.hasQueuedMessages()) return;
+    try {
+      assertNotLive(this.path);
+      this.assertNoForeignWrites();
+    } catch {
+      return; // not ours to write to; the queue's own guards report it on the next hand-off
+    }
+    this.flushDeferredAppends();
+    // ONE WAKE AT A TIME, AND NO RE-PUMP ON FAILURE. Both halves are load-bearing:
+    //
+    // `continue()` can throw — "No messages to continue from" on a transcript that is empty or all
+    // system, or "Agent is already processing" if a run started in the gap. The obvious catch,
+    // report-and-re-pump, is a SPIN: the pump's wake condition (`hasQueued() && !streaming`) is
+    // unchanged by the failure, so it wakes again, throws again, and reports again, forever. That
+    // was measured, not reasoned about — a test with a throwing wake hung for 60s at 0 pass/0 fail.
+    // So a failed wake leaves the state exactly as it found it and waits for a REAL change: the
+    // next SDK event, or the user's next send. Nothing is lost either way; the queued messages are
+    // still queued and Stop still drains them.
+    if (this.waking) return;
+    this.waking = true;
+    this.session.agent
+      .continue()
+      .catch((err) => this.reportTurnFailure(err))
+      .finally(() => {
+        this.waking = false;
+      });
   }
 
   private flushDeferredAppends(): void {
@@ -541,6 +830,17 @@ class ChatSession {
       } catch (err) {
         console.error("[chat] failed to forward event", err);
       }
+      // BEFORE anything else that can throw. Every event that can mean "the SDK's queue moved":
+      // one was queued, one was delivered, the run ended. A generous list is cheaper than a
+      // precise one, because the cost of a spurious wake is a re-read of two lengths while the
+      // cost of a MISSED one is a queue that stops handing messages over until the next turn
+      // boundary — and `normalizeEntry` below is not in a try.
+      if (event.type === "queue_update") {
+        // The mirror's own totals, straight from the SDK. The queue reads GROWTH out of the
+        // sequence of these — the only way to tell "an extension queued something" from "our item
+        // was delivered", which a single total cannot distinguish (one in, one out, total unmoved).
+        this.queue.observeQueueUpdate(event.steering.length, event.followUp.length);
+      } else if (QUEUE_WAKE_EVENTS.has(event.type)) this.queue.onSdkEvent();
       if (event.type === "entry_appended" && (event as { entry?: unknown }).entry) {
         // Display entries an extension appended outside a turn (mode markers, align docs, …)
         // reach the pane now instead of at the next hello/resync. normalizeEntry returns []
@@ -676,6 +976,10 @@ class ChatSession {
     this.clients.add(client);
     client.send(this.hello());
     client.send(this.commands());
+    // The queue goes out on EVERY attach, empty or not: a reconnect resets the pane's live rows to
+    // nothing, so a client that is told nothing cannot tell "no queue" from "not told yet" and
+    // would show an empty thread over a full queue.
+    client.send({ type: "queue", items: this.queue.snapshot() });
     client.send(this.modeMessage());
     const snap = this.workersSnapshot();
     if (snap) client.send(snap);
@@ -700,21 +1004,40 @@ class ChatSession {
    * runs N turns end to end. Acceptance is everything up to handing the text to the SDK: a TUI
    * owning the file, a foreign writer, a closed runtime. Blank text with no image is a no-op.
    */
-  acceptPrompt(text: string, images?: SdkImage[]): Promise<void> {
+  acceptPrompt(
+    text: string,
+    images?: SdkImage[],
+    origin: QueueItem["origin"] = "server",
+    clientId?: string,
+    /** `replay: true` = this text came OUT of the transcript, so it is already expanded and must
+        be sent verbatim. Without it the SDK would expand skills and templates a SECOND time, and a
+        stored message that merely begins with "/" would be DISPATCHED as an extension command
+        instead of replayed — a regenerate that runs a command rather than redoing the turn. */
+    opts?: { replay?: boolean },
+  ): { queued: boolean; turn: Promise<void> } {
     // Never write if a TUI grabbed this file, or anyone else wrote it, after we opened it.
     assertNotLive(this.path);
     this.assertNoForeignWrites();
-    if (!text.trim() && !images) return Promise.resolve();
+    if (!text.trim() && !images) return { queued: false, turn: Promise.resolve() };
+    // While streaming, a plain prompt is a follow-up — held in pi-web's own queue now, so it can
+    // still be taken back one item at a time. Server-originated prompts (a group batch, a remote
+    // status probe) queue on the same terms as a client's: they are messages to this session, and
+    // a queue that some messages could skip would not be a queue.
+    if (this.session.isStreaming) {
+      this.queue.enqueue({ kind: "followUp", text, images: images as QueueImage[] | undefined, origin, id: clientId });
+      return { queued: true, turn: Promise.resolve() };
+    }
     this.flushDeferredAppends();
-    // While streaming, a plain prompt is queued as a follow-up.
-    const streamingBehavior = this.session.isStreaming ? ("followUp" as const) : undefined;
-    return this.session.prompt(text, { images, streamingBehavior });
+    return { queued: false, turn: this.session.prompt(text, { images, ...(opts?.replay ? { expandPromptTemplates: false } : {}) }) };
   }
 
   /** Accept a prompt AND wait for the turn. The /ws/chat path, where the socket reports the
-      turn's own failure to the one client that asked for it. */
-  async prompt(text: string, images?: SdkImage[]): Promise<void> {
-    await this.acceptPrompt(text, images);
+      turn's own failure to the one client that asked for it. A queued message's "turn" is already
+      resolved: its failure, when it comes, reports through the queue's own hand-off path. */
+  async prompt(text: string, images?: SdkImage[], origin: QueueItem["origin"] = "server", clientId?: string): Promise<boolean> {
+    const { queued, turn } = this.acceptPrompt(text, images, origin, clientId);
+    await turn;
+    return queued;
   }
 
   /** Report a failure into this session's own pane(s) — where every other turn failure already
@@ -725,9 +1048,12 @@ class ChatSession {
   }
 
   handle(client: ChatClient, msg: ChatClientMessage): void {
+    // The failing send's own id rides along when it has one, so the client restores THAT draft and
+    // no other; a chat-wide failure still reports without one, exactly as before.
+    const clientId = "clientId" in msg && typeof msg.clientId === "string" && msg.clientId ? msg.clientId : undefined;
     const fail = (err: unknown) => {
       const code = err instanceof BusyError ? err.code : "internal";
-      client.send({ type: "error", code, message: err instanceof Error ? err.message : String(err) });
+      client.send({ type: "error", code, message: err instanceof Error ? err.message : String(err), ...(clientId ? { clientId } : {}) });
     };
     if (this.disposed) {
       client.send({ type: "error", code: "reloaded", message: "Session runtime was closed; reconnect" });
@@ -741,7 +1067,11 @@ class ChatSession {
           // this case needs (TUI ownership, foreign writers, blank text, deferred appends, the
           // streaming follow-up choice) lives in `acceptPrompt`, which `prompt()` awaits.
           this.assertModelAllowed();
-          this.prompt(String(msg.text ?? ""), parseImages(msg.images)).catch(fail);
+          const { queued, turn } = this.acceptPrompt(String(msg.text ?? ""), parseImages(msg.images), "client", clientId);
+          // The ack goes out NOW, not after the turn: it says whether a queue row exists, and a
+          // client that learned that only at turn end would offer Remove for a sent message.
+          if (clientId) client.send({ type: "send_ack", clientId, queued });
+          turn.catch(fail);
           return;
         }
         case "steer": {
@@ -751,18 +1081,41 @@ class ChatSession {
           const text = String(msg.text ?? "");
           const images = parseImages(msg.images);
           if (!text.trim() && !images) return;
+          // Mid-turn, this is a steer and goes through pi-web's queue so it stays removable; idle,
+          // there is nothing to queue behind, so it starts its turn straight away (and the
+          // extension-command split lives in handOffQueued, which both paths reach).
+          if (this.session.isStreaming) {
+            this.queue.enqueue({ kind: "steer", text, images: images as QueueImage[] | undefined, origin: "client", id: clientId });
+            if (clientId) client.send({ type: "send_ack", clientId, queued: true });
+            return;
+          }
           this.flushDeferredAppends();
-          // steer() throws on extension commands; prompt() runs them immediately (even mid-stream)
-          // and otherwise queues as steer with the same skill/template expansion.
-          const p =
-            this.session.isStreaming && !text.startsWith("/")
-              ? this.session.steer(text, images)
-              : this.session.prompt(text, { images, streamingBehavior: this.session.isStreaming ? "steer" : undefined });
-          p.catch(fail);
+          if (clientId) client.send({ type: "send_ack", clientId, queued: false });
+          this.session.prompt(text, { images }).catch(fail);
           return;
         }
         case "abort":
-          drainQueueThenAbort(this.session, (m) => this.broadcast(m)).catch(fail);
+          // The queue drains pi-web's held items AND the SDK's, so Stop still means "nothing
+          // queued survives this", and the drained text still comes back as `queue_cleared`.
+          drainQueueThenAbort(this.session, (m) => this.broadcast(m), this.queue).catch(fail);
+          return;
+        case "queue_remove": {
+          const id = String(msg.id ?? "");
+          const itemId = String(msg.itemId ?? "");
+          // Awaited, not answered from a snapshot: a removal that arrives while the item is still
+          // inside its hand-off (extension `input` handlers, which can take a model call) waits
+          // that window out rather than mistaking "not given to the SDK yet" for "already sent".
+          this.queue
+            .remove(itemId)
+            .then((outcome) => {
+              if (outcome.ok) client.send({ type: "queue_removed", id, itemId, text: outcome.item.text });
+              else client.send({ type: "queue_remove_refused", id, itemId, reason: outcome.reason, message: outcome.message });
+            })
+            .catch(fail);
+          return;
+        }
+        case "regenerate":
+          this.regenerate(client, String(msg.id ?? ""), String(msg.entryId ?? "")).catch(fail);
           return;
         case "set_thinking": {
           // setThinkingLevel appends a thinking_level_change entry: same write guards as set_model.
@@ -857,12 +1210,64 @@ class ChatSession {
         assertNotLive(this.path);
         this.assertNoForeignWrites();
       },
+      queued: () => this.hasPendingSends(),
       beforeMarker: () => this.flushDeferredAppends(),
     });
     if (!outcome.ok) {
       client.send({ type: "rewind_refused", id, entryId, reason: outcome.reason, message: outcome.message });
       return;
     }
+    this.afterBranchMove();
+    if (this.disposed) return;
+    client.send({ type: "rewound", id, entryId, editorText: outcome.editorText });
+  }
+
+  /**
+   * Redo the turn an assistant entry belongs to: rewind to just before the user message that
+   * started it, then send that message again — its own stored text and images, with the session's
+   * CURRENT model and thinking level, which is what makes "switch model, then regenerate" a
+   * comparison rather than a repeat.
+   *
+   * Order is load-bearing in two places. The model policy is checked BEFORE the rewind, so a
+   * session sitting on a switched-off model refuses without having thrown its branch away. And the
+   * rewind goes through `rewindSession`, so the invisible `pi-web-rewind` marker is written before
+   * the prompt: if the prompt then fails, a reload still lands on the new branch instead of
+   * silently restoring the reply the user asked to replace.
+   */
+  private async regenerate(client: ChatClient, id: string, entryId: string): Promise<void> {
+    const refuse = (reason: RegenerateRefusal, message: string) =>
+      client.send({ type: "regenerate_refused", id, entryId, reason, message });
+    const target = resolveRegenerate(this.session.sessionManager.getBranch(), entryId);
+    if (!target.ok) return refuse(target.reason, target.message);
+    try {
+      this.assertModelAllowed();
+    } catch (err) {
+      return refuse("internal", err instanceof Error ? err.message : String(err));
+    }
+    const outcome = await rewindSession(this.session, target.userId, {
+      guard: () => {
+        assertNotLive(this.path);
+        this.assertNoForeignWrites();
+      },
+      queued: () => this.hasPendingSends(),
+      beforeMarker: () => this.flushDeferredAppends(),
+    });
+    if (!outcome.ok) return refuse(outcome.reason, outcome.message);
+    this.afterBranchMove();
+    if (this.disposed) return;
+    client.send({ type: "regenerated", id, entryId, userEntryId: target.userId });
+    // The branch is now at the point before the user message, so the session is idle and this
+    // starts a turn rather than queueing. Its failure reports into this session's pane, where
+    // every other turn failure already does.
+    const { turn } = this.acceptPrompt(target.text, target.images as SdkImage[] | undefined, "client", undefined, { replay: true });
+    turn.catch((err) => this.reportTurnFailure(err));
+  }
+
+  /** The refresh no SDK event does after the leaf moved: a fresh hello (branch-based, so transcript
+      and context fill follow the new leaf), the workers snapshot, and this chat's mode re-resolved
+      from the new branch as bind() does. Shared by rewind and regenerate so the two can never
+      drift into telling clients different things about the same move. */
+  private afterBranchMove(): void {
     if (!this.foreignWrite) markOwned(this.path); // the marker entry is our write
     if (this.disposed) return;
     this.broadcast(this.hello());
@@ -875,7 +1280,6 @@ class ChatSession {
     }
     this.modeState = resolveChatMode(this.session.sessionManager.getBranch());
     this.broadcast(this.modeMessage());
-    client.send({ type: "rewound", id, entryId, editorText: outcome.editorText });
   }
 
   broadcast(msg: ChatServerMessage): void {
@@ -914,6 +1318,7 @@ class ChatSession {
   async dispose(): Promise<void> {
     if (this.disposed) return;
     this.disposed = true;
+    this.queue.close(); // nothing more is handed to a runtime that is going away
     if (this.guardTimer) clearInterval(this.guardTimer);
     if (this.workersTimer) clearInterval(this.workersTimer);
     this.unsubscribe?.();
@@ -1151,14 +1556,10 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
   const sessionCwd = sessionManager.getCwd();
   // The runtime cannot be built against a directory that is gone. Check before doing the work, so
   // the failure is classified (ConfigError, not "internal") and cheap to repeat.
-  if (sessionCwd) {
-    const legacy = legacyMountFailure(path, sessionCwd);
-    if (legacy) throw legacy;
-    if (!existsSync(sessionCwd)) throw new ConfigError(`Stored session working directory does not exist: ${sessionCwd}\nSession file: ${path}`, sessionCwd);
-  }
+  const openCwd = sessionCwd ? resolveOpenCwd(path, sessionCwd) : sessionCwd;
   try {
     const runtime = await createAgentSessionRuntime(createRuntime, {
-      cwd: sessionCwd,
+      cwd: openCwd,
       agentDir: getAgentDir(),
       sessionManager,
     });

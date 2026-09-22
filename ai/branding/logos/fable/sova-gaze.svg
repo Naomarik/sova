@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-label="SOVA">
+  <!-- SOVA, concept 2: the gaze. Two discs that just overlap, each with a negative-space
+       pupil turned the same way. Eyes on a watch, and nothing else. currentColor. -->
+  <path fill="currentColor" fill-rule="evenodd" d="M9.5 8.5a7.5 7.5 0 1 0 0 15 7.5 7.5 0 0 0 0-15Z M11.6 11.4a2.7 2.7 0 1 0 0 5.4 2.7 2.7 0 0 0 0-5.4Z"/>
+  <path fill="currentColor" fill-rule="evenodd" d="M22.5 8.5a7.5 7.5 0 1 0 0 15 7.5 7.5 0 0 0 0-15Z M24.6 11.4a2.7 2.7 0 1 0 0 5.4 2.7 2.7 0 0 0 0-5.4Z"/>
+</svg>

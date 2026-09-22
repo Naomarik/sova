@@ -223,7 +223,9 @@ test("composePrompt joins the heavy block and minor blocks", () => {
 	assert.match(align, /^### Open questions$/m);
 	assert.match(align, /^### Rejected$/m);
 	assert.match(align, /^### Status$/m);
-	assert.match(align, /1\. \[ \] /);
+	// Questions carry their number inside the checkbox label; a list-number marker would be lost by the viewer.
+	assert.match(align, /^- \[ \] \*\*1\. /m);
+	assert.doesNotMatch(align.split("### Open questions")[1]?.split("### Rejected")[0] ?? "", /^\d+\. \[[ xX]\]/m);
 	assert.match(align, /`\[x\]`/);
 	assert.match(align, /Status `confirmed`/);
 	assert.match(align, /Status `implementing`/);

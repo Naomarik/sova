@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-label="TAVI Vertex mark (concept)">
+  <!-- TAVI · VERTEX — the V of TAVI drawn as the moment of divergence: two round-
+       capped strokes meet at a weighted node, each tip carrying a smaller node.
+       One channel in, two agents out — a session forking into parallel work.
+       Letterform first, branch glyph second. Single colour, currentColor. -->
+  <path d="M8.6 8.6 L16 24.8 L23.4 8.6" fill="none" stroke="currentColor"
+        stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="8.6" cy="8.6" r="2.4" fill="currentColor"/>
+  <circle cx="23.4" cy="8.6" r="2.4" fill="currentColor"/>
+  <circle cx="16" cy="24.8" r="3.1" fill="currentColor"/>
+</svg>

@@ -30,8 +30,10 @@ import {
   recentCountValid,
   setRecentCount,
 } from "../lib/recent";
-import { activeThemeId, applyTheme, droppedThemeId, reconcileTheme } from "../lib/theme";
+import { activeThemeId, applyTheme, droppedThemeId, reconcileTheme, typography } from "../lib/theme";
+import { effectiveStack } from "../lib/typography";
 import { announce, home } from "../lib/ui-state";
+import { TypographySection } from "./TypographySection";
 import { Banner, Icon, trapFocus } from "./ui";
 
 /** The tab rail. Four screens; the rail is the structure further settings slot into. General is
@@ -276,7 +278,7 @@ function GeneralPanel() {
   return (
     <>
       <p class="settings-intro">
-        How this browser draws pi-web. These stay in this browser — nothing here changes your pi
+        How this browser draws Sova. These stay in this browser — nothing here changes your pi
         config, and another machine keeps its own.
       </p>
       <div class="field settings-field">
@@ -618,6 +620,19 @@ const SWATCH_KEYS = ["bg", "surface", "accent", "status-error", "ink"] as const;
 
 const fileName = (path: string) => path.slice(path.lastIndexOf("/") + 1);
 
+/** How many cards share the first card's row — the grid's column count as rendered. 1 when
+    nothing is rendered yet, so Up/Down still mean something. */
+const columnsOf = (cards: (HTMLElement | null)[]): number => {
+  const first = cards[0];
+  if (!first) return 1;
+  let n = 0;
+  for (const c of cards) {
+    if (c && c.offsetTop === first.offsetTop) n++;
+    else break;
+  }
+  return Math.max(1, n);
+};
+
 /** `Dark base · Built-in`, plus the third clause a user file that took a built-in's id earns —
     a Dracula that isn't ours is the one surprise this folder can spring (§12). */
 const metaLine = (t: ThemeInfo) => {
@@ -669,18 +684,46 @@ function ThemesPanel() {
     applyTheme({ id: t.id, base: t.base, tokens: t.tokens }); // the store clears the fallback notice
   };
 
-  /** Arrows move the choice, the way they do in the rail. Broken rows are skipped: they can't
-      be checked, so landing on one would be a dead stop. */
+  /**
+   * Arrows move the choice, the way they do in the rail — across the grid, not down a list:
+   * Left/Right step one card and wrap, Up/Down step one ROW and stop at the edges, Home/End go
+   * to the first and last. The column count is read off the rendered cards (how many share the
+   * first card's top edge) rather than restated from the CSS, so a panel of any width agrees
+   * with itself. Broken cards are skipped: they can't be checked, so landing on one would be a
+   * dead stop.
+   */
   const onRowKeyDown = (e: KeyboardEvent, t: ThemeInfo) => {
-    if (e.key !== "ArrowDown" && e.key !== "ArrowUp" && e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
     const list = usable();
     if (list.length === 0) return;
+    const here = Math.max(0, list.findIndex((x) => x.id === t.id));
+    let to: number;
+    switch (e.key) {
+      case "ArrowRight":
+        to = (here + 1) % list.length;
+        break;
+      case "ArrowLeft":
+        to = (here - 1 + list.length) % list.length;
+        break;
+      case "ArrowDown":
+      case "ArrowUp": {
+        const cols = columnsOf(list.map((x) => document.getElementById(`theme-row-${x.id}`)));
+        to = here + (e.key === "ArrowDown" ? cols : -cols);
+        if (to < 0 || to >= list.length) to = here; // the edge: stay, don't wrap to another column
+        break;
+      }
+      case "Home":
+        to = 0;
+        break;
+      case "End":
+        to = list.length - 1;
+        break;
+      default:
+        return;
+    }
     e.preventDefault();
-    const delta = e.key === "ArrowDown" || e.key === "ArrowRight" ? 1 : -1;
-    const here = list.findIndex((x) => x.id === t.id);
-    const next = list[(((here < 0 ? 0 : here) + delta) % list.length + list.length) % list.length];
+    const next = list[to];
     if (!next) return;
-    choose(next);
+    if (next.id !== t.id) choose(next);
     (document.getElementById(`theme-row-${next.id}`) as HTMLButtonElement | null)?.focus();
   };
 
@@ -734,10 +777,8 @@ function ThemesPanel() {
       <Show
         when={!themes.pending()}
         fallback={
-          <div aria-hidden="true">
-            <div class="skeleton skeleton-row" />
-            <div class="skeleton skeleton-row" />
-            <div class="skeleton skeleton-row" />
+          <div class="settings-theme-list" aria-hidden="true">
+            <For each={[0, 1, 2, 3, 4, 5]}>{() => <div class="skeleton settings-theme-skeleton" />}</For>
           </div>
         }
       >
@@ -760,12 +801,20 @@ function ThemesPanel() {
                   t.error
                     ? undefined
                     : {
-                        "--theme-font-body": t.tokens["font-body"],
-                        "--theme-font-mono": t.tokens["font-mono"],
+                        // The faces this theme would actually render in: the font pick on top of
+                        // the theme's own tokens (§12 "Typography"). An undefined value leaves the
+                        // property unset, and the sample falls through to the root's face.
+                        "--theme-font-body": effectiveStack("text", t.tokens, typography()),
+                        "--theme-font-mono": effectiveStack("mono", t.tokens, typography()),
                       }
                 }
               >
                 <span class="settings-theme-name">{t.error ? fileName(t.path) : t.name}</span>
+                <Show when={!t.error}>
+                  <span class="settings-theme-check" aria-hidden="true">
+                    <Icon name="check" small />
+                  </span>
+                </Show>
                 <span class="settings-theme-meta">
                   {t.error ? `We couldn't read this theme. ${t.error}` : metaLine(t)}
                 </span>
@@ -789,6 +838,7 @@ function ThemesPanel() {
           </For>
         </div>
       </Show>
+      <TypographySection />
       <div class="settings-theme-footer">
         <Show when={dir()} fallback={<span />}>
           {(folder) => (

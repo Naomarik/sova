@@ -3,7 +3,7 @@
 // PI_CODING_AGENT_DIR (attachmentsRoot reads it per call), and removes them afterwards.
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, test } from "node:test";
@@ -31,6 +31,7 @@ const typed = tmpFile(`pi-web-test-${tag}.JPG`);
 const gone = `/tmp/pi-clipboard-${randomUUID()}.png`; // never created
 const webUpload = tmpFile(`pi-web-${randomUUID()}.png`);
 const webNotUuid = tmpFile(`pi-web-notauuid-${tag}.png`);
+const sovaUpload = tmpFile(`sova-${randomUUID()}.png`); // what an upload is named after the rename
 
 const userEntry = (text: string) => ({
   type: "message",
@@ -156,6 +157,14 @@ describe("inlineTmpImages", () => {
     const r = inlineTmpImages(`what's this?\n${webUpload}`, true);
     assert.equal(r.text, "what's this?");
     assert.deepEqual(r.attachments, [{ path: webUpload, name: webUpload.slice(5), mimeType: "image/png", size: 9, available: true }]);
+  });
+
+  test("a sova upload path (sova-<uuid>) is a generated name too, and strips the same", () => {
+    // Uploads are sova-named since the rename; the legacy case above must keep passing, but the
+    // name the app writes TODAY is the one that matters most and had no test of its own.
+    const r = inlineTmpImages(`what's this?\n${sovaUpload}`, true);
+    assert.equal(r.text, "what's this?");
+    assert.deepEqual(r.attachments, [{ path: sovaUpload, name: sovaUpload.slice(5), mimeType: "image/png", size: 9, available: true }]);
   });
 
   test("a pi-web name without a uuid is typed text: it stays, still attached", () => {
@@ -643,12 +652,12 @@ describe("attachments root (composer-draft uploads)", () => {
   created.unshift(agentDir); // removed last, after the links below
   process.env.PI_CODING_AGENT_DIR = agentDir;
   const sid = "0199aaaa-bbbb-7ccc-8ddd-eeeeffff0000";
-  const root = join(agentDir, "pi-web", "attachments");
+  const root = join(agentDir, "sova", "attachments");
   mkdirSync(join(root, sid), { recursive: true });
-  const upload = join(root, sid, `pi-web-${randomUUID()}.png`);
+  const upload = join(root, sid, `sova-${randomUUID()}.png`);
   writeFileSync(upload, "png-bytes");
-  // Same tail, wrong place: another dir that merely ends in /pi-web/attachments/<id>/.
-  const lookalikeDir = join(agentDir, "other", "pi-web", "attachments", sid);
+  // Same tail, wrong place: another dir that merely ends in /sova/attachments/<id>/.
+  const lookalikeDir = join(agentDir, "other", "sova", "attachments", sid);
   mkdirSync(lookalikeDir, { recursive: true });
   const lookalike = join(lookalikeDir, "x.png");
   writeFileSync(lookalike, "png-bytes");
@@ -671,7 +680,8 @@ describe("attachments root (composer-draft uploads)", () => {
   test("lookalikes outside the root, traversal and extra depth are 400", () => {
     for (const p of [
       lookalike,
-      `/pi-web/attachments/${sid}/x.png`,
+      `/sova/attachments/${sid}/x.png`,
+      `/pi-web/attachments/${sid}/x.png`, // legacy tail, still outside any real root
       `${root}/${sid}/../${sid}/${upload.split("/").pop()}`,
       `${root}/../attachments/${sid}/x.png`,
       `${root}/./${sid}/x.png`,
@@ -695,7 +705,7 @@ describe("attachments root (composer-draft uploads)", () => {
   test("readTmpImage reads it", async () => assert.equal((await readTmpImage(upload))?.toString(), "png-bytes"));
 
   test("findTmpImagePaths matches the tail, keeps boundaries, order and code masking", () => {
-    const text = `a ${upload} b ${clip} \`${upload}\` ~/.pi/agent/pi-web/attachments/${sid}/z.png rel/pi-web/attachments/${sid}/z.png ${lookalike}.`;
+    const text = `a ${upload} b ${clip} \`${upload}\` ~/.pi/agent/sova/attachments/${sid}/z.png rel/sova/attachments/${sid}/z.png ${lookalike}.`;
     assert.deepEqual(
       findTmpImagePaths(text).map((m) => m.path),
       [upload, clip, lookalike],
@@ -709,5 +719,38 @@ describe("attachments root (composer-draft uploads)", () => {
     assert.equal(r.text, "what's this?");
     assert.deepEqual(r.attachments, [{ path: upload, name: upload.split("/").pop(), mimeType: "image/png", size: 9, available: true }]);
     assert.equal(inlineTmpImages(`see ${lookalike}`).attachments?.[0]?.available, false);
+  });
+
+  // RENAME BRIDGE. The state move renamed <agent dir>/pi-web to <agent dir>/sova; transcripts are
+  // never rewritten, so every historical message still names the old root. Those paths must keep
+  // serving the very same bytes, which now live at the new root.
+  const legacyUpload = join(agentDir, "pi-web", "attachments", sid, upload.split("/").pop()!);
+
+  test("a legacy-rooted attachment path is re-anchored at the new root and serves the same file", () => {
+    assert.equal(existsSync(legacyUpload), false, "nothing is copied back: only the path is re-anchored");
+    const r = checkTmpImage(legacyUpload);
+    assert.deepEqual(r, { ok: true, realPath: upload, mimeType: "image/png", size: 9 });
+  });
+
+  test("a legacy-rooted path is read, attached and shown as available, like the new spelling", async () => {
+    // GET /api/attachment's exact route: checkTmpImage re-anchors and resolves, readTmpImage then
+    // reads the path it handed back (it takes a real path and re-anchors nothing itself).
+    const check = checkTmpImage(legacyUpload);
+    assert.equal(check.ok, true);
+    assert.equal(check.ok && (await readTmpImage(check.realPath))?.toString(), "png-bytes");
+    const inlined = inlineTmpImages(`old message\n${legacyUpload}`, true);
+    assert.equal(inlined.text, "old message");
+    // The stored path is what the transcript says; only availability and metadata come from disk.
+    assert.deepEqual(inlined.attachments, [{ path: legacyUpload, name: legacyUpload.split("/").pop(), mimeType: "image/png", size: 9, available: true }]);
+  });
+
+  test("the legacy tail is still found in message text, and keeps the new spelling's bounds", () => {
+    const text = `before ${legacyUpload} after`;
+    assert.deepEqual(findTmpImagePaths(text).map((m) => m.path), [legacyUpload]);
+    // Depth and traversal are refused under the legacy spelling too: dual roots, not a loophole.
+    for (const p of [`${join(agentDir, "pi-web", "attachments")}/${sid}/sub/y.png`, `${join(agentDir, "pi-web", "attachments")}/x.png`]) {
+      const r = checkTmpImage(p);
+      assert.equal(r.ok ? 0 : r.status, 400, p);
+    }
   });
 });

@@ -1,5 +1,5 @@
 # 10 · Insights
-> Part of the pi-web design spec · [overview](overview.md)
+> Part of the Sova design spec · [overview](overview.md)
 
 What the user's pi extensions publish, read-only: subscription usage (usage-status), teams and
 subagents (subagents + sessions live records), and per-session summaries (topic-outline,
@@ -104,7 +104,7 @@ glance needs the room.
     `error` and `killed` never count, and a stale heartbeat never counts. The counts are read
     from `workerCounts`, not the `workers` array, because the array drops evicted workers.
   - **A host session** is any live record except a headless worker pi (`mode: "rpc"` without
-    `embedded`); pi-web's own embedded rpc runtimes *are* sessions, because they host agents.
+    `embedded`); Sova's own embedded rpc runtimes *are* sessions, because they host agents.
   - **sessions** is how many fresh host sessions hold at least one active agent — not how many
     are running.
   - **teams** is `activeTeams(…).length`, unchanged.
@@ -301,7 +301,7 @@ and "as of `{HH:MM}`" in the meta.
 ```html
 <article class="card team-card" id="team-team_02" aria-labelledby="tt-team_02">
   <header class="card-head">
-    <h3 class="card-title" id="tt-team_02">pi-web-insights</h3>
+    <h3 class="card-title" id="tt-team_02">sova-insights</h3>
     <span class="text-mono text-caption">team_02</span>
   </header>
   <div class="card-body"><p class="team-objective" title="{full objective}">{objective}</p></div>
@@ -408,7 +408,7 @@ which draws them on the session's axis; the strip keeps no history of its own.
 - **Every explain link opens in the same tab.** The gallery's cards, the landing page's grid
   (§3), the transcript's report row and the session pane's explain row are all plain links to
   `/explain/:id` with no `target`. In an installed app a new tab is a new window whose history
-  has one entry, so Back couldn't return to pi-web; in place, it can. `/explain/:id` stays a
+  has one entry, so Back couldn't return to Sova; in place, it can. `/explain/:id` stays a
   standalone document for direct links. None of them carries the `external` icon or a "new tab"
   suffix any more, so each link's accessible name is just what it is — the report row and the
   pane row start with a visually hidden `Explanation: ` ahead of the topic, read as

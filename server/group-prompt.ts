@@ -86,7 +86,10 @@ export const realBatchDeps: BatchDeps = {
     const chat = await acquireChat(path);
     // Guards throw here, synchronously, and that is the acceptance failure. The turn itself is
     // deliberately NOT awaited: its failure belongs in that member's own pane.
-    const turn = chat.acceptPrompt(text);
+    // A member that is mid-turn is refused by this path's own pre-check, so this normally starts a
+    // turn; if one began in the gap it is queued as a follow-up instead (origin "server"), and the
+    // resolved `turn` is not a claim that it ran.
+    const { turn } = chat.acceptPrompt(text);
     void turn.catch((err) => chat.reportTurnFailure(err));
   },
 };

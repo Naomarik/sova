@@ -18,6 +18,7 @@ import type {
   SessionInsight,
   SessionSummary,
   ThemeList,
+  TmpAttachment,
   TranscriptItem,
   UploadResult,
   UsageInsight,
@@ -64,7 +65,7 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
   try {
     res = await fetch(url, init);
   } catch {
-    throw new ApiError("The pi-web server isn't reachable.", 0);
+    throw new ApiError("The Sova server isn't reachable.", 0);
   }
   if (!res.ok) {
     let message = `${res.status} ${res.statusText}`;
@@ -110,10 +111,10 @@ export const putModelPolicy = (policy: ModelPolicy) =>
     still listed (spec/12-settings-dialog.md §12). */
 export const getThemes = () => request<ThemeList>("/api/themes");
 
-/** pi-web's own settings (GET /api/settings). Today: the experimental Claude Code switch. */
+/** Sova's own settings (GET /api/settings). Today: the experimental Claude Code switch. */
 export const getWebSettings = () => request<WebSettings>("/api/settings");
 
-/** Replace pi-web's settings. Applies to sessions created after the change, not to open ones. */
+/** Replace Sova's settings. Applies to sessions created after the change, not to open ones. */
 export const putWebSettings = (settings: WebSettings) =>
   request<WebSettings>("/api/settings", { method: "PUT", body: JSON.stringify(settings) });
 
@@ -198,6 +199,18 @@ export const setSessionArchived = (path: string, archived: boolean) =>
     body: JSON.stringify({ path, archived }),
   });
 
+/**
+ * Renames a session, or clears the user's title with `null` so the derived one (its first user
+ * message) comes back. Sova's own store — the session's .jsonl is never written, so a session
+ * open in a TUI can be renamed too (spec/02-session-list.md §2 "Selecting several sessions").
+ */
+export const setSessionTitle = (path: string, title: string | null) =>
+  request<SessionSummary>("/api/sessions/title", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ path, title }),
+  });
+
 /** The sidebar's user-made groups, in creation order (spec/02-session-list.md §2 "Groups"). */
 export const listSessionGroups = () => request<SessionGroup[]>("/api/session-groups");
 
@@ -241,7 +254,7 @@ export const deleteSessionGroup = (id: string) =>
  * when ungrouping, and ignored for a session already in that group: assign never reorders in
  * place, `PATCH {order}` is the reposition.
  *
- * `dissolved` comes back only when this write removed the last member of a group pi-web fanned
+ * `dissolved` comes back only when this write removed the last member of a group Sova fanned
  * out, which deletes it in the same atomic write — the client cannot infer that from a count it
  * just changed.
  */
@@ -321,6 +334,58 @@ export async function createFanout(body: FanoutRequest): Promise<FanoutOutcome> 
     const status = err instanceof ApiError ? err.status : 0;
     return { ok: false, error: (err as Error).message, status, conflict: conflictOf(err) };
   }
+}
+
+/**
+ * A fork's answer. The 201 carries the new session and, for a fork taken BEFORE a user message,
+ * that message for the new composer — its text, its uploaded attachments and any inline image
+ * bytes — so the fork lands you exactly where you were about to send, with nothing auto-sent.
+ *
+ * The shapes are the server's (POST /api/sessions/fork, see the team's wire contract). They are
+ * described here only as far as this client reads them; the words for a refusal are Sova's own
+ * (`forkRefusalText`), never the server's prose parsed.
+ */
+export interface ForkEditor {
+  text?: string;
+  attachments?: TmpAttachment[];
+  /** Inline image bytes (data URLs) the message carried. A composer draft holds uploaded files,
+      not bytes, so these can be shown but not re-staged — the announcement says so. */
+  images?: string[];
+}
+
+export type ForkOutcome =
+  | { ok: true; session: SessionSummary; editor?: ForkEditor }
+  /** A refusal is a VALUE, like the fanout's: the strip renders it on the message's own row. */
+  | { ok: false; code?: string; message: string; status: number };
+
+/**
+ * Fork a session at one of its entries: `position: "before"` on a user message (pi's /fork — the
+ * branch through its parent, that message handed to the new composer), `"at"` on any entry (pi's
+ * /clone — everything through it). Never sends anything in the new session.
+ */
+export async function createFork(body: { path: string; entryId: string; position: "before" | "at" }): Promise<ForkOutcome> {
+  try {
+    const result = await request<{ session: SessionSummary; editor?: ForkEditor }>("/api/sessions/fork", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    return { ok: true, session: result.session, editor: result.editor };
+  } catch (err) {
+    const status = err instanceof ApiError ? err.status : 0;
+    const refused = err instanceof ApiError && err.status === 409 ? forkRefusalOf(err.body) : null;
+    return { ok: false, code: refused?.code, message: refused?.message ?? (err as Error).message, status };
+  }
+}
+
+/** The 409 body's single refusal, when it is shaped like one. An unknown shape is not invented
+    into a code: the caller then says the plain "couldn't fork" sentence. */
+function forkRefusalOf(body: unknown): { code?: string; message: string } | null {
+  const list = (body as { refused?: unknown } | undefined)?.refused;
+  const first = Array.isArray(list) ? list[0] : list;
+  if (!first || typeof first !== "object") return null;
+  const { code, message } = first as { code?: unknown; message?: unknown };
+  return { code: typeof code === "string" ? code : undefined, message: typeof message === "string" ? message : "" };
 }
 
 /** The coded 400 this route can answer with, when it is one. */

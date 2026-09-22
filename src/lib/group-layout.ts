@@ -4,7 +4,8 @@
 //
 // What is persisted, and what isn't, is deliberate:
 //   - the layout is remembered per group for the browser session
-//     (`sessionStorage["pi-web:group-view-{id}"]`), because it is a posture, not a setting;
+//     (`sessionStorage["sova:group-view-{id}"]`, read and mirrored at the legacy `pi-web:`
+//     spelling while the rename bridge is open), because it is a posture, not a setting;
 //   - a pane's width is memory only, for the same reason §1's sessions pane isn't persisted;
 //   - the member ORDER is the server's (`SessionGroup.members`), never storage — it is what the
 //     group is, and every tab and every server must see the same one.
@@ -13,6 +14,8 @@
 // blocked or full sessionStorage must not break a render.
 
 export type GroupLayoutMode = "split" | "tabs";
+
+import { dualGet, dualSet } from "./storage-keys";
 
 /** A pane narrower than this can't hold a transcript and a composer; the floor for every width. */
 export const PANE_MIN_WIDTH = 440;
@@ -25,7 +28,9 @@ export const TABS_ONLY_WIDTH = 768;
 /** Below this the head's tools can't stand beside the group's name, and become one menu (§14). */
 export const HEAD_MENU_WIDTH = 640;
 
-const KEY = (id: string) => `pi-web:group-view-${id}`;
+const KEY = (id: string) => `sova:group-view-${id}`;
+/** The pre-rebrand spelling, read and mirrored while the rename bridge is open (storage-keys.ts). */
+const LEGACY_KEY = (id: string) => `pi-web:group-view-${id}`;
 
 export const clampWidth = (px: number): number => Math.min(PANE_MAX_WIDTH, Math.max(PANE_MIN_WIDTH, Math.round(px)));
 
@@ -92,7 +97,7 @@ export function neighbourOf(list: readonly string[], removed: string): string | 
 /** The stored layout for this group, or null when it has never been chosen here. */
 export function readMode(id: string): GroupLayoutMode | null {
   try {
-    const v = sessionStorage.getItem(KEY(id));
+    const v = dualGet(sessionStorage, KEY(id), LEGACY_KEY(id));
     return v === "split" || v === "tabs" ? v : null;
   } catch {
     return null;
@@ -101,7 +106,7 @@ export function readMode(id: string): GroupLayoutMode | null {
 
 export function writeMode(id: string, mode: GroupLayoutMode): void {
   try {
-    sessionStorage.setItem(KEY(id), mode);
+    dualSet(sessionStorage, KEY(id), LEGACY_KEY(id), mode);
   } catch {
     // The choice still holds for this page; remembering it is a convenience.
   }

@@ -1,5 +1,5 @@
 # 08 · Token index
-> Part of the pi-web design spec · [overview](overview.md)
+> Part of the Sova design spec · [overview](overview.md)
 
 Every token `src/design/tokens.css` declares, except the `--brand-*` primitives. It used to list
 only the ones these notes cite; it is now complete, because a theme author reads it to find out

@@ -14,12 +14,12 @@ import { test } from "node:test";
 
 const agentDir = mkdtempSync(join(tmpdir(), "pi-web-web-settings-"));
 process.env.PI_CODING_AGENT_DIR = agentDir; // before the module below computes its path
-const FILE = join(agentDir, "pi-web", "settings.json");
+const FILE = join(agentDir, "sova", "settings.json");
 
 const { readWebSettings, writeWebSettings, claudeCodeProviderEnabled } = await import("./web-settings");
 
 const put = (text: string) => {
-  mkdirSync(join(agentDir, "pi-web"), { recursive: true });
+  mkdirSync(join(agentDir, "sova"), { recursive: true });
   writeFileSync(FILE, text);
 };
 const stored = () => JSON.parse(readFileSync(FILE, "utf8"));

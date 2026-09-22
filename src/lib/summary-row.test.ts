@@ -7,10 +7,10 @@ const row = (over: Partial<SessionSummary>): SessionSummary =>
   ({ id: "s", path: "/p", cwd: "/c", title: "t", createdAt: "", lastActiveAt: "", model: null, live: null, origin: "external", archived: false, busy: false, ...over }) as SessionSummary;
 
 test("the summary line is the gist, not the latest process update", () => {
-  const s = row({ outlineGist: "pi-web theming: palette, fonts, Themes tab", outlineNow: "The round is committed as dc63576 with all checks green." });
-  assert.equal(summaryLineOf(s), "pi-web theming: palette, fonts, Themes tab");
+  const s = row({ outlineGist: "sova theming: palette, fonts, Themes tab", outlineNow: "The round is committed as dc63576 with all checks green." });
+  assert.equal(summaryLineOf(s), "sova theming: palette, fonts, Themes tab");
   // The activity is still one hover away.
-  assert.equal(summaryTitleOf(s), "pi-web theming: palette, fonts, Themes tab\nNow: The round is committed as dc63576 with all checks green.");
+  assert.equal(summaryTitleOf(s), "sova theming: palette, fonts, Themes tab\nNow: The round is committed as dc63576 with all checks green.");
 });
 
 test("snapshots written before the gist existed keep showing their now line", () => {

@@ -1,5 +1,5 @@
 # 14b · Fanout
-> Part of the pi-web design spec · [overview](overview.md)
+> Part of the Sova design spec · [overview](overview.md)
 
 Fanout makes a whole workspace (§14) in one gesture: the same starting point, N ways. Either
 **fork this session** — N copies of the conversation you are in, branched at the message you are
@@ -25,7 +25,7 @@ the fork-point marker (below) is the only thing that tells them apart afterwards
 - **The composer flyout** (§4, the `plus` menu panel), a row after Session info: `Fan Out…`. It
   opens the dialog with **Fork at the current leaf** selected and this session as the source.
   Absent when the session has no assistant reply yet — there is nothing to fork — and absent for
-  a watch view, where pi-web holds no runtime.
+  a watch view, where Sova holds no runtime.
 - **The welcome screen's opening** (§3 "Landing page"), beside `New Session`: `Fan Out…`. It
   opens the same dialog with **A fresh prompt** selected and no source. This is the fresh-mode
   front door, and it is deliberately NOT the sidebar: fanout is a creation gesture — it makes
@@ -184,7 +184,7 @@ zai/glm-5.3 ×2                48k of 200k · 24%
 anthropic/haiku-4.5           48k of 200k · 24%
 
 5 members × ~48k tokens re-sent every shared turn.
-Turns start together, so one provider may answer some members with 429. pi-web doesn't stagger them.
+Turns start together, so one provider may answer some members with 429. Sova doesn't stagger them.
 ```
 
 - **Per member, against that model's own window.** The starting fill is the source's context at
@@ -254,7 +254,7 @@ POST /api/session-groups/fanout
 
 - **`groupId` (optional) fans out INTO an existing group** instead of making one. It is what
   the workspace's `Add Members → Fan Out…` sends. **Exactly one of `name` and `groupId`**, the
-  same shape as `source` XOR `cwd` above: `name` alone creates a group and pi-web owns it
+  same shape as `source` XOR `cwd` above: `name` alone creates a group and Sova owns it
   (`autoDissolve` set); `groupId` alone lands in that group, which keeps its own name; **both or
   neither is a `400`**. Both is not a harmless over-send — a client that supplies a name
   alongside a group id has asked for a rename, and accepting it silently would do nothing while
@@ -264,7 +264,7 @@ POST /api/session-groups/fanout
     seed, and its existing members simply have no marker — which §14b already renders as no row
     rather than a guess. Adoption is **pure lineage**: the group gains fork markers and changes
     in no other way. In particular it does not become auto-dissolving — that turns on whether
-    pi-web named the group, not on whether it has a seed (§14 "Emptying a group") — so a
+    Sova named the group, not on whether it has a seed (§14 "Emptying a group") — so a
     hand-made group fanned into is still the user's, and the dialog says nothing about it
     because nothing happened worth saying.
   - **The group's `seed` matches this fork** (same `parentSessionPath` and `leafId`): the new
@@ -279,7 +279,7 @@ POST /api/session-groups/fanout
     exactly it, so the client renders its own sentence for the code rather than treating the 400
     as a surprise (see Entry points).
 - **`named` says whose name this is**, and it exists because the server cannot tell.
-  The dialog's name field is pre-filled with a default pi-web derives and the user may type over
+  The dialog's name field is pre-filled with a default Sova derives and the user may type over
   it, but `name` arrives as a string and the server never generated the default — provenance is
   a fact only the client holds. Without it, typing a name into the dialog and typing the same
   name as a *rename* afterwards give opposite outcomes for identical intent, the first taking a
@@ -312,9 +312,9 @@ POST /api/session-groups/fanout
     client keeps sending `named`, the server reads absence, absence means `"user"`, and every
     fanout group becomes user-named with `autoDissolve` never set by anyone — a half-done
     migration wearing the face of a working feature (§14).
-  - **Provenance, never policy.** The client reports *this is the name pi-web generated*; the
+  - **Provenance, never policy.** The client reports *this is the name Sova generated*; the
     server decides `autoDissolve` from it. A client permitted to send `autoDissolve` itself would
-    assert an ownership pi-web may not have, and an older or buggy one could assert it wrongly.
+    assert an ownership Sova may not have, and an older or buggy one could assert it wrongly.
   - **The check form is pinned, not just the absence default**: `autoDissolve` is set **only when
     `named === "generated"`** — the enum's equivalent of `=== true` for a boolean, and the same
     rule §14 states generally (*read it exactly, never by truthiness*). Testing `named !== "user"` is the same sentence and the wrong one —
@@ -367,20 +367,20 @@ POST /api/session-groups/fanout
     **typed then restored to our text → user** · fork mode untouched → generated. The third
     expects `user` **because that is what the edit event yields, and we accepted its cost rather
     than rebuild** — not because that row deserves to survive. It does not: the group ends up
-    carrying pi-web's own string, so dissolving would be the better answer and the outcome here
+    carrying Sova's own string, so dissolving would be the better answer and the outcome here
     is litter (see above). Say exactly that in the test. Dissolving looks obviously right to
     anyone who reads this row, and it *is* right — so a reader who meets the case without the
     reason will change it and the test will look wrong rather than the change.
   - **The two indistinguishable cases do not need separating, and neither rule separates them.**
     "Typed over then reverted" and "typed our exact string by hand" produce the same state —
-    field touched, `name` equal to what we last wrote — and **both end with pi-web's string on
+    field touched, `name` equal to what we last wrote — and **both end with Sova's string on
     the group**. No rule can tell them apart and none needs to; the candidate rules differ only
     in which single answer they give to both. The edit event answers `user`, so the group stands
     with our name on it. A comparison would answer `generated`, so it dissolves — the nicer
     outcome on these two rows, since nothing the user authored is removed.
   - **We ship the edit event anyway, and not only because it is built: the comparison is the
     fragile mechanism, and it fails toward LOSS.** A comparison is only correct while
-    regeneration stops at the first touch — otherwise pi-web keeps rewriting the field after the
+    regeneration stops at the first touch — otherwise Sova keeps rewriting the field after the
     user has typed, `lastWritten` equals the field by construction, and it reports `generated`
     for a group **the user named**, deleting that name when the group empties. So the comparison
     does not replace the edit flag; it **runs on top of it** and adds a second datum whose
@@ -404,7 +404,7 @@ POST /api/session-groups/fanout
   thing the dialog can produce.
 - **The client sends the leaf it showed the user.** `source.leafId` is the entry the dialog named
   ("up to message 34"), not a request for the server to find the current one.
-- **"The leaf" means the last entry pi-web would render ON THE ACTIVE BRANCH** — the branch the
+- **"The leaf" means the last entry Sova would render ON THE ACTIVE BRANCH** — the branch the
   transcript is showing, which after a rewind is **not** the file's tail. Both halves are load
   bearing, and the branch half is the one a fanout meets most: you rewind to the point you want
   to branch at, then fork, so a rewound source is the *likely* source rather than an exotic one.
@@ -421,7 +421,7 @@ POST /api/session-groups/fanout
   the last *rendered* entry are routinely different, and comparing against the raw last line
   turns this check into a false refusal. The transcript hides several entry kinds — top-level `usage` rows (cache warming
   writes them and is **on by default**, so a source can easily end with one), `message` entries
-  with `role:"system"`, and pi-web's own invisible `pi-web-rewind` marker, which by construction
+  with `role:"system"`, and Sova's own invisible `pi-web-rewind` marker, which by construction
   is the last line of every rewound session. In each case the file's last line carries an id the
   dialog never displayed and the user never saw, so a raw comparison refuses a fork that is
   perfectly current. The failure is worse than a spurious error: `stale-leaf`'s copy tells the
@@ -437,10 +437,10 @@ POST /api/session-groups/fanout
   carries an optional `ref` (`ModelInfo.ref`) used **only** on this route: a member whose
   creation failed has no session, so `id` and `path` are both empty and the model is the only
   handle on it. The partial-creation banner composes from it — `{shortModel(ref)} couldn't
-  start: {message}` — so the words stay pi-web's and the client never parses prose to find a
+  start: {message}` — so the words stay Sova's and the client never parses prose to find a
   model name. Consequently `message` here is the **reason alone**, never prefixed with the ref;
   prefixing would render the model twice. It is still never empty, and it is §9's verbatim case:
-  the server's own reason, which pi-web has no word for.
+  the server's own reason, which Sova has no word for.
 - **Two different empty ids on this route, and they are not the same case.** A **refusal**
   (`409`) names the *source*, which is a member of nothing — `ref` is absent there. A **failure**
   inside a `201`'s `failed` names a member that never came into being — `ref` is present there.
@@ -479,10 +479,10 @@ POST /api/session-groups/fanout
   - **Called N times on one manager it makes a chain, not a fan.** Call 2 would branch from
     member 1, call 3 from member 2, and every member after the first would carry the previous
     one's history. Each member is branched on its own manager, sourced from the source file.
-  - **It is never called on the manager pi-web holds for the source.** That call would silently
+  - **It is never called on the manager Sova holds for the source.** That call would silently
     repoint the live source runtime at a member's file, and the source's next persist would write
     the turn the user is sitting in into a member's transcript. This is a stronger rule than the
-    one `open()` needs, and it binds the common case: the flyout fans out from a session pi-web
+    one `open()` needs, and it binds the common case: the flyout fans out from a session Sova
     is holding a runtime for.
 - **The source file is read, never written, and only while nobody is writing it.** Sourcing N
   managers means reading that file N times, and the read is not itself free of side effects
@@ -536,7 +536,7 @@ POST /api/session-groups/fanout
   the workspace, and the pane says so nowhere: an absent strip is not a state.
   The runtime knows which sessions are members by a marker fanout writes into the member's own
   file at creation, beside the model change: an invisible `custom` entry (`pi-web-fanout-member`,
-  the same shape as pi-web's rewind marker — not LLM context, no usage, rendered nowhere). The
+  the same shape as Sova's rewind marker — not LLM context, no usage, rendered nowhere). The
   marker travels with the file, so the exception survives restarts and holds for the member's
   life — no in-memory flag threaded through `acquireChat`, which a restart would forget.
 - **`failed` is a list, and the banner reads like one.** A fanout of `opus ×3, glm ×2` can fail
@@ -634,7 +634,7 @@ afterwards, and the next incoming token scrolls a followed pane as usual.
 | Source has an unidentified writer | The same shape, reason "Another program wrote to “{title}” a moment ago. Forking waits until it stops." The same window `/ws/chat` refuses on (`RECENT_WRITE_MS`), for the same reason: we don't read a file mid-write |
 | Source is in an older session format | Create is `aria-disabled`, reason "“{title}” is in an older session format. Forking reads the file, and reading it rewrites the whole thing — not something to do to a session that's open. Open it for chat here once to update it, then fan out." The header's `version` is already read to list the session, so this costs nothing to check and it is the one refusal the user can clear themselves in one gesture. The summary carries it as `legacyFormat` (server-computed against the current session format — the client never compares numbers), so the dialog can show this reason **before** the press instead of rendering the server's refusal after it |
 | The fork point moved while the dialog was open | Create is `aria-disabled`, reason "“{title}” answered while this dialog was open, so the fork point you picked isn't its latest message anymore. Reopen Fan out to fork from where it is now." The server refuses it too (`stale-leaf`), so a client that missed the change still can't fork from a point the user never saw |
-| Source is TUI-live | `Fan Out…` is absent. Two reasons, either sufficient: pi-web never touches a file a terminal owns, and the leaf pi-web can see is not the one the terminal is about to write, so the fork would be from a stale point — a silently wrong comparison. A terminal that takes the session **while the dialog is open** disables Create in place — "“{title}” is open in a terminal now. pi-web doesn't touch a file a terminal owns; fan out once it closes." — read live like the mid-turn reason |
+| Source is TUI-live | `Fan Out…` is absent. Two reasons, either sufficient: Sova never touches a file a terminal owns, and the leaf Sova can see is not the one the terminal is about to write, so the fork would be from a stale point — a silently wrong comparison. A terminal that takes the session **while the dialog is open** disables Create in place — "“{title}” is open in a terminal now. Sova doesn't touch a file a terminal owns; fan out once it closes." — read live like the mid-turn reason |
 | A model has no window on record | Its row shows tokens alone; Create stays available |
 | A model's window is smaller than the fork | `.context-error` on the row plus its own line; Create disabled until the row is removed or the count is 0 |
 | Creating | `Creating…`, the dialog stays up and its fields disable. No progress bar: N creations finish in one response |

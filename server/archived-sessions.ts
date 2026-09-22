@@ -1,9 +1,9 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { stateRoot } from "./state-root";
 
 /** Persistent set of session ids the user archived by hand (SessionSummary.archived). */
-const FILE = join(getAgentDir(), "pi-web", "archived-sessions.json");
+const FILE = join(stateRoot(), "archived-sessions.json");
 
 function load(): Set<string> {
   try {

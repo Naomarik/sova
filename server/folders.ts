@@ -2,6 +2,7 @@ import { readdir, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import type { FolderListing } from "../shared/protocol";
+import { movedPath } from "./path-map";
 
 /** Most entries one listing returns (the first ones in sort order); the rest set `truncated`. */
 export const MAX_FOLDER_ENTRIES = 500;
@@ -17,24 +18,30 @@ const code = (err: unknown) => (err as NodeJS.ErrnoException).code;
  * Returns directory names only, never files. A symlink counts when its target is a directory
  * (flagged `symlink`); entries that can't be stat'ed (dangling, EACCES) are skipped. Dot folders
  * are hidden unless `hidden`. No `raw` path means $HOME.
+ *
+ * A path under a root renamed in path-map.json (server/path-map.ts) lists the moved folder, and the
+ * listing reports the MOVED path as its own `path`/`parent`. That is what makes the picker
+ * self-heal: New Session prefills the selected session's stored cwd, which for a pre-rename session
+ * is the old root, and the picker adopts whatever path the listing comes back with — so the folder
+ * it reports, and the cwd the new session is then created in, is the one that exists.
  */
 export async function listFolders(
   raw: string | undefined,
   opts: { hidden?: boolean; cap?: number } = {},
 ): Promise<FoldersResult> {
   if (raw !== undefined && raw !== "" && !isAbsolute(raw)) return { ok: false, status: 400, error: "path must be an absolute path" };
-  const path = resolve(raw || homedir());
+  const path = movedPath(resolve(raw || homedir()));
   try {
     if (!(await stat(path)).isDirectory()) return { ok: false, status: 404, error: "Not a folder" };
   } catch (err) {
-    if (code(err) === "EACCES" || code(err) === "EPERM") return { ok: false, status: 403, error: "pi-web can't read this folder" };
+    if (code(err) === "EACCES" || code(err) === "EPERM") return { ok: false, status: 403, error: "Sova can't read this folder" };
     return { ok: false, status: 404, error: "Folder not found" };
   }
   let dirents;
   try {
     dirents = await readdir(path, { withFileTypes: true });
   } catch (err) {
-    if (code(err) === "EACCES" || code(err) === "EPERM") return { ok: false, status: 403, error: "pi-web can't read this folder" };
+    if (code(err) === "EACCES" || code(err) === "EPERM") return { ok: false, status: 403, error: "Sova can't read this folder" };
     return { ok: false, status: 404, error: "Folder not found" };
   }
   const entries: FolderListing["entries"] = [];

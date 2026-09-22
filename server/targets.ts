@@ -8,6 +8,8 @@ import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "no
 import { dirname, isAbsolute, join, posix, sep } from "node:path";
 import type { Readable } from "node:stream";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { movedPath } from "./path-map";
+import { unlegacyStatePath } from "./state-root";
 import {
   buildListDirsArgv,
   buildTargetArgv,
@@ -27,9 +29,12 @@ export const targetsFile = () => targetsFilePath(getAgentDir());
 
 /** Shared local-create rule for New Session and fresh fanout: trimmed, absolute, an
  *  existing directory. Legacy mount cwds are refused lexically before filesystem access.
- *  Local statSync has no deadline. The caller creates with the TRIMMED cwd. */
+ *  RENAME BRIDGE: the rebase order is state root (unlegacyStatePath), then the repo-move map
+ *  (path-map.json — the cwd the user typed in an old recents entry resolves to the moved folder,
+ *  and the session is created THERE). Local statSync has no deadline. The caller creates with the
+ *  mapped cwd. */
 export async function validateNewSessionCwd(raw: string): Promise<string | null> {
-  const cwd = raw.trim();
+  const cwd = mappedNewCwd(raw.trim());
   if (!cwd || !isAbsolute(cwd)) return "cwd must be an absolute path";
   const legacy = parseLegacyMountCwd(cwd);
   if (legacy) return `cwd belongs to a removed sshfs mount of target ${legacy.target}; start a new remote session instead`;
@@ -40,6 +45,11 @@ export async function validateNewSessionCwd(raw: string): Promise<string | null>
   }
   return null;
 }
+/** The cwd a NEW session opens/creates at: the typed or stored value rebased across the rename —
+ *  a legacy state-root spelling (`…/pi-web/…`) first, then the repo-move map (path-map.json).
+ *  Pure; the same composition openSession applies to stored cwds. */
+export const mappedNewCwd = (cwd: string) => movedPath(unlegacyStatePath(cwd));
+
 /** Local placeholder root: a remote session's cwd is <root>/<target>/<remote/abs/path>. */
 export const targetsRoot = () => dirname(placeholderRoot(getAgentDir(), "x"));
 
@@ -102,7 +112,8 @@ export function writeTargets(targets: Target[]): void {
 }
 
 // ---------------------------------------------------------------------------
-// Placeholder layout: ~/.pi/agent/pi-web/targets/<target>/<remote/abs/path>
+// Placeholder layout: ~/.pi/agent/sova/targets/<target>/<remote/abs/path>
+// (legacy root ~/.pi/agent/pi-web/targets/… — parse-only, re-anchored by unlegacyStatePath)
 
 /** A remote absolute path, normalized (".." clamps at "/", no trailing slash but "/"), or null. */
 export function normalizeRemotePath(p: unknown): string | null {
@@ -119,8 +130,12 @@ export function targetDir(name: string, remoteCwd = "/"): string {
   return remote === "/" ? placeholderRoot(getAgentDir(), name) : placeholderDir(getAgentDir(), name, remote);
 }
 
-/** Split a local cwd under the placeholder root into its target and remote cwd, else null. */
+/** Split a local cwd under the placeholder root into its target and remote cwd, else null.
+ *  RENAME BRIDGE: sessions stored before the rename carry the legacy `pi-web/targets` root in
+ *  their headers; `unlegacyStatePath` re-anchors them, so an old placeholder keeps classifying as
+ *  REMOTE — never as a moved or missing local folder. */
 export function parseTargetCwd(cwd: string): { target: string; remoteCwd: string } | null {
+  cwd = unlegacyStatePath(cwd);
   const root = targetsRoot() + sep;
   if (typeof cwd !== "string" || !cwd.startsWith(root)) return null;
   const [target, ...parts] = cwd.slice(root.length).split(sep).filter(Boolean);
@@ -128,7 +143,7 @@ export function parseTargetCwd(cwd: string): { target: string; remoteCwd: string
   return { target, remoteCwd: `/${parts.join("/")}` };
 }
 
-/** The root pi-web once mounted targets under (`~/.pi/agent/mounts/<name>`). A stored cwd under
+/** The root Sova once mounted targets under (`~/.pi/agent/mounts/<name>`). A stored cwd under
  *  it is a session whose files live on the target, not here: opening it would silently run tools
  *  locally in an empty directory, so chat-manager refuses it. Permanent guard. */
 export const legacyMountsRoot = () => join(getAgentDir(), "mounts");

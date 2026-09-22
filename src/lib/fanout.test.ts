@@ -233,7 +233,7 @@ test("provenance is the EDIT EVENT, in all four cases", () => {
   assert.equal(named(false), "generated", "untouched, however many times we regenerated it");
   assert.equal(named(true, "Backoff experiments"), "user", "typed over");
   // TYPED OVER, THEN RESTORED TO OUR EXACT TEXT → "user", and the reason matters more than the
-  // assertion. This row is NOT one that deserves to survive: the group ends up carrying pi-web's
+  // assertion. This row is NOT one that deserves to survive: the group ends up carrying Sova's
   // own string, so dissolving would be the better answer and what ships here is litter. It is
   // simply what the edit event yields, and we accept that cost rather than rebuild on a
   // comparison — which is correct only while regeneration stops at the first touch, and fails the

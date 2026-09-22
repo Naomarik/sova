@@ -91,6 +91,8 @@ export function SessionView(props: {
   onTurnError?(path: string, message: string | null): void;
   onRewindControl(path: string, control: RewindControl | null): void;
   onRewound(info: { path: string; entryId: string }): void;
+  /** A session a view here just created (a Fork): the app adopts and opens it. */
+  onCreated(session: SessionSummary): void;
   /** Whether the session pane is open for this session on `tab`. */
   paneOn(path: string, tab: TabId): boolean;
   openPane(path: string, tab: TabId): void;
@@ -375,6 +377,7 @@ export function SessionView(props: {
                     path={path}
                     author={author()}
                     streaming={!!s().live}
+                    onCreated={props.onCreated}
                     onAppend={reloadInsight}
                     workersWorking={working()}
                     workersTotal={insight.data?.workers?.length ?? 0}
@@ -436,6 +439,7 @@ export function SessionView(props: {
                       }}
                       onRewindControl={(control) => props.onRewindControl(path, control)}
                       onRewound={props.onRewound}
+                      onCreated={props.onCreated}
                       inputsOpen={props.paneOn(path, "timeline") && props.inputsOnly() === path}
                       paneTab={props.subagentsPath() === path ? activeTab(path) : null}
                       onShowTimeline={(only) => props.showTimeline(path, only)}
@@ -455,7 +459,7 @@ export function SessionView(props: {
                       teams={insight.data?.teams}
                       fork={props.fork}
                       onFanOut={
-                        // Never from a TUI-live session: pi-web doesn't touch a file a terminal
+                        // Never from a TUI-live session: Sova doesn't touch a file a terminal
                         // owns, and the leaf we can see isn't the one it is about to write, so the
                         // fork would be from a stale point — a silently wrong comparison.
                         props.onFanOut && !s().live

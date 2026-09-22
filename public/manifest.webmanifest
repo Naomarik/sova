@@ -1,7 +1,7 @@
 {
-  "name": "pi-web",
-  "short_name": "pi-web",
-  "description": "Browse, watch and chat in pi coding agent sessions.",
+  "name": "sova",
+  "short_name": "sova",
+  "description": "Sessions, Orchestration, Viewing & Agents. Browse, watch and chat in pi coding agent sessions.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

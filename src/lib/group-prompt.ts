@@ -102,7 +102,7 @@ const REFUSAL_CLAUSE: Partial<Record<BatchRefusalCode, (name: string) => string>
 };
 
 /**
- * One refusal, in pi-web's own voice. The server's `message` is shown only when this build has no
+ * One refusal, in Sova's own voice. The server's `message` is shown only when this build has no
  * sentence for the code — `internal` (the server knows something we have no word for) or a code
  * from a newer server — so an older client stays honest instead of dropping the reason. The words
  * are never parsed out of `message`; that would make the server's prose the UI's copy.

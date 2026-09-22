@@ -1,5 +1,5 @@
 # 04d · Slash commands
-> Part of the pi-web design spec · [overview](overview.md)
+> Part of the Sova design spec · [overview](overview.md)
 
 pi's slash commands, offered while you type. The server sends the list once per connection as
 `{type:"commands", commands}`. Names come without the slash (`sessions`, `skill:omarchy`).
@@ -190,7 +190,7 @@ and again when the count changes, at most once a second. When there are none, an
   isn't restored.
 - **Unknown commands.** A `/word` that isn't in the list is sent and rendered as an ordinary
   message, with the optimistic bubble.
-- **Local commands.** A few commands pi-web answers itself and never sends: a bare `/new`
+- **Local commands.** A few commands Sova answers itself and never sends: a bare `/new`
   (below), and a bare `/agents` / `/subagents`, which opens the subagents pane (§11 Trigger).
   Those two are still listed and inserted like any other command — the runtime registers them —
   but Enter runs them here, clears the draft, and adds no row to the thread: the pane opening is
@@ -209,7 +209,7 @@ and again when the count changes, at most once a second. When there are none, an
 
 ## Commands that need the terminal UI
 
-Some extension commands open TUI-only interfaces, such as custom overlays and pickers. pi-web
+Some extension commands open TUI-only interfaces, such as custom overlays and pickers. Sova
 can't show those. When a command's `ui_request` has a kind §6 doesn't support, or the server
 reports the command needs the TUI (answer the request with `ui_response` `value: null` so the
 command isn't left waiting), replace the "Ran" row with:

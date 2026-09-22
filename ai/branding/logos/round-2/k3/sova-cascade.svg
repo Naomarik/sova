@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-label="SOVA">
+  <!-- SOVA · CASCADE — one continuous stroke draws the S, and where the S's top
+       terminal turns over, the same line pours down and rises again as the V.
+       The first consonant ends where the middle letter begins. The V is also
+       the one letter both candidate names carry. Single colour, currentColor,
+       no detached parts. -->
+  <path fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"
+        d="M25.5 7 L21.5 24 L15 6.5 C13.6 4.4 9.3 4.7 7.8 7.3 C6.5 9.7 7.8 11.8 10.6 12.8 C13.6 13.9 15.5 15.7 15.3 18.3 C15.1 21.4 12 23.6 8.8 22.8 C7.2 22.4 6.1 21.5 5.5 20.3"/>
+</svg>

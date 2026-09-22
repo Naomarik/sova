@@ -1,5 +1,5 @@
 # 03 · Transcript (main pane)
-> Part of the pi-web design spec · [overview](overview.md)
+> Part of the Sova design spec · [overview](overview.md)
 
 ## Anatomy
 
@@ -292,6 +292,133 @@ closed, and the markdown on the left when open.
 **Timestamps.** Take them from `raw.timestamp` when present and format as 24-hour `HH:MM` in mono.
 If the date isn't today, prefix `Mar 4 `. Put the full ISO string in `title`.
 
+## Message actions
+
+One strip of actions under each delivered message: `<div class="message-actions" role="group"
+aria-label="Actions for your message|this reply">`, holding `button.button-icon.button-ghost.message-action`
+icons. Under a message of yours it is end-aligned like the message head (`.message-actions-end`).
+
+- **One strip per ENTRY, never per row.** An assistant message renders one row per content block
+  (`<entryId>:<n>`), so the strip hangs off the entry's LAST row that shows text — never off a tool
+  card, and never once per block. Rows that are not a user message or assistant text (wake nudges,
+  tool calls, thinking, info, reports, compactions, and the synthetic `<entryId>:stop` row a failed
+  or aborted turn leaves) get no strip. With tools or thinking hidden, the strip follows the last
+  SHOWN text row; an entry with nothing shown has no strip, and the hidden-rows disclosure never
+  draws one (it renders without the actions provider). Decided in `src/lib/message-actions.ts`,
+  which is the only place that answers "where does a strip go".
+- **What each role offers.** Your message: `Copy` · `Fork` · `Rewind`. A reply: `Copy` · `Fork` ·
+  `Regenerate`. The safe actions come first and the one that changes the branch is last. Copy is
+  absent — not disabled — when there is no text to copy (an images-only message): a Copy that
+  copies nothing would claim to have copied the message.
+- **Quiet until the message is asked about, and every input can ask.** The strip is hidden with
+  `opacity` alone — always in the DOM, always in the accessibility tree, always tabbable, and its
+  height is always reserved, so a message never moves when a strip appears or leaves. A mouse
+  reveals it by being anywhere over the message region, the whole row and not just the bubble; a
+  keyboard reveals it by focusing into it (`:focus-within`, reached by Tab while it is invisible);
+  touch reveals it by a TAP on the message, which stays until a tap lands on another message or
+  outside every one. A hidden strip takes no pointer (`pointer-events: none`), and that is what
+  makes the first tap safe: it is hit-tested against the row, so it can never fire an action
+  nobody could see. Hover is scoped to a fine pointer, because a coarse one leaves `:hover` stuck
+  on the last thing tapped. A press that travelled is a scroll, not a tap, and reveals nothing.
+  Three states hold the strip open regardless of the pointer: an armed confirm, Copy's check, and
+  a refusal the row is keeping. Revealed, hover and focus still deepen the ink
+  (`--color-ink-muted` → `--color-ink-2`); quiet is a semantic colour at full opacity, never alpha —
+  muted measures 4.7:1 or better on every surface a message sits on, in both themes, where a 0.6
+  alpha measured 2.4:1 and failed the 3:1 a glyph needs. Each button is 44px wide and reaches 44px
+  tall through an `::after` extension, so the visual row stays 36px and messages keep their
+  rhythm; the boxes never overlap (44 wide with the strip's own gap between them).
+- **Copy.** Your message: its text as sent, with pi's clipboard paths already stripped. A reply:
+  all of that entry's text blocks joined by a blank line — markdown source, never thinking or tool
+  output. Available in watch mode too: the text is on screen, and nothing owns the clipboard. The
+  icon flips to a check for 1.5s and the toast says "Copied message."
+- **Rewind** (your messages) moves the branch to just before that message and hands its text back
+  to the composer — the same request the Timeline's input rows make (§13), with the same refusals.
+  **Regenerate** (replies) walks back to the user message that started the turn, rewinds there and
+  re-sends that message's own stored text and images with the session's CURRENT model, so
+  switch-model-then-regenerate compares. The whole turn re-runs, tools included, and the composer
+  draft is not touched. The confirm names the message that started this REPLY — never "this turn" —
+  because the server rewinds to the nearest user message and moves the leaf to ITS PARENT, and a
+  MID-TURN STEER is a user message: in `u1 → a1 → tool → s1 → a2`, regenerating a2 resolves to the
+  steer, so s1 and a2 leave while u1, a1 and the tool call stay; regenerating a1 resolves to u1 and
+  takes a1, the tool call, s1 and a2 with it. A reply that answered a scheduled WAKE nudge has no
+  message of yours to send again, so Regenerate is off there with that as its reason — permanently,
+  since no amount of waiting turns a nudge into something you sent.
+- **Both confirm inline, in place.** The first press arms: the strip becomes the sentence plus
+  `Rewind Here` / `Regenerate Here` and `Cancel`. Focus follows into the confirm and back to the
+  button that armed it on Cancel or Esc. The sentence says what survives as well as what goes:
+  "This message and every reply after it leave the branch. The session file keeps them."
+- **Fork** makes a new session from this branch: at a message of yours, the branch through its
+  parent with that message (text and COPIES of its images) staged in the new session's composer, unsent
+  (pi's `/fork`); at a reply, everything through it (pi's `/clone`). The new session opens; this
+  one is unchanged. **Images are counted, never quietly left behind.** Files that still exist are
+  staged by path; images the server could only return as BYTES (a /tmp file cleaned up months ago)
+  are uploaded into the new session's own attachments. **Every image is copied; no path is ever
+  borrowed.** A draft chip's Remove deletes by path, and the server allows deleting anything under
+  the attachments root, so a child holding the SOURCE's path could delete the picture out of the
+  message it was forked from — silent, permanent loss in the original session. The draft's text is
+  rewritten to name the copies, and a name it couldn't copy is removed from the text rather than
+  left pointing at a file the child doesn't own. A duplicate between the two channels is dropped
+  only when the copied CONTENT proves it is one; one that
+  can do neither is counted in the sentence ("…, with 1 of 2 images. The other 1 couldn't come
+  along.") — counted, never explained, because `available: false` covers a deleted file, a path
+  this server won't read and an upload over the size cap alike. When a readable path and stored
+  bytes are both present the FILE wins, so one picture never lands in the draft twice. An
+  unavailable path is never staged as a draft attachment — a draft attachment carries no
+  availability, so it would look fine in the composer and fail at send.
+- **Some refusals are only the server's to make.** A steer awaits the extension input handlers
+  before it is queued, so a message can still be on its way out after the turn it meant to
+  interrupt has ended: `isStreaming` is false and the pane looks idle, yet a rewind there would
+  deliver that message into the branch it rewound TO. The server refuses with `queued`, and the
+  strip shows the server's sentence. The client's own checks stay a fast path and never try to
+  guess this state.
+- **A blocked action keeps its reason.** `aria-disabled` with the reason as `title`, never hidden:
+  "Stop the current turn first.", "Wait for the compaction to finish.", "This session is open in a
+  terminal, so Sova won't write to it.", "Only a chat open in Sova can rewind." (watch mode),
+  "A rewind is already in progress." Fork is blocked by what would stop it READING the file (a
+  terminal, a turn in flight, a compaction), not by anything that only stops writing — a model
+  switch or an archived pane leaves it available.
+- **A refusal stays on the row.** The chat announces it once; the strip keeps the sentence under
+  the message it was about (`.message-actions-refusal`), so looking away doesn't lose it. The
+  server is the authority: the client's own checks are a fast path, and every refusal it sends is
+  rendered as-is rather than pre-empted.
+- **A live reply has no strip until it lands.** Streaming rows carry no entry ids, so nothing on
+  them could be copied, forked or regenerated by id; the resync after `agent_settled` replaces
+  them with canonical rows and the strip appears then. A disabled action that could never enable
+  itself is not drawn at all.
+
+## A queued message (spec §4 sending)
+
+A message of yours that hasn't been delivered says which state it is in, with a dot and the word:
+`Sending…` while nothing is known to hold it, `Queued` once the server says it does. Only a queued
+row carries an action — one `Remove this queued message` — and it is removed BY ITS ID, so a
+duplicate in the middle of three goes and its twins stay, and an images-only message is a row like
+any other. A delivered row never draws one: nothing can be recalled then. A queued row is not an
+`.entry`, so it wraps itself in a `display: contents` host that gives its Remove the same hover
+and tap region every other strip has.
+
+The states are the server's to report, and a queue snapshot proves only what it still holds. Every
+departure is broadcast to EVERY client of the chat as `queue_item_gone {itemId, reason, text?}`,
+and THAT moves the row — a message simply missing from the next snapshot is never called "sent",
+because absence is equally true of a delivery, a Stop, a refused hand-off and another tab's
+removal. The five reasons:
+
+- **delivered** — the agent took it; the row becomes a sent message.
+- **removed** — a `queue_remove` took it, possibly in another tab; the row goes in all of them, and
+  **the text does not come back**. Delete is a discard: Stop takes the queue back to be edited and
+  re-sent, Delete says this message should never be sent, and re-pasting it into the draft would
+  undo the gesture the user just made. The requester's `queue_removed` ack only settles the
+  request; the `text` on it names what left, it is not an instruction to restore it.
+- **cleared** — Stop drained it; the row goes and `queue_cleared` returns the text, as it always did.
+- **failed** — the hand-off was refused (a terminal took the file, a foreign writer, the model
+  turned off in Settings); the row goes and the text comes back where it was typed.
+- **dropped** — an extension `input` handler handled the message instead of queueing it (the
+  model-policy extension does exactly this), so **no `message_start` will ever arrive**. Without
+  this signal the row would sit on "Sending…" for the life of the pane over text the user has
+  lost: the row goes and the text comes back.
+
+A removal the server refuses because the agent already took the message says "Already sent. It
+can't be removed now.", and the row becomes the delivered message it turned out to be.
+
 ## Streaming (chat sessions)
 
 Driven by `ChatServerMessage.event`.
@@ -412,7 +539,7 @@ page with two parts, in this order:
   Explained row.
 - **Tiles open in the same tab.** Each tile is a plain link to `/explain/:id` with no `target`,
   here and in the gallery alike. In an installed app (standalone display mode) a new tab is a new
-  window with one history entry, so its back button couldn't return to pi-web; navigating in place
+  window with one history entry, so its back button couldn't return to Sova; navigating in place
   keeps Back working. `/explain/:id` is still a standalone document, so a direct link opens it
   on its own. There is no external-arrow icon and no "opens in a new tab" suffix on a tile.
 

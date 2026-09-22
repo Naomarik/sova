@@ -1,5 +1,5 @@
 # 13 · Timeline tab
-> Part of the pi-web design spec · [overview](overview.md)
+> Part of the Sova design spec · [overview](overview.md)
 
 The session pane (§11) has a **Timeline** tab: the whole session on one time axis. The outline's
 topics are chapter markers, each message you sent is a row, and what the agent did between two of
@@ -325,6 +325,13 @@ sits apart at the row's end in `.input-row-actions`, so the destructive half sta
 deliberate. Chapters, markers, density and gap rows never carry it: two places to destroy the same
 branch is one too many, and the thing you take back is always a message you sent.
 
+**The message's own strip asks for the same thing** (§03 "Message actions"): the Rewind under a
+message in the transcript sends the identical `rewind` request over the same socket, with the same
+two-step confirm and the same refusals — two places to ASK, one meaning, one request in flight at a
+time. That strip is also where a reply's **Regenerate** lives, which is the "after the previous
+input" case this tab deliberately doesn't offer: the row that acts here is still always a message
+you sent.
+
 The rules are the ones the Inputs tab used, unchanged, and they live in one module:
 `src/lib/inputs.ts` decides which row may act (`rowAction`), the two-step confirm (`stepRewind`),
 and the boundary and abandoned rows after a rewind (`viewRows`, `rewoundAt`, `sentSince`);
@@ -350,8 +357,8 @@ hidden**:
 |---|---|
 | A turn is running | "Stop the current turn first." |
 | A compaction is running (including a manual `/compact`) | "Wait for the compaction to finish." |
-| Open in a terminal (TUI-live) | "This session is open in a terminal, so pi-web won't write to it." |
-| Watching, or no chat open here | "Only a chat open in pi-web can rewind." |
+| Open in a terminal (TUI-live) | "This session is open in a terminal, so Sova won't write to it." |
+| Watching, or no chat open here | "Only a chat open in Sova can rewind." |
 | A rewind is in flight | "A rewind is already in progress." |
 
 Streaming refuses; it never auto-aborts. Stopping is the user's call, and a rewind that silently
@@ -438,14 +445,14 @@ body lands on that message exactly as it would unfiltered, and the filter stays 
 
 ## Watch mode
 
-The tab works for a session pi-web isn't running: the pane opens from the session head's
+The tab works for a session Sova isn't running: the pane opens from the session head's
 Session-details button, the rows render from the same transcript and insight the Session tab
 reads, and the jumps land in the watched transcript. A TUI-live session is the case the axis is
 most useful in — you didn't watch it happen, so the shape of it is all you have.
 
 **Rewind is chat-only, and it says so.** Watching, every input row still shows its Rewind,
-`aria-disabled`, with the reason: "This session is open in a terminal, so pi-web won't write to
-it." for a TUI-live session, "Only a chat open in pi-web can rewind." otherwise. A button that
+`aria-disabled`, with the reason: "This session is open in a terminal, so Sova won't write to
+it." for a TUI-live session, "Only a chat open in Sova can rewind." otherwise. A button that
 vanished in watch mode would leave a reader who used it yesterday wondering where it went.
 
 While watching, the state line is the only thing that moves: it is re-read with the insight, on

@@ -1,5 +1,5 @@
 # 09 · Copy deck
-> Part of the pi-web design spec · [overview](overview.md)
+> Part of the Sova design spec · [overview](overview.md)
 
 These are the exact strings to use. `{…}` is a value. Machine facts (paths, pids, model ids,
 times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths.
@@ -64,6 +64,26 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Wake nudge card, open | the fired message, verbatim, all four lines |
 | Wake nudge in Inputs Only / the Timeline | {reason}, or `Wake nudge {id}` when it carries none |
 
+## Message actions (§03)
+
+| Where | Copy |
+|---|---|
+| Strip `aria-label` | Actions for your message · Actions for this reply · Actions for your queued message |
+| Button `aria-label` (also the `title` when enabled) | `Copy message` · `Fork the session from here` · `Rewind to before this message` · `Regenerate this reply` · `Remove this queued message` |
+| Copy landed | icon flips to the check for 1.5s · toast "Copied message." · clipboard failure keeps the existing "Couldn't reach the clipboard. Nothing was copied." |
+| Rewind armed | note "This message and every reply after it leave the branch. The session file keeps them." · buttons `Rewind Here` · `Cancel` |
+| Regenerate armed | note "The message that started this reply, and everything after it, leave the branch. The session file keeps them." — "this REPLY", never "this turn": the server rewinds to the nearest user message, and a MID-TURN STEER is one, and the leaf moves to that message's PARENT: in `u1 → a1 → tool → s1 → a2`, regenerating a2 drops s1 and a2 while u1/a1/the tool call stay, and regenerating a1 drops a1, the tool call, s1 and a2 · buttons `Regenerate Here` · `Cancel` |
+| Regenerate landed | SR "Regenerating from your message." (the rewound message's own copy stays §13's) |
+| Blocked, mutating actions (`title`) | Stop the current turn first. · Wait for the compaction to finish. · This session is open in a terminal, so Sova won't write to it. · Only a chat open in Sova can rewind. / …can regenerate. · A rewind is already in progress. / A regenerate is already in progress. · a message still on its way out (server refusal `queued`, which happens with isStreaming FALSE — the client cannot pre-check it): the server's own sentence, "A message is still on its way out. Wait for it to send, or press Stop, then rewind." / "…then regenerate." · a reply to a wake nudge: "That reply answered a scheduled wake-up, not a message you sent, so there's nothing to send again." (permanent — it outranks every state that clears on its own, and the server refuses it too with `regenerate_refused` reason "wake") · the composer's own reason while the chat can't write (Switching model…, Reconnecting. Your draft is kept., This session is archived. Unarchive it to send.) |
+| Blocked Fork (`title`) | This session is open in a terminal, so Sova won't read it out from under that process. · This session is mid-turn. Forking reads the file, and we don't read it while it's being written. This enables itself when the turn finishes. · Wait for the compaction to finish, then fork. · A fork is already being made. |
+| Fork landed | toast + SR, counting what actually reached the new composer: "Forked. Your message is in the new session's composer." · "…, with its image." / "…, with its {n} images." · "…, but its image couldn't come along." (plural: "…, but its {n} images couldn't come along.") · "…, with {k} of {n} images. The other {m} couldn't come along." — never a CAUSE: `available:false` covers a deleted file, a path this server won't read and an upload over the 20MB cap alike, so the copy says only that it didn't come · without a staged message "Forked into a new session." + " Nothing was sent." (a message in a composer says that itself; a fork with nothing staged has to say it in words), with the same image clauses |
+| Fork refused | Another program wrote to this session a moment ago. Forking waits until it stops. · This session is in an older session format. Open it for chat once to update it, then fork. · That message isn't on the current branch anymore. Reload the transcript and fork from a message you can see. · This session's working directory is gone, so it cannot be opened. · unknown code: "Couldn't fork this session. {server message}" |
+| Queued message head | `Sending…` (nothing holds it yet) · `Queued` (the server says it does), each a dot AND the word · the author is `You`, or `Sent by Sova` for a message the session queued for itself (a group send, a remote status probe) |
+| Remove blocked (`title`) | Not queued yet. This can be removed once the server has it. · Already sent. It can't be removed now. · Removing… · Only a chat open in Sova can remove a queued message. |
+| Remove landed | SR "Removed from the queue." in every tab, including the one that asked. Delete is a DISCARD: the message does NOT come back to the composer (that is Stop's job, §4 "Stop"), so no sentence claims it did |
+| A queued message that will never be sent (`queue_item_gone`) | dropped (an extension handled it instead): SR "That message was handled without being sent. It's back in the composer." · failed (the hand-off was refused): SR "That message couldn't be sent. It's back in the composer." — both only in the tab that sent it, which is the only one with a composer to put it in |
+| Remove refused | Already sent. It can't be removed now. · That message isn't in the queue anymore. · "pi queued work of its own alongside this message, so it can't be taken back on its own. Press Stop to clear the queue." (NOT transient: that row's Remove stays off from then on, so the copy never invites a retry that cannot succeed) · The session is busy right now. Try again in a moment. · unknown code: "Couldn't remove it from the queue. {server message}" |
+
 ## Live-watch
 
 | Where | Copy |
@@ -79,7 +99,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 |---|---|---|
 | Connecting (first time) | composer reason (`clock`) | Connecting… |
 | Lost, retrying | chat: composer reason (`clock`) · watch: `.banner-warn` | chat: "Reconnecting. Your draft is kept." · watch: **Stopped watching. The connection dropped.** What's shown is up to `{HH:MM}`. Reconnecting… |
-| Gave up (retries exhausted) | `.banner-error` at the top of the transcript; composer reason "Not connected." | **Lost the connection to the pi-web server.** Nothing in the session changed. Check `npm run dev:server` is running, then retry. · button: `Reconnect` |
+| Gave up (retries exhausted) | `.banner-error` at the top of the transcript; composer reason "Not connected." | **Lost the connection to the Sova server.** Nothing in the session changed. Check `npm run dev:server` is running, then retry. · button: `Reconnect` |
 | Reconnected | nothing. The banner or reason simply disappears; no toast | — |
 
 ## Composer
@@ -243,7 +263,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Field, nothing chosen | Choose a folder |
 | Recent label | Recent folders |
 | Picker | group label "Choose a folder" · breadcrumb `aria-label` "Path" · buttons `Home`, `Recent`, `Use This Folder` · checkbox "Show hidden folders" · filter placeholder "Filter", `aria-label` "Filter folders in {name}" / "Filter recent folders" · list `aria-label` "Subfolders of {name}" / "Recent folders" · symlink tag "link" |
-| Picker notes | Loading folders… · No subfolders in {name}. You can still start the session here. · 0 of {n} match “{filter}”. · Showing the first 500 folders, A to Z. Filter to narrow them. · pi-web can't read this folder. Pick another one. · This folder doesn't exist. Pick another one. · Couldn't list this folder. {server message} · No recent folders yet. Sessions you start add theirs here. |
+| Picker notes | Loading folders… · No subfolders in {name}. You can still start the session here. · 0 of {n} match “{filter}”. · Showing the first 500 folders, A to Z. Filter to narrow them. · Sova can't read this folder. Pick another one. · This folder doesn't exist. Pick another one. · Couldn't list this folder. {server message} · No recent folders yet. Sessions you start add theirs here. |
 | Buttons | `Create Session` (pending: "Creating…") · `Cancel` |
 | 4xx error | {server message}, or: That folder doesn't exist. Pick one that does. |
 | Other error | **Couldn't create the session.** Nothing was written. Try again. |
@@ -306,8 +326,8 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Transcript section `aria-label` | {name} transcript |
 | No workers | **0 subagents in this session.** Workers it starts show up here while they run. |
 | None selected | **{n} subagents, {w} working.** Pick one to read its transcript. |
-| No session yet (Claude Code) | **Its transcript isn't available in pi-web.** `{name}` is starting — no Claude session yet. Latest: {preview} |
-| No session file (pi) | **Its transcript isn't available in pi-web.** `{name}` runs on a pi that doesn't publish its session file yet. Latest: {preview} |
+| No session yet (Claude Code) | **Its transcript isn't available in Sova.** `{name}` is starting — no Claude session yet. Latest: {preview} |
+| No session file (pi) | **Its transcript isn't available in Sova.** `{name}` runs on a pi that doesn't publish its session file yet. Latest: {preview} |
 | File gone, first load | **Couldn't find this worker's transcript.** `{path}` is gone. Nothing else changed. |
 | File gone after loading (banner-warn) | **This transcript's file is gone.** What's shown is up to `{HH:MM}`. |
 | Transcript file empty (just started) | **0 entries in {name}'s session so far.** Entries show up here as it writes them. |
@@ -323,7 +343,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Panel intro | Applies as you pick. The choice is remembered in this browser. |
 | Row accessible name | `{name}, {base} base, {source}` — e.g. "Catppuccin Mocha, dark base, built-in". Field names are `shared/protocol.ts`'s: `base`, `source` (`builtin`\|`user`), `path`, `replacesBuiltin` |
 | Row meta | `{Dark\|Light} base · {Built-in\|User}` · a user file holding a built-in's id adds a third clause: `Dark base · User · replaces the built-in` |
-| Row `title`, user themes | the file's full path — e.g. `~/.pi/agent/pi-web/themes/dracula.json` |
+| Row `title`, user themes | the file's full path — e.g. `~/.pi/agent/sova/themes/dracula.json` |
 | Swatch strip `aria-label` | Page, surface, accent, error, and text colors |
 | Font sample | `Aa 0x1F` — `Aa` in the theme's body face, `0x1F` in its mono face |
 | Broken row, name slot | `{filename}` in mono — e.g. `sunset.json` |
@@ -331,9 +351,18 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Broken row, meta slot — a value we won't emit | `{key} is {value}. A color is a hex value, or one call to rgb, rgba, hsl, hsla, oklch, oklab, lab, lch, color-mix, or color.` — e.g. "accent is image-set(…). A color is a hex value, or one call to rgb, rgba, hsl, hsla, oklch, oklab, lab, lch, color-mix, or color." The accepted list is the one in §0, and stays in step with it |
 | …the same, other key families | shadows: `{key} is {value}. A shadow takes lengths, an optional inset, and a color.` (`scrim` and `skeleton-sweep` use the color message) · font stacks: `{key} is {value}. A font stack takes names, quotes, and commas — no parentheses.` · sizes: `{key} is {value}. That takes a px or em length, or 0.` · `lh-*`: `…takes a plain number.` · `fw-*`: `…takes a number from 100 to 900.` |
 | Broken row, hidden suffix | `, can't be used` |
-| Footer | Drop a `.json` file in `~/.pi/agent/pi-web/themes/` and it shows up here. |
+| Typography heading | Typography |
+| Typography intro | Fonts for this browser, over whichever theme is on. Theme default is the theme's own fonts. |
+| Typography fields | `Text` (hint: Everything you read: the sidebar, messages, and headings.) · `Code` (hint: Paths, ids, diffs, and code blocks.) — first option in each: `Theme default`; then the catalogue's labels (`src/lib/typography.ts`) |
+| Typography hint, IBM Plex Mono | Static weights: medium and display text render one step heavier. |
+| Typography reset action | `Use Theme Fonts` (disabled on Theme default) |
+| Typography preview `aria-label` | Preview of the current fonts |
+| Typography preview copy | heading `Changed 7 files in src/api` · body "The run stopped at step 4 and nothing was merged. 3 runs are waiting on you — review them, or discard the one that failed." · mono `+ id: 0x1F  path: src/api/runs.ts  ok` / `- id: 0x2A  path: src/api/jobs.ts  ok` |
+| Typography, pick on (line under the preview) | `Text: {label} · Code: {label}` — `theme default` where a kind has no pick |
+| Typography announcements (polite region) | `Text is now {label}.` / `Code is now {label}.` / `… is now the theme's font.` / `Back to the theme's fonts.` |
+| Footer | Drop a `.json` file in `~/.pi/agent/sova/themes/` and it shows up here. |
 | Footer action | `Refresh` (icon `refresh.svg`; `aria-busy` while a refresh it started is in flight) |
-| Folder unreadable (banner) | We couldn't read `~/.pi/agent/pi-web/themes/`. Your own themes aren't listed; the built-in ones still work. Retry or check the folder's permissions. |
+| Folder unreadable (banner) | We couldn't read `~/.pi/agent/sova/themes/`. Your own themes aren't listed; the built-in ones still work. Retry or check the folder's permissions. |
 | Missing theme fell back (banner) | `{id}` isn't there anymore, so you're back on Dark. |
 | Loading | skeleton rows — no copy |
 
@@ -356,8 +385,8 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Abandoned rows (visually hidden) | Left behind by the rewind. |
 | Off: streaming | Stop the current turn first. |
 | Off: compacting | Wait for the compaction to finish. |
-| Off: TUI-live | This session is open in a terminal, so pi-web won't write to it. |
-| Off: watching, or no chat open here | Only a chat open in pi-web can rewind. |
+| Off: TUI-live | This session is open in a terminal, so Sova won't write to it. |
+| Off: watching, or no chat open here | Only a chat open in Sova can rewind. |
 | Refused: not on the branch | That input is not on this chat's current branch anymore. |
 | Flyout row | Undo last turn · armed: `Confirm: undo last turn` · title: Rewind to before your last message; its text comes back to the composer |
 | Flyout row, off | Stop the turn first, then undo. · Wait for compaction to finish, then undo. · A rewind is already in progress. · Nothing to undo yet. |
@@ -392,34 +421,34 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Promoted chip | Promoted: {title} · button `Add Back` · `title`: You took this session out of “{name}”. Add Back puts it back where it was |
 | Tab | {label or title} · `aria-label`: the pane's own name, byte for byte (label/title or the repeat's `{model} #n` — one rule for strip and pane, so they can never disagree about which #2 is which) |
 | Pane name | {label} · {model}, or {title} · {model} with no label · repeats of one model: {model} #1, #2, #3 — numbered in member order, shared with the tab rule, and never followed by "· {model}": the suffix already names it, and saying it twice makes the name stutter · `title`: the full string, then the cwd, then the session's whole spend (`{cost} this session`, `SessionUsage.total` — the same field the Session-info dialog tallies) when the server reports one |
-| Pane tools | one menu: trigger `aria-label` "Pane actions · {pane name}" · rows `Rename…` · `Open` (link, `title`: Open this session on its own) · `Wider` · `Narrower` · `Move Left` · `Move Right` · `Focus` · `Promote` · `Remove From Group` · `Eliminate` (absent when the session wasn't started in pi-web) |
+| Pane tools | one menu: trigger `aria-label` "Pane actions · {pane name}" · rows `Rename…` · `Open` (link, `title`: Open this session on its own) · `Wider` · `Narrower` · `Move Left` · `Move Right` · `Focus` · `Promote` · `Remove From Group` · `Eliminate` (absent when the session wasn't started in Sova) |
 | Pane tool `aria-label`s | Rename {pane name} · Open {pane name} · Make {pane name} wider · Make {pane name} narrower · Move {pane name} left · Move {pane name} right · Focus {pane name} · Promote {pane name} · Eliminate {pane name} — the pane NAME (suffix included), because the menu says which member it acts on and three same-model forks are three menus |
 | Promote `title` | Take it out of “{name}” and open it on its own. Nothing is archived and nothing is deleted |
 | Eliminate `title` | Take it out of “{name}” and archive it. The transcript stays; unarchiving brings it back |
 | Eliminate off | TUI-live: "This session is open in a terminal." · mid-turn: "It's mid-turn. Stop it or wait, then eliminate it." |
-| Remove From Group `title` | Take it out of “{name}” and stay here. Nothing is archived and nothing is deleted · when Eliminate is absent: This session wasn't started in pi-web, so removing it is all we can do — nothing is archived |
+| Remove From Group `title` | Take it out of “{name}” and stay here. Nothing is archived and nothing is deleted · when Eliminate is absent: This session wasn't started in Sova, so removing it is all we can do — nothing is archived |
 | Member chips | `Working` (live dot, mid-turn — the split row's only at-a-glance sign of who is still running; the tab strip's dot covers tabs mode) · `TUI` (accent, static) · `Archived` (neutral) · `Can't open` (error) · `Busy` (warn) |
-| Member composer reasons | "This session is open in a terminal, so pi-web won't write to it." · "This session is archived. Unarchive it to send." · "This session can't be opened. The banner above says why." · "Another program is writing to this session." |
-| Member file gone | **This session's file is gone.** Its transcript was deleted outside pi-web, so there's nothing left to read. Removing it from the group is all that's left. · button `Remove From Group` |
+| Member composer reasons | "This session is open in a terminal, so Sova won't write to it." · "This session is archived. Unarchive it to send." · "This session can't be opened. The banner above says why." · "Another program is writing to this session." |
+| Member file gone | **This session's file is gone.** Its transcript was deleted outside Sova, so there's nothing left to read. Removing it from the group is all that's left. · button `Remove From Group` |
 | Group composer label and placeholder | `aria-label` "Message every member" · placeholder "Ask all {n} members…—Enter sends, Shift+Enter adds a line" (below 768: "Ask all {n} members…"; 1 member: "Ask this member…") · **{n} is the group's size, never the available count**: availability belongs in the foot, where it can change without rewriting a placeholder under the caret, and "Ask this member…" in a 3-member group would be false |
 | Group composer Send | `Send to All` · in flight `Sending…` · 1 member: `Send` |
 | Group composer targets line | `{n} of {m} members` then the excluded reasons, counted: `· 1 mid-turn` · `· 2 open in a terminal` · `· 1 archived` · `· 1 can't be opened` · `· 1 busy` · `· 1 file gone`. All available: `{n} members` alone |
 | Group composer off | 0 available: Send is `aria-disabled`, reason "No member can take a message right now." · 0 members: the composer isn't rendered |
-| Refusal reason per member | rendered from `code`: `{member} is mid-turn` · `{member} is open in a terminal` · `{member} is archived` · `{member} can't be opened` · `{member} is busy` · `{member}'s file is gone` · `{member} is in an older session format` · `the fork point you picked isn't {member}'s latest message anymore` · `internal`, or a code this build doesn't know: `{member} couldn't be prompted.` then the server's `message` as the detail — pi-web keeps the claim in its own voice and hands the server the part only it knows |
+| Refusal reason per member | rendered from `code`: `{member} is mid-turn` · `{member} is open in a terminal` · `{member} is archived` · `{member} can't be opened` · `{member} is busy` · `{member}'s file is gone` · `{member} is in an older session format` · `the fork point you picked isn't {member}'s latest message anymore` · `internal`, or a code this build doesn't know: `{member} couldn't be prompted.` then the server's `message` as the detail — Sova keeps the claim in its own voice and hands the server the part only it knows |
 | Refusal banner | **Nothing was sent.** {n} of {m} members can't take a message right now: {member} is mid-turn, {member} is open in a terminal. Wait for them, or send to the other {k}. · buttons `Send to the Rest ({k})` · `Cancel` |
 | Partial send banner | **Sent to {k} of {n} members.** {member} was taken by another program between the check and the send, so it didn't get this message. The {k} that did are answering now. (several missed out: {members} **were** taken … so **they** didn't get this message — the verb agrees with its own subject) · one button per member that missed out: `Send to {member}` — re-sends to **that member alone**, the message as it was sent, not as the box now reads (a button's label names exactly who its own press reaches; one label over every failed id would promise one thing and do another) · the composer keeps its text here (it clears only on a clean send) |
 | Announcing a banner | A banner is `role="status"` and speaks for itself: **never** announce beside one. The clean-200 path announces because it has no banner |
 | Sent (live region) | Sent to {n} members. (1: Sent to 1 member.) |
 | Promote toast | Took **{title}** out of “{name}”. · failure: "Couldn't take this session out of the group. {server message}" |
 | Add Back toast | Put **{title}** back in “{name}”. · failure: "Couldn't put this session back. {server message}" · label restored but the order didn't take: "Put **{title}** back in “{name}”. It's at the end." |
-| Eliminate toast | Removed **{title}** and archived it. · remove-only: "Removed **{title}** from “{name}”. It wasn't started in pi-web, so nothing was archived." · with the group's last member: "Removed **{title}** and archived it. Dissolved “{name}” — nothing was left in it." · failure: "Couldn't remove this session. {server message}" · archived half failed: "Removed **{title}** from “{name}”, but couldn't archive it. {server message}" |
+| Eliminate toast | Removed **{title}** and archived it. · remove-only: "Removed **{title}** from “{name}”. It wasn't started in Sova, so nothing was archived." · with the group's last member: "Removed **{title}** and archived it. Dissolved “{name}” — nothing was left in it." · failure: "Couldn't remove this session. {server message}" · archived half failed: "Removed **{title}** from “{name}”, but couldn't archive it. {server message}" |
 | Dissolve vs Delete group | The same route (`DELETE /api/session-groups/:id`) under two words: `Delete group` in the sidebar's tool row, `Dissolve` in the workspace head, where it sits above open transcripts and "Delete" would read as deleting them (§14) |
 | Dissolve, asking in place | Dissolve “{name}”? Its {n} sessions stay in the list. (1: "… Its 1 session stays …"; 0: "Dissolve “{name}”? Nothing is in it.") · buttons `Dissolve` · `Cancel` |
 | Dissolve toast | Dissolved “{name}”. Its {n} sessions are ungrouped. (1: "… Its 1 session is ungrouped.") · "Dissolved “{name}”. It had no sessions." |
 | Add Members popover | trigger `Add Members` · `aria-label` "Add a session to “{name}”" · rows: every ungrouped session, then the grouped ones with a muted note `in “{name}”`, then `Fan Out…` · empty: "Every session is already in a group." |
 | Add Members toasts | Added **{title}** to “{name}”. · Moved **{title}** from “{other}” to “{name}”. · failure: "Couldn't add this session. {server message}" |
 | Empty workspace | **“{name}” has no sessions yet.** Add some here, or drag a row onto the group in the sidebar. · buttons `Add Members` · `Fan Out…` |
-| Empty workspace, fanout group | **“{name}” has no sessions left.** They were removed from the group, or their files were deleted outside pi-web. Dissolving it takes the name and the fork point, and nothing else. · button `Dissolve` — **the group cannot tell the two causes apart** (it stores `seed` and members, never a reason), so the copy names both rather than picking one; parallel to the hand-made state's "no sessions **yet**" |
+| Empty workspace, fanout group | **“{name}” has no sessions left.** They were removed from the group, or their files were deleted outside Sova. Dissolving it takes the name and the fork point, and nothing else. · button `Dissolve` — **the group cannot tell the two causes apart** (it stores `seed` and members, never a reason), so the copy names both rather than picking one; parallel to the hand-made state's "no sessions **yet**" |
 | Member announcements (live region) | {pane name} — working. · {pane name} — replied. · {pane name} — stopped with an error. (the turn-error banner's own title, said once; the settle that follows an errored turn announces nothing — two endings would read as two turns) · {pane name} — stopped by you. · {pane name} — can't be opened. · {pane name} — open in a terminal, so it stays read-only. |
 | Pane focus keys | no visible copy · the workspace's keyboard help lives in `Move Left` / `Move Right` `title`s: "Swap {pane name} with its left-hand neighbour. Ctrl+Alt+← moves focus, not the pane." |
 | Fit All | `Fit All` · `title`: "Make every pane narrow enough to stand in the row side by side. Below 440px a pane trades solo reading for comparison; Wider steps back to the floor." · announce: "Fitted {n} members at {w} pixels each." (below the floor: "… each, below the 440 floor a single pane keeps.") · a fitted width is memory-only, like every width; `Wider` from below the floor lands on 440 and `Narrower` is a no-op there — never a button that says "narrower" while widening |
@@ -448,7 +477,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Doesn't fit | This model's window is smaller than the fork. · `.field-error`: "Remove {ref} to create this fanout." — the **full ref**: it names which row to act on, and with two colliding rows the short form names both (§14b). Never "or lower its count": the fill is per model, not per repeat, so that instruction cannot work |
 | Group name | label `Group name` · default `Fanout · {first 6 words of the title or prompt}` · placeholder Group name |
 | Cost preview | `{n} members × ~{tokens} tokens re-sent every shared turn.` · fresh: `{n} members, each starting empty. Every shared turn is re-sent {n} times as they grow.` · compacted: `{n} members × unknown tokens re-sent every shared turn — the fork point was compacted.` · source not on screen: `{n} members × unknown tokens re-sent every shared turn.` |
-| Rate-limit note | Turns start together, so one provider may answer some members with 429. pi-web doesn't stagger them. |
+| Rate-limit note | Turns start together, so one provider may answer some members with 429. Sova doesn't stagger them. |
 | Create | `Create {n} Members` (1: `Create 1 Member`) · in flight `Creating…` (fields disable; see §14b) · off at 0: reason "Add at least 1 member." · fresh-mode reasons: "Pick a folder for the new sessions." / "Write the first message every member gets." · **treatment:** every reason renders as a hint (`.field-hint`) except the overflow's "Doesn't fit", which stays an error — a reason the user has done nothing wrong to earn (an unfinished form, someone else's turn) is guidance, not a mistake, and an error-styled opening state reads as an accusation |
 | Cancel | `Cancel` |
 | Partial creation banner | Title **{k} of {n} members were created.** (k=1: **1 of {n} members was created.**) · then **one line per failure**, the refusal banner's shape (§14) · closing line The {k} that exist are running; add another from Add Members. (k=1: It is running; add another from Add Members.) · buttons `Add Members` · `Dismiss` |
@@ -458,7 +487,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Fanout into a group with a different fork point (`400 seed-conflict`) | `.field-error`: “{name}” was forked from a different point, and a group can only mark one. Nothing was created. Fan out into a new group, or add these members to the one they came from. |
 | Total failure | `.field-error` in the dialog: "Couldn't create this fanout. No sessions were made. {server message}" |
 | Create off, the fork point moved | “{title}” answered while this dialog was open, so the fork point you picked isn't its latest message anymore. Reopen Fan out to fork from where it is now. |
-| Create off, source taken by a terminal while open | “{title}” is open in a terminal now. pi-web doesn't touch a file a terminal owns; fan out once it closes. |
+| Create off, source taken by a terminal while open | “{title}” is open in a terminal now. Sova doesn't touch a file a terminal owns; fan out once it closes. |
 | Source refusal (after the press) | rendered with the SAME sentence as the matching Create-off state above — recovery advice included, unlike the group composer's refusal clause — and for a code this build has no sentence for: “{title}” couldn't be forked. {server message} |
 | Source gone (404) | `.field-error`: "“{title}” isn't on disk anymore. Nothing was created." |
 | Fork marker row | Forked from {parent title} here · `{HH:MM}` · parent gone: the title as plain text, `title` "This session is no longer on disk." |

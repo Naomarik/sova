@@ -9,7 +9,7 @@ import { after, test } from "node:test";
 const agentDir = mkdtempSync(join(tmpdir(), "pi-web-defaults-"));
 process.env.PI_CODING_AGENT_DIR = agentDir; // before the module below computes its path
 const { loadDefaults, saveDefaults } = await import("./web-defaults");
-const file = join(agentDir, "pi-web", "defaults.json");
+const file = join(agentDir, "sova", "defaults.json");
 
 after(() => rmSync(agentDir, { recursive: true, force: true }));
 
@@ -38,7 +38,7 @@ test("empty or non-string patch fields are dropped, keeping the stored default",
 
 test("a corrupt or wrong-shaped file loads empty, and a save over it repairs the file", () => {
   for (const body of ["not json{", "[]", "42"]) {
-    mkdirSync(join(agentDir, "pi-web"), { recursive: true });
+    mkdirSync(join(agentDir, "sova"), { recursive: true });
     writeFileSync(file, body);
     assert.deepEqual(loadDefaults(file), {});
   }

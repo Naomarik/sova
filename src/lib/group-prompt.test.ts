@@ -17,7 +17,7 @@ test("a member is blocked by the state the LIST can see, in the wire's own words
   assert.equal(memberBlock(member("a", { busy: true })), "mid-turn");
 });
 
-test("TUI-live outranks the other states: it is why pi-web won't write at all", () => {
+test("TUI-live outranks the other states: it is why Sova won't write at all", () => {
   const both = member("a", { live: { pid: 1, status: "running" }, busy: true, archived: true });
   assert.equal(memberBlock(both), "tui-live");
 });
@@ -47,7 +47,7 @@ test("the foot names the exclusions, and says the plain count when there are non
   );
 });
 
-test("a refusal is pi-web's sentence, composed from the code and never parsed from the message", () => {
+test("a refusal is Sova's sentence, composed from the code and never parsed from the message", () => {
   assert.equal(refusalSentence(refusal("mid-turn"), "control"), "control is mid-turn");
   assert.equal(refusalSentence(refusal("tui-live"), "control"), "control is open in a terminal");
   assert.equal(refusalSentence(refusal("missing"), "control"), "control's file is gone");

@@ -44,7 +44,7 @@ export function rankCommands(commands: SlashCommand[], query: string): SlashComm
   return [...prefix.sort(byName), ...inName.sort(byName), ...inDescription.sort(byName)];
 }
 
-/** A command pi-web answers itself rather than sending to the runtime. */
+/** A command Sova answers itself rather than sending to the runtime. */
 export type LocalCommand = "subagents" | "new" | "tree" | "timeline";
 
 /**

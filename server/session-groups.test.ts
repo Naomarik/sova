@@ -24,7 +24,7 @@ const {
   updateGroup,
 } = await import("./session-groups");
 
-const file = join(agentDir, "pi-web", "session-groups.json");
+const file = join(agentDir, "sova", "session-groups.json");
 after(() => rmSync(agentDir, { recursive: true, force: true }));
 
 const onDisk = () =>

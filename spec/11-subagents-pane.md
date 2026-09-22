@@ -1,5 +1,5 @@
 # 11 · Subagents pane
-> Part of the pi-web design spec · [overview](overview.md)
+> Part of the Sova design spec · [overview](overview.md)
 
 The composer's "2 subagents working…" row opens a pane beside the session: this session's
 workers on the left, the selected worker's live transcript on the right, read-only. It answers
@@ -14,7 +14,7 @@ keeps linking there. The pane is for watching; the page is for finding.
 There are two ways in, and both reach the pane whether or not anything is working: the composer's
 subagents row, and `/agents`.
 
-**`/agents` (and `/subagents`), bare, opens the pane.** It is a local command (§4d): pi-web runs
+**`/agents` (and `/subagents`), bare, opens the pane.** It is a local command (§4d): Sova runs
 it itself and sends nothing to the runtime, whose own `/agents` monitor is a TUI overlay and
 answers a web session with "requires Pi's interactive TUI". It is listed in the "/" menu like any
 other command, because the runtime registers it; picking it there inserts `/agents`, and Enter
@@ -251,11 +251,11 @@ webapp never writes to it (CLAUDE.md: no file locking).
 | Workers list couldn't be fetched | `.banner-warn`: **Couldn't load this session's subagents.** {message} Your workers keep running. We'll retry on our own. Whatever is shown stays |
 | Selected, file empty (just started) | View head, then `.empty.subagents-empty`: **0 entries in {name}'s session so far.** Entries show up here as it writes them. |
 | Loading (after 300ms) | View head, then §3's loading skeletons in the thread. `aria-busy="true"` on the section |
-| Selected, no session yet (Claude Code worker) | View head, then `.empty.subagents-empty`: **Its transcript isn't available in pi-web.** `{name}` is starting — no Claude session yet. Latest: {preview, mono}. (Pi worker from an older pi-config: …runs on a pi that doesn't publish its session file yet.) |
+| Selected, no session yet (Claude Code worker) | View head, then `.empty.subagents-empty`: **Its transcript isn't available in Sova.** `{name}` is starting — no Claude session yet. Latest: {preview, mono}. (Pi worker from an older pi-config: …runs on a pi that doesn't publish its session file yet.) |
 | File gone, first load | View head, then `.empty.subagents-empty`: **Couldn't find this worker's transcript.** `{path}` is gone (a claude-code worker reads `Claude session {id}`). Nothing else changed. |
 | File gone after loading | Keep what's shown. `.banner-warn` in the banner slot: **This transcript's file is gone.** What's shown is up to `{HH:MM}`. |
 | Connection lost, retrying | Keep what's shown. `.banner-warn`: **Stopped watching. The connection dropped.** What's shown is up to `{HH:MM}`. Reconnecting… (§9 Live-watch). Pulses stop |
-| Gave up | `.banner-error`: **Lost the connection to the pi-web server.** Nothing in the session changed. Check `npm run dev:server` is running, then retry. · `Reconnect` |
+| Gave up | `.banner-error`: **Lost the connection to the Sova server.** Nothing in the session changed. Check `npm run dev:server` is running, then retry. · `Reconnect` |
 | Other load error | `.banner-error`: **Couldn't load this transcript.** The file at `{path}` wasn't changed. {server message} · `Retry` |
 
 A settled worker's transcript stays readable: Done, Failed and Stopped workers keep their rows

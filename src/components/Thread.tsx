@@ -1,6 +1,6 @@
 import { children, createEffect, createMemo, createSignal, For, Match, on, onCleanup, Show, Switch, type JSX } from "solid-js";
 import type { TmpAttachment, TranscriptItem } from "../../shared/protocol";
-import type { LiveBlock, LiveEntry, LiveState } from "../lib/live";
+import type { LiveBlock, LiveEntry, LiveState, LiveUserState } from "../lib/live";
 import { clockTime, prettyJson, shortModel, stampTime, thousands, tildePath } from "../lib/format";
 import { isObj, str, timestampOf, toolCallArgs, toolResultView } from "../lib/message";
 import { stripPastedPaths } from "../lib/path-attachments";
@@ -21,6 +21,20 @@ import { Markdown } from "./Markdown";
 import { ToolCard, type ToolStatus } from "./ToolCard";
 import { WakeCard } from "./WakeCard";
 import { Banner, Chip, Icon } from "./ui";
+import { MessageActions, type MessageActionItem } from "./MessageActions";
+import { type MessageStrip, stripLabel, stripsByRow } from "../lib/message-actions";
+
+/**
+ * What a view hangs under each delivered message (spec/03 "Message actions"). The thread decides
+ * WHERE a strip goes — once per entry, never once per rendered block — and the view decides what
+ * it holds: a chat offers Copy · Fork · Rewind/Regenerate, a watch offers Copy with the others'
+ * reasons, and a transcript rendered with no provider (a subagent's) shows no strip at all.
+ */
+export interface MessageActionsProvider {
+  items(strip: MessageStrip): MessageActionItem[];
+  /** The last refusal for that entry, kept on its row after the announcement. */
+  note?(entryId: string): string | null;
+}
 
 function Stamp(props: { iso?: string }) {
   return (
@@ -32,14 +46,32 @@ function Stamp(props: { iso?: string }) {
   );
 }
 
-function UserTurn(props: { text: string; time?: string; pending?: boolean; images?: string[]; attachments?: TmpAttachment[] }) {
+/** The head label for a message that hasn't been delivered yet. "Sending…" is only true while
+    nothing has acknowledged it; once the server says it holds the message, the truth is "Queued"
+    — it may sit there for minutes, until the agent next polls its queue. */
+const PENDING_LABEL: Partial<Record<LiveUserState, string>> = { sending: "Sending…", queued: "Queued" };
+
+/** A message Sova queued for itself (a group send from another surface, a remote status probe)
+    is still a message to this session, but it is not one you typed here — and a row that says
+    "You" over a message you never wrote is the kind of small lie that makes the rest suspect. */
+const AUTHOR = { client: "You", server: "Sent by Sova" } as const;
+
+function UserTurn(props: {
+  text: string;
+  time?: string;
+  state?: LiveUserState;
+  origin?: "client" | "server";
+  images?: string[];
+  attachments?: TmpAttachment[];
+}) {
+  const author = () => AUTHOR[props.origin ?? "client"];
   return (
-    <article class="message message-user" aria-label={props.time ? `You, ${stampTime(props.time)}` : "You"}>
+    <article class="message message-user" aria-label={props.time ? `${author()}, ${stampTime(props.time)}` : author()}>
       <div class="message-head">
-        <span class="message-author">You</span>
+        <span class="message-author">{author()}</span>
         <Stamp iso={props.time} />
-        <Show when={props.pending}>
-          <span>Sending…</span>
+        <Show when={props.state && PENDING_LABEL[props.state]}>
+          {(label) => <span class="message-pending">{label()}</span>}
         </Show>
       </div>
       <ImageStrip images={props.images} where="in your message" />
@@ -237,6 +269,9 @@ export function HistoryItems(props: {
       branch was taken from. Nothing is written to the file for it — the client draws it from the
       group's `seed`, and a member whose branch no longer holds that entry simply has no row. */
   fork?: ForkMarker;
+  /** Per-message actions. Absent: no strips at all (a subagent transcript, the hidden-rows
+      disclosure) — an action is about the chat you are in, not about every transcript on screen. */
+  actions?: MessageActionsProvider;
 }) {
   const split = createMemo(() =>
     props.hideTools || props.hideThinking ? splitHidden(props.items, { tools: !!props.hideTools, thinking: !!props.hideThinking }) : null,
@@ -254,6 +289,13 @@ export function HistoryItems(props: {
     return ids;
   });
   const latestAlign = createMemo(() => latestAlignId(props.items));
+  /**
+   * Where the action strips go, by rendered-row index. One per ENTRY: a reply rendered as three
+   * blocks is one message, and three strips under it would be three Regenerates for one turn.
+   * Computed from the rows actually shown, so hiding tools or thinking moves a strip rather than
+   * duplicating or dropping one.
+   */
+  const strips = createMemo(() => (props.actions ? stripsByRow(rows()) : new Map<number, MessageStrip>()));
   // Only calls after the last user message (or wake nudge — isTurnStart) can still be in flight.
   const lastUserIndex = createMemo(() => {
     for (let i = props.items.length - 1; i >= 0; i--) if (isTurnStart(props.items[i]!)) return i;
@@ -380,6 +422,17 @@ export function HistoryItems(props: {
                 </Show>
               </Match>
             </Switch>
+            {/* Under the bubble, once per entry (see `strips`). */}
+            <Show when={strips().get(index())}>
+              {(strip) => (
+                <MessageActions
+                  label={stripLabel(strip().role)}
+                  align={strip().role === "user" ? "end" : "start"}
+                  items={props.actions!.items(strip())}
+                  note={props.actions!.note?.(strip().entryId) ?? null}
+                />
+              )}
+            </Show>
             {/* After the entry, not inside its blocks: above this row is shared with the source,
                 below it is this member's own. */}
             <Show when={forkAfter() === index() && props.fork}>{(fork) => <ForkRow fork={fork()} time={forkTime()} />}</Show>
@@ -436,7 +489,16 @@ function LiveBlockView(props: { block: LiveBlock; live: LiveState; author: strin
 
 /** The in-progress run assembled from streaming events. `hideTools` and `hideThinking` drop those
     blocks and put one summary row after the turn, counted from live status. */
-export function LiveEntries(props: { live: LiveState; author: string; hideTools?: boolean; hideThinking?: boolean }) {
+export function LiveEntries(props: {
+  live: LiveState;
+  author: string;
+  hideTools?: boolean;
+  hideThinking?: boolean;
+  /** What a message of ours that hasn't been delivered offers — one Remove, from the chat. A row
+      the server has already taken (`delivered`) is never asked: nothing can be recalled then, and
+      a disabled Remove under every message you ever sent is an affordance that lies. */
+  queueActions?: (row: { id?: string; state: LiveUserState; text: string }) => MessageActionItem[];
+}) {
   const hide = () => ({ tools: !!props.hideTools, thinking: !!props.hideThinking });
   const shows = (b: LiveBlock | undefined) => !!b && !isHiddenBlock(b, hide());
   /** The nearest block before `i` that renders, so a hidden call doesn't repeat the author head. */
@@ -458,12 +520,21 @@ export function LiveEntries(props: { live: LiveState; author: string; hideTools?
                 <Show
                   when={parseWakeNudge(e().text)}
                   fallback={
-                    <UserTurn
-                      text={e().attachments ? stripPastedPaths(e().text) : e().text}
-                      pending={!e().confirmed}
-                      images={e().images}
-                      attachments={e().attachments}
-                    />
+                    /* A queued row has no `.entry` around it, so it brings the hover/tap region
+                       its Remove needs to be revealed by (base.css; `display: contents`, so the
+                       wrapper changes nothing about how the row lays out). */
+                    <div class="message-actions-host">
+                      <UserTurn
+                        text={e().attachments ? stripPastedPaths(e().text) : e().text}
+                        state={e().state}
+                        origin={e().origin}
+                        images={e().images}
+                        attachments={e().attachments}
+                      />
+                      <Show when={props.queueActions && e().state !== "delivered" ? props.queueActions(e()) : null}>
+                        {(items) => <Show when={items().length > 0}><MessageActions label="Actions for your queued message" align="end" items={items()} /></Show>}
+                      </Show>
+                    </div>
                   }
                 >
                   {(wake) => <WakeCard nudge={wake()} text={e().text} />}

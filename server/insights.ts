@@ -282,7 +282,7 @@ interface SessionFacts {
   /** Every accepted topic-outline snapshot, oldest first (see addOutlineSnapshot). */
   outlines: OutlineSnapshot[];
   compactions: CompactionInfo[];
-  /** The branch's rewinds, oldest first: the markers pi-web leaves when the chat goes back before a
+  /** The branch's rewinds, oldest first: the markers Sova leaves when the chat goes back before a
       message. Hidden from the transcript on purpose, so this is the only way to see one. */
   rewinds: RewindInfo[];
   /** The session's own id, from the header line: the parentSessionId /explain entries carry. */
@@ -462,9 +462,11 @@ function decodeCompaction(e: Rec): CompactionInfo {
 }
 
 /** The invisible custom entry a rewind appends — REWIND_ENTRY in chat-manager.ts, which owns the
-    write. The literal is spelled again rather than imported: chat-manager imports THIS module, and
-    the cycle would pull the pi SDK into every path that reads a session's facts, tests included. */
-const REWIND_ENTRY = "pi-web-rewind";
+    write. The literals are spelled again rather than imported: chat-manager imports THIS module,
+    and the cycle would pull the pi SDK into every path that reads a session's facts, tests
+    included. Both spellings are the bridge: rewinds are WRITTEN legacy-named until it closes, while
+    a post-bridge "sova-rewind" is already accepted on read. */
+const REWIND_ENTRIES: ReadonlySet<string> = new Set(["pi-web-rewind", "sova-rewind"]);
 
 /** One rewind marker, as chat-manager wrote it: ids and a stamp, no text (the abandoned turns are
     not on this branch). An entry missing either half can't be placed on an axis, so it is dropped. */
@@ -497,7 +499,7 @@ function extractFacts(text: string): SessionFacts {
     }
     else if (e.type === "custom_message" && e.customType === "subagent-complete") addReport(reports, e);
     else if (e.type === "compaction") compactions.push(decodeCompaction(e));
-    else if (e.type === "custom" && e.customType === REWIND_ENTRY) {
+    else if (e.type === "custom" && REWIND_ENTRIES.has(e.customType ?? "")) {
       const r = decodeRewind(e);
       if (r) rewinds.push(r);
     }

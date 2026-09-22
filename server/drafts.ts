@@ -1,6 +1,6 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
-import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { stateRoot } from "./state-root";
 import { checkTmpImage } from "./attachments";
 
 /**
@@ -10,7 +10,7 @@ import { checkTmpImage } from "./attachments";
  * Pending images ride along as `attachments`: files already uploaded into the session's
  * attachments folder (server/attachments.ts), so a reload keeps the screenshot with the text.
  */
-const FILE = join(getAgentDir(), "pi-web", "drafts.json");
+const FILE = join(stateRoot(), "drafts.json");
 const PREVIEW_MAX = 80; // the sidebar title cap (sessions-index TITLE_MAX)
 /** Same as a transcript row's cap (MAX_ATTACHMENTS_PER_ROW): more could never show after the send. */
 export const MAX_DRAFT_ATTACHMENTS = 8;

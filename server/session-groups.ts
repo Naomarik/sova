@@ -1,12 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { stateRoot } from "./state-root";
 import { GROUP_LABEL_MAX, GROUP_NAME_MAX, type GroupMember, type GroupSeed, type SessionGroup } from "../shared/protocol";
 
 /** The user's sidebar groups, and which session belongs to which (spec/02-session-list.md §2 "Groups").
-    pi-web's own data, beside the archive and web-session id lists: the session files are never touched. */
-const FILE = join(getAgentDir(), "pi-web", "session-groups.json");
+    Sova's own data, beside the archive and web-session id lists: the session files are never touched. */
+const FILE = join(stateRoot(), "session-groups.json");
 
 /** Re-exported for the tests and the routes; defined once in the wire contract (shared/protocol.ts). */
 export { GROUP_LABEL_MAX, GROUP_NAME_MAX };

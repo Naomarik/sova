@@ -9,7 +9,7 @@ pi --target acme-prod          # any local directory; tools run in the target's 
 ```
 
 Without `--target` the extension registers nothing, and the session behaves exactly as it would
-without it. pi-web sets the same flag per runtime (`extensionFlagValues`) for sessions opened from
+without it. Sova sets the same flag per runtime (`extensionFlagValues`) for sessions opened from
 New Session → Remote.
 
 ## What runs where
@@ -71,7 +71,7 @@ per call over a warm ControlMaster; `bash` and `write` are unchanged. Over one r
 
 **Status.** Two `setStatus` keys, always together: `remote`, the footer line
 (`⇄ <label> · user@hostname`, `· unreachable`, `· ssh rate-limited`, `· pinned`), and
-`remote-status`, JSON for pi-web's connection chip: `{state: "online"|"unreachable"|"unknown",
+`remote-status`, JSON for Sova's connection chip: `{state: "online"|"unreachable"|"unknown",
 target, host?, latencyMs?, pinned, channelState?: "off"|"warming"|"idle"|"busy"|"dead"|"rate-limited",
 channelRetryAt?, lastOkAt, runningMs?, error?, at}`. Re-published
 on session start, every probe and call outcome, every channel transition, and every 5 s while a
@@ -88,8 +88,11 @@ every tool fail with the target's name and ssh's stderr. The failure is cached f
 retried. An unknown or invalid target name makes every tool refuse, and never falls back to local
 execution.
 
-**Paths.** pi-web opens target sessions in a local placeholder,
-`<agentDir>/pi-web/targets/<name>/<remote/abs/path>`, which maps back to `/remote/abs/path`. From
+**Paths.** Sova opens target sessions in a local placeholder,
+`<agentDir>/sova/targets/<name>/<remote/abs/path>`, which maps back to `/remote/abs/path`. Session
+headers written before the rebrand name the `pi-web/targets/...` root; both roots classify as
+remote, and only the `sova` one is ever written (`placeholderRoot` / `legacyPlaceholderRoot` in
+`argv.ts`). From
 any other directory, the local cwd maps to the entry's `cwd` (or the far login directory), and
 `~/…` maps to the far `$HOME`.
 
@@ -105,7 +108,8 @@ and far scripts as the session itself (`workers.ts` is the contract the subagent
 
 How the subagents extension knows: this extension emits `remote:session` on `pi.events` at session
 start (and again on `remote:discover`), since `pi.getFlag("target")` is only answered for the
-extension that registered the flag; a placeholder cwd (`<agentDir>/pi-web/targets/<name>/<far path>`)
+extension that registered the flag; a placeholder cwd (`<agentDir>/sova/targets/<name>/<far path>`, or
+its legacy `pi-web/` spelling)
 is the fallback. A target that failed to load is announced with `error`, and the session then refuses
 to spawn workers at all — never a worker with local tools in an empty placeholder.
 
@@ -118,7 +122,7 @@ and a claude worker again through the server's `initialize.instructions`.
 
 | File | What |
 | --- | --- |
-| `argv.ts` | Pure, node-builtins-only. The entry schema, validation, the one argv builder (`buildTargetArgv`), the folder listing (`buildListDirsArgv`), quoting, and the placeholder path helpers. **pi-web's server imports it**, so keep it pi-runtime-free |
+| `argv.ts` | Pure, node-builtins-only. The entry schema, validation, the one argv builder (`buildTargetArgv`), the folder listing (`buildListDirsArgv`), quoting, and the placeholder path helpers. **Sova's server imports it**, so keep it pi-runtime-free |
 | `exec.ts` | Spawns an argv with no local shell, with a timeout, abort handling and stdin |
 | `channel.ts` | The pinned channel: one far shell over its own ssh, length-prefixed requests, base64 + marker responses |
 | `connection.ts` | Pure, loadable by plain node. `Connection`: one session's probe, status and the choke point every far command takes — the pinned channel when idle, else per call — with the whole channel policy (lazy warm, hold after a teardown, failure cooldown, login rate-limit backoff). `Remote` in index.ts extends it; a worker's MCP server uses it directly. Both lanes run in the far cwd |

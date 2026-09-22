@@ -20,7 +20,21 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 
-export const DEFAULT_WORKERS_ROOT = path.join(os.homedir(), ".pi", "agent", "pi-web", "workers");
+/**
+ * RENAME BRIDGE (pi-web → Sova): the registry root moved with the state dir. `defaultWorkersRoot()`
+ * is what all callers must use: the new root when it exists (or when neither does — fresh state),
+ * else the legacy one, so a manager started before the state move and one started after see the
+ * SAME registry without any coordination. New registries are only ever created at the new root.
+ */
+export const NEW_WORKERS_ROOT = path.join(os.homedir(), ".pi", "agent", "sova", "workers");
+export const LEGACY_WORKERS_ROOT = path.join(os.homedir(), ".pi", "agent", "pi-web", "workers");
+/** Kept for existing importers/tests; new code calls defaultWorkersRoot(). */
+export const DEFAULT_WORKERS_ROOT = NEW_WORKERS_ROOT;
+export function defaultWorkersRoot(fsImpl: Pick<typeof fs, "existsSync"> = fs): string {
+	if (fsImpl.existsSync(NEW_WORKERS_ROOT)) return NEW_WORKERS_ROOT;
+	if (fsImpl.existsSync(LEGACY_WORKERS_ROOT)) return LEGACY_WORKERS_ROOT;
+	return NEW_WORKERS_ROOT;
+}
 /** Entries without a living host are archived after this long. */
 export const REAP_AFTER_MS = 24 * 60 * 60 * 1000;
 /** Archived entries are deleted after this long. */
@@ -114,8 +128,12 @@ export function socketPath(owner: string, id: string, env: NodeJS.ProcessEnv = p
 	const name = `${createHash("sha256").update(owner).digest("hex").slice(0, 12)}-${id}.sock`;
 	const uid = typeof process.getuid === "function" ? process.getuid() : "user";
 	const candidates = [
-		...(env.XDG_RUNTIME_DIR ? [path.join(env.XDG_RUNTIME_DIR, "pi-web-workers")] : []),
+		// New spelling first; the legacy pi-web-workers dirs stay listed so a socket made by a
+		// pre-rename host remains findable through the bridge window.
+		...(env.XDG_RUNTIME_DIR ? [path.join(env.XDG_RUNTIME_DIR, "sova-workers"), path.join(env.XDG_RUNTIME_DIR, "pi-web-workers")] : []),
+		path.join(os.tmpdir(), `sova-workers-${uid}`),
 		path.join(os.tmpdir(), `pi-web-workers-${uid}`),
+		path.join("/tmp", `sova-workers-${uid}`),
 		path.join("/tmp", `pi-web-workers-${uid}`),
 	];
 	for (const dir of candidates) {

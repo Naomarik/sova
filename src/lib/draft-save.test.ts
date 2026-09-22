@@ -71,7 +71,7 @@ test("attachments ride with the text, and the last whole payload wins", () => {
   const t = fakeTimers();
   const r = recorder();
   const saver = createDraftSaver(r.save, t);
-  const shot: UploadResult = { path: "/att/s1/pi-web-1.png", name: "pi-web-1.png", mimeType: "image/png", size: 10 };
+  const shot: UploadResult = { path: "/att/s1/sova-1.png", name: "sova-1.png", mimeType: "image/png", size: 10 };
   saver.schedule("/a", d("look", [shot]));
   saver.schedule("/a", d("look here", [shot]));
   t.tick();

@@ -3,14 +3,17 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { cwdLabel, localOnly, splitRemoteCwd, remoteCrumbs, remoteParent, remotePlaceOf, remoteRecents } from "./remote-session";
 
-const T = "/home/u/.pi/agent/pi-web/targets";
+const T = "/home/u/.pi/agent/pi-web/targets"; // legacy pre-rebrand placeholder root
+const TS = "/home/u/.pi/agent/sova/targets"; // current root
 
-test("splitRemoteCwd reads the target and the mirrored remote folder", () => {
-  assert.deepEqual(splitRemoteCwd(`${T}/acme-prod/home/deploy/site`), { target: "acme-prod", remoteCwd: "/home/deploy/site" });
-  assert.deepEqual(splitRemoteCwd(`${T}/box`), { target: "box", remoteCwd: "/" });
-  assert.deepEqual(splitRemoteCwd(`${T}/box/`), { target: "box", remoteCwd: "/" });
+test("splitRemoteCwd reads the target and the mirrored remote folder, under EITHER root", () => {
+  for (const root of [TS, T]) {
+    assert.deepEqual(splitRemoteCwd(`${root}/acme-prod/home/deploy/site`), { target: "acme-prod", remoteCwd: "/home/deploy/site" });
+    assert.deepEqual(splitRemoteCwd(`${root}/box`), { target: "box", remoteCwd: "/" });
+    assert.deepEqual(splitRemoteCwd(`${root}/box/`), { target: "box", remoteCwd: "/" });
+    assert.equal(splitRemoteCwd(`${root}/`), null);
+  }
   assert.equal(splitRemoteCwd("/home/u/webapps/pi-web"), null);
-  assert.equal(splitRemoteCwd(`${T}/`), null);
 });
 
 test("remotePlaceOf prefers the summary's own fields", () => {

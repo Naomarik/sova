@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-label="TAVI">
+  <!-- TAVI, round 2, concept 3: Frame. The A's crossbar is the T's bar, and the T's stem drops from it
+       to the baseline: two letters, one shared stroke, symmetric. currentColor. -->
+  <path fill="none" stroke="currentColor" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" d="M5 27 16 5.5 27 27M9.4 18.5h13.2M16 18.5V27"/>
+</svg>

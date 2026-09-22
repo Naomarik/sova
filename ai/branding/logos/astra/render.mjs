@@ -1,0 +1,24 @@
+// Uses existing Playwright; no installation. Start an isolated skill browser first.
+import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
+import { writeFile } from 'node:fs/promises';
+const require = createRequire('/home/user/.npm/_npx/9833c18b2d85bc59/node_modules/playwright/package.json');
+const { chromium } = require('playwright');
+if (!process.env.PW_PORT) throw new Error('PW_PORT must identify your own browser');
+const browser = await chromium.connectOverCDP(`http://localhost:${process.env.PW_PORT}`);
+const context = browser.contexts()[0];
+const page = context.pages()[0] ?? await context.newPage();
+const errors = [];
+page.on('pageerror', error => errors.push(error.message));
+await page.goto(new URL('./comparison.html', import.meta.url).href);
+await page.setViewportSize({width:1280,height:1080});
+await page.evaluate(() => document.fonts.ready);
+const desktop = await page.evaluate(() => ({width:innerWidth,overflow:document.documentElement.scrollWidth>innerWidth,fontLoaded:document.fonts.check('640 32px Inter'),marks:document.querySelectorAll('svg').length,darkBackground:getComputedStyle(document.querySelector('.sample.dark')).backgroundColor,lightBackground:getComputedStyle(document.querySelector('.sample.light')).backgroundColor,externalRequests:performance.getEntriesByType('resource').filter(r=>!r.name.startsWith('data:')).length}));
+if(desktop.width!==1280 || desktop.overflow || !desktop.fontLoaded || desktop.marks!==40 || desktop.darkBackground===desktop.lightBackground || desktop.externalRequests) throw new Error(JSON.stringify(desktop));
+await page.screenshot({path:fileURLToPath(new URL('./comparison.png',import.meta.url)),fullPage:true});
+await page.setViewportSize({width:390,height:844});
+const mobile = await page.evaluate(() => ({width:innerWidth,overflow:document.documentElement.scrollWidth>innerWidth}));
+if(mobile.width!==390 || mobile.overflow || errors.length) throw new Error(JSON.stringify({mobile,errors}));
+await writeFile(new URL('./validation.json',import.meta.url),JSON.stringify({method:'Installed Playwright over isolated Chromium CDP; viewport set after navigation',desktop,mobile,errors},null,2)+'\n');
+console.log(JSON.stringify({desktop,mobile,errors}));
+await browser.close();

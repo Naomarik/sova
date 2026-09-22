@@ -474,6 +474,7 @@ export function App() {
     onWorkers: noteWorkers,
     onRewindControl: setRewindControl,
     onRewound: noteRewound,
+    onCreated: adoptCreated,
     paneOn,
     openPane,
     toggleSubagents,
@@ -608,6 +609,7 @@ export function App() {
                       listVersion={wiring.listVersion}
                       now={wiring.now}
                       onRefresh={wiring.onRefresh}
+                      onCreated={wiring.onCreated}
                       onArchiveChanged={wiring.onArchiveChanged}
                       onInsight={wiring.onInsight}
                       onWorkers={wiring.onWorkers}

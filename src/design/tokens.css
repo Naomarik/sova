@@ -1,5 +1,5 @@
 /* =============================================================================
-   pi-web — tokens.css
+   Sova — tokens.css
    Every design decision as a custom property. Derived from the fold-ai-dev
    design system (v1.8.0, .claude/skills/fold-ai-dev-design/tokens.css);
    values are unchanged, only the theme model differs (see §3).
@@ -9,7 +9,7 @@
 
    Load order:  tokens.css  →  base.css
 
-   Theme model — pi-web is a dev tool and ships DARK BY DEFAULT:
+   Theme model — Sova is a dev tool and ships DARK BY DEFAULT:
      <html>                      dark
      <html data-theme="dark">    dark
      <html data-theme="light">   light (full, equal token set)
@@ -35,6 +35,90 @@
   font-family: "JetBrains Mono";
   src: url("/fonts/JetBrainsMono-Variable.woff2") format("woff2");
   font-weight: 100 800;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* The Typography catalogue (spec/12-settings-dialog.md §12 "Typography"): seven more OFL faces,
+   latin subset, bundled under public/fonts/ with their licenses and sources in
+   public/fonts/README.md. A @font-face costs nothing until a rule uses the family, so a face
+   nobody picks is never fetched. Inter and JetBrains Mono above stay the defaults. */
+
+@font-face {
+  font-family: "Source Sans 3";
+  src: url("/fonts/SourceSans3-Variable.woff2") format("woff2");
+  font-weight: 200 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Atkinson Hyperlegible Next";
+  src: url("/fonts/AtkinsonHyperlegibleNext-Variable.woff2") format("woff2");
+  font-weight: 200 800;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "IBM Plex Sans";
+  src: url("/fonts/IBMPlexSans-Variable.woff2") format("woff2");
+  font-weight: 100 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Noto Sans";
+  src: url("/fonts/NotoSans-Variable.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Fira Code";
+  src: url("/fonts/FiraCode-Variable.woff2") format("woff2");
+  font-weight: 300 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Source Code Pro";
+  src: url("/fonts/SourceCodePro-Variable.woff2") format("woff2");
+  font-weight: 200 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* IBM Plex Mono ships static instances only: four faces, one per file. The scale's 530 and 640
+   resolve to 600 and 700 by CSS font matching (public/fonts/README.md "Weights"). */
+@font-face {
+  font-family: "IBM Plex Mono";
+  src: url("/fonts/IBMPlexMono-400.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "IBM Plex Mono";
+  src: url("/fonts/IBMPlexMono-500.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "IBM Plex Mono";
+  src: url("/fonts/IBMPlexMono-600.woff2") format("woff2");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "IBM Plex Mono";
+  src: url("/fonts/IBMPlexMono-700.woff2") format("woff2");
+  font-weight: 700;
   font-style: normal;
   font-display: swap;
 }
@@ -219,7 +303,7 @@
   --ls-display:   -.035em;
   --ls-heading:   -.018em;
   --ls-heading-s: -.01em;   /* heading-s and the markdown headings that borrow it */
-  --ls-wordmark:  -.03em;   /* the "pi-web" lockup only (§0 brand) */
+  --ls-wordmark:  -.03em;   /* the "sova" lockup only (§0 brand) */
   --ls-body:      0;
   --ls-mono-caps: .05em;    /* mono micro set in caps: chips, provider labels */
   --ls-eyebrow:   .13em;
@@ -261,7 +345,7 @@
   --control-md: 44px;
   --control-lg: 52px;
 
-  /* pi-web layout sizes (extension — see spec/01-app-shell.md §1). */
+  /* Sova layout sizes (extension — see spec/01-app-shell.md §1). */
   --sidebar-width: 320px;
   --composer-max:  40vh;  /* textarea auto-grow ceiling */
   --tool-output-max: 320px;

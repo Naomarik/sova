@@ -3,7 +3,7 @@ import "./design/tokens.css";
 import "./design/base.css";
 import "./app.css";
 import { App } from "./App";
-import { applyStoredTheme, clearTheme } from "./lib/theme";
+import { applyStoredTheme, clearTheme, clearTypography } from "./lib/theme";
 import "./sw-register";
 
 /**
@@ -33,7 +33,11 @@ function themeResetRequested(): boolean {
 // Before first paint, synchronously: the cached theme goes on the document now, or a reload of a
 // themed window flashes the default first (spec/00-ground-rules.md §0). App.tsx reconciles the
 // cache against /api/themes once it's up.
-if (themeResetRequested()) clearTheme();
-else applyStoredTheme();
+// The escape hatch takes the font pick off too: one URL that lands on the built-in dark in the
+// built-in faces, whatever was cached (§12 "Typography").
+if (themeResetRequested()) {
+  clearTheme();
+  clearTypography();
+} else applyStoredTheme();
 
 render(() => <App />, document.getElementById("root")!);

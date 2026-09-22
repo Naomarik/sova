@@ -10,6 +10,7 @@ import { RECENT_WRITE_MS } from "./write-guard";
 import { isArchived, setArchived } from "./archived-sessions";
 import { dropGroupAssignments, readAssignments } from "./session-groups";
 import { draftPreview, dropDrafts, readDrafts } from "./drafts";
+import { dropSessionTitles, readSessionTitles } from "./session-titles";
 import { removeSessionAttachments } from "./attachments";
 import { disposeHeldChat, getModelRuntime, isSessionBusy } from "./chat-manager";
 import { contextWindow } from "./models";
@@ -467,6 +468,19 @@ function outlineOverlay(s: BaseSummary, l: LiveRecord | undefined): { outlineNow
   };
 }
 
+/**
+ * The user's own title for a session, laid over the derived one (server/session-titles.ts). The
+ * ORIGINAL — the first user message, which is what the file says — rides along as `originalTitle`
+ * whenever an override is showing, so a reader can still tell which session this is and clearing
+ * the override has something to go back to. Applied here, at the two places a SessionSummary is
+ * handed out, rather than in `summarize`: that result is cached per file mtime, and a rename
+ * changes no byte of the file.
+ */
+function withTitle(s: BaseSummary, titles: Record<string, string>): BaseSummary {
+  const override = titles[s.id];
+  return override && override !== s.title ? { ...s, title: override, originalTitle: s.title } : s;
+}
+
 /** All sessions, newest activity first, with fresh live presence merged in. */
 export async function listSessions(): Promise<SessionSummary[]> {
   const files = await listSessionFiles();
@@ -474,6 +488,7 @@ export async function listSessions(): Promise<SessionSummary[]> {
   const own = readOwnLiveRecords();
   const resolveWindow = await windowResolver();
   const drafts = readDrafts();
+  const titles = readSessionTitles();
   const groups = readAssignments();
   // A member whose file is gone KEEPS its assignment, on purpose: the workspace's "This
   // session's file is gone" pane IS that assignment rendered (spec 14-workspaces "Gone from
@@ -504,8 +519,10 @@ export async function listSessions(): Promise<SessionSummary[]> {
     }
     const l = live.get(s.path);
     const ownRec = own.get(s.path);
+    // The husk check above reads the DERIVED title on purpose: what keeps an empty session out of
+    // the list is that nobody has written in it, which renaming it doesn't change.
     out.push({
-      ...s,
+      ...withTitle(s, titles),
       ...outlineOverlay(s, l),
       live: liveField(l),
       workers: l?.workers ?? (ownRec ? workerCountsOf(ownRec.rec) : undefined),
@@ -543,7 +560,7 @@ export async function getSessionSummary(path: string, resolveWindow?: WindowReso
   const ownRec = readOwnLiveRecords().get(path);
   const groupId = readAssignments()[s.id];
   return {
-    ...s,
+    ...withTitle(s, readSessionTitles()),
     ...outlineOverlay(s, l),
     live: liveField(l),
     workers: l?.workers ?? (ownRec ? workerCountsOf(ownRec.rec) : undefined),
@@ -560,7 +577,7 @@ export type ArchiveResult =
 
 /**
  * POST /api/sessions/archive: set or clear the manual archive mark of a web-spawned session.
- * Only pi-web's own id list changes; the session file is never touched. Archiving a session
+ * Only Sova's own id list changes; the session file is never touched. Archiving a session
  * that's live in a TUI is refused (it would stay on top anyway); unarchiving always works.
  */
 export async function archiveSession(path: string, archived: boolean): Promise<ArchiveResult> {
@@ -570,7 +587,7 @@ export async function archiveSession(path: string, archived: boolean): Promise<A
     return { ok: false, status: 409, error: "This session is open in a TUI, so it stays on top while live. Nothing was archived." };
   }
   if (archived && s.origin !== "web") {
-    return { ok: false, status: 409, error: "Only sessions started in pi-web can be archived. This one is already in the archive." };
+    return { ok: false, status: 409, error: "Only sessions started in Sova can be archived. This one is already in the archive." };
   }
   if (archived && isSessionBusy(s.path)) {
     return { ok: false, status: 409, error: "The agent is mid-turn; abort or wait before archiving." };
@@ -590,6 +607,7 @@ export async function archiveSession(path: string, archived: boolean): Promise<A
         setArchived(s.id, false);
         removeWebSession(s.id);
         dropDrafts([s.id]);
+        dropSessionTitles([s.id]);
         removeSessionAttachments(s.id);
         dropGroupAssignments([s.id]);
         return { ok: true, summary: { ...s, archived: true } };
@@ -723,6 +741,7 @@ export async function cleanupSessions(req: CleanupRequest): Promise<CleanupResul
       setArchived(id, false);
       removeWebSession(id);
       dropDrafts([id]);
+      dropSessionTitles([id]);
       removeSessionAttachments(id);
       deletedIds.push(id);
       forgotten.push(id);

@@ -14,7 +14,7 @@ mkdirSync(join(agentDir, "cache"), { recursive: true });
 
 const { getUsageInsight } = await import("./insights");
 const { LAST_KNOWN_REASON, lastKnownUsage, rememberUsage, resetLastKnownCache } = await import("./usage-last-known");
-const lastKnownFile = join(agentDir, "pi-web", "usage-last-known.json");
+const lastKnownFile = join(agentDir, "sova", "usage-last-known.json");
 
 /** Forget both the parsed-cache memo's input file state and the last-known store's memory. */
 function clearStore(): void {

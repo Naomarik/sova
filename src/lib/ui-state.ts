@@ -6,6 +6,7 @@ import { fetchDraft, putDraft } from "./api";
 import type { UploadResult } from "../../shared/protocol";
 import type { ContextState } from "./context";
 import { createDraftSaver, type DraftPayload } from "./draft-save";
+import { dualGet, dualSet } from "./storage-keys";
 
 export interface Toast {
   id: number;
@@ -202,15 +203,17 @@ export const openLightbox = (images: LightboxState["images"], index: number, ope
 // Per-session view preferences
 //
 // Persisted so a reload keeps them: the key convention follows the sessionStorage users
-// (Sidebar's ARCHIVE_KEY, InsightStrip's per-path key) — `pi-web:<name>-<path>`. Storage access
+// (Sidebar's ARCHIVE_KEY, the group-layout keys) — `sova:<name>-<path>`, with the pre-rebrand
+// `pi-web:` spelling read and mirrored through the rename bridge (storage-keys.ts). Storage access
 // is wrapped: a blocked or full localStorage must never break a render, and the in-memory map
 // below is the authority within a session either way.
 
-const PREF_PREFIX = "pi-web:";
+const PREF_PREFIX = "sova:";
+const LEGACY_PREF_PREFIX = "pi-web:";
 
 function readPref(name: string, path: string): string | null {
   try {
-    return localStorage.getItem(`${PREF_PREFIX}${name}-${path}`);
+    return dualGet(localStorage, `${PREF_PREFIX}${name}-${path}`, `${LEGACY_PREF_PREFIX}${name}-${path}`);
   } catch {
     return null;
   }
@@ -218,7 +221,7 @@ function readPref(name: string, path: string): string | null {
 
 function writePref(name: string, path: string, value: string): void {
   try {
-    localStorage.setItem(`${PREF_PREFIX}${name}-${path}`, value);
+    dualSet(localStorage, `${PREF_PREFIX}${name}-${path}`, `${LEGACY_PREF_PREFIX}${name}-${path}`, value);
   } catch {
     // Persistence is a convenience; the choice still holds for this session.
   }
@@ -262,3 +265,44 @@ export const activeTab = (path: string | null | undefined): string | null => (pa
 export function setActiveTab(path: string, id: string): void {
   setActiveTabByPath((m) => (m[path] === id ? m : { ...m, [path]: id }));
 }
+
+/**
+ * The ids of messages THIS TAB sent, per session — `sessionStorage`, because that is exactly the
+ * scope wanted: per tab (another window must never restore a message it didn't write) and across a
+ * reload (the same tab, after F5 or an HMR reload, is still the author).
+ *
+ * It decides who gets a failed or dropped message's text back. Held only in memory, a reload
+ * between the send and the failure left NO tab willing to restore it, and the user's typed words
+ * were lost with nothing said — rare, but silent, and the text exists nowhere else by then.
+ * Capped, because a long session shouldn't grow an unbounded list of ids nobody will ask about:
+ * the ones that matter are the recent ones, since a message is only ever in flight briefly.
+ */
+const SENDS_CAP = 50;
+const sendsKey = (path: string) => `${PREF_PREFIX}sends-${path}`;
+const legacySendsKey = (path: string) => `${LEGACY_PREF_PREFIX}sends-${path}`;
+
+const readSends = (path: string): string[] => {
+  try {
+    const raw = dualGet(sessionStorage, sendsKey(path), legacySendsKey(path));
+    const list: unknown = raw ? JSON.parse(raw) : [];
+    return Array.isArray(list) ? list.filter((v): v is string => typeof v === "string") : [];
+  } catch {
+    // No sessionStorage (a hardened browser), or unparseable: authorship simply isn't remembered.
+    return [];
+  }
+};
+
+/** Records that this tab sent `id` in `path`. */
+export function rememberSend(path: string, id: string): void {
+  if (!id) return;
+  const list = readSends(path).filter((v) => v !== id);
+  list.push(id);
+  try {
+    dualSet(sessionStorage, sendsKey(path), legacySendsKey(path), JSON.stringify(list.slice(-SENDS_CAP)));
+  } catch {
+    // Storage full or blocked: the in-flight restore is the only thing that degrades.
+  }
+}
+
+/** Whether this tab sent that message — the gate on handing its text back. */
+export const sentHere = (path: string, id: string): boolean => !!id && readSends(path).includes(id);

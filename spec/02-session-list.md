@@ -1,12 +1,12 @@
 # 02 · Session list (sidebar)
-> Part of the pi-web design spec · [overview](overview.md)
+> Part of the Sova design spec · [overview](overview.md)
 
 ## Anatomy
 
 ```html
 <aside class="app-sidebar" aria-label="Sessions">
   <div class="sidebar-head">
-    <a class="brand" href="#/"><svg class="icon" aria-hidden="true">…pi-web-mark…</svg>pi-web</a>
+    <a class="brand" href="#/"><svg class="icon" aria-hidden="true">…sova-mark…</svg>sova</a>
     <span class="sidebar-spacer"></span>
     <button class="button" type="button"><svg class="icon" aria-hidden="true">…plus…</svg>New Session</button>
   </div>
@@ -131,7 +131,7 @@
     is what toggles, and `aria-labelledby` on the `<details>` still points at it. The sticky
     behaviour moves to the `<summary>` — a sticky heading inside a summary has nothing to stick in.
 - **Remote sessions.** A session on a remote target (`SessionSummary.target`/`remoteCwd`, else a
-  `cwd` under `~/.pi/agent/pi-web/targets/<target>/…`, which mirrors the remote folder) never shows
+  `cwd` under `~/.pi/agent/sova/targets/<target>/…`, which mirrors the remote folder) never shows
   that local placeholder. Its group label reads `terminal` icon, the target's `label` (else its
   name) and `·`, then the remote folder as-is: the target's `$HOME` isn't ours, so no `~` — but
   only while every row in the group runs at that one target and folder (`groupRemotePlaceOf` in
@@ -213,7 +213,7 @@
 - **Row line 2.** `SessionSummary.outlineGist`, the outline's "overall" line from the session's
   latest `topic-outline` snapshot: **what the session is for**, not what the agent is doing this
   second. The line truncates after a few words in a narrow rail, so what stands there has to be the
-  thing that makes this session recognizable — "pi-web theming: palette, fonts, Themes tab", never
+  thing that makes this session recognizable — "Sova theming: palette, fonts, Themes tab", never
   "The round is committed as dc63576 with …". Snapshots written before the gist existed fall back
   to `outlineNow`, the rolling "now" line, so those rows keep the line they had. Rendered only when
   present: `--fs-micro` in `--color-ink-2`, one line truncated with an ellipsis. `title=` carries
@@ -272,7 +272,7 @@
     and a row that pulses all day while nothing moves teaches people that the pulse means
     nothing. The pulse now means exactly "work in flight", which is Busy.
   - **Hue.** Accent, unchanged: the accent's meaning is still "a TUI has this".
-- **Busy pill.** Shown when `busy === true`, meaning the server is mid-turn on a session pi-web
+- **Busy pill.** Shown when `busy === true`, meaning the server is mid-turn on a session Sova
   holds: `.session-rail-item.session-rail-state.chip.chip-info.chip-live`, same 26px pill, info
   dot, **pulsing**. `aria-label` and `title` both "pi is replying in this session".
 
@@ -280,7 +280,7 @@
     real work in flight, and it ends when the turn does.
   - **Hue.** Info (`--status-info`, 5.94 dark / 6.36 light on the pill's surface), not the
     accent. Busy is our own run; the accent stays reserved for "a TUI has this".
-  - **At most one pill.** TUI and Busy never co-occur — pi-web never holds a TUI-owned session —
+  - **At most one pill.** TUI and Busy never co-occur — Sova never holds a TUI-owned session —
     and if both ever arrive, **TUI wins** and Busy is hidden: the TUI owns the file, so our view
     of busy is stale.
   - **What tells the two apart.** Tone (accent vs info), and static vs pulsing. One dot glyph
@@ -418,8 +418,8 @@ already saying it, and "0 recent" above "0 sessions" says it twice.
 
 Groups are the user's **own** sections, above every other region: named folders they make and file
 sessions into by dragging a row onto one. They live server-side in
-`~/.pi/agent/pi-web/session-groups.json` (`server/session-groups.ts`), keyed by session id like the
-archive, so every tab and every pi-web server sees the same groups and clearing browser storage
+`~/.pi/agent/sova/session-groups.json` (`server/session-groups.ts`), keyed by session id like the
+archive, so every tab and every Sova server sees the same groups and clearing browser storage
 loses nothing. `GET /api/session-groups` lists them; the other routes are in `shared/protocol.ts`.
 
 **A group is additive.** It never moves a session out of its region or out of its own place in the
@@ -604,13 +604,96 @@ summary. Escape closes the menu (and any screen it is showing) and returns focus
 uses. Contrast is the region head's (ink-2 on sunken, 7.65 dark / 7.22 light); the drop state adds
 the accent tint and a dashed accent edge, never a pulse.
 
+## Selecting several sessions
+
+One session at a time is the sidebar's whole grammar: one row, one click, one transcript. Three
+gestures are not about one session though — renaming, filing into a group, archiving — and doing
+them to eight sessions one row at a time is eight round trips through a pane the user did not want
+to open. So the list itself can be picked from.
+
+**The way in is a press held on a row**, ~500ms, mouse or thumb alike: that row is selected and
+the sidebar enters **selection mode**. Press-and-hold is the accelerator; the **Select** button
+beside the session count is the door, for a keyboard and for anyone who has never held a row in
+their life. There is never only one way in.
+
+**What a press is, and what it stops being.** A press becomes a hold only if it stays within 10px
+of where it started and nothing interrupts it. Moving further is a drag (rows still drag into
+groups, exactly as before) or a scroll; a `pointercancel` — what touch sends the moment the list
+starts moving under a still finger — ends it too, and so does a wheel scroll under a held mouse.
+A native drag can begin before the 10px tolerance is reached (the browser's own threshold is
+smaller), so a `dragstart` ends the press too, as do the pointer leaving the row, capture being
+lost, and the window losing focus — every path where the `pointerup` may never arrive.
+
+A hold that DID fire swallows what it leaves behind: the `click` the pointerup produces and, on
+touch, the `contextmenu` that arrives before it. Neither may reach the row's link, or the session
+would open on top of the selection that was just made. **That suppression lasts for the whole
+press and for a second after it is RELEASED** — never a second after the hold fired. A press may be
+held for as long as the user likes, and a window measured from the hold would have run out under a
+3-second press, letting the click through to toggle the row straight back off. The rules live in
+`src/lib/hold-select.ts`.
+
+**In selection mode**, a click on a row toggles it instead of opening it, each row's rail carries a
+44px checkbox, and the rail — 30px of gutter everywhere else — widens to 44px to hold it. Outside
+selection mode nothing changes: a click is a click. **The selection is keyed by session path**, so
+the same session shown in Recent, in a group and in Live & web is ONE selection with three checked
+boxes, and it is module state (`src/lib/session-selection.ts`), like the open groups and the drag —
+the list refreshes every few seconds and rebuilds every row, and a selection that a poll could
+clear would be unusable. A poll may do exactly one thing to it: drop a session that is no longer in
+the list.
+
+**The toolbar sits inside the sidebar, above the list**, never floating over the rows it acts on:
+the count, `Cancel`, and the actions.
+
+- **Rename** appears at **exactly one** selected session and is gone at two — one field cannot
+  mean two titles. It opens an inline field: Enter saves, Escape cancels, and an **empty field
+  clears** the user's title so the derived one (the session's first message) comes back. Changing
+  the selection closes the field rather than leaving a stale one over another row's title.
+- **Move to group** files every selected session at once, with `No group` first and `New group…`
+  last — the one-session menu's own rows (§2 "Groups"), in a menu that says how many it will move.
+- **Archive** points one way for the whole selection. All archived → `Unarchive`. None archived →
+  `Archive`. **A mix is a disabled control** that says what it found ("2 of these 3 are archived
+  and the rest aren't. Select one kind, or the other."): guessing which half was meant is how a
+  bulk gesture loses work. Only eligible sessions are written — the single Archive button's own
+  four rules, in one place (`archiveBlockReason`): open in a TUI, not started in Sova, mid-turn,
+  or holding working subagents (archiving closes the runtime, so they would stop). The rest are
+  skipped, and what was skipped or failed is said **once, in one sentence, for the whole run**
+  ("Archived 2 sessions. Skipped 1: 1 open in a TUI.") and **stays selected**, so what is left is
+  on screen rather than in a toast that has gone.
+
+**One action at a time, and it owns the tab.** Archive, Move to group and Rename are each several
+requests long. While one is in flight the selection is locked: rows don't toggle, `Cancel` and
+`Escape` are refused (each saying so), and the toolbar's own controls are disabled — and the run
+applies its leftovers through a token that says whether the tab is still the one it started on. A
+run that comes back to a tab whose selection has moved on — cancelled, re-entered, picked again —
+writes **nothing**, neither the leftovers nor the busy flag. "New group…" is ONE action across both
+of its requests, and the sessions it moves are the ones that were selected when the row was
+pressed, snapshotted before the group is created rather than re-read after it.
+
+**Renaming is Sova's, and only Sova's.** A title set here is stored by session id in
+`~/.pi/agent/sova/session-titles.json` (`POST /api/sessions/title`, `server/session-titles.ts`)
+and **not one byte is written into the session's `.jsonl`** — which is what lets a session open in
+a TUI be renamed at all (the webapp must never write a file a TUI owns). Every summary the server
+hands out carries the override as `title` and the derived one as `originalTitle`, so the rename is
+the same everywhere a session is named, and clearing it has something to go back to. Titles are
+capped at `SESSION_TITLE_MAX` (80, the derived title's own cap), trimmed, whitespace collapsed to
+one line; a deleted session's title is forgotten with its file.
+
+**Accessibility.** `Escape` leaves selection mode from anywhere outside a text field (inside one it
+belongs to the field: search clears, the rename field cancels). "Text field" means a caret, not
+merely an `<input>`: a row's checkbox is an input too, and Escape pressed on one — the likeliest
+place for a keyboard to be in this mode — leaves the mode like Escape anywhere else
+(`isTextEntry`). Every checkbox is a real
+`<input type="checkbox">` inside its label, named "Select {title}". The toolbar is a `role="group"`
+labelled "Selected sessions", its count is a polite live region, and every disabled control carries
+the reason it is disabled before it is pressed, never after. Every target in the mode is 44px.
+
 ## Regions: top and Archive
 
 `SessionSummary.origin` and `archived` divide the sessions into two regions (`isTopSession` in
 `src/lib/regions.ts`):
 
 - **Top region:** sessions where `live !== null || (origin === "web" && !archived)`, meaning
-  the ones running in a TUI right now, or started from pi-web and not archived by the user.
+  the ones running in a TUI right now, or started from Sova and not archived by the user.
 - **Archive:** every other session. A server that sends no `archived` counts as not archived.
 
 Both regions use exactly the same folder groups and rows described above. Each region groups by
@@ -706,7 +789,7 @@ rows are ordered by the rules above. A session moves between regions in place on
 example when its TUI closes and `live` becomes null. If it's the selected row, it keeps
 `aria-current`, and case 2 keeps the archive open.
 
-**Archiving.** Sessions started from pi-web (`origin === "web"`) can be archived by hand, so
+**Archiving.** Sessions started from Sova (`origin === "web"`) can be archived by hand, so
 the top region doesn't keep every one of them forever.
 
 - **Where.** An Archive Session icon button (`archive.svg`) last in the session head (§3), only
@@ -714,7 +797,7 @@ the top region doesn't keep every one of them forever.
   splits the row's single target. It's the only archive control in the app, so it stays at every
   head width (§3, §4f "Width budget").
 - **What it does.** `POST /api/sessions/archive { path, archived }`, then a list refresh. The id
-  goes into `~/.pi/agent/pi-web/archived-sessions.json`; the session file is never written.
+  goes into `~/.pi/agent/sova/archived-sessions.json`; the session file is never written.
   Toast: "Archived. Find it under Archive." The row moves to the Archive, and case 2 keeps it
   visible while it's open.
 - **Undo.** On an archived session the same button is Unarchive Session. Toast: "Moved back to

@@ -112,7 +112,7 @@ export function FanoutDialog(props: {
    *
    * It is also the one fact only this client holds: the server receives a string and cannot tell
    * "accepted our default" from "typed their own", because the default is generated HERE (§14b).
-   * That distinction decides whether the group is pi-web's to delete when it empties.
+   * That distinction decides whether the group is Sova's to delete when it empties.
    *
    * ONE SIGNAL, TWO RULES, NEITHER REDUNDANT: it gates regeneration (the input handler below) and
    * it reports provenance (`named`, via fanoutBody). Deleting it does not merely break a
@@ -441,7 +441,7 @@ export function FanoutDialog(props: {
             <div class="fanout-preview">
               <p class="fanout-note">{sharedTurnLine(members(), startFill())}</p>
               <p class="fanout-note">
-                Turns start together, so one provider may answer some members with 429. pi-web doesn't stagger them.
+                Turns start together, so one provider may answer some members with 429. Sova doesn't stagger them.
               </p>
             </div>
           </Show>

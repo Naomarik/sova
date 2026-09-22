@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-label="TAVI">
+  <!-- TAVI · TOTEM — the word's opening pair composed vertically: the T posts
+       onto the A and the two share a single vertex, the stem's round cap
+       leaving a small joint where it meets the apex. Symmetric about the
+       centre axis, so it sits level in a square well. Single colour,
+       currentColor, no detached parts. -->
+  <path fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"
+        d="M8 7 H24 M16 7 V13 M6 25 L16 13 L26 25 M10.5 19.6 H21.5"/>
+</svg>

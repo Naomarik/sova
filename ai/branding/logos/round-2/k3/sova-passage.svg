@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-label="SOVA">
+  <!-- SOVA · PASSAGE — the O is a solid disc and the S is the opening cut clean
+       through it: the word's first letter as a channel of bare surface inside
+       its second. Every terminal of the S stays inside the disc, so the letter
+       floats in the solid. The mask cuts true transparency — the channel shows
+       whatever the mark sits on. Single colour, currentColor. The mask id is
+       prefixed so the file can be inlined beside other marks. -->
+  <mask id="k3r2-sova-passage">
+    <rect width="32" height="32" fill="#fff"/>
+    <path d="M19.8 8.9 C17.8 7.4 13.9 7.5 12.5 9.5 C11.3 11.2 12.3 13 14.3 13.8 C16.9 14.7 18.7 16 18.5 18.3 C18.3 21 15.6 23 12.7 22.4 C11.4 22.1 10.4 21.4 9.9 20.5"
+          fill="none" stroke="#000" stroke-width="3.8" stroke-linecap="round"/>
+  </mask>
+  <circle fill="currentColor" cx="16" cy="16" r="11.5" mask="url(#k3r2-sova-passage)"/>
+</svg>

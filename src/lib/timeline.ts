@@ -20,7 +20,7 @@ import { wakeTitle } from "../../shared/wake";
 export type TimelineKind = "input" | "chapter" | "marker" | "density" | "gap";
 
 /**
- * What a marker row marks. A `rewind` doesn't come from the transcript — pi-web's rewind entries
+ * What a marker row marks. A `rewind` doesn't come from the transcript — Sova's rewind entries
  * are hidden there — so `markerRows` reads it from the insight's own `rewinds` list instead, and
  * emits one only when that list is passed in. An `outline` is a past summary of the session, from
  * the insight's `outlines`: a marker, because it is the axis reporting, not the session speaking.

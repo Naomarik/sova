@@ -3,11 +3,13 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { groupRemotePlaceOf, remoteMarkOf, remoteMarkSuffix, remoteMarkTitle } from "./remote-mark";
 
-const T = "/home/u/.pi/agent/pi-web/targets";
+const T = "/home/u/.pi/agent/pi-web/targets"; // legacy pre-rebrand placeholder root
+const TS = "/home/u/.pi/agent/sova/targets"; // current root
 
 const local = { cwd: "/home/u/webapps/pi-web" };
 const remote = { cwd: "/home/u/webapps/pi-web", target: "box", remoteCwd: "/srv/site" };
 const remote2 = { cwd: `${T}/box/srv/site` };
+const remoteNewRoot = { cwd: `${TS}/box/srv/site` };
 
 test("a remote row among local rows carries the mark; the local rows carry none", () => {
   const rows = [local, remote, local];
@@ -20,6 +22,8 @@ test("a local row among remote rows carries no mark, wherever it sits in the gro
   assert.equal(remoteMarkOf(local), null);
   // The placeholder cwd alone marks a row remote, the way the old label logic did — but per row.
   assert.deepEqual(remoteMarkOf(remote2)?.place, { target: "box", remoteCwd: "/srv/site" });
+  // The current state-root spelling marks it exactly the same way.
+  assert.deepEqual(remoteMarkOf(remoteNewRoot)?.place, { target: "box", remoteCwd: "/srv/site" });
 });
 
 test("a uniformly remote group speaks as one place, however its rows say it", () => {

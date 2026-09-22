@@ -1,4 +1,4 @@
-# pi-web wishlist
+# Sova wishlist
 
 Deferred ideas from the 2026-09-19 build rounds. Ordered loosely by value.
 
@@ -43,7 +43,7 @@ branch, not the file, until first append). Full analysis: `docs/tree-web-feasibi
 
 ## Ops / upstream
 
-- **Merge `fix/steer-delivery-timeout`** (pi-config; now a pi-web branch touching only
+- **Merge `fix/steer-delivery-timeout`** (pi-config; now a Sova branch touching only
   `pi-config/`) — the ag_05-killer fix, verified.
   Takes effect on next pi restart.
 - **Upstreamable to Claude Code:** document `command_lifecycle` as the message-receipt

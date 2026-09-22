@@ -197,7 +197,7 @@ export function fanoutBody(plan: {
    * against the string we generated (spec/14b-fanout.md).
    *
    * Not because a comparison can't separate "typed over then restored our text" from "typed our
-   * exact string by hand": those end with pi-web's own string on the group either way, so they
+   * exact string by hand": those end with Sova's own string on the group either way, so they
    * deserve the same answer, and both candidate rules give them one. The reason is the failure
    * mode. A comparison is correct only while regeneration stops at the first touch — weaken that
    * gate and `lastWritten` equals the field by construction, so it reports "generated" for a name
@@ -283,7 +283,7 @@ export const unidentifiedWriterReason = (title: string): string =>
 export const staleLeafReason = (title: string): string =>
   `“${title}” answered while this dialog was open, so the fork point you picked isn't its latest message anymore. Reopen Fan out to fork from where it is now.`;
 export const tuiLiveReason = (title: string): string =>
-  `“${title}” is open in a terminal now. pi-web doesn't touch a file a terminal owns; fan out once it closes.`;
+  `“${title}” is open in a terminal now. Sova doesn't touch a file a terminal owns; fan out once it closes.`;
 
 /**
  * The source facts `sourceBlocked` reads — a structural slice of `SessionSummary`, so tests can
@@ -319,7 +319,7 @@ export function sourceBlocked(s: SourceFacts): string | null {
  * A source refusal, in full: the §14b sentence for every code this build knows — recovery advice
  * included, unlike the group composer's clause — and the server's own reason for a code it knows
  * better than we do (`internal`, or a newer server's code), so an older client stays honest
- * instead of dropping the reason. Never parses the server's prose; the words stay pi-web's.
+ * instead of dropping the reason. Never parses the server's prose; the words stay Sova's.
  */
 export function sourceRefusal(refusal: BatchRefusal, title: string): string {
   switch (refusal.code) {

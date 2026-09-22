@@ -206,17 +206,17 @@ See [docs/protocol-probes.md](docs/protocol-probes.md).
 
 The same extension can also expose the installed Claude Code CLI as ordinary pi
 models — provider `claude-code-cli`, models `claude-fable-5-1[1m]`, `opus[1m]`,
-`sonnet` and `haiku` — selectable in `/model` and in pi-web's picker, streaming,
+`sonnet` and `haiku` — selectable in `/model` and in Sova's picker, streaming,
 and running **pi's own tools**. It is opt-in and off by default:
 
 - TUI: `pi --claude-code-provider`.
-- pi-web: Settings → Experimental → "Claude Code models" (stored in the agent
-  dir's `pi-web/settings.json`; the server passes the extension flag to every
+- Sova: Settings → Experimental → "Claude Code models" (stored in the agent
+  dir's `sova/settings.json`; the server passes the extension flag to every
   session opened after the change). Off means nothing is registered anywhere.
 
 The flag is read at `session_start` (pi applies caller-supplied flag values
 after extension factories run), so no CLI process starts at load, and a
-runtime shared by several pi-web sessions keeps the provider once registered.
+runtime shared by several Sova sessions keeps the provider once registered.
 
 ### How a turn runs
 
@@ -294,7 +294,7 @@ divergence is stated, and are confirmed by `docs/protocol-probes.md`.
   the CLI saw. A host that embeds the SDK directly and calls
   `AgentSession.dispose()` rather than disposing through `AgentSessionRuntime`
   never emits `session_shutdown`, so that session's CLI child lives until the
-  host process exits — dispose through the runtime (pi's TUI and pi-web both
+  host process exits — dispose through the runtime (pi's TUI and Sova both
   do).
 - Divergences from the investigation, consciously: it proposed
   `--permission-mode manual --permission-prompts host` and answering
@@ -310,7 +310,7 @@ divergence is stated, and are confirmed by `docs/protocol-probes.md`.
 Offline: `node ~/pi-config/extensions/claude-code/tests/run.mjs` (includes
 `provider/*.test.ts` on recorded frames; no CLI). The live protocol probes and
 their scripts are in `docs/protocol-probes.md` and `tests/spike/`; they cost
-quota and are never run by the test loader. pi-web's hermetic end-to-end check:
+quota and are never run by the test loader. Sova's hermetic end-to-end check:
 `npm run dev:hermetic` (PORT 4810, `PI_CODING_AGENT_DIR=<repo>/.agent`) and
 `PI_WEB_PORT=4810 npm run dev:web`, then switch the toggle on in Settings →
 Experimental and open a new session on `claude-code-cli/sonnet`. Verified

@@ -1,5 +1,5 @@
 # 04g · Mode menu
-> Part of the pi-web design spec · [overview](overview.md)
+> Part of the Sova design spec · [overview](overview.md)
 
 pi's mode extension (`pi-config/extensions/mode`) has one **major mode**, `normal` or
 `claude-heavy`, and any set of **minor modes** (today `align`). Both are **per session**: each

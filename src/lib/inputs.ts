@@ -140,8 +140,8 @@ export function stepRewind(phase: RewindPhase, step: RewindStep): RewindPhase {
 const BLOCK_REASON: Record<RewindBlock, string> = {
   streaming: "Stop the current turn first.",
   compacting: "Wait for the compaction to finish.",
-  live: "This session is open in a terminal, so pi-web won't write to it.",
-  "no-chat": "Only a chat open in pi-web can rewind.",
+  live: "This session is open in a terminal, so Sova won't write to it.",
+  "no-chat": "Only a chat open in Sova can rewind.",
 };
 
 /** Whether a row's rewind can act, and if not, why — the reason the disabled button carries. */

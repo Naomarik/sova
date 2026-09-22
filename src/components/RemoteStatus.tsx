@@ -151,7 +151,7 @@ export function RemotePaneStatus(props: { path: string; summary: SessionSummary 
   const ask = (e: RemoteEntry, kind: "check" | "reconnect") => {
     const ok = kind === "check" ? e.controls?.check() : e.controls?.reconnect();
     if (ok) setAsked({ kind, at: Date.now() });
-    else announce("Not connected to pi-web's server; try again once it reconnects.");
+    else announce("Not connected to Sova's server; try again once it reconnects.");
   };
   return (
     <Show when={identity()}>

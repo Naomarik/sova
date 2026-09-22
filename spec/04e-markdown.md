@@ -1,5 +1,5 @@
 # 04e · Markdown and code
-> Part of the pi-web design spec · [overview](overview.md)
+> Part of the Sova design spec · [overview](overview.md)
 
 **Scope.** **assistant-text** rows render markdown. Everything else stays as it is:
 

@@ -132,7 +132,8 @@ async function readHeadAndLeaf(path: string): Promise<{ version: number; leafId:
  *
  * TWO ways the file's last line is the wrong answer, and both are ordinary:
  * 1. HIDDEN ENTRIES. The transcript draws nothing for a top-level `usage` row (cache warming is
- *    on by default), a `role:"system"` loadout message, or pi-web's own `pi-web-rewind` marker.
+ *    on by default), a `role:"system"` loadout message, or a rewind marker (`pi-web-rewind`; the
+ *    write spelling stays legacy until the rename bridge closes, reads accept `sova-rewind`).
  * 2. THE ABANDONED BRANCH. After a rewind, the file's TAIL is the branch that was left behind —
  *    ordinary, visible messages — while the active branch hangs off the rewind marker. Walking
  *    back from end-of-file returns the abandoned leaf, so every rewound source would be refused
@@ -186,7 +187,7 @@ export const realFanoutDeps: FanoutDeps = {
    * instead of fanning, and calling it on the held runtime's manager would repoint a LIVE runtime
    * at a member's file — the user's next turn would land in a member's transcript.
    *
-   * Two non-obvious reasons this is safe to do while pi-web HOLDS an idle runtime for the source,
+   * Two non-obvious reasons this is safe to do while Sova HOLDS an idle runtime for the source,
    * both worth stating because a plausible refactor breaks them:
    *
    * 1. open()'s only write to a healthy current-version file is appending "\n" to a trailing
@@ -431,7 +432,7 @@ export async function runFanout(body: FanoutRequest, deps: FanoutDeps = realFano
       // start: {message}" itself, so prefixing the ref here would render the model twice.
       const said = (err instanceof Error ? err.message : String(err)).trim();
       // The banner reads "{model} couldn't start: {message}", so everything before the colon is
-      // already pi-web's claim and the message has to answer WHY. A restatement ("it could not be
+      // already Sova's claim and the message has to answer WHY. A restatement ("it could not be
       // started") stutters and tells the reader nothing they didn't have from the first clause.
       failed.push(refusal("", "internal", said || "The runtime gave no reason.", "", member.ref));
     }

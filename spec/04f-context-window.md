@@ -1,5 +1,5 @@
 # 04f · Context window
-> Part of the pi-web design spec · [overview](overview.md)
+> Part of the Sova design spec · [overview](overview.md)
 
 How full the model's context is, as of the last reply. The data is `ContextInfo
 { tokens, window | null }`, or `null` when there's no assistant turn yet. It appears in the

@@ -1,5 +1,5 @@
 # 06 · Extension dialogs (`ui_request`, optional in MVP)
-> Part of the pi-web design spec · [overview](overview.md)
+> Part of the Sova design spec · [overview](overview.md)
 
 Use the same `.modal` shell, titled with the request's title.
 

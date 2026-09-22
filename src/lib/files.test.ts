@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { insertMention, mentionEntries, mentionQueryParts, mentionTokenAt } from "./files";
+import { insertMention, mentionEntries, mentionIndexStatus, mentionQueryParts, mentionTokenAt, NO_CWD_MESSAGE, shouldFetchIndex } from "./files";
 
 const caretAfter = (text: string, token: string) => text.indexOf(token) + token.length;
 
@@ -144,4 +144,30 @@ test("insertMention quotes the whole path when only the directory had spaces", (
   const token = mentionTokenAt(text, text.length)!;
   const next = insertMention(text, token, { name: "files.ts", path: "My Docs/files.ts", dir: false });
   assert.equal(next.text, 'see "My Docs/files.ts" ');
+});
+
+// ---------------------------------------------------------------------------
+// what the menu says, and when it fetches — both keyed by the cwd they belong to
+
+test("mentionIndexStatus reads loading, ready, and the session's missing folder", () => {
+  assert.deepEqual(mentionIndexStatus({ cwd: "/w/app", cached: false, error: null }), { state: "loading" });
+  assert.deepEqual(mentionIndexStatus({ cwd: "/w/app", cached: true, error: null }), { state: "ready" });
+  assert.deepEqual(mentionIndexStatus({ cwd: null, cached: false, error: null }), { state: "error", error: NO_CWD_MESSAGE });
+  assert.deepEqual(mentionIndexStatus({ cwd: undefined, cached: true, error: null }), { state: "error", error: NO_CWD_MESSAGE });
+});
+
+test("mentionIndexStatus shows an error only for the cwd it happened in", () => {
+  const error = { cwd: "/w/old", message: "Folder not found" };
+  assert.deepEqual(mentionIndexStatus({ cwd: "/w/old", cached: false, error }), { state: "error", error: "Folder not found" });
+  // The session moved: the folder we left failing says nothing about the one we are in.
+  assert.deepEqual(mentionIndexStatus({ cwd: "/w/new", cached: false, error }), { state: "loading" });
+  assert.deepEqual(mentionIndexStatus({ cwd: "/w/new", cached: true, error }), { state: "ready" });
+});
+
+test("shouldFetchIndex tries once per opening, and re-arms when the cwd changes", () => {
+  assert.equal(shouldFetchIndex({ cwd: "/w/app", cached: false, fetchedFor: null }), true);
+  assert.equal(shouldFetchIndex({ cwd: "/w/app", cached: false, fetchedFor: "/w/app" }), false, "one attempt per opening, failure included");
+  assert.equal(shouldFetchIndex({ cwd: "/w/app", cached: true, fetchedFor: null }), false, "a fresh index needs no request");
+  assert.equal(shouldFetchIndex({ cwd: "/w/new", cached: false, fetchedFor: "/w/old" }), true, "a menu open across a cwd switch refetches");
+  assert.equal(shouldFetchIndex({ cwd: null, cached: false, fetchedFor: null }), false);
 });

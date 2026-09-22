@@ -130,13 +130,13 @@ export function FolderPicker(props: {
     if (l.state === "error") {
       const r = props.remote;
       if (r) {
-        if (l.status === 403) return `pi-web can't read this folder on ${r.name}. Pick another one.`;
+        if (l.status === 403) return `Sova can't read this folder on ${r.name}. Pick another one.`;
         if (l.status === 404) return `This folder doesn't exist on ${r.name}. Pick another one.`;
         // 502 covers both "unreachable" and "no such folder": the server's message says which.
         if (l.status === 504 || l.status === 0) return `Couldn't reach ${r.name}. ${l.message}`;
         return `Couldn't list this folder on ${r.name}. ${l.message}`;
       }
-      if (l.status === 403) return "pi-web can't read this folder. Pick another one.";
+      if (l.status === 403) return "Sova can't read this folder. Pick another one.";
       if (l.status === 404) return "This folder doesn't exist. Pick another one.";
       return `Couldn't list this folder. ${l.message}`;
     }

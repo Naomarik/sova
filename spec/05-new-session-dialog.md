@@ -1,5 +1,5 @@
 # 05 · New Session dialog
-> Part of the pi-web design spec · [overview](overview.md)
+> Part of the Sova design spec · [overview](overview.md)
 
 Triggered by `New Session` (sidebar head, and the empty states).
 
@@ -227,7 +227,7 @@ error; each tab keeps its own choice.
   this target's recent folders. The client gives up after 20 s ("Couldn't reach {target}. No answer
   within 20s."), so "Asking {target} for its folders…" always ends.
 - **Recent remote folders.** No endpoint of their own. A remote session's local cwd is a
-  placeholder that mirrors the remote folder, `~/.pi/agent/pi-web/targets/<target>/<remote path>`,
+  placeholder that mirrors the remote folder, `~/.pi/agent/sova/targets/<target>/<remote path>`,
   so the recents from `GET /api/cwds` already hold them. The Remote tab lists those (up to 20,
   newest first, the remote path with the target beside it), and This Computer's recents leave them
   out. Click or Enter/Space picks target and folder at once, and double-click also submits.
@@ -243,7 +243,7 @@ error; each tab keeps its own choice.
 | State | Note |
 |---|---|
 | Loading | Asking {target} for its folders… |
-| 403 | pi-web can't read this folder on {target}. Pick another one. |
+| 403 | Sova can't read this folder on {target}. Pick another one. |
 | 404 | This folder doesn't exist on {target}. Pick another one. |
 | 400, 502 (unreachable, or no such folder: the message says which) | Couldn't list this folder on {target}. {server message} |
 | Client timeout (20 s), server gone | Couldn't reach {target}. {message} |
@@ -258,7 +258,7 @@ say):
 | No subfolders | No subfolders in {name}. You can still start the session here. |
 | Filter matches nothing | 0 of {n} match “{filter}”. |
 | Over 500 | Showing the first 500 folders, A to Z. Filter to narrow them. |
-| 403 | pi-web can't read this folder. Pick another one. |
+| 403 | Sova can't read this folder. Pick another one. |
 | 404 (e.g. a deleted prefill) | This folder doesn't exist. Pick another one. |
 | Other failure | Couldn't list this folder. {server message} |
 | Recent, none yet | No recent folders yet. Sessions you start add theirs here. |

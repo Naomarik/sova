@@ -1,7 +1,12 @@
 // Run: npx tsx --test src/lib/folder-open.test.ts
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { folderOpen, folderOpenKey, storedFolderOpen } from "./folder-open";
+import {
+  folderOpen,
+  folderOpenKey,
+  legacyFolderOpenKey,
+  storedFolderOpen,
+} from "./folder-open";
 
 const quiet = { searching: false, holdsSelected: false };
 
@@ -45,5 +50,10 @@ test("the key separates the same folder in different regions", () => {
   assert.equal(new Set(keys).size, keys.length);
   // ...and two folders inside one region, whose paths share a prefix.
   assert.notEqual(folderOpenKey("t", "/home/user/webapps"), folderOpenKey("t", "/home/user/webapps/pi-web"));
-  for (const k of keys) assert.match(k, /^pi-web:folder-open-/);
+  for (const k of keys) assert.match(k, /^sova:folder-open-/);
+});
+
+test("the legacy pre-rebrand key is the same shape under the old prefix", () => {
+  assert.equal(legacyFolderOpenKey("t", "/x"), "pi-web:folder-open-t-/x");
+  assert.equal(folderOpenKey("t", "/x"), "sova:folder-open-t-/x");
 });

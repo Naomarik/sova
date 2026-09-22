@@ -51,7 +51,7 @@ const assistant = (id: string, parentId: string, text: string, input: number) =>
 const twoTurns = () => [user("u1", null, "first ask"), assistant("a1", "u1", "first answer", 100), user("u2", "a1", "second ask"), assistant("a2", "u2", "second answer", 200)];
 
 /** A fake session for rewindSession: records navigation and appends, with switchable guards. */
-function fake(entries: any[], opts: { streaming?: boolean; compacting?: boolean; cancel?: boolean; throws?: string } = {}) {
+function fake(entries: any[], opts: { streaming?: boolean; compacting?: boolean; cancel?: boolean; throws?: string; queued?: boolean } = {}) {
   let leaf: string | null = entries.at(-1)?.id ?? null;
   const calls: string[] = [];
   const appended: Array<{ customType: string; data: unknown; parentId: string | null }> = [];
@@ -84,12 +84,28 @@ function fake(entries: any[], opts: { streaming?: boolean; compacting?: boolean;
   };
   const hooks = {
     guard: () => void calls.push("guard"),
+    queued: () => opts.queued ?? false,
     beforeMarker: () => void calls.push("flush"),
   };
   return { session, hooks, calls, appended, leaf: () => leaf };
 }
 
 describe("rewindSession", () => {
+  test("a rewind is REFUSED while a message is still on its way out, and writes nothing", async () => {
+    // The window this exists for is NOT covered by the isStreaming check: `steer()` awaits the
+    // extension `input` handlers before queueing, so a steer carrying images on a non-vision model
+    // can still be in flight after the turn it meant to interrupt has ended (CLAUDE.md). Rewinding
+    // then moves the leaf, and the queued message is delivered into the NEW branch on the next
+    // run — the abandoned message resurrecting on the branch the user rewound TO.
+    const f = fake(twoTurns(), { streaming: false, queued: true });
+    const out = await rewindSession(f.session, "u2", f.hooks);
+    assert.equal(out.ok, false);
+    assert.equal(!out.ok && out.reason, "queued");
+    // Stated as a state, not a code: the branch did not move and nothing was appended.
+    assert.deepEqual(f.appended, [], "no marker was written");
+    assert.ok(!f.calls.includes("navigate"), `navigateTree must not run: ${f.calls.join(", ")}`);
+  });
+
   test("moves the leaf to the input's parent, hands its text back, then pins the move with the marker", async () => {
     const f = fake(twoTurns());
     const out = await rewindSession(f.session, "u2", f.hooks);
@@ -129,6 +145,7 @@ describe("rewindSession", () => {
       const f = fake(twoTurns());
       const out = await rewindSession(f.session, "u2", {
         ...f.hooks,
+        queued: () => false,
         guard: () => {
           throw new BusyError(`owned (${code})`, code);
         },

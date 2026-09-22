@@ -37,7 +37,7 @@ export function activeTeamCount(a: AgentsInsight | undefined): number {
 export const subagentsWorkingLabel = (n: number): string => `${n} ${n === 1 ? "subagent" : "subagents"} working…`;
 
 /** Live records the Agents page shows: everything but headless worker pis (mode "rpc", not
-    embedded). Chat runtimes embedded in pi-web are rpc too, but real sessions hosting agents. */
+    embedded). Chat runtimes embedded in Sova are rpc too, but real sessions hosting agents. */
 export const isHostSession = (s: Pick<LiveAgentSession, "mode" | "embedded">): boolean => s.mode !== "rpc" || s.embedded === true;
 
 /** Subagents pane order: working first, then the most recent activity (else start) first. */

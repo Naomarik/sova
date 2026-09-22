@@ -87,7 +87,7 @@ tool, its prompt snippet and its guideline bullets are absent from a
 vision-capable model's system prompt. The gate runs on `before_agent_start`
 (once per user prompt, against the live model) and again on `model_select` so a
 `/model` switch shows at once. It writes only when the active set is wrong;
-pi then notes the loadout change once, and pi-web hides that note.
+pi then notes the loadout change once, and Sova hides that note.
 
 The execute-time refusal above stays as a second layer: a model switched
 mid-run keeps the tool offered for the rest of that run.

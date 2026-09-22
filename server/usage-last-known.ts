@@ -1,6 +1,6 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { stateRoot } from "./state-root";
 import type { UsageProvider } from "../shared/protocol";
 
 /**
@@ -12,7 +12,7 @@ import type { UsageProvider } from "../shared/protocol";
  * Same directory as web-sessions.json, and derived the same way, so a throwaway
  * PI_CODING_AGENT_DIR keeps tests off ~/.pi.
  */
-const FILE = join(getAgentDir(), "pi-web", "usage-last-known.json");
+const FILE = join(stateRoot(), "usage-last-known.json");
 
 /** A stored reading older than this is not worth showing; the provider reports no data instead. */
 export const LAST_KNOWN_MAX_AGE_MS = 24 * 60 * 60_000;

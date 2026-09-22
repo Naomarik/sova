@@ -26,20 +26,37 @@ import {
   setSessionGroup,
 } from "../lib/session-groups";
 import { announce, home, localRunning, sessionContext, toast } from "../lib/ui-state";
-import { folderOpen, folderOpenKey, storedFolderOpen } from "../lib/folder-open";
+import { dualGet, dualSet } from "../lib/storage-keys";
+import { createHoldGesture } from "../lib/hold-select";
+import {
+  clearSelection,
+  isSelected,
+  isTextEntry,
+  selectionBusy,
+  pruneSelection,
+  selectedPaths,
+  selectionMode,
+  startSelection,
+  toggleSelection,
+} from "../lib/session-selection";
+import { folderOpen, folderOpenKey, readFolderOpenRaw, storedFolderOpen, writeFolderOpenRaw } from "../lib/folder-open";
 import { groupOpen as groupOpenRule, groupsRegionOpen as groupsRegionOpenRule } from "../lib/group-open";
 import { activeAgentCounts, activeTeamCount, sessionWorking } from "../lib/workers";
 import { ActionMenu } from "./ActionMenu";
 import { ArchiveCleanup } from "./ArchiveCleanup";
+import { SelectionToolbar } from "./SelectionToolbar";
 import { ContextRing } from "./ContextRing";
 import { groupHref } from "../lib/group-route";
 import { GroupNameField } from "./Groups";
 import { RemoteGroupDot } from "./RemoteStatus";
 import { Banner, Chip, Icon } from "./ui";
 
-const ARCHIVE_KEY = "pi-web:archive-open";
+const ARCHIVE_KEY = "sova:archive-open";
+/** Pre-rebrand spellings: read and mirrored while the rename bridge is open (lib/storage-keys.ts). */
+const LEGACY_ARCHIVE_KEY = "pi-web:archive-open";
 /** One key per Archive date section, same "1"/"0" values as ARCHIVE_KEY. */
-const archiveDateKey = (id: ArchiveGroupId) => `pi-web:archive-date-open-${id}`;
+const archiveDateKey = (id: ArchiveGroupId) => `sova:archive-date-open-${id}`;
+const legacyArchiveDateKey = (id: ArchiveGroupId) => `pi-web:archive-date-open-${id}`;
 
 /**
  * The row being dragged, and the drop target under the pointer. Module state, because one drag
@@ -128,14 +145,75 @@ function SessionRow(props: { session: SessionSummary; selected: string | null; n
     const fromList = s.context;
     return fromList && fromList.window ? fromList : null;
   };
+  /**
+   * Press-and-hold — a mouse button held down, a thumb held on the row — selects this session and
+   * turns the sidebar into selection mode (§2 "Selecting several sessions"). The press is off the
+   * moment it stops being a press in place: a drag, a scroll (the list moving under a still
+   * finger is `pointercancel` on touch and a `scroll` event on a mouse wheel), or the row going
+   * away. What the fired hold leaves behind — a `click`, and on touch a `contextmenu` — is
+   * swallowed below, or the row would navigate on top of the selection it just made.
+   */
+  const hold = createHoldGesture({
+    onHold: () => {
+      startSelection(s().path);
+      announce(`Selecting sessions. ${s().title} selected.`);
+    },
+  });
+  const cancelHold = () => hold.cancel();
+  /** A release anywhere ends this press, even one that happened over another element. */
+  const finishHold = () => {
+    hold.finish();
+    watchPress(false);
+  };
+  /**
+   * Only while a press is in flight: one set of listeners per PRESSED row, never one per row on
+   * screen. A scroll under the pointer moves the row out from under it; a window blur (an alt-tab,
+   * a native drag taking over, an OS menu) means the pointerup may never arrive at all; and the
+   * pointerup itself is watched on the window because a press that wandered off the row still has
+   * to END — a press left "down" forever would suppress every later click on this row.
+   */
+  const watchPress = (on: boolean) => {
+    if (on) {
+      addEventListener("scroll", cancelHold, true);
+      addEventListener("blur", cancelHold);
+      addEventListener("pointerup", finishHold, true);
+      addEventListener("pointercancel", cancelHold, true);
+    } else {
+      removeEventListener("scroll", cancelHold, true);
+      removeEventListener("blur", cancelHold);
+      removeEventListener("pointerup", finishHold, true);
+      removeEventListener("pointercancel", cancelHold, true);
+    }
+  };
+  /** Every way a press stops being ours, in one place. */
+  const endPress = () => {
+    hold.cancel();
+    watchPress(false);
+  };
+  onCleanup(endPress);
+  /** The rail's own controls (the state pills, the checkbox) are pressed, not held. */
+  const onOwnControl = (e: PointerEvent) => e.target instanceof Element && !!e.target.closest("button, input, label");
+  const selecting = () => selectionMode();
+  const chosen = () => isSelected(s().path);
+
   return (
     <li
       class="session-row-shell"
-      classList={{ "session-row-shell-current": props.selected === s().path, "session-row-dragging": dragging()?.path === s().path }}
+      classList={{
+        "session-row-shell-current": props.selected === s().path,
+        "session-row-dragging": dragging()?.path === s().path,
+        "session-row-shell-selecting": selecting(),
+        "session-row-shell-selected": selecting() && chosen(),
+      }}
       // The row itself is the drag source (the link inside is not: a browser drags links natively,
       // and that drag carries a URL, not a session). §2 "Groups": drag a row onto a group section.
-      draggable="true"
+      // In selection mode there is no drag at all: a press there is a hold or a toggle.
+      draggable={selecting() ? "false" : "true"}
       onDragStart={(e) => {
+        // A native drag can start before the pointer has moved the tolerance — the browser's own
+        // threshold is smaller, and on some platforms a drag begins with no pointermove at all.
+        // Once it has, this press is a drag: it must not also become a hold mid-flight.
+        endPress();
         setGroupDragData(e, s().path);
         setDragging({ path: s().path, groupId: s().groupId ?? null });
       }}
@@ -143,8 +221,46 @@ function SessionRow(props: { session: SessionSummary; selected: string | null; n
         setDragging(null);
         setDropTarget(null);
       }}
+      onPointerDown={(e) => {
+        if (e.pointerType === "mouse" && e.button !== 0) return; // right-click is not a hold
+        if (onOwnControl(e)) return;
+        hold.start({ x: e.clientX, y: e.clientY });
+        watchPress(true);
+      }}
+      onPointerMove={(e) => hold.move({ x: e.clientX, y: e.clientY })}
+      onPointerUp={() => {
+        hold.finish();
+        watchPress(false);
+      }}
+      onPointerCancel={endPress}
+      // The pointer left this row before the hold fired — a slide off the row, or the list moving
+      // under it — so this press is not a selection. AFTER the hold has fired, leaving means
+      // nothing: the gesture is done, and the release (watched on the window) is what ends it.
+      onPointerLeave={() => !hold.held() && endPress()}
+      // Capture went to someone else (a native drag, a scrollbar, another element grabbing it),
+      // so the pointerup belonging to this press will never arrive.
+      onLostPointerCapture={endPress}
+      // The long-press context menu belongs to the hold, not to the browser.
+      onContextMenu={(e) => hold.suppressed() && e.preventDefault()}
     >
       <div class="session-rail">
+        {/* The rail is where a row's state lives, so it is where the row is picked too: one 44px
+            checkbox at the top of it, in selection mode only. Every copy of this row — Recent, a
+            group, Live & web — reads the same selection, so all of them check together. */}
+        <Show when={selecting()}>
+          <label class="toggle session-select">
+            <input
+              type="checkbox"
+              checked={chosen()}
+              aria-label={`Select ${s().title}`}
+              // An action in flight owns the selection it started with; the box says so rather
+              // than silently ignoring the press (the store refuses it either way).
+              disabled={selectionBusy()}
+              onChange={() => toggleSelection(s().path)}
+            />
+            <span class="toggle-box" />
+          </label>
+        </Show>
         {/* At most one state: live wins over busy. TUI is static now; Busy is what pulses. */}
         <Show when={s().live}>
           <button
@@ -193,6 +309,17 @@ function SessionRow(props: { session: SessionSummary; selected: string | null; n
         href={sessionHref(s().path)}
         draggable={false}
         aria-current={props.selected === s().path ? "page" : undefined}
+        onClick={(e) => {
+          // The hold already acted on this row; its click is the gesture's echo, not a choice.
+          if (hold.suppressed()) {
+            e.preventDefault();
+            return;
+          }
+          // In selection mode a row is picked, not opened. Outside it, a click is a click.
+          if (!selecting()) return;
+          e.preventDefault();
+          toggleSelection(s().path);
+        }}
       >
         <div class="list-main">
           <p class="list-title" classList={{ "list-title-muted": s().title === "Untitled" }} title={s().title}>
@@ -301,7 +428,7 @@ function GroupList(props: {
         const key = folderOpenKey(props.idPrefix, group.cwd);
         const open = () =>
           folderOpen({
-            stored: openFolders()[key] ?? storedFolderOpen(sessionStorage.getItem(key)),
+            stored: openFolders()[key] ?? storedFolderOpen(readFolderOpenRaw(props.idPrefix, group.cwd)),
             searching: props.searching,
             holdsSelected: group.sessions.some((s) => s.path === props.selected),
           });
@@ -309,7 +436,7 @@ function GroupList(props: {
           const now = e.currentTarget.open;
           if (now === open()) return; // our own `open` update, not the user's
           setOpenFolders((m) => ({ ...m, [key]: now }));
-          sessionStorage.setItem(key, now ? "1" : "0");
+          writeFolderOpenRaw(props.idPrefix, group.cwd, now);
         };
         return (
           <details class="session-group" aria-labelledby={`${props.idPrefix}-${gi()}`} open={open()} onToggle={onFolderToggle}>
@@ -594,11 +721,28 @@ export function Sidebar(props: {
   // The tab's copy of the group list: the pane's region and the session pane's menu share it.
   onMount(() => void loadSessionGroups());
 
-  // "/" anywhere outside a text field focuses search.
+  // "/" anywhere outside a text field focuses search; Escape leaves selection mode.
   const onKey = (e: KeyboardEvent) => {
+    const t = e.target as HTMLInputElement | null;
+    // Typing, not merely focused on a control: a row's checkbox is an <input> too, and Escape on
+    // one has to leave selection mode like Escape anywhere else (src/lib/session-selection.ts).
+    const inText = isTextEntry(t);
+    // Escape is the way OUT of selection mode, on every keyboard, with no control to find first.
+    // Not while a field has focus: there Escape belongs to the field (search clears, rename cancels).
+    if (e.key === "Escape" && selectionMode() && !inText) {
+      e.preventDefault();
+      // Not while an action is running: leaving the mode under a run in flight is what let a
+      // finished run put its leftovers back over a selection that had moved on.
+      if (selectionBusy()) {
+        announce("Something is still running. It'll be a moment.");
+        return;
+      }
+      clearSelection();
+      announce("Selection off.");
+      return;
+    }
     if (e.key !== "/" || e.metaKey || e.ctrlKey || e.altKey) return;
-    const t = e.target as HTMLElement | null;
-    if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+    if (inText) return;
     e.preventDefault();
     search.focus();
   };
@@ -609,6 +753,17 @@ export function Sidebar(props: {
   });
 
   const all = () => props.sessions ?? [];
+  /**
+   * The selection lives in module state and is keyed by PATH, so a background poll can neither
+   * reset it nor unpick a row whose object was rebuilt. The one thing a poll may change about it:
+   * a session that is no longer in the list is no longer selected. `undefined` is a fetch in
+   * flight, not an empty list — pruning against that would clear everything every few seconds.
+   */
+  createEffect(() => {
+    const list = props.sessions;
+    if (!list) return;
+    pruneSelection(list.map((s) => s.path));
+  });
   // Labels for remote groups: refetched only when the set of targets the list uses changes.
   const usedTargets = createMemo(
     () => [...new Set(all().map((s) => remotePlaceOf(s)?.target).filter(Boolean))].sort().join("\n") || false,
@@ -684,7 +839,7 @@ export function Sidebar(props: {
   });
 
   // Collapsed by default; the user's own choice persists for the tab (spec/02-session-list.md §2 "Regions").
-  const [storedOpen, setStoredOpen] = createSignal(sessionStorage.getItem(ARCHIVE_KEY) === "1");
+  const [storedOpen, setStoredOpen] = createSignal(dualGet(sessionStorage, ARCHIVE_KEY, LEGACY_ARCHIVE_KEY) === "1");
   /** Forced open while searching, when the top is empty, or when the open session is archived. */
   const forcedOpen = () =>
     !!query().trim() || topHits().length === 0 || archiveHits().some((s) => s.path === props.selected);
@@ -693,11 +848,11 @@ export function Sidebar(props: {
     const open = e.currentTarget.open;
     if (open === archiveOpen()) return; // our own `open` update, not the user's
     setStoredOpen(open);
-    sessionStorage.setItem(ARCHIVE_KEY, open ? "1" : "0");
+    dualSet(sessionStorage, ARCHIVE_KEY, LEGACY_ARCHIVE_KEY, open ? "1" : "0");
   };
   // Date sections: collapsed by default, each remembering its own choice the same way.
   const [storedDateOpen, setStoredDateOpen] = createSignal<Partial<Record<ArchiveGroupId, boolean>>>({});
-  const dateStored = (id: ArchiveGroupId) => storedDateOpen()[id] ?? sessionStorage.getItem(archiveDateKey(id)) === "1";
+  const dateStored = (id: ArchiveGroupId) => storedDateOpen()[id] ?? dualGet(sessionStorage, archiveDateKey(id), legacyArchiveDateKey(id)) === "1";
   /** Forced open while searching, or when it holds the open session. */
   const dateOpen = (d: { id: ArchiveGroupId; items: SessionSummary[] }) =>
     !!query().trim() || d.items.some((s) => s.path === props.selected) || dateStored(d.id);
@@ -705,7 +860,7 @@ export function Sidebar(props: {
     const open = e.currentTarget.open;
     if (open === dateOpen(d)) return; // our own `open` update, not the user's
     setStoredDateOpen((m) => ({ ...m, [d.id]: open }));
-    sessionStorage.setItem(archiveDateKey(d.id), open ? "1" : "0");
+    dualSet(sessionStorage, archiveDateKey(d.id), legacyArchiveDateKey(d.id), open ? "1" : "0");
   };
   const liveCount = () => all().filter((s) => s.live).length;
   const glance = createMemo(() => usageGlance(props.usage));
@@ -722,8 +877,8 @@ export function Sidebar(props: {
     <aside class="app-sidebar" aria-label="Sessions">
       <div class="sidebar-head">
         <a class="brand" href="#/">
-          <span class="icon" style={{ "--icon": "url(/icons/pi-web-mark.svg)" }} aria-hidden="true" />
-          pi-web
+          <span class="icon" style={{ "--icon": "url(/icons/sova-mark.svg)" }} aria-hidden="true" />
+          sova
         </a>
         <span class="sidebar-spacer" />
         <button type="button" class="button" onClick={() => props.onNew()}>
@@ -776,8 +931,29 @@ export function Sidebar(props: {
               {liveCount()} TUI
             </Chip>
           </Show>
+          {/* The keyboard's (and the unsure pointer's) door into selection mode: press-and-hold is
+              the accelerator, never the only way in (§2 "Selecting several sessions"). */}
+          <Show when={props.sessions && all().length > 0 && !selectionMode()}>
+            <button
+              type="button"
+              class="button button-sm button-ghost sidebar-select-start"
+              title="Select several sessions to rename, group or archive them"
+              onClick={() => {
+                startSelection();
+                announce("Selecting sessions. Pick rows with their checkboxes.");
+              }}
+            >
+              <Icon name="check" small />
+              Select
+            </button>
+          </Show>
         </div>
       </div>
+
+      {/* Inside the sidebar, above the list: the rows it acts on stay on screen, on a phone too. */}
+      <Show when={selectionMode()}>
+        <SelectionToolbar sessions={all()} onRefresh={props.onRefresh} />
+      </Show>
 
       <nav class="sidebar-list pane" aria-label="Session list" aria-busy={props.sessions === undefined && props.loading ? "true" : undefined}>
         <Show when={props.error}>

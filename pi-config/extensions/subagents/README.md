@@ -235,7 +235,7 @@ are already being stopped and are only reported as a count.
 
 ## Remote sessions
 
-When the parent runs on a remote target (pi-config's `remote` extension, `--target`; pi-web opens
+When the parent runs on a remote target (pi-config's `remote` extension, `--target`; Sova opens
 such sessions in an empty local placeholder directory), every worker runs on the target as well —
 no backend ever gets local tools against the placeholder:
 
@@ -251,7 +251,8 @@ no backend ever gets local tools against the placeholder:
   failed to load.
 
 The session is recognised from the remote extension's `remote:session` event on `pi.events`, else
-from the placeholder cwd (`<agentDir>/pi-web/targets/<name>/<far path>`). See the remote
+from the placeholder cwd (`<agentDir>/sova/targets/<name>/<far path>`; the pre-rebrand
+`pi-web/targets/...` spelling is still read, never written). See the remote
 extension's README ("Workers").
 
 ## Model policy
@@ -285,7 +286,7 @@ session's model. The reason says whether the model is off everywhere or only for
 subagents, because those take different switches to undo. For non-pi backends the
 backend id doubles as the provider (`claude-code` above), and a model-less spec on
 a disabled backend is rejected too, since its default model is that provider's.
-pi-web's Settings → Models tab edits this file live; manual edits apply on the
+Sova's Settings → Models tab edits this file live; manual edits apply on the
 next spawn or discovery, no reload needed. A missing or corrupt file disables
 nothing.
 

@@ -1,5 +1,5 @@
 # 04b · Images
-> Part of the pi-web design spec · [overview](overview.md)
+> Part of the Sova design spec · [overview](overview.md)
 
 Images show up in three places. A **user row** and a **tool-result row** can each carry images
 (`TranscriptItem.images`, as data URLs). The **composer** can attach images to a prompt or a
@@ -8,7 +8,7 @@ steer (`OutboundImage[]`).
 Web uploads don't ride the prompt as base64. The composer uploads each image **when you
 attach it**, not at send: `POST /api/upload?draft=<session path>` stores the bytes as a fresh
 `pi-web-<uuid>.<ext>` in that session's attachments folder,
-`~/.pi/agent/pi-web/attachments/<sessionId>/`. At send, the prompt text names that durable path.
+`~/.pi/agent/sova/attachments/<sessionId>/`. At send, the prompt text names that durable path.
 The user row then shows the same path-attachment unit as TUI pastes; the model sees the image by
 reading the path. Unlike a TUI paste in `/tmp` (10 days on this host, gone on reboot), the file
 outlives a reboot, so a sent image keeps its thumbnail in the transcript. Deleting the session
@@ -92,7 +92,7 @@ alt. `aria-haspopup="dialog"` tells AT that it opens something.
 ## Path attachments
 
 When you paste an image into pi's terminal UI, pi writes it to `/tmp/pi-clipboard-<uuid>.png`
-(`/tmp/pi-wsl-clip-<uuid>.png` under WSL) and puts that **path in the message text**. A pi-web
+(`/tmp/pi-wsl-clip-<uuid>.png` under WSL) and puts that **path in the message text**. A Sova
 upload does the same with a path in the session's attachments folder (above). Either way the
 image never reaches the session file. Replies, tool output and subagent reports then quote
 the same path. The server finds these paths in user, assistant-text, info (custom messages,
@@ -148,7 +148,7 @@ else it becomes an inline chip or a tool-card section (see **Other rows** below)
 - **Cap.** At most 8 different paths per row get a unit or chip. Later ones stay text. The
   server checks each one once, and never looks at anything but the paths it found.
 - **The text.** pi's own clipboard paths come out of the bubble, since the unit stands in for
-  them (a pi-web upload's name, `pi-web-<uuid>`, counts as pi's own in either root). An image
+  them (a Sova upload's name, `pi-web-<uuid>`, counts as pi's own in either root). An image
   path you typed yourself stays in the text (it's part of your sentence)
   and still gets a unit. If nothing is left, there's no bubble (same rule as thumbnails). The
   session file, and the text the model saw, never change.

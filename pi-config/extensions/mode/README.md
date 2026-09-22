@@ -112,16 +112,22 @@ markdown block that the extension captures at the end of every turn
 ### Findings
 ### Approach
 ### Open questions
-1. [ ] Question — with a recommendation
-2. [x] Settled question — the decision
+- [ ] **1. Topic:** Question — with a recommendation
+- [x] **2. Topic:** Settled question — the decision
 ### Rejected
 - Alternative — why not
 ### Status
 aligning | confirmed | implementing
 ```
 
+Questions are numbered inside the checkbox label (`**1. Topic:**`), not with
+a markdown list number: the viewer turns the marker into a glyph and drops
+list numbering, so only a number in the label survives into what the user
+reads. The parser still accepts `1. [ ] …` from older blocks.
+
 The agent re-emits the whole block whenever something changes (answers,
-scope, new findings), ticking settled questions `[x]`. An explicit "go ahead"
+scope, new findings), ticking settled questions `[x]` and keeping each
+question's number and topic. An explicit "go ahead"
 while questions are still open is honoured: the agent sets Status
 `implementing`, keeps those questions unticked, and proceeds. Identical
 re-emits are ignored; every change is a new **revision**. The parser tolerates
@@ -140,11 +146,11 @@ without questions.
   rendering the block as markdown with `☐`/`☑` checklist glyphs. Keys: `↑↓`
   or `j/k` scroll, `pgup/pgdn` page, `g/G` top/bottom, `q`/`esc` close. It
   refreshes live when a new revision is captured. Outside the TUI (RPC hosts
-  such as pi-web) `/align` shows the summary and markdown as a notification.
+  such as Sova) `/align` shows the summary and markdown as a notification.
 - **Persistence** — every revision is a session custom entry
   (`customType: "align-doc"`, `{ version: 1, doc }`, `doc: null` after
   `/align clear`), so the doc travels with the transcript, restores on
-  `/resume`, `/reload`, `/fork` and `/tree`, and is readable by pi-web. The
+  `/resume`, `/reload`, `/fork` and `/tree`, and is readable by Sova. The
   transcript shows a dim `── alignment v2 · questions open · 1/2 settled ──`
   marker per revision. There is no global file; `/align export [path]`
   writes the markdown on demand.
@@ -172,7 +178,7 @@ sections, and the blocks stay a whole-prompt append as before.
 ### Two scopes
 
 The **active** state — major mode, `strict`, minor modes — belongs to **one
-session**. Switching in one pi window, or in one pi-web chat, changes nothing
+session**. Switching in one pi window, or in one Sova chat, changes nothing
 anywhere else. It is persisted by snapshotting the whole triple into the same
 `mode` custom entry every switch already appended:
 
@@ -182,7 +188,7 @@ anywhere else. It is persisted by snapshotting the whole triple into the same
 ```
 
 So it travels with the transcript: it restores on `/resume`, `/reload`,
-`/fork`, `/tree` and a pi-web reopen, exactly like the alignment doc. The
+`/fork`, `/tree` and a Sova reopen, exactly like the alignment doc. The
 newest entry with a readable `active` wins; entries written before this
 existed, and any future schema this build cannot read, are skipped (they still
 render as markers). Restoring writes nothing, so merely opening a session

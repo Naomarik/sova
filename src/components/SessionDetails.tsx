@@ -212,7 +212,7 @@ export function SessionDetails(props: {
               <Fact label="Origin">{s().origin === "web" ? "Started here" : "Started in a terminal"}</Fact>
               <Fact label="Archived">{archived() ? "Yes" : "No"}</Fact>
               <Fact label="Group">{groupNameOf(sessionGroups(), s().groupId) ?? "None"}</Fact>
-              {/* Lineage from the session header, read-only: pi-web never writes it. It says this
+              {/* Lineage from the session header, read-only: Sova never writes it. It says this
                   session was branched from that file — never at which entry (spec/14 "Data"). */}
               <Show when={s().parent}>
                 {(parent) => (
@@ -231,8 +231,8 @@ export function SessionDetails(props: {
                 )}
               </Show>
             </dl>
-            {/* Archiving is ours to define only for sessions pi-web started (it closes their
-                runtime); grouping is pi-web's own bookkeeping for any session. */}
+            {/* Archiving is ours to define only for sessions Sova started (it closes their
+                runtime); grouping is Sova's own bookkeeping for any session. */}
             <div class="cluster">
               <MoveToGroupMenu session={s()} onChanged={() => props.onGroupsChanged?.()} />
               {/* The same assignment, read as a place to work: file it and open that group's

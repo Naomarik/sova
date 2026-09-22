@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { SessionGroup, SessionSummary } from "../../shared/protocol";
-import { GROUP_DRAG_TYPE, dragHasRow, groupDragPath, groupNameOf, groupSections, memberLabel, orderedMembers, paneNames, quoted, tabLabels, setGroupDragData } from "./session-groups";
+import { GROUP_DRAG_TYPE, LEGACY_GROUP_DRAG_TYPE, dragHasRow, groupDragPath, groupNameOf, groupSections, memberLabel, orderedMembers, paneNames, quoted, tabLabels, setGroupDragData } from "./session-groups";
 
 const group = (id: string, name: string): SessionGroup => ({ id, name, createdAt: "2026-09-20T00:00:00.000Z" });
 const session = (id: string, groupId?: string): SessionSummary =>
@@ -50,21 +50,35 @@ test("groupNameOf resolves a name, and null for no group or an unknown one", () 
 test("the drag payload round-trips the session path, and only our own drags report as rows", () => {
   const store = new Map<string, string>();
   const dt = {
-    types: [GROUP_DRAG_TYPE],
+    types: [GROUP_DRAG_TYPE, LEGACY_GROUP_DRAG_TYPE],
     effectAllowed: "none",
     setData: (t: string, v: string) => void store.set(t, v),
     getData: (t: string) => store.get(t) ?? "",
   };
   const drag = { dataTransfer: dt } as unknown as DragEvent;
   setGroupDragData(drag, "/tmp/a.jsonl");
+  // Written under BOTH spellings: a not-yet-reloaded old build in another window still drops it.
   assert.equal(store.get(GROUP_DRAG_TYPE), "/tmp/a.jsonl");
+  assert.equal(store.get(LEGACY_GROUP_DRAG_TYPE), "/tmp/a.jsonl");
   assert.equal(store.get("text/plain"), "/tmp/a.jsonl");
   assert.equal(dt.effectAllowed, "move");
   assert.equal(groupDragPath(drag), "/tmp/a.jsonl");
   assert.equal(dragHasRow(drag), true);
 
+  // A legacy-spelled drag (an old build's dragstart) is read and lit up exactly the same.
+  const legacy = {
+    dataTransfer: {
+      types: [LEGACY_GROUP_DRAG_TYPE],
+      getData: (t: string) => (t === GROUP_DRAG_TYPE || t === LEGACY_GROUP_DRAG_TYPE ? store.get(t) ?? "" : ""),
+    },
+  } as unknown as DragEvent;
+  assert.equal(groupDragPath(legacy), "/tmp/a.jsonl");
+  assert.equal(dragHasRow(legacy), true);
+
   // A drag that carries files or plain text is not ours: no path, and no drop target lights up.
-  const other = { dataTransfer: { types: ["Files"], getData: (t: string) => (t === GROUP_DRAG_TYPE ? "" : "hello") } } as unknown as DragEvent;
+  const other = {
+    dataTransfer: { types: ["Files"], getData: (t: string) => (t === GROUP_DRAG_TYPE || t === LEGACY_GROUP_DRAG_TYPE ? "" : "hello") },
+  } as unknown as DragEvent;
   assert.equal(groupDragPath(other), null);
   assert.equal(dragHasRow(other), false);
 });

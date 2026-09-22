@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>sova · selected mark (Astra Fold)</title>
+<style>
+  /* Standalone on purpose: one file, no build, opens from disk. Values are copied from
+     src/design/tokens.css (dark and light blocks); the fonts are the bundled ones. */
+  @font-face { font-family: "Inter"; src: url("../../../../public/fonts/Inter-Variable.woff2") format("woff2"); font-weight: 100 900; font-display: block; }
+  @font-face { font-family: "JetBrains Mono"; src: url("../../../../public/fonts/JetBrainsMono-Variable.woff2") format("woff2"); font-weight: 100 800; font-display: block; }
+  :root { --bg:#1E1E26; --surface:#2C2C38; --ink:#F2F2F6; --ink-2:#B8B8C6; --muted:#9A9AA8; --border:#3B3B49; --accent:#8E88FF; --tint:#2B2650; --on-accent:#1E1E26; }
+  [data-theme="light"] { --bg:#F2F2F7; --surface:#FFFFFF; --ink:#17171C; --ink-2:#4A4A57; --muted:#656572; --border:#E3E3E9; --accent:#4A43D8; --tint:#E8E6FA; --on-accent:#FFFFFF; }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); color: var(--ink); font: 400 14.5px/1.55 Inter, system-ui, sans-serif; }
+  body { margin: 0; padding: 32px 24px 64px; }
+  .page { max-width: 1120px; margin: 0 auto; }
+  h1 { font-size: 29px; line-height: 1.12; font-weight: 640; letter-spacing: -0.02em; margin: 0 0 8px; }
+  h2 { font-size: 20px; line-height: 1.25; font-weight: 600; margin: 0; }
+  .intro { color: var(--ink-2); max-width: 72ch; margin: 0 0 32px; }
+  .intro code, .ledger code { font: 500 12.5px/1.5 "JetBrains Mono", monospace; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px; margin-bottom: 24px; }
+  .card header { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+  .chip { display: inline-flex; align-items: center; height: 22px; padding: 0 10px; border-radius: 999px; background: var(--tint); color: var(--accent); font-size: 11px; font-weight: 600; letter-spacing: 0.06em; }
+  .ledger { color: var(--muted); font-size: 12.5px; }
+  .panels { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 767px) { .panels { grid-template-columns: 1fr; } }
+  .panel { background: var(--bg); color: var(--ink); border: 1px solid var(--border); border-radius: 8px; padding: 20px; display: grid; gap: 20px; }
+  .lockup { display: inline-flex; align-items: center; gap: 10px; }
+  .lockup .mark { --s: 32px; }
+  .word { font-family: Inter, system-ui, sans-serif; font-weight: 640; font-size: 26px; line-height: 1; letter-spacing: -0.03em; color: var(--ink); }
+  .mark { display: inline-block; width: var(--s, 32px); height: var(--s, 32px); line-height: 0; }
+  .mark svg { width: 100%; height: 100%; display: block; }
+  .mark.accent { color: var(--accent); }
+  .mark.ink { color: var(--ink); }
+  .sizes { display: flex; align-items: flex-end; gap: 24px; flex-wrap: wrap; }
+  figure { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  figcaption { color: var(--muted); font-size: 12.5px; }
+  figure.on-accent .mark { color: var(--on-accent); background: var(--accent); border-radius: 8px; padding: 6px; width: 44px; height: 44px; }
+  .notes { margin-top: 16px; max-width: 72ch; }
+  .notes p { margin: 0 0 8px; }
+  .muted { color: var(--ink-2); }
+  footer { color: var(--muted); font-size: 12.5px; max-width: 72ch; }
+  footer code { font: 400 12.5px/1.5 "JetBrains Mono", monospace; }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>Selected mark</h1>
+  <p class="intro">The name is <strong>sova</strong> and the mark is <strong>Astra&rsquo;s Fold</strong>: one stroked path,
+  a V and an A sharing a stem, with the A&rsquo;s crossbar as the only added move. Geometry is copied verbatim from
+  <code>../round-2/astra/sova-fold.svg</code> &mdash; 32-unit grid, <code>stroke-width 4</code>, <code>currentColor</code>, round caps and joins &mdash;
+  and the same file ships as <code>public/icons/sova-mark.svg</code>. The colorway treatments below are borrowed from the
+  Fable sheet, which showed them best; none of Fable&rsquo;s geometry is used here. The wordmark is Inter 640 at
+  &minus;0.03em, per the design skill&rsquo;s Logo section, and the two panels are the dark and light token sets.</p>
+
+  <section class="card" id="sova-fold">
+    <header>
+      <span class="chip">SOVA</span>
+      <h2>Fold &mdash; selected</h2>
+      <span class="ledger">one stroke &middot; V/A ligature &middot; <code>sova-fold.svg</code></span>
+    </header>
+    <div class="panels">
+    <div class="panel" data-theme="dark">
+      <div class="lockup"><span class="mark accent"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="SOVA"><path fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" d="M4 7L12 25L20 7L28 25M15.6 17H24.4"/></svg></span><span class="word">sova</span></div>
+      <div class="sizes">
+        <figure><span class="mark accent" style="--s:16px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="SOVA"><path fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" d="M4 7L12 25L20 7L28 25M15.6 17H24.4"/></svg></span><figcaption>16</figcaption></figure>
+        <figure><span class="mark accent" style="--s:24px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="SOVA"><path fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" d="M4 7L12 25L20 7L28 25M15.6 17H24.4"/></svg></span><figcaption>24</figcaption></figure>
+        <figure><span class="mark accent" style="--s:32px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="SOVA"><path fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" d="M4 7L12 25L20 7L28 25M15.6 17H24.4"/></svg></span><figcaption>32</figcaption></figure>
+        <figure><span class="mark ink" style="--s:32px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="SOVA"><path fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" d="M4 7L12 25L20 7L28 25M15.6 17H24.4"/></svg></span><figcaption>ink</figcaption></figure>
+        <figure class="on-accent"><span class="mark" style="--s:32px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="SOVA"><path fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" d="M4 7L12 25L20 7L28 25M15.6 17H24.4"/></svg></span><figcaption>on accent</figcaption></figure>
+      </div>
+    </div>
+    <div class="panel" data-theme="light">
+      <div class="lockup"><span class="mark accent"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="SOVA"><path fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" d="M4 7L12 25L20 7L28 25M15.6 17H24.4"/></svg></span><span class="word">sova</span></div>
+      <div class="sizes">
+        <figure><span class="mark accent" style="--s:16px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="SOVA"><path fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" d="M4 7L12 25L20 7L28 25M15.6 17H24.4"/></svg></span><figcaption>16</figcaption></figure>
+        <figure><span class="mark accent" style="--s:24px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="SOVA"><path fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" d="M4 7L12 25L20 7L28 25M15.6 17H24.4"/></svg></span><figcaption>24</figcaption></figure>
+        <figure><span class="mark accent" style="--s:32px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="SOVA"><path fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" d="M4 7L12 25L20 7L28 25M15.6 17H24.4"/></svg></span><figcaption>32</figcaption></figure>
+        <figure><span class="mark ink" style="--s:32px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="SOVA"><path fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" d="M4 7L12 25L20 7L28 25M15.6 17H24.4"/></svg></span><figcaption>ink</figcaption></figure>
+        <figure class="on-accent"><span class="mark" style="--s:32px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="SOVA"><path fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" d="M4 7L12 25L20 7L28 25M15.6 17H24.4"/></svg></span><figcaption>on accent</figcaption></figure>
+      </div>
+    </div></div>
+    <div class="notes">
+      <p>One unbroken zig-zag reads as V-A; the short bar at y=17 is what stops it reading as a W. At 16 the bar
+      is the first thing to go soft, and the mark still holds, which is the test it was drawn to pass.</p>
+      <p class="muted">The sidebar uses it as a CSS mask over <code>currentColor</code>, so the accent panel above is
+      the one that matches the shipped head. Nothing in the app reads this page.</p>
+    </div>
+  </section>
+
+  <footer>Source of truth for the geometry is <code>ai/branding/logos/round-2/astra/sova-fold.svg</code>; the shipped
+  copy at <code>public/icons/sova-mark.svg</code> is byte-identical. The other explorations stay where they are.</footer>
+</div>
+</body>
+</html>

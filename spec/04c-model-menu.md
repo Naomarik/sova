@@ -1,5 +1,5 @@
 # 04c · Model menu
-> Part of the pi-web design spec · [overview](overview.md)
+> Part of the Sova design spec · [overview](overview.md)
 
 A searchable model picker, like pi's Ctrl+P palette. It exists only for **chat** sessions. A
 watched (TUI-owned) session keeps the model as plain mono text in `.session-head-meta`, because it

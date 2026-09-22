@@ -1,9 +1,10 @@
 // Image paths found in message text (TranscriptItem.attachments): directly in /tmp, or in a
-// session's folder under pi-web's attachments root (<agent dir>/pi-web/attachments/<session id>/,
-// where composer-draft uploads live so they survive a reload). Pure: the server uses it to detect
-// them, the client to place inline chips in plain text. No fs here, and no agent dir: the client
-// doesn't know it, so an attachments path is recognised by its tail; the server's checkTmpImage
-// then decides whether it really sits under this machine's root.
+// session's folder under Sova's attachments root (<agent dir>/sova/attachments/<session id>/, or the
+// legacy pi-web spelling from before the rename — transcripts are never rewritten, so both tails are
+// recognised forever). Pure: the server uses it to detect them, the client to place inline chips in
+// plain text. No fs here, and no agent dir: the client doesn't know it, so an attachments path is
+// recognised by its tail; the server's checkTmpImage then decides whether it really sits under this
+// machine's root (re-anchoring legacy paths there).
 
 /** A file name directly in /tmp: no separators, no leading dot, image extension. */
 const NAME = String.raw`[A-Za-z0-9][A-Za-z0-9._-]*\.(?:png|jpe?g|webp|gif)`;
@@ -13,15 +14,17 @@ export const SESSION_ID = String.raw`[A-Za-z0-9][A-Za-z0-9-]*`;
 export const TMP_IMAGE_PATH = new RegExp(`^/tmp/${NAME}$`, "i");
 /** Exactly `<id>/<name>`: what may follow the attachments root. */
 export const ATTACHMENT_TAIL = new RegExp(`^${SESSION_ID}/${NAME}$`, "i");
-/** Where the attachments root ends, as seen in a path (join(getAgentDir(), "pi-web", "attachments")). */
-const ROOT_TAIL = "/pi-web/attachments/";
+/** Where an attachments root ends, as seen in a path: stateRoot()/legacyStateRoot() + "attachments". */
+const ROOT_TAILS = ["/sova/attachments/", "/pi-web/attachments/"] as const;
+const ROOT_TAIL_ALT = String.raw`(?:/sova/attachments/|/pi-web/attachments/)`;
 /** Standalone: not part of a longer path on either side; a trailing "." ends a sentence. An
     attachments path is any absolute path ending in the root's tail, then `<id>/<name>`; "~" is
     also refused before it, so "~/.pi/…" isn't read as "/.pi/…". */
-const TOKEN = String.raw`(?<![\w./-])(?:/tmp/${NAME}|(?<!~)(?:/[\w.-]+)*${ROOT_TAIL}${SESSION_ID}/${NAME})(?![\w/-]|\.\w)`;
-/** Names pi or pi-web write (interactive-mode handleClipboardPaste, utils/clipboard-image,
-    and pi-web's POST /api/upload). */
-const PI_CLIPBOARD = /^pi-(?:clipboard|wsl-clip|web)-[0-9a-f-]{36}\.[a-z]+$/i;
+const TOKEN = String.raw`(?<![\w./-])(?:/tmp/${NAME}|(?<!~)(?:/[\w.-]+)*${ROOT_TAIL_ALT}${SESSION_ID}/${NAME})(?![\w/-]|\.\w)`;
+/** Generated upload/paste names: pi's own (interactive-mode handleClipboardPaste,
+    utils/clipboard-image) and Sova's POST /api/upload — `sova-<uuid>` now, `pi-web-<uuid>` before
+    the rename. Both strip/label the same (a generated reference, never a typed name). */
+const PI_CLIPBOARD = /^(?:pi-(?:clipboard|wsl-clip|web)|sova)-[0-9a-f-]{36}\.[a-z]+$/i;
 
 export const isPiClipboardName = (name: string) => PI_CLIPBOARD.test(name);
 
@@ -77,7 +80,7 @@ function maskCode(text: string): string {
 /** Every standalone image path (in /tmp or an attachments folder) outside markdown code, in
     order (duplicates included). */
 export function findTmpImagePaths(text: string): TmpPathMatch[] {
-  if (!text.includes("/tmp/") && !text.includes(ROOT_TAIL)) return [];
+  if (!text.includes("/tmp/") && !ROOT_TAILS.some((tail) => text.includes(tail))) return [];
   const masked = maskCode(text);
   const re = new RegExp(TOKEN, "gi");
   const found: TmpPathMatch[] = [];

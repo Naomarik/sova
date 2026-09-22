@@ -9,19 +9,23 @@ import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { disposeAllChats, getModelRuntime, heldChat, warmClaudeCodeProvider } from "./chat-manager";
 import { canonicalPath, resolveSessionPath } from "./paths";
+import { stateRoot } from "./state-root";
 import { claudeCodeModelCount, listModels, resolveContext } from "./models";
 import { markOwned } from "./write-guard";
 import { addWebSession } from "./web-sessions";
 import { draftForClient, setDraft } from "./drafts";
 import { getAgentsInsight, getSessionInsight, getUsageInsight, refreshUsageInsight } from "./insights";
 import { archiveSession, cleanupSessions, getSessionSummary, idOf, listCwds, listSessions } from "./sessions-index";
+import { cleanSessionTitle, SESSION_TITLE_MAX, setSessionTitle } from "./session-titles";
 import { contextForBranch, normalizeEntries, readActiveBranch } from "./transcript";
 import { checkTmpImage, deleteAttachment, MAX_ATTACHMENT_BYTES, readTmpImage, saveUploadedImage, sessionAttachmentsDir, UploadError } from "./attachments";
 import { listFolders } from "./folders";
+import { listProjectFiles } from "./files";
 import { assignSession, cleanGroupLabel, createGroup, deleteGroup, GROUP_LABEL_MAX, readGroups, updateGroup } from "./session-groups";
 import { promptGroup } from "./group-prompt";
 import { runFanout } from "./fanout";
-import type { FanoutRequest } from "../shared/protocol";
+import { runFork } from "./fork";
+import type { FanoutRequest, ForkRequest } from "../shared/protocol";
 import { findTarget, isTargetName, listRemoteFolders, listTargets, normalizeRemotePath, targetDir, targetsFile, validateNewSessionCwd } from "./targets";
 import { isExplanationId, listExplanations, readExplanationPage } from "./explanations";
 import { switchMode } from "./mode";
@@ -107,7 +111,7 @@ app.post("/api/sessions/connect", async (c) => {
   } catch {
     return c.json({ error: `connect-agent template missing: ${CONNECT_TEMPLATE}` }, 500);
   }
-  const dir = join(getAgentDir(), "pi-web", "connect");
+  const dir = join(stateRoot(), "connect"); // renamed state root; pre-rebrand connect-session cwds open via chat-manager's rebase
   mkdirSync(dir, { recursive: true });
   const agents = template.replaceAll("{{TARGETS_FILE}}", targetsFile()).replaceAll("{{AGENT_DIR}}", getAgentDir());
   const tmp = join(dir, `AGENTS.md.${process.pid}.tmp`);
@@ -116,8 +120,9 @@ app.post("/api/sessions/connect", async (c) => {
   return createWebSession(c, dir);
 });
 
-// The sidebar's user-made groups (spec/02-session-list.md §2 "Groups"): pi-web's own grouping of
-// sessions, stored in ~/.pi/agent/pi-web/session-groups.json. Keyed by session id, like the archive,
+// The sidebar's user-made groups (spec/02-session-list.md §2 "Groups"): Sova's own grouping of
+// sessions, stored in ~/.pi/agent/sova/session-groups.json (moved from the legacy pi-web/ root). Keyed by
+// session id, like the archive,
 // and purely additive: a grouped session still shows in its region. Never writes a session file.
 app.get("/api/session-groups", (c) => c.json(readGroups()));
 
@@ -158,7 +163,7 @@ app.post("/api/session-groups/assign", async (c) => {
   }
   if (body.groupId !== null && typeof body.groupId !== "string") return c.json({ error: "groupId must be a group id or null" }, 400);
   // REMOVAL BY ID — the "This session's file is gone" pane's gesture (spec 14): a member whose
-  // file was deleted outside pi-web has no path to send, but its assignment is exactly what
+  // file was deleted outside Sova has no path to send, but its assignment is exactly what
   // needs removing and the store keys on ids. Valid for removal ONLY: adding a member requires
   // the file, so an id with a non-null groupId, with a path, or with label/index is a 400.
   if (body.id !== undefined) {
@@ -217,7 +222,22 @@ app.post("/api/session-groups/fanout", async (c) => {
   return c.json({ error: r.error, ...(r.code ? { code: r.code } : {}) }, r.status);
 });
 
-// Moves a web-spawned session between the sidebar regions. Changes pi-web's own id list only.
+// One new session branched off one entry of another: the per-message Fork action (server/fork.ts).
+// Not a one-member fanout — no group, no seed, no member marker — and nothing is ever sent.
+app.post("/api/sessions/fork", async (c) => {
+  let body: ForkRequest;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "Expected JSON body { path, entryId, position }" }, 400);
+  }
+  const r = await runFork(body);
+  if (r.ok) return c.json(r.result, 201);
+  if (r.status === 409) return c.json({ refused: r.refused }, 409);
+  return c.json({ error: r.error }, r.status);
+});
+
+// Moves a web-spawned session between the sidebar regions. Changes Sova's own id list only.
 app.post("/api/sessions/archive", async (c) => {
   let body: { path?: unknown; archived?: unknown };
   try {
@@ -231,6 +251,36 @@ app.post("/api/sessions/archive", async (c) => {
   if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
   const r = await archiveSession(path, body.archived);
   return r.ok ? c.json(r.summary) : c.json({ error: r.error }, r.status);
+});
+
+// Renames a session, in Sova ONLY (server/session-titles.ts): the id gets a stored title and
+// the .jsonl is never opened, let alone written — a session open in a TUI can be renamed here
+// without touching the file that TUI owns. `title: null` clears the override, and the derived
+// title (the first user message) comes back.
+app.post("/api/sessions/title", async (c) => {
+  let body: { path?: unknown; title?: unknown };
+  try {
+    const parsed: unknown = await c.req.json();
+    // Valid JSON is not yet a body: `null`, `7`, `"x"` and `[]` all parse, and reading `.title`
+    // off any of them is a TypeError the client would see as a 500 rather than its own mistake.
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("not an object");
+    body = parsed as { path?: unknown; title?: unknown };
+  } catch {
+    return c.json({ error: "Expected JSON body { path, title }" }, 400);
+  }
+  if (body.title !== null && typeof body.title !== "string") return c.json({ error: "title must be a string, or null to clear it" }, 400);
+  const title = body.title === null ? null : cleanSessionTitle(body.title);
+  if (body.title !== null && title === null) return c.json({ error: `title must be 1–${SESSION_TITLE_MAX} characters, and no control characters` }, 400);
+  const path = resolveSessionPath(typeof body.path === "string" ? body.path : null);
+  if (!path) return c.json({ error: "Invalid or missing path (must be a .jsonl under the pi sessions dir)" }, 400);
+  if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
+  // The id comes from the header the summary read, never from the file name: that is the id the
+  // archive mark and the group assignment are keyed by too.
+  const before = await getSessionSummary(path);
+  if (!before) return c.json({ error: "Session file not found" }, 404);
+  setSessionTitle(before.id, title);
+  const summary = await getSessionSummary(path);
+  return c.json(summary ?? { ...before, title: title ?? before.originalTitle ?? before.title });
 });
 
 // Permanently deletes transcript files from disk: sessions older than 7 or 30 days, empty
@@ -265,7 +315,7 @@ app.post("/api/sessions/cleanup", async (c) => {
   return c.json({ error: 'mode must be "husks", "paths", or "age" with minAgeDays 7 or 30' }, 400);
 });
 
-// Composer drafts, kept by pi-web beside the session (server/drafts.ts), never in its file: a
+// Composer drafts, kept by Sova beside the session (server/drafts.ts), never in its file: a
 // reload keeps what the user typed, and a never-sent new session stays listed as a draft row.
 const MAX_DRAFT_CHARS = 1_000_000;
 
@@ -313,6 +363,14 @@ app.get("/api/folders", async (c) => {
   return r.ok ? c.json(r.listing) : c.json({ error: r.error }, r.status);
 });
 
+// The composer's @-mention index (server/files.ts): every non-ignored file under the session
+// cwd, gitignore-respecting in git repos, default-ignored elsewhere, cached ~30s server-side.
+// 501 for an unmounted remote session's placeholder cwd.
+app.get("/api/files", async (c) => {
+  const r = await listProjectFiles(c.req.query("cwd"));
+  return r.ok ? c.json(r.index) : c.json({ error: r.error }, r.status);
+});
+
 app.get("/api/models", async (c) => c.json(await listModels()));
 
 // The model policy (spec/12-settings-dialog.md §12): GET reads it (empty = nothing disabled), PUT
@@ -332,12 +390,12 @@ app.put("/api/settings/models", async (c) => {
 });
 
 // Every theme we can find (spec/12-settings-dialog.md §12): the 18 shipped ones plus whatever is in
-// ~/.pi/agent/pi-web/themes/, rescanned per request. Read-only — the choice is the browser's, kept
+// ~/.pi/agent/sova/themes/, rescanned per request. Read-only — the choice is the browser's, kept
 // in localStorage (§0), so there is nothing here to write. Never fails: a file we can't use comes
 // back as a row carrying its reason, and an unreadable folder as `error` beside the built-ins.
 app.get("/api/themes", (c) => c.json(listThemes()));
 
-// pi-web's own settings (server/web-settings.ts): today one experimental switch. GET reads the
+// Sova's own settings (server/web-settings.ts): today one experimental switch. GET reads the
 // stored value, PUT replaces it. The switch drives the `claude-code-provider` extension flag, so
 // it applies to sessions created after the change — an open chat keeps the runtime it started with.
 app.get("/api/settings", (c) => c.json(readWebSettings()));
@@ -514,7 +572,7 @@ app.get("*", (c, next) => (hasDist() ? spaIndex(c, next) : next()));
 export { app };
 
 export const server = serve({ fetch: app.fetch, port: PORT, hostname: HOST }, (info) => {
-  console.log(`pi-web server on http://${HOST}:${info.port}`);
+  console.log(`sova server on http://${HOST}:${info.port}`);
 }) as Server;
 server.on("error", (err) => {
   // e.g. EADDRINUSE: don't linger half-alive behind the uncaughtException handler
@@ -541,7 +599,10 @@ async function shutdown() {
   // Hosted subagent workers (PI_WORKER_TRANSPORT=host) outlive this process: the
   // subagents extension's session_shutdown detaches them instead of killing them.
   // No-op for the default inline transport. See pi-config/extensions/subagents/hosting.ts.
+  // Both spellings, through the rename bridge: pi-config's subagents extension reads
+  // "sova:detach-workers" first and falls back to the legacy one — either side may move first.
   (globalThis as Record<symbol, unknown>)[Symbol.for("pi-web:detach-workers")] = true;
+  (globalThis as Record<symbol, unknown>)[Symbol.for("sova:detach-workers")] = true;
   await Promise.race([disposeAllChats(), new Promise((r) => setTimeout(r, 3000))]);
   process.exit(0);
 }

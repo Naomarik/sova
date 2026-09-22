@@ -1,8 +1,29 @@
-# pi-web
+# Sova
 
 Webapp interface for the pi coding agent (npm: `@earendil-works/pi-coding-agent`, pinned **0.86.1**).
 Single local user. Goals: list all sessions, view transcripts, chat in webapp-owned sessions,
 live-watch sessions that are open in the CLI/TUI, spawn new sessions.
+
+The remote is `github.com/Naomarik/sova` (renamed from `Naomarik/pi-web`). The worktree is
+`~/webapps/sova` and the state directory is `~/.pi/agent/sova/`: both moved on 2026-09-22, and both
+are written at the new name ONLY. What is still spelled `pi-web` is read-compatibility for data
+already written, and it is load-bearing — transcripts are never rewritten, so deleting one of these
+orphans real data:
+- `~/.pi/agent/pi-web/...` paths embedded in transcripts and session headers (attachments, remote
+  placeholder cwds, connect dirs) → `unlegacyStatePath` (`server/state-root.ts`). There is no
+  fallback for the state root itself: a half-finished move must fail loudly, not read old data.
+- session cwds recorded under `~/webapps/pi-web` (98 of them here) → `<state root>/path-map.json`,
+  applied by `movedPath` (`server/path-map.ts`) at the boundaries that OPEN or LIST a folder:
+  `resolveOpenCwd`, `/api/files` and `/api/folders`. Never at display: a session's stored cwd is
+  its identity and stays as recorded. Placeholder cwds are refused as remote BEFORE the map runs,
+  so a remote session can never be re-read as a moved local folder.
+- `pi-web:*` browser keys → new `sova:*` keys written, legacy read and mirrored
+  (`src/lib/storage-keys.ts`); `pi-web-theme/v1` still accepted beside `sova-theme/v1`.
+- the `pi-web-rewind` / `pi-web-fanout-member` session markers are still WRITTEN legacy-named on
+  purpose (a rollback must be able to read them); both spellings parse.
+A move of the worktree breaks the absolute symlinks in
+`~/.pi/agent/` (`settings.json`, `keybindings.json`, `models.json`, `vision-delegate.json`), so
+re-run `pi-config/install.sh` after one (`--check` verifies them without changing anything).
 
 ## Layout & ownership
 
@@ -19,23 +40,23 @@ live-watch sessions that are open in the CLI/TUI, spawn new sessions.
 - `pi-config/` — the user's pi config and extensions (merged in from Naomarik/pi-config with history;
   `~/pi-config` is a compat symlink to it). Shared, not owned by any team. `~/.pi/agent` symlinks into
   this directory, so an edit here changes the user's LIVE TUI on its next `/reload`, and every
-  runtime pi-web embeds. Treat it like `shared/protocol.ts`: coordinate before changing any contract
-  pi-web parses (sessions live registry `sessions/live/*.json`, usage-status cache, subagents
+  runtime Sova embeds. Treat it like `shared/protocol.ts`: coordinate before changing any contract
+  Sova parses (sessions live registry `sessions/live/*.json`, usage-status cache, subagents
   teams/snapshots, topic-outline state, command-palette `model-favorites.json`, the model policy
   `model-policy.json` (extensions/model-policy: what may be used at all, and what subagents may be
-  given — read by the TUI, the palette, subagent spawning and pi-web alike), mode `mode.json` =
+  given — read by the TUI, the palette, subagent spawning and Sova alike), mode `mode.json` =
   the DEFAULT mode for new sessions; the active mode is per session, in the session's own `mode`
-  custom entry, and pi-web restores it with `restoreActive` from `state.ts`).
-  Not covered by pi-web's tsconfig, with two exceptions: `server/mode-state.ts` imports
+  custom entry, and Sova restores it with `restoreActive` from `state.ts`).
+  Not covered by Sova's tsconfig, with two exceptions: `server/mode-state.ts` imports
   `pi-config/extensions/mode/state.ts` and `minor.ts` (hence `allowImportingTsExtensions`), and
   `server/targets.ts` imports `pi-config/extensions/remote/argv.ts` (the target schema,
   validation and the single argv builder that both the `remote` extension and the web server use to
-  run a command on a target), so an edit to any of the three can break pi-web's typecheck. Keep
+  run a command on a target), so an edit to any of the three can break Sova's typecheck. Keep
   them pi-runtime-free (node builtins and, for the mode pair, each other only), and import nothing
   else from pi-config. `argv.ts` is also the quoting boundary: every path that reaches a far shell is
   single-quote-escaped there, and callers spawn its argv without a local shell. The web mode switch calls that extension's
   `/mode` command handler directly (`ChatSession.applyMode`), so its arguments are a contract too.
-  pi-web has no sshfs/mount support (removed 2026-09-22): a remote session's cwd is always its
+  Sova has no sshfs/mount support (removed 2026-09-22): a remote session's cwd is always its
   local placeholder, every tool runs on the target, and a session stored under the old mount root
   `~/.pi/agent/mounts/<target>` is refused at open (`parseLegacyMountCwd`, a permanent guard) rather
   than opened as a local session in an empty directory. The watcher does NOT watch
@@ -58,7 +79,7 @@ live-watch sessions that are open in the CLI/TUI, spawn new sessions.
 
 `npm run dev:server` is `tsx watch`: editing ANY file in the server's live import graph —
 non-test `server/**` files, `shared/**`, and ANY non-test file under `pi-config/extensions/mode/`
-(`scripts/dev-server.mjs` watches that whole directory, not just the two files pi-web imports) —
+(`scripts/dev-server.mjs` watches that whole directory, not just the two files Sova imports) —
 restarts the server process within ~100ms. Workers spawned by a session hosted in that server
 (pi or claude-code backend from agent_spawn/team_create) are CHILD PROCESSES of it with piped
 stdio: the restart kills them mid-task and zeroes the in-memory subagent registry (agent_list
@@ -117,7 +138,7 @@ branch (the full reasoning lives in that branch's commit messages and spec §14'
 ## pi-config mirror
 
 The public repo github.com/Naomarik/pi-config is a `git subtree split` of `pi-config/`, so it stays
-installable without pi-web. After committing pi-config changes on `master`, refresh it with:
+installable without Sova. After committing pi-config changes on `master`, refresh it with:
 
 ```sh
 git subtree split --prefix=pi-config -b pi-config-mirror   # creates, or fast-forwards, the local branch
@@ -126,7 +147,7 @@ git push git@github.com:Naomarik/pi-config.git pi-config-mirror:master
 
 The split is deterministic, and it reproduces the original pi-config commit hashes (the import used
 `git filter-repo --to-subdirectory-filter`), so pushes fast-forward. Never use `--force`. If a push is
-rejected, pi-web history under `pi-config/` was rewritten, and that needs a look first. Keep anything the mirror needs, such as README/LICENSE/install.sh, inside `pi-config/`.
+rejected, Sova history under `pi-config/` was rewritten, and that needs a look first. Keep anything the mirror needs, such as README/LICENSE/install.sh, inside `pi-config/`.
 
 ## pi SDK facts (verified against the installed package, 0.86.1)
 
@@ -140,7 +161,7 @@ Pi package on disk: `/home/user/.local/share/mise/installs/node/25.2.1/lib/node_
   (`SessionEntry` union, `dist/core/session-manager.d.ts:117`).
   Cheap listing: read only the first few lines; first user `message` = title; first `model_change` = model.
   Docs: `docs/session-format.md`.
-- **pi-web writes `custom` entries with `customType: "pi-web-rewind"`** (`data: {targetId, fromLeafId}`)
+- **Sova writes `custom` entries with `customType: "pi-web-rewind"`** (`data: {targetId, fromLeafId}`)
   into webapp-owned session files. `navigateTree(id, {summarize:false})` only moves the in-memory
   leaf and `SessionManager.open()` takes the file's LAST entry as the leaf, so without this marker a
   reload or restart reverts a rewind. It is invisible (normalizeEntry renders unknown custom types as
@@ -211,7 +232,7 @@ Frontend is SolidJS (NOT React): signals/stores, `<For>/<Show>`, `onCleanup` for
   any foreign line → busy on every prompt/steer until a `&force=1` reconnect reloads the runtime from disk.
   TUI-live sessions stay refused even with force.
 - `SessionSummary.origin`: ids of sessions spawned via `POST /api/sessions` persist in
-  `~/.pi/agent/pi-web/web-sessions.json` (`server/web-sessions.ts`); everything else is "external".
+  `~/.pi/agent/sova/web-sessions.json` (`server/web-sessions.ts`); everything else is "external".
   Writes re-read + merge (safe with several servers); reads use the startup copy plus this
   server's own adds, so ids another running server adds show as "web" here only after a restart.
 - Opening a chat runtime must not write: the SDK appends model_change/thinking_level_change at

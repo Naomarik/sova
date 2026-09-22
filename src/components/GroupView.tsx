@@ -106,6 +106,8 @@ export interface PaneWiring {
   onWorkers(path: string, workers: WorkerInfo[] | null, usage: UsageTotalView | null): void;
   onRewindControl(path: string, control: RewindControl | null): void;
   onRewound(info: { path: string; entryId: string }): void;
+  /** A session a pane just created (a Fork): the app adopts and opens it. */
+  onCreated(session: SessionSummary): void;
   paneOn(path: string, tab: TabId): boolean;
   openPane(path: string, tab: TabId): void;
   toggleSubagents(path: string): void;
@@ -308,7 +310,7 @@ export function GroupView(props: {
 
   /**
    * The group's fork point, and the ONLY source of a marker's position: `seed` is written when
-   * pi-web itself fanned the group out. Lineage (`parent`/`parentId`) proves two members came from
+   * Sova itself fanned the group out. Lineage (`parent`/`parentId`) proves two members came from
    * one session but not WHICH entry they diverged at, so a hand-made group of forks gets no marker
    * — a marker in the wrong place is a false claim about what is shared (gate #10, §14 "Data").
    */
@@ -525,7 +527,7 @@ export function GroupView(props: {
    * Takes a file-gone member out of the group: the `.empty` pane's one action. By session id,
    * because there is no file left to resolve a path through — the wire's `{ id, groupId: null }`
    * form. Everything downstream is detach's: the group may dissolve under the write (its last
-   * member, pi-web's own name), and that is said and routed, not inferred.
+   * member, Sova's own name), and that is said and routed, not inferred.
    */
   const removeGone = async (g: { id: string; label: string | null; seen?: SessionSummary }) => {
     const name = nameOf(ghostKey(g.id));
@@ -560,12 +562,12 @@ export function GroupView(props: {
     if (!result) return;
     let done: string;
     if (!archive) {
-      // Remove-only on a session pi-web didn't start is the whole story, and says so: there was
+      // Remove-only on a session Sova didn't start is the whole story, and says so: there was
       // never an archive half to leave out (§9 "Eliminate toast").
       done =
         s?.origin === "web"
           ? `Removed ${title} from ${quoted(props.group.name)}.`
-          : `Removed ${title} from ${quoted(props.group.name)}. It wasn't started in pi-web, so nothing was archived.`;
+          : `Removed ${title} from ${quoted(props.group.name)}. It wasn't started in Sova, so nothing was archived.`;
     } else {
       try {
         await setSessionArchived(path, true);
@@ -850,7 +852,7 @@ export function GroupView(props: {
               </Show>
             </div>
           </Show>
-          {/* Absent for a group pi-web didn't fan out: there is nothing to align to, and gate #10
+          {/* Absent for a group Sova didn't fan out: there is nothing to align to, and gate #10
               forbids inferring a fork point from lineage. A hand-made group that ADOPTS a seed
               gains this button, which §9 notes is adoption's one visible trace. */}
           <Show when={props.group.seed}>
@@ -938,8 +940,8 @@ export function GroupView(props: {
           <div class="center-fill">
             {/* Two empty states, and the difference is whether this group ever HAD members. A
                 fanout group with none left did not fail to fill: its sessions were deleted
-                outside pi-web, and "no sessions yet" would be the wrong story about the same
-                screen. `seed` is the only thing that tells them apart — a group pi-web fanned
+                outside Sova, and "no sessions yet" would be the wrong story about the same
+                screen. `seed` is the only thing that tells them apart — a group Sova fanned
                 out, or a hand-made one that adopted lineage. */}
             <Show
               when={props.group.seed}
@@ -961,7 +963,7 @@ export function GroupView(props: {
               }
             >
               {/* Seed + no members. The group knows those two facts and NOTHING about why, so the
-                  copy must not pick a cause: this is reachable by deletion outside pi-web AND by a
+                  copy must not pick a cause: this is reachable by deletion outside Sova AND by a
                   user-named group whose members were removed or promoted, files intact. The old
                   wording asserted the first, which is a falsehood in the second — and the datum
                   that would separate them doesn't exist anywhere in the group. */}
@@ -969,7 +971,7 @@ export function GroupView(props: {
                 <Icon name="folder" class="empty-mark" />
                 <p class="empty-title">{quoted(props.group.name)} has no sessions left.</p>
                 <p class="empty-body">
-                  They were removed from the group, or their files were deleted outside pi-web. Dissolving it
+                  They were removed from the group, or their files were deleted outside Sova. Dissolving it
                   takes the name and the fork point, and nothing else.
                 </p>
                 <button type="button" class="button empty-action button-destructive" onClick={() => void dissolve()}>
@@ -1035,7 +1037,7 @@ export function GroupView(props: {
                       <div class="empty">
                         <p class="empty-title">This session's file is gone.</p>
                         <p class="empty-body">
-                          Its transcript was deleted outside pi-web, so there's nothing left to read. Removing it from the
+                          Its transcript was deleted outside Sova, so there's nothing left to read. Removing it from the
                           group is all that's left.
                         </p>
                         <button type="button" class="button empty-action" onClick={() => void removeGone(ghost)}>
@@ -1127,6 +1129,7 @@ export function GroupView(props: {
                     inputsOnly={props.wiring.inputsOnly}
                     subagentsPath={props.wiring.subagentsPath}
                     onNewSession={props.wiring.onNewSession}
+                onCreated={props.wiring.onCreated}
                   />
                 </section>
               );
@@ -1172,7 +1175,7 @@ function PaneMenu(props: {
   first: boolean;
   last: boolean;
   /**
-   * Eliminate's state: `null` when this session was not started in pi-web (there is nothing to
+   * Eliminate's state: `null` when this session was not started in Sova (there is nothing to
    * archive, so the row is absent), `""` when it can be eliminated, and otherwise the reason it
    * can't — said before the press rather than discovered as a half-finished gesture.
    */
@@ -1278,14 +1281,14 @@ function PaneMenu(props: {
                   aria={`Remove ${props.name} from the group`}
                   title={
                     props.eliminate === null
-                      ? "This session wasn't started in pi-web, so removing it is all we can do — nothing is archived"
+                      ? "This session wasn't started in Sova, so removing it is all we can do — nothing is archived"
                       : `Take it out of ${quoted(props.groupName)} and stay here. Nothing is archived and nothing is deleted`
                   }
                   icon={<Icon name="close" small />}
                   keepFocus
                   onRun={props.onRemove}
                 />
-                {/* Absent, not disabled, when the session wasn't started in pi-web: there is nothing
+                {/* Absent, not disabled, when the session wasn't started in Sova: there is nothing
                     to archive, and it is a different gesture rather than a refusal. */}
                 <Show when={props.eliminate !== null}>
                   <menu.Item

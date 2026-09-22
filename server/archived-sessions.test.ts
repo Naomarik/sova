@@ -13,7 +13,7 @@ const sessionsDir = join(agentDir, "sessions", "--tmp-archive-test--");
 const liveDir = join(agentDir, "sessions", "live");
 mkdirSync(sessionsDir, { recursive: true });
 mkdirSync(liveDir, { recursive: true });
-const archiveFile = join(agentDir, "pi-web", "archived-sessions.json");
+const archiveFile = join(agentDir, "sova", "archived-sessions.json");
 
 const { isArchived, setArchived } = await import("./archived-sessions");
 const { archiveSession } = await import("./sessions-index");

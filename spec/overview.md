@@ -1,15 +1,21 @@
-# pi-web — Design Notes
+# Sova — Design Notes
 
-The UX spec for the pi-web MVP. The frontend builds exactly this with plain SolidJS and two
+The UX spec for the Sova MVP. The frontend builds exactly this with plain SolidJS and two
 stylesheets — no component library.
 
 - **System.** fold-ai-dev design system v1.8.0 (`.claude/skills/fold-ai-dev-design/`), rebranded
-  as pi-web. Where these notes don't say otherwise, the skill's rules apply: `SKILL.md` for
+  as Sova. Where these notes don't say otherwise, the skill's rules apply: `SKILL.md` for
   anything that spans components, `reference/components/*.md` for how each component is built.
 - **Stylesheets.** `src/design/tokens.css`, then `src/design/base.css`. Import both once, in that
   order, from `src/main.tsx`. Every class named here is defined in `base.css`.
 - **Assets.** Vite serves `public/` at the site root: `/fonts/*.woff2`, `/icons/*.svg`,
   `/favicon.svg`.
+- **Naming.** The product is **Sova** (Sessions, Orchestration, Viewing & Agents) and the mark is
+  `public/icons/sova-mark.svg`. The state directory (`~/.pi/agent/sova/`), the browser keys
+  (`sova:*`) and the theme schema (`sova-theme/v1`) all carry the new name since 2026-09-22; their
+  `pi-web` spellings are still READ so data written before the rename keeps working, and the
+  `pi-web-rewind` / `pi-web-fanout-member` session markers are still written legacy-named on
+  purpose. So each `pi-web` below is a compatibility spelling, not the product name.
 
 ## Class index (all in `src/design/base.css`)
 
@@ -90,7 +96,7 @@ and in the codebase point at the file whose number matches.
 | [04g-mode-menu.md](04g-mode-menu.md) | §4g · Mode menu | Per-chat mode switching and the mode menu. |
 | [05-new-session-dialog.md](05-new-session-dialog.md) | §5 · New Session dialog | Creating a session: the modal, the in-place folder picker, fields, and validation. |
 | [06-extension-dialogs.md](06-extension-dialogs.md) | §6 · Extension dialogs (`ui_request`, optional in MVP) | Extension-driven `ui_request` dialogs. |
-| [07-deviations.md](07-deviations.md) | §7 · Deviations from, and extensions to, fold-ai-dev | Where pi-web departs from or extends fold-ai-dev. |
+| [07-deviations.md](07-deviations.md) | §7 · Deviations from, and extensions to, fold-ai-dev | Where Sova departs from or extends fold-ai-dev. |
 | [08-token-index.md](08-token-index.md) | §8 · Token index | Every token these notes reference, grouped by kind. |
 | [09-copy-deck.md](09-copy-deck.md) | §9 · Copy deck | All user-facing strings. |
 | [10-insights.md](10-insights.md) | §10 · Insights | Sidebar foot, Usage and Agents pages, team and subagent cards, insight strip. |

@@ -30,7 +30,10 @@ async function shutdown() {
   // Hosted subagent workers (PI_WORKER_TRANSPORT=host) outlive this process: the
   // subagents extension's session_shutdown detaches them instead of killing them.
   // No-op for the default inline transport. See pi-config/extensions/subagents/hosting.ts.
+  // Rename bridge: the extension reads "sova:detach-workers" first, legacy "pi-web:detach-workers"
+  // second — the server sets BOTH so either side may be applied first.
   (globalThis as Record<symbol, unknown>)[Symbol.for("pi-web:detach-workers")] = true;
+  (globalThis as Record<symbol, unknown>)[Symbol.for("sova:detach-workers")] = true;
   await Promise.race([disposeAllChats(), new Promise((r) => setTimeout(r, 3000))]);
   process.exit(0);
 }
@@ -73,7 +76,7 @@ value falls back to `inline`.
   re-adopted, and its completion only announced, once its owner session's
   runtime is opened again. Until then the host keeps it running. The host stops
   it after 24 h with no manager attached. To adopt eagerly, the server could
-  scan `~/.pi/agent/pi-web/workers/<ownerSessionId>/*/meta.json` at startup for
+  scan `~/.pi/agent/sova/workers/<ownerSessionId>/*/meta.json` (legacy pi-web/workers until the state move; defaultWorkersRoot() picks) at startup for
   `state` in {"running", "detached"} and `acquireChat(meta.ownerSessionFile)`
   for each. An already-open runtime can re-scan with
   `pi.events.emit("subagents:workers-adopt", { version: 1 })`.

@@ -10,6 +10,7 @@ import {
 	DEFAULT_SSH_OPTIONS,
 	parseListDirsOutput,
 	parseTargetsFile,
+	legacyPlaceholderRoot,
 	placeholderDir,
 	placeholderRoot,
 	shJoin,
@@ -222,7 +223,9 @@ test("validateTarget and parseTargetsFile", () => {
 
 test("placeholder cwd maps back to the remote path", () => {
 	const root = placeholderRoot("/h/.pi/agent", "acme-prod");
-	assert.equal(root, "/h/.pi/agent/pi-web/targets/acme-prod");
+	assert.equal(root, "/h/.pi/agent/sova/targets/acme-prod");
+	// Rename bridge: the legacy root stays exported for read-side parses of pre-rename cwds.
+	assert.equal(legacyPlaceholderRoot("/h/.pi/agent", "acme-prod"), "/h/.pi/agent/pi-web/targets/acme-prod");
 	assert.equal(placeholderDir("/h/.pi/agent", "acme-prod", "/home/deploy/x"), `${root}/home/deploy/x`);
 	assert.equal(toRemotePath(`${root}/home/deploy/x`, root), "/home/deploy/x");
 	assert.equal(toRemotePath(root, root), "/");

@@ -122,7 +122,7 @@ function AgentCard(props: { s: LiveAgentSession; workers: WorkerInfo[]; title: s
           </Show>
         </h3>
         <Show when={props.s.embedded}>
-          <CountChip title="A chat running in pi-web">Web</CountChip>
+          <CountChip title="A chat running in Sova">Web</CountChip>
         </Show>
         <Show when={working() > 0}>
           <CountChip>{working()} working</CountChip>

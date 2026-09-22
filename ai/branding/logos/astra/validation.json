@@ -1,0 +1,17 @@
+{
+  "method": "Installed Playwright over isolated Chromium CDP; viewport set after navigation",
+  "desktop": {
+    "width": 1280,
+    "overflow": false,
+    "fontLoaded": true,
+    "marks": 40,
+    "darkBackground": "rgb(30, 30, 38)",
+    "lightBackground": "rgb(255, 255, 255)",
+    "externalRequests": 0
+  },
+  "mobile": {
+    "width": 390,
+    "overflow": false
+  },
+  "errors": []
+}

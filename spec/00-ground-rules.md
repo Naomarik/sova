@@ -1,5 +1,5 @@
 # 00 · Ground rules
-> Part of the pi-web design spec · [overview](overview.md)
+> Part of the Sova design spec · [overview](overview.md)
 
 ## Theme
 
@@ -8,7 +8,7 @@ the full light set. Those two blocks in `src/design/tokens.css` are the bases ev
 on.
 
 A theme is one JSON file: `themes/<id>.json` for the ones shipped with the app,
-`~/.pi/agent/pi-web/themes/<id>.json` for the ones you drop in. It carries
+`~/.pi/agent/sova/themes/<id>.json` for the ones you drop in. It carries
 `"$schema": "pi-web-theme/v1"`, a `name`, an `extends` of `dark` or `light`, an optional `vars`
 map of named values its own later keys can reference as `"$name"`, a `colors` map keyed by the
 semantic tokens without their `--color-` / `--status-` / `--diff-` prefix, and an optional
@@ -87,9 +87,19 @@ themes (Dracula, three Tokyo Nights, four Catppuccins, four Monokais, four Nords
 color only and keep Inter and JetBrains Mono. A user file whose id matches a built-in replaces
 it.
 
-The choice is made in Settings → Themes (§12), persists in `localStorage` under `pi-web:theme`,
+The choice is made in Settings → Themes (§12), persists in `localStorage` under `sova:theme` (the legacy `pi-web:theme` is read and mirrored),
 and is applied — custom properties written, `data-theme` set to the theme's base — before first
 paint. An id that no longer resolves falls back to `dark`.
+
+**A font pick sits over the theme.** Settings → Themes → Typography (§12) lets this browser put
+one of a closed list of bundled faces on `--font-body` + `--font-display` (Text) and `--font-mono`
+(Code), persisted under `pi-web:typography` as catalogue ids — never a stack the user typed, so
+nothing there is subject to the grammar above; the ids resolve in `src/lib/typography.ts`. The
+precedence is pick, then the theme's own `typography`, then `tokens.css`: the pick is written
+after the theme's tokens on every apply, so it survives a theme switch, and a kind left on Theme
+default shows the theme's face. `?theme=default` clears both. Every face in the catalogue is
+bundled under `public/fonts/` with its license and source (`public/fonts/README.md`); nothing is
+fetched from a CDN.
 
 ## Icons
 
@@ -111,7 +121,7 @@ and `fill="none" stroke="currentColor"`.
 
 | File (`/icons/…`) | Used for |
 |---|---|
-| `pi-web-mark.svg` | Brand mark in the sidebar head (accent colored). pi-web's own mark, drawn on the system grid |
+| `sova-mark.svg` | Brand mark in the sidebar head (accent colored). Astra's Fold, drawn on the system grid; the earlier `pi-web-mark.svg` is kept on disk but unused |
 | `plus.svg` | New Session |
 | `search.svg` | Search field glyph; tool card for `grep` / `find` / `ls` |
 | `close.svg` | Clear search, close dialog |
@@ -139,7 +149,7 @@ and `fill="none" stroke="currentColor"`.
 | `command.svg` | Commands button (composer, §4d): a `/` in a rounded square. New, drawn on the system grid |
 | `image.svg` | Tool-card image count, drop overlay. New, drawn on the system grid |
 | `pencil.svg` | Draft rows (§2): the lead of line 2, before the draft's preview. A pen at 45° with a nib, legible at `.icon-sm`. New, drawn on the system grid |
-| `gauge.svg` | Usage: the sidebar foot's Usage row. pi-web's own, drawn on the system grid |
+| `gauge.svg` | Usage: the sidebar foot's Usage row. Sova's own, drawn on the system grid |
 | `sliders.svg` | Mode: the mode trigger at the right end of the composer foot (§4g). Three tracks with an offset handle each. New, drawn on the system grid |
 | `worker.svg` | Agents: the sidebar foot's Agents row, plus the Teams and Subagents section heads (from the skill's set) |
 | `settings.svg` | Settings: the gear at the right end of the sidebar foot's Agents row, and the Settings dialog's tab rail. A cog on the system grid (the skill ships a sun-burst under this name)

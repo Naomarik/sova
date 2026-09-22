@@ -1,13 +1,14 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { stateRoot } from "./state-root";
 import type { ThemeInfo, ThemeList, ThemeTokens } from "../shared/protocol";
 import { DEFAULT_THEME_ID, parseTheme, type ParsedTheme, type ThemeBase, themeInfo } from "../shared/theme";
 
 /**
  * Every theme the app can find (spec/12-settings-dialog.md §12): the 18 shipped under themes/ and
- * whatever the user dropped in `~/.pi/agent/pi-web/themes/`. The grammar and the read pipeline are
+ * whatever the user dropped in `~/.pi/agent/sova/themes/` (the state root moved with the rename).
+ * The grammar and the read pipeline are
  * shared/theme.ts's — this module is only the two folders and the order they come back in.
  *
  * There is no watch and no cache: the picker re-fetches every 2s while its tab is visible, and a
@@ -17,7 +18,7 @@ import { DEFAULT_THEME_ID, parseTheme, type ParsedTheme, type ThemeBase, themeIn
  */
 const BUILTIN_DIR = fileURLToPath(new URL("../themes/", import.meta.url));
 /** Read per call, like every other agent-dir path: PI_CODING_AGENT_DIR is what the tests move. */
-export const userThemesDir = () => join(getAgentDir(), "pi-web", "themes");
+export const userThemesDir = () => join(stateRoot(), "themes");
 
 /** `dark` and `light` lead the list: they are the two bases, and dark is the default (§0). */
 const BASE_IDS: readonly string[] = [DEFAULT_THEME_ID, "light"];

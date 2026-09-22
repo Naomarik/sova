@@ -2,7 +2,18 @@ import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Sh
 import type { SlashCommand, UploadResult } from "../../shared/protocol";
 import { enterRunsLocal, insertCommand, localCommand, rankCommands, slashMenuSuppressed, slashTokenAt, type SlashToken } from "../lib/slash";
 import { commandOptionIds, SlashMenu } from "./SlashMenu";
-import { cachedFileIndex, ensureFileIndex, insertMention, mentionEntries, mentionQueryParts, mentionTokenAt, type MentionToken } from "../lib/files";
+import {
+  cachedFileIndex,
+  ensureFileIndex,
+  insertMention,
+  mentionEntries,
+  mentionIndexStatus,
+  mentionQueryParts,
+  mentionTokenAt,
+  shouldFetchIndex,
+  type MentionIndexError,
+  type MentionToken,
+} from "../lib/files";
 import { FileMenu, mentionOptionIds, type FileMenuStatus } from "./FileMenu";
 import { deleteAttachment } from "../lib/api";
 import {
@@ -139,8 +150,8 @@ export function Composer(props: {
   const [mentionToken, setMentionToken] = createSignal<MentionToken | null>(null);
   const [mentionActive, setMentionActive] = createSignal(0);
   const [mentionDismissed, setMentionDismissed] = createSignal<string | null>(null);
-  /** Why the last index fetch failed; kept until the menu next opens. */
-  const [mentionError, setMentionError] = createSignal<string | null>(null);
+  /** Why the last index fetch failed, and for which cwd; kept until the menu next opens. */
+  const [mentionError, setMentionError] = createSignal<MentionIndexError | null>(null);
   /** Bumped when an index fetch settles, so the derivation memos re-read the index cache. */
   const [indexTick, setIndexTick] = createSignal(0);
   const mentionKey = (t: MentionToken) => `${t.start}:${t.query}`;
@@ -319,10 +330,8 @@ export function Composer(props: {
   });
   const mentionStatus = createMemo<FileMenuStatus>(() => {
     indexTick();
-    if (!props.cwd) return { state: "error", error: "No working directory yet — the @ menu needs the session's folder." };
-    const error = mentionError();
-    if (error) return { state: "error", error };
-    return cachedFileIndex(props.cwd) ? { state: "ready" } : { state: "loading" };
+    const cwd = props.cwd;
+    return mentionIndexStatus({ cwd, cached: !!(cwd && cachedFileIndex(cwd)), error: mentionError() });
   });
   /** Never while disabled. Streaming is fine: a completed path is ordinary prompt text. */
   const mentionOpen = () => {
@@ -348,28 +357,42 @@ export function Composer(props: {
     input.focus();
     updateMention(); // after a directory pick the caret sits right after "/", still in the token
   };
-  /** One fetch attempt per menu opening; a failure stays until the menu closes and reopens. */
-  let mentionFetched = false;
+  /** The cwd the open menu has already tried to read: one attempt per opening, per folder. */
+  let mentionFetchedFor: string | null = null;
   createEffect(() => {
     const token = mentionToken();
+    const cwd = props.cwd ?? null;
     if (!token) {
-      mentionFetched = false;
+      mentionFetchedFor = null; // closed: the next opening tries again
       return;
     }
-    if (mentionFetched || (props.cwd && cachedFileIndex(props.cwd))) return;
-    const cwd = props.cwd;
-    if (!cwd) return;
-    mentionFetched = true;
+    if (!shouldFetchIndex({ cwd, cached: !!(cwd && cachedFileIndex(cwd)), fetchedFor: mentionFetchedFor })) return;
+    mentionFetchedFor = cwd;
     setMentionError(null);
-    void ensureFileIndex(cwd)
-      .then(
-        () => setIndexTick((t) => t + 1),
-        (err) => {
-          if (disposed) return;
-          setMentionError(err instanceof Error ? err.message : String(err));
-          setIndexTick((t) => t + 1);
-        },
-      );
+    void ensureFileIndex(cwd!).then(
+      () => setIndexTick((t) => t + 1),
+      (err) => {
+        if (disposed) return;
+        setMentionError({ cwd: cwd!, message: err instanceof Error ? err.message : String(err) });
+        setIndexTick((t) => t + 1);
+      },
+    );
+  });
+  // The session's folder changed under an open menu: its list, its error and its active row all
+  // described the folder we left. Drop them; the effect above refetches for the folder we're in.
+  //
+  // The comparison is ours on purpose. `props.cwd` is read off a summary object the session poll
+  // REPLACES every few seconds, so the effect re-runs constantly with the same string — and `on`
+  // would not save us: it re-runs whenever its tracked source changes, equal value or not (the
+  // equality option belongs to createMemo's OUTPUT, which this isn't). Measured before the guard:
+  // two polls moved the active row off the entry the user had arrowed to.
+  let lastCwd = props.cwd ?? null;
+  createEffect(() => {
+    const cwd = props.cwd ?? null;
+    if (cwd === lastCwd) return;
+    lastCwd = cwd;
+    setMentionActive(0);
+    setMentionError(null);
   });
 
   /** The open menu's listbox id and active row id, whichever menu that is (only one can be open). */

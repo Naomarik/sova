@@ -1,5 +1,5 @@
 # 14 · Group workspaces
-> Part of the pi-web design spec · [overview](overview.md)
+> Part of the Sova design spec · [overview](overview.md)
 
 A group stops being only a section in the sidebar and becomes a place you can open. The
 **workspace** is a second view over the groups that already exist (§2 "Groups"): every member of
@@ -10,7 +10,7 @@ It answers the question the sidebar can't: *what did all of these say to the sam
 Fanout (§14b) is how a group full of members gets made in one gesture; this file is the surface
 they land in, and it works exactly the same for a group you filed by hand.
 
-**One registry, not two.** The workspace reads and writes `~/.pi/agent/pi-web/session-groups.json`
+**One registry, not two.** The workspace reads and writes `~/.pi/agent/sova/session-groups.json`
 through the routes §2 already names. There is no second grouping concept, no workspace that isn't
 a group, and no group that can't be opened as a workspace.
 
@@ -19,12 +19,12 @@ a group, and no group that can't be opened as a workspace.
 | Decision | What it means here |
 |---|---|
 | The registry is the existing group store, extended | `SessionGroup` gains `members` (display order, optional label) and an optional `seed`. Nothing new is invented, and a hand-made group opens as a workspace with no migration |
-| Lineage is the session header, and it is never rewritten | `parentSession` in the file says where a fork came from; `SessionSummary.parent` carries it to the client. pi-web reads it and never writes over it. `seed` is pi-web's own note about a fanout it performed, not a claim about the session file |
+| Lineage is the session header, and it is never rewritten | `parentSession` in the file says where a fork came from; `SessionSummary.parent` carries it to the client. Sova reads it and never writes over it. `seed` is Sova's own note about a fanout it performed, not a claim about the session file |
 | One group per session | The `assignments` map already enforces it. A session is in one workspace or none, so "which workspace am I looking at" is never ambiguous |
 | Split is one horizontal row that scrolls | No grid, no tiling, no cap on how many members a group holds. A pane never goes under 440px |
 | Every pane stays mounted, including hidden tabs | A member that streams while you read another one must not lose its turn. Tabs hide, they don't unmount |
 | One group composer, all members, all-or-nothing | A shared follow-up is a single server-side batch. If one member can't take it, none of them do, and the refusal names each one |
-| The pre-check is also what makes this surface testable for nothing | A refused batch has no side effects, so the whole refusal path — parsing, the banner, every member named in pi-web's words, `Send to the Rest`, the draft surviving — can be exercised against a real server with **zero model calls**, e.g. by a group whose members are all TUI-live. A transactional design would have something to undo on every run. Noted beside the decision because it is a property of it, not a testing trick |
+| The pre-check is also what makes this surface testable for nothing | A refused batch has no side effects, so the whole refusal path — parsing, the banner, every member named in Sova's words, `Send to the Rest`, the draft surviving — can be exercised against a real server with **zero model calls**, e.g. by a group whose members are all TUI-live. A transactional design would have something to undo on every run. Noted beside the decision because it is a property of it, not a testing trick |
 | All-or-nothing is a **pre-check**, not a transaction | The server checks every member before it prompts any of them, so the refusal is complete and nothing is half-sent by our own doing. A member lost *between* the check and the send (a TUI grabs it in the same second) makes the batch partial, and we say so — a prompt a model is already answering cannot be recalled, and claiming otherwise would be the one lie this surface can't afford |
 | Promote removes from the group; Eliminate removes and archives | Neither deletes a transcript. Both are the group's writes, never the session file's |
 | A group that a fanout created dissolves when its last member leaves | See "Emptying a group". A hand-made group survives empty, as §2 already says |
@@ -53,7 +53,7 @@ interface SessionGroup {
   id: string; name: string; createdAt: string;
   /** The group's sessions in display order, reconciled against the assignments on every read. */
   members?: GroupMember[];
-  /** Recorded only when pi-web itself forked or fanned this group out (§14b). Absent for a
+  /** Recorded only when Sova itself forked or fanned this group out (§14b). Absent for a
       group made by hand, and never written from a session file's own lineage. */
   seed?: { parentSessionPath: string; leafId: string };
 }
@@ -67,7 +67,7 @@ interface SessionGroup {
   the label first and the title under it. A member with no label shows the title alone. A label
   survives a move between groups, because it describes the session, not the group.
 - **A field this build doesn't know is kept, not dropped.** The store preserves unrecognized keys
-  on a group through a rename or a reassign, so a `seed` written by a newer pi-web survives an
+  on a group through a rename or a reassign, so a `seed` written by a newer Sova survives an
   older one touching the same group. Without that, the fork markers and `Align to Fork` of a
   fanout would quietly disappear the first time an older build renamed the group — the kind of
   loss nobody would connect to its cause.
@@ -79,7 +79,7 @@ interface SessionGroup {
   different from a folder of unrelated chats.
 - **`SessionSummary.parent` and `parentId`** are the session header's `parentSession`, as a
   canonical path and as the session id, set together or not at all. Read-only lineage: they
-  survive a promote, a dissolve and a rename, because pi-web never writes the header. Use
+  survive a promote, a dissolve and a rename, because Sova never writes the header. Use
   `parent` to link or open (routes take paths), `parentId` to match against `GroupMember.id` and
   the assignments, which are id-keyed.
 - **Two identifier vocabularies, on purpose.** Lineage is **paths** (`seed.parentSessionPath`,
@@ -91,7 +91,7 @@ interface SessionGroup {
 - **Lineage says *that*; `seed` says *where*.** `parentId` can tell you two members of a
   hand-made group came from one session; it cannot tell you which entry they diverged at, and
   without that there is no row to draw and nothing to align to. So the fork marker and
-  `Align to Fork` (§14b) are `seed` features, and a group pi-web didn't fan out has neither —
+  `Align to Fork` (§14b) are `seed` features, and a group Sova didn't fan out has neither —
   even when every member is visibly a fork. A marker placed at a guessed position would be worse
   than no marker.
 
@@ -252,7 +252,7 @@ The workspace is a third value of `.app`'s `data-view`, and it takes the whole m
 
 ## A pane
 
-A pane is a whole `ChatView` for a member pi-web can write to, and a whole `WatchView`
+A pane is a whole `ChatView` for a member Sova can write to, and a whole `WatchView`
 (read-only, §2 "Live sessions") for a member open in a TUI. Nothing about the transcript, the
 composer, the model menu or the mode menu changes inside a pane — §3, §4 and their sub-sections
 apply verbatim. What changes is scoping and chrome:
@@ -313,7 +313,7 @@ apply verbatim. What changes is scoping and chrome:
   the rows whose gesture most invites it, and it lived nowhere else.
 - **Three ways a member leaves, and each word does one thing.** `Promote` removes it and takes
   you to it. `Remove From Group` removes it and leaves you here. `Eliminate` removes it and
-  archives it. All three are offered for a session pi-web started; for one it didn't,
+  archives it. All three are offered for a session Sova started; for one it didn't,
   `Eliminate` is absent rather than relabelled, because the archive half isn't available (§2
   "Archiving") and a word that only sometimes archives is the lie this set exists to avoid.
   `Remove From Group` is what a member you want out but not archived has always needed — without
@@ -328,11 +328,11 @@ apply verbatim. What changes is scoping and chrome:
 |---|---|---|
 | Ready | The chat, the composer live | Included |
 | Mid-turn | The chat, the run status row, `Steer` in its own composer (§4) | **Excluded**, reason "mid-turn". A shared prompt is not a steer |
-| Open in a TUI | A **watch** pane: read-only transcript, the `TUI` chip (accent, static), and in place of a composer the `.composer-reason` "This session is open in a terminal, so pi-web won't write to it." | Excluded, reason "open in a terminal" |
+| Open in a TUI | A **watch** pane: read-only transcript, the `TUI` chip (accent, static), and in place of a composer the `.composer-reason` "This session is open in a terminal, so Sova won't write to it." | Excluded, reason "open in a terminal" |
 | Archived **while still a member** — archived from its own pane, or from anywhere else, without leaving the group | The chat, read normally, with a neutral `.chip` "Archived" in the pane head and its composer disabled, reason "This session is archived. Unarchive it to send." **Archiving is the close gesture**: the server disposes the held runtime, so this pane's `/ws/chat` closes from the server side while the pane is still mounted. That close is **expected** — the pane keeps rendering the transcript it has and shows the Archived chip, never the disconnected or busy banner a single-session view would show for the same event. This is the only state in which that happens; an **eliminated** session is not a member and has no pane (see Eliminate) | Excluded, reason "archived" |
 | Config error | The §1 open-failure banner, in the pane's own banner slot, with its own actions (Reconnect · Archive, as appropriate to the diagnosis). The transcript area keeps whatever loaded | Excluded, reason "can't be opened" |
 | Foreign-write busy | The `busy` banner the single-session view already shows, with its `Reconnect (force)` action, and the composer disabled | Excluded, reason "another program is writing to it" |
-| Gone from disk (the session file, checked by shape plus one async stat — never a sync stat, and never the member's `cwd`) | The pane is replaced by an `.empty` inside the pane: **"This session's file is gone."** Its transcript was deleted outside pi-web. Removing it from the group is all that's left. · button `Remove From Group` | Excluded, reason "the file is gone" |
+| Gone from disk (the session file, checked by shape plus one async stat — never a sync stat, and never the member's `cwd`) | The pane is replaced by an `.empty` inside the pane: **"This session's file is gone."** Its transcript was deleted outside Sova. Removing it from the group is all that's left. · button `Remove From Group` | Excluded, reason "the file is gone" |
 **The gone member keeps its pane, its place and its name.** The `.empty` renders at the member's
 position in the row and in its tab, called what this tab last saw it called (a `lastSeen` summary
 cache), because a member that silently drops out between polls is exactly the loss this state
@@ -353,7 +353,7 @@ removal-only), and it is what dissolves an emptied fanout group, exactly like an
 last-member removal. The group composer counts these members in its foot (`· 1 file gone`) so a
 send the server refuses on one is a confirmation, not a discovery.
 
-The assignment outlives the file **on purpose**: the server prunes a member's group assignment only from Archive cleanup (ids it deleted itself, inside pi-web), never on the listing pass — a prune there would race this pane's own Remove From Group and the member would vanish silently instead of rendering this state. Removing the ghost is the user's gesture (`POST …/assign { id, groupId: null }`, the store keys on ids so no file is needed), and it is what dissolves an emptied fanout group. A reader tempted to "clean up" stale assignments in the lister owns re-deriving who else deletes members.
+The assignment outlives the file **on purpose**: the server prunes a member's group assignment only from Archive cleanup (ids it deleted itself, inside Sova), never on the listing pass — a prune there would race this pane's own Remove From Group and the member would vanish silently instead of rendering this state. Removing the ghost is the user's gesture (`POST …/assign { id, groupId: null }`, the store keys on ids so no file is needed), and it is what dissolves an emptied fanout group. A reader tempted to "clean up" stale assignments in the lister owns re-deriving who else deletes members.
 
 The excluded count is always visible in the group composer's foot, never discovered at send time.
 
@@ -442,9 +442,9 @@ member at once.
   tidy: `message` is what an older client shows when it meets a code it doesn't know, so an empty
   one would drop the reason on the floor in exactly the case the fallback exists for.
   **The banner is composed from `code` and the member's own name** (§9), never by
-  parsing prose — so the words on screen are pi-web's and stay consistent with the rest of the
+  parsing prose — so the words on screen are Sova's and stay consistent with the rest of the
   product. `message` is shown verbatim in exactly two cases, and both are the same case really:
-  when pi-web has no sentence of its own to say. `internal` is one (the server knows something we
+  when Sova has no sentence of its own to say. `internal` is one (the server knows something we
   have no word for, and inventing a calm generic sentence would be hiding it), and a `code` this
   client doesn't recognize is the other, which is how an older client stays honest about a newer
   server instead of dropping a reason on the floor.
@@ -545,7 +545,7 @@ its text must stay visible — and a focused pane composer never collapses under
   frame. Typing is never done in a box that is deciding whether to grow.
 - **A collapsed composer keeps its reason as an accessible description.** `.composer-reason` is
   hidden visually, not removed, so `aria-describedby="composer-reason-p2"` still reads "This
-  session is open in a terminal, so pi-web won't write to it." to AT. A disabled pane composer
+  session is open in a terminal, so Sova won't write to it." to AT. A disabled pane composer
   that collapses must not become a Send button with no explanation.
 - **`data-collapsed="true"` is the only hook**, on `.composer`, so the state is one attribute and
   the styling is one rule.
@@ -582,7 +582,7 @@ All four are writes to the group registry. None of them touches a session's JSON
 - **Eliminate** — the same assign-to-null, plus
   `POST /api/sessions/archive {path, archived:true}`. Two writes, one gesture, and **the second
   can refuse in three ways** (`archiveSession` in `server/sessions-index.ts`): the session
-  is open in a TUI, it wasn't started in pi-web, or it is mid-turn. Two of the three the pane
+  is open in a TUI, it wasn't started in Sova, or it is mid-turn. Two of the three the pane
   already knows, so it says so **before** the press rather than half-succeeding: for a TUI-live
   or mid-turn member, Eliminate is `aria-disabled` with the reason ("This session is open in a
   terminal." · "It's mid-turn. Stop it or wait, then eliminate it."). Removed-but-not-archived is
@@ -599,9 +599,9 @@ All four are writes to the group registry. None of them touches a session's JSON
     Promote. Promote gets one because it also navigates you away, so a mis-click moves the ground
     under you; Eliminate leaves you exactly where you were, looking at the members you kept.
 
-  The toast names both writes: "Removed **{title}** and archived it." For a session pi-web did not start, the
+  The toast names both writes: "Removed **{title}** and archived it." For a session Sova did not start, the
   archive half is not available (§2 "Archiving" is web-origin only), the button reads
-  `Remove From Group`, and its `title` says why: "This session wasn't started in pi-web, so
+  `Remove From Group`, and its `title` says why: "This session wasn't started in Sova, so
   removing it is all we can do — nothing is archived." One word for two behaviors would be the
   lie here.
 - **Dissolve** — `DELETE /api/session-groups/{id}`, the existing route, asked in place in the
@@ -625,7 +625,7 @@ All four are writes to the group registry. None of them touches a session's JSON
 ### Emptying a group
 
 **A group whose name is the user's work stands empty. Everything else here follows from that.**
-pi-web deletes a group it both created *and* named, on the write that removes its last member;
+Sova deletes a group it both created *and* named, on the write that removes its last member;
 it never deletes one a person named — whether they typed the name when they made the group, or
 typed it later over a generated one.
 
@@ -640,7 +640,7 @@ in the sidebar forever — is litter the user has to notice and clean up.
 **Only the assign gesture dissolves.** Two other paths can leave a fanout group empty, and
 neither of them may delete it: archive cleanup, which removes session files in bulk, and the
 listing pass itself, which prunes assignments whose file has gone (deleted by hand, or by a TUI).
-Both are **bookkeeping about files that disappeared outside pi-web**, there is no client waiting
+Both are **bookkeeping about files that disappeared outside Sova**, there is no client waiting
 on either to be told what happened, and a group vanishing during a background refresh is
 unexplained loss — the exact thing this spec spends its words preventing. The rule is about the
 gesture that empties a group, not about the group ever being empty. The prune already holds the
@@ -652,7 +652,7 @@ files may forget an assignment, but it may not delete something the user named. 
 **`seed` is not the test, and never was a good proxy for one.** A seed says where a fork came
 from — it is marker data, nothing more. Dissolution turns on a different question: *did anyone
 type this name?* So the group carries an explicit flag, **`autoDissolve`**, set only when a
-fanout creates a group and generates its name — pi-web made it and named it, so pi-web may
+fanout creates a group and generates its name — Sova made it and named it, so Sova may
 remove it — and **that flag is the one truth of dissolution**. Nothing else confers it.
 
 **It is named for the behaviour, not the property, and that is the point.** This whole
@@ -662,7 +662,7 @@ the same second use; `autoDissolve` says exactly what it controls and can proxy 
 Do not re-derive dissolution from any other field, and do not use this one to mean anything
 else.
 
-**A rename revokes it.** `autoDissolve` says "pi-web made this and named it", so a rename that
+**A rename revokes it.** `autoDissolve` says "Sova made this and named it", so a rename that
 actually changes the name falsifies the second half and clears the flag. Renaming
 "Fanout · retry backoff" to "Backoff experiments" is the plainest statement a user can make that
 they mean to keep something, and it would be a poor reading of it to delete the group weeks
@@ -672,7 +672,7 @@ flag, because only the name is what it is about.
 
 This is the property the flag's name was chosen for, generalised: **it is set and cleared by the
 events that make it true or false, so nobody has to remember a rule.** The working method that
-falls out of it, for the next field like this one: **`autoDissolve` encodes a claim — "pi-web
+falls out of it, for the next field like this one: **`autoDissolve` encodes a claim — "Sova
 owns this group" — so enumerate the events that transfer ownership, because each one is a defect
 until it clears the field.** Four were found that way, each a separate round: adoption (the user's
 group gains lineage), the legacy fallback (an adopted group is indistinguishable on disk from a
@@ -685,7 +685,7 @@ catch a claim that *drifts* — one that was true when written and outlived its 
 cannot catch a claim that was **never true in one branch**: born half-false, and looking whole
 because the other branch is the common one. For those, enumerate the **inputs**: *who can supply
 this value?* For a group's name that list is short — `createGroup` (the user), `updateGroup` (the
-user), and the fanout dialog's name field, which is **pi-web's generated default OR the user's
+user), and the fanout dialog's name field, which is **Sova's generated default OR the user's
 typing**. One input, two cases, and a flag that only ever encoded the first — closed
 by `FanoutRequest.named` (§14b), which is the client telling the server which of the
 two it is. Run both enumerations when a field encodes a claim: the events that falsify it, and
@@ -693,9 +693,9 @@ the inputs that were never covered by it.
 
 **With that input closed the enumeration is complete, and completeness is the point.** Who can
 supply a group's name? `createGroup` — the user, no claim made. `updateGroup` — the user, and it
-clears the claim. The fanout dialog — pi-web's generated default *or* the user's typing, now
+clears the claim. The fanout dialog — Sova's generated default *or* the user's typing, now
 distinguished by `FanoutRequest.named` (§14b). There is no fourth supplier, so
-"pi-web may remove what it both made and named" is **literally** true rather than nearly true.
+"Sova may remove what it both made and named" is **literally** true rather than nearly true.
 Every round of this family lived in the gap between those two words.
 
 **The dangerous state must be the one a check has to ASSERT**, because absence is the state you
@@ -711,7 +711,7 @@ absence rule alone does not cover this, because absence and `"false"` take diffe
 through the same careless check. Two fields
 can carry identical information and fail in opposite directions — had `named` been a boolean, the
 pair shows it exactly: `nameIsGenerated` absent reads as *the user named it*, and the group
-survives; `nameEdited` absent reads as *untouched*, so pi-web claims the name and deletes it.
+survives; `nameEdited` absent reads as *untouched*, so Sova claims the name and deletes it.
 Same fact, same size, one of them safe by construction.
 The name that reads most naturally is not reliably the one that fails safe, so choose the
 polarity first and the wording second.
@@ -754,7 +754,7 @@ but it asks the user to carry a rule that only fires much later, at the moment o
 It is a **boolean, not a true-only flag**, because an explicit `false` has to be sayable: a
 seeded group that must survive being emptied is the case this fixes, and absence now means
 something else. **Absent** means "written before this field existed", and only then does `seed`
-imply dissolution — those older groups are pi-web's own fanouts, and **no adopted hand-made
+imply dissolution — those older groups are Sova's own fanouts, and **no adopted hand-made
 group can be among them**: `seed` is written only by a fork-mode fanout, which until the
 `groupId` path existed always created the group, and that path shipped in the same change as
 the flag. There is no window, so the fallback cannot catch a group a user named. An explicit
@@ -790,7 +790,7 @@ no longer names anything.
 |---|---|
 | 1 member | Renders normally: one pane at its width, the row not scrolling, the group composer reading "1 member" and sending to that one. **It does not silently become `#/s/`** — you are one `Add Members` away from a comparison, and a view that redirects out from under you can't be built on |
 | 0 members, hand-made | `.empty` in the pane area: **"“{name}” has no sessions yet."** Add some here, or drag a row onto the group in the sidebar. · buttons `Add Members` · `Fan Out…`. The group composer is not rendered — there is nothing to send to |
-| 0 members, fanout group | Reachable **two ways, and the group cannot tell them apart**: every member removed or promoted (a renamed fanout group carries `autoDissolve: false`, so it survives being emptied), or every member's file deleted outside pi-web. The store holds `seed` and members, never a *reason*, so no rule can separate the causes and the copy must not name one — the same refusal as everywhere else on this surface: do not assert a datum the contract does not carry. The pane area is an `.empty` (§9), and there is no `Add Members`: the fork point aims at a branch these members left, so filling the group with unrelated chats would make it lie about what it is · button `Dissolve` |
+| 0 members, fanout group | Reachable **two ways, and the group cannot tell them apart**: every member removed or promoted (a renamed fanout group carries `autoDissolve: false`, so it survives being emptied), or every member's file deleted outside Sova. The store holds `seed` and members, never a *reason*, so no rule can separate the causes and the copy must not name one — the same refusal as everywhere else on this surface: do not assert a datum the contract does not carry. The pane area is an `.empty` (§9), and there is no `Add Members`: the fork point aims at a branch these members left, so filling the group with unrelated chats would make it lie about what it is · button `Dissolve` |
 
 ## Announcements
 

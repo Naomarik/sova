@@ -1,5 +1,5 @@
 /**
- * The executable definition of a pi-web theme file: the token names, the grammar each value
+ * The executable definition of a Sova theme file: the token names, the grammar each value
  * family accepts, and the read pipeline. spec/00-ground-rules.md §0 "Theme" is the contract;
  * this file is its only canonical copy, and BOTH sides import it — the server to read files,
  * the client to write the custom properties.
@@ -229,8 +229,10 @@ export function parseTheme(text: string): ParsedTheme {
   if (!raw) return { name: "", base: "dark", tokens, warnings, error: "A theme is a JSON object." };
 
   const name = typeof raw.name === "string" ? raw.name.trim() : "";
-  if (typeof raw.$schema === "string" && raw.$schema !== "pi-web-theme/v1")
-    warn(`$schema is ${shown(raw.$schema)}. This app reads pi-web-theme/v1.`);
+  // Both spellings: the grammar didn't change with the product name, and a theme file written
+  // before the rename must keep loading.
+  if (typeof raw.$schema === "string" && raw.$schema !== "sova-theme/v1" && raw.$schema !== "pi-web-theme/v1")
+    warn(`$schema is ${shown(raw.$schema)}. This app reads sova-theme/v1 (and the legacy pi-web-theme/v1).`);
 
   let base: ThemeBase = "dark";
   if (THEME_BASES.includes(raw.extends as ThemeBase)) base = raw.extends as ThemeBase;

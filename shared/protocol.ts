@@ -12,8 +12,13 @@ export interface SessionSummary {
   /** Absolute path of the .jsonl file. Used as THE session key in /api and /ws params. */
   path: string;
   cwd: string;
-  /** First user message truncated to ~80 chars, or "Untitled". */
+  /** First user message truncated to ~80 chars, or "Untitled" — replaced by the user's own title
+      when they renamed the session (POST /api/sessions/title; Sova's own store, keyed by id in
+      ~/.pi/agent/sova/session-titles.json). Renaming never writes into the session file. */
   title: string;
+  /** The DERIVED title — the first user message — present only while `title` is a user-set
+      override that differs from it. Absent otherwise, and from older servers. */
+  originalTitle?: string;
   createdAt: string; // ISO, from header
   lastActiveAt: string; // ISO, file mtime
   /** Latest "provider/model": the model_change or assistant message closest to the end of the
@@ -58,11 +63,11 @@ export interface SessionSummary {
       live!=null || (origin==="web" && !archived); everything else goes to the bottom archive section. */
   origin: "web" | "external";
   /** The user archived this web-spawned session by hand (POST /api/sessions/archive; ids persist in
-      ~/.pi/agent/pi-web/archived-sessions.json). Only moves it between regions; it opens as before,
+      ~/.pi/agent/sova/archived-sessions.json). Only moves it between regions; it opens as before,
       and a live one still shows on top. Absent from older servers: treat as false. */
   archived: boolean;
   /** The user's group for this session (`SessionGroup.id`, POST /api/session-groups/assign; ids
-      persist in ~/.pi/agent/pi-web/session-groups.json). One group at most, and purely additive:
+      persist in ~/.pi/agent/sova/session-groups.json). One group at most, and purely additive:
       a grouped session stays in its region (Live & web, or the Archive) as well. Absent when it
       belongs to none, and from an older server: treat as ungrouped. */
   groupId?: string;
@@ -77,12 +82,12 @@ export interface SessionSummary {
       `parent` is. Use `parent` to link or open (routes take paths), `parentId` to match.
       LINEAGE ONLY, and the distinction matters: this pair says a session was forked from THAT
       file, never at WHICH entry. A fork marker needs the leaf it diverged at, which only a group
-      pi-web fanned out carries (`seed`), so a marker position must never be inferred from here —
+      Sova fanned out carries (`seed`), so a marker position must never be inferred from here —
       a marker in the wrong place is a false claim about which part of the transcript is shared
       (spec/14-workspaces.md "Data", spec/14b-fanout.md "The fork point in a transcript"). */
   parentId?: string;
   /** Remote session: the target name from ~/.pi/agent/targets.json. Derived from `cwd`, which for a
-      remote session is the local placeholder ~/.pi/agent/pi-web/targets/<target>/<remote/abs/path>.
+      remote session is the local placeholder ~/.pi/agent/sova/targets/<target>/<remote/abs/path>.
       Absent for local sessions. */
   target?: string;
   /** Remote session: the absolute working directory on the target (the placeholder path minus
@@ -239,7 +244,7 @@ export interface AlignReportInfo {
 
 /** An image a transcript row names by path: user messages, assistant text, info rows (custom
     messages such as subagent reports) and tool results. The path is `/tmp/<name>` (a TUI
-    clipboard paste, or a pi-web upload without ?draft=) or `<agent dir>/pi-web/attachments/<session
+    clipboard paste, or a Sova upload without ?draft=) or `<agent dir>/sova/attachments/<session
     id>/<name>` (a composer-draft upload, durable; shared/tmp-paths.ts matches it by that tail). */
 export interface TmpAttachment {
   path: string; // absolute, as written in the message
@@ -264,7 +269,8 @@ export interface OutboundImage {
     Content-Type image/png|jpeg|webp|gif -> 201). The prompt text references `path`. Also the
     shape of a composer draft's `attachments` entry (GET/PUT /api/sessions/draft). */
 export interface UploadResult {
-  path: string; // /tmp/pi-web-<uuid>.<ext>, or <agent dir>/pi-web/attachments/<session id>/pi-web-<uuid>.<ext> with ?draft=
+  path: string; // /tmp/sova-<uuid>.<ext>, or <agent dir>/sova/attachments/<session id>/sova-<uuid>.<ext> with ?draft=
+  // (legacy uploads kept the pi-web-<uuid> name; old paths keep serving from the moved root)
   name: string; // basename
   mimeType: string;
   size: number;
@@ -276,17 +282,20 @@ export interface UploadResult {
 // GET  /api/sessions            -> SessionSummary[]
 // POST /api/sessions { cwd }    -> SessionSummary   (creates a NEW empty webapp-owned session)
 // POST /api/sessions { target, remoteCwd } -> SessionSummary   (remote session: creates the local placeholder
-//                                  ~/.pi/agent/pi-web/targets/<target>/<remoteCwd> and a session there; 400 bad body/
+//                                  ~/.pi/agent/sova/targets/<target>/<remoteCwd> and a session there; 400 bad body/
 //                                  non-absolute remoteCwd, 404 unknown target)
+// POST /api/sessions/fork { path, entryId, position } -> ForkResult   (201; one new web-owned session
+//                                  branched off `path` at `entryId`, the per-message Fork action. Nothing is
+//                                  sent. 400 bad body, 404 unknown session, 409 { refused: ForkRefusal })
 // POST /api/sessions/connect {} -> SessionSummary   (the connection agent: a new session in a fresh
-//                                  ~/.pi/agent/pi-web/connect/<ts>/ seeded with AGENTS.md from server/connect-agent-template.md)
+//                                  ~/.pi/agent/sova/connect/<ts>/ seeded with AGENTS.md from server/connect-agent-template.md)
 // GET  /api/targets             -> TargetInfo[]   (~/.pi/agent/targets.json; missing file → []; status from a cached,
 //                                  bounded probe)
 // GET  /api/targets/:name/folders?path=…&hidden=1 -> FolderListing   (subfolders on the target; paths are REMOTE;
 //                                  no path = the target's cwd, else its $HOME. 400 not absolute, 404 unknown target,
 //                                  502 unreachable / ssh failed / folder missing)
 // GET  /api/session-groups    -> SessionGroup[]   (the sidebar's user-made groups, in creation order;
-//                                  ~/.pi/agent/pi-web/session-groups.json; missing file → [])
+//                                  ~/.pi/agent/sova/session-groups.json; missing file → [])
 // POST /api/session-groups { name: string } -> SessionGroup   (creates one. 400 name not 1–60 chars)
 // PATCH /api/session-groups/:id { name?: string, order?: string[], labels?: {id: string, label: string | null}[] }
 //                                  -> SessionGroup   (renames and/or reorders and/or (re)labels members; every
@@ -302,7 +311,7 @@ export interface UploadResult {
 // POST /api/session-groups/assign { path, groupId: string | null, label?: string | null, index?: number }
 //                                  -> AssignGroupResult
 //                                  (puts one session in a group, or takes it out with null. When this write
-//                                  removes the LAST member of a group whose `autoDissolve` is set (one pi-web
+//                                  removes the LAST member of a group whose `autoDissolve` is set (one Sova
 //                                  both created AND named), that group is deleted in the same atomic write and
 //                                  the response carries dissolved: true. `seed` decides nothing here: a group
 //                                  the user named stands empty even after it adopts one. `label` sets the
@@ -340,14 +349,14 @@ export interface UploadResult {
 // POST /api/session-groups/fanout FanoutRequest -> 201 FanoutResult
 //                                  (N sessions from one starting point, as one group. FORK MODE ({source}):
 //                                  every member is branched from source.leafId onto a FRESH SessionManager of
-//                                  its own — never the manager pi-web holds for the source — and the group
+//                                  its own — never the manager Sova holds for the source — and the group
 //                                  gets a `seed`. FRESH MODE ({cwd, text}): N independent sessions, no shared
 //                                  root, no seed, and `text` is sent through the batch-prompt path.
 //                                  `groupId` lands the members in an EXISTING group (the response's `group`
 //                                  is then that one): a target with no seed adopts this fanout's, a matching
 //                                  seed appends, a DIFFERING seed is 400 { error, code: "seed-conflict" } with
 //                                  nothing created, and an unknown id is 404 with nothing created.
-//                                  `named` says whether `name` is pi-web's generated default: "generated" makes
+//                                  `named` says whether `name` is Sova's generated default: "generated" makes
 //                                  the new group auto-dissolve when emptied; "user", absent or unrecognised marks
 //                                  it user-named and explicitly NOT dissolving. Ignored with `groupId` (the target
 //                                  keeps its own name and its own flag).
@@ -376,7 +385,7 @@ export interface UploadResult {
 //     reason to archive it first, as is anything outside the sessions dir, gone, or unreadable; each
 //     refusal is returned in refused with its reason. refused is paths-mode-only, additive)
 // GET  /api/sessions/draft?path=… -> { text: string | null, attachments: UploadResult[], updatedAt: string | null }
-//                                  (the stored composer draft, ~/.pi/agent/pi-web/drafts.json; nulls and [] when
+//                                  (the stored composer draft, ~/.pi/agent/sova/drafts.json; nulls and [] when
 //                                  none; attachments whose file is gone are left out. 400 bad path, 404 missing)
 // PUT  /api/sessions/draft { path, text, attachments?: UploadResult[] } -> { ok: true }   (stores it; blank text
 //                                  with no attachments deletes it. At most 8 attachments; an entry that isn't
@@ -391,7 +400,7 @@ export interface UploadResult {
 // GET  /api/models              -> ModelInfo[]                       (available models; favorite=true mirrors the TUI Ctrl+P palette.
 //                                  EVERY model with credentials, disabled ones included: Settings → Models has to list what it
 //                                  can turn back on. Pickers filter with the policy; the server refuses what the policy forbids)
-// GET  /api/attachment?path=…   -> image bytes (TmpAttachment.path; only /tmp/<name> or <agent dir>/pi-web/attachments/
+// GET  /api/attachment?path=…   -> image bytes (TmpAttachment.path; only /tmp/<name> or <agent dir>/{sova,pi-web}/attachments/
 //                                  <session id>/<name>, .png|jpg|jpeg|webp|gif, ≤ 20MB; 400 bad shape, 403 resolves
 //                                  outside /tmp / the attachments root or too large, 404 missing)
 // DELETE /api/attachment?path=… -> { ok: true }   (removes one file under the attachments root, e.g. a composer
@@ -455,7 +464,8 @@ export type ThemeTokens = Record<string, string>;
     deref'd (`$name`) and validated the file, so every string here is safe to paint — which is
     what lets a row preview swatches and a font sample from a file nobody selected. */
 export interface ThemeInfo {
-  /** The file's basename without `.json`; what localStorage stores under `pi-web:theme`. */
+  /** The file's basename without `.json`; the browser stores the choice under `sova:theme` (legacy
+      `pi-web:theme` mirrored while the rename bridge is open). */
   id: string;
   /** The file's `name`. Empty on a broken row, where §12 shows the filename instead. */
   name: string;
@@ -493,8 +503,8 @@ export interface ThemeList {
 // PUT /api/settings              -> WebSettings (400 bad body; only the keys below are accepted)
 // GET /api/settings/claude-status -> ClaudeCliStatus
 // ---------------------------------------------------------------------------
-/** pi-web's own settings, stored in <agentDir>/pi-web/settings.json (server/web-settings.ts).
-    Nothing outside pi-web reads this file, so it is not a cross-process contract the way the
+/** Sova's own settings, stored in <agentDir>/sova/settings.json (server/web-settings.ts).
+    Nothing outside Sova reads this file, so it is not a cross-process contract the way the
     subagent policy is. */
 export interface WebSettings {
   experimental: {
@@ -551,13 +561,15 @@ export interface FolderListing {
   truncated: boolean;
 }
 
-// GET /api/files?cwd=…            -> FileIndex   (NOT IMPLEMENTED YET: the client for the composer's
-//                                  @-mention menu landed in 6504bbe without this route, so today the
-//                                  fetch 404s and the menu shows its error state)
+// GET /api/files?cwd=…            -> FileIndex   (the composer's @-mention index, server/files.ts:
+//                                  every non-ignored file under the cwd — gitignore-respecting in git
+//                                  repos via git ls-files, the default ignore list elsewhere — cached
+//                                  ~30s. 400 a relative cwd, 404 a missing folder, 501 an unmounted
+//                                  remote session's placeholder cwd)
 // ---------------------------------------------------------------------------
 /** The @-mention file index for a session cwd: every non-ignored file under it as a "/"-separated
-    path relative to the cwd, cut at the server's cap. This is the shape the client (src/lib/files.ts,
-    Composer's FileMenu) already consumes; the server side is still to be written. */
+    path relative to the cwd, cut at the server's cap. The client (src/lib/files.ts, Composer's
+    FileMenu) derives each completion level locally from this one list. */
 export interface FileIndex {
   /** Non-ignored file paths relative to the cwd, "/"-separated. */
   files: string[];
@@ -569,6 +581,12 @@ export interface FileIndex {
     refuses an empty or longer one with 400). The one place the limit is written down: the create
     input's maxlength and the server's rule read it from here. */
 export const GROUP_NAME_MAX = 60;
+
+/** Longest session title the user can set, in characters, after trimming (POST /api/sessions/title;
+    the same cap the derived title is cut to, so a renamed row is never taller than its neighbours).
+    The one place the limit is written down: the rename field's maxlength and the server's rule
+    both read it from here. */
+export const SESSION_TITLE_MAX = 80;
 
 /** Longest member label, in characters, after trimming (GroupMember.label; the server trims and
     refuses a longer one with 400, while an empty one clears the label). */
@@ -604,14 +622,14 @@ export interface GroupSeed {
 
 /** One user-made group in the sidebar's Groups region (GET /api/session-groups). Groups hold
     sessions; they never replace a region, so a grouped session still shows in Live & web or the
-    Archive. Stored in ~/.pi/agent/pi-web/session-groups.json, keyed by session id (like the archive). */
+    Archive. Stored in ~/.pi/agent/sova/session-groups.json, keyed by session id (like the archive). */
 export interface SessionGroup {
   /** Stable uuid; what `SessionSummary.groupId` and every route below take. */
   id: string;
   /** Shown as-is (trimmed, 1–60 chars). Duplicates are allowed: nothing keys on the name. */
   name: string;
   createdAt: string; // ISO
-  /** Set only on a group pi-web fanned out (fork mode): where its members came from. Lineage
+  /** Set only on a group Sova fanned out (fork mode): where its members came from. Lineage
       (`SessionSummary.parent`/`parentId`) says a session was forked from THAT file; only this
       says WHERE, so the fork marker and Align to Fork are seed-only and never infer a position
       from lineage. A hand-made group never grows one, which is what the auto-dissolve rule
@@ -619,7 +637,7 @@ export interface SessionGroup {
   seed?: GroupSeed;
   /** Whether the group deletes itself when its last member leaves (AssignGroupResult.dissolved).
       Set ONLY by POST /api/session-groups/fanout when it CREATES the group with a generated name
-      — pi-web made it and named it, so pi-web may remove it. NEVER set by that route's `groupId`
+      — Sova made it and named it, so Sova may remove it. NEVER set by that route's `groupId`
       path: a group the user named is theirs and keeps standing empty, even after it adopts a
       fanout's `seed`.
       THIS IS THE ONE TRUTH OF DISSOLUTION. It used to be inferred from `seed`, which is lineage
@@ -627,12 +645,12 @@ export interface SessionGroup {
       group start deleting itself. Do not re-derive dissolution from another field, and do not
       use this one to mean anything but dissolution.
       A RENAME CLEARS IT (PATCH /api/session-groups/:id with a name that actually changes): the
-      claim above is a conjunction — pi-web made it AND named it — and renaming falsifies the
+      claim above is a conjunction — Sova made it AND named it — and renaming falsifies the
       second half, so the group becomes the user's and stands when emptied. Renaming to the same
       string revokes nothing, and reordering or relabelling never touch it. The flag is set and
       cleared by the events that make it true or false, so no rule has to be remembered.
       Absent only on a group written before this field existed — then, and only then, `seed`
-      implies it, since those are pi-web's own fanout groups. An explicit value always wins. */
+      implies it, since those are Sova's own fanout groups. An explicit value always wins. */
   autoDissolve?: boolean;
   /** The group's sessions in display order, with their labels. The server always sends it — it is
       reconciled against the assignments on every read (ids no longer in the group drop out, ids
@@ -716,7 +734,7 @@ export interface FanoutMemberSpec {
 /** POST /api/session-groups/fanout. Exactly one of `source` (fork mode) and `cwd` (fresh mode). */
 export interface FanoutRequest {
   /** Name for a NEW group, 1–GROUP_NAME_MAX. Exactly one of `name` and `groupId` is required:
-      with `name` the route creates the group (and pi-web owns it, so `autoDissolve` is set); with
+      with `name` the route creates the group (and Sova owns it, so `autoDissolve` is set); with
       `groupId` it lands in an existing one, which keeps its own name. Sending both is a 400 —
       ignoring one of them silently would look like a rename that did nothing. */
   name?: string;
@@ -735,11 +753,11 @@ export interface FanoutRequest {
       and started none says so instead of announcing a success that lands the user in N silent
       panes. The members are kept either way: real, empty, grouped sessions, retryable. */
   text?: string;
-  /** Whether `name` is the default pi-web generated, or one the user typed over it. The client
+  /** Whether `name` is the default Sova generated, or one the user typed over it. The client
       holds this fact and nothing else can: the server never generated the default, so it cannot
       distinguish an accepted one from an identical string typed by hand. Reported as a FACT; the
       policy stays server-side, and `autoDissolve` is derived from it, never sent by a client.
-      "generated" ⇒ pi-web made AND named the group ⇒ `autoDissolve: true`.
+      "generated" ⇒ Sova made AND named the group ⇒ `autoDissolve: true`.
       "user", ABSENT, or any unrecognised value ⇒ the user named it ⇒ the server writes
       `autoDissolve: false` EXPLICITLY — never leaves it absent, because absent-plus-`seed` is the
       on-disk signature of a pre-flag fanout group and the legacy rule dissolves those.
@@ -752,7 +770,7 @@ export interface FanoutRequest {
       same commit that adds the new one.
       CHECK IT POSITIVELY: `named === "generated"`. `named !== "user"` is the same sentence and
       the wrong one — an absent field is not a claim of user authorship, it is a client that
-      cannot make the claim at all, and treating it as pi-web's deletes a name. Both spellings
+      cannot make the claim at all, and treating it as Sova's deletes a name. Both spellings
       are equally SAFE with a boolean and equally available here, but a two-valued enum makes the
       negative form read naturally, so it is the likelier mistake and worth naming. Tests pin
       absent and unrecognised to a recorded false so the wrong spelling fails loudly.
@@ -768,12 +786,12 @@ export interface FanoutRequest {
       alternative was rejected on: in fresh mode the default is rewritten on every keystroke, so a
       derivation at Create time disagrees with what the user was looking at. Same precedent as
       `source.leafId`, accepted as the leaf the DIALOG SHOWED rather than recomputed.
-      DERIVE IT FROM THE EDIT EVENT, never by comparing strings. pi-web's client keeps
+      DERIVE IT FROM THE EDIT EVENT, never by comparing strings. Sova's client keeps
       `nameTouched`, set by the name field's own input handler and by nothing else, and sends
       "user" when it is set. "Typed over then reverted" is therefore "user": an empty group may
       be left behind, which is litter, recoverable in one gesture.
       THAT SIGNAL DOES TWO JOBS, and the second is invisible from the first: `nameTouched` also
-      gates whether pi-web may keep REGENERATING the field from the prompt. One decides whether we
+      gates whether Sova may keep REGENERATING the field from the prompt. One decides whether we
       may keep writing the name; the other decides whose the result is. So a change to when
       regeneration stops silently changes who owns the name, and no test in the file being edited
       will fail. Anyone altering either rule owns both.
@@ -846,6 +864,88 @@ export interface BatchPromptResult {
   failed: BatchRefusal[];
 }
 
+/** POST /api/sessions/fork — one session branched off another at one entry, the per-message Fork
+    action (spec 13's "Fork the session from here"). Unlike the fanout route this makes exactly one
+    child, in no group, with no fanout member marker, and sends nothing.
+
+    `entryId` is a `TranscriptItem.id`; an assistant BLOCK id (`<entryId>:<n>`, `<entryId>:stop` —
+    server/transcript.ts gives one row per content block) is accepted and resolved to its entry, so
+    the client can pass the row id it rendered without re-deriving the entry.
+
+    `position` is pi's own pair (docs/sessions.md): "before" is `/fork` — branch through the
+    entry's PARENT and hand the entry's own text back for the composer — and "at" is `/clone`,
+    everything through the entry itself. */
+export interface ForkRequest {
+  path: string;
+  entryId: string;
+  position: "before" | "at";
+}
+
+/** What position "before" hands to the NEW session's composer: the original message, ready to
+    edit and send again, and never sent for it. All three fields are the entry's own, so a fork of
+    a message with images is a composer with those images — the approved difference from `rewound`,
+    which hands back text only (pi's /tree parity).
+
+    `text` is the DISPLAY text: pi-clipboard paths are stripped exactly as `TranscriptItem.text`
+    strips them, because `attachments` stands in for them and the composer writes them back on
+    send. Absent when the message was images only. */
+export interface ForkEditor {
+  /** Display text: pi's own clipboard paths are stripped exactly as `TranscriptItem.text` strips
+      them, because `attachments` stands in for them and the composer writes them back on send.
+      A path the USER TYPED is not stripped — that is their sentence, not a generated reference.
+      Absent when the message was images only. */
+  text?: string;
+  /** Every image path the original text named, INCLUDING ones whose file is gone (`available:
+      false`). The dead ones are kept on purpose: they are the only record that an image was part
+      of this message, so the client can say "1 image couldn't come along" instead of dropping it
+      silently. Stage the available ones; name the rest. */
+  attachments?: TmpAttachment[];
+  /** `data:<mime>;base64,<data>` for stored `ImageContent` blocks — the bytes the model saw — for
+      images NOT already covered by an available entry in `attachments`. Re-upload these into the
+      new session's draft.
+      THE TWO CHANNELS NEVER OVERLAP, and it is settled by CONTENT rather than by assuming a
+      message cannot carry both a path and its own bytes: the server hashes each still-readable
+      attachment and drops any stored block with the same hash, because the FILE is the better
+      carrier (it becomes a real draft attachment). So "in `attachments` and available" and "in
+      `images`" partition the images that can travel, and `available:false` is the third case —
+      neither, and the client must say so. Without that split a client cannot tell a re-upload from
+      a duplicate, and the safe guess is to report images lost that were in fact sent. */
+  images?: string[];
+}
+
+/** 201 body of POST /api/sessions/fork. The child is already web-owned (origin "web"), its header
+    records `parentSession`, and its entries are the source's ACTIVE branch root→branch point with
+    their ids preserved, so lineage ("Forked from") needs no extra call. */
+export interface ForkResult {
+  session: SessionSummary;
+  /** Only for "before" on a user entry, and only when there is something to hand over. */
+  editor?: ForkEditor;
+}
+
+/** Why a fork was refused (409 `{ refused }`). A CLOSED SET OF ITS OWN, deliberately not an
+    extension of `BatchRefusalCode`: adding a member there would silently widen every exhaustive
+    switch the fanout client already has. The codes that mean the same thing are spelled the same
+    and carry the same server sentence, so one copy deck covers both routes.
+    "not-on-branch" = the id is unknown or sits on an abandoned branch (after a rewind the file's
+    TAIL is the abandoned one, so this is an ordinary state, not a corruption);
+    "nothing-before" = "before" on the first entry, which has nothing in front of it to branch from. */
+export type ForkRefusalCode =
+  | "tui-live"
+  | "mid-turn"
+  | "busy"
+  | "config"
+  | "missing"
+  | "old-format"
+  | "not-on-branch"
+  | "nothing-before"
+  | "internal";
+
+export interface ForkRefusal {
+  path: string;
+  code: ForkRefusalCode;
+  message: string;
+}
+
 /** The mode extension's settings (pi-config/extensions/mode). One major mode, any set of minor
     modes. The mode itself is per session; `mode`/`minorModes`/`strict` here are the **default for
     new sessions** (~/.pi/agent/mode.json), never one chat's state. `strict` is shown, never
@@ -872,8 +972,12 @@ export interface ChatModeResult extends ModeInfo {
 
 /** WS /ws/chat?path= — full-duplex chat for webapp-owned sessions. */
 export type ChatClientMessage =
-  | { type: "prompt"; text: string; images?: OutboundImage[] }
-  | { type: "steer"; text: string; images?: OutboundImage[] }
+  /** `clientId` is the SENDER'S OWN id for this send, chosen before the round trip. When the send
+      is held in the outgoing queue it becomes that item's `QueueItem.id`, so the client can key
+      its pending row by a value it already has instead of waiting to be told one. Omitted = the
+      server allocates an id, and the row is only nameable from the next `queue` snapshot. */
+  | { type: "prompt"; text: string; images?: OutboundImage[]; clientId?: string }
+  | { type: "steer"; text: string; images?: OutboundImage[]; clientId?: string }
   | { type: "abort" }
   | { type: "set_model"; ref: string }   // calls session.setModel; server replies {type:"model"} or error
   | { type: "set_thinking"; level: string } // calls session.setThinkingLevel (clamped to the model); server replies {type:"thinking"}
@@ -882,12 +986,105 @@ export type ChatClientMessage =
       the tip moves to that message's parent and its text comes back for the composer. `id` is the
       client's request id, echoed in the `rewound`/`rewind_refused` reply; `entryId` is the user
       row's TranscriptItem.id. Refused while a turn streams or compacts (never auto-aborts). */
-  | { type: "rewind"; id: string; entryId: string };
+  | { type: "rewind"; id: string; entryId: string }
+  /** Redo the turn an ASSISTANT entry belongs to: the server walks the active branch back from
+      `entryId` to the nearest `role:"user"` message, rewinds to just before it (so the invisible
+      rewind marker is written — legacy-spelled `pi-web-rewind` while the rename bridge is open —
+      and the move survives a reload), and re-prompts that
+      entry's STORED text and STORED images, unchanged, with the session's CURRENT model and
+      thinking level — which is what makes switch-model-then-regenerate a comparison.
+      `id` is the client's request id, echoed in `regenerated`/`regenerate_refused`; `entryId` is
+      an assistant row's `TranscriptItem.id` (a block id `<entryId>:<n>` is accepted and resolved
+      to its entry). A user entry is refused `not_on_branch` — Rewind is that gesture. Refused
+      while a turn streams or compacts, and NEVER auto-aborts. The confirmation step is the
+      client's; the server does not ask. */
+  | { type: "regenerate"; id: string; entryId: string }
+  /** Remove ONE still-unsent message from this chat's outgoing queue, by its `QueueItem.id` —
+      any position, including the middle, duplicates of the same text, and image-only sends.
+      `id` is the client's request id, echoed in the reply. */
+  | { type: "queue_remove"; id: string; itemId: string };
 
 /** Why a rewind was refused: busy = a TUI owns the session; recent = an unknown process wrote it
     (reconnect with force); not_on_branch = the id is unknown, not a user message, or not on the
-    active branch; cancelled = an extension cancelled the navigation; internal = anything else. */
-export type RewindRefusal = "streaming" | "compacting" | "busy" | "recent" | "not_on_branch" | "cancelled" | "internal";
+    active branch; cancelled = an extension cancelled the navigation; internal = anything else.
+    "queued" = messages are still waiting to go out. NOT the same condition as "streaming", and
+    that is the whole reason it exists: `steer()` awaits the extension `input` handlers BEFORE
+    queueing, so a steer carrying images on a non-vision model can still be in flight when the turn
+    it meant to interrupt has already ended (CLAUDE.md documents that window). A rewind allowed
+    then would move the leaf, and the queued message would be delivered into the NEW branch on the
+    next run — the user's abandoned message resurrecting on the branch they rewound TO. Covers
+    Sova's own queue and the SDK's, ours or an extension's, because any of them lands the same way.
+    Reused verbatim by `regenerate_refused`: a regenerate IS a rewind plus a re-prompt, and a
+    second near-identical union would be two names for one set of conditions. */
+export type RewindRefusal = "streaming" | "compacting" | "busy" | "recent" | "not_on_branch" | "cancelled" | "queued" | "internal";
+
+/** Why a regenerate was refused. Every RewindRefusal, plus one condition only a regenerate has.
+    A SEPARATE union rather than a member added to RewindRefusal: widening that one would silently
+    widen every exhaustive switch the existing rewind client already has.
+    "wake" = the message that started the turn is a WAKE NUDGE — machine-generated text the
+    scheduler wrote, not something the user said. Replaying it would put Sova's own nudge back on
+    the branch as if the user had typed it, complete with its "[wake_nudge …] Scheduled wakeup
+    fired" preamble and a stale elapsed time. There is no honest thing to re-send, so nothing is. */
+export type RegenerateRefusal = RewindRefusal | "wake";
+
+/** One message Sova is holding for this chat, not yet given to the model.
+ *
+ * `state` is the WHOLE removability contract, and the two values are not a cosmetic difference:
+ * "queued" means Sova itself holds the item, so removing it is an array splice that can never
+ * fail; "sending" means it has been handed to the pi SDK and may reach the model at any moment,
+ * so a removal can come back refused. The UI must not offer the same promise for both.
+ *
+ * `text` is the RAW text as sent, never the skill/template expansion the SDK queues — the row has
+ * to read as the user typed it. */
+export interface QueueItem {
+  /** Stable for the item's whole life; equals the sender's `clientId` when it gave one. */
+  id: string;
+  kind: "steer" | "followUp";
+  state: "queued" | "sending";
+  text: string;
+  /** How many images ride with it. The bytes are never echoed back. */
+  images?: number;
+  /** "client" = a send from a Sova socket; "server" = Sova queued it itself (a group batch
+      prompt, a remote status probe). Both are removable; the client decides what it shows. */
+  origin: "client" | "server";
+}
+
+/** Why a `queue_remove` was refused, and nothing was removed.
+    "consumed" = already delivered or drained (its `message_start` is on the way);
+    "unknown" = no such id in this chat's queue;
+    "shared_queue" = the item is in the SDK's hands AND the SDK queue also holds work Sova did
+      not put there (extensions queue follow-ups: wake-nudge, btw, explain, subagents,
+      command-palette). The only way to pull one item back out of the SDK is `clearQueue()`, which
+      empties both its queues, so it is taken ONLY when Sova can prove our item is all that is in
+      there. NOT TRANSIENT: once anything has been queued alongside ours, `hasQueuedMessages()` —
+      the only public reader of the real queue in 0.86.1 — can never again attribute "something is
+      queued" to our item, so the refusal holds for that message's whole life. Stop is the way out.
+      Refusing is the point: dropping an extension's queued message to satisfy a removal would be
+      exactly the silent loss this feature must not have;
+    "busy" = a TUI owns the session, or a foreign writer was seen. */
+export type QueueRemoveRefusal = "consumed" | "unknown" | "shared_queue" | "busy" | "internal";
+
+/**
+ * WHY an item left the queue. Every departure says so, to every client, because ABSENCE FROM A
+ * SNAPSHOT IS NOT EVIDENCE OF DELIVERY: an item can vanish from `queue` because it was sent,
+ * because someone else's tab removed it, because Stop cleared it, because the write guards refused
+ * it at hand-off, or because an extension `input` handler swallowed it. Those demand opposite
+ * things of the UI — one becomes a sent message, one disappears, two return text to a composer —
+ * and a client that diffs snapshots cannot tell them apart. A reconnecting client that missed the
+ * event is in exactly that position, which is why the snapshot is never the whole story and
+ * `queue_item_gone` is broadcast rather than sent to whoever asked.
+ *
+ * "delivered" — handed to the model. A `message_start` for it is on its way (or already past).
+ * "removed"   — a `queue_remove` took it; it will never be sent.
+ * "cleared"   — Stop drained the queue; the text comes back in the same `queue_cleared`.
+ * "failed"    — hand-off was refused (a TUI grabbed the file, a foreign writer, a model turned off
+ *               in Settings). An `error` carries the reason and the text comes back to the draft.
+ * "dropped"   — accepted, then nothing: an extension `input` handler returned `{action:"handled"}`,
+ *               or the text was an extension command that ran instead of queueing. NO
+ *               `message_start` will ever arrive for it, which is the case a client waiting for
+ *               one would hang on forever.
+ */
+export type QueueGoneReason = "delivered" | "removed" | "cleared" | "failed" | "dropped";
 
 export interface SlashCommand {
   /** Invocation name without the leading slash, e.g. "sessions", "skill:omarchy". */
@@ -934,7 +1131,9 @@ export type ChatServerMessage =
   /** Stop drained the SDK's still-queued steers and follow-ups (as queued, templates/skills
       expanded) before aborting, the TUI's Esc order: left queued, the next prompt would deliver
       them AFTER itself. The client drops their pending rows and puts the text back in the draft.
-      Only sent when something was queued. */
+      Only sent when something was queued. Now covers BOTH queues — the items Sova was holding
+      (raw text) and the SDK's own (expanded) — in delivery order, SDK's first, and is followed by
+      a `{ type: "queue", items: [] }`. */
   | { type: "queue_cleared"; steering: string[]; followUp: string[] }
   /** A rewind landed. Every client of the chat first got a fresh `hello` (the new branch) and a
       `mode` (re-resolved from it); only the requester then gets this, with the input's text for
@@ -944,6 +1143,53 @@ export type ChatServerMessage =
   /** The rewind was refused and nothing changed; to the requester only, never as `error`.
       `message` is user-facing copy. */
   | { type: "rewind_refused"; id: string; entryId: string; reason: RewindRefusal; message: string }
+  /** A regenerate landed. Every client of the chat first got a fresh `hello` (the new branch),
+      `workers` and a `mode`, exactly as a rewind does; only the requester then gets this, and the
+      re-prompted turn's own events follow it. `userEntryId` is the user message the server walked
+      back to and replayed — the row the new turn hangs off. */
+  | { type: "regenerated"; id: string; entryId: string; userEntryId: string }
+  /** The regenerate was refused and NOTHING changed — no rewind, no prompt; to the requester only. */
+  | { type: "regenerate_refused"; id: string; entryId: string; reason: RegenerateRefusal; message: string }
+  /** Acceptance of one identified send, to its sender only, as soon as acceptance finishes.
+      `queued: true` = a `QueueItem` with this id exists and a `queue` snapshot carries it;
+      `queued: false` = the session was idle, so it went straight to the model and NO queue row
+      will ever appear for it. Without this the client cannot tell "not queued" from "not yet
+      acknowledged", and would offer a Remove button for something already on its way. */
+  | { type: "send_ack"; clientId: string; queued: boolean }
+  /** This chat's whole outgoing queue, in delivery order. Broadcast to EVERY client on every
+      change (a send accepted, an item handed to the SDK, an item delivered, a removal, a Stop),
+      and sent on attach right after `commands` — which is what lets a reconnecting client rebuild
+      the pending rows its socket drop wiped, instead of showing an empty thread over a full queue.
+      An empty queue still sends `{ items: [] }`: absence of a message is not evidence of an empty
+      queue, and the client needs the difference to clear stale rows. */
+  | { type: "queue"; items: QueueItem[] }
+  /** One item left the queue, and WHY — broadcast to EVERY client, immediately before the `queue`
+      snapshot that no longer contains it. This is the message a client acts on; the snapshot only
+      says what is left. Two tabs on one chat therefore agree about a removal the other one made,
+      and neither has to guess a reason from a diff (see QueueGoneReason).
+      `text` is the raw text, present for every reason except "delivered".
+      PRESENCE IS NOT PERMISSION TO RESTORE IT. The text is carried so a client CAN act, and the
+      rule for whether it SHOULD is narrower than "it arrived" (operator ruling):
+        • "dropped" and "failed" — restore, and only in the tab that sent it. These are the two
+          departures with no other carrier and no `message_start` ever coming, so a client that
+          ignores the text here loses the user's typing silently.
+        • "removed" — NEVER restore, from this message or from the requester's `queue_removed` ack.
+          Delete is a DISCARD: re-pasting a deleted message undoes the gesture the user just made.
+          (`queue_removed.text` is therefore not load-bearing for a composer.)
+        • "cleared" — never restore from here. Stop is the sole owner of that restore, through
+          `queue_cleared`, because Stop means "take it back to edit and re-send".
+      The second-tab hazard the body looks like it creates is answered by the ID, not by
+      withholding it: `itemId` IS the sender's own `clientId`, so only the tab that typed a message
+      can recognise it as its own. And nothing else re-sends this text — two carriers made the
+      client restore the same message twice, which is why the synthetic `queue_cleared` that used
+      to accompany a failed hand-off is gone. */
+  | { type: "queue_item_gone"; itemId: string; reason: QueueGoneReason; text?: string }
+  /** The requester's correlated ack for ITS `queue_remove` (`id` is that request's id): the
+      removal is already public as `queue_item_gone` + `queue`, and this only closes the request
+      that asked for it, so an in-flight request map can settle. */
+  | { type: "queue_removed"; id: string; itemId: string; text: string }
+  /** The removal was refused and the item is untouched; to the requester only. */
+  | { type: "queue_remove_refused"; id: string; itemId: string; reason: QueueRemoveRefusal; message: string }
   // Codes: "busy" = a TUI owns the session (never retry with force); "recent" = file written by an
   // unknown process, at connect or mid-chat (client may reconnect with &force=1);
   // "reloaded" = runtime reloaded by another client, or message sent to a closed runtime (reconnect);
@@ -951,7 +1197,9 @@ export type ChatServerMessage =
   // cwd no longer exists). PERMANENT: show it once and stop reconnecting — retrying re-runs the
   // same failure and appends another banner. The socket closes 4422; "internal" closes 4500.
   // "internal" = server error, transient, safe to retry.
-  | { type: "error"; message: string; code?: "busy" | "recent" | "reloaded" | "config" | "internal" };
+  /** `clientId` is set when the failure belongs to ONE identified send (its `clientId`), so the
+      client restores that draft and no other. Absent on chat-wide errors, as before. */
+  | { type: "error"; message: string; code?: "busy" | "recent" | "reloaded" | "config" | "internal"; clientId?: string };
 
 /** WS /ws/watch?path= — read-only live view. Safe for sessions a TUI currently owns. Never writes.
     Also accepts `?claude=<uuid>` instead of `?path=`: a claude-code worker's own Claude Code
@@ -967,14 +1215,14 @@ export type WatchServerMessage =
   | { type: "error"; message: string };
 
 // ---------------------------------------------------------------------------
-// INSIGHTS (pi-web-insights team) — all GET, all read-only, never 500 on
+// INSIGHTS (Sova insights team) — all GET, all read-only, never 500 on
 // missing/corrupt sources: they return an honest empty/unavailable payload.
 // ---------------------------------------------------------------------------
 // GET /api/insights/usage          -> UsageInsight
 // GET /api/insights/agents         -> AgentsInsight     (all live pi processes; poll ~5s)
 // POST /api/upload                -> UploadResult 201  (raw image bytes; Content-Type: image/*; saved in /tmp)
 // POST /api/upload?draft=<session path> -> UploadResult 201  (same, saved durably in that session's folder
-//                                  <agent dir>/pi-web/attachments/<session id>/; 400 invalid session path, 404 no such session)
+//                                  <agent dir>/sova/attachments/<session id>/; 400 invalid session path, 404 no such session)
 // GET /api/insights/session?path=  -> SessionInsight    (400/404 semantics like /api/transcript)
 
 export interface UsageWindow { label: string; pct: number; resetsAt?: string; /** Raw counts when the provider exposes them (e.g. z.ai MCP calls: used/limit). */
@@ -1051,7 +1299,7 @@ export interface TeamInfo {
 export interface LiveAgentSession {
   path: string | null; sessionId: string | null; name: string | null; cwd: string; pid: number; mode: string | null;
   fresh: boolean; // heartbeat ≤ 15s
-  /** A chat runtime embedded in this pi-web server (own pid). Its mode is "rpc" like a headless
+  /** A chat runtime embedded in this Sova server (own pid). Its mode is "rpc" like a headless
       worker pi, but it's a real session that hosts agents. Absent from older servers. */
   embedded?: boolean;
   state: "working" | "idle" | "needs-input" | "error";
@@ -1098,7 +1346,8 @@ export interface CompactionInfo {
   id: string; timestamp: string; tokensBefore: number | null; summary: string;
   readFiles: string[]; modifiedFiles: string[];
 }
-/** One rewind on the active branch: the invisible `pi-web-rewind` entry pi-web appends after
+/** One rewind on the active branch: the invisible `pi-web-rewind` entry (bridge spelling; the
+  * reader accepts `sova-rewind` too) Sova appends after
     navigating the tree (server/chat-manager.ts). Ids only — the turns it abandoned are, by
     definition, not on the branch a reader can walk — so a timeline marker can say a rewind
     happened and when, never what it took back. */
@@ -1172,7 +1421,7 @@ export interface SessionInsight {
       not appear in this list yet. Absent when there are none, or from an older server. */
   outlines?: OutlineSnapshot[];
   compactions: CompactionInfo[]; // active branch, oldest first
-  /** The branch's rewinds, oldest first — the invisible markers pi-web leaves when the chat goes
+  /** The branch's rewinds, oldest first — the invisible markers Sova leaves when the chat goes
       back before a message. Absent when the session has none, or from an older server. */
   rewinds?: RewindInfo[];
   teams: TeamInfo[]; // live-joined when the session is running, else history

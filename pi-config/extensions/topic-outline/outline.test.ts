@@ -1,10 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { extractJsonObject, parseSummarizerJson, SummarizerChain } from "./summarizers/chain.ts";
+import { buildPrompt, extractJsonObject, parseSummarizerJson, SummarizerChain } from "./summarizers/chain.ts";
 import { SummarizerError, type SummarizeInput, type SummarizerResult } from "./types.ts";
 import { fingerprintKey, fingerprintOf, isMarkedMessage, locateMarker, locateMarkerRow, markerOrdinalIndex, markerRows, sameFingerprint, stripAnsi } from "./anchors.ts";
-import { NowLine, OutlineStore, applyUpdates, extractDelta, lastMessageEntryId } from "./state.ts";
+import { NowLine, OutlineStore, applyUpdates, earliestUserRequest, extractDelta, lastMessageEntryId } from "./state.ts";
 import { HEADLESS_FLAG, shouldRunOutline } from "./policy.ts";
 
 const input = (over: Partial<SummarizeInput> = {}): SummarizeInput => ({
@@ -19,6 +19,42 @@ const valid = JSON.stringify({
   now: "Editing auth.ts",
   overall: "Fixing the auth flow",
   topicUpdates: [{ kind: "new", heading: "Auth flow fix", anchor: "m1", summary: ["Patched token refresh"] }],
+});
+
+test("buildPrompt carries the anchor request and asks overall to lead with the subject", () => {
+  const prompt = buildPrompt(input({ purpose: "make pi-web themable: palette and fonts" }));
+  assert.ok(prompt.includes("SESSION ANCHOR"));
+  assert.ok(prompt.includes("make pi-web themable: palette and fonts"));
+  // The anchor is stated before the messages it anchors, so a truncated tail never loses it.
+  assert.ok(prompt.indexOf("SESSION ANCHOR") < prompt.indexOf("NEW MESSAGES:"));
+  // The anchor is offered, never asserted: it can be a mid-session message on an older session.
+  assert.ok(prompt.includes("it may be a mid-session message"));
+  assert.ok(prompt.includes("when they disagree, the topics win"));
+  // The one rule the sidebar depends on: "overall" is what the session is for, front-loaded.
+  assert.ok(prompt.includes('"overall": what this session is FOR'));
+  assert.ok(/first few words/.test(prompt));
+  // A real change of goal is allowed; progress alone is not a reason to rewrite it.
+  assert.ok(/Rewrite it when the user's goal actually changes/.test(prompt));
+});
+
+test("buildPrompt says the anchor is unknown rather than leaving the section empty", () => {
+  const prompt = buildPrompt(input());
+  assert.ok(prompt.includes("SESSION ANCHOR"));
+  assert.ok(prompt.includes("\nunknown\n"));
+});
+
+test("earliestUserRequest reads the branch, not the delta's first follow-up", () => {
+  const entries = [
+    { id: "u1", type: "message", message: { role: "user", content: [{ type: "text", text: "  " }] } },
+    { id: "u2", type: "message", message: { role: "user", content: [{ type: "text", text: "make pi-web themable" }] } },
+    { id: "a1", type: "message", message: { role: "assistant", content: [{ type: "text", text: "on it" }] } },
+    { id: "u3", type: "message", message: { role: "user", content: [{ type: "text", text: "also fix the placeholder" }] } },
+  ];
+  assert.equal(earliestUserRequest(entries), "make pi-web themable");
+  // A follow-up-only view (compaction ate the opening) still yields the earliest text it has.
+  assert.equal(earliestUserRequest(entries.slice(2)), "also fix the placeholder");
+  assert.equal(earliestUserRequest([]), "");
+  assert.equal(earliestUserRequest([entries[2]]), "");
 });
 
 test("parseSummarizerJson accepts clean JSON and fenced/messy JSON", () => {
@@ -207,6 +243,32 @@ test("lastHeading survives snapshot round-trip; old snapshots restore without it
   assert.equal(legacy.lastHeading, "Auth fix");
   legacy.restore([]);
   assert.equal(legacy.lastHeading, "");
+});
+
+test("the anchor request is kept once, survives snapshots, and older snapshots restore empty", () => {
+  const store = new OutlineStore();
+  assert.equal(store.purpose, "");
+  store.notePurpose("## Make pi-web themable — palette and fonts");
+  // First one wins: later requests are topics, not a new reason for the session to exist.
+  store.notePurpose("also fix the placeholder text");
+  assert.equal(store.purpose, "Make pi-web themable — palette and fonts");
+  const data = store.snapshot();
+  assert.equal(data.purpose, "Make pi-web themable — palette and fonts");
+  const restored = new OutlineStore();
+  restored.restore([{ id: "s", type: "custom", customType: "topic-outline", data }]);
+  assert.equal(restored.purpose, "Make pi-web themable — palette and fonts");
+  const { purpose: _p, ...old } = data;
+  const legacy = new OutlineStore();
+  legacy.restore([{ id: "s", type: "custom", customType: "topic-outline", data: old }]);
+  assert.equal(legacy.purpose, "");
+  // A snapshot taken before any user message carries no purpose key at all.
+  assert.equal("purpose" in legacy.snapshot(), false);
+  store.notePurpose("x".repeat(900));
+  restored.clear();
+  assert.equal(restored.purpose, "");
+  const long = new OutlineStore();
+  long.notePurpose("x".repeat(900));
+  assert.ok(long.purpose.length <= 401);
 });
 
 test("broadcast includes lastHeading unless sharing is off or shareLastHeading is false", () => {

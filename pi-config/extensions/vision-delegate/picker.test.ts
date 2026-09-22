@@ -113,3 +113,15 @@ test("the usage cache is optional and corruption is not an error", () => {
 	writeFileSync(good, JSON.stringify({ zai: { state: "ok", fiveHour: { pct: 3 } } }));
 	assert.equal(bucketUsedPct(readUsage(good), "zai"), 3);
 });
+
+test("a model turned off in Settings → Models is never a fallback, and says so", () => {
+	const resolve = registry([seer("zai", "glm-5.3-flash"), seer("anthropic", "claude-haiku-4-5")]);
+	const allowed = (ref: string) => ref !== "zai/glm-5.3-flash";
+	const pick = pickVisionModel(settings(["zai/glm-5.3-flash", "anthropic/claude-haiku-4-5"]), resolve, undefined, allowed);
+	assert.equal(pick.model?.id, "claude-haiku-4-5");
+	assert.deepEqual(pick.skipped, [{ ref: "zai/glm-5.3-flash", reason: "turned off in Settings → Models" }]);
+	// Everything off is a miss, not a degraded answer: an off model is not "over budget".
+	const none = pickVisionModel(settings(["zai/glm-5.3-flash"]), resolve, undefined, () => false);
+	assert.equal(none.model, undefined);
+	assert.equal(none.overBudget, undefined);
+});

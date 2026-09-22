@@ -6,6 +6,7 @@ import { ModelFavorites } from "./favorites.ts";
 import { CATEGORY_DISCOVER_EVENT, CATEGORY_REGISTER_EVENT, OPEN_EVENT,
   type CategoryDiscovery, type CategoryProvider, type OpenRequest } from "./contracts.ts";
 import { join } from "node:path";
+import { globallyEnabled, readPolicy } from "../model-policy/policy.ts";
 
 type FavoriteStore = Pick<ModelFavorites, "has" | "set">;
 
@@ -27,10 +28,13 @@ const groups: [string, [string, string, string?][]][] = [
   ["Help", [["hotkeys", "Keyboard shortcuts"], ["changelog", "Changelog"], ["quit", "Quit Pi"]]],
 ];
 
-export function modelItems(pi: ExtensionAPI, ctx: ExtensionContext, favorites?: FavoriteStore): MenuItem[] {
+export function modelItems(pi: ExtensionAPI, ctx: ExtensionContext, favorites?: FavoriteStore, policyFile?: string): MenuItem[] {
   const scoped = ctx.scopedModels;
   const models = scoped.length ? scoped.map(entry => entry.model) : ctx.modelRegistry.getAvailable();
-  return models.map(model => {
+  // Models turned off in pi-web's Settings → Models are not choices: the palette is a picker, and
+  // listing one here would offer a model the session refuses to run (../model-policy/policy.ts).
+  const policy = readPolicy(policyFile);
+  return models.filter(model => globallyEnabled(policy, "pi", `${model.provider}/${model.id}`)).map(model => {
     const current = model.provider === ctx.model?.provider && model.id === ctx.model?.id;
     const levels = getSupportedThinkingLevels(model);
     const preferred = current ? ctx.thinkingLevel : scoped.find(entry =>

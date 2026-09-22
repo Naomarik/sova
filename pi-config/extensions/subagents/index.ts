@@ -66,6 +66,11 @@ const QUESTION_CHARS = 4000;
 const WORKERS_SNAPSHOT_EVENT = "subagents:workers-snapshot";
 const WORKERS_REQUEST_EVENT = "subagents:workers-request";
 const WORKER_PREVIEW_CHARS = 320;
+/* Busy-worker activity tail (see recentActivity): a tool-heavy run must not read
+ * as "no output" while the only missing thing is final prose. */
+const WORKER_ACTIVITY_ITEMS = 6;
+const WORKER_ACTIVITY_ITEM_CHARS = 160;
+const WORKER_ACTIVITY_TOTAL_CHARS = 1400;
 /** How long a failed agent_spawn waits for rollback termination before returning. */
 const ROLLBACK_WAIT_MS = 10_000;
 const BUILTIN_TOOLS = new Set(BUILTIN_TOOL_NAMES);
@@ -642,13 +647,51 @@ export function registerSubagents(
 		pruneFinished();
 		scheduleRefresh();
 	};
+	/**
+	 * Bounded tail of what a busy worker is doing right now. Tool-heavy runs
+	 * (Claude opus routinely makes dozens of tool calls before any assistant
+	 * text) would otherwise present as "(no output for this task)" while the
+	 * retained transcript holds plenty of live activity. Each item is one
+	 * clipped line and the whole section stays under ~1.5 KB.
+	 */
+	const recentActivity = (a: Worker): string => {
+		if (!a.transcript.length) return "(no output yet — task in progress)";
+		const items = a.transcript.slice(-WORKER_ACTIVITY_ITEMS);
+		const lines: string[] = [];
+		let used = 0;
+		let more = false;
+		for (const t of items) {
+			const text = t.text.replace(/\s+/g, " ").trim() || "(no text)";
+			const line = `[${t.kind}${t.toolName ? `:${t.toolName}` : ""}] ${
+				text.length > WORKER_ACTIVITY_ITEM_CHARS ? `${text.slice(0, WORKER_ACTIVITY_ITEM_CHARS)}…` : text
+			}`;
+			if (used + line.length > WORKER_ACTIVITY_TOTAL_CHARS && lines.length) {
+				more = true;
+				break;
+			}
+			used += line.length;
+			lines.push(line);
+		}
+		return [
+			`Still working — no final answer yet. Recent activity (last ${lines.length} of ${a.transcript.length} retained item(s)${
+				a.transcriptOmitted?.items ? `, ${a.transcriptOmitted.items} older trimmed` : ""
+			}):`,
+			...lines.map((line) => `  ${line}`),
+			more ? "  …" : "",
+			"Call agent_transcript with full: true for the retained transcript.",
+		]
+			.filter(Boolean)
+			.join("\n");
+	};
 	const summary = (a: Worker) =>
 		[
 			`### ${a.id} (${a.name}) — ${a.status}${a.taskOutcome ? ` · task ${a.taskOutcome}` : ""}`,
 			a.error ? `Error: ${a.error}` : "",
 			a.sessionFile || a.sessionId ? `Session: ${a.sessionFile ?? a.sessionId}` : "",
 			`Model: ${a.model ?? "child default"} · thinking: ${a.effort ?? "default"}${a.backend && a.backend !== "pi" ? ` · backend: ${a.backend}` : ""}`,
-			a.finalOutput() || "(no output for this task)",
+			// Busy workers show live tool activity instead of a premature "no output";
+			// settled ones keep the final-answer line the completion message quotes.
+			a.finalOutput() || (a.isSettled() ? "(no output for this task)" : recentActivity(a)),
 		]
 			.filter(Boolean)
 			.join("\n");
@@ -1318,7 +1361,7 @@ export function registerSubagents(
 		name: "agent_transcript",
 		label: "Read Subagent",
 		description:
-			"Read current-task output, or retained in-memory transcript with full=true (not necessarily complete history). Output capped at 50KB/2000 lines with snapshot path. sessionFile identifies canonical history when available; otherwise sessionId identifies the backend session.",
+			"Read current-task output, or retained in-memory transcript with full=true (not necessarily complete history). While a worker is still working, returns bounded recent tool activity instead of a final answer. Output capped at 50KB/2000 lines with snapshot path. sessionFile identifies canonical history when available; otherwise sessionId identifies the backend session.",
 		parameters: Type.Object({ id: Nonempty, full: Type.Optional(Type.Boolean()) }),
 		async execute(_id, params, _signal, _update, ctx) {
 			context(ctx);

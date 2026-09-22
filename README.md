@@ -74,6 +74,24 @@ directory for experiments, though some extensions still read fixed `~/.pi/agent`
 example `usage-status` reads `~/.pi/agent/auth.json`). `CLAUDE.md` has the rules for not
 corrupting sessions a TUI owns.
 
+## Models
+
+**Settings → Models** decides what may be used on this machine. Every provider and every model has
+two switches: **Enabled** — usable at all — and **Subagents** — may a worker be given it. Enabled
+covers Subagents, and a model turned off globally keeps its Subagents preference so turning it back
+on returns it.
+
+It is a rule, not a filter. The policy lives in `~/.pi/agent/model-policy.json` and is read by
+every session on this machine: the picker here stops offering the model, the chat socket refuses to
+switch to it, a chat already sitting on it refuses to send until you pick another (nothing falls
+back on its own), the TUI's `/model` puts your previous model back and says why, every message
+there is refused before the turn starts — skills and prompt templates included — and a turn nobody
+typed (a subagent wake-up, a continuation, a retry) is stopped at the last point before the request
+leaves. Compaction and prompt-cache warming stop with it, and subagent
+discovery and spawning refuse it. `claude-code` is one provider with one switch over every Claude
+Code worker. See [`pi-config/extensions/model-policy/README.md`](pi-config/extensions/model-policy/README.md)
+for the file, the readers, and what is out of reach.
+
 ## Themes
 
 A theme is one JSON file. The 18 that ship live in `themes/`; yours go in
@@ -152,7 +170,7 @@ is the fastest way to tune one.
 
 ## Tests
 
-The web app has no test suite; `npm run typecheck` and `npm run build` are the gate. Each extension
+The web app's own units run with `npm test`; `npm run typecheck` and `npm run build` are the gate. Each extension
 has its own tests, run from its directory. They make no model requests and install nothing: they
 find `jiti` and pi's packages inside the global pi install (`npm root -g`, or `which pi` for
 command-palette; `PI_PACKAGE_DIR` overrides the location for the subagents/codefold loaders).
@@ -164,6 +182,7 @@ cd pi-config/extensions
 (cd extension-toggle && node --test index.test.ts)
 (cd mode             && node --test index.test.ts && node tests/smoke.mjs)
 (cd command-palette  && node --test test.mjs)
+(cd model-policy     && node --test policy.test.ts index.test.ts)
 (cd sessions         && node --test test.mjs)
 (cd codefold         && node tests/run.mjs)
 (cd topic-outline    && node test.mjs)

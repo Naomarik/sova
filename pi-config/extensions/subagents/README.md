@@ -23,7 +23,7 @@ the parent session so old references cannot target unrelated new workers.
 | `agent_models`     | Discover loaded backends and exact model IDs using the active registry/CLI.    |
 | `agent_spawn`      | Start a batch and return agent/run IDs without waiting for tasks.              |
 | `agent_list`       | Show workers grouped by run, including model, status, task outcome, and usage. |
-| `agent_transcript` | Read current-task output, or retained history with `full: true`.               |
+| `agent_transcript` | Read current-task output; while busy, bounded recent activity; `full: true` for retained history. |
 | `agent_steer`      | Send new instructions; wait for RPC acceptance, not task completion.           |
 | `agent_kill`       | Stop one worker, a run, or all workers; await process termination.             |
 | `agent_wait`       | Wait for selected tasks to settle; report failures and timeouts explicitly.    |
@@ -256,26 +256,38 @@ extension's README ("Workers").
 
 ## Model policy
 
-`~/.pi/agent/subagents/settings.json` (version 1) blocks models and providers
-from being picked as workers — in every session, TUI and webapp alike:
+`~/.pi/agent/model-policy.json` (version 1) decides which models and providers
+may be picked as workers — in every session, TUI and webapp alike:
 
 ```json
 {
 	"version": 1,
 	"disabledProviders": ["anthropic"],
-	"disabledModels": ["openai/gpt-5.2", "claude-code/opus"]
+	"disabledModels": ["openai/gpt-5.2", "claude-code/opus"],
+	"subagentDisabledProviders": ["zai"],
+	"subagentDisabledModels": ["ollama/qwen3-coder"]
 }
 ```
+
+The bare keys are global — those providers and models may not be used anywhere,
+by anyone — and the `subagent*` keys narrow what is still allowed down to what a
+worker may be given. Workers obey both. The file, and everything else that reads
+it, is documented in [`../model-policy/README.md`](../model-policy/README.md);
+while it does not exist the pre-Models-tab file
+`~/.pi/agent/subagents/settings.json` is read instead and its two lists are
+treated as the subagent dimension, which is what they always meant.
 
 A disabled provider blocks all of its models; `agent_models` and the
 `/subagents models` picker stop listing blocked choices, and `agent_spawn`,
 `team_create`, and `team_add` reject one with a reason — whether it was named
 explicitly, taken from an agentType definition, or inherited from the parent
-session's model. For non-pi backends the backend id doubles as the provider
-(`claude-code` above), and a model-less spec on a disabled backend is rejected
-too, since its default model is that provider's. pi-web's Settings dialog edits
-this file live; manual edits apply on the next spawn or discovery, no reload
-needed. A missing or corrupt file disables nothing.
+session's model. The reason says whether the model is off everywhere or only for
+subagents, because those take different switches to undo. For non-pi backends the
+backend id doubles as the provider (`claude-code` above), and a model-less spec on
+a disabled backend is rejected too, since its default model is that provider's.
+pi-web's Settings → Models tab edits this file live; manual edits apply on the
+next spawn or discovery, no reload needed. A missing or corrupt file disables
+nothing.
 
 ## Status and task results
 

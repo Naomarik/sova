@@ -127,6 +127,7 @@ the textarea, where the next thing you do is type.
 | **Loading models** (first open; fetched on every open and cached, so later opens show the cache while it refreshes) | normal | After 300ms, 4 × `<div class="skeleton skeleton-row">` in the list, with `aria-busy="true"` on the listbox |
 | **Load failed** | normal | `.banner.banner-error`: **Couldn't load models.** Your current model is unchanged. Action: `<button class="button button-sm">Retry</button>` |
 | **0 models** | normal | `<p class="model-menu-empty">` "0 models have credentials. Log in with `pi` in a terminal to add one." |
+| **0 models, because they're all off** (the list has models; Settings → Models turned every one of them off — §12) | normal | `<p class="model-menu-empty">` "Every model is turned off in Settings → Models. Turn one back on to switch to it." |
 | **No matches** | normal | `<p class="model-menu-empty">` "0 models match “{query}”." |
 | **Blocked: agent running** (`isStreaming`) | enabled, so pressing it shows the reason | `.banner.banner-info`: **Model changes wait until this turn finishes.** Stop or wait, then pick one. Every option gets `aria-disabled="true"`, and the list stays browsable. If a turn starts while the menu is open, the banner appears right away |
 | **Blocked: composer disabled** (connecting, reconnecting, a foreign writer, the TUI took over) | enabled | Same banner, with the current `.composer-reason` text as the title, and options disabled |
@@ -168,6 +169,7 @@ The body depends on the server message (the server sends free text, so match on 
 | Server message starts with | Body |
 |---|---|
 | `No credentials configured for` | {provider} has no credentials set up. Log in with `pi` in a terminal, then try again. |
+| `is turned off in Settings → Models` | Quoted as the server sends it: it names the model and the switch that has to move (§12). The menu doesn't list disabled models, so this one arrives only when the policy changed under an open menu. |
 | `Unknown model` | pi doesn't know this model. It may have been removed from your config. |
 | `Cannot switch models while the agent is running` | Model changes wait until this turn finishes. |
 | `code: "busy"` / `"recent"` / `"reloaded"` | the same copy the composer uses for that code |

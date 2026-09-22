@@ -1,0 +1,143 @@
+{
+  "purpose": "Acceptance suite for shared/theme.ts. The grammar is NOT restated here \u2014 it is quoted from the normative file.",
+  "normative_source": {
+    "file": "spec/00-ground-rules.md",
+    "md5_at_verification": "5d4b4f47f4052cd05ddf021e33dd2f9c",
+    "lines": {
+      "27": "the 27 color keys",
+      "28": "shadow-1..shadow-3",
+      "29": "font-body/display/mono",
+      "30": "fs-*, ls-*",
+      "31": "lh-*",
+      "32": "fw-*"
+    },
+    "rule": "read line 27 of the file; do not paraphrase it. Quoted once here for traceability only: hex #rgb/#rgba/#rrggbb/#rrggbbaa carrying no parentheses at all, OR one call from rgb, rgba, hsl, hsla, oklch, oklab, lab, lch, color-mix, color with no second '(' anywhere in the value; either shape charset A-Za-z0-9 #%(),./+- and 120 characters.",
+    "consequences_worth_stating": [
+      "named colors, transparent, currentColor and hwb() REJECT \u2014 they are neither a hex nor one of the ten names",
+      "color() and color-mix() ACCEPT \u2014 both are in the ten",
+      "scrim and skeleton-sweep are COLOR keys (line 27), not open-charset keys; shadow-1..3 are alone on the open charset (line 28), which the file justifies as 'box-shadow takes no image, so the open form is safe here and only here'"
+    ]
+  },
+  "mandated_must_reject": [
+    {
+      "key": "scrim",
+      "value": "url(//attacker.example/x.png)",
+      "result": "reject",
+      "clause": "not a hex, not one of the ten names",
+      "rejects_under_current_rule": true,
+      "would_have_passed_before_the_fix": true,
+      "regression_test": "fails if scrim is ever moved back to an open-charset row"
+    },
+    {
+      "key": "scrim",
+      "value": "image-set(url(//a/x) 1x)",
+      "result": "reject",
+      "clause": "name + second '('",
+      "rejects_under_current_rule": true,
+      "would_have_passed_before_the_fix": true,
+      "regression_test": "fails if scrim is ever moved back to an open-charset row"
+    },
+    {
+      "key": "scrim",
+      "value": "image-set(//a/x.png 1x)",
+      "result": "reject",
+      "clause": "single paren pair \u2014 ONLY the name allowlist rejects this one",
+      "rejects_under_current_rule": true,
+      "would_have_passed_before_the_fix": true,
+      "regression_test": "fails if scrim is ever moved back to an open-charset row"
+    },
+    {
+      "key": "ink",
+      "value": "red",
+      "result": "reject",
+      "clause": "named color"
+    },
+    {
+      "key": "ink",
+      "value": "transparent",
+      "result": "reject",
+      "clause": "named color"
+    },
+    {
+      "key": "ink",
+      "value": "hwb(120 30% 40%)",
+      "result": "reject",
+      "clause": "hwb is not one of the ten"
+    },
+    {
+      "key": "accent",
+      "value": "rgb(var(--x))",
+      "result": "reject",
+      "clause": "second '(' in the value"
+    },
+    {
+      "key": "bg",
+      "value": "#<121 chars>",
+      "result": "reject",
+      "clause": "120-character cap"
+    },
+    {
+      "key": "shadow-1",
+      "value": "<224-char shadow>",
+      "result": "reject",
+      "clause": "200-character cap (line 28)"
+    },
+    {
+      "key": "font-body",
+      "value": "Inter, url(//a/b)",
+      "result": "reject",
+      "clause": "stacks carry no parentheses at all (line 29)"
+    }
+  ],
+  "verification_run": {
+    "date": "2026-09-22",
+    "validator": "implemented directly from lines 27-32, not from notes",
+    "mandated_suite": "10 of 10 reject, 0 leaks",
+    "shipped_values": "540 checked, 0 rejected",
+    "dark_light_byte_gate": "0 mismatches across 60 values \u2014 unchanged",
+    "key_counts_from_the_file": "27 color keys, 3 shadow keys, 3 font stacks"
+  },
+  "scrim_item": "CLOSED. spec/00 line 27 names scrim and skeleton-sweep among the 27 color keys; line 28 is shadow-1..3 alone on the open charset. All three scrim vectors reject under the current rule and would have passed under the old one \u2014 which is exactly what makes them a regression test rather than a description of a past bug. Keep them: if the split is ever undone, these three fail first, and the single-paren image-set variant fails even if someone adds a paren limit to the raw row without a name allowlist.",
+  "supplementary_vectors": [
+    {
+      "key": "bg",
+      "value": "-webkit-image-set(//a/b 1x)",
+      "result": "reject"
+    },
+    {
+      "key": "bg",
+      "value": "src(//attacker.example/f.woff2)",
+      "result": "reject"
+    },
+    {
+      "key": "accent",
+      "value": "var(--icon)",
+      "result": "reject",
+      "note": "--icon carries url(/icons/copy.svg) and is substituted into mask at base.css:173-174 \u2014 a custom property value causing a fetch without escaping its declaration"
+    },
+    {
+      "key": "accent",
+      "value": "color-mix(in oklab, rgb(var(--y)) 10%, #000)",
+      "result": "reject",
+      "note": "nested call; the error text should name the accepted shapes or this failure is inexplicable"
+    }
+  ],
+  "must_accept_sanity": [
+    "#fff",
+    "#ffff",
+    "#1E1E26",
+    "#1e1e26ff",
+    "rgba(0, 0, 0, .5)",
+    "oklch(62% 0.2 250)",
+    "rgb(30 30 38 / 80%)",
+    "color-mix(in oklab, #fff 20%, #000)",
+    "color(display-p3 .2 .3 .4)"
+  ],
+  "settling_test": {
+    "test": "expect(validate('scrim', 'url(//attacker.example/x.png)')).toBe(rejected)",
+    "status": "PASSING",
+    "before_the_fix": "FAILED \u2014 scrim sat on the open-charset row, which had no function-name allowlist and no paren limit",
+    "after_the_fix": "passes \u2014 spec/00 line 27 lists scrim among the 27 color keys, so the name allowlist applies",
+    "verified": "run against a validator built from spec/00 lines 27-32 at md5 5d4b4f47f4052cd05ddf021e33dd2f9c"
+  }
+}

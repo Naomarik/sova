@@ -105,7 +105,7 @@ interface SessionGroup {
 
 `#/s/{path}` keeps meaning exactly what it means now — one session, alone, whether or not it is in
 a group. Opening a grouped session from the sidebar row still goes to `#/s/`, because the row is a
-session; the workspace is reached from the group (§2 "Groups", the tool row's `Open workspace`).
+session; the workspace is reached from the group (§2 "Groups", the group menu's `Open workspace`).
 A member's pane head links to `#/s/{path}` so one member can always be pulled out to full width
 without leaving the group.
 

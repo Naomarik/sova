@@ -25,7 +25,7 @@ import type { FanoutRequest } from "../shared/protocol";
 import { findTarget, isTargetName, listRemoteFolders, listTargets, normalizeRemotePath, targetDir, targetsFile, validateNewSessionCwd } from "./targets";
 import { isExplanationId, listExplanations, readExplanationPage } from "./explanations";
 import { switchMode } from "./mode";
-import { readSubagentPolicy, writeSubagentPolicy } from "./settings";
+import { readModelPolicy, writeModelPolicy } from "./model-policy";
 import { listThemes } from "./themes";
 import { readWebSettings, writeWebSettings } from "./web-settings";
 import { claudeCliStatus } from "./claude-status";
@@ -315,17 +315,19 @@ app.get("/api/folders", async (c) => {
 
 app.get("/api/models", async (c) => c.json(await listModels()));
 
-// The subagent model policy (spec/12-settings-dialog.md §12): GET reads it (empty = nothing
-// disabled), PUT replaces the whole policy. The subagents extension picks the file up per spawn.
-app.get("/api/settings/subagents", (c) => c.json(readSubagentPolicy()));
-app.put("/api/settings/subagents", async (c) => {
+// The model policy (spec/12-settings-dialog.md §12): GET reads it (empty = nothing disabled), PUT
+// replaces the whole policy. It is a rule, not a filter — this server refuses a disabled model on
+// set_model and on the next message of a session already sitting on one, and the pi extensions
+// pick the same file up per model change, per turn and per spawn, TUI sessions included.
+app.get("/api/settings/models", (c) => c.json(readModelPolicy()));
+app.put("/api/settings/models", async (c) => {
   let body: unknown;
   try {
     body = await c.req.json();
   } catch {
-    return c.json({ error: "Expected JSON body { disabledProviders, disabledModels }" }, 400);
+    return c.json({ error: "Expected a JSON body with the four policy lists" }, 400);
   }
-  const result = writeSubagentPolicy(body);
+  const result = writeModelPolicy(body);
   return "error" in result ? c.json({ error: result.error }, 400) : c.json(result);
 });
 

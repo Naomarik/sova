@@ -57,6 +57,9 @@ function boundedLine(value: string, max: number): string {
   return clean.length > max ? `${clean.slice(0, max - 1)}…` : clean;
 }
 
+/** The anchor request, clipped, as handed to the summarizer. */
+const PURPOSE_CHARS = 400;
+
 /** Limits for the "summary"-mode per-topic detail sent to /sessions. */
 const DETAIL_TOPICS = 6;
 const DETAIL_BULLETS = 3;
@@ -137,6 +140,22 @@ export function extractDelta(entries: EntryLike[], basisLeafId?: string): DeltaM
   return out;
 }
 
+/**
+ * The earliest user request still on the branch: the first user message in the entries handed in,
+ * which is the session's opening request unless a compaction has already dropped it. It is NOT
+ * read from the delta — a session whose outline started before this existed has a delta beginning
+ * mid-conversation, and its first user line is an arbitrary follow-up, not what the session is for.
+ * Empty when the view holds no user text at all.
+ */
+export function earliestUserRequest(entries: EntryLike[]): string {
+  for (const entry of entries) {
+    if (entry.type !== "message" || entry.message?.role !== "user") continue;
+    const text = textOf(entry.message);
+    if (text.trim()) return text;
+  }
+  return "";
+}
+
 /** Last message entry id on the current context view (basis for the next delta). */
 export function lastMessageEntryId(entries: EntryLike[]): string | undefined {
   for (let i = entries.length - 1; i >= 0; i--) {
@@ -194,6 +213,8 @@ export class OutlineStore {
   generatedAt = 0;
   /** Heading of the most recent user `#`-topic (kept even if the topic is later trimmed). */
   lastManualHeading = "";
+  /** The user's opening request, clipped. Set once; the summarizer's stable anchor for `overall`. */
+  purpose = "";
   private topicCounter = 0;
 
   /**
@@ -223,6 +244,7 @@ export class OutlineStore {
       this.generatedAt = typeof data.generatedAt === "number" ? data.generatedAt : 0;
       this.topicCounter = typeof data.topicCounter === "number" ? data.topicCounter : this.topics.length;
       this.lastManualHeading = typeof data.lastManualHeading === "string" ? data.lastManualHeading : "";
+      this.purpose = typeof data.purpose === "string" ? data.purpose : "";
       this.state = this.topics.length || this.now ? "stale" : "none";
       return;
     }
@@ -237,6 +259,7 @@ export class OutlineStore {
     this.basisLeafId = undefined;
     this.generatedAt = 0;
     this.lastManualHeading = "";
+    this.purpose = "";
   }
 
   /** Apply a summarizer result. Returns false when validation rejected everything. */
@@ -273,7 +296,16 @@ export class OutlineStore {
       state: this.state === "none" ? "none" : this.state === "failed-keeping-last" ? "failed-keeping-last" : "stale",
       lastHeading: this.lastHeading,
       lastManualHeading: this.lastManualHeading,
+      ...(this.purpose ? { purpose: this.purpose } : {}),
     };
+  }
+
+  /** Record the anchor request. First one wins, so once a session has an anchor it keeps it;
+   *  later requests are topics, not a new reason for the session to exist. */
+  notePurpose(text: string): void {
+    if (this.purpose) return;
+    const clean = clip(text.replace(/^#{1,3}\s+/, ""), PURPOSE_CHARS);
+    if (clean) this.purpose = clean;
   }
 
   /** Create an instant topic from a `#`-headed user message (no model call). */

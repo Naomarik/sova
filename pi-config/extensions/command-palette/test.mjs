@@ -974,3 +974,22 @@ test('OPEN_EVENT is claimed only in TUI and only while no palette is open', asyn
   close(); await again;
   assert.deepEqual(h.notices, []);
 });
+
+test('models turned off in Settings → Models are not offered by the palette', () => {
+  const h = modelHarness();
+  const dir = mkdtempSync(join(tmpdir(), 'palette-policy-'));
+  const file = join(dir, 'model-policy.json');
+  try {
+    // The global dimension only: a model kept from workers is still yours to pick here.
+    writeFileSync(file, JSON.stringify({ version: 1, disabledModels: ['test/plain'],
+      subagentDisabledProviders: ['test'] }));
+    const rows = modelItems(h.pi, h.ctx, undefined, file);
+    assert.deepEqual(rows.map(row => row.id), ['model:test/reasoner']);
+    writeFileSync(file, JSON.stringify({ version: 1, disabledProviders: ['test'], subagentDisabledProviders: [] }));
+    const future = new Date(Date.now() + 5000);
+    fs.utimesSync(file, future, future);
+    assert.deepEqual(modelItems(h.pi, h.ctx, undefined, file), []);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

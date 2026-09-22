@@ -110,13 +110,25 @@ export function bucketUsedPct(usage: Record<string, unknown> | undefined, provid
  * vision-capable candidate is exhausted the first one is returned anyway with
  * overBudget set: a degraded answer beats no answer, and the caller says so.
  */
-export function pickVisionModel(settings: VisionSettings, resolve: ResolveModel, usage: Record<string, unknown> | undefined): PickResult {
+export function pickVisionModel(
+	settings: VisionSettings,
+	resolve: ResolveModel,
+	usage: Record<string, unknown> | undefined,
+	/** Whether a candidate may be used at all. Injected, so this stays pure: the caller reads the
+	 *  user's model policy (../model-policy/policy.ts). Default: everything is allowed. */
+	isAllowed: (ref: string) => boolean = () => true,
+): PickResult {
 	const skipped: SkippedCandidate[] = [];
 	let firstExhausted: VisionPick | undefined;
 	for (const ref of settings.fallbacks) {
 		const parsed = parseRef(ref);
 		if (!parsed) {
 			skipped.push({ ref, reason: "not a provider/model reference" });
+			continue;
+		}
+		// A model the user turned off is never a fallback, however capable it is.
+		if (!isAllowed(ref)) {
+			skipped.push({ ref, reason: "turned off in Settings → Models" });
 			continue;
 		}
 		const model = resolve(parsed.provider, parsed.id);

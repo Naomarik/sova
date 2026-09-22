@@ -23,7 +23,9 @@ import {
   setSessionGroup,
 } from "../lib/session-groups";
 import { announce, home, localRunning, sessionContext, toast } from "../lib/ui-state";
+import { folderOpen, folderOpenKey, storedFolderOpen } from "../lib/folder-open";
 import { activeAgentCounts, activeTeamCount, sessionWorking } from "../lib/workers";
+import { ActionMenu } from "./ActionMenu";
 import { ArchiveCleanup } from "./ArchiveCleanup";
 import { ContextRing } from "./ContextRing";
 import { groupHref } from "../lib/group-route";
@@ -72,8 +74,10 @@ const leftTarget = (e: DragEvent, el: HTMLElement) => !(e.relatedTarget instance
     the same reason as the drag: a group's section is rebuilt whenever the session list refreshes
     (every few seconds), and an open group, or a rename in progress, must survive that. */
 const [openGroups, setOpenGroups] = createSignal<Record<string, boolean>>({});
-const [editingGroup, setEditingGroup] = createSignal<string | null>(null);
-const [confirmingGroup, setConfirmingGroup] = createSignal<string | null>(null);
+/** Which folder sections are open, keyed by `folderOpenKey` (region + folder). Module state for
+    the same reason: `groupByCwd` mints fresh folder objects on every poll, so every folder section
+    in the list is rebuilt a few seconds after the user collapses one. */
+const [openFolders, setOpenFolders] = createSignal<Record<string, boolean>>({});
 /** The "New group" row has turned into its name field. */
 const [newGroupField, setNewGroupField] = createSignal(false);
 
@@ -280,8 +284,17 @@ function SessionRow(props: { session: SessionSummary; selected: string | null; n
 
 /** Sessions grouped by folder, newest first: the markup of spec/02-session-list.md §2 "Anatomy".
     `level` is the heading level a folder label takes: h3 directly under a region, h4 inside a
-    group, where the group's own label already sits at h3. */
-function GroupList(props: { groups: Group[]; selected: string | null; now: number; idPrefix: string; targets: TargetInfo[]; level?: 4 }) {
+    group, where the group's own label already sits at h3. Every folder collapses (§2 "Folder
+    open/closed state"), so `searching` — which forces every one of them open — comes in too. */
+function GroupList(props: {
+  groups: Group[];
+  selected: string | null;
+  now: number;
+  idPrefix: string;
+  targets: TargetInfo[];
+  searching: boolean;
+  level?: 4;
+}) {
   return (
     <For each={props.groups}>
       {(group, gi) => {
@@ -290,39 +303,60 @@ function GroupList(props: { groups: Group[]; selected: string | null; now: numbe
         const remote = groupRemotePlaceOf(group.sessions, group.cwd);
         const host = () => (remote ? props.targets.find((t) => t.name === remote.target)?.host : undefined);
         const label = (name: string) => props.targets.find((t) => t.name === name)?.label || name;
+        // Open/closed per region + folder, remembered for the browser session. The folder object
+        // is rebuilt on every poll, so the choice lives in module state and sessionStorage, never
+        // in this component.
+        const key = folderOpenKey(props.idPrefix, group.cwd);
+        const open = () =>
+          folderOpen({
+            stored: openFolders()[key] ?? storedFolderOpen(sessionStorage.getItem(key)),
+            searching: props.searching,
+            holdsSelected: group.sessions.some((s) => s.path === props.selected),
+          });
+        const onFolderToggle = (e: Event & { currentTarget: HTMLDetailsElement }) => {
+          const now = e.currentTarget.open;
+          if (now === open()) return; // our own `open` update, not the user's
+          setOpenFolders((m) => ({ ...m, [key]: now }));
+          sessionStorage.setItem(key, now ? "1" : "0");
+        };
         return (
-          <section class="session-group" aria-labelledby={`${props.idPrefix}-${gi()}`}>
-            <Dynamic
-              component={props.level === 4 ? "h4" : "h3"}
-              class="list-group-label"
-              id={`${props.idPrefix}-${gi()}`}
-              title={remote ? `${remote.target}${host() ? ` (${host()})` : ""}:${remote.remoteCwd}` : group.cwd}
-            >
-              <Icon name={remote ? "terminal" : "folder"} small />
-              {/* Remote: the target's label stays whole and the folder on it truncates from the left
-                  like a local path, but never as "~": the target's $HOME isn't ours. */}
-              <Show when={remote}>
-                {(r) => (
-                  <>
-                    <span>{label(r().target)}</span>
-                    {/* The connection as the open chat last reported it: after the label, never
-                        on a row's rail, and it never pulses, so it can't read as the live dot. */}
-                    <RemoteGroupDot target={r().target} />
-                    <span aria-hidden="true">·</span>
-                  </>
-                )}
-              </Show>
-              <span class="session-group-path">
-                <bdi>{remote ? remote.remoteCwd : tildePath(group.cwd, home())}</bdi>
-              </span>
-              <span class="text-num">{group.sessions.length}</span>
-            </Dynamic>
+          <details class="session-group" aria-labelledby={`${props.idPrefix}-${gi()}`} open={open()} onToggle={onFolderToggle}>
+            {/* The heading stays a heading, and keeps its level: the <summary> is what toggles, the
+                heading inside it is what the outline and `aria-labelledby` read. */}
+            <summary class="session-group-head">
+              <Dynamic
+                component={props.level === 4 ? "h4" : "h3"}
+                class="list-group-label"
+                id={`${props.idPrefix}-${gi()}`}
+                title={remote ? `${remote.target}${host() ? ` (${host()})` : ""}:${remote.remoteCwd}` : group.cwd}
+              >
+                <Icon name="chevron-right" small class="icon-twist" />
+                <Icon name={remote ? "terminal" : "folder"} small />
+                {/* Remote: the target's label stays whole and the folder on it truncates from the left
+                    like a local path, but never as "~": the target's $HOME isn't ours. */}
+                <Show when={remote}>
+                  {(r) => (
+                    <>
+                      <span>{label(r().target)}</span>
+                      {/* The connection as the open chat last reported it: after the label, never
+                          on a row's rail, and it never pulses, so it can't read as the live dot. */}
+                      <RemoteGroupDot target={r().target} />
+                      <span aria-hidden="true">·</span>
+                    </>
+                  )}
+                </Show>
+                <span class="session-group-path">
+                  <bdi>{remote ? remote.remoteCwd : tildePath(group.cwd, home())}</bdi>
+                </span>
+                <span class="text-num">{group.sessions.length}</span>
+              </Dynamic>
+            </summary>
             <ul class="list">
               <For each={group.sessions}>
                 {(s) => <SessionRow session={s} selected={props.selected} now={props.now} targets={props.targets} />}
               </For>
             </ul>
-          </section>
+          </details>
         );
       }}
     </For>
@@ -343,16 +377,23 @@ function GroupBlock(props: {
   selected: string | null;
   now: number;
   targets: TargetInfo[];
+  /** A search is on, so the folder sections inside are forced open with every other region's. */
+  searching: boolean;
   onChanged(): void;
 }) {
   const group = () => props.group;
   const count = () => props.sessions.length;
   const over = () => dropTarget() === group().id;
 
+  /** The confirm question, one sentence, in both its forms: what goes away, then what doesn't. */
+  const question = () =>
+    count() === 0
+      ? `Delete ${quoted(group().name)}? Nothing is in it.`
+      : `Delete ${quoted(group().name)}? Its ${sessionsWord(count())} stay${count() === 1 ? "s" : ""} in the list.`;
+
   const deleteGroup = async () => {
     const n = count();
     const name = group().name;
-    setConfirmingGroup(null);
     if (!(await removeGroup(group().id))) return;
     toast(
       n === 0
@@ -382,13 +423,88 @@ function GroupBlock(props: {
         if (groupDragPath(e)) void applyDrop(group().id).then((changed) => changed && props.onChanged());
       }}
     >
+      {/* No folder icon here, unlike the cwd heads inside: a group is the user's own name for a set
+          of sessions, not a folder on disk, and the icon claimed otherwise right above real ones. */}
       <summary class="list-group-label group-label" title={group().name}>
         <Icon name="chevron-right" small class="icon-twist" />
-        <Icon name="folder" small />
         <span class="group-name">
           <bdi>{group().name}</bdi>
         </span>
         <span class="text-num">{count()}</span>
+        {/* The group's own actions, on its own name row. `contain` is what makes a control inside a
+            <summary> possible at all: without it every click in here would toggle the section. The
+            trigger is quiet until the row is hovered or something in it takes focus (base.css), and
+            always visible to the keyboard. */}
+        <ActionMenu label={`Group actions · ${group().name}`} title="Group actions" class="group-actions" contain>
+          {(menu) => (
+            <Show
+              when={menu.screen()}
+              fallback={
+                <div class="model-menu-list" role="menu" aria-label={`Group actions · ${group().name}`}>
+                  {/* The workspace: every session of this group on screen at once (#/g/<id>).
+                      Purely additive — the rows above still open one session at a time. */}
+                  <menu.Item
+                    label="Open workspace"
+                    aria={`Open ${quoted(group().name)} as a workspace`}
+                    title={`Open ${quoted(group().name)} as a workspace`}
+                    icon={<Icon name="external" small />}
+                    href={groupHref(group().id)}
+                    disabled={count() === 0 ? "Nothing is in it yet. Drag a session here first." : ""}
+                  />
+                  <menu.Item
+                    label="Rename…"
+                    aria={`Rename ${quoted(group().name)}`}
+                    icon={<Icon name="pencil" small />}
+                    stayOpen
+                    onRun={() => menu.show("rename")}
+                  />
+                  <menu.Item
+                    label="Delete group…"
+                    aria={`Delete ${quoted(group().name)}`}
+                    icon={<Icon name="close" small />}
+                    stayOpen
+                    onRun={() => menu.show("delete")}
+                  />
+                </div>
+              }
+            >
+              {/* The menu's second screen: one question at a time, in the menu the press came from,
+                  so nothing moves in the list below while it is answered. */}
+              <Show
+                when={menu.screen() === "delete"}
+                fallback={
+                  <div class="group-menu-screen">
+                    <GroupNameField
+                      label={`Rename ${quoted(group().name)}`}
+                      initial={group().name}
+                      onDone={(name) => {
+                        menu.dismiss();
+                        if (name !== group().name) void renameGroup(group().id, name);
+                      }}
+                      onCancel={() => menu.dismiss()}
+                    />
+                  </div>
+                }
+              >
+                <div class="group-menu-screen">
+                  <p class="group-tools-question">{question()}</p>
+                  <div class="cluster">
+                    <button
+                      type="button"
+                      class="button button-sm button-destructive"
+                      onClick={() => menu.run(() => void deleteGroup())}
+                    >
+                      Delete group
+                    </button>
+                    <button type="button" class="button button-sm button-ghost" onClick={() => menu.dismiss()}>
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              </Show>
+            </Show>
+          )}
+        </ActionMenu>
       </summary>
       <Show when={count() > 0} fallback={<p class="sidebar-region-note">No sessions yet. Drag one here.</p>}>
         <GroupList
@@ -397,64 +513,10 @@ function GroupBlock(props: {
           now={props.now}
           idPrefix={`g-${group().id}`}
           targets={props.targets}
+          searching={props.searching}
           level={4}
         />
       </Show>
-      {/* Rename and Delete in place, in the section's own quiet tool row (as the Archive does
-          with Cleanup): a button inside a <summary> would fight the section's own toggle. */}
-      <div class="group-tools">
-        <Show
-          when={editingGroup() === group().id}
-          fallback={
-            <Show
-              when={confirmingGroup() === group().id}
-              fallback={
-                <>
-                  {/* The workspace: every session of this group on screen at once (#/g/<id>).
-                      Purely additive — the rows above still open one session at a time. */}
-                  <a
-                    class="button button-sm button-ghost"
-                    href={groupHref(group().id)}
-                    title={`Open ${quoted(group().name)} as a workspace`}
-                    aria-disabled={count() === 0 ? "true" : undefined}
-                  >
-                    <Icon name="external" small />
-                    Open workspace
-                  </a>
-                  <button type="button" class="button button-sm button-ghost" onClick={() => setEditingGroup(group().id)}>
-                    Rename
-                  </button>
-                  <button type="button" class="button button-sm button-ghost" onClick={() => setConfirmingGroup(group().id)}>
-                    Delete group
-                  </button>
-                </>
-              }
-            >
-              <p class="group-tools-question">
-                {count() === 0
-                  ? `Delete ${quoted(group().name)}? Nothing is in it.`
-                  : `Delete ${quoted(group().name)}? Its ${sessionsWord(count())} stay${count() === 1 ? "s" : ""} in the list.`}
-              </p>
-              <button type="button" class="button button-sm button-destructive" onClick={() => void deleteGroup()}>
-                Delete group
-              </button>
-              <button type="button" class="button button-sm button-ghost" onClick={() => setConfirmingGroup(null)}>
-                Cancel
-              </button>
-            </Show>
-          }
-        >
-          <GroupNameField
-            label={`Rename ${quoted(group().name)}`}
-            initial={group().name}
-            onDone={(name) => {
-              setEditingGroup(null);
-              if (name !== group().name) void renameGroup(group().id, name);
-            }}
-            onCancel={() => setEditingGroup(null)}
-          />
-        </Show>
-      </div>
     </details>
   );
 }
@@ -796,7 +858,7 @@ export function Sidebar(props: {
             </Show>
             <For each={sections().map((s) => s.group)}>
               {(group) => (
-                <GroupBlock group={group} sessions={rowsOf(group.id)} selected={props.selected} now={props.now} targets={targets()} onChanged={props.onRefresh} />
+                <GroupBlock group={group} sessions={rowsOf(group.id)} selected={props.selected} now={props.now} targets={targets()} searching={searching()} onChanged={props.onRefresh} />
               )}
             </For>
             {/* Only while a grouped row is in flight: dropping here takes it out of its group. */}
@@ -838,7 +900,7 @@ export function Sidebar(props: {
               when={topHits().length > 0}
               fallback={<p class="sidebar-region-note">0 sessions open in a TUI, or started here and not archived. The archive below has the rest.</p>}
             >
-              <GroupList groups={topGroups()} selected={props.selected} now={props.now} idPrefix="t" targets={targets()} />
+              <GroupList groups={topGroups()} selected={props.selected} now={props.now} idPrefix="t" targets={targets()} searching={searching()} />
             </Show>
           </section>
         </Show>
@@ -860,7 +922,7 @@ export function Sidebar(props: {
                     <span class="archive-date-name">{d.label}</span>
                     <span class="text-num">{d.items.length}</span>
                   </summary>
-                  <GroupList groups={d.groups} selected={props.selected} now={props.now} idPrefix={`a-${d.id}`} targets={targets()} />
+                  <GroupList groups={d.groups} selected={props.selected} now={props.now} idPrefix={`a-${d.id}`} targets={targets()} searching={searching()} />
                 </details>
               )}
             </For>

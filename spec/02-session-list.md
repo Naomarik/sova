@@ -29,12 +29,15 @@
 
   <nav class="sidebar-list pane" aria-label="Session list">
     <!-- First region: the user's own groups (§2 "Groups"), omitted here for length. -->
-    <section class="session-group" aria-labelledby="g-1">
-      <h2 class="list-group-label" id="g-1" title="/home/user/webapps/pi-web">
-        <svg class="icon icon-sm" aria-hidden="true">…folder…</svg>
-        <span class="session-group-path"><bdi>~/webapps/pi-web</bdi></span>
-        <span class="text-num">4</span>
-      </h2>
+    <details class="session-group" aria-labelledby="g-1" open>
+      <summary class="session-group-head">
+        <h2 class="list-group-label" id="g-1" title="/home/user/webapps/pi-web">
+          <svg class="icon icon-sm icon-twist" aria-hidden="true">…chevron-right…</svg>
+          <svg class="icon icon-sm" aria-hidden="true">…folder…</svg>
+          <span class="session-group-path"><bdi>~/webapps/pi-web</bdi></span>
+          <span class="text-num">4</span>
+        </h2>
+      </summary>
       <ul class="list">
         <!-- The rail is the row's state, on the LEFT, wordless. Every row has one, even
              an empty one, so every title starts on the same edge:
@@ -93,7 +96,7 @@
           </a>
         </li>
       </ul>
-    </section>
+    </details>
   </nav>
 </aside>
 ```
@@ -110,6 +113,22 @@
   Long paths truncate **from the left**, because the leaf folder is what people scan for. The
   `rtl` + `<bdi>` pair in `.session-group-path` handles this. Labels stick to the top while their
   group scrolls.
+- **Folder open/closed state.** Every folder is a `<details>` and its label a `<summary>`, in
+  every region alike: Live & web, inside a user group, and inside an Archive date section. The
+  whole label toggles it and the chevron rotates 90° when open, as the Archive's sections do — but
+  a folder is **open by default**, because a folder is where the rows actually are; collapsing one
+  is how a long list is quieted, not how it starts.
+  - The user's choice per folder lives in `sessionStorage["pi-web:folder-open-{idPrefix}-{cwd}"]`
+    (`"1"`/`"0"`, `folderOpenKey` in `src/lib/folder-open.ts`) for the browser session. The region
+    prefix is part of the key, so the same folder under Live & web and inside a group are two
+    separate choices — they are two sections, and one holds rows the other doesn't.
+  - It opens **without** changing the stored choice while a search query is non-empty (every hit
+    has to be visible) or while it holds the selected session (its `aria-current` row must not be
+    hidden under the user). When the force ends it goes back to the stored choice. Same rule as an
+    Archive date section, with the default flipped (`folderOpen`).
+  - The heading keeps its element, its level and its `id`: it sits inside the `<summary>`, which
+    is what toggles, and `aria-labelledby` on the `<details>` still points at it. The sticky
+    behaviour moves to the `<summary>` — a sticky heading inside a summary has nothing to stick in.
 - **Remote sessions.** A session on a remote target (`SessionSummary.target`/`remoteCwd`, else a
   `cwd` under `~/.pi/agent/pi-web/targets/<target>/…`, which mirrors the remote folder) never shows
   that local placeholder. Its group label reads `terminal` icon, the target's `label` (else its
@@ -371,22 +390,40 @@ appear in a group and below it at once. A session belongs to **at most one** gro
 
   <!-- One group: a <details>, like an Archive date section. -->
   <details class="group-section" open>
+    <!-- The twist, the name, the count, the actions — and NO folder icon: a group is the user's
+         own name for a set of sessions, not a folder on disk. The cwd heads inside it keep theirs. -->
     <summary class="list-group-label group-label" title="Work">
       <svg class="icon icon-sm icon-twist" aria-hidden="true">…chevron-right…</svg>
-      <svg class="icon icon-sm" aria-hidden="true">…folder…</svg>
       <span class="group-name"><bdi>Work</bdi></span>
       <span class="text-num">4</span>
+      <!-- The group's own actions, on its own name row. Always shown, muted until the row is
+           hovered or focused. Click and keydown stop here, or they would toggle the section. -->
+      <button type="button" class="button button-icon button-ghost group-actions"
+              aria-haspopup="menu" aria-expanded="false" aria-label="Group actions · Work"
+              title="Group actions">…more…</button>
     </summary>
-    <section class="session-group" aria-labelledby="g-…">
-      <h4 class="list-group-label" id="g-…">…folder, path, count…</h4>
-      <ul class="list">…session rows, exactly as everywhere else…</ul>
-    </section>
-    <!-- The group's own controls, quiet and last, as the Archive's cleanup row is. -->
-    <div class="group-tools">
-      <a class="button button-sm button-ghost" href="#/g/…">Open workspace</a>
-      <button class="button button-sm button-ghost" type="button">Rename</button>
-      <button class="button button-sm button-ghost" type="button">Delete group</button>
+    <!-- The panel is portaled to <body>, NOT left inside the summary: see "The actions menu". -->
+    <!-- `.action-menu`: the model menu's shell at a menu's own width, placed by measuring the
+         rendered panel and clamping it inside the window (both axes, both directions). -->
+    <div class="model-menu action-menu" popover="auto">
+      <div class="model-menu-list" role="menu" aria-label="Group actions · Work">
+        <a class="mode-option group-option" role="menuitem" tabindex="0" href="#/g/…"
+           aria-label="Open “Work” as a workspace">…external…<span class="mode-option-text">
+           <span class="mode-option-id">Open workspace</span></span></a>
+        <div class="mode-option group-option" role="menuitem" tabindex="0"
+             aria-label="Rename “Work”">…pencil… Rename…</div>
+        <div class="mode-option group-option" role="menuitem" tabindex="0"
+             aria-label="Delete “Work”">…close… Delete group…</div>
+      </div>
+      <!-- Rename… and Delete group… each swap the rows for one screen inside this same menu:
+           the name field (§ Renaming), or the question with Delete group + Cancel (§ Deleting). -->
     </div>
+    <details class="session-group" aria-labelledby="g-…" open>
+      <summary class="session-group-head">
+        <h4 class="list-group-label" id="g-…">…twist, folder, path, count…</h4>
+      </summary>
+      <ul class="list">…session rows, exactly as everywhere else…</ul>
+    </details>
   </details>
 
   <!-- A group with no sessions: the note, and still a drop target. -->
@@ -404,9 +441,15 @@ when it is empty.
 - **Order.** Groups keep their creation order, so a rename or a new group never shuffles the list.
 Within a group, rows and folder groups follow the usual rule (newest `lastActiveAt` first), and
 the folder labels are `h4`, one level under the group's own label.
-- **Count.** The region head counts **groups**: each section's own count sits beside its name.
-(Live & web and the Archive count sessions instead; those regions are lists of sessions, this one
-is a list of groups.) While searching it reads `· {matching groups} of {all groups}`.
+- **The name row.** Twist, name, count, actions — and no folder icon. A group is the user's own
+name for a set of sessions, not a folder on disk, and the icon read as a claim about the file
+system directly above the `cwd` heads that really are one. Those keep their folder (or `terminal`)
+icon; it is what tells the two kinds of head apart at a glance.
+- **Count.** The region head counts **groups**. Within Groups only, a group's own session count
+and each nested folder's count appear only while that particular section is collapsed; expanded
+sections show their rows instead of repeating the numbers. Live & web and Archive folder counts
+remain visible whether expanded or collapsed. (Those regions count sessions, not groups.) While
+searching the Groups region head reads `· {matching groups} of {all groups}`.
 - **A group is a `<details>`**, like an Archive date section, but **open by default** — it is the
 user's own curation, and a collapsed group would hide the sessions they just filed. The choice is
 remembered in `sessionStorage["pi-web:group-open-{id}"]` for the browser session.
@@ -417,10 +460,26 @@ state: it dissolves itself on the write that empties it (§14 "Emptying a group"
 - **Creating.** `New group` turns that row into the name field (focused), so the section never
 moves. The field saves on Enter, saves what is there when it loses focus, and cancels on Escape or
 when empty. `POST /api/session-groups`, then the group appears open and empty at the end.
-- **Opening it as a workspace.** `Open workspace` is the first control in the tool row, and it
-links to `#/g/{id}` — the group's members side by side, each a whole chat, with one composer that
-writes to all of them (§14). It is in the tool row rather than on the label because the label is a
-`<summary>`, and a link inside one fights the section's toggle exactly as a button does. The
+- **The actions menu.** A group's three actions live behind one `⋯` trigger on the group's own
+name row, in the `<summary>` after the count — not in a tool row under the section, which cost
+every group three buttons' worth of height whether or not anyone wanted them. The trigger is
+`.button-icon.button-ghost`, ALWAYS drawn — a hover-revealed one is invisible to a touch user and
+a guess to everyone else — in the count's muted ink, coming up to full ink on hover, on
+focus-within and while its menu is open. Its 44px target is the standard one; only the glyph is a
+step smaller (16px), and the box hangs into the sidebar's right gutter so the dots sit on the edge. It opens the same `popover="auto"` menu §4g and §14 use: `Open workspace`, `Rename…`,
+`Delete group…`. **A control inside a `<summary>` costs two things.** The trigger stops its own
+click and keydown, so a press on it is not also a press on the summary. And the menu's panel is
+rendered OUT of the summary's subtree (a portal to `<body>`): a popover paints in the top layer
+but stays where it is in the DOM, and a `<details>` toggles for a click on anything inside its
+summary that has no activation behaviour of its own — which is exactly what a `role="menuitem"`
+row is. Measured before the panel moved: pressing `Rename…` collapsed the group under the menu.
+Dropping a dragged row on the summary still files it into the group, and still doesn't open the
+section.
+- **Opening it as a workspace.** `Open workspace` is the menu's first row, a link to `#/g/{id}` —
+the group's members side by side, each a whole chat, with one composer that writes to all of them
+(§14). An empty group can't be opened as one: the row is `aria-disabled` with its reason under the
+label ("Nothing is in it yet. Drag a session here first."), said before the press rather than
+discovered as a blank workspace. The
 section is still the place you file sessions into; the workspace is the place you read them in.
 While that workspace is open, the group's `<summary>` takes `aria-current="true"` and its name
 takes the selected row's tint, so the sidebar says which group you are inside.
@@ -430,11 +489,14 @@ creation action and lives beside `New Session` on the welcome screen (§14b "Ent
 A group made that way is an ordinary group here all the same: it holds ordinary sessions, and
 the only difference is that it dissolves itself when its last member leaves (§14 "Emptying a
 group"), because its name and its fork point mean nothing without them.
-- **Renaming.** Rename in the group's tool row swaps that row for the same field, pre-filled. The
+- **Renaming.** `Rename…` swaps the menu's rows for the same field, pre-filled, without closing
+the menu — one question at a time, and nothing in the list below moves while it is answered. The
 name is trimmed, 1–60 characters, and duplicates are allowed (nothing keys on a name).
 `PATCH /api/session-groups/:id`.
-- **Deleting.** Delete group asks in place, in the tool row — "Delete “Work”? Its 4 sessions stay
-in the list." (empty: "Delete “Work”? Nothing is in it.") — with `Delete group` and `Cancel`. It
+- **Deleting.** `Delete group…` swaps the menu's rows for the question — "Delete “Work”? Its 4
+sessions stay in the list." (empty: "Delete “Work”? Nothing is in it.") — with `Delete group`
+(destructive, outlined) and `Cancel`. `Cancel` and Escape both close the whole menu: cancelling a
+destructive ask means the gesture is off, not that it should be re-offered. It
 removes the group and its assignments and never touches a session file. `DELETE
 /api/session-groups/:id`; toast: "Deleted “Work”. Its 4 sessions are ungrouped."
 - **Dragging.** A session row is a drag source (the link inside is not — a browser drags links
@@ -455,8 +517,10 @@ than one region's slice, and the region disappears when no group matches.
 inconsistently (the same rule the Archive's summary follows), so the folder labels inside a group
 are `h4` and the outline reads region → folder with one level deliberately skipped rather than a
 heading nobody can rely on. The label is a `<summary>`, so Enter or
-Space opens and closes the section and AT announces expanded or collapsed; Rename and Delete live
-in the tool row instead, because a button inside a `<summary>` fights the section's toggle. The
+Space opens and closes the section and AT announces expanded or collapsed. The `⋯` trigger inside
+it keeps the section's own gestures: it stops click and keydown, so Enter or Space on the trigger
+opens the menu and does not also toggle the section, and Tab reaches the trigger after the
+summary. Escape closes the menu (and any screen it is showing) and returns focus to it. The
 `Remove from …` row is a drop target only, not a control: the popover path is what a keyboard
 uses. Contrast is the region head's (ink-2 on sunken, 7.65 dark / 7.22 light); the drop state adds
 the accent tint and a dashed accent edge, never a pulse.
@@ -484,10 +548,12 @@ and a session — can appear in all three at once.
     <h2 class="sidebar-region-head" id="r-top">
       Live &amp; web <span class="sidebar-region-count">· 5</span>
     </h2>
-    <section class="session-group" aria-labelledby="g-1">
-      <h3 class="list-group-label" id="g-1" title="/home/user/webapps/pi-web">…same as above…</h3>
+    <details class="session-group" aria-labelledby="g-1" open>
+      <summary class="session-group-head">
+        <h3 class="list-group-label" id="g-1" title="/home/user/webapps/pi-web">…same as above…</h3>
+      </summary>
       <ul class="list">…session rows…</ul>
-    </section>
+    </details>
   </section>
 
   <!-- Archive: omitted entirely when it has 0 rows -->
@@ -497,10 +563,12 @@ and a session — can appear in all three at once.
       <span>Archive</span>
       <span class="sidebar-region-count">· 43</span>
     </summary>
-    <section class="session-group" aria-labelledby="ga-1">
-      <h3 class="list-group-label" id="ga-1" title="/home/user">…</h3>
+    <details class="session-group" aria-labelledby="ga-1" open>
+      <summary class="session-group-head">
+        <h3 class="list-group-label" id="ga-1" title="/home/user">…</h3>
+      </summary>
       <ul class="list">…session rows…</ul>
-    </section>
+    </details>
   </details>
 </nav>
 ```
@@ -562,7 +630,9 @@ the top region doesn't keep every one of them forever.
 **Accessibility.**
 
 - The top region is a `section` labelled by its `h2`. Folder labels become `h3`, since they're
-  now nested one level deeper.
+  now nested one level deeper. A folder is a `<details>` (see Folder open/closed state) and its
+  `h3` sits inside the `<summary>`: the heading and its level stay, `aria-labelledby` on the
+  `<details>` still names the section, and `<details>` announces expanded or collapsed on its own.
 - For the Archive, `<summary>` is what AT announces ("Archive · 43, collapsed"). Use a plain
   `<span>`, not a heading, inside it, because headings inside `<summary>` are exposed
   inconsistently. `<details>` announces expanded or collapsed on its own.
@@ -594,10 +664,12 @@ usual folder groups inside each section. Sections, newest first, keyed on `lastA
       <svg class="icon icon-sm icon-twist" aria-hidden="true">…chevron-right…</svg>
       <span class="archive-date-name">Today</span><span class="text-num">4</span>
     </summary>
-    <section class="session-group" aria-labelledby="a-today-0">
-      <h3 class="list-group-label" id="a-today-0" title="/home/user">…folder, path, count…</h3>
+    <details class="session-group" aria-labelledby="a-today-0" open>
+      <summary class="session-group-head">
+        <h3 class="list-group-label" id="a-today-0" title="/home/user">…folder, path, count…</h3>
+      </summary>
       <ul class="list">…session rows…</ul>
-    </section>
+    </details>
   </details>
   <div class="archive-tools">…Clean Up…, see Archive cleanup…</div>
 </details>
@@ -610,7 +682,8 @@ usual folder groups inside each section. Sections, newest first, keyed on `lastA
 - **Collapsed by default.** Each section is a native `<details>`, so an open Archive first reads
   as five short lines (label + count), not a wall of rows. The whole 44px summary toggles it, and
   the chevron rotates 90° when open, like the Archive head. Folder groups inside an open section
-  are unchanged.
+  collapse on the same rule as everywhere else, and open by default (see Folder open/closed
+  state), so opening a date section shows its folders with their rows.
 - **Open/closed state** follows the Archive's rule: the user's choice per section lives in
   `sessionStorage["pi-web:archive-date-open-{id}"]` (`id` is `today`, `yesterday`, `week`,
   `month`, `older`; `"1"`/`"0"`), read on load and written on `toggle`. A section opens
@@ -622,7 +695,8 @@ usual folder groups inside each section. Sections, newest first, keyed on `lastA
   `--color-border` rule separates sections and sits under an open section's summary. No new
   colors.
 - **Accessibility.** AT reads the summary ("Today 4, collapsed"); it holds spans, not a heading,
-  for the reason given under Regions. Folder labels inside stay `h3`. Tab reaches each summary,
+  for the reason given under Regions. Folder labels inside stay `h3`, each inside its own folder
+  `<summary>`. Tab reaches each summary,
   Enter or Space toggles it, and rows in a closed section aren't focusable.
 - **Row time vs section.** Row line 2 still uses `relativeTime`, which counts 24-hour spans, so
   just after midnight a row can read "3h ago" under Yesterday, or "yesterday" under Last 7 days.

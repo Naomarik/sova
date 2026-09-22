@@ -66,3 +66,52 @@ test("readPolicy: missing file reads empty, changes land without reload, corrupt
 		fs.rmSync(dir, { recursive: true, force: true });
 	}
 });
+
+test("the unified file adds the global dimension, and denials say which rule caught the model", () => {
+	// Bare keys are global, subagent* keys narrow what is still allowed; workers obey both.
+	const policy = parsePolicy({
+		version: 1,
+		disabledProviders: ["anthropic"],
+		disabledModels: ["openai/gpt-5.2"],
+		subagentDisabledProviders: ["zai"],
+		subagentDisabledModels: ["ollama/qwen3-coder"],
+	});
+	assert.deepEqual(policy.disabledProviders, ["anthropic", "zai"]);
+	assert.deepEqual(policy.disabledModels, ["openai/gpt-5.2", "ollama/qwen3-coder"]);
+	assert.match(policyDenial(policy, "pi", "anthropic/claude-sonnet-5")!, /Provider anthropic is disabled everywhere/);
+	assert.match(policyDenial(policy, "pi", "zai/glm-5.3")!, /Provider zai is disabled for subagents/);
+	assert.match(policyDenial(policy, "pi", "openai/gpt-5.2")!, /^openai\/gpt-5\.2 is disabled everywhere/);
+	assert.match(policyDenial(policy, "pi", "ollama/qwen3-coder")!, /is disabled as a subagent model/);
+	assert.equal(policyDenial(policy, "pi", "openai/gpt-5.1"), null);
+	// A backend turned off globally is refused whether or not the spawn named a model.
+	const claude = parsePolicy({ version: 1, disabledProviders: ["claude-code"], subagentDisabledProviders: [] });
+	assert.match(backendDenial(claude, "claude-code")!, /Backend claude-code is disabled everywhere/);
+	assert.match(policyDenial(claude, "claude-code", "sonnet")!, /Backend claude-code is disabled everywhere/);
+});
+
+test("readPolicy falls back to the pre-Models-tab file only while the unified one is absent", () => {
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "subagents-policy-fallback-"));
+	const previous = process.env.PI_CODING_AGENT_DIR;
+	try {
+		fs.mkdirSync(path.join(dir, "subagents"));
+		fs.writeFileSync(
+			path.join(dir, "subagents", "settings.json"),
+			JSON.stringify({ version: 1, disabledProviders: ["zai"], disabledModels: [] }),
+		);
+		// The module resolved its paths at import time, so exercise the same rule the way the
+		// module does: explicit-file reads for each candidate, in the order readPolicy tries them.
+		assert.deepEqual(readPolicy(path.join(dir, "model-policy.json")), EMPTY_POLICY);
+		const legacy = readPolicy(path.join(dir, "subagents", "settings.json"));
+		assert.deepEqual(legacy.disabledProviders, ["zai"]);
+		assert.equal(legacy.globalProviders, undefined); // the old lists were never global
+		fs.writeFileSync(
+			path.join(dir, "model-policy.json"),
+			JSON.stringify({ version: 1, disabledProviders: [], subagentDisabledProviders: ["openai"] }),
+		);
+		assert.deepEqual(readPolicy(path.join(dir, "model-policy.json")).disabledProviders, ["openai"]);
+	} finally {
+		if (previous === undefined) delete process.env.PI_CODING_AGENT_DIR;
+		else process.env.PI_CODING_AGENT_DIR = previous;
+		fs.rmSync(dir, { recursive: true, force: true });
+	}
+});

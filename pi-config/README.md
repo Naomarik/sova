@@ -27,6 +27,7 @@ additions, the pinned third-party packages, and the extensions kept in-tree.
 | `extensions/command-palette/` | `Ctrl+P` palette over models, sessions, settings, extension commands and skills |
 | `extensions/extension-toggle/` | `/extensions` to switch extensions on and off in-session |
 | `extensions/explain/` | `/explain <topic>`: one forked subagent writes a self-contained HTML explanation into `~/.pi/agent/explanations/`, kept forever and read in pi-web |
+| `extensions/model-policy/` | The shared model policy (`model-policy.json`): which providers and models may be used at all, and which of them subagents may be given. Written by pi-web's Settings → Models tab; this extension enforces the global half in the TUI |
 | `extensions/mode/` | Per-session normal ↔ claude-heavy mode switcher plus minor modes (`alt+m`, `ctrl+p` → Mode, `/mode`), orchestrating Claude Code workers with a fable/opus planner fallback |
 | `extensions/sessions/` | Live pi sessions on this machine find each other through a filesystem presence registry; ships the `pi-sessions` CLI (`bin/pi-sessions.ts`) and the record schema (`public/SCHEMA.md`) |
 | `extensions/remote/` | `--target <name>`: runs the session's tools on an ssh / AWS-SSM / docker / incus target from `targets.json`; inert without the flag. Its `argv.ts` is imported by pi-web |
@@ -134,6 +135,7 @@ cd extensions/subagents && node tests/run.mjs && node tests/smoke.mjs && node te
 cd extensions/claude-code && node tests/run.mjs && node tests/smoke.mjs && node tests/ui-permissions.mjs
 cd extensions/extension-toggle && node --test index.test.ts
 cd extensions/mode && node --test index.test.ts align.test.ts && node tests/smoke.mjs
+cd extensions/model-policy && node --test policy.test.ts index.test.ts
 cd extensions/command-palette && node --test test.mjs
 cd extensions/sessions && node --test test.mjs
 cd extensions/codefold && node tests/run.mjs

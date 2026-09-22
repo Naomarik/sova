@@ -25,7 +25,12 @@ function eventBus() {
 	};
 }
 
+/** A path that is never created: the user's real ~/.pi/agent model policy must not decide what a
+ *  test sees. Tests about the policy pass their own file (see the policy tests below). */
+const NO_POLICY_FILE = path.join(os.tmpdir(), "subagents-tests-absent-policy.json");
+
 function harness(bus = eventBus(), options: SubagentsOptions = {}) {
+	options = { policyFile: NO_POLICY_FILE, ...options };
 	const tools = new Map<string, any>();
 	const commands = new Map<string, any>();
 	const events = new Map<string, any>();
@@ -590,7 +595,49 @@ test("completion summary states model, thinking level and non-pi backend", async
 		// Errors stay above the metadata; empty output is still disclosed.
 		worker.backend = "pi"; worker.output = ""; worker.error = "boom";
 		text = (await h.call("agent_transcript", { id: worker.id })).content[0].text;
-		assert.match(text, /\nError: boom\nSession: .*\nModel: opus · thinking: high\n\(no output for this task\)$/);
+		assert.match(text, /\nError: boom\nSession: .*\nModel: opus · thinking: high\n\(no output yet — task in progress\)$/);
+	} finally { await h.close(); }
+});
+
+test("busy workers surface recent transcript activity instead of an empty task", async () => {
+	const h = harness();
+	try {
+		await h.call("agent_spawn", { prompt: "task" });
+		const worker = h.workers[0];
+		worker.backend = "claude-code";
+		worker.sessionId = "claude-session-123";
+		// A tool-heavy Claude run: many tool items, no assistant text yet.
+		worker.transcript = [
+			{ kind: "task", text: "fix the menu" },
+			...Array.from({ length: 40 }, (_, i) => ({
+				kind: "tool" as const,
+				toolName: i % 2 ? "Bash" : "Edit",
+				text: i % 2 ? `{"command":"echo step ${i}"}` : `{"file_path":"/repo/src/File${i}.tsx"}`,
+			})),
+		];
+		let text = (await h.call("agent_transcript", { id: worker.id })).content[0].text;
+		assert.match(text, /— running\n/);
+		assert.match(text, /Still working — no final answer yet\. Recent activity \(last 6 of 41 retained item\(s\)\):/);
+		assert.match(text, /\[tool:Edit\] \{"file_path":"\/repo\/src\/File38\.tsx"\}/);
+		assert.match(text, /\[tool:Bash\] \{"command":"echo step 39"\}/);
+		assert.doesNotMatch(text, /step 2\d\b/); // only the bounded tail, not the whole run
+		assert.match(text, /full: true for the retained transcript/);
+		assert.ok(text.length < 2500);
+		// Items are one clipped line each: a huge tool input cannot flood the summary.
+		worker.transcript.push({ kind: "system", text: "x".repeat(50_000) });
+		text = (await h.call("agent_transcript", { id: worker.id })).content[0].text;
+		const line = text.split("\n").find((l: string) => l.includes("xxxxx"));
+		assert.ok(line && line.length <= 200, `activity line not clipped: ${line?.length}`);
+		// Partial assistant prose still wins over the activity tail while running.
+		worker.output = "partial answer so far";
+		text = (await h.call("agent_transcript", { id: worker.id })).content[0].text;
+		assert.match(text, /\npartial answer so far$/);
+		// A settled worker keeps the final-answer wording the completion message quotes.
+		worker.output = "";
+		worker.status = "waiting";
+		worker.transcript = [];
+		text = (await h.call("agent_transcript", { id: worker.id })).content[0].text;
+		assert.match(text, /\(no output for this task\)$/);
 	} finally { await h.close(); }
 });
 

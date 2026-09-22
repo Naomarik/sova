@@ -29,6 +29,20 @@ After each settled run (debounced, one run at a time, skipped when nothing chang
 2. **Pi model registry** — `ollama-cloud/deepseek-v4.1-flash` via
    `ctx.modelRegistry.complete()` (Pi's own auth resolution).
 
+Each backend is checked against the user's model policy **at the moment it is called**
+(`summarizers/policy-gate.ts`, over `~/.pi/agent/model-policy.json`): one turned off in pi-web's
+Settings → Models is never called, and the chain moves to the next. The check is per call, not per
+session, so turning a model off stops the next summary rather than waiting for a reload. The chain
+counts the denial as a failure, so a backend turned back on rejoins after its backoff.
+
+Every run is also handed a **session anchor**: the earliest user request still on the branch,
+clipped to 400 characters and kept in the snapshot (`purpose`) so it outlives compaction and the
+delta. It is what `overall` describes — `overall` answers "what is this session about?", front-loaded
+so the first few words still read in a narrow list, while `now` stays the latest process update. The
+anchor is offered, not asserted: on a session whose outline predates this field it can be a
+mid-session message, so the prompt says the existing topics win when the two disagree, and a genuine
+change of goal rewrites `overall`.
+
 Failures (missing binary, non-zero exit, timeout, model errors, rate limits, invalid
 JSON) fall through the chain with growing per-backend backoff (1m → 5m → 15m). If
 everything fails, the last good outline stays in place, marked stale; nothing blocks.
@@ -70,7 +84,7 @@ for trusted projects):
 
 Snapshots travel with the session file as `topic-outline` custom entries
 (`pi.appendEntry`) — they are never sent to the model, invisible in the transcript,
-follow branch switches (`/tree`), and restore on resume. `lastHeading`/`lastManualHeading`
+follow branch switches (`/tree`), and restore on resume. `lastHeading`/`lastManualHeading`/`purpose`
 were added within snapshot version 2; older snapshots restore with them empty. Ephemeral sessions keep the
 outline in memory only.
 

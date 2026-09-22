@@ -20,6 +20,7 @@ import { decodeUsageTotal, decodeWorkers } from "./insights";
 import { readLive, readOwnLiveRecords, workerCountsOf } from "./live";
 import { appliesAfter, mergeMode, MINOR_MODES, modeApplyPlan, modeInfo, readMode, resolveChatMode, writeMode, type ModePatch, type ModeState } from "./mode-state";
 import { loadDefaults, saveDefaults } from "./web-defaults";
+import { modelAllowed, modelDenial, readModelPolicy } from "./model-policy";
 import { toContextInfo } from "./models";
 import { contextForBranch, normalizeEntries, normalizeEntry } from "./transcript";
 import { parseLegacyMountCwd, targetOfCwd } from "./targets";
@@ -482,6 +483,19 @@ class ChatSession {
     }
   }
 
+  /**
+   * The user's model policy, checked as the message goes out (spec/12 §12): a session sitting on a
+   * model that was turned off in Settings → Models refuses its next message and says which switch
+   * to move. Nothing is chosen for it — a session that silently fell back to another model would
+   * spend a turn on a model the user didn't pick, and the transcript would not say so.
+   */
+  assertModelAllowed(): void {
+    const ref = modelLabel(this.session);
+    if (!ref) return; // no model yet: the SDK's own error is the useful one
+    const denial = modelDenial(readModelPolicy(), ref);
+    if (denial) throw new Error(denial);
+  }
+
   busyMessage(): string {
     return `modified by another process while open here (${this.foreignWrite}); reconnect with force to reload`;
   }
@@ -722,12 +736,18 @@ class ChatSession {
     try {
       switch (msg.type) {
         case "prompt": {
+          // The model-policy gate, at the same site the `steer` case below applies it: a model
+          // turned off in Settings → Models is refused before anything is written. Everything else
+          // this case needs (TUI ownership, foreign writers, blank text, deferred appends, the
+          // streaming follow-up choice) lives in `acceptPrompt`, which `prompt()` awaits.
+          this.assertModelAllowed();
           this.prompt(String(msg.text ?? ""), parseImages(msg.images)).catch(fail);
           return;
         }
         case "steer": {
           assertNotLive(this.path);
           this.assertNoForeignWrites();
+          this.assertModelAllowed();
           const text = String(msg.text ?? "");
           const images = parseImages(msg.images);
           if (!text.trim() && !images) return;
@@ -781,6 +801,10 @@ class ChatSession {
           this.runtime.services.modelRuntime
             .getAvailable()
             .then(async (available) => {
+              // The user's own policy first: a model turned off in Settings → Models is refused
+              // whether or not it has credentials, and nothing is written (server/model-policy.ts).
+              const denial = modelDenial(readModelPolicy(), ref);
+              if (denial) throw new Error(denial);
               const model = available.find((m) => `${m.provider}/${m.id}` === ref);
               if (!model) {
                 const known = this.runtime.services.modelRuntime.getModel(ref.split("/")[0] ?? "", ref.slice(ref.indexOf("/") + 1));
@@ -1102,7 +1126,9 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
     let defaultThinking: ThinkingLevel | undefined;
     if (!sessionManager.getBranch().some((e) => e.type === "message" && e.message.role === "user")) {
       const defaults = loadDefaults();
-      if (defaults.model)
+      // A stored default the user has since turned off is stale like any other: skipped here, so
+      // the session opens on pi's own default rather than on a model it would refuse to send with.
+      if (defaults.model && modelAllowed(readModelPolicy(), defaults.model))
         defaultModel = (await modelRuntime.getAvailable().catch(() => [])).find(
           (m) => `${m.provider}/${m.id}` === defaults.model,
         );

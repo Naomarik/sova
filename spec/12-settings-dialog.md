@@ -7,7 +7,7 @@ each other (§0 and §7 record the deviation). There is no route and no URL — 
 the session stays behind, closed by the scrim, Esc, or its Close button.
 
 The rail is the structure: each settings screen is one tab, and the first release ships two —
-Subagent models and Themes.
+Models and Themes.
 Tabs move with the arrow keys as well as the pointer, and the first tab has focus on open. The
 active tab is the only filled thing in the rail — an accent tint, never an accent label, because
 §0 spends accent on the primary, live, and focus — and the rail carries no fill of its own, so
@@ -15,30 +15,52 @@ that tint has something to read against in both themes. Under 768px the same mar
 sheet: the panel draws the sheet's grip, the rail turns into a horizontal strip above it, and the
 active tab keeps its tint.
 
-## Subagent models
+## Models
 
-The policy behind this screen is shared: `~/.pi/agent/subagents/settings.json`, written here and
-enforced by the subagents extension in **every** session, pi-web and TUI alike. It blocks models
-and providers from being picked for subagents and team members — hidden from `agent_models` and
-the `/subagents models` picker, and rejected at spawn with a reason the orchestrator can act on,
-whether the pick was explicit, agentType-defined, or inherited from the parent's model.
+The policy behind this screen is shared: `~/.pi/agent/model-policy.json`, written here and read by
+**every** session, pi-web and TUI alike, per model change, per turn and per spawn. It answers two
+questions about every provider and every model:
 
-The screen lists one row per provider, its models indented beneath it, and one `claude-code`
-row for the Claude Code backend — a provider of its own, with no model rows: its single switch
-blocks Claude workers entirely, default model included. Providers are group heads: their name
-takes the app's group-label voice (mono, semibold, its own case) with the model count as meta,
-and their models nest behind one guide rule — depth is the rule's job, not the indent's, so a
-model id keeps its width. Model rows carry the bare id and the full `provider/id` ref in mono
-beneath it. Every row is at least 44px, the whole row is the switch's label, and hovering one
-fills it with sunken; the switch draws the focus ring, inset so it stays inside the panel.
+- **Enabled** — may it be used at all. Off is a prohibition, not a filter: the model leaves this
+  browser's picker, the TUI's `/model` puts your previous model back and says why, a session
+  already sitting on it refuses its next message until you switch — every message, skills and
+  prompt templates included, and a turn nobody typed is stopped before the request leaves — and no
+  subagent or team member can be given it — hidden from `agent_models` and the `/subagents models` picker, and rejected at
+  spawn with a reason the orchestrator can act on, whether the pick was explicit, agentType-defined
+  or inherited from the parent.
+- **Subagents** — may a worker be given it, out of the models that are still enabled. A model can
+  be yours to drive by hand and out of bounds for workers.
 
-Every row is a switch, **on meaning allowed**: the default, everything on. A switch saves
-immediately — a switch that needed a Save button would be lying about when it takes effect, and
-the extension reads the file per spawn, so "immediately" is the truth. Turning a provider off
-removes its models' own entries from the file: the provider already covers them, and turning it
-back on returns every model allowed, which is what the list showed. A failed save puts the
-switch back where it was and says so in an error banner; the server's copy is the truth, never
-a local maybe.
+Enabled covers Subagents: turning a model off turns it off for workers too, and its Subagents
+switch greys out **holding the position you left it in** — turning the model back on returns the
+preference rather than a default. Nothing here ever picks another model for you. A session on a
+model that was turned off says so and waits; a fallback would spend a turn on a model you didn't
+choose, and the transcript wouldn't say so.
+
+The screen is one table with three columns — Model, Enabled, Subagents — over a search field. Rows
+are providers, collapsed, with a count that answers the question the group asks (`6 of 9 on`, or
+`Off · 9 models`); opening one lists its models behind a single guide rule, one line each, the id
+alone and the full `provider/id` ref in `title`. Depth is the rule's job, not the indent's, and the
+provider is on the group head, so a model row never repeats it — a list that says `openai/gpt-5.2`
+on every row of the `openai` group is a list you read twice to learn nothing. Searching matches
+provider names and full refs, and opens what it found: answering a query with a collapsed count is
+answering a different question. Every row is at least 44px and every switch carries its own
+accessible name (`Enable openai/gpt-5.2`, `Allow subagents to use openai/gpt-5.2`), because the
+column header is a word in a grid and not a label a screen reader can reach from the control.
+
+A provider is a group head: its switches cover every model under it, and the model rows' own
+switches grey out while it is off — the provider already answered. Turning a provider off removes
+its models' own entries from that dimension: the provider covers them, and turning it back on
+returns every model allowed, which is what the list showed. `claude-code` is a provider of its own
+with no model rows: one switch over every Claude Code worker, its default model included, because
+its models are the CLI's rather than pi's. A provider named in the policy that this machine has no
+credentials for is listed too, with `No models on this machine` where the count goes — a rule you
+can't see is a rule you can't undo.
+
+Every switch saves immediately — a switch that needed a Save button would be lying about when it
+takes effect, and the file is read per spawn and per turn — and the save is the whole policy. A
+failed save puts the switch back where it was and says so in an error banner; the server's copy is
+the truth, never a local maybe.
 
 While the model list or the policy loads, the panel shows skeleton rows. If the policy can't be
 read, an error banner offers Retry and touches nothing.

@@ -21,7 +21,9 @@ live-watch sessions that are open in the CLI/TUI, spawn new sessions.
   this directory, so an edit here changes the user's LIVE TUI on its next `/reload`, and every
   runtime pi-web embeds. Treat it like `shared/protocol.ts`: coordinate before changing any contract
   pi-web parses (sessions live registry `sessions/live/*.json`, usage-status cache, subagents
-  teams/snapshots, topic-outline state, command-palette `model-favorites.json`, mode `mode.json` =
+  teams/snapshots, topic-outline state, command-palette `model-favorites.json`, the model policy
+  `model-policy.json` (extensions/model-policy: what may be used at all, and what subagents may be
+  given — read by the TUI, the palette, subagent spawning and pi-web alike), mode `mode.json` =
   the DEFAULT mode for new sessions; the active mode is per session, in the session's own `mode`
   custom entry, and pi-web restores it with `restoreActive` from `state.ts`).
   Not covered by pi-web's tsconfig, with two exceptions: `server/mode-state.ts` imports

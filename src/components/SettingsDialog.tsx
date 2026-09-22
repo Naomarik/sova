@@ -1,7 +1,24 @@
 import { createEffect, createMemo, createResource, createSignal, For, onMount, Show } from "solid-js";
 import type { ModelInfo, ThemeInfo } from "../../shared/protocol";
-import { getClaudeCliStatus, getSubagentPolicy, getThemes, getWebSettings, putSubagentPolicy, putWebSettings } from "../lib/api";
+import { getClaudeCliStatus, getThemes, getWebSettings, putModelPolicy, putWebSettings } from "../lib/api";
 import { tildePath } from "../lib/format";
+import {
+  cacheModelPolicy,
+  CLAUDE_CODE_PROVIDER,
+  enabledCount,
+  loadModelPolicy,
+  modelEnabled,
+  modelSubagentEnabled,
+  modelSubagentPreference,
+  providerEnabled,
+  providerSubagentEnabled,
+  providerSubagentPreference,
+  setModelEnabled,
+  setModelSubagents,
+  setProviderEnabled,
+  setProviderSubagents,
+  type ModelPolicy,
+} from "../lib/model-policy";
 import { ensureModels } from "../lib/models";
 import { createPoll } from "../lib/poll";
 import { activeThemeId, applyTheme, droppedThemeId, reconcileTheme } from "../lib/theme";
@@ -10,33 +27,19 @@ import { Banner, Icon, trapFocus } from "./ui";
 
 /** The tab rail. Three screens; the rail is the structure further settings slot into. */
 const TABS = [
-  { id: "subagents", label: "Subagent models", icon: "worker" as const },
-  { id: "themes", label: "Themes", icon: "sliders" as const },
+  { id: "models", label: "Models", icon: "sliders" as const },
+  { id: "themes", label: "Themes", icon: "image" as const },
   { id: "experimental", label: "Experimental", icon: "terminal" as const },
 ] as const;
 type TabId = (typeof TABS)[number]["id"];
 
 /**
- * The Settings dialog (spec/12-settings-dialog.md): a modal with a left tab rail. Subagent
- * models edits the shared file the subagents extension enforces for every session, TUI and
- * webapp alike — every switch saves immediately, and a failed save puts the switch back and
- * says so. Themes picks what this browser wears; that one is localStorage only.
+ * The Settings dialog (spec/12-settings-dialog.md): a modal with a left tab rail. Models edits the
+ * policy file every session reads — this browser, the TUI, and every subagent — so a switch here
+ * is a rule, not a filter. Themes picks what this browser wears; that one is localStorage only.
  */
 export function SettingsDialog(props: { onClose(): void }) {
-  const [tab, setTab] = createSignal<TabId>("subagents");
-  const [models] = createResource(() => ensureModels());
-  const [policySource, { refetch: refetchPolicy }] = createResource(() => getSubagentPolicy());
-  /** The policy as the user has set it: policySource on load, then optimistic toggles. */
-  const [providersOff, setProvidersOff] = createSignal<string[]>([]);
-  const [modelsOff, setModelsOff] = createSignal<string[]>([]);
-  const [saveError, setSaveError] = createSignal<string | null>(null);
-  const [saving, setSaving] = createSignal(false);
-  createEffect(() => {
-    const p = policySource();
-    if (!p) return;
-    setProvidersOff(p.disabledProviders.map((x) => x.toLowerCase()));
-    setModelsOff(p.disabledModels.map((x) => x.toLowerCase()));
-  });
+  const [tab, setTab] = createSignal<TabId>("models");
   const [webSettings, { refetch: refetchSettings }] = createResource(() => getWebSettings());
   /** The switch as the user has set it: the stored value, then optimistic toggles. */
   const [claudeCodeOn, setClaudeCodeOn] = createSignal(false);
@@ -90,60 +93,6 @@ export function SettingsDialog(props: { onClose(): void }) {
   let firstTab: HTMLButtonElement | undefined;
   onMount(() => firstTab?.focus());
 
-  const providerOff = (provider: string) => providersOff().includes(provider.toLowerCase());
-  const modelOff = (provider: string, id: string) => {
-    const ref = `${provider}/${id}`.toLowerCase();
-    return providersOff().includes(provider.toLowerCase()) || modelsOff().includes(ref);
-  };
-
-  /** One switch moved: write the whole policy, revert and say so if the write fails. */
-  const apply = async (next: { providers: string[]; models: string[] }) => {
-    const before = { providers: providersOff(), models: modelsOff() };
-    setProvidersOff(next.providers);
-    setModelsOff(next.models);
-    setSaveError(null);
-    setSaving(true);
-    try {
-      await putSubagentPolicy({ disabledProviders: next.providers, disabledModels: next.models });
-    } catch (err) {
-      setProvidersOff(before.providers);
-      setModelsOff(before.models);
-      setSaveError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  /** A provider switch: off covers all of its models, so their own entries leave the file —
-      turning the provider back on returns every model allowed, which is what the list showed. */
-  const toggleProvider = (provider: string) => {
-    const key = provider.toLowerCase();
-    const off = providerOff(provider);
-    const providers = off ? providersOff().filter((p) => p !== key) : [...providersOff(), key];
-    const models = modelsOff().filter((m) => !m.startsWith(`${key}/`));
-    void apply({ providers, models });
-  };
-
-  const toggleModel = (m: ModelInfo) => {
-    const ref = m.ref.toLowerCase();
-    const off = modelsOff().includes(ref);
-    const models = off ? modelsOff().filter((x) => x !== ref) : [...modelsOff(), ref];
-    void apply({ providers: providersOff(), models });
-  };
-
-  /** Model rows grouped by provider, name-sorted — the same order the model picker lists. */
-  const groups = () => {
-    const byProvider = new Map<string, ModelInfo[]>();
-    for (const m of models() ?? []) {
-      const list = byProvider.get(m.provider);
-      if (list) list.push(m);
-      else byProvider.set(m.provider, [m]);
-    }
-    return [...byProvider.entries()]
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([provider, list]) => ({ provider, models: list.sort((a, b) => a.id.localeCompare(b.id)) }));
-  };
-
   return (
     <>
       <div class="scrim" onClick={props.onClose} />
@@ -196,111 +145,9 @@ export function SettingsDialog(props: { onClose(): void }) {
               )}
             </For>
           </nav>
-          {/* One panel per tab, each mounted only while its tab is active. .settings-body is a
-              two-column grid (base.css): two panels rendered at once would become a third grid
-              item and squeeze the content into a sliver, which the <Show> guards prevent. */}
-          <Show when={tab() === "subagents"}>
-            <div class="settings-panel" role="tabpanel" id="settings-panel-subagents" aria-labelledby="settings-tab-subagents">
-              <p class="settings-intro">
-                Choose which models and providers subagents and team members can use. Changes apply to the
-                next spawn — pi-web sessions and the TUI alike.
-              </p>
-              <Show when={saveError()}>
-                {(message) => (
-                  <Banner
-                    tone="error"
-                    title="Couldn't save the change"
-                    body={`The subagent policy on the server didn't update, so the previous choice stands. ${message()}`}
-                  />
-                )}
-              </Show>
-              <Show when={!policySource.error} fallback={
-                <Banner
-                  tone="error"
-                  title="Couldn't read the subagent policy"
-                  body="The list below may not match the server. Nothing was changed."
-                  action={
-                    <button type="button" class="button button-sm" onClick={() => void refetchPolicy()}>
-                      Retry
-                    </button>
-                  }
-                />
-              }>
-                <Show
-                  when={models() && !models.loading}
-                  fallback={
-                    <div aria-hidden="true">
-                      <div class="skeleton skeleton-row" />
-                      <div class="skeleton skeleton-row" />
-                      <div class="skeleton skeleton-row" />
-                    </div>
-                  }
-                >
-                  <ul class="settings-list">
-                    {/* The Claude Code backend is a provider of its own: one switch blocks its
-                        workers (their sonnet/opus picks and their default alike). */}
-                    <li>
-                      <label class="toggle toggle-switch settings-provider" title="Claude Code workers run on the claude-code backend">
-                        <input
-                          type="checkbox"
-                          checked={!providerOff("claude-code")}
-                          disabled={saving() || policySource.loading}
-                          onChange={() => toggleProvider("claude-code")}
-                        />
-                        <span class="settings-provider-main">
-                          <span class="settings-provider-name">claude-code</span>
-                          <span class="settings-provider-meta">Claude Code backend · sonnet, opus, and its default</span>
-                        </span>
-                        <span class="toggle-box" />
-                      </label>
-                    </li>
-                    <For each={groups()}>
-                      {(group) => (
-                        <li>
-                          <label class="toggle toggle-switch settings-provider">
-                            <input
-                              type="checkbox"
-                              checked={!providerOff(group.provider)}
-                              disabled={saving() || policySource.loading}
-                              onChange={() => toggleProvider(group.provider)}
-                            />
-                            <span class="settings-provider-main">
-                              <span class="settings-provider-name">{group.provider}</span>
-                              <span class="settings-provider-meta">
-                                {group.models.length} {group.models.length === 1 ? "model" : "models"}
-                              </span>
-                            </span>
-                            <span class="toggle-box" />
-                          </label>
-                          <Show when={!providerOff(group.provider)}>
-                            <ul class="settings-models">
-                              <For each={group.models}>
-                                {(m) => (
-                                  <li>
-                                    <label class="toggle toggle-switch settings-model" title={m.ref}>
-                                      <input
-                                        type="checkbox"
-                                        checked={!modelOff(m.provider, m.id)}
-                                        disabled={saving() || policySource.loading}
-                                        onChange={() => toggleModel(m)}
-                                      />
-                                      <span class="settings-model-main">
-                                        <span class="settings-model-name">{m.id}</span>
-                                        <span class="settings-model-ref">{m.ref}</span>
-                                      </span>
-                                      <span class="toggle-box" />
-                                    </label>
-                                  </li>
-                                )}
-                              </For>
-                            </ul>
-                          </Show>
-                        </li>
-                      )}
-                    </For>
-                  </ul>
-                </Show>
-              </Show>
+          <Show when={tab() === "models"}>
+            <div class="settings-panel" role="tabpanel" id="settings-panel-models" aria-labelledby="settings-tab-models">
+              <ModelsPanel />
             </div>
           </Show>
           {/* The panel is mounted only while its tab is: the themes poll starts when this tab
@@ -358,6 +205,298 @@ export function SettingsDialog(props: { onClose(): void }) {
           </button>
         </div>
       </div>
+    </>
+  );
+}
+
+/** One provider and the models it serves, as the list draws them. */
+interface ProviderGroup {
+  provider: string;
+  models: ModelInfo[];
+  /** A provider with no models of its own: the Claude Code backend, or a name the policy holds
+      that this machine has no credentials for. Its switches still apply to the whole group. */
+  note?: string;
+}
+
+/**
+ * Settings → Models (spec/12-settings-dialog.md §12). One row per provider, its models behind a
+ * twisty, and two switches on every row: Enabled, which decides whether the model may be used at
+ * all, and Subagents, which decides whether a worker may be given it. Providers are group heads:
+ * their switches cover every model under them.
+ *
+ * Every switch saves the whole policy immediately — the file is read per model change, per turn
+ * and per spawn, so "immediately" is the truth — and a failed save puts the switch back and says
+ * so. A globally disabled model's Subagents switch is greyed rather than cleared: it remembers
+ * what you chose, and turning the model back on returns it.
+ */
+function ModelsPanel() {
+  const [models] = createResource(() => ensureModels());
+  const [source, { refetch }] = createResource(() => loadModelPolicy());
+  /** The policy as the user has set it: `source` on load, then optimistic switch moves. */
+  const [policy, setPolicy] = createSignal<ModelPolicy | null>(null);
+  const [saveError, setSaveError] = createSignal<string | null>(null);
+  const [saving, setSaving] = createSignal(false);
+  const [query, setQuery] = createSignal("");
+  const [opened, setOpened] = createSignal<string[]>([]);
+  createEffect(() => {
+    const p = source();
+    if (p) setPolicy(p);
+  });
+
+  const busy = () => saving() || source.loading;
+
+  /** One switch moved: write the whole policy, revert and say so if the write fails. */
+  const apply = async (next: ModelPolicy) => {
+    const before = policy();
+    setPolicy(next);
+    setSaveError(null);
+    setSaving(true);
+    try {
+      cacheModelPolicy(await putModelPolicy(next)); // the picker follows the same rule, at once
+    } catch (err) {
+      if (before) setPolicy(before);
+      setSaveError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSaving(false);
+    }
+  };
+  const edit = (change: (p: ModelPolicy) => ModelPolicy) => {
+    const current = policy();
+    if (current && !busy()) void apply(change(current));
+  };
+
+  /** Model rows grouped by provider, name-sorted — the same order the model picker lists — plus
+      the Claude Code backend and any provider the policy names that has no models here. */
+  const groups = createMemo<ProviderGroup[]>(() => {
+    const byProvider = new Map<string, ModelInfo[]>();
+    for (const m of models() ?? []) {
+      const list = byProvider.get(m.provider.toLowerCase());
+      if (list) list.push(m);
+      else byProvider.set(m.provider.toLowerCase(), [m]);
+    }
+    const rows: ProviderGroup[] = [...byProvider.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([provider, list]) => ({ provider, models: list.sort((a, b) => a.id.localeCompare(b.id)) }));
+    // The Claude Code backend is a provider of its own: one switch over every Claude worker, its
+    // own default model included. It has no rows here because its models are the CLI's, not pi's.
+    rows.unshift({ provider: CLAUDE_CODE_PROVIDER, models: [], note: "Claude Code workers" });
+    const p = policy();
+    if (p) {
+      const named = new Set(
+        [...p.disabledProviders, ...p.subagentDisabledProviders].map((x) => x.toLowerCase()),
+      );
+      for (const provider of [...named].sort())
+        if (!rows.some((row) => row.provider === provider))
+          rows.push({ provider, models: [], note: "No models on this machine" });
+    }
+    return rows;
+  });
+
+  /** Every query token must appear in the provider name or in one of its model refs. */
+  const tokens = createMemo(() => query().toLowerCase().split(/\s+/).filter(Boolean));
+  const matching = createMemo(() => {
+    const words = tokens();
+    if (words.length === 0) return groups();
+    return groups()
+      .map((group) => {
+        const hitProvider = words.every((t) => group.provider.includes(t));
+        const hits = group.models.filter((m) => words.every((t) => m.ref.toLowerCase().includes(t)));
+        if (hitProvider) return group; // the whole group matched: keep all of its models
+        return hits.length ? { ...group, models: hits } : null;
+      })
+      .filter((group): group is ProviderGroup => group !== null);
+  });
+  const shown = createMemo(() => matching().reduce((sum, group) => sum + group.models.length, 0));
+  const total = createMemo(() => (models() ?? []).length);
+
+  // A search opens what it found: hiding the matches behind a twisty would answer the query with
+  // a count. Without one, groups stay as the user left them — collapsed, so the list is a list.
+  const isOpen = (provider: string) => tokens().length > 0 || opened().includes(provider);
+  const toggleOpen = (provider: string) =>
+    setOpened((list) => (list.includes(provider) ? list.filter((p) => p !== provider) : [...list, provider]));
+
+  /** What a provider row says about itself: the count that answers "how much of this is on". */
+  const providerMeta = (group: ProviderGroup, p: ModelPolicy) => {
+    if (group.note) return group.note;
+    if (!providerEnabled(p, group.provider)) return `Off · ${group.models.length} ${group.models.length === 1 ? "model" : "models"}`;
+    return `${enabledCount(p, group.models)} of ${group.models.length} on`;
+  };
+
+  return (
+    <>
+      <p class="settings-intro">
+        What may be used, here and in the terminal, and what subagents may be given. A model that is off
+        is refused everywhere — a session already on it asks you to switch before its next message.
+      </p>
+      <Show when={saveError()}>
+        {(message) => (
+          <Banner tone="error" title="Couldn't save the change" body={`The policy on the server didn't change, so the previous choice stands. ${message()}`} />
+        )}
+      </Show>
+      <Show
+        when={!source.error}
+        fallback={
+          <Banner
+            tone="error"
+            title="Couldn't read the model policy"
+            body="The list below may not match the server. Nothing was changed."
+            action={
+              <button type="button" class="button button-sm" onClick={() => void refetch()}>
+                Retry
+              </button>
+            }
+          />
+        }
+      >
+        <div class="model-policy-search">
+          <div class="search">
+            <Icon name="search" />
+            <input
+              class="input"
+              type="search"
+              aria-label="Search models and providers"
+              placeholder="Search models"
+              autocomplete="off"
+              spellcheck={false}
+              value={query()}
+              onInput={(e) => setQuery(e.currentTarget.value)}
+            />
+          </div>
+        </div>
+        <Show
+          when={policy() && models() && !models.loading}
+          fallback={
+            <div aria-hidden="true">
+              <div class="skeleton skeleton-row" />
+              <div class="skeleton skeleton-row" />
+              <div class="skeleton skeleton-row" />
+            </div>
+          }
+        >
+          {(_ready) => {
+            const p = () => policy()!;
+            return (
+              <>
+                <div class="model-policy-head">
+                  <span>Model</span>
+                  <span>Enabled</span>
+                  <span>Subagents</span>
+                </div>
+                <Show
+                  when={matching().length > 0}
+                  fallback={
+                    <p class="model-policy-empty">0 models match “{query().trim()}”.</p>
+                  }
+                >
+                  <ul class="model-policy-list">
+                    <For each={matching()}>
+                      {(group) => (
+                        <li class="model-policy-group">
+                          <div class="model-policy-row model-policy-provider">
+                            <Show
+                              when={group.models.length > 0}
+                              fallback={
+                                /* A provider with no models of its own keeps the name column's
+                                   shape without claiming a control that would open nothing. */
+                                <span class="model-policy-twist model-policy-twist-static">
+                                  <span class="model-policy-provider-name">{group.provider}</span>
+                                  <span class="model-policy-meta">{providerMeta(group, p())}</span>
+                                </span>
+                              }
+                            >
+                              <button
+                                type="button"
+                                class="model-policy-twist"
+                                aria-expanded={isOpen(group.provider)}
+                                aria-controls={`models-${group.provider}`}
+                                onClick={() => toggleOpen(group.provider)}
+                              >
+                                <Icon name={isOpen(group.provider) ? "chevron-down" : "chevron-right"} small />
+                                <span class="model-policy-provider-name">{group.provider}</span>
+                                <span class="model-policy-meta">{providerMeta(group, p())}</span>
+                              </button>
+                            </Show>
+                            <label class="toggle toggle-switch model-policy-switch">
+                              <input
+                                type="checkbox"
+                                aria-label={`Enable ${group.provider}`}
+                                checked={providerEnabled(p(), group.provider)}
+                                disabled={busy()}
+                                onChange={(e) => edit((cur) => setProviderEnabled(cur, group.provider, e.currentTarget.checked))}
+                              />
+                              <span class="toggle-box" />
+                            </label>
+                            <label class="toggle toggle-switch model-policy-switch">
+                              <input
+                                type="checkbox"
+                                aria-label={`Allow subagents to use ${group.provider}`}
+                                checked={providerSubagentPreference(p(), group.provider)}
+                                disabled={busy() || !providerEnabled(p(), group.provider)}
+                                title={providerEnabled(p(), group.provider) ? undefined : `${group.provider} is off, so subagents can't use it either`}
+                                onChange={(e) => edit((cur) => setProviderSubagents(cur, group.provider, e.currentTarget.checked))}
+                              />
+                              <span class="toggle-box" />
+                            </label>
+                          </div>
+                          <Show when={group.models.length > 0 && isOpen(group.provider)}>
+                            <ul class="model-policy-models" id={`models-${group.provider}`}>
+                              <For each={group.models}>
+                                {(m) => (
+                                  <li class="model-policy-row model-policy-model">
+                                    <span class="model-policy-model-name" title={m.ref}>
+                                      {m.id}
+                                    </span>
+                                    <label class="toggle toggle-switch model-policy-switch">
+                                      <input
+                                        type="checkbox"
+                                        aria-label={`Enable ${m.ref}`}
+                                        checked={modelEnabled(p(), m.ref)}
+                                        disabled={busy() || !providerEnabled(p(), m.provider)}
+                                        title={providerEnabled(p(), m.provider) ? undefined : `${m.provider} is off, so this model is too`}
+                                        onChange={(e) => edit((cur) => setModelEnabled(cur, m.ref, e.currentTarget.checked))}
+                                      />
+                                      <span class="toggle-box" />
+                                    </label>
+                                    <label class="toggle toggle-switch model-policy-switch">
+                                      <input
+                                        type="checkbox"
+                                        aria-label={`Allow subagents to use ${m.ref}`}
+                                        checked={modelSubagentPreference(p(), m.ref) && providerSubagentPreference(p(), m.provider)}
+                                        disabled={busy() || !modelEnabled(p(), m.ref) || !providerSubagentEnabled(p(), m.provider)}
+                                        title={
+                                          modelEnabled(p(), m.ref)
+                                            ? modelSubagentEnabled(p(), m.ref) || providerSubagentEnabled(p(), m.provider)
+                                              ? undefined
+                                              : `${m.provider} is off for subagents, so this model is too`
+                                            : "This model is off, so subagents can't use it either"
+                                        }
+                                        onChange={(e) => edit((cur) => setModelSubagents(cur, m.ref, e.currentTarget.checked))}
+                                      />
+                                      <span class="toggle-box" />
+                                    </label>
+                                  </li>
+                                )}
+                              </For>
+                            </ul>
+                          </Show>
+                        </li>
+                      )}
+                    </For>
+                  </ul>
+                </Show>
+                <p class="model-policy-foot">
+                  <Show
+                    when={tokens().length > 0}
+                    fallback={`${total()} ${total() === 1 ? "model" : "models"} with credentials on this machine.`}
+                  >
+                    {shown()} of {total()} {total() === 1 ? "model" : "models"} match.
+                  </Show>
+                </p>
+              </>
+            );
+          }}
+        </Show>
+      </Show>
     </>
   );
 }

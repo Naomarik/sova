@@ -43,6 +43,7 @@ import { SessionView } from "./SessionView";
 import { GroupComposer } from "./GroupComposer";
 import type { FanoutSource } from "./FanoutDialog";
 import type { ForkMarker } from "./Thread";
+import { ActionMenu, type ActionMenuApi } from "./ActionMenu";
 import { Banner, Icon } from "./ui";
 
 /**
@@ -1190,127 +1191,46 @@ function PaneMenu(props: {
   onEliminate(): void;
   onPromote(): void;
 }) {
-  let trigger!: HTMLButtonElement;
-  let menu!: HTMLDivElement;
-  const [open, setOpen] = createSignal(false);
   /**
-   * The rename state: the menu's one non-menu screen, same shape as the narrow head's dissolve
+   * The rename screen: the menu's one non-menu screen, same shape as the narrow head's dissolve
    * question. The field starts from the current label, `maxlength` is the wire's own
    * GROUP_LABEL_MAX, and an empty field CLEARS the label — that is the gesture's other half, and
    * a disabled Save would hide it. Enter saves, Escape cancels, both keep the menu's focus rules.
    */
-  const [naming, setNaming] = createSignal(false);
   let nameInput!: HTMLInputElement;
-  const startNaming = () => {
-    setNaming(true);
+  const startNaming = (menu: ActionMenuApi) => {
+    menu.show("rename");
     queueMicrotask(() => nameInput?.focus());
   };
-  const saveName = () => {
+  const saveName = (menu: ActionMenuApi) => {
     const raw = nameInput?.value.trim() ?? "";
-    setNaming(false);
-    run(() => props.onRename(raw.length > 0 ? raw : null), true);
+    menu.show(null);
+    menu.run(() => props.onRename(raw.length > 0 ? raw : null), true);
   };
-
-  const close = () => {
-    if (menu.matches(":popover-open")) menu.hidePopover();
-  };
-  const openMenu = () => {
-    const r = trigger.getBoundingClientRect();
-    // A pane menu sits low in a tall window as often as the session tab does: same upward anchor,
-    // same class, now that base.css's compound selector makes the class enough on its own.
-    menu.classList.toggle("group-menu-up", innerHeight - r.bottom < 320);
-    menu.style.setProperty("--menu-top", `${Math.round(r.bottom + 4)}px`);
-    menu.style.setProperty("--menu-right", `${Math.max(0, Math.round(innerWidth - r.right))}px`);
-    menu.style.setProperty("--menu-bottom", `${Math.round(innerHeight - r.top + 4)}px`);
-    menu.showPopover();
-    queueMicrotask(() => menu.querySelector<HTMLElement>("[role=menuitem]")?.focus());
-  };
-  /** Every row closes the menu; the ones that move focus themselves don't take it back. */
-  const run = (act: () => void, keepFocus = false) => {
-    close();
-    if (!keepFocus) trigger.focus();
-    act();
-  };
-
-  const Item = (p: {
-    label: string;
-    /** The row's accessible name: every row says which member it acts on (§9 "Pane tool aria-labels"). */
-    aria: string;
-    title?: string;
-    icon: JSX.Element;
-    disabled?: string;
-    onRun(): void;
-    keepFocus?: boolean;
-    /** The row replaces the menu's content instead of acting and closing (Rename's field). */
-    stayOpen?: boolean;
-  }) => (
-    <div
-      class="mode-option group-option"
-      role="menuitem"
-      tabindex={0}
-      aria-label={p.aria}
-      aria-disabled={p.disabled ? "true" : undefined}
-      title={p.disabled || p.title || undefined}
-      onClick={() => !p.disabled && (p.stayOpen ? p.onRun() : run(p.onRun, p.keepFocus))}
-      onKeyDown={(e) => {
-        if (e.key !== "Enter" && e.key !== " ") return;
-        e.preventDefault();
-        if (!p.disabled) (p.stayOpen ? p.onRun() : run(p.onRun, p.keepFocus));
-      }}
-    >
-      {p.icon}
-      <span class="mode-option-text">
-        <span class="mode-option-id">{p.label}</span>
-        <Show when={p.disabled}>
-          <span class="mode-option-note">{p.disabled}</span>
-        </Show>
-      </span>
-    </div>
-  );
 
   return (
-    <>
-      <button
-        ref={trigger}
-        type="button"
-        class="button button-icon button-ghost"
-        aria-haspopup="menu"
-        aria-expanded={open() ? "true" : "false"}
-        aria-label={`Pane actions · ${props.name}`}
-        title="Pane actions"
-        onClick={() => (open() ? close() : openMenu())}
-      >
-        <Icon name="more" />
-      </button>
-      <div
-        ref={menu}
-        class="model-menu group-menu"
-        popover="auto"
-        onToggle={(e) => {
-          setOpen((e as ToggleEvent).newState === "open");
-          if ((e as ToggleEvent).newState !== "open") setNaming(false);
-        }}
-      >
-        {/* The rename screen: the menu's one input, given the whole menu while it is up — the
-            same "one question at a time" shape the narrow head's dissolve ask uses. Empty CLEARS
-            the label (that half of the gesture is invisible if Save refuses it), Enter saves,
-            Escape cancels, and the field caps at the wire's GROUP_LABEL_MAX. */}
+    <ActionMenu label={`Pane actions · ${props.name}`} title="Pane actions">
+      {(menu) => (
+        // The rename screen: the menu's one input, given the whole menu while it is up — the
+        // same "one question at a time" shape the narrow head's dissolve ask uses. Empty CLEARS
+        // the label (that half of the gesture is invisible if Save refuses it), Enter saves,
+        // Escape cancels, and the field caps at the wire's GROUP_LABEL_MAX.
         <Show
-          when={naming()}
+          when={menu.screen() === "rename"}
           fallback={
             <div class="model-menu-list" role="menu" aria-label={`Pane actions · ${props.name}`}>
               <div class="model-menu-group" role="group" aria-label="This member">
-                <Item
+                <menu.Item
                   label="Rename…"
                   aria={`Rename ${props.name}`}
                   title="Give this member your own name — the useful one is only known after reading its output"
                   icon={<Icon name="pencil" small />}
                   stayOpen
-                  onRun={startNaming}
+                  onRun={() => startNaming(menu)}
                 />
               </div>
               <div class="model-menu-group" role="group" aria-label="This pane">
-                <Item
+                <menu.Item
                   label="Open"
                   aria={`Open ${props.name}`}
                   title="Open this session on its own"
@@ -1319,9 +1239,9 @@ function PaneMenu(props: {
                   onRun={() => (location.hash = props.standaloneHref)}
                 />
                 <Show when={props.split}>
-                  <Item label="Wider" aria={`Make ${props.name} wider`} icon={<Icon name="chevron-right" small />} onRun={props.onWider} />
-                  <Item label="Narrower" aria={`Make ${props.name} narrower`} icon={<Icon name="chevron-left" small />} onRun={props.onNarrower} />
-                  <Item
+                  <menu.Item label="Wider" aria={`Make ${props.name} wider`} icon={<Icon name="chevron-right" small />} onRun={props.onWider} />
+                  <menu.Item label="Narrower" aria={`Make ${props.name} narrower`} icon={<Icon name="chevron-left" small />} onRun={props.onNarrower} />
+                  <menu.Item
                     label="Move Left"
                     aria={`Move ${props.name} left`}
                     /* The keyboard hint lives where it is first needed: order moves are mouseless
@@ -1331,7 +1251,7 @@ function PaneMenu(props: {
                     disabled={props.first ? "It's already first." : ""}
                     onRun={props.onLeft}
                   />
-                  <Item
+                  <menu.Item
                     label="Move Right"
                     aria={`Move ${props.name} right`}
                     title={`Swap ${props.name} with its right-hand neighbour. Ctrl+Alt+→ moves focus, not the pane.`}
@@ -1342,10 +1262,10 @@ function PaneMenu(props: {
                 </Show>
                 {/* Not in §9's row list: a workspace needs a way to put the keyboard in a pane that
                     doesn't depend on reaching its composer, which a read-only member doesn't have. */}
-                <Item label="Focus" aria={`Focus ${props.name}`} icon={<Icon name="chat" small />} keepFocus onRun={props.onFocus} />
+                <menu.Item label="Focus" aria={`Focus ${props.name}`} icon={<Icon name="chat" small />} keepFocus onRun={props.onFocus} />
               </div>
               <div class="model-menu-group" role="group" aria-label="This session's membership">
-                <Item
+                <menu.Item
                   label="Promote"
                   aria={`Promote ${props.name}`}
                   title={`Take it out of ${quoted(props.groupName)} and open it on its own`}
@@ -1353,7 +1273,7 @@ function PaneMenu(props: {
                   keepFocus
                   onRun={props.onPromote}
                 />
-                <Item
+                <menu.Item
                   label="Remove From Group"
                   aria={`Remove ${props.name} from the group`}
                   title={
@@ -1368,7 +1288,7 @@ function PaneMenu(props: {
                 {/* Absent, not disabled, when the session wasn't started in pi-web: there is nothing
                     to archive, and it is a different gesture rather than a refusal. */}
                 <Show when={props.eliminate !== null}>
-                  <Item
+                  <menu.Item
                     label="Eliminate"
                     aria={`Eliminate ${props.name}`}
                     title={`Take it out of ${quoted(props.groupName)} and archive it. The transcript stays; unarchiving brings it back`}
@@ -1395,26 +1315,24 @@ function PaneMenu(props: {
                 onKeyDown={(e) => {
                   if (e.key === "Enter") {
                     e.preventDefault();
-                    saveName();
+                    saveName(menu);
                   } else if (e.key === "Escape") {
                     e.preventDefault();
-                    setNaming(false);
-                    close(); // Escape means "leave this screen AND the menu", as everywhere else
-                    trigger.focus();
+                    menu.dismiss(); // Escape means "leave this screen AND the menu", as everywhere else
                   }
                 }}
               />
             </div>
             <div class="cluster">
-              <button type="button" class="button button-sm" onClick={saveName}>
+              <button type="button" class="button button-sm" onClick={() => saveName(menu)}>
                 Save
               </button>
               <button
                 type="button"
                 class="button button-sm button-ghost"
                 onClick={() => {
-                  setNaming(false);
-                  trigger.focus();
+                  menu.show(null);
+                  menu.focusTrigger();
                 }}
               >
                 Cancel
@@ -1423,8 +1341,8 @@ function PaneMenu(props: {
             <p class="sidebar-region-note">Empty clears the label — the pane shows the title again.</p>
           </div>
         </Show>
-      </div>
-    </>
+      )}
+    </ActionMenu>
   );
 }
 

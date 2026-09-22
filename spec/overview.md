@@ -95,7 +95,7 @@ and in the codebase point at the file whose number matches.
 | [09-copy-deck.md](09-copy-deck.md) | §9 · Copy deck | All user-facing strings. |
 | [10-insights.md](10-insights.md) | §10 · Insights | Sidebar foot, Usage and Agents pages, team and subagent cards, insight strip. |
 | [11-subagents-pane.md](11-subagents-pane.md) | §11 · Subagents pane | The subagents side pane. |
-| [12-settings-dialog.md](12-settings-dialog.md) | §12 · Settings dialog | The gear in the sidebar foot, the tabbed modal it opens, and the subagent model policy screen. |
+| [12-settings-dialog.md](12-settings-dialog.md) | §12 · Settings dialog | The gear in the sidebar foot, the tabbed modal it opens, and the model policy screen (what may be used, and what subagents may be given). |
 | [13-timeline.md](13-timeline.md) | §13 · Timeline tab | The session on one time axis: chapters, inputs, density lines, markers, idle gaps — and the Inputs Only filter, whose rows rewind the chat. |
 | [14-workspaces.md](14-workspaces.md) | §14 · Group workspaces | A group opened as a place: split or tabbed panes, one composer that writes to every member, and what promoting, eliminating and dissolving do. |
 | [14b-fanout.md](14b-fanout.md) | §14b · Fanout | Making a whole workspace in one gesture: fork at a leaf or start fresh, per-model counts, the cost preview, and the fork-point marker. |

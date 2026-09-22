@@ -37,6 +37,7 @@ import {
 	viaLine,
 	type ImageBlock,
 } from "./describe.ts";
+import { globallyEnabled, readPolicy } from "../model-policy/policy.ts";
 import { describeSkipped, pickVisionModel, readUsage, type PickableModel, type VisionPick } from "./picker.ts";
 import { loadSettings } from "./settings.ts";
 
@@ -66,7 +67,10 @@ function gate(pi: ExtensionAPI, model: ExtensionContext["model"]) {
 async function delegate(ctx: ExtensionContext, agentDir: string, images: ImageBlock[], prompt: string): Promise<{ answer: string; model: PickableModel; pick: VisionPick }> {
 	const settings = loadSettings(agentDir);
 	// Re-read per call: the usage cache is refreshed out-of-band every ~3 minutes.
-	const pick = pickVisionModel(settings, (provider, id) => ctx.modelRegistry.find(provider, id), readUsage());
+	const policy = readPolicy();
+	const pick = pickVisionModel(settings, (provider, id) => ctx.modelRegistry.find(provider, id), readUsage(), (ref) =>
+		globallyEnabled(policy, "pi", ref),
+	);
 	if (!pick.model) {
 		throw new DelegationError(
 			`No vision model available. Candidates: ${describeSkipped(pick.skipped) || "none configured"}. Set "fallbacks" in ~/.pi/agent/vision-delegate.json.`,

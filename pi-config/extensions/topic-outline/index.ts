@@ -23,10 +23,12 @@ import { loadConfig, DEFAULT_CONFIG } from "./config.ts";
 import { SummarizerChain } from "./summarizers/chain.ts";
 import { createClaudeCliSummarizer } from "./summarizers/claude-cli.ts";
 import { createPiModelSummarizer } from "./summarizers/pi-model.ts";
+import { policyGated } from "./summarizers/policy-gate.ts";
 import {
   CUSTOM_TYPE,
   NowLine,
   OutlineStore,
+  earliestUserRequest,
   existingOutlineJson,
   extractDelta,
   lastMessageEntryId,
@@ -141,9 +143,15 @@ export default function topicOutline(pi: ExtensionAPI): void {
 
   function buildChain(ctx: ExtensionContext, config: OutlineConfig): SummarizerChain {
     const backends: Summarizer[] = [];
+    // A summarizer is a model call like any other, so each one is gated on the user's model policy
+    // AT THE CALL (summarizers/policy-gate.ts) rather than here: a chain is built once per session,
+    // and a model turned off afterwards has to stop being called from the next summary on, not from
+    // the next reload. A denied backend hands the outline to the next one in the chain.
     for (const spec of config.summarizers) {
-      if (spec.backend === "claude-code") backends.push(createClaudeCliSummarizer(spec, config.claudeBin));
-      else backends.push(createPiModelSummarizer(spec, ctx));
+      const summarizer = spec.backend === "claude-code"
+        ? createClaudeCliSummarizer(spec, config.claudeBin)
+        : createPiModelSummarizer(spec, ctx);
+      backends.push(policyGated(summarizer, spec));
     }
     return new SummarizerChain(backends);
   }
@@ -256,6 +264,12 @@ export default function topicOutline(pi: ExtensionAPI): void {
     }
     if (!delta.length) { updateStatus(true); return; }
 
+    // "overall" needs an anchor that outlives the delta, so it describes the session instead of
+    // its newest messages. That anchor is the earliest user request still on the branch — read
+    // from the entries, never from the delta, whose first user line is a mid-session follow-up
+    // for any session whose outline predates this. First one wins; see OutlineStore.notePurpose.
+    rt.store.notePurpose(earliestUserRequest(entries));
+
     const validRefs = new Set(delta.map(message => message.ref));
     const anchors = new Map<string, Anchor>();
     for (const message of delta) if (message.anchor) anchors.set(message.ref, message.anchor);
@@ -271,6 +285,7 @@ export default function topicOutline(pi: ExtensionAPI): void {
         existingOutline: existingOutlineJson(rt.store.topics),
         newLines: delta.map(message => message.line),
         validRefs,
+        purpose: rt.store.purpose,
         signal: runActive.signal,
       });
       // The branch may have moved (tree navigation / compaction) while the model ran.

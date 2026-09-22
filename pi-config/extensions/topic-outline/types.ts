@@ -36,6 +36,9 @@ export interface OutlineData {
   lastHeading?: string;
   /** Heading of the most recent user `#`-topic; source of truth for lastHeading. */
   lastManualHeading?: string;
+  /** The earliest user request seen on the branch, clipped: the anchor `overall` describes.
+   *  Kept here so it survives compaction and delta advance. Absent in older snapshots. */
+  purpose?: string;
 }
 
 /** Wire format returned by summarizers (validated before use). */
@@ -96,6 +99,9 @@ export interface SummarizeInput {
   newLines: string[];
   /** refs (m12) that may appear in the result's anchor fields. */
   validRefs: Set<string>;
+  /** The earliest user request still on the branch, clipped: the anchor for "overall".
+   *  Empty when the branch holds no user text (or the session predates this field). */
+  purpose?: string;
   signal: AbortSignal;
 }
 

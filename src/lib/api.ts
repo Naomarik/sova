@@ -17,7 +17,6 @@ import type {
   SessionGroup,
   SessionInsight,
   SessionSummary,
-  SubagentModelPolicy,
   ThemeList,
   TranscriptItem,
   UploadResult,
@@ -25,6 +24,7 @@ import type {
   WebSettings,
 } from "../../shared/protocol";
 import { type CleanupRequest, type CleanupResult, parseCleanupResult } from "./archive";
+import type { ModelPolicy } from "./model-policy";
 import type { TargetInfo } from "./remote-session";
 
 /**
@@ -96,12 +96,14 @@ export const listFolders = (path?: string, hidden = false) => {
 
 export const listModels = () => request<ModelInfo[]>("/api/models");
 
-/** Which models and providers are blocked from being spawned as subagents or team members. */
-export const getSubagentPolicy = () => request<SubagentModelPolicy>("/api/settings/subagents");
+/** The unified model policy: what may be used at all, and what subagents may additionally use
+    (Settings → Models, §12). Both halves apply everywhere — this browser, the TUI, and workers. */
+export const getModelPolicy = () => request<ModelPolicy>("/api/settings/models");
 
-/** Replace the subagent model policy (whole object). Applies to the next spawn, everywhere. */
-export const putSubagentPolicy = (policy: SubagentModelPolicy) =>
-  request<SubagentModelPolicy>("/api/settings/subagents", { method: "PUT", body: JSON.stringify(policy) });
+/** Replace the whole policy. It takes effect on the next model change, turn and spawn, everywhere;
+    the server refuses a model it forbids, so this is a rule, not a filter. */
+export const putModelPolicy = (policy: ModelPolicy) =>
+  request<ModelPolicy>("/api/settings/models", { method: "PUT", body: JSON.stringify(policy) });
 
 /** Every theme the app can find — the ones it ships and the ones in the user's folder — rescanned
     per request. Never fails on an unreadable folder: that comes back as `error` with the built-ins

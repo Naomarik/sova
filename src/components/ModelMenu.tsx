@@ -1,5 +1,6 @@
 import { createEffect, createMemo, createSignal, For, on, onMount, Show, type Accessor, type JSX } from "solid-js";
 import type { ModelInfo } from "../../shared/protocol";
+import { loadModelPolicy, usableModels } from "../lib/model-policy";
 import { loadModels, modelList } from "../lib/models";
 import { usePaneId } from "../lib/pane-scope";
 import { Banner, Icon } from "./ui";
@@ -52,7 +53,10 @@ export function ModelPicker(props: {
     setLoadError(false);
     const skeleton = setTimeout(() => setShowSkeleton(true), 300);
     try {
-      await loadModels();
+      // The policy rides along with the list: a model turned off in Settings → Models is refused
+      // by the server, so offering it here would be a dead option. A policy that fails to load
+      // hides nothing (src/lib/model-policy.ts) — the list is still the models you have.
+      await Promise.all([loadModels(), loadModelPolicy().catch(() => undefined)]);
     } catch {
       if (!modelList()) setLoadError(true);
     } finally {
@@ -65,7 +69,7 @@ export function ModelPicker(props: {
   /** Every query token must appear in provider/id, case-insensitively. */
   const matches = createMemo(() => {
     const tokens = query().toLowerCase().split(/\s+/).filter(Boolean);
-    return (modelList() ?? []).filter((m) => tokens.every((t) => m.ref.toLowerCase().includes(t)));
+    return usableModels(modelList() ?? []).filter((m) => tokens.every((t) => m.ref.toLowerCase().includes(t)));
   });
   const favorites = createMemo(() => matches().filter((m) => m.favorite).sort((a, b) => a.ref.localeCompare(b.ref)));
   const others = createMemo(() =>
@@ -231,9 +235,16 @@ export function ModelPicker(props: {
                 <Show
                   when={query().trim()}
                   fallback={
-                    <>
-                      0 models have credentials. Log in with <code>pi</code> in a terminal to add one.
-                    </>
+                    <Show
+                      when={(modelList() ?? []).length > 0}
+                      fallback={
+                        <>
+                          0 models have credentials. Log in with <code>pi</code> in a terminal to add one.
+                        </>
+                      }
+                    >
+                      Every model is turned off in Settings → Models. Turn one back on to switch to it.
+                    </Show>
                   }
                 >
                   0 models match “{query().trim()}”.

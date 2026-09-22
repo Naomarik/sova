@@ -6,6 +6,7 @@ import { fetchTranscriptWithContext, setSessionArchived, wsUrl } from "../lib/ap
 import { contextStateFor, usageTokens, windowOf } from "../lib/context";
 import { addPendingPrompt, applyEvent, emptyLive, runDetail, takeBackQueued, type LiveState } from "../lib/live";
 import { isObj, str } from "../lib/message";
+import { ensureModelPolicy, modelEnabled, modelPolicy } from "../lib/model-policy";
 import { openFailureView } from "../lib/open-failure";
 import {
   closeRemoteStatus,
@@ -664,12 +665,32 @@ export function ChatView(props: {
   });
   onCleanup(() => setMine(undefined));
 
+  // The policy this chat is judged by. Cached app-wide, so the Settings dialog's last save is
+  // already here; a policy we couldn't read blocks nothing (the server still refuses).
+  void ensureModelPolicy().catch(() => {});
+  /** Why this chat can't send right now — its model is off — or null. */
+  const offNow = (): string | null => {
+    const ref = model();
+    const policy = modelPolicy();
+    if (!ref || !policy || modelEnabled(policy, ref)) return null;
+    return `${ref} is turned off in Settings → Models. Pick another model, then send this again.`;
+  };
+
   // The same pane's turn-error state as data (the prop's doc, above): the workspace meta line
   // pairs a word with colour from this (§14 "every state pairs a word with colour"), and a pane
   // outside a workspace has nobody to tell — the prop is simply absent there.
   createEffect(() => props.onTurnError?.(turnError()));
 
   const send = (text: string, steer: boolean, attachments: UploadResult[]) => {
+    // A model turned off in Settings → Models is refused by the server on its way to the provider
+    // (server/model-policy.ts). Saying so here keeps the message in the composer instead of
+    // spending it on a refusal, and never picks another model for you (§12).
+    const offModel = offNow();
+    if (offModel) {
+      setErrors((e) => (e[e.length - 1] === offModel ? e : [...e, offModel]));
+      announce(offModel);
+      return false;
+    }
     if (!socket.send({ type: steer ? "steer" : "prompt", text })) return false;
     // A known slash command isn't a message to the model (templates and skills expand into other
     // text, extensions may never start the agent): no optimistic bubble or running state, just a

@@ -383,7 +383,9 @@ export interface UploadResult {
 // GET  /api/cwds                -> string[]                          (distinct cwds, for the new-session picker)
 // GET  /api/folders?path=…&hidden=1 -> FolderListing   (subfolders for the New Session folder picker; no path = $HOME;
 //                                  400 not absolute, 403 unreadable, 404 missing or not a folder)
-// GET  /api/models              -> ModelInfo[]                       (available models; favorite=true mirrors the TUI Ctrl+P palette)
+// GET  /api/models              -> ModelInfo[]                       (available models; favorite=true mirrors the TUI Ctrl+P palette.
+//                                  EVERY model with credentials, disabled ones included: Settings → Models has to list what it
+//                                  can turn back on. Pickers filter with the policy; the server refuses what the policy forbids)
 // GET  /api/attachment?path=…   -> image bytes (TmpAttachment.path; only /tmp/<name> or <agent dir>/pi-web/attachments/
 //                                  <session id>/<name>, .png|jpg|jpeg|webp|gif, ≤ 20MB; 400 bad shape, 403 resolves
 //                                  outside /tmp / the attachments root or too large, 404 missing)
@@ -402,17 +404,36 @@ export interface UploadResult {
     window unknown. Live-updates via the assistant usage in passthrough events at turn end. */
 export interface ContextInfo { tokens: number; window: number | null }
 
-// GET /api/settings/subagents    -> SubagentModelPolicy (empty lists when nothing is disabled)
-// PUT /api/settings/subagents    -> SubagentModelPolicy (replaces the whole policy; 400 bad body)
+// GET /api/settings/models      -> ModelPolicy (empty lists when nothing is disabled)
+// PUT /api/settings/models      -> ModelPolicy (replaces the whole policy; 400 bad body)
 // ---------------------------------------------------------------------------
-/** Which providers and models are blocked from being picked as subagents or team members
-    (Settings dialog §12). Storage and enforcement live in the subagents extension
-    (pi-config/extensions/subagents/policy.ts), which reads the same file per spawn — TUI
-    sessions included. Providers are lowercase names ("anthropic", or a backend id like
-    "claude-code"); models are "provider/modelId" refs. */
-export interface SubagentModelPolicy {
+/** Which providers and models may be used, and which of them subagents may be given (Settings →
+    Models, spec/12-settings-dialog.md §12).
+
+    Two dimensions over the same names. The bare lists are GLOBAL: those providers and models may
+    not be used anywhere — not in a chat here (the socket refuses set_model, and a session already
+    on one refuses to send), not in the TUI, not by a worker. The `subagent*` lists narrow what is
+    still globally allowed down to what subagents and team members may pick, so a model can be
+    yours to drive by hand and out of bounds for workers. Global therefore implies subagent, and
+    the subagent entry is kept rather than folded in: turning a model back on restores the worker
+    preference it had.
+
+    Storage is `~/.pi/agent/model-policy.json` (server/model-policy.ts is the only writer);
+    enforcement is shared with the pi extensions that read the same file per model change, per
+    turn and per spawn — `pi-config/extensions/model-policy/` (the TUI, the command palette,
+    topic-outline, vision-delegate) and `pi-config/extensions/subagents/policy.ts` (discovery and
+    spawning), TUI sessions included. Providers are lowercase names ("anthropic", or a worker
+    backend id like "claude-code", which is one provider with one switch over every Claude worker);
+    models are "provider/modelId" refs. */
+export interface ModelPolicy {
+  /** Providers nothing may use. */
   disabledProviders: string[];
+  /** "provider/modelId" refs nothing may use. */
   disabledModels: string[];
+  /** Providers subagents may not use, on top of the global list. */
+  subagentDisabledProviders: string[];
+  /** Refs subagents may not use, on top of the global list. */
+  subagentDisabledModels: string[];
 }
 
 // GET /api/themes                -> ThemeList (built-ins + the user's folder, rescanned per request;

@@ -53,6 +53,7 @@ test('topic-outline extension loads and registers command, shortcut, and events'
 });
 
 await jiti.import(fileURLToPath(new URL('./outline.test.ts', import.meta.url)));
+await jiti.import(fileURLToPath(new URL('./policy-gate.test.ts', import.meta.url)));
 
 const { transcriptTests } = await import('./transcript.test.mjs');
 await transcriptTests({ root, jiti, test, assert });

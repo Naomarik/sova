@@ -670,9 +670,8 @@ button.list-row { width: 100%; border: 0; background: none; text-align: left; }
 .toggle input:disabled ~ * { cursor: default; }
 
 
-/* ---- SETTINGS DIALOG. A left tab rail and one panel; the subagent model
-   policy lists provider rows with their models indented under them. The rail
-   is the structure further settings screens slot into (spec/12). ---------- */
+/* ---- SETTINGS DIALOG. A left tab rail and one panel; the rail is the
+   structure further settings screens slot into (spec/12). ---------------- */
 
 .settings-body {
   display: grid;
@@ -720,46 +719,126 @@ button.list-row { width: 100%; border: 0; background: none; text-align: left; }
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+  gap: var(--space-3);
 }
 .settings-intro { margin: 0; font-size: var(--fs-caption); color: var(--color-ink-2); }
 
-.settings-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
-.settings-list > li { border-bottom: var(--stroke-thin) solid var(--color-border); }
-.settings-list > li:last-child { border-bottom: 0; }
+/* ---- SETTINGS · MODELS. One table, two switch columns: what may be used at
+   all, and what subagents may be given. Providers are collapsed group heads,
+   so the screen opens as a list of providers rather than a wall of switches;
+   their models sit behind one guide rule, one line each (spec/12). --------- */
 
-/* Provider row: the group head, with its own switch. The name takes the app's
-   group-label voice (mono, semibold, its own case); the count is its meta. */
-.settings-provider {
+/* The three columns every row shares. The switch columns are fixed so the
+   header's words sit over the switches they name, at any panel width. */
+.model-policy-head,
+.model-policy-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 72px 88px;
+  align-items: center;
+  gap: var(--space-2);
+}
+.model-policy-head {
+  position: sticky;
+  top: calc(-1 * var(--space-4));   /* the panel's own padding: the head pins to the panel edge */
+  z-index: 1;
   padding: var(--space-1) var(--space-2);
+  margin: 0 calc(-1 * var(--space-2));
+  background: var(--color-surface);
+  border-bottom: var(--stroke-thin) solid var(--color-border);
+  font-size: var(--fs-micro);
+  letter-spacing: var(--ls-eyebrow);
+  text-transform: uppercase;
+  color: var(--color-ink-muted);
+}
+.model-policy-head > span:not(:first-child) { text-align: center; }
+
+.model-policy-search { margin: 0; }
+
+.model-policy-list { list-style: none; margin: 0; padding: 0; }
+.model-policy-group { border-bottom: var(--stroke-thin) solid var(--color-border); }
+.model-policy-group:last-child { border-bottom: 0; }
+
+.model-policy-row {
+  min-height: var(--tap-min);
+  padding: 0 var(--space-2);
   margin: 0 calc(-1 * var(--space-2));   /* the hover fill bleeds into the panel padding */
   border-radius: var(--r-sm);
 }
-.settings-provider-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.settings-provider-name { font-family: var(--font-mono); font-size: var(--fs-mono); font-weight: var(--fw-semibold); color: var(--color-ink); }
-.settings-provider-meta { font-size: var(--fs-caption); color: var(--color-ink-muted); }
+.model-policy-row:hover { background: var(--color-sunken); }
+
+/* The twisty is the whole name cell: a 44px target that says what it opens. */
+.model-policy-twist {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  overflow: hidden;
+  min-height: var(--tap-min);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.model-policy-twist:focus-visible { outline: var(--focus-ring); outline-offset: calc(var(--focus-offset) * -1); }
+.model-policy-twist .icon { flex: none; color: var(--color-ink-muted); }
+/* A provider with no models of its own keeps the name column's shape without
+   claiming a control that would open nothing. */
+.model-policy-twist-static { cursor: default; padding-left: calc(16px + var(--space-2)); }
+
+.model-policy-provider-name {
+  flex: none;   /* the name never pays for the meta: the count ellipsizes first */
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono);
+  font-weight: var(--fw-semibold);
+  color: var(--color-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.model-policy-meta {
+  flex: 0 1 auto;
+  min-width: 0;
+  font-size: var(--fs-caption);
+  color: var(--color-ink-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
 /* Models sit under their provider behind one guide rule — depth is the rule's
-   job, not the indent's, so the name keeps its width. */
-.settings-models {
+   job, not the indent's, so the id keeps its width. One line: the full ref is
+   the row's title, and repeating the provider on every row is what made the
+   old list unreadable. */
+.model-policy-models {
   list-style: none;
-  margin: 0 0 var(--space-1) var(--space-2);
+  margin: 0 0 var(--space-1) var(--space-3);
   padding: 0 0 0 var(--space-2);
   border-left: var(--stroke-thin) solid var(--color-border);
 }
-.settings-model {
-  min-height: var(--tap-min);
-  padding-right: var(--space-2);
-  margin-right: calc(-1 * var(--space-2));
-  border-radius: var(--r-sm);
+.model-policy-model-name {
+  font-size: var(--fs-body);
+  color: var(--color-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.settings-model-main { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
-.settings-model-name { font-size: var(--fs-body); color: var(--color-ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.settings-model-ref { font-family: var(--font-mono); font-size: var(--fs-mono); color: var(--color-ink-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.model-policy-model .model-policy-model-name { padding-left: var(--space-1); }
 
-/* Every row is a target; hovering one names it. */
-.settings-provider:hover,
-.settings-model:hover { background: var(--color-sunken); }
+/* Each switch centers in its column, and keeps the 44px target around a 40px
+   control. A switch whose answer is decided elsewhere (its provider is off) is
+   dimmed by the toggle's own disabled rule, and keeps the state it remembers. */
+.model-policy-switch {
+  justify-self: center;
+  justify-content: center;
+  min-height: var(--tap-min);
+  padding: 0 var(--space-2);
+  margin: 0;
+}
+
+.model-policy-empty,
+.model-policy-foot { margin: 0; font-size: var(--fs-caption); color: var(--color-ink-muted); }
 
 /* Folded: the rail becomes a horizontal tab strip above the panel, inside the
    sheet. It keeps the active tint (the strip has no fill to fight), and gains
@@ -773,6 +852,14 @@ button.list-row { width: 100%; border: 0; background: none; text-align: left; }
     border-right: 0;
     border-bottom: var(--stroke-thin) solid var(--color-border);
   }
+  /* The switch columns shrink but never below a 40px switch plus air — the row
+     still has to hold two controls — and the header keeps both words, at the
+     one size where they fit over the switches they name. The provider's count
+     drops: the name and its two answers are what the width is for. */
+  .model-policy-head,
+  .model-policy-row { grid-template-columns: minmax(0, 1fr) 64px 78px; gap: var(--space-1); }
+  .model-policy-head { font-size: 10px; letter-spacing: normal; }
+  .model-policy-provider .model-policy-meta { display: none; }
 }
 
 /* ---- SETTINGS · THEMES. The second settings tab: one radio row per theme,
@@ -867,7 +954,9 @@ button.list-row { width: 100%; border: 0; background: none; text-align: left; }
 
 .thread { display: flex; flex-direction: column; gap: var(--space-4); }
 
-.message { display: flex; flex-direction: column; gap: var(--space-2); max-width: var(--measure); min-width: 0; }
+/* End-aligned user messages must fit the pane too, not only the reading measure.
+   Long attachment names otherwise give the bubble an intrinsic width wider than a phone. */
+.message { display: flex; flex-direction: column; gap: var(--space-2); max-width: min(100%, var(--measure)); min-width: 0; }
 .message-head {
   display: flex;
   align-items: center;
@@ -1120,6 +1209,25 @@ html.is-resizing * {
 }
 .session-group-path > bdi { direction: ltr; unicode-bidi: isolate; }
 
+/* Every folder head is a <summary> (§2 "Anatomy"), so the folder collapses like the Archive's
+   date sections do. The sticky and the surface move UP to the summary: a sticky heading inside a
+   summary can only stick inside that one-row box, which is no sticking at all. The heading keeps
+   its own padding, its level, and the id `aria-labelledby` points at. */
+.session-group > summary {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--color-surface);
+  cursor: pointer;
+  list-style: none;
+}
+.session-group > summary::-webkit-details-marker { display: none; }
+.session-group > summary > .list-group-label { position: static; background: none; }
+.session-group > summary:hover > .list-group-label { color: var(--color-ink-2); }
+.session-group > summary:focus-visible { outline: var(--focus-ring); outline-offset: calc(var(--focus-offset) * -1); }
+.session-group > summary .icon-twist { flex: none; transition: transform var(--dur-fast) var(--ease-standard); }
+.session-group[open] > summary .icon-twist { transform: rotate(90deg); }
+
 /* Regions. The list splits in two: live + webapp sessions on top, everything
    else in a collapsible Archive below. Both use the same groups and rows. */
 .sidebar-region + .sidebar-region { border-top: var(--stroke-thin) solid var(--color-border); }
@@ -1206,6 +1314,40 @@ summary.sidebar-region-head .icon-twist { transition: transform var(--dur-fast) 
    (.list-group-label > .text-num). */
 .group-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+/* The group's actions, on the group's own name row. ALWAYS drawn — hover-only made the group's
+   whole menu invisible until the pointer happened to be in the right row, and on touch there is
+   no hover to find it with. Quiet rather than absent: it rests in the muted ink the row's own
+   count uses and comes up to full ink on hover, on focus within the row, and while its menu is
+   open (that one matters — the trigger is what the open panel is anchored to).
+   The glyph is a step smaller than a body icon so a standing control doesn't shout, and the
+   44px target is untouched: only the icon shrinks inside it. The box hangs into the sidebar's
+   own right gutter, so the dots sit against the edge instead of a button's width inside it. */
+.group-label .group-actions {
+  flex: none;
+  margin-right: calc(var(--space-4) * -1 + var(--space-1));
+  color: var(--color-ink-muted);
+  transition: color var(--dur-fast) var(--ease-standard);
+}
+.group-label .group-actions .icon { width: 16px; height: 16px; }
+/* In curated Groups, counts describe hidden rows only. Keep the other regions' counts. */
+.group-section[open] > .group-label > .text-num,
+.group-section .session-group[open] > .session-group-head > .list-group-label > .text-num {
+  display: none;
+}
+.group-label:hover .group-actions,
+.group-label:focus-within .group-actions,
+.group-label .group-actions[aria-expanded="true"] { color: var(--color-ink); }
+
+/* A menu screen: the one question (a name field, a confirm) that replaces the rows. The rows are
+   flush to the panel's edges by design; a screen is prose and a control, so it gets the padding. */
+.group-menu-screen {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+}
+.group-menu-screen .group-field { flex-wrap: wrap; }
+
 /* The group's own controls: one quiet row at the end of the section, as the Archive's
    cleanup row is. A button inside the summary would fight the section's own toggle. */
 .group-tools {
@@ -1260,6 +1402,11 @@ summary.sidebar-region-head .icon-twist { transition: transform var(--dur-fast) 
    group per line, a check on the current one, and a plus on "New group…". */
 .group-option { align-items: center; }
 .group-option-icon { flex: none; color: var(--color-ink-muted); }
+/* A row that goes somewhere is a link, so it can be middle-clicked like any other; it must not
+   also look like one inside a menu. */
+a.group-option { color: inherit; text-decoration: none; }
+/* Why a row can't run, under its own label: the same voice as a picker's description. */
+.mode-option-note { font-size: var(--fs-caption); color: var(--color-ink-muted); }
 /* The Session tab sits near the bottom of a tall window: with no room below the trigger,
    the menu grows upward instead. Under 768px the sheet rules own the position either way.
    COMPOUND ON PURPOSE: `.model-menu` (below) sets `inset: auto; top: var(--menu-top)` at the
@@ -1269,6 +1416,40 @@ summary.sidebar-region-head .icon-twist { transition: transform var(--dur-fast) 
 @media (min-width: 768px) {
   .model-menu.group-menu-up { top: auto; bottom: var(--menu-bottom, 72px); }
 }
+
+/* ---- ACTION MENU (the "⋯" popover: §2's group rows, §14's pane heads). The model menu's
+   shell at a MENU's size: its rows are short verbs, not model ids, so the picker's 360px was
+   wider than the 350px sidebar it hangs off and the panel's left edge — icons, labels and all —
+   fell outside the window. Width is the design system's popover (min 200px, content-sized), and
+   the position comes from ActionMenu.tsx, which measures the RENDERED box and clamps it inside
+   the viewport on both axes and in both directions; --menu-max is the height it was given, so a
+   panel taller than the room above and below scrolls instead of hanging off an edge.
+   COMPOUND ON PURPOSE, as `.group-menu-up` above: `.model-menu` sets `right`/`top` later in the
+   file at a lower specificity, and `left` only wins if this selector outweighs it.
+   Under 768px the `.model-menu` sheet rules own the position, as for every other menu. */
+@media (min-width: 768px) {
+  .model-menu.action-menu {
+    width: max-content;
+    min-width: 208px;
+    max-width: min(264px, calc(100vw - var(--space-6)));
+    top: var(--menu-top, 64px);
+    left: var(--menu-left, var(--space-4));
+    right: auto;
+    bottom: auto;
+    /* Not the picker's 440px: a menu that fits its window should not scroll, and §14's pane
+       menu is ten rows. --menu-max is the room the placement found; 70dvh keeps a tall window
+       from being taken over by one. */
+    max-height: min(70dvh, var(--menu-max, 70dvh));
+  }
+}
+/* A verb, not a model id: an action row reads in the body face, like every popover row in the
+   system. The mono treatment belongs to the pickers `.mode-option-id` was borrowed from. */
+.action-menu .mode-option-id { font-family: var(--font-body); font-size: var(--fs-body); }
+/* Menu rows, not picker rows: the row is a label beside its icon, and the icon keeps the
+   design system's --space-2 from it at every row height. */
+.action-menu .mode-option { gap: var(--space-2); padding: var(--space-1) var(--space-3); }
+.action-menu .mode-option .icon { flex: none; color: var(--color-ink-muted); }
+.action-menu .mode-option[aria-disabled="true"] { cursor: not-allowed; }
 
 /* ---- SESSION ROW. The row's state lives in a fixed LEFT rail, wordless, so
    every title starts on one edge and no chip eats the width the title needs.

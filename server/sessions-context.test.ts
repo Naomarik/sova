@@ -31,8 +31,8 @@ function session(id: string, lines: unknown[], tail = ""): string {
   return canonicalPath(path);
 }
 
-function outlineEntry(now: string, generatedAt: number, topics: unknown[]) {
-  return { type: "custom", id: `o${generatedAt}`, parentId: null, customType: "topic-outline", data: { version: 2, now, generatedAt, topics } };
+function outlineEntry(now: string, generatedAt: number, topics: unknown[], overall?: string) {
+  return { type: "custom", id: `o${generatedAt}`, parentId: null, customType: "topic-outline", data: { version: 2, now, generatedAt, topics, ...(overall === undefined ? {} : { overall }) } };
 }
 
 function topic(id: string, heading: string) {
@@ -60,6 +60,23 @@ test("an outline entry with an empty topics array counts 0", async () => {
   const s = await getSessionSummary(p);
   assert.equal(s?.outlineNow, "just started");
   assert.equal(s?.outlineTopics, 0);
+});
+
+test("the gist comes from the same entry as the now line", async () => {
+  const p = session("outline-gist", [
+    outlineEntry("early work", 1000, [topic("t1", "A")], "Fixing the auth flow"),
+    outlineEntry("Committed dc63576 with all checks green", 2000, [topic("t1", "A")], "pi-web theming: palette, fonts, Themes tab"),
+  ]);
+  const s = await getSessionSummary(p);
+  assert.equal(s?.outlineGist, "pi-web theming: palette, fonts, Themes tab");
+  assert.equal(s?.outlineNow, "Committed dc63576 with all checks green");
+});
+
+test("a snapshot without an overall line reports no gist", async () => {
+  const p = session("outline-no-gist", [outlineEntry("just started", 1000, [])]);
+  const s = await getSessionSummary(p);
+  assert.equal(s?.outlineGist, undefined);
+  assert.equal(s?.outlineNow, "just started");
 });
 
 test("context tokens come from the tail's last assistant usage", async () => {

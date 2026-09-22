@@ -21,12 +21,23 @@ import {
 } from "../lib/model-policy";
 import { ensureModels } from "../lib/models";
 import { createPoll } from "../lib/poll";
+import {
+  DEFAULT_RECENT_COUNT,
+  MAX_RECENT_COUNT,
+  MIN_RECENT_COUNT,
+  parseRecentCount,
+  recentCount,
+  recentCountValid,
+  setRecentCount,
+} from "../lib/recent";
 import { activeThemeId, applyTheme, droppedThemeId, reconcileTheme } from "../lib/theme";
-import { home } from "../lib/ui-state";
+import { announce, home } from "../lib/ui-state";
 import { Banner, Icon, trapFocus } from "./ui";
 
-/** The tab rail. Three screens; the rail is the structure further settings slot into. */
+/** The tab rail. Four screens; the rail is the structure further settings slot into. General is
+    first because it is the one screen about this browser's own behaviour rather than a subsystem. */
 const TABS = [
+  { id: "general", label: "General", icon: "settings" as const },
   { id: "models", label: "Models", icon: "sliders" as const },
   { id: "themes", label: "Themes", icon: "image" as const },
   { id: "experimental", label: "Experimental", icon: "terminal" as const },
@@ -39,7 +50,9 @@ type TabId = (typeof TABS)[number]["id"];
  * is a rule, not a filter. Themes picks what this browser wears; that one is localStorage only.
  */
 export function SettingsDialog(props: { onClose(): void }) {
-  const [tab, setTab] = createSignal<TabId>("models");
+  // The first tab in the rail, which is also the one `onMount` focuses: the two have to agree, or
+  // the dialog opens with focus on a tab that isn't the selected one.
+  const [tab, setTab] = createSignal<TabId>("general");
   const [webSettings, { refetch: refetchSettings }] = createResource(() => getWebSettings());
   /** The switch as the user has set it: the stored value, then optimistic toggles. */
   const [claudeCodeOn, setClaudeCodeOn] = createSignal(false);
@@ -145,6 +158,11 @@ export function SettingsDialog(props: { onClose(): void }) {
               )}
             </For>
           </nav>
+          <Show when={tab() === "general"}>
+            <div class="settings-panel" role="tabpanel" id="settings-panel-general" aria-labelledby="settings-tab-general">
+              <GeneralPanel />
+            </div>
+          </Show>
           <Show when={tab() === "models"}>
             <div class="settings-panel" role="tabpanel" id="settings-panel-models" aria-labelledby="settings-tab-models">
               <ModelsPanel />
@@ -204,6 +222,96 @@ export function SettingsDialog(props: { onClose(): void }) {
             Close
           </button>
         </div>
+      </div>
+    </>
+  );
+}
+
+/**
+ * General (spec/12-settings-dialog.md "General"): preferences about how THIS browser draws the
+ * product. Nothing here is written to the machine — no policy file, no server endpoint — which is
+ * the line between this screen and Models, and the reason the sidebar's Recent region has no
+ * control of its own: a count that could be set in two places would disagree in one of them.
+ */
+function GeneralPanel() {
+  /**
+   * The field's own text, not the stored count. A number input hands over "" mid-edit (select-all,
+   * then type), and the stored value must not become the default for the one keystroke that takes:
+   * a valid draft writes through immediately, an invalid one says why and leaves the count alone.
+   */
+  const [draft, setDraft] = createSignal(String(recentCount()));
+  const invalid = () => !recentCountValid(draft());
+
+  /**
+   * What is wrong with the draft, in the form the user can act on. Empty while it is fine.
+   *
+   * `parseRecentCount` is the same parse the rule uses, and it has to be: an empty field is
+   * `Number("") === 0`, so reading the raw text here once had a blank box answered with "3 is the
+   * fewest" — the floor offered as the fix for a box the user had simply cleared.
+   */
+  const problem = () => {
+    if (!invalid()) return "";
+    const n = parseRecentCount(draft());
+    if (n === null) return `Type a whole number from ${MIN_RECENT_COUNT} to ${MAX_RECENT_COUNT}.`;
+    if (n < MIN_RECENT_COUNT) return `${MIN_RECENT_COUNT} is the fewest. Below that Recent is a row, not a list.`;
+    return `${MAX_RECENT_COUNT} is the most. Past that the shortcut is the list again.`;
+  };
+
+  /** Writes a valid draft the moment it is typed — §12's rule: a setting that needed a Save
+      button would be lying about when it takes effect. */
+  const onInput = (value: string) => {
+    setDraft(value);
+    if (recentCountValid(value)) setRecentCount(value);
+  };
+
+  /** Leaving the field is where an unusable draft gets repaired: it becomes the nearest count
+      that works, and the field says so rather than sitting on red. */
+  const onCommit = () => {
+    const n = setRecentCount(draft());
+    const repaired = invalid();
+    setDraft(String(n));
+    if (repaired) announce(`Recent shows ${n} ${n === 1 ? "session" : "sessions"}.`);
+  };
+
+  return (
+    <>
+      <p class="settings-intro">
+        How this browser draws pi-web. These stay in this browser — nothing here changes your pi
+        config, and another machine keeps its own.
+      </p>
+      <div class="field settings-field">
+        <label class="field-label" for="recent-count">
+          Sessions in Recent
+        </label>
+        <input
+          class="input input-num"
+          classList={{ "input-invalid": invalid() }}
+          id="recent-count"
+          type="number"
+          inputmode="numeric"
+          min={MIN_RECENT_COUNT}
+          max={MAX_RECENT_COUNT}
+          step={1}
+          value={draft()}
+          aria-invalid={invalid() ? "true" : undefined}
+          aria-describedby={invalid() ? "recent-count-error" : "recent-count-hint"}
+          onInput={(e) => onInput(e.currentTarget.value)}
+          onChange={onCommit}
+          onBlur={onCommit}
+        />
+        <Show
+          when={invalid()}
+          fallback={
+            <span class="field-hint" id="recent-count-hint">
+              The top of the sidebar lists this many sessions, the ones that moved last. They stay
+              in Live &amp; web and the Archive too. {MIN_RECENT_COUNT}–{MAX_RECENT_COUNT}, {DEFAULT_RECENT_COUNT} by default.
+            </span>
+          }
+        >
+          <span class="field-error" id="recent-count-error">
+            {problem()}
+          </span>
+        </Show>
       </div>
     </>
   );

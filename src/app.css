@@ -330,3 +330,55 @@ html, body, #root { height: 100%; }
 /* The fork point: one drawn row in a member's transcript, never an entry. */
 .fork-marker { display: flex; align-items: center; gap: var(--space-2); }
 .workspace-align { flex: none; }
+
+/* The Groups region head (spec/02-session-list.md §2 "Groups"): a <details> like the Archive, but
+   its <summary> wraps the region's own <h2> so the heading and `aria-labelledby` survive the
+   twist. base.css styles the h2; everything the summary itself needs is here. */
+.sidebar-groups > summary.sidebar-groups-summary {
+  display: block;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+.sidebar-groups > summary.sidebar-groups-summary::-webkit-details-marker { display: none; }
+.sidebar-groups > summary > .sidebar-region-head { transition: color var(--dur-fast) var(--ease-standard); }
+.sidebar-groups > summary:hover > .sidebar-region-head { color: var(--color-ink); }
+.sidebar-groups > summary:focus-visible { outline: var(--focus-ring); outline-offset: calc(var(--focus-offset) * -1); border-radius: 0; }
+.sidebar-groups > summary .icon-twist { flex: none; transition: transform var(--dur-fast) var(--ease-standard); }
+.sidebar-groups[open] > summary .icon-twist { transform: rotate(90deg); }
+/* Collapsed, the head is the region's last row: the region rule below it is the only divider. */
+.sidebar-groups:not([open]) > summary > .sidebar-region-head { border-bottom: 0; }
+
+/* The Recent region (spec/02-session-list.md §2 "Recent"): a flat list, so it has no folder
+   <details> to close it off the way every other region does. The rule under the last row is what
+   separates the shortcut from the Groups head below it. */
+.sidebar-recent > .list { padding-bottom: var(--space-1); }
+
+/* The Settings modal's height (spec/12-settings-dialog.md "One height"). Without this the dialog
+   is as tall as whichever tab is open — Themes ran to the viewport cap and Experimental to a few
+   hundred pixels — so switching tabs resized the window under the pointer and moved the rail's
+   own buttons out from under it. One height for every tab: the panel scrolls instead.
+   The value is the viewport's, capped — never a bare pixel height — so a short window gets a
+   dialog that fits it and a tall one doesn't get a dialog with a field floating in space. */
+.settings-modal {
+  /* Tall enough for the Models tab's provider list without a scrollbar on a laptop. */
+  --settings-height: 640px;
+  height: min(var(--settings-height), calc(100dvh - var(--space-8)));
+}
+/* base.css floors the body at 320px so the rail always has room. On a short viewport that floor
+   plus the head and foot is taller than the dialog, and the foot's Close button goes under the
+   edge: the panel is what gives, and it already scrolls. */
+.settings-modal .settings-body { min-height: 0; }
+.settings-modal .modal-head,
+.settings-modal .modal-foot { flex: none; }
+.settings-modal .settings-tabs { overflow-y: auto; }
+@media (max-width: 767px) {
+  /* Folded, the modal is a sheet pinned to the bottom edge and base.css caps it at 85dvh. Same
+     rule, same reason: one height, whichever tab is open. */
+  .settings-modal { height: 85dvh; }
+}
+
+/* A count, not a sentence: the field is as wide as the number it holds plus its spinner, so the
+   Settings panel doesn't offer a 500px box for two digits. */
+.settings-field { max-width: 22rem; }
+.input-num { width: 7.5rem; font-variant-numeric: tabular-nums; }

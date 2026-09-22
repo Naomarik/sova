@@ -28,7 +28,8 @@
   </div>
 
   <nav class="sidebar-list pane" aria-label="Session list">
-    <!-- First region: the user's own groups (§2 "Groups"), omitted here for length. -->
+    <!-- First region: Recent (§2 "Recent"). Second: the user's own groups (§2 "Groups").
+         Both omitted here for length. -->
     <details class="session-group" aria-labelledby="g-1" open>
       <summary class="session-group-head">
         <h2 class="list-group-label" id="g-1" title="/home/user/webapps/pi-web">
@@ -209,17 +210,23 @@
   The pencil is pinned to the line box (`--fs-micro` × `--lh-micro` square, not `.icon-sm`'s
   16px), never shrinks, and takes `--color-ink-muted`, so a draft row is exactly as tall as its
   neighbours and the icon stays quieter than the preview beside it.
-- **Row line 2.** `SessionSummary.outlineNow`, the session's rolling "now" line from its latest
-  `topic-outline` snapshot. Rendered only when present: `--fs-micro` in `--color-ink-2`, one line
-  truncated with an ellipsis, the full text in `title=`. Sessions without one (older sessions, or
+- **Row line 2.** `SessionSummary.outlineGist`, the outline's "overall" line from the session's
+  latest `topic-outline` snapshot: **what the session is for**, not what the agent is doing this
+  second. The line truncates after a few words in a narrow rail, so what stands there has to be the
+  thing that makes this session recognizable — "pi-web theming: palette, fonts, Themes tab", never
+  "The round is committed as dc63576 with …". Snapshots written before the gist existed fall back
+  to `outlineNow`, the rolling "now" line, so those rows keep the line they had. Rendered only when
+  present: `--fs-micro` in `--color-ink-2`, one line truncated with an ellipsis. `title=` carries
+  the full line, and the "now" line under a `Now: ` label when it says something else — the latest
+  activity is one hover away, never in the row. Sessions without any outline (older sessions, or
   topic-outline off) omit the line entirely — the row is then title over meta, as before.
 
   The line also carries the session's **topic count**, at its right end: a
   `.chip.chip-count.session-topics` holding a bare figure, `title` "{n} topics in this session",
-  shown only when the count is ≥ 1. It comes from the **same outline snapshot** as the "now" line
-  it sits beside (`readTailOutline` returns both from the accepted entry), so the sentence and the
-  figure can never disagree. No count, no chip — and no chip without a "now" line either, since
-  the line is what it rides on.
+  shown only when the count is ≥ 1. It comes from the **same outline snapshot** as the line it sits
+  beside (`readTailOutline` returns gist, "now" and count from the accepted entry), so the sentence
+  and the figure can never disagree. No count, no chip — and no chip without a summary line either,
+  since the line is what it rides on.
 - **Row line 3.** Relative `lastActiveAt` ("just now", "4m ago", "2h ago", "yesterday", "Mar 4"),
   then ` · `, then the model in mono. Show only the part after the first `/` and put the full
   `provider/model` in `title`. If `model` is null, omit the separator and the model. A remote row
@@ -355,6 +362,58 @@
 - **Refreshing** (polling or a WS nudge). Update rows in place and never re-show the skeleton.
   Keep scroll position and focus. If the focused row moves, it stays focused.
 
+## Recent
+
+The top of the list, above Groups: the few sessions that moved last, said once more so the one you
+want back is the first thing on screen. With 48 sessions across 11 folders, the session you closed
+five minutes ago is three collapsed sections down — and it is the single most likely thing you came
+for.
+
+Recent is a **shortcut, not a place a session lives.** Every row in it is still in Live & web or
+the Archive underneath, exactly as a grouped session keeps its row in its region (§2 "Groups"):
+nothing is moved, nothing is hidden, and closing the gap between two copies of one row is not
+something the user has to think about. It follows from that that Recent has **no actions of its
+own** — no drag target, no remove, no count control. Every gesture a row has, it has where it
+lives.
+
+```html
+<!-- First in .sidebar-list, above the Groups region. -->
+<section class="sidebar-region sidebar-recent" aria-labelledby="r-recent">
+  <h2 class="sidebar-region-head" id="r-recent"
+      title="The 5 sessions that moved last. Change how many in Settings, under General.">
+    Recent <span class="sidebar-region-count">· 5</span>
+  </h2>
+  <ul class="list">…session rows, exactly as every other region draws them…</ul>
+</section>
+```
+
+- **Flat, no folders.** The only region without `<details class="session-group">` heads. At five
+rows a folder head per row would BE the region, and the folder is already on each row's own meta
+line. Rows are the same `SessionRow` as everywhere else, with the same rail, summary line, remote
+mark, menu and accessible name.
+- **Not collapsible, and nothing persisted about it.** It is five rows; a twist would be a control
+that saves four.
+- **Who is eligible.** Not archived (`archived !== true`) — and deliberately **not** the pane rule
+`isTopSession`. A session you ran in a TUI last week and closed is exactly what this region is
+for, and the pane rule files that under the Archive. Archiving is the user saying "done with
+this", so an archived session never reappears here; that is the one gesture Recent has to honour,
+or the archive gesture doesn't work.
+- **Order: most recently active first**, by `SessionSummary.lastActiveAt`. **That field is the
+session file's mtime** and the list carries no other activity signal, so it moves for anything that
+writes to the session — a reply, a tool result, an outline snapshot, a background subagent's turn.
+It is the honest answer to "what moved last" and NOT an answer to "where was I last", and the
+region is named for the former. Ties break on `createdAt` (newer first), then on `id`, so the top
+of the sidebar has one order and does not shuffle between polls.
+- **The search narrows it** with everything else: Recent is built from the same hit list as the
+regions below, so it can never show a row the query has ruled out, and the region disappears when
+nothing matches. The rule lives in `src/lib/recent.ts`; the sidebar passes its hits in.
+- **How many rows** is a preference — 5 by default, 3 at the fewest, 20 at the most — set in
+**Settings › General and nowhere else** (spec/12-settings-dialog.md "General"). It persists in
+`localStorage["pi-web:recent-count"]`, so it is this browser's, like the theme. A stored value that
+is not a whole number in range is the default; a number out of range is clamped.
+- **Empty.** The region is omitted entirely — with 0 sessions the sidebar's own empty state is
+already saying it, and "0 recent" above "0 sessions" says it twice.
+
 ## Groups
 
 Groups are the user's **own** sections, above every other region: named folders they make and file
@@ -370,8 +429,15 @@ appear in a group and below it at once. A session belongs to **at most one** gro
 ### Anatomy
 
 ```html
-<section class="sidebar-region sidebar-groups" aria-labelledby="r-groups">
-  <h2 class="sidebar-region-head" id="r-groups">Groups <span class="sidebar-region-count">· 2</span></h2>
+<details class="sidebar-region sidebar-groups" aria-labelledby="r-groups">
+  <!-- The head is the twist: the <summary> toggles, the <h2> inside it is what the outline and
+       `aria-labelledby` read (the folder-head pattern, not the Archive's bare <summary>). -->
+  <summary class="sidebar-groups-summary">
+    <h2 class="sidebar-region-head" id="r-groups">
+      <svg class="icon icon-sm icon-twist" aria-hidden="true">…chevron-right…</svg>
+      Groups <span class="sidebar-region-count">· 2</span>
+    </h2>
+  </summary>
 
   <!-- The region's one action. It replaces nothing, so it never moves: hidden while searching.
        Fanout is NOT here — it creates sessions rather than curating them, and its front door is
@@ -388,8 +454,8 @@ appear in a group and below it at once. A session belongs to **at most one** gro
     </form>
   </div>
 
-  <!-- One group: a <details>, like an Archive date section. -->
-  <details class="group-section" open>
+  <!-- One group: a <details>, like an Archive date section, and collapsed like one too. -->
+  <details class="group-section">
     <!-- The twist, the name, the count, the actions — and NO folder icon: a group is the user's
          own name for a set of sessions, not a folder on disk. The cwd heads inside it keep theirs. -->
     <summary class="list-group-label group-label" title="Work">
@@ -431,7 +497,7 @@ appear in a group and below it at once. A session belongs to **at most one** gro
 
   <!-- Only while a grouped row is in flight. -->
   <div class="group-remove"><svg class="icon icon-sm" aria-hidden="true">…close…</svg> Remove from “Work”</div>
-</section>
+</details>
 ```
 
 - **Placement.** Above Live & web, below the search field. The region is always rendered — with no
@@ -450,16 +516,29 @@ and each nested folder's count appear only while that particular section is coll
 sections show their rows instead of repeating the numbers. Live & web and Archive folder counts
 remain visible whether expanded or collapsed. (Those regions count sessions, not groups.) While
 searching the Groups region head reads `· {matching groups} of {all groups}`.
-- **A group is a `<details>`**, like an Archive date section, but **open by default** — it is the
-user's own curation, and a collapsed group would hide the sessions they just filed. The choice is
-remembered in `sessionStorage["pi-web:group-open-{id}"]` for the browser session.
+- **The region is a `<details>`**, and it is **collapsed on every page load**. The Groups region
+is the user's own curation sitting above the whole list, and it grows without bound as they file
+more away; starting it closed keeps the top of the sidebar the same height however many groups
+exist, and Live & web — the sessions they came for — stays in view. The twist is the whole head
+row, keyboard-reachable like the Archive's.
+- **The choice is never persisted.** Not `sessionStorage`, not `localStorage`, not the server:
+opening the region lasts as long as the page does and no longer, so a reload always starts closed.
+This is the deliberate exception to the Archive's rule (§2 "Regions"), and there is no storage key
+to read — `src/lib/group-open.ts` is the whole rule, inputs only.
+- **Forced open** — without changing the choice, exactly as the Archive is — while a search is on
+(a matching group must not hide its hits) and while a grouped row is being dragged (the group
+sections and the "Remove from …" target it needs are inside the region).
+- **A group inside it is a `<details>` too**, like an Archive date section, and collapsed by
+default on the same terms: memory only, no storage key, reopened by hand each page.
 - **Empty.** An empty group stays visible with `0` and "No sessions yet. Drag one here.": it is
 what a group is when the user makes it, and a drop target is what fills it. While a search is on,
 a group with no matching session is left out entirely. A **fanout** group never reaches this
 state: it dissolves itself on the write that empties it (§14 "Emptying a group").
 - **Creating.** `New group` turns that row into the name field (focused), so the section never
 moves. The field saves on Enter, saves what is there when it loses focus, and cancels on Escape or
-when empty. `POST /api/session-groups`, then the group appears open and empty at the end.
+when empty. `POST /api/session-groups`, then the group appears empty at the end of the region —
+collapsed like every other, with its `0` showing; the region it lands in is open, because the user
+is standing in it.
 - **The actions menu.** A group's three actions live behind one `⋯` trigger on the group's own
 name row, in the `<summary>` after the count — not in a tool row under the section, which cost
 every group three buttons' worth of height whether or not anyone wanted them. The trigger is
@@ -538,6 +617,26 @@ Both regions use exactly the same folder groups and rows described above. Each r
 `cwd` independently, so one folder can appear in both. The Groups region above them is a third
 region that cuts across these two: a session in a group keeps its row here as well, so a folder —
 and a session — can appear in all three at once.
+
+### What orders a region
+
+Each region sorts for the question it answers, and they are not the same question:
+
+- **Live & web** orders by **`createdAt`, newest first** — when the session was STARTED. Folder
+sections sit where their newest session puts them, and rows inside a folder are newest-created
+first. `createdAt` is written once, in the JSONL header, and nothing an agent does moves it: a
+folder does not jump to the top because a background subagent wrote a line in it, and a session
+you started an hour ago is still an hour old however much output it has produced since. This is
+the region you scan to find the session you started, so the stable fact is the one to sort on.
+Ties break on `id`, and folder ties on `cwd` — uuidv7 ids and folder names are unique, so two
+sessions sharing a millisecond still have one order, and it is the same order on the next poll.
+- **The Archive and its date sections** order by **`lastActiveAt`, newest first** — unchanged. The
+Archive is a place you look back from, and the last thing that happened is the handle you reach
+for. **Recent** reads the same field for the same reason (§2 "Recent").
+- **A user's group** orders by `lastActiveAt` too, inside the folder sections it draws.
+
+Both rules live in `src/lib/session-order.ts` (`groupByCreation`, `groupByActivity`); the sidebar
+picks one per region and the folder markup is shared.
 
 ```html
 <nav class="sidebar-list pane" aria-label="Session list">

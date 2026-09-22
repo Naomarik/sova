@@ -7,7 +7,10 @@ import { relativeTime, shortModel, tildePath } from "../lib/format";
 import { agentsHref, type GlancePart, usageGlance, usageHref } from "../lib/insights";
 import { isTopSession } from "../lib/regions";
 import { groupRemotePlaceOf, remoteMarkOf, remoteMarkSuffix, remoteMarkTitle } from "../lib/remote-mark";
+import { summaryLineOf, summaryTitleOf } from "../lib/summary-row";
 import { remotePlaceOf, type TargetInfo } from "../lib/remote-session";
+import { recentCount, recentSessions } from "../lib/recent";
+import { type CwdGroup, groupByActivity, groupByCreation } from "../lib/session-order";
 import {
   createGroup,
   dragHasRow,
@@ -24,6 +27,7 @@ import {
 } from "../lib/session-groups";
 import { announce, home, localRunning, sessionContext, toast } from "../lib/ui-state";
 import { folderOpen, folderOpenKey, storedFolderOpen } from "../lib/folder-open";
+import { groupOpen as groupOpenRule, groupsRegionOpen as groupsRegionOpenRule } from "../lib/group-open";
 import { activeAgentCounts, activeTeamCount, sessionWorking } from "../lib/workers";
 import { ActionMenu } from "./ActionMenu";
 import { ArchiveCleanup } from "./ArchiveCleanup";
@@ -33,29 +37,9 @@ import { GroupNameField } from "./Groups";
 import { RemoteGroupDot } from "./RemoteStatus";
 import { Banner, Chip, Icon } from "./ui";
 
-interface Group {
-  cwd: string;
-  sessions: SessionSummary[];
-}
-
-function groupByCwd(sessions: SessionSummary[]): Group[] {
-  const byCwd = new Map<string, SessionSummary[]>();
-  const sorted = [...sessions].sort((a, b) => b.lastActiveAt.localeCompare(a.lastActiveAt));
-  for (const s of sorted) {
-    const list = byCwd.get(s.cwd);
-    if (list) list.push(s);
-    else byCwd.set(s.cwd, [s]);
-  }
-  // Map keeps insertion order, and the first session seen per cwd is its newest.
-  return [...byCwd].map(([cwd, list]) => ({ cwd, sessions: list }));
-}
-
 const ARCHIVE_KEY = "pi-web:archive-open";
 /** One key per Archive date section, same "1"/"0" values as ARCHIVE_KEY. */
 const archiveDateKey = (id: ArchiveGroupId) => `pi-web:archive-date-open-${id}`;
-/** One key per group section; unlike the Archive's dates, a group opens by default — it is the
-    user's own curation, and a collapsed group would hide the sessions they just filed away. */
-const groupOpenKey = (id: string) => `pi-web:group-open-${id}`;
 
 /**
  * The row being dragged, and the drop target under the pointer. Module state, because one drag
@@ -75,20 +59,19 @@ const leftTarget = (e: DragEvent, el: HTMLElement) => !(e.relatedTarget instance
     (every few seconds), and an open group, or a rename in progress, must survive that. */
 const [openGroups, setOpenGroups] = createSignal<Record<string, boolean>>({});
 /** Which folder sections are open, keyed by `folderOpenKey` (region + folder). Module state for
-    the same reason: `groupByCwd` mints fresh folder objects on every poll, so every folder section
+    the same reason: the folder rules mint fresh folder objects on every poll, so every folder section
     in the list is rebuilt a few seconds after the user collapses one. */
 const [openFolders, setOpenFolders] = createSignal<Record<string, boolean>>({});
 /** The "New group" row has turned into its name field. */
 const [newGroupField, setNewGroupField] = createSignal(false);
 
-/** Open by default (unlike the Archive's dates): a group is the user's own curation, so hiding it
-    would hide the sessions they just filed. The choice persists in sessionStorage, as the Archive's does. */
-const groupOpen = (id: string) => openGroups()[id] ?? sessionStorage.getItem(groupOpenKey(id)) !== "0";
+/** Collapsed on every page load, and never persisted (`lib/group-open`): the module state above
+    holds the user's choice for as long as the page lives, and a reload starts closed again. */
+const groupOpen = (id: string) => groupOpenRule(openGroups()[id]);
 const onGroupToggle = (id: string, e: Event & { currentTarget: HTMLDetailsElement }) => {
   const open = e.currentTarget.open;
   if (open === groupOpen(id)) return; // our own `open` update, not the user's
   setOpenGroups((m) => ({ ...m, [id]: open }));
-  sessionStorage.setItem(groupOpenKey(id), open ? "1" : "0");
 };
 
 /**
@@ -125,6 +108,9 @@ function SessionRow(props: { session: SessionSummary; selected: string | null; n
   /** The row's own remote mark (§2 "Remote sessions"): one row answers for itself, never its
       group's first row. */
   const mark = () => remoteMarkOf(s());
+  /** Line 2: the outline's gist (what the session is for), the now line only as a fallback. */
+  const summaryText = () => summaryLineOf(s());
+  const summaryTitle = () => summaryTitleOf(s());
   const markTitle = () => {
     const m = mark();
     return m ? remoteMarkTitle(m, props.targets.find((t) => t.name === m.place.target)?.host) : "";
@@ -226,9 +212,13 @@ function SessionRow(props: { session: SessionSummary; selected: string | null; n
               </div>
             )}
           </Show>
-          <Show when={!s().draftPreview && s().outlineNow}>
+          {/* The summary row says what the session is FOR (the outline's gist), not what the agent
+              just did: the row truncates after a few words, and "Committed dc63576…" tells a reader
+              nothing about which session this is. Older snapshots carry no gist — those still show
+              the "now" line rather than nothing, and the tooltip always has both. */}
+          <Show when={!s().draftPreview && summaryText()}>
             <div class="list-line list-summary-row">
-              <p class="list-summary" title={s().outlineNow}>{s().outlineNow}</p>
+              <p class="list-summary" title={summaryTitle()}>{summaryText()}</p>
               <Show when={s().outlineTopics}>
                 {(n) => (
                   <Show when={n() > 0}>
@@ -282,12 +272,14 @@ function SessionRow(props: { session: SessionSummary; selected: string | null; n
   );
 }
 
-/** Sessions grouped by folder, newest first: the markup of spec/02-session-list.md §2 "Anatomy".
+/** Sessions grouped by folder: the markup of spec/02-session-list.md §2 "Anatomy". The ORDER is the
+    caller's — `groupByCreation` for Live & web, `groupByActivity` for the Archive and for a group
+    (src/lib/session-order.ts) — so this component never decides what "newest" means.
     `level` is the heading level a folder label takes: h3 directly under a region, h4 inside a
     group, where the group's own label already sits at h3. Every folder collapses (§2 "Folder
     open/closed state"), so `searching` — which forces every one of them open — comes in too. */
 function GroupList(props: {
-  groups: Group[];
+  groups: CwdGroup[];
   selected: string | null;
   now: number;
   idPrefix: string;
@@ -508,7 +500,7 @@ function GroupBlock(props: {
       </summary>
       <Show when={count() > 0} fallback={<p class="sidebar-region-note">No sessions yet. Drag one here.</p>}>
         <GroupList
-          groups={groupByCwd(props.sessions)}
+          groups={groupByActivity(props.sessions)}
           selected={props.selected}
           now={props.now}
           idPrefix={`g-${group().id}`}
@@ -637,11 +629,19 @@ export function Sidebar(props: {
   const topHits = createMemo(() => hits().filter(isTop));
   const archiveHits = createMemo(() => hits().filter((s) => !isTop(s)));
   // Each region groups by cwd on its own, so a folder can appear in both.
-  const topGroups = createMemo(() => groupByCwd(topHits()));
+  const topGroups = createMemo(() => groupByCreation(topHits()));
+  /**
+   * Recent (§2 "Recent"): the handful of sessions that moved last, said once more at the very top.
+   * Purely additive, like a group — every row here is still in Live & web or the Archive below —
+   * and built from `hits()`, so it narrows with the search and can never carry a row the rest of
+   * the sidebar is hiding. How many rows is `recentCount()`, and §12's General tab is the only
+   * place that writes it: this region has no controls of its own.
+   */
+  const recent = createMemo(() => recentSessions(hits(), recentCount()));
   // The Archive splits by date first (Today … Older), then by cwd inside each date section.
   const archiveSections = createMemo(() => {
     const sorted = [...archiveHits()].sort((a, b) => b.lastActiveAt.localeCompare(a.lastActiveAt));
-    return groupByArchiveDate(sorted, new Date(props.now)).map((d) => ({ ...d, groups: groupByCwd(d.items) }));
+    return groupByArchiveDate(sorted, new Date(props.now)).map((d) => ({ ...d, groups: groupByActivity(d.items) }));
   });
   const archiveTotal = () => all().filter((s) => !isTop(s)).length;
 
@@ -656,6 +656,20 @@ export function Sidebar(props: {
       door. While searching it appears only when a group has a match — or when a row is in flight
       and needs its "Remove from …" target, which a fruitless search would otherwise hide. */
   const groupsShown = () => !searching() || sections().length > 0 || !!dragging()?.groupId;
+
+  /** The Groups region's own twist. Collapsed on every load and memory-only — unlike the Archive
+      there is no stored choice to read, so nothing a past visit did can open it (§2 "Groups"). It
+      is component state, not module state: the region is one node that outlives every poll. */
+  const [groupsChosen, setGroupsChosen] = createSignal<boolean | undefined>(undefined);
+  /** Forced open, without touching the choice, while a search is on (a matching group must not
+      hide its hits) or while a grouped row is in flight (its drop targets live in here). */
+  const groupsRegionOpen = () =>
+    groupsRegionOpenRule({ chosen: groupsChosen(), searching: searching(), draggingGrouped: !!dragging()?.groupId });
+  const onGroupsRegionToggle = (e: Event & { currentTarget: HTMLDetailsElement }) => {
+    const open = e.currentTarget.open;
+    if (open === groupsRegionOpen()) return; // our own `open` update, not the user's
+    setGroupsChosen(open);
+  };
 
   // A groupId this tab doesn't know means the local group list is behind (another tab, another
   // server): without this the row would silently vanish from the Groups region until a reload.
@@ -817,16 +831,40 @@ export function Sidebar(props: {
           </div>
         </Show>
 
+        {/* Recent (§2 "Recent"), above everything: a flat list, no folder sections — with 5 rows a
+            folder head per row would be the region. It is a shortcut, not a place a session lives,
+            so every row appears again in Live & web or the Archive below, and the region carries
+            no controls: the count is Settings › General's, and only its. */}
+        <Show when={props.sessions && recent().length > 0}>
+          <section class="sidebar-region sidebar-recent" aria-labelledby="r-recent">
+            <h2 class="sidebar-region-head" id="r-recent" title={`The ${recent().length} sessions that moved last. Change how many in Settings, under General.`}>
+              Recent <span class="sidebar-region-count">· {recent().length}</span>
+            </h2>
+            <ul class="list">
+              <For each={recent()}>
+                {(s) => <SessionRow session={s} selected={props.selected} now={props.now} targets={targets()} />}
+              </For>
+            </ul>
+          </section>
+        </Show>
+
         {/* The user's own groups, above every region (§2 "Groups"): the same rows and folder
             groups as below, plus the two controls that make a group and name it. */}
         <Show when={groupsShown()}>
-          <section class="sidebar-region sidebar-groups" aria-labelledby="r-groups">
-            <h2 class="sidebar-region-head" id="r-groups">
-              Groups{" "}
-              <span class="sidebar-region-count">
-                · {searching() ? `${sections().length} of ${sessionGroups().length}` : sessionGroups().length}
-              </span>
-            </h2>
+          <details class="sidebar-region sidebar-groups" aria-labelledby="r-groups" open={groupsRegionOpen()} onToggle={onGroupsRegionToggle}>
+            {/* The heading stays a heading, and keeps its level (the folder-head pattern): the
+                <summary> is what toggles, the <h2> inside it is what the outline and
+                `aria-labelledby` read. The Archive's head is a bare <summary>; this region has to
+                keep its `r-groups` heading, which every region above and below it has too. */}
+            <summary class="sidebar-groups-summary">
+              <h2 class="sidebar-region-head" id="r-groups">
+                <Icon name="chevron-right" small class="icon-twist" />
+                Groups{" "}
+                <span class="sidebar-region-count">
+                  · {searching() ? `${sections().length} of ${sessionGroups().length}` : sessionGroups().length}
+                </span>
+              </h2>
+            </summary>
             {/* Making a group is the region's one action, and it stays where it is: the field
                 replaces the row in place, so nothing moves while the user types. Fanout is NOT
                 here — it is a creation gesture, not a curation one, and its front door is the
@@ -884,7 +922,7 @@ export function Sidebar(props: {
                 Remove from {quoted(groupNameOf(sessionGroups(), dragging()?.groupId ?? undefined) ?? "its group")}
               </div>
             </Show>
-          </section>
+          </details>
         </Show>
 
         {/* Hidden when a search empties it; kept with a note when there's simply nothing on top. */}

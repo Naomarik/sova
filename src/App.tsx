@@ -54,6 +54,7 @@ const sameSummary = (a: SessionSummary, b: SessionSummary) =>
   a.lastActiveAt === b.lastActiveAt &&
   a.model === b.model &&
   a.outlineNow === b.outlineNow &&
+  a.outlineGist === b.outlineGist &&
   a.outlineAt === b.outlineAt &&
   a.live?.pid === b.live?.pid &&
   a.live?.status === b.live?.status &&

@@ -6,18 +6,63 @@ one panel, wider than the product's question-asking modals because two panes hav
 each other (§0 and §7 record the deviation). There is no route and no URL — Settings is a modal
 the session stays behind, closed by the scrim, Esc, or its Close button.
 
-The rail is the structure: each settings screen is one tab, and the first release ships two —
-Models and Themes.
-Tabs move with the arrow keys as well as the pointer, and the first tab has focus on open. The
+The rail is the structure: each settings screen is one tab — General, Models, Themes,
+Experimental.
+Tabs move with the arrow keys as well as the pointer, and the first tab has focus on open, which
+is why the first tab in the rail is also the one selected when the dialog opens: the two have to
+name the same screen. The
 active tab is the only filled thing in the rail — an accent tint, never an accent label, because
 §0 spends accent on the primary, live, and focus — and the rail carries no fill of its own, so
 that tint has something to read against in both themes. Under 768px the same markup arrives as a
 sheet: the panel draws the sheet's grip, the rail turns into a horizontal strip above it, and the
 active tab keeps its tint.
 
+## One height
+
+**The dialog is the same height whichever tab is open.** Its height comes from the viewport —
+`min(640px, 100dvh - --space-8)`, and `85dvh` in the folded sheet — not from the panel's content,
+and the panel scrolls inside it (`.settings-panel`, `overflow-y: auto`).
+
+This is a correction, and the bug names the rule: while the height followed the content, Themes
+filled the viewport and Experimental came in at a few hundred pixels, so switching between them
+resized the window under the pointer and moved the rail's own tab buttons out from under the
+finger that was aiming at them. A rail you have to re-find after every press is not a rail.
+
+The head, the rail and the foot never scroll or shrink — Close is reachable at every viewport —
+and on a short window the floor under the body gives way rather than the foot: the panel is the
+part that already knows how to scroll. Adding a tab is then a content question only; no screen
+can change the dialog's size by being long or short.
+
+## General
+
+The first tab: how **this browser** draws pi-web. Nothing here is written to the machine — no
+policy file, no server endpoint — which is the line between this screen and Models, where a
+switch is a rule every session obeys. The panel says so in one line, because "settings" in a tool
+with a shared config file is otherwise an open question.
+
+- **Sessions in Recent** — how many rows the sidebar's Recent region shows
+(spec/02-session-list.md §2 "Recent"). A number field, **3 to 20, 5 by default**. This is the
+**only** control for that count: the region itself carries none, because a count settable in two
+places is a count that disagrees in one of them.
+
+  3 is the floor and it is enforced in the rule rather than by the input's `min`, since a typed
+  value, a pasted one and a hand-edited `localStorage` all arrive past the spinner. Below 3 the
+  region is a row with neighbours, which the open session alone can fill.
+
+  It saves as you type, like every other setting here: a valid number moves the sidebar on the
+  keystroke. An invalid one changes nothing and the field says which way it is wrong — "3 is the
+  fewest. Below that Recent is a row, not a list." — rather than silently clamping under the
+  caret. Leaving the field is where an unusable draft is repaired to the nearest count that works,
+  and the polite region says the new count so the repair isn't silent.
+
+  The value persists in `localStorage["pi-web:recent-count"]`, like the theme and for the same
+  reason: it is this browser's, not the machine's. A stored value that is not a whole number in
+  range is the default; a number out of range is clamped.
+
 ## Models
 
-The policy behind this screen is shared: `~/.pi/agent/model-policy.json`, written here and read by
+The second tab, and the one that is not about this browser at all. The policy behind this screen
+is shared: `~/.pi/agent/model-policy.json`, written here and read by
 **every** session, pi-web and TUI alike, per model change, per turn and per spawn. It answers two
 questions about every provider and every model:
 
@@ -67,7 +112,7 @@ read, an error banner offers Retry and touches nothing.
 
 ## Themes
 
-The second tab. It lists every theme the app can find — the ones shipped with it and the ones
+The third tab. It lists every theme the app can find — the ones shipped with it and the ones
 you dropped in yourself — as a radiogroup: one row per theme, one of them checked, arrow keys
 move the choice the way they do in the rail.
 

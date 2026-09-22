@@ -131,13 +131,14 @@ async function readTailModel(path: string, size: number): Promise<string | null>
 
 /**
  * The topic-outline's latest snapshot, scanned backwards from EOF exactly like readTailModel:
- * the last `topic-outline` custom entry's rolling "now" line, when it was generated, and how many
- * topics that same entry carried. This is the sidebar's summary row; the live record's broadcast
+ * the last `topic-outline` custom entry's rolling "now" line, its "overall" gist, when it was
+ * generated, and how many topics that same entry carried. The gist is the sidebar's summary row
+ * (the "now" line is the fallback for snapshots without one); the live record's broadcast
  * may be newer (outlineOverlay). The count comes from the ACCEPTED entry (the one whose "now"
  * reads), so it always describes the snapshot shown next to it.
  * null when the window has none (topic-outline off, older sessions, or a very long tail).
  */
-async function readTailOutline(path: string, size: number): Promise<{ now: string; generatedAt: number; topics: number } | null> {
+async function readTailOutline(path: string, size: number): Promise<{ now: string; gist: string; generatedAt: number; topics: number } | null> {
   const fh = await open(path, "r");
   try {
     const floor = Math.max(0, size - MAX_TAIL);
@@ -166,6 +167,7 @@ async function readTailOutline(path: string, size: number): Promise<{ now: strin
               if (now)
                 return {
                   now,
+                  gist: typeof data.overall === "string" ? summaryLine(data.overall) : "",
                   generatedAt: typeof data.generatedAt === "number" && Number.isFinite(data.generatedAt) ? data.generatedAt : 0,
                   topics: Array.isArray(data.topics) ? data.topics.length : 0,
                 };
@@ -423,6 +425,7 @@ async function summarize(path: string, resolveWindow?: WindowResolver): Promise<
       lastActiveAt: new Date(st.mtimeMs).toISOString(),
       model,
       ...(outline ? { outlineNow: outline.now, outlineAt: outline.generatedAt, outlineTopics: outline.topics } : {}),
+      ...(outline?.gist ? { outlineGist: outline.gist } : {}),
       ...(ctx ? { context: { tokens: ctx.tokens, window: null } } : {}),
       ...(parent ?? {}),
       ...(remote ? { target: remote.target, remoteCwd: remote.remoteCwd } : {}),
@@ -444,17 +447,21 @@ function liveField(l: LiveRecord | undefined): SessionSummary["live"] {
  *  (insights' overlayOutline, reduced to the summary line + topic count): prefer it when it's at
  *  least as new. The broadcast's `topics` is an array of heading strings, so its length is the
  *  count; a broadcast without that array leaves the file's count alone. */
-function outlineOverlay(s: BaseSummary, l: LiveRecord | undefined): { outlineNow?: string; outlineAt?: number; outlineTopics?: number } {
+function outlineOverlay(s: BaseSummary, l: LiveRecord | undefined): { outlineNow?: string; outlineGist?: string; outlineAt?: number; outlineTopics?: number } {
   const outline = l?.outline;
   if (!outline || typeof outline !== "object") return {};
-  const o = outline as { now?: unknown; generatedAt?: unknown; topics?: unknown };
+  const o = outline as { now?: unknown; overall?: unknown; generatedAt?: unknown; topics?: unknown };
   if (typeof o.now !== "string" || !o.now.trim()) return {};
   const at = typeof o.generatedAt === "number" && Number.isFinite(o.generatedAt) ? o.generatedAt : 0;
   if (s.outlineAt !== undefined && at < s.outlineAt) return {};
   const now = summaryLine(o.now);
   if (!now) return {};
+  // `overall` only rides the broadcast under `shareWithSessions: "summary"`; without it the file's
+  // gist stands (a stale purpose still beats a fresh process update).
+  const gist = typeof o.overall === "string" ? summaryLine(o.overall) : "";
   return {
     outlineNow: now,
+    ...(gist ? { outlineGist: gist } : {}),
     outlineAt: Math.max(at, s.outlineAt ?? 0),
     ...(Array.isArray(o.topics) ? { outlineTopics: o.topics.filter((t) => typeof t === "string").length } : {}),
   };

@@ -23,6 +23,11 @@ export interface SessionSummary {
       last `topic-outline` entry in the file, overlaid by the live record's fresher broadcast.
       Absent when the session has none (topic-outline off, older sessions). */
   outlineNow?: string;
+  /** The topic-outline's "overall" line — what the session is FOR, front-loaded, from the same
+      snapshot (or broadcast) as `outlineNow`. This is what the session list shows; `outlineNow` is
+      the latest process update, which reads as noise in a narrow row. Absent when the snapshot has
+      none (older sessions, or a broadcast under `shareWithSessions: "now-only"`). */
+  outlineGist?: string;
   /** When that outline snapshot was generated (ms epoch); 0 when unknown. */
   outlineAt?: number;
   /** Outline topics in that same snapshot — the count the sidebar shows beside the "now" line.

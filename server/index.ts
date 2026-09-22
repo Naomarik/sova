@@ -1,6 +1,6 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import type { Server } from "node:http";
-import { dirname, isAbsolute, join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
@@ -18,8 +18,11 @@ import { archiveSession, cleanupSessions, getSessionSummary, idOf, listCwds, lis
 import { contextForBranch, normalizeEntries, readActiveBranch } from "./transcript";
 import { checkTmpImage, deleteAttachment, MAX_ATTACHMENT_BYTES, readTmpImage, saveUploadedImage, sessionAttachmentsDir, UploadError } from "./attachments";
 import { listFolders } from "./folders";
-import { assignSession, createGroup, deleteGroup, readGroups, renameGroup } from "./session-groups";
-import { findTarget, isTargetName, listRemoteFolders, listTargets, normalizeRemotePath, targetDir, targetsFile } from "./targets";
+import { assignSession, cleanGroupLabel, createGroup, deleteGroup, GROUP_LABEL_MAX, readGroups, updateGroup } from "./session-groups";
+import { promptGroup } from "./group-prompt";
+import { runFanout } from "./fanout";
+import type { FanoutRequest } from "../shared/protocol";
+import { findTarget, isTargetName, listRemoteFolders, listTargets, normalizeRemotePath, targetDir, targetsFile, validateNewSessionCwd } from "./targets";
 import { isExplanationId, listExplanations, readExplanationPage } from "./explanations";
 import { switchMode } from "./mode";
 import { readSubagentPolicy, writeSubagentPolicy } from "./settings";
@@ -87,12 +90,9 @@ app.post("/api/sessions", async (c) => {
     return createWebSession(c, dir);
   }
   const cwd = typeof body.cwd === "string" ? body.cwd.trim() : "";
-  if (!cwd || !isAbsolute(cwd)) return c.json({ error: "cwd must be an absolute path" }, 400);
-  try {
-    if (!statSync(cwd).isDirectory()) return c.json({ error: "cwd is not a directory" }, 400);
-  } catch {
-    return c.json({ error: "cwd does not exist" }, 400);
-  }
+  // The one rule, shared with fanout's fresh mode (spec 14b: fresh IS this path N times).
+  const cwdError = await validateNewSessionCwd(cwd);
+  if (cwdError) return c.json({ error: cwdError }, 400);
   return createWebSession(c, cwd);
 });
 
@@ -130,14 +130,15 @@ app.post("/api/session-groups", async (c) => {
   return r.ok ? c.json(r.group, 201) : c.json({ error: r.error }, r.status);
 });
 
+// Name, member order and member labels: whatever the body carries, in one write.
 app.patch("/api/session-groups/:id", async (c) => {
-  let body: { name?: unknown };
+  let body: { name?: unknown; order?: unknown; labels?: unknown };
   try {
     body = await c.req.json();
   } catch {
-    return c.json({ error: "Expected JSON body { name }" }, 400);
+    return c.json({ error: "Expected JSON body { name?, order?, labels? }" }, 400);
   }
-  const r = renameGroup(c.req.param("id"), body.name);
+  const r = updateGroup(c.req.param("id"), body);
   return r.ok ? c.json(r.group) : c.json({ error: r.error }, r.status);
 });
 
@@ -147,18 +148,71 @@ app.delete("/api/session-groups/:id", (c) =>
 
 // One session into one group (or out of it, with `groupId: null`).
 app.post("/api/session-groups/assign", async (c) => {
-  let body: { path?: unknown; groupId?: unknown };
+  let body: { path?: unknown; groupId?: unknown; label?: unknown; index?: unknown; id?: unknown };
   try {
     body = await c.req.json();
   } catch {
-    return c.json({ error: "Expected JSON body { path, groupId }" }, 400);
+    return c.json({ error: "Expected JSON body { path, groupId, label? }" }, 400);
   }
   if (body.groupId !== null && typeof body.groupId !== "string") return c.json({ error: "groupId must be a group id or null" }, 400);
+  // REMOVAL BY ID — the "This session's file is gone" pane's gesture (spec 14): a member whose
+  // file was deleted outside pi-web has no path to send, but its assignment is exactly what
+  // needs removing and the store keys on ids. Valid for removal ONLY: adding a member requires
+  // the file, so an id with a non-null groupId, with a path, or with label/index is a 400.
+  if (body.id !== undefined) {
+    if (typeof body.id !== "string" || !body.id) return c.json({ error: "id must be a session id" }, 400);
+    if (body.groupId !== null) return c.json({ error: "id is valid only for removal (groupId: null); use path to assign" }, 400);
+    if (body.path !== undefined) return c.json({ error: "send either path or id, not both" }, 400);
+    if (body.label !== undefined || body.index !== undefined) return c.json({ error: "label and index belong to an assignment, not a removal" }, 400);
+    const out = assignSession(body.id, null);
+    // dissolved is set only when this write emptied a fanout group, which the server then deleted.
+    return out.ok ? c.json({ ok: true, ...(out.dissolved ? { dissolved: true } : {}) }) : c.json({ error: out.error }, out.status);
+  }
+  // Omitted keeps the label the session already had (a move between groups carries it).
+  const label = body.label === undefined ? { ok: true as const, label: undefined } : cleanGroupLabel(body.label);
+  if (!label.ok) return c.json({ error: `label must be a string of at most ${GROUP_LABEL_MAX} characters, or null` }, 400);
+  // Where in the target group's order it lands; omitted (or past the end) means the end.
+  if (body.index !== undefined && (typeof body.index !== "number" || !Number.isInteger(body.index) || body.index < 0))
+    return c.json({ error: "index must be a non-negative integer" }, 400);
   const path = resolveSessionPath(typeof body.path === "string" ? body.path : null);
   if (!path) return c.json({ error: "Invalid or missing path (must be a .jsonl under the pi sessions dir)" }, 400);
   if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
-  const r = assignSession(idOf(path), body.groupId);
-  return r.ok ? c.json({ ok: true }) : c.json({ error: r.error }, r.status);
+  const r = assignSession(idOf(path), body.groupId, label.label, body.index as number | undefined);
+  // dissolved is set only when this write emptied a fanout group, which the server then deleted.
+  return r.ok ? c.json({ ok: true, ...(r.dissolved ? { dissolved: true } : {}) }) : c.json({ error: r.error }, r.status);
+});
+
+// The group workspace's shared follow-up: one request, N sessions, all-or-nothing (spec §14).
+// The pre-check refuses the whole batch before a single member is prompted.
+app.post("/api/session-groups/:id/prompt", async (c) => {
+  let body: { text?: unknown; members?: unknown };
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "Expected JSON body { text, members? }" }, 400);
+  }
+  if (typeof body.text !== "string") return c.json({ error: "text must be a string" }, 400);
+  if (body.members !== undefined && (!Array.isArray(body.members) || body.members.some((m) => typeof m !== "string")))
+    return c.json({ error: "members must be an array of session ids" }, 400);
+  const r = await promptGroup(c.req.param("id"), body.text, body.members as string[] | undefined);
+  if (r.ok) return c.json(r.result);
+  return r.status === 409 ? c.json({ refused: r.refused }, 409) : c.json({ error: r.error }, r.status);
+});
+
+// N sessions from one starting point, as one group (spec/14b-fanout.md). Fork mode branches every
+// member from one entry of one source; fresh mode makes N independent sessions in a folder.
+app.post("/api/session-groups/fanout", async (c) => {
+  let body: FanoutRequest;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "Expected JSON body { name, members, source | cwd }" }, 400);
+  }
+  const r = await runFanout(body);
+  if (r.ok) return c.json(r.result, 201);
+  if (r.status === 409) return c.json({ refused: r.refused }, 409);
+  // One 400 carries a code (seed-conflict), so the client renders its own sentence for it.
+  return c.json({ error: r.error, ...(r.code ? { code: r.code } : {}) }, r.status);
 });
 
 // Moves a web-spawned session between the sidebar regions. Changes pi-web's own id list only.

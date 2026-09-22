@@ -7,8 +7,9 @@
 // the bottom is the tab's copy of the list, shared by the sidebar and the session pane.
 
 import { createSignal } from "solid-js";
-import type { SessionGroup, SessionSummary } from "../../shared/protocol";
-import { assignSessionGroup, createSessionGroup, deleteSessionGroup, listSessionGroups, renameSessionGroup } from "./api";
+import type { AssignGroupResult, SessionGroup, SessionSummary } from "../../shared/protocol";
+import { assignSessionGroup, createSessionGroup, deleteSessionGroup, listSessionGroups, patchSessionGroup, renameSessionGroup } from "./api";
+import { shortModel } from "./format";
 import { toast } from "./ui-state";
 
 /** One group and the sessions of it that the caller passed in (already the search hits). */
@@ -38,6 +39,106 @@ export function groupSections(
   return groups
     .map((group) => ({ group, sessions: byGroup.get(group.id) ?? [] }))
     .filter((section) => !searching || section.sessions.length > 0);
+}
+
+/**
+ * The group's sessions in DISPLAY order: `members` (the server's order) first, then anything the
+ * server's list doesn't mention, in the order the caller passed. Membership is the caller's list —
+ * a member id the sessions don't carry is dropped, exactly as the server reconciles its own copy.
+ * An older server sends no `members` at all, and then this is the caller's order unchanged.
+ */
+export function orderedMembers(sessions: readonly SessionSummary[], group: SessionGroup | null | undefined): SessionSummary[] {
+  const members = group?.members;
+  if (!members || members.length === 0) return [...sessions];
+  const byId = new Map(sessions.map((s) => [s.id, s]));
+  const out: SessionSummary[] = [];
+  const seen = new Set<string>();
+  for (const m of members) {
+    const s = byId.get(m.id);
+    if (s && !seen.has(s.id)) {
+      seen.add(s.id);
+      out.push(s);
+    }
+  }
+  for (const s of sessions) if (!seen.has(s.id)) out.push(s);
+  return out;
+}
+
+/**
+ * What each tab SHOWS (spec/14-workspaces.md "A pane"). A tab's job is to tell one member from
+ * another inside this group, and a title often can't: every member of a fork shares the source's
+ * title, so a strip of five tabs reading "Retry with jitter" names nothing. The rule is the first
+ * thing that distinguishes it — the label if the user set one, else the model (with a repeat
+ * suffix when that model is in the group more than once) whenever members share a title, else the
+ * title. Returned in the members' own order, one per member.
+ *
+ * `fromModel` says the string was built FROM the model (the repeat case): `paneNames` needs to
+ * know, because "claude-opus-5 #2 · claude-opus-5" would say the model twice. It is not a second
+ * rule — it is the same map's note about which branch fired, so the pane rule can extend this one
+ * instead of re-deriving it.
+ */
+function memberTabs(members: readonly { title: string; model?: string | null; label?: string | null }[]): { text: string; fromModel: boolean }[] {
+  const titles = new Map<string, number>();
+  const models = new Map<string, number>();
+  for (const m of members) {
+    titles.set(m.title, (titles.get(m.title) ?? 0) + 1);
+    const model = shortModel(m.model);
+    if (model) models.set(model, (models.get(model) ?? 0) + 1);
+  }
+  // Numbered over the whole group, not over the title-sharers, so a member's suffix doesn't move
+  // when an unrelated member joins or leaves.
+  const seen = new Map<string, number>();
+  return members.map((m) => {
+    const model = shortModel(m.model);
+    const nth = model ? (seen.set(model, (seen.get(model) ?? 0) + 1), seen.get(model)!) : 0;
+    if (m.label) return { text: m.label, fromModel: false };
+    if ((titles.get(m.title) ?? 0) > 1 && model) {
+      return { text: (models.get(model) ?? 0) > 1 ? `${model} #${nth}` : model, fromModel: true };
+    }
+    return { text: m.title, fromModel: false };
+  });
+}
+
+export function tabLabels(members: readonly { title: string; model?: string | null; label?: string | null }[]): string[] {
+  return memberTabs(members).map((r) => r.text);
+}
+
+/**
+ * The pane names in member order (§14 "A pane", §14b "Member labels"): the same string the pane
+ * head shows, the pane's aria-label carries and the live region prefixes every fact with —
+ * "{label} · {model}", "{title} · {model}", or for members that share a title with no label (the
+ * canonical `opus ×3` fanout) the model with its `#n` ALONE: "claude-opus-5 #2". The suffix
+ * already names the model, and appending " · claude-opus-5" would make the name stutter; §14b
+ * says that suffix is how repeats are distinguished "until a label is set", numbered in member
+ * order — which is `memberTabs`' numbering, shared rather than re-derived, so the tab strip and
+ * the pane head can never disagree about which #2 is which (they did, exactly there, before this
+ * was one function: the pane names had no suffix at all).
+ */
+export function paneNames(members: readonly { title: string; model?: string | null; label?: string | null }[]): string[] {
+  return memberTabs(members).map((r, i) => {
+    const model = shortModel(members[i]?.model);
+    return r.fromModel || !model ? r.text : `${r.text} · ${model}`;
+  });
+}
+
+/** The user's own word for a session inside its group ("control"), or null when it has none. */
+export function memberLabel(group: SessionGroup | null | undefined, sessionId: string): string | null {
+  return group?.members?.find((m) => m.id === sessionId)?.label ?? null;
+}
+
+/**
+ * Writes a group's whole member order. Always the full array: the server reads `order` as "these
+ * first, in this order", so a partial list moves those members to the front.
+ */
+export async function setGroupOrder(id: string, order: string[]): Promise<boolean> {
+  try {
+    const group = await patchSessionGroup(id, { order });
+    setGroups((list) => list.map((g) => (g.id === id ? group : g)));
+    return true;
+  } catch (err) {
+    toast(`Couldn't reorder this group. ${(err as Error).message}`);
+    return false;
+  }
 }
 
 /** The name of a session's group, or null when it has none (or the group is gone). */
@@ -85,6 +186,11 @@ const [groups, setGroups] = createSignal<SessionGroup[]>([]);
 /** Every group, in creation order. Empty until `loadSessionGroups` lands (or on an older server). */
 export { groups as sessionGroups };
 
+/** Whether a load has ever finished. Until it has, "this group doesn't exist" is not yet a fact —
+    the workspace route must not bounce a group it simply hasn't heard of yet. */
+const [loaded, setLoaded] = createSignal(false);
+export { loaded as sessionGroupsLoaded };
+
 /**
  * Fetch the list. Called at startup, when the session pane's menu opens, and by the sidebar the
  * moment a session carries a group id this tab doesn't know — that is a change made in another tab
@@ -97,6 +203,7 @@ export async function loadSessionGroups(): Promise<void> {
   } catch {
     // Nothing to say: the region renders from whatever list we have.
   }
+  setLoaded(true);
 }
 
 /** Creates a group at the end of the list; null when the server refused (a toast says why). */
@@ -136,13 +243,39 @@ export async function removeGroup(id: string): Promise<boolean> {
 /**
  * Puts a session in a group, or takes it out with null. The caller refreshes the session list
  * afterwards (the group a row shows comes from the list, not from here).
+ *
+ * Returns the server's answer, not just success, because one thing in it cannot be inferred from
+ * the list: `dissolved` says this write emptied a fanout group and the server deleted it in the
+ * same breath. Null means the write failed and a toast has already said why.
  */
-export async function setSessionGroup(path: string, groupId: string | null): Promise<boolean> {
+export async function setSessionGroup(
+  path: string,
+  groupId: string | null,
+  opts?: { label?: string | null; index?: number },
+): Promise<AssignGroupResult | null> {
   try {
-    await assignSessionGroup(path, groupId);
-    return true;
+    return await assignSessionGroup(path, groupId, opts);
   } catch (err) {
     toast(`Couldn't move this session. ${(err as Error).message}`);
+    return null;
+  }
+}
+
+/**
+ * Sets or clears ONE member's label (§14 "Data": trimmed, 1–`GROUP_LABEL_MAX` characters,
+ * optional) — the pane head's `Rename` gesture. Same store update shape as `setGroupOrder`: the
+ * server's whole group replaces the tab's copy, so the pane names (which read the label) move in
+ * the same tick. A label describes the session, not the group, so it rides the member entry and
+ * survives moves; clearing is `null`, and the caller decides which sentence to say — set and
+ * clear are different facts to the user reading the pane head.
+ */
+export async function setMemberLabel(groupId: string, sessionId: string, label: string | null): Promise<boolean> {
+  try {
+    const group = await patchSessionGroup(groupId, { labels: [{ id: sessionId, label }] });
+    setGroups((list) => list.map((g) => (g.id === groupId ? group : g)));
+    return true;
+  } catch (err) {
+    toast(`Couldn't rename this member. ${(err as Error).message}`);
     return false;
   }
 }

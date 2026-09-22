@@ -1,6 +1,7 @@
 import { createMemo, createSignal, For, Show, type Accessor } from "solid-js";
 import type { ChatServerMessage, ModeInfo } from "../../shared/protocol";
 import { getMode, postMode } from "../lib/api";
+import { usePaneId } from "../lib/pane-scope";
 import { Banner, Icon } from "./ui";
 
 /** This chat's last WS "mode" message: the mode of THIS chat and how a switch applies here. */
@@ -27,6 +28,7 @@ const [info, setInfo] = createSignal<ModeInfo | null>(null);
  * stays open). The mode is per chat: only this chat follows, from its next message.
  */
 export function ModeMenu(props: { control: ModeControl }) {
+  const paneId = usePaneId();
   let trigger!: HTMLButtonElement;
   let menu!: HTMLDivElement;
   let closedByChoice = false;
@@ -156,7 +158,7 @@ export function ModeMenu(props: { control: ModeControl }) {
         class="button button-ghost mode-trigger"
         aria-haspopup="menu"
         aria-expanded={open() ? "true" : "false"}
-        aria-controls="mode-menu"
+        aria-controls={paneId("mode-popover")}
         aria-label={name()}
         title={name()}
         data-applies={current()?.applies}
@@ -174,7 +176,7 @@ export function ModeMenu(props: { control: ModeControl }) {
       <div
         ref={menu}
         class="model-menu mode-menu"
-        id="mode-popover"
+        id={paneId("mode-popover")}
         popover="auto"
         onKeyDown={onKeyDown}
         onToggle={(e) => {
@@ -206,16 +208,16 @@ export function ModeMenu(props: { control: ModeControl }) {
         </Show>
         <Show when={error()}>{(e) => <Banner tone="error" title={e().title} body={e().body} />}</Show>
 
-        <div class="model-menu-list" role="menu" id="mode-menu" aria-label="Mode">
-          <div class="model-menu-group" role="group" aria-labelledby="mode-group-major">
-            <div class="list-group-label" id="mode-group-major">
+        <div class="model-menu-list" role="menu" id={paneId("mode-menu")} aria-label="Mode">
+          <div class="model-menu-group" role="group" aria-labelledby={paneId("mode-group-major")}>
+            <div class="list-group-label" id={paneId("mode-group-major")}>
               Major mode
             </div>
             <For each={group("radio")}>{(x) => <Row it={x.it} index={x.index} />}</For>
           </div>
           <Show when={group("check").length > 0}>
-            <div class="model-menu-group" role="group" aria-labelledby="mode-group-minor">
-              <div class="list-group-label" id="mode-group-minor">
+            <div class="model-menu-group" role="group" aria-labelledby={paneId("mode-group-minor")}>
+              <div class="list-group-label" id={paneId("mode-group-minor")}>
                 Minor modes
               </div>
               <For each={group("check")}>{(x) => <Row it={x.it} index={x.index} />}</For>

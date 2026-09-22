@@ -7,6 +7,12 @@ import type {
   FolderListing,
   ModeInfo,
   ModelInfo,
+  AssignGroupResult,
+  BatchPromptResult,
+  BatchRefusal,
+  FanoutConflict,
+  FanoutRequest,
+  FanoutResult,
   SessionGroup,
   SessionInsight,
   SessionSummary,
@@ -19,10 +25,33 @@ import type {
 import { type CleanupRequest, type CleanupResult, parseCleanupResult } from "./archive";
 import type { TargetInfo } from "./remote-session";
 
+/**
+ * What a batch send can come back as. The refusal is a VALUE, not a throw: it is the route's
+ * specified answer to "one of these members can't take a message", and the banner it drives is
+ * the whole point of the pre-check.
+ */
+export type BatchOutcome =
+  | { ok: true; result: BatchPromptResult }
+  | { ok: false; refused: BatchRefusal[]; error?: undefined; status?: undefined }
+  /** `status` so a caller can tell "the group changed under me" (400) from "the server is gone"
+      (0) — the first is recoverable by re-reading the list, the second isn't. */
+  | { ok: false; error: string; status: number; refused?: undefined };
+
+/** What a fanout can come back as; the 409 is the route's answer, not an exception. */
+export type FanoutOutcome =
+  | { ok: true; result: FanoutResult }
+  | { ok: false; refused: BatchRefusal[]; error?: undefined; status?: undefined; conflict?: undefined }
+  /** `conflict` is the route's one coded 400 (`seed-conflict`): the client renders its own
+      sentence from the code, and `error` stays the fallback for every other 400. */
+  | { ok: false; error: string; status: number; refused?: undefined; conflict?: FanoutConflict["code"] };
+
 export class ApiError extends Error {
   constructor(
     message: string,
     readonly status: number,
+    /** The parsed error body, when there was one. A route whose refusal is part of its contract
+        (the batch prompt's 409) carries its detail here rather than only in the message. */
+    readonly body?: unknown,
   ) {
     super(message);
   }
@@ -37,13 +66,15 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
   }
   if (!res.ok) {
     let message = `${res.status} ${res.statusText}`;
+    let parsed: unknown;
     try {
-      const body = (await res.json()) as { error?: unknown };
+      parsed = await res.json();
+      const body = parsed as { error?: unknown };
       if (typeof body.error === "string") message = body.error;
     } catch {
       // Non-JSON error body: keep the status line.
     }
-    throw new ApiError(message, res.status);
+    throw new ApiError(message, res.status, parsed);
   }
   return (await res.json()) as T;
 }
@@ -163,24 +194,137 @@ export const createSessionGroup = (name: string) =>
     body: JSON.stringify({ name }),
   });
 
-export const renameSessionGroup = (id: string, name: string) =>
+/**
+ * Renames and/or reorders and/or (re)labels a group's members. Every field is optional, at least
+ * one is required, and `order` is ALWAYS the whole array of session ids: the server reads it as
+ * "these first, in this order; everything left out keeps its relative order behind them", so a
+ * one-id order would silently move that member to the front. Ids that are not in the group are
+ * ignored — they race with assign.
+ */
+export const patchSessionGroup = (id: string, patch: { name?: string; order?: string[]; labels?: { id: string; label: string | null }[] }) =>
   request<SessionGroup>(`/api/session-groups/${encodeURIComponent(id)}`, {
     method: "PATCH",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ name }),
+    body: JSON.stringify(patch),
   });
+
+export const renameSessionGroup = (id: string, name: string) => patchSessionGroup(id, { name });
+
+/** The group's members in display order (`SessionGroup.members`), as session ids. */
+export const reorderSessionGroup = (id: string, order: string[]) => patchSessionGroup(id, { order });
 
 /** Deletes the group and its assignments; the sessions themselves are untouched. */
 export const deleteSessionGroup = (id: string) =>
   request<{ ok: true }>(`/api/session-groups/${encodeURIComponent(id)}`, { method: "DELETE" });
 
-/** Puts one session in a group, or takes it out of the one it's in (`null`). */
-export const assignSessionGroup = (path: string, groupId: string | null) =>
-  request<{ ok: true }>("/api/session-groups/assign", {
+/**
+ * Puts one session in a group, or takes it out of the one it's in (`null`).
+ *
+ * `label` sets the session's label in the group it lands in, `null` clears it, and leaving it out
+ * keeps the label it already had — a session moved between groups carries its metadata with it.
+ * `index` is where it lands in the member order (0 first, omitted or past the end = the end), so
+ * an undo restores the label AND the place in one write that can't half-succeed. It is ignored
+ * when ungrouping, and ignored for a session already in that group: assign never reorders in
+ * place, `PATCH {order}` is the reposition.
+ *
+ * `dissolved` comes back only when this write removed the last member of a group pi-web fanned
+ * out, which deletes it in the same atomic write — the client cannot infer that from a count it
+ * just changed.
+ */
+export const assignSessionGroup = (path: string, groupId: string | null, opts?: { label?: string | null; index?: number }) =>
+  request<AssignGroupResult>("/api/session-groups/assign", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ path, groupId }),
+    body: JSON.stringify({
+      path,
+      groupId,
+      ...(opts?.label === undefined ? {} : { label: opts.label }),
+      ...(opts?.index === undefined ? {} : { index: opts.index }),
+    }),
   });
+
+/**
+ * Removal by session id, for a member whose FILE is gone (§14 "Member states" — gone from disk):
+ * the path form 404s when there is no file to resolve, but the pane's `Remove From Group` still
+ * has to work, so the route takes `id` for unassignment only. Same response shape as the path
+ * form, `dissolved` included — taking the last member out of a fanout group dissolves it whether
+ * the file existed or not.
+ */
+export const unassignSessionById = (id: string) =>
+  request<AssignGroupResult>("/api/session-groups/assign", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ id, groupId: null }),
+  });
+
+/**
+ * The shared follow-up: one request, the server prompts every member in GROUP order.
+ *
+ * The 409 is part of this route's contract, not an exception — every member is checked before any
+ * is prompted, and one unavailable member refuses the whole batch having sent NOTHING. So it comes
+ * back as a value the caller must handle, rather than a throw it might not. `members` is the
+ * user's explicit subset ("Send to the rest"), never inferred here or on the server.
+ *
+ * `sent` means ACCEPTED, not answered: the route returns once every prompt is queued. A member
+ * that fails after acceptance reports in its own pane, over its own socket, never in this body.
+ */
+export async function promptSessionGroup(id: string, text: string, members?: string[]): Promise<BatchOutcome> {
+  try {
+    const result = await request<BatchPromptResult>(`/api/session-groups/${encodeURIComponent(id)}/prompt`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(members ? { text, members } : { text }),
+    });
+    return { ok: true, result };
+  } catch (err) {
+    const refused = err instanceof ApiError && err.status === 409 ? refusalsOf(err.body) : null;
+    if (refused) return { ok: false, refused };
+    return { ok: false, error: (err as Error).message, status: err instanceof ApiError ? err.status : 0 };
+  }
+}
+
+/**
+ * N sessions from one starting point, as one group (spec/14b-fanout.md "The route"). One write:
+ * the group, its members and their assignments land together, because a fanout that half-exists
+ * is a sidebar section the user has to clean up.
+ *
+ * Like the batch prompt, the refusal is a VALUE — a source that is mid-turn, TUI-live, in an older
+ * format or has moved on since the dialog opened comes back as a 409 with exactly one entry naming
+ * the SOURCE (which is a member of nothing, so its `id` is empty by design). A 201 can still carry
+ * `failed`: members that couldn't start, named by `ref` since they have no session.
+ */
+export async function createFanout(body: FanoutRequest): Promise<FanoutOutcome> {
+  try {
+    const result = await request<FanoutResult>("/api/session-groups/fanout", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    return { ok: true, result };
+  } catch (err) {
+    const refused = err instanceof ApiError && err.status === 409 ? refusalsOf(err.body) : null;
+    if (refused) return { ok: false, refused };
+    const status = err instanceof ApiError ? err.status : 0;
+    return { ok: false, error: (err as Error).message, status, conflict: conflictOf(err) };
+  }
+}
+
+/** The coded 400 this route can answer with, when it is one. */
+function conflictOf(err: unknown): FanoutConflict["code"] | undefined {
+  if (!(err instanceof ApiError) || err.status !== 400) return undefined;
+  const code = (err.body as { code?: unknown } | undefined)?.code;
+  return code === "seed-conflict" ? code : undefined;
+}
+
+/** The 409's members, or null when the body isn't the shape this route promises. */
+function refusalsOf(body: unknown): BatchRefusal[] | null {
+  if (typeof body !== "object" || body === null) return null;
+  const list = (body as { refused?: unknown }).refused;
+  if (!Array.isArray(list) || list.length === 0) return null;
+  return list.every((r) => typeof r === "object" && r !== null && typeof (r as BatchRefusal).code === "string")
+    ? (list as BatchRefusal[])
+    : null;
+}
 
 /** POST /api/sessions/cleanup `{ mode:"paths" }`: named session paths, e.g. one archived row. */
 export type PathsCleanupRequest = { mode: "paths"; paths: string[] };

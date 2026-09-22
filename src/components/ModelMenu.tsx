@@ -1,6 +1,7 @@
 import { createEffect, createMemo, createSignal, For, on, onMount, Show, type Accessor, type JSX } from "solid-js";
 import type { ModelInfo } from "../../shared/protocol";
 import { loadModels, modelList } from "../lib/models";
+import { usePaneId } from "../lib/pane-scope";
 import { Banner, Icon } from "./ui";
 
 /** What the chat view exposes so the header can show and change its model. */
@@ -14,7 +15,7 @@ export interface ModelControl {
   choose(ref: string): void;
 }
 
-const optionId = (ref: string) => `mo-${ref.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
+const baseOptionId = (ref: string) => `mo-${ref.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
 const PAGE = 8;
 
 /**
@@ -35,6 +36,10 @@ export function ModelPicker(props: {
 }) {
   let search!: HTMLInputElement;
   let listbox!: HTMLDivElement;
+  // Every id here is the pane's inside a workspace: aria-activedescendant and the scroll-into-view
+  // below both resolve against the document, and N composers can have a picker open at once.
+  const paneId = usePaneId();
+  const optionId = (ref: string) => paneId(baseOptionId(ref));
 
   const [query, setQuery] = createSignal("");
   const [active, setActive] = createSignal<string | null>(null);
@@ -180,7 +185,7 @@ export function ModelPicker(props: {
             autocomplete="off"
             spellcheck={false}
             aria-expanded="true"
-            aria-controls="model-listbox"
+            aria-controls={paneId("model-listbox")}
             aria-autocomplete="list"
             aria-activedescendant={active() ? optionId(active()!) : undefined}
             value={query()}
@@ -206,7 +211,7 @@ export function ModelPicker(props: {
 
       <div
         class="model-menu-list"
-        id="model-listbox"
+        id={paneId("model-listbox")}
         role="listbox"
         aria-label="Models"
         tabindex="-1"
@@ -237,16 +242,16 @@ export function ModelPicker(props: {
             }
           >
             <Show when={favorites().length > 0}>
-              <div class="model-menu-group" role="group" aria-labelledby="mg-fav">
-                <div class="list-group-label" id="mg-fav">
+              <div class="model-menu-group" role="group" aria-labelledby={paneId("mg-fav")}>
+                <div class="list-group-label" id={paneId("mg-fav")}>
                   Favorites
                 </div>
                 <For each={favorites()}>{(m) => <Option m={m} />}</For>
               </div>
             </Show>
             <Show when={others().length > 0}>
-              <div class="model-menu-group" role="group" aria-labelledby="mg-all">
-                <div class="list-group-label" id="mg-all">
+              <div class="model-menu-group" role="group" aria-labelledby={paneId("mg-all")}>
+                <div class="list-group-label" id={paneId("mg-all")}>
                   All models
                 </div>
                 <For each={others()}>{(m) => <Option m={m} />}</For>

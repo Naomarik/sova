@@ -28,6 +28,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Group section label | {name} (own case, no eyebrow), then its count · `title`: {name} |
 | Empty group | No sessions yet. Drag one here. |
 | Groups region, no groups | No groups yet. Make one, then drag a session into it. |
+| Open workspace (group tool row, §14) | `Open workspace` · `title`: Open “{name}” as a workspace — every member side by side |
 | Group tool row | `Rename` · `Delete group` · asking: with sessions "Delete “{name}”? Its {n} sessions stay in the list." (1 session: "… Its 1 session stays …"), empty "Delete “{name}”? Nothing is in it." — with `Delete group` · `Cancel` |
 | Group toasts | "Added to “{name}”." · "Moved to “{name}”." · "Removed from “{name}”." · "Deleted “{name}”. Its {n} sessions are ungrouped." (1: "… Its 1 session is ungrouped.") · "Deleted “{name}”. It had no sessions." · failures: "Couldn't create the group. {server message}" · "Couldn't rename the group. …" · "Couldn't delete the group. …" · "Couldn't move this session. {server message}" |
 | Remove-from-group drop row (only while dragging a grouped row) | Remove from “{name}” |
@@ -45,7 +46,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 
 | Where | Copy |
 |---|---|
-| No session selected | **{n} sessions across {m} folders.** Pick one to read it, or start a new one. · button: `New Session` |
+| No session selected | **{n} sessions across {m} folders.** Pick one to read it, or start a new one. · buttons: `New Session` · `Fan Out…` (§14b's fresh-prompt entry, beside it) |
 | No session selected, Explained grid | section head: Explained `{n}` (shown only when {n} ≥ 1; the tiles' own copy is §10) |
 | Transcript load error | **Couldn't load this transcript.** The file at `{path}` wasn't changed. {server message} · button: `Retry` |
 | New empty session | **New session in `{cwd}`.** Nothing sent yet. Your first message becomes its title. |
@@ -95,7 +96,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Reason: connecting / reconnecting / gave up | see Connection above |
 | Busy fallback, when the message was already typed and rejected | the draft stays in the textarea (not cleared), plus the busy reason. No banner |
 | Turn error banner (in thread) | **The turn stopped with an error.** {message}. Your messages are kept. Send again to retry. |
-| SR announcements | Working. · Reply finished. |
+| SR announcements | Working. · Reply finished. · The turn stopped with an error. (once per error, and it replaces that turn's "Reply finished." — an errored turn still settles, and two endings would read as two turns) |
 
 ## Composer flyout
 
@@ -235,6 +236,9 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Where | Copy |
 |---|---|
 | Title | New Session |
+| Type field | label `What to start` · radios `One session` (the default) / `Fan out…` (§14b's fresh-mode entry at every width and route) · radios disable while Creating… · Enter never submits from them |
+| Title, fanout chosen | Fan out — the same title §14b's dialog carries, so the handoff reads as one flow |
+| Primary, fanout chosen | `Fan Out…` · `aria-disabled` until a folder is chosen, like Create Session · pressing it creates nothing: §14b's dialog opens on a fresh prompt with the folder carried (§05 "Type") |
 | Field label / hint | Folder · pi runs in this folder and can read and change files in it. |
 | Field, nothing chosen | Choose a folder |
 | Recent label | Recent folders |
@@ -375,5 +379,90 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | `/timeline` | Timeline open. |
 | `/tree` | Timeline open, your messages only. |
 
----
+## Workspace (§14)
 
+| Where | Copy |
+|---|---|
+| Skip link | Skip to Group Composer · before the group composer exists: `Skip to Transcript`, targeting the focused pane |
+| Main landmark | `aria-label`: Workspace: {name} |
+| Title and meta | {name} · `{n} members` (1: `1 member`) · `·` · the cwd when every member shares one, else `{n} folders` · after a shared send: `{r} of {t} replied` (then `· {w} still working` while any of them runs, and `· {e} errored` whenever a member's turn failed — the failure is always named, so the count can never hide a broken member) |
+| Back | `aria-label`: Back to Sessions |
+| Head buttons | `Tabs` (`aria-pressed`; pressed reads the same word) · `Fit All` (split only, 2+ members) · `Align to Fork` · `Add Members` · `Dissolve` · collapsed under 640px into `More Actions` |
+| Unknown group id (toast) | That group is gone. |
+| Promoted chip | Promoted: {title} · button `Add Back` · `title`: You took this session out of “{name}”. Add Back puts it back where it was |
+| Tab | {label or title} · `aria-label`: the pane's own name, byte for byte (label/title or the repeat's `{model} #n` — one rule for strip and pane, so they can never disagree about which #2 is which) |
+| Pane name | {label} · {model}, or {title} · {model} with no label · repeats of one model: {model} #1, #2, #3 — numbered in member order, shared with the tab rule, and never followed by "· {model}": the suffix already names it, and saying it twice makes the name stutter · `title`: the full string, then the cwd, then the session's whole spend (`{cost} this session`, `SessionUsage.total` — the same field the Session-info dialog tallies) when the server reports one |
+| Pane tools | one menu: trigger `aria-label` "Pane actions · {pane name}" · rows `Rename…` · `Open` (link, `title`: Open this session on its own) · `Wider` · `Narrower` · `Move Left` · `Move Right` · `Focus` · `Promote` · `Remove From Group` · `Eliminate` (absent when the session wasn't started in pi-web) |
+| Pane tool `aria-label`s | Rename {pane name} · Open {pane name} · Make {pane name} wider · Make {pane name} narrower · Move {pane name} left · Move {pane name} right · Focus {pane name} · Promote {pane name} · Eliminate {pane name} — the pane NAME (suffix included), because the menu says which member it acts on and three same-model forks are three menus |
+| Promote `title` | Take it out of “{name}” and open it on its own. Nothing is archived and nothing is deleted |
+| Eliminate `title` | Take it out of “{name}” and archive it. The transcript stays; unarchiving brings it back |
+| Eliminate off | TUI-live: "This session is open in a terminal." · mid-turn: "It's mid-turn. Stop it or wait, then eliminate it." |
+| Remove From Group `title` | Take it out of “{name}” and stay here. Nothing is archived and nothing is deleted · when Eliminate is absent: This session wasn't started in pi-web, so removing it is all we can do — nothing is archived |
+| Member chips | `Working` (live dot, mid-turn — the split row's only at-a-glance sign of who is still running; the tab strip's dot covers tabs mode) · `TUI` (accent, static) · `Archived` (neutral) · `Can't open` (error) · `Busy` (warn) |
+| Member composer reasons | "This session is open in a terminal, so pi-web won't write to it." · "This session is archived. Unarchive it to send." · "This session can't be opened. The banner above says why." · "Another program is writing to this session." |
+| Member file gone | **This session's file is gone.** Its transcript was deleted outside pi-web, so there's nothing left to read. Removing it from the group is all that's left. · button `Remove From Group` |
+| Group composer label and placeholder | `aria-label` "Message every member" · placeholder "Ask all {n} members…—Enter sends, Shift+Enter adds a line" (below 768: "Ask all {n} members…"; 1 member: "Ask this member…") · **{n} is the group's size, never the available count**: availability belongs in the foot, where it can change without rewriting a placeholder under the caret, and "Ask this member…" in a 3-member group would be false |
+| Group composer Send | `Send to All` · in flight `Sending…` · 1 member: `Send` |
+| Group composer targets line | `{n} of {m} members` then the excluded reasons, counted: `· 1 mid-turn` · `· 2 open in a terminal` · `· 1 archived` · `· 1 can't be opened` · `· 1 busy` · `· 1 file gone`. All available: `{n} members` alone |
+| Group composer off | 0 available: Send is `aria-disabled`, reason "No member can take a message right now." · 0 members: the composer isn't rendered |
+| Refusal reason per member | rendered from `code`: `{member} is mid-turn` · `{member} is open in a terminal` · `{member} is archived` · `{member} can't be opened` · `{member} is busy` · `{member}'s file is gone` · `{member} is in an older session format` · `the fork point you picked isn't {member}'s latest message anymore` · `internal`, or a code this build doesn't know: `{member} couldn't be prompted.` then the server's `message` as the detail — pi-web keeps the claim in its own voice and hands the server the part only it knows |
+| Refusal banner | **Nothing was sent.** {n} of {m} members can't take a message right now: {member} is mid-turn, {member} is open in a terminal. Wait for them, or send to the other {k}. · buttons `Send to the Rest ({k})` · `Cancel` |
+| Partial send banner | **Sent to {k} of {n} members.** {member} was taken by another program between the check and the send, so it didn't get this message. The {k} that did are answering now. (several missed out: {members} **were** taken … so **they** didn't get this message — the verb agrees with its own subject) · one button per member that missed out: `Send to {member}` — re-sends to **that member alone**, the message as it was sent, not as the box now reads (a button's label names exactly who its own press reaches; one label over every failed id would promise one thing and do another) · the composer keeps its text here (it clears only on a clean send) |
+| Announcing a banner | A banner is `role="status"` and speaks for itself: **never** announce beside one. The clean-200 path announces because it has no banner |
+| Sent (live region) | Sent to {n} members. (1: Sent to 1 member.) |
+| Promote toast | Took **{title}** out of “{name}”. · failure: "Couldn't take this session out of the group. {server message}" |
+| Add Back toast | Put **{title}** back in “{name}”. · failure: "Couldn't put this session back. {server message}" · label restored but the order didn't take: "Put **{title}** back in “{name}”. It's at the end." |
+| Eliminate toast | Removed **{title}** and archived it. · remove-only: "Removed **{title}** from “{name}”. It wasn't started in pi-web, so nothing was archived." · with the group's last member: "Removed **{title}** and archived it. Dissolved “{name}” — nothing was left in it." · failure: "Couldn't remove this session. {server message}" · archived half failed: "Removed **{title}** from “{name}”, but couldn't archive it. {server message}" |
+| Dissolve vs Delete group | The same route (`DELETE /api/session-groups/:id`) under two words: `Delete group` in the sidebar's tool row, `Dissolve` in the workspace head, where it sits above open transcripts and "Delete" would read as deleting them (§14) |
+| Dissolve, asking in place | Dissolve “{name}”? Its {n} sessions stay in the list. (1: "… Its 1 session stays …"; 0: "Dissolve “{name}”? Nothing is in it.") · buttons `Dissolve` · `Cancel` |
+| Dissolve toast | Dissolved “{name}”. Its {n} sessions are ungrouped. (1: "… Its 1 session is ungrouped.") · "Dissolved “{name}”. It had no sessions." |
+| Add Members popover | trigger `Add Members` · `aria-label` "Add a session to “{name}”" · rows: every ungrouped session, then the grouped ones with a muted note `in “{name}”`, then `Fan Out…` · empty: "Every session is already in a group." |
+| Add Members toasts | Added **{title}** to “{name}”. · Moved **{title}** from “{other}” to “{name}”. · failure: "Couldn't add this session. {server message}" |
+| Empty workspace | **“{name}” has no sessions yet.** Add some here, or drag a row onto the group in the sidebar. · buttons `Add Members` · `Fan Out…` |
+| Empty workspace, fanout group | **“{name}” has no sessions left.** They were removed from the group, or their files were deleted outside pi-web. Dissolving it takes the name and the fork point, and nothing else. · button `Dissolve` — **the group cannot tell the two causes apart** (it stores `seed` and members, never a reason), so the copy names both rather than picking one; parallel to the hand-made state's "no sessions **yet**" |
+| Member announcements (live region) | {pane name} — working. · {pane name} — replied. · {pane name} — stopped with an error. (the turn-error banner's own title, said once; the settle that follows an errored turn announces nothing — two endings would read as two turns) · {pane name} — stopped by you. · {pane name} — can't be opened. · {pane name} — open in a terminal, so it stays read-only. |
+| Pane focus keys | no visible copy · the workspace's keyboard help lives in `Move Left` / `Move Right` `title`s: "Swap {pane name} with its left-hand neighbour. Ctrl+Alt+← moves focus, not the pane." |
+| Fit All | `Fit All` · `title`: "Make every pane narrow enough to stand in the row side by side. Below 440px a pane trades solo reading for comparison; Wider steps back to the floor." · announce: "Fitted {n} members at {w} pixels each." (below the floor: "… each, below the 440 floor a single pane keeps.") · a fitted width is memory-only, like every width; `Wider` from below the floor lands on 440 and `Narrower` is a no-op there — never a button that says "narrower" while widening |
+| Rename member | menu row `Rename…` · `title`: "Give this member your own name — the useful one is only known after reading its output" · the menu's one input: `aria-label` "Name {pane name}", starts from the current label, `maxlength` 40 · empty CLEARS (note under the field: "Empty clears the label — the pane shows the title again.") · Enter saves, Escape cancels and closes · toasts: "Renamed to “{label}”." / "Label cleared — the pane shows the title again." · announce: "{new pane name} — renamed." / "{new pane name} — label cleared." — the NEW name, which is true from that moment |
+| Align to Fork, tabs mode | "Aligned {n} members now. {names} will align when you open its/their tab." — a hidden pane cannot be scrolled (`display: none` has no scroll offsets), so it is never counted as aligned; the alignment rides with the pane and lands the moment its tab is opened. A pane with no marker on its branch is named as ever: "{name} has no fork point on its branch." |
+| Member gone, removal | the `.empty` pane's button `Remove From Group` removes by session id (`{ id, groupId: null }` — there is no file to resolve a path through) · toast "Removed {pane name} from “{name}”." · with the group's last member: "… Dissolved “{name}” — nothing was left in it." |
+| Completion roll-up | the meta line's "{r} of {t} replied" is anchored to the last ACCEPTED shared send (a box send replaces the set; a partial banner's retry unions it, so the straggler is counted with the ones already answering) · errored members are counted "errored", never "replied" · memory-only: a reload genuinely does not know about the last send, and shows nothing rather than a guess |
+
+## Fanout (§14b)
+
+| Where | Copy |
+|---|---|
+| Flyout row (§4) | `Fan Out…` · `title`: Fork this session N ways and compare the answers |
+| Welcome screen button (§3) | `Fan Out…` beside `New Session` — the fresh-prompt entry, opening the dialog with "A fresh prompt" and no source |
+| Dialog title | Fan out |
+| Start from | field label `Start from` · radios: "Fork “{title}” at its latest message" · "A fresh prompt" |
+| Fork note | Each member gets the whole conversation up to message {n}, then goes its own way. |
+| Create off, source mid-turn | “{title}” is mid-turn. We read the file to fork it, and we don't read it while it's being written. This enables itself when the turn finishes. |
+| Create off, unidentified writer | Another program wrote to “{title}” a moment ago. Forking waits until it stops. |
+| Create off, older session format | “{title}” is in an older session format. Forking reads the file, and reading it rewrites the whole thing — not something to do to a session that's open. Open it for chat here once to update it, then fan out. |
+| Fresh fields | the §5 folder picker, unchanged · field label `First message` · placeholder "Ask all of them to…" |
+| Members field | label `Members` · empty: "No members yet. Add a model, then set how many of it you want." |
+| Member row | the **full ref** in mono (`ModelInfo.ref`, e.g. `zai/glm-5.3`) — **never the bare model id**: two providers ship the same name (`zai/glm-5.3` and `ollama-cloud/glm-5.3` differ only by provider and bill to different subscriptions), so a row showing `glm-5.3` is two rows the user cannot tell apart · the fill (below) · count buttons `aria-label` "One more {ref}" / "One fewer {ref}" (at 1: "Remove the only {ref}" — never the remove button's own "Remove {ref}", which would put two controls of one row under one accessible name) · at 9 the `+` answers "{ref} is already at 9, the most per model." in the toast and the live region — the count cannot move, so the answer is the whole feedback · remove `aria-label` "Remove {ref}" |
+| Add a model | `Add a Model` · picking a model already listed: no new row, the count goes up, and the live region says "{ref} ×3." — the **full ref**, and this is the surface that needs it most: the announcement is the *only* channel here, so nothing visible disambiguates two rows that differ by provider (§14b) |
+| Member fill | `{tokens} of {window} · {pct}%` (§4f's formats and its 80% / 95% steps) · window unknown: "{tokens}, window unknown" · fresh prompt: "new session" · compacted fork point: "compacted" · source not on screen (the Add-Members entry): "unknown" — a fill that can't be named is words, never 0, which is a measurement we cannot make |
+| Doesn't fit | This model's window is smaller than the fork. · `.field-error`: "Remove {ref} to create this fanout." — the **full ref**: it names which row to act on, and with two colliding rows the short form names both (§14b). Never "or lower its count": the fill is per model, not per repeat, so that instruction cannot work |
+| Group name | label `Group name` · default `Fanout · {first 6 words of the title or prompt}` · placeholder Group name |
+| Cost preview | `{n} members × ~{tokens} tokens re-sent every shared turn.` · fresh: `{n} members, each starting empty. Every shared turn is re-sent {n} times as they grow.` · compacted: `{n} members × unknown tokens re-sent every shared turn — the fork point was compacted.` · source not on screen: `{n} members × unknown tokens re-sent every shared turn.` |
+| Rate-limit note | Turns start together, so one provider may answer some members with 429. pi-web doesn't stagger them. |
+| Create | `Create {n} Members` (1: `Create 1 Member`) · in flight `Creating…` (fields disable; see §14b) · off at 0: reason "Add at least 1 member." · fresh-mode reasons: "Pick a folder for the new sessions." / "Write the first message every member gets." · **treatment:** every reason renders as a hint (`.field-hint`) except the overflow's "Doesn't fit", which stays an error — a reason the user has done nothing wrong to earn (an unfinished form, someone else's turn) is guidance, not a mistake, and an error-styled opening state reads as an accusation |
+| Cancel | `Cancel` |
+| Partial creation banner | Title **{k} of {n} members were created.** (k=1: **1 of {n} members was created.**) · then **one line per failure**, the refusal banner's shape (§14) · closing line The {k} that exist are running; add another from Add Members. (k=1: It is running; add another from Add Members.) · buttons `Add Members` · `Dismiss` |
+| …its failure lines | Two shapes, told apart by `id`: **never created** (empty `id`) `{model} couldn't start: {server message}` · **created but refused its first message** (`id` set, fresh mode's fold) `{model} couldn't take the first message: {server message}` — a session the user can see in its pane must not be told "couldn't start" — the two never collapse together, even at the same ref and reason · a pre-existing `groupId` member (id only, no ref) is "A member", never a guessed ref · `{model}` is the **full ref** (`BatchRefusal.ref`), for the same reason the picker rows are (§14b): two providers ship one name, and two failure lines both reading `glm-5.3 couldn't start` name different models while looking like a duplicate. Never parsed out of the message; the message is the reason alone, unprefixed (162ee20). Entries sharing ref **and** message **and** shape collapse to `{count} × {model} couldn't …`; sharing a ref but not a message gets one line each, because the reasons are the information. **Never a member number** — `failed` carries no index into the plan, so `{model} #2` would be a guess |
+| …the three shapes, worked | **one failure:** `4 of 5 members were created.` / `anthropic/claude-opus-5 couldn't start: the provider returned 429.` · **two distinct refs:** `3 of 5 members were created.` / `anthropic/claude-opus-5 couldn't start: the provider returned 429.` / `zai/glm-5.3 couldn't start: no credentials for zai.` · **two sharing a ref, same reason:** `3 of 5 members were created.` / `2 × anthropic/claude-opus-5 couldn't start: the provider returned 429.` · **two sharing a ref, different reasons:** two lines, the model repeated verbatim — the repetition is honest, since what differs is the reason |
+| Fanning out into an existing group (success) | No special copy: the members appear in the workspace, and a hand-made target gains fork markers on them and the `Align to Fork` button. Nothing warns, because nothing was taken away — the group keeps its name and survives being emptied exactly as before (§14 `autoDissolve`) |
+| Fanout into a group with a different fork point (`400 seed-conflict`) | `.field-error`: “{name}” was forked from a different point, and a group can only mark one. Nothing was created. Fan out into a new group, or add these members to the one they came from. |
+| Total failure | `.field-error` in the dialog: "Couldn't create this fanout. No sessions were made. {server message}" |
+| Create off, the fork point moved | “{title}” answered while this dialog was open, so the fork point you picked isn't its latest message anymore. Reopen Fan out to fork from where it is now. |
+| Create off, source taken by a terminal while open | “{title}” is open in a terminal now. pi-web doesn't touch a file a terminal owns; fan out once it closes. |
+| Source refusal (after the press) | rendered with the SAME sentence as the matching Create-off state above — recovery advice included, unlike the group composer's refusal clause — and for a code this build has no sentence for: “{title}” couldn't be forked. {server message} |
+| Source gone (404) | `.field-error`: "“{title}” isn't on disk anymore. Nothing was created." |
+| Fork marker row | Forked from {parent title} here · `{HH:MM}` · parent gone: the title as plain text, `title` "This session is no longer on disk." |
+| Align to Fork | `Align to Fork` · live region: "Aligned {n} members to the fork point." · some missing: "Aligned {k} members. {pane name} has no fork point on its branch." |
+| Fan out unavailable | the row is absent — no reply yet, a watch view, or a session open in a TUI. Nothing is disabled and nothing explains an absence |
+
+---

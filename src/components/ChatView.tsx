@@ -1,7 +1,7 @@
 import { batch, createEffect, createMemo, createSignal, For, Match, on, onCleanup, Show, Switch } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { Portal } from "solid-js/web";
-import type { ChatServerMessage, SessionSummary, SlashCommand, TeamInfo, TranscriptItem, WorkerInfo } from "../../shared/protocol";
+import type { ChatServerMessage, ContextInfo, SessionSummary, SlashCommand, TeamInfo, TranscriptItem, WorkerInfo } from "../../shared/protocol";
 import { fetchTranscriptWithContext, setSessionArchived, wsUrl } from "../lib/api";
 import { contextStateFor, usageTokens, windowOf } from "../lib/context";
 import { addPendingPrompt, applyEvent, emptyLive, runDetail, takeBackQueued, type LiveState } from "../lib/live";
@@ -25,18 +25,21 @@ import { remotePlaceOf } from "../lib/remote-session";
 import { createReconnectingSocket } from "../lib/socket";
 import { usageTotal, type UsageTotalView, workingSplit } from "../lib/workers";
 import type { UploadResult } from "../../shared/protocol";
-import { announce, drafts, hideThinking, hideTools, sessionContext, setDraftText, setLocalRunning, setSessionContext, toast } from "../lib/ui-state";
+import { drafts, hideThinking, hideTools, sessionContext, setDraftText, setLocalRunning, setSessionContext, toast } from "../lib/ui-state";
+import { usePaneAnnounce, usePaneId, usePaneScope } from "../lib/pane-scope";
 import { visibleCount } from "../lib/hidden-rows";
 import { inputCount } from "../lib/input-count";
+import { messageCount } from "../lib/message-count";
 import type { RewindControl, RewindResult } from "../lib/inputs";
 import { isTurnStart } from "../lib/turn";
+import { entryIdOf } from "../lib/jump";
 import { Composer, type ComposerReason } from "./Composer";
 import { FlyoutSession, type ThinkingControl, type UndoControl } from "./ComposerMenu";
 import { ConnectionBanner } from "./ConnectionBanner";
 import { SessionInfoDialog } from "./SessionInfoDialog";
 import type { ModeControl, ModeState } from "./ModeMenu";
 import type { ModelControl } from "./ModelMenu";
-import { HistoryItems, InfoRow, LiveEntries, ThreadScroller, TranscriptSkeleton, TurnError } from "./Thread";
+import { type ForkMarker, HistoryItems, InfoRow, LiveEntries, ThreadScroller, TranscriptSkeleton, TurnError } from "./Thread";
 import { Banner, Icon } from "./ui";
 import { UiDialog } from "./UiDialog";
 
@@ -98,11 +101,42 @@ export function ChatView(props: {
   onRewound?(info: { path: string; entryId: string }): void;
   /** This session's teams (polled insight), so the status row can name team members as such. */
   teams?: TeamInfo[];
+  /** Where this member was forked from, when it is one (spec/14b): one drawn row in the thread. */
+  fork?: ForkMarker;
+  /** Open the fanout dialog on this session. Absent (with the flyout row) when there is nothing
+      to fork or nobody who may read the file. */
+  onFanOut?(source: { leafId: string; messages: number; context: ContextInfo | "compacted" | null }): void;
+  /** This pane's turn-error state, for the workspace's roll-up (§14 "Member states"): the latest
+      turn-error message while it is current, or null. Current means the last turn ended in an
+      error and no newer turn has started — a fresh turn (or a rewind) clears it, so the workspace
+      never says "errored" about a pane that is visibly working. Without it a failed member looks
+      exactly like a quiet one. */
+  onTurnError?(message: string | null): void;
 }) {
+  // One status region for the whole page: inside a workspace every sentence from this chat says
+  // which pane it came from, and every DOM id below carries the pane's id.
+  const announce = usePaneAnnounce();
+  const scope = usePaneScope();
+  const paneId = usePaneId();
+  /**
+   * A turn's start and end, said the way spec/09-copy-deck.md says them. In a pane the sentence
+   * follows the member's name ("control · glm-5.3 — working."), so it reads as a clause about that
+   * member; alone on the page it is the whole sentence and stands on its own.
+   */
+  const turnWord = (member: string, alone: string) => (scope.id ? member : alone);
+
   const [items, setItems] = createSignal<TranscriptItem[] | null>(null);
   const [live, setLive] = createStore<LiveState>(emptyLive());
   const [syncing, setSyncing] = createSignal(false);
   const [errors, setErrors] = createSignal<string[]>([]);
+  /** The pane's turn-error STATE (≠ `errors`, the thread's permanent record): the last turn ended
+      in an error and no newer turn has started. Cleared by `agent_start` — a fresh turn supersedes
+      the old failure — and by a rewind. Announced when it lands, reported to the workspace's
+      roll-up (`onTurnError`), and consulted before "replied.": an errored turn still settles (the
+      SDK's `finally` emits `agent_settled` whatever happened), and two endings for one turn would
+      read as two turns. A transcript-reload failure (`resync`) never sets it — that turn did not
+      fail, the read after it did. */
+  const [turnError, setTurnError] = createSignal<string | null>(null);
   /** A permanent open failure (code "config"): shown once, never retried, never appended to. */
   const [configError, setConfigError] = createSignal<string | null>(null);
   /** The open-failure banner's action state (spec/01-app-shell.md "The open-failure banner"): an Archive in flight. */
@@ -125,6 +159,41 @@ export function ChatView(props: {
   const [thinkingError, setThinkingError] = createSignal<{ target: string; from: string | null; body: string } | null>(null);
   /** The per-session info modal (§4h), opened from the composer flyout. */
   const [showInfo, setShowInfo] = createSignal(false);
+
+  /**
+   * "Fan Out…" in the flyout, and the source it hands over (spec/14b "Entry points").
+   *
+   * The leaf is the last entry THIS TRANSCRIPT RENDERS, which is the entry the user is looking at
+   * — and it is an ENTRY id, not a row id: an assistant message renders one row per content block
+   * (`${entryId}:${i}`), so the last row's own id is usually not something the server can match
+   * against the file. The server computes its side the same way (readActiveBranch + normalizeEntry,
+   * server/fanout.ts) and refuses a leaf that isn't current, so the two have to mean the same thing.
+   *
+   * The row is ABSENT rather than disabled with nothing to fork: no reply yet, or no items at all.
+   * §9 is explicit that an absence needs no explanation.
+   *
+   * `messages` is a MESSAGE count (src/lib/message-count.ts), because the dialog's fork note says
+   * "up to message {n}" — the rendered-row count it used to send counts one row per content block
+   * plus every info row, so it named a number that was never a count of messages.
+   */
+  const fanOut = () => {
+    const list = items();
+    if (!props.onFanOut || !list || list.length === 0) return undefined;
+    if (!list.some((it) => it.kind === "assistant-text" || it.kind === "tool-call")) return undefined;
+    const leafId = entryIdOf(list[list.length - 1]!.id);
+    if (!leafId) return undefined;
+    return () => {
+      const state = sessionContext()[props.path];
+      props.onFanOut!({
+        leafId,
+        messages: messageCount(list),
+        // The gauge's own state, verbatim: "compacted" stays "compacted" — the dialog turns it
+        // into words, never into 0, which is a claim §4f refuses for exactly this state. Null is
+        // the fill never having been reported, which the dialog also says as words.
+        context: state ?? null,
+      });
+    };
+  };
   /** This session's slash commands (sent after hello, and again after a runtime reload). */
   const [commands, setCommands] = createSignal<SlashCommand[]>([]);
   /** The global mode and how it applies to this chat (WS "mode"). */
@@ -194,7 +263,10 @@ export function ChatView(props: {
     let settled = false;
     batch(() => {
       for (const ev of events) {
-        if (isObj(ev) && ev.type === "agent_start") announce("Working.");
+        if (isObj(ev) && ev.type === "agent_start") {
+          setTurnError(null); // a fresh turn supersedes the last one's failure
+          announce(turnWord("working.", "Working."));
+        }
         // Context fill at turn end: the finished assistant message carries the final usage
         // (no extra server push). A compaction makes it stale until the next reply.
         if (isObj(ev) && ev.type === "message_end" && isObj(ev.message) && ev.message.role === "assistant") {
@@ -211,7 +283,9 @@ export function ChatView(props: {
       }
     });
     if (settled) {
-      announce("Reply finished.");
+      // "replied." only for a turn that didn't already say how it ended: the error announcement
+      // is the ending (see `turnError` above — an errored turn still settles).
+      if (!turnError()) announce(turnWord("replied.", "Reply finished."));
       void resync();
       props.onSettled();
     }
@@ -280,6 +354,7 @@ export function ChatView(props: {
         case "rewound": {
           batch(() => {
             setErrors([]); // they belonged to the turns just abandoned
+            setTurnError(null);
             setCommandRows([]);
             if (msg.editorText) setRestored({ text: msg.editorText });
           });
@@ -357,12 +432,22 @@ export function ChatView(props: {
               setConfigError(msg.message);
               setLive("running", false);
               return;
-            default:
+            default: {
               if (modelError() || thinkingError()) break; // shown as the switch's banner
-              // The same failure re-reported (a reconnect loop) says nothing new: keep one row.
-              setErrors((e) => (e[e.length - 1] === msg.message ? e : [...e, msg.message]));
+              const seen = errors();
+              // The same failure re-reported (a reconnect loop) says nothing new: keep one row —
+              // and say nothing, because an announcement per retry would read as N new errors.
+              // The first landing is announced like every other turn boundary (§3 "Streaming",
+              // §9 "SR announcements"): a member whose turn died reads the same as one that
+              // replied, in its own pane's voice, without panning to find the banner.
+              if (seen[seen.length - 1] !== msg.message) {
+                setErrors([...seen, msg.message]);
+                setTurnError(msg.message);
+                announce(turnWord("stopped with an error.", "The turn stopped with an error."));
+              }
               // A prompt that failed before the agent started leaves nothing running.
               if (!live.entries.some((e) => e.kind === "assistant")) setLive("running", false);
+            }
           }
           break;
       }
@@ -439,7 +524,18 @@ export function ChatView(props: {
     setDialogs((d) => d.filter((x) => x.id !== id));
   };
 
+  /**
+   * Archiving IS the close gesture: the server disposes the held runtime, so this socket closes
+   * from the server side moments after Eliminate. Inside a workspace that close is EXPECTED, and
+   * the pane says the one true thing about it — the session is archived — instead of the
+   * disconnected banner and "Not connected." the single-session view would show for the same
+   * event (spec/14-workspaces.md "Member states"). An eliminated member stays readable, which is
+   * what makes elimination reversible.
+   */
+  const archivedPane = () => !!scope.id && !!props.summary?.()?.archived;
+
   const blocked = (): ComposerReason | null => {
+    if (archivedPane()) return { icon: "archive", text: "This session is archived. Unarchive it to send." };
     switch (socket.status()) {
       case "connecting":
         return everOpened() ? { icon: "clock", text: "Reconnecting. Your draft is kept." } : { icon: "clock", text: "Connecting…" };
@@ -568,6 +664,11 @@ export function ChatView(props: {
   });
   onCleanup(() => setMine(undefined));
 
+  // The same pane's turn-error state as data (the prop's doc, above): the workspace meta line
+  // pairs a word with colour from this (§14 "every state pairs a word with colour"), and a pane
+  // outside a workspace has nobody to tell — the prop is simply absent there.
+  createEffect(() => props.onTurnError?.(turnError()));
+
   const send = (text: string, steer: boolean, attachments: UploadResult[]) => {
     if (!socket.send({ type: steer ? "steer" : "prompt", text })) return false;
     // A known slash command isn't a message to the model (templates and skills expand into other
@@ -629,7 +730,7 @@ export function ChatView(props: {
       await setSessionArchived(props.path, true);
       toast("Archived. Find it under Archive.");
       props.onArchiveChanged?.(props.path, true);
-      location.hash = "#/";
+      if (!scope.id) location.hash = "#/";
     } catch (err) {
       toast(`Couldn't archive this session. ${(err as Error).message}`);
     } finally {
@@ -640,12 +741,15 @@ export function ChatView(props: {
   return (
     <>
       <ThreadScroller
+        path={props.path}
         count={visibleCount(items() ?? [], { tools: hideTools(props.path), thinking: hideThinking(props.path) }) + live.entries.length}
         resume={resume()}
         busy={!items()}
         banner={
           <div class="stack-2">
-            <ConnectionBanner socket={socket} />
+            <Show when={!archivedPane()}>
+              <ConnectionBanner socket={socket} />
+            </Show>
             {/* Permanent until the world it names changes: the diagnosis and the gestures that
                 fix it, derived in src/lib/open-failure.ts (spec/01-app-shell.md "The open-failure
                 banner"). The first action is the primary one. */}
@@ -747,7 +851,7 @@ export function ChatView(props: {
         <Show when={items()} fallback={<TranscriptSkeleton />}>
           {(list) => (
             <>
-              <HistoryItems items={list()} author={props.author} streaming={live.running} hideTools={hideTools(props.path)} hideThinking={hideThinking(props.path)} />
+              <HistoryItems items={list()} author={props.author} streaming={live.running} hideTools={hideTools(props.path)} hideThinking={hideThinking(props.path)} fork={props.fork} />
               <LiveEntries live={live} author={props.author} hideTools={hideTools(props.path)} hideThinking={hideThinking(props.path)} />
               <For each={modelRows()}>
                 {(ref) => (
@@ -815,6 +919,7 @@ export function ChatView(props: {
         thinking={thinkingControl}
         mode={modeControl}
         onShowInfo={() => setShowInfo(true)}
+        onFanOut={fanOut()}
         undo={undoControl}
         onSend={send}
         onAbort={abort}
@@ -834,7 +939,7 @@ export function ChatView(props: {
           }}
           onClose={() => {
             setShowInfo(false);
-            queueMicrotask(() => document.getElementById("composer-menu-trigger")?.focus());
+            queueMicrotask(() => document.getElementById(paneId("composer-menu-trigger"))?.focus());
           }}
         />
       </Show>

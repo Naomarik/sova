@@ -230,6 +230,25 @@ export function drainQueueThenAbort(session: Pick<AgentSession, "clearQueue" | "
  */
 export const REWIND_ENTRY = "pi-web-rewind";
 
+/**
+ * customType of the invisible entry fanout writes into every member at creation (server/fanout.ts,
+ * beside the member's model change). It is how a LATER runtime — this server after a restart, or
+ * the workspace opened cold — knows to open the session WITHOUT `topic-outline-headless`: the
+ * outline summarizer is a second model call per turn, and N of them on a fanout is cost with no
+ * reader (spec 14b "Members run with the topic outline off"). The marker travels with the file,
+ * so the exception holds for the member's life across restarts, rather than being an in-memory
+ * flag threaded through acquireChat that a restart would forget. Same shape as REWIND_ENTRY:
+ * never LLM context, no usage, rendered nowhere (normalizeEntry's default for custom types).
+ */
+export const FANOUT_MEMBER_ENTRY = "pi-web-fanout-member";
+
+/** Whether a session file is a fanout member, by the marker its creation wrote. The predicate
+ *  openSession keys the outline exception on; exported for the test that pins the marker's
+ *  round trip through the file. */
+export function isFanoutMember(sm: Pick<SessionManager, "getEntries">): boolean {
+  return sm.getEntries().some((e) => e.type === "custom" && e.customType === FANOUT_MEMBER_ENTRY);
+}
+
 export type RewindOutcome = { ok: true; editorText: string } | { ok: false; reason: RewindRefusal; message: string };
 
 /** The members of AgentSession a rewind uses (narrow so tests can drive it with a fake). */
@@ -573,6 +592,39 @@ class ChatSession {
     }
   }
 
+  /**
+   * ACCEPT one user message: the write guards run NOW and throw on refusal, and the turn itself
+   * runs on. Returns the in-flight turn so a caller can attach failure handling — it is NOT
+   * something to await before answering a request, because the SDK's `prompt()` resolves on TURN
+   * COMPLETION (`AgentSession.prompt` in agent-session.js runs the whole agent loop; :937 in the
+   * pinned 0.86.1), so awaiting N of them in a row
+   * runs N turns end to end. Acceptance is everything up to handing the text to the SDK: a TUI
+   * owning the file, a foreign writer, a closed runtime. Blank text with no image is a no-op.
+   */
+  acceptPrompt(text: string, images?: SdkImage[]): Promise<void> {
+    // Never write if a TUI grabbed this file, or anyone else wrote it, after we opened it.
+    assertNotLive(this.path);
+    this.assertNoForeignWrites();
+    if (!text.trim() && !images) return Promise.resolve();
+    this.flushDeferredAppends();
+    // While streaming, a plain prompt is queued as a follow-up.
+    const streamingBehavior = this.session.isStreaming ? ("followUp" as const) : undefined;
+    return this.session.prompt(text, { images, streamingBehavior });
+  }
+
+  /** Accept a prompt AND wait for the turn. The /ws/chat path, where the socket reports the
+      turn's own failure to the one client that asked for it. */
+  async prompt(text: string, images?: SdkImage[]): Promise<void> {
+    await this.acceptPrompt(text, images);
+  }
+
+  /** Report a failure into this session's own pane(s) — where every other turn failure already
+      reports. Used for a turn nobody is awaiting (the group batch dispatches and returns). */
+  reportTurnFailure(err: unknown): void {
+    const code = err instanceof BusyError ? err.code : "internal";
+    this.broadcast({ type: "error", code, message: err instanceof Error ? err.message : String(err) });
+  }
+
   handle(client: ChatClient, msg: ChatClientMessage): void {
     const fail = (err: unknown) => {
       const code = err instanceof BusyError ? err.code : "internal";
@@ -585,16 +637,7 @@ class ChatSession {
     try {
       switch (msg.type) {
         case "prompt": {
-          // Never write if a TUI grabbed this file, or anyone else wrote it, after we opened it.
-          assertNotLive(this.path);
-          this.assertNoForeignWrites();
-          const text = String(msg.text ?? "");
-          const images = parseImages(msg.images);
-          if (!text.trim() && !images) return;
-          this.flushDeferredAppends();
-          // While streaming, a plain prompt is queued as a follow-up.
-          const streamingBehavior = this.session.isStreaming ? ("followUp" as const) : undefined;
-          this.session.prompt(text, { images, streamingBehavior }).catch(fail);
+          this.prompt(String(msg.text ?? ""), parseImages(msg.images)).catch(fail);
           return;
         }
         case "steer": {
@@ -879,6 +922,58 @@ export function isSessionBusy(path: string): boolean {
   return !!chat && !chat.disposed && chat.session.isStreaming;
 }
 
+/** A model as the runtime resolves it, without naming pi-ai's `Model` (not re-exported by the SDK entry). */
+type ResolvedModel = NonNullable<ReturnType<ModelRuntime["getModel"]>>;
+
+/**
+ * The model a MESSAGE-LESS session records for itself, for openSession to pass as
+ * `createAgentSessionFromServices`' `model`. The SDK restores a session's recorded model only
+ * when the branch already has messages (sdk.js gates the restore on `messages.length > 0`), and
+ * a fresh fanout member is created with a model_change and nothing else — so without this, its
+ * runtime resolves the server default and the member's first turn runs a model nobody chose.
+ * Once the branch has messages the SDK does this itself, which is why the message-less case is
+ * the only one answered here. The two guards are the SDK's own restore guards (getModel, then
+ * hasConfiguredAuth): on either failure the answer is undefined and the SDK falls back —
+ * binding a member's model must never fail the open.
+ */
+export function recordedModelForEmptyBranch(
+  sessionManager: Pick<SessionManager, "buildSessionContext">,
+  modelRuntime: Pick<ModelRuntime, "getModel" | "hasConfiguredAuth">,
+): ResolvedModel | undefined {
+  const context = sessionManager.buildSessionContext();
+  if (context.messages.length > 0 || !context.model) return undefined;
+  const model = modelRuntime.getModel(context.model.provider, context.model.modelId);
+  return model && modelRuntime.hasConfiguredAuth(model.provider) ? model : undefined;
+}
+
+/** The recorded member choice outranks an eligible global default; undefined leaves the SDK
+ *  to choose. savedDefault has already passed the pristine-session and available/auth checks. */
+export function modelForSessionOpen(
+  sessionManager: Pick<SessionManager, "buildSessionContext">,
+  modelRuntime: Pick<ModelRuntime, "getModel" | "hasConfiguredAuth">,
+  savedDefault: ResolvedModel | undefined,
+): ResolvedModel | undefined {
+  return recordedModelForEmptyBranch(sessionManager, modelRuntime) ?? savedDefault;
+}
+
+/** A branch's resolved context, as buildSessionContext() reports it. */
+type BranchContext = ReturnType<SessionManager["buildSessionContext"]>;
+
+/**
+ * Whether the runtime's construction-time model append only restates what the branch already
+ * records. The SDK appends the model it was built with for a session with no messages
+ * (sdk.js:261), and a fanout member's file was written with exactly that model at creation — so
+ * deferring it lands a second identical `model_change` on the first prompt, and transcript.ts
+ * renders one `Model:` row per entry: every member's pane would open with the same row twice.
+ * Both halves of the condition are load-bearing. With messages on the branch that append is the
+ * SDK's own resume record, and a pair that differs from the recorded one is a real change (the
+ * fallback default after an unauthenticated recorded model) — those must still be written.
+ */
+export function restatesRecordedModel(context: BranchContext, provider: string, modelId: string): boolean {
+  if (context.messages.length > 0 || !context.model) return false;
+  return context.model.provider === provider && context.model.modelId === modelId;
+}
+
 async function openSession(path: string, onDisposed: () => void): Promise<ChatSession> {
   if (!existsSync(path)) throw new Error(`Session file not found: ${path}`);
   const modelRuntime = await getModelRuntime();
@@ -889,7 +984,12 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
   const deferred: Array<() => void> = [];
   const appendModelChange = sessionManager.appendModelChange;
   const appendThinkingLevelChange = sessionManager.appendThinkingLevelChange;
+  // Everything is deferred except the one append restatesRecordedModel names — see its comment
+  // for why that restatement must be dropped rather than queued. Reading the context once, before
+  // the runtime exists, is what lets the filter answer without touching the file.
+  const openContext = sessionManager.buildSessionContext();
   sessionManager.appendModelChange = (...args: Parameters<typeof appendModelChange>) => {
+    if (restatesRecordedModel(openContext, args[0], args[1])) return "";
     deferred.push(() => appendModelChange.apply(sessionManager, args));
     return "";
   };
@@ -904,9 +1004,13 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
   const createRuntime: CreateAgentSessionRuntimeFactory = async ({ cwd, sessionManager, sessionStartEvent }) => {
     // topic-outline only summarizes in the TUI unless its host opts in; opt in so web chats get
     // outlines. Boolean flag: the SDK sets it true whatever the value. Workers never get it.
+    // A FANOUT MEMBER is the one exception, and the FILE says so, not a flag threaded through
+    // acquireChat: its creation wrote the FANOUT_MEMBER_ENTRY marker beside the model change, so
+    // the member opens WITHOUT the opt-in and lands in the extension's own default — N outline
+    // summarizers on one fanout is cost with no reader, and the marker survives restarts.
+    const flags = new Map<string, boolean | string>(isFanoutMember(sessionManager) ? [] : [["topic-outline-headless", true]]);
     // A remote session (cwd = a target placeholder, server/targets.ts) also gets the string flag
     // `target`, which switches pi-config's remote extension on for that target.
-    const flags = new Map<string, boolean | string>([["topic-outline-headless", true]]);
     const target = targetOfCwd(cwd);
     if (target) flags.set("target", target);
     const services = await createAgentSessionServices({ cwd, modelRuntime, extensionFlagValues: flags });
@@ -926,12 +1030,13 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
       if (defaults.thinking && (THINKING_LEVELS as readonly string[]).includes(defaults.thinking))
         defaultThinking = defaults.thinking as ThinkingLevel;
     }
+    const model = modelForSessionOpen(sessionManager, modelRuntime, defaultModel);
     return {
       ...(await createAgentSessionFromServices({
         services,
         sessionManager,
         sessionStartEvent,
-        ...(defaultModel ? { model: defaultModel } : {}),
+        model,
         ...(defaultThinking ? { thinkingLevel: defaultThinking as Parameters<AgentSession["setThinkingLevel"]>[0] } : {}), // same cast as setThinkingLevel above: our ladder has "off", the SDK's union doesn't
       })),
       services,

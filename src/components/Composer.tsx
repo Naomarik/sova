@@ -18,7 +18,7 @@ import {
 import { modelProvider, shortModel } from "../lib/format";
 import { ensureModels, modelList, thinkingLevelsFor } from "../lib/models";
 import {
-  announce,
+  groupComposerActive,
   clearDraft,
   draftAttachments,
   drafts,
@@ -28,6 +28,7 @@ import {
   setDraftAttachments,
   setDraftText,
 } from "../lib/ui-state";
+import { paneScopedId, usePaneAnnounce, usePaneScope } from "../lib/pane-scope";
 import { inputsText } from "../lib/input-count";
 import { dragHasRow } from "../lib/session-groups";
 import { showInputsOnTimelineLabel } from "../lib/timeline";
@@ -103,6 +104,8 @@ export function Composer(props: {
   mode?: ModeControl | null;
   /** Opens this session's info modal from the flyout (§4h). */
   onShowInfo?: () => void;
+  /** "Fan Out…" in the flyout, for a chat session that can be forked (§14b). */
+  onFanOut?: () => void;
   /** Chat sessions only: the flyout's "Undo last turn" row. */
   undo?: UndoControl | null;
   /** `text` already names each attachment's path; `attachments` are for the optimistic row. */
@@ -147,6 +150,20 @@ export function Composer(props: {
   let indicator: HTMLButtonElement | undefined;
   /** The flyout's handle (§4b), so the model indicator opens the same one popover. */
   const [menu, setMenu] = createSignal<ComposerMenuApi | null>(null);
+
+  // The pane this composer belongs to: its id scopes every DOM id below (a workspace has N
+  // composers on screen), and its label prefixes what this composer says out loud.
+  const scope = usePaneScope();
+  /** Whether the caret is in THIS composer: half of what decides it may collapse. */
+  const [focused, setFocused] = createSignal(false);
+  /**
+   * Collapsed (spec §14): only in a pane, only while the group composer is in use, and never when
+   * this composer is focused or holds a draft — a pane with text must keep it visible, and the one
+   * you are typing in must not shrink under you.
+   */
+  const collapsed = () => !!scope.id && groupComposerActive() && !focused() && !text();
+  const paneId = (base: string) => paneScopedId(scope, base);
+  const announce = usePaneAnnounce();
 
   /** Any local write (typing, send's clear, a restore) makes this tab's text the authority, so a
       stored draft still on its way from the server must not replace it. */
@@ -250,7 +267,7 @@ export function Composer(props: {
     const token = slashToken();
     return token ? rankCommands(props.commands ?? [], token.query) : [];
   });
-  const slashIds = createMemo(() => commandOptionIds(slashMatches()));
+  const slashIds = createMemo(() => commandOptionIds(slashMatches(), scope.id));
   /** Never while disabled, nor on a bare local command (§4d). Streaming is fine: pi runs a
       "/command" steer as a command. */
   const slashOpen = () => {
@@ -359,7 +376,7 @@ export function Composer(props: {
   const listboxControls = () =>
     slashOpen()
       ? slashMatches().length > 0
-        ? "command-listbox"
+        ? paneId("command-listbox")
         : null
       : mentionOpen()
         ? mentionMatches().length > 0
@@ -612,6 +629,7 @@ export function Composer(props: {
   return (
     <footer
       class="composer"
+      data-collapsed={collapsed() ? "true" : undefined}
       data-drop={drop() ?? undefined}
       onDragOver={(e) => {
         if (disabled() || !e.dataTransfer?.types.includes("Files")) return;
@@ -788,6 +806,7 @@ export function Composer(props: {
             model={props.model}
             thinking={props.thinking}
             onShowInfo={props.onShowInfo}
+            onFanOut={props.onFanOut}
             undo={props.undo}
             onRefocus={() => input.focus()}
             onApi={setMenu}
@@ -807,16 +826,16 @@ export function Composer(props: {
               }}
             />
           </Show>
-          <label class="visually-hidden" for="composer-input">
+          <label class="visually-hidden" for={paneId("composer-input")}>
             Message
           </label>
           <textarea
             ref={input}
             class="input textarea composer-input"
-            id="composer-input"
+            id={paneId("composer-input")}
             rows={1}
             placeholder={placeholder()}
-            aria-describedby="composer-reason"
+            aria-describedby={paneId("composer-reason")}
             aria-autocomplete={slashOpen() || mentionOpen() ? "list" : undefined}
             aria-controls={listboxControls() ?? undefined}
             aria-activedescendant={listboxActive() ?? undefined}
@@ -838,7 +857,9 @@ export function Composer(props: {
                 updateMention();
               }
             }}
+            onFocus={() => setFocused(true)}
             onBlur={() => {
+              setFocused(false);
               dropButtonSlash(); // closing by blur undoes an untouched button "/" too
               setSlashToken(null);
               setMentionToken(null);
@@ -912,7 +933,7 @@ export function Composer(props: {
                 type="submit"
                 class="button button-primary"
                 aria-disabled={canSend() ? undefined : "true"}
-                aria-describedby="composer-reason"
+                aria-describedby={paneId("composer-reason")}
               >
                 <Icon name="arrow-right" small />
                 <span class="button-label">{props.running ? "Steer" : "Send"}</span>
@@ -942,7 +963,7 @@ export function Composer(props: {
               type="button"
               class="composer-model"
               aria-haspopup="menu"
-              aria-controls="composer-flyout"
+              aria-controls={paneId("composer-flyout")}
               aria-expanded={indicatorOpen() ? "true" : "false"}
               aria-disabled={disabled() ? "true" : undefined}
               aria-label={`${modelRef() ?? "No model yet"}${levelShown() ? `, thinking ${levelShown()}` : ""} — Change Model & Thinking`}
@@ -971,7 +992,7 @@ export function Composer(props: {
               <Icon name="chevron-down" small class="composer-model-caret" />
             </button>
           </Show>
-          <span class="composer-reason" id="composer-reason">
+          <span class="composer-reason" id={paneId("composer-reason")}>
             <Show when={shownReason()}>
               {(r) => (
                 <>

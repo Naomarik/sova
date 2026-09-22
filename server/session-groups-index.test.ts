@@ -17,7 +17,7 @@ const sessionsDir = join(agentDir, "sessions", "--tmp-groups-index--");
 mkdirSync(sessionsDir, { recursive: true });
 mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
 
-const { assignSession, createGroup, readAssignments } = await import("./session-groups");
+const { assignSession, createGroup, readAssignments, readGroups } = await import("./session-groups");
 const { cleanupSessions, getSessionSummary, listSessions } = await import("./sessions-index");
 const { canonicalPath } = await import("./paths");
 
@@ -26,6 +26,7 @@ after(() => rmSync(agentDir, { recursive: true, force: true }));
 const ID_A = "01234567-89ab-7cde-8f01-234567890abc";
 const ID_B = "01234567-89ab-7cde-8f01-234567890abd";
 const ID_C = "01234567-89ab-7cde-8f01-234567890abe";
+const ID_OLD = "01234567-89ab-7cde-8f01-234567890abf";
 
 const header = (id: string) =>
   JSON.stringify({ type: "session", version: 3, id, timestamp: "2026-09-21T00:00:00.000Z", cwd: "/tmp" });
@@ -52,10 +53,10 @@ const grouped = () => {
   return r.group.id;
 };
 
-test("a listing carries groupId only for grouped rows, and prunes an assignment whose file is gone", async () => {
+test("a listing carries groupId only for grouped rows, and KEEPS the assignment of a member whose file is gone", async () => {
   const group = grouped();
   const a = session(ID_A, "Grouped session");
-  const b = session(ID_B, "Soon deleted");
+  const b = session(ID_B, "Soon deleted outside pi-web");
   assignSession(ID_A, group);
   assignSession(ID_B, group);
 
@@ -64,16 +65,38 @@ test("a listing carries groupId only for grouped rows, and prunes an assignment 
   assert.equal(byId.get(ID_A)!.groupId, group);
   assert.equal(byId.get(ID_B)!.groupId, group, "both rows are grouped while both files exist");
 
-  // Deleted by someone other than pi-web's cleanup: the next listing forgets the assignment.
+  // Deleted by someone other than pi-web's cleanup. The assignment SURVIVES: the workspace's
+  // "This session's file is gone" pane is that assignment rendered (spec 14-workspaces "Gone
+  // from disk"), and a listing-pass prune would race the pane's own Remove From Group gesture —
+  // the member would vanish silently instead of showing its state. Only Archive cleanup prunes,
+  // and only the ids it deleted itself.
   unlinkSync(b);
   await listSessions();
-  assert.deepEqual(readAssignments(), { [ID_A]: group }, "only the deleted session's assignment went");
+  assert.deepEqual(readAssignments(), { [ID_A]: group, [ID_B]: group }, "the gone member's assignment survived the listing");
+  const named = readGroups().find((g) => g.id === group)!;
+  assert.ok((named.members ?? []).some((m) => m.id === ID_B), "so the group still names it and a pane can render");
+
+  // And removal with no file on disk is exactly the assign gesture the ghost pane offers
+  // (POST /api/session-groups/assign { id, groupId: null } — store level needs no file).
+  assert.deepEqual(assignSession(ID_B, null), { ok: true });
+  assert.deepEqual(readAssignments(), { [ID_A]: group }, "only the removed member's assignment went");
 
   // Ungrouped is an absent field, not null: what shared/protocol.ts promises.
   assignSession(ID_A, null);
   const cleared = (await listSessions()).find((s) => s.id === ID_A)!;
   assert.ok(!("groupId" in cleared));
   assert.equal((await getSessionSummary(a))!.groupId, undefined);
+});
+
+test("a summary flags an older session format (legacyFormat) and never a current one", async () => {
+  // The fanout dialog pre-disables Create for an old-format source; the server computes the
+  // flag so the client never compares version numbers itself. Absent = current, unreadable
+  // head, or an older server — only `true` ever blocks a fork.
+  const old = join(sessionsDir, `2026-09-21T00-00-00-000Z_${ID_OLD}.jsonl`);
+  writeFileSync(old, `${[JSON.stringify({ type: "session", version: 2, id: ID_OLD, timestamp: "2026-09-21T00:00:00.000Z", cwd: "/tmp" }), userMessage("old format")].join("\n")}\n`);
+  assert.equal((await getSessionSummary(canonicalPath(old)))?.legacyFormat, true);
+  const current = await getSessionSummary(session(ID_A, "current format"));
+  assert.ok(current && !("legacyFormat" in current), "absent when current — the same absence an older server sends");
 });
 
 test("cleanup prunes the ids it deleted, and a dry run changes nothing", async () => {

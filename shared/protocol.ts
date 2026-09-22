@@ -61,6 +61,21 @@ export interface SessionSummary {
       a grouped session stays in its region (Live & web, or the Archive) as well. Absent when it
       belongs to none, and from an older server: treat as ungrouped. */
   groupId?: string;
+  /** The session this one was forked from: the header's `parentSession`, canonicalized like every
+      other session path here (so it is byte-identical to that session's `path`), and only while
+      that file still exists and is a .jsonl inside the sessions dir. Absent for every session that
+      was not branched, and from an older server. Lets a group show fork points without reading
+      each transcript. */
+  parent?: string;
+  /** The same parent as a session id (that session's `id`, read from its filename): what
+      `GroupMember.id`, the group assignments and every group route key on. Set exactly when
+      `parent` is. Use `parent` to link or open (routes take paths), `parentId` to match.
+      LINEAGE ONLY, and the distinction matters: this pair says a session was forked from THAT
+      file, never at WHICH entry. A fork marker needs the leaf it diverged at, which only a group
+      pi-web fanned out carries (`seed`), so a marker position must never be inferred from here —
+      a marker in the wrong place is a false claim about which part of the transcript is shared
+      (spec/14-workspaces.md "Data", spec/14b-fanout.md "The fork point in a transcript"). */
+  parentId?: string;
   /** Remote session: the target name from ~/.pi/agent/targets.json. Derived from `cwd`, which for a
       remote session is the local placeholder ~/.pi/agent/pi-web/targets/<target>/<remote/abs/path>.
       Absent for local sessions. */
@@ -70,6 +85,15 @@ export interface SessionSummary {
   remoteCwd?: string;
   /** Composer draft stored for this session: the draft's first non-empty line, ~80 chars. Present only on a session with no user message anywhere that has a stored draft — that is what keeps a never-sent new session in the list (sidebar). */
   draftPreview?: string;
+  /** This session's file is in a session format older than the server's current
+      (⇔ header `version` ≠ CURRENT_SESSION_FORMAT, server-computed — the client never compares
+      numbers itself). The fanout source rules refuse such a file (`old-format`: forking reads
+      the file, and reading an old format rewrites it wholesale under a runtime we hold), so the
+      dialog pre-disables Create with §14b's sentence. SAFE BY ABSENCE: absent = current, OR the
+      head could not be read, OR an older server that never sends the field — none of which ever
+      blocks anything; only `true` disables a fork. Never affects opening, watching or chatting:
+      an older-format session is only special to a route that would rewrite it. */
+  legacyFormat?: true;
 }
 
 /** A configured remote target (~/.pi/agent/targets.json, GET /api/targets). Credential-free. */
@@ -259,12 +283,82 @@ export interface UploadResult {
 // GET  /api/session-groups    -> SessionGroup[]   (the sidebar's user-made groups, in creation order;
 //                                  ~/.pi/agent/pi-web/session-groups.json; missing file → [])
 // POST /api/session-groups { name: string } -> SessionGroup   (creates one. 400 name not 1–60 chars)
-// PATCH /api/session-groups/:id { name: string } -> SessionGroup   (renames. 400 bad name, 404 unknown)
+// PATCH /api/session-groups/:id { name?: string, order?: string[], labels?: {id: string, label: string | null}[] }
+//                                  -> SessionGroup   (renames and/or reorders and/or (re)labels members; every
+//                                  field is optional but at least one is required. `order` is session ids: the
+//                                  listed ones come first, in that order, and any member it leaves out keeps its
+//                                  relative order after them; ids that are not in the group are ignored (they race
+//                                  with assign). `labels` sets one label per session id, `null` clears it; ids not
+//                                  in the group are ignored. 400 no recognised field, bad name, order not an array
+//                                  of strings, labels not an array of {id, label}, or a label longer than
+//                                  GROUP_LABEL_MAX characters after trimming; 404 unknown group)
 // DELETE /api/session-groups/:id -> { ok: true }   (deletes the group and its assignments; the
 //                                  sessions themselves are untouched. 404 unknown)
-// POST /api/session-groups/assign { path, groupId: string | null } -> { ok: true }   (puts one session in
-//                                  a group, or takes it out with null. 400 bad body/path, 404 session file
-//                                  or group missing. Never writes the session file)
+// POST /api/session-groups/assign { path, groupId: string | null, label?: string | null, index?: number }
+//                                  -> AssignGroupResult
+//                                  (puts one session in a group, or takes it out with null. When this write
+//                                  removes the LAST member of a group whose `autoDissolve` is set (one pi-web
+//                                  both created AND named), that group is deleted in the same atomic write and
+//                                  the response carries dissolved: true. `seed` decides nothing here: a group
+//                                  the user named stands empty even after it adopts one. `label` sets the
+//                                  session's label in the group it lands in, `null` clears it, and omitting it
+//                                  keeps the label it already had — a session moved between groups keeps its
+//                                  metadata. `index` is where it lands in the target group's member order:
+//                                  0 first, at/past the end or omitted = the end, so Add Back restores label
+//                                  AND place in one write that cannot half-succeed. `index` is ignored with
+//                                  groupId null, and ignored when the session is already in that group —
+//                                  assign never reorders in place; PATCH { order } is the reposition.
+//                                  REMOVAL BY ID: `{ id, groupId: null }` (session id, no path) is valid for
+//                                  taking a session OUT only — a group member whose FILE is gone (the
+//                                  workspace's "This session's file is gone" pane, spec 14) has no path to
+//                                  send but its assignment is exactly what needs removing, and the store keys
+//                                  on ids. `id` with a non-null groupId, `id` beside `path`, or `id` with
+//                                  `label`/`index` is a 400: adding a member requires the file.
+//                                  400 bad body/path, a label over GROUP_LABEL_MAX, or a negative/non-integer
+//                                  index; 404 session file or group missing. Never writes the session file)
+// POST /api/session-groups/:id/prompt { text: string, members?: string[] (session ids) } -> BatchPromptResult
+//                                  (the shared follow-up: prompts every member of the group, in member order.
+//                                  ALL-OR-NOTHING PRE-CHECK — every member is checked before any is prompted
+//                                  (file exists, not TUI-live, not archived, no active config failure, not
+//                                  mid-turn here, no foreign/recent writer), and if any one fails the whole
+//                                  batch is refused with 409 { refused: BatchRefusal[] } having sent NOTHING.
+//                                  Returns on ACCEPTANCE, not completion: as soon as every member's prompt
+//                                  is queued, never waiting for the turns. A member that breaks between the
+//                                  check and being queued is reported in `failed`, never rolled back; one
+//                                  that fails after being accepted reports in its own pane. Nothing accepted
+//                                  at all is a 409, not a "sent to 0 of n". `members` is the user's explicit subset
+//                                  ("Send to the rest"), never inferred server-side: given, every id must be
+//                                  in the group, and only those are checked and prompted. No attachments and
+//                                  no slash commands — images belong to a pane composer (spec §14).
+//                                  400 bad body, blank text, members not an array of strings, an id that is
+//                                  not a member, or the group is empty; 404 unknown group; 409 refused)
+// POST /api/session-groups/fanout FanoutRequest -> 201 FanoutResult
+//                                  (N sessions from one starting point, as one group. FORK MODE ({source}):
+//                                  every member is branched from source.leafId onto a FRESH SessionManager of
+//                                  its own — never the manager pi-web holds for the source — and the group
+//                                  gets a `seed`. FRESH MODE ({cwd, text}): N independent sessions, no shared
+//                                  root, no seed, and `text` is sent through the batch-prompt path.
+//                                  `groupId` lands the members in an EXISTING group (the response's `group`
+//                                  is then that one): a target with no seed adopts this fanout's, a matching
+//                                  seed appends, a DIFFERING seed is 400 { error, code: "seed-conflict" } with
+//                                  nothing created, and an unknown id is 404 with nothing created.
+//                                  `named` says whether `name` is pi-web's generated default: "generated" makes
+//                                  the new group auto-dissolve when emptied; "user", absent or unrecognised marks
+//                                  it user-named and explicitly NOT dissolving. Ignored with `groupId` (the target
+//                                  keeps its own name and its own flag).
+//                                  400 bad name, empty members, a count outside 1–9, an unknown ref, both or
+//                                  neither of name/groupId, both or neither of source/cwd, text or cwd in fork
+//                                  mode, blank text in fresh mode, or a cwd the New Session path itself would
+//                                  refuse (not absolute, gone, not a directory, or a removed legacy mount cwd
+//                                  — fresh mode IS that path N times, and answers with its sentences);
+//                                  404 a source path that resolves to no session (the subject doesn't exist —
+//                                  different from "exists but not right now"); 409 { refused: [BatchRefusal] }
+//                                  with exactly ONE entry, the source: tui-live, mid-turn, busy, config,
+//                                  old-format (opening it would migrate-rewrite the file) or stale-leaf (the
+//                                  ACTIVE branch's last rendered entry is no longer the one the dialog showed —
+//                                  not the file's last line, which after a rewind is the abandoned branch). A member that fails DURING creation
+//                                  has its own half-written file removed and is reported in `failed`; a member
+//                                  that already exists is never unmade)
 // POST /api/sessions/archive { path, archived: boolean } -> SessionSummary   (sets/clears the archive mark; never
 //                                  writes the session file. 400 bad body/path, 404 missing, 409 archiving a live
 //                                  or non-web session)
@@ -385,6 +479,13 @@ export interface ModelInfo {
       models.json provider that omits it); treat unknown as text-only. Vision is
       `input?.includes("image")`, derived client-side — there is no separate flag. */
   input?: ("text" | "image")[];
+  /** The model's context window in tokens: the SDK model registry first (custom models.json
+      providers included), then models-store.json — the same cached resolver ContextInfo.window
+      uses. Absent when neither source knows it, the same convention as ContextInfo.window, so a
+      cost preview shows "unknown" rather than assuming a default. This is the MODEL's window,
+      independent of any session, which is what lets the fanout dialog compare candidate rows;
+      ContextInfo.window cannot, because it describes one session's current model. */
+  contextWindow?: number;
 }
 
 /** One folder's subfolders (GET /api/folders). Directories only, never files: a symlink is listed
@@ -417,6 +518,38 @@ export interface FileIndex {
     input's maxlength and the server's rule read it from here. */
 export const GROUP_NAME_MAX = 60;
 
+/** Longest member label, in characters, after trimming (GroupMember.label; the server trims and
+    refuses a longer one with 400, while an empty one clears the label). */
+export const GROUP_LABEL_MAX = 40;
+
+/** The session file format this server writes and considers current (the JSONL header's
+    `version`). A file whose header carries a different version — or none, which reads as 1,
+    pre-versioning — is `legacyFormat` in a summary and `old-format` as a fanout source refusal:
+    reading one rewrites it wholesale. The SERVER owns this number and every comparison against
+    it; a client that compared versions itself would drift on the next bump, which is exactly
+    why SessionSummary.legacyFormat is a computed flag and not a raw version. */
+export const CURRENT_SESSION_FORMAT = 3;
+
+/** One session's presentation metadata inside a group (SessionGroup.members). Membership itself is
+    the server's assignments map — this carries only the ORDER (array position) and an optional
+    short LABEL, e.g. "sonnet ×2" on a fanout member. */
+export interface GroupMember {
+  /** Session id (`SessionSummary.id`), not a path. */
+  id: string;
+  /** Shown beside the row; absent when unset. Trimmed, 1–GROUP_LABEL_MAX characters. */
+  label?: string;
+}
+
+/** Where a fanout group came from (SessionGroup.seed). Written only by POST
+    /api/session-groups/fanout in fork mode; fresh mode has no fork point to align to. */
+export interface GroupSeed {
+  /** Canonical path of the source session — the same path each member's header carries as
+      `parentSession`, and the same string that session's own `SessionSummary.path` has. */
+  parentSessionPath: string;
+  /** The entry every member was branched at: the ONLY source of a fork marker's position. */
+  leafId: string;
+}
+
 /** One user-made group in the sidebar's Groups region (GET /api/session-groups). Groups hold
     sessions; they never replace a region, so a grouped session still shows in Live & web or the
     Archive. Stored in ~/.pi/agent/pi-web/session-groups.json, keyed by session id (like the archive). */
@@ -426,6 +559,239 @@ export interface SessionGroup {
   /** Shown as-is (trimmed, 1–60 chars). Duplicates are allowed: nothing keys on the name. */
   name: string;
   createdAt: string; // ISO
+  /** Set only on a group pi-web fanned out (fork mode): where its members came from. Lineage
+      (`SessionSummary.parent`/`parentId`) says a session was forked from THAT file; only this
+      says WHERE, so the fork marker and Align to Fork are seed-only and never infer a position
+      from lineage. A hand-made group never grows one, which is what the auto-dissolve rule
+      (AssignGroupResult.dissolved) stands on. */
+  seed?: GroupSeed;
+  /** Whether the group deletes itself when its last member leaves (AssignGroupResult.dissolved).
+      Set ONLY by POST /api/session-groups/fanout when it CREATES the group with a generated name
+      — pi-web made it and named it, so pi-web may remove it. NEVER set by that route's `groupId`
+      path: a group the user named is theirs and keeps standing empty, even after it adopts a
+      fanout's `seed`.
+      THIS IS THE ONE TRUTH OF DISSOLUTION. It used to be inferred from `seed`, which is lineage
+      and the fork marker's datum; that inference is what would have made an adopted hand-made
+      group start deleting itself. Do not re-derive dissolution from another field, and do not
+      use this one to mean anything but dissolution.
+      A RENAME CLEARS IT (PATCH /api/session-groups/:id with a name that actually changes): the
+      claim above is a conjunction — pi-web made it AND named it — and renaming falsifies the
+      second half, so the group becomes the user's and stands when emptied. Renaming to the same
+      string revokes nothing, and reordering or relabelling never touch it. The flag is set and
+      cleared by the events that make it true or false, so no rule has to be remembered.
+      Absent only on a group written before this field existed — then, and only then, `seed`
+      implies it, since those are pi-web's own fanout groups. An explicit value always wins. */
+  autoDissolve?: boolean;
+  /** The group's sessions in display order, with their labels. The server always sends it — it is
+      reconciled against the assignments on every read (ids no longer in the group drop out, ids
+      missing from it are appended in id order) — and it is optional in the type only because an
+      older server, or a hand-written store file, may not carry it. */
+  members?: GroupMember[];
+}
+
+/** 200 body of POST /api/session-groups/assign. Additive: a client that only reads `ok` is
+    unaffected. */
+export interface AssignGroupResult {
+  ok: true;
+  /** The assign emptied a group whose `autoDissolve` is set, and the server deleted it in the SAME
+      write (spec/14-workspaces.md §14 "Emptying a group"). `autoDissolve` is the whole rule and
+      `seed` decides nothing: a hand-made group that ADOPTS a fanout's seed keeps standing when
+      emptied, because a group whose name is the user's work stands empty — whether they typed it
+      at creation or later over a generated one. Absent otherwise. The client toasts
+      "Dissolved “{name}”", leaves the workspace route and refetches the list. Archive cleanup can
+      also empty a group and deliberately does NOT dissolve one: no client is listening to that
+      call, and a background listing pass must never delete a group. */
+  dissolved?: true;
+}
+
+/** Why one member of a group batch prompt cannot be prompted right now
+    (POST /api/session-groups/:id/prompt). A closed set: the client renders its own sentence per
+    code and never parses `message`. "internal" is the escape hatch, so an unexpected failure
+    still carries a valid code. */
+export type BatchRefusalCode =
+  | "mid-turn"
+  | "tui-live"
+  | "archived"
+  | "config"
+  | "busy"
+  | "missing"
+  /** Fanout only: the source's header version isn't current, so opening it would rewrite the
+      file — which a runtime we hold for that session would see as a foreign write. The only
+      refusal here the user can clear themselves ("open it for chat once, then fan out"). */
+  | "old-format"
+  /** Fanout only: `source.leafId` is not the source's current leaf — meaning the last entry its
+      transcript RENDERS on its ACTIVE branch, which is what the server compares against
+      (readActiveBranch + normalizeEntry, the transcript's own two rules). NOT the file's last
+      line, and the difference is not academic: after a rewind the file's TAIL is the ABANDONED
+      branch, and the entries there are ordinary visible messages. Comparing against the tail
+      refuses sources nobody has touched, and rewound sessions are the likeliest thing to fork.
+      The client sends the leaf it SHOWED the user, for the same reason: forking from a point
+      they didn't approve would break the fork marker's only promise. */
+  | "stale-leaf"
+  | "internal";
+
+/** One member the batch could not take, named four ways: `id` joins against `GroupMember.id` and
+    the assignments map, `path` is what a pane routes and opens with, `code` is for logic, and
+    `message` is the server's human sentence (a fallback, not the UI copy). */
+export interface BatchRefusal {
+  id: string; // session id
+  path: string; // canonical session path ("" when the file is gone)
+  code: BatchRefusalCode;
+  message: string;
+  /** FANOUT ONLY, and only in a 201's `failed`: the model ref (`ModelInfo.ref`) of the member
+      the entry names, so the partial-creation banner can compose "{model} couldn't start: …"
+      without a lookup. TWO SHAPES OF ENTRY LIVE HERE, told apart by `id`:
+      • EMPTY `id` (and empty `path`): a member that NEVER CAME INTO BEING — creation failed, so
+        there is no session and `ref` is the ONLY handle on it.
+      • `id` (and `path`) SET: a member that EXISTS — created and grouped — but was REFUSED ITS
+        FIRST MESSAGE by the batch path (fresh mode's `text`). `id` names it and joins to the
+        pane; `ref` is present too, so the banner can still name the model. A pre-existing
+        member of a `groupId` target (not of this fanout) reports with `id` only — its model is
+        not this fanout's to claim.
+      A 409 refusal (the source) carries no `ref` on any route. As ever, `message` is the bare
+      reason — never prefixed with the ref, which would render the model twice in the banner. */
+  ref?: string;
+}
+
+/** One row of the fanout dialog: a model, and how many copies of it to make. */
+export interface FanoutMemberSpec {
+  /** `ModelInfo.ref`, "provider/id". */
+  ref: string;
+  /** 1–9. The member appears this many times, consecutively, in pane order. */
+  count: number;
+}
+
+/** POST /api/session-groups/fanout. Exactly one of `source` (fork mode) and `cwd` (fresh mode). */
+export interface FanoutRequest {
+  /** Name for a NEW group, 1–GROUP_NAME_MAX. Exactly one of `name` and `groupId` is required:
+      with `name` the route creates the group (and pi-web owns it, so `autoDissolve` is set); with
+      `groupId` it lands in an existing one, which keeps its own name. Sending both is a 400 —
+      ignoring one of them silently would look like a rename that did nothing. */
+  name?: string;
+  members: FanoutMemberSpec[]; // array order IS pane order
+  /** Fork mode: branch every member from this entry of this session. `leafId` is the leaf the
+      dialog SHOWED the user, not a request for the server to find the current one. */
+  source?: { path: string; leafId: string };
+  /** Fresh mode: the folder every member is created in — checked by the New Session route's own
+      rule (targets.ts validateNewSessionCwd: absolute, an existing directory, not a legacy
+      mount cwd), so a folder that path refuses is a 400 with that path's own sentence
+      BEFORE anything is made. */
+  cwd?: string;
+  /** Fresh mode only: the first message every member gets, sent through the batch path. Its
+      outcome is PART OF THE 201: the batch's refusals are folded into `failed` (entries whose
+      `id` names an existing member — see BatchRefusal.ref), so a fanout that created N members
+      and started none says so instead of announcing a success that lands the user in N silent
+      panes. The members are kept either way: real, empty, grouped sessions, retryable. */
+  text?: string;
+  /** Whether `name` is the default pi-web generated, or one the user typed over it. The client
+      holds this fact and nothing else can: the server never generated the default, so it cannot
+      distinguish an accepted one from an identical string typed by hand. Reported as a FACT; the
+      policy stays server-side, and `autoDissolve` is derived from it, never sent by a client.
+      "generated" ⇒ pi-web made AND named the group ⇒ `autoDissolve: true`.
+      "user", ABSENT, or any unrecognised value ⇒ the user named it ⇒ the server writes
+      `autoDissolve: false` EXPLICITLY — never leaves it absent, because absent-plus-`seed` is the
+      on-disk signature of a pre-flag fanout group and the legacy rule dissolves those.
+      IF THIS FIELD IS EVER REPLACED, THE REPLACEMENT MUST LAND ATOMICALLY — contract, server,
+      client and tests in one change. An ADDITIVE migration fails silently and in the direction
+      that looks healthy: a client still sending `named` while the server reads a new field sees
+      absent, absent means "the user named it", so NO group is ever marked auto-dissolving, none
+      is ever removed, and nothing errors anywhere. The safe-absence rule that exists to prevent
+      lost names is exactly what would hide the feature being dead. Delete the old field in the
+      same commit that adds the new one.
+      CHECK IT POSITIVELY: `named === "generated"`. `named !== "user"` is the same sentence and
+      the wrong one — an absent field is not a claim of user authorship, it is a client that
+      cannot make the claim at all, and treating it as pi-web's deletes a name. Both spellings
+      are equally SAFE with a boolean and equally available here, but a two-valued enum makes the
+      negative form read naturally, so it is the likelier mistake and worth naming. Tests pin
+      absent and unrecognised to a recorded false so the wrong spelling fails loudly.
+      TWO ABSENCES, OPPOSITE DEFAULTS, BOTH CORRECT: this field's absence means the CLIENT predates
+      it, and a user-named group is what is at risk, so it falls to "user"; `SessionGroup.autoDissolve`'s
+      absence means the RECORD predates it, where no user-named group can exist, so there it falls
+      to seed-implies-dissolution. Do not "align" them — and note that the SHAPES differ on purpose
+      for the same reason: a boolean beside a boolean with opposite absence defaults invites exactly
+      that alignment, while a boolean beside an enum cannot be mistaken for a matched pair. The
+      difference in kind is what keeps the difference in meaning visible.
+      THE SERVER MUST NOT VALIDATE THIS BY RE-DERIVING THE DEFAULT. Generating the name here to
+      compare would be a second generator of one string, which is the ground the server-side
+      alternative was rejected on: in fresh mode the default is rewritten on every keystroke, so a
+      derivation at Create time disagrees with what the user was looking at. Same precedent as
+      `source.leafId`, accepted as the leaf the DIALOG SHOWED rather than recomputed.
+      DERIVE IT FROM THE EDIT EVENT, never by comparing strings. pi-web's client keeps
+      `nameTouched`, set by the name field's own input handler and by nothing else, and sends
+      "user" when it is set. "Typed over then reverted" is therefore "user": an empty group may
+      be left behind, which is litter, recoverable in one gesture.
+      THAT SIGNAL DOES TWO JOBS, and the second is invisible from the first: `nameTouched` also
+      gates whether pi-web may keep REGENERATING the field from the prompt. One decides whether we
+      may keep writing the name; the other decides whose the result is. So a change to when
+      regeneration stops silently changes who owns the name, and no test in the file being edited
+      will fail. Anyone altering either rule owns both.
+      WHY NOT A COMPARISON (`name === the last string we wrote`): it is correct ONLY while
+      regeneration stops at the first touch. That gate lives in another function; weaken it, add a
+      second writer, and regeneration keeps firing after the user types — the field then holds our
+      latest guess, the comparison equals it by construction, and a group the USER named is
+      classified "generated" and deleted. The edit flag cannot fail that way: the signal is sticky
+      and set by the user's own input. So the comparison is the fragile mechanism and it fails
+      toward LOSS, while the edit flag's error is an empty group left standing.
+      AND THE PROXY RUNS THE OTHER WAY from how it looks: under that gate, `name === lastWritten`
+      is true exactly when the field was never touched — so the comparison is a DERIVED READING of
+      the edit event, computed the long way and valid only while an invariant in another function
+      holds. The edit flag is the direct measurement; the comparison is its correlate.
+      NOTE the tempting argument here is a retracted one (spec 9d6fe2b): that "typed over then
+      reverted" and "typed our exact string by hand" are the same state deserving opposite
+      answers, so no comparison can separate them. They do deserve the SAME answer — both end
+      with our string on the group — and if that argument held it would indict the edit flag
+      equally, since it also gives both rows one answer. Do not defend this rule with it; the
+      fragility above is the live reason.
+      POLARITY IS LOAD-BEARING FOR ANY OPTIONAL FLAG HERE, not just this one: the field must be
+      the one whose FALSEHOOD, or absence, is the safe answer. `nameEdited` would have been the
+      same information with the opposite failure — absent ⇒ not edited ⇒ generated ⇒ the group
+      deletes itself — which is the unsafe default wearing an innocent name. */
+  named?: "generated" | "user";
+  /** Land the new members in an EXISTING group instead of creating one; the response's `group`
+      is then that group. Omitted = create one named `name`. Seed rules, all checked BEFORE
+      anything is created: an unknown id is 404; a target with NO seed ADOPTS this fanout's and
+      appends; a target whose seed EQUALS this one appends; a target whose seed DIFFERS is
+      refused with 400 { error, code: "seed-conflict" }. ONE GROUP CARRIES ONE SEED, because the
+      fork marker and Align to Fork read it — a mixed-lineage group would make the marker assert
+      a divergence point it cannot know, so the request is refused rather than the datum
+      fabricated. Fresh mode has no seed: it never adopts and never conflicts, and leaves the
+      target's seed alone. NOTE a hand-made group that adopts a seed becomes auto-dissolving
+      (AssignGroupResult.dissolved), including the name the user chose. */
+  groupId?: string;
+}
+
+/** 400 body of POST /api/session-groups/fanout when the request cannot be reconciled with the
+    group it was asked to land in. `code` is a closed set of one today; the client renders its own
+    sentence from it and `error` is the fallback. Every other 400 on this route is `{ error }`. */
+export interface FanoutConflict {
+  error: string;
+  code: "seed-conflict";
+}
+
+/** 201 body of the fanout. `created` is never empty: if not one member could be made, nothing is
+    created, the group is not written, and the call fails — a group with no members is debris,
+    not a result. `failed` carries the members that couldn't START, in two shapes told apart by
+    `id` (see BatchRefusal.ref): an empty id names a member that never came into being (its own
+    debris is unlinked; `ref` is the only handle); a set id names an EXISTING member that was
+    created and grouped but refused its first message by the batch path — kept, retryable, `ref`
+    beside the id so the banner can name the model. Nothing already created is ever rolled back.
+    `group` is read back AFTER the members are assigned, so the one response the client navigates
+    on carries the members this fanout just landed. */
+export interface FanoutResult {
+  group: SessionGroup;
+  created: SessionSummary[];
+  failed: BatchRefusal[];
+}
+
+/** 200 body of the batch prompt. `sent` MEANS ACCEPTED, NOT ANSWERED: the route returns as soon
+    as every member's prompt is queued and never waits for the turns, because they are meant to
+    run in parallel and waiting would serialize them. A member accepted and then failing reports
+    in its OWN pane, over its own socket — this response never speaks for a turn it didn't wait
+    for. `failed` is therefore about acceptance only: a member that broke between the pre-check
+    and being queued. `sent` is never empty; nothing accepted is a refusal (409 { refused }). */
+export interface BatchPromptResult {
+  sent: string[]; // session ids, in the order they were accepted
+  failed: BatchRefusal[];
 }
 
 /** The mode extension's settings (pi-config/extensions/mode). One major mode, any set of minor

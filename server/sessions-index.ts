@@ -1,9 +1,9 @@
 import { statSync } from "node:fs";
 import { open, readdir, stat, unlink } from "node:fs/promises";
 import { basename, join } from "node:path";
-import type { SessionSummary } from "../shared/protocol";
+import { CURRENT_SESSION_FORMAT, type SessionSummary } from "../shared/protocol";
 import { type LiveRecord, readLive, readOwnLiveRecords, workerCountsOf } from "./live";
-import { LIVE_DIR, resolveSessionPath, SESSIONS_DIR } from "./paths";
+import { LIVE_DIR, resolveSessionPath, sessionPathShape, SESSIONS_DIR } from "./paths";
 import { isWebSession, removeWebSession } from "./web-sessions";
 import { parseWakeNudge } from "../shared/wake";
 import { RECENT_WRITE_MS } from "./write-guard";
@@ -13,7 +13,7 @@ import { draftPreview, dropDrafts, readDrafts } from "./drafts";
 import { removeSessionAttachments } from "./attachments";
 import { disposeHeldChat, getModelRuntime, isSessionBusy } from "./chat-manager";
 import { contextWindow } from "./models";
-import { remoteOfCwd } from "./targets";
+import { parseTargetCwd } from "./targets";
 
 type BaseSummary = Omit<SessionSummary, "live" | "workers" | "origin" | "archived" | "busy">;
 
@@ -325,7 +325,29 @@ async function readHead(path: string): Promise<{ header: any; title: string | nu
   }
 }
 
-async function listSessionFiles(): Promise<string[]> {
+/**
+ * The header's `parentSession` — the file a branched session was forked from (SessionHeader,
+ * `SessionHeader.parentSession` in dist/core/session-manager.d.ts) — as the canonical path AND
+ * the session id the group store
+ * keys on, and only while that file is still there: a fork marker that points at a deleted
+ * transcript is worse than none. sessionPathShape is what keeps this safe as well as honest: it
+ * is pure string work — no syscall — and it only ever yields a .jsonl inside the (always local)
+ * sessions dir, so the one ASYNC stat below never touches a session's cwd. It is also the same construction the
+ * listing uses (SESSIONS_DIR + name), so `parent` is byte-identical to that session's own `path`.
+ * Part of the cached summary, so a parent deleted after this session's last write keeps showing
+ * until this file is touched again.
+ */
+async function existingParent(raw: unknown): Promise<{ parent: string; parentId: string } | null> {
+  const path = sessionPathShape(typeof raw === "string" ? raw : null);
+  if (!path) return null;
+  const there = await stat(path).then(
+    () => true,
+    () => false,
+  );
+  return there ? { parent: path, parentId: idOf(path) } : null;
+}
+
+export async function listSessionFiles(): Promise<string[]> {
   const files: string[] = [];
   let top;
   try {
@@ -384,8 +406,14 @@ async function summarize(path: string, resolveWindow?: WindowResolver): Promise<
     const outline = await readTailOutline(path, st.size);
     const ctx = await readTailContext(path, st.size);
     const cwd = typeof h.cwd === "string" ? h.cwd : "";
-    // a remote session's cwd is its target placeholder
-    const remote = remoteOfCwd(cwd);
+    // An older session format is fanout-source metadata (legacyFormat ⇔ version ≠ current,
+    // pre-versioning headers read as 1 — the same rule fanout's own head read applies), so the
+    // dialog can pre-disable a fork that the route would refuse. Absent means current (or an
+    // unreadable head, which has no summary at all): never a blocker anywhere else.
+    const format = typeof h.version === "number" ? h.version : 1;
+    const parent = await existingParent(h.parentSession);
+    // Remote sessions use local placeholders, never mount mappings.
+    const remote = parseTargetCwd(cwd);
     const summary: BaseSummary = {
       id: h.id,
       path,
@@ -396,7 +424,9 @@ async function summarize(path: string, resolveWindow?: WindowResolver): Promise<
       model,
       ...(outline ? { outlineNow: outline.now, outlineAt: outline.generatedAt, outlineTopics: outline.topics } : {}),
       ...(ctx ? { context: { tokens: ctx.tokens, window: null } } : {}),
+      ...(parent ?? {}),
       ...(remote ? { target: remote.target, remoteCwd: remote.remoteCwd } : {}),
+      ...(format !== CURRENT_SESSION_FORMAT ? { legacyFormat: true as const } : {}),
     };
     const entry: CacheEntry = { mtimeMs: st.mtimeMs, size: st.size, summary, contextModel: ctx?.model ?? null };
     cache.set(path, entry);
@@ -438,12 +468,12 @@ export async function listSessions(): Promise<SessionSummary[]> {
   const resolveWindow = await windowResolver();
   const drafts = readDrafts();
   const groups = readAssignments();
-  // An assignment whose session file is gone — deleted by hand, or by a TUI — can never match a row
-  // again, so pi-web's own bookkeeping is pruned on the way past. Archive cleanup prunes the ids it
-  // deletes; this catches every other writer, and only writes when something is actually dead.
-  // Keyed on file existence, never on a summary succeeding: an unreadable file keeps its group.
-  const liveIds = new Set(files.map(idOf));
-  dropGroupAssignments(Object.keys(groups).filter((id) => !liveIds.has(id)));
+  // A member whose file is gone KEEPS its assignment, on purpose: the workspace's "This
+  // session's file is gone" pane IS that assignment rendered (spec 14-workspaces "Gone from
+  // disk"), and pruning here — on every listing pass — would race the pane's own Remove From
+  // Group gesture, so the member would vanish silently instead of showing its state. Only
+  // Archive cleanup prunes, and only the ids it deleted itself (cleanupSessions, below). The
+  // batch prompt already answers a gone member with its own "missing" refusal code.
   const results = await Promise.all(files.map((f) => summarize(f, resolveWindow)));
   const present = new Set(files);
   for (const k of cache.keys()) if (!present.has(k)) cache.delete(k);
@@ -564,6 +594,19 @@ export async function archiveSession(path: string, archived: boolean): Promise<A
   // There is no idle timer anymore — a runtime lives until this, a reload, or server shutdown.
   if (archived) await disposeHeldChat(s.path, "Session archived; its runtime was closed.");
   return { ok: true, summary: { ...s, archived } };
+}
+
+/**
+ * Session id → path, from the listing cache this server already keeps — no disk access at all.
+ * Warm after any listing (the sidebar refreshes constantly); empty on a cold start, which is why
+ * the one caller falls back to a real walk only for ids it cannot find here, rather than paying
+ * for a directory scan on every press of Send (spec/14-workspaces.md §14 "The pre-check reads
+ * the group, not the disk").
+ */
+export function indexedSessionPaths(): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const [path, entry] of cache) out.set(entry.summary.id, path);
+  return out;
 }
 
 /** The session id of a session file: the uuidv7 after the last "_" of its name. */

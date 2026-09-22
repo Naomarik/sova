@@ -3,13 +3,14 @@ import type { TranscriptItem, WatchServerMessage } from "../../shared/protocol";
 import { fetchTranscriptWithContext, wsUrl } from "../lib/api";
 import { contextFromItems, contextStateFor } from "../lib/context";
 import { createReconnectingSocket } from "../lib/socket";
-import { announce, hideThinking, hideTools, setSessionContext } from "../lib/ui-state";
+import { hideThinking, hideTools, setSessionContext } from "../lib/ui-state";
+import { usePaneAnnounce } from "../lib/pane-scope";
 import { visibleCount } from "../lib/hidden-rows";
 import type { WorkingSplit } from "../lib/workers";
 import { Composer, type ComposerReason } from "./Composer";
 import { FlyoutSession } from "./ComposerMenu";
 import { ConnectionBanner } from "./ConnectionBanner";
-import { HistoryItems, ThreadScroller, TranscriptSkeleton } from "./Thread";
+import { type ForkMarker, HistoryItems, ThreadScroller, TranscriptSkeleton } from "./Thread";
 import { Banner } from "./ui";
 
 /** SR announcements of appended entries are throttled to one per this interval. */
@@ -38,7 +39,10 @@ export function WatchView(props: {
   /** Makes that row a button that toggles the subagents pane. */
   onShowWorkers?(): void;
   workersOpen?: boolean;
+  /** Where this member was forked from, when it is one (spec/14b). */
+  fork?: ForkMarker;
 }) {
+  const announce = usePaneAnnounce();
   const [items, setItems] = createSignal<TranscriptItem[] | null>(null);
   const [error, setError] = createSignal<string | null>(null);
   const [lastUpdate, setLastUpdate] = createSignal<string | null>(null);
@@ -95,6 +99,7 @@ export function WatchView(props: {
   return (
     <>
       <ThreadScroller
+        path={props.path}
         count={visibleCount(items() ?? [], { tools: hideTools(props.path), thinking: hideThinking(props.path) })}
         busy={!items()}
         banner={
@@ -131,7 +136,7 @@ export function WatchView(props: {
                 </div>
               }
             >
-              <HistoryItems items={list()} author={props.author} streaming={props.streaming} hideTools={hideTools(props.path)} hideThinking={hideThinking(props.path)} />
+              <HistoryItems items={list()} author={props.author} streaming={props.streaming} hideTools={hideTools(props.path)} hideThinking={hideThinking(props.path)} fork={props.fork} />
             </Show>
           )}
         </Show>

@@ -10,7 +10,8 @@ import { groupNameOf, sessionGroups } from "../lib/session-groups";
 import { copyText, home, toast } from "../lib/ui-state";
 import { formatCost, sessionWorking, usageHeadline, usageTitle, usageTotal } from "../lib/workers";
 import { Banner, CopyButton, Icon } from "./ui";
-import { MoveToGroupMenu } from "./Groups";
+import { sessionHref } from "./Sidebar";
+import { GroupWithParent, MoveToGroupMenu } from "./Groups";
 
 /** Long machine facts wrap instead of widening the sheet. */
 const wrapMono = { margin: 0, "overflow-wrap": "anywhere" } as const;
@@ -211,6 +212,17 @@ export function SessionDetails(props: {
               <Fact label="Origin">{s().origin === "web" ? "Started here" : "Started in a terminal"}</Fact>
               <Fact label="Archived">{archived() ? "Yes" : "No"}</Fact>
               <Fact label="Group">{groupNameOf(sessionGroups(), s().groupId) ?? "None"}</Fact>
+              {/* Lineage from the session header, read-only: pi-web never writes it. It says this
+                  session was branched from that file — never at which entry (spec/14 "Data"). */}
+              <Show when={s().parent}>
+                {(parent) => (
+                  <Fact label="Forked from">
+                    <a class="text-mono" style={wrapMono} href={sessionHref(parent())} title={parent()}>
+                      {parent().split("/").pop()}
+                    </a>
+                  </Fact>
+                )}
+              </Show>
               <Show when={live()}>
                 {(l) => (
                   <Fact label="Live">
@@ -223,6 +235,11 @@ export function SessionDetails(props: {
                 runtime); grouping is pi-web's own bookkeeping for any session. */}
             <div class="cluster">
               <MoveToGroupMenu session={s()} onChanged={() => props.onGroupsChanged?.()} />
+              {/* The same assignment, read as a place to work: file it and open that group's
+                  workspace with this session focused. */}
+              <MoveToGroupMenu session={s()} onChanged={() => props.onGroupsChanged?.()} variant="beside" />
+              {/* Forked from a session and in no group: one press puts the pair in one workspace. */}
+              <GroupWithParent session={s()} onChanged={() => props.onGroupsChanged?.()} />
               <Show when={s().origin === "web"}>
                 <ArchiveAction
                   session={s()}

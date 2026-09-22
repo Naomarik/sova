@@ -78,6 +78,40 @@ Rules:
   or server shutdown.
 - Or run the server without watch (`npx tsx server/index.ts`) for the duration of server-side work.
 
+## Method
+
+Rules for working on this repo, each earned by at least two real misses on the `fanout-groups`
+branch (the full reasoning lives in that branch's commit messages and spec §14's Decisions):
+
+- **Prefer the form that cannot be accidentally satisfied** — in tests, rules, and copy alike. A
+  collision assertion beats a literal string; a behaviour name beats a property name; a sentence
+  true in every branch beats one that is merely right in the common one. The rules below are
+  instances of this one.
+
+- **A worked example is a second implementation of its rule, not documentation of it.** Review it
+  the same way you review the rule — a rule and its own example disagreed three times in one file.
+- **Reading verifies claims; running verifies neighborhoods.** Exercising a surface finds the
+  instance; enumerating the inputs finds the class. The defects that mattered were all seams —
+  invisible to a green build, found only by driving the thing.
+- **Before trusting a check, ask what it returns in the case you're trying to rule out.** A check
+  that cannot distinguish the two states isn't weak evidence — it's no evidence. And a
+  what-instrument cannot answer a when-question: greps and test counts say what's there;
+  `git show <sha>:<file>` and `git merge-base --is-ancestor` say since when. Name the commit a
+  claim is true at, and read the live tree, not an archive of it.
+- **A frame that is confirming itself feels exactly like a frame that is correct.** When a class
+  is salient, every event reads into it and the pattern-match feels like recognition; a count of
+  instances is an instrument like any other and must be measured, not repeated.
+- **Solid's `on(deps, fn)` does not equality-gate the deps' VALUE — it re-fires whenever any
+  signal read while evaluating the accessor changes.** `on(() => props.group.id, …)` reads
+  `props.group`, which is a fresh object on every background refresh of the list, so the effect
+  fired on every refresh while the id string never changed. Two real misses from that one shape
+  on `fanout-groups`: every pane width (Wider/Narrower/Fit) was reset by `setWidths({})` one
+  fetch after the click — styles written at 280px, observed resetting to 490px ~283ms later —
+  and the effect that re-read the groups re-triggered itself on its own response, a standing
+  fetch loop. When only the VALUE matters, make the dep a memo (`const gid = createMemo(() =>
+  props.group.id)`) so equality gating happens where you can see it. The green build catches
+  none of this: the bug is between two re-runs, not inside either.
+
 ## pi-config mirror
 
 The public repo github.com/Naomarik/pi-config is a `git subtree split` of `pi-config/`, so it stays

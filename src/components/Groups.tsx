@@ -1,6 +1,8 @@
 import { createSignal, For, onMount, Show } from "solid-js";
 import { GROUP_NAME_MAX, type SessionSummary } from "../../shared/protocol";
+import { listSessions } from "../lib/api";
 import { createGroup, groupNameOf, loadSessionGroups, quoted, sessionGroups, setSessionGroup } from "../lib/session-groups";
+import { groupHref } from "../lib/group-route";
 import { announce, toast } from "../lib/ui-state";
 import { Banner, Icon } from "./ui";
 
@@ -66,6 +68,70 @@ export function GroupNameField(props: {
   );
 }
 
+/**
+ * A session that was forked from another one (`SessionSummary.parent`) and is in no group: one
+ * press puts it and its parent in one group and opens that workspace, which is the whole point of
+ * having the lineage on the row. If the parent is already in a group, this joins that group
+ * rather than making a second one — the parent's workspace is where the comparison belongs.
+ *
+ * The session list is read on the press, not held: this is a deliberate, rare gesture, and the
+ * parent's own row (its title, and the group it is in) is the thing that has to be current.
+ */
+export function GroupWithParent(props: { session: SessionSummary; onChanged(): void }) {
+  const [busy, setBusy] = createSignal(false);
+
+  const run = async () => {
+    const parentPath = props.session.parent;
+    if (!parentPath || busy()) return;
+    setBusy(true);
+    try {
+      let list: SessionSummary[];
+      try {
+        list = await listSessions();
+      } catch (err) {
+        toast(`Couldn't read the session list. ${(err as Error).message}`);
+        return;
+      }
+      const parent = list.find((s) => s.path === parentPath);
+      if (!parent) {
+        toast("Couldn't find the session this one was forked from.");
+        return;
+      }
+      let groupId = parent.groupId ?? null;
+      if (!groupId) {
+        // Named after the parent, because that is what the group is: it and what came out of it.
+        const group = await createGroup(parent.title.trim().slice(0, GROUP_NAME_MAX) || "Fork");
+        if (!group) return;
+        groupId = group.id;
+        if (!(await setSessionGroup(parent.path, groupId))) return;
+      }
+      if (!(await setSessionGroup(props.session.path, groupId))) return;
+      props.onChanged();
+      const done = `Grouped with ${parent.title}.`;
+      toast(done);
+      announce(done);
+      location.hash = groupHref(groupId, props.session.path);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Show when={props.session.parent && !props.session.groupId}>
+      <button
+        type="button"
+        class="button"
+        aria-disabled={busy() ? "true" : undefined}
+        title="Put this session and the one it was forked from in one group, and open it as a workspace"
+        onClick={() => void run()}
+      >
+        <Icon name="folder" />
+        Group with parent
+      </button>
+    </Show>
+  );
+}
+
 interface Row {
   /** The group to move into; null is "No group", which clears the assignment. */
   id: string | null;
@@ -86,7 +152,15 @@ export function MoveToGroupMenu(props: {
   session: SessionSummary;
   /** After a change: the app re-reads the session list, which is what carries the new groupId. */
   onChanged(): void;
+  /**
+   * "move" (the default) files the session and stays where it is. "beside" is the same gesture
+   * read as a place to work: it files the session and then opens that group's workspace with this
+   * session the focused pane. Choosing the group it is already in just opens the workspace, and
+   * "No group" isn't offered — there is no workspace to open.
+   */
+  variant?: "move" | "beside";
 }) {
+  const beside = () => props.variant === "beside";
   const uid = `move-to-group-${++seq}`;
   let trigger!: HTMLButtonElement;
   let menu!: HTMLDivElement;
@@ -102,7 +176,8 @@ export function MoveToGroupMenu(props: {
   const current = () => props.session.groupId ?? null;
   const currentName = () => groupNameOf(sessionGroups(), props.session.groupId ?? undefined);
   /** The radio rows in keyboard order: "No group" first, then each group in creation order. */
-  const rows = (): Row[] => [{ id: null, name: "No group" }, ...sessionGroups().map((g) => ({ id: g.id, name: g.name }))];
+  const rows = (): Row[] =>
+    beside() ? sessionGroups().map((g) => ({ id: g.id, name: g.name })) : [{ id: null, name: "No group" }, ...sessionGroups().map((g) => ({ id: g.id, name: g.name }))];
   /** Only the radio rows are a radiogroup; the "New group…" item follows them in the tab order. */
   const items = () => [...menu.querySelectorAll<HTMLElement>("[role^=menuitem]")];
   const rowIndex = () => (current() === null ? 0 : rows().findIndex((r) => r.id === current()));
@@ -120,16 +195,15 @@ export function MoveToGroupMenu(props: {
   const openMenu = () => {
     if (open()) return;
     const r = trigger.getBoundingClientRect();
-    menu.style.setProperty("--menu-top", `${Math.round(r.bottom + 4)}px`);
     menu.style.setProperty("--menu-right", `${Math.max(0, Math.round(innerWidth - r.right))}px`);
     // The Session tab's own controls sit near the bottom of a tall window: with no room for the
-    // list below the trigger, the menu anchors above it instead (base.css `.group-menu-up`).
-    if (innerHeight - r.bottom < 320) {
-      menu.style.setProperty("--menu-bottom", `${Math.round(innerHeight - r.top + 4)}px`);
-      menu.classList.add("group-menu-up");
-    } else {
-      menu.classList.remove("group-menu-up");
-    }
+    // list below the trigger, the menu anchors above it instead (base.css `.model-menu.group-menu-up`,
+    // which is compound so it wins the cascade). Both custom properties are always set; the class
+    // and the media query decide which one applies, so the sheet band keeps owning the position
+    // under 768px.
+    menu.classList.toggle("group-menu-up", innerHeight - r.bottom < 320);
+    menu.style.setProperty("--menu-top", `${Math.round(r.bottom + 4)}px`);
+    menu.style.setProperty("--menu-bottom", `${Math.round(innerHeight - r.top + 4)}px`);
     closedByChoice = false;
     tabbedAway = false;
     setError(null);
@@ -150,6 +224,8 @@ export function MoveToGroupMenu(props: {
       closedByChoice = true;
       closeMenu();
       trigger.focus();
+      // Already in this group: there is nothing to change, but "Open beside" still opens it.
+      if (beside() && id) location.hash = groupHref(id, props.session.path);
       return;
     }
     setBusy(true);
@@ -167,6 +243,7 @@ export function MoveToGroupMenu(props: {
       toast(done);
       announce(done);
       props.onChanged();
+      if (beside() && id) location.hash = groupHref(id, props.session.path);
     } else {
       setError("This session's group is unchanged.");
     }
@@ -236,11 +313,17 @@ export function MoveToGroupMenu(props: {
         aria-haspopup="menu"
         aria-expanded={open() ? "true" : "false"}
         aria-controls={uid}
-        title={currentName() ? `In the group ${quoted(currentName()!)}` : "Move into group"}
+        title={
+          beside()
+            ? "Open this session in a group's workspace, beside the sessions already in it"
+            : currentName()
+              ? `In the group ${quoted(currentName()!)}`
+              : "Move into group"
+        }
         onClick={() => (open() ? closeMenu() : openMenu())}
       >
-        <Icon name="folder" />
-        Move into group
+        <Icon name={beside() ? "external" : "folder"} />
+        {beside() ? "Open beside" : "Move into group"}
         <Icon name="chevron-down" small />
       </button>
 
@@ -258,9 +341,16 @@ export function MoveToGroupMenu(props: {
         onFocusOut={onFocusOut}
       >
         <Show when={error()}>{(m) => <Banner tone="error" title="Couldn't move this session." body={m()} />}</Show>
+        <Show when={beside() && sessionGroups().length === 0 && !creating()}>
+          <p class="sidebar-region-note">No groups yet. Make one to open this session beside another.</p>
+        </Show>
         {/* The mode menu's shape (§4g): one role=menu list, role=group sections inside it. While the
             name field is showing there is no menu at all — a form is not menu content. */}
-        <div class="model-menu-list" role={creating() ? undefined : "menu"} aria-label={creating() ? undefined : "Move into group"}>
+        <div
+          class="model-menu-list"
+          role={creating() ? undefined : "menu"}
+          aria-label={creating() ? undefined : beside() ? "Open beside" : "Move into group"}
+        >
           <Show
             when={!creating()}
             fallback={

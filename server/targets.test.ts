@@ -214,11 +214,11 @@ test("parseLegacyMountCwd: a cwd under the legacy mounts root names its target; 
   assert.equal(T.parseLegacyMountCwd(root), null); // the root itself names no target
   assert.equal(T.parseLegacyMountCwd(T.targetDir("mthost", "/srv/app")), null); // a placeholder is a remote session
   assert.equal(T.parseLegacyMountCwd("/home/user/webapps/pi-web"), null);
-  // remoteOfCwd knows placeholders only: a legacy mount cwd is not a remote session
-  assert.deepEqual(T.remoteOfCwd(T.targetDir("mthost", "/srv/app")), { target: "mthost", remoteCwd: "/srv/app" });
+  // parseTargetCwd knows placeholders only: a legacy mount cwd is not a remote session
+  assert.deepEqual(T.parseTargetCwd(T.targetDir("mthost", "/srv/app")), { target: "mthost", remoteCwd: "/srv/app" });
   assert.equal(T.targetOfCwd(T.targetDir("mthost", "/srv/app")), "mthost");
-  assert.equal(T.remoteOfCwd(join(root, "mthost", "x")), null);
-  assert.equal(T.remoteOfCwd("/home/user/webapps/pi-web"), null);
+  assert.equal(T.parseTargetCwd(join(root, "mthost", "x")), null);
+  assert.equal(T.parseTargetCwd("/home/user/webapps/pi-web"), null);
 });
 
 test("TargetInfo carries no mount field", async () => {
@@ -256,8 +256,13 @@ test("a session stored inside a legacy sshfs mount cwd is refused, never opened 
   const legacy = join(T.legacyMountsRoot(), "mthost", "work");
   mkdirSync(legacy, { recursive: true }); // exists and is empty: exactly the silent-local-session trap
   const r = await app.request("/api/sessions", { method: "POST", body: JSON.stringify({ cwd: legacy }), headers: { "content-type": "application/json" } });
-  assert.equal(r.status, 201); // creating there is a plain local cwd; OPENING is what is refused
-  const { path } = (await r.json()) as { path: string };
+  assert.equal(r.status, 400); // new sessions must not be created in removed mounts either
+  assert.match((await r.json() as { error: string }).error, /removed sshfs mount/);
+  // Simulate a historical file directly: the create endpoint now prevents this trap.
+  const dir = join(agentDir, "sessions", "--legacy--");
+  mkdirSync(dir, { recursive: true });
+  const path = join(dir, "2026-09-22T00-00-00-000Z_legacy-mount.jsonl");
+  writeFileSync(path, JSON.stringify({ type: "session", version: 3, id: "legacy-mount", timestamp: "2026-09-22T00:00:00.000Z", cwd: legacy }) + "\n");
   const { acquireChat, activeConfigFailure, ConfigError } = await import("./chat-manager");
   await assert.rejects(acquireChat(path), (e: Error) => e instanceof ConfigError && /a feature pi-web no longer has/.test(e.message) && /mthost/.test(e.message));
   assert.ok(activeConfigFailure(path), "memoized for good: the empty directory existing does not clear it");

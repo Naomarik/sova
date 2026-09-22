@@ -4,8 +4,8 @@
 // server/mode-state.ts imports the mode extension's pure modules (node builtins only; nothing else
 // from pi-config). See CLAUDE.md.
 import { type ChildProcessByStdio, spawn } from "node:child_process";
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { dirname, join, posix, sep } from "node:path";
+import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { dirname, isAbsolute, join, posix, sep } from "node:path";
 import type { Readable } from "node:stream";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import {
@@ -24,6 +24,22 @@ import { MAX_FOLDER_ENTRIES } from "./folders";
 export type { Target };
 
 export const targetsFile = () => targetsFilePath(getAgentDir());
+
+/** Shared local-create rule for New Session and fresh fanout: trimmed, absolute, an
+ *  existing directory. Legacy mount cwds are refused lexically before filesystem access.
+ *  Local statSync has no deadline. The caller creates with the TRIMMED cwd. */
+export async function validateNewSessionCwd(raw: string): Promise<string | null> {
+  const cwd = raw.trim();
+  if (!cwd || !isAbsolute(cwd)) return "cwd must be an absolute path";
+  const legacy = parseLegacyMountCwd(cwd);
+  if (legacy) return `cwd belongs to a removed sshfs mount of target ${legacy.target}; start a new remote session instead`;
+  try {
+    if (!statSync(cwd).isDirectory()) return "cwd is not a directory";
+  } catch {
+    return "cwd does not exist";
+  }
+  return null;
+}
 /** Local placeholder root: a remote session's cwd is <root>/<target>/<remote/abs/path>. */
 export const targetsRoot = () => dirname(placeholderRoot(getAgentDir(), "x"));
 
@@ -125,13 +141,10 @@ export function parseLegacyMountCwd(cwd: string): { target: string } | null {
   return isTargetName(target) ? { target } : null;
 }
 
-/** A cwd that stands for a remote directory (the target's local placeholder) → that target and the remote path. */
-export const remoteOfCwd = (cwd: string): { target: string; remoteCwd: string } | null => parseTargetCwd(cwd);
-
 /** The remote target a cwd belongs to (chat-manager passes it as the `target` flag, which switches
  *  pi-config's remote extension on). */
-export const targetOfCwd = (cwd: string): string | null => remoteOfCwd(cwd)?.target ?? null;
-export const remoteCwdOfCwd = (cwd: string): string | null => remoteOfCwd(cwd)?.remoteCwd ?? null;
+export const targetOfCwd = (cwd: string): string | null => parseTargetCwd(cwd)?.target ?? null;
+export const remoteCwdOfCwd = (cwd: string): string | null => parseTargetCwd(cwd)?.remoteCwd ?? null;
 
 // ---------------------------------------------------------------------------
 // Running commands on a target: bounded, never throws.

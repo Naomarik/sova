@@ -10,8 +10,17 @@ opens a folder picker in place, under the field, inside the same dialog.
 <!-- Portal to body -->
 <div class="scrim"></div>
 <div class="modal" role="dialog" aria-modal="true" aria-labelledby="ns-title">
-  <div class="modal-head"><h2 class="modal-title" id="ns-title">New Session</h2></div>
+  <div class="modal-head"><h2 class="modal-title" id="ns-title">New Session</h2></div>  <!-- the title reads "Fan out" while that type is chosen -->
   <form class="modal-body" id="ns-form">
+    <!-- The first field: what this dialog starts (see "Type" below). .fanout-source is §14b's
+         radio presentation, reused so both dialogs that offer fanout render the choice the same. -->
+    <div class="field">
+      <span class="field-label" id="ns-type">What to start</span>
+      <div role="radiogroup" aria-labelledby="ns-type" class="fanout-source">
+        <label><input type="radio" name="ns-type" checked> One session</label>
+        <label><input type="radio" name="ns-type"> Fan out…</label>
+      </div>
+    </div>
     <div class="field">
       <label class="field-label" for="ns-cwd">Folder</label>
       <button type="button" class="input input-mono folder-field" id="ns-cwd" title="/home/user/webapps/pi-web"
@@ -90,6 +99,19 @@ affordance. Every folder is reached by clicking or by the keyboard, and the filt
 the current list. A folder with no readable route to it (say, an unreadable parent) can't be
 chosen here. Start that session from a TUI.
 
+**Type.** The first field (§14b "Entry points" says why it exists): radios **One session** — the
+default, and everything else on this page — and **Fan out…**. One session is the default because
+one session is what `New Session` has always made and what most presses of it want; fanout is
+offered, not advertised. Choosing **Fan out…** re-aims the dialog: the title reads "Fan out", the
+primary reads `Fan Out…` (`aria-disabled` until a folder is chosen, exactly as Create Session
+is), and the Where-pi-runs tabs leave — §14b's fresh mode is N sessions in one **local** folder,
+so there is no remote choice to make, and none that could carry over. Pressing `Fan Out…`
+creates nothing here: this dialog closes and §14b's opens on **A fresh prompt**, carrying the
+folder the field shows (picker open or closed) as its cwd — one folder choice, not two. Nothing
+else carries, because nothing else was asked: this dialog has no first message, so there is no
+prompt to retype. Enter never submits from the radios — Space and the arrows choose — so the
+implicit submit a form would otherwise give Enter on a radio is suppressed.
+
 - **Prefill.** The `cwd` of the open session, else the most recently active session's `cwd`. The
   field shows it with `~`, and the full path goes in `title`. With no prefill it reads "Choose a
   folder" in `--color-ink-muted`, and Create Session is `aria-disabled`.
@@ -116,7 +138,9 @@ chosen here. Start that session from a TUI.
   to 20. Click or Enter/Space picks one, and double-click picks it and submits, as before. The list
   is hidden while the picker is open, since Recent is there.
 - **Submitting.** Create Session posts `{cwd}`. While pending, the button shows "Creating…" and
-  is `aria-disabled`. Enter inside the picker never submits.
+  is `aria-disabled`. Enter inside the picker never submits. With **Fan out…** chosen, the
+  primary reads `Fan Out…` and posts nothing: the dialog closes and §14b's opens on a fresh
+  prompt carrying the field's folder (see **Type** above).
 - **On success.** Close the dialog, navigate to the new session, and focus the composer, except
   on a touch-only device (`(hover: none) and (pointer: coarse)`), where that would raise the
   keyboard over the empty session. There the user taps the composer.

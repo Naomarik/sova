@@ -215,6 +215,7 @@ export function SessionPane(props: {
           </Match>
           <Match when={tab() === "skills"}>
             <SkillsTab
+              path={props.path}
               insight={props.insight}
               now={props.now}
               onShowWorker={(id) => {
@@ -361,7 +362,7 @@ const HOW: Record<SessionSkillUse["how"], { word: string; title: string }> = {
  * this session's rows jump — a worker's evidence is in its own transcript, which the Agents tab
  * opens. What the prompt offered sits below, folded: offered is not loaded.
  */
-function SkillsTab(props: { insight: PaneInsight; now: number; onShowWorker(id: string): void }) {
+function SkillsTab(props: { path: string; insight: PaneInsight; now: number; onShowWorker(id: string): void }) {
   const own = () => props.insight.data?.skills;
   const workers = () => props.insight.data?.workers ?? [];
   const teams = () => props.insight.data?.teams;
@@ -374,7 +375,7 @@ function SkillsTab(props: { insight: PaneInsight; now: number; onShowWorker(id: 
   const loads = () => (own()?.used.length ?? 0) + workerLoads().reduce((n, w) => n + w.skills.used.length, 0);
 
   const jump = (entryId: string) => {
-    if (!jumpToEntry(entryId)) toast("That entry isn't in the transcript on screen.");
+    if (!jumpToEntry(entryId, props.path)) toast("That entry isn't in the transcript on screen.");
   };
 
   return (

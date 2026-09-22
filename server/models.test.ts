@@ -59,3 +59,13 @@ test("input passes through verbatim; a model without one has no input key", () =
   assert.equal(unknown.favorite, false);
   assert.equal(JSON.stringify(unknown).includes("input"), false);
 });
+
+test("toModelInfo carries the context window, and leaves it out when nothing knows it", () => {
+  const favorites = new Set<string>();
+  assert.equal(toModelInfo({ provider: "anthropic", id: "claude-opus-5" }, favorites, 200_000).contextWindow, 200_000);
+  // Absent, not 0 or null: a cost preview must be able to say "unknown" (same rule as ContextInfo.window).
+  for (const unknown of [null, undefined, 0]) {
+    const info = toModelInfo({ provider: "ollama-cloud", id: "kimi-k3" }, favorites, unknown);
+    assert.ok(!("contextWindow" in info), `window ${String(unknown)} is left out`);
+  }
+});

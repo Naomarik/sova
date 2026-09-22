@@ -9,13 +9,30 @@ import { after, test } from "node:test";
 const agentDir = mkdtempSync(join(tmpdir(), "pi-web-groups-test-"));
 process.env.PI_CODING_AGENT_DIR = agentDir; // before the module below computes its paths
 
-const { assignSession, cleanGroupName, createGroup, deleteGroup, dropGroupAssignments, GROUP_NAME_MAX, readAssignments, readGroups, renameGroup } =
-  await import("./session-groups");
+const {
+  assignSession,
+  cleanGroupLabel,
+  cleanGroupName,
+  createGroup,
+  deleteGroup,
+  dropGroupAssignments,
+  GROUP_LABEL_MAX,
+  GROUP_NAME_MAX,
+  readAssignments,
+  readGroups,
+  renameGroup,
+  updateGroup,
+} = await import("./session-groups");
 
 const file = join(agentDir, "pi-web", "session-groups.json");
 after(() => rmSync(agentDir, { recursive: true, force: true }));
 
-const onDisk = () => JSON.parse(readFileSync(file, "utf8")) as { version: number; groups: { id: string; name: string; createdAt: string }[]; assignments: Record<string, string> };
+const onDisk = () =>
+  JSON.parse(readFileSync(file, "utf8")) as {
+    version: number;
+    groups: { id: string; name: string; createdAt: string; members?: { id: string; label?: string }[] }[];
+    assignments: Record<string, string>;
+  };
 const created = (name: string) => {
   const r = createGroup(name);
   assert.ok(r.ok);
@@ -137,8 +154,488 @@ test("a corrupt or malformed store is read as empty and replaced on the next wri
       assignments: { a: "keep", b: "missing-group", c: 7 },
     }),
   );
-  assert.deepEqual(readGroups(), [{ id: "keep", name: "Keep", createdAt: "2026-01-01T00:00:00.000Z" }]);
+  // members is absent on disk here: it comes back derived from the assignments.
+  assert.deepEqual(readGroups(), [{ id: "keep", name: "Keep", createdAt: "2026-01-01T00:00:00.000Z", members: [{ id: "a" }] }]);
   assert.deepEqual(readAssignments(), { a: "keep" });
   assert.deepEqual(assignSession("b", "keep"), { ok: true });
   assert.deepEqual(readAssignments(), { a: "keep", b: "keep" });
+});
+
+// --- member metadata (order + labels) -------------------------------------------------------
+// Each of these starts from a store it wrote itself, so it doesn't depend on the tests above.
+
+const reset = (store: unknown) => writeFileSync(file, JSON.stringify(store));
+const membersOf = (id: string) => readGroups().find((g) => g.id === id)?.members;
+
+test("cleanGroupLabel trims, clears on blank and null, and rejects a long or non-string label", () => {
+  assert.deepEqual(cleanGroupLabel("  sonnet ×2 "), { ok: true, label: "sonnet ×2" });
+  assert.deepEqual(cleanGroupLabel(""), { ok: true, label: null });
+  assert.deepEqual(cleanGroupLabel("   "), { ok: true, label: null });
+  assert.deepEqual(cleanGroupLabel(null), { ok: true, label: null });
+  assert.deepEqual(cleanGroupLabel("x".repeat(GROUP_LABEL_MAX)), { ok: true, label: "x".repeat(GROUP_LABEL_MAX) });
+  assert.deepEqual(cleanGroupLabel("x".repeat(GROUP_LABEL_MAX + 1)), { ok: false });
+  assert.deepEqual(cleanGroupLabel(7), { ok: false });
+  assert.deepEqual(cleanGroupLabel(undefined), { ok: false });
+});
+
+test("members and their labels survive a save/load round trip", () => {
+  reset({ version: 1, groups: [{ id: "g1", name: "Fanout", createdAt: "2026-01-01T00:00:00.000Z" }], assignments: {} });
+  assignSession("s1", "g1", "sonnet ×2");
+  assignSession("s2", "g1");
+  assert.deepEqual(membersOf("g1"), [{ id: "s1", label: "sonnet ×2" }, { id: "s2" }]);
+  // and on disk, inside the group object
+  assert.deepEqual(onDisk().groups[0]!.members, [{ id: "s1", label: "sonnet ×2" }, { id: "s2" }]);
+  assert.deepEqual(readAssignments(), { s1: "g1", s2: "g1" });
+});
+
+test("a store without members reads back as the assigned sessions in id order", () => {
+  reset({
+    version: 1,
+    groups: [{ id: "g1", name: "Fanout", createdAt: "2026-01-01T00:00:00.000Z" }],
+    assignments: { zz: "g1", aa: "g1", mm: "g1" },
+  });
+  assert.deepEqual(membersOf("g1"), [{ id: "aa" }, { id: "mm" }, { id: "zz" }]);
+});
+
+test("load drops malformed, stale and duplicate members, and appends the ones the metadata missed", () => {
+  reset({
+    version: 1,
+    groups: [
+      {
+        id: "g1",
+        name: "Fanout",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        members: [{ id: "b", label: "  kept  " }, { id: "b" }, { id: "not-assigned" }, { id: "a", label: 7 }, { id: "c", label: "x".repeat(GROUP_LABEL_MAX + 1) }, { label: "no id" }, "junk", null],
+      },
+      { id: "g2", name: "Other", createdAt: "2026-01-01T00:00:00.000Z", members: "not an array" },
+    ],
+    assignments: { a: "g1", b: "g1", d: "g1", e: "g2" },
+  });
+  // b keeps its (trimmed) label; the duplicate, the unassigned entry and the two bad labels go;
+  // d, which no member entry mentioned, is appended.
+  assert.deepEqual(membersOf("g1"), [{ id: "b", label: "kept" }, { id: "a" }, { id: "d" }]);
+  assert.deepEqual(membersOf("g2"), [{ id: "e" }]);
+});
+
+test("updateGroup reorders, ignoring ids that are not in the group, and keeps the rest behind", () => {
+  reset({ version: 1, groups: [{ id: "g1", name: "Fanout", createdAt: "2026-01-01T00:00:00.000Z" }], assignments: { a: "g1", b: "g1", c: "g1", d: "g1" } });
+  const r = updateGroup("g1", { order: ["c", "nope", "a"] });
+  assert.ok(r.ok);
+  assert.deepEqual(r.group.members, [{ id: "c" }, { id: "a" }, { id: "b" }, { id: "d" }]);
+  assert.deepEqual(membersOf("g1"), [{ id: "c" }, { id: "a" }, { id: "b" }, { id: "d" }]);
+  assert.deepEqual(readAssignments(), { a: "g1", b: "g1", c: "g1", d: "g1" }); // membership untouched
+});
+
+test("updateGroup sets and clears labels, and renames in the same write", () => {
+  reset({ version: 1, groups: [{ id: "g1", name: "Fanout", createdAt: "2026-01-01T00:00:00.000Z" }], assignments: { a: "g1", b: "g1" } });
+  const set = updateGroup("g1", { name: "  Fan out  ", labels: [{ id: "a", label: " sonnet ×2 " }, { id: "b", label: "opus" }, { id: "gone", label: "ignored" }] });
+  assert.ok(set.ok);
+  assert.equal(set.group.name, "Fan out");
+  assert.deepEqual(set.group.members, [{ id: "a", label: "sonnet ×2" }, { id: "b", label: "opus" }]);
+  const cleared = updateGroup("g1", { labels: [{ id: "a", label: null }, { id: "b", label: "   " }] });
+  assert.ok(cleared.ok);
+  assert.deepEqual(cleared.group.members, [{ id: "a" }, { id: "b" }]);
+  assert.deepEqual(membersOf("g1"), [{ id: "a" }, { id: "b" }]);
+});
+
+test("updateGroup: 404 unknown group, 400 empty patch and bad order/labels/name", () => {
+  reset({ version: 1, groups: [{ id: "g1", name: "Fanout", createdAt: "2026-01-01T00:00:00.000Z" }], assignments: { a: "g1" } });
+  const missing = updateGroup("nope", { name: "Anything" });
+  assert.ok(!missing.ok && missing.status === 404);
+  for (const patch of [
+    {},
+    { name: "   " },
+    { order: "a" },
+    { order: ["a", 7] },
+    { labels: { a: "x" } },
+    { labels: [{ label: "no id" }] },
+    { labels: [{ id: "a", label: 7 }] },
+    { labels: [{ id: "a", label: "x".repeat(GROUP_LABEL_MAX + 1) }] },
+  ]) {
+    const r = updateGroup("g1", patch as Parameters<typeof updateGroup>[1]);
+    assert.ok(!r.ok && r.status === 400, `expected 400 for ${JSON.stringify(patch)}`);
+  }
+  assert.deepEqual(membersOf("g1"), [{ id: "a" }]); // nothing changed
+  assert.equal(readGroups()[0]!.name, "Fanout");
+});
+
+test("renameGroup still only renames, leaving the members alone", () => {
+  reset({ version: 1, groups: [{ id: "g1", name: "Fanout", createdAt: "2026-01-01T00:00:00.000Z", members: [{ id: "b" }, { id: "a", label: "opus" }] }], assignments: { a: "g1", b: "g1" } });
+  const r = renameGroup("g1", "Day job");
+  assert.ok(r.ok);
+  assert.equal(r.group.name, "Day job");
+  assert.deepEqual(membersOf("g1"), [{ id: "b" }, { id: "a", label: "opus" }]);
+});
+
+test("moving a session between groups carries its label; an explicit one wins, null clears", () => {
+  reset({
+    version: 1,
+    groups: [
+      { id: "g1", name: "One", createdAt: "2026-01-01T00:00:00.000Z" },
+      { id: "g2", name: "Two", createdAt: "2026-01-01T00:00:00.000Z" },
+    ],
+    assignments: {},
+  });
+  assignSession("s1", "g1", "sonnet ×2");
+  assignSession("s2", "g2", "opus");
+  assert.deepEqual(assignSession("s1", "g2"), { ok: true }); // move, label carried
+  assert.deepEqual(membersOf("g1"), []);
+  assert.deepEqual(membersOf("g2"), [{ id: "s2", label: "opus" }, { id: "s1", label: "sonnet ×2" }]);
+  assignSession("s1", "g1", "haiku"); // an explicit label replaces the carried one
+  assert.deepEqual(membersOf("g1"), [{ id: "s1", label: "haiku" }]);
+  assignSession("s1", "g1", null); // re-assign to the same group, clearing the label
+  assert.deepEqual(membersOf("g1"), [{ id: "s1" }]);
+  assert.deepEqual(readAssignments(), { s1: "g1", s2: "g2" });
+});
+
+test("a refused assign leaves the member entry where it was; ungrouping drops it", () => {
+  reset({ version: 1, groups: [{ id: "g1", name: "One", createdAt: "2026-01-01T00:00:00.000Z" }], assignments: {} });
+  assignSession("s1", "g1", "sonnet ×2");
+  const bad = assignSession("s1", "no-such-group");
+  assert.ok(!bad.ok && bad.status === 404);
+  assert.deepEqual(membersOf("g1"), [{ id: "s1", label: "sonnet ×2" }]);
+  assert.deepEqual(readAssignments(), { s1: "g1" });
+  assert.deepEqual(assignSession("s1", null), { ok: true });
+  assert.deepEqual(membersOf("g1"), []);
+  assert.deepEqual(readAssignments(), {});
+});
+
+test("dropGroupAssignments takes the member entries with the assignments", () => {
+  reset({
+    version: 1,
+    groups: [
+      { id: "g1", name: "One", createdAt: "2026-01-01T00:00:00.000Z", members: [{ id: "gone", label: "sonnet ×2" }, { id: "stays" }] },
+      { id: "g2", name: "Two", createdAt: "2026-01-01T00:00:00.000Z", members: [{ id: "gone-too", label: "opus" }] },
+    ],
+    assignments: { gone: "g1", stays: "g1", "gone-too": "g2" },
+  });
+  dropGroupAssignments(["gone", "gone-too", "never-was"]);
+  assert.deepEqual(readAssignments(), { stays: "g1" });
+  assert.deepEqual(membersOf("g1"), [{ id: "stays" }]);
+  assert.deepEqual(membersOf("g2"), []);
+  assert.deepEqual(onDisk().groups.map((g) => g.members), [[{ id: "stays" }], []]);
+});
+
+test("deleting a group takes its members with it", () => {
+  reset({
+    version: 1,
+    groups: [
+      { id: "g1", name: "One", createdAt: "2026-01-01T00:00:00.000Z", members: [{ id: "s1", label: "sonnet ×2" }] },
+      { id: "g2", name: "Two", createdAt: "2026-01-01T00:00:00.000Z" },
+    ],
+    assignments: { s1: "g1", s2: "g2" },
+  });
+  assert.equal(deleteGroup("g1"), true);
+  assert.deepEqual(readGroups().map((g) => g.id), ["g2"]);
+  assert.deepEqual(readAssignments(), { s2: "g2" });
+  assert.deepEqual(onDisk().groups[0]!.members, [{ id: "s2" }]);
+});
+
+test("an unknown field written by another pi-web version survives our writes", () => {
+  // The case this protects: a fanout group's `seed` (spec/14b), written by a build that has it,
+  // must not be deleted by a build that doesn't when the user renames the group here.
+  reset({
+    futureTopLevel: { note: "from another build" },
+    version: 7,
+    groups: [
+      { id: "g1", name: "Fanout", createdAt: "2026-01-01T00:00:00.000Z", seed: { parentSessionPath: "/p.jsonl", leafId: "e9" }, members: [{ id: "a", label: "opus", pinned: true }] },
+    ],
+    assignments: { a: "g1" },
+  });
+  const r = renameGroup("g1", "Renamed");
+  assert.ok(r.ok);
+  const raw = onDisk() as unknown as { version: number; futureTopLevel: unknown; groups: Record<string, unknown>[] };
+  assert.equal(raw.groups[0]!.name, "Renamed", "the field we do know is the one that changed");
+  assert.deepEqual(raw.groups[0]!.seed, { parentSessionPath: "/p.jsonl", leafId: "e9" }, "the group's unknown field is still there");
+  assert.deepEqual(raw.groups[0]!.members, [{ pinned: true, id: "a", label: "opus" }], "and so is the member's");
+  assert.deepEqual(raw.futureTopLevel, { note: "from another build" }, "top-level too");
+  assert.equal(raw.version, 7, "a newer writer's version is not stamped back down to ours");
+  // It reaches a reader as well, so a frontend that understands it can use it.
+  assert.deepEqual((readGroups()[0] as unknown as { seed: unknown }).seed, { parentSessionPath: "/p.jsonl", leafId: "e9" });
+});
+
+test("a store we create ourselves is version 1 with nothing extra", () => {
+  rmSync(file, { force: true });
+  created("Fresh");
+  const raw = onDisk();
+  assert.deepEqual(Object.keys(raw).sort(), ["assignments", "groups", "version"]);
+  assert.equal(raw.version, 1);
+});
+
+// --- auto-dissolve of a fanout group (spec/14 "Emptying a group") ---------------------------
+// `seed` is written by the fanout stage and isn't a typed field yet; the store carries unknown
+// keys through, so these tests write one the way a newer build would.
+
+const SEED = { parentSessionPath: "/s/root.jsonl", leafId: "e9" };
+
+test("unassigning the last member of a fanout group dissolves it, and says so", () => {
+  reset({
+    version: 1,
+    groups: [{ id: "g1", name: "Fanout", createdAt: "2026-01-01T00:00:00.000Z", seed: SEED, members: [{ id: "a" }] }],
+    assignments: { a: "g1" },
+  });
+  assert.deepEqual(assignSession("a", null), { ok: true, dissolved: true });
+  assert.deepEqual(readGroups(), []);
+  assert.deepEqual(readAssignments(), {});
+});
+
+test("moving the last member OUT of a fanout group dissolves it too", () => {
+  reset({
+    version: 1,
+    groups: [
+      { id: "g1", name: "Fanout", createdAt: "2026-01-01T00:00:00.000Z", seed: SEED, members: [{ id: "a", label: "opus" }] },
+      { id: "g2", name: "Hand-made", createdAt: "2026-01-01T00:00:00.000Z" },
+    ],
+    assignments: { a: "g1" },
+  });
+  assert.deepEqual(assignSession("a", "g2"), { ok: true, dissolved: true });
+  assert.deepEqual(readGroups().map((g) => g.id), ["g2"]);
+  assert.deepEqual(membersOf("g2"), [{ id: "a", label: "opus" }], "the member arrives with its label");
+});
+
+test("a fanout group with members left is not dissolved", () => {
+  reset({
+    version: 1,
+    groups: [{ id: "g1", name: "Fanout", createdAt: "2026-01-01T00:00:00.000Z", seed: SEED }],
+    assignments: { a: "g1", b: "g1" },
+  });
+  assert.deepEqual(assignSession("a", null), { ok: true });
+  assert.deepEqual(readGroups().map((g) => g.id), ["g1"]);
+  assert.deepEqual(membersOf("g1"), [{ id: "b" }]);
+});
+
+test("a HAND-MADE group stands empty: no seed, no dissolve", () => {
+  reset({
+    version: 1,
+    groups: [{ id: "g1", name: "Work", createdAt: "2026-01-01T00:00:00.000Z", members: [{ id: "a" }] }],
+    assignments: { a: "g1" },
+  });
+  assert.deepEqual(assignSession("a", null), { ok: true }, "no dissolved flag");
+  assert.deepEqual(readGroups().map((g) => g.name), ["Work"], "the group the user named is still there");
+  assert.deepEqual(membersOf("g1"), []);
+});
+
+test("re-assigning the only member to the same fanout group does not dissolve it", () => {
+  reset({
+    version: 1,
+    groups: [{ id: "g1", name: "Fanout", createdAt: "2026-01-01T00:00:00.000Z", seed: SEED, members: [{ id: "a" }] }],
+    assignments: { a: "g1" },
+  });
+  assert.deepEqual(assignSession("a", "g1", "sonnet ×2"), { ok: true });
+  assert.deepEqual(membersOf("g1"), [{ id: "a", label: "sonnet ×2" }]);
+});
+
+test("a malformed seed is not a fanout group", () => {
+  reset({
+    version: 1,
+    groups: [{ id: "g1", name: "Fanout", createdAt: "2026-01-01T00:00:00.000Z", seed: "yes", members: [{ id: "a" }] }],
+    assignments: { a: "g1" },
+  });
+  assert.deepEqual(assignSession("a", null), { ok: true });
+  assert.deepEqual(readGroups().map((g) => g.id), ["g1"]);
+});
+
+test("archive cleanup empties a fanout group WITHOUT dissolving it (deliberate, documented)", () => {
+  reset({
+    version: 1,
+    groups: [{ id: "g1", name: "Fanout", createdAt: "2026-01-01T00:00:00.000Z", seed: SEED, members: [{ id: "a" }] }],
+    assignments: { a: "g1" },
+  });
+  dropGroupAssignments(["a"]);
+  assert.deepEqual(readGroups().map((g) => g.id), ["g1"], "no client is listening to that call");
+  assert.deepEqual(membersOf("g1"), []);
+});
+
+test("re-assigning a session to the group it is already in does not reorder it", () => {
+  // §2's drag-and-drop can drop a grouped row back onto its own section, and a double-fire sends
+  // the same assign twice: neither may rewrite an order the user arranged by hand.
+  reset({
+    version: 1,
+    groups: [{ id: "g1", name: "Work", createdAt: "2026-01-01T00:00:00.000Z", members: [{ id: "a", label: "opus" }, { id: "b" }, { id: "c" }] }],
+    assignments: { a: "g1", b: "g1", c: "g1" },
+  });
+  assert.deepEqual(assignSession("a", "g1"), { ok: true });
+  assert.deepEqual(membersOf("g1"), [{ id: "a", label: "opus" }, { id: "b" }, { id: "c" }], "position and label both untouched");
+  assignSession("a", "g1", "sonnet ×2"); // a label change still lands, still in place
+  assert.deepEqual(membersOf("g1"), [{ id: "a", label: "sonnet ×2" }, { id: "b" }, { id: "c" }]);
+  assignSession("a", "g1", null); // and clearing it
+  assert.deepEqual(membersOf("g1"), [{ id: "a" }, { id: "b" }, { id: "c" }]);
+});
+
+test("a session moved to a DIFFERENT group still arrives at the end", () => {
+  reset({
+    version: 1,
+    groups: [
+      { id: "g1", name: "One", createdAt: "2026-01-01T00:00:00.000Z", members: [{ id: "a", label: "opus" }] },
+      { id: "g2", name: "Two", createdAt: "2026-01-01T00:00:00.000Z", members: [{ id: "b" }] },
+    ],
+    assignments: { a: "g1", b: "g2" },
+  });
+  assert.deepEqual(assignSession("a", "g2"), { ok: true });
+  assert.deepEqual(membersOf("g2"), [{ id: "b" }, { id: "a", label: "opus" }]);
+});
+
+test("assign with index lands the member at that position, so Add Back is one write", () => {
+  reset({
+    version: 1,
+    groups: [
+      { id: "g1", name: "Fanout", createdAt: "2026-01-01T00:00:00.000Z", members: [{ id: "a" }, { id: "b" }, { id: "c" }] },
+      { id: "g2", name: "Elsewhere", createdAt: "2026-01-01T00:00:00.000Z" },
+    ],
+    assignments: { a: "g1", b: "g1", c: "g1", promoted: "g2" },
+  });
+  // Promote took `promoted` out at position 1; Add Back restores label AND place in one call.
+  assert.deepEqual(assignSession("promoted", "g1", "sonnet ×2", 1), { ok: true });
+  assert.deepEqual(membersOf("g1"), [{ id: "a" }, { id: "promoted", label: "sonnet ×2" }, { id: "b" }, { id: "c" }]);
+});
+
+test("index 0 lands first; past the end, and omitted, land at the end", () => {
+  const three = () => ({
+    version: 1,
+    groups: [{ id: "g1", name: "G", createdAt: "2026-01-01T00:00:00.000Z", members: [{ id: "a" }, { id: "b" }] }],
+    assignments: { a: "g1", b: "g1" },
+  });
+  reset(three());
+  assignSession("x", "g1", undefined, 0);
+  assert.deepEqual(membersOf("g1"), [{ id: "x" }, { id: "a" }, { id: "b" }]);
+  reset(three());
+  assignSession("x", "g1", undefined, 99);
+  assert.deepEqual(membersOf("g1"), [{ id: "a" }, { id: "b" }, { id: "x" }]);
+  reset(three());
+  assignSession("x", "g1");
+  assert.deepEqual(membersOf("g1"), [{ id: "a" }, { id: "b" }, { id: "x" }]);
+});
+
+test("index is ignored for a session already in the group: assign never reorders in place", () => {
+  reset({
+    version: 1,
+    groups: [{ id: "g1", name: "G", createdAt: "2026-01-01T00:00:00.000Z", members: [{ id: "a" }, { id: "b" }, { id: "c" }] }],
+    assignments: { a: "g1", b: "g1", c: "g1" },
+  });
+  assert.deepEqual(assignSession("c", "g1", undefined, 0), { ok: true });
+  assert.deepEqual(membersOf("g1"), [{ id: "a" }, { id: "b" }, { id: "c" }], "PATCH {order} is the reposition, not assign");
+});
+
+test("a member's unknown fields travel with it between groups", () => {
+  // The forward-compat case passThrough exists for: a newer build's per-member field must not be
+  // dropped by an older build moving that member.
+  reset({
+    version: 1,
+    groups: [
+      { id: "g1", name: "One", createdAt: "2026-01-01T00:00:00.000Z", members: [{ id: "a", label: "opus", pinned: true, note: { by: "newer build" } }] },
+      { id: "g2", name: "Two", createdAt: "2026-01-01T00:00:00.000Z" },
+    ],
+    assignments: { a: "g1" },
+  });
+  assignSession("a", "g2");
+  assert.deepEqual(onDisk().groups[1]!.members, [{ id: "a", label: "opus", pinned: true, note: { by: "newer build" } } as never]);
+  // and an explicit label change keeps them too
+  assignSession("a", "g1", null);
+  assert.deepEqual(onDisk().groups[0]!.members, [{ id: "a", pinned: true, note: { by: "newer build" } } as never]);
+});
+
+// --- what decides dissolution (autoDissolve, not seed) ---------------------------------------
+// The flag is the one truth. `seed` is lineage and the fork marker's datum; inferring deletion
+// from it is what would have made a group the USER named start deleting itself once it adopted
+// a fanout's lineage.
+
+test("a group pi-web created AND named dissolves when emptied", () => {
+  reset({
+    version: 1,
+    groups: [{ id: "g1", name: "opus ×3", createdAt: "2026-01-01T00:00:00.000Z", seed: SEED, autoDissolve: true, members: [{ id: "a" }] }],
+    assignments: { a: "g1" },
+  });
+  assert.deepEqual(assignSession("a", null), { ok: true, dissolved: true });
+  assert.deepEqual(readGroups(), []);
+});
+
+test("a HAND-MADE group that adopted a fanout's seed SURVIVES being emptied", () => {
+  // The case the flag exists for: it has lineage (so markers and Align to Fork work), and it
+  // keeps the name the user chose.
+  reset({
+    version: 1,
+    groups: [{ id: "g1", name: "My comparison", createdAt: "2026-01-01T00:00:00.000Z", seed: SEED, autoDissolve: false, members: [{ id: "a" }] }],
+    assignments: { a: "g1" },
+  });
+  assert.deepEqual(assignSession("a", null), { ok: true }, "no dissolved flag");
+  assert.deepEqual(readGroups().map((g) => g.name), ["My comparison"]);
+  assert.deepEqual(membersOf("g1"), []);
+});
+
+test("an explicit false beats a seed, and survives a round trip", () => {
+  reset({
+    version: 1,
+    groups: [{ id: "g1", name: "Named", createdAt: "2026-01-01T00:00:00.000Z", seed: SEED, autoDissolve: false, members: [{ id: "a" }] }],
+    assignments: { a: "g1" },
+  });
+  assignSession("a", null);
+  assert.equal(readGroups()[0]!.autoDissolve, false, "the flag is preserved, not dropped");
+  assert.equal((onDisk().groups[0] as { autoDissolve?: boolean }).autoDissolve, false);
+});
+
+test("legacy: a seeded group written before the flag existed still dissolves", () => {
+  // Absence means "predates the flag", and only then does seed imply dissolution — those records
+  // are pi-web's own fanout groups.
+  reset({
+    version: 1,
+    groups: [{ id: "g1", name: "Old fanout", createdAt: "2026-01-01T00:00:00.000Z", seed: SEED, members: [{ id: "a" }] }],
+    assignments: { a: "g1" },
+  });
+  assert.deepEqual(assignSession("a", null), { ok: true, dissolved: true });
+  assert.deepEqual(readGroups(), []);
+});
+
+test("a hand-made group with neither flag nor seed survives, as it always did", () => {
+  reset({
+    version: 1,
+    groups: [{ id: "g1", name: "Work", createdAt: "2026-01-01T00:00:00.000Z", members: [{ id: "a" }] }],
+    assignments: { a: "g1" },
+  });
+  assert.deepEqual(assignSession("a", null), { ok: true });
+  assert.deepEqual(readGroups().map((g) => g.name), ["Work"]);
+});
+
+test("a malformed autoDissolve is dropped, falling back to the legacy rule", () => {
+  reset({
+    version: 1,
+    groups: [{ id: "g1", name: "Odd", createdAt: "2026-01-01T00:00:00.000Z", seed: SEED, autoDissolve: "yes", members: [{ id: "a" }] }],
+    assignments: { a: "g1" },
+  });
+  assert.equal(readGroups()[0]!.autoDissolve, undefined, "not a boolean: treated as absent");
+  assert.deepEqual(assignSession("a", null), { ok: true, dissolved: true }, "so the seed decides");
+});
+
+test("renaming a fanout group hands it to the user: it then survives being emptied", () => {
+  // "pi-web made it AND named it, so pi-web may remove it" — a rename falsifies the second half.
+  reset({
+    version: 1,
+    groups: [{ id: "g1", name: "Fanout · retry backoff", createdAt: "2026-01-01T00:00:00.000Z", seed: SEED, autoDissolve: true, members: [{ id: "a" }] }],
+    assignments: { a: "g1" },
+  });
+  const r = renameGroup("g1", "Backoff experiments");
+  assert.ok(r.ok);
+  assert.equal(readGroups()[0]!.autoDissolve, false, "the rename revoked pi-web's claim on it");
+  assert.deepEqual(assignSession("a", null), { ok: true }, "so emptying it does not delete it");
+  assert.deepEqual(readGroups().map((g) => g.name), ["Backoff experiments"]);
+});
+
+test("renaming to the SAME name changes nothing, including the flag", () => {
+  reset({
+    version: 1,
+    groups: [{ id: "g1", name: "Fanout · one", createdAt: "2026-01-01T00:00:00.000Z", seed: SEED, autoDissolve: true, members: [{ id: "a" }] }],
+    assignments: { a: "g1" },
+  });
+  assert.ok(renameGroup("g1", "  Fanout · one  ").ok, "trimmed to the same string: not a rename");
+  assert.equal(readGroups()[0]!.autoDissolve, true, "nothing happened, so nothing was revoked");
+  assert.deepEqual(assignSession("a", null), { ok: true, dissolved: true });
+});
+
+test("reordering or relabelling a fanout group does NOT revoke its flag", () => {
+  reset({
+    version: 1,
+    groups: [{ id: "g1", name: "Fanout · two", createdAt: "2026-01-01T00:00:00.000Z", seed: SEED, autoDissolve: true, members: [{ id: "a" }, { id: "b" }] }],
+    assignments: { a: "g1", b: "g1" },
+  });
+  updateGroup("g1", { order: ["b", "a"], labels: [{ id: "a", label: "opus" }] });
+  assert.equal(readGroups()[0]!.autoDissolve, true, "only a NAME the user typed hands it over");
 });

@@ -12,9 +12,17 @@ continuing your [pi](https://pi.dev) sessions.
 
 Sova runs on your own machine beside the pi coding agent and reads the same `~/.pi/agent` the
 terminal does. It lists every session on the machine, opens any transcript, shows a session that
-is open in a TUI as it runs, and lets you chat in the sessions it started itself. Nothing leaves
-the machine unless you point it at a remote target you own. It is one person's tool for one
-person's agent: a single local user, no accounts, no authentication, loopback by default.
+is open in a TUI as it runs, and lets you chat in the sessions it started itself. It is one
+person's tool for one person's agent: a single local user, no accounts, no authentication,
+loopback by default.
+
+There is no Sova service and no Sova account: the app, its state and your transcripts stay on the
+machine, and nothing is sent anywhere on Sova's behalf. What does leave the machine is what you
+ask the agent to do. A turn sends your prompt and the session's context to whichever model
+provider it is pointed at, exactly as the TUI would. A session started against a remote target
+runs its tools on that host. Extensions and tools reach the network on their own — web search and
+fetch, the usage endpoints behind the Usage page, an authenticated `claude` CLI. Sova is local; the
+agent it drives is as local as the providers and tools you give it.
 
 ## Install
 
@@ -49,9 +57,17 @@ git clone https://github.com/Naomarik/sova.git && sova/scripts/install.sh
 ```
 
 Sessions already on the machine are listed and readable as soon as the server starts. Chatting
-needs pi's provider credentials in `~/.pi/agent/auth.json`; if you have never logged in, run `pi`
-and `/login` once. Sova embeds its own pinned pi (`@earendil-works/pi-coding-agent` **0.86.1**)
-from `node_modules`, so no global install is required.
+needs pi's provider credentials in `~/.pi/agent/auth.json`. Sova embeds its own pinned pi
+(`@earendil-works/pi-coding-agent` **0.86.1**), so nothing has to be installed globally — if you
+have never logged in, use the copy that came with it:
+
+```sh
+~/.local/share/sova/node_modules/.bin/pi      # or <install dir>/node_modules/.bin/pi
+#   /login
+```
+
+A global `pi` on your PATH does the same job; either way the credentials land in the same file,
+and the server reads them from there.
 
 ## What it does
 

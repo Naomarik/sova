@@ -146,6 +146,8 @@ async function deadline(promise, ms, label) {
 		sendUserMessage: () => {
 			throw new Error("teams must never send user messages");
 		},
+		registerFlag: () => {},
+		getFlag: () => undefined,
 	};
 	registerClaudeCode(pi);
 	registerSubagents(pi, (options, handlers) => {
@@ -261,7 +263,7 @@ async function deadline(promise, ms, label) {
 		assert.equal(workers[0].disposed, true, "workers disposed at shutdown");
 		console.log("PASS: team tools, widget refresh/shutdown wiring and /team semantics (offline, no model).");
 	} finally {
-		for (const fn of hooks.get("session_shutdown") ?? []) await fn({}, ctx).catch(() => {});
+		for (const fn of hooks.get("session_shutdown") ?? []) await Promise.resolve(fn({}, ctx)).catch(() => {});
 	}
 }
 
@@ -290,6 +292,8 @@ if (!LIVE) {
 		registerTool: (t) => tools.set(t.name, t),
 		registerCommand() {},
 		registerShortcut() {},
+		registerFlag() {},
+		getFlag: () => undefined,
 		on(name, fn) {
 			const list = hooks.get(name) ?? [];
 			list.push(fn);
@@ -343,7 +347,7 @@ if (!LIVE) {
 		assert.equal(listed.details.teams[0].members[0].processAlive, false, "own worker stopped");
 		console.log("PASS: one bounded live Claude member ran through team_create and was stopped (haiku, tools [], effort low, maxBudgetUsd 0.5, wake false).");
 	} finally {
-		for (const fn of hooks.get("session_shutdown") ?? []) await fn({}, ctx).catch(() => {});
+		for (const fn of hooks.get("session_shutdown") ?? []) await Promise.resolve(fn({}, ctx)).catch(() => {});
 		fs.rmSync(cwd, { recursive: true, force: true });
 	}
 }

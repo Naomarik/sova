@@ -1084,7 +1084,7 @@ test("integration: the real Claude permission emitter hides and restores the tea
 	const h = harness(bus);
 	let backend: any;
 	bus.on(BACKEND_REGISTER_EVENT, (b: any) => { backend = b; });
-	registerClaudeCode({ events: bus, on: () => {} } as any);
+	registerClaudeCode({ events: bus, on: () => {}, registerFlag: () => {}, getFlag: () => undefined } as any);
 	assert.ok(backend, "backend registered with the manager");
 	captureOverlay(h.ctx);
 	const overlay = overlayOf(h.ctx);

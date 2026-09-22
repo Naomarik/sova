@@ -113,7 +113,7 @@ export interface SessionBridgeOptions {
 }
 
 // ---------------------------------------------------------------------------
-// uuid5, for a CLI session id that survives a pi-web restart
+// uuid5, for a CLI session id derived from the pi session
 // ---------------------------------------------------------------------------
 
 /** RFC 4122 namespace URL. */
@@ -136,10 +136,32 @@ export function uuidv5(namespace: string, name: string): string {
 	return `${s.slice(0, 8)}-${s.slice(8, 12)}-${s.slice(12, 16)}-${s.slice(16, 20)}-${s.slice(20)}`;
 }
 
-/** The CLI `--session-id` for a pi session. Stable across pi-web restarts. */
-export function claudeSessionId(piSessionId: string): string {
-	return uuidv5(NAMESPACE_URL, `pi:${piSessionId}`);
+/**
+ * The CLI `--session-id` for the `launch`-th child of a pi session.
+ *
+ * `--session-id` CREATES a record; it never re-attaches to one. Handed an id
+ * that already exists the CLI prints `Session ID <id> is already in use.` on
+ * stderr and exits 1 before answering `initialize`, so a *stable* id would make
+ * every relaunch after the first child's death fail forever. Each launch
+ * therefore gets its own id, still derived from the pi session id so the
+ * records stay attributable to it. Launch 0 keeps the bare `pi:<id>` name, so
+ * an existing session's first child is unchanged.
+ */
+export function claudeSessionId(piSessionId: string, launch = 0): string {
+	return uuidv5(NAMESPACE_URL, launch === 0 ? `pi:${piSessionId}` : `pi:${piSessionId}#${launch}`);
 }
+
+/** stderr of a child that was handed a `--session-id` some earlier child took. */
+const SESSION_ID_TAKEN_RE = /session id\b.*\bis already in use/i;
+/** "Claude <why>" for that case; distinguished from a real handshake failure. */
+const SESSION_ID_TAKEN = "was handed a session id already in use";
+/**
+ * How far past `launchAttempt` to probe for a free id. The counter lives in
+ * memory, so a new pi-web process starts back at 0 and has to walk past the
+ * records the previous one left on disk; each collision costs one fast-failing
+ * spawn (~150 ms).
+ */
+const SESSION_ID_PROBES = 32;
 
 // ---------------------------------------------------------------------------
 // Transcript fingerprinting
@@ -399,6 +421,8 @@ class CliSession {
 	private disposing = false;
 	/** True while a child is being replaced: the turn outlives the old process. */
 	private restarting = false;
+	/** Children this bridge has launched; each one needs its own --session-id. */
+	private launchAttempt = 0;
 	private failure?: string;
 
 	constructor(piSessionId: string, options: SessionBridgeOptions, cwd: string) {
@@ -521,6 +545,26 @@ class CliSession {
 		this.recorded = [];
 		this.meta = undefined;
 
+		// Walk forward until the CLI accepts an id: a collision is survivable and
+		// costs one fast-failing spawn, whereas reusing an id is fatal for good.
+		for (let probe = 0; probe <= SESSION_ID_PROBES; probe++) {
+			const why = await this.launchChild(request, claudeSessionId(this.piSessionId, this.launchAttempt));
+			this.launchAttempt++;
+			if (why === undefined) {
+				const folded = foldHistory(request.messages, this.limits);
+				this.sendUserMessage(folded.text, folded.images);
+				return;
+			}
+			if (why !== SESSION_ID_TAKEN) throw new Error(`Claude ${why}`);
+		}
+		throw new Error(`Claude ${SESSION_ID_TAKEN}, for ${SESSION_ID_PROBES + 1} ids in a row`);
+	}
+
+	/**
+	 * Spawn one child and run the `initialize` handshake. Returns undefined once
+	 * the child is live, or the "Claude <why>" tail for a child already torn down.
+	 */
+	private async launchChild(request: ClaudeTurnRequest, sessionId: string): Promise<string | undefined> {
 		const built = buildClaudeArgv({
 			permissionMode: "dontAsk",
 			permissionModes: ["dontAsk"],
@@ -531,7 +575,7 @@ class CliSession {
 			// MANDATORY. Under dontAsk an unlisted MCP server is auto-denied and
 			// the held tools/call never reaches this host at all.
 			allowedTools: [`mcp__${PI_MCP_SERVER_NAME}`],
-			sessionId: claudeSessionId(this.piSessionId),
+			sessionId,
 		});
 		if ("error" in built) throw new Error(`Claude argv rejected: ${built.error}`);
 		const args = built.args;
@@ -545,6 +589,9 @@ class CliSession {
 		});
 		this.host = host;
 
+		// Only read when the handshake fails: a child that refuses its session id
+		// says so here and nowhere else.
+		let stderr = "";
 		const transport = new ClaudeTransport({
 			timings: this.transportTimings(),
 			limits: { maxLineBytes: this.limits.maxLineBytes } satisfies ClaudeTransportLimits,
@@ -552,6 +599,7 @@ class CliSession {
 			signalGroupImpl: this.options.signalGroupImpl,
 			hooks: {
 				onEvent: (event) => this.onEvent(event as unknown as Record<string, unknown>),
+				onStderr: (text) => { if (stderr.length < 4096) stderr += text; },
 				// The MCP facade rides the control channel; returning false lets the
 				// transport refuse anything else as unsupported.
 				onControlRequest: (request) => this.host?.handleFrame(request.frame as unknown as Record<string, unknown>) ?? false,
@@ -578,14 +626,12 @@ class CliSession {
 			fields.systemPromptSnapshot = false;
 		}
 		const ack = await transport.control("initialize", fields);
-		if (ack !== true) {
-			const why = ack === undefined ? "did not answer initialize" : "rejected initialize";
-			await this.teardown(`Claude ${why}`);
-			throw new Error(`Claude ${why}`);
-		}
-
-		const folded = foldHistory(request.messages, this.limits);
-		this.sendUserMessage(folded.text, folded.images);
+		if (ack === true) return undefined;
+		// Tear down before reading stderr: the child's last words arrive before
+		// its close, and teardown is what waits for that close.
+		await this.teardown("Claude failed the initialize handshake");
+		return SESSION_ID_TAKEN_RE.test(stderr) ? SESSION_ID_TAKEN
+			: ack === undefined ? "did not answer initialize" : "rejected initialize";
 	}
 
 	private transportTimings(): ClaudeTransportTimings {

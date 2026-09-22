@@ -4,7 +4,7 @@ import { announcement, toasts } from "../lib/ui-state";
 import { Lightbox } from "./Lightbox";
 
 export type IconName =
-  | "alert-circle" | "archive" | "arrow-right" | "attach" | "command" | "image" | "attention" | "chat" | "check" | "chevron-down" | "chevron-left"
+  | "alert-circle" | "archive" | "arrow-right" | "attach" | "branch" | "command" | "image" | "attention" | "chat" | "check" | "chevron-down" | "chevron-left"
   | "chevron-right" | "bell" | "clock" | "close" | "copy" | "external" | "file" | "folder" | "info" | "more" | "stop"
   | "pencil" | "plus" | "refresh" | "search" | "settings" | "terminal" | "gauge" | "worker";
 
@@ -144,15 +144,28 @@ export function GlobalRegions() {
 /** Keeps Tab inside `root` and returns focus to whatever was focused before, on cleanup. */
 export function trapFocus(root: HTMLElement) {
   const opener = document.activeElement as HTMLElement | null;
+  const focusables = () => [...root.querySelectorAll<HTMLElement>("button, input, textarea, select, [href], [tabindex]:not([tabindex='-1'])")].filter(
+    (el) => !el.hasAttribute("disabled") && el.tabIndex >= 0 && el.offsetParent !== null,
+  );
+  const previousTabIndex = root.getAttribute("tabindex");
+  if (previousTabIndex === null) root.tabIndex = -1;
+  queueMicrotask(() => {
+    if (root.isConnected && !root.contains(document.activeElement)) (focusables()[0] ?? root).focus();
+  });
   const onKey = (e: KeyboardEvent) => {
     if (e.key !== "Tab") return;
-    const focusable = [...root.querySelectorAll<HTMLElement>("button, input, textarea, select, [href], [tabindex]:not([tabindex='-1'])")].filter(
-      (el) => !el.hasAttribute("disabled") && el.offsetParent !== null,
-    );
-    if (focusable.length === 0) return;
+    const focusable = focusables();
+    if (focusable.length === 0) {
+      e.preventDefault();
+      root.focus();
+      return;
+    }
     const first = focusable[0]!;
     const last = focusable[focusable.length - 1]!;
-    if (e.shiftKey && document.activeElement === first) {
+    if (!focusable.includes(document.activeElement as HTMLElement)) {
+      e.preventDefault();
+      (e.shiftKey ? last : first).focus();
+    } else if (e.shiftKey && document.activeElement === first) {
       e.preventDefault();
       last.focus();
     } else if (!e.shiftKey && document.activeElement === last) {
@@ -163,6 +176,7 @@ export function trapFocus(root: HTMLElement) {
   root.addEventListener("keydown", onKey);
   onCleanup(() => {
     root.removeEventListener("keydown", onKey);
+    if (previousTabIndex === null) root.removeAttribute("tabindex");
     // Give focus back only if nothing else claimed it (e.g. a composer that just mounted).
     const active = document.activeElement;
     if (opener?.isConnected && (!active || active === document.body || root.contains(active))) opener.focus();

@@ -71,8 +71,13 @@ export function orderedMembers(sessions: readonly SessionSummary[], group: Sessi
  * thing that distinguishes it — the label if the user set one, else the model (with a repeat
  * suffix when that model is in the group more than once) whenever members share a title, else the
  * title. Returned in the members' own order, one per member.
+ *
+ * `fromModel` says the string was built FROM the model (the repeat case): `paneNames` needs to
+ * know, because "claude-opus-5 #2 · claude-opus-5" would say the model twice. It is not a second
+ * rule — it is the same map's note about which branch fired, so the pane rule can extend this one
+ * instead of re-deriving it.
  */
-export function tabLabels(members: readonly { title: string; model?: string | null; label?: string | null }[]): string[] {
+function memberTabs(members: readonly { title: string; model?: string | null; label?: string | null }[]): { text: string; fromModel: boolean }[] {
   const titles = new Map<string, number>();
   const models = new Map<string, number>();
   for (const m of members) {
@@ -86,9 +91,33 @@ export function tabLabels(members: readonly { title: string; model?: string | nu
   return members.map((m) => {
     const model = shortModel(m.model);
     const nth = model ? (seen.set(model, (seen.get(model) ?? 0) + 1), seen.get(model)!) : 0;
-    if (m.label) return m.label;
-    if ((titles.get(m.title) ?? 0) > 1 && model) return (models.get(model) ?? 0) > 1 ? `${model} #${nth}` : model;
-    return m.title;
+    if (m.label) return { text: m.label, fromModel: false };
+    if ((titles.get(m.title) ?? 0) > 1 && model) {
+      return { text: (models.get(model) ?? 0) > 1 ? `${model} #${nth}` : model, fromModel: true };
+    }
+    return { text: m.title, fromModel: false };
+  });
+}
+
+export function tabLabels(members: readonly { title: string; model?: string | null; label?: string | null }[]): string[] {
+  return memberTabs(members).map((r) => r.text);
+}
+
+/**
+ * The pane names in member order (§14 "A pane", §14b "Member labels"): the same string the pane
+ * head shows, the pane's aria-label carries and the live region prefixes every fact with —
+ * "{label} · {model}", "{title} · {model}", or for members that share a title with no label (the
+ * canonical `opus ×3` fanout) the model with its `#n` ALONE: "claude-opus-5 #2". The suffix
+ * already names the model, and appending " · claude-opus-5" would make the name stutter; §14b
+ * says that suffix is how repeats are distinguished "until a label is set", numbered in member
+ * order — which is `memberTabs`' numbering, shared rather than re-derived, so the tab strip and
+ * the pane head can never disagree about which #2 is which (they did, exactly there, before this
+ * was one function: the pane names had no suffix at all).
+ */
+export function paneNames(members: readonly { title: string; model?: string | null; label?: string | null }[]): string[] {
+  return memberTabs(members).map((r, i) => {
+    const model = shortModel(members[i]?.model);
+    return r.fromModel || !model ? r.text : `${r.text} · ${model}`;
   });
 }
 
@@ -229,5 +258,24 @@ export async function setSessionGroup(
   } catch (err) {
     toast(`Couldn't move this session. ${(err as Error).message}`);
     return null;
+  }
+}
+
+/**
+ * Sets or clears ONE member's label (§14 "Data": trimmed, 1–`GROUP_LABEL_MAX` characters,
+ * optional) — the pane head's `Rename` gesture. Same store update shape as `setGroupOrder`: the
+ * server's whole group replaces the tab's copy, so the pane names (which read the label) move in
+ * the same tick. A label describes the session, not the group, so it rides the member entry and
+ * survives moves; clearing is `null`, and the caller decides which sentence to say — set and
+ * clear are different facts to the user reading the pane head.
+ */
+export async function setMemberLabel(groupId: string, sessionId: string, label: string | null): Promise<boolean> {
+  try {
+    const group = await patchSessionGroup(groupId, { labels: [{ id: sessionId, label }] });
+    setGroups((list) => list.map((g) => (g.id === groupId ? group : g)));
+    return true;
+  } catch (err) {
+    toast(`Couldn't rename this member. ${(err as Error).message}`);
+    return false;
   }
 }

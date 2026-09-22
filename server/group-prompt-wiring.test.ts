@@ -45,6 +45,10 @@ function session(id: string): string {
     [
       { type: "session", version: 3, id, timestamp: "2026-09-22T00:00:00.000Z", cwd: "/tmp" },
       { type: "message", id: "u1", parentId: null, message: { role: "user", content: [{ type: "text", text: "hi" }] } },
+      // What a fanout member's file carries: its model change, appended after the history. The
+      // read-back guard in runFanout fails any member whose file does not record its planned
+      // model, so a fixture without one is not a member at all.
+      { type: "model_change", id: "mc1", parentId: "u1", provider: "anthropic", modelId: "opus" },
     ]
       .map((e) => JSON.stringify(e))
       .join("\n") + "\n",

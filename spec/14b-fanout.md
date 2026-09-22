@@ -26,11 +26,38 @@ the fork-point marker (below) is the only thing that tells them apart afterwards
   opens the dialog with **Fork at the current leaf** selected and this session as the source.
   Absent when the session has no assistant reply yet — there is nothing to fork — and absent for
   a watch view, where pi-web holds no runtime.
-- **The sidebar's Groups region** (§2), a row beside `New group`: `New fanout`. It opens the same
-  dialog with **Fresh prompt** selected and no source.
+- **The welcome screen's opening** (§3 "Landing page"), beside `New Session`: `Fan Out…`. It
+  opens the same dialog with **A fresh prompt** selected and no source. This is the fresh-mode
+  front door, and it is deliberately NOT the sidebar: fanout is a creation gesture — it makes
+  sessions the way `New Session` makes one, N of them from one prompt — so it is offered where
+  creating is offered. (A Groups-region row named `New fanout` was removed with this move: the
+  region's one action stays making an empty group to curate, and one entry point per mode is
+  enough. §2 says the same.)
+- **The New Session dialog's type field** (§05 "Type"): radios `One session` — the default, that
+  dialog's own behaviour — and `Fan out…`, chosen before the folder. This is the entry reachable
+  at **every window width and on every route**, and it exists because the welcome CTA alone was
+  not: the folded shell hides `.app-main` outright (`display:none` below 768px, §1), and the
+  welcome screen lives inside it, so a folded user — or anyone sitting in a session, watch or
+  chat, where there is no welcome screen at all — had no fresh-fanout entry. The sidebar's
+  `New Session` is the one control every width and every route keeps, so fanout is a choice
+  inside it. Pressing `Fan Out…` opens this dialog on **A fresh prompt** with the folder that
+  dialog had chosen as its cwd; nothing else carries (§05 asks no first message). The
+  Where-pi-runs tabs leave while fanout is chosen: fresh mode is N sessions in one local folder,
+  and there is no remote shape to offer.
 - **A workspace's `Add Members`** (§14), the last row of its popover: `Fan Out…`, with the
   workspace's group pre-chosen as the destination, so the new members land beside the ones
-  already there.
+  already there. When the group carries a `seed` the dialog opens on that seed — `groupId` and
+  `source` together — which is the **append** case of "The route" below: the new members branch
+  from the same fork point the existing ones share, so "I want two more of these" is open →
+  Create. The source's fill is unknown in that dialog (its transcript is not on screen, and the
+  summary's tail value is not the fork point's fill once the source ran on), so the preview says
+  so in words and the fork note hides — it never invents a count. A seed whose parent has left
+  the list falls back to the destination-only dialog, which adds members without forking.
+  One consequence worth writing down: every `groupId`+`source` the UI can now send carries the
+  group's OWN seed, so the differing-seed `400` of "The route" is **defensive** — it waits for a
+  client talking to several servers, or a future entry point, not for anything reachable from
+  this UI. The branch stays because deleting it would make a two-lineage group merely unlikely
+  rather than impossible, and unlikely is not a contract.
 
 ## The dialog
 
@@ -99,16 +126,31 @@ beside each other), a bottom sheet under 768px.
   distinguished only by their provider, name the full ref.** Where something else already
   separates them — a pane's own label, title and repeat suffix — the short form stays, because
   there the provider is noise rather than the distinguishing fact.
-- **`Add a Model`** opens the §4c model picker, unchanged, as its own panel. Picking a model that
-  is already listed **increments that row** rather than adding a second one — the count is the
-  repeat.
+- **`Add a Model`** opens the §4c model picker, unchanged, **as its own modal** — a sibling of
+  this dialog, not a panel of it, so it behaves like one: it takes focus on open, Tab wraps
+  within it, close returns focus to `Add a Model`, and **Escape closes it first** — the nested
+  surface goes before the one under it, which is what the picker footer's "Esc to close" has
+  always promised — with the dialog following on the next press. One press never falls through
+  both. (The dialog itself traps focus the same way: focus lands in it on open, Tab wraps within
+  it, and close returns focus to what opened it.)
+  Picking a model that is already listed **increments that row** rather than adding a second one —
+  the count is the repeat.
 - **Repeats are the point.** `claude-opus-5 ×3` is three members of one model, which is how you
   see the spread of one model rather than the difference between two. The count field goes 1–9
-  per row; `−` at 1 removes the row, and its `aria-label` says `Remove {model}` there.
+  per row; `−` at 1 removes the row, and its `aria-label` says `Remove the only {model}` there —
+  never the remove button's own `Remove {model}`, which would put two controls of one row under
+  one accessible name. At 9 the `+` stays pressable and answers — "{ref} is already at 9, the
+  most per model.", in the toast for the eye and the live region for AT — because the count
+  cannot move, the answer is the whole feedback; a silent press reads as a broken one. (No
+  `aria-disabled` on it: a control that answers is not a dead one.)
 - **Member labels** are not set here. They are the group's per-member `label` (§14) and are
   edited in the pane head afterwards, because the useful name ("the one that read the tests")
   isn't known until you've read some output. Until then members of one model are distinguished by
   a suffix in the pane name: `claude-opus-5 #1`, `#2`, `#3`, numbered in member order.
+- **A folder can arrive chosen.** Opened from §05's type field, the fresh-mode folder starts at
+  the folder that dialog had chosen, not the list's guess — the choice the user made is the one
+  the members get. Nothing else carries over: §05 asks no first message, so there is no prompt
+  to prefill either.
 - **The group name** defaults to `Fanout · {first 6 words of the source's title, or of the fresh
   prompt}`, trimmed to 60. It is a plain text field, duplicates allowed, exactly as §2's rename.
 - **The default stops being offered the moment the user edits it.** In fresh mode the default is
@@ -119,6 +161,11 @@ beside each other), a bottom sheet under 768px.
   recurring defect one level down: a generated value with no event wired to *the user has taken
   this over*. The trigger is **the field being edited**, not the string differing from what we
   would generate — someone who types the default by hand still owns it.
+  "Fresh mode" here is the dialog's **current source radio**, not how the dialog was opened: a
+  dialog opened on a session keeps regenerating after the user switches the radio to a fresh
+  prompt, because the field is still ours to guess at. The gate is the mode because that is
+  what the default is derived from — gating on the opening instead froze a fork-derived name
+  over a prompt the user was actively typing.
   **That same edit also decides provenance** (`named`, below), so changing *when regeneration
   stops* silently changes *who owns the name* — and no test in this file would fail. One decides
   whether we may keep writing the field; the other decides whose the result is. Anyone altering
@@ -158,9 +205,20 @@ Turns start together, so one provider may answer some members with 429. pi-web d
   session that fails on its first turn.
 - **Window unknown** shows tokens alone ("48k, window unknown") and no percent, no step, exactly
   as §4f's readout does. It never blocks Create: we don't know that it doesn't fit.
+- **A fill that cannot be named is said in words, never as a number.** A **compacted** fork point
+  (§4f: a compaction row follows the last usage, so the fill is unknown until the source's next
+  reply) shows `compacted`; a source that is **not on screen** — the Add-Members entry, whose
+  seed is a record, not a transcript — shows `unknown`. Both because `0 of {window} · 0%` and
+  `~0 tokens re-sent` are claims the dialog cannot make: an empty-looking gauge reads as a
+  measurement, and this is the absence of one. Neither blocks Create, for the same reason an
+  unknown window doesn't.
 - **The shared-turn line** is `{n} members × ~{tokens} tokens re-sent every shared turn.` It is
   the running cost of the group composer (§14): one message you type, N contexts re-sent. `~`
-  because the number is the fork-point fill, and it grows with every turn.
+  because the number is the fork-point fill, and it grows with every turn. An unnamed fill keeps
+  the sentence and drops the number — `{n} members × unknown tokens re-sent every shared turn —
+  the fork point was compacted.` for a compacted source, plain `… × unknown tokens re-sent every
+  shared turn.` for one not on screen — never `~0`, which is the false claim in its shortest
+  form.
 - **Fresh prompt has no fill**, so the per-model rows show `new session` instead of a fraction and
   the shared-turn line reads "5 members, each starting empty. Every shared turn is re-sent 5
   times as they grow."
@@ -216,7 +274,10 @@ POST /api/session-groups/fanout
     have to either mark members against a point they never diverged at, or pick one lineage and
     silently un-mark the rest. Both fabricate a fact the contract cannot carry — the same reason
     a marker's position is never inferred from `parent`/`parentId`. Fan out into a new group
-    instead; the two groups can sit side by side.
+    instead; the two groups can sit side by side. This refusal is reachable from the UI, not
+    vestigial: the append case (`Add Members → Fan Out…` on a group a different fanout made) is
+    exactly it, so the client renders its own sentence for the code rather than treating the 400
+    as a surprise (see Entry points).
 - **`named` says whose name this is**, and it exists because the server cannot tell.
   The dialog's name field is pre-filled with a default pi-web derives and the user may type over
   it, but `name` arrives as a string and the server never generated the default — provenance is
@@ -399,10 +460,14 @@ POST /api/session-groups/fanout
   doesn't exist, which is a different kind of wrong from "exists but not right now".
 - **`400`** for both or neither of `name` and `groupId`, a bad name, an empty `members`, a
   `count` outside 1–9, a `ref` no provider knows,
-  blank `text` in fresh mode, or `text`/`cwd` sent in fork mode.
+  blank `text` in fresh mode, or `text`/`cwd` sent in fork mode — and for a `cwd` the New Session
+  path itself would refuse (not absolute, gone, not a directory, or unreachable through its
+  mount). Fresh mode **is** that path N times, so it is checked with that path's own rule and
+  answers with that path's own sentences, before anything is made — not as an N-times-repeated
+  "internal" member failure after the group was already being written.
 - **`201`, and `created` is never empty.** If not one member could be made, nothing is created,
   the group is not written, and the response is the failure — a group with no members is not a
-  result, it is debris. `failed` carries the members that couldn't start, in the batch's own
+  result, it is debris. `failed` carries the members that did not come up, in the batch's own
   refusal shape, and drives the partial-creation banner below.
 
 ## What creation does
@@ -442,7 +507,21 @@ POST /api/session-groups/fanout
   by the SDK — is the only link back.
 - **Fresh mode** is N × `POST /api/sessions`' own path: create in the chosen folder, write the
   header immediately, hand the first message to each independently. No branch, no parent, no
-  shared id.
+  shared id — and the folder is checked by that path's own rule, with its sentences (see The
+  route). **The member's model is appended before the file is written and read back after.**
+  `SessionManager.create` defers persisting until a first assistant reply, so an append after a
+  header-only write lands in memory only and never reaches the disk — a member whose file says
+  nothing about its model is opened with the server's *default* and answers as a model nobody
+  chose, which is the one failure a fanout cannot survive silently (it shipped, once: a
+  `zai/glm-5.3` plan ran `ollama-cloud/deepseek`, pane label and header disagreeing). The write
+  order is the fix; the read-back is the guard: a member whose file does not record its planned
+  model never became the member it was meant to be — its debris is unlinked and it reports in
+  `failed`, never a quiet default. **The first message's outcome is part of the 201.** The
+  batch's refusals are folded into `failed` — entries whose `id` and `path` name the member
+  (it exists; the banner can link its pane) and whose `ref` still names the model — so a fanout
+  that created five members and started none *says so*, instead of announcing success and
+  landing the user in five silent panes. The members are kept either way: they are real, empty,
+  grouped sessions the user can prompt with a retry.
 - **Every member is assigned to the new group** in the same write that creates it, in the
   dialog's order (rows top to bottom, repeats in sequence), and `seed` set to
   `{parentSessionPath, leafId}` in fork mode. Fresh mode writes no `seed`: there is no fork point
@@ -455,6 +534,11 @@ POST /api/session-groups/fanout
   on a fanout is cost with no reader — the workspace is for reading the members against each
   other, and the strip is a single-session surface. It is off for the member's life, not just in
   the workspace, and the pane says so nowhere: an absent strip is not a state.
+  The runtime knows which sessions are members by a marker fanout writes into the member's own
+  file at creation, beside the model change: an invisible `custom` entry (`pi-web-fanout-member`,
+  the same shape as pi-web's rewind marker — not LLM context, no usage, rendered nowhere). The
+  marker travels with the file, so the exception survives restarts and holds for the member's
+  life — no in-memory flag threaded through `acquireChat`, which a restart would forget.
 - **`failed` is a list, and the banner reads like one.** A fanout of `opus ×3, glm ×2` can fail
   two or three ways at once, so the banner takes the same shape the group composer's refusal
   already uses — the count, then one line per failure naming its model and its reason. Two
@@ -472,6 +556,16 @@ POST /api/session-groups/fanout
   a creation that died part-way through leaves half-written files of its own, and those are
   unlinked, because a header with no session behind it is a row in the sidebar that opens onto
   nothing. The line is between *a member* and *the wreckage of one that never became a member*.
+  **Two shapes of line, told apart by `id`, and they must not be reconciled into one phrasing.** An
+  empty `id` is a member that never came into being, and its line is `{model} couldn't start:
+  {server message}`. A set `id` is a member that **exists** — created, grouped, sitting in its own
+  pane — which fresh mode then refused its first message (§14b's fold of the prompt outcome); its
+  line is `{model} couldn't take the first message: {server message}`, because "couldn't start" is
+  false of a session the user can see, and a banner that says it would send them looking for a pane
+  that is right there. The two never collapse together even when ref and message match (the collapse
+  keys on the shape), a pre-existing `groupId` member with no ref reads "A member" rather than a
+  guessed ref, and — as anywhere else on this route — `{model}` is the full `ref` and the message is
+  the reason alone. §9's deck states the same rule for the same reason.
 - **Total failure** keeps the dialog open with a `.field-error` and no group is created.
 
 ## The fork point in a transcript
@@ -486,6 +580,13 @@ from, immediately after it:
 </p>
 ```
 
+- **The `· HH:MM` is the forked entry's OWN timestamp** — the time of the last shared moment,
+  read from the member's copy of the entry the marker follows, never the wall-clock of the fanout
+  gesture. The gesture's time lives nowhere in `seed` ("seed says where"), and adding a field
+  for it would put a write-time fact into marker data whose only reader is this decoration; the
+  entry's timestamp costs nothing, cannot drift from the transcript, and answers the question
+  the marker actually raises (how old is the shared history?). A row with no timestamp omits the
+  clock half rather than guessing — the same rule as the marker's position.
 - **One leaf id locates the row in every member**, because branching **copies entries with their
   ids intact** — it re-parents the chain (`{...entry, parentId}` in `createBranchedSession`'s
   path loop, pi **0.86.1**)
@@ -510,7 +611,12 @@ from, immediately after it:
 **`Align to Fork`** in the workspace head scrolls **every** pane, split or tabs, so its fork
 marker sits at the top of the pane's scroll region, and announces "Aligned 5 members to the fork
 point." A pane with no marker is left where it is and is named in the announcement: "Aligned 4
-members. control has no fork point on its branch." The button is absent for a group with no
+members. control has no fork point on its branch." **A hidden pane (tabs mode) cannot be scrolled
+at all** — `display: none` has no scroll offsets — so it is never counted as aligned: its
+alignment is remembered and lands the moment its tab is opened (or the row returns to split),
+and the announcement says that instead: "Aligned 2 members now. glm-5.3 #3 will align when you
+open its tab." Counting a scroll that did not happen would be the announcement overstating
+something the reader cannot check. The button is absent for a group with no
 `seed`, because there is nothing to align to — and **present for one that adopted a seed later**
 (`groupId`, above), which is the one visible trace adoption leaves. A hand-made group that has
 been fanned into gains fork markers on the new members and this button; it keeps its name, its
@@ -522,13 +628,13 @@ afterwards, and the next incoming token scrolls a followed pane as usual.
 
 | State | Shows |
 |---|---|
-| Dialog opened with no models yet | The Members list is one line of hint text, "No members yet. Add a model, then set how many of it you want." Create is `aria-disabled` with the reason "Add at least 1 member." |
+| Dialog opened | The Members list is **pre-seeded** — fork mode with the source's own model, every other opening with the top favorite — so the fast path is open → Create. The empty list is reachable only by removing that row, and then shows the hint "No members yet. Add a model, then set how many of it you want." with Create `aria-disabled`, reason "Add at least 1 member." (this row reopens deliberately with the pre-seed: the empty dialog it used to describe was a state before the first click, not a state the user chose) |
 | Source has no assistant reply | `Fan Out…` is not in the flyout. Nothing to fork, and a disabled row would invite a question with no answer |
-| Source mid-turn | The dialog **opens and is fully usable** — pick models, set counts, name the group — and Create is `aria-disabled` with the reason "“{title}” is mid-turn. We read the file to fork it, and we don't read it while it's being written. This enables itself when the turn finishes." It does enable itself, in place, with no re-open: setting a fanout up during the turn you are waiting on is the natural thing to do |
+| Source mid-turn | The dialog **opens and is fully usable** — pick models, set counts, name the group — and Create is `aria-disabled` with the reason "“{title}” is mid-turn. We read the file to fork it, and we don't read it while it's being written. This enables itself when the turn finishes." It does enable itself, in place, with no re-open: the reason is derived from the session list on every read, never snapshotted at open time — a string captured when the dialog opened could only repeat the turn's start forever. Setting a fanout up during the turn you are waiting on is the natural thing to do |
 | Source has an unidentified writer | The same shape, reason "Another program wrote to “{title}” a moment ago. Forking waits until it stops." The same window `/ws/chat` refuses on (`RECENT_WRITE_MS`), for the same reason: we don't read a file mid-write |
-| Source is in an older session format | Create is `aria-disabled`, reason "“{title}” is in an older session format. Forking reads the file, and reading it rewrites the whole thing — not something to do to a session that's open. Open it for chat here once to update it, then fan out." The header's `version` is already read to list the session, so this costs nothing to check and it is the one refusal the user can clear themselves in one gesture |
+| Source is in an older session format | Create is `aria-disabled`, reason "“{title}” is in an older session format. Forking reads the file, and reading it rewrites the whole thing — not something to do to a session that's open. Open it for chat here once to update it, then fan out." The header's `version` is already read to list the session, so this costs nothing to check and it is the one refusal the user can clear themselves in one gesture. The summary carries it as `legacyFormat` (server-computed against the current session format — the client never compares numbers), so the dialog can show this reason **before** the press instead of rendering the server's refusal after it |
 | The fork point moved while the dialog was open | Create is `aria-disabled`, reason "“{title}” answered while this dialog was open, so the fork point you picked isn't its latest message anymore. Reopen Fan out to fork from where it is now." The server refuses it too (`stale-leaf`), so a client that missed the change still can't fork from a point the user never saw |
-| Source is TUI-live | `Fan Out…` is absent. Two reasons, either sufficient: pi-web never touches a file a terminal owns, and the leaf pi-web can see is not the one the terminal is about to write, so the fork would be from a stale point — a silently wrong comparison |
+| Source is TUI-live | `Fan Out…` is absent. Two reasons, either sufficient: pi-web never touches a file a terminal owns, and the leaf pi-web can see is not the one the terminal is about to write, so the fork would be from a stale point — a silently wrong comparison. A terminal that takes the session **while the dialog is open** disables Create in place — "“{title}” is open in a terminal now. pi-web doesn't touch a file a terminal owns; fan out once it closes." — read live like the mid-turn reason |
 | A model has no window on record | Its row shows tokens alone; Create stays available |
 | A model's window is smaller than the fork | `.context-error` on the row plus its own line; Create disabled until the row is removed or the count is 0 |
 | Creating | `Creating…`, the dialog stays up and its fields disable. No progress bar: N creations finish in one response |
@@ -541,6 +647,7 @@ afterwards, and the next incoming token scrolls a followed pane as usual.
 | Source | `.fanout-source` `.fanout-source-note` |
 | Member rows | `ul.fanout-rows` `li.fanout-row` `.fanout-row-model` `.fanout-row-fill` `.fanout-count` `.fanout-add` |
 | Preview | `.fanout-preview` `.fanout-preview-row` `.fanout-note` (+ `.context-warn` `.context-error` from §4f) |
+| Create's reason, under the primary | `.fanout-blocked` — on a `.field-hint` for every reason the user hasn't earned, on `.field-error` for the overflow (§9 "Create") |
 | Fork marker | `.info-row.fork-marker` (+ `.info-row-text`) |
 | Align | `.workspace-align` (§14) |
 

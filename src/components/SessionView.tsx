@@ -4,11 +4,12 @@ import type { SessionInsight, SessionSummary, TeamInfo, WorkerInfo } from "../..
 import { fetchSessionInsight } from "../lib/api";
 import { agentsHref } from "../lib/insights";
 import { shortModel } from "../lib/format";
+import { sourceBlocked } from "../lib/fanout";
 import { PaneScopeProvider, type PaneScope } from "../lib/pane-scope";
 import { cwdLabel } from "../lib/remote-session";
 import type { RewindControl } from "../lib/inputs";
 import { activeTab, home } from "../lib/ui-state";
-import { sessionWorking, type UsageTotalView, workingSplit } from "../lib/workers";
+import { sessionWorking, formatCost, type UsageTotalView, workingSplit } from "../lib/workers";
 import { ChatView, type ChatRefusal } from "./ChatView";
 import { ContextGauge, ContextMetaPrefix, contextDescribedBy } from "./ContextGauge";
 import { InsightStrip } from "./InsightStrip";
@@ -62,6 +63,13 @@ export function SessionView(props: {
   /** The user's word for this member inside its group (`GroupMember.label`), when it has one:
       the pane head shows it in place of the title, and it is what the pane is called to AT. */
   label?: () => string | null;
+  /** The pane's whole name, pre-assembled by the workspace (§14 "A pane"): label, title or a
+      repeat suffix (`claude-opus-5 #2`) — whatever tells this member apart — already joined with
+      the model. Given, it overrides the label/title assembly, because the workspace is the only
+      place that can see which members repeat: three `opus ×3` forks share a title, and this
+      view's own assembly would name all three identically. One rule (paneNames), one string,
+      every surface — head, aria-label, live prefix. */
+  name?: () => string;
   /** The group's fork point, for a member of a fanout: drawn in the thread, never written. */
   fork?: ForkMarker;
   /** Leading control in the head (the single view's Back link, a pane's nothing). */
@@ -75,6 +83,11 @@ export function SessionView(props: {
   onInsight(path: string, insight: PaneInsight | null): void;
   /** This chat's live subagents and its Σ; null list as the chat goes away. */
   onWorkers(path: string, workers: WorkerInfo[] | null, usage: UsageTotalView | null): void;
+  /** This chat's turn-error state (§14 "Member states"), keyed by path like onWorkers: the latest
+   *  turn-error message, or null when there is none. State, not events — the workspace's roll-up
+   *  pairs a word with colour without panning every pane, and without it a failed member reads
+   *  exactly like a quiet one. */
+  onTurnError?(path: string, message: string | null): void;
   onRewindControl(path: string, control: RewindControl | null): void;
   onRewound(info: { path: string; entryId: string }): void;
   /** Whether the session pane is open for this session on `tab`. */
@@ -198,11 +211,34 @@ export function SessionView(props: {
   /** What's working, by kind: team members and plain subagents are different things. */
   const split = () => workingSplit(working(), insight.data?.workers, insight.data?.teams);
 
-  /** The name this pane is known by, in the head and to AT: "{label or title} · {model}". */
+  /**
+   * The name this pane is known by, in the head and to AT. In a workspace it is the pre-assembled
+   * `name()` (repeat-suffix aware, see the prop); standalone it is "{label or title} · {model}".
+   */
   const paneName = () => {
+    if (props.name) return props.name();
     const name = props.label?.() || s().title;
     const m = shortModel(model());
     return m ? `${name} · ${m}` : name;
+  };
+
+  /**
+   * The pane name's `title` (§9): the full string, then the cwd, then the member's session-lifetime
+   * spend when the server reports one. "Which answer won" includes cost, and the spend already
+   * lives in the member's Session-info dialog — this puts it one hover away from the comparison
+   * itself instead of a dialog deep in each pane. The cwd is the raw path (no tilde folding): a
+   * tooltip is where the long form earns its place.
+   *
+   * The cost is `SessionInsight.usage.total` — the SAME field the Session-info dialog's spend
+   * table tallies, not a second computation that could drift — and `total` rather than `main`
+   * on purpose: a member that spawned workers to answer spent them as part of its answer, and a
+   * comparison that hid subagent cost would tilt "which answer won" toward exactly the members
+   * that delegated the most. (`usageTotal` here is the WORKERS' Σ — a member with no worker has
+   * none, and the title would show no spend at all; that was the first cut of this line.)
+   */
+  const paneTitle = () => {
+    const cost = formatCost(insight.data?.usage?.total?.cost);
+    return [paneName(), cwdLabel(s(), null), ...(cost ? [`${cost} this session`] : [])].filter(Boolean).join(" · ");
   };
 
   /** The single-session view's head, unchanged: the whole width of the main column. */
@@ -284,10 +320,18 @@ export function SessionView(props: {
             workspace's own, carrying only what tells this member apart — its name, its context
             fill, its state chip, and its tools. The pane's accessible name IS this name. */}
         <header class="workspace-pane-head">
-          <span class="workspace-pane-name" id={`pane-${props.paneId}-name`} title={paneName()}>
+          <span class="workspace-pane-name" id={`pane-${props.paneId}-name`} title={paneTitle()}>
             {paneName()}
           </span>
           <ContextGauge path={path} />
+          {/* Mid-turn, said at workspace level (§14 "Member states"): split mode has N panes and
+              no single place that says who is still working — the tab strip's dot covers tabs
+              mode only. The pulse is the sanctioned one: work in flight. */}
+          <Show when={s().busy || working() > 0}>
+            <Chip live title="This member is mid-turn. Its own composer can steer; the group composer waits.">
+              Working
+            </Chip>
+          </Show>
           <RemoteChip path={path} summary={s()} />
           <Show when={s().archived}>
             <Chip title="Archived. Unarchive it to send.">Archived</Chip>
@@ -405,6 +449,7 @@ export function SessionView(props: {
                         reloadInsight();
                       }}
                       onWorkers={(w, usage) => props.onWorkers(path, w, usage)}
+                      onTurnError={props.onTurnError ? (m) => props.onTurnError!(path, m) : undefined}
                       onShowWorkers={() => props.toggleSubagents(path)}
                       workersOpen={props.paneOn(path, "agents")}
                       onNewSession={() => props.onNewSession(path)}
@@ -419,12 +464,14 @@ export function SessionView(props: {
                               props.onFanOut!({
                                 session: s(),
                                 ...src,
-                                // Mid-turn is a state the dialog OPENS in: setting a fanout up
-                                // during the turn you are waiting on is the natural thing to do,
-                                // and it enables itself in place when the turn finishes.
-                                blocked: s().busy
-                                  ? `“${s().title}” is mid-turn. We read the file to fork it, and we don't read it while it's being written. This enables itself when the turn finishes.`
-                                  : null,
+                                // Read LIVE from the summary, not snapshotted here: a mid-turn
+                                // block must clear itself when the turn ends — "It enables itself,
+                                // in place, with no re-open" (§14b) — and a string captured at
+                                // open time can only repeat the turn's start forever. The states a
+                                // string COULD hold are the ones the list can see; the ones it
+                                // can't (an unidentified writer, a moved leaf) stay server
+                                // refusals, rendered with the same sentences after the press.
+                                blocked: () => sourceBlocked(s()),
                               })
                           : undefined
                       }

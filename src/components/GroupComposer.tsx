@@ -1,7 +1,7 @@
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import type { BatchRefusal, SessionSummary } from "../../shared/protocol";
 import { promptSessionGroup } from "../lib/api";
-import { composerPlaceholder, refusalBody, refusalSentence, targetsLine, targetsOf } from "../lib/group-prompt";
+import { composerPlaceholder, partialAfterRetry, partialBody, partialRetries, refusalBody, refusalSentence, targetsLine, targetsOf, withGone, type Targets } from "../lib/group-prompt";
 import { announce, toast } from "../lib/ui-state";
 import { Banner, Icon } from "./ui";
 
@@ -22,6 +22,11 @@ export function GroupComposer(props: {
   groupId: string;
   /** The group's members in pane order; the foot counts from these. */
   members: SessionSummary[];
+  /** The group's file-gone members, as session ids (§14 "Member states"): no session row
+      exists for them, so they reach neither the panes nor `targetsOf` — but the server's pre-check
+      refuses a send on the ASSIGNMENT, and the foot has to be the count that comes back. They
+      ride under `missing`, and they count in the total, which is the group's size. */
+  gone?: string[];
   /** The pane name of a member, for every sentence that has to say which one. */
   nameOf(id: string): string;
   /** Re-read the session list: after a send its `busy` is stale, and after a 400 the membership
@@ -29,6 +34,13 @@ export function GroupComposer(props: {
   onRefresh(): void;
   /** Focused or holding text — what collapses the pane composers under it. */
   onActive(active: boolean): void;
+  /** The ids a send REACHED (accepted, not answered), for the workspace head's completion roll-up
+   *  (§14): the roll-up is anchored to a send rather than to idle-vs-busy, so it starts at the
+   *  moment the server accepted. `kind` is how the workspace merges it: a box send (or "Send to
+   *  the Rest", which follows a refusal — nothing was sent, so there is no anchor to keep)
+   *  REPLACES the watched set; a partial banner's retry UNIONS it, so the straggler is watched
+   *  alongside the members already answering and the roll-up can reach "5 of 5 replied". */
+  onSent?(sentIds: string[], kind: "send" | "retry"): void;
 }) {
   let input!: HTMLTextAreaElement;
   const [text, setText] = createSignal("");
@@ -56,7 +68,9 @@ export function GroupComposer(props: {
    */
   createEffect(() => props.onActive(focused() || !!text()));
 
-  const targets = createMemo(() => targetsOf(props.members));
+  const targets = createMemo<Targets>(() => withGone(targetsOf(props.members), props.gone ?? []));
+  /** The group's size, not the list's: a gone member is a member until it is removed. */
+  const totalMembers = () => props.members.length + (props.gone?.length ?? 0);
   /** Nobody at all: the only state where Send is off. A stale snapshot is the server's to correct. */
   const noone = () => targets().available.length === 0;
 
@@ -90,12 +104,24 @@ export function GroupComposer(props: {
     if (out.ok) {
       const n = out.result.sent.length;
       setRefused(null);
-      // A member that broke between the check and being queued: the others are answering, and
-      // nothing is rolled back — say exactly that rather than pretending the batch failed.
-      setPartial(out.result.failed.length > 0 ? { failed: out.result.failed, sent: n, text: sent } : null);
+      // A banner retry reaches SOME of the members that missed out, and the report is the only
+      // record of who never got the message: it survives with exactly the still-missing members
+      // (partialAfterRetry). A box send — with or without a subset chosen at the refusal banner —
+      // reports its own outcome wholesale; it is a new message, superseding the old report.
+      const was = partial();
+      const next =
+        body !== undefined && was
+          ? partialAfterRetry(was, out.result.sent)
+          : out.result.failed.length > 0
+            ? { failed: out.result.failed, sent: n, text: sent }
+            : null;
+      setPartial(next);
+      // The roll-up's anchor: this is the set the workspace counts "replied" against, from the
+      // moment the server accepted — accepted, not answered (the route never waits for turns).
+      props.onSent?.(out.result.sent, body === undefined ? "send" : "retry");
       // Only the box's own send clears the box. A retry may run while the user is typing the next
       // message, and wiping that would be this composer destroying work to report success.
-      if (fromBox && out.result.failed.length === 0) {
+      if (fromBox && !next) {
         edit("");
         input.value = "";
       }
@@ -106,8 +132,9 @@ export function GroupComposer(props: {
     }
     if (out.refused) {
       // The draft is kept: nothing was sent, and retyping it would be the app's mistake to charge
-      // the user for.
-      setPartial(null);
+      // the user for. A refused RETRY keeps the partial report — it is still true — while a
+      // refused box send replaces the report with the refusal's own offer.
+      if (body === undefined) setPartial(null);
       setRefused(out.refused);
       // No announce() here: the banner is a role=status, so it speaks for itself. Saying it twice
       // in one region reads as two events, and the second one is a summary of the first.
@@ -145,7 +172,7 @@ export function GroupComposer(props: {
             <Banner
               tone="warn"
               title="Nothing was sent."
-              body={refusalBody(list().map((r) => refusalSentence(r, nameOfRefusal(r))), props.members.length, rest().length)}
+              body={refusalBody(list().map((r) => refusalSentence(r, nameOfRefusal(r))), totalMembers(), rest().length)}
               action={
                 <>
                   <Show when={rest().length > 0}>
@@ -165,14 +192,25 @@ export function GroupComposer(props: {
           {(p) => (
             <Banner
               tone="warn"
-              title={`Sent to ${p().sent} of ${props.members.length} members.`}
-              body={`${p()
-                .failed.map((r) => nameOfRefusal(r))
-                .join(", ")} was taken by another program between the check and the send, so it didn't get this message. The ${p().sent} that did are answering now.`}
+              title={`Sent to ${p().sent} of ${totalMembers()} members.`}
+              body={partialBody(
+                p().failed.map((r) => props.nameOf(r.id)),
+                p().sent,
+              )}
               action={
-                <button type="button" class="button button-sm" onClick={() => void send(p().failed.map((r) => r.id), p().text)}>
-                  Send to {nameOfRefusal(p().failed[0]!)}
-                </button>
+                /* One button per member that missed out, each re-sending to exactly the member it
+                   names (partialRetries): a button's label and the subset it requests are the same
+                   fact, so the two cannot drift apart the way `Send to {first}` over every failed
+                   id did — the many-failed case and the common one take the same shape. */
+                <span class="cluster">
+                  <For each={partialRetries(p().failed, props.nameOf)}>
+                    {(retry) => (
+                      <button type="button" class="button button-sm" onClick={() => void send([retry.id], p().text)}>
+                        {retry.label}
+                      </button>
+                    )}
+                  </For>
+                </span>
               }
             />
           )}
@@ -187,7 +225,7 @@ export function GroupComposer(props: {
             class="input textarea composer-input"
             id="group-composer-input"
             rows={1}
-            placeholder={composerPlaceholder(props.members.length, folded())}
+            placeholder={composerPlaceholder(totalMembers(), folded())}
             aria-describedby="group-composer-reason"
             onInput={(e) => edit(e.currentTarget.value)}
             onFocus={() => setFocused(true)}
@@ -205,7 +243,7 @@ export function GroupComposer(props: {
             <button type="submit" class="button button-primary" aria-disabled={noone() || sending() ? "true" : undefined}>
               <Icon name="arrow-right" small />
               <span class="button-label">
-                {sending() ? "Sending…" : props.members.length === 1 ? "Send" : "Send to All"}
+                {sending() ? "Sending…" : totalMembers() === 1 ? "Send" : "Send to All"}
               </span>
             </button>
           </div>

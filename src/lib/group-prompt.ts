@@ -62,6 +62,23 @@ export function targetsOf(members: readonly SessionSummary[]): Targets {
 }
 
 /**
+ * The same picture with the group's file-gone members folded in (§14 "Member states"). A gone
+ * member has no session row, so `targetsOf` cannot see it — but the server's pre-check counts the
+ * ASSIGNMENT, and a send is refused on it. The foot's whole job is to be the count that comes
+ * back, so the gone ride under `missing` (the wire's own code for them) and in the total, which
+ * is the group's size, not the list's.
+ */
+export function withGone(t: Targets, gone: readonly string[]): Targets {
+  if (gone.length === 0) return t;
+  const blocked = [...t.blocked];
+  const at = blocked.findIndex((b) => b.code === "missing");
+  if (at >= 0) blocked[at] = { ...blocked[at]!, ids: [...blocked[at]!.ids, ...gone] };
+  else blocked.push({ code: "missing", ids: [...gone] });
+  blocked.sort((a, b) => BLOCK_ORDER.indexOf(a.code) - BLOCK_ORDER.indexOf(b.code));
+  return { available: t.available, blocked, total: t.total + gone.length };
+}
+
+/**
  * The foot's line: "4 of 5 members · 1 mid-turn". With nobody excluded it is the count alone,
  * because "5 of 5" invites the reader to look for the missing one.
  */
@@ -105,6 +122,58 @@ export function refusalBody(sentences: string[], total: number, rest: number): s
   const n = sentences.length;
   const head = `${n} of ${total} ${total === 1 ? "member" : "members"} can't take a message right now: ${sentences.join(", ")}.`;
   return rest > 0 ? `${head} Wait for them, or send to the other ${rest}.` : head;
+}
+
+/**
+ * The partial-send banner's body (§9 "Partial send banner"): who missed the message and what the
+ * members that got it are doing. One member keeps §9's sentence exactly; several must agree with
+ * their own subject ("were", "they"), because a plural that doesn't reads as a bug in the
+ * counting rather than a grammar slip.
+ */
+export function partialBody(names: readonly string[], sent: number): string {
+  const one = names.length === 1;
+  const verb = one ? "was" : "were";
+  const pronoun = one ? "it didn't" : "they didn't";
+  return `${names.join(", ")} ${verb} taken by another program between the check and the send, so ${pronoun} get this message. The ${sent} that did are answering now.`;
+}
+
+/** One retry button of the partial-send banner: a member that missed the message. */
+export interface PartialRetry {
+  /** The ONLY member this press re-sends to — the whole `members` array on the wire, never one of
+   *      several picked by a shared button. */
+  id: string;
+  /** `Send to {member}` (§9), naming exactly `id`'s member and nobody else. */
+  label: string;
+}
+
+/**
+ * The partial-send banner's retries (§9): one button per member that didn't get the message. A
+ * single button labelled `Send to {first}` while the request carries every failed id promises one
+ * member and prompts them all — the label and the subset have to agree per press, and per-member
+ * buttons make them agree by construction, in the many-failed case as in the common one.
+ */
+export function partialRetries(failed: readonly BatchRefusal[], nameOf: (id: string) => string): PartialRetry[] {
+  return failed.map((r) => ({ id: r.id, label: `Send to ${nameOf(r.id)}` }));
+}
+
+/** The partial-send state the banner carries (`GroupComposer`'s `partial`). */
+export interface PartialState {
+  failed: BatchRefusal[];
+  sent: number;
+  text: string;
+}
+
+/**
+ * What the partial report becomes after a banner retry reached `accepted` of the missed members.
+ * The banner is the only record of who never got the message, so a retry to ONE of two stragglers
+ * must leave the other on screen — the report survives with exactly the still-missing members
+ * and the count moves by exactly who was reached. All of them reached: nothing is missing, the
+ * report is done (null). A member broken during the retry's own check reports in its own pane,
+ * not here — this state is about the message the report names.
+ */
+export function partialAfterRetry(was: PartialState, accepted: readonly string[]): PartialState | null {
+  const failed = was.failed.filter((r) => !accepted.includes(r.id));
+  return failed.length > 0 ? { failed, sent: was.sent + accepted.length, text: was.text } : null;
 }
 
 /**

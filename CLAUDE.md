@@ -105,6 +105,16 @@ branch (the full reasoning lives in that branch's commit messages and spec §14'
 - **A frame that is confirming itself feels exactly like a frame that is correct.** When a class
   is salient, every event reads into it and the pattern-match feels like recognition; a count of
   instances is an instrument like any other and must be measured, not repeated.
+- **Solid's `on(deps, fn)` does not equality-gate the deps' VALUE — it re-fires whenever any
+  signal read while evaluating the accessor changes.** `on(() => props.group.id, …)` reads
+  `props.group`, which is a fresh object on every background refresh of the list, so the effect
+  fired on every refresh while the id string never changed. Two real misses from that one shape
+  on `fanout-groups`: every pane width (Wider/Narrower/Fit) was reset by `setWidths({})` one
+  fetch after the click — styles written at 280px, observed resetting to 490px ~283ms later —
+  and the effect that re-read the groups re-triggered itself on its own response, a standing
+  fetch loop. When only the VALUE matters, make the dep a memo (`const gid = createMemo(() =>
+  props.group.id)`) so equality gating happens where you can see it. The green build catches
+  none of this: the bug is between two re-runs, not inside either.
 
 ## pi-config mirror
 

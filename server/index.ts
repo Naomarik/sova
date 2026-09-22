@@ -1,6 +1,6 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import type { Server } from "node:http";
-import { dirname, isAbsolute, join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
@@ -26,7 +26,7 @@ import type { FanoutRequest } from "../shared/protocol";
 // verifyMounted bounds a real check on a path INSIDE the mount — neither ever stats the fuse path
 // synchronously, which would block the event loop on a hung mount.
 import { isMounted, mountPointOf, verifyMounted } from "../pi-config/extensions/remote/mount.ts";
-import { findTarget, isTargetName, listRemoteFolders, listTargets, mountDir, normalizeRemotePath, remoteOfCwd, targetDir, targetsFile, toggleTargetMount } from "./targets";
+import { findTarget, isTargetName, listRemoteFolders, listTargets, mountDir, normalizeRemotePath, targetDir, targetsFile, toggleTargetMount, validateNewSessionCwd } from "./targets";
 import { isExplanationId, listExplanations, readExplanationPage } from "./explanations";
 import { switchMode } from "./mode";
 import { readSubagentPolicy, writeSubagentPolicy } from "./settings";
@@ -112,23 +112,11 @@ app.post("/api/sessions", async (c) => {
     return createWebSession(c, dir);
   }
   const cwd = typeof body.cwd === "string" ? body.cwd.trim() : "";
-  if (!cwd || !isAbsolute(cwd)) return c.json({ error: "cwd must be an absolute path" }, 400);
-  // A cwd picked inside a target's mount point is verified through the mount module's bounded
-  // check: statSync would stat the fuse path, and a hung mount must never block the event loop.
-  const inMount = remoteOfCwd(cwd);
-  if (inMount?.mounted) {
-    const remoteTarget = findTarget(inMount.target);
-    const verified = remoteTarget
-      ? await verifyMounted(remoteTarget, cwd)
-      : { ok: false as const, error: `target ${inMount.target} is not configured` };
-    if (!verified.ok) return c.json({ error: `cwd: ${verified.error}` }, 400);
-  } else {
-    try {
-      if (!statSync(cwd).isDirectory()) return c.json({ error: "cwd is not a directory" }, 400);
-    } catch {
-      return c.json({ error: "cwd does not exist" }, 400);
-    }
-  }
+  // The one rule, shared with fanout's fresh mode (spec 14b: fresh IS this path N times).
+  // Identical sentences to the checks this replaces — mount cwds stay behind the mount module's
+  // bounded verify, never a sync stat on the fuse path.
+  const cwdError = await validateNewSessionCwd(cwd);
+  if (cwdError) return c.json({ error: cwdError }, 400);
   return createWebSession(c, cwd);
 });
 
@@ -184,13 +172,26 @@ app.delete("/api/session-groups/:id", (c) =>
 
 // One session into one group (or out of it, with `groupId: null`).
 app.post("/api/session-groups/assign", async (c) => {
-  let body: { path?: unknown; groupId?: unknown; label?: unknown; index?: unknown };
+  let body: { path?: unknown; groupId?: unknown; label?: unknown; index?: unknown; id?: unknown };
   try {
     body = await c.req.json();
   } catch {
     return c.json({ error: "Expected JSON body { path, groupId, label? }" }, 400);
   }
   if (body.groupId !== null && typeof body.groupId !== "string") return c.json({ error: "groupId must be a group id or null" }, 400);
+  // REMOVAL BY ID — the "This session's file is gone" pane's gesture (spec 14): a member whose
+  // file was deleted outside pi-web has no path to send, but its assignment is exactly what
+  // needs removing and the store keys on ids. Valid for removal ONLY: adding a member requires
+  // the file, so an id with a non-null groupId, with a path, or with label/index is a 400.
+  if (body.id !== undefined) {
+    if (typeof body.id !== "string" || !body.id) return c.json({ error: "id must be a session id" }, 400);
+    if (body.groupId !== null) return c.json({ error: "id is valid only for removal (groupId: null); use path to assign" }, 400);
+    if (body.path !== undefined) return c.json({ error: "send either path or id, not both" }, 400);
+    if (body.label !== undefined || body.index !== undefined) return c.json({ error: "label and index belong to an assignment, not a removal" }, 400);
+    const out = assignSession(body.id, null);
+    // dissolved is set only when this write emptied a fanout group, which the server then deleted.
+    return out.ok ? c.json({ ok: true, ...(out.dissolved ? { dissolved: true } : {}) }) : c.json({ error: out.error }, out.status);
+  }
   // Omitted keeps the label the session already had (a move between groups carries it).
   const label = body.label === undefined ? { ok: true as const, label: undefined } : cleanGroupLabel(body.label);
   if (!label.ok) return c.json({ error: `label must be a string of at most ${GROUP_LABEL_MAX} characters, or null` }, 400);

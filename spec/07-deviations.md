@@ -28,7 +28,7 @@
 | One live region for N panes, with a mandatory member prefix | The skill's per-surface region assumes one stream of events. N regions interleave with no ordering guarantee; one queue plus a prefix is the only way three finishes in the same second read as three facts |
 | `Ctrl+Alt+Left` / `Ctrl+Alt+Right` move pane focus | The product's second key takeover after `Ctrl+P`. `Alt+Arrow` is history and `Ctrl+Arrow` is word navigation in the N textareas on screen, so the third modifier is the only free one. Bound in the workspace only |
 | New components: `.workspace`, `.workspace-*`, `.workspace-pane*`, `.group-composer*`, `.fanout-*`, `.fork-marker`; new tokens `--workspace-pane-min`, `--workspace-pane-width` | Built from the skill's chat, tabs, list, chip, banner, modal, and empty patterns and from system tokens only |
-| `branch.svg` leaves the reserved set (§0) | It marks the fork point in a forked member's transcript (§14b) and the `New fanout` row, which is the first thing in the product that is about lineage |
+| `branch.svg` leaves the reserved set (§0) | It marks the fork point in a forked member's transcript (§14b) and the `Fan Out…` buttons (the flyout row and the welcome screen's), the first things in the product that are about lineage |
 | `--measure` grows from 72ch to a 110ch cap with the pane from unfolded up (the skill fixes it at 72ch) | Requested: the chat column was too narrow on desktop. A transcript is mostly code, diffs, and tool output rather than running prose, and they wrap badly at 72ch. Folded width keeps 72ch exactly (§3 "Column width") |
 
 Everything the skill forbids stays forbidden: no gradients (except the skeleton sweep the skill

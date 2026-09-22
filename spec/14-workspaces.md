@@ -179,6 +179,16 @@ The workspace is a third value of `.app`'s `data-view`, and it takes the whole m
 - **The head is 56px**, like `.session-head` and `.subagents-head`, so the band across the window
   still reads as one. Under 640px of head width the four tool buttons collapse into one
   `More Actions` ghost icon button opening the skill's plain action menu, in the order above.
+- **The meta line is the workspace's one roll-up**: `{n} members`, then the cwd every member
+  shares (or `{n} folders` when they don't — the one fact that says "these are not the same
+  task"), then — after a shared send — the completion count `{r} of {t} replied`, with
+  `· {w} still working` while any of them runs and `· {e} errored` whenever a member's turn
+  failed. The roll-up is anchored to the last ACCEPTED shared send (a box send replaces the
+  watched set; a partial banner's retry unions it, so the straggler is counted with the ones
+  already answering), reads `busy`/workers live off the list plus each pane's turn-error state,
+  and **never counts an errored member as replied** — "3 of 5 replied" must not be able to hide
+  a broken member, which is the whole reason the count exists. It is memory-only: a reload does
+  not know about the last send and shows nothing rather than a guess.
 - **Nothing here pulses except work.** The tab's `.live-dot` is a running turn. A member open in
   a TUI takes `.chip-accent` with no `.chip-live`, exactly as §0 requires.
 
@@ -198,6 +208,20 @@ The workspace is a third value of `.app`'s `data-view`, and it takes the whole m
 - **`Wider` and `Narrower`** step that one pane's width by 120px between 440 and 1040, written to
   a per-pane `--workspace-pane-w` and kept in memory only. Like §1's sessions pane, nothing is persisted:
   a width is a posture for the task in front of you.
+- **`Fit All`** (split only, 2+ members) sets EVERY pane to the one width at which they stand in
+  the row with no scrollbar: the row's own client width divided by the pane count, measured at
+  the press (panes are `border-box` and the seam is a pane's own border, so nothing is
+  subtracted; floored, never rounded). That width is **allowed below the 440 floor, and Fit is
+  the only thing that is** — the floor's own words are "a pane narrower than this can't hold a
+  transcript and a composer", and that is true: comparison wins here because the user asked for
+  exactly it, and the alternative is that a 4-way fanout fits no viewport at all (4×440 = 1760).
+  A fitted pane carries an inline `min-width: 0` beside the width, because the stylesheet's floor
+  would otherwise quietly re-apply. Leaving a fit is deliberate: `Wider` from below the floor
+  lands on 440, the first stepped width; `Narrower` below the floor does nothing — a button that
+  says "narrower" while raising the pane to 440 would be the announcement lying about the click.
+  The number is said out loud (the announcement, and what a later step starts from), and it is
+  memory-only like every width. At the audit's live measurement: row 1120 → Fit 2 = 560, Fit 3 =
+  373, Fit 4 = 280; at 1600 → 800 / 533 / 400.
 - **`Move Left` / `Move Right`** swap the member with its neighbour and write the whole order
   (`PATCH /api/session-groups/{id} {order}`). The pane keeps focus and is scrolled back into view, so the
   thing you moved is the thing you are still looking at. Disabled at the ends, with
@@ -234,9 +258,20 @@ composer, the model menu or the mode menu changes inside a pane — §3, §4 and
 apply verbatim. What changes is scoping and chrome:
 
 - **Pane head, 40px**, sunken, under the 56px workspace head: the member name, the context gauge
-  (§4f, the percent-only step — a pane is never a 720px head), its state chip, and the tools.
-  The name is `{label} · {model}` when a label exists, else `{title} · {model}`, truncated, with
-  the full string in `title`.
+  (§4f, the percent-only step — a pane is never a 720px head), its state chips, and the tools.
+  The name is `{label} · {model}` when a label exists, else `{title} · {model}` — and for
+  members that share a title with no label (the canonical `opus ×3` fanout) the model with its
+  `#n` ALONE: `claude-opus-5 #2`. The suffix is numbered in member order and is **the same rule
+  the tab strip reads** (`paneNames` in `session-groups.ts`, one implementation), because the tab
+  strip and the pane head naming the same member differently — or the pane names omitting the
+  suffix while the tabs kept it, which is where this was caught — makes `#2` mean two things at
+  once. The model is never said twice: a name that already is the model takes no `· {model}`
+  half. The name's `title` is the full string, then the cwd, then the session's whole spend
+  (`SessionUsage.total`, the same field the Session-info dialog tallies) — "which answer won"
+  includes cost, and this puts it one hover from the comparison instead of a dialog deep in each
+  pane. A `Working` chip (live dot) sits in the head while the member is mid-turn: in split mode
+  there is no single place that says who is still running, and the tab strip's dot only covers
+  tabs mode.
 - **The accessible name of the pane is that same string, in both modes.** The pane carries
   `aria-label="{label or title} · {model}"` whether it is a `region` or a `tabpanel` — it is not
   labelled by its tab. Pointing a tabpanel at its tab is the usual convention, and here it breaks
@@ -268,6 +303,14 @@ apply verbatim. What changes is scoping and chrome:
   widths in the same view. One `Pane actions` trigger, the skill's plain action menu, named for
   the pane it acts on (`Pane actions · {pane name}`) so three of them on screen are three
   different menus to AT. The labels inside are the ones below, unabbreviated.
+- **`Rename…` is the comparison's naming act** (§14b "Member labels"). The useful name — "the
+  one that read the tests", "control" — is only known AFTER reading output, which is why the
+  fanout dialog sets no label and this gesture lives in the pane that output is read in: a field
+  in the pane's own menu, one write (`PATCH {labels}`), and every surface that names the member
+  (head, tab, aria-label, announcements) moves in the same breath because they read one rule.
+  Empty clears the label; the pane shows the title — or the repeat suffix — again. `Move Left`
+  and `Move Right` carry the workspace's one keyboard hint in their `title`s, because they are
+  the rows whose gesture most invites it, and it lived nowhere else.
 - **Three ways a member leaves, and each word does one thing.** `Promote` removes it and takes
   you to it. `Remove From Group` removes it and leaves you here. `Eliminate` removes it and
   archives it. All three are offered for a session pi-web started; for one it didn't,
@@ -290,6 +333,27 @@ apply verbatim. What changes is scoping and chrome:
 | Config error | The §1 open-failure banner, in the pane's own banner slot, with its own actions (Mount and reconnect · Reconnect · Archive). The transcript area keeps whatever loaded | Excluded, reason "can't be opened" |
 | Foreign-write busy | The `busy` banner the single-session view already shows, with its `Reconnect (force)` action, and the composer disabled | Excluded, reason "another program is writing to it" |
 | Gone from disk (the session file, checked by shape plus one async stat — never a sync stat, and never the member's `cwd`) | The pane is replaced by an `.empty` inside the pane: **"This session's file is gone."** Its transcript was deleted outside pi-web. Removing it from the group is all that's left. · button `Remove From Group` | Excluded, reason "the file is gone" |
+**The gone member keeps its pane, its place and its name.** The `.empty` renders at the member's
+position in the row and in its tab, called what this tab last saw it called (a `lastSeen` summary
+cache), because a member that silently drops out between polls is exactly the loss this state
+exists to prevent — the pane disappearing IS the bug, not the report of it. Detection reads the
+WHOLE session list, never this group's filter: a member moved to another group out-of-band has no
+row here but a live file, and "gone" would be a lie about a session that is merely elsewhere. It
+also waits for one list load to land after the workspace opened, because the fanout dialog
+refreshes the list and navigates in the same breath, and a just-created member is the one thing
+"file is gone" must never be said about; before that load a member with no row is absent, the
+same as it ever was.
+
+**The assignment outlives the file on purpose.** `dropGroupAssignments` runs only from Archive
+cleanup (ids it deleted itself), never on the listing pass — a prune there would race this pane's
+own `Remove From Group`, and the member would vanish silently instead of rendering this state.
+Removing the ghost is the user's gesture, **by session id** (`POST /api/session-groups/assign
+{ id, groupId: null }` — there is no file left to resolve a path through; the id form is
+removal-only), and it is what dissolves an emptied fanout group, exactly like any other
+last-member removal. The group composer counts these members in its foot (`· 1 file gone`) so a
+send the server refuses on one is a confirmation, not a discovery.
+
+The assignment outlives the file **on purpose**: the server prunes a member's group assignment only from Archive cleanup (ids it deleted itself, inside pi-web), never on the listing pass — a prune there would race this pane's own Remove From Group and the member would vanish silently instead of rendering this state. Removing the ghost is the user's gesture (`POST …/assign { id, groupId: null }`, the store keys on ids so no file is needed), and it is what dissolves an emptied fanout group. A reader tempted to "clean up" stale assignments in the lister owns re-deriving who else deletes members.
 
 The excluded count is always visible in the group composer's foot, never discovered at send time.
 
@@ -548,7 +612,15 @@ All four are writes to the group registry. None of them touches a session's JSON
   same outcome, and both confirmations say the sessions stay.
 - **Add Members** — the §2 popover radio list in reverse: a popover of ungrouped sessions,
   filtered by the same search, plus `Fan Out…` (§14b) at the end. Adding a session that is in
-  another group moves it, and the row says so ("in “Home”").
+  another group moves it, and the row says so ("in “Home”"). **The same picker serves every
+  width**: under 640px the narrow head's menu opens into this exact popover (search field
+  included), not a truncated list of its own — a picker that silently caps at 40 rows and loses
+  the search is a different picker wearing the same label. Its rows are keyboard-complete
+  (Enter and Space activate), like every menuitem in the product. The empty state's and the
+  partial-creation banner's `Add Members` buttons open it too, at any width — under 640 they
+  flip the same open state the narrow head's menu answers, because a button that flips a signal
+  nothing is listening to is a dead button. When the group carries a `seed`, the popover's
+  `Fan Out…` hands the dialog that seed (§14b "Entry points": the append case).
 
 ### Emptying a group
 

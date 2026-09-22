@@ -1,7 +1,7 @@
 import { statSync } from "node:fs";
 import { open, readdir, stat, unlink } from "node:fs/promises";
 import { basename, join } from "node:path";
-import type { SessionSummary } from "../shared/protocol";
+import { CURRENT_SESSION_FORMAT, type SessionSummary } from "../shared/protocol";
 import { type LiveRecord, readLive, readOwnLiveRecords, workerCountsOf } from "./live";
 import { LIVE_DIR, resolveSessionPath, sessionPathShape, SESSIONS_DIR } from "./paths";
 import { isWebSession, removeWebSession } from "./web-sessions";
@@ -407,6 +407,11 @@ async function summarize(path: string, resolveWindow?: WindowResolver, registry?
     const outline = await readTailOutline(path, st.size);
     const ctx = await readTailContext(path, st.size);
     const cwd = typeof h.cwd === "string" ? h.cwd : "";
+    // An older session format is fanout-source metadata (legacyFormat ⇔ version ≠ current,
+    // pre-versioning headers read as 1 — the same rule fanout's own head read applies), so the
+    // dialog can pre-disable a fork that the route would refuse. Absent means current (or an
+    // unreadable head, which has no summary at all): never a blocker anywhere else.
+    const format = typeof h.version === "number" ? h.version : 1;
     const parent = await existingParent(h.parentSession);
     // a remote session's cwd is its target placeholder, or a directory inside its mount point;
     // the registry (one read per listing, not one per session) resolves mount-point cwds
@@ -424,6 +429,7 @@ async function summarize(path: string, resolveWindow?: WindowResolver, registry?
       ...(parent ?? {}),
       ...(remote ? { target: remote.target, remoteCwd: remote.remoteCwd } : {}),
       ...(remote?.mounted ? { mounted: true } : {}),
+      ...(format !== CURRENT_SESSION_FORMAT ? { legacyFormat: true as const } : {}),
     };
     const entry: CacheEntry = { mtimeMs: st.mtimeMs, size: st.size, summary, contextModel: ctx?.model ?? null };
     cache.set(path, entry);
@@ -465,12 +471,12 @@ export async function listSessions(): Promise<SessionSummary[]> {
   const resolveWindow = await windowResolver();
   const drafts = readDrafts();
   const groups = readAssignments();
-  // An assignment whose session file is gone — deleted by hand, or by a TUI — can never match a row
-  // again, so pi-web's own bookkeeping is pruned on the way past. Archive cleanup prunes the ids it
-  // deletes; this catches every other writer, and only writes when something is actually dead.
-  // Keyed on file existence, never on a summary succeeding: an unreadable file keeps its group.
-  const liveIds = new Set(files.map(idOf));
-  dropGroupAssignments(Object.keys(groups).filter((id) => !liveIds.has(id)));
+  // A member whose file is gone KEEPS its assignment, on purpose: the workspace's "This
+  // session's file is gone" pane IS that assignment rendered (spec 14-workspaces "Gone from
+  // disk"), and pruning here — on every listing pass — would race the pane's own Remove From
+  // Group gesture, so the member would vanish silently instead of showing its state. Only
+  // Archive cleanup prunes, and only the ids it deleted itself (cleanupSessions, below). The
+  // batch prompt already answers a gone member with its own "missing" refusal code.
   const registry = loadTargets().targets; // one read for every summary's mount-point match
   const results = await Promise.all(files.map((f) => summarize(f, resolveWindow, registry)));
   const present = new Set(files);

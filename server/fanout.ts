@@ -1,8 +1,8 @@
 import { existsSync, unlinkSync, writeFileSync } from "node:fs";
 import { open } from "node:fs/promises";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
-import { GROUP_NAME_MAX, type BatchRefusal, type BatchRefusalCode, type FanoutRequest, type FanoutResult, type GroupSeed, type SessionGroup, type SessionSummary } from "../shared/protocol";
-import { activeConfigFailure, heldChat } from "./chat-manager";
+import { GROUP_NAME_MAX, type BatchRefusal, type BatchRefusalCode, CURRENT_SESSION_FORMAT, type FanoutRequest, type FanoutResult, type GroupSeed, type SessionGroup, type SessionSummary } from "../shared/protocol";
+import { activeConfigFailure, FANOUT_MEMBER_ENTRY, heldChat } from "./chat-manager";
 import { readLive } from "./live";
 import { listModels } from "./models";
 import { canonicalPath, resolveSessionPath, sessionPathShape } from "./paths";
@@ -10,7 +10,8 @@ import { adoptGroupSeed, assignSession, cleanGroupName, createGroup, deleteGroup
 import { getSessionSummary } from "./sessions-index";
 import { addWebSession } from "./web-sessions";
 import { markOwned, recentForeignWriteAgeSec } from "./write-guard";
-import { promptGroup } from "./group-prompt";
+import { promptGroup, type BatchResult } from "./group-prompt";
+import { validateNewSessionCwd } from "./targets";
 import { normalizeEntry, readActiveBranch } from "./transcript";
 
 /**
@@ -19,8 +20,10 @@ import { normalizeEntry, readActiveBranch } from "./transcript";
  * N independent sessions in a folder. Nothing here is a fan-out of one runtime — see forkMember.
  */
 
-/** The current session file format. A source in an older one is refused rather than migrated. */
-const CURRENT_SESSION_VERSION = 3;
+/** The current session file format (shared/protocol's CURRENT_SESSION_FORMAT, one home so the
+    summary's `legacyFormat` and this refusal can never disagree). A source in an older one is
+    refused rather than migrated. */
+const CURRENT_SESSION_VERSION = CURRENT_SESSION_FORMAT;
 /** Enough for the header line. The leaf needs the whole file (see renderedActiveLeaf). */
 const HEAD_BYTES = 16 * 1024;
 
@@ -55,6 +58,10 @@ export interface PlannedMember {
 export interface FanoutDeps {
   /** Refs the server knows, for validating `members[].ref`. */
   knownRefs(): Promise<Set<string>>;
+  /** The cwd rule POST /api/sessions itself applies to a local create (targets.ts
+      validateNewSessionCwd) — fresh mode IS that path N times, so it refuses the same folders
+      with the same sentences. An error string, or null when the folder can be used. */
+  validateCwd(cwd: string): Promise<string | null>;
   /** The source path as this server keys sessions, or null when it is not a session file here.
       Shape check first (no syscall), then the FULL resolve, because fanout OPENS this file —
       sessionPathShape contains by string only (server/paths.ts). */
@@ -85,8 +92,10 @@ export interface FanoutDeps {
   adoptSeed(id: string, seed: GroupSeed): SessionGroup | null;
   deleteGroup(id: string): void;
   assign(sessionId: string, groupId: string, label: string): void;
-  /** The stage-2 batch path, for fresh mode's first message. */
-  prompt(groupId: string, text: string): Promise<void>;
+  /** The stage-2 batch path, for fresh mode's first message. Returns the batch's own outcome so
+      the caller folds its refusals into `failed`: a first message nothing could accept is a
+      VISIBLE half-started state, never a silent workspace of empty panes. */
+  prompt(groupId: string, text: string): Promise<BatchResult>;
 }
 
 /** Read the header and the last entry's id without loading the whole file. */
@@ -152,6 +161,7 @@ export const realFanoutDeps: FanoutDeps = {
   async knownRefs() {
     return new Set((await listModels()).map((m) => m.ref));
   },
+  validateCwd: (cwd) => validateNewSessionCwd(cwd),
   resolveSource(raw) {
     if (!sessionPathShape(raw)) return null;
     const path = resolveSessionPath(raw);
@@ -197,6 +207,11 @@ export const realFanoutDeps: FanoutDeps = {
     if (!created) throw new Error("Branching produced no session file");
     // The manager IS the member now, so this pins the member's model, not the source's.
     sm.appendModelChange(member.provider, member.modelId);
+    // The fanout-member marker, what a later runtime keys the outline exception on
+    // (chat-manager's FANOUT_MEMBER_ENTRY): it rides the same write as the model — the SDK
+    // writes the file itself when the branch has an assistant reply, and the hand-write below
+    // serializes getEntries() when it does not.
+    sm.appendCustomEntry(FANOUT_MEMBER_ENTRY);
     // The SDK only writes the branch immediately when it contains an assistant message; otherwise
     // it waits for one. Write it by hand, wx, so the member exists on disk like every web session.
     if (!existsSync(created)) {
@@ -219,6 +234,10 @@ export const realFanoutDeps: FanoutDeps = {
     // model (fork() escaped the bug because append-then-write-all is its order). getEntries()
     // excludes the header, so [header, ...entries] is the whole file.
     sm.appendModelChange(member.provider, member.modelId);
+    // The fanout-member marker, beside the model change (chat-manager's FANOUT_MEMBER_ENTRY):
+    // same deferral rules as the append above, so it is written by the same hand-write and never
+    // left in memory only.
+    sm.appendCustomEntry(FANOUT_MEMBER_ENTRY);
     writeFileSync(created, `${[JSON.stringify(header), ...sm.getEntries().map((e) => JSON.stringify(e))].join("\n")}\n`, { flag: "wx" });
     return finishMember(created);
   },
@@ -240,7 +259,7 @@ export const realFanoutDeps: FanoutDeps = {
   deleteGroup: (id) => void deleteGroup(id),
   assign: (sessionId, groupId, label) => void assignSession(sessionId, groupId, label),
   async prompt(groupId, text) {
-    await promptGroup(groupId, text, undefined);
+    return promptGroup(groupId, text, undefined);
   },
 };
 
@@ -347,6 +366,15 @@ export async function runFanout(body: FanoutRequest, deps: FanoutDeps = realFano
   const plan = await planFanout(body, deps);
   if (!plan.ok) return { ok: false, status: 400, error: plan.error };
 
+  // Fresh mode's folder is checked by POST /api/sessions' own rule BEFORE anything is made
+  // (spec 14b: fresh mode IS that path N times): a cwd that path refuses would otherwise fail N
+  // times as "internal" member failures with a worse sentence than the one the user has seen on
+  // every New Session — and after the members had already half-started.
+  if (body.cwd !== undefined) {
+    const cwdError = await deps.validateCwd(body.cwd);
+    if (cwdError) return { ok: false, status: 400, error: cwdError };
+  }
+
   let sourcePath: string | null = null;
   if (body.source) {
     sourcePath = deps.resolveSource(body.source.path);
@@ -374,15 +402,28 @@ export async function runFanout(body: FanoutRequest, deps: FanoutDeps = realFano
       };
   }
 
-  const created: SessionSummary[] = [];
+  // Pairing each summary with ITS member (not created[i] against planned[i]) is what keeps pane
+  // labels honest under partial failure: created skips the failures, so an index pairing would
+  // hand member #3 the label of the failed #2.
+  const made: { summary: SessionSummary; member: PlannedMember }[] = [];
   const failed: BatchRefusal[] = [];
+  const freshCwd = body.cwd?.trim();
   for (const member of plan.planned) {
     let path: string | null = null;
     try {
-      path = sourcePath ? await deps.fork(sourcePath, body.source!.leafId, member) : await deps.fresh(body.cwd!, member);
+      path = sourcePath ? await deps.fork(sourcePath, body.source!.leafId, member) : await deps.fresh(freshCwd!, member);
       const summary = await deps.summary(path);
       if (!summary) throw new Error("the new session could not be read back");
-      created.push(summary);
+      // The plan's model must be what the FILE records. A member whose model_change never
+      // reached the disk opens on the runtime's DEFAULT model and answers as a model nobody
+      // chose — the one failure a fanout cannot survive silently (it shipped once: a zai/glm-5.3
+      // plan ran ollama-cloud/deepseek, pane label and header disagreeing). readTailModel reads
+      // from the file's end, so the entry creation just appended is the one compared. A mismatch
+      // makes the member a NEVER-member — its half-written file is debris (unlinked in the
+      // catch), reported in `failed` with its ref — never a quiet default.
+      if (summary.model !== member.ref)
+        throw new Error(`its recorded model is ${summary.model ?? "none"}, not ${member.ref}`);
+      made.push({ summary, member });
     } catch (err) {
       if (path) deps.discard(path); // its own debris only; nothing that succeeded is touched
       // `ref` is the only handle on a member that never existed: no session, so no id and no
@@ -395,6 +436,7 @@ export async function runFanout(body: FanoutRequest, deps: FanoutDeps = realFano
       failed.push(refusal("", "internal", said || "The runtime gave no reason.", "", member.ref));
     }
   }
+  const created = made.map((m) => m.summary);
   // A group with no members is debris, not a result.
   if (created.length === 0) return { ok: false, status: 500, error: failed[0]?.message ?? "No member could be created" };
 
@@ -413,11 +455,31 @@ export async function runFanout(body: FanoutRequest, deps: FanoutDeps = realFano
     // treat an ABSENT field as pi-web's, deleting a name an older client never claimed.
     : deps.createGroup(plan.name, seed, body.named === "generated");
   if (!group) return { ok: false, status: 500, error: "The group could not be created" };
-  created.forEach((summary, i) => deps.assign(summary.id, group.id, plan.planned[i]!.label));
+  made.forEach(({ summary, member }) => deps.assign(summary.id, group.id, member.label));
 
-  // Fresh mode's first message goes through the stage-2 batch path. A refusal there keeps every
-  // member: they are real, empty, grouped sessions the user can prompt with a retry.
-  if (body.text) await deps.prompt(group.id, body.text);
+  // Fresh mode's first message goes through the stage-2 batch path, and its OUTCOME IS PART OF
+  // THE 201: a refusal keeps every member (they are real, empty, grouped sessions the user can
+  // prompt with a retry) and is folded into `failed` — entries carrying the member's id and
+  // path (it exists) plus its ref (so the banner names the model) — so a fanout that created N
+  // members and started none SAYS so, instead of announcing success and landing the user in a
+  // workspace of silent panes. A member of the target group that this fanout did not create
+  // (the groupId path prompts the whole group) reports with its id only: its model is not this
+  // fanout's to claim.
+  if (body.text) {
+    const batch = await deps.prompt(group.id, body.text);
+    const refOf = new Map(made.map(({ summary, member }) => [summary.id, member.ref]));
+    const fold = (entries: BatchRefusal[]) =>
+      failed.push(...entries.map((e) => ({ ...e, ...(refOf.has(e.id) ? { ref: refOf.get(e.id) } : {}) })));
+    if (batch.ok) fold(batch.result.failed);
+    else if ("refused" in batch) fold(batch.refused);
+    // Unreachable shapes (blank text, a vanished group) with validated inputs: still visible,
+    // as one internal entry rather than a swallow.
+    else failed.push(refusal("", "internal", batch.error));
+  }
 
-  return { ok: true, result: { group: { ...group, ...(group.seed ?? seed ? { seed: group.seed ?? seed } : {}) }, created, failed } };
+  // The response's group is read BACK after the assignments: the object createGroup/adoptSeed
+  // returned predates them (caught live: a 201 whose group.members was empty beside a created
+  // member), and the client navigates straight into the workspace off this one response.
+  const finalGroup = deps.group(group.id) ?? group;
+  return { ok: true, result: { group: { ...finalGroup, ...(finalGroup.seed ?? seed ? { seed: finalGroup.seed ?? seed } : {}) }, created, failed } };
 }

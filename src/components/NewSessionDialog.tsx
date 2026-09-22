@@ -45,6 +45,12 @@ function TargetStatus(props: { target: TargetInfo; checking: boolean }) {
  * Asks for a folder, creates an empty webapp-owned session, and hands it back (spec/05-new-session-dialog.md §5).
  * The folder is chosen, never typed: the Folder field opens the folder picker in place. The Remote
  * tab does the same on a configured target, and can start the agent that connects a new one.
+ *
+ * The type field (§05 "Type") chooses what the dialog starts: One session — this, the default —
+ * or Fan out…, which creates nothing here: it closes this dialog and opens §14b's on a fresh
+ * prompt, carrying the chosen folder as its cwd. That handoff is fanout's entry at every window
+ * width and on every route: the folded shell hides .app-main (the welcome CTA with it), and a
+ * session view has no welcome screen at all.
  */
 export function NewSessionDialog(props: {
   prefill: string;
@@ -52,10 +58,15 @@ export function NewSessionDialog(props: {
   knownCwds: string[];
   onCreated(s: SessionSummary): void;
   onCancel(): void;
+  /** Fan Out… was pressed: hand the chosen folder to §14b's fresh-mode dialog. */
+  onFanOut(cwd: string): void;
 }) {
   const prefillRemote = splitRemoteCwd(props.prefill);
   const [cwds] = createResource(() => listCwds().catch(() => props.knownCwds));
   const [where, setWhere] = createSignal<Where>(prefillRemote ? "remote" : "local");
+  /** What the dialog starts (§05 "Type"): One session is the default and everything below reads
+   *  as it always did; Fan out… doesn't create here — it hands the folder to §14b's dialog. */
+  const [kind, setKind] = createSignal<"one" | "fanout">("one");
   const [cwd, setCwd] = createSignal(prefillRemote ? "" : props.prefill);
   const [place, setPlace] = createSignal<{ target: string | null; remoteCwd: string }>(
     prefillRemote ?? { target: null, remoteCwd: "" },
@@ -133,6 +144,13 @@ export function NewSessionDialog(props: {
   const submit = async (e?: Event) => {
     e?.preventDefault();
     if (pending() || connecting() || !ready()) return;
+    if (kind() === "fanout") {
+      // No POST, nothing created: this dialog closes and §14b's opens on a fresh prompt with the
+      // folder the field shows. `ready()` above is the same gate Create Session uses, so the
+      // handoff never arrives without a folder.
+      props.onFanOut(cwd().trim());
+      return;
+    }
     setPending(true);
     setFieldError(null);
     setFailed(false);
@@ -168,6 +186,15 @@ export function NewSessionDialog(props: {
     }
   };
 
+  const switchKind = (k: "one" | "fanout") => {
+    if (k === kind()) return;
+    setKind(k);
+    setPicking(false);
+    setFieldError(null);
+    // Fresh-mode fanout is N sessions in one LOCAL folder (§14b's route has no remote shape), so
+    // the tabs leave while fanout is chosen: there is no tab whose choice could carry over.
+    if (k === "fanout") setWhere("local");
+  };
   const switchTo = (w: Where) => {
     if (w === where()) return;
     setWhere(w);
@@ -208,37 +235,70 @@ export function NewSessionDialog(props: {
         }}
       >
         <div class="modal-head">
+          {/* The title moves with the type (§09): "Fan out" is the title the dialog it opens
+              carries, so the handoff reads as one flow rather than a second question. */}
           <h2 class="modal-title" id="ns-title">
-            New Session
+            {kind() === "fanout" ? "Fan out" : "New Session"}
           </h2>
         </div>
         <form class="modal-body" id="ns-form" ref={form} onSubmit={submit}>
           <Show when={failed()}>
             <Banner tone="error" title="Couldn't create the session." body="Nothing was written. Try again." />
           </Show>
-          {/* flex: none — .tabs scrolls sideways, so in the scrolling modal body it would otherwise shrink to nothing. */}
-          <div class="tabs" role="tablist" aria-label="Where pi runs" style={{ flex: "none" }}>
-            <For each={TABS}>
-              {(t, i) => (
-                <button
-                  type="button"
-                  role="tab"
-                  class={where() === t.id ? "tab tab-active" : "tab"}
-                  id={`ns-tab-${t.id}`}
-                  aria-selected={where() === t.id ? "true" : "false"}
-                  aria-controls="ns-tabpanel"
-                  tabindex={where() === t.id ? 0 : -1}
-                  ref={(el) => (tabEls[i()] = el)}
-                  onClick={() => switchTo(t.id)}
-                  onKeyDown={(e) => onTabKey(e, i())}
-                >
-                  <Icon name={t.id === "local" ? "folder" : "terminal"} small />
-                  {t.label}
-                </button>
-              )}
-            </For>
+          {/* The type field is first (§05 "Type"): One session is the default and everything
+              below it reads as it always did; Fan out… re-aims the same folder choice at §14b's
+              dialog instead of creating here. */}
+          <div class="field">
+            <span class="field-label" id="ns-type">
+              What to start
+            </span>
+            <div
+              role="radiogroup"
+              aria-labelledby="ns-type"
+              class="fanout-source"
+              onKeyDown={(e) => {
+                // Enter on a radio would implicitly submit the form (no text input owns Enter
+                // here), and Enter is not how a radio is chosen — Space and the arrows are.
+                if (e.key === "Enter") e.preventDefault();
+              }}
+            >
+              <label>
+                <input type="radio" name="ns-type" checked={kind() === "one"} onChange={() => switchKind("one")} disabled={pending() || connecting()} /> One
+                session
+              </label>
+              <label>
+                <input type="radio" name="ns-type" checked={kind() === "fanout"} onChange={() => switchKind("fanout")} disabled={pending() || connecting()} /> Fan
+                out…
+              </label>
+            </div>
           </div>
-          <div class="stack" role="tabpanel" id="ns-tabpanel" aria-labelledby={`ns-tab-${where()}`}>
+          {/* flex: none — .tabs scrolls sideways, so in the scrolling modal body it would otherwise shrink to nothing. */}
+          <Show when={kind() === "one"}>
+            <div class="tabs" role="tablist" aria-label="Where pi runs" style={{ flex: "none" }}>
+              <For each={TABS}>
+                {(t, i) => (
+                  <button
+                    type="button"
+                    role="tab"
+                    class={where() === t.id ? "tab tab-active" : "tab"}
+                    id={`ns-tab-${t.id}`}
+                    aria-selected={where() === t.id ? "true" : "false"}
+                    aria-controls="ns-tabpanel"
+                    tabindex={where() === t.id ? 0 : -1}
+                    ref={(el) => (tabEls[i()] = el)}
+                    onClick={() => switchTo(t.id)}
+                    onKeyDown={(e) => onTabKey(e, i())}
+                  >
+                    <Icon name={t.id === "local" ? "folder" : "terminal"} small />
+                    {t.label}
+                  </button>
+                )}
+              </For>
+            </div>
+          </Show>
+          {/* A tabpanel needs its tab: while fanout is chosen the tabs are gone, so the panel is a
+              plain stack and labels itself. */}
+          <div class="stack" role={kind() === "one" ? "tabpanel" : undefined} id="ns-tabpanel" aria-labelledby={kind() === "one" ? `ns-tab-${where()}` : undefined}>
             <Show when={where() === "local"}>
               <div class="field">
                 <label class="field-label" for="ns-cwd">
@@ -467,7 +527,7 @@ export function NewSessionDialog(props: {
         </form>
         <div class="modal-foot">
           <button type="submit" form="ns-form" class="button button-primary" aria-disabled={pending() || connecting() || !ready() ? "true" : undefined}>
-            {pending() ? "Creating…" : "Create Session"}
+            {pending() ? "Creating…" : kind() === "fanout" ? "Fan Out…" : "Create Session"}
           </button>
           <span class="modal-spacer" />
           <button type="button" class="button button-ghost" onClick={cancel}>

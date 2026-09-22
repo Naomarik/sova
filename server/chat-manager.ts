@@ -215,6 +215,25 @@ export function drainQueueThenAbort(session: Pick<AgentSession, "clearQueue" | "
  */
 export const REWIND_ENTRY = "pi-web-rewind";
 
+/**
+ * customType of the invisible entry fanout writes into every member at creation (server/fanout.ts,
+ * beside the member's model change). It is how a LATER runtime — this server after a restart, or
+ * the workspace opened cold — knows to open the session WITHOUT `topic-outline-headless`: the
+ * outline summarizer is a second model call per turn, and N of them on a fanout is cost with no
+ * reader (spec 14b "Members run with the topic outline off"). The marker travels with the file,
+ * so the exception holds for the member's life across restarts, rather than being an in-memory
+ * flag threaded through acquireChat that a restart would forget. Same shape as REWIND_ENTRY:
+ * never LLM context, no usage, rendered nowhere (normalizeEntry's default for custom types).
+ */
+export const FANOUT_MEMBER_ENTRY = "pi-web-fanout-member";
+
+/** Whether a session file is a fanout member, by the marker its creation wrote. The predicate
+ *  openSession keys the outline exception on; exported for the test that pins the marker's
+ *  round trip through the file. */
+export function isFanoutMember(sm: Pick<SessionManager, "getEntries">): boolean {
+  return sm.getEntries().some((e) => e.type === "custom" && e.customType === FANOUT_MEMBER_ENTRY);
+}
+
 export type RewindOutcome = { ok: true; editorText: string } | { ok: false; reason: RewindRefusal; message: string };
 
 /** The members of AgentSession a rewind uses (narrow so tests can drive it with a fake). */
@@ -942,9 +961,13 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
   const createRuntime: CreateAgentSessionRuntimeFactory = async ({ cwd, sessionManager, sessionStartEvent }) => {
     // topic-outline only summarizes in the TUI unless its host opts in; opt in so web chats get
     // outlines. Boolean flag: the SDK sets it true whatever the value. Workers never get it.
+    // A FANOUT MEMBER is the one exception, and the FILE says so, not a flag threaded through
+    // acquireChat: its creation wrote the FANOUT_MEMBER_ENTRY marker beside the model change, so
+    // the member opens WITHOUT the opt-in and lands in the extension's own default — N outline
+    // summarizers on one fanout is cost with no reader, and the marker survives restarts.
+    const flags = new Map<string, boolean | string>(isFanoutMember(sessionManager) ? [] : [["topic-outline-headless", true]]);
     // A remote session (cwd = a target placeholder, server/targets.ts) also gets the string flag
     // `target`, which switches pi-config's remote extension on for that target.
-    const flags = new Map<string, boolean | string>([["topic-outline-headless", true]]);
     const target = targetOfCwd(cwd);
     if (target) flags.set("target", target);
     const services = await createAgentSessionServices({ cwd, modelRuntime, extensionFlagValues: flags });

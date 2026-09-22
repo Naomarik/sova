@@ -312,6 +312,13 @@ Driven by `ChatServerMessage.event`.
 - **End of turn** (`agent_settled`, or `agent_end` if that's all you get). Remove the live dots
   and the run status. Replace the optimistic items with the server's canonical ones if it sends
   them. Announce "Reply finished." in the polite live region; announce nothing per delta.
+- **A turn that errors** (`type:"error"`, not a refusal) announces "The turn stopped with an
+  error." — the banner's own title, so the failure is heard wherever the banner isn't being read:
+  in a workspace a failed member looks exactly like a quiet one until you pan its pane, and the
+  announcement is the one signal that crosses panes (§14's pane-prefixed member form, "{pane
+  name} — stopped with an error."). Once per error: the same failure re-reported on a reconnect
+  loop says nothing, because each announcement would read as another error. It replaces that
+  turn's "Reply finished." (Accessibility, below): the error is the ending.
 - **Performance.** Batch deltas per animation frame. Never re-render the whole thread on each
   delta.
 
@@ -361,9 +368,12 @@ Driven by `ChatServerMessage.event`.
 With no session selected the main pane is not an empty state with a grid bolted on — it is one
 page with two parts, in this order:
 
-1. **The opening**, unchanged: `.welcome-head` wrapping the `.empty` block that has always been
-   here — the `chat` mark, "{n} sessions across {m} folders.", "Pick one to read it, or start a
-   new one.", and the `New Session` button. It is the first thing read at every width.
+1. **The opening**, unchanged except for its actions: `.welcome-head` wrapping the `.empty` block
+   that has always been here — the `chat` mark, "{n} sessions across {m} folders.", "Pick one to
+   read it, or start a new one.", and two buttons in one `.empty-action` cluster: `New Session`
+   and `Fan Out…` (§14b "Entry points" — the empty screen is fanout's front door, which is a
+   creation gesture offered beside the other creation gesture, not in the sidebar). It is the
+   first thing read at every width.
 2. **The Explained grid**, shown **only when at least one explanation exists** (0 renders
    nothing — no empty state, no head, no reserved space):
 
@@ -410,7 +420,7 @@ page with two parts, in this order:
 
 | State | What renders |
 |---|---|
-| No session selected (unfolded) | The landing page below, not a bare `.empty`: `.welcome` fills `.app-main`, its `.welcome-head` holds the `.empty` opening (`chat` icon in `.empty-mark`, title "48 sessions across 7 folders.", body "Pick one to read it, or start a new one.", `.empty-action` `New Session`), and the Explained grid follows when there is one. No composer |
+| No session selected (unfolded) | The landing page below, not a bare `.empty`: `.welcome` fills `.app-main`, its `.welcome-head` holds the `.empty` opening (`chat` icon in `.empty-mark`, title "48 sessions across 7 folders.", body "Pick one to read it, or start a new one.", an `.empty-action` cluster with `New Session` and `Fan Out…`), and the Explained grid follows when there is one. No composer |
 | Loading transcript (after 300ms) | Three placeholder messages in `.thread`: a right-aligned `.skeleton` 40% × 44px, then a left `.skeleton-title` plus 3 `.skeleton-line` at 92/78/60%, then a `.skeleton-row` at 60% width. Put `aria-busy="true"` on the `section`. The head renders straight away from the `SessionSummary` |
 | Error | `.banner.banner-error` in `.transcript-inner`. Title: "Couldn't load this transcript." Body: "The file at `{path}` wasn't changed. {server message}." Action: `Retry` |
 | Empty (new session) | `.empty`. Title: "New session in `~/webapps/pi-web`." Body: "Nothing sent yet. Your first message becomes its title." No action; focus the composer instead. Show it only while the thread has **zero rows**, counting local rows such as "Ran `/cmd`" (§4d) and model-change info rows. Once any row exists, the thread renders normally with no empty state |
@@ -452,6 +462,10 @@ page with two parts, in this order:
   labelled `section`. A single visually-hidden `role="status"` region announces turn boundaries:
   - "Working." at the start of a turn.
   - "Reply finished." at the end.
+  - "The turn stopped with an error." when a turn ends in an error — the banner's own title, said
+    once per error (a reconnect loop's repeat of the same failure announces nothing), and instead
+    of that turn's "Reply finished.": an errored turn still settles, and two endings would read
+    as two turns.
   - For watched sessions, "{n} new entries." throttled to at most once every 5s.
 - **Articles.** Each message is an `article` with an `aria-label` like "You, 14:06" or
   "claude-opus-5, 14:07".

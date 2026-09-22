@@ -14,6 +14,7 @@ import { homeFromSessionPath } from "./lib/format";
 import type { RewindControl } from "./lib/inputs";
 import { activeTab, home, setActiveTab, setHome, toast } from "./lib/ui-state";
 import { sessionWorking, type UsageTotalView } from "./lib/workers";
+import { sourceBlocked } from "./lib/fanout";
 import { AgentsView } from "./components/AgentsView";
 import { NewSessionDialog } from "./components/NewSessionDialog";
 import { SettingsDialog } from "./components/SettingsDialog";
@@ -275,11 +276,24 @@ export function App() {
   const [autofocusPath, setAutofocusPath] = createSignal<string | null>(null);
   /**
    * The fanout dialog, when it is open: `{}` with no source is a fresh-prompt fanout, and a
-   * `source` opens it on that session with Fork selected. It lives here rather than in the
-   * workspace because it can be opened from a session too, and it outlives the surface that
-   * opened it — the dialog stays up while the request is in flight.
+   * `source` opens it on that session with Fork selected. `presetCwd` is the New Session
+   * dialog's handoff (§05 "Type"): fresh mode starts in the folder that dialog had chosen. It
+   * lives here rather than in the workspace because it can be opened from a session too, and it
+   * outlives the surface that opened it — the dialog stays up while the request is in flight.
    */
-  const [fanout, setFanout] = createSignal<{ source?: FanoutSource; into?: { id: string; name: string } } | null>(null);
+  const [fanout, setFanout] = createSignal<{ source?: FanoutSource; into?: { id: string; name: string }; presetCwd?: string } | null>(null);
+
+  /**
+   * The skip link's target and name move together (§14 "Accessibility"): a workspace with members
+   * has one action — the group composer — so the link says "Skip to Group Composer" and lands on
+   * its input; before the composer exists (a workspace with no members) it is the focused pane's
+   * transcript and says so, because a link that says "Group Composer" and lands on a transcript
+   * is worse than either. A link that says "Transcript" in a workspace of N panes would also
+   * have to pick one silently; the composer is the one target that needs no picking.
+   */
+  const hasGroupComposer = () => !!groupRoute() && !!openGroup() && groupMembers().length > 0;
+  const skipHref = () => (hasGroupComposer() ? "#group-composer" : `#${transcriptIdOf(focusedPath())}`);
+  const skipLabel = () => (hasGroupComposer() ? "Skip to Group Composer" : "Skip to Transcript");
 
   // At folded width, opening a session swaps the column: move focus to its title.
   let titleEl: HTMLHeadingElement | undefined;
@@ -440,9 +454,36 @@ export function App() {
     subagentsPath,
     onNewSession: startNewFrom,
     // From a workspace: the members land in THIS group, beside the ones already there (§14b).
-    onFanOut: () => {
+    // With the group's own seed it is the APPEND case — "I want two more of these": the new
+    // members branch from the same fork point the existing ones share, which is the one `groupId`
+    // + `source` combination the route defines and the one the UI could never reach before. A
+    // hand-made group (no seed) lands beside them with no source, as before; a seed whose parent
+    // is no longer in the list falls back to that too — the fork UI would otherwise name a
+    // transcript nobody can show.
+    onFanOut: (seed?: { parentSessionPath: string; leafId: string }) => {
       const group = openGroup();
-      setFanout(group ? { into: { id: group.id, name: group.name } } : {});
+      if (!group) {
+        setFanout({});
+        return;
+      }
+      const into = { id: group.id, name: group.name };
+      const parent = seed ? (list() ?? []).find((s) => s.path === seed.parentSessionPath) : undefined;
+      if (!seed || !parent) {
+        setFanout({ into });
+        return;
+      }
+      setFanout({
+        into,
+        source: {
+          session: parent,
+          leafId: seed.leafId,
+          // The source is not on screen here: its fill was never reported, and the summary's own
+          // tail value is not the fork point's fill once the source ran on — so unknown, never a
+          // guess. No `messages` either: the fork note hides rather than count what it can't see.
+          context: null,
+          blocked: () => sourceBlocked(parent),
+        },
+      });
     },
     onFanOutFrom: (source) => setFanout({ source }),
   };
@@ -460,15 +501,19 @@ export function App() {
       */}
       <a
         class="button skip-link"
-        href={`#${transcriptIdOf(focusedPath())}`}
+        href={skipHref()}
         onClick={(e) => {
-          const el = document.getElementById(transcriptIdOf(focusedPath()));
+          // The composer's INPUT is what takes focus (a footer with an id is not focusable);
+          // a workspace whose composer is somehow missing falls back to the pane transcript.
+          const el =
+            (hasGroupComposer() ? document.getElementById("group-composer-input") : null) ??
+            document.getElementById(transcriptIdOf(focusedPath()));
           if (!el) return; // nothing rendered to skip to: leave the browser to it
           e.preventDefault();
           el.focus();
         }}
       >
-        Skip to Transcript
+        {skipLabel()}
       </a>
       <div class="app" data-view={groupRoute() ? "workspace" : route() || insightsRoute() ? "session" : "list"}>
         <Sidebar
@@ -483,7 +528,6 @@ export function App() {
           onRefresh={refresh}
           onNew={() => setCreating(true)}
           onOpenSettings={() => setSettingsOpen(true)}
-          onFanOut={() => setFanout({})}
         />
 
         {/* The workspace takes the whole second column, so it IS the main: no session head, and
@@ -575,10 +619,19 @@ export function App() {
                         </Show>
                       </p>
                       <p class="empty-body">Pick one to read it, or start a new one.</p>
-                      <button type="button" class="button empty-action" onClick={() => setCreating(true)}>
-                        <Icon name="plus" />
-                        New Session
-                      </button>
+                      {/* Two ways to start something: one session, or the same prompt to N models
+                          at once (§14b "Entry points" — the empty screen is fanout's front door,
+                          which is why it is offered here and not in the sidebar). */}
+                      <div class="cluster empty-action">
+                        <button type="button" class="button" onClick={() => setCreating(true)}>
+                          <Icon name="plus" />
+                          New Session
+                        </button>
+                        <button type="button" class="button" onClick={() => setFanout({})}>
+                          <span class="icon icon-sm" style={{ "--icon": "url(/icons/branch.svg)" }} aria-hidden="true" />
+                          Fan Out…
+                        </button>
+                      </div>
                     </div>
                   </div>
                   <Show when={explained()}>
@@ -633,6 +686,12 @@ export function App() {
             knownCwds={[...new Set((list() ?? []).map((s) => s.cwd))]}
             onCancel={() => setCreating(false)}
             onCreated={adoptCreated}
+            onFanOut={(cwd) => {
+              // The type field's handoff (§05 "Type"): close this dialog, open §14b's on a fresh
+              // prompt, with the folder it had chosen carried over.
+              setCreating(false);
+              setFanout({ presetCwd: cwd });
+            }}
           />
         </Portal>
       </Show>
@@ -642,6 +701,7 @@ export function App() {
             <FanoutDialog
               source={open().source}
               into={open().into}
+              presetCwd={open().presetCwd}
               sessions={list() ?? []}
               onClose={() => setFanout(null)}
               onCreated={refresh}

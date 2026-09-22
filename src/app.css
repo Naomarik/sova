@@ -209,6 +209,7 @@ html, body, #root { height: 100%; }
 .workspace-row[data-mode="split"] > .workspace-pane-focused {
   box-shadow: inset 0 2px 0 0 var(--color-accent);
 }
+.workspace-pane[hidden] { display: none; }
 .workspace-pane:focus-visible { outline: var(--focus-ring); outline-offset: calc(var(--focus-offset) * -1); }
 
 /* A pane's own 40px head, under the workspace's 56px one: the member's name,
@@ -315,7 +316,7 @@ html, body, #root { height: 100%; }
 }
 .fanout-row-model { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 /* The fill takes §4f's steps, class for class, so 80% looks the same here as in the head. */
-.fanout-row-fill { flex: none; font-size: var(--fs-caption); color: var(--color-ink-2); white-space: nowrap; }
+.fanout-row-fill { display: inline; font-family: var(--font-mono); font-variant-numeric: tabular-nums; flex: none; font-size: var(--fs-caption); color: var(--color-ink-2); white-space: nowrap; }
 .fanout-count { flex: none; display: flex; align-items: center; gap: var(--space-2); }
 .fanout-add { align-self: flex-start; margin-top: var(--space-2); }
 

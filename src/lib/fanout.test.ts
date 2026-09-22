@@ -10,16 +10,22 @@ import {
   failureLines,
   fanoutBody,
   fewerLabel,
+  midTurnReason,
   moreLabel,
+  oldFormatReason,
   partialClosing,
   partialTitle,
   removeModel,
   removeLabel,
   rowFill,
+  seedRef,
   sharedTurnLine,
+  sourceBlocked,
+  sourceRefusal,
   stepCount,
   totalMembers,
 } from "./fanout";
+import type { ModelInfo } from "../../shared/protocol";
 
 const failure = (ref: string, message: string): BatchRefusal => ({ id: "", path: "", code: "internal", message, ref });
 
@@ -61,6 +67,21 @@ test("a row's fill compares against THAT model's window, which is the point of t
   assert.equal(rowFill(48_000, 200_000).text, "48k of 200k · 24%");
 });
 
+test("a fill that can't be named is said in words, never as 0 — which would be a false claim", () => {
+  // §4f refuses "0%" for a just-compacted session in the head, for the same reason: an
+  // empty-looking gauge is a claim we can't make. The preview must not make it either.
+  const compacted = rowFill("compacted", 1_000_000);
+  assert.equal(compacted.text, "compacted");
+  assert.equal(compacted.step, "");
+  assert.equal(compacted.overflows, false, "we don't know that it doesn't fit");
+  assert.notEqual(compacted.text, "0 of 1M · 0%");
+  // The Add-Members entry's source is not on screen: its fill was never reported, and the
+  // summary's tail is not the fork point's fill once the source ran on. Also unknown, also words.
+  const unknown = rowFill("unknown", 200_000);
+  assert.equal(unknown.text, "unknown");
+  assert.equal(unknown.overflows, false);
+});
+
 test("an unknown window shows tokens alone and never blocks; fresh mode has no fill at all", () => {
   const unknown = rowFill(48_000, undefined);
   assert.equal(unknown.text, "48k, window unknown");
@@ -83,11 +104,21 @@ test("a fork bigger than the window overflows, and carries §4f's error step", (
   assert.equal(rowFill(170_000, 200_000).step, "context-warn");
 });
 
-test("the shared-turn line says what every future turn costs, in both modes", () => {
+test("the shared-turn line says what every future turn costs, in every mode and unknowable", () => {
   assert.equal(sharedTurnLine(5, 48_000), "5 members × ~48k tokens re-sent every shared turn.");
   assert.equal(
     sharedTurnLine(3, null),
     "3 members, each starting empty. Every shared turn is re-sent 3 times as they grow.",
+  );
+  // A number we can't name is not ~0 — "~0 tokens re-sent" was the false claim (§4f).
+  assert.equal(
+    sharedTurnLine(5, "compacted"),
+    "5 members × unknown tokens re-sent every shared turn — the fork point was compacted.",
+  );
+  assert.equal(sharedTurnLine(2, "unknown"), "2 members × unknown tokens re-sent every shared turn.");
+  assert.equal(
+    sharedTurnLine(1, "compacted"),
+    "1 member × unknown tokens re-sent every shared turn — the fork point was compacted.",
   );
 });
 
@@ -134,6 +165,31 @@ test("a failure with no ref still gets a line rather than vanishing", () => {
   // the reason disappear, because the reason is the only thing the user can act on.
   assert.deepEqual(failureLines([{ id: "", path: "", code: "internal", message: "the runtime gave no reason." }]), [
     "A member couldn't start: the runtime gave no reason.",
+  ]);
+});
+
+test("the two shapes of `failed` entry say different things, because they are different facts", () => {
+  // An empty id is a member that never came into being: "couldn't start". A SET id is a member
+  // that exists — created, grouped, in `created` — but was refused its FIRST MESSAGE by the batch
+  // path (the fold): "couldn't start" would be false of a session the user can see in the pane,
+  // so the line names the message, not the member. The two never collapse together, even at the
+  // same ref and reason — merging them would count one broken plan and one fine-but-silent
+  // member as two of the same thing.
+  const reason = "the provider returned 429.";
+  const never = failure("zai/glm-5.3", reason);
+  const refused = { id: "s1", path: "/tmp/s1.jsonl", code: "busy" as const, message: reason, ref: "zai/glm-5.3" };
+  assert.deepEqual(failureLines([never, refused]), [
+    "zai/glm-5.3 couldn't start: the provider returned 429.",
+    "zai/glm-5.3 couldn't take the first message: the provider returned 429.",
+  ]);
+  // Repeats of the exists-shape collapse among themselves, with the count.
+  assert.deepEqual(failureLines([refused, { ...refused, id: "s2", path: "/tmp/s2.jsonl" }]), [
+    "2 × zai/glm-5.3 couldn't take the first message: the provider returned 429.",
+  ]);
+  // A pre-existing member of a groupId target reports with id only (its model is not this
+  // fanout's to claim): named as "A member", never a guessed ref.
+  assert.deepEqual(failureLines([{ id: "old1", path: "/tmp/old1.jsonl", code: "mid-turn", message: "still replying." }]), [
+    "A member couldn't take the first message: still replying.",
   ]);
 });
 
@@ -207,8 +263,11 @@ test("a member row's controls are named by the FULL ref, because two providers s
   assert.equal(moreLabel("zai/glm-5.3"), "One more zai/glm-5.3");
   assert.notEqual(moreLabel("zai/glm-5.3"), moreLabel("ollama-cloud/glm-5.3"));
   assert.equal(removeLabel("ollama-cloud/glm-5.3"), "Remove ollama-cloud/glm-5.3");
-  // At 1 the − button removes the row, so it says so — the same string as the remove button.
-  assert.equal(fewerLabel("zai/glm-5.3", 1), "Remove zai/glm-5.3");
+  // At 1 the − button removes the row, so it says so — but NOT in the remove button's words: two
+  // controls in one row answering to one name is a duplicate-accessible-name defect, so − names
+  // the situation and × keeps the plain "Remove {ref}".
+  assert.equal(fewerLabel("zai/glm-5.3", 1), "Remove the only zai/glm-5.3");
+  assert.notEqual(fewerLabel("zai/glm-5.3", 1), removeLabel("zai/glm-5.3"));
   assert.equal(fewerLabel("zai/glm-5.3", 2), "One fewer zai/glm-5.3");
 });
 
@@ -223,4 +282,65 @@ test("two providers failing the same way stay two lines, and read as two models"
     "zai/glm-5.3 couldn't start: the provider returned 429.",
     "ollama-cloud/glm-5.3 couldn't start: the provider returned 429.",
   ]);
+});
+
+/** A summary with only the facts `sourceBlocked` reads — structural, so the real SessionSummary
+ *  (and the `legacyFormat` field the server computes) can stand in for it unchanged. */
+const facts = (over: {
+  title?: string;
+  busy?: boolean;
+  live?: { pid: number; status: string } | null;
+  legacyFormat?: true;
+}) => ({
+  title: over.title ?? "Retry with jitter",
+  busy: over.busy ?? false,
+  live: over.live ?? null,
+  ...over,
+});
+
+test("the source's blocked reason reads the LIST, so it is reactive and never a snapshot", () => {
+  // The states the list can see, in the order they outrank each other: a format that reading
+  // would rewrite (waiting clears nothing), then the terminal's claim on the file, then the turn's.
+  assert.equal(sourceBlocked(facts({ legacyFormat: true, busy: true })), oldFormatReason("Retry with jitter"));
+  assert.equal(sourceBlocked(facts({ legacyFormat: true })), oldFormatReason("Retry with jitter"));
+  const tui = { pid: 1, status: "running" };
+  assert.equal(sourceBlocked(facts({ live: tui })), sourceBlocked(facts({ live: tui })), "a stable string, re-derived per read");
+  assert.ok(sourceBlocked(facts({ live: tui }))!.includes("open in a terminal now"));
+  assert.equal(sourceBlocked(facts({ busy: true })), midTurnReason("Retry with jitter"));
+  // The MID-TURN sentence is the one §14b promises enables itself; the function's whole job is
+  // that re-reading it after the turn ends yields null, which a snapshot could never do.
+  assert.equal(sourceBlocked(facts({})), null, "a quiet source blocks nothing");
+  // Absence is "can't tell", never "current": legacyFormat absent = no block, even though an
+  // older server can't send it — the refusal still names it after the press.
+  assert.equal(sourceBlocked(facts({})), null);
+});
+
+test("a source refusal keeps the recovery advice the group composer's clause drops", () => {
+  const refusal = (code: string, message = "reason") => ({ id: "", path: "", code, message }) as BatchRefusal;
+  const stale = sourceRefusal(refusal("stale-leaf"), "Retry with jitter");
+  assert.ok(stale.includes("Reopen Fan out to fork from where it is now."), "the advice survives");
+  const old = sourceRefusal(refusal("old-format"), "Retry with jitter");
+  assert.ok(old.includes("Open it for chat here once to update it, then fan out."));
+  // A code this build has no sentence for (a newer server's) shows the server's own reason
+  // rather than dropping it — the older client stays honest.
+  assert.equal(sourceRefusal(refusal("some-new-code", "the server knows."), "Retry with jitter"),
+    "“Retry with jitter” couldn't be forked. the server knows.");
+  assert.equal(sourceRefusal(refusal("some-new-code", "  "), "Retry with jitter"), "“Retry with jitter” couldn't be forked.");
+});
+
+test("the pre-seeded row is the source's model in fork mode, else the top favorite", () => {
+  const m = (ref: string, favorite: boolean): ModelInfo => ({
+    ref,
+    provider: ref.split("/")[0]!,
+    id: ref.split("/")[1]!,
+    favorite,
+    thinkingLevels: ["off"],
+  });
+  const list = [m("zai/glm-5.3", true), m("anthropic/claude-opus-5", true), m("ollama-cloud/deepseek-v4.1-flash", false)];
+  assert.equal(seedRef(list, true, "zai/glm-5.3"), "zai/glm-5.3", "fork mode: where you are");
+  assert.equal(seedRef(list, false, null), "anthropic/claude-opus-5", "fresh: the first favorite, picker's order");
+  assert.equal(seedRef(undefined, false, null), null, "nothing loaded yet: no seed, not a guess");
+  // No favorites at all (the palette file missing or empty): no seed either — a guessed
+  // non-favorite would be a first row the user never chose.
+  assert.equal(seedRef([m("zai/glm-5.3", false)], false, null), null);
 });

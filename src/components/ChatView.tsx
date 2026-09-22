@@ -31,6 +31,7 @@ import { drafts, hideThinking, hideTools, sessionContext, setDraftText, setLocal
 import { usePaneAnnounce, usePaneId, usePaneScope } from "../lib/pane-scope";
 import { visibleCount } from "../lib/hidden-rows";
 import { inputCount } from "../lib/input-count";
+import { messageCount } from "../lib/message-count";
 import type { RewindControl, RewindResult } from "../lib/inputs";
 import { isTurnStart } from "../lib/turn";
 import { entryIdOf } from "../lib/jump";
@@ -105,7 +106,13 @@ export function ChatView(props: {
   fork?: ForkMarker;
   /** Open the fanout dialog on this session. Absent (with the flyout row) when there is nothing
       to fork or nobody who may read the file. */
-  onFanOut?(source: { leafId: string; messages: number; context: ContextInfo | null }): void;
+  onFanOut?(source: { leafId: string; messages: number; context: ContextInfo | "compacted" | null }): void;
+  /** This pane's turn-error state, for the workspace's roll-up (§14 "Member states"): the latest
+      turn-error message while it is current, or null. Current means the last turn ended in an
+      error and no newer turn has started — a fresh turn (or a rewind) clears it, so the workspace
+      never says "errored" about a pane that is visibly working. Without it a failed member looks
+      exactly like a quiet one. */
+  onTurnError?(message: string | null): void;
 }) {
   // One status region for the whole page: inside a workspace every sentence from this chat says
   // which pane it came from, and every DOM id below carries the pane's id.
@@ -123,6 +130,14 @@ export function ChatView(props: {
   const [live, setLive] = createStore<LiveState>(emptyLive());
   const [syncing, setSyncing] = createSignal(false);
   const [errors, setErrors] = createSignal<string[]>([]);
+  /** The pane's turn-error STATE (≠ `errors`, the thread's permanent record): the last turn ended
+      in an error and no newer turn has started. Cleared by `agent_start` — a fresh turn supersedes
+      the old failure — and by a rewind. Announced when it lands, reported to the workspace's
+      roll-up (`onTurnError`), and consulted before "replied.": an errored turn still settles (the
+      SDK's `finally` emits `agent_settled` whatever happened), and two endings for one turn would
+      read as two turns. A transcript-reload failure (`resync`) never sets it — that turn did not
+      fail, the read after it did. */
+  const [turnError, setTurnError] = createSignal<string | null>(null);
   /** A permanent open failure (code "config"): shown once, never retried, never appended to. */
   const [configError, setConfigError] = createSignal<string | null>(null);
   /** The open-failure banner's action state (spec/01-app-shell.md "The open-failure banner"): a
@@ -161,6 +176,10 @@ export function ChatView(props: {
    *
    * The row is ABSENT rather than disabled with nothing to fork: no reply yet, or no items at all.
    * §9 is explicit that an absence needs no explanation.
+   *
+   * `messages` is a MESSAGE count (src/lib/message-count.ts), because the dialog's fork note says
+   * "up to message {n}" — the rendered-row count it used to send counts one row per content block
+   * plus every info row, so it named a number that was never a count of messages.
    */
   const fanOut = () => {
     const list = items();
@@ -172,8 +191,11 @@ export function ChatView(props: {
       const state = sessionContext()[props.path];
       props.onFanOut!({
         leafId,
-        messages: list.length,
-        context: state && state !== "compacted" ? state : null,
+        messages: messageCount(list),
+        // The gauge's own state, verbatim: "compacted" stays "compacted" — the dialog turns it
+        // into words, never into 0, which is a claim §4f refuses for exactly this state. Null is
+        // the fill never having been reported, which the dialog also says as words.
+        context: state ?? null,
       });
     };
   };
@@ -246,7 +268,10 @@ export function ChatView(props: {
     let settled = false;
     batch(() => {
       for (const ev of events) {
-        if (isObj(ev) && ev.type === "agent_start") announce(turnWord("working.", "Working."));
+        if (isObj(ev) && ev.type === "agent_start") {
+          setTurnError(null); // a fresh turn supersedes the last one's failure
+          announce(turnWord("working.", "Working."));
+        }
         // Context fill at turn end: the finished assistant message carries the final usage
         // (no extra server push). A compaction makes it stale until the next reply.
         if (isObj(ev) && ev.type === "message_end" && isObj(ev.message) && ev.message.role === "assistant") {
@@ -263,7 +288,9 @@ export function ChatView(props: {
       }
     });
     if (settled) {
-      announce(turnWord("replied.", "Reply finished."));
+      // "replied." only for a turn that didn't already say how it ended: the error announcement
+      // is the ending (see `turnError` above — an errored turn still settles).
+      if (!turnError()) announce(turnWord("replied.", "Reply finished."));
       void resync();
       props.onSettled();
     }
@@ -332,6 +359,7 @@ export function ChatView(props: {
         case "rewound": {
           batch(() => {
             setErrors([]); // they belonged to the turns just abandoned
+            setTurnError(null);
             setCommandRows([]);
             if (msg.editorText) setRestored({ text: msg.editorText });
           });
@@ -409,12 +437,22 @@ export function ChatView(props: {
               setConfigError(msg.message);
               setLive("running", false);
               return;
-            default:
+            default: {
               if (modelError() || thinkingError()) break; // shown as the switch's banner
-              // The same failure re-reported (a reconnect loop) says nothing new: keep one row.
-              setErrors((e) => (e[e.length - 1] === msg.message ? e : [...e, msg.message]));
+              const seen = errors();
+              // The same failure re-reported (a reconnect loop) says nothing new: keep one row —
+              // and say nothing, because an announcement per retry would read as N new errors.
+              // The first landing is announced like every other turn boundary (§3 "Streaming",
+              // §9 "SR announcements"): a member whose turn died reads the same as one that
+              // replied, in its own pane's voice, without panning to find the banner.
+              if (seen[seen.length - 1] !== msg.message) {
+                setErrors([...seen, msg.message]);
+                setTurnError(msg.message);
+                announce(turnWord("stopped with an error.", "The turn stopped with an error."));
+              }
               // A prompt that failed before the agent started leaves nothing running.
               if (!live.entries.some((e) => e.kind === "assistant")) setLive("running", false);
+            }
           }
           break;
       }
@@ -630,6 +668,11 @@ export function ChatView(props: {
     wasRunning = running;
   });
   onCleanup(() => setMine(undefined));
+
+  // The same pane's turn-error state as data (the prop's doc, above): the workspace meta line
+  // pairs a word with colour from this (§14 "every state pairs a word with colour"), and a pane
+  // outside a workspace has nobody to tell — the prop is simply absent there.
+  createEffect(() => props.onTurnError?.(turnError()));
 
   const send = (text: string, steer: boolean, attachments: UploadResult[]) => {
     if (!socket.send({ type: steer ? "steer" : "prompt", text })) return false;

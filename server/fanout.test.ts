@@ -9,7 +9,7 @@ import { test } from "node:test";
 
 const { planFanout, planMembers, runFanout } = await import("./fanout");
 import type { FanoutDeps } from "./fanout";
-import type { FanoutRequest, SessionSummary } from "../shared/protocol";
+import type { FanoutRequest, SessionGroup, SessionSummary } from "../shared/protocol";
 
 const SOURCE = "/sessions/--tmp--/2026-09-20T00-00-00-000Z_01a0-source.jsonl";
 const LEAF = "e9";
@@ -30,27 +30,36 @@ interface Recorder {
 function deps(over: Partial<FanoutDeps> = {}): FanoutDeps & { rec: Recorder } {
   const rec: Recorder = { forked: [], freshed: [], discarded: [], groups: [], assigned: [], prompted: [], deleted: [] };
   let n = 0;
+  // path → the member that made it, so the default read-back answers with the model the plan
+  // chose (the mismatch guard below has its own tests that override `summary`). fork/fresh are
+  // destructured OUT of `over` and wrapped below: spreading them back would replace the wrapper
+  // and silently drop the registration, which the guard would then misreport as a mismatch.
+  const { fork: overrideFork, fresh: overrideFresh, ...rest } = over;
+  const refOf = new Map<string, string>();
   return {
     rec,
     knownRefs: async () => new Set(["anthropic/opus", "openai/gpt-5"]),
+    validateCwd: async () => null,
     resolveSource: (raw) => (raw.endsWith(".jsonl") && raw.startsWith("/sessions/") ? raw : null),
     sourceHead: async () => ({ version: 3, leafId: LEAF }),
     live: () => false,
     streaming: () => false,
     foreignWriter: () => false,
     misconfigured: () => false,
-    async fork(_src, _leaf, member) {
-      const path = `/sessions/--tmp--/m${++n}_id${n}.jsonl`;
+    async fork(src, leaf, member) {
+      const path = overrideFork ? await overrideFork(src, leaf, member) : `/sessions/--tmp--/m${++n}_id${n}.jsonl`;
+      refOf.set(path, member.ref);
       rec.forked.push(`${member.ref}->${path}`);
       return path;
     },
     async fresh(cwd, member) {
-      const path = `/sessions/--tmp--/f${++n}_id${n}.jsonl`;
+      const path = overrideFresh ? await overrideFresh(cwd, member) : `/sessions/--tmp--/f${++n}_id${n}.jsonl`;
+      refOf.set(path, member.ref);
       rec.freshed.push(`${member.ref}@${cwd}->${path}`);
       return path;
     },
     discard: (path) => rec.discarded.push(path),
-    summary: async (path) => summaryOf(path),
+    summary: async (path) => ({ ...summaryOf(path), model: refOf.get(path) ?? null }),
     createGroup(name, seed, autoDissolve) {
       rec.groups.push({ name, seed, autoDissolve });
       return { id: "g1", name, createdAt: "2026-09-22T00:00:00.000Z", members: [], ...(seed ? { seed } : {}) };
@@ -59,8 +68,11 @@ function deps(over: Partial<FanoutDeps> = {}): FanoutDeps & { rec: Recorder } {
     adoptSeed: (id, seed) => ({ id, name: "Target", createdAt: "2026-09-22T00:00:00.000Z", members: [], seed }),
     deleteGroup: (id) => rec.deleted.push(id),
     assign: (s, g, l) => rec.assigned.push([s, g, l]),
-    prompt: async (g, t) => void rec.prompted.push([g, t]),
-    ...over,
+    async prompt(g, t) {
+      rec.prompted.push([g, t]);
+      return { ok: true, result: { sent: [], failed: [] } };
+    },
+    ...rest,
   };
 }
 
@@ -139,6 +151,93 @@ test("fresh mode: N independent sessions, NO seed, and the first message goes th
   assert.deepEqual(d.rec.prompted, [["g1", "start here"]]);
 });
 
+test("fresh mode: a cwd the New Session path would refuse is a 400 before anything is made", async () => {
+  // Fresh mode IS that path N times, so it answers with that path's own sentences — not an
+  // N-times-repeated "internal" member failure after the group was already half-written.
+  const d = deps({ validateCwd: async () => "cwd does not exist" });
+  const r = await runFanout({ name: "n", members: [{ ref: "anthropic/opus", count: 2 }], cwd: "/nope", text: "hi" }, d);
+  assert.ok(!r.ok && r.status === 400);
+  assert.equal(r.error, "cwd does not exist", "POST /api/sessions' own sentence");
+  assert.deepEqual(d.rec.freshed, [], "not one member was created");
+  assert.deepEqual(d.rec.groups, [], "no group was written");
+});
+
+test("fresh mode's first message is folded into failed when the batch refuses EVERY member", async () => {
+  // The 201 keeps every member — they are real, empty, grouped sessions — and says which of
+  // them did not start, instead of announcing a success that lands the user in N silent panes.
+  const d = deps({
+    prompt: async () => ({
+      ok: false as const,
+      status: 409 as const,
+      refused: [
+        { id: "id1", path: "/sessions/--tmp--/f1_id1.jsonl", code: "busy", message: "Another process wrote to it just now." },
+        { id: "id2", path: "/sessions/--tmp--/f2_id2.jsonl", code: "mid-turn", message: "It is mid-turn here." },
+      ],
+    }),
+  });
+  const r = await runFanout({ name: "Two", members: [{ ref: "anthropic/opus", count: 2 }], cwd: "/work", text: "go" }, d);
+  assert.ok(r.ok, "the members exist; the batch's refusal is an outcome, not a route failure");
+  assert.equal(r.result.created.length, 2, "nothing that exists is rolled back");
+  assert.deepEqual(
+    r.result.failed.map((f) => [f.id, f.path, f.code, f.ref]),
+    [
+      ["id1", "/sessions/--tmp--/f1_id1.jsonl", "busy", "anthropic/opus"],
+      ["id2", "/sessions/--tmp--/f2_id2.jsonl", "mid-turn", "anthropic/opus"],
+    ],
+    "the batch's own vocabulary, with the model named beside the id",
+  );
+  assert.ok(r.result.failed.every((f) => f.message.trim().length > 0), "the reason is never blank");
+});
+
+test("a member refused its first message keeps its id AND gains the ref; a pre-existing member keeps no ref", async () => {
+  // Two shapes live in `failed` on this route: empty id = never came into being; id set = exists
+  // but did not start. A member of the target group that this fanout did NOT create (the
+  // `groupId` path prompts the whole group) reports with its id only — its model is not this
+  // fanout's to claim.
+  const d = deps({
+    group: () => ({ id: "g-existing", name: "Handmade", createdAt: "2026-09-22T00:00:00.000Z", members: [{ id: "old" }] }) as never,
+    prompt: async () => ({
+      ok: false as const,
+      status: 409 as const,
+      refused: [
+        { id: "id1", path: "/sessions/--tmp--/f1_id1.jsonl", code: "busy", message: "Another process wrote to it just now." },
+        { id: "old", path: "/sessions/--tmp--/old.jsonl", code: "mid-turn", message: "It is mid-turn here." },
+      ],
+    }),
+  });
+  const r = await runFanout({ members: [{ ref: "anthropic/opus", count: 1 }], cwd: "/work", text: "go", groupId: "g-existing" }, d);
+  assert.ok(r.ok);
+  assert.deepEqual(
+    r.result.failed.map((f) => [f.id, f.ref]),
+    [
+      ["id1", "anthropic/opus"],
+      ["old", undefined],
+    ],
+  );
+});
+
+test("a partial first-message send folds its failed entries the same way", async () => {
+  const d = deps({
+    prompt: async () => ({
+      ok: true as const,
+      result: { sent: ["id1"], failed: [{ id: "id2", path: "/sessions/--tmp--/f2_id2.jsonl", code: "internal", message: "The queue refused it." }] },
+    }),
+  });
+  const r = await runFanout({ name: "Two", members: [{ ref: "anthropic/opus", count: 2 }], cwd: "/work", text: "go" }, d);
+  assert.ok(r.ok);
+  assert.equal(r.result.created.length, 2);
+  assert.deepEqual(r.result.failed, [
+    { id: "id2", path: "/sessions/--tmp--/f2_id2.jsonl", code: "internal", message: "The queue refused it.", ref: "anthropic/opus" },
+  ]);
+});
+
+test("a batch outcome this route cannot reach still becomes a visible failed entry, never a swallow", async () => {
+  const d = deps({ prompt: async () => ({ ok: false as const, status: 400 as const, error: "Group has no members" }) });
+  const r = await runFanout({ name: "Two", members: [{ ref: "anthropic/opus", count: 2 }], cwd: "/work", text: "go" }, d);
+  assert.ok(r.ok, "the members exist; the outcome is reported, not raised over them");
+  assert.deepEqual(r.result.failed, [{ id: "", path: "", code: "internal", message: "Group has no members" }]);
+});
+
 test("every source refusal is a 409 naming the source, and NOTHING is created", async () => {
   const cases: [Partial<FanoutDeps>, string][] = [
     [{ live: () => true }, "tui-live"],
@@ -188,12 +287,67 @@ test("a member that fails mid-creation loses its OWN file and nothing else", asy
 });
 
 test("a member whose read-back fails has its file discarded", async () => {
-  const d = deps({ summary: async (path) => (path.startsWith("/sessions/--tmp--/m2") ? null : summaryOf(path)) });
+  const d = deps({ summary: async (path) => (path.startsWith("/sessions/--tmp--/m2") ? null : { ...summaryOf(path), model: "anthropic/opus" }) });
   const r = await runFanout(forkBody({ members: [{ ref: "anthropic/opus", count: 2 }] }), d);
   assert.ok(r.ok);
   assert.equal(r.result.created.length, 1);
   assert.deepEqual(d.rec.discarded, ["/sessions/--tmp--/m2_id2.jsonl"], "its own half-written file, removed");
   assert.equal(d.rec.assigned.length, 1, "the one that exists is untouched and grouped");
+});
+
+test("a member whose file does not record the PLANNED model is failed, never silently defaulted", async () => {
+  // N1's live failure, held shut: a member whose model_change never reached the disk opens with
+  // the runtime's default and answers as a model nobody chose. The read-back turns that into a
+  // `failed` entry naming both models, and the member's own file is unlinked as debris.
+  const d = deps({ summary: async (path) => ({ ...summaryOf(path), model: path.includes("f2") ? "ollama-cloud/deepseek-v4.1-flash" : "anthropic/opus" }) });
+  const r = await runFanout({ name: "Two", members: [{ ref: "anthropic/opus", count: 2 }], cwd: "/work", text: "go" }, d);
+  assert.ok(r.ok, "the member that recorded its model is a result");
+  assert.equal(r.result.created.length, 1);
+  assert.equal(r.result.failed.length, 1);
+  assert.equal(r.result.failed[0]!.ref, "anthropic/opus");
+  assert.match(r.result.failed[0]!.message, /ollama-cloud\/deepseek-v4\.1-flash.*anthropic\/opus|recorded model/);
+  assert.ok(/recorded model/.test(r.result.failed[0]!.message), "the sentence says WHICH model the file wrongly names");
+  assert.deepEqual(d.rec.discarded, ["/sessions/--tmp--/f2_id2.jsonl"], "a member that never became the planned member is debris");
+});
+
+test("a mid-batch failure does not shift the labels of the members behind it", async () => {
+  // created[] skips failures, so pairing it with planned[i] would hand member #3 the label of
+  // the failed #2 — pane names that lie about which session is behind them.
+  let n = 0;
+  const d = deps({
+    async fork(_s, _l) {
+      n++;
+      if (n === 2) throw new Error("boom");
+      return `/sessions/--tmp--/m${n}_id${n}.jsonl`;
+    },
+  });
+  const r = await runFanout(forkBody({ members: [{ ref: "anthropic/opus", count: 3 }] }), d);
+  assert.ok(r.ok);
+  assert.deepEqual(
+    d.rec.assigned.map(([, , label]) => label),
+    ["anthropic/opus #1", "anthropic/opus #3"],
+    "each survivor keeps ITS number, not the slot's",
+  );
+});
+
+test("the response's group is read back AFTER assigning, so it carries the members just landed", async () => {
+  // Caught live: a 201 whose group.members was empty beside a created member — the store object
+  // was returned from before the assignments that made it a group.
+  const store = new Map<string, SessionGroup>();
+  const d = deps({
+    createGroup(name, seed, autoDissolve) {
+      const g = { id: "g1", name, createdAt: "2026-09-22T00:00:00.000Z", members: [], ...(seed ? { seed } : {}), ...(autoDissolve !== undefined ? { autoDissolve } : {}) } as SessionGroup;
+      store.set("g1", g);
+      return g;
+    },
+    group: (id) => store.get(id) ?? null,
+    assign: (sessionId, groupId, label) => {
+      store.get(groupId)!.members!.push({ id: sessionId, ...(label ? { label } : {}) });
+    },
+  });
+  const r = await runFanout(forkBody({ members: [{ ref: "anthropic/opus", count: 2 }] }), d);
+  assert.ok(r.ok);
+  assert.deepEqual((r.result.group.members ?? []).map((m) => m.id), r.result.created.map((s) => s.id), "the one response the client navigates on tells the truth");
 });
 
 test("if not one member could be made, no group is written at all", async () => {
@@ -415,11 +569,17 @@ test("an unrecognised `named` is treated as absent, not as generated", async () 
 });
 
 test("the groupId path never sets the flag, whatever `named` says", async () => {
-  const adopted: unknown[] = [];
+  // `group` mirrors what readGroup answers AFTER adoption (adoptGroupSeed writes
+  // `autoDissolve ??= false`): the response's group is read back post-assignment now, so a fake
+  // still answering the pre-adoption shape would test the fake, not the rule.
+  let adoptedSeed: { parentSessionPath: string; leafId: string } | null = null;
   const d = deps({
-    group: () => existing(),
+    group: () =>
+      adoptedSeed
+        ? ({ id: "g-existing", name: "Handmade", createdAt: "2026-09-22T00:00:00.000Z", members: [], seed: adoptedSeed, autoDissolve: false } as const)
+        : existing(),
     adoptSeed: (id, seed) => {
-      adopted.push(id);
+      adoptedSeed = seed;
       return { id, name: "Handmade", createdAt: "2026-09-22T00:00:00.000Z", members: [], seed, autoDissolve: false };
     },
   });

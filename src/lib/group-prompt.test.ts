@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { BatchRefusal, SessionSummary } from "../../shared/protocol";
-import { composerPlaceholder, memberBlock, refusalBody, refusalSentence, targetsLine, targetsOf } from "./group-prompt";
+import { composerPlaceholder, memberBlock, partialAfterRetry, partialBody, partialRetries, refusalBody, refusalSentence, targetsLine, targetsOf, withGone } from "./group-prompt";
 
 const member = (id: string, over: Partial<SessionSummary> = {}): SessionSummary =>
   ({ id, path: `/tmp/${id}.jsonl`, title: id, live: null, busy: false, archived: false, ...over }) as SessionSummary;
@@ -84,6 +84,65 @@ test("the refusal banner offers the rest only when there is a rest", () => {
   );
 });
 
+test("a partial send retries per member: each button names exactly who its own press reaches", () => {
+  const failed: BatchRefusal[] = [
+    { ...refusal("internal", "grabbed by a terminal"), id: "a", path: "/tmp/a.jsonl" },
+    { ...refusal("internal", "grabbed by a terminal"), id: "b", path: "/tmp/b.jsonl" },
+  ];
+  const nameOf = (id: string) => (id === "a" ? "control" : "glm-5.3 #2");
+  const retries = partialRetries(failed, nameOf);
+  // One button per failed member, in the order the server named them — two failed, two buttons.
+  assert.deepEqual(retries, [
+    { id: "a", label: "Send to control" },
+    { id: "b", label: "Send to glm-5.3 #2" },
+  ]);
+  // The defect this replaces: one label (`Send to control`) over every failed id. A button whose
+  // label names its own member and nobody else's cannot carry a second member's id, so every
+  // label is checked against every other member's name.
+  for (const r of retries)
+    for (const other of retries.filter((x) => x.id !== r.id)) assert.ok(!r.label.includes(nameOf(other.id)));
+});
+
+test("a partial send with one straggler keeps §9's sentence exactly", () => {
+  const retries = partialRetries([{ ...refusal("internal", "grabbed"), id: "a", path: "/tmp/a.jsonl" }], () => "control");
+  assert.deepEqual(retries, [{ id: "a", label: "Send to control" }]);
+});
+
+test("the partial banner's body agrees with its own subject, one member or several", () => {
+  assert.equal(
+    partialBody(["control"], 3),
+    "control was taken by another program between the check and the send, so it didn't get this message. The 3 that did are answering now.",
+  );
+  assert.equal(
+    partialBody(["control", "glm-5.3 #2"], 3),
+    "control, glm-5.3 #2 were taken by another program between the check and the send, so they didn't get this message. The 3 that did are answering now.",
+  );
+});
+
+test("a retry to one of two stragglers keeps the other on the report, not the whole list", () => {
+  const was = {
+    failed: [
+      { ...refusal("internal", "grabbed"), id: "a", path: "/tmp/a.jsonl" },
+      { ...refusal("internal", "grabbed"), id: "b", path: "/tmp/b.jsonl" },
+    ],
+    sent: 3,
+    text: "same message",
+  };
+  const next = partialAfterRetry(was, ["a"]);
+  // Still 4 of 5 in sync, still the SAME message, and only b remains missing it — a's success
+  // must not clear the record of b, which was the one-press-fixes-all assumption the single
+  // button made.
+  assert.equal(next?.failed.length, 1);
+  assert.equal(next?.failed[0]?.id, "b");
+  assert.equal(next?.sent, 4);
+  assert.equal(next?.text, "same message");
+});
+
+test("a retry that reaches every straggler closes the report", () => {
+  const was = { failed: [{ ...refusal("internal", "grabbed"), id: "b", path: "/tmp/b.jsonl" }], sent: 4, text: "m" };
+  assert.equal(partialAfterRetry(was, ["b"]), null);
+});
+
 test("the placeholder names the group's size, not who is available, and drops the key hint when folded", () => {
   assert.equal(composerPlaceholder(4, false), "Ask all 4 members…—Enter sends, Shift+Enter adds a line");
   assert.equal(composerPlaceholder(4, true), "Ask all 4 members…");
@@ -91,4 +150,21 @@ test("the placeholder names the group's size, not who is available, and drops th
   // The count is the group's, so a member going mid-turn does not rewrite the box under the caret:
   // three members, none of them available, still reads "all 3".
   assert.equal(composerPlaceholder(3, true), "Ask all 3 members…");
+});
+
+test("withGone folds file-gone members in under missing, counted in the group's size", () => {
+  const t = targetsOf([member("a"), member("b", { busy: true })]);
+  const g = withGone(t, ["gone1", "gone2"]);
+  // The foot the server's pre-check will confirm: gone members ride under `missing` (the wire's
+  // own code), in the BLOCK_ORDER position, and the total is the GROUP's size, not the list's.
+  assert.deepEqual(g.blocked.map((b) => [b.code, b.ids]), [
+    ["mid-turn", ["b"]],
+    ["missing", ["gone1", "gone2"]],
+  ]);
+  assert.equal(g.total, 4);
+  assert.equal(targetsLine(g), "1 of 4 members · 1 mid-turn · 2 file gone");
+  // No ghosts, no change — the identity, so callers need not branch.
+  assert.equal(withGone(t, []), t);
+  // The available set is untouched: a gone member was never sendable, never counted sendable.
+  assert.deepEqual(g.available, ["a"]);
 });

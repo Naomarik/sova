@@ -39,6 +39,35 @@ export function defaultPaneWidth(viewport: number): number {
 export const stepWidth = (current: number, direction: 1 | -1): number => clampWidth(current + direction * PANE_WIDTH_STEP);
 
 /**
+ * The one direction a width below the floor can move: UP, back to the stepped range. `Narrower`
+ * cannot — below `PANE_MIN_WIDTH` the only writer is `Fit all` (see `fitPaneWidth`), and a step
+ * that reported "narrower" while raising a fitted 320px pane to the 440 floor would be the
+ * announcement lying about what just happened. So a below-floor width is a dead end for
+ * `Narrower` and a springboard for `Wider`, which is exactly how a posture you asked for should
+ * leave the stepped world: deliberately, not by one press of a labelled button.
+ */
+export const stepFrom = (current: number, direction: 1 | -1): number =>
+  current < PANE_MIN_WIDTH && direction === -1 ? current : stepWidth(current, direction);
+
+/**
+ * `Fit all` (spec/14-workspaces.md "Layout: split"): the one width at which `count` panes stand
+ * in the row with no scrollbar — the row's inner width divided by the pane count. Panes are
+ * `border-box` and the seam is a pane's own left border, so there is nothing to subtract: N of
+ * these widths never exceed the row. Floored, not rounded, for the same reason.
+ *
+ * NOT floored at `PANE_MIN_WIDTH`, and that is the whole point of the action: 440 was chosen for
+ * a transcript and a composer each on their own, and 4×440 = 1760px means a 4-way comparison
+ * never fits any viewport this product is used at. A fit the user asked for is allowed to trade
+ * solo readability for side-by-side reading — the reason the row exists — and says the number it
+ * landed on out loud (the announcement, and the width a later `Wider`/`Narrower` starts from).
+ * The stepped floor still bounds every width nobody asked to fit.
+ */
+export function fitPaneWidth(rowWidth: number, count: number): number {
+  if (!Number.isFinite(rowWidth) || rowWidth <= 0 || !Number.isInteger(count) || count < 1) return PANE_MIN_WIDTH;
+  return Math.min(PANE_MAX_WIDTH, Math.max(1, Math.floor(rowWidth / count)));
+}
+
+/**
  * `list` with one item moved a step in `direction`; unchanged at either end. The result is always
  * the WHOLE order, because that is what `PATCH {order}` means: the ids listed first, in that
  * order, and anything left out behind them.

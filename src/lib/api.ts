@@ -252,6 +252,20 @@ export const assignSessionGroup = (path: string, groupId: string | null, opts?: 
   });
 
 /**
+ * Removal by session id, for a member whose FILE is gone (§14 "Member states" — gone from disk):
+ * the path form 404s when there is no file to resolve, but the pane's `Remove From Group` still
+ * has to work, so the route takes `id` for unassignment only. Same response shape as the path
+ * form, `dissolved` included — taking the last member out of a fanout group dissolves it whether
+ * the file existed or not.
+ */
+export const unassignSessionById = (id: string) =>
+  request<AssignGroupResult>("/api/session-groups/assign", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ id, groupId: null }),
+  });
+
+/**
  * The shared follow-up: one request, the server prompts every member in GROUP order.
  *
  * The 409 is part of this route's contract, not an exception — every member is checked before any

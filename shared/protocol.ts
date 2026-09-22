@@ -91,6 +91,15 @@ export interface SessionSummary {
   mounted?: true;
   /** Composer draft stored for this session: the draft's first non-empty line, ~80 chars. Present only on a session with no user message anywhere that has a stored draft — that is what keeps a never-sent new session in the list (sidebar). */
   draftPreview?: string;
+  /** This session's file is in a session format older than the server's current
+      (⇔ header `version` ≠ CURRENT_SESSION_FORMAT, server-computed — the client never compares
+      numbers itself). The fanout source rules refuse such a file (`old-format`: forking reads
+      the file, and reading an old format rewrites it wholesale under a runtime we hold), so the
+      dialog pre-disables Create with §14b's sentence. SAFE BY ABSENCE: absent = current, OR the
+      head could not be read, OR an older server that never sends the field — none of which ever
+      blocks anything; only `true` disables a fork. Never affects opening, watching or chatting:
+      an older-format session is only special to a route that would rewrite it. */
+  legacyFormat?: true;
 }
 
 /** A configured remote target (~/.pi/agent/targets.json, GET /api/targets). Credential-free. */
@@ -319,6 +328,12 @@ export interface UploadResult {
 //                                  AND place in one write that cannot half-succeed. `index` is ignored with
 //                                  groupId null, and ignored when the session is already in that group —
 //                                  assign never reorders in place; PATCH { order } is the reposition.
+//                                  REMOVAL BY ID: `{ id, groupId: null }` (session id, no path) is valid for
+//                                  taking a session OUT only — a group member whose FILE is gone (the
+//                                  workspace's "This session's file is gone" pane, spec 14) has no path to
+//                                  send but its assignment is exactly what needs removing, and the store keys
+//                                  on ids. `id` with a non-null groupId, `id` beside `path`, or `id` with
+//                                  `label`/`index` is a 400: adding a member requires the file.
 //                                  400 bad body/path, a label over GROUP_LABEL_MAX, or a negative/non-integer
 //                                  index; 404 session file or group missing. Never writes the session file)
 // POST /api/session-groups/:id/prompt { text: string, members?: string[] (session ids) } -> BatchPromptResult
@@ -353,7 +368,9 @@ export interface UploadResult {
 //                                  keeps its own name and its own flag).
 //                                  400 bad name, empty members, a count outside 1–9, an unknown ref, both or
 //                                  neither of name/groupId, both or neither of source/cwd, text or cwd in fork
-//                                  mode, blank text in fresh mode;
+//                                  mode, blank text in fresh mode, or a cwd the New Session path itself would
+//                                  refuse (not absolute, gone, not a directory, unreachable through its mount
+//                                  — fresh mode IS that path N times, and answers with its sentences);
 //                                  404 a source path that resolves to no session (the subject doesn't exist —
 //                                  different from "exists but not right now"); 409 { refused: [BatchRefusal] }
 //                                  with exactly ONE entry, the source: tui-live, mid-turn, busy, config,
@@ -475,6 +492,14 @@ export const GROUP_NAME_MAX = 60;
     refuses a longer one with 400, while an empty one clears the label). */
 export const GROUP_LABEL_MAX = 40;
 
+/** The session file format this server writes and considers current (the JSONL header's
+    `version`). A file whose header carries a different version — or none, which reads as 1,
+    pre-versioning — is `legacyFormat` in a summary and `old-format` as a fanout source refusal:
+    reading one rewrites it wholesale. The SERVER owns this number and every comparison against
+    it; a client that compared versions itself would drift on the next bump, which is exactly
+    why SessionSummary.legacyFormat is a computed flag and not a raw version. */
+export const CURRENT_SESSION_FORMAT = 3;
+
 /** One session's presentation metadata inside a group (SessionGroup.members). Membership itself is
     the server's assignments map — this carries only the ORDER (array position) and an optional
     short LABEL, e.g. "sonnet ×2" on a fanout member. */
@@ -583,15 +608,18 @@ export interface BatchRefusal {
   path: string; // canonical session path ("" when the file is gone)
   code: BatchRefusalCode;
   message: string;
-  /** FANOUT ONLY, and only in a 201's `failed`: the model ref (`ModelInfo.ref`) of a member that
-      was never created, so the partial-creation banner can name it. Such a member has no session,
-      so `id` and `path` are both "" and this is the only handle the client has on it.
-      TWO DIFFERENT EMPTY IDS LIVE ON THIS ROUTE and they are not the same case: a 409 refusal
-      names the SOURCE, which is a member of nothing and carries no `ref`; a `failed` entry names
-      a member that never came into being and does carry one. Neither has an id, for different
-      reasons, and nothing should build a lookup on either. Absent on the prompt route entirely —
-      there the member always exists and `id` names it, so a `ref` would be a second way to say
-      the same thing, and the two would drift. */
+  /** FANOUT ONLY, and only in a 201's `failed`: the model ref (`ModelInfo.ref`) of the member
+      the entry names, so the partial-creation banner can compose "{model} couldn't start: …"
+      without a lookup. TWO SHAPES OF ENTRY LIVE HERE, told apart by `id`:
+      • EMPTY `id` (and empty `path`): a member that NEVER CAME INTO BEING — creation failed, so
+        there is no session and `ref` is the ONLY handle on it.
+      • `id` (and `path`) SET: a member that EXISTS — created and grouped — but was REFUSED ITS
+        FIRST MESSAGE by the batch path (fresh mode's `text`). `id` names it and joins to the
+        pane; `ref` is present too, so the banner can still name the model. A pre-existing
+        member of a `groupId` target (not of this fanout) reports with `id` only — its model is
+        not this fanout's to claim.
+      A 409 refusal (the source) carries no `ref` on any route. As ever, `message` is the bare
+      reason — never prefixed with the ref, which would render the model twice in the banner. */
   ref?: string;
 }
 
@@ -614,9 +642,16 @@ export interface FanoutRequest {
   /** Fork mode: branch every member from this entry of this session. `leafId` is the leaf the
       dialog SHOWED the user, not a request for the server to find the current one. */
   source?: { path: string; leafId: string };
-  /** Fresh mode: the folder every member is created in. */
+  /** Fresh mode: the folder every member is created in — checked by the New Session route's own
+      rule (targets.ts validateNewSessionCwd: absolute, an existing directory, or verified
+      through its mount), so a folder that path refuses is a 400 with that path's own sentence
+      BEFORE anything is made. */
   cwd?: string;
-  /** Fresh mode only: the first message every member gets, sent through the batch path. */
+  /** Fresh mode only: the first message every member gets, sent through the batch path. Its
+      outcome is PART OF THE 201: the batch's refusals are folded into `failed` (entries whose
+      `id` names an existing member — see BatchRefusal.ref), so a fanout that created N members
+      and started none says so instead of announcing a success that lands the user in N silent
+      panes. The members are kept either way: real, empty, grouped sessions, retryable. */
   text?: string;
   /** Whether `name` is the default pi-web generated, or one the user typed over it. The client
       holds this fact and nothing else can: the server never generated the default, so it cannot
@@ -705,8 +740,13 @@ export interface FanoutConflict {
 
 /** 201 body of the fanout. `created` is never empty: if not one member could be made, nothing is
     created, the group is not written, and the call fails — a group with no members is debris,
-    not a result. `failed` carries the members that couldn't start, in the batch's own refusal
-    shape, and drives the partial-creation banner. Nothing already created is ever rolled back. */
+    not a result. `failed` carries the members that couldn't START, in two shapes told apart by
+    `id` (see BatchRefusal.ref): an empty id names a member that never came into being (its own
+    debris is unlinked; `ref` is the only handle); a set id names an EXISTING member that was
+    created and grouped but refused its first message by the batch path — kept, retryable, `ref`
+    beside the id so the banner can name the model. Nothing already created is ever rolled back.
+    `group` is read back AFTER the members are assigned, so the one response the client navigates
+    on carries the members this fanout just landed. */
 export interface FanoutResult {
   group: SessionGroup;
   created: SessionSummary[];

@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { SessionGroup, SessionSummary } from "../../shared/protocol";
-import { GROUP_DRAG_TYPE, dragHasRow, groupDragPath, groupNameOf, groupSections, memberLabel, orderedMembers, quoted, tabLabels, setGroupDragData } from "./session-groups";
+import { GROUP_DRAG_TYPE, dragHasRow, groupDragPath, groupNameOf, groupSections, memberLabel, orderedMembers, paneNames, quoted, tabLabels, setGroupDragData } from "./session-groups";
 
 const group = (id: string, name: string): SessionGroup => ({ id, name, createdAt: "2026-09-20T00:00:00.000Z" });
 const session = (id: string, groupId?: string): SessionSummary =>
@@ -123,4 +123,42 @@ test("a label wins over both, and a member with no model keeps its title", () =>
     ]),
     ["control", "glm-5.3 #2", "Retry with jitter"],
   );
+});
+
+test("pane names carry the repeat suffix — the canonical opus ×3 fanout is three names, not one", () => {
+  // The defect this pins: the pane head, aria-label and announcements all read this string, and
+  // three byte-identical names made three panes indistinguishable to AT and to the reader.
+  assert.deepEqual(
+    paneNames([
+      { title: "Retry with jitter", model: "anthropic/claude-opus-5" },
+      { title: "Retry with jitter", model: "anthropic/claude-opus-5" },
+      { title: "Retry with jitter", model: "anthropic/claude-opus-5" },
+    ]),
+    ["claude-opus-5 #1", "claude-opus-5 #2", "claude-opus-5 #3"],
+  );
+});
+
+test("pane names never say the model twice, and otherwise take the · model suffix", () => {
+  assert.deepEqual(
+    paneNames([
+      { title: "Retry with jitter", model: "zai/glm-5.3", label: "control" },
+      { title: "Retry with jitter", model: "zai/glm-5.3" },
+      { title: "Retry with jitter", model: "anthropic/claude-opus-5" }, // shared title, lone model: no #n
+      { title: "Cache warming", model: "zai/glm-5.3" }, // distinct title
+      { title: "Retry with jitter", model: null }, // no model: the title alone
+    ]),
+    ["control · glm-5.3", "glm-5.3 #2", "claude-opus-5", "Cache warming · glm-5.3", "Retry with jitter"],
+  );
+});
+
+test("pane names and tab labels number repeats identically — one rule, two lengths", () => {
+  const members = [
+    { title: "Retry with jitter", model: "zai/glm-5.3" },
+    { title: "Retry with jitter", model: "zai/glm-5.3" },
+    { title: "Retry with jitter", model: "zai/glm-5.3", label: "the cheap one" },
+  ];
+  // #2 in both: the tab strip and the pane head must agree about which member #2 is, because the
+  // live region's prefix and the tab's visible text name the same pane.
+  assert.deepEqual(tabLabels(members).slice(0, 2), ["glm-5.3 #1", "glm-5.3 #2"]);
+  assert.deepEqual(paneNames(members).slice(0, 2), ["glm-5.3 #1", "glm-5.3 #2"]);
 });

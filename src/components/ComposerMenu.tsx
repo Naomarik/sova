@@ -186,7 +186,9 @@ export function ComposerMenu(props: {
       out.push({
         id: "fanout",
         role: "menuitem",
-        icon: "worker",
+        // branch, not worker: every fanout surface marks a fork with the branch icon (§14b's fork
+        // marker, `Align to Fork`), and worker.svg already means Agents (§3's working count).
+        icon: "branch",
         label: "Fan Out…",
         title: "Fork this session N ways and compare the answers",
         disabled: false,

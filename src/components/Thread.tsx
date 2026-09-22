@@ -1,7 +1,7 @@
 import { children, createEffect, createMemo, createSignal, For, Match, on, onCleanup, Show, Switch, type JSX } from "solid-js";
 import type { TmpAttachment, TranscriptItem } from "../../shared/protocol";
 import type { LiveBlock, LiveEntry, LiveState } from "../lib/live";
-import { prettyJson, shortModel, stampTime, thousands, tildePath } from "../lib/format";
+import { clockTime, prettyJson, shortModel, stampTime, thousands, tildePath } from "../lib/format";
 import { isObj, str, timestampOf, toolCallArgs, toolResultView } from "../lib/message";
 import { stripPastedPaths } from "../lib/path-attachments";
 import { home } from "../lib/ui-state";
@@ -275,6 +275,19 @@ export function HistoryItems(props: {
     });
     return at;
   });
+  /**
+   * The forked entry's OWN timestamp, in `HH:MM` — the marker's "· 14:06". It is the time of the
+   * last shared moment (the row the marker follows), NOT the wall-clock of the fanout gesture:
+   * the gesture time lives nowhere in `seed` (§14 "seed says where"), and adding a field for it
+   * would put a write-time fact in marker data whose only reader is this decoration. Derived
+   * from the row itself, so nothing is added and nothing can drift; omitted outright when the
+   * row carries no timestamp (never guessed — the same rule as the marker's position).
+   */
+  const forkTime = createMemo(() => {
+    const at = forkAfter();
+    const iso = at >= 0 ? timestampOf(rows()[at]?.raw) : undefined;
+    return iso ? clockTime(iso) : null;
+  });
 
   return (
     <>
@@ -369,7 +382,7 @@ export function HistoryItems(props: {
             </Switch>
             {/* After the entry, not inside its blocks: above this row is shared with the source,
                 below it is this member's own. */}
-            <Show when={forkAfter() === index() && props.fork}>{(fork) => <ForkRow fork={fork()} />}</Show>
+            <Show when={forkAfter() === index() && props.fork}>{(fork) => <ForkRow fork={fork()} time={forkTime()} />}</Show>
           </div>
         )}
       </For>
@@ -624,8 +637,10 @@ export interface ForkMarker {
  * The marker row: above it is shared with the source, below it is this member's own. A rendered
  * row, never an entry — nothing is written into the session file for it, because the fact it
  * states already lives in the group registry, and a written marker would need the write guards.
+ * `time` is the forked entry's own `HH:MM` (see `forkTime`), or null to omit the clock half —
+ * an entry with no timestamp is not a thing to guess at.
  */
-function ForkRow(props: { fork: ForkMarker }) {
+function ForkRow(props: { fork: ForkMarker; time: string | null }) {
   return (
     <p class="info-row fork-marker" role="note">
       <span class="icon icon-sm" style={{ "--icon": "url(/icons/branch.svg)" }} aria-hidden="true" />
@@ -637,7 +652,7 @@ function ForkRow(props: { fork: ForkMarker }) {
         >
           {(path) => <a href={`#/s/${encodeURIComponent(path())}`}>{props.fork.title}</a>}
         </Show>{" "}
-        here
+        here{props.time ? ` · ${props.time}` : ""}
       </span>
     </p>
   );

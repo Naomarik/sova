@@ -354,10 +354,12 @@ function dissolvesWhenEmpty(group: StoredGroup): boolean {
  * the user's work, and §2 already specs an empty one as a real state.
  *
  * Deliberately only here, on the assign GESTURE — never on "the group happens to be empty now".
- * dropGroupAssignments prunes assignments whose session file has gone, and it runs on EVERY
- * listing pass (sessions-index.ts, listSessions), not just archive cleanup. A rule keyed on
- * emptiness rather than on the gesture would therefore let a background list refresh silently
- * delete a group the user made — with nobody listening to that call to even report it. An empty
+ * Nothing else empties a group behind the user's back: a member whose file is gone KEEPS its
+ * assignment (the "This session's file is gone" pane renders it; see dropGroupAssignments for
+ * the decision), and Archive cleanup prunes only the ids it deleted itself — so a rule keyed on
+ * emptiness rather than the gesture could still only ever fire under the user's own hands, and
+ * would let a background event silently delete a group the user made — with nobody listening
+ * to that call to even report it. An empty
  * fanout group is a real state instead, and the workspace offers Dissolve by hand (spec §14).
  *
  * Returns whether it dissolved, so the caller can tell the client the group it was viewing is gone.

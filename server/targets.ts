@@ -4,8 +4,8 @@
 // server/mode-state.ts imports the mode extension's pure modules (node builtins only; nothing else
 // from pi-config). See CLAUDE.md.
 import { type ChildProcessByStdio, spawn } from "node:child_process";
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { dirname, posix, sep } from "node:path";
+import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { dirname, isAbsolute, posix, sep } from "node:path";
 import type { Readable } from "node:stream";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import {
@@ -29,6 +29,7 @@ import {
   toMountLocal,
   toMountRemote,
   unmount,
+  verifyMounted,
 } from "../pi-config/extensions/remote/mount.ts";
 import type { FolderListing, TargetInfo } from "../shared/protocol";
 import { MAX_FOLDER_ENTRIES } from "./folders";
@@ -36,6 +37,33 @@ import { MAX_FOLDER_ENTRIES } from "./folders";
 export type { Target };
 
 export const targetsFile = () => targetsFilePath(getAgentDir());
+
+/** The cwd rule POST /api/sessions applies to a local { cwd } create, in ONE place because
+ *  fanout's fresh mode is that same path N times (spec 14b "What creation does"): trimmed,
+ *  absolute, an existing directory — or, inside a target's mount point, a directory the mount
+ *  answers for through the mount module's BOUNDED check (never a sync stat on the fuse path,
+ *  which could hang the event loop). Returns the error sentence this rule has always answered
+ *  with (identical strings to the pre-extraction route, so no client sees a new word), or null
+ *  when the folder can be used. The caller creates with the TRIMMED cwd. */
+export async function validateNewSessionCwd(raw: string): Promise<string | null> {
+  const cwd = raw.trim();
+  if (!cwd || !isAbsolute(cwd)) return "cwd must be an absolute path";
+  const inMount = remoteOfCwd(cwd);
+  if (inMount?.mounted) {
+    const target = findTarget(inMount.target);
+    const verified = target
+      ? await verifyMounted(target, cwd)
+      : { ok: false as const, error: `target ${inMount.target} is not configured` };
+    if (!verified.ok) return `cwd: ${verified.error}`;
+    return null;
+  }
+  try {
+    if (!statSync(cwd).isDirectory()) return "cwd is not a directory";
+  } catch {
+    return "cwd does not exist";
+  }
+  return null;
+}
 /** Local placeholder root: a remote session's cwd is <root>/<target>/<remote/abs/path>. */
 export const targetsRoot = () => dirname(placeholderRoot(getAgentDir(), "x"));
 

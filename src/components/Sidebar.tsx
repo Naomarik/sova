@@ -535,8 +535,6 @@ export function Sidebar(props: {
   insightsPage: "usage" | "agents" | null;
   /** Opens the Settings dialog from the foot's gear. */
   onOpenSettings(): void;
-  /** "New fanout": the dialog with no source, a fresh prompt N ways (§14b "Entry points"). */
-  onFanOut(): void;
 }) {
   const [query, setQuery] = createSignal("");
   const [showSkeleton, setShowSkeleton] = createSignal(false);
@@ -781,22 +779,17 @@ export function Sidebar(props: {
               </span>
             </h2>
             {/* Making a group is the region's one action, and it stays where it is: the field
-                replaces the row in place, so nothing moves while the user types. */}
+                replaces the row in place, so nothing moves while the user types. Fanout is NOT
+                here — it is a creation gesture, not a curation one, and its front door is the
+                welcome screen beside New Session (§14b "Entry points"). */}
             <Show when={!searching()}>
               <Show
                 when={newGroupField()}
                 fallback={
-                  <>
-                    <button type="button" class="list-row list-row-interactive group-new" onClick={() => setNewGroupField(true)}>
-                      <Icon name="plus" small />
-                      <span class="list-title">New group</span>
-                    </button>
-                    {/* Beside it, the other way to get a group: make its members too (§14b). */}
-                    <button type="button" class="list-row list-row-interactive group-new" onClick={props.onFanOut}>
-                      <span class="icon icon-sm" style={{ "--icon": "url(/icons/branch.svg)" }} aria-hidden="true" />
-                      <span class="list-title">New fanout</span>
-                    </button>
-                  </>
+                  <button type="button" class="list-row list-row-interactive group-new" onClick={() => setNewGroupField(true)}>
+                    <Icon name="plus" small />
+                    <span class="list-title">New group</span>
+                  </button>
                 }
               >
                 <div class="group-field-row">

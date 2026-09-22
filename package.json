@@ -11,6 +11,8 @@
     "dev:server:tsx": "tsx watch server/index.ts",
     "dev:server:detached": "PI_WORKER_TRANSPORT=host node scripts/dev-server.mjs",
     "dev:web": "vite",
+    "hermetic:agent-dir": "node scripts/hermetic-agent-dir.mjs",
+    "dev:hermetic": "node scripts/hermetic-agent-dir.mjs && PORT=4810 PI_CODING_AGENT_DIR=\"$PWD/.agent\" tsx server/index.ts",
     "typecheck": "tsc --noEmit",
     "build": "tsc --noEmit && vite build",
     "start": "tsx server/index.ts",

@@ -396,6 +396,8 @@ test("team_create against the real Claude backend rejects an oversized composed 
 		getActiveTools: () => [],
 		sendMessage: () => {},
 		sendUserMessage: () => {},
+		registerFlag: () => {},
+		getFlag: () => undefined,
 	};
 	const { registerClaudeCode } = await import("../claude-code/index.ts");
 	const { MAX_CLAUDE_INPUT_CHARS } = await import("../claude-code/runner.ts");

@@ -1,0 +1,3 @@
+{"type":"system","subtype":"init","session_id":"sess-7"}
+{"type":"stream_event","event":{"type":"message_start","message":{"usage":{"input_tokens":5,"output_tokens":0}}}}
+{"type":"result","subtype":"success","is_error":true,"result":"Credit balance is too low"}

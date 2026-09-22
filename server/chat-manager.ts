@@ -23,9 +23,94 @@ import { loadDefaults, saveDefaults } from "./web-defaults";
 import { toContextInfo } from "./models";
 import { contextForBranch, normalizeEntries, normalizeEntry } from "./transcript";
 import { parseLegacyMountCwd, targetOfCwd } from "./targets";
+import { claudeCodeProviderEnabled } from "./web-settings";
 import { ForeignWriteGuard, markOwned, recentForeignWriteAgeSec } from "./write-guard";
 
 const GUARD_POLL_MS = 3000;
+
+/** The experimental Settings switch, as the claude-code extension registers it
+    (pi-config/extensions/claude-code/provider/index.ts CLAUDE_PROVIDER_FLAG). */
+const CLAUDE_CODE_FLAG = "claude-code-provider";
+
+/**
+ * The extension flags every webapp-hosted runtime starts with.
+ *
+ * - `topic-outline-headless`: topic-outline only summarizes in the TUI unless its host opts in;
+ *   opt in so web chats get outlines. Boolean flag: the SDK sets it true whatever the value.
+ *   Workers never get it, and neither does a fanout member (`outline: false`) — N outline
+ *   summarizers on one fanout is cost with no reader.
+ * - `target`: a remote session (cwd = a target placeholder, server/targets.ts) switches
+ *   pi-config's remote extension on for that target.
+ * - `claude-code-provider`: the experimental Settings switch. When on, the claude-code extension
+ *   registers the Claude Code CLI's models as first-class pi models. Read per runtime, so the
+ *   switch applies to sessions created after it changed and never reaches an open one.
+ */
+function sessionFlags(cwd: string, outline = true): Map<string, boolean | string> {
+  const flags = new Map<string, boolean | string>(outline ? [["topic-outline-headless", true]] : []);
+  const target = targetOfCwd(cwd);
+  if (target) flags.set("target", target);
+  if (claudeCodeProviderEnabled()) flags.set(CLAUDE_CODE_FLAG, true);
+  return flags;
+}
+
+/**
+ * Build services for a webapp runtime.
+ *
+ * A flag no extension registered is NOT fatal: the SDK reports `Unknown option: --<flag>` as a
+ * services diagnostic and carries on (verified against 0.86.1 with the switch on and a
+ * claude-code extension that does not register it yet — the session still opened and every other
+ * model still worked). That is what makes the experimental switch safe to leave on with an older
+ * pi-config: the provider is simply absent, and the diagnostic below says why.
+ */
+async function servicesForCwd(cwd: string, modelRuntime: ModelRuntime, outline = true) {
+  return await createAgentSessionServices({ cwd, modelRuntime, extensionFlagValues: sessionFlags(cwd, outline) });
+}
+
+/**
+ * Register the Claude Code provider without waiting for the user to open a session.
+ *
+ * The provider registers from the claude-code extension's session_start, straight into the
+ * ModelRuntime it is handed — and pi-web shares one runtime across every session, so building a
+ * throwaway services instance with the flag set is enough to make claude-code-cli/* appear in
+ * GET /api/models for the picker. The instance is discarded; only the registration outlives it.
+ *
+ * Best-effort by design: the CLI may be missing or unauthenticated, and neither is a reason to
+ * fail startup. A failure just means the models are absent until a session opens.
+ */
+export async function warmClaudeCodeProvider(modelRuntime: ModelRuntime, cwd: string): Promise<void> {
+  if (!claudeCodeProviderEnabled()) return;
+  try {
+    const services = await servicesForCwd(cwd, modelRuntime);
+    for (const d of services.diagnostics) console.warn(`[chat] claude-code warm-up ${d.type}: ${d.message}`);
+    // The flag is only visible from session_start, and session_start is emitted by
+    // AgentSession.bindExtensions (dist/core/agent-session.js:2029) — NOT by creating the session.
+    // So the warm-up has to go all the way to bindExtensions, exactly as a real chat does, or the
+    // extension factory runs and registers nothing (verified: the factory logs, session_start
+    // never fires). SessionManager.create() defers writing until the first assistant reply
+    // (CLAUDE.md, "Backend notes"), and this session never prompts, so no file is left behind.
+    const { session } = await createAgentSessionFromServices({ services, sessionManager: SessionManager.create(cwd) });
+    currentTheme(); // extensions may read the theme singleton at session_start; initialize it first
+    await session.bindExtensions({
+      mode: "rpc",
+      onError: (err) => console.warn(`[chat] claude-code warm-up extension error (${err.extensionPath}): ${err.error}`),
+    });
+    // The registration now lives in the shared runtime; the session itself must not outlive the
+    // warm-up, or every extension's session_start side effects (timers, live records) would.
+    //
+    // Shut the extensions down BEFORE disposing, which is what AgentSessionRuntime.dispose does
+    // (agent-session-runtime.js:296 — emitSessionShutdownEvent, then session.dispose). A bare
+    // session.dispose() skips session_shutdown, and extensions that armed a timer at session_start
+    // then fire it against a disposed session: the sessions extension's focus-discovery timeout
+    // did exactly that, throwing "This extension ctx is stale after session replacement or reload"
+    // as an unhandledRejection on every warm-up.
+    if (session.extensionRunner.hasHandlers("session_shutdown")) {
+      await session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" });
+    }
+    session.dispose();
+  } catch (err) {
+    console.warn(`[chat] claude-code warm-up failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
 
 /** pi's ThinkingLevel ladder (see server/models.ts, which mirrors the semantics). */
 const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
@@ -1002,18 +1087,12 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
     sessionManager.appendThinkingLevelChange = appendThinkingLevelChange;
   };
   const createRuntime: CreateAgentSessionRuntimeFactory = async ({ cwd, sessionManager, sessionStartEvent }) => {
-    // topic-outline only summarizes in the TUI unless its host opts in; opt in so web chats get
-    // outlines. Boolean flag: the SDK sets it true whatever the value. Workers never get it.
-    // A FANOUT MEMBER is the one exception, and the FILE says so, not a flag threaded through
-    // acquireChat: its creation wrote the FANOUT_MEMBER_ENTRY marker beside the model change, so
-    // the member opens WITHOUT the opt-in and lands in the extension's own default — N outline
-    // summarizers on one fanout is cost with no reader, and the marker survives restarts.
-    const flags = new Map<string, boolean | string>(isFanoutMember(sessionManager) ? [] : [["topic-outline-headless", true]]);
-    // A remote session (cwd = a target placeholder, server/targets.ts) also gets the string flag
-    // `target`, which switches pi-config's remote extension on for that target.
-    const target = targetOfCwd(cwd);
-    if (target) flags.set("target", target);
-    const services = await createAgentSessionServices({ cwd, modelRuntime, extensionFlagValues: flags });
+    // The outline opt-in is declined for a FANOUT MEMBER, and the FILE says so, not a flag
+    // threaded through acquireChat: its creation wrote the FANOUT_MEMBER_ENTRY marker beside the
+    // model change, so the member opens WITHOUT the opt-in and lands in the extension's own
+    // default, and the marker survives restarts. Everything else about the loadout — `target`,
+    // the experimental claude-code switch — is the same sessionFlags() every runtime gets.
+    const services = await servicesForCwd(cwd, modelRuntime, !isFanoutMember(sessionManager));
     for (const d of services.diagnostics) console.warn(`[chat] runtime ${d.type}: ${d.message}`);
     // A session with no messages yet starts from the saved new-session defaults (web-defaults.ts):
     // resolve the stored model ref against models with configured auth and let the SDK clamp the

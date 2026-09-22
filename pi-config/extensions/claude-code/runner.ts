@@ -4,22 +4,18 @@
  * our own detached host's worker (options.adopt): its replayed user messages
  * re-create the in-flight task from the stream itself.
  */
-import { spawn, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import * as fs from "node:fs";
-import * as os from "node:os";
-import * as path from "node:path";
-import { StringDecoder } from "node:string_decoder";
 import { CLAUDE_PERMISSION_MODES, type ClaudePermissionMode } from "./policy.ts";
+import {
+	applyResultUsage, buildClaudeArgv, ClaudePrivateFiles, ClaudeTransport, contextTokensFrom, deferred,
+	isMessageStart, isUncorrelatedResult, mcpServerFailure, parseCanUseTool, permissionDenialsFrom, record,
+	resultError, resultMatches, textBlocksText, textDelta,
+	type ClaudeToolPermissionRequest, type ControlAck, type Deferred,
+} from "./transport.ts";
 import type { AgentStatus, AgentUsage, TaskOutcome, TranscriptItem, TranscriptKind, SteerResult } from "../subagents/runner.ts";
 import type { Worker, WorkerHandlers, SteerMode, SpawnOptions } from "../subagents/contracts.ts";
 
-export interface ClaudePermissionRequest {
-	requestId: string;
-	toolName: string;
-	input: Record<string, unknown>;
-	toolUseId?: string;
-	description?: string;
+export interface ClaudePermissionRequest extends ClaudeToolPermissionRequest {
 	/** Identity of the requesting worker; count>1 batches share one spec name. */
 	workerId: string;
 	workerName: string;
@@ -83,27 +79,6 @@ export interface ClaudeSpawnOptions extends SpawnOptions {
 	limits?: Partial<ClaudeRunnerLimits>;
 }
 export type ClaudeRunnerHandlers = WorkerHandlers;
-const MCP_SERVER_NAME = /^[A-Za-z0-9_-]+$/;
-const isPlain = (value: unknown): value is string => typeof value === "string" && !!value.trim() && !/[\x00-\x1f\x7f]/.test(value);
-/** Environment blocks are passed verbatim to a child, so names must be shell-legal and values real strings. */
-function validEnv(env: unknown): env is Record<string, string> {
-	return !!env && typeof env === "object" && !Array.isArray(env)
-		&& Object.entries(env).every(([name, value]) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(name) && typeof value === "string");
-}
-/** mcp.json entries are written verbatim, so they must be plain strings only. */
-function validMcpServers(entries: [string, unknown][]): entries is [string, { command: string; args: string[]; env?: Record<string, string> }][] {
-	return entries.every(([name, spec]) => MCP_SERVER_NAME.test(name) && !!spec && typeof spec === "object"
-		&& isPlain((spec as any).command) && Array.isArray((spec as any).args) && (spec as any).args.every((a: unknown) => typeof a === "string")
-		&& ((spec as any).env === undefined || validEnv((spec as any).env)));
-}
-interface Deferred<T> { promise: Promise<T>; resolve: (value: T) => void }
-function deferred<T>(): Deferred<T> {
-	let resolve!: (value: T) => void;
-	const promise = new Promise<T>((r) => { resolve = r; });
-	return { promise, resolve };
-}
-/** false is a correlated rejection; undefined means no known response. */
-type ControlAck = boolean | undefined;
 interface Task {
 	id: string;
 	accepted: Deferred<boolean>;
@@ -122,19 +97,6 @@ const LIMITS: ClaudeRunnerLimits = {
 	maxLineBytes: 4 * 1024 * 1024, maxTranscriptBytes: 2 * 1024 * 1024,
 	maxItemChars: 256 * 1024, maxQueue: 16, maxInputChars: MAX_CLAUDE_INPUT_CHARS, maxPendingPermissions: 8,
 };
-function number(value: unknown): number { return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : 0; }
-function record(value: unknown): value is Record<string, any> { return !!value && typeof value === "object" && !Array.isArray(value); }
-// API failures can arrive as is_error with subtype "success" and the message only in result.
-function resultError(e: Record<string, any>): string {
-	const text = (value: unknown) => typeof value === "string" ? value.trim() : "";
-	const errors = Array.isArray(e.errors) ? e.errors.slice(0, 20).map(text).filter(Boolean) : [];
-	if (errors.length) return errors.join("\n");
-	if (text(e.result)) return text(e.result);
-	if (text(e.terminal_reason)) return `Claude task ended: ${text(e.terminal_reason)}`;
-	if (text(e.subtype) && e.subtype !== "success") return `Claude task failed: ${text(e.subtype)}`;
-	return "Claude task failed";
-}
-
 export class ClaudeRunner implements Worker {
 	readonly backend = "claude-code" as const;
 	readonly id: string;
@@ -171,13 +133,10 @@ export class ClaudeRunner implements Worker {
 	permissionDenials: { toolName: string; toolUseId?: string }[] = [];
 	private readonly timings: ClaudeRunnerTimings;
 	private readonly limits: ClaudeRunnerLimits;
-	private readonly closedState = deferred<void>();
-	private proc?: ChildProcess;
-	private closed = false;
-	private leaderExited = false;
-	private shutdownStarted = false;
-	private escalationComplete = false;
-	private pipeDrainTimer?: ReturnType<typeof setTimeout>;
+	/** CLI process, framing, control channel and shutdown escalation. */
+	private readonly transport: ClaudeTransport;
+	/** Private 0700 directory for files Claude reads at startup (system prompt, mcp.json). */
+	private readonly privateFiles = new ClaudePrivateFiles();
 	private stopping = false;
 	private initialized = false;
 	/** The configured MCP servers were checked against an init event; every turn re-emits one. */
@@ -190,22 +149,11 @@ export class ClaudeRunner implements Worker {
 	private active?: Task;
 	private redirecting = false;
 	private queue: string[] = [];
-	private buffer = "";
 	private output = "";
 	private partial?: TranscriptItem;
 	private lastAssistant?: TranscriptItem;
 	private transcriptBytes = 0;
-	private decoder = new StringDecoder("utf8");
-	private stderrDecoder = new StringDecoder("utf8");
-	private controls = new Map<string, { resolve: (ok: ControlAck) => void; timer: ReturnType<typeof setTimeout> }>();
 	private permissions = new Map<string, { controller: AbortController; finish: (decision: ClaudePermissionDecision) => void }>();
-	private timers = new Set<ReturnType<typeof setTimeout>>();
-	/** Pending while an interrupt is unanswered; no new turn is dispatched under it. */
-	private interruptPromise?: Promise<ControlAck>;
-	/** Private 0700 directory for files Claude reads at startup (system prompt, mcp.json). */
-	private privateDir?: string;
-	private systemPromptFile?: string;
-	private mcpConfigFile?: string;
 	/** Adopt mode: tasks re-created from replayed user messages; the first is the initial task. */
 	private adoptedTasks = 0;
 	/** Adopt mode: replayed permission requests no earlier manager answered; prompted again once live. */
@@ -224,7 +172,27 @@ export class ClaudeRunner implements Worker {
 		for (const value of [...Object.values(this.timings), ...Object.values(this.limits)]) {
 			if (!Number.isSafeInteger(value) || value <= 0) throw new Error("Runner limits/timings must be positive integers");
 		}
-		this.whenClosed = this.closedState.promise;
+		this.transport = new ClaudeTransport({
+			timings: this.timings,
+			limits: this.limits,
+			spawnImpl: options.spawnImpl,
+			signalGroupImpl: options.signalGroupImpl,
+			hooks: {
+				onEvent: (event) => this.event(event as Record<string, any>),
+				onStderr: (text) => { this.push("error", text); },
+				onProtocolError: (message) => this.fail(message),
+				onStdinError: (message) => { if (!this.stopping) this.fail(message); },
+				onProcessError: (message) => this.fail(message),
+				onSpawned: (pid) => { this.processAlive = true; this.pid = pid; },
+				onLeaderExit: () => { this.processAlive = false; this.cancelPermissions(); },
+				onActivity: () => this.touch(),
+				beforeEof: () => this.abortActiveWork(),
+				onInterruptStart: () => { if (this.active) this.active.cancelled = true; this.cancelPermissions(); },
+				onInterruptSettled: (ack) => this.afterInterrupt(ack),
+				onClose: (code, signal) => this.close(code, signal),
+			},
+		});
+		this.whenClosed = this.transport.whenClosed;
 		if (options.adopt) this.sessionId = options.adopt.sessionId;
 		// Defer callbacks until the owner has stored the constructed runner.
 		queueMicrotask(() => (options.adopt ? this.adopt() : this.start()));
@@ -253,12 +221,11 @@ export class ClaudeRunner implements Worker {
 	private adopt(): void {
 		if (this.stopping || this.closed) return;
 		try {
-			this.proc = (this.options.spawnImpl ?? spawn)("", [], { cwd: this.options.cwd, stdio: ["pipe", "pipe", "pipe"] });
+			this.transport.attach({ cwd: this.options.cwd });
 		} catch (error) { this.fail(`Adoption failed: ${String(error)}`); return; }
 		this.initialized = true; this.initialOwed = false; this.notificationPending = false;
 		this.status = "running";
-		this.wire(this.proc);
-		this.proc.on("live", () => {
+		this.transport.child?.on("live", () => {
 			// Claude still waits on requests the earlier manager never answered.
 			const pending = [...this.replayedPermissions.values()];
 			this.replayedPermissions.clear();
@@ -276,105 +243,35 @@ export class ClaudeRunner implements Worker {
 		if (o.forkSession || o.extensions?.length || o.allowNestedExtensions) {
 			this.fail("Claude runner does not support Pi forks or nested extensions"); return;
 		}
-		if (o.allowedTools?.some((tool) => !tool.trim() || /^\s*-/.test(tool) || /[\x00-\x1f\x7f]/.test(tool))) {
-			this.fail("Invalid allowedTools: flags and control characters are not allowed"); return;
-		}
 		const permissionMode = o.permissionMode ?? "bypassPermissions";
-		if (!CLAUDE_PERMISSION_MODES.includes(permissionMode)) { this.fail("Unsupported permission mode"); return; }
 		const hostPermissions = permissionMode !== "bypassPermissions" && !!o.onPermission;
-		const args = ["-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose",
-			"--include-partial-messages", "--replay-user-messages", "--permission-mode", permissionMode,
-			"--permission-prompts", hostPermissions ? "host" : "none", "--setting-sources", "", "--strict-mcp-config"];
-		if (hostPermissions) args.push("--permission-prompt-tool", "stdio");
-		if (o.model) args.push("--model", o.model);
-		if (o.effort) args.push("--effort", o.effort);
-		args.push("--tools", (o.tools ?? ["Bash", "Read", "Edit", "Write", "Glob", "Grep"]).join(","));
-		const mcpServers = Object.entries(o.mcpServers ?? {});
-		if (!validMcpServers(mcpServers)) { this.fail("Invalid mcpServers: names must be [A-Za-z0-9_-], commands/args/env plain strings"); return; }
-		if (o.env !== undefined && !validEnv(o.env)) { this.fail("Invalid env: names must be [A-Za-z_][A-Za-z0-9_]*, values strings"); return; }
-		// Non-bypass modes would prompt (or, without a host, deny) every MCP tool
-		// call; a server the parent configured is trusted like the built-ins.
-		const allowedTools = [...(o.allowedTools ?? []), ...(permissionMode === "bypassPermissions" ? [] : mcpServers.map(([name]) => `mcp__${name}`))];
-		if (allowedTools.length) args.push("--allowedTools", ...allowedTools);
-		if (o.maxBudgetUsd !== undefined) {
-			if (!Number.isFinite(o.maxBudgetUsd) || o.maxBudgetUsd <= 0) { this.fail("maxBudgetUsd must be positive"); return; }
-			args.push("--max-budget-usd", String(o.maxBudgetUsd));
-		}
-		if (o.systemPrompt || mcpServers.length) {
-			// Files keep instructions and server environments out of the process
-			// list and avoid argv size limits (E2BIG). Probed with CLI 2.1.277: the
-			// system prompt is read at startup, so it is removed once initialize
-			// succeeds; the MCP config stays until the process closes.
-			try {
-				this.privateDir = fs.mkdtempSync(path.join(o.tmpDir ?? os.tmpdir(), "pi-claude-"));
-				if (o.systemPrompt) {
-					this.systemPromptFile = path.join(this.privateDir, "system.md");
-					fs.writeFileSync(this.systemPromptFile, o.systemPrompt, { encoding: "utf8", mode: 0o600, flag: "wx" });
-					args.push("--append-system-prompt-file", this.systemPromptFile);
-				}
-				if (mcpServers.length) {
-					this.mcpConfigFile = path.join(this.privateDir, "mcp.json");
-					fs.writeFileSync(this.mcpConfigFile, JSON.stringify({ mcpServers: Object.fromEntries(mcpServers) }), { encoding: "utf8", mode: 0o600, flag: "wx" });
-					args.push("--mcp-config", this.mcpConfigFile);
-				}
-			} catch (error) {
-				// Never run without the instructions or tools the worker was configured with.
-				const what = mcpServers.length ? "private launch" : "system prompt";
-				this.cleanupPrivateDir();
-				this.fail(`Could not write ${what} file: ${(error as Error).message}`); return;
-			}
-		}
+		const built = buildClaudeArgv({
+			permissionMode, permissionModes: CLAUDE_PERMISSION_MODES, hostPermissions,
+			model: o.model, effort: o.effort, tools: o.tools, allowedTools: o.allowedTools,
+			mcpServers: o.mcpServers, env: o.env, maxBudgetUsd: o.maxBudgetUsd,
+		});
+		if (built.error !== undefined) { this.fail(built.error); return; }
+		const args = built.args;
 		try {
-			// Preserve configured CLI authentication/routing (including API keys), but
-			// do not inherit Claude's nested-session markers from the host shell.
-			const env = { ...process.env };
-			delete env.CLAUDECODE; delete env.CLAUDE_CODE_ENTRYPOINT;
-			// Last, so a caller's variable is what the CLI sees; validated above.
-			Object.assign(env, o.env);
-			const spawnOptions = { cwd: o.cwd, shell: false, detached: process.platform !== "win32", env, stdio: ["pipe", "pipe", "pipe"] };
-			this.proc = (o.spawnImpl ?? spawn)(o.executable ?? "claude", args, spawnOptions);
+			args.push(...this.privateFiles.write({ tmpDir: o.tmpDir, systemPrompt: o.systemPrompt, mcpServers: built.mcpServers }));
+		} catch (error) { this.fail((error as Error).message); return; }
+		try {
+			this.transport.launch(o.executable ?? "claude", args, { cwd: o.cwd, env: o.env });
 		} catch (error) { this.fail(`Spawn failed: ${String(error)}`); return; }
-		this.wire(this.proc);
 		void this.initialize();
 	}
 
-	private wire(proc: ChildProcess): void {
-		this.processAlive = true; this.pid = proc.pid;
-		proc.stdin?.on("error", (e) => { if (!this.stopping) this.fail(`stdin error: ${e.message}`); });
-		proc.stdout?.on("data", (chunk: Buffer) => this.consume(this.decoder.write(chunk)));
-		proc.stdout?.on("end", () => { this.consume(this.decoder.end()); if (this.buffer) this.consume("\n"); });
-		proc.stderr?.on("data", (chunk: Buffer) => { if (!this.closed) this.push("error", this.stderrDecoder.write(chunk)); });
-		proc.on("error", (e) => this.fail(`Process error: ${e.message}`));
-		proc.once("exit", () => {
-			this.leaderExited = true; this.processAlive = false;
-			this.cancelPermissions();
-			// exit proves leader death, not EOF: detached descendants can retain pipes.
-			void this.shutdown();
-			this.schedulePipeDrain(); this.touch();
-		});
-		proc.on("close", (code, signal) => this.close(code, signal));
-	}
+	/** Transport state the worker's own guards read. */
+	private get closed(): boolean { return this.transport.isClosed(); }
+	private get leaderExited(): boolean { return this.transport.hasExited(); }
 
 	private async initialize(): Promise<void> {
-		const ok = await this.control("initialize");
+		const ok = await this.transport.control("initialize");
 		if (this.stopping || this.closed || this.leaderExited) return;
 		if (!ok) { this.fail("Claude initialize failed or timed out"); return; }
-		this.cleanupSystemPrompt();
+		this.privateFiles.releaseSystemPrompt();
 		this.initialized = true;
 		this.dispatch(this.task, "task");
-	}
-	/** After initialize: the system prompt has been read; the MCP config (if any) must outlive startup. */
-	private cleanupSystemPrompt(): void {
-		if (this.systemPromptFile) {
-			try { fs.rmSync(this.systemPromptFile, { force: true }); } catch { /* best effort */ }
-			this.systemPromptFile = undefined;
-		}
-		if (!this.mcpConfigFile) this.cleanupPrivateDir();
-	}
-	private cleanupPrivateDir(): void {
-		if (!this.privateDir) return;
-		try { fs.rmSync(this.privateDir, { recursive: true, force: true }); } catch { /* best effort */ }
-		this.privateDir = undefined; this.systemPromptFile = undefined; this.mcpConfigFile = undefined;
 	}
 	private validInput(message: string): boolean { return !!message.trim() && message.length <= this.limits.maxInputChars; }
 	/** adoptedId: the task was sent by an earlier manager and is only being re-created here (never re-sent). */
@@ -393,61 +290,15 @@ export class ClaudeRunner implements Worker {
 			clearTimeout(task.acceptTimer); task.accepted.resolve(true);
 			return task;
 		}
-		if (!this.send({ type: "user", uuid: task.id, message: { role: "user", content: [{ type: "text", text: message }] } })) {
+		if (!this.transport.sendUser(task.id, message)) {
 			task.unsent = true; this.fail("Could not send user message");
 		}
 		return task;
 	}
-	private send(value: unknown): boolean {
-		const input = this.proc?.stdin;
-		if (!input || input.destroyed || input.writableEnded || !input.writable || this.closed || this.leaderExited) return false;
-		try {
-			const line = JSON.stringify(value) + "\n";
-			// Bound queued pipe writes too; write(false) means buffered, not rejected.
-			if (input.writableLength + Buffer.byteLength(line) > this.limits.maxLineBytes) return false;
-			input.write(line); return true;
-		} catch { return false; }
-	}
-	private control(subtype: string): Promise<ControlAck> {
-		const request_id = randomUUID();
-		return new Promise((resolve) => {
-			const timer = setTimeout(() => { this.controls.delete(request_id); resolve(undefined); }, this.timings.requestTimeoutMs);
-			this.controls.set(request_id, { resolve, timer });
-			if (!this.send({ type: "control_request", request_id, request: { subtype } })) {
-				clearTimeout(timer); this.controls.delete(request_id); resolve(undefined);
-			}
-		});
-	}
-	private consume(text: string): void {
-		if (this.closed) return;
-		// Bound individual records, including newline-terminated oversized records.
-		let start = 0;
-		while (start < text.length) {
-			const end = text.indexOf("\n", start);
-			const piece = text.slice(start, end < 0 ? text.length : end);
-			if (Buffer.byteLength(this.buffer) + Buffer.byteLength(piece) > this.limits.maxLineBytes) {
-				this.buffer = ""; this.fail("Claude stream-json record exceeds limit"); return;
-			}
-			this.buffer += piece;
-			if (end < 0) return;
-			const line = this.buffer; this.buffer = ""; start = end + 1;
-			if (!line.trim()) continue;
-			let event: unknown;
-			try { event = JSON.parse(line); } catch { this.fail("Malformed Claude stream-json record"); return; }
-			if (record(event)) this.event(event);
-		}
-	}
 	private event(e: Record<string, any>): void {
-		if (e.type === "control_response") {
-			const response = e.response;
-			const pending = this.controls.get(response?.request_id);
-			if (pending) {
-				this.controls.delete(response.request_id); clearTimeout(pending.timer);
-				// Intentionally discard private initialize account/capability metadata.
-				pending.resolve(response.subtype === "success" ? true : response.subtype === "error" ? false : undefined);
-			}
-			return;
-		}
+		// Correlated by the transport; its private initialize account/capability
+		// metadata is intentionally never read here.
+		if (e.type === "control_response") return;
 		if (e.type === "control_request") { this.permission(e); return; }
 		if (e.type === "control_cancel_request") {
 			this.replayedPermissions.delete(e.request_id);
@@ -464,10 +315,7 @@ export class ClaudeRunner implements Worker {
 		// Adopt mode: Claude echoes each user message it accepted (--replay-user-messages).
 		// One this runner did not send is the earlier manager's task; take it over.
 		if (this.options.adopt && !this.active && !this.stopping && e.type === "user" && e.isReplay === true && typeof e.uuid === "string") {
-			const content = e.message?.content;
-			const text = typeof content === "string" ? content
-				: Array.isArray(content) ? content.filter((b: any) => b?.type === "text").map((b: any) => String(b.text ?? "")).join("") : "";
-			this.dispatch(text, this.adoptedTasks++ ? "steer" : "task", e.uuid);
+			this.dispatch(textBlocksText(e.message?.content), this.adoptedTasks++ ? "steer" : "task", e.uuid);
 		}
 		const task = this.active;
 		if (task && e.type === "user" && e.isReplay === true && e.uuid === task.id) {
@@ -478,13 +326,12 @@ export class ClaudeRunner implements Worker {
 			// itself (observed when it reaps a Bash command it backgrounded at its
 			// own 120s timeout). That answer is newer than the settled task's.
 			if (!task) { this.idleResult(e); return; }
-			const ids = Array.isArray(e.user_message_uuids) ? e.user_message_uuids : [];
-			if (e.user_message_uuid !== task.id && !ids.includes(task.id)) {
+			if (!resultMatches(e, task.id)) {
 				// CLI 2.1.277 omits both fields on session-scoped failures (e.g. a
 				// crashed worker's zeroed result). The task's fate is unknown, so stop
 				// rather than wait forever. Stale/mismatched UUIDs and uncorrelated
 				// successes never settle the active task.
-				const uncorrelated = e.user_message_uuid === undefined && ids.length === 0;
+				const uncorrelated = isUncorrelatedResult(e);
 				if (uncorrelated && (e.is_error || e.subtype !== "success")) {
 					this.fail(`Claude session failed without task correlation: ${resultError(e)}`);
 				}
@@ -496,9 +343,9 @@ export class ClaudeRunner implements Worker {
 				if (this.partial) this.replaceText(this.partial, this.output);
 				else if (this.lastAssistant?.text !== this.output || !this.transcript.includes(this.lastAssistant)) this.push("assistant", e.result);
 			}
-			this.updateUsage(e);
+			applyResultUsage(this.usage, e);
 			if (Array.isArray(e.permission_denials)) {
-				this.permissionDenials = e.permission_denials.slice(0, 100).map((d: any) => ({ toolName: String(d.tool_name ?? "tool").slice(0, 256), toolUseId: typeof d.tool_use_id === "string" ? d.tool_use_id.slice(0, 256) : undefined }));
+				this.permissionDenials = permissionDenialsFrom(e.permission_denials);
 				if (this.permissionDenials.length) this.push("system", `${this.permissionDenials.length} operation(s) denied by permissions`);
 			}
 			// Interrupt intent can race natural completion or an unrelated error.
@@ -516,11 +363,11 @@ export class ClaudeRunner implements Worker {
 		// Text is never dropped for want of a task: a CLI-initiated turn owns the
 		// idle session's answer too, and arms the next completion announcement.
 		if (!task && (e.type === "assistant" || e.type === "stream_event")) this.idleAnnounced = false;
-		if (e.type === "stream_event" && e.event?.type === "message_start") {
+		if (isMessageStart(e)) {
 			this.partial = undefined; this.output = "";
 		}
-		if (e.type === "stream_event" && e.event?.type === "content_block_delta" && e.event.delta?.type === "text_delta") {
-			const delta = String(e.event.delta.text ?? "");
+		const delta = textDelta(e);
+		if (delta !== undefined) {
 			if (!this.partial) {
 				const item = this.push("assistant", "");
 				this.partial = this.transcript.includes(item) ? item : undefined;
@@ -528,7 +375,7 @@ export class ClaudeRunner implements Worker {
 			this.output = this.clip(this.output + delta);
 			if (this.partial) this.replaceText(this.partial, this.output);
 		} else if (e.type === "assistant" && Array.isArray(e.message?.content)) {
-			const text = e.message.content.filter((b: any) => b.type === "text").map((b: any) => String(b.text ?? "")).join("");
+			const text = textBlocksText(e.message.content);
 			if (text) {
 				this.output = this.clip(text);
 				if (this.partial) {
@@ -542,7 +389,7 @@ export class ClaudeRunner implements Worker {
 				if (block.type === "thinking") this.push("thinking", String(block.thinking ?? ""));
 			}
 			const u = e.message.usage;
-			if (u) this.usage.contextTokens = number(u.input_tokens) + number(u.cache_read_input_tokens) + number(u.cache_creation_input_tokens) + number(u.output_tokens);
+			if (u) this.usage.contextTokens = contextTokensFrom(u);
 			this.touch();
 		} else if (e.type === "user" && !e.isReplay && Array.isArray(e.message?.content)) {
 			for (const block of e.message.content) if (block.type === "tool_result") this.push(block.is_error ? "tool-result" : "system", typeof block.content === "string" ? block.content : JSON.stringify(block.content ?? ""));
@@ -566,7 +413,7 @@ export class ClaudeRunner implements Worker {
 			else if (this.lastAssistant?.text !== this.output || !this.transcript.includes(this.lastAssistant)) this.push("assistant", e.result);
 		}
 		this.partial = undefined;
-		this.updateUsage(e);
+		applyResultUsage(this.usage, e);
 		this.taskOutcome = "success";
 		// The earlier manager already announced whatever history replays.
 		if (this.replaying()) return;
@@ -576,21 +423,6 @@ export class ClaudeRunner implements Worker {
 		this.notificationPending = true;
 		this.touch();
 		this.notifySettled();
-	}
-	private updateUsage(e: Record<string, any>): void {
-		// modelUsage and total_cost_usd are process-cumulative; never sum results.
-		if (record(e.modelUsage)) {
-			const values = Object.values(e.modelUsage).filter(record);
-			this.usage.input = values.reduce((n, u) => n + number(u.inputTokens), 0);
-			this.usage.output = values.reduce((n, u) => n + number(u.outputTokens), 0);
-			this.usage.cacheRead = values.reduce((n, u) => n + number(u.cacheReadInputTokens), 0);
-			this.usage.cacheWrite = values.reduce((n, u) => n + number(u.cacheCreationInputTokens), 0);
-		} else if (record(e.usage)) {
-			this.usage.input += number(e.usage.input_tokens); this.usage.output += number(e.usage.output_tokens);
-			this.usage.cacheRead += number(e.usage.cache_read_input_tokens); this.usage.cacheWrite += number(e.usage.cache_creation_input_tokens);
-		}
-		this.usage.cost = Math.max(this.usage.cost, number(e.total_cost_usd));
-		this.usage.turns += number(e.num_turns);
 	}
 	private finishTask(task: Task, outcome: TaskOutcome, correlated: boolean): void {
 		if (this.active !== task) return;
@@ -628,17 +460,16 @@ export class ClaudeRunner implements Worker {
 		if (this.options.adopt?.ended) return;
 		const id = e.request_id;
 		if (this.permissions.has(id)) return;
-		if (e.request?.subtype !== "can_use_tool") {
-			this.send({ type: "control_response", response: { subtype: "error", request_id: id, error: "Unsupported host control request" } }); return;
+		const parsed = parseCanUseTool(e);
+		if (!parsed) {
+			this.transport.respondError(id, "Unsupported host control request"); return;
 		}
-		const input = record(e.request.input) ? e.request.input : {};
-		const request: ClaudePermissionRequest = { requestId: id, toolName: String(e.request.tool_name ?? "tool"), input,
-			toolUseId: e.request.tool_use_id, description: e.request.description,
-			workerId: this.id, workerName: this.name, cwd: this.cwd };
+		const input = parsed.input;
+		const request: ClaudePermissionRequest = { ...parsed, workerId: this.id, workerName: this.name, cwd: this.cwd };
 		const deny = (message: string): ClaudePermissionDecision => ({ behavior: "deny", message });
 		const reply = (decision: ClaudePermissionDecision) => {
 			if (this.leaderExited || this.closed) return;
-			if (!this.send({ type: "control_response", response: { subtype: "success", request_id: id, response: decision } }) && !this.stopping) this.fail("Could not send permission decision");
+			if (!this.transport.respond(id, decision) && !this.stopping) this.fail("Could not send permission decision");
 		};
 		if (this.stopping || this.leaderExited || !this.active || this.active.cancelled || !this.options.onPermission || this.permissions.size >= this.limits.maxPendingPermissions) {
 			reply(deny("Host permission unavailable or task interrupted")); return;
@@ -670,29 +501,14 @@ export class ClaudeRunner implements Worker {
 	private cancelPermissions(): void {
 		for (const entry of [...this.permissions.values()]) entry.controller.abort();
 	}
-	private interrupt(): Promise<ControlAck> {
-		if (this.interruptPromise) return this.interruptPromise;
-		if (this.active) this.active.cancelled = true;
-		this.cancelPermissions();
-		const pending = this.control("interrupt");
-		this.interruptPromise = pending;
-		void pending.then((ack) => {
-			if (this.interruptPromise !== pending) return;
-			this.interruptPromise = undefined;
-			if (this.stopping || this.closed || this.leaderExited) return;
-			// CLI 2.1.277 answers interrupts promptly, even when idle. Silence
-			// through the whole control deadline leaves a delayed interrupt that
-			// could abort later work, so stop rather than dispatch under it.
-			if (ack === undefined) { this.fail("Claude never answered an interrupt request; stopped so a delayed interrupt cannot affect later work"); return; }
-			queueMicrotask(() => this.drainQueue());
-		});
-		return pending;
-	}
-	private async bounded<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
-		let timer!: ReturnType<typeof setTimeout>;
-		const timeout = new Promise<T>((resolve) => { timer = setTimeout(() => resolve(fallback), ms); this.timers.add(timer); });
-		try { return await Promise.race([promise, timeout, this.whenClosed.then(() => fallback)]); }
-		finally { clearTimeout(timer); this.timers.delete(timer); }
+	/** Transport hook: the single-flight interrupt settled (undefined = unanswered). */
+	private afterInterrupt(ack: ControlAck): void {
+		if (this.stopping || this.closed || this.leaderExited) return;
+		// CLI 2.1.277 answers interrupts promptly, even when idle. Silence
+		// through the whole control deadline leaves a delayed interrupt that
+		// could abort later work, so stop rather than dispatch under it.
+		if (ack === undefined) { this.fail("Claude never answered an interrupt request; stopped so a delayed interrupt cannot affect later work"); return; }
+		queueMicrotask(() => this.drainQueue());
 	}
 
 	/** Redirect never writes mid-turn user input. followUp only acknowledges the HOST queue. */
@@ -716,7 +532,7 @@ export class ClaudeRunner implements Worker {
 			return { ok: true };
 		}
 		if (this.redirecting) return { ok: false, reason: "another redirect is pending" };
-		if (this.interruptPromise && !this.active) return { ok: false, reason: "an earlier interrupt is still unanswered; new instructions would race it" };
+		if (this.transport.isInterruptPending() && !this.active) return { ok: false, reason: "an earlier interrupt is still unanswered; new instructions would race it" };
 		this.redirecting = true;
 		// The caller owns only its wait, not this persistent worker. Once started,
 		// the redirect transaction retains its barrier and protocol deadlines even
@@ -737,8 +553,8 @@ export class ClaudeRunner implements Worker {
 				// A negative ack may mean the old turn completed naturally. Its
 				// correlated result is authoritative, but still require a response:
 				// a missing ack could leave an interrupt racing the replacement.
-				const both = Promise.all([this.interrupt(), previous.settled.promise]).then(([ack, settled]) => ack !== undefined && settled);
-				const ok = await this.bounded(both, this.timings.settlementTimeoutMs, false);
+				const both = Promise.all([this.transport.interrupt(), previous.settled.promise]).then(([ack, settled]) => ack !== undefined && settled);
+				const ok = await this.transport.bounded(both, this.timings.settlementTimeoutMs, false);
 				if (!ok && this.active === previous) {
 					// The task itself never settled: its state is unknown. Fail closed.
 					if (!this.stopping) this.fail("Interrupt did not acknowledge and settle; redirect not delivered");
@@ -767,7 +583,7 @@ export class ClaudeRunner implements Worker {
 	private drainQueue(): Task | undefined {
 		if (this.active || this.redirecting || this.stopping || this.closed || this.leaderExited || !this.initialized) return;
 		// Queued work waits out an unanswered interrupt; interrupt() drains afterward.
-		const message = this.interruptPromise ? undefined : this.queue.shift();
+		const message = this.transport.isInterruptPending() ? undefined : this.queue.shift();
 		const task = message !== undefined ? this.dispatch(message, "steer") : undefined;
 		this.notifySettled();
 		return task;
@@ -788,95 +604,41 @@ export class ClaudeRunner implements Worker {
 		if (this.closed || this.stopping) return this.whenClosed;
 		this.error = reason; this.status = "stopping"; this.stopping = true;
 		this.push("system", reason); this.dropQueue("because the worker was stopped");
-		void this.shutdown(); return this.whenClosed;
+		void this.transport.shutdown(); return this.whenClosed;
 	}
 	dispose(): Promise<void> { return this.kill("session shutdown"); }
 	/**
-	 * A server that does not connect is not an error to Claude: it reports `status: "failed"` in
-	 * its init event, says nothing on stderr, and runs the turn anyway — with `--tools ""` that
-	 * leaves a worker with no tools at all, which looks like a worker that simply invents its
-	 * answers. Checked once, on the first init event; a later turn's init repeats it.
-	 * Returns false when the worker was failed.
+	 * Checked once, on the first init event; a later turn's init repeats it (see
+	 * mcpServerFailure). Returns false when the worker was failed.
 	 */
 	private checkMcpServers(event: any): boolean {
 		const configured = Object.keys(this.options.mcpServers ?? {});
 		if (!configured.length) return true;
 		this.mcpChecked = true;
-		const reported = new Map<string, string>();
-		if (Array.isArray(event.mcp_servers)) {
-			for (const server of event.mcp_servers) {
-				if (server && typeof server.name === "string") reported.set(server.name, typeof server.status === "string" ? server.status : "unknown");
-			}
-		}
-		for (const name of configured) {
-			const status = reported.get(name);
-			if (status === "connected") continue;
-			this.fail(`MCP server "${name}" did not connect (status ${status ?? "missing"}); the worker would run without its tools`);
-			return false;
-		}
-		return true;
+		const failure = mcpServerFailure(event, configured);
+		if (!failure) return true;
+		this.fail(failure);
+		return false;
 	}
 	private fail(message: string): void {
 		if (this.closed || this.stopping) return;
 		this.error = this.clip(message); this.status = "error"; this.stopping = true;
 		this.push("error", message); this.dropQueue("because the worker failed", "error");
-		void this.shutdown();
+		void this.transport.shutdown();
 	}
-	private async shutdown(): Promise<void> {
-		if (this.shutdownStarted || this.closed) return;
-		this.shutdownStarted = true;
-		if (!this.proc) { this.close(null, null); return; }
-		if (!this.leaderExited) {
-			const task = this.active;
-			const interruption = this.interrupt(); // First allow Claude to cancel its own tools.
-			await this.bounded(Promise.all([interruption, task?.settled.promise ?? Promise.resolve(true)]), this.timings.abortGraceMs, [false, false]);
-		}
-		if (this.closed) return;
-		try { this.proc.stdin?.end(); } catch { /* proceed with escalation */ }
-		await this.bounded(this.whenClosed.then(() => true), this.timings.eofGraceMs, false);
-		if (this.closed) return;
-		this.signalChild("SIGTERM");
-		await this.bounded(this.whenClosed.then(() => true), this.timings.termGraceMs, false);
-		if (!this.closed) {
-			this.signalChild("SIGKILL");
-			this.escalationComplete = true;
-			this.schedulePipeDrain();
-		}
+	/** Transport hook before stdin EOF: first allow Claude to cancel its own tools. */
+	private async abortActiveWork(): Promise<void> {
+		const task = this.active;
+		const interruption = this.transport.interrupt();
+		await this.transport.bounded(Promise.all([interruption, task?.settled.promise ?? Promise.resolve(true)]), this.timings.abortGraceMs, [false, false]);
 	}
-	private schedulePipeDrain(): void {
-		// A deadline never proves death. If SIGKILL fails or the leader is stuck,
-		// keep whenClosed pending until exit/close actually arrives.
-		if (this.closed || !this.leaderExited || !this.escalationComplete || this.pipeDrainTimer) return;
-		this.pipeDrainTimer = setTimeout(() => {
-			this.pipeDrainTimer = undefined;
-			if (this.closed) return;
-			this.consume(this.decoder.end()); if (this.buffer) this.consume("\n");
-			this.proc?.stdin?.destroy(); this.proc?.stdout?.destroy(); this.proc?.stderr?.destroy();
-		}, this.timings.pipeDrainMs);
-	}
-	private signalChild(signal: NodeJS.Signals): void {
-		try {
-			// Claude first gets interrupt + EOF so it can reap tools itself. The
-			// fallback owns the complete foreground group, including grandchildren
-			// retaining stdout after the CLI leader exits. Detached services that
-			// create their own process group remain outside this guarantee.
-			if (process.platform !== "win32" && this.pid) {
-				(this.options.signalGroupImpl ?? ((pid, sig) => process.kill(-pid, sig)))(this.pid, signal);
-			} else this.proc?.kill(signal);
-		} catch { /* group/process may already be gone */ }
-	}
+	/** Transport hook: the process closed; its pipes and control channel are already done. */
 	private close(code: number | null, signal: string | null): void {
-		if (this.closed) return;
-		this.closed = true; this.processAlive = false; this.exitCode = code; this.signal = signal;
-		clearTimeout(this.pipeDrainTimer); this.pipeDrainTimer = undefined;
-		this.cancelPermissions(); this.buffer = ""; this.cleanupPrivateDir();
+		this.processAlive = false; this.exitCode = code; this.signal = signal;
+		this.cancelPermissions(); this.privateFiles.cleanup();
 		// Acknowledged work that never ran is not a clean exit, even with code 0.
 		const undelivered = this.stopping ? 0 : this.dropQueue("because Claude exited before delivering them", "error");
 		const redirectPending = this.redirecting && !this.stopping;
-		for (const entry of this.controls.values()) { clearTimeout(entry.timer); entry.resolve(undefined); }
-		this.controls.clear();
-		for (const timer of this.timers) clearTimeout(timer);
-		this.timers.clear();
 		const unexpectedActive = !!this.active || this.initialOwed || redirectPending || undelivered > 0;
 		if (this.status !== "error") {
 			this.status = this.stopping ? "killed" : code === 0 && !unexpectedActive ? "done" : "error";
@@ -890,7 +652,7 @@ export class ClaudeRunner implements Worker {
 		else if (this.initialOwed) {
 			this.initialOwed = false; this.taskOutcome = this.stopping && this.status !== "error" ? "aborted" : "error";
 			}
-		this.endedAt = Date.now(); this.notifySettled(); this.touch(); this.handlers.onExit(this); this.closedState.resolve();
+		this.endedAt = Date.now(); this.notifySettled(); this.touch(); this.handlers.onExit(this);
 	}
 	isFinished(): boolean { return this.closed; }
 	/** Teardown in flight or process exited, not yet closed; see Worker.isStopping. */

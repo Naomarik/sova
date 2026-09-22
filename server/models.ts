@@ -5,6 +5,7 @@ import type { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import type { ContextInfo, ModelInfo } from "../shared/protocol";
 import { getModelRuntime } from "./chat-manager";
 import type { BranchContext } from "./transcript";
+import { claudeCodeProviderEnabled } from "./web-settings";
 
 /** pi's cached remote catalogs (READ-ONLY): {[provider]: {models: [{id, contextWindow}]}}. */
 const MODELS_STORE_FILE = join(getAgentDir(), "models-store.json");
@@ -100,9 +101,29 @@ export async function listModels(): Promise<ModelInfo[]> {
   const favorites = readFavorites();
   const runtime = await getModelRuntime();
   const models = await runtime.getAvailable();
-  // The window comes from the same cached resolver ContextInfo.window uses, so a model's window
-  // reads identically whether it is asked about here or through a session's gauge.
-  return models.map((m) => toModelInfo(m, favorites, contextWindow(`${m.provider}/${m.id}`, runtime)));
+  const offerClaudeCode = claudeCodeProviderEnabled();
+  return models
+    // The experimental switch decides what pi-web OFFERS. The claude-code extension registers its
+    // provider into the ModelRuntime, which this server shares across every session, and an
+    // extension instance only unregisters what it registered itself — so a session opened while
+    // the switch was on leaves the provider in the shared runtime until the server restarts.
+    // Filtering here is what makes turning the switch off take effect immediately, rather than
+    // leaving models in the picker that the user has just asked not to see.
+    .filter((m) => offerClaudeCode || m.provider !== CLAUDE_CODE_PROVIDER)
+    // The window comes from the same cached resolver ContextInfo.window uses, so a model's window
+    // reads identically whether it is asked about here or through a session's gauge.
+    .map((m) => toModelInfo(m, favorites, contextWindow(`${m.provider}/${m.id}`, runtime)));
+}
+
+/** Provider id the claude-code extension registers under (provider/index.ts CLAUDE_PROVIDER_ID). */
+export const CLAUDE_CODE_PROVIDER = "claude-code-cli";
+
+/** How many Claude Code CLI models the shared runtime currently has (the Experimental tab's
+    status line). Counts what is registered, not what is offered, so it stays honest while the
+    switch is off and the registration is still in place. */
+export async function claudeCodeModelCount(): Promise<number> {
+  const models = await (await getModelRuntime()).getAvailable();
+  return models.filter((m) => m.provider === CLAUDE_CODE_PROVIDER).length;
 }
 
 /**

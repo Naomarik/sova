@@ -1,0 +1,384 @@
+{
+  "_": "Exact legacy spec/*.md bytes captured before migration. Current docs are built from HEAD bytes; modified/untracked worktree bytes build the legacy-working draft. Hashes are SHA-256 of the file bytes; blobs are Git object ids.",
+  "capturedAt": "2026-09-23T09:36:47.958Z",
+  "head": "c4d7993604f488f4204b45def773ccdae6ee8faf",
+  "gitStatus": [
+    " M spec/03-transcript.md",
+    " M spec/04-composer.md",
+    " M spec/09-copy-deck.md",
+    " M spec/overview.md",
+    "?? spec/04i-playbooks.md",
+    "?? spec/brainstorms/spec-system/astra-judge/repair-synthesis.md",
+    "?? spec/brainstorms/spec-system/astra/repair.md",
+    "?? spec/brainstorms/spec-system/fable/repair.md",
+    "?? spec/brainstorms/spec-system/glm-5.3/repair.md",
+    "?? spec/brainstorms/spec-system/kimi-k3/repair.md",
+    "?? spec/brainstorms/spec-system/migration-implementation-brief.md",
+    "?? spec/brainstorms/spec-system/opus-5.5/repair.md",
+    "?? spec/brainstorms/spec-system/repair-brief.md"
+  ],
+  "excluded": "spec/brainstorms/** (research, not product documentation)",
+  "files": [
+    {
+      "path": "spec/00-ground-rules.md",
+      "id": "§design/ground-rules",
+      "kind": "note",
+      "headBlob": "ce90b63abbf3e065a41109ace7c6084521efdb53",
+      "headSha256": "a1fbf0887553e5f84912e655f60a076d758e0c290b79ae36c703cd7d4f6eaadc",
+      "headBytes": 14338,
+      "worktreeSha256": "a1fbf0887553e5f84912e655f60a076d758e0c290b79ae36c703cd7d4f6eaadc",
+      "worktreeBytes": 14338,
+      "worktreeBlob": "ce90b63abbf3e065a41109ace7c6084521efdb53",
+      "state": "clean",
+      "retained": {
+        "head": "migration/legacy/head/spec/00-ground-rules.md"
+      }
+    },
+    {
+      "path": "spec/01-app-shell.md",
+      "id": "§app/shell",
+      "kind": "surface",
+      "headBlob": "efc781e5feaa101d308a1fe0e31cefe1f532f45a",
+      "headSha256": "006cf341beb1b68e066f03cafdb7bc25589ef7291368331a8db89d0e7846af02",
+      "headBytes": 15992,
+      "worktreeSha256": "006cf341beb1b68e066f03cafdb7bc25589ef7291368331a8db89d0e7846af02",
+      "worktreeBytes": 15992,
+      "worktreeBlob": "efc781e5feaa101d308a1fe0e31cefe1f532f45a",
+      "state": "clean",
+      "retained": {
+        "head": "migration/legacy/head/spec/01-app-shell.md"
+      }
+    },
+    {
+      "path": "spec/02-session-list.md",
+      "id": "§app/session-list",
+      "kind": "surface",
+      "headBlob": "bc43e9555d40a380593b9d4c09dbebe4239a8ef1",
+      "headSha256": "f6bc33ecdf94c97bef54303cf68e4c4b6a9bc042af7d9b4cbaed8670a1e8681c",
+      "headBytes": 77762,
+      "worktreeSha256": "f6bc33ecdf94c97bef54303cf68e4c4b6a9bc042af7d9b4cbaed8670a1e8681c",
+      "worktreeBytes": 77762,
+      "worktreeBlob": "bc43e9555d40a380593b9d4c09dbebe4239a8ef1",
+      "state": "clean",
+      "retained": {
+        "head": "migration/legacy/head/spec/02-session-list.md"
+      }
+    },
+    {
+      "path": "spec/03-transcript.md",
+      "id": "§chat/transcript",
+      "kind": "surface",
+      "headBlob": "9c6f2da6686a59bfbed6ccaca06e93a70c637a5d",
+      "headSha256": "dcd75eddded12bb9f0cf41a00cc959e66210b43422fd4ce7c4ec343ffb2d78a8",
+      "headBytes": 41042,
+      "worktreeSha256": "8c935500c78d7ff50ce7b373f58c701b8ef4f4adb1c8d54ada2a3f365dc5abb0",
+      "worktreeBytes": 42628,
+      "worktreeBlob": "a1590c2557f0bd35b0c4939e487e7f60b7c396d6",
+      "state": "modified",
+      "retained": {
+        "head": "migration/legacy/head/spec/03-transcript.md",
+        "worktree": "migration/legacy/worktree/spec/03-transcript.md"
+      }
+    },
+    {
+      "path": "spec/04-composer.md",
+      "id": "§chat/composer",
+      "kind": "surface",
+      "headBlob": "e96bda4c93cd622087ced74183080d23c98f5c42",
+      "headSha256": "8b9421eac1e952acb124abf72724c635b3ddbcb89edb2615b20625cfbe282b65",
+      "headBytes": 18370,
+      "worktreeSha256": "8490a83554d8f824b2b56a58ad4df1b71d6014740ae5da5ee3f158f3b47b0fa0",
+      "worktreeBytes": 19689,
+      "worktreeBlob": "6adb8486a661e739ec9f8a0a26d908dbc7f62f18",
+      "state": "modified",
+      "retained": {
+        "head": "migration/legacy/head/spec/04-composer.md",
+        "worktree": "migration/legacy/worktree/spec/04-composer.md"
+      }
+    },
+    {
+      "path": "spec/04b-images.md",
+      "id": "§chat/images",
+      "kind": "surface",
+      "headBlob": "b13f46934d17c73fdd10ebe5b790c48084e7646c",
+      "headSha256": "1adb4ae172593b89d6060216ab417335961e69e1ea8413292878e78bfb00c0a3",
+      "headBytes": 23326,
+      "worktreeSha256": "1adb4ae172593b89d6060216ab417335961e69e1ea8413292878e78bfb00c0a3",
+      "worktreeBytes": 23326,
+      "worktreeBlob": "b13f46934d17c73fdd10ebe5b790c48084e7646c",
+      "state": "clean",
+      "retained": {
+        "head": "migration/legacy/head/spec/04b-images.md"
+      }
+    },
+    {
+      "path": "spec/04c-model-menu.md",
+      "id": "§chat/model-menu",
+      "kind": "surface",
+      "headBlob": "93b0174cf3bd7670ffc6c70c3521d40cc29a8546",
+      "headSha256": "0a662f0647f562e4497c5601a1ddecfc4fc7c3cce8b1d5f90bbd2dc680a2d484",
+      "headBytes": 13169,
+      "worktreeSha256": "0a662f0647f562e4497c5601a1ddecfc4fc7c3cce8b1d5f90bbd2dc680a2d484",
+      "worktreeBytes": 13169,
+      "worktreeBlob": "93b0174cf3bd7670ffc6c70c3521d40cc29a8546",
+      "state": "clean",
+      "retained": {
+        "head": "migration/legacy/head/spec/04c-model-menu.md"
+      }
+    },
+    {
+      "path": "spec/04d-slash-commands.md",
+      "id": "§chat/slash-commands",
+      "kind": "surface",
+      "headBlob": "789f99252aedc3a23255691dc4d67d68eb684fc9",
+      "headSha256": "0b0e21edfd9397da3493c1359b6924dda658b03b652fa01f05233c0bafec4ae0",
+      "headBytes": 14040,
+      "worktreeSha256": "0b0e21edfd9397da3493c1359b6924dda658b03b652fa01f05233c0bafec4ae0",
+      "worktreeBytes": 14040,
+      "worktreeBlob": "789f99252aedc3a23255691dc4d67d68eb684fc9",
+      "state": "clean",
+      "retained": {
+        "head": "migration/legacy/head/spec/04d-slash-commands.md"
+      }
+    },
+    {
+      "path": "spec/04e-markdown.md",
+      "id": "§chat/markdown",
+      "kind": "surface",
+      "headBlob": "c4faa56b092188b3bc2bd1990528476b15654810",
+      "headSha256": "3dd4bd157ad739ecddc3261a71d4b98cef82e1a154fe899d161728bee3d128d3",
+      "headBytes": 9835,
+      "worktreeSha256": "3dd4bd157ad739ecddc3261a71d4b98cef82e1a154fe899d161728bee3d128d3",
+      "worktreeBytes": 9835,
+      "worktreeBlob": "c4faa56b092188b3bc2bd1990528476b15654810",
+      "state": "clean",
+      "retained": {
+        "head": "migration/legacy/head/spec/04e-markdown.md"
+      }
+    },
+    {
+      "path": "spec/04f-context-window.md",
+      "id": "§chat/context-window",
+      "kind": "surface",
+      "headBlob": "20784512d682e104d3442f3c630c2a7ad6535b86",
+      "headSha256": "5780c3d7bd26166660fc238f552d24c2e167e57f7218c8a142912824b285a405",
+      "headBytes": 10631,
+      "worktreeSha256": "5780c3d7bd26166660fc238f552d24c2e167e57f7218c8a142912824b285a405",
+      "worktreeBytes": 10631,
+      "worktreeBlob": "20784512d682e104d3442f3c630c2a7ad6535b86",
+      "state": "clean",
+      "retained": {
+        "head": "migration/legacy/head/spec/04f-context-window.md"
+      }
+    },
+    {
+      "path": "spec/04g-mode-menu.md",
+      "id": "§chat/mode-menu",
+      "kind": "surface",
+      "headBlob": "6459a4b8e0caf1cefaa7ffaae4025226987f21a4",
+      "headSha256": "2be45f1014e8763365482d93dbd4bc1e886181ed902827e52e01cce9dcc9c73a",
+      "headBytes": 11048,
+      "worktreeSha256": "2be45f1014e8763365482d93dbd4bc1e886181ed902827e52e01cce9dcc9c73a",
+      "worktreeBytes": 11048,
+      "worktreeBlob": "6459a4b8e0caf1cefaa7ffaae4025226987f21a4",
+      "state": "clean",
+      "retained": {
+        "head": "migration/legacy/head/spec/04g-mode-menu.md"
+      }
+    },
+    {
+      "path": "spec/04i-playbooks.md",
+      "id": "§chat/playbooks",
+      "kind": "surface",
+      "worktreeSha256": "8cd682b19c1e6bdb962bcd7b6602f6642b31a809171165282ad22155085d7541",
+      "worktreeBytes": 16622,
+      "worktreeBlob": "839d452e5ae3bb11ee02cd80cff50a1f5da4f04d",
+      "state": "untracked",
+      "retained": {
+        "worktree": "migration/legacy/worktree/spec/04i-playbooks.md"
+      }
+    },
+    {
+      "path": "spec/05-new-session-dialog.md",
+      "id": "§app/new-session-dialog",
+      "kind": "surface",
+      "headBlob": "922ff344662c33e260b738f2b8a329007af97ec3",
+      "headSha256": "5a2c8ac625972aed2552e1bf26e3bb6d8cd192a1681324180a6bebfbc353d2ba",
+      "headBytes": 19772,
+      "worktreeSha256": "5a2c8ac625972aed2552e1bf26e3bb6d8cd192a1681324180a6bebfbc353d2ba",
+      "worktreeBytes": 19772,
+      "worktreeBlob": "922ff344662c33e260b738f2b8a329007af97ec3",
+      "state": "clean",
+      "retained": {
+        "head": "migration/legacy/head/spec/05-new-session-dialog.md"
+      }
+    },
+    {
+      "path": "spec/06-extension-dialogs.md",
+      "id": "§app/extension-dialogs",
+      "kind": "surface",
+      "headBlob": "0a4a97ce6e8d7c33c159492ff361372d9797044f",
+      "headSha256": "1a20fd2b8add0e49e9acac5c661a342ffbc57bba41e60d5849a08e8b27ca15fb",
+      "headBytes": 676,
+      "worktreeSha256": "1a20fd2b8add0e49e9acac5c661a342ffbc57bba41e60d5849a08e8b27ca15fb",
+      "worktreeBytes": 676,
+      "worktreeBlob": "0a4a97ce6e8d7c33c159492ff361372d9797044f",
+      "state": "clean",
+      "retained": {
+        "head": "migration/legacy/head/spec/06-extension-dialogs.md"
+      }
+    },
+    {
+      "path": "spec/07-deviations.md",
+      "id": "§design/deviations",
+      "kind": "note",
+      "headBlob": "759b39cb00b0e97f46d93101f442f9f489624ca9",
+      "headSha256": "b0fbc9427ae5b7d41730ab39a3ce1753a90dc60f5aaf8b88e56a2c2ea3e58ea3",
+      "headBytes": 10779,
+      "worktreeSha256": "b0fbc9427ae5b7d41730ab39a3ce1753a90dc60f5aaf8b88e56a2c2ea3e58ea3",
+      "worktreeBytes": 10779,
+      "worktreeBlob": "759b39cb00b0e97f46d93101f442f9f489624ca9",
+      "state": "clean",
+      "retained": {
+        "head": "migration/legacy/head/spec/07-deviations.md"
+      }
+    },
+    {
+      "path": "spec/08-token-index.md",
+      "id": "§design/token-index",
+      "kind": "note",
+      "headBlob": "c552ccefd6c35051f664c1144487a5dd79d1f86d",
+      "headSha256": "6d6b7448fd84d856bbbe6fc4d84989ee053100bfb2e79ea172171c7ca640da55",
+      "headBytes": 4222,
+      "worktreeSha256": "6d6b7448fd84d856bbbe6fc4d84989ee053100bfb2e79ea172171c7ca640da55",
+      "worktreeBytes": 4222,
+      "worktreeBlob": "c552ccefd6c35051f664c1144487a5dd79d1f86d",
+      "state": "clean",
+      "retained": {
+        "head": "migration/legacy/head/spec/08-token-index.md"
+      }
+    },
+    {
+      "path": "spec/09-copy-deck.md",
+      "id": "§design/copy-deck",
+      "kind": "note",
+      "headBlob": "2e92fd61eafcdf870af14b29f5bcb4c308a5d43e",
+      "headSha256": "819bfaee661b64fb7b2ea07f4b4fe12705a1d499c30a51135179dfe052f7f249",
+      "headBytes": 61896,
+      "worktreeSha256": "a66a34448793d82702ed600c234109d005a645ef254cb5fb9bf22e97d5b14d30",
+      "worktreeBytes": 65556,
+      "worktreeBlob": "1337a72170504349f1c1d1efe6aaac126c02ad3d",
+      "state": "modified",
+      "retained": {
+        "head": "migration/legacy/head/spec/09-copy-deck.md",
+        "worktree": "migration/legacy/worktree/spec/09-copy-deck.md"
+      }
+    },
+    {
+      "path": "spec/10-insights.md",
+      "id": "§app/insights",
+      "kind": "surface",
+      "headBlob": "08f3b7428d10dbdd4d9f4a900da532da38c67236",
+      "headSha256": "3788945f331383ccac06c32757c39d82df5a1ef7048a07bc0e1b2d42ca34a1a2",
+      "headBytes": 32189,
+      "worktreeSha256": "3788945f331383ccac06c32757c39d82df5a1ef7048a07bc0e1b2d42ca34a1a2",
+      "worktreeBytes": 32189,
+      "worktreeBlob": "08f3b7428d10dbdd4d9f4a900da532da38c67236",
+      "state": "clean",
+      "retained": {
+        "head": "migration/legacy/head/spec/10-insights.md"
+      }
+    },
+    {
+      "path": "spec/11-subagents-pane.md",
+      "id": "§app/subagents-pane",
+      "kind": "surface",
+      "headBlob": "de53648282ca90b3913f646f1dfa7eeb4b200b9b",
+      "headSha256": "7c5be7885fc3bfba8230f587a5cdca799906d9ae192fbdf747050b43d582b1e2",
+      "headBytes": 25759,
+      "worktreeSha256": "7c5be7885fc3bfba8230f587a5cdca799906d9ae192fbdf747050b43d582b1e2",
+      "worktreeBytes": 25759,
+      "worktreeBlob": "de53648282ca90b3913f646f1dfa7eeb4b200b9b",
+      "state": "clean",
+      "retained": {
+        "head": "migration/legacy/head/spec/11-subagents-pane.md"
+      }
+    },
+    {
+      "path": "spec/12-settings-dialog.md",
+      "id": "§app/settings-dialog",
+      "kind": "surface",
+      "headBlob": "3428bcee38d288a2c39f1f657b25230806ec6e55",
+      "headSha256": "22df74cb5bf543107ea85f167150f10962e87b1a4660fc269a7125921792832b",
+      "headBytes": 19019,
+      "worktreeSha256": "22df74cb5bf543107ea85f167150f10962e87b1a4660fc269a7125921792832b",
+      "worktreeBytes": 19019,
+      "worktreeBlob": "3428bcee38d288a2c39f1f657b25230806ec6e55",
+      "state": "clean",
+      "retained": {
+        "head": "migration/legacy/head/spec/12-settings-dialog.md"
+      }
+    },
+    {
+      "path": "spec/13-timeline.md",
+      "id": "§chat/timeline",
+      "kind": "surface",
+      "headBlob": "c9b4549d0c8f14f5671f69826386329b539d1c68",
+      "headSha256": "f2ae68b6a4ddc46bf94bb6abacf2214d8282b3379019d844529be50b42f3fb16",
+      "headBytes": 37093,
+      "worktreeSha256": "f2ae68b6a4ddc46bf94bb6abacf2214d8282b3379019d844529be50b42f3fb16",
+      "worktreeBytes": 37093,
+      "worktreeBlob": "c9b4549d0c8f14f5671f69826386329b539d1c68",
+      "state": "clean",
+      "retained": {
+        "head": "migration/legacy/head/spec/13-timeline.md"
+      }
+    },
+    {
+      "path": "spec/14-workspaces.md",
+      "id": "§workspace/groups",
+      "kind": "surface",
+      "headBlob": "8bd1d67a48627ccb65d1e24e0423c62548a48dc2",
+      "headSha256": "a32889fb27beb4a60932576ef8ec79517643084bd7c8d58b1c4106dcf6d8ffe9",
+      "headBytes": 68736,
+      "worktreeSha256": "a32889fb27beb4a60932576ef8ec79517643084bd7c8d58b1c4106dcf6d8ffe9",
+      "worktreeBytes": 68736,
+      "worktreeBlob": "8bd1d67a48627ccb65d1e24e0423c62548a48dc2",
+      "state": "clean",
+      "retained": {
+        "head": "migration/legacy/head/spec/14-workspaces.md"
+      }
+    },
+    {
+      "path": "spec/14b-fanout.md",
+      "id": "§workspace/fanout",
+      "kind": "surface",
+      "headBlob": "486ec8fc70b4093eeb19c395f008325b1abcf9a5",
+      "headSha256": "8555200eb375ff0b8611e30284348cad5c1dbb7d17ab63c7b64240c1756f3cc3",
+      "headBytes": 54567,
+      "worktreeSha256": "8555200eb375ff0b8611e30284348cad5c1dbb7d17ab63c7b64240c1756f3cc3",
+      "worktreeBytes": 54567,
+      "worktreeBlob": "486ec8fc70b4093eeb19c395f008325b1abcf9a5",
+      "state": "clean",
+      "retained": {
+        "head": "migration/legacy/head/spec/14b-fanout.md"
+      }
+    },
+    {
+      "path": "spec/overview.md",
+      "id": "§design/overview",
+      "kind": "note",
+      "headBlob": "4dffd2659b26741873922b5b297aa2e89cb473ab",
+      "headSha256": "9eb1311b52d68a0dba269598dce462d37db65207ecaabffd2827642169658fae",
+      "headBytes": 17078,
+      "worktreeSha256": "a6a2478e60122822c1625a9736d01b026ebb04edda2ba5231e9239c97c531329",
+      "worktreeBytes": 17267,
+      "worktreeBlob": "7d8941abc2536515b967dc1d68a0841f241cabae",
+      "state": "modified",
+      "retained": {
+        "head": "migration/legacy/head/spec/overview.md",
+        "worktree": "migration/legacy/worktree/spec/overview.md"
+      }
+    }
+  ]
+}

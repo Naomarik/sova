@@ -1,0 +1,999 @@
+{
+  "formatVersion": 1,
+  "_": "Sova's product documentation, migrated from the legacy spec/*.md at c4d7993604f4. Migration moved requirement authority, not proof of implementation: a migrated record is authority 'migrated', evidence 'unreviewed'. A behavior without `requires` has uninvestigated dependencies; cross-document links and legacy §N citations in the prose are ordinary references, not dependencies. Legacy paths, headings and §N resolve through migration/legacy-map.json.",
+  "grammar": {
+    "claimsRoot": "claims/",
+    "directoryKinds": [
+      "section"
+    ]
+  },
+  "claims": {
+    "§app.insights/aggregate-chips-live-vs-working": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§app.insights/compaction-row": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§app.insights/insight-strip": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§app.insights/placement": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§app.insights/sidebar-foot": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§app.insights/subagent-cards": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§app.insights/team-cards": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§app.insights/tokens-motion-and-accessibility": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§app.insights/usage-cards": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§app.insights/usage-page-and-agents-page": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§app.session-list/accessibility": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§app.session-list/anatomy": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§app.session-list/archive-by-date": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§app.session-list/archive-cleanup": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§app.session-list/content-rules": {
+      "kind": "behavior",
+      "requires": [
+        "§app.shell/remote-session-chips",
+        "§chat.composer/behavior",
+        "§chat.context-window/sidebar-ring"
+      ],
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§app.session-list/groups": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§app.session-list/recent": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§app.session-list/regions-top-and-archive": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§app.session-list/search": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§app.session-list/selecting-several-sessions": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§app.session-list/states": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§app.session-list/tokens": {
+      "kind": "note",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§app.settings-dialog/general": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§app.settings-dialog/models": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§app.settings-dialog/modes": {
+      "kind": "behavior",
+      "requires": [
+        "§app.settings-dialog/models"
+      ],
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§app.settings-dialog/one-height": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§app.settings-dialog/themes": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§app.shell/remote-session-chips": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§app.shell/resizing-the-sessions-pane": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§app.shell/the-open-failure-banner": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§app.subagents-pane/accessibility": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§app.subagents-pane/body-list-transcript": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§app.subagents-pane/claude-code-workers": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§app.subagents-pane/head": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§app.subagents-pane/motion": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§app.subagents-pane/narrow-viewports": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§app.subagents-pane/rejected": {
+      "kind": "note",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§app.subagents-pane/shell-a-third-column": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§app.subagents-pane/tokens": {
+      "kind": "note",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§app.subagents-pane/transcript-view": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§app.subagents-pane/trigger": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§app.subagents-pane/worker-rows": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§app/extension-dialogs": {
+      "kind": "surface",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§app/insights": {
+      "kind": "surface",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§app/new-session-dialog": {
+      "kind": "surface",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§app/session-list": {
+      "kind": "surface",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§app/settings-dialog": {
+      "kind": "surface",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§app/shell": {
+      "kind": "surface",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§app/subagents-pane": {
+      "kind": "surface",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§chat.composer/accessibility": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§chat.composer/anatomy": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§chat.composer/behavior": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.images/composer-attachments"
+      ],
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§chat.composer/composer-flyout": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§chat.composer/disabled-states": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§chat.composer/tokens": {
+      "kind": "note",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§chat.context-window/exact-numbers": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§chat.context-window/format": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§chat.context-window/honesty": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§chat.context-window/markup": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§chat.context-window/plain-text-not-a-meter": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§chat.context-window/sidebar-ring": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§chat.context-window/states": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§chat.context-window/steps-toward-the-limit": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§chat.context-window/tokens": {
+      "kind": "note",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§chat.context-window/width-budget": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§chat.images/composer-attachments": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.composer/behavior",
+        "§chat.composer/composer-flyout",
+        "§chat.images/lightbox",
+        "§design.copy-deck/images"
+      ],
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§chat.images/lightbox": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§chat.images/path-attachments": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§chat.images/thread-thumbnails": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§chat.markdown/accessibility": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§chat.markdown/code-blocks": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§chat.markdown/element-styling": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§chat.markdown/highlight-theme": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§chat.markdown/images-in-markdown": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§chat.markdown/streaming": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§chat.mode-menu/how-a-switch-reaches-the-chat": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§chat.mode-menu/menu": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§chat.mode-menu/rejected": {
+      "kind": "note",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§chat.mode-menu/states": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§chat.mode-menu/tokens": {
+      "kind": "note",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§chat.mode-menu/trigger": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§chat.model-menu/content-and-order": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§chat.model-menu/contrast": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§chat.model-menu/errors": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§chat.model-menu/keyboard": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§chat.model-menu/menu": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.composer/composer-flyout"
+      ],
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§chat.model-menu/states": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§chat.model-menu/tokens": {
+      "kind": "note",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§chat.model-menu/trigger": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§chat.slash-commands/announcements": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§chat.slash-commands/commands-row": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§chat.slash-commands/commands-that-need-the-terminal-ui": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§chat.slash-commands/contrast": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§chat.slash-commands/filtering-and-order": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§chat.slash-commands/in-the-thread": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§chat.slash-commands/keyboard-and-mouse": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§chat.slash-commands/markup": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§chat.slash-commands/tokens": {
+      "kind": "note",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§chat.slash-commands/when-the-menu-opens": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§chat.timeline/accessibility": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§chat.timeline/class-table": {
+      "kind": "note",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§chat.timeline/inputs-only": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§chat.timeline/jumping": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§chat.timeline/no-virtualization": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§chat.timeline/opening-it": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§chat.timeline/rejected": {
+      "kind": "note",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§chat.timeline/rewind": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.transcript/message-actions"
+      ],
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§chat.timeline/rows": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§chat.timeline/watch-mode": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§chat.transcript/a-queued-message": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§chat.transcript/accessibility": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§chat.transcript/anatomy": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§chat.transcript/landing-page": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§chat.transcript/live-watch": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§chat.transcript/message-actions": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§chat.transcript/open-questions": {
+      "kind": "note",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§chat.transcript/states": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§chat.transcript/streaming": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§chat.transcript/tokens": {
+      "kind": "note",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§chat.transcript/transcript-items": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§chat/composer": {
+      "kind": "surface",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§chat/context-window": {
+      "kind": "surface",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§chat/images": {
+      "kind": "surface",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§chat/markdown": {
+      "kind": "surface",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§chat/mode-menu": {
+      "kind": "surface",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§chat/model-menu": {
+      "kind": "surface",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§chat/slash-commands": {
+      "kind": "surface",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§chat/timeline": {
+      "kind": "surface",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§chat/transcript": {
+      "kind": "surface",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§design.copy-deck/composer": {
+      "kind": "note",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§design.copy-deck/composer-flyout": {
+      "kind": "note",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§design.copy-deck/connection": {
+      "kind": "note",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§design.copy-deck/context-window": {
+      "kind": "note",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§design.copy-deck/fanout": {
+      "kind": "note",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§design.copy-deck/images": {
+      "kind": "note",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§design.copy-deck/insights": {
+      "kind": "note",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§design.copy-deck/live-watch": {
+      "kind": "note",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§design.copy-deck/main-pane": {
+      "kind": "note",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§design.copy-deck/markdown-and-code": {
+      "kind": "note",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§design.copy-deck/message-actions": {
+      "kind": "note",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§design.copy-deck/mode-menu": {
+      "kind": "note",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§design.copy-deck/model-menu": {
+      "kind": "note",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§design.copy-deck/new-session-dialog": {
+      "kind": "note",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§design.copy-deck/settings-modes-delegate": {
+      "kind": "note",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§design.copy-deck/settings-themes": {
+      "kind": "note",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§design.copy-deck/sidebar": {
+      "kind": "note",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§design.copy-deck/slash-commands": {
+      "kind": "note",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§design.copy-deck/subagents-pane": {
+      "kind": "note",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§design.copy-deck/timeline-tab": {
+      "kind": "note",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§design.copy-deck/workspace": {
+      "kind": "note",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§design.ground-rules/color-budget": {
+      "kind": "note",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§design.ground-rules/icons": {
+      "kind": "note",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§design.ground-rules/motion": {
+      "kind": "note",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§design.ground-rules/theme": {
+      "kind": "note",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§design.ground-rules/voice": {
+      "kind": "note",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§design.overview/class-index": {
+      "kind": "note",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§design.overview/file-map": {
+      "kind": "note",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§design/copy-deck": {
+      "kind": "note",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§design/deviations": {
+      "kind": "note",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§design/ground-rules": {
+      "kind": "note",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§design/overview": {
+      "kind": "note",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§design/token-index": {
+      "kind": "note",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§workspace.fanout/classes": {
+      "kind": "note",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§workspace.fanout/cost-preview": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§workspace.fanout/entry-points": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§workspace.fanout/states": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§workspace.fanout/the-dialog": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§workspace.fanout/the-fork-point-in-a-transcript": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§workspace.fanout/the-route": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§workspace.fanout/tokens": {
+      "kind": "note",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§workspace.fanout/two-sources": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§workspace.fanout/what-creation-does": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§workspace.groups/a-pane": {
+      "kind": "behavior",
+      "requires": [
+        "§chat/composer",
+        "§chat/mode-menu",
+        "§chat/model-menu",
+        "§chat/transcript"
+      ],
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§workspace.groups/accessibility": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§workspace.groups/announcements": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§workspace.groups/classes": {
+      "kind": "note",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§workspace.groups/data": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§workspace.groups/decisions": {
+      "kind": "note",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§workspace.groups/group-lifecycle": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§workspace.groups/keyboard": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§workspace.groups/layout-split": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§workspace.groups/layout-tabs": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§workspace.groups/member-states": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§workspace.groups/rejected": {
+      "kind": "note",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§workspace.groups/routes": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§workspace.groups/shell": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§workspace.groups/the-group-composer": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.composer/anatomy",
+        "§chat.composer/behavior",
+        "§design.copy-deck/workspace",
+        "§design.ground-rules/color-budget",
+        "§design.ground-rules/voice",
+        "§workspace.groups/member-states"
+      ],
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§workspace.groups/tokens": {
+      "kind": "note",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§workspace/fanout": {
+      "kind": "surface",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§workspace/groups": {
+      "kind": "surface",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    }
+  }
+}

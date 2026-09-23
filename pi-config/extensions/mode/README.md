@@ -53,6 +53,7 @@ edit" is a prompt-level rule the orchestrator checks.
 | `/mode default` | Save this session's mode, strict flag and minor modes as the default for new sessions (the only command here that writes `mode.json`) |
 | `/mode strict on\|off` | Also remove `edit`/`write` from the orchestrator while in delegate (off by default) |
 | `/mode align [on\|off]` | Toggle (or set) the `align` minor mode |
+| `/mode spec [on\|off]` | Toggle (or set) the `spec` minor mode |
 | `/align`, or `alt+a` | Open the read-only alignment-doc viewer (see below) |
 | `/align status` · `/align clear` · `/align export [path]` · `/align on\|off` | Summarize, clear, write the doc to a file (default `.pi/align.md`), or toggle align |
 | `pi --major delegate` | Start that launch in a mode (not persisted; `--major claude-heavy` still works) |
@@ -105,7 +106,9 @@ full post-switch snapshot, which is what makes the state per session (see
 
 Minor modes are extra instructions toggled independently of the major mode:
 zero or more can be active at once, in normal or delegate. Their blocks
-are appended after the delegate block (when in delegate) in registry order.
+are appended after the delegate block (when in delegate) in registry order
+(`align`, then `spec`). Only `align` adds a bridge sentence to the delegate
+block; `spec` composes with either major mode and with `align` unchanged.
 
 - **align** — before building anything non-trivial, the agent investigates
   (in delegate, through a non-editing **Planning & specs** worker — never the
@@ -114,6 +117,19 @@ are appended after the delegate block (when in delegate) in registry order.
   architecture, UX, scope and trade-offs, then stops and waits for
   confirmation. Questions, explicit commands, pointed-at one-liners and
   confirmations are exempt. Text in `minor.ts`.
+- **spec** — for work that changes behavior, the agent scopes it from the
+  project's `.sova/spec/` documentation, and changes that documentation only
+  through drafts, promoted once implemented and verified. The discipline itself
+  is [`spec-mode.md`](spec-mode.md), and nowhere else. `minor.ts` reads it at
+  load: the injected block is that file byte for byte, minus trailing
+  whitespace, and its one `sh` block is the shell prefix `minor.ts` exports as
+  `SPEC_CORE_SHELL`. A missing, repeated or multi-line block fails the load. A
+  project may point its agents at the same file without the mode; Sova's
+  `CLAUDE.md` does. The tools it runs without asking are the three linked into
+  the agent directory (`<agent dir>/extensions/spec/core/`, resolved like pi's
+  own agent dir: an exact `~` or a leading `~/` is home). A copy inside the
+  project is read and asked about first. Prompt-only: no widget, command or
+  entry of its own. See `../spec/README.md`.
 
 Like the major mode, the prompt is read per turn, so toggles apply from the
 next prompt. Unknown names hand-edited into `minorModes` are dropped on load.

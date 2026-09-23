@@ -51,7 +51,8 @@ plans. Don't run the installer against your real home merely to validate its doc
 | `themes/` | Built-in JSON themes |
 | `pi-config/` | Optional pi configuration and extensions |
 | `scripts/install.sh` | Published-release installer |
-| `spec/` | UX contracts; verify implementation before claiming a feature |
+| `.sova/spec/` | Product documentation, migrated from `spec/`; verify implementation before claiming a feature. Propose changes in a draft ([USAGE](.sova/spec/USAGE.md)) |
+| `spec/` | Redirects from the old paths, and research in `spec/brainstorms/`; not requirements |
 
 Use strict TypeScript and ESM; ask before adding dependencies. Read [CLAUDE.md](CLAUDE.md) for
 architecture, ownership, and session-write safety before changing backend code. Treat live TUI

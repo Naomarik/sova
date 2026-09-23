@@ -442,6 +442,122 @@ i.icon {
 .empty-action{ margin-top: var(--space-3); }
 
 
+/* The setup card under a new session's title (spec/03 §3): what pi loads, what it offers, the
+   repository. A contained surface in the centred column, read left-aligned; names lead, figures
+   trail in mono tabular muted, so the eye scans names first. */
+.setup-card {
+  width: 100%;
+  max-width: 560px;
+  margin: var(--space-3) 0 var(--space-1);
+  text-align: left;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--r-lg);
+  /* Its own query container, so the fold below asks the card, not the pane: the card stops at
+     560px, so a pane query would miss every pane between the fold and that cap. Its width is
+     already set from outside (100%, capped), never from contents, so this changes no layout. */
+  container-type: inline-size;
+}
+.setup-group { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-4) var(--space-5); }
+.setup-group + .setup-group { border-top: 1px solid var(--color-border); }
+/* h2 for the outline (the pane's head is the h1); the line-height is pinned because .text-eyebrow
+   doesn't set one, so the heading level would otherwise decide it. Value as first reviewed (h3's). */
+.setup-label { margin: 0; line-height: var(--lh-heading-s); }
+.setup-note  { margin: 0; font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); }
+/* The aggregate line that opens the card, and the total each section carries beside its label.
+   Both are the same shape — a label leading, its figures trailing in mono tabular — and both stop
+   at the card's right edge, the one the rows' facts stop at, so every figure reads as one column.
+   The aggregate group has no heading: it is a line, not a section. */
+.setup-sum {
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.setup-sum-label { font-size: var(--fs-body); line-height: var(--lh-body); font-weight: var(--fw-medium); color: var(--color-ink); }
+.setup-sum-facts {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-ink-2);
+  white-space: nowrap;
+}
+.setup-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.setup-total {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-ink-muted);
+  white-space: nowrap;
+}
+.setup-list  { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-1); }
+.setup-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  min-width: 0;
+}
+.setup-name  { flex: 1 1 auto; min-width: 0; display: flex; align-items: baseline; gap: var(--space-2); }
+.setup-path {
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono);
+  color: var(--color-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.setup-role  { flex: none; font-size: var(--fs-caption); color: var(--color-ink-muted); }
+.setup-facts {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-ink-muted);
+  white-space: nowrap;
+}
+.setup-git {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: var(--space-2);
+  row-gap: var(--space-1);
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+  color: var(--color-ink-2);
+  font-variant-numeric: tabular-nums;
+}
+.setup-git .icon   { color: var(--color-ink-muted); }
+.setup-git-head    { font-family: var(--font-mono); font-size: var(--fs-mono); font-weight: var(--fw-medium); color: var(--color-ink); overflow-wrap: anywhere; }
+.setup-sep         { color: var(--color-ink-muted); }
+.setup-num         { font-family: var(--font-mono); font-size: var(--fs-mono); white-space: nowrap; margin-left: var(--space-1); }
+.setup-add         { color: var(--diff-add-ink); }
+.setup-del         { color: var(--diff-del-ink); }
+.setup-commit      { flex-wrap: nowrap; }
+.setup-oid         { flex: none; font-family: var(--font-mono); font-size: var(--fs-mono); color: var(--color-ink-muted); }
+.setup-subject     { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-ink); }
+.setup-ago         { flex: none; color: var(--color-ink-muted); white-space: nowrap; }
+/* A narrow card (its own container, above): every row puts its figures on their own line under
+   the name, rather than squeezing the name to an ellipsis — all rows alike, so the list stays even.
+   The query reads the card's CONTENT box: 417.98px here is a card under 420px across its 1px borders. */
+@container (max-width: 417.98px) {
+  .setup-row { flex-direction: column; align-items: stretch; gap: 0; }
+  /* The totals fold with the rows: figures on their own line, left-aligned like a row's, so a
+     folded card has no right-aligned column of numbers whose rows never reach it. */
+  .setup-sum, .setup-head { flex-direction: column; align-items: stretch; gap: 0; }
+  .setup-group { padding: var(--space-3) var(--space-4); }
+}
+
+
 /* ---- SKELETON. Shaped like what lands; show only after ~300ms. ----------- */
 
 .skeleton {

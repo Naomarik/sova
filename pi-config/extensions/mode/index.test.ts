@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import test from "node:test";
-import { buildMinorPrompt, isMinorMode, MINOR_DESCRIPTIONS, MINOR_MODES, normalizeMinorModes, parseMinorFlag } from "./minor.ts";
+import { buildMinorPrompt, isMinorMode, MINOR_DESCRIPTIONS, MINOR_MODES, type MinorMode, normalizeMinorModes, parseMinorFlag, SPEC_CORE_SHELL } from "./minor.ts";
 import { MODE_CATEGORY_ID, modeCategoryItems } from "./palette.ts";
 import { delegateDefaults, type DelegateSettings } from "./delegate.ts";
 import {
@@ -243,6 +245,149 @@ test("composePrompt joins the delegate block and minor blocks", () => {
 	assert.match(align, /Status `confirmed`/);
 	assert.match(align, /Status `implementing`/);
 	assert.match(align, /go ahead while questions are still open/);
+});
+
+test("spec: a registered minor mode, composed after align and never bridged", () => {
+	assert.deepEqual(MINOR_MODES, ["align", "spec"], "registry order is prompt and status order");
+	assert.deepEqual(Object.keys(MINOR_DESCRIPTIONS), [...MINOR_MODES], "one description per minor mode, nothing else");
+	assert.deepEqual(parseMinorFlag("spec,align"), { minorModes: ["align", "spec"], unknown: [] });
+	const spec = buildMinorPrompt("spec");
+	const align = buildMinorPrompt("align");
+	assert.match(spec, /^# Minor mode: spec\n/);
+
+	const both = withMinor(withMinor(defaults(), "spec", true), "align", true);
+	assert.equal(composePrompt(both, ALL_OK), `${align}\n\n${spec}`, "each block verbatim, align first whatever the toggle order");
+	assert.equal(composePrompt(withMinor(defaults(), "spec", true), ALL_OK), spec);
+	// Only align bridges into delegate; spec rides after the delegate block unchanged.
+	assert.equal(composePrompt({ ...defaults(), mode: "delegate", minorModes: ["spec"] }, ALL_OK), `${buildDelegatePrompt(ALL_OK)}\n\n${spec}`);
+	assert.equal(
+		composePrompt({ ...defaults(), mode: "delegate", minorModes: ["align", "spec"] }, ALL_OK),
+		`${buildDelegatePrompt(ALL_OK)}\n\n${DELEGATE_ALIGN_BRIDGE}\n\n${align}\n\n${spec}`,
+	);
+	assert.doesNotMatch(spec, /\balign\b/, "spec composes with align without naming it");
+	assert.deepEqual(statusLabel("normal", ALL_OK, false, ["align", "spec"]), { text: "normal · align · spec", tone: "accent" });
+	// Off means absent; on means exactly once, alone or composed.
+	const heading = /^# Minor mode: spec$/gm;
+	for (const state of [defaults(), withMinor(defaults(), "align", true), { ...defaults(), mode: "delegate" as const }])
+		assert.equal((composePrompt(state, ALL_OK) ?? "").match(heading), null, "spec off: no block");
+	for (const state of [withMinor(defaults(), "spec", true), both, { ...defaults(), mode: "delegate" as const, minorModes: ["align", "spec"] as MinorMode[] }])
+		assert.equal((composePrompt(state, ALL_OK) ?? "").match(heading)?.length, 1, "spec on: one block");
+});
+
+test("spec: the prompt is spec-mode.md, byte for byte", () => {
+	const here = dirname(fileURLToPath(import.meta.url));
+	const canonical = readFileSync(join(here, "spec-mode.md"), "utf8");
+	assert.equal(buildMinorPrompt("spec"), canonical.trimEnd(), "the only normalization is trimEnd");
+	assert.ok(canonical.endsWith("\n") && !canonical.endsWith("\n\n"), "the file ends in exactly one newline");
+	// The shell prefix is the file's one ```sh block, and appears nowhere else.
+	assert.equal(canonical.match(/^```sh$/gm)?.length, 1);
+	assert.ok(canonical.includes(`\`\`\`sh\n${SPEC_CORE_SHELL}\n\`\`\``));
+	assert.equal(canonical.split(SPEC_CORE_SHELL).length, 2, "one occurrence");
+});
+
+test("spec: minor.ts reads its own spec-mode.md, from any cwd, and refuses a malformed one", () => {
+	const here = dirname(fileURLToPath(import.meta.url));
+	const canonical = readFileSync(join(here, "spec-mode.md"), "utf8");
+	// A standalone copy of just these two files, imported from an unrelated cwd.
+	const load = (md: string) => {
+		const dir = mkdtempSync(join(tmpdir(), "spec-mode-"));
+		try {
+			writeFileSync(join(dir, "minor.ts"), readFileSync(join(here, "minor.ts")));
+			writeFileSync(join(dir, "spec-mode.md"), md);
+			const src = `import(${JSON.stringify(pathToFileURL(join(dir, "minor.ts")).href)}).then((m) => process.stdout.write(JSON.stringify([m.buildMinorPrompt("spec"), m.SPEC_CORE_SHELL])))`;
+			return spawnSync(process.execPath, ["--input-type=module", "-e", src], { cwd: tmpdir(), encoding: "utf8" });
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	};
+	const ok = load(canonical);
+	assert.equal(ok.status, 0, ok.stderr);
+	assert.deepEqual(JSON.parse(ok.stdout), [canonical.trimEnd(), SPEC_CORE_SHELL]);
+	const edited = load(canonical.replace("Trusted tools:", "Edited tools:"));
+	assert.equal(edited.status, 0, edited.stderr);
+	assert.match(JSON.parse(edited.stdout)[0], /^Edited tools:/m, "the text comes from the file, not a copy");
+	const fence = `\`\`\`sh\n${SPEC_CORE_SHELL}\n\`\`\``;
+	for (const [what, md] of [
+		["no block", canonical.replace(fence, SPEC_CORE_SHELL)],
+		["two blocks", canonical.replace(fence, `${fence}\n\n${fence}`)],
+		["prefix repeated in prose", `${canonical}\n${SPEC_CORE_SHELL}\n`],
+	]) {
+		const bad = load(md);
+		assert.notEqual(bad.status, 0, `${what}: loading fails`);
+		assert.match(bad.stderr, /spec-mode\.md: /, `${what}: says why`);
+	}
+});
+
+test("spec: the shell prefix resolves the agent dir the way pi does", () => {
+	const resolve = (env: Record<string, string>) =>
+		spawnSync("bash", ["-c", `${SPEC_CORE_SHELL}; printf %s "$core"`], { encoding: "utf8", env: { PATH: process.env.PATH ?? "", HOME: "/h", ...env } }).stdout;
+	assert.equal(resolve({}), "/h/.pi/agent/extensions/spec/core");
+	assert.equal(resolve({ PI_CODING_AGENT_DIR: "" }), "/h/.pi/agent/extensions/spec/core", "empty is unset, as in getAgentDir");
+	assert.equal(resolve({ PI_CODING_AGENT_DIR: "/abs/agent" }), "/abs/agent/extensions/spec/core");
+	assert.equal(resolve({ PI_CODING_AGENT_DIR: "~/agent" }), "/h/agent/extensions/spec/core", "a leading ~ is home, as pi expands it");
+	assert.equal(resolve({ PI_CODING_AGENT_DIR: "~" }), "/h/extensions/spec/core");
+	assert.equal(resolve({ PI_CODING_AGENT_DIR: "/a/~b" }), "/a/~b/extensions/spec/core", "only a leading ~ expands");
+	assert.equal(resolve({ PI_CODING_AGENT_DIR: "~other/agent" }), "~other/agent/extensions/spec/core", "~user is not home: pi expands only ~ and ~/");
+	assert.equal(resolve({ PI_CODING_AGENT_DIR: "~other" }), "~other/extensions/spec/core");
+});
+
+test("spec: the prompt names the trusted tools, their real flags, and the draft workflow", () => {
+	const spec = buildMinorPrompt("spec");
+	assert.ok(spec.includes(`start each bash command with:\n\n\`\`\`sh\n${SPEC_CORE_SHELL}\n\`\`\``));
+	const here = dirname(fileURLToPath(import.meta.url));
+	const coreDir = join(here, "../spec/core");
+	// Every tool the prompt runs from $core ships in the linked directory, and so does the README it points to.
+	const named = [...spec.matchAll(/"\$core\/([\w.-]+\.mjs)"/g)].map((m) => m[1]);
+	assert.deepEqual(named, ["sova-spec.mjs", "sova-spec-draft.mjs"]);
+	assert.ok(spec.includes("`sova-spec-review.mjs`, see `$core/../README.md`"));
+	for (const tool of [...named, "sova-spec-review.mjs"]) assert.ok(existsSync(join(coreDir, tool)), `${tool} ships beside this extension`);
+	assert.ok(existsSync(join(here, "../spec/README.md")));
+	// Every flag the prompt spells is one a named tool parses: each tool names an unknown flag in its usage error.
+	const usage = (tool: string, arg: string) => {
+		const r = spawnSync(process.execPath, [join(coreDir, tool), arg], { encoding: "utf8" });
+		return `${r.stdout}${r.stderr}`;
+	};
+	for (const tool of named) assert.match(usage(tool, "--no-such-flag"), /unknown flag --no-such-flag/, `${tool} reports an unknown flag`);
+	const flags = new Set(spec.match(/--[a-z][a-z-]*/g));
+	for (const flag of flags) assert.ok(named.some((tool) => !usage(tool, flag).includes(`unknown flag ${flag}`)), `${flag} is a real flag`);
+	for (const flag of ["--spec", "--commit", "--snapshot", "--doc-only", "--plan", "--write", "--verification"]) assert.ok(flags.has(flag), `${flag} is named`);
+	// Every draft command the prompt names is one the draft tool advertises.
+	const draftUsage = usage("sova-spec-draft.mjs", "--no-such-flag");
+	for (const cmd of ["new", "status", "diff", "check", "evidence", "promote", "recover"]) {
+		assert.match(draftUsage, new RegExp(`[<|] ?${cmd}[ >]`), `${cmd} is a draft command`);
+		assert.match(spec, new RegExp(`\`${cmd}\\b`), `${cmd} is named`);
+	}
+	// The core's four commands only read; --budget only inside the scope form (elsewhere a usage error).
+	assert.match(spec, /only reads; command is `check`, `census`, `scope '<§id>' \[--budget <bytes>\]` or `impact '<§id>'`; `--spec <dir>` reads a draft instead\./);
+	assert.equal(spec.match(/--budget/g)?.length, 1);
+	// A project's copy is foreign code: inspected and asked about, never run blind.
+	assert.match(spec, /A project's own copy is foreign code: read it and ask before running it/);
+	assert.match(spec, /never run other project scripts, installs or network commands/);
+	assert.match(spec, /Without trusted tools, say so and read the files directly/);
+	// The discipline, one assertion per rule.
+	assert.match(spec, /It needs no Git, no prior docs and no source annotations/, "any project, no incumbent prose");
+	assert.match(spec, /Work from the returned passages as written/, "literal scope before work");
+	assert.match(spec, /Keep the frontier in view/);
+	assert.match(spec, /Exit 0 means the declared closure was delivered, not that the context is complete/, "known closure, not completeness");
+	assert.match(spec, /Labels are declared, never proof: `migrated` text is the requirement with its implementation unreviewed; `candidate` is a proposal\./);
+	assert.match(spec, /Old docs that redirect into `\.sova\/spec\/` are not a second authority/);
+	assert.match(spec, /Documentation changes only through drafts, never by editing current `claims\/` or `manifest\.json`/);
+	assert.match(spec, /`new <name> --write` copies the whole current spec \(or starts one\)/, "a draft is a full copy");
+	assert.match(spec, /Documenting what the code already does is its own baseline draft, never mixed into a feature draft/, "baseline apart from the feature");
+	assert.match(spec, /agreement approves intent, not current truth/);
+	assert.match(spec, /After implementing, verify each changed promise\. Relabel each record as it will read once current: explicit `authority`: `accepted` for new or rewritten prose \(the task's go-ahead adopts it\), `migrated` only for text still as ported, never `candidate`;/);
+	assert.doesNotMatch(spec, /or `migrated`/, "migrated is provenance, not an alternative to accepted");
+	assert.match(spec, /`--commit <rev>` \(Git: the implementation's existing commit\)/);
+	assert.match(spec, /It is not permission to commit: without that, leave evidence pending, and never commit unrelated changes\./, "task approval is not a commit");
+	assert.match(spec, /except `manifest-not-found`: no spec yet, so start a draft\./, "no spec is a start, not an error");
+	assert.match(spec, /Promote only what is implemented and verified\. A refusal is resolved, never forced\./);
+	assert.match(spec, /Write `"requires": \[\]` only after investigating; otherwise omit the key/);
+	assert.match(spec, /never put `§` IDs or spec annotations in source code/);
+	assert.match(spec, /authorizes its drafts, evidence and promotions as one bounded batch; no dialog per claim, and nothing at session start/);
+	assert.match(spec, /No check, record, evidence or promotion proves correctness; no tool checks meaning\./);
+	assert.match(spec, /only the passages and unknowns relevant to its part, quoted literally/, "workers get the relevant slice, not the graph");
+	assert.doesNotMatch(spec, /\{[A-Z_]+\}/);
+	assert.ok(spec.split(/\s+/).length <= 500, "short enough to ride every turn");
 });
 
 test("mode helpers", () => {

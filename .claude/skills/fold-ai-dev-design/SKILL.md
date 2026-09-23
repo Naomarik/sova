@@ -9,8 +9,8 @@ user-invocable: true
 **Version.** 1.8.0 · **Locale.** en-US
 
 This file is the design system: how a surface looks, reads and behaves. It says nothing about
-what the product does — `spec/` owns that, and duplicating it here is how the two
-drift apart.
+what the product does — the project documentation in `.sova/spec/` owns that, and duplicating
+it here is how the two drift apart.
 
 **Precedence.** For how a component is built — its classes, variants, states — the file in
 `reference/components/` wins. For anything that crosses components, this file wins. When they
@@ -135,7 +135,7 @@ form that carries it. Work down this ladder and stop at the first row that fits.
 | A short paragraph | A form or a destructive act, where the user is choosing. | Two or three sentences, only what changes the choice. A confirmation says what survives, then what doesn't. | "The checkout, sessions, and transcripts stay. Installs inside the cell don't." |
 
 **Facts, not rationale** — why the product behaves this way stays out unless the user's choice
-depends on it. **No spec quotation** — a sentence copied from `spec/` is a defect unless the spec
+depends on it. **No spec quotation** — a sentence copied from `.sova/spec/` is a defect unless the spec
 says the screen says it. **The user is capable** — define a product noun once, where it is first
 met, then use it.
 

@@ -1,0 +1,622 @@
+{
+  "schema": "sova-spec/pilot-manifest",
+  "version": 1,
+  "_": "MANUAL PILOT, not a production format. Every record here is a candidate and unreviewed. Claim prose lives only in claims/*.md headings; this file cites IDs and never declares them (foldaidev One declaration rule).",
+  "status": "candidate-unreviewed",
+  "grammar": {
+    "id": "§[a-z][a-z-]*(?:\\.[a-z][a-z-]*)?/[a-z][a-z-]*",
+    "fullToken": true,
+    "claimsRoot": "claims/",
+    "directoryKinds": [
+      "section"
+    ],
+    "declaration": "An ID declares only at the start of an H1 (surface/section lede) or H2 (child claim) in its resolved file. Mentions anywhere else, including JSON keys, cite. Fenced blocks never declare.",
+    "resolver": "foldaidev docs/identifiers/spec-graph.mjs idToFile, verified at foldaidev ce7ea5993930431bf6f8e727802e1882edfc31b1; 'section' is data here, while foldaidev hardcodes it",
+    "spans": "An H1 lede ends before the first H2. An H2 child ends before the next heading. Spans are disjoint."
+  },
+  "namespaces": {
+    "chat": "the single-session chat composer",
+    "workspace": "a group workspace and its shared composer",
+    "shared": "facts more than one surface relies on",
+    "section": "a kind: working sets of surfaces (directory-deep)"
+  },
+  "relationSemantics": {
+    "requires": "A dependency: this claim's truth or safe change relies on the target. An absent key means not investigated. [] means none declared after investigation, not proven independence.",
+    "members": "Section membership only. It is not a dependency, and members inherit nothing from each other.",
+    "children": "Not authored. A surface's children are the H2 claims declared in its file.",
+    "code": "Whole files that are evidence locations. They are never complete-file specifications, and a behavior inside a mapped file that no claim names is a blind spot."
+  },
+  "baseline": {
+    "inventory": "reviews/baseline/inventory.tsv",
+    "objects": "reviews/baseline/objects/sha256/",
+    "provenanceHead": "c4d7993604f488f4204b45def773ccdae6ee8faf",
+    "capturedAt": "2026-09-23T06:10Z–06:2xZ; census before at 06:10:38Z"
+  },
+  "claims": {
+    "§chat/composer": {
+      "kind": "surface",
+      "code": [
+        "src/components/Composer.tsx",
+        "src/components/ChatView.tsx"
+      ],
+      "incumbent": [
+        {
+          "file": "spec/04-composer.md",
+          "heading": "Behavior",
+          "lines": [
+            64,
+            106
+          ],
+          "object": "8b9421eac1e952acb124abf72724c635b3ddbcb89edb2615b20625cfbe282b65",
+          "spanSha256": "25cf930b34d732f0ac16a1c6997d128dc993a59df8d88ca7a2013a015d1d9c4f"
+        }
+      ]
+    },
+    "§chat.composer/drafts": {
+      "kind": "behavior",
+      "requires": [
+        "§shared/message-text"
+      ],
+      "code": [
+        "server/drafts.ts",
+        "server/index.ts",
+        "server/attachments.ts"
+      ],
+      "incumbent": [
+        {
+          "file": "spec/04-composer.md",
+          "heading": "Behavior",
+          "lines": [
+            96,
+            106
+          ],
+          "object": "8b9421eac1e952acb124abf72724c635b3ddbcb89edb2615b20625cfbe282b65",
+          "spanSha256": "5c6740bb617b059c3dfafba4ec4e7ac6a607337d7bbb45e1c9f1ec4b87fa8cb8"
+        },
+        {
+          "file": "spec/04b-images.md",
+          "heading": "Composer attachments",
+          "lines": [
+            375,
+            377
+          ],
+          "object": "1adb4ae172593b89d6060216ab417335961e69e1ea8413292878e78bfb00c0a3",
+          "spanSha256": "f9d5fd7bbef727b2f310db01202b6043aaf0886bc732b2910dc5b2afcda0f810"
+        }
+      ]
+    },
+    "§chat.composer/draft-memory": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.composer/drafts"
+      ],
+      "code": [
+        "src/lib/ui-state.ts",
+        "src/lib/draft-save.ts",
+        "src/components/Composer.tsx"
+      ],
+      "incumbent": [
+        {
+          "file": "spec/04-composer.md",
+          "heading": "Behavior",
+          "lines": [
+            92,
+            100
+          ],
+          "object": "8b9421eac1e952acb124abf72724c635b3ddbcb89edb2615b20625cfbe282b65",
+          "spanSha256": "eccf6bd5d076a77e302a6276dd221c6b2213e42839198e599d361652235772cc"
+        }
+      ]
+    },
+    "§chat.composer/send": {
+      "kind": "behavior",
+      "requires": [
+        "§shared/message-text",
+        "§chat.composer/draft-memory",
+        "§chat.composer/attachments"
+      ],
+      "code": [
+        "src/components/Composer.tsx",
+        "src/components/ChatView.tsx",
+        "src/lib/socket.ts",
+        "src/lib/images.ts",
+        "src/lib/ui-state.ts"
+      ],
+      "incumbent": [
+        {
+          "file": "spec/04-composer.md",
+          "heading": "Behavior",
+          "lines": [
+            79,
+            88
+          ],
+          "object": "8b9421eac1e952acb124abf72724c635b3ddbcb89edb2615b20625cfbe282b65",
+          "spanSha256": "6586ff3467a329b6d12b4bcd700c5beb242112f38234f818333f62a6420eee9c"
+        },
+        {
+          "file": "spec/04b-images.md",
+          "heading": "Composer attachments",
+          "lines": [
+            369,
+            374
+          ],
+          "object": "1adb4ae172593b89d6060216ab417335961e69e1ea8413292878e78bfb00c0a3",
+          "spanSha256": "0750017cb3ca6e6d8e05066933717be65ee175955a2f5f1266ff2f5d49c321df"
+        }
+      ]
+    },
+    "§chat.composer/keys": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.composer/send",
+        "§chat.composer/slash",
+        "§chat.composer/mentions"
+      ],
+      "code": [
+        "src/components/Composer.tsx",
+        "src/lib/slash.ts"
+      ],
+      "incumbent": [
+        {
+          "file": "spec/04-composer.md",
+          "heading": "Behavior",
+          "lines": [
+            69,
+            72
+          ],
+          "object": "8b9421eac1e952acb124abf72724c635b3ddbcb89edb2615b20625cfbe282b65",
+          "spanSha256": "91b53f0e4b38856535b7ee09c38e23f49dd06a3383b13b9eadd70609ad28fee7"
+        },
+        {
+          "file": "spec/04d-slash-commands.md",
+          "heading": "Keyboard and mouse",
+          "lines": [
+            106,
+            116
+          ],
+          "object": "0b0e21edfd9397da3493c1359b6924dda658b03b652fa01f05233c0bafec4ae0",
+          "spanSha256": "88fa557b029eb521593081027c6bd674ec60169e2fccd2dc778fb441d8cc4c0c"
+        }
+      ]
+    },
+    "§chat.composer/restore": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.composer/draft-memory"
+      ],
+      "code": [
+        "src/components/ChatView.tsx",
+        "src/components/Composer.tsx",
+        "src/lib/live.ts",
+        "src/lib/ui-state.ts"
+      ],
+      "incumbent": [
+        {
+          "file": "spec/09-copy-deck.md",
+          "heading": "(table row: queue_item_gone)",
+          "lines": [
+            84,
+            84
+          ],
+          "object": "819bfaee661b64fb7b2ea07f4b4fe12705a1d499c30a51135179dfe052f7f249",
+          "spanSha256": "f5868ba414508841428b4e35c37c1776eb50a170fd31b81a2f9fd8ba130f1ee7"
+        },
+        {
+          "file": "spec/09-copy-deck.md",
+          "heading": "(table row: After it lands (composer))",
+          "lines": [
+            408,
+            408
+          ],
+          "object": "819bfaee661b64fb7b2ea07f4b4fe12705a1d499c30a51135179dfe052f7f249",
+          "spanSha256": "871134d3e235e607312538bca223a896e2c55238f19628502ca7d9348e01ae07"
+        }
+      ]
+    },
+    "§chat.composer/slash": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.composer/send"
+      ],
+      "code": [
+        "src/lib/slash.ts",
+        "src/components/Composer.tsx",
+        "src/components/ChatView.tsx"
+      ],
+      "incumbent": [
+        {
+          "file": "spec/04d-slash-commands.md",
+          "heading": "When the menu opens",
+          "lines": [
+            8,
+            27
+          ],
+          "object": "0b0e21edfd9397da3493c1359b6924dda658b03b652fa01f05233c0bafec4ae0",
+          "spanSha256": "fc73fe9f31569910d2d0a89d3afe46230599d42a1978ba2496116fe3a421f132"
+        },
+        {
+          "file": "spec/04d-slash-commands.md",
+          "heading": "In the thread",
+          "lines": [
+            193,
+            208
+          ],
+          "object": "0b0e21edfd9397da3493c1359b6924dda658b03b652fa01f05233c0bafec4ae0",
+          "spanSha256": "7e323738c7a6668692bd21faa7b9ebc2bafcc7f4ac4259b847cc84bd3a25dd99"
+        }
+      ]
+    },
+    "§chat.composer/mentions": {
+      "kind": "behavior",
+      "requires": [
+        "§shared/message-text"
+      ],
+      "code": [
+        "src/lib/files.ts",
+        "src/lib/files.test.ts",
+        "src/components/Composer.tsx"
+      ],
+      "incumbent": [],
+      "incumbentNote": "No incumbent spec. src/lib/files.ts cites spec/04h-file-mentions.md, which is absent from the tree and from all Git history (see reviews/baseline/inventory.tsv)."
+    },
+    "§chat.composer/attachments": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.composer/draft-memory"
+      ],
+      "code": [
+        "src/lib/images.ts",
+        "src/components/Composer.tsx",
+        "server/attachments.ts",
+        "server/drafts.ts"
+      ],
+      "incumbent": [
+        {
+          "file": "spec/04b-images.md",
+          "heading": "Composer attachments",
+          "lines": [
+            296,
+            299
+          ],
+          "object": "1adb4ae172593b89d6060216ab417335961e69e1ea8413292878e78bfb00c0a3",
+          "spanSha256": "d89a3d58cd9398e8b5999a071fd3e8242c13815edf9f17eb9267ad39a37e02d7"
+        },
+        {
+          "file": "spec/09-copy-deck.md",
+          "heading": "(table rows: Rejected)",
+          "lines": [
+            151,
+            152
+          ],
+          "object": "819bfaee661b64fb7b2ea07f4b4fe12705a1d499c30a51135179dfe052f7f249",
+          "spanSha256": "ebfb57fe1749f113ad1e4465d200c5c43c59cf370b96b8b982c178d703b1643b"
+        }
+      ]
+    },
+    "§shared/message-text": {
+      "kind": "behavior",
+      "requires": [],
+      "code": [
+        "src/components/Composer.tsx",
+        "src/components/ChatView.tsx",
+        "src/components/GroupComposer.tsx",
+        "src/lib/api.ts"
+      ],
+      "incumbent": [
+        {
+          "file": "spec/04-composer.md",
+          "heading": "Behavior",
+          "lines": [
+            81,
+            81
+          ],
+          "object": "8b9421eac1e952acb124abf72724c635b3ddbcb89edb2615b20625cfbe282b65",
+          "spanSha256": "3408149d6953e60737585b9247cd6d83a3a894826a23146965b35582a90bc843"
+        },
+        {
+          "file": "spec/14-workspaces.md",
+          "heading": "The group composer",
+          "lines": [
+            392,
+            392
+          ],
+          "object": "a32889fb27beb4a60932576ef8ec79517643084bd7c8d58b1c4106dcf6d8ffe9",
+          "spanSha256": "8e992978eb3f674bb3885f3eb48138f927ba53344282da0e0d3e8af87bc4c329"
+        }
+      ]
+    },
+    "§workspace/input": {
+      "kind": "surface",
+      "code": [
+        "src/components/GroupComposer.tsx"
+      ],
+      "incumbent": [
+        {
+          "file": "spec/14-workspaces.md",
+          "heading": "The group composer",
+          "lines": [
+            360,
+            363
+          ],
+          "object": "a32889fb27beb4a60932576ef8ec79517643084bd7c8d58b1c4106dcf6d8ffe9",
+          "spanSha256": "aeb99cd7544d7da50e2893da76557423264b19053f492a91b1ccb24666fdab65"
+        }
+      ]
+    },
+    "§workspace.input/exclusions": {
+      "kind": "behavior",
+      "requires": [],
+      "code": [
+        "src/components/GroupComposer.tsx",
+        "src/lib/api.ts"
+      ],
+      "incumbent": [
+        {
+          "file": "spec/14-workspaces.md",
+          "heading": "The group composer",
+          "lines": [
+            396,
+            397
+          ],
+          "object": "a32889fb27beb4a60932576ef8ec79517643084bd7c8d58b1c4106dcf6d8ffe9",
+          "spanSha256": "fc26ec13c2d3b01c0fd827b6678bd9c0ba84bdcfaafa4252839692f8b6737a80"
+        },
+        {
+          "file": "spec/14-workspaces.md",
+          "heading": "The group composer",
+          "lines": [
+            470,
+            473
+          ],
+          "object": "a32889fb27beb4a60932576ef8ec79517643084bd7c8d58b1c4106dcf6d8ffe9",
+          "spanSha256": "6d6ae42d4165ad0f48507d2f4de9b4148d3563925411cb63a0c1a15a26bea09e"
+        }
+      ],
+      "incumbentNote": "The incumbent says nothing about a stored group draft. 'No stored draft' is observed from code only."
+    },
+    "§workspace.input/acceptance": {
+      "kind": "behavior",
+      "requires": [
+        "§shared/message-text"
+      ],
+      "code": [
+        "src/components/GroupComposer.tsx",
+        "src/lib/group-prompt.ts",
+        "src/lib/api.ts"
+      ],
+      "incumbent": [
+        {
+          "file": "spec/14-workspaces.md",
+          "heading": "The group composer",
+          "lines": [
+            476,
+            480
+          ],
+          "object": "a32889fb27beb4a60932576ef8ec79517643084bd7c8d58b1c4106dcf6d8ffe9",
+          "spanSha256": "c93ae3af7d01254ae46eb9f353f365e68d213f28f44290dc379875a8b8e83618"
+        },
+        {
+          "file": "spec/14-workspaces.md",
+          "heading": "Refusal",
+          "lines": [
+            490,
+            504
+          ],
+          "object": "a32889fb27beb4a60932576ef8ec79517643084bd7c8d58b1c4106dcf6d8ffe9",
+          "spanSha256": "b98f8908c2911aab087f4fa415b94b332d84e74b1e76ba0794f900b67c96b860"
+        },
+        {
+          "file": "spec/14-workspaces.md",
+          "heading": "Banners that offer, and banners that report",
+          "lines": [
+            506,
+            526
+          ],
+          "object": "a32889fb27beb4a60932576ef8ec79517643084bd7c8d58b1c4106dcf6d8ffe9",
+          "spanSha256": "691246bb71cb3a4583d8145df039470254d1b30a0c87c6f700bf32c6fc5369dd"
+        }
+      ]
+    },
+    "§workspace.input/retry": {
+      "kind": "behavior",
+      "requires": [
+        "§workspace.input/acceptance"
+      ],
+      "code": [
+        "src/components/GroupComposer.tsx",
+        "src/lib/group-prompt.ts",
+        "src/lib/api.ts"
+      ],
+      "incumbent": [
+        {
+          "file": "spec/14-workspaces.md",
+          "heading": "The group composer",
+          "lines": [
+            481,
+            487
+          ],
+          "object": "a32889fb27beb4a60932576ef8ec79517643084bd7c8d58b1c4106dcf6d8ffe9",
+          "spanSha256": "94e06980fe0d5627b08beb1c6f0061b76f4ff3802ec15891f48d64b70386adb2"
+        },
+        {
+          "file": "spec/09-copy-deck.md",
+          "heading": "(table row: Partial send banner)",
+          "lines": [
+            464,
+            464
+          ],
+          "object": "819bfaee661b64fb7b2ea07f4b4fe12705a1d499c30a51135179dfe052f7f249",
+          "spanSha256": "51f34c1b3b1e2affbd53fa7c915c7caf96deaa624cef02038eed28108ee6a82c"
+        }
+      ]
+    },
+    "§workspace.input/keys": {
+      "kind": "behavior",
+      "requires": [
+        "§workspace.input/acceptance"
+      ],
+      "code": [
+        "src/components/GroupComposer.tsx"
+      ],
+      "incumbent": [
+        {
+          "file": "spec/14-workspaces.md",
+          "heading": "The group composer",
+          "lines": [
+            488,
+            488
+          ],
+          "object": "a32889fb27beb4a60932576ef8ec79517643084bd7c8d58b1c4106dcf6d8ffe9",
+          "spanSha256": "7dcb784b02ed862ee2b77ea2e1d6048a931e7ad3dba40cc6dd0e2ea6eadfeb22"
+        }
+      ]
+    },
+    "§section.chat/input": {
+      "kind": "section",
+      "members": [
+        "§chat/composer",
+        "§workspace/input"
+      ]
+    }
+  },
+  "adoption": {
+    "_": "Authority transfer is per claim and pending an independent review. Nothing here is adopted, and the incumbent spec stays authoritative. No receipts were issued.",
+    "records": []
+  },
+  "resolution": {
+    "_": "DERIVED, not authored: computed from each ID by the grammar resolver and checked against the actual heading. Recompute; never edit by hand. Lines are 1-based [heading, end) in the claim file at the time of the pilot.",
+    "§chat/composer": {
+      "file": "claims/chat/composer.md",
+      "heading": "H1",
+      "lines": [
+        1,
+        4
+      ]
+    },
+    "§chat.composer/drafts": {
+      "file": "claims/chat/composer.md",
+      "heading": "H2",
+      "lines": [
+        5,
+        12
+      ]
+    },
+    "§chat.composer/draft-memory": {
+      "file": "claims/chat/composer.md",
+      "heading": "H2",
+      "lines": [
+        13,
+        22
+      ]
+    },
+    "§chat.composer/send": {
+      "file": "claims/chat/composer.md",
+      "heading": "H2",
+      "lines": [
+        23,
+        31
+      ]
+    },
+    "§chat.composer/keys": {
+      "file": "claims/chat/composer.md",
+      "heading": "H2",
+      "lines": [
+        32,
+        40
+      ]
+    },
+    "§chat.composer/restore": {
+      "file": "claims/chat/composer.md",
+      "heading": "H2",
+      "lines": [
+        41,
+        52
+      ]
+    },
+    "§chat.composer/slash": {
+      "file": "claims/chat/composer.md",
+      "heading": "H2",
+      "lines": [
+        53,
+        60
+      ]
+    },
+    "§chat.composer/mentions": {
+      "file": "claims/chat/composer.md",
+      "heading": "H2",
+      "lines": [
+        61,
+        68
+      ]
+    },
+    "§chat.composer/attachments": {
+      "file": "claims/chat/composer.md",
+      "heading": "H2",
+      "lines": [
+        69,
+        74
+      ]
+    },
+    "§section.chat/input": {
+      "file": "claims/section/chat/input.md",
+      "heading": "H1",
+      "lines": [
+        1,
+        5
+      ]
+    },
+    "§shared/message-text": {
+      "file": "claims/shared/message-text.md",
+      "heading": "H1",
+      "lines": [
+        1,
+        5
+      ]
+    },
+    "§workspace/input": {
+      "file": "claims/workspace/input.md",
+      "heading": "H1",
+      "lines": [
+        1,
+        4
+      ]
+    },
+    "§workspace.input/exclusions": {
+      "file": "claims/workspace/input.md",
+      "heading": "H2",
+      "lines": [
+        5,
+        9
+      ]
+    },
+    "§workspace.input/acceptance": {
+      "file": "claims/workspace/input.md",
+      "heading": "H2",
+      "lines": [
+        10,
+        19
+      ]
+    },
+    "§workspace.input/retry": {
+      "file": "claims/workspace/input.md",
+      "heading": "H2",
+      "lines": [
+        20,
+        27
+      ]
+    },
+    "§workspace.input/keys": {
+      "file": "claims/workspace/input.md",
+      "heading": "H2",
+      "lines": [
+        28,
+        32
+      ]
+    }
+  },
+  "revision": {
+    "number": 2,
+    "date": "2026-09-23",
+    "basis": "independent review findings 1-5 (see pilot/report.md §10); the baseline is unchanged, and adoption is still pending"
+  }
+}

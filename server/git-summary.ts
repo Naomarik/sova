@@ -346,7 +346,11 @@ function gitMessage(out: string): string {
   return line.replace(/^(fatal|error): /, "");
 }
 
-type Place = { where: GitWhere; cwd: string; moved?: true };
+export type Place = { where: GitWhere; cwd: string; moved?: true };
+
+/** The one GitSummary variant a refusal can produce, so a caller that never runs git can still
+    answer in that shape (server/session-setup.ts). */
+export type Unavailable = Extract<GitSummary, { state: "unavailable" }>;
 
 /** A finished run's sections as a GitSummary. Pure: the transports and the clock are the caller's. */
 export function summarize(sections: Map<string, Section>, place: Place, checkedAt: number): GitSummary {
@@ -442,8 +446,9 @@ export function summarize(sections: Map<string, Section>, place: Place, checkedA
 // ---------------------------------------------------------------------------
 // the read
 
-/** The session header's cwd: the first line of the file, a `session` entry. */
-async function readStoredCwd(path: string): Promise<string | null> {
+/** The session header's cwd: the first line of the file, a `session` entry. Exported because
+    server/session-setup.ts reads the same header to answer the same "which folder" question. */
+export async function readStoredCwd(path: string): Promise<string | null> {
   let fh: Awaited<ReturnType<typeof open>>;
   try {
     fh = await open(path, "r");
@@ -481,13 +486,16 @@ async function slot<T>(run: () => Promise<T>): Promise<T> {
   }
 }
 
-/** Where a stored cwd is read, decided lexically — no fs call before this answers. */
-type Plan =
+/** Where a stored cwd is read, decided lexically — no fs call before this answers. Exported with
+    `plan` because it is the ONLY classification of a stored cwd: a remote placeholder, a removed
+    sshfs mount and the rename bridge must be decided the same way everywhere they are asked. */
+export type Plan =
   | { kind: "local"; place: Place }
   | { kind: "remote"; target: string; place: Place }
-  | { kind: "refuse"; summary: (now: number) => GitSummary };
+  | { kind: "refuse"; summary: (now: number) => Unavailable };
 
-function plan(stored: string, deps: GitDeps): Plan {
+/** `mapCwd` is the only seam `plan` uses, so a caller with no git of its own can pass just that. */
+export function plan(stored: string, deps: Pick<GitDeps, "mapCwd">): Plan {
   const remote = parseTargetCwd(stored);
   if (remote) return { kind: "remote", target: remote.target, place: { where: { kind: "remote", target: remote.target }, cwd: remote.remoteCwd } };
   const legacy = parseLegacyMountCwd(stored);

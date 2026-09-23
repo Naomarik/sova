@@ -30,7 +30,10 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
 - `shared/protocol.ts` — the REST/WS wire contract. Change only with team coordination.
 - `server/` — Node backend: Hono (REST) + `ws` (2 WS endpoints), embeds the pi SDK. Owned by **backend**.
 - `src/` — SolidJS + TS frontend (Vite, vite-plugin-solid; HMR = live reload). Owned by **frontend**, except `src/design/`.
-- `src/design/`, `spec/`, `public/` — design tokens, base CSS, fonts/icons, UX spec. Owned by **designer**.
+- `src/design/`, `public/`, `.sova/spec/claims/` + `.sova/spec/manifest.json` — design tokens, base CSS,
+  fonts/icons, and the product documentation (the UX spec). Owned by **designer**.
+- `.sova/spec/` — the product documentation and its tools; see **Product documentation** below. `spec/*.md`
+  are redirects from the old paths, and `spec/brainstorms/` is research. Neither is a requirement.
 - `.claude/skills/` — project skills, registered for pi by `.pi/settings.json` (`"skills": ["../.claude/skills"]`;
   the folder is also trusted in `~/.pi/agent/trust.json`, or pi prompts each session).
   `fold-ai-dev-design/` — the design system skill (copied from foldaidev). READ IT.
@@ -63,7 +66,8 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   validation and the single argv builder that both the `remote` extension and the web server use to
   run a command on a target), so an edit to any of the four can break Sova's typecheck. Keep
   them pi-runtime-free (node builtins and, for the mode trio, each other only), and import nothing
-  else from pi-config at runtime. One test-only exception: `server/claude-models.test.ts` imports
+  else from pi-config at runtime. `minor.ts` also reads its sibling `spec-mode.md` once at load, and
+  refuses to load if that file's shell block is malformed. One test-only exception: `server/claude-models.test.ts` imports
   `pi-config/extensions/claude-code/transport.ts` (builtins only) to pin the server's Claude
   model-discovery argv to the extension's; the server itself never imports claude-code. `argv.ts` is also the quoting boundary: every path that reaches a far shell is
   single-quote-escaped there, and callers spawn its argv without a local shell. The web mode switch calls that extension's
@@ -113,10 +117,30 @@ Rules:
   or server shutdown.
 - Or run the server without watch (`npx tsx server/index.ts`) for the duration of server-side work.
 
+## Product documentation
+
+`.sova/spec/` is the requirement for what Sova does: `manifest.json` plus `claims/<ns>/<name>.md`,
+under `§` IDs. The committed root `spec/*.md` docs moved there on 2026-09-23 with their prose
+intact; only their headings changed, to carry IDs. Those records carry `authority: migrated`
+and `evidence: unreviewed`: the text is the requirement, and nothing has checked that the code
+does it. Verify the implementation before you claim a feature.
+- Old paths and `§N` citations resolve through `.sova/spec/migration/legacy-map.json`. That
+  covers the ones in source comments, which stay as written. The exact original bytes are in
+  `.sova/spec/migration/legacy/`. Edits to those docs that were uncommitted at migration time
+  (and the untracked `spec/04i-playbooks.md`) are the draft `.sova/spec/drafts/legacy-working/`,
+  not the current docs. Drafts, reviews and the pilot are local only (`.sova/spec/.gitignore`);
+  commit by explicit path, as `.sova/spec/README.md` shows, never `git add -A`.
+- The pilot's candidates (`.sova/spec/pilot/`, `.sova/spec/migration/pilot/`) are a historical
+  experiment, not the requirement.
+- **Before a task that changes behavior, follow the spec discipline.** If your system prompt
+  already includes the `# Minor mode: spec` block, follow it without rereading. Otherwise read
+  `pi-config/extensions/mode/spec-mode.md`, the same text, and follow it. It applies in Sova
+  whether or not that mode is on; don't turn any mode on. Commands are in `.sova/spec/USAGE.md`.
+
 ## Method
 
 Rules for working on this repo, each earned by at least two real misses on the `fanout-groups`
-branch (the full reasoning lives in that branch's commit messages and spec §14's Decisions):
+branch (the full reasoning lives in that branch's commit messages and `§workspace.groups/decisions`):
 
 - **Prefer the form that cannot be accidentally satisfied** — in tests, rules, and copy alike. A
   collision assertion beats a literal string; a behaviour name beats a property name; a sentence

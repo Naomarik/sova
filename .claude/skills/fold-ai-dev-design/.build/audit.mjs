@@ -141,7 +141,7 @@ for (const [what, re] of [['tagline', /Portable AI dev|Your workshop, folded/],
                           ['positioning verb', /\b(?:helps you|lets you|makes it easy)\b/i],
                           ['product self-description', /\bthis product (?:is|reports)\b|this product is named for/i]]) {
   const hits = prose.filter((f) => re.test(readFileSync(f, 'utf8')));
-  hits.length ? bad(`${what} in ${hits.map((f) => relative(ROOT, f)).join(', ')} — belongs in spec/, not here`)
+  hits.length ? bad(`${what} in ${hits.map((f) => relative(ROOT, f)).join(', ')} — belongs in .sova/spec/, not here`)
               : ok(`no ${what} (${prose.length} files)`);
 }
 

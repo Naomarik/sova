@@ -250,6 +250,19 @@ assert.ok(entries.some((e) => e.type === "mode" && e.data.minor === "align" && e
 await commands.get("mode").handler("status", ctx);
 assert.match(store.notices.at(-1).message, /^minor: \(none\)$/m);
 
+// The spec minor mode goes through the same generic /mode toggle, after align in every order
+await commands.get("mode").handler("spec on", ctx);
+await commands.get("mode").handler("align on", ctx);
+assert.equal(store.status.get("mode"), "<accent>delegate · strict · align · spec</accent>");
+const heavyAlignSpec = (await beforeAgentStart({ systemPrompt: "base" }, ctx)).systemPrompt;
+assert.ok(heavyAlignSpec.search(alignHeader) < heavyAlignSpec.indexOf("# Minor mode: spec"), "align before spec");
+assert.ok(entries.some((e) => e.type === "mode" && e.data.minor === "spec" && e.data.on === true), "spec marker appended");
+assert.deepEqual(modeEntries().at(-1).data.active.minorModes, ["align", "spec"]);
+await commands.get("mode").handler("spec", ctx);
+await commands.get("mode").handler("align off", ctx);
+assert.equal(store.status.get("mode"), "<accent>delegate · strict</accent>");
+assert.doesNotMatch((await beforeAgentStart({ systemPrompt: "base" }, ctx)).systemPrompt, /# Minor mode: spec/);
+
 // Palette rows: align toggles in place with a live marker; major rows switch mode
 let rows = provider.items(ctx);
 const alignRow = () => rows.find((row) => row.id === "mode:minor:align");

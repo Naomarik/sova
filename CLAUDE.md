@@ -38,8 +38,10 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   SKILL.md before any browser work (own browser per caller, `resize` must follow `navigate`, a bare
   `console` reloads the page).
 - `pi-config/` — the user's pi config and extensions (merged in from Naomarik/pi-config with history;
-  `~/pi-config` is a compat symlink to it). Shared, not owned by any team. `~/.pi/agent` symlinks into
-  this directory, so an edit here changes the user's LIVE TUI on its next `/reload`, and every
+  `~/pi-config` is a compat symlink to it). It is self-contained — its `install.sh` and README must
+  keep working on a plain copy of the directory, with no imports from Sova. Shared, not owned by any
+  team. `~/.pi/agent` symlinks into this directory, so an edit here changes the user's LIVE TUI on
+  its next `/reload`, and every
   runtime Sova embeds. Treat it like `shared/protocol.ts`: coordinate before changing any contract
   Sova parses (sessions live registry `sessions/live/*.json`, usage-status cache, subagents
   teams/snapshots, topic-outline state, command-palette `model-favorites.json`, the model policy
@@ -134,20 +136,6 @@ branch (the full reasoning lives in that branch's commit messages and spec §14'
   fetch loop. When only the VALUE matters, make the dep a memo (`const gid = createMemo(() =>
   props.group.id)`) so equality gating happens where you can see it. The green build catches
   none of this: the bug is between two re-runs, not inside either.
-
-## pi-config mirror
-
-The public repo github.com/Naomarik/pi-config is a `git subtree split` of `pi-config/`, so it stays
-installable without Sova. After committing pi-config changes on `master`, refresh it with:
-
-```sh
-git subtree split --prefix=pi-config -b pi-config-mirror   # creates, or fast-forwards, the local branch
-git push git@github.com:Naomarik/pi-config.git pi-config-mirror:master
-```
-
-The split is deterministic, and it reproduces the original pi-config commit hashes (the import used
-`git filter-repo --to-subdirectory-filter`), so pushes fast-forward. Never use `--force`. If a push is
-rejected, Sova history under `pi-config/` was rewritten, and that needs a look first. Keep anything the mirror needs, such as README/LICENSE/install.sh, inside `pi-config/`.
 
 ## pi SDK facts (verified against the installed package, 0.86.1)
 

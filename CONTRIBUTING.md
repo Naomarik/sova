@@ -70,6 +70,6 @@ Legacy `pi-web` strings remain where existing transcripts and browser state depe
 Do not bulk-rename them or rewrite transcripts to remove them. Current app state is written under
 `~/.pi/agent/sova/`.
 
-`pi-config/` is also published as a standalone repository through a git subtree split. Keep its
-installer and documentation self-contained. Follow the mirror procedure in `CLAUDE.md` when
-publishing changes to that subtree; ordinary Sova documentation changes need no mirror update.
+`pi-config/` is a standalone-installable bundle. Keep its installer and documentation
+self-contained: its `install.sh` must work on a plain copy of the directory, with no imports from
+Sova.

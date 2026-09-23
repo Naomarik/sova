@@ -1,18 +1,15 @@
 # pi-config
 
 Configuration and custom extensions for the [pi coding agent](https://pi.dev)
-(`@earendil-works/pi-coding-agent`). Cloning this repository and running
-`install.sh` reproduces the whole setup: settings, keybindings, model catalog
-additions, the pinned third-party packages, and the extensions kept in-tree.
+(`@earendil-works/pi-coding-agent`). This directory lives in the
+[Sova](https://github.com/Naomarik/sova) repository and installs from a Sova
+checkout: run `~/.local/share/sova/pi-config/install.sh` for the default Sova
+installation, or `pi-config/install.sh` from a checkout. Running it reproduces
+the whole setup: settings, keybindings, model catalog additions, the pinned
+third-party packages, and the extensions kept in-tree.
 
-> **Mirror.** The public repository
-> [Naomarik/pi-config](https://github.com/Naomarik/pi-config) is a
-> `git subtree split` mirror of the `pi-config/` directory of a private
-> monorepo (the Sova app, which embeds pi and reads some of these
-> extensions' files). Development happens there, and changes reach this
-> repository as ordinary fast-forward pushes. Everything in this
-> directory is self-contained: clone the mirror and `install.sh` works
-> without the web app.
+Everything in this directory is self-contained: a copy of this directory
+installs with `install.sh` alone, without the web app.
 
 ## Layout
 
@@ -71,15 +68,15 @@ directory: there is no `package.json`, and the extensions load through pi.
 `claude-code` also needs an authenticated `claude` CLI.
 
 ```sh
-git clone https://github.com/Naomarik/pi-config.git ~/pi-config
-~/pi-config/install.sh
+~/.local/share/sova/pi-config/install.sh   # the default Sova installation
+# or, from a Sova checkout:
+pi-config/install.sh
 pi            # installs missing pinned packages on first start
 /reload
 ```
 
-The clone can live anywhere. `install.sh` resolves its own location, and the
-links it creates point at the real path of the checkout. If you have the Sova
-monorepo, run `pi-config/install.sh` from there instead; it is the same script.
+A copy of this directory can live anywhere. `install.sh` resolves its own
+location, and the links it creates point at the real path of the copy.
 
 For each of `settings.json`, `keybindings.json`, `models.json`,
 `vision-delegate.json`, every

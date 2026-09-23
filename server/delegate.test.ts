@@ -13,6 +13,7 @@ import {
   delegateOptions,
   resetClaudeCache,
   saveDelegateSettings,
+  withRecent1m,
   workerDenial,
   type DelegateSources,
 } from "./delegate";
@@ -124,6 +125,24 @@ describe("GET /api/settings/delegate/options", () => {
     assert.equal(fails, 2);
     resetClaudeCache();
   });
+
+  test("[1m] ids seen within 30 minutes stay listed when the CLI's list flips to the shape without them", async () => {
+    resetClaudeCache();
+    const withOnes: ClaudeModel[] = [{ id: "opus[1m]", name: "Opus", efforts: ALL_CLAUDE }, { id: "sonnet", name: "Sonnet" }];
+    const without: ClaudeModel[] = [{ id: "opus", name: "Opus" }, { id: "sonnet", name: "Sonnet" }];
+    const t0 = 1_000_000;
+    assert.deepEqual(withRecent1m(withOnes, t0), withOnes, "nothing invented");
+    assert.deepEqual(withRecent1m(without, t0 + 5 * 60_000), [...without, withOnes[0]!], "the omitted [1m] id is carried, efforts as last reported");
+    assert.deepEqual(withRecent1m(without, t0 + 31 * 60_000), without, "after 30 minutes without a sighting it drops out");
+    assert.deepEqual(withRecent1m(without, t0 + 40 * 60_000), without, "and stays out");
+    resetClaudeCache();
+    let shape = withOnes;
+    const discover = async () => shape;
+    assert.ok((await cachedClaudeModels(discover)).some((m) => m.id === "opus[1m]"));
+    resetClaudeCache();
+    assert.ok(!(await cachedClaudeModels(async () => without)).some((m) => m.id === "opus[1m]"), "reset forgets the sightings too");
+    resetClaudeCache();
+  });
 });
 
 describe("PUT /api/settings/delegate", () => {
@@ -161,10 +180,15 @@ describe("PUT /api/settings/delegate", () => {
   test("a changed tuple the backend answered it can't run is refused — model or effort", async () => {
     const f = file();
     const absent = defaults();
-    absent.profiles.routine.primary = { backend: "claude-code", model: "gpt-9", effort: "low" };
+    absent.profiles.routine.primary = { backend: "pi", model: "zai/glm-9", effort: "low" };
     const r1 = await saveDelegateSettings(absent, sources(), f);
     assert.ok("error" in r1);
-    assert.equal(r1.error, "Routine implementation primary: gpt-9 isn't offered by Claude Code.");
+    assert.equal(r1.error, "Routine implementation primary: zai/glm-9 isn't offered by pi.");
+    const claudeEffort = defaults();
+    claudeEffort.profiles.routine.primary = { backend: "claude-code", model: "sonnet", effort: "max" };
+    const r0 = await saveDelegateSettings(claudeEffort, sources(), f);
+    assert.ok("error" in r0);
+    assert.equal(r0.error, 'Routine implementation primary: sonnet doesn\'t take effort "max" (it takes low, medium, high).');
     const effort = defaults();
     effort.profiles.investigation.fallback = { backend: "pi", model: "ollama/qwen3", effort: "high" };
     const r2 = await saveDelegateSettings(effort, sources(), f);
@@ -206,8 +230,24 @@ describe("PUT /api/settings/delegate", () => {
     next.profiles.complex.primary.effort = "high";
     const result = await saveDelegateSettings(next, sources(), f);
     assert.ok(!("error" in result), JSON.stringify(result));
-    assert.deepEqual(result.warnings, ["Routine implementation primary: retired-alias isn't offered by Claude Code"]);
+    assert.deepEqual(result.warnings, ["Routine implementation primary: not verified — the Claude Code CLI's model list doesn't include retired-alias right now (the list varies); it will still be used"]);
     assert.equal(JSON.parse(readFileSync(f, "utf8")).profiles.complex.primary.effort, "high");
+  });
+
+  test("a Claude alias the CLI's list omits is saved with a note, never refused: the list varies and the CLI accepts it at runtime", async () => {
+    const f = file();
+    const next = defaults();
+    next.profiles.routine.primary = { backend: "claude-code", model: "gpt-9", effort: "low" };
+    const result = await saveDelegateSettings(next, sources(), f);
+    assert.ok(!("error" in result), JSON.stringify(result));
+    assert.deepEqual(result.warnings, ["Routine implementation primary: not verified — the Claude Code CLI's model list doesn't include gpt-9 right now (the list varies); it will still be used"]);
+    assert.equal(result.settings.profiles.routine.primary.model, "gpt-9");
+    // The defaults themselves, against the shape of the list without the [1m] aliases: every slot saves, each with the note.
+    const flipped = sources({ claudeModels: async () => [{ id: "opus", name: "Opus", efforts: ALL_CLAUDE }, { id: "claude-fable-5-1", name: "Fable", efforts: ALL_CLAUDE }] });
+    const saved = await saveDelegateSettings(defaults(), flipped, file());
+    assert.ok(!("error" in saved), JSON.stringify(saved));
+    assert.equal(saved.warnings.length, 5);
+    assert.ok(saved.warnings.every((w) => /not verified — the Claude Code CLI's model list doesn't include (opus|claude-fable-5-1)\[1m\] right now/.test(w)), saved.warnings.join("\n"));
   });
 
   test("empty effort lists: the save accepts what routing would run", async () => {
@@ -239,5 +279,7 @@ describe("PUT /api/settings/delegate", () => {
     assert.deepEqual(checkChoice({ backend: "claude-code", model: "opus[1m]", effort: "max" }, options), {});
     assert.deepEqual(checkChoice({ backend: "claude-code", model: "legacy", effort: "xhigh" }, options), {});
     assert.match(checkChoice({ backend: "claude-code", model: "sonnet", effort: "max" }, options).error!, /doesn't take effort "max"/);
+    assert.match(checkChoice({ backend: "claude-code", model: "unlisted-alias", effort: "low" }, options).warning!, /^not verified — the Claude Code CLI's model list doesn't include unlisted-alias right now/);
+    assert.match(checkChoice({ backend: "pi", model: "zai/glm-9", effort: "low" }, options).error!, /isn't offered by pi/, "pi's registry is an answer");
   });
 });

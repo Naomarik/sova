@@ -335,6 +335,14 @@ transcripts carry the mode, never the routing.
   would refuse — means unconstrained. A
   backend that isn't loaded at all counts as unavailable too — `agent_spawn`
   would refuse it.
+- **Except a Claude alias the CLI's list omits.** The `claude` initialize model
+  list is remote and account-gated, and alternates within minutes between a
+  shape that carries `opus[1m]` / `claude-fable-5-1[1m]` and one that does not,
+  while the CLI accepts a valid alias at runtime either way (verified on
+  2.1.280). So a shape-valid Claude model (an alias: no `/`, no leading `-`)
+  missing from a successful list is "not verified" and stays in use, exactly
+  like a failed discovery; only a shape-invalid id is refused. pi's registry is
+  local and reliable, so a pi model it doesn't list stays unavailable.
 - **A failed discovery is not absence.** CLI missing, timed out, logged out:
   the tuple stays in use, "not verified", and spawn has the final word. If a
   spawn then fails on model availability, the prompt says to retry once with

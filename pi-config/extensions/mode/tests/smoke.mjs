@@ -193,13 +193,14 @@ await commands.get("mode").handler("normal", ctx);
 assert.deepEqual(getTools(), ["read", "bash", "edit", "write", "grep"], "tools restored on leaving heavy");
 assert.equal(store.status.get("mode"), "<dim>normal</dim>");
 
-// Planner fallback: fable not offered → warning status + prompt names opus/high
-offered = [{ id: "opus[1m]", name: "Opus" }];
+// Planner fallback: fable listed without medium → warning status + prompt names opus/high.
+// (An alias the CLI's varying list omits is unverified and stays in use; see the routing tests.)
+offered = [{ id: "claude-fable-5-1[1m]", name: "Fable", efforts: ["low"] }, { id: "opus[1m]", name: "Opus" }];
 await commands.get("mode").handler("delegate", ctx);
 assert.equal(store.status.get("mode"), "<warning>delegate · fallback:plan · strict</warning>", "fallback reflected in status (strict is still on from the previous scenario)");
 const fallbackPrompt = await beforeAgentStart({ systemPrompt: "base" }, ctx);
 assert.match(fallbackPrompt.systemPrompt, /- Planning & specs .* → backend "claude-code", model "opus\[1m\]", effort "high"\. This is the configured FALLBACK/);
-assert.match(store.notices.at(-1).message, /^Delegate routing:\nPlanning & specs: fallback claude-code · opus\[1m\] · high \(claude-fable-5-1\[1m\] is not offered by claude-code\)$/, "fallback is disclosed");
+assert.match(store.notices.at(-1).message, /^Delegate routing:\nPlanning & specs: fallback claude-code · opus\[1m\] · high \(claude-fable-5-1\[1m\] does not support effort "medium" \(supports: low\)\)$/, "fallback is disclosed");
 assert.equal(store.notices.at(-1).level, "warning");
 
 // Toggling via the shortcut flips modes
@@ -707,7 +708,7 @@ rmSync(delegateFile);
 await commands.get("mode").handler("normal", ctx);
 
 // ── A turn during the entry probe joins it: no restart, and the entry's fallback notice survives ──
-offered = [{ id: "opus[1m]", name: "Opus" }]; // planning will be on its fallback
+offered = [{ id: "claude-fable-5-1[1m]", name: "Fable", efforts: ["low"] }, { id: "opus[1m]", name: "Opus" }]; // planning will be on its fallback
 let releaseProbe;
 gate = new Promise((resolve) => (releaseProbe = resolve));
 listCalls = 0;

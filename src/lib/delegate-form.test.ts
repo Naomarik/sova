@@ -69,7 +69,9 @@ test("the model select always shows the stored pick, and never calls an unverifi
     "claude-fable-5-1[1m]",
     "opus[1m] — off for subagents",
   ]);
-  assert.deepEqual(modelSelectOptions(options, claude("retired", "low"))[0], { value: "retired", label: "retired — not offered" });
+  assert.deepEqual(modelSelectOptions(options, claude("retired", "low"))[0], { value: "retired", label: "retired — not verified" }, "the CLI's list varies: a valid alias it omits is not gone");
+  assert.deepEqual(modelSelectOptions(options, claude("bad/alias", "low"))[0], { value: "bad/alias", label: "bad/alias — not offered" }, "a shape-invalid Claude id is");
+  assert.deepEqual(modelSelectOptions(options, { backend: "pi", model: "zai/glm-9", effort: "low" })[0], { value: "zai/glm-9", label: "zai/glm-9 — not offered" }, "pi's registry is an answer");
   assert.deepEqual(modelSelectOptions(claudeDown, claude("opus[1m]", "low")), [{ value: "opus[1m]", label: "opus[1m] — not verified" }]);
   assert.deepEqual(modelSelectOptions(undefined, claude("opus[1m]", "low")), [{ value: "opus[1m]", label: "opus[1m] — not verified" }], "still asking");
   assert.deepEqual(modelSelectOptions(options, { backend: "pi", model: "", effort: "" }), [{ value: "zai/glm-5.3", label: "zai/glm-5.3" }], "nothing chosen: nothing injected");
@@ -86,7 +88,8 @@ test("each row says what the server's save check would", () => {
   const issue = (choice: DraftChoice, opts: DelegateOptions | undefined = options, other: DraftChoice | null = null, slot: "primary" | "fallback" = "primary") =>
     slotIssue(info, opts, choice, other, slot);
   assert.equal(issue(claude("claude-fable-5-1[1m]", "medium")), null);
-  assert.deepEqual(issue(claude("gone", "low")), { tone: "error", text: "Claude Code doesn't offer gone." });
+  assert.deepEqual(issue(claude("gone", "low")), { tone: "muted", text: "Not verified: the Claude Code CLI's model list doesn't include gone right now (the list varies). It will still be used." });
+  assert.deepEqual(issue(claude("bad/alias", "low")), { tone: "error", text: "Claude Code doesn't offer bad/alias." }, "only a shape-invalid Claude id is an error");
   assert.deepEqual(issue(claude("claude-fable-5-1[1m]", "max")), { tone: "error", text: "claude-fable-5-1[1m] doesn't take max effort." });
   assert.deepEqual(issue(claude("opus[1m]", "low")), { tone: "warn", text: "claude-code is off for subagents in Settings → Models. Delegate uses the fallback, or asks." });
   assert.deepEqual(issue(claude("gone", "low"), claudeDown), {

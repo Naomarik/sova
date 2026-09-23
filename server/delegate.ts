@@ -9,6 +9,7 @@ import {
   delegateDefaults,
   effectiveEfforts,
   loadDelegate,
+  modelShapeError,
   parseDelegate,
   PI_EFFORTS,
   saveDelegate,
@@ -84,14 +85,40 @@ export interface DelegateSources {
 }
 
 const CLAUDE_TTL_MS = 60_000;
+/**
+ * How long a `[1m]` id stays listed after a later discovery omits it. The CLI's initialize model
+ * list is remote and account-gated, and alternates within minutes between a shape that carries
+ * the 1M-context aliases (`opus[1m]`, `claude-fable-5-1[1m]`) and one that does not, while the CLI
+ * accepts them at runtime either way; without this the picker flickers between the two shapes.
+ * Long enough to outlast that, short enough that a model really withdrawn drops out the same hour.
+ */
+const CLAUDE_1M_MEMORY_MS = 30 * 60_000;
 let claudeCache: { at: number; models: ClaudeModel[] } | undefined;
 let claudeInFlight: Promise<ClaudeModel[]> | undefined;
+/** `[1m]` ids by last sighting. */
+let recent1m = new Map<string, { model: ClaudeModel; at: number }>();
+
+/**
+ * A fresh CLI list, plus every `[1m]` id seen within CLAUDE_1M_MEMORY_MS that it omits (as last
+ * reported, efforts included). Sightings older than that are forgotten. Pure but for the sighting
+ * map; exported for tests.
+ */
+export function withRecent1m(models: ClaudeModel[], now = Date.now()): ClaudeModel[] {
+  for (const model of models) if (model.id.endsWith("[1m]")) recent1m.set(model.id, { model, at: now });
+  const merged = [...models];
+  for (const [id, seen] of recent1m) {
+    if (now - seen.at > CLAUDE_1M_MEMORY_MS) recent1m.delete(id);
+    else if (!merged.some((m) => m.id === id)) merged.push(seen.model);
+  }
+  return merged;
+}
 
 /** Claude discovery cached 60 s like the extension's backend; failures are not cached, concurrent asks share one CLI run. */
 export function cachedClaudeModels(discover: () => Promise<ClaudeModel[]> = () => discoverClaudeModels()): Promise<ClaudeModel[]> {
   if (claudeCache && Date.now() - claudeCache.at < CLAUDE_TTL_MS) return Promise.resolve(claudeCache.models);
   claudeInFlight ??= discover()
-    .then((models) => {
+    .then((discovered) => {
+      const models = withRecent1m(discovered);
       claudeCache = { at: Date.now(), models };
       return models;
     })
@@ -101,10 +128,11 @@ export function cachedClaudeModels(discover: () => Promise<ClaudeModel[]> = () =
   return claudeInFlight;
 }
 
-/** Test seam: forget the cached Claude list. */
+/** Test seam: forget the cached Claude list and the `[1m]` sightings. */
 export const resetClaudeCache = () => {
   claudeCache = undefined;
   claudeInFlight = undefined;
+  recent1m = new Map();
 };
 
 const message = (err: unknown) => (err instanceof Error ? err.message : String(err)).replace(/\.$/, "");
@@ -169,6 +197,11 @@ const sessionScoped = (backend: DelegateBackendOptions, model: string): boolean 
 /**
  * What discovery says about one tuple: an error when the backend answered and cannot run it, a
  * warning when it cannot be checked or the policy refuses it. Pure; exported for tests.
+ *
+ * Claude Code is the exception to "answered without it means gone": its list varies (see
+ * CLAUDE_1M_MEMORY_MS), and the CLI accepts a valid alias at runtime, so a shape-valid Claude id
+ * the list omits is a warning, never an error — the same reading the mode extension routes by
+ * (routing.ts assess). pi's registry is local and reliable: there absence stands.
  */
 export function checkChoice(choice: WorkerChoice, options: DelegateOptions): { error?: string; warning?: string } {
   const backend = options.backends.find((b) => b.id === choice.backend);
@@ -177,6 +210,8 @@ export function checkChoice(choice: WorkerChoice, options: DelegateOptions): { e
   const model = backend.models.find((m) => m.id === choice.model);
   if (!model && sessionScoped(backend, choice.model))
     return { warning: `not verified — ${choice.model.slice(0, choice.model.indexOf("/"))} models exist only in sessions started with that provider on` };
+  if (!model && choice.backend === "claude-code" && modelShapeError("claude-code", choice.model) === null)
+    return { warning: `not verified — the Claude Code CLI's model list doesn't include ${choice.model} right now (the list varies); it will still be used` };
   if (!model) return { error: `${choice.model} isn't offered by ${BACKEND_LABELS[choice.backend]}` };
   if (!model.efforts.includes(choice.effort))
     return { error: `${choice.model} doesn't take effort "${choice.effort}" (it takes ${model.efforts.join(", ") || "none"})` };

@@ -66,6 +66,19 @@ export function sessionScoped(options: DelegateOptions | undefined, choice: Draf
   return slash > 0 && !!scoped?.includes(choice.model.slice(0, slash));
 }
 
+/**
+ * A Claude Code alias the CLI would accept at runtime, missing from a list it did answer. The
+ * CLI's model list is remote and account-gated and alternates within minutes between a shape
+ * with the `[1m]` aliases and one without, so absence from it is weak evidence: the pick reads
+ * "not verified", never "not offered". Same shape rule as the mode extension's modelShapeError
+ * for claude-code (an alias: no "/", no leading "-", no whitespace); pi's registry is local and
+ * reliable, so a pi model missing from its list stays an error.
+ */
+export function unlistedClaudeAlias(choice: DraftChoice): boolean {
+  const model = choice.model;
+  return choice.backend === "claude-code" && model !== "" && model.trim() === model && !/[\s\0]/.test(model) && !model.startsWith("-") && !model.includes("/");
+}
+
 /** The efforts this model takes, or null when discovery can't say. */
 export function modelEfforts(options: DelegateOptions | undefined, backend: DelegateBackendId, model: string): string[] | null {
   const models = backendModels(options, backend);
@@ -92,7 +105,7 @@ export function modelSelectOptions(options: DelegateOptions | undefined, choice:
     label: `${m.id}${m.denied ? " — off for subagents" : ""}`,
   }));
   if (choice.model && !listed.some((o) => o.value === choice.model))
-    listed.unshift({ value: choice.model, label: `${choice.model} — ${models === null || sessionScoped(options, choice) ? "not verified" : "not offered"}` });
+    listed.unshift({ value: choice.model, label: `${choice.model} — ${models === null || sessionScoped(options, choice) || unlistedClaudeAlias(choice) ? "not verified" : "not offered"}` });
   return listed;
 }
 
@@ -128,6 +141,8 @@ export function slotIssue(
   const model = backend.models.find((m) => m.id === choice.model);
   if (!model && sessionScoped(options, choice))
     return { tone: "muted", text: `Not verified: ${choice.model.slice(0, choice.model.indexOf("/"))} models exist only in sessions started with that provider on.` };
+  if (!model && unlistedClaudeAlias(choice))
+    return { tone: "muted", text: `Not verified: the Claude Code CLI's model list doesn't include ${choice.model} right now (the list varies). It will still be used.` };
   if (!model) return { tone: "error", text: `${label} doesn't offer ${choice.model}.` };
   if (!model.efforts.includes(choice.effort)) return { tone: "error", text: `${choice.model} doesn't take ${choice.effort} effort.` };
   if (model.denied) return { tone: "warn", text: `${model.denied}. Delegate uses the fallback, or asks.` };

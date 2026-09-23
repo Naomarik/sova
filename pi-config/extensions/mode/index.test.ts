@@ -197,7 +197,9 @@ test("applyModeSection sets, overwrites and deletes the mode section", () => {
 /** Claude discovery offering fable and opus at every effort: every default profile routes to its primary. */
 const offering = (...ids: string[]): Discovery => ({ models: ids.map((id) => ({ id, efforts: ["low", "medium", "high", "xhigh", "max"] })) });
 const ALL_OK = routeAll(delegateDefaults(), { "claude-code": offering("claude-fable-5-1[1m]", "opus[1m]") }, () => null);
-const PLAN_FALLBACK = routeAll(delegateDefaults(), { "claude-code": offering("opus[1m]") }, () => null);
+/** Fable listed at low only: planning's primary can't run at medium, so its fallback. (An alias the CLI's varying list omits is unverified, not unavailable.) */
+const fableLowOnly = { id: "claude-fable-5-1[1m]", efforts: ["low"] };
+const PLAN_FALLBACK = routeAll(delegateDefaults(), { "claude-code": { models: [fableLowOnly, { id: "opus[1m]", efforts: ["low", "medium", "high", "xhigh", "max"] }] } }, () => null);
 
 test("composePrompt joins the delegate block and minor blocks", () => {
 	const normal = defaults();
@@ -472,28 +474,33 @@ test("delegate prompt names every profile's exact worker and leaves no placehold
 
 test("delegate prompt discloses a fallback and asks when a profile has no worker", () => {
 	const fallback = buildDelegatePrompt(PLAN_FALLBACK);
-	assert.match(fallback, /- Planning & specs .* → backend "claude-code", model "opus\[1m\]", effort "high"\. This is the configured FALLBACK: the primary \(backend "claude-code", model "claude-fable-5-1\[1m\]", effort "medium"\) is unavailable — claude-fable-5-1\[1m\] is not offered by claude-code\. Tell the user/);
+	assert.match(fallback, /- Planning & specs .* → backend "claude-code", model "opus\[1m\]", effort "high"\. This is the configured FALLBACK: the primary \(backend "claude-code", model "claude-fable-5-1\[1m\]", effort "medium"\) is unavailable — claude-fable-5-1\[1m\] does not support effort "medium" \(supports: low\)\. Tell the user/);
 	assert.match(fallback, /do not retry the primary unless asked/);
 
-	const none = routeAll(delegateDefaults(), { "claude-code": offering("sonnet") }, () => null);
+	const none = routeAll(delegateDefaults(), { "claude-code": { models: [fableLowOnly, { id: "opus[1m]", efforts: ["xhigh"] }, { id: "sonnet", efforts: ["low", "medium", "high"] }] } }, () => null);
 	const prompt = buildDelegatePrompt(none);
-	assert.match(prompt, /- Routine implementation .* → NO AVAILABLE WORKER \(opus\[1m\] is not offered by claude-code; no fallback is set\)\. Before delegating this kind of work, tell the user and ask which model to use; do not choose one yourself\./);
-	assert.match(prompt, /- Planning & specs .* → NO AVAILABLE WORKER \(claude-fable-5-1\[1m\] is not offered by claude-code; opus\[1m\] is not offered by claude-code\)/);
+	assert.match(prompt, /- Routine implementation .* → NO AVAILABLE WORKER \(opus\[1m\] does not support effort "low" \(supports: xhigh\); no fallback is set\)\. Before delegating this kind of work, tell the user and ask which model to use; do not choose one yourself\./);
+	assert.match(prompt, /- Planning & specs .* → NO AVAILABLE WORKER \(claude-fable-5-1\[1m\] does not support effort "medium" \(supports: low\); opus\[1m\] does not support effort "high" \(supports: xhigh\)\)/);
 	assert.doesNotMatch(prompt, /model "sonnet"/, "an offered but unconfigured model is never named");
+	// The CLI's list of the moment omitting every configured alias: nothing is refused, every profile stays on its primary.
+	const unlisted = buildDelegatePrompt(routeAll(delegateDefaults(), { "claude-code": offering("sonnet") }, () => null));
+	assert.doesNotMatch(unlisted, /NO AVAILABLE WORKER|FALLBACK/);
+	assert.match(unlisted, /- Planning & specs .* → backend "claude-code", model "claude-fable-5-1\[1m\]", effort "medium"; fallback backend "claude-code", model "opus\[1m\]", effort "high"\./);
 });
 
 test("a configured fallback that can't run is never offered for the retry", () => {
 	// Fable offered, opus not: planning runs on its primary, and its fallback is known dead.
-	const deadFallback = routeAll(delegateDefaults(), { "claude-code": offering("claude-fable-5-1[1m]") }, () => null);
+	const deadFallback = routeAll(delegateDefaults(), { "claude-code": { models: [{ id: "claude-fable-5-1[1m]" }, { id: "opus[1m]", efforts: ["low"] }] } }, () => null);
 	const prompt = buildDelegatePrompt(deadFallback);
 	const planning = prompt.split("\n").find((line) => line.startsWith("- Planning & specs"))!;
-	assert.match(planning, /→ backend "claude-code", model "claude-fable-5-1\[1m\]", effort "medium"; its configured fallback \(backend "claude-code", model "opus\[1m\]", effort "high"\) can't run — opus\[1m\] is not offered by claude-code — so if the primary fails, ask the user\./);
+	assert.match(planning, /→ backend "claude-code", model "claude-fable-5-1\[1m\]", effort "medium"; its configured fallback \(backend "claude-code", model "opus\[1m\]", effort "high"\) can't run — opus\[1m\] does not support effort "high" \(supports: low\) — so if the primary fails, ask the user\./);
 	assert.doesNotMatch(planning, /; fallback backend/);
-	// Denied and effort-unsupported fallbacks are withheld the same way, with their own reasons.
+	// A fallback the CLI's list of the moment omits is still offered: absence from that list is not an answer.
+	const unlistedFallback = buildDelegatePrompt(routeAll(delegateDefaults(), { "claude-code": offering("claude-fable-5-1[1m]") }, () => null));
+	assert.match(unlistedFallback, /- Planning & specs .*; fallback backend "claude-code", model "opus\[1m\]", effort "high"\./);
+	// Denied fallbacks are withheld the same way, with their own reason.
 	const denied = buildDelegatePrompt(routeAll(delegateDefaults(), { "claude-code": offering("claude-fable-5-1[1m]", "opus[1m]") }, (c) => (c.model === "opus[1m]" ? "opus[1m] is disabled as a subagent model by user settings." : null)));
 	assert.match(denied, /its configured fallback .* can't run — opus\[1m\] is disabled as a subagent model/);
-	const effort = buildDelegatePrompt(routeAll(delegateDefaults(), { "claude-code": { models: [{ id: "claude-fable-5-1[1m]" }, { id: "opus[1m]", efforts: ["low"] }] } }, () => null));
-	assert.match(effort, /its configured fallback .* can't run — opus\[1m\] does not support effort "high"/);
 	// An unverified fallback (discovery failed) is still offered: failure to discover is not absence.
 	const unverified = buildDelegatePrompt(routeAll(delegateDefaults(), { "claude-code": { error: "timeout" } }, () => null));
 	assert.match(unverified, /- Planning & specs .*; fallback backend "claude-code", model "opus\[1m\]", effort "high"\./);
@@ -512,8 +519,8 @@ test("DEFAULT_ROUTES: every default profile on its primary, unverified until pro
 test("status labels", () => {
 	const settings: DelegateSettings = delegateDefaults();
 	const askRoutine = routeAll(
-		{ ...settings, profiles: { ...settings.profiles, routine: { primary: { backend: "claude-code", model: "gone", effort: "low" }, fallback: null } } },
-		{ "claude-code": offering("claude-fable-5-1[1m]", "opus[1m]") },
+		{ ...settings, profiles: { ...settings.profiles, routine: { primary: { backend: "claude-code", model: "opus[1m]", effort: "max" }, fallback: null } } },
+		{ "claude-code": { models: [{ id: "claude-fable-5-1[1m]", efforts: ["low", "medium", "high"] }, { id: "opus[1m]", efforts: ["low", "medium", "high"] }] } },
 		() => null,
 	);
 	assert.deepEqual(statusLabel("normal", ALL_OK, false, []), { text: "normal", tone: "dim" });

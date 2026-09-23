@@ -16,9 +16,14 @@ terminal session moves.
 `~/.pi/agent/mode.json` is the **default for new sessions** (plus the shortcuts). A session that
 has never toggled follows it; the first toggle pins that session. `GET /api/mode` reads it and
 `POST /api/mode` without `?path=` writes it; neither touches an open chat. From a terminal,
-`/mode default` saves the current session's mode as the default. A switch in a session that has
-sent no message yet writes the default too — the chat you're still setting up is the one you're
-setting up new chats from; once it has messages, switching is that chat's alone.
+`/mode default` saves the current session's mode as the default.
+
+**A switch never writes the default** — not even in a session that has sent no message yet. The
+default moves only when someone asks for exactly that: the menu's **`Save as default`** button
+(below), `/mode default` in a terminal, or a `POST /api/mode` with no `?path=`. A new chat is no
+longer a side effect of being new: setting one up is not a statement about every chat you start
+next, and the state that made it look like one (an empty session) was invisible in the act of
+switching.
 
 ## §chat.mode-menu/trigger — Trigger
 
@@ -86,10 +91,39 @@ toggles, which is exactly what `menuitemradio` and `menuitemcheckbox` are for.
       <div class="mode-option" role="menuitemcheckbox" aria-checked="true" tabindex="-1">…align…</div>
     </div>
   </div>
-  <p class="mode-menu-foot"><span class="text-mono">strict: off</span> · Before your first message
-    it's also the new default; after, this chat only. <code>/mode default</code> saves it any time.</p>
+  <div class="mode-menu-foot">
+    <p class="mode-menu-foot-line"><span class="text-mono">strict: off</span> · A switch here is this
+      chat's own. New sessions start from the default.</p>
+    <button type="button" class="button button-ghost button-sm mode-menu-save">Save as default</button>
+  </div>
 </div>
 ```
+
+- **`Save as default`** is the menu's one write of the default. Pressing it makes **this chat's**
+  major mode, strict flag and minor modes what new sessions start from (`POST /api/mode?path=…
+  { saveDefault: true }`) — the same three fields `/mode default` writes in a terminal. The request
+  carries no mode of its own — the server takes the chat's — so a switch that lands between the
+  click and the answer can't save something the user never saw. The write re-reads the file first,
+  so `mode.json`'s shortcuts and anything else in it are kept, and the mode extension reads it at
+  each `session_start`: the next session, TUI or Sova, starts on it.
+- **What it moves, and when.** It switches nothing now: this chat keeps what it is on, and no open
+  chat hears about it. But the default is read at each start, so it moves new sessions from their
+  next start — and, like any write of the default, a session that has never switched (no mode entry
+  on its branch) follows it too from its next start or reopen. "Unchanged" is true now, not
+  forever. It stays pressable in a chat that can't switch (`This chat can't switch.`): it saves
+  the very state the menu is showing.
+- **The button states.** `Save as default` when this chat's mode, strict flag or minors differ from
+  what new sessions start from; `Already the default` with a check, `aria-disabled`, when all three
+  match — a button offering to save what is already saved is the thing this wording exists to rule
+  out. What new sessions start from is the FILE's answer (read on every open, or the save's reply),
+  never a switch's reply, which is this chat's own mode. The visible label is the accessible name
+  (so a voice-control user can say what they see); the `title` adds what the press makes true and
+  names the mode: "New sessions will start from delegate · align." While the save is in flight it
+  reads `Saving…`, and only then; during a switch it keeps its label and is `aria-disabled`.
+  Unknown either side (the file unread, this chat's mode not arrived) is **not** "already the
+  default": the button stays pressable. The footer sentence beside it is the same in every state:
+  `strict: off|on` — the one flag the menu does not switch — then "A switch here is this chat's
+  own. New sessions start from the default."
 
 - **Choosing.** Picking a major mode closes the menu and returns focus to the trigger, like the
   terminal palette. Toggling a minor mode keeps the menu open, so you can set several. While the
@@ -109,7 +143,11 @@ toggles, which is exactly what `menuitemradio` and `menuitemcheckbox` are for.
   - On open, focus goes to the checked major mode.
   - `↑` / `↓` move and wrap. `Home` / `End` jump.
   - `Enter` or `Space` chooses or toggles.
-  - `Esc` closes (native) and focus returns to the trigger. `Tab` closes and moves on.
+  - `Esc` closes (native) and focus returns to the trigger.
+  - `Tab` from a row goes to the footer's `Save as default`, a real button and a tab stop inside
+    the menu (still reachable when `aria-disabled`); `Tab` from there leaves the menu, which closes
+    it and moves on. Keys pressed on the button are the button's own: `Enter` or `Space` presses
+    it, never whichever row was last focused, and the arrows do not move the rows from there.
 - **Motion.** The same single fade as §4c.
 
 ## §chat.mode-menu/how-a-switch-reaches-the-chat — How a switch reaches the chat
@@ -129,6 +167,13 @@ this server holds open (404 otherwise), and `mode.json` is not written. The chat
   session, the chat isn't touched. Its menu shows a warn banner, "This chat can't switch." Only
   the default applies then.
 
+`Save as default` is the same route with `{ saveDefault: true }`, and its refusals are of the
+same kind: no `?path=` is a 400 ("saveDefault needs ?path=: it saves that chat's own mode") — the
+save takes a chat's own mode, so there has to be a chat, never a write of whatever the file
+already says; a body that also names `mode` or `minorModes` (or a `saveDefault` that isn't `true`)
+is a 400, because the save takes the chat's state, never the body's fields; and a session this
+server doesn't hold open is a 404.
+
 **Where a chat's mode comes from when it opens.** `bind()` resolves it once, with the extension's
 own rule (`resolveChatMode`, `restoreActive` from pi-config `state.ts`): the newest `mode` entry
 on the branch that carries a snapshot wins, otherwise the default from `mode.json`. Server and
@@ -144,7 +189,10 @@ chats, and nothing watches `mode.json`.
 | Saving | Rows `aria-disabled` (the cursor is `progress`) |
 | Mid-turn switch | Info banner "Applies after this turn." (trigger name adds it too) |
 | Chat can't switch | Warn banner "This chat can't switch." |
-| Save failed | Error banner "Couldn't switch the mode." with the reason. The mode is unchanged |
+| Switch failed | Error banner "Couldn't switch the mode." with the reason. The mode is unchanged |
+| Saving the default | `Save as default` reads `Saving…`, `aria-disabled` — only the save does this; a switch keeps the label |
+| Default save failed | Error banner "Couldn't save the default." with the reason. The mode is unchanged |
+| Already the default | `Already the default` with the check, `aria-disabled` |
 | Load failed | Error banner "Couldn't load the modes." |
 
 ## §chat.mode-menu/tokens — Tokens

@@ -402,13 +402,13 @@
     },
     "§chat.mode-menu/how-a-switch-reaches-the-chat": {
       "kind": "behavior",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "verified"
     },
     "§chat.mode-menu/menu": {
       "kind": "behavior",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "verified"
     },
     "§chat.mode-menu/rejected": {
       "kind": "note",
@@ -417,8 +417,8 @@
     },
     "§chat.mode-menu/states": {
       "kind": "behavior",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "verified"
     },
     "§chat.mode-menu/tokens": {
       "kind": "note",
@@ -653,8 +653,8 @@
     },
     "§chat/mode-menu": {
       "kind": "surface",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "verified"
     },
     "§chat/model-menu": {
       "kind": "surface",
@@ -718,8 +718,8 @@
     },
     "§design.copy-deck/main-pane": {
       "kind": "note",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "verified"
     },
     "§design.copy-deck/markdown-and-code": {
       "kind": "note",
@@ -733,8 +733,8 @@
     },
     "§design.copy-deck/mode-menu": {
       "kind": "note",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "verified"
     },
     "§design.copy-deck/model-menu": {
       "kind": "note",
@@ -838,8 +838,8 @@
     },
     "§design/token-index": {
       "kind": "note",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "verified"
     },
     "§workspace.fanout/classes": {
       "kind": "note",
@@ -939,8 +939,8 @@
     },
     "§workspace.groups/layout-split": {
       "kind": "behavior",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "verified"
     },
     "§workspace.groups/layout-tabs": {
       "kind": "behavior",
@@ -982,8 +982,8 @@
     },
     "§workspace.groups/tokens": {
       "kind": "note",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "verified"
     },
     "§workspace/fanout": {
       "kind": "surface",
@@ -994,6 +994,11 @@
       "kind": "surface",
       "authority": "migrated",
       "evidence": "unreviewed"
+    },
+    "§chat.transcript/setup-card-figures": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified"
     }
   }
 }

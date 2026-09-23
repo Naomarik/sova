@@ -553,6 +553,32 @@ page with two parts, in this order:
 | Empty (new session) | `.empty`. Title: "New session in `~/webapps/pi-web`." Body: "Nothing sent yet. Your first message becomes its title." No action; focus the composer instead. Show it only while the thread has **zero rows**, counting local rows such as "Ran `/cmd`" (§4d) and model-change info rows. Once any row exists, the thread renders normally with no empty state |
 | Agent/server error (`type:"error"`, not busy) | `.banner.banner-error` placed as the last item of the thread (in flow, so it stays in the record). Title: "The turn stopped with an error." Body: "{message}. Your messages are kept. Send again to retry." |
 
+## §chat.transcript/setup-card-figures — Setup card: the commit log and the token figures
+
+A new session's setup card lists the context files pi loads, the skills it offers, and the
+repository around the folder. Two of its figures:
+
+- **Repository: the last three commits**, newest first, from `git log -3` in the same read that
+  answers the rest of the group. Each row is `{short oid} {subject} {relative age}` in one line —
+  the raw subject as git wrote it, never relabelled, cut at 300 characters by the server
+  (`SUBJECT_MAX`), cut with an ellipsis at its end when the card is narrow (the full text is the
+  row's title), and the age relative to now in the app's own words ("2h ago", "yesterday", "3d
+  ago", and past seven days a date like "Mar 4"). Fewer than three when the repository has fewer
+  commits. An unborn repository lists none and adds no note: the head line already reads "no
+  commits yet". A log the byte cap cut still lists the commits that arrived whole. Only a failed
+  read says so in words ("The last commits couldn't be read.") instead of showing an empty list. The
+  read is capped at three because this is a glance at where the folder stands, not a log viewer.
+- **Every loadout figure carries an estimated token count**: `31 KB · 475 lines · ≈8.1k tokens`, in
+  the app's one token formatter (§4f: `812 · 8.4k · 237k · 1M`), the same figure in the same place
+  on a row and on the section total that adds the rows up. The estimate is pi's own —
+  `ceil(characters ÷ CHARS_PER_TOKEN)`, `pi-ai`'s `estimateTextTokens`, never a tokenizer (characters
+  are the decoded text's JS string length, UTF-16 code units, the same count pi makes) — so the
+  card says what a file costs before it is sent, marked `≈` because a model's real count differs,
+  and the note under each section says what the mark means: "Token counts are estimates: 4
+  characters per token." That note appears **exactly when the section shows token figures**, and a
+  figure that isn't there is dropped rather than zeroed: a server that sends no estimate gets bytes
+  and lines, never `≈0 tokens` for a file nobody counted.
+
 ## §chat.transcript/tokens — Tokens
 
 - **Page and head.** Page `--color-bg`. Head `--color-surface` with bottom border `--color-border`.

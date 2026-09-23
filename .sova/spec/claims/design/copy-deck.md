@@ -50,6 +50,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | No session selected, Explained grid | section head: Explained `{n}` (shown only when {n} ≥ 1; the tiles' own copy is §10) |
 | Transcript load error | **Couldn't load this transcript.** The file at `{path}` wasn't changed. {server message} · button: `Retry` |
 | New empty session | **New session in `{cwd}`.** Nothing sent yet. Your first message becomes its title. |
+| New empty session, setup card figures | a file row or a section total: `{size} · {n} lines · ≈{tokens} tokens` (the token figure only when the server sent one) · under Context: "Loaded into the prompt." then, with token figures, "Token counts are estimates: 4 characters per token." · under Skills, with token figures: the same sentence after its note · commits: `{short oid} {subject} {age}` per row, or "The last commits couldn't be read." |
 | Archive button / toasts | `aria-label` "Archive Session" · "Unarchive Session" (shown at every width) · disabled `title` "Open in a TUI. It stays on top while live." · toasts "Archived. Find it under Archive." · "Moved back to Live & web." · error "Couldn't archive this session. {server message}" |
 | Copy output button / toast | `Copy Output` · toast "Copied output." |
 | Unknown entry | Unrecognized entry `{raw.type}` · disclosure label "Raw entry" |
@@ -202,10 +203,14 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Group labels | Major mode · Minor modes |
 | Descriptions | from pi-config `MODE_DESCRIPTIONS` (state.ts): normal: Pi as usual · delegate: Orchestrate: route planning, investigation and implementation to workers by profile · minors: from pi-config `MINOR_DESCRIPTIONS` |
 | Delegate gear | icon only; `aria-label`/`title`: Configure Delegate (opens Settings → Modes; switches nothing) |
-| Foot | strict: {on\|off} · Before your first message it's also the new default; after, this chat only. `/mode default` saves it any time. |
+| Foot | strict: {on\|off} · A switch here is this chat's own. New sessions start from the default. |
+| Save button | `Save as default` · while the save is in flight: `Saving…` · when this chat's mode, strict flag and minors are the file's: ✓ `Already the default` (`aria-disabled`). The visible label is the accessible name |
+| Save button `title` | New sessions will start from {mode · strict · minors}. · already: New sessions already start from {mode · strict · minors}. · this chat's mode not arrived: Make this chat's mode the default for new sessions. (already: New sessions already start from the default mode.) — `strict` named only when on |
+| Save failed | **Couldn't save the default.** {reason}. Your mode is unchanged. |
+| Saved (announcement) | Default mode saved: {mode · strict · minors}. New sessions start here. · this chat's mode not arrived: Default mode saved. New sessions start here. |
 | Pending | **Applies after this turn.** This turn keeps the old mode, and so do messages queued during it. Your next message follows the new one. |
 | Can't switch | **This chat can't switch.** This chat can't switch: the mode extension isn't loaded here, or another program wrote this session. |
-| Save failed | **Couldn't switch the mode.** {reason}. Your mode is unchanged. |
+| Switch failed | **Couldn't switch the mode.** {reason}. Your mode is unchanged. |
 | Load failed | **Couldn't load the modes.** Your mode is unchanged. Close this and try again. |
 | Transcript marker | Mode → {mode} · Minor mode: {minor} on\|off (shown as recorded: a pre-rename marker keeps "Mode → claude-heavy") |
 | Toast (from the extension) | Mode: {mode} · Minor mode: {minor} on\|off |

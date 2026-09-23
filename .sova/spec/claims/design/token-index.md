@@ -44,7 +44,8 @@ reader can't tell from a stale one.
 
 Workspace-local tokens declared in `src/app.css` (§14), rather than `tokens.css`:
 - `--workspace-pane-min`: 440px, the transcript floor (the same reason as `--main-min`).
-- `--workspace-pane-width`: `clamp(440px, 34vw, 720px)`, the default pane width.
+- `--workspace-pane-width`: `clamp(440px, 34vw, 720px)`, the least a pane nobody has stepped stands
+  at; it takes the row's share above that, up to 1040px (§workspace.groups "Layout: split").
 
 The 38 `--brand-*` primitives are the one deliberate omission: they are raw values that only
 `tokens.css` consumes, and a screen or a theme that reaches for one has gone around the semantic

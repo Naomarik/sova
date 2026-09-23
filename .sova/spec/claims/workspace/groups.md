@@ -199,24 +199,48 @@ The workspace is a third value of `.app`'s `data-view`, and it takes the whole m
 | Property | Value | Why |
 |---|---|---|
 | Direction | `flex-direction: row`, `overflow-x: auto`, `overflow-y: hidden` | One axis of overflow. A pane never wraps to a second row, so "left of" and "right of" stay true |
-| Pane width | `flex: 0 0 var(--workspace-pane-width)` (`clamp(440px, 34vw, 720px)`), floor `--workspace-pane-min` (440px) | 440 is `--main-min`, the transcript's floor, for the same reason: under it the reading column stops being one |
+| Pane width | `flex: 0 0 var(--workspace-pane-w)` — a pane nobody has stepped takes the row's own share (`max(--workspace-pane-width, row ÷ panes)`, `autoPaneWidth`; `--workspace-pane-width` is `clamp(440px, 34vw, 720px)`), floor `--workspace-pane-min` (440px) and ceiling `PANE_MAX_WIDTH` (1040px, in code; there is no CSS token for it) | 440 is `--main-min`, the transcript's floor, for the same reason: under it the reading column stops being one. 34vw is a guess at a comfortable column made without knowing the row; when it leaves the row half empty the measured share wins, because an empty strip to the right of the last pane is a workspace that isn't using the screen it was given — up to the ceiling, past which a wider reading column is not the answer |
 | Count | Uncapped | A fanout of 9 is a legitimate thing to ask for, and the row already scrolls. What protects the layout is the floor, not a cap |
 | Snap | `scroll-snap-type: x proximity` on the row, `scroll-snap-align: start` on each pane | Proximity, not mandatory: you must be able to park two panes half-and-half to read them together |
 | Gap and seam | No gap; each pane has a left border (`--color-border`), the first none | Panes are columns of one surface, not cards on a canvas. A gap here would read as N windows |
 | Scrollbar | The row's own, always at the foot of the panes and above the group composer | The one place a horizontal scrollbar is allowed in this product |
 
+- **A pane nobody has stepped fills the row.** Its width is the leftover space — the row's own
+  measured width minus the panes the user has stepped — divided among the panes still on their
+  default, floored, never below the 34vw posture and never past 1040px. It is derived on every
+  render, never stored, so it follows the window and the sidebar. While the row's share is under
+  the ceiling, no empty strip is left to the right of the last pane; past it (one member in any
+  row wider than 1040px, two past 2080px) the panes stop at 1040 and the strip stays. A row with
+  nothing left to divide (the share lands under 34vw) keeps the 34vw posture: the panes overflow
+  and the row scrolls, as they did before this existed. So `Wider` on a row the auto-fit filled can
+  bring the scrollbar back — the pane beside it holds its floor rather than shrinking to make room
+  for the step. An **auto-fit only ever widens**
+  a pane; it never squeezes one, which is why it cannot be the thing that makes a 4-way fanout
+  unreadable. A pane the user has stepped is out of the calculation entirely: a chosen width is a
+  posture, and filling the row by rewriting one is the bug §14 already paid for once (the `gid`
+  memo in GroupView.tsx).
 - **`Wider` and `Narrower`** step that one pane's width by 120px between 440 and 1040, written to
-  a per-pane `--workspace-pane-w` and kept in memory only. Like §1's sessions pane, nothing is persisted:
-  a width is a posture for the task in front of you.
+  a per-pane `--workspace-pane-w` and kept in memory only. The step starts from the number on
+  screen, so the first press on an auto-fitted 560px pane lands on 680 — not on 34vw. Like §1's
+  sessions pane, nothing is persisted: a width is a posture for the task in front of you.
 - **`Fit All`** (split only, 2+ members) sets EVERY pane to the one width at which they stand in
-  the row with no scrollbar: the row's own client width divided by the pane count, measured at
-  the press (panes are `border-box` and the seam is a pane's own border, so nothing is
-  subtracted; floored, never rounded). That width is **allowed below the 440 floor, and Fit is
-  the only thing that is** — the floor's own words are "a pane narrower than this can't hold a
-  transcript and a composer", and that is true: comparison wins here because the user asked for
-  exactly it, and the alternative is that a 4-way fanout fits no viewport at all (4×440 = 1760).
-  A fitted pane carries an inline `min-width: 0` beside the width, because the stylesheet's floor
-  would otherwise quietly re-apply. Leaving a fit is deliberate: `Wider` from below the floor
+  the row with no scrollbar: the row's measured width (its content box, watched by a
+  `ResizeObserver`, never `clientWidth`) divided by the pane count (panes are `border-box` and the
+  seam is a pane's own border, so nothing is subtracted; floored, never rounded; and capped at the
+  1040 ceiling every width here keeps, `PANE_MAX_WIDTH`). The press stores the posture, not the
+  number, so that width is re-derived every time the row changes. That width
+  is **allowed below the 440 floor, and Fit is the only thing that is** — the floor's own words are
+  "a pane narrower than this can't hold a transcript and a composer", and that is true: comparison
+  wins here because the user asked for exactly it, and the alternative is that a 4-way fanout fits
+  no viewport at all (4×440 = 1760). A fitted pane under 440px carries an inline `min-width: 0`
+  beside the width, because the stylesheet's floor would otherwise quietly re-apply. **A fitted
+  pane is a posture, not a number**: it keeps taking the row's share when the row changes (the row shrinks, the panes shrink together, still with no
+  scrollbar), where a pane stepped to a number keeps that number through the same resize. While any
+  pane in the row is fitted, a member added to the group — or one that comes back — joins the fit
+  instead of standing at the auto width beside it, so the row stays without a scrollbar. On a row
+  nobody has stepped the press usually changes no width at all — the auto-fit is already the fit
+  width — and it still means something: it leaves the panes fitted, and it is the way back from
+  stepped widths. Leaving a fit is deliberate: `Wider` from below the floor
   lands on 440, the first stepped width; `Narrower` below the floor does nothing — a button that
   says "narrower" while raising the pane to 440 would be the announcement lying about the click.
   The number is said out loud (the announcement, and what a later step starts from), and it is
@@ -864,7 +888,8 @@ Everything else is reused as it stands: `.composer*`, `.transcript*`, `.chip*`, 
 ## §workspace.groups/tokens — Tokens
 
 `--workspace-pane-min` (440px, the same floor and the same reason as `--main-min`), `--workspace-pane-width`
-(`clamp(440px, 34vw, 720px)`), plus `--color-border`, `--color-surface`, `--color-sunken`,
+(`clamp(440px, 34vw, 720px)`, the least a pane nobody has stepped stands at — it takes the row's
+share above that, "Layout: split"), plus `--color-border`, `--color-surface`, `--color-sunken`,
 `--space-2`, `--space-3`, `--space-4`, `--dur-fast`, `--ease-standard`, `--fs-caption`,
 `--control-md`, `--tap-min`, and the chip and status tokens the member states use.
 

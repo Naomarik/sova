@@ -16,9 +16,9 @@ export type LiveBlock =
  * Where an outgoing message of ours stands (spec/03 "A queued message"):
  * "sending" = this tab put it on the socket and the server hasn't acknowledged it (its input
  * handlers may still be running, and it may never be queued at all); "queued" = the server says
- * it holds it, so it can still be taken back; "delivered" = the agent started it (message_start),
- * and nothing about it can be recalled. The head label and the Remove affordance both read this,
- * so neither can claim a state the server never confirmed.
+ * it holds it, so it can still be taken back; "delivered" = the agent has taken it (the server's
+ * departure by id, or its message_start), and nothing about it can be recalled. The head label and
+ * the Remove affordance both read this, so neither can claim a state the server never confirmed.
  */
 export type LiveUserState = "sending" | "queued" | "delivered";
 
@@ -34,6 +34,11 @@ export type LiveEntry =
           snapshot no longer lists it. Not a claim about WHY it left — only `message_start` says
           delivered, a removal says removed and `queue_cleared` says a Stop took it back. */
       handed?: boolean;
+      /** The agent's own `message_start` for this message has been applied to this row, so no
+          later start may claim it. Not the same fact as `state: "delivered"`: the server reports a
+          delivery by id (`queue_item_gone`, a `consumed` refusal) BEFORE the start, so a delivered
+          row can still be waiting for its start. */
+      started?: boolean;
       /** Who put it in the queue: "server" is a prompt this session made for itself (a group
           message, a remote status check), which we render but never claim you typed. */
       origin?: "client" | "server";
@@ -80,8 +85,8 @@ export const emptyLive = (): LiveState => ({ entries: [], tools: {}, running: fa
 export function runDetail(s: LiveState): string | null {
   const running = Object.values(s.tools).find((t) => t.status === "running");
   if (running) return `running ${running.name}`;
-  const last = s.entries[s.entries.length - 1];
-  if (last?.kind !== "assistant" || last.done) return null;
+  const last = streamingAssistant(s);
+  if (!last) return null;
   const block = [...last.blocks].reverse().find(Boolean);
   if (block?.type === "thinking") return "thinking";
   if (block?.type === "text") return "writing";
@@ -109,9 +114,19 @@ function blocksFromContent(content: unknown): LiveBlock[] {
   return out;
 }
 
+/** The reply still streaming, if any. Not only the last entry: a message sent while the reply
+    streams is appended after it, and the reply's later deltas and its end are still the reply's. */
+function streamingAssistant(s: LiveState): Extract<LiveEntry, { kind: "assistant" }> | undefined {
+  for (let i = s.entries.length - 1; i >= 0; i--) {
+    const e = s.entries[i]!;
+    if (e.kind === "assistant") return e.done ? undefined : e;
+  }
+  return undefined;
+}
+
 function lastAssistant(s: LiveState): Extract<LiveEntry, { kind: "assistant" }> {
-  const last = s.entries[s.entries.length - 1];
-  if (last?.kind === "assistant" && !last.done) return last;
+  const current = streamingAssistant(s);
+  if (current) return current;
   // Joined mid-message (e.g. after reconnect): start a fresh one.
   const entry: LiveEntry = { kind: "assistant", blocks: [], done: false };
   s.entries.push(entry);
@@ -328,16 +343,25 @@ export function applyEvent(set: SetStoreFunction<LiveState>, event: unknown) {
             const model = liveModelOf(msg);
             s.entries.push({ kind: "assistant", blocks: blocksFromContent(msg.content), done: false, ...(model ? { model } : {}) });
           } else if (msg.role === "user") {
-            // Which row this is: the SDK's own rule for taking a message off its queue — the
-            // first row with that text — and only then the first undelivered row, for the
-            // expansions (skills, templates, vision delegates) whose text no longer matches what
-            // was typed. Matching text first is what keeps two queued messages from swapping
-            // labels when the steer ahead of the follow-up is delivered first.
+            // Which row this is, among the rows no start has claimed yet — NOT the undelivered
+            // ones. A message sent mid-turn is reported delivered by id before its start arrives
+            // (the SDK takes it off its queue before emitting the start, and SDK events wait for
+            // the next frame here), so its row is usually "delivered" already. Leaving those out
+            // gave the start no row, and a second copy of the message was appended.
+            // Then: the SDK's own rule for taking a message off its queue — the first row with
+            // that text; then the first row the server has reported delivered; only then the
+            // first one still waiting. The last two are for the expansions (skills, templates,
+            // vision delegates) whose text no longer matches what was typed. Matching text first
+            // is what keeps two queued messages from swapping labels when the steer ahead of the
+            // follow-up is delivered first. Each start claims one row, so the same words sent
+            // twice are still two messages, and a start no row waits for is a new one.
             const text = contentText(msg.content);
-            const undelivered = s.entries.filter((e) => e.kind === "user" && e.state !== "delivered");
-            const row = undelivered.find((e) => e.kind === "user" && e.text === text) ?? undelivered[0];
-            if (row && row.kind === "user") row.state = "delivered";
-            else s.entries.push({ kind: "user", text, state: "delivered", images: imagesFromContent(msg.content) });
+            const open = s.entries.filter((e): e is Extract<LiveEntry, { kind: "user" }> => e.kind === "user" && !e.started);
+            const row = open.find((e) => e.text === text) ?? open.find((e) => e.state === "delivered") ?? open[0];
+            if (row) {
+              row.state = "delivered";
+              row.started = true;
+            } else s.entries.push({ kind: "user", text, state: "delivered", started: true, images: imagesFromContent(msg.content) });
           }
           break;
         }

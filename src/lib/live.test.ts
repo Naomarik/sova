@@ -12,6 +12,7 @@ import {
   markRemoved,
   newClientId,
   queuedText,
+  runDetail,
   takeBackQueued,
   unsentRows,
   type LiveState,
@@ -241,6 +242,129 @@ test("message_start delivers the row with THAT text, not whichever came first", 
     ["c1", "queued"],
     ["c2", "delivered"],
   ]);
+});
+
+// ---- Delivery: the server's word by id, then the agent's own message_start ----------------------
+
+const userStart = (text: string) => ({ type: "message_start", message: { role: "user", content: [{ type: "text", text }] } });
+
+/**
+ * How a message sent mid-turn reaches its row when the agent takes it, in the order ChatView
+ * applies it. The SDK takes the message off its queue BEFORE it emits that message's
+ * `message_start` (`_handleAgentEvent`, agent-session.js), the server's queue reports the departure
+ * from inside that step (`queue_item_gone{delivered}`, then the snapshot without it), and ChatView
+ * applies both on receipt while SDK events wait for the next animation frame. So the row is
+ * already "delivered" when its own start arrives — on every mid-turn send, not in a race.
+ */
+function deliverMidTurn(set: ReturnType<typeof store>[1], id: string, started: string, stillHeld: QueuedItem[] = []) {
+  markDelivered(set, id); // queue_item_gone{delivered}
+  applyQueue(set, stillHeld); // queue
+  applyEvent(set, userStart(started)); // event{message_start}, a frame later
+}
+
+test("a message sent mid-turn is ONE row once delivered, in either order of its departure and its start", () => {
+  const path = "/home/u/.pi/agent/sova/attachments/s1/sova-shot.png";
+  const text = `what is this?\n${path}`;
+  for (const departureFirst of [true, false]) {
+    const [s, set] = store();
+    applyEvent(set, messageStart("zai", "glm-5.3")); // the reply this message interrupts
+    addPendingPrompt(set, text, [], [{ path, name: "sova-shot.png", mimeType: "image/png", size: 10 }], "c1");
+    applyQueue(set, [queued("c1", text, { state: "sending" })]);
+    markQueued(set, "c1");
+    if (departureFirst) deliverMidTurn(set, "c1", text);
+    else {
+      applyEvent(set, userStart(text));
+      markDelivered(set, "c1");
+      applyQueue(set, []);
+    }
+    assert.deepEqual(userRows(s), [{ id: "c1", text, state: "delivered", handed: true }], `order departureFirst=${departureFirst}`);
+    // The row that stays is the one that was sent, attachment chip and all — not one rebuilt from
+    // the start's text, which renders the upload's path as prose.
+    const row = s.entries.find((e) => e.kind === "user");
+    assert.equal(row?.kind === "user" ? row.attachments?.length : 0, 1, `order departureFirst=${departureFirst}`);
+  }
+});
+
+test("a start whose row was already delivered doesn't take the queued message behind it", () => {
+  const [s, set] = store();
+  addPendingPrompt(set, "it has been working fine", [], [], "c1");
+  addPendingPrompt(set, "*with* claude models", [], [], "c2");
+  applyQueue(set, [queued("c1", "it has been working fine", { state: "sending" }), queued("c2", "*with* claude models")]);
+  deliverMidTurn(set, "c1", "it has been working fine", [queued("c2", "*with* claude models")]);
+  assert.deepEqual(userRows(s).map((r) => [r.id, r.state]), [
+    ["c1", "delivered"],
+    ["c2", "queued"], // still removable: nothing has taken it
+  ]);
+  deliverMidTurn(set, "c2", "*with* claude models");
+  assert.deepEqual(userRows(s).map((r) => [r.id, r.state]), [
+    ["c1", "delivered"],
+    ["c2", "delivered"],
+  ]);
+});
+
+test("the same words twice are two messages: one start per row, and a start no row is waiting for is a new message", () => {
+  const [s, set] = store();
+  addPendingPrompt(set, "ok", [], [], "c1");
+  applyEvent(set, userStart("ok")); // sent idle: no queue, its start alone delivers it
+  applyEvent(set, messageStart());
+  addPendingPrompt(set, "ok", [], [], "c2"); // the same words again, mid-turn
+  applyQueue(set, [queued("c2", "ok", { state: "sending" })]);
+  deliverMidTurn(set, "c2", "ok");
+  assert.deepEqual(userRows(s).map((r) => [r.id, r.state]), [
+    ["c1", "delivered"],
+    ["c2", "delivered"],
+  ]);
+  // A third "ok" that no row here was waiting for — another tab's send, a group prompt — is shown,
+  // not taken for an echo of either: a row answers to one start, never to its words alone.
+  applyEvent(set, userStart("ok"));
+  assert.deepEqual(userRows(s).map((r) => [r.id, r.state]), [
+    ["c1", "delivered"],
+    ["c2", "delivered"],
+    [undefined, "delivered"],
+  ]);
+});
+
+test("a start whose text was rewritten on the way claims the row the server delivered, not the first one waiting", () => {
+  // A vision description or a skill expansion changes the text between the send and the start,
+  // so no row matches it. Here this tab's own message is on screen first but reached the server
+  // second, behind another tab's — whose departure is the evidence of whose start this is.
+  const [s, set] = store();
+  addPendingPrompt(set, "mine", [], [], "c1");
+  applyQueue(set, [queued("t2", "theirs", { state: "sending" }), queued("c1", "mine")]);
+  deliverMidTurn(set, "t2", "theirs\n\n[image: a chart]", [queued("c1", "mine")]);
+  assert.deepEqual(userRows(s).map((r) => [r.id, r.state]), [
+    ["c1", "queued"],
+    ["t2", "delivered"],
+  ]);
+});
+
+test("a message sent while a reply streams doesn't split the reply in two", () => {
+  const [s, set] = store();
+  const update = (ev: Record<string, unknown>) => applyEvent(set, { type: "message_update", assistantMessageEvent: ev });
+  applyEvent(set, messageStart("zai", "glm-5.3"));
+  update({ type: "thinking_start", contentIndex: 0 });
+  update({ type: "thinking_delta", contentIndex: 0, delta: "Definitive timeline" });
+  addPendingPrompt(set, "this session is weird", [], [], "c1");
+  // The row below the reply doesn't hide what the reply is doing.
+  assert.equal(runDetail(s), "thinking");
+  update({ type: "thinking_delta", contentIndex: 0, delta: " for today" });
+  update({ type: "toolcall_start", contentIndex: 1, id: "t1", toolName: "bash" });
+  applyEvent(set, {
+    type: "message_end",
+    message: {
+      role: "assistant",
+      content: [
+        { type: "thinking", thinking: "Definitive timeline for today" },
+        { type: "toolCall", id: "t1", name: "bash", arguments: {} },
+      ],
+      stopReason: "toolUse",
+    },
+  });
+  assert.deepEqual(s.entries.map((e) => e.kind), ["assistant", "user"]);
+  const reply = s.entries[0];
+  assert.ok(reply?.kind === "assistant");
+  assert.equal(reply.done, true); // no half of it left streaming for ever
+  assert.deepEqual(reply.blocks.map((b) => (b.type === "toolCall" ? b.name : b.text)), ["Definitive timeline for today", "bash"]);
 });
 
 test("client ids are unique, and exist without a secure context", () => {

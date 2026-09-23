@@ -2,6 +2,7 @@ import { createMemo, createSignal, For, Show, type Accessor } from "solid-js";
 import type { ChatServerMessage, ModeInfo } from "../../shared/protocol";
 import { getMode, postMode } from "../lib/api";
 import { usePaneId } from "../lib/pane-scope";
+import { openSettings } from "../lib/settings-nav";
 import { Banner, Icon } from "./ui";
 
 /** This chat's last WS "mode" message: the mode of THIS chat and how a switch applies here. */
@@ -14,7 +15,16 @@ export interface ModeControl {
   path: string;
 }
 
-type Item = { kind: "radio" | "check"; id: string; description: string };
+/** radio: the major mode; check: a minor mode; action: opens a settings screen, switches nothing. */
+type Item = { kind: "radio" | "check" | "action"; id: string; description: string; label?: string };
+
+/** The one action: a gear on Delegate's row, since Delegate's routing lives in Settings → Modes. */
+const CONFIGURE_DELEGATE: Item = {
+  kind: "action",
+  id: "configure-delegate",
+  label: "Configure Delegate",
+  description: "Which worker each kind of work goes to",
+};
 
 const itemId = (it: Item) => `mode-${it.kind}-${it.id}`;
 
@@ -45,11 +55,16 @@ export function ModeMenu(props: { control: ModeControl }) {
   const items = createMemo<Item[]>(() => {
     const i = info();
     if (!i) return [];
-    return [...i.modes.map((m) => ({ kind: "radio" as const, ...m })), ...i.minors.map((m) => ({ kind: "check" as const, ...m }))];
+    // The gear follows Delegate in the roving order, as it follows it on the row.
+    return [
+      ...i.modes.flatMap((m) => (m.id === "delegate" ? [{ kind: "radio" as const, ...m }, CONFIGURE_DELEGATE] : [{ kind: "radio" as const, ...m }])),
+      ...i.minors.map((m) => ({ kind: "check" as const, ...m })),
+    ];
   });
   const checked = (it: Item) => {
     const c = current();
-    return !!c && (it.kind === "radio" ? c.mode === it.id : c.minorModes.includes(it.id));
+    if (!c || it.kind === "action") return false;
+    return it.kind === "radio" ? c.mode === it.id : c.minorModes.includes(it.id);
   };
   const label = () => {
     const c = current();
@@ -85,6 +100,13 @@ export function ModeMenu(props: { control: ModeControl }) {
   };
 
   const activate = async (it: Item) => {
+    if (it.kind === "action") {
+      // Opens Settings at Modes → Delegate. This chat's mode is left exactly as it is.
+      closedByChoice = true;
+      closeMenu();
+      openSettings("modes");
+      return;
+    }
     const c = current();
     if (!c || busy()) return;
     let patch: { mode?: string; minorModes?: string[] };
@@ -143,10 +165,29 @@ export function ModeMenu(props: { control: ModeControl }) {
     >
       <Icon name="check" small class="mode-option-check" />
       <span class="mode-option-text">
-        <span class="mode-option-id">{p.it.id}</span>
+        <span class="mode-option-id">{p.it.label ?? p.it.id}</span>
         <span class="mode-option-desc">{p.it.description}</span>
       </span>
     </div>
+  );
+  // A sibling of Delegate's row, not inside it: a button nested in a menuitemradio loses its role.
+  const Gear = (p: { it: Item; index: number }) => (
+    <button
+      type="button"
+      class="button button-ghost button-icon mode-option-gear"
+      role="menuitem"
+      id={itemId(p.it)}
+      tabindex={active() === p.index ? 0 : -1}
+      aria-label={p.it.label}
+      title={p.it.label}
+      onClick={() => {
+        setActive(p.index);
+        void activate(p.it);
+      }}
+      onFocus={() => setActive(p.index)}
+    >
+      <Icon name="settings" small />
+    </button>
   );
   const group = (kind: Item["kind"]) => items().map((it, index) => ({ it, index })).filter((x) => x.it.kind === kind);
 
@@ -213,7 +254,21 @@ export function ModeMenu(props: { control: ModeControl }) {
             <div class="list-group-label" id={paneId("mode-group-major")}>
               Major mode
             </div>
-            <For each={group("radio")}>{(x) => <Row it={x.it} index={x.index} />}</For>
+            <For each={group("radio")}>
+              {(x) => {
+                const gear = () => (items()[x.index + 1]?.kind === "action" ? items()[x.index + 1]! : null);
+                return (
+                  <Show when={gear()} fallback={<Row it={x.it} index={x.index} />}>
+                    {(g) => (
+                      <div class="mode-option-row" role="none">
+                        <Row it={x.it} index={x.index} />
+                        <Gear it={g()} index={x.index + 1} />
+                      </div>
+                    )}
+                  </Show>
+                );
+              }}
+            </For>
           </div>
           <Show when={group("check").length > 0}>
             <div class="model-menu-group" role="group" aria-labelledby={paneId("mode-group-minor")}>

@@ -10,13 +10,30 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { MINOR_MODES, normalizeMinorModes, type MinorMode } from "./minor.ts";
 
-export type Mode = "normal" | "claude-heavy";
+export type Mode = "normal" | "delegate";
+
+/** Canonical modes, in menu order. Only these are ever written. */
+export const MODES: readonly Mode[] = ["normal", "delegate"];
+
+/** One line per mode: the palette rows and Sova's mode menu both show it. */
+export const MODE_DESCRIPTIONS: Record<Mode, string> = {
+	normal: "Pi as usual",
+	delegate: "Orchestrate: route planning, investigation and implementation to workers by profile",
+};
+
+/**
+ * Names a mode was once written under. Read everywhere a mode is parsed — mode.json, session
+ * snapshots, launch flags, /mode arguments, Sova's API — and never written: "claude-heavy" is
+ * what Delegate was called until 2026-09, and transcripts and files carrying it are never
+ * rewritten, so this alias is permanent.
+ */
+export const LEGACY_MODE_ALIASES: Readonly<Record<string, Mode>> = { "claude-heavy": "delegate" };
 
 export interface ModeState {
 	version: 1;
 	/** The major mode new sessions start in. A session's own mode lives in its `mode` entries (see ModeActive). */
 	mode: Mode;
-	/** Strict mode additionally removes the edit/write tools from the orchestrator while heavy. Default for new sessions; off by default. */
+	/** Strict mode additionally removes the edit/write tools from the orchestrator while in delegate. Default for new sessions; off by default. */
 	strict: boolean;
 	/** Optional override of the toggle shortcut (a pi-tui KeyId, for example "alt+h"). Default: alt+m. Global. */
 	shortcut?: string;
@@ -35,12 +52,20 @@ export function defaults(): ModeState {
 	return { version: 1, mode: "normal", strict: false, minorModes: [] };
 }
 
+/** A canonical mode name. Legacy names are not modes; `parseMode` reads them. */
 export function isMode(value: unknown): value is Mode {
-	return value === "normal" || value === "claude-heavy";
+	return typeof value === "string" && (MODES as readonly string[]).includes(value);
+}
+
+/** The mode a stored or typed name means: canonical names as is, legacy aliases mapped, else undefined. */
+export function parseMode(value: unknown): Mode | undefined {
+	if (isMode(value)) return value;
+	if (typeof value !== "string" || !Object.hasOwn(LEGACY_MODE_ALIASES, value)) return undefined;
+	return LEGACY_MODE_ALIASES[value];
 }
 
 export function toggleMode(mode: Mode): Mode {
-	return mode === "normal" ? "claude-heavy" : "normal";
+	return mode === "normal" ? "delegate" : "normal";
 }
 
 // Matches the single-chord KeyId grammar pi-tui parses; double-tap/leader chords are not supported by pi.
@@ -59,7 +84,8 @@ export function normalizeState(value: unknown): ModeState {
 	const state = defaults();
 	if (value === null || typeof value !== "object" || Array.isArray(value)) return state;
 	const record = value as Record<string, unknown>;
-	if (isMode(record.mode)) state.mode = record.mode;
+	const mode = parseMode(record.mode);
+	if (mode !== undefined) state.mode = mode;
 	if (typeof record.strict === "boolean") state.strict = record.strict;
 	const shortcut = parseShortcut(record.shortcut);
 	if (shortcut !== undefined) state.shortcut = shortcut;
@@ -113,10 +139,11 @@ export function activeOf(state: Pick<ModeState, "mode" | "strict" | "minorModes"
 export function normalizeActive(value: unknown): ModeActive | undefined {
 	if (value === null || typeof value !== "object" || Array.isArray(value)) return undefined;
 	const record = value as Record<string, unknown>;
-	if (record.version !== 1 || !isMode(record.mode)) return undefined;
+	const mode = parseMode(record.mode);
+	if (record.version !== 1 || mode === undefined) return undefined;
 	return {
 		version: 1,
-		mode: record.mode,
+		mode,
 		strict: record.strict === true,
 		minorModes: normalizeMinorModes(record.minorModes),
 	};

@@ -1,15 +1,20 @@
 // Single content model for the Fold AI Dev reference.
 // site/**.html and reference/**.md are both generated from this, so a doc can
-// never disagree with the page it documents.
+// never disagree with the page it documents. Scale & spec tables read their
+// values from tokens.css and the shipped files, so they cannot restate a stale one.
+import { readFileSync, readdirSync } from 'node:fs';
+import { token, contrast } from './tokens.mjs';
 
-export const FOUNDATIONS = [
-  {
-    slug: 'colors', title: 'Color',
-    purpose: `One saturated color, spent carefully. Fold Indigo marks the primary action and the live run; everything else is ink, paper, and four status hues. The rule that matters: full-strength indigo is 5% of any composition — spend it on decoration and "this needs you" stops meaning anything.`,
-    sections: [
-      { id: 'palette', name: 'Palette', html: `
-<div class="swatches">
-  ${[['Fold Indigo','--color-accent','#4A43D8','#8E88FF','Primary action, live run, links'],
+const ROOT = new URL('..', import.meta.url).pathname;
+const both = (t) => [token(t), token(t, 'dark')];
+const GROUNDS = ['--color-bg', '--color-surface', '--color-sunken'];
+const NAMES = { '--color-bg': 'paper', '--color-surface': 'surface', '--color-sunken': 'sunken' };
+// The lowest contrast a foreground reaches on any of the three grounds, per theme.
+const floor = (fg, theme) => GROUNDS.map((g) => [contrast(token(fg, theme), token(g, theme)), NAMES[g]])
+  .sort((a, b) => a[0] - b[0])[0];
+const fmt = ([r, on]) => `${r.toFixed(2)} on ${on}`;
+
+const SWATCHES = [['Fold Indigo','--color-accent','#4A43D8','#8E88FF','Primary action, live run, links'],
      ['Indigo tint','--color-accent-tint','#E8E6FA','#2B2650','Selected rows, active nav'],
      ['Ink','--color-ink','#17171C','#F2F2F6','Body text, headings'],
      ['Ink-2','--color-ink-2','#4A4A57','#B8B8C6','Secondary prose'],
@@ -18,7 +23,16 @@ export const FOUNDATIONS = [
      ['Surface','--color-surface','#FFFFFF','#2C2C38','Cards, sheets'],
      ['Sunken','--color-sunken','#E9E9F0','#26262F','Headers, gutters'],
      ['Border','--color-border','#E3E3E9','#3B3B49','Dividers'],
-     ['Border strong','--color-border-strong','#86868F','#7E7E93','Control borders — 3:1']]
+     ['Border strong','--color-border-strong','#86868F','#7E7E93','Control borders — 3:1']];
+
+export const FOUNDATIONS = [
+  {
+    slug: 'colors', title: 'Color',
+    purpose: `One saturated color, spent carefully. Fold Indigo marks the primary action and the live run; everything else is ink, paper, and four status hues. The rule that matters: full-strength indigo is 5% of any composition — spend it on decoration and "this needs you" stops meaning anything.`,
+    sections: [
+      { id: 'palette', name: 'Palette', html: `
+<div class="swatches">
+  ${SWATCHES
     .map(([n,t,l,d,r])=>`<div class="swatch">
     <div class="swatch-c" style="background:var(${t})"></div>
     <div class="swatch-m"><b>${n}</b><code>${t}</code><span>${l} · ${d}</span><em>${r}</em></div>
@@ -101,7 +115,7 @@ export const FOUNDATIONS = [
     dos: [['Use mono for anything the user might copy','it signals "this is exact" before they read it'],
           ['Cap prose with `.prose` or `.measure`','past ~72ch the eye loses the line return'],
           ['Use `.text-num` in any numeric column','proportional digits make a column of numbers jitter']],
-    donts: [['Expect a bare `<p>` to be capped','it is not, since 1.6.0 — a `<p>` is a status strip as often as it is prose'],
+    donts: [['Expect a bare `<p>` to be capped','it is not — a `<p>` is a status strip as often as it is prose'],
             ['Set body text in mono because it looks technical','it costs ~20% reading speed and says nothing'],
             ['Add a weight outside the four permitted','a fifth weight is a decision nobody documented'],
             ['Use `.text-eyebrow` for a sentence','it is uppercase and letterspaced; sentences become unreadable']],
@@ -130,7 +144,7 @@ export const FOUNDATIONS = [
               ['.stack-2 / .stack-5','Tighter / looser column','8px / 24px'],
               ['.cluster','Horizontal wrap at `--space-2`','Buttons, chips'],
               ['.spread','Space-between row','Title + action'],
-              ['.page','Centred page box','`--page-max` + `--space-4` gutter']],
+              ['.page','Centered page box','`--page-max` + `--space-4` gutter']],
     tokens: [['--space-1…9','4 · 8 · 12 · 16 · 24 · 32 · 48 · 64 · 96.'],
              ['--row-height','44px. The list row and the tap target are the same number.'],
              ['--page-max','1280px page ceiling.']],
@@ -200,7 +214,7 @@ export const FOUNDATIONS = [
   },
   {
     slug: 'grid-composition', title: 'Grid & responsive',
-    purpose: `The bands are the device, not a screen-size ladder. This product is designed first for a folded phone, so the threshold that matters is the one the phone itself crosses — the Galaxy Z Fold8 reports ~475 CSS px folded and ~933 unfolded, its main display being landscape-first, and 768 separates them. Container queries rather than media queries, because a pane can be at folded width inside a desktop window and should look like it.`,
+    purpose: `Three bands, and they are the device, not a screen-size ladder: folded is designed first, and 768 is the one threshold the stylesheet branches on. Components ask their own box with container queries rather than the window with media queries, because a pane can be at folded width inside a desktop window and should look like it.`,
     sections: [
       { id: 'breakpoints', name: 'Breakpoints', html: `
 <div class="table-wrap"><table class="table">
@@ -214,7 +228,7 @@ export const FOUNDATIONS = [
 <p class="text-muted"><strong>Unfolded means sidebar left, main pane right.</strong> Unfolding the phone turns it
 landscape, and landscape with a bottom nav wastes the width it just gained while pushing the primary action away from
 both thumbs. A screen that answers unfolding by growing one column has stretched the folded layout, not designed the
-unfolded one. <code>tablet</code> is retired as a band name: it was 768, which <code>unfolded</code> now names.</p>` },
+unfolded one. There is no <code>tablet</code> band: a tablet at 1024 gets the unfolded composition.</p>` },
       { id: 'touch', name: 'Touch', html: `
 <div class="card"><div class="card-body">
   <div class="cluster"><button class="button button-primary">Approve</button>
@@ -225,24 +239,24 @@ unfolded one. <code>tablet</code> is retired as a band name: it was 768, which <
   Destructive keeps its distance from primary — never adjacent in a thumb arc.</p>
 </div></div>` },
     ],
-    classes: [['.page','Centred, max 1280','Gutter is `--space-4`'],
+    classes: [['.page','Centered, max 1280','Gutter is `--space-4`'],
               ['.pane','Scroll region **and** query container','The box a component measures'],
-              ['.measure','72ch reading cap, one element','Opt-in since 1.6.0'],
+              ['.measure','72ch reading cap, one element','Opt-in; a bare element is never capped'],
               ['.prose','72ch cap on the running text inside','Leaves strips and rows alone'],
               ['.table-stack','Table collapses below 768 of its `.table-wrap`','Needs `data-label` per cell']],
-    tokens: [['--bp-unfolded / -desktop','768 / 1120. For JS and docs — custom properties do not work in `@media`. `--bp-tablet` is retired; it was 768, which `--bp-unfolded` now names.'],
+    tokens: [['--bp-unfolded / -desktop','768 / 1120. For JS and docs — custom properties do not work in `@media`.'],
              ['--page-max','1280px.'],['--measure','72ch.'],
              ['--tap-min','44px, every breakpoint.']],
     dos: [['Write `@container` queries in components','the component should ask its own box, not the window'],
           ['Give the box a `.pane` so the query has something to match','a container query with no container never matches and the page still renders'],
-          ['Name any container you declare yourself, and query it by name','an unnamed `@container` binds to the nearest one, which since 1.6.0 may be a `.table-wrap` or a `.diff` rather than your screen root'],
+          ['Name any container you declare yourself, and query it by name','an unnamed `@container` binds to the nearest one, which may be a `.table-wrap` or a `.diff` rather than your screen root'],
           ['Duplicate every gesture with a visible control','swipe is an accelerator, never the door'],
           ['Pin the primary decision to the bottom at folded width','that is where a thumb reaches one-handed']],
     donts: [['Let a table scroll horizontally on a phone','stack it — horizontal scroll is a defeat, not a fallback'],
             ['Render a `.scrim` or `.modal` inside a `.pane`','containment makes the pane its containing block, so it covers the pane and not the screen'],
             ['Let a container take its width from its own contents','`container-type: inline-size` resolves the box without them, so a `.table-wrap` as a flex item measures 0px and a `.diff` in an `auto` track measures 2px'],
             ['Hide a control behind hover','a phone has no hover, so the control does not exist there'],
-            ['Treat folded as a degraded desktop','it is a first-class width, and it is designed for first']],
+            ['Treat folded as a degraded desktop','it is a first-class width, and the one drawn first']],
   },
   {
     slug: 'motion', title: 'Focus & motion',
@@ -250,8 +264,8 @@ unfolded one. <code>tablet</code> is retired as a band name: it was 768, which <
     sections: [
       { id: 'focus', name: 'Focus', html: `
 <div class="cluster">
-  <button class="button button-focus">Focus ring</button>
-  <input class="input input-focus" style="max-width:200px" value="Focused input">
+  <button class="button is-focus">Focus ring</button>
+  <input class="input is-focus" style="max-width:200px" value="Focused input">
 </div>
 <p class="text-muted">2px solid accent, 2px offset, <code>:focus-visible</code> only. Never removed.</p>` },
       { id: 'durations', name: 'Durations', html: `
@@ -275,16 +289,16 @@ unfolded one. <code>tablet</code> is retired as a band name: it was 768, which <
   both stop under <code>prefers-reduced-motion</code>.</p>
 </div></div>` },
     ],
-    classes: [['.button-focus / .input-focus','Static focus — demo only','Production uses `:focus-visible`'],
+    classes: [['.button.is-focus / .input.is-focus','Static focus — demo only','Production uses `:focus-visible`'],
               ['.timeline-running','Pulsing live marker','One of two sanctioned loops'],
               ['.skeleton','Sweeping placeholder','The other']],
     tokens: [['--focus-ring / --focus-width / --focus-offset / --focus-color','The ring, in pieces and composed.'],
              ['--dur-fast|base|slow','120 / 200 / 320ms.'],
              ['--ease-standard','The only curve in the system.']],
     dos: [['Animate state changes at `--dur-fast`','faster feels broken, slower feels sluggish'],
-          ['Keep opacity fades under reduced motion','they carry meaning; transforms are what cause discomfort'],
+          ['Carry meaning in the end state, not the transition','under reduced motion every transition is near-instant, fades included, so the state must read without it'],
           ['Use one curve everywhere','mixed easings read as mixed authorship']],
-    donts: [['Add a spring or bounce','this product reports on other people\'s work; playfulness reads as unseriousness'],
+    donts: [['Add a spring or bounce','motion here reports state, and a bounce on a failure reads as play'],
             ['Loop anything decorative','two exceptions exist and they both mean "work is happening"'],
             ['Remove the focus outline','a keyboard user who cannot see focus cannot use the product']],
   },
@@ -329,16 +343,6 @@ export const BRAND = [
     purpose: `37 line icons on a 24px grid, shipped as local files. They inherit color from context via \`currentColor\`, which is what lets one file serve both themes and every surface it lands on.`,
     sections: [
       { id: 'functional', name: 'The set', html: `{{ICONS_FUNCTIONAL}}` },
-      { id: 'spec', name: 'Spec', html: `
-<div class="table-wrap"><table class="table">
-  <thead><tr><th>Property</th><th>Value</th></tr></thead>
-  <tbody>
-    <tr><td>Grid</td><td class="text-mono">24</td></tr>
-    <tr><td>Stroke</td><td class="text-mono">1.5px — the same in both themes</td></tr>
-    <tr><td>Caps / joins</td><td>round</td></tr>
-    <tr><td>Fill / stroke</td><td class="text-mono">fill="none" · stroke="currentColor"</td></tr>
-  </tbody>
-</table></div>` },
     ],
     classes: [['—','Icons are files, not classes','Inline the SVG so `currentColor` works']],
     tokens: [['--stroke-icon','1.5px — the icon stroke, in both themes.']],
@@ -350,3 +354,155 @@ export const BRAND = [
             ['Draw off the pixel grid','a half-pixel stroke renders soft at 24px and muddy at 16']],
   },
 ];
+
+// ------------------------------------------------------------ Scale & spec
+// Every foundation and brand page carries exactly one; build.mjs emits it as the
+// page's `## Scale & spec` and the site's #spec section.
+const svgDir = (d) => readdirSync(`${ROOT}${d}`).filter((f) => f.endsWith('.svg')).sort();
+const ICONS = svgDir('assets/icons/functional')
+  .map((f) => readFileSync(`${ROOT}assets/icons/functional/${f}`, 'utf8'));
+const iconsWith = (attr) => `${ICONS.filter((s) => s.includes(attr)).length} of ${ICONS.length}`;
+const logoFill = (f) => readFileSync(`${ROOT}assets/logos/${f}`, 'utf8').match(/<path[^>]*fill="([^"]+)"/)[1];
+
+const COLOR_ROWS = [
+  ['--color-accent', 'Primary action, live run, links, focus ring'], ['--color-accent-hover', 'Hovered and pressed accent'],
+  ['--color-accent-tint', 'Selected rows, active nav, user bubbles'], ['--color-on-accent', 'Text on a filled accent'],
+  ['--color-ink', 'Body text, headings'], ['--color-ink-2', 'Secondary prose'],
+  ['--color-ink-muted', 'Metadata, captions, placeholders'],
+  ['--color-bg', 'Page (paper)'], ['--color-surface', 'Cards, sheets, raised things'], ['--color-sunken', 'Headers, gutters, hover fills'],
+  ['--color-border', 'Dividers — decorative, never the only signal'], ['--color-border-strong', 'Control borders'],
+  ...['success', 'warn', 'error', 'info'].flatMap((k) => [[`--status-${k}`, `${k[0].toUpperCase() + k.slice(1)} text, dot, and border`],
+                                                         [`--status-${k}-bg`, `Soft ${k} fill for banners and chips — never text`]]),
+];
+const FG = new Set(['--color-accent', '--color-ink', '--color-ink-2', '--color-ink-muted', '--color-border-strong',
+                    '--status-success', '--status-warn', '--status-error', '--status-info']);
+
+const SPECS = {
+  colors: {
+    head: ['Token', 'Role', 'Light', 'Dark', 'Lowest contrast, light · dark'],
+    rows: COLOR_ROWS.map(([t, r]) => [`\`${t}\``, r, ...both(t).map((v) => `\`${v}\``),
+      FG.has(t) ? `${fmt(floor(t, 'light'))} · ${fmt(floor(t, 'dark'))}` : '—']),
+    prose: [
+      '**Contrast is measured against paper, surface and sunken, and the column shows the lowest of the three.** Text needs 4.5 and UI boundaries 3.0 (WCAG 2.x). Every text token clears 4.5 on every ground in both themes; the tightest text pair is `--color-accent` on surface in dark.',
+      `**One boundary reads under 3.0:** \`--color-border-strong\` against light sunken, ${contrast(token('--color-border-strong'), token('--color-sunken')).toFixed(2)}. A control that sits on a sunken fill (a filter bar) carries its own surface fill, and its border against that fill is ${contrast(token('--color-border-strong'), token('--color-surface')).toFixed(2)} — so the border never has to separate a control from sunken on its own.`,
+      '**Muted text is a discrete token, never an alpha of ink.** An alpha has a different ratio on every surface it lands on, so it cannot be measured; a token can.',
+      (() => {
+        const pairs = ['success', 'warn', 'error', 'info'].flatMap((k) => ['light', 'dark'].map((th) =>
+          [contrast(token(`--status-${k}`, th), token(`--status-${k}-bg`, th)), `\`--status-${k}\` on its soft fill, ${th}`]));
+        const [r, what] = pairs.sort((x, y) => x[0] - y[0])[0];
+        return `**A status hue on its own soft fill is measured too** — the lowest of the eight is ${what}, ${r.toFixed(2)}. The fills are for banners and chips only, never text of another color.`;
+      })(),
+    ],
+  },
+  typography: {
+    head: ['Step', 'Size', 'Line height', 'Usage'],
+    rows: [['display-xl', 'Page title. One per page.'], ['display-l', 'Section opener.'], ['heading-m', 'Card group heading, modal title.'],
+           ['heading-s', 'Card title, list section header.'], ['body', 'Everything else.'], ['caption', 'Metadata, hints, timestamps.'],
+           ['mono', 'IDs, paths, diffs, counts.'], ['micro', 'Eyebrow labels and chips only. Never a sentence.']]
+      .map(([n, u]) => [`\`${n}\``, `\`${token(`--fs-${n}`)}\``, `\`${token(`--lh-${n}`)}\``, u]),
+    prose: [
+      `**Weights:** regular \`${token('--fw-regular')}\` · medium \`${token('--fw-medium')}\` · semibold \`${token('--fw-semibold')}\` · display \`${token('--fw-display')}\` (display sizes only). Nothing else is on-system.`,
+      '**Sizes are px, not rem** — in a dense product UI, rem drift across nested containers costs more than it buys. **Sizes and weights are the same in both themes** — no per-theme type adjustment ships.',
+      '**The 72ch measure is opt-in.** `.measure` caps one element and `.prose` caps the running text inside a block; a bare `<p>` is never capped, because a `<p>` is a one-line status strip as often as it is prose, and a strip capped short still renders — the mistake is invisible.',
+      '**The fonts are real, not placeholders:** Inter and JetBrains Mono, variable, latin subset, SIL OFL 1.1, shipped in `fonts/` with their license texts. Swapping a face means replacing the `@font-face` block in `tokens.css` and the `--font-*` stacks — nothing else names a family.',
+    ],
+  },
+  spacing: {
+    head: ['Token', 'Value', 'Band'],
+    rows: [...[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => [`\`--space-${n}\``, `\`${token(`--space-${n}`)}\``,
+             n === 1 ? 'Inside a control: icon to label, chip padding'
+           : n <= 5 ? 'Product surfaces — gaps, padding, rows'
+           : n === 6 ? 'Section breaks (`hr` margin)'
+           : 'One idea on the screen only — an empty state']),
+           ['`--row-height`', `\`${token('--row-height')}\``, 'List row — the same number as the tap target'],
+           ['`--control-sm / -md / -lg`', `\`${token('--control-sm')}\` · \`${token('--control-md')}\` · \`${token('--control-lg')}\``, 'Control heights'],
+           ['`--page-max`', `\`${token('--page-max')}\``, 'Page ceiling']],
+    prose: [
+      '**4px base.** Surfaces live in `space-2` to `space-5`; that density is what lets a folded screen show more than four items. A list row reaches 44px through 12px padding — the target grew, the type did not.',
+      '**No value between steps.** A 10px gap is a decision nobody can repeat; pick the nearer step.',
+    ],
+  },
+  radius: {
+    head: ['Token', 'Value', 'Assigned to', 'Why'],
+    rows: [['none', 'Full-bleed regions', 'Nothing that meets a screen edge is rounded'], ['xs', 'Focus ring, checkbox', '8px on a 16px box is a circle, which means "radio"'],
+           ['sm', 'Code block, diff hunk', 'Round corners fight a monospace grid'], ['md', 'Button, input, select', '4px disappears on a 44px control'],
+           ['lg', 'Card, panel', 'One step above its contents, so nesting reads as nesting'], ['xl', 'Sheet, modal, drawer', 'Reads as a surface arriving, not a card growing'],
+           ['full', 'Chip, badge, avatar', 'Status is round; actions are not']]
+      .map(([n, a, w]) => [`\`--r-${n}\``, `\`${token(`--r-${n}`)}\``, a, w]),
+    prose: ['**Radius is assigned by element, never by taste,** and there are no `.radius-*` utilities: a component takes its radius from this table, so shape alone tells a reader what is clickable before color does.'],
+  },
+  shadow: {
+    head: ['Token', 'Light', 'Dark', 'Used by'],
+    rows: [['--shadow-1', 'Resting card'], ['--shadow-2', 'Popover, sheet, toast, raised card'], ['--shadow-3', 'Modal only']]
+      .map(([t, u]) => [`\`${t}\``, ...both(t).map((v) => `\`${v}\``), u]),
+    prose: [
+      '**Neutral black only** — no tinted or colored shadows. Every shadow is paired with a border, because shadows vanish on some displays and borders do not.',
+      '**In dark, elevation is surface lightness, not a heavier shadow.** The dark values are heavier only so they register at all; the step you see is paper → sunken → surface getting lighter.',
+    ],
+  },
+  'grid-composition': {
+    head: ['Band', 'Width', 'Device', 'Composition'],
+    rows: [['`folded`', '< 768', 'cover screen, ~475', 'Single column, bottom nav, stacked tables, approval bar pinned in the thumb arc, unified diff only'],
+           ['`unfolded`', `≥ ${parseInt(token('--bp-unfolded'))} (\`--bp-unfolded\`)`, 'main screen, ~933 landscape', 'Sidebar left, main pane right; approval bar inline; split diff available'],
+           ['`desktop`', `≥ ${parseInt(token('--bp-desktop'))} (\`--bp-desktop\`)`, 'external display', 'Three panes: rail + list + detail'],
+           ['`--page-max`', `\`${token('--page-max')}\``, '—', 'Page ceiling (`.page`)'],
+           ['`--measure`', `\`${token('--measure')}\``, '—', 'Reading cap, opt-in via `.measure` / `.prose`'],
+           ['`--tap-min`', `\`${token('--tap-min')}\``, '—', 'Touch minimum at every band, desktop included']],
+    prose: [
+      '**768 is the only width the stylesheet branches on.** The device widths are estimates derived from panel resolutions at an assumed pixel ratio, not measurements; they are what the bands aim at. There is no `tablet` band — a tablet at 1024 gets the unfolded composition.',
+      '**Components ask their own box, not the window.** `.table-stack` measures its `.table-wrap`, `.diff-split` its `.diff`, `.approvalbar` the nearest `.pane`; `.toast-stack` alone asks the window, because a toast is window chrome. A container query with no container never matches and the page still renders, so a rule that *contracts* at width keeps a `@media` floor beneath it — the argument is written beside the rule in `fold-ai-dev.css`.',
+      '**Containment has two costs.** A container is the containing block for `position: fixed` descendants, so render overlays at the screen root; and it has no intrinsic inline size, so a `.table-wrap` as a flex item measures 0px and a `.diff` in a grid `auto` track measures 2px. Give them width from the parent (`flex: 1`, `1fr`, `width: 100%`). The symptom is a blank region and no error.',
+      '**Name any container you declare yourself.** An unnamed `@container` binds to the nearest ancestor with containment, which may be a `.table-wrap` or a `.diff` rather than your screen root.',
+    ],
+  },
+  motion: {
+    head: ['Token', 'Value', 'Applies to'],
+    rows: [['--dur-fast', 'Hover, focus, press, tooltip'], ['--dur-base', 'Popover, toast, sheet entering'], ['--dur-slow', 'Full-screen transitions only'],
+           ['--ease-standard', 'Everything — one curve, no bounce, no spring'], ['--focus-width', 'Focus ring stroke'],
+           ['--focus-offset', 'Gap between the ring and the element'], ['--focus-color', 'Ring color — the accent, per theme']]
+      .map(([t, u]) => [`\`${t}\``, `\`${token(t)}\``, u]),
+    prose: [
+      '**What never animates: decoration.** Nothing loops, drifts, or pulses, with two exceptions — the live-run indicator and the skeleton sweep, both of which report that work is happening.',
+      '**Under `prefers-reduced-motion`,** `tokens.css` collapses animation and transition durations to near zero, which stops both exceptions. Nothing is exempt — opacity fades land instantly too — and transforms are not removed, only made instant.',
+      '**The focus ring is `:focus-visible` only, never removed, and never replaced by a color change alone.**',
+    ],
+  },
+  logo: {
+    head: ['Variant', 'File', 'Fill', 'Ground', 'Use'],
+    rows: [['Symbol, inherit', 'fold-symbol.svg', 'Any', 'The source of truth; context colors it'],
+           ['Symbol, accent', 'fold-symbol-accent.svg', 'Paper or surface', 'Default app bar'],
+           ['Symbol, ink', 'fold-symbol-ink.svg', 'Paper or surface', 'Monochrome documents, print'],
+           ['Symbol, inverse', 'fold-symbol-inverse.svg', 'Accent fill', 'On indigo']]
+      .map(([v, f, g, u]) => [v, `\`assets/logos/${f}\``, `\`${logoFill(f)}\``, g, u]),
+    prose: [
+      '**Clear space:** one panel width on every side. **Minimum size:** 16px for the symbol, 80px wide for the lockup. The wordmark is the symbol plus "Fold" set in Inter 640 at -0.03em, composed in markup — there is no wordmark file.',
+      '**Placeholder disclosure.** The mark was generated for this system, not designed by a brand studio, and it is unregistered. Replace the four files in `assets/logos/` and nothing else changes.',
+    ],
+  },
+  iconography: {
+    head: ['Property', 'Value', 'Measured on disk'],
+    rows: [['Count', `${ICONS.length} files`, '`assets/icons/functional/*.svg`'],
+           ['Grid', '`viewBox="0 0 24 24"`', iconsWith('viewBox="0 0 24 24"')],
+           ['Stroke', '`stroke-width="1.5"` — the same in both themes', iconsWith('stroke-width="1.5"')],
+           ['Caps', '`stroke-linecap="round"`', iconsWith('stroke-linecap="round"')],
+           ['Joins', '`stroke-linejoin="round"`', iconsWith('stroke-linejoin="round"')],
+           ['Fill', '`fill="none"`', iconsWith('fill="none"')],
+           ['Color', '`stroke="currentColor"`', iconsWith('stroke="currentColor"')]],
+    prose: [
+      '**Inline the SVG** so `currentColor` and the theme reach it; an `<img>` cannot follow either.',
+      '**Adding one:** copy the nearest file, keep the 24 viewBox, the 1.5 stroke and `currentColor`, draw on whole or half pixels, and ship it here. The last column is computed from the files, so an icon that breaks the spec shows up on this page.',
+      '**Provenance is unrecorded.** Nothing in the skill or its history says who drew the set or under what terms; treat the license as unknown until the owner confirms it.',
+    ],
+  },
+};
+
+for (const e of [...FOUNDATIONS, ...BRAND]) {
+  if (!SPECS[e.slug]) throw new Error(`content.mjs: ${e.slug} has no Scale & spec`);
+  e.spec = SPECS[e.slug];
+}
+
+// The swatches above restate hexes for the Palette section; they must equal tokens.css.
+for (const [, t, l, d] of SWATCHES) {
+  if (token(t).toUpperCase() !== l.toUpperCase() || token(t, 'dark').toUpperCase() !== d.toUpperCase())
+    throw new Error(`content.mjs swatch ${t} says ${l}/${d}, tokens.css says ${token(t)}/${token(t, 'dark')}`);
+}

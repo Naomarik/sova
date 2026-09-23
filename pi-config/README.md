@@ -25,7 +25,7 @@ installs with `install.sh` alone, without the web app.
 | `extensions/extension-toggle/` | `/extensions` to switch extensions on and off in-session |
 | `extensions/explain/` | `/explain <topic>`: one forked subagent writes a self-contained HTML explanation into `~/.pi/agent/explanations/`, kept forever and read in Sova |
 | `extensions/model-policy/` | The shared model policy (`model-policy.json`): which providers and models may be used at all, and which of them subagents may be given. Written by Sova's Settings → Models tab; this extension enforces the global half in the TUI |
-| `extensions/mode/` | Per-session normal ↔ claude-heavy mode switcher plus minor modes (`alt+m`, `ctrl+p` → Mode, `/mode`), orchestrating Claude Code workers with a fable/opus planner fallback |
+| `extensions/mode/` | Per-session normal ↔ delegate mode switcher plus minor modes (`alt+m`, `ctrl+p` → Mode, `/mode`). Delegate (formerly claude-heavy) orchestrates workers by four profiles — planning, investigation, routine and complex implementation — each a configurable backend/model/effort with an optional fallback (`mode-delegate.json`) |
 | `extensions/sessions/` | Live pi sessions on this machine find each other through a filesystem presence registry; ships the `pi-sessions` CLI (`bin/pi-sessions.ts`) and the record schema (`public/SCHEMA.md`) |
 | `extensions/remote/` | `--target <name>`: runs the session's tools on an ssh / AWS-SSM / docker / incus target from `targets.json`; inert without the flag. Its `argv.ts` is imported by Sova |
 | `extensions/codefold/` | Folds long fenced code blocks in assistant messages into one band |
@@ -131,7 +131,7 @@ and the trust list are runtime state or secrets and are ignored by
 cd extensions/subagents && node tests/run.mjs && node tests/smoke.mjs && node tests/team-smoke.mjs
 cd extensions/claude-code && node tests/run.mjs && node tests/smoke.mjs && node tests/ui-permissions.mjs
 cd extensions/extension-toggle && node --test index.test.ts
-cd extensions/mode && node --test index.test.ts align.test.ts && node tests/smoke.mjs
+cd extensions/mode && node --test index.test.ts delegate.test.ts routing.test.ts align.test.ts && node tests/smoke.mjs
 cd extensions/model-policy && node --test policy.test.ts index.test.ts
 cd extensions/command-palette && node --test test.mjs
 cd extensions/sessions && node --test test.mjs

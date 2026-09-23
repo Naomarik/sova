@@ -21,6 +21,20 @@ Rendered: `site/foundations/radius.html`
 - `--r-xl` — Sheet, modal, drawer.
 - `--r-full` — Chip, badge, avatar.
 
+## Scale & spec
+
+| Token | Value | Assigned to | Why |
+|---|---|---|---|
+| `--r-none` | `0` | Full-bleed regions | Nothing that meets a screen edge is rounded |
+| `--r-xs` | `4px` | Focus ring, checkbox | 8px on a 16px box is a circle, which means "radio" |
+| `--r-sm` | `6px` | Code block, diff hunk | Round corners fight a monospace grid |
+| `--r-md` | `8px` | Button, input, select | 4px disappears on a 44px control |
+| `--r-lg` | `12px` | Card, panel | One step above its contents, so nesting reads as nesting |
+| `--r-xl` | `16px` | Sheet, modal, drawer | Reads as a surface arriving, not a card growing |
+| `--r-full` | `999px` | Chip, badge, avatar | Status is round; actions are not |
+
+**Radius is assigned by element, never by taste,** and there are no `.radius-*` utilities: a component takes its radius from this table, so shape alone tells a reader what is clickable before color does.
+
 ## DO / DON'T
 
 - **DO** Keep chips fully round and buttons at 8px — the shape difference is what separates state from action at a glance.

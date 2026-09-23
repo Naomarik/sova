@@ -12,7 +12,7 @@ import { jumpToEntry } from "../lib/jump";
 import { RemotePaneStatus } from "./RemoteStatus";
 import { SessionDetails } from "./SessionDetails";
 import { SessionTimeline } from "./SessionTimeline";
-import { SubagentPane } from "./SubagentPane";
+import { type AgentsView, SubagentPane } from "./SubagentPane";
 import { Chip, Icon } from "./ui";
 
 /** The open session's insight, loaded once in App.tsx for the head, the strip and this pane. */
@@ -106,6 +106,10 @@ export function SessionPane(props: {
     return isTab(kept) ? kept : fallback;
   };
 
+  /** The Agents tab's half in a narrow pane (list or one worker), kept across tab switches for
+      as long as the pane is open. */
+  const [agentsView, setAgentsView] = createSignal<AgentsView | null>(null);
+
   createEffect(() => props.onTab?.(tab()));
   onCleanup(() => props.onTab?.(null));
 
@@ -113,9 +117,12 @@ export function SessionPane(props: {
   let aside!: HTMLElement;
   onMount(() =>
     queueMicrotask(() => {
+      // A narrow pane shows one half of the tab: the first of these it actually shows.
       const row =
         tab() === "agents"
-          ? aside.querySelector<HTMLElement>('.subagent-row[aria-current="true"]') ?? aside.querySelector<HTMLElement>(".subagent-row")
+          ? ['.subagent-row[aria-current="true"]', ".subagent-row", ".subagents-back"]
+              .map((q) => aside.querySelector<HTMLElement>(q))
+              .find((el) => el?.checkVisibility())
           : null;
       (row ?? tabEls[TABS.findIndex((t) => t.id === tab())])?.focus();
     }),
@@ -211,7 +218,14 @@ export function SessionPane(props: {
             />
           </Match>
           <Match when={tab() === "agents"}>
-            <SubagentPane chatWorkers={props.chatWorkers} insight={props.insight} selected={props.selected} onSelect={props.onSelect} />
+            <SubagentPane
+              chatWorkers={props.chatWorkers}
+              insight={props.insight}
+              selected={props.selected}
+              onSelect={props.onSelect}
+              view={agentsView()}
+              onView={setAgentsView}
+            />
           </Match>
           <Match when={tab() === "skills"}>
             <SkillsTab
@@ -220,6 +234,7 @@ export function SessionPane(props: {
               now={props.now}
               onShowWorker={(id) => {
                 props.onSelect(id);
+                setAgentsView("detail");
                 setActiveTab(props.path, "agents");
               }}
             />
@@ -270,6 +285,7 @@ function SessionTab(props: {
         now={props.now}
         onArchiveChanged={props.onArchiveChanged}
         onGroupsChanged={props.onGroupsChanged}
+        gitChanged={props.insight.changed}
         idPrefix="sp"
       />
     </div>

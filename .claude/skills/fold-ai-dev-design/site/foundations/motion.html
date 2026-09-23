@@ -68,8 +68,8 @@
         <h2 class="docs-h2">Focus</h2>
         <div class="docs-demo">
 <div class="cluster">
-  <button class="button button-focus">Focus ring</button>
-  <input class="input input-focus" style="max-width:200px" value="Focused input">
+  <button class="button is-focus">Focus ring</button>
+  <input class="input is-focus" style="max-width:200px" value="Focused input">
 </div>
 <p class="text-muted">2px solid accent, 2px offset, <code>:focus-visible</code> only. Never removed.</p></div>
       </section>
@@ -99,12 +99,30 @@
   both stop under <code>prefers-reduced-motion</code>.</p>
 </div></div></div>
       </section>
+      <section class="docs-section" id="spec">
+        <h2 class="docs-h2">Scale &amp; spec</h2>
+        <div class="table-wrap"><table class="table">
+          <thead><tr><th>Token</th><th>Value</th><th>Applies to</th></tr></thead>
+          <tbody>
+          <tr><td class="text-mono"><code>--dur-fast</code></td><td><code>120ms</code></td><td>Hover, focus, press, tooltip</td></tr>
+          <tr><td class="text-mono"><code>--dur-base</code></td><td><code>200ms</code></td><td>Popover, toast, sheet entering</td></tr>
+          <tr><td class="text-mono"><code>--dur-slow</code></td><td><code>320ms</code></td><td>Full-screen transitions only</td></tr>
+          <tr><td class="text-mono"><code>--ease-standard</code></td><td><code>cubic-bezier(.2, 0, 0, 1)</code></td><td>Everything — one curve, no bounce, no spring</td></tr>
+          <tr><td class="text-mono"><code>--focus-width</code></td><td><code>2px</code></td><td>Focus ring stroke</td></tr>
+          <tr><td class="text-mono"><code>--focus-offset</code></td><td><code>2px</code></td><td>Gap between the ring and the element</td></tr>
+          <tr><td class="text-mono"><code>--focus-color</code></td><td><code>#4A43D8</code></td><td>Ring color — the accent, per theme</td></tr>
+          </tbody>
+        </table></div>
+        <p class="measure"><b>What never animates: decoration.</b> Nothing loops, drifts, or pulses, with two exceptions — the live-run indicator and the skeleton sweep, both of which report that work is happening.</p>
+        <p class="measure"><b>Under <code>prefers-reduced-motion</code>,</b> <code>tokens.css</code> collapses animation and transition durations to near zero, which stops both exceptions. Nothing is exempt — opacity fades land instantly too — and transforms are not removed, only made instant.</p>
+        <p class="measure"><b>The focus ring is <code>:focus-visible</code> only, never removed, and never replaced by a color change alone.</b></p>
+      </section>
       <section class="docs-section" id="styles">
         <h2 class="docs-h2">Styles</h2>
         <div class="table-wrap"><table class="table">
           <thead><tr><th>Class</th><th>Role</th><th>Notes</th></tr></thead>
           <tbody>
-          <tr><td class="text-mono">.button-focus / .input-focus</td><td>Static focus — demo only</td><td>Production uses <code>:focus-visible</code></td></tr>
+          <tr><td class="text-mono">.button.is-focus / .input.is-focus</td><td>Static focus — demo only</td><td>Production uses <code>:focus-visible</code></td></tr>
           <tr><td class="text-mono">.timeline-running</td><td>Pulsing live marker</td><td>One of two sanctioned loops</td></tr>
           <tr><td class="text-mono">.skeleton</td><td>Sweeping placeholder</td><td>The other</td></tr>
           </tbody>
@@ -126,11 +144,11 @@
         <div class="do-dont">
           <div class="do">
             <p class="text-eyebrow text-success">Do</p>
-            <ul><li><b>Animate state changes at `--dur-fast`</b> — faster feels broken, slower feels sluggish.</li><li><b>Keep opacity fades under reduced motion</b> — they carry meaning; transforms are what cause discomfort.</li><li><b>Use one curve everywhere</b> — mixed easings read as mixed authorship.</li></ul>
+            <ul><li><b>Animate state changes at `--dur-fast`</b> — faster feels broken, slower feels sluggish.</li><li><b>Carry meaning in the end state, not the transition</b> — under reduced motion every transition is near-instant, fades included, so the state must read without it.</li><li><b>Use one curve everywhere</b> — mixed easings read as mixed authorship.</li></ul>
           </div>
           <div class="dont">
             <p class="text-eyebrow text-error">Don't</p>
-            <ul><li><b>Add a spring or bounce</b> — this product reports on other people's work; playfulness reads as unseriousness.</li><li><b>Loop anything decorative</b> — two exceptions exist and they both mean "work is happening".</li><li><b>Remove the focus outline</b> — a keyboard user who cannot see focus cannot use the product.</li></ul>
+            <ul><li><b>Add a spring or bounce</b> — motion here reports state, and a bounce on a failure reads as play.</li><li><b>Loop anything decorative</b> — two exceptions exist and they both mean "work is happening".</li><li><b>Remove the focus outline</b> — a keyboard user who cannot see focus cannot use the product.</li></ul>
           </div>
         </div>
       </section>

@@ -95,7 +95,7 @@
   margin-bottom: var(--space-7);
 }
 
-/* The reading measure, opted into. Since 1.6.0 a bare `<p>` is not capped, and
+/* The reading measure, opted into. A bare `<p>` is not capped, and
    this site is a consumer like any other — it has to ask. It asks in exactly
    one place: a paragraph that is a DIRECT child of a demo block is the site
    talking, and every specimen's own text is nested inside the component it

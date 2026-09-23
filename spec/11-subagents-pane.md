@@ -131,12 +131,26 @@ answers whether anything is happening, the other only how much it cost.
 the transcript are **each their own scroll region**, and the body, the pane, and the page never
 scroll. The list scrolls on its own (`overscroll-behavior: contain`). The transcript is a `.pane`.
 
-**Under 500px of pane, the two stack.** The list goes on top, capped at 30vh with a bottom
-border, and the transcript takes the rest. The pane is a named container, `subagents`. The
-threshold is 500, not the pane's 520 minimum, because a container measures its content box: a
-520px drawer is 519 inside its border and must stay side by side. The rule contracts, so it has
-a `@media (max-width: 884px)` floor, per the skill's union: the drawer's content is under 500px
-below an 885px window, and folded is always stacked.
+**Under 560px of pane, it's list/detail.** One half shows at a time, and it gets the whole body:
+the list, or one worker's view. `.subagents-body[data-view]` says which. A row opens its worker,
+and the view head's back button (`.subagents-back`, a 44px ghost icon button, chevron left,
+named "All subagents", or "All workers" when the session has a team) returns to the list with
+the row still selected. Focus follows the swap: to the back button on opening, and to the
+selected row on the way back. Rows gain a trailing chevron, because a row now opens something.
+Neither the back button nor the chevron is drawn side by side. The pane is a named container,
+`subagents`. The threshold is 560, the 256px list plus a 304px transcript, the least that reads
+beside it. The 520px drawer used to keep both and left the transcript 264px: at 933 unfolded, a
+tool row showed `bash sl…`. The rule contracts, so it has a `@media (max-width: 1279px)` floor,
+per the skill's union. Below 1280 the pane is the 520px drawer or full screen, so it's always
+list/detail. From 1280 the column is 40vw and asks its own box, so it's side by side from 1400.
+
+- **Which half opens.** It's settled once, when the first workers arrive: 1 worker opens on
+  that worker, and more open on the list. A second worker starting later doesn't swap the half
+  under the reader. The pane (`SessionPane`) keeps the half across tab switches for as long as
+  it's open. Skills' "show this worker" opens the worker. With nothing selected (no workers, or
+  the list couldn't load), the view half shows, since it holds those empty and error states.
+- **Stacking was rejected.** Putting the list on top of the transcript gave each one a strip,
+  with no visible line between them, and at 30vh a list of 7 workers still scrolled.
 
 ## Worker rows
 
@@ -153,7 +167,7 @@ below an 885px window, and folded is always stacked.
         <span class="meta-line-sep" aria-hidden="true">·</span>
         <span class="text-mono" title="18.4k in · 5.3k out · 242k cache read · 32.1k cache write · $0.41">23.7k</span>
       </span>
-      <span class="subagent-row-preview">Editing src/design/base.css</span>
+      <span class="icon icon-sm subagent-row-go" aria-hidden="true"></span>   <!-- list/detail only -->
     </button>
   </li>
 </ul>
@@ -161,8 +175,9 @@ below an 885px window, and folded is always stacked.
 
 - **Anatomy.** The whole row is the button, 44px minimum. Line 1 is the name (the team role when
   the worker is a team member, else its own name), with the status chip at the right. Line 2 is
-  the meta. Line 3 is the preview, mono and one line, **only while working**. Every line
-  ellipsizes; the full preview goes in the row's `title`.
+  the meta. Every line ellipsizes. **There's no excerpt of the worker's reply**, whether that's
+  "No response yet." or the reply itself: one clipped line of a reply said little and cost every
+  row a line. The transcript says it whole, one tap away.
 - **The meta line ranks its facts** (`.meta-line`, shared with the transcript view's meta). It is
   a nowrap flex row and **leads with the provider** — the route that serves the model
   (`WorkerInfo.provider`): `claude code` for that backend, else the model ref's own provider, else
@@ -181,7 +196,7 @@ below an 885px window, and folded is always stacked.
 
   | Worker | Chip | Meta |
   |---|---|---|
-  | `running` | `.chip.chip-accent.chip-live` Working | `{provider}` · `{model}` · `{tokens}` (the preview line carries the now) |
+  | `running` | `.chip.chip-accent.chip-live` Working | `{provider}` · `{model}` · `{tokens}` |
   | `starting` | `.chip.chip-accent.chip-live` Starting | `{provider}` · `{model}` |
   | `waiting` | `.chip` + dot, Idle | `{provider}` · `{model}` · `{tokens}` · as of `{HH:MM}` · after a failure: · last task failed |
   | `stopping` | `.chip` + dot, Stopping | `{provider}` · `{model}` · `{tokens}` |
@@ -236,8 +251,9 @@ webapp never writes to it (CLAUDE.md: no file locking).
   falls back to the row's number when the server doesn't report one. A Claude Code transcript
   carries no cost, so that `title` shows counts only.
   That's the only place the read-only fact is written; it's also self-evident, since
-  there's nothing to type into. The head repeats the row on purpose: stacked, the list may be
-  scrolled away.
+  there's nothing to type into. The head repeats the row on purpose: in list/detail, the list
+  isn't on screen. There, the back button leads the head, and title, chips and meta sit beside
+  it in `.subagents-view-id`.
 - **Thread.** The same §3 rows, capped at the transcript column (`--measure` + `--space-9`) and
   centred, 16px side padding. Auto-follow and Jump to Latest behave exactly as §3 "Live-watch".
   `.subagents-jump` is `.jump-latest` held inside the view's width.
@@ -283,7 +299,7 @@ nothing is ever sent to a Claude Code session.
 
 Folded (< 768), the pane is **full screen over the session view**. It isn't suppressed: on the
 phone this is the only way to watch a worker without leaving the session, and it costs nothing
-when closed. It's stacked (list on top, capped at 30vh). Close stays in the head at the right,
+when closed. It's list/detail (Body, above). Close stays in the head at the right,
 in the thumb arc, and Esc works with a keyboard. There's no swipe to dismiss, since a gesture is
 never the door. The browser back button doesn't close it, because the pane isn't a route.
 
@@ -303,7 +319,7 @@ never the door. The browser back button doesn't close it, because the pane isn't
   first). Focus returns to the trigger if it's still rendered, or else to the session's
   transcript section (`#transcript`). The same happens after Close.
 - **Rows.** Each is a `<button>` in a labelled list. The selected one carries
-  `aria-current="true"`. Its name reads the name, status word, meta, and preview in order.
+  `aria-current="true"`. Its name reads the name, status word, and meta in order.
 - **No aggressive live regions.** The pane announces nothing on updates: no `role="log"`, no
   `aria-live` on the list, the chip, or the thread. Status words are text, and a user who wants
   them reads the row. The session's single polite region (§3) stays the only one.
@@ -336,8 +352,8 @@ surface, paper, sunken, border, accent-tint for the selected row, and the §10 c
   whether a side panel is open.
 - **Suppressing the pane when folded.** It removes the feature from the device the product is
   designed for.
-- **A tab strip for workers.** Tabs truncate names at 3 workers, and they can't carry status,
-  meta, and preview. The list can.
+- **A tab strip for workers.** Tabs truncate names at 3 workers, and they can't carry status
+  and meta. The list can.
 - **Opening `#/agents` from the trigger.** That's a different question (every session) and
   leaves the conversation.
 - **A pressed or tinted trigger while open.** It adds a state that the pane beside it already

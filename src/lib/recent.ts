@@ -11,6 +11,7 @@
 
 import { createSignal } from "solid-js";
 import type { SessionSummary } from "../../shared/protocol";
+import { isMainThread } from "./regions";
 import { dualGet, dualSet } from "./storage-keys";
 
 /** §12 "General": the count lives in localStorage, like the theme. It is this browser's, not the
@@ -73,9 +74,15 @@ export const recentCountValid = (raw: unknown): boolean => {
  * user saying "done with this", and Recent is the one region that has to honour that: an archived
  * session that keeps reappearing at the top is the archive gesture not working.
  *
- * A server that predates `archived` sends none, which counts as not archived (protocol.ts).
+ * A worker session (a subagent's or team member's own) is never eligible either: it is not a
+ * thread the user started. The sidebar already hands over main threads only; this rule holds
+ * even when a caller passes the whole list.
+ *
+ * A server that predates `archived` or `workerSession` sends none, which counts as not archived
+ * and a main thread (protocol.ts).
  */
-export const recentEligible = (s: Pick<SessionSummary, "archived">): boolean => s.archived !== true;
+export const recentEligible = (s: Pick<SessionSummary, "archived" | "workerSession">): boolean =>
+  s.archived !== true && isMainThread(s);
 
 /**
  * Recent's order: most recently ACTIVE first.

@@ -382,3 +382,22 @@ html, body, #root { height: 100%; }
    Settings panel doesn't offer a 500px box for two digits. */
 .settings-field { max-width: 22rem; }
 .input-num { width: 7.5rem; font-variant-numeric: tabular-nums; }
+
+/* Session details → Repository (SessionDetails RepositorySection). The changed-path list is
+   bounded and scrolls inside itself, so a repository with thousands of changes never stretches
+   the panel; each row keeps its path and its line counts on one baseline. */
+.git-files-body {
+  max-height: 320px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  white-space: normal;
+}
+.git-files-body:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.git-file-row { align-items: flex-start; gap: var(--space-3); }
+.git-file-row .list-title { font-weight: var(--fw-regular); }
+.git-file-lines { flex: none; font-size: var(--fs-caption); white-space: nowrap; }
+.git-add { color: var(--diff-add-ink); }
+.git-del { color: var(--diff-del-ink); }
+/* Label and hash · age on one unbroken line; the subject below, full width, wrapped whole. */
+.git-commit-meta { flex: none; margin: 0; white-space: nowrap; }
+.git-commit-subject { margin: var(--space-1) 0 0; color: var(--color-ink-2); overflow-wrap: anywhere; }

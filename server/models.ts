@@ -115,6 +115,18 @@ export async function listModels(): Promise<ModelInfo[]> {
     .map((m) => toModelInfo(m, favorites, contextWindow(`${m.provider}/${m.id}`, runtime)));
 }
 
+/**
+ * Every model the shared runtime holds with credentials, the experimental Claude Code switch
+ * notwithstanding: what a worker could be spawned from, rather than what the picker offers
+ * (Settings → Modes → Delegate). The Claude Code provider's models are registered per runtime, so
+ * this is still not the whole truth for them — see DelegateBackendOptions.sessionScopedProviders.
+ */
+export async function listRegistryModels(): Promise<ModelInfo[]> {
+  const favorites = readFavorites();
+  const runtime = await getModelRuntime();
+  return (await runtime.getAvailable()).map((m) => toModelInfo(m, favorites, contextWindow(`${m.provider}/${m.id}`, runtime)));
+}
+
 /** Provider id the claude-code extension registers under (provider/index.ts CLAUDE_PROVIDER_ID). */
 export const CLAUDE_CODE_PROVIDER = "claude-code-cli";
 

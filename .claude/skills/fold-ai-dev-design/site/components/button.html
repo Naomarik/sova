@@ -93,31 +93,31 @@ never as the sole action on a touch surface.</p></div>
   <span class="text-eyebrow">focus</span><span class="text-eyebrow">active</span><span class="text-eyebrow">disabled</span>
   <span class="text-eyebrow">primary</span>
   <button class="button button-primary">Approve</button>
-  <button class="button button-primary button-hover">Approve</button>
-  <button class="button button-primary button-focus">Approve</button>
-  <button class="button button-primary button-active">Approve</button>
-  <button class="button button-primary button-disabled" disabled>Approve</button>
+  <button class="button button-primary is-hover">Approve</button>
+  <button class="button button-primary is-focus">Approve</button>
+  <button class="button button-primary is-active">Approve</button>
+  <button class="button button-primary is-disabled" disabled>Approve</button>
   <span class="text-eyebrow">secondary</span>
   <button class="button">Review</button>
-  <button class="button button-hover">Review</button>
-  <button class="button button-focus">Review</button>
-  <button class="button button-active">Review</button>
-  <button class="button button-disabled" disabled>Review</button>
+  <button class="button is-hover">Review</button>
+  <button class="button is-focus">Review</button>
+  <button class="button is-active">Review</button>
+  <button class="button is-disabled" disabled>Review</button>
   <span class="text-eyebrow">destructive</span>
   <button class="button button-destructive">Discard</button>
-  <button class="button button-destructive button-hover">Discard</button>
-  <button class="button button-destructive button-focus">Discard</button>
-  <button class="button button-destructive button-active">Discard</button>
-  <button class="button button-destructive button-disabled" disabled>Discard</button>
+  <button class="button button-destructive is-hover">Discard</button>
+  <button class="button button-destructive is-focus">Discard</button>
+  <button class="button button-destructive is-active">Discard</button>
+  <button class="button button-destructive is-disabled" disabled>Discard</button>
   <span class="text-eyebrow">ghost</span>
   <button class="button button-ghost">Cancel</button>
-  <button class="button button-ghost button-hover">Cancel</button>
-  <button class="button button-ghost button-focus">Cancel</button>
-  <button class="button button-ghost button-active">Cancel</button>
-  <button class="button button-ghost button-disabled" disabled>Cancel</button>
+  <button class="button button-ghost is-hover">Cancel</button>
+  <button class="button button-ghost is-focus">Cancel</button>
+  <button class="button button-ghost is-active">Cancel</button>
+  <button class="button button-ghost is-disabled" disabled>Cancel</button>
 </div>
-<p class="text-muted">The <code>.button-hover</code> / <code>-focus</code> / <code>-active</code> /
-<code>-disabled</code> classes exist so this matrix can render every state at once.
+<p class="text-muted">The <code>.is-hover</code> / <code>.is-focus</code> / <code>.is-active</code> /
+<code>.is-disabled</code> classes exist so this matrix can render every state at once.
 <b>They are documentation scaffolding — production uses the real pseudo-classes.</b></p></div>
       </section>
       <section class="docs-section" id="styles">
@@ -132,7 +132,7 @@ never as the sole action on a touch surface.</p></div>
           <tr><td class="text-mono">.button-sm / .button-lg</td><td>36px / 52px</td><td>Label size shifts with it</td></tr>
           <tr><td class="text-mono">.button-icon</td><td>Square 44px</td><td>Requires <code>aria-label</code></td></tr>
           <tr><td class="text-mono">.button-row</td><td>Demo helper — wrapping row</td><td>Demo only</td></tr>
-          <tr><td class="text-mono">.button-hover / -focus / -active / -disabled</td><td>Static states</td><td>**Demo only** — production uses pseudo-classes</td></tr>
+          <tr><td class="text-mono">.is-hover / .is-focus / .is-active / .is-disabled</td><td>Static states on <code>.button</code></td><td><b>Demo only</b> — production uses pseudo-classes</td></tr>
           </tbody>
         </table></div>
       </section>
@@ -159,7 +159,7 @@ never as the sole action on a touch surface.</p></div>
           </div>
           <div class="dont">
             <p class="text-eyebrow text-error">Don't</p>
-            <ul><li><b>Fill a destructive button</b> — it becomes the most inviting target on screen.</li><li><b>Use `.button-sm` as the only action on a touch surface</b> — 36px is below the 44px minimum.</li><li><b>Ship the `.button-hover` helpers in production</b> — they are documentation scaffolding; use the real pseudo-classes.</li></ul>
+            <ul><li><b>Fill a destructive button</b> — it becomes the most inviting target on screen.</li><li><b>Use `.button-sm` as the only action on a touch surface</b> — 36px is below the 44px minimum.</li><li><b>Ship the `.is-*` state helpers in production</b> — they are documentation scaffolding; use the real pseudo-classes.</li></ul>
           </div>
         </div>
       </section>

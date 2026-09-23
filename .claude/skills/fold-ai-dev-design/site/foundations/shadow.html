@@ -82,6 +82,19 @@
     <div><code>--shadow-3</code><br><small>Modal</small></div></div>
 </div></div>
       </section>
+      <section class="docs-section" id="spec">
+        <h2 class="docs-h2">Scale &amp; spec</h2>
+        <div class="table-wrap"><table class="table">
+          <thead><tr><th>Token</th><th>Light</th><th>Dark</th><th>Used by</th></tr></thead>
+          <tbody>
+          <tr><td class="text-mono"><code>--shadow-1</code></td><td><code>0 1px 2px rgba(23, 23, 28, .06)</code></td><td><code>0 1px 2px rgba(0, 0, 0, .5)</code></td><td>Resting card</td></tr>
+          <tr><td class="text-mono"><code>--shadow-2</code></td><td><code>0 1px 2px rgba(23, 23, 28, .06), 0 8px 24px -12px rgba(23, 23, 28, .18)</code></td><td><code>0 1px 2px rgba(0, 0, 0, .5), 0 8px 24px -12px rgba(0, 0, 0, .75)</code></td><td>Popover, sheet, toast, raised card</td></tr>
+          <tr><td class="text-mono"><code>--shadow-3</code></td><td><code>0 2px 4px rgba(23, 23, 28, .08), 0 18px 44px -16px rgba(23, 23, 28, .26)</code></td><td><code>0 2px 4px rgba(0, 0, 0, .6), 0 18px 44px -16px rgba(0, 0, 0, .85)</code></td><td>Modal only</td></tr>
+          </tbody>
+        </table></div>
+        <p class="measure"><b>Neutral black only</b> — no tinted or colored shadows. Every shadow is paired with a border, because shadows vanish on some displays and borders do not.</p>
+        <p class="measure"><b>In dark, elevation is surface lightness, not a heavier shadow.</b> The dark values are heavier only so they register at all; the step you see is paper → sunken → surface getting lighter.</p>
+      </section>
       <section class="docs-section" id="styles">
         <h2 class="docs-h2">Styles</h2>
         <div class="table-wrap"><table class="table">

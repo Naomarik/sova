@@ -899,7 +899,7 @@ class ChatSession {
    * Make this runtime follow `state` from its next prompt (modeApplyPlan), and make it this
    * chat's mode. The /mode handler is called directly, never sent through prompt(), so no command
    * text can reach the model; it appends the marker entry this session later restores from.
-   * Resolves once the switch is in the extension's memory; the claude-heavy planner probe it then
+   * Resolves once the switch is in the extension's memory; the delegate routing probe it then
    * starts isn't awaited. Returns the plan that ran ("command" = taken, "skip" = a foreign writer
    * got it, "unsupported" = no /mode command loaded), so callers can decide what else to do.
    */
@@ -931,7 +931,7 @@ class ChatSession {
       this.flushDeferredAppends(); // open-time entries go before the extension's mode marker
       try {
         for (const minor of MINOR_MODES) await cmd.handler(`${minor} ${state.minorModes.includes(minor) ? "on" : "off"}`, ctx);
-        // Not awaited: after switching, setMode awaits the claude-heavy planner probe (up to 15s).
+        // Not awaited: after switching, setMode awaits the delegate routing probe (up to 15s).
         cmd.handler(state.mode, ctx).catch((err) => {
           console.error("[chat] /mode handler failed", err);
           if (this.disposed) return;

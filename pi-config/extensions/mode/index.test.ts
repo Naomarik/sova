@@ -5,17 +5,17 @@ import { join } from "node:path";
 import test from "node:test";
 import { buildMinorPrompt, isMinorMode, MINOR_DESCRIPTIONS, MINOR_MODES, normalizeMinorModes, parseMinorFlag } from "./minor.ts";
 import { MODE_CATEGORY_ID, modeCategoryItems } from "./palette.ts";
-import { pickPlanner } from "./planner.ts";
+import { delegateDefaults, type DelegateSettings } from "./delegate.ts";
 import {
 	applyModeSection,
-	buildHeavyPrompt,
+	buildDelegatePrompt,
 	composePrompt,
-	HEAVY_ALIGN_BRIDGE,
+	DEFAULT_ROUTES,
+	DELEGATE_ALIGN_BRIDGE,
 	MODE_SECTION,
-	PLANNER_FALLBACK,
-	PLANNER_PRIMARY,
 	statusLabel,
 } from "./prompt.ts";
+import { routeAll, type Discovery } from "./routing.ts";
 import {
 	activeOf,
 	DEFAULT_ALIGN_VIEWER_SHORTCUT,
@@ -23,9 +23,13 @@ import {
 	defaults,
 	hasMinor,
 	isMode,
+	LEGACY_MODE_ALIASES,
 	loadState,
+	MODE_DESCRIPTIONS,
+	MODES,
 	normalizeActive,
 	normalizeState,
+	parseMode,
 	parseShortcut,
 	restoreActive,
 	saveState,
@@ -46,7 +50,7 @@ test("loadState falls back to defaults when the file is missing or corrupt", () 
 		const path = join(dir, "mode.json");
 		writeFileSync(path, "{ not json");
 		assert.deepEqual(loadState(path), defaults());
-		writeFileSync(path, JSON.stringify(["claude-heavy"]));
+		writeFileSync(path, JSON.stringify(["delegate"]));
 		assert.deepEqual(loadState(path), defaults());
 	} finally {
 		rmSync(dir, { recursive: true, force: true });
@@ -59,7 +63,7 @@ test("saveState/loadState round-trips and writes parseable JSON", () => {
 		const path = join(dir, "mode.json");
 		const state: ModeState = {
 			version: 1,
-			mode: "claude-heavy",
+			mode: "delegate",
 			strict: true,
 			shortcut: "alt+h",
 			minorModes: ["align"],
@@ -67,7 +71,7 @@ test("saveState/loadState round-trips and writes parseable JSON", () => {
 		};
 		saveState(path, state);
 		const onDisk = JSON.parse(readFileSync(path, "utf8"));
-		assert.equal(onDisk.mode, "claude-heavy");
+		assert.equal(onDisk.mode, "delegate");
 		assert.deepEqual(onDisk.minorModes, ["align"]);
 		assert.deepEqual(loadState(path), state);
 	} finally {
@@ -78,9 +82,9 @@ test("saveState/loadState round-trips and writes parseable JSON", () => {
 test("normalizeState drops invalid values instead of breaking load", () => {
 	assert.deepEqual(normalizeState(null), defaults());
 	assert.deepEqual(normalizeState({ mode: "weird", strict: "yes", shortcut: "ctrl shift m" }), defaults());
-	assert.deepEqual(normalizeState({ mode: "claude-heavy", strict: true, extra: 1 }), {
+	assert.deepEqual(normalizeState({ mode: "delegate", strict: true, extra: 1 }), {
 		version: 1,
-		mode: "claude-heavy",
+		mode: "delegate",
 		strict: true,
 		minorModes: [],
 	});
@@ -90,8 +94,8 @@ test("old-format files without minor modes load with an empty list", () => {
 	const dir = tmp();
 	try {
 		const path = join(dir, "mode.json");
-		writeFileSync(path, JSON.stringify({ version: 1, mode: "claude-heavy", strict: false }));
-		assert.deepEqual(loadState(path), { version: 1, mode: "claude-heavy", strict: false, minorModes: [] });
+		writeFileSync(path, JSON.stringify({ version: 1, mode: "delegate", strict: false }));
+		assert.deepEqual(loadState(path), { version: 1, mode: "delegate", strict: false, minorModes: [] });
 	} finally {
 		rmSync(dir, { recursive: true, force: true });
 	}
@@ -105,7 +109,7 @@ test("minor modes normalize to known names in canonical order", () => {
 	assert.deepEqual(normalizeMinorModes([...MINOR_MODES].reverse().concat(MINOR_MODES)), [...MINOR_MODES]);
 	assert.deepEqual(normalizeMinorModes(undefined), []);
 	assert.ok(isMinorMode("align"));
-	assert.ok(!isMinorMode("claude-heavy"));
+	assert.ok(!isMinorMode("delegate"));
 	assert.ok(!isMinorMode(1));
 });
 
@@ -161,7 +165,7 @@ test("parseMinorFlag", () => {
 
 test("minor mode names never collide with /mode keywords", () => {
 	for (const minor of MINOR_MODES) {
-		assert.ok(!["normal", "claude-heavy", "status", "strict"].includes(minor), minor);
+		assert.ok(![...MODES, ...Object.keys(LEGACY_MODE_ALIASES), "status", "strict", "default"].includes(minor), minor);
 		assert.match(minor, /^[a-z-]+$/, "must match the /mode minor-toggle pattern");
 	}
 });
@@ -188,31 +192,40 @@ test("applyModeSection sets, overwrites and deletes the mode section", () => {
 	assert.deepEqual(sections, { preamble: "base" });
 });
 
-test("composePrompt joins the heavy block and minor blocks", () => {
+/** Claude discovery offering fable and opus at every effort: every default profile routes to its primary. */
+const offering = (...ids: string[]): Discovery => ({ models: ids.map((id) => ({ id, efforts: ["low", "medium", "high", "xhigh", "max"] })) });
+const ALL_OK = routeAll(delegateDefaults(), { "claude-code": offering("claude-fable-5-1[1m]", "opus[1m]") }, () => null);
+const PLAN_FALLBACK = routeAll(delegateDefaults(), { "claude-code": offering("opus[1m]") }, () => null);
+
+test("composePrompt joins the delegate block and minor blocks", () => {
 	const normal = defaults();
-	assert.equal(composePrompt(normal, PLANNER_PRIMARY), undefined);
+	assert.equal(composePrompt(normal, ALL_OK), undefined);
 
 	const normalAlign = withMinor(normal, "align", true);
-	const alignOnly = composePrompt(normalAlign, PLANNER_PRIMARY);
+	const alignOnly = composePrompt(normalAlign, ALL_OK);
 	assert.equal(alignOnly, buildMinorPrompt("align"));
 	assert.match(alignOnly ?? "", /^# Minor mode: align/);
-	assert.doesNotMatch(alignOnly ?? "", /# Mode: claude-heavy/);
+	assert.doesNotMatch(alignOnly ?? "", /# Mode: delegate/);
 
-	const heavy = composePrompt({ ...normal, mode: "claude-heavy" }, PLANNER_PRIMARY);
-	assert.equal(heavy, buildHeavyPrompt(PLANNER_PRIMARY));
+	const delegate = composePrompt({ ...normal, mode: "delegate" }, ALL_OK);
+	assert.equal(delegate, buildDelegatePrompt(ALL_OK));
 
-	const both = composePrompt({ ...normalAlign, mode: "claude-heavy" }, PLANNER_FALLBACK) ?? "";
-	assert.match(both, /^# Mode: claude-heavy/);
-	assert.ok(both.indexOf("# Mode: claude-heavy") < both.indexOf("# Minor mode: align"), "heavy before align");
-	assert.equal(both, `${buildHeavyPrompt(PLANNER_FALLBACK)}\n\n${HEAVY_ALIGN_BRIDGE}\n\n${buildMinorPrompt("align")}`);
-	// The bridge only exists when both are on: heavy alone and align alone stay verbatim.
-	assert.doesNotMatch(heavy ?? "", /align minor mode is on/);
+	const both = composePrompt({ ...normalAlign, mode: "delegate" }, PLAN_FALLBACK) ?? "";
+	assert.match(both, /^# Mode: delegate/);
+	assert.ok(both.indexOf("# Mode: delegate") < both.indexOf("# Minor mode: align"), "delegate before align");
+	assert.equal(both, `${buildDelegatePrompt(PLAN_FALLBACK)}\n\n${DELEGATE_ALIGN_BRIDGE}\n\n${buildMinorPrompt("align")}`);
+	// The bridge only exists when both are on: delegate alone and align alone stay verbatim.
+	assert.doesNotMatch(delegate ?? "", /align minor mode is on/);
 	assert.doesNotMatch(alignOnly ?? "", /align minor mode is on/);
-	assert.match(HEAVY_ALIGN_BRIDGE, /no implementation worker until the user has confirmed/);
+	assert.match(DELEGATE_ALIGN_BRIDGE, /no implementation worker until the user has confirmed/);
+	// Align stays orthogonal: its pre-confirmation investigation is Planning, never the cheap Investigation profile.
+	assert.match(DELEGATE_ALIGN_BRIDGE, /non-editing Planning & specs worker/);
+	assert.match(DELEGATE_ALIGN_BRIDGE, /never the Investigation profile/);
 	assert.doesNotMatch(both, /\{[A-Z_]+\}/);
 
 	const align = buildMinorPrompt("align");
-	assert.match(align, /planning worker/);
+	assert.match(align, /non-editing Planning & specs worker/);
+	assert.match(align, /not the Investigation profile/);
 	assert.match(align, /Stop and wait/);
 	assert.match(align, /Exempt/);
 	assert.match(align, /do not re-ask/);
@@ -234,10 +247,13 @@ test("composePrompt joins the heavy block and minor blocks", () => {
 
 test("mode helpers", () => {
 	assert.ok(isMode("normal"));
-	assert.ok(isMode("claude-heavy"));
+	assert.ok(isMode("delegate"));
+	assert.ok(!isMode("claude-heavy"), "the legacy name is read by parseMode, never a mode itself");
 	assert.ok(!isMode("build"));
-	assert.equal(toggleMode("normal"), "claude-heavy");
-	assert.equal(toggleMode("claude-heavy"), "normal");
+	assert.deepEqual(MODES, ["normal", "delegate"]);
+	assert.deepEqual(Object.keys(MODE_DESCRIPTIONS), [...MODES], "one description per canonical mode, nothing else");
+	assert.equal(toggleMode("normal"), "delegate");
+	assert.equal(toggleMode("delegate"), "normal");
 	assert.equal(parseShortcut(DEFAULT_MODE_SHORTCUT), "alt+m");
 	assert.equal(parseShortcut("ctrl+shift+p"), "ctrl+shift+p");
 	assert.equal(parseShortcut("shift+tab"), "shift+tab");
@@ -247,49 +263,124 @@ test("mode helpers", () => {
 	assert.equal(parseShortcut(42), undefined);
 });
 
-test("pickPlanner uses fable when offered and opus high otherwise", () => {
-	const fable = { id: "claude-fable-5-1[1m]", name: "Fable" };
-	const opus = { id: "opus[1m]", name: "Opus" };
-	assert.deepEqual(pickPlanner([fable, opus]), PLANNER_PRIMARY);
-	assert.deepEqual(pickPlanner([opus]), PLANNER_FALLBACK);
-	assert.deepEqual(pickPlanner([]), PLANNER_FALLBACK);
-	assert.deepEqual(pickPlanner(undefined), PLANNER_FALLBACK);
+test("parseMode reads canonical names and the permanent legacy alias, nothing else", () => {
+	assert.equal(parseMode("normal"), "normal");
+	assert.equal(parseMode("delegate"), "delegate");
+	assert.equal(parseMode("claude-heavy"), "delegate");
+	for (const bad of ["Claude-Heavy", "heavy", "", " delegate", "toString", "__proto__", "constructor", undefined, null, 1, {}, ["delegate"]]) {
+		assert.equal(parseMode(bad), undefined, `rejected: ${JSON.stringify(bad)}`);
+	}
+	for (const target of Object.values(LEGACY_MODE_ALIASES)) assert.ok(isMode(target), "every alias maps to a canonical mode");
 });
 
-test("heavy prompt wires the probed planner and leaves no placeholders", () => {
-	const primary = buildHeavyPrompt(PLANNER_PRIMARY);
-	assert.doesNotMatch(primary, /\{[A-Z_]+\}/);
-	assert.match(primary, /model "claude-fable-5-1\[1m\]", effort "medium"/);
-	assert.match(primary, /model "opus\[1m\]"/); // coding worker
-	assert.doesNotMatch(primary, /unavailable in this session/);
-	// House policy: workers bypass permissions; no Claude plan mode anywhere.
-	assert.doesNotMatch(primary, /permissionMode/);
-	assert.match(primary, /bypassed permissions/);
-	assert.match(primary, /only voice to the user/);
-	assert.match(primary, /effort "low".*effort "medium"/s);
+test("legacy claude-heavy migrates through every state.ts parser and is written back canonical", () => {
+	// mode.json (the default for new sessions)
+	assert.equal(normalizeState({ version: 1, mode: "claude-heavy", strict: true }).mode, "delegate");
+	const dir = tmp();
+	try {
+		const path = join(dir, "mode.json");
+		writeFileSync(path, JSON.stringify({ version: 1, mode: "claude-heavy", strict: false, minorModes: ["align"] }));
+		const loaded = loadState(path);
+		assert.equal(loaded.mode, "delegate");
+		saveState(path, loaded);
+		assert.equal(JSON.parse(readFileSync(path, "utf8")).mode, "delegate", "the next write is canonical");
+		assert.doesNotMatch(readFileSync(path, "utf8"), /claude-heavy/);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+	// a session's own snapshot
+	assert.deepEqual(normalizeActive({ version: 1, mode: "claude-heavy", strict: true, minorModes: ["align"] }), {
+		version: 1,
+		mode: "delegate",
+		strict: true,
+		minorModes: ["align"],
+	});
+	assert.deepEqual(
+		restoreActive([{ type: "custom", customType: "mode", data: { mode: "claude-heavy", active: { version: 1, mode: "claude-heavy", strict: false, minorModes: [] } } }]),
+		{ version: 1, mode: "delegate", strict: false, minorModes: [] },
+		"a transcript pinned before the rename restores into delegate",
+	);
+});
 
-	const fallback = buildHeavyPrompt(PLANNER_FALLBACK);
-	assert.match(fallback, /model "opus\[1m\]", effort "high"/);
-	assert.match(fallback, /planning already runs on opus\[1m\] at high/);
+test("delegate prompt names every profile's exact worker and leaves no placeholders", () => {
+	const prompt = buildDelegatePrompt(ALL_OK);
+	assert.doesNotMatch(prompt, /\{[A-Z_]+\}/);
+	assert.match(prompt, /^# Mode: delegate/);
+	assert.match(prompt, /- Planning & specs \(.*\) → backend "claude-code", model "claude-fable-5-1\[1m\]", effort "medium"; fallback backend "claude-code", model "opus\[1m\]", effort "high"\./);
+	assert.match(prompt, /- Investigation \(.*\) → backend "claude-code", model "opus\[1m\]", effort "low"; no fallback — if it fails, ask the user\./);
+	assert.match(prompt, /- Routine implementation \(.*\) → backend "claude-code", model "opus\[1m\]", effort "low"; no fallback — if it fails, ask the user\./);
+	assert.match(prompt, /- Complex implementation \(.*\) → backend "claude-code", model "opus\[1m\]", effort "medium"; no fallback — if it fails, ask the user\./);
+	assert.ok(prompt.indexOf("Planning & specs") < prompt.indexOf("- Investigation") && prompt.indexOf("- Investigation") < prompt.indexOf("- Routine") && prompt.indexOf("- Routine") < prompt.indexOf("- Complex"), "canonical order");
+	// Mandatory verification, the only voice, no invented permission modes.
+	assert.match(prompt, /only voice to the user/);
+	assert.match(prompt, /read the diffs, run the project's tests or type checks/);
+	assert.match(prompt, /never how hard you check/);
+	assert.doesNotMatch(prompt, /permissionMode|plan mode|--permission/i);
+	assert.match(prompt, /usual permissions, so that rule is prompt-level/);
+	// Routing rules the approved design fixed.
+	assert.match(prompt, /investigation that feeds a design or plan is Planning & specs, not Investigation/);
+	assert.match(prompt, /unsure between Routine and Complex, choose Complex/);
+	assert.match(prompt, /never substitute one of your own/);
+	assert.match(prompt, /When the user names a backend, model or effort for a task, that choice wins over the profile/);
+	assert.match(prompt, /a spawn they refuse is reported to the user, not rerouted/);
+});
+
+test("delegate prompt discloses a fallback and asks when a profile has no worker", () => {
+	const fallback = buildDelegatePrompt(PLAN_FALLBACK);
+	assert.match(fallback, /- Planning & specs .* → backend "claude-code", model "opus\[1m\]", effort "high"\. This is the configured FALLBACK: the primary \(backend "claude-code", model "claude-fable-5-1\[1m\]", effort "medium"\) is unavailable — claude-fable-5-1\[1m\] is not offered by claude-code\. Tell the user/);
+	assert.match(fallback, /do not retry the primary unless asked/);
+
+	const none = routeAll(delegateDefaults(), { "claude-code": offering("sonnet") }, () => null);
+	const prompt = buildDelegatePrompt(none);
+	assert.match(prompt, /- Routine implementation .* → NO AVAILABLE WORKER \(opus\[1m\] is not offered by claude-code; no fallback is set\)\. Before delegating this kind of work, tell the user and ask which model to use; do not choose one yourself\./);
+	assert.match(prompt, /- Planning & specs .* → NO AVAILABLE WORKER \(claude-fable-5-1\[1m\] is not offered by claude-code; opus\[1m\] is not offered by claude-code\)/);
+	assert.doesNotMatch(prompt, /model "sonnet"/, "an offered but unconfigured model is never named");
+});
+
+test("a configured fallback that can't run is never offered for the retry", () => {
+	// Fable offered, opus not: planning runs on its primary, and its fallback is known dead.
+	const deadFallback = routeAll(delegateDefaults(), { "claude-code": offering("claude-fable-5-1[1m]") }, () => null);
+	const prompt = buildDelegatePrompt(deadFallback);
+	const planning = prompt.split("\n").find((line) => line.startsWith("- Planning & specs"))!;
+	assert.match(planning, /→ backend "claude-code", model "claude-fable-5-1\[1m\]", effort "medium"; its configured fallback \(backend "claude-code", model "opus\[1m\]", effort "high"\) can't run — opus\[1m\] is not offered by claude-code — so if the primary fails, ask the user\./);
+	assert.doesNotMatch(planning, /; fallback backend/);
+	// Denied and effort-unsupported fallbacks are withheld the same way, with their own reasons.
+	const denied = buildDelegatePrompt(routeAll(delegateDefaults(), { "claude-code": offering("claude-fable-5-1[1m]", "opus[1m]") }, (c) => (c.model === "opus[1m]" ? "opus[1m] is disabled as a subagent model by user settings." : null)));
+	assert.match(denied, /its configured fallback .* can't run — opus\[1m\] is disabled as a subagent model/);
+	const effort = buildDelegatePrompt(routeAll(delegateDefaults(), { "claude-code": { models: [{ id: "claude-fable-5-1[1m]" }, { id: "opus[1m]", efforts: ["low"] }] } }, () => null));
+	assert.match(effort, /its configured fallback .* can't run — opus\[1m\] does not support effort "high"/);
+	// An unverified fallback (discovery failed) is still offered: failure to discover is not absence.
+	const unverified = buildDelegatePrompt(routeAll(delegateDefaults(), { "claude-code": { error: "timeout" } }, () => null));
+	assert.match(unverified, /- Planning & specs .*; fallback backend "claude-code", model "opus\[1m\]", effort "high"\./);
+	assert.match(prompt, /retry once with that profile's fallback only if one is listed above as its fallback/);
+});
+
+test("DEFAULT_ROUTES: every default profile on its primary, unverified until probed", () => {
+	assert.deepEqual(DEFAULT_ROUTES.map((r) => [r.profile, r.via, r.primary.availability]), [
+		["planning", "primary", "unverified"],
+		["investigation", "primary", "unverified"],
+		["routine", "primary", "unverified"],
+		["complex", "primary", "unverified"],
+	]);
 });
 
 test("status labels", () => {
-	assert.deepEqual(statusLabel("normal", PLANNER_PRIMARY, false, []), { text: "normal", tone: "dim" });
-	assert.deepEqual(statusLabel("claude-heavy", PLANNER_PRIMARY, false, []), { text: "claude-heavy", tone: "accent" });
-	assert.deepEqual(statusLabel("claude-heavy", PLANNER_FALLBACK, false, []), {
-		text: "claude-heavy · plan:opus",
-		tone: "warning",
-	});
-	assert.deepEqual(statusLabel("claude-heavy", PLANNER_PRIMARY, true, []), { text: "claude-heavy · strict", tone: "accent" });
-	assert.deepEqual(statusLabel("normal", PLANNER_PRIMARY, true, ["align"]), { text: "normal · align", tone: "accent" });
-	assert.deepEqual(statusLabel("claude-heavy", PLANNER_PRIMARY, true, ["align"]), {
-		text: "claude-heavy · strict · align",
-		tone: "accent",
-	});
-	assert.deepEqual(statusLabel("claude-heavy", PLANNER_FALLBACK, true, ["align"]), {
-		text: "claude-heavy · plan:opus · strict · align",
-		tone: "warning",
-	});
+	const settings: DelegateSettings = delegateDefaults();
+	const askRoutine = routeAll(
+		{ ...settings, profiles: { ...settings.profiles, routine: { primary: { backend: "claude-code", model: "gone", effort: "low" }, fallback: null } } },
+		{ "claude-code": offering("claude-fable-5-1[1m]", "opus[1m]") },
+		() => null,
+	);
+	assert.deepEqual(statusLabel("normal", ALL_OK, false, []), { text: "normal", tone: "dim" });
+	assert.deepEqual(statusLabel("normal", PLAN_FALLBACK, false, []), { text: "normal", tone: "dim" }, "routing never shows outside delegate");
+	assert.deepEqual(statusLabel("delegate", ALL_OK, false, []), { text: "delegate", tone: "accent" });
+	assert.deepEqual(statusLabel("delegate", DEFAULT_ROUTES, false, []), { text: "delegate", tone: "accent" }, "unverified is not degraded");
+	assert.deepEqual(statusLabel("delegate", PLAN_FALLBACK, false, []), { text: "delegate · fallback:plan", tone: "warning" });
+	assert.deepEqual(statusLabel("delegate", askRoutine, false, []), { text: "delegate · ask:routine", tone: "warning" });
+	assert.deepEqual(statusLabel("delegate", ALL_OK, true, []), { text: "delegate · strict", tone: "accent" });
+	assert.deepEqual(statusLabel("normal", ALL_OK, true, ["align"]), { text: "normal · align", tone: "accent" });
+	assert.deepEqual(statusLabel("delegate", ALL_OK, true, ["align"]), { text: "delegate · strict · align", tone: "accent" });
+	assert.deepEqual(statusLabel("delegate", PLAN_FALLBACK, true, ["align"]), { text: "delegate · fallback:plan · strict · align", tone: "warning" });
 });
 
 test("modeCategoryItems: radio major modes, live minor toggles", async () => {
@@ -313,7 +404,7 @@ test("modeCategoryItems: radio major modes, live minor toggles", async () => {
 	const rows = modeCategoryItems(() => state, actions);
 	assert.deepEqual(
 		rows.map((row) => row.id),
-		["mode:normal", "mode:claude-heavy", ...MINOR_MODES.map((minor) => `mode:minor:${minor}`), "mode:align:view", "mode:default:save"],
+		["mode:normal", "mode:delegate", ...MINOR_MODES.map((minor) => `mode:minor:${minor}`), "mode:align:view", "mode:default:save"],
 		"two major rows, then one row per minor mode, then the align viewer, then save as default",
 	);
 	const defaultRow = rows.at(-1);
@@ -326,17 +417,17 @@ test("modeCategoryItems: radio major modes, live minor toggles", async () => {
 	assert.deepEqual(calls.at(-1), ["viewer"]);
 	calls.length = 0;
 	assert.equal(rows[0].label, "✓ normal");
-	assert.equal(rows[1].label, "  claude-heavy");
+	assert.equal(rows[1].label, "  delegate");
 	assert.equal(rows[0].description, "Pi as usual");
 	assert.ok(rows[0].run && rows[1].run && !rows[0].toggle, "major rows run, not toggle");
 
-	const heavyRows = modeCategoryItems(() => ({ ...state, mode: "claude-heavy" }), actions);
+	const heavyRows = modeCategoryItems(() => ({ ...state, mode: "delegate" }), actions);
 	assert.equal(heavyRows[0].label, "  normal");
-	assert.equal(heavyRows[1].label, "✓ claude-heavy");
+	assert.equal(heavyRows[1].label, "✓ delegate");
 
 	await rows[1].run?.();
 	await rows[0].run?.();
-	assert.deepEqual(calls, [["mode", "claude-heavy"], ["mode", "normal"]]);
+	assert.deepEqual(calls, [["mode", "delegate"], ["mode", "normal"]]);
 
 	calls.length = 0;
 	const align = rows.find((row) => row.id === "mode:minor:align");
@@ -360,7 +451,7 @@ test("modeCategoryItems: radio major modes, live minor toggles", async () => {
 test("activeOf snapshots only the session-scoped triple, copying minorModes", () => {
 	const state: ModeState = {
 		version: 1,
-		mode: "claude-heavy",
+		mode: "delegate",
 		strict: true,
 		shortcut: "alt+h",
 		minorModes: ["align"],
@@ -368,7 +459,7 @@ test("activeOf snapshots only the session-scoped triple, copying minorModes", ()
 		viewerShortcut: "alt+v",
 	};
 	const active = activeOf(state);
-	assert.deepEqual(active, { version: 1, mode: "claude-heavy", strict: true, minorModes: ["align"] });
+	assert.deepEqual(active, { version: 1, mode: "delegate", strict: true, minorModes: ["align"] });
 	assert.notEqual(active.minorModes, state.minorModes, "minorModes is copied, never aliased");
 	// A ModeActive is itself a valid input, so a restored snapshot can be re-snapshotted.
 	assert.deepEqual(activeOf(active), active);
@@ -376,7 +467,7 @@ test("activeOf snapshots only the session-scoped triple, copying minorModes", ()
 });
 
 test("normalizeActive round-trips a snapshot and rejects anything else without throwing", () => {
-	const active: ModeActive = { version: 1, mode: "claude-heavy", strict: true, minorModes: ["align"] };
+	const active: ModeActive = { version: 1, mode: "delegate", strict: true, minorModes: ["align"] };
 	assert.deepEqual(normalizeActive(JSON.parse(JSON.stringify(active))), active);
 	// Defaults for the optional halves of the triple.
 	assert.deepEqual(normalizeActive({ version: 1, mode: "normal" }), { version: 1, mode: "normal", strict: false, minorModes: [] });
@@ -396,7 +487,7 @@ test("normalizeActive round-trips a snapshot and rejects anything else without t
 		undefined,
 		null,
 		0,
-		"claude-heavy",
+		"delegate",
 		[],
 		{},
 		{ mode: "normal" }, // missing version
@@ -411,14 +502,14 @@ test("normalizeActive round-trips a snapshot and rejects anything else without t
 
 test("restoreActive takes the newest usable snapshot and skips everything else", () => {
 	const older: ModeActive = { version: 1, mode: "normal", strict: false, minorModes: ["align"] };
-	const newer: ModeActive = { version: 1, mode: "claude-heavy", strict: true, minorModes: [] };
+	const newer: ModeActive = { version: 1, mode: "delegate", strict: true, minorModes: [] };
 	assert.equal(restoreActive([]), undefined, "an empty branch has no snapshot");
 	assert.equal(restoreActive(undefined as never), undefined, "a missing branch never throws");
 	assert.equal(
 		restoreActive([
 			{ type: "custom", customType: "align-doc", data: { version: 1, doc: null } },
 			{ type: "message" },
-			{ type: "custom", customType: "mode", data: { mode: "claude-heavy" } }, // legacy delta marker
+			{ type: "custom", customType: "mode", data: { mode: "delegate" } }, // legacy delta marker
 			{ type: "custom", customType: "mode", data: { minor: "align", on: true } }, // legacy delta marker
 		]),
 		undefined,
@@ -436,7 +527,7 @@ test("restoreActive takes the newest usable snapshot and skips everything else",
 		restoreActive([
 			{ type: "custom", customType: "mode", data: { mode: "normal", active: older } },
 			{ type: "custom", customType: "mode", data: { active: { version: 9, mode: "normal" } } }, // newer schema
-			{ type: "custom", customType: "mode", data: { active: "claude-heavy" } }, // malformed
+			{ type: "custom", customType: "mode", data: { active: "delegate" } }, // malformed
 			{ type: "custom", customType: "mode", data: null },
 			{ type: "custom", customType: "mode" },
 			{ type: "custom", customType: "mode", data: [{ active: newer }] }, // array payload
@@ -456,10 +547,10 @@ test("restoreActive takes the newest usable snapshot and skips everything else",
 });
 
 test("composePrompt takes a ModeActive, so the per-session state drives the turn", () => {
-	const active: ModeActive = { version: 1, mode: "claude-heavy", strict: true, minorModes: ["align"] };
-	const block = composePrompt(active, PLANNER_PRIMARY);
+	const active: ModeActive = { version: 1, mode: "delegate", strict: true, minorModes: ["align"] };
+	const block = composePrompt(active, ALL_OK);
 	assert.ok(block !== undefined);
-	assert.ok(block.indexOf("# Mode: claude-heavy") < block.indexOf(HEAVY_ALIGN_BRIDGE), "heavy block, then the align bridge");
+	assert.ok(block.indexOf("# Mode: delegate") < block.indexOf(DELEGATE_ALIGN_BRIDGE), "delegate block, then the align bridge");
 	assert.match(block, /# Minor mode: align/);
-	assert.equal(composePrompt({ version: 1, mode: "normal", strict: true, minorModes: [] } satisfies ModeActive, PLANNER_PRIMARY), undefined);
+	assert.equal(composePrompt({ version: 1, mode: "normal", strict: true, minorModes: [] } satisfies ModeActive, ALL_OK), undefined);
 });

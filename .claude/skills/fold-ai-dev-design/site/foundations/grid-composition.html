@@ -63,7 +63,7 @@
       <button class="docs-theme button button-sm" data-theme-toggle>Theme</button>
       <p class="text-eyebrow">Foundation</p>
       <h1>Grid &amp; responsive</h1>
-      <p class="docs-purpose">The bands are the device, not a screen-size ladder. This product is designed first for a folded phone, so the threshold that matters is the one the phone itself crosses — the Galaxy Z Fold8 reports ~475 CSS px folded and ~933 unfolded, its main display being landscape-first, and 768 separates them. Container queries rather than media queries, because a pane can be at folded width inside a desktop window and should look like it.</p>
+      <p class="docs-purpose">Three bands, and they are the device, not a screen-size ladder: folded is designed first, and 768 is the one threshold the stylesheet branches on. Components ask their own box with container queries rather than the window with media queries, because a pane can be at folded width inside a desktop window and should look like it.</p>
       <section class="docs-section" id="breakpoints">
         <h2 class="docs-h2">Breakpoints</h2>
         <div class="docs-demo">
@@ -78,7 +78,7 @@
 <p class="text-muted"><strong>Unfolded means sidebar left, main pane right.</strong> Unfolding the phone turns it
 landscape, and landscape with a bottom nav wastes the width it just gained while pushing the primary action away from
 both thumbs. A screen that answers unfolding by growing one column has stretched the folded layout, not designed the
-unfolded one. <code>tablet</code> is retired as a band name: it was 768, which <code>unfolded</code> now names.</p></div>
+unfolded one. There is no <code>tablet</code> band: a tablet at 1024 gets the unfolded composition.</p></div>
       </section>
       <section class="docs-section" id="touch">
         <h2 class="docs-h2">Touch</h2>
@@ -92,14 +92,32 @@ unfolded one. <code>tablet</code> is retired as a band name: it was 768, which <
   Destructive keeps its distance from primary — never adjacent in a thumb arc.</p>
 </div></div></div>
       </section>
+      <section class="docs-section" id="spec">
+        <h2 class="docs-h2">Scale &amp; spec</h2>
+        <div class="table-wrap"><table class="table">
+          <thead><tr><th>Band</th><th>Width</th><th>Device</th><th>Composition</th></tr></thead>
+          <tbody>
+          <tr><td class="text-mono"><code>folded</code></td><td>&lt; 768</td><td>cover screen, ~475</td><td>Single column, bottom nav, stacked tables, approval bar pinned in the thumb arc, unified diff only</td></tr>
+          <tr><td class="text-mono"><code>unfolded</code></td><td>≥ 768 (<code>--bp-unfolded</code>)</td><td>main screen, ~933 landscape</td><td>Sidebar left, main pane right; approval bar inline; split diff available</td></tr>
+          <tr><td class="text-mono"><code>desktop</code></td><td>≥ 1120 (<code>--bp-desktop</code>)</td><td>external display</td><td>Three panes: rail + list + detail</td></tr>
+          <tr><td class="text-mono"><code>--page-max</code></td><td><code>1280px</code></td><td>—</td><td>Page ceiling (<code>.page</code>)</td></tr>
+          <tr><td class="text-mono"><code>--measure</code></td><td><code>72ch</code></td><td>—</td><td>Reading cap, opt-in via <code>.measure</code> / <code>.prose</code></td></tr>
+          <tr><td class="text-mono"><code>--tap-min</code></td><td><code>44px</code></td><td>—</td><td>Touch minimum at every band, desktop included</td></tr>
+          </tbody>
+        </table></div>
+        <p class="measure"><b>768 is the only width the stylesheet branches on.</b> The device widths are estimates derived from panel resolutions at an assumed pixel ratio, not measurements; they are what the bands aim at. There is no <code>tablet</code> band — a tablet at 1024 gets the unfolded composition.</p>
+        <p class="measure"><b>Components ask their own box, not the window.</b> <code>.table-stack</code> measures its <code>.table-wrap</code>, <code>.diff-split</code> its <code>.diff</code>, <code>.approvalbar</code> the nearest <code>.pane</code>; <code>.toast-stack</code> alone asks the window, because a toast is window chrome. A container query with no container never matches and the page still renders, so a rule that *contracts* at width keeps a <code>@media</code> floor beneath it — the argument is written beside the rule in <code>fold-ai-dev.css</code>.</p>
+        <p class="measure"><b>Containment has two costs.</b> A container is the containing block for <code>position: fixed</code> descendants, so render overlays at the screen root; and it has no intrinsic inline size, so a <code>.table-wrap</code> as a flex item measures 0px and a <code>.diff</code> in a grid <code>auto</code> track measures 2px. Give them width from the parent (<code>flex: 1</code>, <code>1fr</code>, <code>width: 100%</code>). The symptom is a blank region and no error.</p>
+        <p class="measure"><b>Name any container you declare yourself.</b> An unnamed <code>@container</code> binds to the nearest ancestor with containment, which may be a <code>.table-wrap</code> or a <code>.diff</code> rather than your screen root.</p>
+      </section>
       <section class="docs-section" id="styles">
         <h2 class="docs-h2">Styles</h2>
         <div class="table-wrap"><table class="table">
           <thead><tr><th>Class</th><th>Role</th><th>Notes</th></tr></thead>
           <tbody>
-          <tr><td class="text-mono">.page</td><td>Centred, max 1280</td><td>Gutter is <code>--space-4</code></td></tr>
-          <tr><td class="text-mono">.pane</td><td>Scroll region **and** query container</td><td>The box a component measures</td></tr>
-          <tr><td class="text-mono">.measure</td><td>72ch reading cap, one element</td><td>Opt-in since 1.6.0</td></tr>
+          <tr><td class="text-mono">.page</td><td>Centered, max 1280</td><td>Gutter is <code>--space-4</code></td></tr>
+          <tr><td class="text-mono">.pane</td><td>Scroll region <b>and</b> query container</td><td>The box a component measures</td></tr>
+          <tr><td class="text-mono">.measure</td><td>72ch reading cap, one element</td><td>Opt-in; a bare element is never capped</td></tr>
           <tr><td class="text-mono">.prose</td><td>72ch cap on the running text inside</td><td>Leaves strips and rows alone</td></tr>
           <tr><td class="text-mono">.table-stack</td><td>Table collapses below 768 of its <code>.table-wrap</code></td><td>Needs <code>data-label</code> per cell</td></tr>
           </tbody>
@@ -110,7 +128,7 @@ unfolded one. <code>tablet</code> is retired as a band name: it was 768, which <
         <div class="table-wrap"><table class="table">
           <thead><tr><th>Token</th><th>Role here</th></tr></thead>
           <tbody>
-          <tr><td class="text-mono">--bp-unfolded / -desktop</td><td>768 / 1120. For JS and docs — custom properties do not work in <code>@media</code>. <code>--bp-tablet</code> is retired; it was 768, which <code>--bp-unfolded</code> now names.</td></tr>
+          <tr><td class="text-mono">--bp-unfolded / -desktop</td><td>768 / 1120. For JS and docs — custom properties do not work in <code>@media</code>.</td></tr>
           <tr><td class="text-mono">--page-max</td><td>1280px.</td></tr>
           <tr><td class="text-mono">--measure</td><td>72ch.</td></tr>
           <tr><td class="text-mono">--tap-min</td><td>44px, every breakpoint.</td></tr>
@@ -122,11 +140,11 @@ unfolded one. <code>tablet</code> is retired as a band name: it was 768, which <
         <div class="do-dont">
           <div class="do">
             <p class="text-eyebrow text-success">Do</p>
-            <ul><li><b>Write `@container` queries in components</b> — the component should ask its own box, not the window.</li><li><b>Give the box a `.pane` so the query has something to match</b> — a container query with no container never matches and the page still renders.</li><li><b>Name any container you declare yourself, and query it by name</b> — an unnamed `@container` binds to the nearest one, which since 1.6.0 may be a `.table-wrap` or a `.diff` rather than your screen root.</li><li><b>Duplicate every gesture with a visible control</b> — swipe is an accelerator, never the door.</li><li><b>Pin the primary decision to the bottom at folded width</b> — that is where a thumb reaches one-handed.</li></ul>
+            <ul><li><b>Write `@container` queries in components</b> — the component should ask its own box, not the window.</li><li><b>Give the box a `.pane` so the query has something to match</b> — a container query with no container never matches and the page still renders.</li><li><b>Name any container you declare yourself, and query it by name</b> — an unnamed `@container` binds to the nearest one, which may be a `.table-wrap` or a `.diff` rather than your screen root.</li><li><b>Duplicate every gesture with a visible control</b> — swipe is an accelerator, never the door.</li><li><b>Pin the primary decision to the bottom at folded width</b> — that is where a thumb reaches one-handed.</li></ul>
           </div>
           <div class="dont">
             <p class="text-eyebrow text-error">Don't</p>
-            <ul><li><b>Let a table scroll horizontally on a phone</b> — stack it — horizontal scroll is a defeat, not a fallback.</li><li><b>Render a `.scrim` or `.modal` inside a `.pane`</b> — containment makes the pane its containing block, so it covers the pane and not the screen.</li><li><b>Let a container take its width from its own contents</b> — `container-type: inline-size` resolves the box without them, so a `.table-wrap` as a flex item measures 0px and a `.diff` in an `auto` track measures 2px.</li><li><b>Hide a control behind hover</b> — a phone has no hover, so the control does not exist there.</li><li><b>Treat folded as a degraded desktop</b> — it is a first-class width, and it is designed for first.</li></ul>
+            <ul><li><b>Let a table scroll horizontally on a phone</b> — stack it — horizontal scroll is a defeat, not a fallback.</li><li><b>Render a `.scrim` or `.modal` inside a `.pane`</b> — containment makes the pane its containing block, so it covers the pane and not the screen.</li><li><b>Let a container take its width from its own contents</b> — `container-type: inline-size` resolves the box without them, so a `.table-wrap` as a flex item measures 0px and a `.diff` in an `auto` track measures 2px.</li><li><b>Hide a control behind hover</b> — a phone has no hover, so the control does not exist there.</li><li><b>Treat folded as a degraded desktop</b> — it is a first-class width, and the one drawn first.</li></ul>
           </div>
         </div>
       </section>

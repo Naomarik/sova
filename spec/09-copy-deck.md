@@ -200,13 +200,14 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Trigger (composer foot, right end) | {mode} · {minor} …, or "Mode" before this chat's state arrives (`aria-label`/`title`: "Mode: {label}", plus ", applies after this turn" when pending) |
 | Menu `aria-label` | Mode |
 | Group labels | Major mode · Minor modes |
-| Descriptions | normal: Pi as usual · claude-heavy: Orchestrate: delegate coding and planning to Claude Code workers · minors: from pi-config `MINOR_DESCRIPTIONS` |
+| Descriptions | from pi-config `MODE_DESCRIPTIONS` (state.ts): normal: Pi as usual · delegate: Orchestrate: route planning, investigation and implementation to workers by profile · minors: from pi-config `MINOR_DESCRIPTIONS` |
+| Delegate gear | icon only; `aria-label`/`title`: Configure Delegate (opens Settings → Modes; switches nothing) |
 | Foot | strict: {on\|off} · Before your first message it's also the new default; after, this chat only. `/mode default` saves it any time. |
 | Pending | **Applies after this turn.** This turn keeps the old mode, and so do messages queued during it. Your next message follows the new one. |
 | Can't switch | **This chat can't switch.** This chat can't switch: the mode extension isn't loaded here, or another program wrote this session. |
 | Save failed | **Couldn't switch the mode.** {reason}. Your mode is unchanged. |
 | Load failed | **Couldn't load the modes.** Your mode is unchanged. Close this and try again. |
-| Transcript marker | Mode → {mode} · Minor mode: {minor} on\|off |
+| Transcript marker | Mode → {mode} · Minor mode: {minor} on\|off (shown as recorded: a pre-rename marker keeps "Mode → claude-heavy") |
 | Toast (from the extension) | Mode: {mode} · Minor mode: {minor} on\|off |
 
 ## Context window
@@ -333,6 +334,30 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Transcript file empty (just started) | **0 entries in {name}'s session so far.** Entries show up here as it writes them. |
 | Pane's session-insight fetch failed (banner-warn) | **Couldn't load this session's subagents.** {message} Your workers keep running. We'll retry on our own. |
 | Transcript socket and load errors | the §11 state table: Live-watch and Connection copy above, and Main pane's transcript load error |
+
+## Settings · Modes → Delegate (§12)
+
+| Where | Copy |
+|---|---|
+| Tab | Modes |
+| Section title | Delegate |
+| Intro | In Delegate the agent hands work to background workers and checks what they bring back. Pick the worker for each kind of work. Chats already in Delegate, here and in the terminal, use a change from their next message. |
+| Profiles (legend · hint) | Planning & specs · Investigation · Routine implementation · Complex implementation; hints from pi-config `DELEGATE_PROFILE_INFO` (delegate.ts) |
+| Row labels | Primary · Backend · Model · Effort · Fallback (toggle) |
+| Select placeholders | Choose a model (Checking… while asking) · Choose |
+| Model option suffixes | — off for subagents · — not offered · — not verified |
+| No fallback | No fallback: if the primary can't run, the agent asks you which model to use. |
+| Row notes | Choose a model. · Choose an effort. · {backend} doesn't offer {model}. · {model} doesn't take {effort} effort. · {policy reason}. Delegate uses the fallback, or asks. · Not verified: {backend} couldn't list its models. · Not verified: {provider} models exist only in sessions started with that provider on. · Same as the primary. Choose another worker, or no fallback. |
+| Checking | Checking which models each backend offers… |
+| Backend can't list (banner-warn) | **{backend} couldn't list its models.** {reason}. Choices on it stay as saved and read "not verified" — it isn't saying they're gone. [Check Again] |
+| Options request failed (banner-warn) | **Couldn't check which models are offered.** Your saved choices stay, marked not verified. [Check Again] |
+| Load failed (banner-error) | **Couldn't load the Delegate settings.** Nothing was changed. [Try Again] |
+| Save failed (banner-error) | **Couldn't save the routing.** {server reason}. Your saved routing is unchanged. |
+| Saved with notes (banner-warn) | **Saved, with notes.** {warnings as sentences}: "Not verified, because {backend} couldn't list its models ({reason}): {slot}, {slot}…" once per backend, then one per other slot |
+| Close held (banner-warn, above the dialog foot) | **Your Delegate changes aren't saved.** Save them on this screen, or discard them and close. [Keep Editing] [Discard and Close] |
+| Buttons | Reset to Defaults · Discard Changes · Save Changes (Saving…) |
+| Announcement | Delegate routing saved. Chats in Delegate use it from their next message. |
+| Footnote | Stored in `~/.pi/agent/mode-delegate.json`, shared with pi in the terminal. |
 
 ## Settings · Themes (§12)
 

@@ -21,6 +21,18 @@ Rendered: `site/foundations/shadow.html`
 - `--shadow-2` — Anything that floats above the page.
 - `--shadow-3` — Modal only. If everything is elevated, nothing is.
 
+## Scale & spec
+
+| Token | Light | Dark | Used by |
+|---|---|---|---|
+| `--shadow-1` | `0 1px 2px rgba(23, 23, 28, .06)` | `0 1px 2px rgba(0, 0, 0, .5)` | Resting card |
+| `--shadow-2` | `0 1px 2px rgba(23, 23, 28, .06), 0 8px 24px -12px rgba(23, 23, 28, .18)` | `0 1px 2px rgba(0, 0, 0, .5), 0 8px 24px -12px rgba(0, 0, 0, .75)` | Popover, sheet, toast, raised card |
+| `--shadow-3` | `0 2px 4px rgba(23, 23, 28, .08), 0 18px 44px -16px rgba(23, 23, 28, .26)` | `0 2px 4px rgba(0, 0, 0, .6), 0 18px 44px -16px rgba(0, 0, 0, .85)` | Modal only |
+
+**Neutral black only** — no tinted or colored shadows. Every shadow is paired with a border, because shadows vanish on some displays and borders do not.
+
+**In dark, elevation is surface lightness, not a heavier shadow.** The dark values are heavier only so they register at all; the step you see is paper → sunken → surface getting lighter.
+
 ## DO / DON'T
 
 - **DO** Reserve `--shadow-3` for the modal — a single highest surface is what makes "highest" mean something.

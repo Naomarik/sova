@@ -1030,6 +1030,58 @@ button.list-row { width: 100%; border: 0; background: none; text-align: left; }
   overflow-x: auto;
 }
 
+/* ---- SETTINGS · MODES → DELEGATE. One fieldset per kind of work, each a
+   primary worker row and an optional fallback row: backend, model, effort as
+   native selects that sit side by side when there's room and stack when there
+   isn't (spec/12 "Modes"). ------------------------------------------------ */
+
+.settings-delegate { display: flex; flex-direction: column; gap: var(--space-4); }
+.settings-delegate-profile {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-4) 0 0;
+  border: 0;
+  border-top: var(--stroke-thin) solid var(--color-border);
+  min-width: 0;
+}
+.settings-delegate-legend {
+  float: left; /* keeps the legend inside the flex flow instead of on the border */
+  width: 100%;
+  padding: 0;
+  font-size: var(--fs-body);
+  font-weight: var(--fw-semibold);
+  color: var(--color-ink);
+}
+.settings-delegate-desc { margin: 0; }
+.settings-delegate-slot { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
+.settings-delegate-slot-label { font-size: var(--fs-caption); font-weight: var(--fw-semibold); color: var(--color-ink-2); }
+/* Backend fits "Claude Code" with its caret; the model id takes what the row leaves. */
+.settings-delegate-fields {
+  display: grid;
+  grid-template-columns: minmax(9.5rem, 1fr) minmax(0, 2.2fr) minmax(6.5rem, 0.8fr);
+  gap: var(--space-3);
+}
+.settings-delegate-fields .field { min-width: 0; }
+.settings-delegate-fields .select.text-mono { font-family: var(--font-mono); font-size: var(--fs-mono); }
+.settings-delegate-issue { margin: 0; font-size: var(--fs-caption); }
+.settings-delegate-issue-error { color: var(--status-error); }
+.settings-delegate-issue-warn { color: var(--status-warn); }
+.settings-delegate-issue-muted { color: var(--color-ink-muted); }
+.settings-delegate-fallback-toggle { justify-content: flex-start; font-size: var(--fs-caption); font-weight: var(--fw-semibold); color: var(--color-ink-2); }
+.settings-delegate-actions { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+/* When the row wraps (phone widths), Save stays at the trailing edge rather than starting a line. */
+.settings-delegate-actions .button-primary { margin-left: auto; }
+/* The dialog's "unsaved Delegate changes" hold: above the foot, outside the scrolling panel. */
+.settings-close-held { flex: none; padding: var(--space-2) var(--space-4) 0; }
+.settings-close-held-actions { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+.settings-delegate-file { margin: 0; font-size: var(--fs-caption); color: var(--color-ink-muted); overflow-wrap: anywhere; }
+.settings-delegate-file code { font-family: var(--font-mono); font-size: var(--fs-mono); color: var(--color-ink-2); }
+@media (max-width: 640px) {
+  .settings-delegate-fields { grid-template-columns: 1fr; }
+}
+
 /* ---- SELECT. A native select, 44px, appearance reset; the caret is drawn
    by the wrapper and never a control (skill: select). Short closed lists get
    the platform picker on a phone for free. -------------------------------- */
@@ -1114,6 +1166,16 @@ button.list-row { width: 100%; border: 0; background: none; text-align: left; }
   /* clip, not hidden: a hidden box still scrolls programmatically, so a scrollIntoView (a
      transcript jump) could shift the whole shell up, and nothing would scroll it back. */
   overflow: clip;
+  /* `relative` at every width, not just unfolded: a positioned .app is the containing block
+     for anything absolute inside it that has no nearer positioned ancestor. Without it,
+     .visually-hidden (`position: absolute`, no insets) in a long sidebar list resolves
+     against the initial containing block, its static position lands far below the fold,
+     `overflow: clip` can't clip it, and the document grows taller than the window — so the
+     page itself scrolls and the header rides up off-screen (measured 3079px at 412×915).
+     It also anchors .pane-resizer (unfolded) and .app-subagents. `relative` is not a
+     containing block for `position: fixed`, so the portalled scrim, modal, toasts,
+     lightbox and popovers are untouched. */
+  position: relative;
 }
 .app-sidebar,
 .app-main {
@@ -1131,16 +1193,7 @@ button.list-row { width: 100%; border: 0; background: none; text-align: left; }
 .app-back { display: inline-flex; }
 
 @media (min-width: 768px) {
-  /* `relative` so .pane-resizer can hang off the shell rather than become a
-     grid track. Nothing else moves: every absolutely positioned thing inside
-     .app already has a nearer positioned ancestor (.search, .transcript,
-     .composer, .composer-inner, .composer-model, .run-status-link,
-     .subagents-view), .visually-hidden sets no insets so it keeps its static
-     position, and `relative` is not a containing block for `position: fixed`,
-     so the portalled scrim, modal, toasts, lightbox and popovers are
-     untouched. It also just restates what .app:has(> .app-subagents) below
-     already asserts whenever that pane is open. */
-  .app { position: relative; grid-template-columns: var(--sidebar-width) minmax(0, 1fr); }
+  .app { grid-template-columns: var(--sidebar-width) minmax(0, 1fr); }
   .app[data-view] .app-sidebar,
   .app[data-view] .app-main { display: flex; }
   .app-sidebar { border-right: var(--stroke-thin) solid var(--color-border); }
@@ -2718,6 +2771,20 @@ a.group-option { color: inherit; text-decoration: none; }
 .mode-option-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.35; }
 .mode-option-id { font-family: var(--font-mono); font-size: var(--fs-mono); color: var(--color-ink); }
 .mode-option-desc { font-size: var(--fs-caption); color: var(--color-ink-muted); }
+/* Delegate's row carries "Configure Delegate" as a gear at its right edge: a sibling button with
+   its own 44px target, so choosing the row and opening Settings stay two separate things. */
+.mode-option-row { display: flex; align-items: stretch; }
+.mode-option-row > .mode-option { flex: 1; min-width: 0; }
+.mode-option-gear {
+  flex: none;
+  align-self: center;
+  width: var(--tap-min);
+  min-height: var(--tap-min);
+  margin-right: var(--space-1);
+  color: var(--color-ink-muted);
+}
+.mode-option-gear:hover { color: var(--color-ink); }
+.mode-option-row:has(> .mode-option[aria-checked="true"]) { background: var(--color-accent-tint); }
 .mode-menu-foot {
   flex: none;
   margin: 0;
@@ -3660,7 +3727,6 @@ a.chip:hover { color: var(--color-ink); border-color: var(--color-border-strong)
      < 768   full screen over the session view.
    320 + 440 + 520 = 1280, which is where the column fits. -------------- */
 
-.app:has(> .app-subagents) { position: relative; }
 .app-subagents {
   position: absolute;
   inset: 0;
@@ -3860,12 +3926,13 @@ a.chip:hover { color: var(--color-ink); border-color: var(--color-border-strong)
 
 
 /* ---- BODY. List | transcript, each its own scroll region; the body itself
-   never scrolls. Under 500px of pane the two stack: list on top, capped at
-   30vh, transcript below. 500, not 520: the container is the content box, so
-   a 520px drawer measures 519 inside its border and must stay side by side.
+   never scrolls. Under 560px of pane it is list/detail instead: one half at
+   a time, the whole body each, swapped by data-view (a row opens its worker,
+   the view head's back button returns). 560 = the 256px list + a 304px
+   transcript, the least that reads beside it; the 520px drawer left 264.
    That rule contracts, so the container query gets a @media floor (skill:
-   the union) — the drawer's content is under 500px below an 885px window,
-   and the pane is full width, so stacked, when folded. ---------------- */
+   the union): below 1280 the pane is the 520px drawer or full screen, so
+   always list/detail; from 1280 the column is 40vw and asks its own box. */
 
 .subagents-body {
   flex: 1;
@@ -3886,18 +3953,36 @@ a.chip:hover { color: var(--color-ink); border-color: var(--color-border-strong)
 }
 .subagents-list > li { border-bottom: var(--stroke-thin) solid var(--color-border); }
 
-@container subagents (max-width: 499px) {
-  .subagents-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
-  .subagents-list { max-height: 30vh; border-right: 0; border-bottom: var(--stroke-thin) solid var(--color-border); }
+/* The back button and the row chevron exist only in list/detail; side by side
+   both halves are on screen, so neither has anywhere to go. */
+.subagents-view-head > .subagents-back,
+.subagent-row > .subagent-row-go { display: none; }
+
+@container subagents (max-width: 559px) {
+  .subagents-body { grid-template-columns: minmax(0, 1fr); }
+  .subagents-list { border-right: 0; }
+  .subagents-body[data-view="detail"] > .subagents-list,
+  .subagents-body[data-view="list"] > .subagents-view { display: none; }
+  .subagents-view-head > .subagents-back { display: inline-flex; flex: none; }
+  .subagents-view-head:has(> .subagents-back) { padding-left: var(--space-1); }
+  .subagent-row { grid-template-columns: minmax(0, 1fr) auto auto; }
+  .subagent-row > .subagent-row-go { display: inline-block; grid-column: 3; grid-row: 1 / span 2; color: var(--color-ink-muted); }
 }
-@media (max-width: 884px) {
-  .subagents-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
-  .subagents-list { max-height: 30vh; border-right: 0; border-bottom: var(--stroke-thin) solid var(--color-border); }
+@media (max-width: 1279px) {
+  .subagents-body { grid-template-columns: minmax(0, 1fr); }
+  .subagents-list { border-right: 0; }
+  .subagents-body[data-view="detail"] > .subagents-list,
+  .subagents-body[data-view="list"] > .subagents-view { display: none; }
+  .subagents-view-head > .subagents-back { display: inline-flex; flex: none; }
+  .subagents-view-head:has(> .subagents-back) { padding-left: var(--space-1); }
+  .subagent-row { grid-template-columns: minmax(0, 1fr) auto auto; }
+  .subagent-row > .subagent-row-go { display: inline-block; grid-column: 3; grid-row: 1 / span 2; color: var(--color-ink-muted); }
 }
 
 
 /* ---- WORKER ROW. The whole row is the button. Name + status chip on the
-   first line, meta under it, the preview (mono, one line) while working.
+   first line, meta under it — no excerpt of the worker's reply; the
+   transcript says it whole. In list/detail a chevron closes the row.
    Status follows the member-row table (§10): the chip carries the word, and
    only a live Working/Starting chip pulses — one pulsing thing per row.
    Selected: accent tint (the house selected row) plus a semibold name, so
@@ -3955,18 +4040,13 @@ a.chip:hover { color: var(--color-ink); border-color: var(--color-border-strong)
 }
 .meta-line-sep { color: var(--color-ink-muted); }
 
-.subagent-row-meta,
-.subagent-row-preview {
-  grid-column: 1 / -1;
+.subagent-row-meta {
+  grid-column: 1 / 3;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.subagent-row-meta { font-size: var(--fs-caption); color: var(--color-ink-muted); }
-.subagent-row-preview {
-  font-family: var(--font-mono);
-  font-size: var(--fs-mono);
+  font-size: var(--fs-caption);
   color: var(--color-ink-muted);
 }
 
@@ -3987,15 +4067,24 @@ a.chip:hover { color: var(--color-ink); border-color: var(--color-border-strong)
 }
 .subagents-view-head {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  column-gap: var(--space-2);
-  row-gap: 2px;
+  gap: var(--space-1);
   padding: var(--space-2) var(--space-4);
   border-bottom: var(--stroke-thin) solid var(--color-border);
   background: var(--color-surface);
   flex: none;
 }
+/* Who the worker is: title, chips, and the meta on its own line under them. */
+.subagents-view-id {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: var(--space-2);
+  row-gap: 2px;
+}
+/* The name is who this is, so a long one wraps to a second line before it clips. */
 .subagents-view-title {
   flex: 1;
   min-width: 0;
@@ -4004,8 +4093,10 @@ a.chip:hover { color: var(--color-ink); border-color: var(--color-border-strong)
   line-height: var(--lh-body);
   font-weight: var(--fw-semibold);
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 .subagents-view-meta {
   flex-basis: 100%;

@@ -10,7 +10,7 @@ import { bodyLimit } from "hono/body-limit";
 import { disposeAllChats, getModelRuntime, heldChat, warmClaudeCodeProvider } from "./chat-manager";
 import { canonicalPath, resolveSessionPath } from "./paths";
 import { stateRoot } from "./state-root";
-import { claudeCodeModelCount, listModels, resolveContext } from "./models";
+import { claudeCodeModelCount, listModels, listRegistryModels, resolveContext } from "./models";
 import { markOwned } from "./write-guard";
 import { addWebSession } from "./web-sessions";
 import { draftForClient, setDraft } from "./drafts";
@@ -21,6 +21,7 @@ import { contextForBranch, normalizeEntries, readActiveBranch } from "./transcri
 import { checkTmpImage, deleteAttachment, MAX_ATTACHMENT_BYTES, readTmpImage, saveUploadedImage, sessionAttachmentsDir, UploadError } from "./attachments";
 import { listFolders } from "./folders";
 import { listProjectFiles } from "./files";
+import { getGitSummary } from "./git-summary";
 import { assignSession, cleanGroupLabel, createGroup, deleteGroup, GROUP_LABEL_MAX, readGroups, updateGroup } from "./session-groups";
 import { promptGroup } from "./group-prompt";
 import { runFanout } from "./fanout";
@@ -29,6 +30,7 @@ import type { FanoutRequest, ForkRequest } from "../shared/protocol";
 import { findTarget, isTargetName, listRemoteFolders, listTargets, normalizeRemotePath, targetDir, targetsFile, validateNewSessionCwd } from "./targets";
 import { isExplanationId, listExplanations, readExplanationPage } from "./explanations";
 import { switchMode } from "./mode";
+import { cachedClaudeModels, delegateInfo, delegateOptions, saveDelegateSettings, type DelegateSources } from "./delegate";
 import { readModelPolicy, writeModelPolicy } from "./model-policy";
 import { listThemes } from "./themes";
 import { readWebSettings, writeWebSettings } from "./web-settings";
@@ -371,6 +373,17 @@ app.get("/api/files", async (c) => {
   return r.ok ? c.json(r.index) : c.json({ error: r.error }, r.status);
 });
 
+// A session's repository (server/git-summary.ts): read-only git of the whole repository around the
+// session's stored cwd, here or on its target. Never fetches, never sends contents. A folder with no
+// repository, or one that can't be read, is still a 200 whose `state` says so; ?fresh=1 skips the
+// ~10s cache (the Refresh button).
+app.get("/api/sessions/git", async (c) => {
+  const path = resolveSessionPath(c.req.query("path"));
+  if (!path) return c.json({ error: "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)" }, 400);
+  if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
+  return c.json(await getGitSummary(path, { fresh: c.req.query("fresh") === "1" }));
+});
+
 app.get("/api/models", async (c) => c.json(await listModels()));
 
 // The model policy (spec/12-settings-dialog.md §12): GET reads it (empty = nothing disabled), PUT
@@ -418,6 +431,27 @@ app.put("/api/settings", async (c) => {
     }
   }
   return c.json(result);
+});
+
+// Settings → Modes → Delegate (spec/12-settings-dialog.md "Modes"): which worker each kind of
+// Delegate work goes to. The file is the mode extension's; every Delegate session re-reads it at
+// its next turn boundary, so a save here reaches open Delegate chats and TUI sessions alike.
+const delegateSources: DelegateSources = {
+  piModels: () => listRegistryModels(),
+  claudeModels: () => cachedClaudeModels(),
+  policy: () => readModelPolicy(),
+};
+app.get("/api/settings/delegate", (c) => c.json(delegateInfo()));
+app.get("/api/settings/delegate/options", async (c) => c.json(await delegateOptions(delegateSources)));
+app.put("/api/settings/delegate", async (c) => {
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "Expected JSON body { version: 1, profiles }" }, 400);
+  }
+  const result = await saveDelegateSettings(body, delegateSources);
+  return "error" in result ? c.json({ error: result.error }, 400) : c.json(result);
 });
 
 // Is the Claude Code CLI actually usable? `claude --version` plus how many of its models the

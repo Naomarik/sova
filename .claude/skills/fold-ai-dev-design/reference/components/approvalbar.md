@@ -38,16 +38,13 @@ Rendered: `site/components/approvalbar.html`
 </div>
 ```
 
-Every state is rendered together in the site page's state matrix. The `-hover`, `-focus`,
-`-active` and `-disabled` helper classes are **documentation scaffolding only** — production
-code uses the real pseudo-classes.
 
 ## DO / DON'T
 
-- **DO** Summarise what is being approved — nobody should have to scroll up to remember.
+- **DO** Summarize what is being approved — nobody should have to scroll up to remember.
 - **DO** Keep the spacer between primary and destructive — the gap is the safety mechanism.
 - **DO** Put the bar in a `.pane` — it measures the pane, so a bar in a 600px pane stays pinned inside a wide window.
 - **DO** Disable Approve when approval is impossible — and say why in the summary.
-- **DON'T** Put Discard next to Approve — they are the two ends of the decision, not neighbours.
+- **DON'T** Put Discard next to Approve — they are the two ends of the decision, not neighbors.
 - **DON'T** Hide the bar on scroll — the decision is the reason the screen exists.
 - **DON'T** Use it for navigation — it decides; it does not move you.

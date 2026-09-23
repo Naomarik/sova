@@ -14,7 +14,7 @@ Rendered: `site/components/nav.html`
 | `.rail` | Vertical column | 768 and up |
 | `.navitem` | 44px minimum target | Shared by both |
 | `.navitem-active` | Tinted current item | Pair with `aria-current="page"` |
-| `.navitem-label` | The label, truncating | Wrap every label. Ellipsises rather than eating the item padding |
+| `.navitem-label` | The label, truncating | Wrap every label. Truncates with an ellipsis rather than eating the item padding |
 
 ## Tokens used
 
@@ -33,9 +33,6 @@ Rendered: `site/components/nav.html`
 </nav>
 ```
 
-Every state is rendered together in the site page's state matrix. The `-hover`, `-focus`,
-`-active` and `-disabled` helper classes are **documentation scaffolding only** — production
-code uses the real pseudo-classes.
 
 ## DO / DON'T
 
@@ -44,5 +41,5 @@ code uses the real pseudo-classes.
 - **DO** Size the nav by its longest label, not by a count — at 475px five items leave 71px for a label and six leave 55px; `Worktrees` measures 54.6, so six fit and a longer word does not.
 - **DO** Wrap every label in `.navitem-label` — it truncates a label that will not fit; bare text in a `.navitem` spends the item padding instead and closes the gap to its neighbor.
 - **DON'T** Show a rail and a bottom bar together — the user cannot tell which one is authoritative.
-- **DON'T** Hide labels and ship icons alone — an unlabelled icon is a guess.
+- **DON'T** Hide labels and ship icons alone — an unlabeled icon is a guess.
 - **DON'T** Put a destructive action in the nav — navigation moves you; it should not change anything.

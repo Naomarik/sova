@@ -1,0 +1,21 @@
+{
+  "about": "Claude initialize model lists and what model discovery must make of them. Read by this extension's models.test.ts AND by Sova's server/claude-models.test.ts, so both parsers agree: `models` is the expected [{id, efforts?}] (other fields ignored), `error` a substring both parsers' messages contain.",
+  "cases": [
+    { "name": "valid, deduped by first value, efforts deduped", "input": [
+      { "value": "a[1m]", "displayName": "A", "supportedEffortLevels": ["low", "high", "low"] },
+      { "value": "b", "displayName": "B" },
+      { "value": "a[1m]", "displayName": "duplicate" } ],
+      "models": [ { "id": "a[1m]", "efforts": ["low", "high"] }, { "id": "b" } ] },
+    { "name": "empty list is an answer", "input": [], "models": [] },
+    { "name": "reported empty efforts are kept empty (normalized later, in delegate.ts)", "input": [ { "value": "a", "displayName": "A", "supportedEffortLevels": [] } ], "models": [ { "id": "a", "efforts": [] } ] },
+    { "name": "unknown efforts are kept (cut later)", "input": [ { "value": "a", "displayName": "A", "supportedEffortLevels": ["low", "new-effort"] } ], "models": [ { "id": "a", "efforts": ["low", "new-effort"] } ] },
+    { "name": "not an array", "input": "nope", "error": "no model list" },
+    { "name": "missing", "input": null, "error": "no model list" },
+    { "name": "blank value", "input": [ { "value": " ", "displayName": "A" } ], "error": "invalid model list" },
+    { "name": "blank displayName", "input": [ { "value": "a", "displayName": "  " } ], "error": "invalid model list" },
+    { "name": "non-string displayName", "input": [ { "value": "a", "displayName": 3 } ], "error": "invalid model list" },
+    { "name": "non-object entry", "input": [ "a" ], "error": "invalid model list" },
+    { "name": "non-string effort", "input": [ { "value": "a", "displayName": "A", "supportedEffortLevels": ["low", 3] } ], "error": "invalid effort levels" },
+    { "name": "blank effort", "input": [ { "value": "a", "displayName": "A", "supportedEffortLevels": ["low", " "] } ], "error": "invalid effort levels" }
+  ]
+}

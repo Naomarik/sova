@@ -92,15 +92,16 @@
 
 /* Static state helpers — DEMO/DOCUMENTATION ONLY.
    Production uses the real pseudo-classes above. These exist so the reference
-   site can render a full state matrix on one page. */
-.button-hover    { background: var(--color-sunken); }
-.button-primary.button-hover { background: var(--color-accent-hover); border-color: var(--color-accent-hover); }
-.button-destructive.button-hover { background: var(--status-error-bg); }
-.button-ghost.button-hover { background: var(--color-sunken); color: var(--color-ink); }
-.button-focus    { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
-.button-active   { background: var(--color-sunken); transform: translateY(1px); }
-.button-primary.button-active { background: var(--color-accent-hover); }
-.button-disabled { opacity: .42; cursor: not-allowed; }
+   site can render a full state matrix on one page. They live in the `is-`
+   namespace so a fake state can never be mistaken for a variant class. */
+.button.is-hover    { background: var(--color-sunken); }
+.button-primary.is-hover { background: var(--color-accent-hover); border-color: var(--color-accent-hover); }
+.button-destructive.is-hover { background: var(--status-error-bg); }
+.button-ghost.is-hover { background: var(--color-sunken); color: var(--color-ink); }
+.button.is-focus    { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.button.is-active   { background: var(--color-sunken); transform: translateY(1px); }
+.button-primary.is-active { background: var(--color-accent-hover); }
+.button.is-disabled { opacity: .42; cursor: not-allowed; }
 
 /* Demo helper. */
 .button-row { display: flex; gap: var(--space-2); flex-wrap: wrap; align-items: center; }
@@ -210,10 +211,11 @@
 
 .input-mono { font-family: var(--font-mono); font-size: var(--fs-mono); }
 
-/* Static state helpers — demo only. */
-.input-hover { border-color: var(--color-ink-muted); }
-.input-focus { outline: var(--focus-ring); outline-offset: var(--focus-offset); border-color: var(--color-accent); }
-.input-disabled { opacity: .42; cursor: not-allowed; }
+/* Static state helpers — DEMO/DOCUMENTATION ONLY. Production uses the real
+   pseudo-classes above. */
+.input.is-hover    { border-color: var(--color-ink-muted); }
+.input.is-focus    { outline: var(--focus-ring); outline-offset: var(--focus-offset); border-color: var(--color-accent); }
+.input.is-disabled { opacity: .42; cursor: not-allowed; }
 
 
 /* =============================================================================
@@ -380,7 +382,7 @@
   padding: 0 var(--space-4);
   border-bottom: var(--stroke-thin) solid var(--color-border);
   /* Chrome sits ON the page, so it takes the raised surface, not the page
-     colour. Paper and surface are a real step apart in both themes; chrome
+     color. Paper and surface are a real step apart in both themes; chrome
      painted `--color-bg` next to a `--color-bg` page is separated only by a
      1px border, which vanishes in a screenshot. */
   background: var(--color-surface);
@@ -452,7 +454,7 @@
 
 /* The text of a nav item. Separate from the icon so a collapsed rail can drop
    it — never drop the label in an EXPANDED rail to save space, because an
-   unlabelled icon is a guess (nav.md).
+   unlabeled icon is a guess (nav.md).
 
    `max-width` and `nowrap` are what make the ellipsis real, and they are here
    because `min-width: 0` alone only works in the rail. A rail item is a ROW
@@ -636,7 +638,7 @@
   border-radius: var(--r-sm);
   background: var(--color-sunken);
   /* DOCUMENTED EXCEPTION: the sweep needs a transparent stop of the surface
-     colour, which no token expresses. Alpha values only — no new hues. */
+     color, which no token expresses. Alpha values only — no new hues. */
   background-image: linear-gradient(
     90deg,
     rgba(255, 255, 255, 0) 0%,
@@ -826,7 +828,7 @@ details[open] > .tree-row .tree-twist { transform: rotate(90deg); }
    2. NO INTRINSIC INLINE SIZE. Size containment resolves the box's inline size
       without looking at its contents, so wherever a parent asks the child how
       wide it wants to be, the answer is now 0. A `.table-wrap` as a flex item
-      measures 0px and vanishes; before 1.6.0 it measured its table. Put it
+      measures 0px and vanishes. Put it
       somewhere the width comes from the parent — `flex: 1`, a grid `1fr`,
       `width: 100%` — never `flex: none` or a grid `auto` track. The symptom is
       a blank region and no error, which is why it is written down here.
@@ -939,9 +941,9 @@ details[open] > .tree-row .tree-twist { transform: rotate(90deg); }
    What a set is narrowed by, what it is ordered by, and how many it is showing
    — one bar, because those three facts are read together or not at all.
 
-   THE COUNT IS PART OF THE COMPONENT, NOT A NEIGHBOUR OF IT. A badge reading 5
+   THE COUNT IS PART OF THE COMPONENT, NOT A NEIGHBOR OF IT. A badge reading 5
    while three rows are hidden by a filter is a lie, and the only reliable
-   defence is putting the number where the filters are, so the person who
+   defense is putting the number where the filters are, so the person who
    changed one sees the other move.
 
    A FILTER IS A CONTROL AND TAKES A CONTROL'S SHAPE — 8px radius, 44px tall,
@@ -996,7 +998,7 @@ details[open] > .tree-row .tree-twist { transform: rotate(90deg); }
 .filterbar-order:disabled { opacity: .42; cursor: not-allowed; }
 
 /* Set. The tint is the cheap half of this; the label carrying the value is the
-   half that survives a colourblind reader and direct sunlight. */
+   half that survives a colorblind reader and direct sunlight. */
 .filterbar-filter-on {
   background: var(--color-accent-tint);
   border-color: var(--color-accent);
@@ -1030,7 +1032,7 @@ details[open] > .tree-row .tree-twist { transform: rotate(90deg); }
    in, and collapsing the two loses the distinction between a full allocation
    and a full machine.
 
-   A meter measures; it does not warn. Colour the fill by status only where the
+   A meter measures; it does not warn. Color the fill by status only where the
    word is already on the screen — per Accessibility, hue is never the signal.
    ============================================================================= */
 
@@ -1197,7 +1199,7 @@ details[open] > .tree-row .tree-twist { transform: rotate(90deg); }
 .tip:focus-within > .tip-bubble { opacity: 1; transform: translate(-50%, 0); }
 /* Demo helper. */
 .tip-static > .tip-bubble { opacity: 1; transform: translate(-50%, 0); }
-/* Alignment. Centred by default; a trigger near a pane edge anchors the bubble
+/* Alignment. Centered by default; a trigger near a pane edge anchors the bubble
    to its own start or end edge instead, so the sentence stays inside the pane. */
 .tip-start > .tip-bubble { left: 0; transform: translate(0, 2px); }
 .tip-end > .tip-bubble { left: auto; right: 0; transform: translate(0, 2px); }
@@ -1205,7 +1207,7 @@ details[open] > .tree-row .tree-twist { transform: rotate(90deg); }
 .tip-end:hover > .tip-bubble, .tip-end:focus-visible > .tip-bubble, .tip-end:focus-within > .tip-bubble,
 .tip-static.tip-start > .tip-bubble, .tip-static.tip-end > .tip-bubble { transform: translate(0, 0); }
 /* Folded width. A bubble floated beside its term has nowhere to go on a 475px
-   pane — centred it crosses the edge, start-anchored it crosses the other one
+   pane — centered it crosses the edge, start-anchored it crosses the other one
    when the term sits in a second column. So under 768px the bubble is a strip
    pinned above the bottom bar instead, full width, and the alignment variants
    have nothing to do. The bottom bar is 56px; the strip clears it by a step. */
@@ -1285,8 +1287,8 @@ details[open] > .tree-row .tree-twist { transform: rotate(90deg); }
 
 /* =============================================================================
    DIFF VIEWER — domain
-   Unified below tablet, side-by-side above. Added/removed carry a sign in the
-   gutter as well as a colour — the review act must survive colour blindness.
+   Unified at folded width, side-by-side from unfolded. Added/removed carry a sign in the
+   gutter as well as a color — the review act must survive color blindness.
 
    `.diff-split` goes inside a `.diff`, which is the box it measures.
    ============================================================================= */
@@ -1296,8 +1298,8 @@ details[open] > .tree-row .tree-twist { transform: rotate(90deg); }
 
    Containing block for fixed and absolute descendants: harmless, `overflow:
    hidden` already clipped them. No intrinsic inline size: a `.diff` in a grid
-   `auto` track, or set to `inline-block`, measures 2px — its own borders —
-   where before 1.6.0 it measured its widest line. Give it a track that supplies
+   `auto` track, or set to `inline-block`, measures 2px — its own borders.
+   Give it a track that supplies
    a width.
 
    It also captures a bare `@container` written inside it; see THE PANE. */
@@ -1368,7 +1370,7 @@ details[open] > .tree-row .tree-twist { transform: rotate(90deg); }
 /* =============================================================================
    APPROVAL BAR — domain
    The persistent decision affordance. Pinned to the bottom inside the thumb
-   arc on folded widths; inline from tablet up. Destructive sits apart from
+   arc on folded widths; inline from unfolded up. Destructive sits apart from
    primary — never adjacent in a thumb arc.
 
    Put it in a `.pane`. Unlike the table and the diff, this component owns no
@@ -1399,7 +1401,7 @@ details[open] > .tree-row .tree-twist { transform: rotate(90deg); }
 
 /* REPLACED, NOT UNIONED — a min-width rule, same as `.diff-split`. `position:
    sticky` resolves against the nearest scroll container, so this component was
-   already pane-scoped in behaviour while asking the window about width; that
+   already pane-scoped in behavior while asking the window about width; that
    mismatch is what un-pinned a bar in a 600px pane the moment the window passed
    768, and crushed its buttons with `flex-wrap: nowrap`.
 
@@ -1493,10 +1495,9 @@ details[open] > .tree-row .tree-twist { transform: rotate(90deg); }
 
 /* THE PANE — the one layout primitive, and the box the responsive components
    ask about. An app shell is rail + list + detail and a review layout is a
-   detail pane with an approval bar in it; both are panes. `.pane` is new at
-   1.6.0: the composition was always here, but every screen spelled it out for
-   itself, and the two lines everybody wrote are the two that make a pane a
-   pane — an independent scroll region and a query container. That second one is
+   detail pane with an approval bar in it; both are panes. `.pane` is the two
+   lines every screen would otherwise spell out for itself, and they are the
+   two that make a pane a pane — an independent scroll region and a query container. That second one is
    what lets `.approvalbar` — and anything a screen writes with `@container` —
    answer to the pane instead of to the window.
 
@@ -1517,10 +1518,10 @@ details[open] > .tree-row .tree-twist { transform: rotate(90deg); }
    `.table-wrap`.
 
    NAME YOUR OWN CONTAINERS. An unnamed `@container` binds to the nearest
-   ancestor with containment, and since 1.6.0 that may be a `.table-wrap` or a
+   ancestor with containment, and that may be a `.table-wrap` or a
    `.diff` rather than the box you had in mind: a bare
    `@container (min-width: 768px)` written inside a table wrapper measures the
-   wrapper. The defence is one extra declaration —
+   wrapper. The defense is one extra declaration —
 
        .myscreen { container-type: inline-size; container-name: myscreen; }
        @container myscreen (min-width: 768px) { … }

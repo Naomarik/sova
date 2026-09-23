@@ -5,7 +5,7 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import * as os from "node:os";
-import { MEMBER_EXTENSION, MEMBER_MCP, REMOTE_EXTENSION, REMOTE_MCP, REMOTE_MCP_TOOL_TIMEOUT_MS, registerSubagents, boundedText, installedPackageDir, type SubagentsOptions } from "./index.ts";
+import { MARKER_EXTENSION, MEMBER_EXTENSION, MEMBER_MCP, REMOTE_EXTENSION, REMOTE_MCP, REMOTE_MCP_TOOL_TIMEOUT_MS, registerSubagents, boundedText, installedPackageDir, type SubagentsOptions } from "./index.ts";
 import { placeholderDir } from "../remote/argv.ts";
 import { REMOTE_MCP_ENV, REMOTE_MCP_SERVER_NAME, REMOTE_SESSION_EVENT, decodeRemoteMcpIdentity } from "../remote/workers.ts";
 import { SubagentRunner } from "./runner.ts";
@@ -1302,7 +1302,7 @@ test("child extensions: remote sources pass, missing paths fail, this extension 
 	const h = harness();
 	try {
 		await h.call("agent_spawn", { prompt: "task", extensions: ["npm:definitely-not-installed-xyz", "git:github.com/x/y"] });
-		assert.deepEqual(h.workers[0].extensions, ["npm:definitely-not-installed-xyz", "git:github.com/x/y"]);
+		assert.deepEqual(h.workers[0].extensions, [MARKER_EXTENSION, "npm:definitely-not-installed-xyz", "git:github.com/x/y"]);
 		await assert.rejects(
 			h.call("agent_spawn", { prompt: "task", extensions: ["./definitely-missing-extension.ts"] }),
 			/not found/,
@@ -1909,7 +1909,7 @@ test("team members get a parent-issued identity, private mailbox and only the me
 		assert.deepEqual(r.details.members.map((m: any) => [m.workerId, m.orchestrator]), [["ag_01", true], ["ag_02", undefined], ["ag_03", undefined]]);
 		const lead = h.workers.find((w: any) => w.id === "ag_01");
 		const dev = h.workers.find((w: any) => w.id === "ag_02");
-		assert.deepEqual(lead.extensions, [MEMBER_EXTENSION], "only member.ts, never the manager");
+		assert.deepEqual(lead.extensions, [MARKER_EXTENSION, MEMBER_EXTENSION], "the marker, then member.ts, never the manager");
 		assert.deepEqual(lead.tools, ["read"], "the built-in allowlist is unchanged; the runner restricts by exclusion when extensions are present");
 		const me = h.memberOf("ag_01")!;
 		assert.deepEqual({ ...me, dir: undefined }, { version: 1, teamId: "team_01", teamName: "Crew", workerId: "ag_01", role: "lead", orchestrator: true, dir: undefined });
@@ -1937,7 +1937,7 @@ test("team members get a parent-issued identity, private mailbox and only the me
 		await assert.rejects(h.call("agent_spawn", { prompt: "x", extensions: [MEMBER_EXTENSION] }), /do not nest/);
 		await h.call("agent_spawn", { prompt: "plain", wake: false });
 		assert.equal(h.workers.at(-1).env, undefined);
-		assert.deepEqual(h.workers.at(-1).extensions, []);
+		assert.deepEqual(h.workers.at(-1).extensions, [MARKER_EXTENSION]);
 		await assert.rejects(
 			h.call("team_add", { team: "Crew", members: [{ role: "boss", prompt: "t", orchestrator: true, backend: "other" }] }),
 			/must use the pi or claude-code backend/,
@@ -2162,7 +2162,7 @@ test("a remote session's workers run on the target: pi loads the remote extensio
 		assert.match(spawned.content[0].text, /^Remote session: workers run on target box in \/srv\/app\.$/m, "the parent can see it runs the remote wiring");
 		assert.match((await h.call("agent_list")).content[0].text, /Remote session: workers run on target box in \/srv\/app\./);
 		const piWorker = h.workers[0];
-		assert.deepEqual(piWorker.extensions, [REMOTE_EXTENSION], "the remote extension, nothing else");
+		assert.deepEqual(piWorker.extensions, [MARKER_EXTENSION, REMOTE_EXTENSION], "the marker and the remote extension, nothing else");
 		assert.deepEqual(piWorker.flags, { target: "box" });
 		assert.equal(piWorker.cwd, h.ctx.cwd, "the session's placeholder is the local cwd");
 		assert.deepEqual(piWorker.tools, ["read", "bash"], "the allowlist is unchanged; the runner restricts by exclusion when extensions are present");
@@ -2188,7 +2188,7 @@ test("a remote session's workers run on the target: pi loads the remote extensio
 		// A team member of a remote session gets both servers; a pi member both extensions.
 		await h.call("team_create", { name: "Crew", objective: "o", members: [{ role: "lead", prompt: "t", orchestrator: true }, { role: "writer", prompt: "w", backend: "claude-code" }] });
 		const lead = h.workers.find((w: any) => w.id === "ag_03");
-		assert.deepEqual(lead.extensions, [REMOTE_EXTENSION, MEMBER_EXTENSION]);
+		assert.deepEqual(lead.extensions, [MARKER_EXTENSION, REMOTE_EXTENSION, MEMBER_EXTENSION]);
 		assert.deepEqual(lead.flags, { target: "box" });
 		const writer = created[1];
 		assert.deepEqual(Object.keys(writer.mcpServers).sort(), [REMOTE_MCP_SERVER_NAME, "team"]);
@@ -2213,7 +2213,7 @@ test("the placeholder cwd alone identifies a remote session when the remote exte
 	const h = remoteHarness(agentDir, false);
 	try {
 		await h.call("agent_spawn", { prompt: "pi task" });
-		assert.deepEqual(h.workers[0].extensions, [REMOTE_EXTENSION]);
+		assert.deepEqual(h.workers[0].extensions, [MARKER_EXTENSION, REMOTE_EXTENSION]);
 		assert.deepEqual(h.workers[0].flags, { target: "box" });
 		// The announcement wins over the placeholder, and carries what the placeholder cannot say.
 		h.bus.emit(REMOTE_SESSION_EVENT, { version: 1, target: "box", farCwd: "/srv/app", channelOff: true });
@@ -2242,10 +2242,95 @@ test("a local session's workers are untouched by the remote wiring", async () =>
 		assert.doesNotMatch(spawned.content[0].text, /Remote session/);
 		assert.doesNotMatch((await h.call("agent_list")).content[0].text, /Remote session/);
 		assert.equal(h.workers[0].flags, undefined);
-		assert.deepEqual(h.workers[0].extensions, []);
+		assert.deepEqual(h.workers[0].extensions, [MARKER_EXTENSION]);
 		await h.call("agent_spawn", { prompt: "claude task", backend: "claude-code" });
 		assert.equal(created[0].mcpServers, undefined);
 		assert.equal(created[0].env, undefined);
 		assert.equal(created[0].tools, undefined, "the backend's default tool list applies");
 	} finally { await h.close(); }
+});
+
+test("worker session marker: every pi worker loads worker-mark.ts first; claude-code workers never do", async () => {
+	assert.equal(path.basename(MARKER_EXTENSION), "worker-mark.ts");
+	assert.ok(fs.existsSync(MARKER_EXTENSION));
+	assert.equal(path.dirname(MARKER_EXTENSION), path.dirname(MEMBER_EXTENSION), "a sibling of member.ts, under this extension's own directory");
+	const h = harness();
+	const created: any[] = [];
+	h.bus.emit(BACKEND_REGISTER_EVENT, fakeBackend(created));
+	try {
+		const plain = await h.call("agent_spawn", { prompt: "plain", tools: ["read"] });
+		assert.equal(h.workers[0].extensions[0], MARKER_EXTENSION, "a plain worker");
+		assert.doesNotMatch(plain.content[0].text, /extensions=/, "the spawn summary does not list the marker");
+		const given = await h.call("agent_spawn", { prompt: "given", extensions: ["npm:definitely-not-installed-xyz"] });
+		assert.deepEqual(h.workers[1].extensions, [MARKER_EXTENSION, "npm:definitely-not-installed-xyz"], "a worker with its own extensions");
+		assert.match(given.content[0].text, /  extensions=npm:definitely-not-installed-xyz(  |$)/m, "only the user's extensions are listed");
+		await h.call("team_create", { name: "Crew", objective: "o", members: [{ role: "lead", prompt: "t", orchestrator: true }, { role: "writer", prompt: "w", backend: "claude-code" }] });
+		const member = h.workers.at(-1);
+		assert.deepEqual(member.extensions, [MARKER_EXTENSION, MEMBER_EXTENSION], "a team member");
+		await h.call("agent_spawn", { prompt: "claude", backend: "claude-code" });
+		assert.equal(created.length, 2);
+		for (const claude of created) assert.equal(claude.extensions.length, 0, "claude-code workers are untouched");
+		// The marker is spawn plumbing, never a user-facing source.
+		await assert.rejects(h.call("agent_spawn", { prompt: "x", extensions: [MARKER_EXTENSION] }), /do not nest/);
+	} finally {
+		await h.close();
+	}
+});
+
+test("worker session marker: one subagents-worker-session entry at session_start, inert everywhere else", async () => {
+	const { default: workerMark, WORKER_SESSION_ENTRY, workerSessionMarker } = await import(MARKER_EXTENSION);
+	// The literal is a contract with Sova's reader (server/worker-sessions.ts); a rename must fail here.
+	assert.equal(WORKER_SESSION_ENTRY, "subagents-worker-session");
+	const stub = (opts: { append?: unknown; file?: string | undefined; entries?: unknown[]; on?: unknown } = {}) => {
+		const appended: { customType: string; data: unknown }[] = [];
+		const handlers = new Map<string, (event: unknown, ctx: unknown) => unknown>();
+		const pi: any = {
+			on: opts.on ?? ((name: string, fn: any) => handlers.set(name, fn)),
+			appendEntry: "append" in opts ? opts.append : (customType: string, data: unknown) => appended.push({ customType, data }),
+		};
+		const ctx = { sessionManager: { getSessionFile: () => ("file" in opts ? opts.file : "/tmp/worker.jsonl"), getEntries: () => opts.entries ?? [] } };
+		return { pi, appended, handlers, start: () => handlers.get("session_start")?.({ type: "session_start", reason: "startup" }, ctx) };
+	};
+	const prev = process.env[MEMBER_ENV];
+	delete process.env[MEMBER_ENV];
+	try {
+		// Load registers only the handler: nothing is appended while pi refuses actions.
+		const plain = stub();
+		assert.doesNotThrow(() => workerMark(plain.pi));
+		assert.deepEqual([...plain.handlers.keys()], ["session_start"]);
+		assert.equal(plain.appended.length, 0);
+		plain.start();
+		assert.deepEqual(plain.appended, [{ customType: "subagents-worker-session", data: { v: 1 } }]);
+
+		// A team member carries its identity from the existing member env.
+		process.env[MEMBER_ENV] = JSON.stringify({ version: 1, teamId: "team_01", teamName: "Crew", workerId: "ag_02", role: "dev", orchestrator: false, dir: path.join(os.tmpdir(), "m") });
+		const member = stub();
+		workerMark(member.pi);
+		member.start();
+		assert.deepEqual(member.appended, [{ customType: "subagents-worker-session", data: { v: 1, workerId: "ag_02", teamId: "team_01", role: "dev" } }]);
+		process.env[MEMBER_ENV] = "not json";
+		assert.deepEqual(workerSessionMarker(), { v: 1 }, "an invalid identity degrades to presence-only");
+
+		// Already marked (a resumed worker session): no second entry.
+		const resumed = stub({ entries: [{ type: "custom", customType: "subagents-worker-session", data: { v: 1 } }] });
+		workerMark(resumed.pi);
+		resumed.start();
+		assert.equal(resumed.appended.length, 0);
+
+		// No session file, no append API, a throwing append, a throwing event API: nothing happens, nothing throws.
+		const ephemeral = stub({ file: undefined });
+		workerMark(ephemeral.pi);
+		ephemeral.start();
+		assert.equal(ephemeral.appended.length, 0);
+		const missing = stub({ append: undefined });
+		workerMark(missing.pi);
+		assert.doesNotThrow(() => missing.start());
+		const throwing = stub({ append: () => { throw new Error("Extension runtime not initialized"); } });
+		workerMark(throwing.pi);
+		assert.doesNotThrow(() => throwing.start());
+		assert.doesNotThrow(() => workerMark(stub({ on: () => { throw new Error("no events"); } }).pi));
+		assert.doesNotThrow(() => workerMark({} as any));
+	} finally {
+		if (prev === undefined) delete process.env[MEMBER_ENV]; else process.env[MEMBER_ENV] = prev;
+	}
 });

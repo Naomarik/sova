@@ -46,9 +46,6 @@ Rendered: `site/components/filterbar.html`
 <p class="filterbar-count">7 of 24 <span class="visually-hidden">worktrees shown</span></p>
 ```
 
-Every state is rendered together in the site page's state matrix. The `-hover`, `-focus`,
-`-active` and `-disabled` helper classes are **documentation scaffolding only** — production
-code uses the real pseudo-classes.
 
 ## DO / DON'T
 

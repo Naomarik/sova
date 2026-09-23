@@ -45,9 +45,6 @@ Rendered: `site/components/tree.html`
 <li><a class="tree-row" href="#"><span class="tree-name">runs.ts</span></a></li>
 ```
 
-Every state is rendered together in the site page's state matrix. The `-hover`, `-focus`,
-`-active` and `-disabled` helper classes are **documentation scaffolding only** — production
-code uses the real pseudo-classes.
 
 ## DO / DON'T
 
@@ -55,5 +52,5 @@ code uses the real pseudo-classes.
 - **DO** Use `<details>` for a branch — it collapses, it announces expanded/collapsed, and it needs no script.
 - **DO** Truncate the name and keep the row 44px — the full path belongs in the detail view, not in three wrapped lines.
 - **DON'T** Use a tree because the layout looks nested — if the nesting is not the data's, this is the wrong component.
-- **DON'T** Hide a row's only action behind hover — the device this product is named for has no hover.
+- **DON'T** Hide a row's only action behind hover — a phone has no hover, so the action does not exist there.
 - **DON'T** Indent by margin on the row itself — the target stops starting at the left edge, and depth eats the name.

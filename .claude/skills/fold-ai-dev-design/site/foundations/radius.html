@@ -101,6 +101,22 @@
 </div>
 <div class="card" style="margin-top:var(--space-4)"><div class="card-body">Card · lg</div></div></div>
       </section>
+      <section class="docs-section" id="spec">
+        <h2 class="docs-h2">Scale &amp; spec</h2>
+        <div class="table-wrap"><table class="table">
+          <thead><tr><th>Token</th><th>Value</th><th>Assigned to</th><th>Why</th></tr></thead>
+          <tbody>
+          <tr><td class="text-mono"><code>--r-none</code></td><td><code>0</code></td><td>Full-bleed regions</td><td>Nothing that meets a screen edge is rounded</td></tr>
+          <tr><td class="text-mono"><code>--r-xs</code></td><td><code>4px</code></td><td>Focus ring, checkbox</td><td>8px on a 16px box is a circle, which means "radio"</td></tr>
+          <tr><td class="text-mono"><code>--r-sm</code></td><td><code>6px</code></td><td>Code block, diff hunk</td><td>Round corners fight a monospace grid</td></tr>
+          <tr><td class="text-mono"><code>--r-md</code></td><td><code>8px</code></td><td>Button, input, select</td><td>4px disappears on a 44px control</td></tr>
+          <tr><td class="text-mono"><code>--r-lg</code></td><td><code>12px</code></td><td>Card, panel</td><td>One step above its contents, so nesting reads as nesting</td></tr>
+          <tr><td class="text-mono"><code>--r-xl</code></td><td><code>16px</code></td><td>Sheet, modal, drawer</td><td>Reads as a surface arriving, not a card growing</td></tr>
+          <tr><td class="text-mono"><code>--r-full</code></td><td><code>999px</code></td><td>Chip, badge, avatar</td><td>Status is round; actions are not</td></tr>
+          </tbody>
+        </table></div>
+        <p class="measure"><b>Radius is assigned by element, never by taste,</b> and there are no <code>.radius-*</code> utilities: a component takes its radius from this table, so shape alone tells a reader what is clickable before color does.</p>
+      </section>
       <section class="docs-section" id="styles">
         <h2 class="docs-h2">Styles</h2>
         <div class="table-wrap"><table class="table">

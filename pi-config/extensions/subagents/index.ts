@@ -207,6 +207,14 @@ const SELF_DIR = realpathOr(path.dirname(fileURLToPath(import.meta.url)));
  */
 export const MEMBER_EXTENSION = path.join(SELF_DIR, "member.ts");
 /**
+ * The other file under SELF_DIR a child loads, first, in every pi worker (plain, member, remote;
+ * inline or hosted): one `subagents-worker-session` entry in the worker's own session so Sova can
+ * tell it from a user session (see worker-mark.ts). Never user-facing, like MEMBER_EXTENSION.
+ */
+export const MARKER_EXTENSION = path.join(SELF_DIR, "worker-mark.ts");
+/** The spawn summary names the extensions a worker was given; the marker is plumbing, not one of them. */
+const listedExtensions = (worker: Worker): string[] => worker.extensions.filter((source) => source !== MARKER_EXTENSION);
+/**
  * The same member tools as a stdio MCP server for claude-code members (the CLI
  * launches it from a per-worker mcp.json; Claude sees mcp__team__<tool>). It is
  * run under the current runtime, which executes .ts files directly.
@@ -855,7 +863,7 @@ export function registerSubagents(
 			const own = request.team
 				? [MEMBER_EXTENSION]
 				: spec.extensions?.map((source) => resolveExtensionSource(source, ctx.cwd));
-			const extensions = remote ? [REMOTE_EXTENSION, ...(own ?? [])] : own;
+			const extensions = [MARKER_EXTENSION, ...(remote ? [REMOTE_EXTENSION] : []), ...(own ?? [])];
 			let forkSession: string | undefined;
 			if (spec.fork) {
 				forkSession = ctx.sessionManager.getSessionFile();
@@ -1307,7 +1315,7 @@ export function registerSubagents(
 					remoteNotice(ctx),
 					...group.agents.map(
 						(a) =>
-							`${a.id}  ${a.name}  ${a.status}  backend=${a.backend ?? "pi"}  model=${a.model ?? "child default"}  effort=${a.effort ?? "default"}${a.forked ? "  forked" : ""}${a.extensions.length ? `  extensions=${a.extensions.join(",")}` : ""}${a.wake ? "" : "  wake=false"}`,
+							`${a.id}  ${a.name}  ${a.status}  backend=${a.backend ?? "pi"}  model=${a.model ?? "child default"}  effort=${a.effort ?? "default"}${a.forked ? "  forked" : ""}${listedExtensions(a).length ? `  extensions=${listedExtensions(a).join(",")}` : ""}${a.wake ? "" : "  wake=false"}`,
 					),
 					"You are not blocked. Inspect with agent_list/agent_transcript; /agents opens the monitor.",
 					group.agents.some((a) => a.wake)

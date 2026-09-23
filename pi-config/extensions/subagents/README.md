@@ -464,9 +464,18 @@ safety hooks, or overridden tool implementations are **not inherited** unless
 their source is listed in `extensions`. Inheriting a tool name does not copy an
 extension's implementation. Use only providers available to a standalone Pi child.
 A forked child (`fork: true`) inherits the conversation, not the extensions.
-Pi team members are the one exception: they load `member.ts` from this package,
+Pi team members are the one exception with tools: they load `member.ts` from this package,
 which registers only the mailbox-backed team tools described above. Claude team
 members get the same tools from `member-mcp.ts` through their own `mcp.json`.
+
+Every pi worker (plain, team member or remote, inline or hosted) also loads
+`worker-mark.ts` first, which registers nothing and writes one
+`subagents-worker-session` custom entry into the worker's own session at birth
+(at `session_start`: pi refuses writes while extensions load). The data is
+`{ v: 1 }`, plus `workerId`, `teamId` and `role` when the child has a team
+identity. The entry's name and shape are a contract with Sova, which reads it to
+keep worker sessions out of its session list (`server/worker-sessions.ts`,
+`SessionSummary.workerSession`). Claude Code workers do not load it.
 
 RPC commands are correlated with acknowledgments and have deadlines. Output uses
 UTF-8-safe JSONL decoding. Failed tasks, broken pipes, rejected commands, and

@@ -6,6 +6,8 @@ import { FOUNDATIONS, BRAND } from './content.mjs';
 import { COMPONENTS } from './components.mjs';
 
 const ROOT = new URL('..', import.meta.url).pathname;
+// The version line in SKILL.md is the only record of the version; the site reads it.
+const VERSION = readFileSync(`${ROOT}SKILL.md`, 'utf8').match(/^\*\*Version\.\*\* (\S+)/m)[1];
 const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
 const SYMBOL = (size) =>
@@ -31,14 +33,14 @@ ${[['primary', 'Approve'], ['', 'Review'], ['destructive', 'Discard'], ['ghost',
   const c = v ? ` button-${v}` : '';
   return `  <span class="text-eyebrow">${v || 'secondary'}</span>
   <button class="button${c}">${label}</button>
-  <button class="button${c} button-hover">${label}</button>
-  <button class="button${c} button-focus">${label}</button>
-  <button class="button${c} button-active">${label}</button>
-  <button class="button${c} button-disabled" disabled>${label}</button>`;
+  <button class="button${c} is-hover">${label}</button>
+  <button class="button${c} is-focus">${label}</button>
+  <button class="button${c} is-active">${label}</button>
+  <button class="button${c} is-disabled" disabled>${label}</button>`;
 }).join('\n')}
 </div>
-<p class="text-muted">The <code>.button-hover</code> / <code>-focus</code> / <code>-active</code> /
-<code>-disabled</code> classes exist so this matrix can render every state at once.
+<p class="text-muted">The <code>.is-hover</code> / <code>.is-focus</code> / <code>.is-active</code> /
+<code>.is-disabled</code> classes exist so this matrix can render every state at once.
 <b>They are documentation scaffolding — production uses the real pseudo-classes.</b></p>`;
 
 const expand = (html) => html
@@ -115,9 +117,21 @@ const tablesHtml = (entry) => {
   // an empty `<a>` that turned the word "or" into a link, and every table that
   // named a tag lost the tag. Escaping is what makes a backtick mean *code*
   // rather than *markup*.
+  const inline = (c) => esc(c).replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
   const rows = (arr) => arr.map((r) => `<tr>${r.map((c, i) =>
-    `<td${i === 0 ? ' class="text-mono"' : ''}>${esc(c).replace(/`([^`]+)`/g, '<code>$1</code>')}</td>`).join('')}</tr>`).join('\n          ');
-  return `      <section class="docs-section" id="styles">
+    `<td${i === 0 ? ' class="text-mono"' : ''}>${inline(c)}</td>`).join('')}</tr>`).join('\n          ');
+  const spec = entry.spec ? `      <section class="docs-section" id="spec">
+        <h2 class="docs-h2">Scale &amp; spec</h2>
+        <div class="table-wrap"><table class="table">
+          <thead><tr>${entry.spec.head.map((h) => `<th>${esc(h)}</th>`).join('')}</tr></thead>
+          <tbody>
+          ${rows(entry.spec.rows)}
+          </tbody>
+        </table></div>
+${entry.spec.prose.map((p) => `        <p class="measure">${inline(p)}</p>`).join('\n')}
+      </section>
+` : '';
+  return `${spec}      <section class="docs-section" id="styles">
         <h2 class="docs-h2">Styles</h2>
         <div class="table-wrap"><table class="table">
           <thead><tr><th>Class</th><th>Role</th><th>Notes</th></tr></thead>
@@ -188,7 +202,13 @@ ${mdTable(['Class', 'Role', 'Notes'], entry.classes.map(([c, r, n]) => [`\`${c}\
 ## Tokens used
 
 ${entry.tokens.map(([t, r]) => `- \`${t}\` — ${r}`).join('\n')}
-${entry.snippets ? `
+${entry.spec ? `
+## Scale & spec
+
+${mdTable(entry.spec.head, entry.spec.rows)}
+
+${entry.spec.prose.join('\n\n')}
+` : ''}${entry.snippets ? `
 ## Variants & states
 
 ${entry.snippets.map(([name, code]) => `### ${name}
@@ -197,10 +217,14 @@ ${entry.snippets.map(([name, code]) => `### ${name}
 ${code}
 \`\`\`
 `).join('\n')}
-Every state is rendered together in the site page's state matrix. The \`-hover\`, \`-focus\`,
-\`-active\` and \`-disabled\` helper classes are **documentation scaffolding only** — production
-code uses the real pseudo-classes.
-` : ''}
+${entry.classes.some(([c]) => c.includes('.is-')) ? `Every state is rendered together in the site page's state matrix. The \`.is-hover\`,
+\`.is-focus\`, \`.is-active\` and \`.is-disabled\` helpers are **documentation scaffolding
+only** — production code uses the real pseudo-classes.
+` : ''}` : ''}${entry.subsections ? entry.subsections.map(([h, body]) => `
+### ${h}
+
+${body}
+`).join('') : ''}
 ## DO / DON'T
 
 ${entry.dos.map(([r, w]) => `- **DO** ${r} — ${w}.`).join('\n')}
@@ -219,7 +243,7 @@ const card = (dir, e) => `      <a class="card card-interactive index-card" href
       </a>`;
 
 const index = page({
-  depth: 1, current: null, title: 'Fold AI Dev', eyebrow: 'Design system · v1.4.0 · en-US',
+  depth: 1, current: null, title: 'Fold AI Dev', eyebrow: `Design system · v${VERSION} · en-US`,
   purpose: 'The whole system, rendered — 7 foundations, 2 brand topics, and 25 components, in both themes. Use the theme toggle: nothing on these pages knows which theme it is in.',
   body: `      <section class="docs-section" id="foundations">
         <h2 class="docs-h2">Foundations</h2>

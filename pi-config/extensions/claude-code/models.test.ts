@@ -3,6 +3,7 @@ import { test } from "node:test";
 import { EventEmitter } from "node:events";
 import { PassThrough, Writable } from "node:stream";
 import { spawn, type ChildProcess, type SpawnOptions } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { discoverClaudeModels, type ClaudeModelDiscoveryOptions } from "./models.ts";
 
 const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
@@ -253,4 +254,22 @@ test("real missing executable rejects after spawn failure closure", async () => 
 
 test("invalid resource limits fail before spawn", async () => {
 	await assert.rejects(discoverClaudeModels(undefined, { maxLineBytes: -1, spawnImpl: () => { assert.fail("must not spawn"); } }), /positive integers/);
+});
+
+test("parity fixtures: the cases Sova's server parser is held to parse the same way here", async () => {
+	// tests/fixtures/discovery-parity.json is also read by Sova's server/claude-models.test.ts.
+	const { cases } = JSON.parse(readFileSync(new URL("./tests/fixtures/discovery-parity.json", import.meta.url), "utf8")) as {
+		cases: { name: string; input: unknown; models?: { id: string; efforts?: string[] }[]; error?: string }[];
+	};
+	assert.ok(cases.length >= 10);
+	for (const c of cases) {
+		const f = fixture();
+		f.child.out(f.child.response({ models: c.input }));
+		if (c.error) {
+			await assert.rejects(f.promise, (err: Error) => err.message.includes(c.error!), c.name);
+		} else {
+			const got = (await f.promise).map((m) => ({ id: m.id, ...(m.efforts ? { efforts: m.efforts } : {}) }));
+			assert.deepEqual(got, c.models, c.name);
+		}
+	}
 });

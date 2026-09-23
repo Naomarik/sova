@@ -15,6 +15,7 @@ import { removeSessionAttachments } from "./attachments";
 import { disposeHeldChat, getModelRuntime, isSessionBusy } from "./chat-manager";
 import { contextWindow } from "./models";
 import { parseTargetCwd } from "./targets";
+import { WorkerSessions } from "./worker-sessions";
 
 type BaseSummary = Omit<SessionSummary, "live" | "workers" | "origin" | "archived" | "busy">;
 
@@ -39,6 +40,20 @@ interface CacheEntry {
 }
 
 const cache = new Map<string, CacheEntry>();
+
+/** Worker-session detection (a subagent's / team member's own file). Kept apart from `cache` on
+ *  purpose: the flag depends on OTHER files (owners append refs) and on the live registry, so it
+ *  is recomputed on every listing, never baked into a file's cached head facts. */
+const workerSessions = new WorkerSessions({ idOf: (p) => idOf(p) });
+
+/** The worker-session paths among `files`; best-effort — a failure hides nothing. */
+async function workerSessionPaths(files: string[]): Promise<Set<string>> {
+  try {
+    return await workerSessions.refresh(files);
+  } catch {
+    return new Set();
+  }
+}
 
 function oneLine(s: string): string {
   const t = s.replace(/\s+/g, " ").trim();
@@ -496,7 +511,10 @@ export async function listSessions(): Promise<SessionSummary[]> {
   // Group gesture, so the member would vanish silently instead of showing its state. Only
   // Archive cleanup prunes, and only the ids it deleted itself (cleanupSessions, below). The
   // batch prompt already answers a gone member with its own "missing" refusal code.
-  const results = await Promise.all(files.map((f) => summarize(f, resolveWindow)));
+  const [results, workers] = await Promise.all([
+    Promise.all(files.map((f) => summarize(f, resolveWindow))),
+    workerSessionPaths(files),
+  ]);
   const present = new Set(files);
   for (const k of cache.keys()) if (!present.has(k)) cache.delete(k);
   const out: SessionSummary[] = [];
@@ -528,6 +546,7 @@ export async function listSessions(): Promise<SessionSummary[]> {
       workers: l?.workers ?? (ownRec ? workerCountsOf(ownRec.rec) : undefined),
       origin: isWebSession(s.id) ? "web" : "external",
       archived: isArchived(s.id),
+      ...(workers.has(s.path) ? { workerSession: true as const } : {}),
       ...(groups[s.id] !== undefined ? { groupId: groups[s.id] } : {}),
       busy: isSessionBusy(s.path),
       ...(preview !== undefined ? { draftPreview: preview } : {}),
@@ -559,6 +578,7 @@ export async function getSessionSummary(path: string, resolveWindow?: WindowReso
   const l = readLive().get(path);
   const ownRec = readOwnLiveRecords().get(path);
   const groupId = readAssignments()[s.id];
+  const worker = await workerSessions.isWorker(s.path).catch(() => false);
   return {
     ...withTitle(s, readSessionTitles()),
     ...outlineOverlay(s, l),
@@ -566,6 +586,7 @@ export async function getSessionSummary(path: string, resolveWindow?: WindowReso
     workers: l?.workers ?? (ownRec ? workerCountsOf(ownRec.rec) : undefined),
     origin: isWebSession(s.id) ? "web" : "external",
     archived: isArchived(s.id),
+    ...(worker ? { workerSession: true as const } : {}),
     ...(groupId !== undefined ? { groupId } : {}),
     busy: isSessionBusy(s.path),
   };

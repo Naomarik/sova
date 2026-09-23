@@ -2,7 +2,7 @@
 // Drives the real index.ts through the globally installed pi runtime (jiti alias),
 // with a fake ExtensionAPI/TUI and a fake claude-code backend registration.
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -101,11 +101,20 @@ const { api, hooks, commands, shortcuts, renderers, entries, events, getTools } 
 const store = { status: new Map(), notices: [], widgets: new Map(), branch: [], customCalls: [] };
 const ctx = makeCtx(store);
 
+// Probe instrumentation for the in-flight scenarios: how many discoveries ran, and an optional
+// gate that holds them open.
+let listCalls = 0;
+let gate;
 events.on("subagents:backend-discover", () => {
 	events.emit("subagents:backend-register", {
 		version: 1,
 		id: "claude-code",
-		listModels: async () => structuredClone(offered),
+		listModels: async () => {
+			listCalls++;
+			if (gate) await gate;
+			if (offered instanceof Error) throw offered;
+			return structuredClone(offered);
+		},
 		validate: () => {},
 		create: () => {
 			throw new Error("smoke test must not create workers");
@@ -151,28 +160,28 @@ assert.equal(store.status.get("mode"), "<dim>normal</dim>", "normal status rende
 assert.equal(await beforeAgentStart({ systemPrompt: "base" }, ctx), undefined);
 
 // Toggle heavy with fable available
-await commands.get("mode").handler("claude-heavy", ctx);
-assert.equal(store.status.get("mode"), "<accent>claude-heavy</accent>", "heavy status renders after probe");
+await commands.get("mode").handler("delegate", ctx);
+assert.equal(store.status.get("mode"), "<accent>delegate</accent>", "heavy status renders after probe");
 const heavyPrompt = await beforeAgentStart({ systemPrompt: "base" }, ctx);
 assert.match(heavyPrompt.systemPrompt, /^base\n/);
-assert.match(heavyPrompt.systemPrompt, /# Mode: claude-heavy/);
+assert.match(heavyPrompt.systemPrompt, /# Mode: delegate/);
 assert.match(heavyPrompt.systemPrompt, /claude-fable-5-1\[1m\]/);
-assert.ok(entries.some((e) => e.type === "mode" && e.data.mode === "claude-heavy"), "transcript marker appended");
+assert.ok(entries.some((e) => e.type === "mode" && e.data.mode === "delegate"), "transcript marker appended");
 const modeEntries = () => entries.filter((e) => e.type === "mode");
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 assert.deepEqual(
 	modeEntries().at(-1).data,
-	{ mode: "claude-heavy", active: { version: 1, mode: "claude-heavy", strict: false, minorModes: [] } },
+	{ mode: "delegate", active: { version: 1, mode: "delegate", strict: false, minorModes: [] } },
 	"the switch entry carries the full post-switch snapshot",
 );
 
 // Strict mode hides edit/write from the orchestrator and restores on mode exit
 await commands.get("mode").handler("strict on", ctx);
 assert.deepEqual(getTools(), ["read", "bash", "grep"], "strict removed edit/write");
-assert.equal(store.status.get("mode"), "<accent>claude-heavy · strict</accent>");
+assert.equal(store.status.get("mode"), "<accent>delegate · strict</accent>");
 assert.deepEqual(
 	modeEntries().at(-1).data,
-	{ strict: true, active: { version: 1, mode: "claude-heavy", strict: true, minorModes: [] } },
+	{ strict: true, active: { version: 1, mode: "delegate", strict: true, minorModes: [] } },
 	"strict gets its own marker",
 );
 assert.match(
@@ -186,11 +195,12 @@ assert.equal(store.status.get("mode"), "<dim>normal</dim>");
 
 // Planner fallback: fable not offered → warning status + prompt names opus/high
 offered = [{ id: "opus[1m]", name: "Opus" }];
-await commands.get("mode").handler("claude-heavy", ctx);
-assert.equal(store.status.get("mode"), "<warning>claude-heavy · plan:opus · strict</warning>", "fallback reflected in status (strict is still on from the previous scenario)");
+await commands.get("mode").handler("delegate", ctx);
+assert.equal(store.status.get("mode"), "<warning>delegate · fallback:plan · strict</warning>", "fallback reflected in status (strict is still on from the previous scenario)");
 const fallbackPrompt = await beforeAgentStart({ systemPrompt: "base" }, ctx);
-assert.match(fallbackPrompt.systemPrompt, /model "opus\[1m\]", effort "high"/);
-assert.ok(store.notices.some((n) => n.level === "warning"), "fallback notifies");
+assert.match(fallbackPrompt.systemPrompt, /- Planning & specs .* → backend "claude-code", model "opus\[1m\]", effort "high"\. This is the configured FALLBACK/);
+assert.match(store.notices.at(-1).message, /^Delegate routing:\nPlanning & specs: fallback claude-code · opus\[1m\] · high \(claude-fable-5-1\[1m\] is not offered by claude-code\)$/, "fallback is disclosed");
+assert.equal(store.notices.at(-1).level, "warning");
 
 // Toggling via the shortcut flips modes
 await shortcuts.get("alt+m").handler(ctx);
@@ -202,7 +212,7 @@ await commands.get("mode").handler("align on", ctx);
 assert.equal(store.status.get("mode"), "<accent>normal · align</accent>", "align shows in normal status");
 const normalAlign = await beforeAgentStart({ systemPrompt: "base" }, ctx);
 assert.match(normalAlign.systemPrompt, /^base\n\n# Minor mode: align/);
-assert.doesNotMatch(normalAlign.systemPrompt, /# Mode: claude-heavy/);
+assert.doesNotMatch(normalAlign.systemPrompt, /# Mode: delegate/);
 assert.ok(entries.some((e) => e.type === "mode" && e.data.minor === "align" && e.data.on === true), "minor marker appended");
 assert.deepEqual(
 	modeEntries().at(-1).data.active,
@@ -212,18 +222,19 @@ assert.deepEqual(
 const markerText = renderers.get("mode")({ data: { minor: "align", on: true } }, {}, ctx.ui.theme).render(80).join("");
 assert.match(markerText, /── align on ──/, "minor marker renders");
 const oldMarkerText = renderers.get("mode")({ data: { mode: "claude-heavy" } }, {}, ctx.ui.theme).render(80).join("");
-assert.match(oldMarkerText, /── mode → claude-heavy ──/, "old major markers still render");
+assert.match(oldMarkerText, /── mode → claude-heavy ──/, "old major markers render as recorded: history is not relabelled");
+assert.match(renderers.get("mode")({ data: { mode: "delegate" } }, {}, ctx.ui.theme).render(80).join(""), /── mode → delegate ──/);
 
 // Switching to heavy keeps align; the heavy block precedes the align block
 offered = [
 	{ id: "claude-fable-5-1[1m]", name: "Fable" },
 	{ id: "opus[1m]", name: "Opus" },
 ];
-await commands.get("mode").handler("claude-heavy", ctx);
-assert.equal(store.status.get("mode"), "<accent>claude-heavy · strict · align</accent>");
+await commands.get("mode").handler("delegate", ctx);
+assert.equal(store.status.get("mode"), "<accent>delegate · strict · align</accent>");
 const heavyAlign = (await beforeAgentStart({ systemPrompt: "base" }, ctx)).systemPrompt;
-assert.ok(heavyAlign.indexOf("# Mode: claude-heavy") > 0, "heavy block present");
-assert.ok(heavyAlign.indexOf("# Mode: claude-heavy") < heavyAlign.search(alignHeader), "heavy before align");
+assert.ok(heavyAlign.indexOf("# Mode: delegate") > 0, "heavy block present");
+assert.ok(heavyAlign.indexOf("# Mode: delegate") < heavyAlign.search(alignHeader), "heavy before align");
 
 // /mode status reports minor modes
 await commands.get("mode").handler("status", ctx);
@@ -231,9 +242,9 @@ assert.match(store.notices.at(-1).message, /^minor: align$/m);
 
 // Bare /mode align toggles off; prompt back to heavy only
 await commands.get("mode").handler("align", ctx);
-assert.equal(store.status.get("mode"), "<accent>claude-heavy · strict</accent>");
+assert.equal(store.status.get("mode"), "<accent>delegate · strict</accent>");
 const heavyOnly = (await beforeAgentStart({ systemPrompt: "base" }, ctx)).systemPrompt;
-assert.match(heavyOnly, /# Mode: claude-heavy/);
+assert.match(heavyOnly, /# Mode: delegate/);
 assert.doesNotMatch(heavyOnly, alignHeader);
 assert.ok(entries.some((e) => e.type === "mode" && e.data.minor === "align" && e.data.on === false), "off marker appended");
 await commands.get("mode").handler("status", ctx);
@@ -242,20 +253,20 @@ assert.match(store.notices.at(-1).message, /^minor: \(none\)$/m);
 // Palette rows: align toggles in place with a live marker; major rows switch mode
 let rows = provider.items(ctx);
 const alignRow = () => rows.find((row) => row.id === "mode:minor:align");
-assert.equal(rows.find((row) => row.id === "mode:claude-heavy").label, "✓ claude-heavy");
+assert.equal(rows.find((row) => row.id === "mode:delegate").label, "✓ delegate");
 assert.equal(alignRow().toggle.isOn(), false);
 alignRow().toggle.toggle();
 assert.equal(alignRow().toggle.isOn(), true, "marker reads live state after toggling");
-assert.equal(store.status.get("mode"), "<accent>claude-heavy · strict · align</accent>", "palette toggle turns align on");
+assert.equal(store.status.get("mode"), "<accent>delegate · strict · align</accent>", "palette toggle turns align on");
 alignRow().toggle.toggle();
 assert.equal(alignRow().toggle.isOn(), false);
-assert.equal(store.status.get("mode"), "<accent>claude-heavy · strict</accent>", "palette toggle turns align off");
+assert.equal(store.status.get("mode"), "<accent>delegate · strict</accent>", "palette toggle turns align off");
 await rows.find((row) => row.id === "mode:normal").run();
 assert.equal(store.status.get("mode"), "<dim>normal</dim>", "normal row switches mode");
 rows = provider.items(ctx);
 assert.equal(rows.find((row) => row.id === "mode:normal").label, "✓ normal", "fresh rows mark the new mode");
-await rows.find((row) => row.id === "mode:claude-heavy").run();
-assert.equal(store.status.get("mode"), "<accent>claude-heavy · strict</accent>", "claude-heavy row switches mode");
+await rows.find((row) => row.id === "mode:delegate").run();
+assert.equal(store.status.get("mode"), "<accent>delegate · strict</accent>", "delegate row switches mode");
 
 assert.equal(rows.at(-2).id, "mode:align:view", "the align viewer row is second to last");
 assert.equal(rows.at(-1).id, "mode:default:save", "save as default is the last palette row");
@@ -267,7 +278,7 @@ for (const bareCtx of [ctx, tuiCtx]) {
 	await commands.get("mode").handler("", bareCtx);
 	assert.equal(store.status.get("mode"), before, "bare /mode does not toggle");
 	assert.equal(store.notices.at(-1).level, "warning");
-	assert.match(store.notices.at(-1).message, /^mode: claude-heavy$/m);
+	assert.match(store.notices.at(-1).message, /^mode: delegate$/m);
 	assert.match(store.notices.at(-1).message, /Usage: \/mode/);
 }
 
@@ -305,23 +316,23 @@ const writeDefault = (mode, minorModes) => writeFileSync(stateFile, `${JSON.stri
 assert.ok(!existsSync(stateFile), "no switch so far has written mode.json");
 
 // /mode default is the only session-side writer, and writes no entry
-await commands.get("mode").handler("claude-heavy", ctx);
+await commands.get("mode").handler("delegate", ctx);
 await commands.get("mode").handler("align on", ctx);
 let entriesBefore = entries.length;
 await commands.get("mode").handler("default", ctx);
 assert.equal(entries.length, entriesBefore, "/mode default appends no transcript entry");
-assert.deepEqual(readDefault(), { version: 1, mode: "claude-heavy", strict: true, minorModes: ["align"] }, "/mode default writes this session's triple");
-assert.match(store.notices.at(-1).message, /^Default mode saved: claude-heavy · strict · align/);
+assert.deepEqual(readDefault(), { version: 1, mode: "delegate", strict: true, minorModes: ["align"] }, "/mode default writes this session's triple");
+assert.match(store.notices.at(-1).message, /^Default mode saved: delegate · strict · align/);
 
 // /mode status shows both scopes
 await commands.get("mode").handler("status", ctx);
-assert.match(store.notices.at(-1).message, /^mode: claude-heavy$/m, "status names this session's mode");
-assert.match(store.notices.at(-1).message, /^default: claude-heavy · strict · align/m, "status names the default too");
+assert.match(store.notices.at(-1).message, /^mode: delegate$/m, "status names this session's mode");
+assert.match(store.notices.at(-1).message, /^default: delegate · strict · align/m, "status names the default too");
 
 // The palette's last row saves the default as well
 writeDefault("normal", []);
 await provider.items(ctx).at(-1).run();
-assert.equal(readDefault().mode, "claude-heavy", "the save-as-default row writes the file");
+assert.equal(readDefault().mode, "delegate", "the save-as-default row writes the file");
 
 // A snapshot on the branch beats both the launch flags and the default
 writeDefault("normal", []);
@@ -329,7 +340,7 @@ flagValues.major = "normal";
 flagValues.minor = "none";
 store.branch = [
 	{ type: "custom", customType: "mode", data: { mode: "normal", active: { version: 1, mode: "normal", strict: false, minorModes: [] } } },
-	{ type: "custom", customType: "mode", data: { mode: "claude-heavy", active: { version: 1, mode: "claude-heavy", strict: true, minorModes: ["align"] } } },
+	{ type: "custom", customType: "mode", data: { mode: "delegate", active: { version: 1, mode: "delegate", strict: true, minorModes: ["align"] } } },
 	{ type: "custom", customType: "mode", data: { minor: "align", on: true } }, // legacy marker: renders, never restores
 	{ type: "custom", customType: "mode", data: { active: { version: 2, mode: "normal", strict: false, minorModes: [] } } }, // newer schema: skipped
 	{ type: "custom", customType: "mode", data: null }, // malformed: skipped
@@ -337,9 +348,9 @@ store.branch = [
 entriesBefore = entries.length;
 await hook("session_start", { reason: "startup" });
 await flush();
-assert.equal(store.status.get("mode"), "<accent>claude-heavy · strict · align</accent>", "the newest usable snapshot wins over --major/--minor and the default");
+assert.equal(store.status.get("mode"), "<accent>delegate · strict · align</accent>", "the newest usable snapshot wins over --major/--minor and the default");
 assert.deepEqual(getTools(), ["read", "bash", "grep"], "restoring strict heavy reapplies the strict tool set");
-assert.match((await beforeAgentStart({ systemPrompt: "base" }, ctx)).systemPrompt, /# Mode: claude-heavy/, "the restored mode shapes the prompt");
+assert.match((await beforeAgentStart({ systemPrompt: "base" }, ctx)).systemPrompt, /# Mode: delegate/, "the restored mode shapes the prompt");
 assert.equal(entries.length, entriesBefore, "restoring appends nothing");
 
 // An empty branch adopts the default as it is now, and still writes nothing
@@ -362,22 +373,27 @@ assert.equal(store.status.get("mode"), "<accent>normal · align</accent>", "flag
 delete flagValues.minor;
 
 // --major picks the launch mode; the old --mode name is core's and is ignored here
-flagValues.mode = "claude-heavy";
+flagValues.mode = "delegate";
 await hook("session_start", { reason: "startup" });
 assert.equal(store.status.get("mode"), "<accent>normal \u00b7 align</accent>", "--mode is pi core's output-mode flag, not a mode override");
 delete flagValues.mode;
+flagValues.major = "delegate";
+await hook("session_start", { reason: "startup" });
+assert.equal(store.status.get("mode"), "<accent>delegate \u00b7 align</accent>", "--major starts that launch in the mode");
+flagValues.major = "normal";
+await hook("session_start", { reason: "startup" });
 flagValues.major = "claude-heavy";
 await hook("session_start", { reason: "startup" });
-assert.equal(store.status.get("mode"), "<accent>claude-heavy \u00b7 align</accent>", "--major starts that launch in the mode");
+assert.equal(store.status.get("mode"), "<accent>delegate \u00b7 align</accent>", "--major claude-heavy still starts in delegate");
 delete flagValues.major;
 
 // /tree: no snapshot on the new branch falls back to the default; one with strict heavy retools
 await hook("session_tree", { newLeafId: "a", oldLeafId: "b" });
 assert.equal(store.status.get("mode"), "<accent>normal · align</accent>", "a branch without a snapshot uses the default");
-store.branch = [{ type: "custom", customType: "mode", data: { strict: true, active: { version: 1, mode: "claude-heavy", strict: true, minorModes: [] } } }];
+store.branch = [{ type: "custom", customType: "mode", data: { strict: true, active: { version: 1, mode: "delegate", strict: true, minorModes: [] } } }];
 await hook("session_tree", { newLeafId: "c", oldLeafId: "a" });
 await flush();
-assert.equal(store.status.get("mode"), "<accent>claude-heavy · strict</accent>", "the branch's snapshot applies");
+assert.equal(store.status.get("mode"), "<accent>delegate · strict</accent>", "the branch's snapshot applies");
 assert.deepEqual(getTools(), ["read", "bash", "grep"], "tree onto strict heavy removes edit/write");
 store.branch = [];
 await hook("session_tree", { newLeafId: "a", oldLeafId: "c" });
@@ -562,11 +578,11 @@ await commands.get("align").handler("off", ctx);
 assert.equal(store.status.get("mode"), "<dim>normal</dim>", "/align off turns the minor off");
 
 // ── Prompt delivery: diffed sections on pi ≥ 0.86, whole-prompt append on 0.85 hosts ──
-await commands.get("mode").handler("claude-heavy", ctx);
+await commands.get("mode").handler("delegate", ctx);
 const promptSections = { preamble: "base" };
 const sectionHost = () => ({ systemPrompt: "base", systemPromptOptions: { cwd: ctx.cwd, sections: promptSections } });
 assert.equal(await beforeAgentStart(sectionHost(), ctx), undefined, "a sections host gets no systemPrompt return");
-assert.match(promptSections.mode, /# Mode: claude-heavy/, "the block lands in the mode section");
+assert.match(promptSections.mode, /# Mode: delegate/, "the block lands in the mode section");
 assert.deepEqual(Object.keys(promptSections), ["preamble", "mode"], "no other section is touched");
 
 // Back to normal: the section must go, or the replayed prompt keeps the heavy instruction live.
@@ -578,8 +594,153 @@ assert.deepEqual(promptSections, { preamble: "base" });
 // A 0.85 host has no sections at all: the whole-prompt append is unchanged.
 const legacyHost = () => ({ systemPrompt: "base", systemPromptOptions: { cwd: ctx.cwd } });
 assert.equal(await beforeAgentStart(legacyHost(), ctx), undefined, "normal mode appends nothing on a 0.85 host");
-await commands.get("mode").handler("claude-heavy", ctx);
-assert.match((await beforeAgentStart(legacyHost(), ctx)).systemPrompt, /^base\n\n# Mode: claude-heavy/, "0.85 hosts still get the appended prompt");
+await commands.get("mode").handler("delegate", ctx);
+assert.match((await beforeAgentStart(legacyHost(), ctx)).systemPrompt, /^base\n\n# Mode: delegate/, "0.85 hosts still get the appended prompt");
 await commands.get("mode").handler("normal", ctx);
+
+// ── Delegate routing: legacy command alias, settings re-read per turn, policy, discovery failure ──
+const delegateFile = path.join(process.env.PI_CODING_AGENT_DIR, "mode-delegate.json");
+const policyFile = path.join(process.env.PI_CODING_AGENT_DIR, "model-policy.json");
+const writeRouting = (mutate) => {
+	const settings = { version: 1, profiles: {
+		planning: { primary: { backend: "claude-code", model: "claude-fable-5-1[1m]", effort: "medium" }, fallback: { backend: "claude-code", model: "opus[1m]", effort: "high" } },
+		investigation: { primary: { backend: "claude-code", model: "opus[1m]", effort: "low" }, fallback: null },
+		routine: { primary: { backend: "claude-code", model: "opus[1m]", effort: "low" }, fallback: null },
+		complex: { primary: { backend: "claude-code", model: "opus[1m]", effort: "medium" }, fallback: null },
+	} };
+	mutate(settings);
+	// Atomic replace, the way Sova writes it: a new inode, so the per-turn stat sees the change.
+	writeFileSync(`${delegateFile}.tmp`, JSON.stringify(settings));
+	renameSync(`${delegateFile}.tmp`, delegateFile);
+};
+offered = [
+	{ id: "claude-fable-5-1[1m]", name: "Fable", efforts: ["low", "medium", "high", "xhigh", "max"] },
+	{ id: "opus[1m]", name: "Opus", efforts: ["low", "medium", "high", "xhigh", "max"] },
+];
+const delegateEntriesBefore = modeEntries().length;
+await commands.get("mode").handler("claude-heavy", ctx);
+assert.equal(store.status.get("mode"), "<accent>delegate</accent>", "/mode claude-heavy selects delegate");
+assert.deepEqual(modeEntries().at(-1).data, { mode: "delegate", active: { version: 1, mode: "delegate", strict: false, minorModes: [] } }, "and writes the canonical name");
+assert.equal(modeEntries().length, delegateEntriesBefore + 1);
+assert.ok(!existsSync(delegateFile), "no switch writes the routing file");
+let turn = (await beforeAgentStart({ systemPrompt: "base" }, ctx)).systemPrompt;
+assert.match(turn, /- Routine implementation .* → backend "claude-code", model "opus\[1m\]", effort "low"; no fallback — if it fails, ask the user\./, "defaults without a file");
+assert.match(turn, /- Investigation .* → backend "claude-code", model "opus\[1m\]", effort "low"; no fallback — if it fails, ask the user\./);
+
+// An edit to the routing reaches this already-delegate session at its next turn boundary.
+const piCtx = {
+	...ctx,
+	modelRegistry: { getAvailable: () => [{ provider: "zai", id: "glm-5.3", name: "GLM", api: "openai-completions", reasoning: true, input: ["text"] }] },
+};
+writeRouting((s) => {
+	s.profiles.routine = { primary: { backend: "pi", model: "zai/glm-5.3", effort: "high" }, fallback: { backend: "claude-code", model: "opus[1m]", effort: "low" } };
+});
+turn = (await beforeAgentStart({ systemPrompt: "base" }, piCtx)).systemPrompt;
+assert.match(turn, /- Routine implementation .* → backend "pi", model "zai\/glm-5.3", effort "high"; fallback backend "claude-code", model "opus\[1m\]", effort "low"\./, "re-read at the turn boundary");
+await flush();
+await flush();
+await commands.get("mode").handler("status", piCtx);
+assert.match(store.notices.at(-1).message, /^  Routine implementation: pi · zai\/glm-5.3 · high, fallback claude-code · opus\[1m\] · low — using primary$/m, "the background probe verified the pi tuple");
+assert.match(store.notices.at(-1).message, /^delegate routing \(.*mode-delegate\.json\):$/m);
+
+// Normal mode never reads the routing: the prompt is untouched whatever the file says.
+await commands.get("mode").handler("normal", ctx);
+assert.equal(await beforeAgentStart({ systemPrompt: "base" }, ctx), undefined, "normal mode is unaffected");
+await commands.get("mode").handler("delegate", piCtx);
+
+// The subagent policy is re-read per turn too: a denied primary reroutes to the configured fallback, disclosed.
+writeFileSync(policyFile, JSON.stringify({ version: 1, disabledProviders: [], disabledModels: [], subagentDisabledProviders: [], subagentDisabledModels: ["claude-code/claude-fable-5-1[1m]"] }));
+turn = (await beforeAgentStart({ systemPrompt: "base" }, piCtx)).systemPrompt;
+assert.match(turn, /- Planning & specs .* → backend "claude-code", model "opus\[1m\]", effort "high"\. This is the configured FALLBACK: .* is disabled as a subagent model by user settings\./);
+assert.equal(store.status.get("mode"), "<warning>delegate · fallback:plan</warning>");
+
+// With the provider denied outright nothing is routed around it: every claude-only profile asks.
+writeFileSync(policyFile, JSON.stringify({ version: 1, disabledProviders: [], disabledModels: [], subagentDisabledProviders: ["claude-code"], subagentDisabledModels: [] }));
+turn = (await beforeAgentStart({ systemPrompt: "base" }, piCtx)).systemPrompt;
+assert.match(turn, /- Complex implementation .* → NO AVAILABLE WORKER \(Backend claude-code is disabled for subagents by user settings\..*; no fallback is set\)/);
+assert.match(turn, /- Routine implementation .* → backend "pi", model "zai\/glm-5.3"/, "the pi primary is unaffected");
+assert.equal(store.status.get("mode"), "<warning>delegate · ask:plan,investigate,complex</warning>");
+rmSync(policyFile);
+
+// Discovery that fails is not absence: the primary stays in use, unverified, and no fallback is claimed.
+offered = new Error("Claude model discovery timed out");
+writeRouting((s) => {
+	s.profiles.planning.primary.effort = "high"; // a changed routing re-probes
+});
+turn = (await beforeAgentStart({ systemPrompt: "base" }, piCtx)).systemPrompt;
+await flush();
+await flush();
+assert.equal(store.status.get("mode"), "<accent>delegate</accent>", "a failed discovery degrades nothing");
+turn = (await beforeAgentStart({ systemPrompt: "base" }, piCtx)).systemPrompt;
+assert.match(turn, /- Planning & specs .* → backend "claude-code", model "claude-fable-5-1\[1m\]", effort "high"; fallback/);
+await commands.get("mode").handler("status", piCtx);
+assert.match(store.notices.at(-1).message, /^  Planning & specs: .* — using primary \(not verified\)$/m);
+
+// Discovered but without the configured effort: unavailable, so the fallback, disclosed.
+offered = [
+	{ id: "claude-fable-5-1[1m]", name: "Fable", efforts: ["low", "medium"] },
+	{ id: "opus[1m]", name: "Opus", efforts: ["low", "medium", "high"] },
+];
+writeRouting(() => {});
+writeRouting((s) => {
+	s.profiles.planning.primary.effort = "max";
+});
+await beforeAgentStart({ systemPrompt: "base" }, piCtx);
+await flush();
+await flush();
+assert.equal(store.status.get("mode"), "<warning>delegate · fallback:plan</warning>", "an unsupported effort is not clamped silently");
+assert.match(store.notices.at(-1).message, /Planning & specs: fallback claude-code · opus\[1m\] · high \(claude-fable-5-1\[1m\] does not support effort "max"/, "a routing change that degrades a profile is announced");
+rmSync(delegateFile);
+await commands.get("mode").handler("normal", ctx);
+
+// ── A turn during the entry probe joins it: no restart, and the entry's fallback notice survives ──
+offered = [{ id: "opus[1m]", name: "Opus" }]; // planning will be on its fallback
+let releaseProbe;
+gate = new Promise((resolve) => (releaseProbe = resolve));
+listCalls = 0;
+const noticesBeforeEntry = store.notices.length;
+const entering = commands.get("mode").handler("delegate", ctx); // awaits its probe, which is gated
+await flush();
+assert.equal(listCalls, 1, "entering delegate started one probe");
+await beforeAgentStart({ systemPrompt: "base" }, ctx);
+await beforeAgentStart({ systemPrompt: "base" }, ctx);
+assert.equal(listCalls, 1, "turns during the probe join it instead of restarting it");
+releaseProbe();
+gate = undefined;
+await entering;
+await flush();
+assert.ok(
+	store.notices.slice(noticesBeforeEntry).some((n) => n.level === "warning" && /^Delegate routing:\nPlanning & specs: fallback/.test(n.message)),
+	"the fallback notice the switch asked for is delivered, though turns joined the probe",
+);
+assert.equal(store.status.get("mode"), "<warning>delegate · fallback:plan</warning>");
+await beforeAgentStart({ systemPrompt: "base" }, ctx);
+await flush();
+assert.equal(listCalls, 1, "a fresh discovery is not repeated on the next turn");
+await commands.get("mode").handler("normal", ctx);
+
+// ── A backend that wasn't loaded is asked again at the next turn, not after 10 minutes ──
+{
+	const late = makeApi();
+	let loaded = false;
+	late.events.on("subagents:backend-discover", () => {
+		if (!loaded) return;
+		late.events.emit("subagents:backend-register", { version: 1, id: "claude-code", listModels: async () => [{ id: "claude-fable-5-1[1m]", name: "F" }, { id: "opus[1m]", name: "O" }], validate() {}, create() {} });
+	});
+	const lateStore = { status: new Map(), notices: [], widgets: new Map(), branch: [], customCalls: [] };
+	const lateCtx = makeCtx(lateStore);
+	modeExtension(late.api);
+	const lateStart = (event) => late.hooks.get("before_agent_start")[0](event, lateCtx);
+	await late.commands.get("mode").handler("delegate", lateCtx);
+	assert.equal(lateStore.status.get("mode"), "<warning>delegate · ask:plan,investigate,routine,complex</warning>", "no backend loaded: every claude profile asks");
+	assert.match((await lateStart({ systemPrompt: "base" })).systemPrompt, /- Routine implementation .* → NO AVAILABLE WORKER \(the claude-code backend is not loaded/);
+	const settle = () => new Promise((resolve) => setTimeout(resolve, 60)); // a missing backend's probe waits 25ms for registration
+	await settle(); // that turn's own re-ask (still not loaded) lands
+	loaded = true; // e.g. the claude-code extension came up after a /reload of its own
+	await lateStart({ systemPrompt: "base" }); // this turn re-asks in the background
+	await settle();
+	assert.equal(lateStore.status.get("mode"), "<accent>delegate</accent>", "the next turn found the backend");
+	assert.match((await lateStart({ systemPrompt: "base" })).systemPrompt, /- Routine implementation .* → backend "claude-code", model "opus\[1m\]", effort "low"/);
+}
 
 console.log("mode smoke tests passed");

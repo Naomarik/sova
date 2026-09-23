@@ -32,6 +32,13 @@ const MetaSep = () => (
   </span>
 );
 
+/** Which half a narrow pane shows (§11 "Narrow panes"): the worker list, or one worker. A wide
+    pane shows both side by side and ignores it. */
+export type AgentsView = "list" | "detail";
+
+/** Shown to the reader right now: `display: none` (the other half of a narrow pane) is not. */
+const shown = (el: Element | null | undefined): el is HTMLElement => !!el && (el as HTMLElement).checkVisibility();
+
 const SETTLED = new Set<WorkerInfo["status"]>(["waiting", "done", "error", "killed"]);
 const asOf = (w: WorkerInfo): number | undefined => (SETTLED.has(w.status) ? w.endedAt ?? w.lastActivity : undefined);
 
@@ -40,7 +47,9 @@ const asOf = (w: WorkerInfo): number | undefined => (SETTLED.has(w.status) ? w.e
  * selected worker's read-only transcript (its own session file over `/ws/watch`) on the right.
  * Nothing is ever sent to a worker. `chatWorkers` is the chat runtime's live list; without it
  * (watching, or before the first "workers" message) the list comes from the polled insight.
- * The head, Escape and the opening focus belong to SessionPane.
+ * The head, Escape and the opening focus belong to SessionPane. A narrow pane is list/detail:
+ * `view` says which half shows (SessionPane holds it, so it outlives a tab switch); null until
+ * the first workers arrive, when it settles once — one worker opens on it, more on the list.
  */
 export function SubagentPane(props: {
   chatWorkers: WorkerInfo[] | null;
@@ -49,6 +58,8 @@ export function SubagentPane(props: {
   insight: PaneInsight;
   selected: string | null;
   onSelect(id: string): void;
+  view: AgentsView | null;
+  onView(view: AgentsView): void;
 }) {
   const insight = {
     data: () => props.insight.data ?? undefined,
@@ -98,24 +109,59 @@ export function SubagentPane(props: {
     if (!props.selected && first) props.onSelect(first.id);
   });
 
-  /** One worker row. Inside a team section the name is its role, and the section says whose. */
-  const row = (w: WorkerInfo) => (
-    <button
-      type="button"
-      class="subagent-row"
-      aria-current={props.selected === w.id ? "true" : undefined}
-      title={w.working ? capTitle(w.preview) : undefined}
-      onClick={() => props.onSelect(w.id)}
-    >
-      <span class="subagent-row-name">{label(w)}</span>
-      <span class="subagent-row-status">
-        <StatusChip worker={w} liveSource={liveSource()} />
-      </span>
-      <WorkerMeta worker={w} liveSource={liveSource()} class="subagent-row-meta" />
-      <Show when={w.working && w.preview}>
-        <span class="subagent-row-preview">{w.preview}</span>
-      </Show>
-    </button>
+  // Settled once, on the first workers: a view that followed the count would swap halves under
+  // the reader when a second worker started.
+  createEffect(() => {
+    if (props.view) return;
+    const n = workers().length;
+    if (n > 0) props.onView(n === 1 ? "detail" : "list");
+  });
+  /** With nothing selected the list has nothing to open, and the view half holds the empty and
+      error states, so that is the half to show. */
+  const view = (): AgentsView => (selected() ? props.view ?? "list" : "detail");
+
+  let body!: HTMLDivElement;
+  /** Focus follows a narrow pane's swap, to the half now shown; a wide pane moves nothing. */
+  const focusShown = (selector: string) =>
+    queueMicrotask(() => {
+      const el = body.querySelector(selector);
+      if (shown(el)) el.focus();
+    });
+  const open = (id: string) => {
+    props.onSelect(id);
+    props.onView("detail");
+    focusShown(".subagents-back");
+  };
+  const back = () => {
+    props.onView("list");
+    focusShown('.subagent-row[aria-current="true"]');
+  };
+
+  /** The list renders by id and section key, never by object: every worker update builds new
+      groups (and the insight new workers), and a <For> over those remounted every row on each
+      poll, dropping focus and any tap in flight. Strings keep their rows. */
+  const byId = createMemo(() => new Map(workers().map((w) => [w.id, w])));
+  const groupOf = (key: string) => groups().find((g) => g.key === key);
+  const idsOf = (key: string) => groupOf(key)?.workers.map((w) => w.id) ?? [];
+
+  /** One worker row: name and status, then the meta. No excerpt of its reply — the transcript
+      is one tap away and says it whole. Inside a team section the name is its role, and the
+      section says whose. The chevron shows only where the row opens a view of its own. */
+  const row = (id: string) => (
+    <Show when={byId().get(id)}>
+      {(w) => (
+        <button type="button" class="subagent-row" aria-current={props.selected === id ? "true" : undefined} onClick={() => open(id)}>
+          <span class="subagent-row-name" title={label(w())}>
+            {label(w())}
+          </span>
+          <span class="subagent-row-status">
+            <StatusChip worker={w()} liveSource={liveSource()} />
+          </span>
+          <WorkerMeta worker={w()} liveSource={liveSource()} class="subagent-row-meta" />
+          <Icon name="chevron-right" small class="subagent-row-go" />
+        </button>
+      )}
+    </Show>
   );
 
   let list: HTMLUListElement | undefined;
@@ -130,16 +176,16 @@ export function SubagentPane(props: {
   };
 
   return (
-    <div class="subagents-body">
+    <div class="subagents-body" data-view={view()} ref={body}>
       <ul class="subagents-list" aria-label={noun()} ref={list} onKeyDown={onListKey}>
-        <For each={groups()}>
-          {(g, gi) => (
-            <Show when={grouped()} fallback={<For each={g.workers}>{(w) => <li>{row(w)}</li>}</For>}>
+        <For each={groups().map((g) => g.key)}>
+          {(key, gi) => (
+            <Show when={grouped()} fallback={<For each={idsOf(key)}>{(id) => <li>{row(id)}</li>}</For>}>
               <li class="subagents-group">
                 <h3 class="list-group-label subagents-group-label" id={`subagents-group-${gi()}`}>
                   <Icon name="worker" small />
-                  <span>{g.team ? "Team" : "Subagents"}</span>
-                  <Show when={g.team}>
+                  <span>{groupOf(key)?.team ? "Team" : "Subagents"}</span>
+                  <Show when={groupOf(key)?.team}>
                     {(t) => (
                       <>
                         <span aria-hidden="true">·</span>
@@ -147,9 +193,9 @@ export function SubagentPane(props: {
                       </>
                     )}
                   </Show>
-                  <span class="text-num">{g.workers.length}</span>
+                  <span class="text-num">{idsOf(key).length}</span>
                 </h3>
-                <Show when={g.team?.objective}>
+                <Show when={groupOf(key)?.team?.objective}>
                   {(o) => (
                     <p class="team-objective subagents-group-objective" title={capTitle(o())}>
                       {o()}
@@ -157,7 +203,7 @@ export function SubagentPane(props: {
                   )}
                 </Show>
                 <ul class="subagents-group-list" aria-labelledby={`subagents-group-${gi()}`}>
-                  <For each={g.workers}>{(w) => <li>{row(w)}</li>}</For>
+                  <For each={idsOf(key)}>{(id) => <li>{row(id)}</li>}</For>
                 </ul>
               </li>
             </Show>
@@ -196,59 +242,72 @@ export function SubagentPane(props: {
           {(w) => (
             <>
               <header class="subagents-view-head">
-                <h3 class="subagents-view-title">{label(w())}</h3>
-                <StatusChip worker={w()} liveSource={liveSource()} />
-                <Show when={teamOf(w())}>
-                  {(t) => (
-                    <span class="chip chip-count" title={t().objective || undefined}>
-                      Team · {t().name}
-                    </span>
-                  )}
-                </Show>
-                <p class="subagents-view-meta meta-line">
-                  <span class="text-mono">{w().id}</span>
-                  {/* The provider leads (§11 "The meta line ranks its facts"): the route that
-                      serves the model — never the part that clips. `claude code` for that
-                      backend, a pi ref's prefix or a catalog lookup otherwise. */}
-                  <Show when={w().provider}>
-                    {(p) => (
-                      <>
-                        <MetaSep />
-                        <span>{p()}</span>
-                      </>
+                <button
+                  type="button"
+                  class="button button-icon button-ghost subagents-back"
+                  aria-label={`All ${noun().toLowerCase()}`}
+                  title={`All ${noun().toLowerCase()}`}
+                  onClick={back}
+                >
+                  <Icon name="chevron-left" />
+                </button>
+                <div class="subagents-view-id">
+                  <h3 class="subagents-view-title" title={label(w())}>
+                    {label(w())}
+                  </h3>
+                  <StatusChip worker={w()} liveSource={liveSource()} />
+                  <Show when={teamOf(w())}>
+                    {(t) => (
+                      <span class="chip chip-count" title={t().objective || undefined}>
+                        Team · {t().name}
+                      </span>
                     )}
                   </Show>
-                  <Show when={compactModel(w().model)}>
-                    {(m) => (
-                      <>
-                        <MetaSep />
-                        <span class="text-mono meta-line-shrink" title={w().model ?? undefined}>
-                          {m()}
-                        </span>
-                      </>
-                    )}
-                  </Show>
-                  <Show when={watched() ?? workerUsage(w())}>
-                    {(u) => (
-                      <>
-                        <MetaSep />
-                        <span class="text-mono" title={usageTitle(u())}>
-                          {formatTokens(usageHeadline(u()))} tokens
-                        </span>
-                      </>
-                    )}
-                  </Show>
-                  <Show when={w().effort}>
-                    {(e) => (
-                      <>
-                        <MetaSep />
-                        <span>
-                          effort <span class="text-mono">{e()}</span>
-                        </span>
-                      </>
-                    )}
-                  </Show>
-                </p>
+                  <p class="subagents-view-meta meta-line">
+                    <span class="text-mono">{w().id}</span>
+                    {/* The provider leads (§11 "The meta line ranks its facts"): the route that
+                        serves the model — never the part that clips. `claude code` for that
+                        backend, a pi ref's prefix or a catalog lookup otherwise. */}
+                    <Show when={w().provider}>
+                      {(p) => (
+                        <>
+                          <MetaSep />
+                          <span>{p()}</span>
+                        </>
+                      )}
+                    </Show>
+                    <Show when={compactModel(w().model)}>
+                      {(m) => (
+                        <>
+                          <MetaSep />
+                          <span class="text-mono meta-line-shrink" title={w().model ?? undefined}>
+                            {m()}
+                          </span>
+                        </>
+                      )}
+                    </Show>
+                    <Show when={watched() ?? workerUsage(w())}>
+                      {(u) => (
+                        <>
+                          <MetaSep />
+                          <span class="text-mono" title={usageTitle(u())}>
+                            {formatTokens(usageHeadline(u()))} tokens
+                          </span>
+                        </>
+                      )}
+                    </Show>
+                    <Show when={w().effort}>
+                      {(e) => (
+                        <>
+                          <MetaSep />
+                          <span>
+                            effort <span class="text-mono">{e()}</span>
+                          </span>
+                        </>
+                      )}
+                    </Show>
+                  </p>
+                </div>
               </header>
               <Show
                 when={sourceKey(w())}
@@ -438,7 +497,15 @@ function WorkerTranscript(props: {
   const observer = new MutationObserver(() => {
     if (follow) toBottom();
   });
-  onCleanup(() => observer.disconnect());
+  // A narrow pane hides the view while its list shows; content that arrived meanwhile had no box
+  // to scroll, so the end is found again when the view comes back (or the pane is resized).
+  const sized = new ResizeObserver(() => {
+    if (follow) toBottom();
+  });
+  onCleanup(() => {
+    observer.disconnect();
+    sized.disconnect();
+  });
 
   return (
     <Show
@@ -460,6 +527,7 @@ function WorkerTranscript(props: {
         ref={(node) => {
           el = node;
           observer.observe(node, { childList: true, subtree: true, characterData: true });
+          sized.observe(node);
           queueMicrotask(toBottom);
         }}
         onScroll={onScroll}

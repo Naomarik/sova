@@ -108,6 +108,28 @@
     <p class="list-meta">The target grew; the row didn't</p></div><span class="chip chip-error"><i class="chip-dot"></i>Failed</span></div>
 </div></div>
       </section>
+      <section class="docs-section" id="spec">
+        <h2 class="docs-h2">Scale &amp; spec</h2>
+        <div class="table-wrap"><table class="table">
+          <thead><tr><th>Token</th><th>Value</th><th>Band</th></tr></thead>
+          <tbody>
+          <tr><td class="text-mono"><code>--space-1</code></td><td><code>4px</code></td><td>Inside a control: icon to label, chip padding</td></tr>
+          <tr><td class="text-mono"><code>--space-2</code></td><td><code>8px</code></td><td>Product surfaces — gaps, padding, rows</td></tr>
+          <tr><td class="text-mono"><code>--space-3</code></td><td><code>12px</code></td><td>Product surfaces — gaps, padding, rows</td></tr>
+          <tr><td class="text-mono"><code>--space-4</code></td><td><code>16px</code></td><td>Product surfaces — gaps, padding, rows</td></tr>
+          <tr><td class="text-mono"><code>--space-5</code></td><td><code>24px</code></td><td>Product surfaces — gaps, padding, rows</td></tr>
+          <tr><td class="text-mono"><code>--space-6</code></td><td><code>32px</code></td><td>Section breaks (<code>hr</code> margin)</td></tr>
+          <tr><td class="text-mono"><code>--space-7</code></td><td><code>48px</code></td><td>One idea on the screen only — an empty state</td></tr>
+          <tr><td class="text-mono"><code>--space-8</code></td><td><code>64px</code></td><td>One idea on the screen only — an empty state</td></tr>
+          <tr><td class="text-mono"><code>--space-9</code></td><td><code>96px</code></td><td>One idea on the screen only — an empty state</td></tr>
+          <tr><td class="text-mono"><code>--row-height</code></td><td><code>44px</code></td><td>List row — the same number as the tap target</td></tr>
+          <tr><td class="text-mono"><code>--control-sm / -md / -lg</code></td><td><code>36px</code> · <code>44px</code> · <code>52px</code></td><td>Control heights</td></tr>
+          <tr><td class="text-mono"><code>--page-max</code></td><td><code>1280px</code></td><td>Page ceiling</td></tr>
+          </tbody>
+        </table></div>
+        <p class="measure"><b>4px base.</b> Surfaces live in <code>space-2</code> to <code>space-5</code>; that density is what lets a folded screen show more than four items. A list row reaches 44px through 12px padding — the target grew, the type did not.</p>
+        <p class="measure"><b>No value between steps.</b> A 10px gap is a decision nobody can repeat; pick the nearer step.</p>
+      </section>
       <section class="docs-section" id="styles">
         <h2 class="docs-h2">Styles</h2>
         <div class="table-wrap"><table class="table">
@@ -117,7 +139,7 @@
           <tr><td class="text-mono">.stack-2 / .stack-5</td><td>Tighter / looser column</td><td>8px / 24px</td></tr>
           <tr><td class="text-mono">.cluster</td><td>Horizontal wrap at <code>--space-2</code></td><td>Buttons, chips</td></tr>
           <tr><td class="text-mono">.spread</td><td>Space-between row</td><td>Title + action</td></tr>
-          <tr><td class="text-mono">.page</td><td>Centred page box</td><td><code>--page-max</code> + <code>--space-4</code> gutter</td></tr>
+          <tr><td class="text-mono">.page</td><td>Centered page box</td><td><code>--page-max</code> + <code>--space-4</code> gutter</td></tr>
           </tbody>
         </table></div>
       </section>

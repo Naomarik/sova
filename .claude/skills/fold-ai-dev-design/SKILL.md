@@ -19,6 +19,11 @@ disagree one of them is stale; fix it.
 If invoked without other guidance, ask what to build, ask a handful of focused questions, and
 act as an expert designer producing HTML artifacts or production code.
 
+**Start here.** Read **How to use** for the load order and how the app consumes this system, then
+the section for what you are touching — Color, Type, Shape & space and Responsive for layout,
+Components and the matching `reference/components/<name>.md` for a control. Open the rendered page
+before writing CSS for it.
+
 ## How to use
 
 Link two stylesheets, in this order:
@@ -38,6 +43,13 @@ unstyled without it. Both are plain CSS: no build step, no network requests, fon
 **Look before you build.** `site/index.html` links all 34 pages — 7 foundations, 2 brand topics,
 25 components — rendered in both themes. A screenshot answers questions a table can't. Then load
 `reference/<category>/<page>.md` for the section you're actually rendering.
+
+**In Sova, the app does not load these two files.** It imports `src/design/tokens.css` and
+`src/design/base.css`, and `base.css` is a hand-ported subset: it ports only what the app's spec
+uses. A component whose **Ported** cell in **Components** says `no` has no rules in the app — using
+its classes there renders unstyled markup with no error. Port it into `base.css` first, from this
+directory's `fold-ai-dev.css`, and change the cell in the same edit. A component this skill ships is
+not a component the app has.
 
 ## Layout
 
@@ -59,15 +71,9 @@ fold-ai-dev-design/
 └── .build/                     # generates reference/ and site/ from one content model
 ```
 
-| Entry | Purpose |
-|---|---|
-| `tokens.css` | The system's only source of raw values. Load first. |
-| `fold-ai-dev.css` | Components and utilities. Consumes tokens; loads second. |
-| `fonts/` | Real font files. The system works offline; nothing is fetched. |
-| `assets/` | Logos and icons, as files you can copy. |
-| `reference/` | Per-topic detail. Component files are authoritative for implementation. |
-| `site/` | The same system, rendered, in both themes. |
-| `.build/` | `node .build/build.mjs` regenerates `reference/**.md` and `site/**.html` from `.build/content.mjs` + `.build/components.mjs`. **Edit the model, not the output.** |
+`node .build/build.mjs` regenerates `reference/**.md` and `site/**.html` from `.build/content.mjs` +
+`.build/components.mjs`, reading values from `tokens.css`; `node .build/audit.mjs` checks the result.
+**Edit the model, not the output.**
 
 ## Voice
 
@@ -128,14 +134,10 @@ form that carries it. Work down this ladder and stop at the first row that fits.
 | One sentence on the page | The fact is about the whole list or screen and no row or control can carry it. | One sentence under a title. Empty and error states may take two, per the patterns above. | "Sorted by free memory, most first." |
 | A short paragraph | A form or a destructive act, where the user is choosing. | Two or three sentences, only what changes the choice. A confirmation says what survives, then what doesn't. | "The checkout, sessions, and transcripts stay. Installs inside the cell don't." |
 
-**Facts, not rationale.** State what is so. Why the product behaves this way stays out unless
-the user's choice depends on it.
-
-**No spec quotation.** A sentence copied from `spec/` is a defect unless the spec says the
-screen says it.
-
-**The user is capable.** Define a product noun once, where it is first met, then use it.
-Don't re-explain it on every screen.
+**Facts, not rationale** — why the product behaves this way stays out unless the user's choice
+depends on it. **No spec quotation** — a sentence copied from `spec/` is a defect unless the spec
+says the screen says it. **The user is capable** — define a product noun once, where it is first
+met, then use it.
 
 ## Color
 
@@ -154,20 +156,10 @@ Don't re-explain it on every screen.
 | Border strong | `#86868F` | `#7E7E93` | Control borders. Meets the 3:1 UI threshold. |
 
 **Paper is a real step off surface, in both directions.** Light paper sits *below* white; dark
-paper sits *above* black. A page background within 1% of the cards standing on it reads as one
-flat sheet — every card edge then has to be carried by a 1px border, which disappears in a
-screenshot, on a phone in sunlight, and for anyone who turns contrast down.
-
-The neutral ladder is monotone in both themes, and every step is visible. In L*:
-
-| | Light | | Dark | |
-|---|---|---|---|---|
-| Surface (raised) | `#FFFFFF` | 100.0 | `#2C2C38` | 18.5 |
-| Sunken (recessed) | `#E9E9F0` | 92.4 | `#26262F` | 15.5 |
-| Paper (page) | `#F2F2F7` | 95.6 | `#1E1E26` | 11.6 |
-
-Dark inverts the *direction* of "sunken", not the idea: elevation is surface lightness, so a
-recessed fill sits between paper and surface rather than below both.
+paper sits *above* black. A page within 1% of its cards reads as one flat sheet, and every card
+edge falls to a 1px border that disappears in a screenshot or in sunlight. The ladder — paper,
+sunken, surface — is monotone in both themes (L\* values in `tokens.css`); dark inverts the
+*direction* of "sunken", not the idea, so a recessed fill sits between paper and surface.
 
 **Usage ratio — 60 / 25 / 10 / 5.** 60% paper, 25% ink, 10% tint, 5% full-strength indigo. That
 last 5% is the primary action and the live-run indicator, and nothing else. Spend indigo on
@@ -214,16 +206,11 @@ on-system.
 | `micro` | 11px | 1.3 | Eyebrow labels and chips only. Never a sentence. |
 
 Sizes are px, not rem: this is a dense product UI, and rem drift across nested containers costs
-more than it buys. **In dark, body weight drops one step** — light text on a dark ground bleeds
-heavier — but sizes never change.
+more than it buys. **Sizes and weights are the same in both themes** — no per-theme type
+adjustment ships.
 
-**Reading measure is 72ch, and it is opt-in.** `.measure` caps one element; `.prose` caps the
-running text inside a block. **Changed at 1.6.0:** a bare `<p>` used to carry the cap as an
-element default and no longer does. In a dense ops UI `<p>` is the right element for a one-line
-status strip far more often than it is a paragraph of prose, and a strip capped at 72ch stops
-short while still rendering — the mistake is invisible, which is the worst kind. Consumers had
-already voted: 12 of 16 screens in one kit run, and the prototype hub itself, shipped a
-`max-width: none` to undo it. Apply the measure where there is running text to read.
+**Reading measure is 72ch, and it is opt-in** — `.measure` caps one element, `.prose` the running
+text inside a block, and a bare `<p>` is never capped. Why is in `tokens.css` beside the `p` rule.
 
 ## Shape & space
 
@@ -250,19 +237,16 @@ where there is one idea on the screen, such as an empty state.
 modal. Neutral black only, per the never-rules. **In dark, elevation is surface lightness, not a
 heavier shadow** — a black shadow on a near-black background is invisible.
 
-**Layout.** Page max-width 1280px (`.page`). Reading measure 72ch, opt-in via `.measure` or
-`.prose`. Two canonical shells:
+**Layout.** Page max-width 1280px (`.page`). Two canonical shells, built from `.pane`s (see
+**Responsive**):
 
 - **App shell** — rail (or bottom bar) + list + detail. Panes are independent scroll regions.
 - **Review layout** — detail pane with a sticky approval bar at the bottom edge.
 
-**A pane is `.pane`** — an independent scroll region *and* a query container, which is how a
-component inside it can be at folded width while the window is wide. See **Responsive**.
-
 ## Responsive
 
-**This is the single source of truth for the bands.** Every other file — the spec, the prototype
-workspace, `kit/` — cites these names and never restates the numbers.
+**This is the single source of truth for the bands.** Everything else cites these names and never
+restates the numbers.
 
 | Breakpoint | Width | Device | What changes |
 |---|---|---|---|
@@ -270,82 +254,27 @@ workspace, `kit/` — cites these names and never restates the numbers.
 | `unfolded` | ≥ 768 | the main screen, ~933 landscape | **Sidebar left, main pane right.** Approval bar returns inline. Side-by-side diff available. |
 | `desktop` | ≥ 1120 | an external display | Three panes: rail + list + detail. |
 
-**The bands are the device, not a screen-size ladder.** This product is designed first for a
-folded phone, so the threshold that matters is the one the phone itself crosses. The Galaxy Z
-Fold8 reports **~475 CSS px folded** and **~933 unfolded**, its main display being landscape-first
-— 768 is what separates them, and it is the only width the stylesheet branches on. Both device
-numbers are derived from Samsung's panel resolutions at the Fold7's confirmed device pixel ratio
-of 2.625; no source has published the Fold8's DPR yet. Treat them as the ground truth they are
-aimed at, not as measurements.
+**The bands are the device, not a screen-size ladder.** Folded is drawn first, and 768 is the only
+width the stylesheet branches on. There is no `tablet` band — a tablet at 1024 gets the unfolded
+composition. The device widths are estimates; `reference/foundations/grid-composition.md` says how
+they were derived.
 
-**Unfolded means sidebar left, main pane right.** That is the shape, not a suggestion: unfolding
-the phone turns it landscape, and landscape with a bottom nav wastes the width it just gained
-while pushing the primary action away from both thumbs. A screen that answers unfolding by
-growing one column has not used the second screen — it has stretched the first.
-
-**`tablet` is retired as a band name.** It was 768, which is what `unfolded` now names. A tablet
-at 1024 gets the unfolded composition because at that width the composition is the same thing.
-Two names for one threshold let prose put the side rail in either band, and prose did.
+**Unfolded means sidebar left, main pane right.** A screen that answers unfolding by growing one
+column has stretched the folded layout, not used the second screen.
 
 **Use container queries, not media queries.** A pane can be at folded width inside a desktop
-window, and it should look like it. Media queries ask the window; the component needs to ask its
-own box.
-
-**As of 1.6.0 the system's own components obey this**, and each one names the box it asks:
-
-| Component | Asks | You must |
-|---|---|---|
-| `.table-stack` | its `.table-wrap` | wrap every stacking table — the wrapper *is* the container |
-| `.diff-split` | its `.diff` | keep the split inside a `.diff`, as the anatomy shows |
-| `.approvalbar` | the nearest `.pane` | put the review pane in a `.pane`; it owns no wrapper of its own |
-| `.toast-stack` | the window, deliberately | nothing — a toast is app chrome and means the window |
-
-**A container query with no container never matches, and the page still renders.** That is the
-failure mode to design against, and it decides which query a rule gets. A rule that *expands* at
-width (`min-width`) is safe to leave as a container query alone: failing to match leaves the
-folded composition, which fits everywhere. A rule that *contracts* at width (`max-width`) is not
-— `.table-stack` failing to match would leave a five-column table on a 475px phone — so that one
-keeps a `@media` floor underneath and the two act as a union. Both queries are load-bearing.
-**The union is not free**: it can stack a wide `.table-wrap` inside a narrow window, which is a
-table stacking when it had the room not to. That is a legible result where the failure it
-prevents is an invisible one, and `fold-ai-dev.css` argues it out where the two rules are
-written.
-
-**`.pane` is the only layout primitive, and it is opt-in.** It makes an element an independent
-scroll region and a query container in one line. It is new at 1.6.0 — the composition is not, but
-every screen used to spell it out for itself.
-
-**`container-type: inline-size` costs two things, and both are why nothing applies it for you.**
-It is on `.pane`, `.table-wrap` and `.diff`, so all three carry both:
-
-- **Containing block.** A container is the containing block for `position: fixed` descendants, so
-  a `.scrim` or `.modal` rendered inside one covers that box rather than the viewport. Render
-  overlays at the screen root.
-- **No intrinsic inline size.** A container is sized without consulting its contents, so wherever
-  a parent asks the child how wide it wants to be, the answer is now 0. A `.table-wrap` as a flex
-  item measures **0px**; a `.diff` in a grid `auto` track, or set `inline-block`, measures **2px**
-  — its own borders. Both sized to content before 1.6.0. Put them where the width comes from the
-  parent: `flex: 1`, a grid `1fr`, `width: 100%` — never `flex: none` or a grid `auto` track.
-  **The symptom is a blank region and no error**, which is the reason this is written down at all.
-
-**Name the containers you declare yourself.** An unnamed `@container` binds to the nearest
-ancestor with containment, and since 1.6.0 that may be a `.table-wrap` or a `.diff` rather than the
-box you meant — a screen writing a bare `@container (min-width: 768px)` inside a table wrapper is
-measuring the wrapper. One extra declaration fixes it, and a named query skips every container
-that does not carry the name, so a component that grows containment later cannot capture it:
-
-```css
-.myscreen { container-type: inline-size; container-name: myscreen; }
-@container myscreen (min-width: 768px) { … }
-```
-
-The system's own container queries stay unnamed on purpose — each wants the nearest box, and the
-nearest box is the component it belongs to.
+window, and it should look like it — a media query asks the window; a component must ask its own
+box. `.pane` is the one layout primitive: an independent scroll region and a query container.
+Which box each responsive component asks, why a *contracting* rule keeps a `@media` floor, and
+the cost of containment (overlays inside a container cover the container; a container sized from
+its content measures 0px) are in `fold-ai-dev.css` beside the rules, in
+`reference/foundations/grid-composition.md`, and in `reference/components/table.md`. Name any
+container you declare yourself — the snippet is in `fold-ai-dev.css` under THE PANE.
 
 **Touch minimum is 44×44px at every breakpoint, desktop included.** Hover never hides or reveals
-the only control. Every gesture has a visible equivalent — swipe is an accelerator, never the
-door. Destructive actions keep an 8px gap and never sit adjacent to the primary action in a
-thumb arc. **Bigger targets, same information.**
+the only control — a phone has no hover. Every gesture has a visible equivalent; swipe is an
+accelerator, never the door. Destructive actions keep an 8px gap and never sit adjacent to the
+primary action in a thumb arc. **Bigger targets, same information.**
 
 ## Focus & motion
 
@@ -361,8 +290,8 @@ by a color change alone** — a keyboard user who can't see focus can't use the 
 
 **What never animates:** decoration. Nothing loops, drifts, or pulses, with exactly two
 exceptions — the live-run indicator and the skeleton sweep, both of which report that work is
-happening. Under `prefers-reduced-motion`, durations collapse to zero and transforms are
-removed; opacity fades stay, because they carry meaning rather than delight.
+happening. Under `prefers-reduced-motion`, every animation and transition collapses to near zero,
+fades included — so a state change must read from its end state, never from the motion.
 
 ## Dark mode
 
@@ -371,26 +300,47 @@ removed; opacity fades stay, because they carry meaning rather than delight.
 full token sets and rendered site pages. A component never knows which theme it's in.
 
 **Dark is not inverted light.** The accent lifts, and elevation is surface lightness rather than
-a heavier shadow, so **dark paper is a dark grey (L\* 11.6), never a near-black**: a page with no
+a heavier shadow, so **dark paper is a dark gray (L\* 11.6), never a near-black**: a page with no
 headroom above it has nothing to carry elevation with, and the screen reads as switched off
 rather than designed.
 
-**Dark paper cannot go much above L\* 12 without moving the accent.** At page `#25252F` the
-existing Fold Indigo dark (`#8E88FF`) falls to 4.22 on surface and the soft status fills stop
-clearing AA. Accent-on-surface in dark is 4.67 — the tightest pair in the system, and the one
-that constrains any future move.
+**The tightest text pair is accent on surface in dark: `#8E88FF` on `#2C2C38`, 4.67.** It is the
+number that constrains the next palette move — lift dark paper or surface and it falls toward 4.5
+first. The full measured table is generated in `reference/foundations/colors.md`.
 
 ## Accessibility
 
 Policy, not vibes:
 
-- **Contrast.** Every documented foreground/background pair meets WCAG AA or better in both
-  themes, with no exceptions. Add a pair, measure it — text needs 4.5, UI boundaries need 3.0.
+- **Contrast.** Every documented foreground/background pair is measured in both themes — text
+  needs 4.5, UI boundaries 3.0. One boundary reads under: `--color-border-strong` on light sunken
+  is 2.99, excepted because a control on sunken carries its own surface fill (3.61). Add a pair,
+  measure it.
 - **Touch.** 44×44px minimum, every breakpoint.
 - **Focus.** Visible on every interactive element, always.
 - **Status.** Never hue alone; dot plus word.
 - **Motion.** `prefers-reduced-motion` honored globally in `tokens.css`.
 - **Labels.** Anything you can't address by accessible name is a bug, not a style choice.
+
+### Interaction model
+
+- **Focus order is reading order.** No positive `tabindex`; a keyboard user who Tabs from the
+  title to the footer and back has lost the screen. Sova: none in `src/`.
+- **A modal or sheet traps focus and returns it to the opener on close.** Without the trap, Tab
+  walks into the page behind the scrim. Sova: `trapFocus` in `src/components/ui.tsx`; the
+  lightbox uses a native `<dialog>` with `showModal()`, which also makes the page `inert`. The
+  `trapFocus` dialogs do not set `inert`, so a screen reader's virtual cursor can still leave them —
+  a current gap.
+- **Status speaks through one polite live region.** Run and turn status changes announce there
+  (`role="status"`, `aria-live="polite"`); a status that changes silently is invisible to anyone
+  not looking at it. Sova: `announce()` in `src/lib/ui-state.ts`. **The toast stack is not a live
+  region** — a toast is heard only when its caller also calls `announce()`. Current gap.
+- **Landmarks and headings.** One `<main>`, labeled `<nav>` regions, one `display-xl` heading per
+  page, and a skip link as the first focusable element, so a keyboard user does not tab through
+  the sidebar on every screen. Sova: `<main>` and `.skip-link` in `src/App.tsx`.
+- **`forced-colors` is not supported** by this skill or the app: under Windows High Contrast the
+  status dots and soft fills drop out and only the words survive — which is why the word is
+  mandatory.
 
 ## Icons
 
@@ -410,14 +360,14 @@ compensating for glow is what makes icons vanish on a phone outdoors.
 external library** — a network dependency isn't a shipped system, and the set stops being
 coherent the moment half of it comes from somewhere else.
 
-## Logo
+## Marks
 
 **Placeholder disclosure.** The mark shipped here was generated for this system, not designed by
-a human brand studio. It's deliberately simple and **swappable**: replace the four files in
-`assets/logos/` and nothing else in the system changes.
+a human brand studio, and it is unregistered. It's deliberately simple and **swappable**: replace
+the four files in `assets/logos/` and nothing else in the system changes.
 
-The symbol is two panels hinged at a center crease — the device seen from above. One color plus
-one opacity, which is what lets it survive a favicon and a 16px sidebar.
+Two panels hinged at a center crease, in one color plus one opacity — which is what lets it
+survive a favicon and a 16px sidebar.
 
 | Variant | File | Use |
 |---|---|---|
@@ -425,7 +375,7 @@ one opacity, which is what lets it survive a favicon and a 16px sidebar.
 | Symbol, accent | `assets/logos/fold-symbol-accent.svg` | Default app bar. |
 | Symbol, ink | `assets/logos/fold-symbol-ink.svg` | Monochrome documents, print. |
 | Symbol, inverse | `assets/logos/fold-symbol-inverse.svg` | On indigo. |
-| Wordmark | Symbol + "Fold" set in Inter 640, -0.03em | Composed in markup; no separate file needed. |
+| Wordmark | Symbol + "Fold" set in Inter 640, -0.03em | Composed in markup; no separate file. |
 
 **Clear space:** one panel width on all sides. **Minimum size:** 16px for the symbol, 80px wide
 for the lockup. **Misuse:** never rotate it, gradient it, re-set the wordmark in another face,
@@ -434,81 +384,49 @@ add a drop shadow, or stretch it to fill a non-square box.
 ## Components
 
 25 components. Each has a file in `reference/components/` and a section in `fold-ai-dev.css`.
+**Ported** says whether Sova's `src/design/base.css` has rules for it today (rule selectors, not
+comments): `yes`, `no`, or `partial` with what is missing.
 
-| Component | Variants | Sizes | Key rule |
-|---|---|---|---|
-| Button | primary, secondary, destructive, ghost, icon | sm 36 · md 44 · lg 52 | One primary per view. Destructive outlined, never filled. |
-| Chip | success, warn, error, info, accent, solid, count | one | Status is round. A dot *and* the word — never hue alone. |
-| Input | text, textarea, mono, invalid | md 44 | Label always present; placeholder is never the label. A field is a column unless you say `.field-row`. |
-| Select | select, combobox | md 44 | Options are 44px targets too. |
-| Toggle | checkbox, radio, switch | 18px box / 40px switch | The label row is the target, not the 18px box. |
-| Card | resting, raised, interactive | — | Interactive cards need a focus ring, not just a hover. |
-| App bar | — | 56px | Brand, context, and status. Never actions that belong to content. |
-| Rail & bottom bar | rail, bottombar | 44px items | One or the other, never both. Bottom under 768px. |
-| Tabs | — | 44px | Tabs switch views; they never submit. State goes in the URL. |
-| Breadcrumb | — | — | Last item is current and not a link. |
-| Banner | success, warn, error, info | — | In-flow and persistent. Carries the fact itself. |
-| Toast | with action | — | Transient. **Never the only copy of a fact.** |
-| Empty state | — | — | Live fact first, absence second. |
-| Skeleton | line, title, row | — | Matches the shape of what's loading, or it's a lie. |
-| List & row | interactive, selected, group label | 44px row | Whole row is the target. |
-| Tree | branch, leaf, selected | 44px row | One 12px indent step per level — depth is the guide rule's job, never width the name pays for. A branch is a `<details>`, so it collapses with no script. |
-| Table | stacked below 768 | — | Below tablet a table is not a table. **Always inside a `.table-wrap`** — that is the box it measures. |
-| Filter bar | filter, set, order, count | md 44 | The count lives in the bar with the filters it answers to. A set filter says its value in words, never by tint alone. |
-| Meter | measure, ghost | 6px track | Number first, bar second, **never a bar alone**. The third term is context, not the denominator. |
-| Modal | — | ≤520px | Becomes a sheet at folded width. |
-| Sheet | — | ≤85vh | Arrives inside the thumb arc. |
-| Popover | — | ≥200px | Items are 44px. Never the only path to an action. |
-| Tooltip | on a term, on a figure, start · end aligned | ≤32ch | One sentence, on hover and keyboard focus. **Never the only place a fact lives.** |
-| Run timeline | done, running, waiting, failed | — | Every step says what happened; a failure says what it did *not* touch. |
-| Diff viewer | unified, split ≥768 | — | Added/removed carry a gutter sign as well as a color. Split measures its `.diff`, not the window. |
-| Approval bar | — | — | Sticky at folded width, inline from tablet — measured on its `.pane`. Destructive apart from primary. |
-| Chat thread | worker, user, tool | — | Tool turns are mono and visually quieter than either speaker. |
+| Component | Variants | Sizes | Key rule | Ported |
+|---|---|---|---|---|
+| Button | primary, secondary, destructive, ghost, icon | sm 36 · md 44 · lg 52 | One primary per view. Destructive outlined, never filled. | yes |
+| Chip | success, warn, error, info, accent, solid, count | one | Status is round. A dot *and* the word — never hue alone. | yes |
+| Input | text, textarea, mono, invalid | md 44 | Label always present; placeholder is never the label. A field is a column unless you say `.field-row`. | yes |
+| Select | select, combobox | md 44 | Options are 44px targets too. | partial — no combobox |
+| Toggle | checkbox, radio, switch | 18px box / 40px switch | The label row is the target, not the 18px box. | partial — switch only |
+| Card | resting, raised, interactive | — | Interactive cards need a focus ring, not just a hover. | yes |
+| App bar | — | 56px | Brand, context, and status. Never actions that belong to content. | no |
+| Rail & bottom bar | rail, bottombar | 44px items | One or the other, never both. Bottom under 768px. | no |
+| Tabs | — | 44px | Tabs switch views; they never submit. State goes in the URL. | yes |
+| Breadcrumb | — | — | Last item is current and not a link. | no |
+| Banner | success, warn, error, info | — | In-flow and persistent. Carries the fact itself. | yes |
+| Toast | with action | — | Transient. **Never the only copy of a fact.** | yes |
+| Empty state | — | — | Live fact first, absence second. | yes |
+| Skeleton | line, title, row | — | Matches the shape of what's loading, or it's a lie. | yes |
+| List & row | interactive, selected, group label | 44px row | Whole row is the target. | yes |
+| Tree | branch, leaf, selected | 44px row | One 12px indent step per level — depth is the guide rule's job, never width the name pays for. A branch is a `<details>`, so it collapses with no script. | no |
+| Table | stacked below 768 | — | At folded width a table is not a table. **Always inside a `.table-wrap`** — that is the box it measures. | no |
+| Filter bar | filter, set, order, count | md 44 | The count lives in the bar with the filters it answers to. A set filter says its value in words, never by tint alone. | no |
+| Meter | measure, ghost | 6px track | Number first, bar second, **never a bar alone**. The third term is context, not the denominator. | yes |
+| Modal | — | ≤520px | Becomes a sheet at folded width. | yes |
+| Sheet | — | ≤85vh | Arrives inside the thumb arc. | partial — a folded-width state of `.modal` |
+| Popover | — | ≥200px | Items are 44px. Never the only path to an action. | no |
+| Tooltip | on a term, on a figure, start · end aligned | ≤32ch | One sentence, on hover and keyboard focus. **Never the only place a fact lives.** | no |
+| Run timeline | done, running, waiting, failed | — | Every step says what happened; a failure says what it did *not* touch. | no |
+| Diff viewer | unified, split ≥768 | — | Added/removed carry a gutter sign as well as a color. Split measures its `.diff`, not the window. | no |
+| Approval bar | — | — | Sticky at folded width, inline from unfolded — measured on its `.pane`. Destructive apart from primary. | no |
+| Chat thread | worker, user, tool | — | Tool turns are mono and visually quieter than either speaker. | yes |
 
-## Status vocabulary
-
-**Some domain words appear on many surfaces, and the chip they take is fixed here so it cannot be
-two things.** The words themselves, and what each one means, belong to `spec/` — this table only
-assigns the color, which is the part that crosses components.
-
-### Model availability
-
-Four words, owned by `spec/control-plane/settings.md` → `§control-plane.settings/models`, and
-read by every model picker.
-
-| Word | Chip | Why this severity |
-|---|---|---|
-| `available` | `.chip-success` | Working, inside its allowance. |
-| `degraded` | `.chip-info` | Works now, worse than usual. A caveat, not a wait. |
-| `rate-limited` | `.chip-warn` | Not right now, and it returns on its own. A wait. |
-| `quota-exhausted` | `.chip-error` | Not until the subscription resets. A switch. |
-
-**The order is monotonic with how far the model is from running the turn you are about to
-start**, and that is the whole reason it is written down. It is the spec's own *"What the user
-does next"* column in the same order — choose it · choose it knowing that · wait or choose
-another · choose another. `degraded` sits below `rate-limited` because a degraded model answers
-now and a rate-limited one does not; coloring `degraded` above a state that makes you wait tells
-a user to avoid a model that works. Two screens in one kit run assigned the two the opposite way
-round to each other; both defended the choice, and the picker that got it backwards was steering
-people off a working model.
-
-**Severity is not selectability, and this table decides neither.** Three of the four are
-selectable — `spec/control-plane/settings.md` marks only `quota-exhausted` **No** — so the chip is
-never the reason a row is disabled, and a warn or info chip must not be drawn as one. Read the
-spec's Selectable column for that.
-
-**Every one of these carries a dot and the word** — never the hue alone, per **Accessibility**.
-That includes `available`: a row with no chip is neither a dot nor a word, so "no chip means
-fine" is not a state a reader can see. A screen wanting less green on an eight-row picker has a
-composition problem to solve in its own layout, not a fifth meaning to give to absence.
+Sova's own `.timeline` is a different component (its session axis), not Run timeline; the chip
+status-word mapping lives in `reference/components/chip.md`.
 
 ## Class index
 
 | Component | Selectors |
 |---|---|
-| Button | `.button` `.button-primary` `.button-destructive` `.button-ghost` `.button-sm` `.button-lg` `.button-icon` `.button-row` · demo: `.button-hover` `.button-focus` `.button-active` `.button-disabled` |
+| Button | `.button` `.button-primary` `.button-destructive` `.button-ghost` `.button-sm` `.button-lg` `.button-icon` `.button-row` · demo only: `.is-hover` `.is-focus` `.is-active` `.is-disabled` |
 | Chip | `.chip` `.chip-dot` `.chip-success` `.chip-warn` `.chip-error` `.chip-info` `.chip-accent` `.chip-solid` `.chip-count` |
-| Input | `.field` `.field-row` `.field-label` `.field-hint` `.field-error` `.input` `.textarea` `.input-mono` `.input-invalid` · demo: `.input-hover` `.input-focus` `.input-disabled` |
+| Input | `.field` `.field-row` `.field-label` `.field-hint` `.field-error` `.input` `.textarea` `.input-mono` `.input-invalid` · demo only: `.is-hover` `.is-focus` `.is-disabled` |
 | Select | `.select` `.select-wrap` `.select-caret` `.combobox-list` `.combobox-option` |
 | Toggle | `.toggle` `.toggle-box` `.toggle-radio` `.toggle-switch` |
 | Card | `.card` `.card-head` `.card-title` `.card-body` `.card-foot` `.card-raised` `.card-interactive` |
@@ -526,6 +444,7 @@ composition problem to solve in its own layout, not a fifth meaning to give to a
 | Filter bar | `.filterbar` `.filterbar-filters` `.filterbar-filter` `.filterbar-filter-on` `.filterbar-value` `.filterbar-order` `.filterbar-count` |
 | Meter | `.meter` `.meter-head` `.meter-label` `.meter-value` `.meter-of` `.meter-track` `.meter-fill` `.meter-context` `.meter-ghost` |
 | Overlay | `.scrim` `.modal` `.modal-head` `.modal-title` `.modal-body` `.modal-foot` `.sheet` `.sheet-grip` `.popover` `.popover-item` `.popover-sep` |
+| Tooltip | `.tip` `.tip-bubble` `.tip-start` `.tip-end` `.tip-static` |
 | Run timeline | `.timeline` `.timeline-step` `.timeline-marker` `.timeline-title` `.timeline-meta` `.timeline-body` `.timeline-done|running|waiting|failed` |
 | Diff viewer | `.diff` `.diff-file` `.diff-stat-add` `.diff-stat-del` `.diff-hunk` `.diff-line` `.diff-gutter` `.diff-add` `.diff-del` `.diff-split` |
 | Approval bar | `.approvalbar` `.approvalbar-summary` `.approvalbar-spacer` |
@@ -554,3 +473,12 @@ composition problem to solve in its own layout, not a fifth meaning to give to a
 The `--brand-*` layer beneath these holds the raw hex per theme. **Consume the semantic tokens,
 never the brand layer** — a component that reads `--brand-indigo` directly stops following the
 theme.
+
+## Licensing
+
+| Asset | Source | License | Redistribution |
+|---|---|---|---|
+| Inter (`fonts/Inter-Variable.woff2`) | The Inter Project Authors | SIL OFL 1.1 — `fonts/Inter-OFL.txt` | Permitted, with the license text; not sold on its own. |
+| JetBrains Mono (`fonts/JetBrainsMono-Variable.woff2`) | The JetBrains Mono Project Authors | SIL OFL 1.1 — `fonts/JetBrainsMono-OFL.txt` | Permitted, with the license text; not sold on its own. |
+| Marks (`assets/logos/`) | Generated for this system — a placeholder | None claimed; unregistered | Free to replace or discard. |
+| Icons (`assets/icons/functional/`) | **Provenance unknown — owner to confirm** | **Unknown** | Unconfirmed. Do not relicense or redistribute the set outside this project until the owner confirms who drew it. |

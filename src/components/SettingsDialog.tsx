@@ -32,19 +32,24 @@ import {
   setRecentCount,
 } from "../lib/recent";
 import { activeThemeId, applyTheme, droppedThemeId, reconcileTheme, typography } from "../lib/theme";
+import type { SettingsTab } from "../lib/settings-nav";
+import { delegateDirty, resetDelegateDraft } from "../lib/delegate-draft";
 import { effectiveStack } from "../lib/typography";
 import { announce, home } from "../lib/ui-state";
+import { DelegateSettingsSection } from "./DelegateSettings";
 import { TypographySection } from "./TypographySection";
 import { Banner, Icon, trapFocus } from "./ui";
 
-/** The tab rail. Four screens; the rail is the structure further settings slot into. General is
-    first because it is the one screen about this browser's own behaviour rather than a subsystem. */
+/** The tab rail. Five screens; the rail is the structure further settings slot into. General is
+    first because it is the one screen about this browser's own behaviour rather than a subsystem.
+    Same ids, same order as `SETTINGS_TABS` (lib/settings-nav.ts), which is what opens it. */
 const TABS = [
   { id: "general", label: "General", icon: "settings" as const },
   { id: "models", label: "Models", icon: "sliders" as const },
+  { id: "modes", label: "Modes", icon: "worker" as const },
   { id: "themes", label: "Themes", icon: "image" as const },
   { id: "experimental", label: "Experimental", icon: "terminal" as const },
-] as const;
+] as const satisfies readonly { id: SettingsTab; label: string; icon: string }[];
 type TabId = (typeof TABS)[number]["id"];
 
 /**
@@ -52,10 +57,11 @@ type TabId = (typeof TABS)[number]["id"];
  * policy file every session reads — this browser, the TUI, and every subagent — so a switch here
  * is a rule, not a filter. Themes picks what this browser wears; that one is localStorage only.
  */
-export function SettingsDialog(props: { onClose(): void }) {
-  // The first tab in the rail, which is also the one `onMount` focuses: the two have to agree, or
-  // the dialog opens with focus on a tab that isn't the selected one.
-  const [tab, setTab] = createSignal<TabId>("general");
+export function SettingsDialog(props: { onClose(): void; initialTab?: SettingsTab }) {
+  // The tab it opens at (General unless a caller — the mode menu's "Configure Delegate" — asks for
+  // another) is also the one `onMount` focuses: the two have to agree, or the dialog opens with
+  // focus on a tab that isn't the selected one.
+  const [tab, setTab] = createSignal<TabId>(props.initialTab ?? "general");
   const [webSettings, { refetch: refetchSettings }] = createResource(() => getWebSettings());
   /** The switch as the user has set it: the stored value, then optimistic toggles. */
   const [claudeCodeOn, setClaudeCodeOn] = createSignal(false);
@@ -106,12 +112,29 @@ export function SettingsDialog(props: { onClose(): void }) {
     }
   };
 
-  let firstTab: HTMLButtonElement | undefined;
-  onMount(() => firstTab?.focus());
+  /** Close was asked for over unsaved Delegate edits: the foot asks what to do with them. */
+  const [closeHeld, setCloseHeld] = createSignal(false);
+  /** Every way out (Close, Esc, the scrim) comes through here, so none of them drops a draft silently. */
+  const requestClose = () => {
+    if (delegateDirty()) {
+      setTab("modes");
+      setCloseHeld(true);
+      return;
+    }
+    resetDelegateDraft();
+    props.onClose();
+  };
+  const discardAndClose = () => {
+    resetDelegateDraft();
+    props.onClose();
+  };
+
+  const tabButtons = new Map<TabId, HTMLButtonElement>();
+  onMount(() => tabButtons.get(tab())?.focus());
 
   return (
     <>
-      <div class="scrim" onClick={props.onClose} />
+      <div class="scrim" onClick={requestClose} />
       <div
         class="modal modal-wide settings-modal"
         role="dialog"
@@ -119,7 +142,7 @@ export function SettingsDialog(props: { onClose(): void }) {
         aria-labelledby="settings-title"
         ref={(el) => trapFocus(el)}
         onKeyDown={(e) => {
-          if (e.key === "Escape") props.onClose();
+          if (e.key === "Escape") requestClose();
         }}
       >
         <div class="sheet-grip" aria-hidden="true" />
@@ -131,7 +154,7 @@ export function SettingsDialog(props: { onClose(): void }) {
         <div class="settings-body">
           <nav class="settings-tabs" aria-label="Settings sections" role="tablist" aria-orientation="vertical">
             <For each={TABS}>
-              {(t, i) => (
+              {(t) => (
                 <button
                   type="button"
                   role="tab"
@@ -140,9 +163,7 @@ export function SettingsDialog(props: { onClose(): void }) {
                   aria-controls={`settings-panel-${t.id}`}
                   id={`settings-tab-${t.id}`}
                   tabindex={tab() === t.id ? 0 : -1}
-                  ref={(el) => {
-                    if (i() === 0) firstTab = el;
-                  }}
+                  ref={(el) => tabButtons.set(t.id, el)}
                   onClick={() => setTab(t.id)}
                   onKeyDown={(e) => {
                     if (e.key === "ArrowDown" || e.key === "ArrowUp") {
@@ -169,6 +190,13 @@ export function SettingsDialog(props: { onClose(): void }) {
           <Show when={tab() === "models"}>
             <div class="settings-panel" role="tabpanel" id="settings-panel-models" aria-labelledby="settings-tab-models">
               <ModelsPanel />
+            </div>
+          </Show>
+          {/* Mounted only while its tab is: the backend discovery (a Claude Code CLI call) runs
+              when the tab opens, not with the dialog. */}
+          <Show when={tab() === "modes"}>
+            <div class="settings-panel" role="tabpanel" id="settings-panel-modes" aria-labelledby="settings-tab-modes">
+              <DelegateSettingsSection />
             </div>
           </Show>
           {/* The panel is mounted only while its tab is: the themes poll starts when this tab
@@ -219,9 +247,28 @@ export function SettingsDialog(props: { onClose(): void }) {
             </div>
           </Show>
         </div>
+        <Show when={closeHeld() && delegateDirty()}>
+          <div class="settings-close-held">
+            <Banner
+              tone="warn"
+              title="Your Delegate changes aren't saved."
+              body="Save them on this screen, or discard them and close."
+              action={
+                <span class="settings-close-held-actions">
+                  <button type="button" class="button button-sm button-ghost" onClick={() => setCloseHeld(false)}>
+                    Keep Editing
+                  </button>
+                  <button type="button" class="button button-sm" onClick={discardAndClose}>
+                    Discard and Close
+                  </button>
+                </span>
+              }
+            />
+          </div>
+        </Show>
         <div class="modal-foot">
           <span class="modal-spacer" />
-          <button type="button" class="button button-ghost" onClick={props.onClose}>
+          <button type="button" class="button button-ghost" onClick={requestClose}>
             Close
           </button>
         </div>

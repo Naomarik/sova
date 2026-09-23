@@ -2,10 +2,16 @@
 > Part of the Sova design spec · [overview](overview.md)
 
 pi's mode extension (`pi-config/extensions/mode`) has one **major mode**, `normal` or
-`claude-heavy`, and any set of **minor modes** (today `align`). Both are **per session**: each
-chat keeps its own, persisted in that session's own `mode` entries. The menu switches them from
-the chat's composer, and the switch reaches **that chat only**, **from its next message**. You never
-start a new chat or reconnect, and no other chat or terminal session moves.
+`delegate`, and any set of **minor modes** (today `align`). Delegate was called `claude-heavy`
+until 2026-09; that name is still read everywhere a mode is parsed (the API, `mode.json`, session
+snapshots) as `delegate`, and it is never written. Recorded history keeps it: an old transcript
+marker still reads "Mode → claude-heavy". What Delegate
+routes where is Settings → Modes (§12), not this menu.
+
+Both are **per session**: each chat keeps its own, persisted in that session's own `mode`
+entries. The menu switches them from the chat's composer, and the switch reaches **that chat
+only**, **from its next message**. You never start a new chat or reconnect, and no other chat or
+terminal session moves.
 
 `~/.pi/agent/mode.json` is the **default for new sessions** (plus the shortcuts). A session that
 has never toggled follows it; the first toggle pins that session. `GET /api/mode` reads it and
@@ -26,9 +32,9 @@ chip and the info button (§4f); it carries no mode.
 ```html
 <button class="button button-ghost mode-trigger" type="button" aria-haspopup="menu"
         aria-expanded="false" aria-controls="mode-menu"
-        aria-label="Mode: claude-heavy · align" title="Mode: claude-heavy · align">
+        aria-label="Mode: delegate · align" title="Mode: delegate · align">
   <span class="icon icon-sm" style="--icon: url(/icons/sliders.svg)" aria-hidden="true"></span>
-  <span class="mode-trigger-label">claude-heavy</span>
+  <span class="mode-trigger-label">delegate</span>
   <span class="mode-trigger-label mode-trigger-minor">· align</span>   <!-- only with a minor on -->
   <span class="icon icon-sm" style="--icon: url(/icons/chevron-down.svg)" aria-hidden="true"></span>
 </button>
@@ -67,7 +73,13 @@ toggles, which is exactly what `menuitemradio` and `menuitemcheckbox` are for.
         <span class="mode-option-text"><span class="mode-option-id">normal</span>
           <span class="mode-option-desc">Pi as usual</span></span>
       </div>
-      <div class="mode-option" role="menuitemradio" aria-checked="true" tabindex="0">…claude-heavy…</div>
+      <div class="mode-option-row" role="none">
+        <div class="mode-option" role="menuitemradio" aria-checked="true" tabindex="0">…delegate…</div>
+        <button type="button" class="button button-ghost button-icon mode-option-gear" role="menuitem"
+          tabindex="-1" aria-label="Configure Delegate" title="Configure Delegate">
+          <span class="icon icon-sm" style="--icon: url(/icons/settings.svg)" aria-hidden="true"></span>
+        </button>
+      </div>
     </div>
     <div class="model-menu-group" role="group" aria-labelledby="mode-group-minor">
       <div class="list-group-label" id="mode-group-minor">Minor modes</div>
@@ -82,6 +94,13 @@ toggles, which is exactly what `menuitemradio` and `menuitemcheckbox` are for.
 - **Choosing.** Picking a major mode closes the menu and returns focus to the trigger, like the
   terminal palette. Toggling a minor mode keeps the menu open, so you can set several. While the
   switch is saving, the rows are `aria-disabled`.
+- **Configure Delegate** is an icon-only gear at the right end of Delegate's row: a real
+  `button` with `role="menuitem"`, a sibling of the `menuitemradio` (never nested in it) inside a
+  `role="none"` wrapper, with a `--tap-min` target. It comes right after Delegate in the same
+  roving focus. It closes the menu and opens Settings at **Modes** (§12), where Delegate's routing
+  lives. It switches nothing: this chat's mode stays what it was, and it's there in either mode,
+  so you can set Delegate up before turning it on. Clicking the rest of the row still picks
+  Delegate.
 - **Checked.** A checked row gets `--color-accent-tint` and the check. The words carry the state
   too, since `aria-checked` is announced.
 - **strict** is shown read-only in the foot, for this chat. Change it in a terminal with
@@ -99,7 +118,7 @@ toggles, which is exactly what `menuitemradio` and `menuitemcheckbox` are for.
 this server holds open (404 otherwise), and `mode.json` is not written. The chat then:
 
 - **Calls the extension's own `/mode` handler** directly. That's the same code the terminal runs,
-  so it leaves the same **marker** in the transcript: an info row "Mode → claude-heavy" or
+  so it leaves the same **marker** in the transcript: an info row "Mode → delegate" or
   "Minor mode: align on", plus the snapshot the extension restores from. The command text never
   goes to the model. There's no reload, so the chat's subagent workers keep running. A chat that
   was never prompted takes the same path (the marker is a deliberate user write).
@@ -148,7 +167,7 @@ checked `--color-accent-tint`, focus `--focus-ring` inset. Foot: `--fs-caption`
 - **`/mode` only.** It works today (the slash menu lists it), but nobody finds it, and it can't
   show the current mode.
 - **Reloading the chat.** A runtime reload stops that chat's subagent workers, which would end
-  claude-heavy teams mid-task.
+  delegate teams mid-task.
 - **Fanning a switch out to every open chat** (what this used to do, through `mode.json` and a
   file watcher). One chat's mode is not another's: it moved terminals and tabs nobody asked to
   move. The file is now only the default.

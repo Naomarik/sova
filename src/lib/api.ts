@@ -6,6 +6,7 @@ import type {
   ExplanationInfo,
   FileIndex,
   FolderListing,
+  GitSummary,
   ModeInfo,
   ModelInfo,
   AssignGroupResult,
@@ -26,6 +27,7 @@ import type {
 } from "../../shared/protocol";
 import { type CleanupRequest, type CleanupResult, parseCleanupResult } from "./archive";
 import type { ModelPolicy } from "./model-policy";
+import type { DelegateOptions, DelegateSaveResult, DelegateSettings, DelegateSettingsInfo } from "../../shared/protocol";
 import type { TargetInfo } from "./remote-session";
 
 /**
@@ -105,6 +107,17 @@ export const getModelPolicy = () => request<ModelPolicy>("/api/settings/models")
     the server refuses a model it forbids, so this is a rule, not a filter. */
 export const putModelPolicy = (policy: ModelPolicy) =>
   request<ModelPolicy>("/api/settings/models", { method: "PUT", body: JSON.stringify(policy) });
+
+/** Delegate mode's routing (Settings → Modes → Delegate): which worker each kind of work goes to. */
+export const getDelegateSettings = () => request<DelegateSettingsInfo>("/api/settings/delegate");
+
+/** What each worker backend offers. Slow the first time (it asks the Claude Code CLI; cached 60s);
+    a backend that can't answer comes back with `models: null`, which is not "offers nothing". */
+export const getDelegateOptions = () => request<DelegateOptions>("/api/settings/delegate/options");
+
+/** Replace the whole routing. Delegate sessions everywhere pick it up at their next turn. */
+export const putDelegateSettings = (settings: DelegateSettings) =>
+  request<DelegateSaveResult>("/api/settings/delegate", { method: "PUT", body: JSON.stringify(settings) });
 
 /** Every theme the app can find — the ones it ships and the ones in the user's folder — rescanned
     per request. Never fails on an unreadable folder: that comes back as `error` with the built-ins
@@ -493,6 +506,11 @@ export const fetchExplanations = () => request<ExplanationInfo[]>("/api/explanat
 
 export const fetchSessionInsight = (path: string) =>
   request<SessionInsight>(`/api/insights/session?path=${encodeURIComponent(path)}`);
+
+/** The repository around a session's folder (read-only git). `fresh` skips the server's ~10s cache.
+    Use loadGitSummary (lib/git-summary.ts), which shares a request already running. */
+export const fetchGitSummary = (path: string, fresh = false) =>
+  request<GitSummary>(`/api/sessions/git?path=${encodeURIComponent(path)}${fresh ? "&fresh=1" : ""}`);
 
 /**
  * `force` (chat only) lets the server open a session whose file was written recently by

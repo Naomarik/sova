@@ -48,14 +48,24 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   `model-policy.json` (extensions/model-policy: what may be used at all, and what subagents may be
   given — read by the TUI, the palette, subagent spawning and Sova alike), mode `mode.json` =
   the DEFAULT mode for new sessions; the active mode is per session, in the session's own `mode`
-  custom entry, and Sova restores it with `restoreActive` from `state.ts`).
-  Not covered by Sova's tsconfig, with two exceptions: `server/mode-state.ts` imports
-  `pi-config/extensions/mode/state.ts` and `minor.ts` (hence `allowImportingTsExtensions`), and
+  custom entry, and Sova restores it with `restoreActive` from `state.ts`; mode
+  `mode-delegate.json` = Delegate's global routing (four profiles, each backend/model/effort plus
+  an optional fallback), written by Sova's Settings → Modes → Delegate and re-read by every
+  Delegate session at each turn boundary — never snapshotted into a session).
+  The major mode `delegate` was `claude-heavy` until 2026-09. `claude-heavy` is a permanent READ
+  alias (`parseMode`/`LEGACY_MODE_ALIASES` in `state.ts`: `/mode`, `--major`, `mode.json`, session
+  snapshots, `POST /api/mode`) and is never written; recorded transcript markers are displayed as
+  written ("Mode → claude-heavy"), never relabelled.
+  Not covered by Sova's tsconfig, with two exceptions: the server imports
+  `pi-config/extensions/mode/state.ts`, `minor.ts` and `delegate.ts` (`server/mode-state.ts`,
+  `server/delegate.ts`; hence `allowImportingTsExtensions`), and
   `server/targets.ts` imports `pi-config/extensions/remote/argv.ts` (the target schema,
   validation and the single argv builder that both the `remote` extension and the web server use to
-  run a command on a target), so an edit to any of the three can break Sova's typecheck. Keep
-  them pi-runtime-free (node builtins and, for the mode pair, each other only), and import nothing
-  else from pi-config. `argv.ts` is also the quoting boundary: every path that reaches a far shell is
+  run a command on a target), so an edit to any of the four can break Sova's typecheck. Keep
+  them pi-runtime-free (node builtins and, for the mode trio, each other only), and import nothing
+  else from pi-config at runtime. One test-only exception: `server/claude-models.test.ts` imports
+  `pi-config/extensions/claude-code/transport.ts` (builtins only) to pin the server's Claude
+  model-discovery argv to the extension's; the server itself never imports claude-code. `argv.ts` is also the quoting boundary: every path that reaches a far shell is
   single-quote-escaped there, and callers spawn its argv without a local shell. The web mode switch calls that extension's
   `/mode` command handler directly (`ChatSession.applyMode`), so its arguments are a contract too.
   Sova has no sshfs/mount support (removed 2026-09-22): a remote session's cwd is always its

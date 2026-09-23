@@ -1,13 +1,22 @@
 // The mode extension's settings file (~/.pi/agent/mode.json), owned by pi-config's mode extension.
 // The mode itself is per session; this file is the DEFAULT new sessions start from. We import
-// exactly its two pure modules (state.ts, minor.ts: node:fs/node:path only) so validation, the
-// minor-mode list and the restore rule have one source of truth. Nothing else from pi-config.
-// See CLAUDE.md.
+// exactly its three pure modules (state.ts, minor.ts, and delegate.ts in server/delegate.ts:
+// node:fs/node:path only) so validation, the mode and minor-mode lists, the legacy mode alias and
+// the restore rule have one source of truth. Nothing else from pi-config. See CLAUDE.md.
 import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { MINOR_DESCRIPTIONS, MINOR_MODES } from "../pi-config/extensions/mode/minor.ts";
-import { isMode, loadState, normalizeState, restoreActive, saveState, type ModeState } from "../pi-config/extensions/mode/state.ts";
+import {
+  loadState,
+  MODE_DESCRIPTIONS,
+  MODES,
+  normalizeState,
+  parseMode,
+  restoreActive,
+  saveState,
+  type ModeState,
+} from "../pi-config/extensions/mode/state.ts";
 import type { ModeApplies, ModeInfo } from "../shared/protocol";
 
 export type { ModeState };
@@ -16,18 +25,12 @@ export { MINOR_MODES };
 export const MODE_FILE_NAME = "mode.json";
 export const modeFile = () => join(getAgentDir(), MODE_FILE_NAME);
 
-/** Copied from pi-config mode/palette.ts (not exported there; palette.ts imports the palette contract). */
-const MODE_DESCRIPTIONS: Record<ModeState["mode"], string> = {
-  normal: "Pi as usual",
-  "claude-heavy": "Orchestrate: delegate coding and planning to Claude Code workers",
-};
-
 export function modeInfo(state: ModeState): ModeInfo {
   return {
     mode: state.mode,
     minorModes: [...state.minorModes],
     strict: state.strict,
-    modes: (Object.keys(MODE_DESCRIPTIONS) as ModeState["mode"][]).map((id) => ({ id, description: MODE_DESCRIPTIONS[id] })),
+    modes: MODES.map((id) => ({ id, description: MODE_DESCRIPTIONS[id] })),
     minors: MINOR_MODES.map((id) => ({ id, description: MINOR_DESCRIPTIONS[id] })),
   };
 }
@@ -38,14 +41,16 @@ export interface ModePatch {
   minorModes?: ModeState["minorModes"];
 }
 
-/** Validate a POST /api/mode body. Unknown names are an error, not silently dropped. */
+/** Validate a POST /api/mode body. Unknown names are an error, not silently dropped. A legacy mode
+    name ("claude-heavy") is read as the mode it now names, and only the canonical one goes on. */
 export function parseModePatch(body: unknown): ModePatch | { error: string } {
   if (body === null || typeof body !== "object" || Array.isArray(body)) return { error: "Expected JSON body { mode?, minorModes? }" };
   const b = body as Record<string, unknown>;
   const patch: ModePatch = {};
   if (b.mode !== undefined) {
-    if (!isMode(b.mode)) return { error: `mode must be one of: ${Object.keys(MODE_DESCRIPTIONS).join(", ")}` };
-    patch.mode = b.mode;
+    const mode = parseMode(b.mode);
+    if (mode === undefined) return { error: `mode must be one of: ${MODES.join(", ")}` };
+    patch.mode = mode;
   }
   if (b.minorModes !== undefined) {
     if (!Array.isArray(b.minorModes)) return { error: "minorModes must be an array" };

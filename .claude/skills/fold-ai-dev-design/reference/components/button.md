@@ -17,7 +17,7 @@ Rendered: `site/components/button.html`
 | `.button-sm / .button-lg` | 36px / 52px | Label size shifts with it |
 | `.button-icon` | Square 44px | Requires `aria-label` |
 | `.button-row` | Demo helper — wrapping row | Demo only |
-| `.button-hover / -focus / -active / -disabled` | Static states | **Demo only** — production uses pseudo-classes |
+| `.is-hover / .is-focus / .is-active / .is-disabled` | Static states on `.button` | **Demo only** — production uses pseudo-classes |
 
 ## Tokens used
 
@@ -60,9 +60,9 @@ Rendered: `site/components/button.html`
 <button class="button button-icon" aria-label="More actions">…</button>
 ```
 
-Every state is rendered together in the site page's state matrix. The `-hover`, `-focus`,
-`-active` and `-disabled` helper classes are **documentation scaffolding only** — production
-code uses the real pseudo-classes.
+Every state is rendered together in the site page's state matrix. The `.is-hover`,
+`.is-focus`, `.is-active` and `.is-disabled` helpers are **documentation scaffolding
+only** — production code uses the real pseudo-classes.
 
 ## DO / DON'T
 
@@ -71,4 +71,4 @@ code uses the real pseudo-classes.
 - **DO** Keep destructive out of the thumb arc beside primary — one mis-tap on a train should not throw work away.
 - **DON'T** Fill a destructive button — it becomes the most inviting target on screen.
 - **DON'T** Use `.button-sm` as the only action on a touch surface — 36px is below the 44px minimum.
-- **DON'T** Ship the `.button-hover` helpers in production — they are documentation scaffolding; use the real pseudo-classes.
+- **DON'T** Ship the `.is-*` state helpers in production — they are documentation scaffolding; use the real pseudo-classes.

@@ -54,6 +54,16 @@ export interface SessionSummary {
       server's own embedded runtime (its own live record, which never sets `live`). Absent when no
       record reports counts, and from older servers: fall back to live?.workers. */
   workers?: { working: number; total: number };
+  /** This session IS a subagent's or team member's own session, never a thread the user started;
+      the sidebar does not list it (src/lib/regions.ts `isMainThread`). True when the file itself
+      carries the spawn marker pi-config's subagents extension writes into every pi worker
+      (`subagents-worker-session`, server/worker-sessions.ts), when another session's file names it
+      as a worker (that owner's `subagents-worker-registry` entries, or the `Session:` line of its
+      inline `subagent-complete` message), or when a live record lists it as a running worker.
+      NOT the same thing as `workers` above, which counts the subagents THIS session runs.
+      Safe by absence: absent = a main thread, and an older server that never sends it hides
+      nothing. */
+  workerSession?: true;
   /** While the server holds this session's runtime AND it is mid-agent-turn (streaming): true.
       The sidebar shows a "Busy" marker. false when idle/closed or not held by this server.
       Never pulsing (design rule). */
@@ -407,7 +417,9 @@ export interface UploadResult {
 //                                  chip's remove; 403 anything else, /tmp included; 400 no path; 404 missing)
 // GET  /api/mode                -> ModeInfo   (the DEFAULT for new sessions: ~/.pi/agent/mode.json; missing file → defaults)
 // POST /api/mode { mode?, minorModes? } -> ModeInfo   (writes that default only, merged into the fresh file with the
-//                                  other fields kept. No open chat changes. 400 bad body or unknown name)
+//                                  other fields kept. No open chat changes. 400 bad body or unknown name.
+//                                  mode "claude-heavy" — Delegate's old name — is accepted and read as "delegate",
+//                                  here and with ?path=; only "delegate" is ever written or returned)
 // POST /api/mode?path=… { mode?, minorModes? } -> ChatModeResult   (switches THAT chat only, from its next message;
 //                                  mode.json is not written. 400 bad body/unknown name/bad path,
 //                                  404 that session isn't held open by this server)
@@ -417,6 +429,15 @@ export interface UploadResult {
     vs the model's contextWindow from models-store.json. null when no assistant message yet or
     window unknown. Live-updates via the assistant usage in passthrough events at turn end. */
 export interface ContextInfo { tokens: number; window: number | null }
+
+// GET /api/settings/delegate            -> DelegateSettingsInfo (~/.pi/agent/mode-delegate.json; missing → defaults)
+// GET /api/settings/delegate/options    -> DelegateOptions (what each worker backend offers; runs `claude` initialize,
+//                                          cached 60s. A backend that can't list its models has models:null + error)
+// PUT /api/settings/delegate DelegateSettings -> DelegateSaveResult (replaces the whole routing. 400 bad shape, or a
+//                                          CHANGED tuple its backend answered it can't run; unverifiable or
+//                                          policy-denied tuples save with a warning. Delegate sessions — TUI and
+//                                          web — pick it up at their next turn; normal mode never reads it)
+// ---------------------------------------------------------------------------
 
 // GET /api/settings/models      -> ModelPolicy (empty lists when nothing is disabled)
 // PUT /api/settings/models      -> ModelPolicy (replaces the whole policy; 400 bad body)
@@ -576,6 +597,87 @@ export interface FileIndex {
   /** True when `files` was cut at the server's cap. */
   truncated: boolean;
 }
+
+// GET /api/sessions/git?path=<session file>&fresh=1 -> GitSummary   (server/git-summary.ts: the
+//                                  whole repository containing the session's STORED cwd — locally
+//                                  after the path map, or on its target through the argv builder.
+//                                  Read-only, never fetches. 400 a bad path, 404 a missing session
+//                                  file; everything else, a folder with no repository included, is a
+//                                  200 whose `state` says so. Cached ~10s per folder; fresh=1 skips
+//                                  the cache but still joins a read already running.)
+// ---------------------------------------------------------------------------
+/** What one side of a change did to a path: index vs HEAD (`staged`) or worktree vs index
+    (`unstaged`), from git status's XY letters. */
+export type GitChange = "modified" | "added" | "deleted" | "renamed" | "copied" | "type-changed";
+
+/** One changed path. Paths are relative to the repository root, "/"-separated, as git wrote them;
+    an untracked FOLDER (git collapses one it has never tracked) ends in "/". */
+export interface GitFileChange {
+  path: string;
+  /** Rename or copy source, when git paired one. */
+  from?: string;
+  kind: "tracked" | "untracked" | "conflicted";
+  staged?: GitChange;
+  unstaged?: GitChange;
+  /** A submodule's pointer or contents moved, not a file. */
+  submodule?: true;
+  /** Lines added/removed, worktree against HEAD (staged and unstaged together; against the empty
+      tree in a repository with no commits). "binary" when git counts no lines. null when there is
+      no count: always for untracked paths (git has nothing to diff them against), else see
+      GitRepoSummary.lines for why. */
+  lines: { added: number; removed: number } | "binary" | null;
+}
+
+/** Where the read ran: this machine, or the session's target. */
+export type GitWhere = { kind: "local" } | { kind: "remote"; target: string };
+
+export interface GitRepoSummary {
+  state: "repo";
+  where: GitWhere;
+  /** The folder git ran in: the stored cwd, the moved folder when path-map.json rebased it
+      (`moved`), or the remote cwd on a target. */
+  cwd: string;
+  /** The stored cwd no longer exists under that name and was read at its moved location. */
+  moved?: true;
+  /** The repository's top-level folder (absolute; a REMOTE path for a remote session). */
+  root: string;
+  head: { kind: "branch"; name: string } | { kind: "detached"; oid: string };
+  /** No commit yet: `head` names the branch the first commit will create. */
+  unborn: boolean;
+  /** Divergence from the upstream as this repository last saw it (nothing fetches): `gone` when
+      the branch tracks an upstream whose ref no longer exists locally. null: no upstream set. */
+  upstream: { name: string; ahead: number; behind: number } | { name: string; gone: true } | null;
+  /** Paths with staged changes, unstaged changes, untracked paths (a collapsed folder counts once)
+      and unmerged paths. One path can count as both staged and unstaged. */
+  counts: { staged: number; unstaged: number; untracked: number; conflicted: number };
+  /** Nothing staged, unstaged, untracked or conflicted — and the status read was whole. */
+  clean: boolean;
+  /** The commit HEAD points at; null in an unborn repository or when git log failed. */
+  lastCommit: { oid: string; subject: string; at: number } | null;
+  /** Changed paths, conflicted first, then by path; cut at the server's cap (`filesTotal`). */
+  files: GitFileChange[];
+  /** Changed paths git reported, before the cap. */
+  filesTotal: number;
+  /** git status's output hit the server's byte cap or its time limit: `counts`, `files` and
+      `filesTotal` are lower bounds, and `clean` is false. */
+  statusPartial: boolean;
+  /** Line counts: "ok" every tracked path was counted; "partial" the count output hit the byte cap;
+      "timeout" counting took too long; "failed" git refused. Sums over counted paths only. */
+  lines: "ok" | "partial" | "timeout" | "failed";
+  /** Σ of `lines` over every counted path (not only the listed ones). */
+  added: number;
+  removed: number;
+  /** When the server read it (ms epoch). A cached answer keeps its original time. */
+  checkedAt: number;
+}
+
+export type GitSummary =
+  | GitRepoSummary
+  /** The folder is readable and no repository contains it. */
+  | { state: "none"; where: GitWhere; cwd: string; moved?: true; checkedAt: number }
+  /** Nothing could be read: `reason` is a sentence for the user (folder gone, target offline,
+      git missing, took too long, a removed sshfs mount, git's own refusal). Never cached. */
+  | { state: "unavailable"; where: GitWhere; cwd: string; reason: string; checkedAt: number };
 
 /** Longest group name, in characters, after trimming (SessionGroup.name; the server trims and
     refuses an empty or longer one with 400). The one place the limit is written down: the create
@@ -951,11 +1053,73 @@ export interface ForkRefusal {
     new sessions** (~/.pi/agent/mode.json), never one chat's state. `strict` is shown, never
     changed here. `modes`/`minors` list what exists. */
 export interface ModeInfo {
-  mode: string; // "normal" | "claude-heavy"
+  mode: string; // "normal" | "delegate" (never the legacy "claude-heavy": the server reads that as "delegate")
   minorModes: string[]; // canonical order
   strict: boolean;
   modes: { id: string; description: string }[];
   minors: { id: string; description: string }[];
+}
+
+/** Delegate mode's four kinds of work, canonical order (pi-config/extensions/mode/delegate.ts). */
+export type DelegateProfileId = "planning" | "investigation" | "routine" | "complex";
+export type DelegateBackendId = "pi" | "claude-code";
+
+/** One worker, exactly as agent_spawn receives it. pi models are "provider/modelId" and efforts
+    are pi thinking levels; Claude Code models are the CLI's own ids. */
+export interface WorkerChoice {
+  backend: DelegateBackendId;
+  model: string;
+  effort: string;
+}
+
+/** The whole routing (the file's shape). `fallback: null` = none: an unavailable primary makes
+    the orchestrator ask the user rather than pick a model itself. */
+export interface DelegateSettings {
+  version: 1;
+  profiles: Record<DelegateProfileId, { primary: WorkerChoice; fallback: WorkerChoice | null }>;
+}
+
+/** GET /api/settings/delegate. `defaults` is what "Reset to defaults" fills in; `backends[].efforts`
+    is every effort the backend accepts at all (a model may take fewer — see DelegateOptions). */
+export interface DelegateSettingsInfo {
+  settings: DelegateSettings;
+  defaults: DelegateSettings;
+  profiles: { id: DelegateProfileId; label: string; description: string }[];
+  backends: { id: DelegateBackendId; label: string; efforts: string[] }[];
+  /** Absolute path of the file, for the screen's footnote. */
+  file: string;
+}
+
+/** A model a backend offers, with the efforts it takes. `denied`: the model policy keeps it from
+    subagents (shown, still selectable — Delegate then uses the fallback or asks). */
+export interface DelegateModelOption {
+  id: string;
+  name: string;
+  efforts: string[];
+  denied?: string;
+}
+
+/** `models: null` = discovery failed (`error` says why). That is not "offers nothing": saved
+    values stay, unverified. */
+export interface DelegateBackendOptions {
+  id: DelegateBackendId;
+  label: string;
+  models: DelegateModelOption[] | null;
+  error?: string;
+  /** pi only: providers whose models exist per session, not globally (today the Claude Code
+      provider, `claude-code-cli`, registered only in sessions started with it on). A model of one
+      of these that `models` doesn't list is NOT VERIFIED, never "not offered". */
+  sessionScopedProviders?: string[];
+}
+
+export interface DelegateOptions {
+  backends: DelegateBackendOptions[];
+}
+
+/** PUT /api/settings/delegate: what is now stored, plus anything saved that could not be verified
+    or that the policy refuses, one sentence each. */
+export interface DelegateSaveResult extends DelegateSettingsInfo {
+  warnings: string[];
 }
 
 /** Where a switch stands for the one chat it was sent to: "now" = its next message follows it;

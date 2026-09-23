@@ -39,9 +39,6 @@ Rendered: `site/components/select.html`
 <li class="combobox-option" aria-selected="true">src/api/runs.ts</li>
 ```
 
-Every state is rendered together in the site page's state matrix. The `-hover`, `-focus`,
-`-active` and `-disabled` helper classes are **documentation scaffolding only** — production
-code uses the real pseudo-classes.
 
 ## DO / DON'T
 

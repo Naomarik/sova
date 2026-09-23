@@ -29,7 +29,7 @@ never as the sole action on a touch surface.</p>` },
               ['.button-sm / .button-lg','36px / 52px','Label size shifts with it'],
               ['.button-icon','Square 44px','Requires `aria-label`'],
               ['.button-row','Demo helper — wrapping row','Demo only'],
-              ['.button-hover / -focus / -active / -disabled','Static states','**Demo only** — production uses pseudo-classes']],
+              ['.is-hover / .is-focus / .is-active / .is-disabled','Static states on `.button`','**Demo only** — production uses pseudo-classes']],
     tokens: [['--control-sm|md|lg','36 / 44 / 52px heights.'],
              ['--r-md','8px corner.'],
              ['--color-accent / --color-on-accent','Primary fill and its label.'],
@@ -48,7 +48,7 @@ never as the sole action on a touch surface.</p>` },
           ['Keep destructive out of the thumb arc beside primary','one mis-tap on a train should not throw work away']],
     donts: [['Fill a destructive button','it becomes the most inviting target on screen'],
             ['Use `.button-sm` as the only action on a touch surface','36px is below the 44px minimum'],
-            ['Ship the `.button-hover` helpers in production','they are documentation scaffolding; use the real pseudo-classes']],
+            ['Ship the `.is-*` state helpers in production','they are documentation scaffolding; use the real pseudo-classes']],
   },
   {
     slug: 'chip', title: 'Chip',
@@ -90,6 +90,18 @@ never as the sole action on a touch surface.</p>` },
     donts: [['Put a click handler on a chip','if it does something it is a button — use `.button-sm`'],
             ['Invent a sixth status color','four statuses plus accent cover every run state'],
             ['Use a chip as a tag input','that is a combobox']],
+    subsections: [['Status words', `A word that appears on many surfaces takes one chip everywhere, so it cannot be two things. The words and what each means belong to whatever spec defines them; this table assigns only the color. No spec owns these four words yet; the mapping stands for the first surface that uses them.
+
+| Word | Chip | Why this severity |
+|---|---|---|
+| \`available\` | \`.chip-success\` | Working, inside its allowance. |
+| \`degraded\` | \`.chip-info\` | Works now, worse than usual. A caveat, not a wait. |
+| \`rate-limited\` | \`.chip-warn\` | Not right now, and it returns on its own. A wait. |
+| \`quota-exhausted\` | \`.chip-error\` | Not until the allowance resets. A switch. |
+
+**The order follows how far the thing is from doing the work you are about to start** — choose it · choose it knowing that · wait or choose another · choose another. \`degraded\` sits below \`rate-limited\` because a degraded thing answers now and a rate-limited one does not; coloring it higher tells a reader to avoid something that works.
+
+**Severity is not selectability.** The chip is never the reason a row is disabled, so a warn or info chip must not be drawn as one. Every word carries a dot and the word — \`available\` included, because a row with no chip is neither.`]],
   },
   {
     slug: 'input', title: 'Input',
@@ -115,9 +127,9 @@ never as the sole action on a touch surface.</p>` },
       { id: 'states', name: 'States', html: `
 <div class="cluster">
   <input class="input" style="max-width:170px" placeholder="Default">
-  <input class="input input-hover" style="max-width:170px" value="Hover">
-  <input class="input input-focus" style="max-width:170px" value="Focus">
-  <input class="input input-disabled" style="max-width:170px" value="Disabled" disabled>
+  <input class="input is-hover" style="max-width:170px" value="Hover">
+  <input class="input is-focus" style="max-width:170px" value="Focus">
+  <input class="input is-disabled" style="max-width:170px" value="Disabled" disabled>
   <input class="input input-mono" style="max-width:190px" value="run_8f21c4">
 </div>` },
     ],
@@ -130,13 +142,13 @@ never as the sole action on a touch surface.</p>` },
               ['.textarea','Multi-line, vertical resize','Min 88px'],
               ['.input-mono','Mono content','IDs, paths'],
               ['.input-invalid','Error border','Use with `aria-invalid="true"`'],
-              ['.input-hover / -focus / -disabled','Static states','**Demo only**']],
+              ['.is-hover / .is-focus / .is-disabled','Static states on `.input`','**Demo only** — production uses pseudo-classes']],
     tokens: [['--control-md','44px height.'],['--r-md','8px corner.'],
              ['--color-border-strong','Resting border, 3:1.'],
              ['--color-accent','Focused border and ring.'],
              ['--status-error','Invalid border and message.']],
     snippets: [
-      ['Labelled field', `<div class="field">
+      ['Labeled field', `<div class="field">
   <label class="field-label" for="run-name">Run name</label>
   <input class="input" id="run-name" placeholder="Add rate limiting">
   <span class="field-hint">Shown in the queue and in the run log.</span>
@@ -341,7 +353,7 @@ never as the sole action on a touch surface.</p>` },
               ['.rail','Vertical column','768 and up'],
               ['.navitem','44px minimum target','Shared by both'],
               ['.navitem-active','Tinted current item','Pair with `aria-current="page"`'],
-              ['.navitem-label','The label, truncating','Wrap every label. Ellipsises rather than eating the item padding']],
+              ['.navitem-label','The label, truncating','Wrap every label. Truncates with an ellipsis rather than eating the item padding']],
     tokens: [['--tap-min','44px per item.'],
              ['--color-accent-tint / --color-accent','Active fill and label.'],
              ['--bp-unfolded','768px — where the nav moves, from bottom bar to side rail.']],
@@ -356,7 +368,7 @@ never as the sole action on a touch surface.</p>` },
           ['Size the nav by its longest label, not by a count','at 475px five items leave 71px for a label and six leave 55px; `Worktrees` measures 54.6, so six fit and a longer word does not'],
           ['Wrap every label in `.navitem-label`','it truncates a label that will not fit; bare text in a `.navitem` spends the item padding instead and closes the gap to its neighbor']],
     donts: [['Show a rail and a bottom bar together','the user cannot tell which one is authoritative'],
-            ['Hide labels and ship icons alone','an unlabelled icon is a guess'],
+            ['Hide labels and ship icons alone','an unlabeled icon is a guess'],
             ['Put a destructive action in the nav','navigation moves you; it should not change anything']],
   },
   {
@@ -478,7 +490,7 @@ never as the sole action on a touch surface.</p>` },
     classes: [['.toast','Floating strip, `--shadow-2`','Max 420px'],
               ['.toast-body','Message','Grows'],
               ['.toast-action','Trailing action','Usually Undo'],
-              ['.toast-stack','Fixed container','Bottom centre, right from 768']],
+              ['.toast-stack','Fixed container','Bottom center, right from 768']],
     tokens: [['--shadow-2','Elevation.'],
              ['--dur-base','200ms entry.'],
              ['--r-lg','12px corner.']],
@@ -514,7 +526,7 @@ never as the sole action on a touch surface.</p>` },
   <div class="empty-action"><button class="button button-primary">Start A Worker</button></div>
 </div></div>` },
     ],
-    classes: [['.empty','Centred column','`--space-8` vertical padding'],
+    classes: [['.empty','Centered column','`--space-8` vertical padding'],
               ['.empty-mark','Muted glyph or icon','Optional'],
               ['.empty-title','16px semibold','The fact'],
               ['.empty-body','Muted, ≤44ch','What will appear here'],
@@ -619,7 +631,7 @@ never as the sole action on a touch surface.</p>` },
     dos: [['Make the whole row the link','a 44px row with a 20px hit area wastes the row'],
           ['Group rows with `.list-group-label`','"Waiting on you" is the most useful heading in the product'],
           ['Put the machine facts in mono on the meta line','they are scannable exactly because they look different']],
-    donts: [['Put row actions behind hover','they do not exist on the device this product is named for'],
+    donts: [['Put row actions behind hover','a phone has no hover, so they do not exist there'],
             ['Let the title wrap to three lines','truncate; the detail pane has the full text'],
             ['Use a list where a table is right','if you need aligned columns, use the table']],
   },
@@ -676,7 +688,7 @@ that is the <code>&lt;details&gt;</code>, not a handler.</p>` },
           ['Use `<details>` for a branch','it collapses, it announces expanded/collapsed, and it needs no script'],
           ['Truncate the name and keep the row 44px','the full path belongs in the detail view, not in three wrapped lines']],
     donts: [['Use a tree because the layout looks nested','if the nesting is not the data\'s, this is the wrong component'],
-            ['Hide a row\'s only action behind hover','the device this product is named for has no hover'],
+            ['Hide a row\'s only action behind hover','a phone has no hover, so the action does not exist there'],
             ['Indent by margin on the row itself','the target stops starting at the left edge, and depth eats the name']],
   },
   {
@@ -703,7 +715,7 @@ that is the <code>&lt;details&gt;</code>, not a handler.</p>` },
     </tbody>
   </table>
 </div>
-<p class="text-muted">Narrow this page below 768px and the same table becomes stacked rows, labelled from
+<p class="text-muted">Narrow this page below 768px and the same table becomes stacked rows, labeled from
 <code>data-label</code>.</p>` },
     ],
     classes: [['.table-wrap','Scroll container **and** query container','Required around `.table-stack`'],
@@ -841,7 +853,7 @@ track reads as zero — and zero is a measurement.</p>` },
           ['Leave the track `aria-hidden`','the number above it is already the accessible value; the bar would say it twice']],
     donts: [['Ship a bar with no number','it answers "roughly" to a question asked in gigabytes'],
             ['Ship a bar with no denominator','a track with no whole behind it is a picture of nothing — state the number and stop'],
-            ['Colour the fill to mean a status on its own','pair it with the word, per Accessibility'],
+            ['Color the fill to mean a status on its own','pair it with the word, per Accessibility'],
             ['Animate the fill on load','nothing drifts or pulses but the live-run indicator']],
   },
   {
@@ -873,7 +885,7 @@ track reads as zero — and zero is a measurement.</p>` },
 </div>` },
     ],
     classes: [['.scrim','Fixed dim layer','Click closes'],
-              ['.modal','Centred dialog, ≤520px','`--shadow-3`'],
+              ['.modal','Centered dialog, ≤520px','`--shadow-3`'],
               ['.modal-head / -title / -body / -foot','Dialog parts','Foot holds actions'],
               ['.sheet','Bottom sheet, ≤85vh','Folded-width modal'],
               ['.sheet-grip','Drag handle','Affordance only'],
@@ -895,7 +907,7 @@ track reads as zero — and zero is a measurement.</p>` },
 </div>`],
     ],
     dos: [['State what goes away and what does not','the second half is what makes the decision easy'],
-          ['Use a sheet instead of a modal at folded width','the thumb cannot reach a centred dialog'],
+          ['Use a sheet instead of a modal at folded width','the thumb cannot reach a centered dialog'],
           ['Separate destructive popover items with a divider','distance prevents mis-taps']],
     donts: [['Put the only path to an action in a popover','hidden actions do not exist on touch'],
             ['Stack a modal on a modal','close the first; the user has lost the thread by then'],
@@ -924,7 +936,7 @@ track reads as zero — and zero is a measurement.</p>` },
       ['Term with a tooltip', `<span class="tip" tabindex="0" aria-describedby="t-free">free memory<span class="tip-bubble" role="tooltip" id="t-free">Inside this machine's share, latest reading.</span></span>`],
     ],
     dos: [['Keep it to one sentence','a second sentence is a paragraph that found a hiding place'],
-          ['Use `.tip-start` or `.tip-end` on a trigger in a first or last column','a centred bubble on an edge chip is clipped at phone width'],
+          ['Use `.tip-start` or `.tip-end` on a trigger in a first or last column','a centered bubble on an edge chip is clipped at phone width'],
           ['Put the trigger on the term, not on an icon','the word is what the user is unsure of'],
           ['Give the trigger `tabindex="0"` and `aria-describedby`','a tooltip only a mouse can open is a tooltip half the users never see']],
     donts: [['Make a tooltip the only place a fact lives','touch users may never open it; put the fact in the row or on the control'],
@@ -1068,11 +1080,11 @@ track reads as zero — and zero is a measurement.</p>` },
   </div>
 </div>`],
     ],
-    dos: [['Summarise what is being approved','nobody should have to scroll up to remember'],
+    dos: [['Summarize what is being approved','nobody should have to scroll up to remember'],
           ['Keep the spacer between primary and destructive','the gap is the safety mechanism'],
           ['Put the bar in a `.pane`','it measures the pane, so a bar in a 600px pane stays pinned inside a wide window'],
           ['Disable Approve when approval is impossible','and say why in the summary']],
-    donts: [['Put Discard next to Approve','they are the two ends of the decision, not neighbours'],
+    donts: [['Put Discard next to Approve','they are the two ends of the decision, not neighbors'],
             ['Hide the bar on scroll','the decision is the reason the screen exists'],
             ['Use it for navigation','it decides; it does not move you']],
   },

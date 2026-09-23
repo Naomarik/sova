@@ -6,11 +6,12 @@ one panel, wider than the product's question-asking modals because two panes hav
 each other (§0 and §7 record the deviation). There is no route and no URL — Settings is a modal
 the session stays behind, closed by the scrim, Esc, or its Close button.
 
-The rail is the structure: each settings screen is one tab — General, Models, Themes,
+The rail is the structure: each settings screen is one tab — General, Models, Modes, Themes,
 Experimental.
-Tabs move with the arrow keys as well as the pointer, and the first tab has focus on open, which
-is why the first tab in the rail is also the one selected when the dialog opens: the two have to
-name the same screen. The
+Tabs move with the arrow keys as well as the pointer, and the selected tab has focus on open: the
+two have to name the same screen. The gear opens General; the mode menu's **Configure Delegate** gear
+(§4g) opens Modes directly, and nothing else about the chat changes. Which tab is open lives in
+`src/lib/settings-nav.ts`, so a control deep in a pane can open it without a callback chain. The
 active tab is the only filled thing in the rail — an accent tint, never an accent label, because
 §0 spends accent on the primary, live, and focus — and the rail carries no fill of its own, so
 that tint has something to read against in both themes. Under 768px the same markup arrives as a
@@ -110,9 +111,69 @@ the truth, never a local maybe.
 While the model list or the policy loads, the panel shows skeleton rows. If the policy can't be
 read, an error banner offers Retry and touches nothing.
 
+## Modes
+
+The third tab. Today it holds one section, **Delegate**: which worker each kind of Delegate work
+goes to (§4g names the mode; `pi-config/extensions/mode/README.md` owns the behaviour). Normal mode
+has nothing to configure, so it has no section.
+
+Delegate routes four kinds of work, in this order: **Planning & specs** (non-editing design,
+including any investigation that feeds one), **Investigation** (focused read-only research or
+diagnosis), **Routine implementation** (mechanical, low-risk) and **Complex implementation**
+(ambiguous, cross-cutting, high-risk). Each is a `fieldset` with a **Primary** row and an optional
+**Fallback** row; a row is three native selects — Backend (`pi`, `Claude Code`), Model, Effort —
+side by side when the panel has room and stacked under 640px.
+
+- **Choices, not free text.** Models come from what each backend offers
+  (`GET /api/settings/delegate/options`: pi's credentialed models with the thinking levels each
+  supports; the Claude Code CLI's own list with the efforts each reports, from an initialize-only
+  call cached 60s). Effort lists what the chosen model takes.
+- **Nothing is picked for you.** Changing the backend blanks the model and the effort; changing the
+  model keeps the effort only when the new model takes it. A blank row can't be saved.
+- **A stored pick is always shown.** When discovery doesn't list it, it stays in the select with
+  "— not offered" (the backend answered without it; the row says so in error ink) or "— not
+  verified" (the backend couldn't answer; muted). Couldn't-answer is never read as gone: a
+  backend whose discovery fails gets one warn banner with **Check Again** carrying the reason,
+  its rows say only "Not verified: {backend} couldn't list its models.", and saves still go
+  through, with one "not verified" note per backend naming every slot on it.
+- **Efforts.** A model's effort list is what its backend reported, cut to what the backend
+  accepts; a model reporting none usable (no list, an empty one, or only efforts the backend
+  refuses) takes every effort the backend accepts — the same rule Delegate routes by.
+- **Claude Code provider models (pi) are per session.** `claude-code-cli/*` models exist only in
+  sessions started with that provider on, so the server lists what its own runtime holds and
+  reads a missing one as "not verified", never "not offered".
+- **The policy is shown, not enforced here.** A model Settings → Models keeps from subagents reads
+  "— off for subagents" and warns under its row; spawn enforces the policy, and Delegate uses that
+  profile's fallback, or asks.
+- **Fallback** is a toggle. Off: "No fallback: if the primary can't run, the agent asks you which
+  model to use." On: a second row starting blank on the primary's backend. A fallback identical to
+  its primary is refused.
+- **Saving** is explicit — Save Changes (primary, pinned to the trailing edge even when the row
+  wraps), Discard Changes, Reset to Defaults (fills the built-in routing in; it's saved only by
+  Save Changes) — because the routing is one coherent choice across eight rows, not eight
+  switches. Save waits for every row to have a model and an effort, and for no fallback to be its
+  own primary.
+- **Unsaved edits are kept, and never dropped silently.** The draft lives outside the tab
+  (`src/lib/delegate-draft.ts`), so switching to Models and back keeps it. Closing the dialog —
+  Close, Esc, or the scrim — over unsaved Delegate edits brings you back to Modes and holds the
+  close with a warn banner above the foot: **Your Delegate changes aren't saved.** "Save them on
+  this screen, or discard them and close." [Keep Editing] [Discard and Close]. A closed dialog
+  forgets the draft; reopening starts from what's saved. The save replaces the whole file. The server
+  refuses a **changed** row its backend answered it can't run (model not offered, effort not
+  taken) and names it; a row that can't be checked, or that the policy refuses, saves with a warn
+  banner "Saved, with notes." A row left as it was stored never blocks a save.
+
+The file is `~/.pi/agent/mode-delegate.json` (shown in the footnote), global and shared with pi in
+the terminal. Chats already in Delegate — web and TUI — use a save from their next message; chats
+in normal mode never read it, and no chat keeps a copy of it.
+
+Defaults (Reset to Defaults): Planning & specs Claude Code `claude-fable-5-1[1m]` medium, fallback
+`opus[1m]` high; Investigation `opus[1m]` low; Routine `opus[1m]` low; Complex `opus[1m]` medium;
+no fallbacks but Planning's.
+
 ## Themes
 
-The third tab. It lists every theme the app can find — the ones shipped with it and the ones
+The fourth tab. It lists every theme the app can find — the ones shipped with it and the ones
 you dropped in yourself — as a radiogroup of **cards in a grid**, one of them checked. The grid
 follows the panel's width: 3 cards across at the unfolded panel, 2 in the folded sheet, so 18
 themes are 6 rows rather than 18 and the footer is a screen away instead of a page. Arrow keys

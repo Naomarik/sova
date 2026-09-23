@@ -10,7 +10,7 @@ Rendered: `site/components/empty.html`
 
 | Class | Role | Notes |
 |---|---|---|
-| `.empty` | Centred column | `--space-8` vertical padding |
+| `.empty` | Centered column | `--space-8` vertical padding |
 | `.empty-mark` | Muted glyph or icon | Optional |
 | `.empty-title` | 16px semibold | The fact |
 | `.empty-body` | Muted, ≤44ch | What will appear here |
@@ -32,9 +32,6 @@ Rendered: `site/components/empty.html`
 </div>
 ```
 
-Every state is rendered together in the site page's state matrix. The `-hover`, `-focus`,
-`-active` and `-disabled` helper classes are **documentation scaffolding only** — production
-code uses the real pseudo-classes.
 
 ## DO / DON'T
 

@@ -39,15 +39,12 @@ Rendered: `site/components/list.html`
 </a>
 ```
 
-Every state is rendered together in the site page's state matrix. The `-hover`, `-focus`,
-`-active` and `-disabled` helper classes are **documentation scaffolding only** — production
-code uses the real pseudo-classes.
 
 ## DO / DON'T
 
 - **DO** Make the whole row the link — a 44px row with a 20px hit area wastes the row.
 - **DO** Group rows with `.list-group-label` — "Waiting on you" is the most useful heading in the product.
 - **DO** Put the machine facts in mono on the meta line — they are scannable exactly because they look different.
-- **DON'T** Put row actions behind hover — they do not exist on the device this product is named for.
+- **DON'T** Put row actions behind hover — a phone has no hover, so they do not exist there.
 - **DON'T** Let the title wrap to three lines — truncate; the detail pane has the full text.
 - **DON'T** Use a list where a table is right — if you need aligned columns, use the table.

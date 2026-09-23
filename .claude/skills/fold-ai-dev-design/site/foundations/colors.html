@@ -136,6 +136,38 @@
   <div class="banner banner-error"><span class="banner-icon">×</span><div><p class="banner-title">This run failed at step 4 and stopped.</p><p class="banner-body">Nothing was merged.</p></div></div>
 </div></div>
       </section>
+      <section class="docs-section" id="spec">
+        <h2 class="docs-h2">Scale &amp; spec</h2>
+        <div class="table-wrap"><table class="table">
+          <thead><tr><th>Token</th><th>Role</th><th>Light</th><th>Dark</th><th>Lowest contrast, light · dark</th></tr></thead>
+          <tbody>
+          <tr><td class="text-mono"><code>--color-accent</code></td><td>Primary action, live run, links, focus ring</td><td><code>#4A43D8</code></td><td><code>#8E88FF</code></td><td>5.63 on sunken · 4.67 on surface</td></tr>
+          <tr><td class="text-mono"><code>--color-accent-hover</code></td><td>Hovered and pressed accent</td><td><code>#3A34B4</code></td><td><code>#A6A1FF</code></td><td>—</td></tr>
+          <tr><td class="text-mono"><code>--color-accent-tint</code></td><td>Selected rows, active nav, user bubbles</td><td><code>#E8E6FA</code></td><td><code>#2B2650</code></td><td>—</td></tr>
+          <tr><td class="text-mono"><code>--color-on-accent</code></td><td>Text on a filled accent</td><td><code>#FFFFFF</code></td><td><code>#1E1E26</code></td><td>—</td></tr>
+          <tr><td class="text-mono"><code>--color-ink</code></td><td>Body text, headings</td><td><code>#17171C</code></td><td><code>#F2F2F6</code></td><td>14.78 on sunken · 12.34 on surface</td></tr>
+          <tr><td class="text-mono"><code>--color-ink-2</code></td><td>Secondary prose</td><td><code>#4A4A57</code></td><td><code>#B8B8C6</code></td><td>7.22 on sunken · 7.03 on surface</td></tr>
+          <tr><td class="text-mono"><code>--color-ink-muted</code></td><td>Metadata, captions, placeholders</td><td><code>#656572</code></td><td><code>#9A9AA8</code></td><td>4.75 on sunken · 4.96 on surface</td></tr>
+          <tr><td class="text-mono"><code>--color-bg</code></td><td>Page (paper)</td><td><code>#F2F2F7</code></td><td><code>#1E1E26</code></td><td>—</td></tr>
+          <tr><td class="text-mono"><code>--color-surface</code></td><td>Cards, sheets, raised things</td><td><code>#FFFFFF</code></td><td><code>#2C2C38</code></td><td>—</td></tr>
+          <tr><td class="text-mono"><code>--color-sunken</code></td><td>Headers, gutters, hover fills</td><td><code>#E9E9F0</code></td><td><code>#26262F</code></td><td>—</td></tr>
+          <tr><td class="text-mono"><code>--color-border</code></td><td>Dividers — decorative, never the only signal</td><td><code>#E3E3E9</code></td><td><code>#3B3B49</code></td><td>—</td></tr>
+          <tr><td class="text-mono"><code>--color-border-strong</code></td><td>Control borders</td><td><code>#86868F</code></td><td><code>#7E7E93</code></td><td>2.99 on sunken · 3.47 on surface</td></tr>
+          <tr><td class="text-mono"><code>--status-success</code></td><td>Success text, dot, and border</td><td><code>#15704A</code></td><td><code>#4FC98D</code></td><td>5.04 on sunken · 6.61 on surface</td></tr>
+          <tr><td class="text-mono"><code>--status-success-bg</code></td><td>Soft success fill for banners and chips — never text</td><td><code>#E7F4ED</code></td><td><code>#1B4936</code></td><td>—</td></tr>
+          <tr><td class="text-mono"><code>--status-warn</code></td><td>Warn text, dot, and border</td><td><code>#8A5A00</code></td><td><code>#E3A63A</code></td><td>4.90 on sunken · 6.42 on surface</td></tr>
+          <tr><td class="text-mono"><code>--status-warn-bg</code></td><td>Soft warn fill for banners and chips — never text</td><td><code>#FBF1DE</code></td><td><code>#45351C</code></td><td>—</td></tr>
+          <tr><td class="text-mono"><code>--status-error</code></td><td>Error text, dot, and border</td><td><code>#B8302B</code></td><td><code>#FF7A70</code></td><td>4.97 on sunken · 5.42 on surface</td></tr>
+          <tr><td class="text-mono"><code>--status-error-bg</code></td><td>Soft error fill for banners and chips — never text</td><td><code>#FBEAE9</code></td><td><code>#4E2823</code></td><td>—</td></tr>
+          <tr><td class="text-mono"><code>--status-info</code></td><td>Info text, dot, and border</td><td><code>#2A5FA8</code></td><td><code>#78ADF2</code></td><td>5.27 on sunken · 5.94 on surface</td></tr>
+          <tr><td class="text-mono"><code>--status-info-bg</code></td><td>Soft info fill for banners and chips — never text</td><td><code>#E9F0FA</code></td><td><code>#1F3555</code></td><td>—</td></tr>
+          </tbody>
+        </table></div>
+        <p class="measure"><b>Contrast is measured against paper, surface and sunken, and the column shows the lowest of the three.</b> Text needs 4.5 and UI boundaries 3.0 (WCAG 2.x). Every text token clears 4.5 on every ground in both themes; the tightest text pair is <code>--color-accent</code> on surface in dark.</p>
+        <p class="measure"><b>One boundary reads under 3.0:</b> <code>--color-border-strong</code> against light sunken, 2.99. A control that sits on a sunken fill (a filter bar) carries its own surface fill, and its border against that fill is 3.61 — so the border never has to separate a control from sunken on its own.</p>
+        <p class="measure"><b>Muted text is a discrete token, never an alpha of ink.</b> An alpha has a different ratio on every surface it lands on, so it cannot be measured; a token can.</p>
+        <p class="measure"><b>A status hue on its own soft fill is measured too</b> — the lowest of the eight is <code>--status-success</code> on its soft fill, dark, 4.91. The fills are for banners and chips only, never text of another color.</p>
+      </section>
       <section class="docs-section" id="styles">
         <h2 class="docs-h2">Styles</h2>
         <div class="table-wrap"><table class="table">

@@ -174,6 +174,8 @@ export interface RunResult {
   stderr: string;
   timedOut: boolean;
   spawnError?: string;
+  /** stdout reached MAX_OUTPUT bytes and the rest was dropped. */
+  stdoutTruncated?: true;
 }
 
 /**
@@ -182,8 +184,13 @@ export interface RunResult {
  */
 export function runArgv(argv: readonly string[], timeoutMs = REMOTE_TIMEOUT_MS): Promise<RunResult> {
   return new Promise((resolve) => {
-    let stdout = "";
-    let stderr = "";
+    // Bytes, capped before storing and decoded once at the end: a character split across two
+    // chunks survives (per-chunk decoding turned it into U+FFFD), and the cap is a real byte bound.
+    const out: Buffer[] = [];
+    const err: Buffer[] = [];
+    let outBytes = 0;
+    let errBytes = 0;
+    let stdoutTruncated = false;
     let timedOut = false;
     let settled = false;
     let timer: NodeJS.Timeout | undefined;
@@ -191,7 +198,9 @@ export function runArgv(argv: readonly string[], timeoutMs = REMOTE_TIMEOUT_MS):
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      resolve({ ...r, stdout, stderr, timedOut });
+      const stdout = Buffer.concat(out).toString("utf8");
+      const stderr = Buffer.concat(err).toString("utf8");
+      resolve({ ...r, stdout, stderr, timedOut, ...(stdoutTruncated ? { stdoutTruncated: true as const } : {}) });
     };
     const [cmd, ...args] = argv;
     if (!cmd) return done({ code: null, spawnError: "empty command" });
@@ -207,10 +216,19 @@ export function runArgv(argv: readonly string[], timeoutMs = REMOTE_TIMEOUT_MS):
       setTimeout(() => done({ code: null }), 500);
     }, timeoutMs);
     child.stdout.on("data", (b: Buffer) => {
-      if (stdout.length < MAX_OUTPUT) stdout += b.toString("utf8");
+      const room = MAX_OUTPUT - outBytes;
+      if (b.length > room) stdoutTruncated = true;
+      if (room <= 0) return;
+      const kept = b.length > room ? b.subarray(0, room) : b;
+      out.push(kept);
+      outBytes += kept.length;
     });
     child.stderr.on("data", (b: Buffer) => {
-      if (stderr.length < MAX_OUTPUT) stderr += b.toString("utf8");
+      const room = MAX_OUTPUT - errBytes;
+      if (room <= 0) return;
+      const kept = b.length > room ? b.subarray(0, room) : b;
+      err.push(kept);
+      errBytes += kept.length;
     });
     child.on("error", (err) => done({ code: null, spawnError: err.message }));
     child.on("exit", (code) => setTimeout(() => done({ code: timedOut ? null : code }), 1000));
@@ -230,6 +248,32 @@ export function classifyFailure(r: RunResult): { status: "offline" | "error"; er
       .filter(Boolean)
       .pop() ?? "";
   return { status: r.code === 255 ? "offline" : "error", error: last || `exited with code ${r.code}` };
+}
+
+export type TargetRunResult = { ok: true; run: RunResult } | { ok: false; status: 404 | 502; error: string };
+
+/**
+ * Run far shell code on a named target, in `remoteCwd` (a REMOTE absolute path): the builder
+ * composes the argv and quotes the cwd (`cd -- '<cwd>' || exit 1` ahead of `command`), runArgv
+ * bounds the run. The caller reads the RunResult (classifyFailure turns a failed one into words).
+ * A run the target didn't answer updates the probe cache, as the folder browser does. Never throws.
+ */
+export async function runOnTarget(name: string, command: string, remoteCwd: string, timeoutMs = REMOTE_TIMEOUT_MS): Promise<TargetRunResult> {
+  const { targets } = loadTargets();
+  const target = isTargetName(name) ? targets.find((t) => t.name === name) : undefined;
+  if (!target) return { ok: false, status: 404, error: `Unknown target: ${name}` };
+  const cwd = normalizeRemotePath(remoteCwd);
+  if (!cwd) return { ok: false, status: 502, error: `${name}: remote cwd must be an absolute path` };
+  let argv: string[];
+  try {
+    argv = buildTargetArgv(target, { command, cwd, registry: targets });
+  } catch (err) {
+    return { ok: false, status: 502, error: `${target.name}: ${(err as Error).message}` };
+  }
+  const run = await runArgv(argv, timeoutMs);
+  const fail = classifyFailure(run);
+  if (fail?.status === "offline") probes.set(probeKey(target, targets), { ...fail, at: Date.now() });
+  return { ok: true, run };
 }
 
 // ---------------------------------------------------------------------------

@@ -133,3 +133,10 @@ test("Recent narrows with whatever the caller already filtered", () => {
   // And the caller's array is not the one that got sorted.
   assert.deepEqual(ids(all), ["keep", "drop"]);
 });
+
+test("Recent never lists a worker session, even when handed the whole list", () => {
+  assert.equal(recentEligible({ archived: false, workerSession: true }), false);
+  const worker = { ...session({ id: "w", lastActiveAt: "2026-03-09T00:00:00Z" }), workerSession: true as const };
+  const main = session({ id: "m", lastActiveAt: "2026-03-01T00:00:00Z" });
+  assert.deepEqual(recentSessions([worker, main], 5).map((s) => s.id), ["m"]);
+});

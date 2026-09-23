@@ -8,7 +8,7 @@
 // (resolveSessionPath); these tests call cleanupSessions directly, which re-validates the same way.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
@@ -20,7 +20,7 @@ const liveDir = join(agentDir, "sessions", "live");
 mkdirSync(sessionsDir, { recursive: true });
 mkdirSync(liveDir, { recursive: true });
 
-const { archiveSession, cleanupSessions, idOf } = await import("./sessions-index");
+const { archiveSession, cleanupSessions, getSessionSummary, idOf, listSessions } = await import("./sessions-index");
 const { isArchived, setArchived } = await import("./archived-sessions");
 const { addWebSession, isWebSession } = await import("./web-sessions");
 const { setDraft } = await import("./drafts");
@@ -234,4 +234,22 @@ test("archive: a husk this server didn't spawn is still refused, never deleted",
 
   assert.equal(r.ok, false);
   assert.ok(existsSync(path), "an external session file is never touched");
+});
+test("workerSession: a file its owner names as a worker is flagged in the list and the single summary; the owner is not", async () => {
+  const ID_W = "01234567-89ab-7cde-8f01-2345678900a1";
+  const ID_O = "01234567-89ab-7cde-8f01-2345678900a2";
+  const worker = session(ID_W, "worker task");
+  const owner = session(ID_O, "owner thread");
+  const registry = JSON.stringify({ type: "custom", customType: "subagents-worker-registry", data: { v: 1, backendSessionId: ID_W } });
+  appendFileSync(owner, `${registry}\n`);
+
+  const byId = new Map((await listSessions()).map((s) => [s.id, s]));
+  assert.equal(byId.get(ID_W)?.workerSession, true);
+  assert.equal(byId.get(ID_O)?.workerSession, undefined);
+  assert.equal((await getSessionSummary(worker))?.workerSession, true);
+  assert.equal((await getSessionSummary(owner))?.workerSession, undefined);
+
+  // The flag is recomputed per listing: once the owner is gone, nothing names the worker.
+  rmSync(owner);
+  assert.equal((await listSessions()).find((s) => s.id === ID_W)?.workerSession, undefined);
 });

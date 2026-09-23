@@ -40,6 +40,8 @@ export function SessionInfoDialog(props: {
   const [fetchedAt, setFetchedAt] = createSignal(0);
   const [now, setNow] = createSignal(Date.now());
   const [slow, setSlow] = createSignal(false);
+  /** Bumped by Refresh: the Repository section reads git again with the insight. */
+  const [gitRefresh, setGitRefresh] = createSignal(0);
 
   // The dialog is mounted while it's open, so mounting IS opening: reopening refetches, and a
   // path that changes under an open dialog (never today) would too.
@@ -111,6 +113,7 @@ export function SessionInfoDialog(props: {
             now={now()}
             onArchiveChanged={props.onArchiveChanged}
             onGroupsChanged={props.onGroupsChanged}
+            gitRefresh={gitRefresh()}
           />
         </div>
 
@@ -119,7 +122,15 @@ export function SessionInfoDialog(props: {
             <span class="text-caption text-muted">Refreshed {relativeTime(new Date(fetchedAt()).toISOString(), now())}</span>
           </Show>
           <span class="modal-spacer" />
-          <button type="button" class="button button-ghost" onClick={() => void load()} aria-disabled={loading() ? "true" : undefined}>
+          <button
+            type="button"
+            class="button button-ghost"
+            onClick={() => {
+              void load();
+              setGitRefresh((n) => n + 1);
+            }}
+            aria-disabled={loading() ? "true" : undefined}
+          >
             Refresh
           </button>
           <button type="button" class="button" onClick={close}>

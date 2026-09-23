@@ -35,7 +35,9 @@ unfolded (≥768)                                  folded (<768)
   is window chrome, so it uses `@media` rather than a container query, the same reasoning the
   skill gives for `.toast-stack`.
 - **Scrolling.** The session list and the transcript each carry `.pane`, so each is an
-  independent scroll region. The page itself never scrolls.
+  independent scroll region. The page itself never scrolls. `.app` is `overflow: clip` and
+  `position: relative` at every width, so nothing absolutely positioned inside it (screen-reader
+  text included) can extend the document past the window.
 - **Routing.** Keep the selected session in the URL, e.g. `#/s/<encodeURIComponent(path)>`. That
   way reload and back work, and the folded back button is `history.back()` or a link to `#/`.
   The other routes follow the same rule: `#/usage` and `#/agents` (§10), and a group opened as a
@@ -165,8 +167,9 @@ ghost:
 ## Resizing the sessions pane
 
 The divider between the two columns is draggable. `.pane-resizer` is a child of `.app` (the
-sidebar is `overflow: hidden` and would clip it), absolutely positioned — which is why `.app`
-takes `position: relative` from 768px up — and it writes `--sidebar-width` on
+sidebar is `overflow: hidden` and would clip it), absolutely positioned against `.app`, which is `position: relative` at every
+width (folded too: without it, absolutely positioned `.visually-hidden` text deep in a long
+sidebar list escapes `.app`'s clip and makes the document scroll) — and it writes `--sidebar-width` on
 `document.documentElement`.
 
 - **An invisible 12px hit strip.** `left: var(--sidebar-width)` with `margin-left: -6px`, so it

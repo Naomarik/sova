@@ -47,9 +47,6 @@ Rendered: `site/components/meter.html`
 <div class="meter meter-ghost">…<div class="meter-track" aria-hidden="true"></div></div>
 ```
 
-Every state is rendered together in the site page's state matrix. The `-hover`, `-focus`,
-`-active` and `-disabled` helper classes are **documentation scaffolding only** — production
-code uses the real pseudo-classes.
 
 ## DO / DON'T
 
@@ -58,5 +55,5 @@ code uses the real pseudo-classes.
 - **DO** Leave the track `aria-hidden` — the number above it is already the accessible value; the bar would say it twice.
 - **DON'T** Ship a bar with no number — it answers "roughly" to a question asked in gigabytes.
 - **DON'T** Ship a bar with no denominator — a track with no whole behind it is a picture of nothing — state the number and stop.
-- **DON'T** Colour the fill to mean a status on its own — pair it with the word, per Accessibility.
+- **DON'T** Color the fill to mean a status on its own — pair it with the word, per Accessibility.
 - **DON'T** Animate the fill on load — nothing drifts or pulses but the live-run indicator.

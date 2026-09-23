@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { SessionSummary } from "../../shared/protocol";
-import { isTopSession } from "./regions";
+import { isMainThread, isTopSession } from "./regions";
 
 const live: SessionSummary["live"] = { pid: 1, status: "idle" };
 const row = (over: Partial<SessionSummary>) =>
@@ -25,4 +25,10 @@ test("external sessions go to the archive", () => {
 test("fields missing from older servers count as external and not archived", () => {
   assert.equal(isTopSession({ live: null } as Pick<SessionSummary, "live" | "origin" | "archived">), false);
   assert.equal(isTopSession({ live: null, origin: "web" } as Pick<SessionSummary, "live" | "origin" | "archived">), true);
+});
+
+test("a worker session is not a main thread; an unmarked one (older server) is", () => {
+  assert.equal(isMainThread({}), true);
+  assert.equal(isMainThread({ workerSession: undefined }), true);
+  assert.equal(isMainThread({ workerSession: true }), false);
 });

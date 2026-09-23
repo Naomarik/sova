@@ -1,6 +1,6 @@
 /* =============================================================================
    Fold AI Dev — tokens.css
-   Portable AI dev. Every design decision in the system, as a custom property.
+   Every design decision in the system, as a custom property.
 
    This is the ONLY file in the skill permitted to contain raw hex values.
    Components consume semantic aliases (--color-*), never brand primitives.
@@ -17,14 +17,15 @@
 /* -----------------------------------------------------------------------------
    1 · FONTS
    Both faces are variable, latin subset, shipped locally in fonts/.
-   Licence: SIL Open Font Licence 1.1 — redistribution permitted. See README §9.
+   License: SIL Open Font License 1.1 — redistribution permitted; the texts ship
+   beside the fonts. See SKILL.md → Licensing.
    Offline-safe: no CDN, no network dependency.
    -------------------------------------------------------------------------- */
 
 @font-face {
   font-family: "Inter";
   src: url("fonts/Inter-Variable.woff2") format("woff2");
-  font-weight: 100 900;          /* variable range; the system permits 400–700 */
+  font-weight: 100 900;          /* variable range; the system permits 400–640 */
   font-style: normal;
   font-display: swap;
 }
@@ -45,7 +46,7 @@
    -------------------------------------------------------------------------- */
 
 :root {
-  /* Fold Indigo — the one saturated colour in the system.
+  /* Fold Indigo — the one saturated color in the system.
      Two values, because #4A43D8 goes muddy on near-black.
      Usage ratio across any composition: 60 paper / 25 ink / 10 tint / 5 accent.
      That last 5% is the primary action and the live-run indicator, nothing else. */
@@ -62,8 +63,8 @@
      cards on it reads as one flat sheet, and every card edge has to be drawn
      by a border that isn't there in a screenshot.
 
-     Dark paper is a DARK GREY, not a near-black. This product is read at 02:00
-     on a folding phone, and a page pinned to the bottom of the range drags the
+     Dark paper is a DARK GRAY, not a near-black. A page pinned to the bottom
+     of the range drags the
      surfaces, borders and muted labels down with it — the screen stops looking
      designed and starts looking switched off. Lightness ladder, in L*:
        paper 11.6 · sunken 15.5 · surface 18.5 · border 25.4 */
@@ -85,7 +86,7 @@
   --brand-line-dk:       #3B3B49;
   --brand-line-strong-dk:#7E7E93;
 
-  /* Status — harmonised with the palette, tuned per theme for AA. */
+  /* Status — harmonized with the palette, tuned per theme for AA. */
   --brand-success:    #15704A;
   --brand-warn:       #8A5A00;
   --brand-error:      #B8302B;
@@ -108,7 +109,7 @@
 
 
 /* -----------------------------------------------------------------------------
-   3 · SEMANTIC COLOUR — LIGHT
+   3 · SEMANTIC COLOR — LIGHT
    Components consume only these. Both themes define the same names.
    Muted ink is a discrete token, not an alpha of ink: alpha over an unknown
    surface loses contrast unpredictably, and a token can be measured.
@@ -145,7 +146,7 @@
   --diff-del-ink:   #B8302B;
   --diff-gutter:    var(--brand-sunken);
 
-  /* Elevation — neutral black only. No tinted shadows (README §4). */
+  /* Elevation — neutral black only. No tinted shadows (SKILL.md → Color, never-rules). */
   --shadow-1: 0 1px 2px rgba(23, 23, 28, .06);
   --shadow-2: 0 1px 2px rgba(23, 23, 28, .06), 0 8px 24px -12px rgba(23, 23, 28, .18);
   --shadow-3: 0 2px 4px rgba(23, 23, 28, .08), 0 18px 44px -16px rgba(23, 23, 28, .26);
@@ -155,7 +156,7 @@
 
 
 /* -----------------------------------------------------------------------------
-   4 · SEMANTIC COLOUR — DARK
+   4 · SEMANTIC COLOR — DARK
    Dark is not inverted light. Two rules that are easy to get wrong:
      · The accent LIFTS (#4A43D8 → #8E88FF). The light value fails on near-black.
      · Elevation is carried by SURFACE LIGHTNESS, not a heavier shadow — a black
@@ -306,7 +307,7 @@
 /* -----------------------------------------------------------------------------
    6 · SPACE, SHAPE, STROKE
    Base unit 4px. Product surfaces live in space-2…space-5; space-7 and up
-   belong to marketing pages. Compact ops tool, not a reading environment.
+   appear only where there is one idea on the screen, such as an empty state.
    -------------------------------------------------------------------------- */
 
 :root {
@@ -365,32 +366,22 @@
        unfolded  ≥ 768      sidebar left, main pane right
        desktop   ≥ 1120     three panes
 
-     **The bands are the device, not a screen-size ladder.** This product is
-     designed first for a folded phone, so the one threshold that matters is
-     the one the phone itself crosses: the Galaxy Z Fold8 reports ~475 CSS px
-     folded and ~933 unfolded (landscape-first), and 768 is what separates them.
-     A number chosen for any other reason is a number no hardware ever lands on.
-
-     `--bp-tablet` is retired. It was 768 — the same threshold this now names —
-     and a tablet at 1024 gets the unfolded composition because at that width
-     the composition is the same. Two names for one line meant prose could put
-     the side rail in either band.
-
-     @container, not @media: a pane can be at folded width inside a desktop
-     window, and it should look like it. As of 1.6.0 the system's own responsive
-     components follow this — `.table-stack` asks its `.table-wrap`,
-     `.diff-split` asks its `.diff`, `.approvalbar` asks its `.pane`. The only
-     width-based @media left in fold-ai-dev.css are `.toast-stack`, which is
-     window chrome and means the window, and the floor under `.table-stack`,
-     which is explained where it is written. */
+     768 is the only width the stylesheet branches on; there is no tablet
+     band. Components ask their own box with @container, not the window with
+     @media: `.table-stack` asks its `.table-wrap`, `.diff-split` its `.diff`,
+     `.approvalbar` its `.pane`. The only width-based @media left in
+     fold-ai-dev.css are `.toast-stack`, which is window chrome and means the
+     window, the floor under `.table-stack`, and the tooltip's folded strip —
+     each explained where it is written. */
   --bp-unfolded:  768px;
   --bp-desktop:  1120px;
   --page-max:    1280px;
   --measure:       72ch;
 }
 
-/* Nothing loops, drifts or pulses — except one live-run indicator. Under
-   reduced-motion even that stops. Opacity fades survive: they carry meaning. */
+/* Nothing loops, drifts or pulses — except the live-run indicator and the
+   skeleton sweep. Under reduced-motion both stop, and every transition —
+   opacity fades included — lands near-instantly. */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -406,7 +397,7 @@
 /* -----------------------------------------------------------------------------
    8 · ELEMENT DEFAULTS
    A bare page with only tokens.css linked already looks like Fold AI Dev.
-   Document language is en-US (see README §3 for the grammar rules).
+   Document language is en-US (SKILL.md → Voice → Grammar).
    -------------------------------------------------------------------------- */
 
 /* Border-box everywhere. Without it, any padded control set to width:100%
@@ -449,13 +440,10 @@ h3 { font-size: var(--fs-heading-m);  line-height: var(--lh-heading-m);
 h4 { font-size: var(--fs-heading-s);  line-height: var(--lh-heading-s);
      letter-spacing: -.01em;           font-weight: var(--fw-semibold); }
 
-/* Margin only. The 72ch measure moved to `.prose` and `.measure` in
-   fold-ai-dev.css at 1.6.0, because as an element default it was silently wrong
-   far more often than it was right: this is a dense ops UI, `<p>` is the correct
-   element for a one-line status strip, and a strip capped at 72ch stops short
-   while still rendering, so the mistake is invisible. Every consumer had already
-   voted — 12 of 16 screens in one kit run and the prototype hub itself carried a
-   `max-width: none` to undo it. Opt in where there is running text to read. */
+/* Margin only. The 72ch measure is opt-in via `.prose` and `.measure` in
+   fold-ai-dev.css: `<p>` is the right element for a one-line status strip as
+   often as for prose, and a strip capped at 72ch stops short while still
+   rendering, so the mistake is invisible. Opt in where there is running text. */
 p { margin: 0 0 var(--space-4); }
 
 a {
@@ -485,7 +473,7 @@ hr {
   color: var(--color-on-accent);
 }
 
-/* Never removed, never replaced by a colour change alone. */
+/* Never removed, never replaced by a color change alone. */
 :focus-visible {
   outline: var(--focus-ring);
   outline-offset: var(--focus-offset);

@@ -43,9 +43,21 @@ Rendered: `site/components/chip.html`
 <span class="chip chip-count">7</span>
 ```
 
-Every state is rendered together in the site page's state matrix. The `-hover`, `-focus`,
-`-active` and `-disabled` helper classes are **documentation scaffolding only** — production
-code uses the real pseudo-classes.
+
+### Status words
+
+A word that appears on many surfaces takes one chip everywhere, so it cannot be two things. The words and what each means belong to whatever spec defines them; this table assigns only the color. No spec owns these four words yet; the mapping stands for the first surface that uses them.
+
+| Word | Chip | Why this severity |
+|---|---|---|
+| `available` | `.chip-success` | Working, inside its allowance. |
+| `degraded` | `.chip-info` | Works now, worse than usual. A caveat, not a wait. |
+| `rate-limited` | `.chip-warn` | Not right now, and it returns on its own. A wait. |
+| `quota-exhausted` | `.chip-error` | Not until the allowance resets. A switch. |
+
+**The order follows how far the thing is from doing the work you are about to start** — choose it · choose it knowing that · wait or choose another · choose another. `degraded` sits below `rate-limited` because a degraded thing answers now and a rate-limited one does not; coloring it higher tells a reader to avoid something that works.
+
+**Severity is not selectability.** The chip is never the reason a row is disabled, so a warn or info chip must not be drawn as one. Every word carries a dot and the word — `available` included, because a row with no chip is neither.
 
 ## DO / DON'T
 

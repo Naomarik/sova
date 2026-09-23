@@ -842,7 +842,7 @@ function toggleRow(id, label, { on = false, fail } = {}) {
 function modeCategory(rows) {
   return { id: 'mode', label: 'Mode', children: [
     { id: 'mode:normal', label: '✓ normal', description: 'Pi as usual', run() {} },
-    { id: 'mode:claude-heavy', label: '  claude-heavy', run() {} }, ...rows] };
+    { id: 'mode:delegate', label: '  delegate', run() {} }, ...rows] };
 }
 const rowLine = (p, text) => screen(p).split('\n').find(line => line.includes(text));
 test('toggle rows: Enter flips in place, keeps selection and query, never closes', () => {

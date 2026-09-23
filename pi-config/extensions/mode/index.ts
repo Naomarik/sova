@@ -1,11 +1,13 @@
 /**
- * Mode switcher: normal ↔ claude-heavy, plus independently toggleable minor modes.
+ * Mode switcher: normal ↔ delegate, plus independently toggleable minor modes.
  *
- * claude-heavy re-instructs the main agent (per turn, in before_agent_start) to
- * act as a pure orchestrator: coding implementation goes to Claude Code workers
- * on opus[1m] (low effort for mechanical work, medium where precision matters),
- * planning goes to claude-fable-5-1[1m] at medium, falling back to opus[1m]/high
- * when the planner model is not offered. See prompt.ts for the full text.
+ * delegate (called claude-heavy until 2026-09; that name is still read everywhere) re-instructs
+ * the main agent (per turn, in before_agent_start) to act as a pure orchestrator that routes work
+ * to background workers by four profiles — Planning & specs, Investigation, Routine and Complex
+ * implementation — each a configurable backend · model · effort with an optional fallback
+ * (delegate.ts, ~/.pi/agent/mode-delegate.json, re-read at every turn boundary). routing.ts
+ * decides which tuple each profile uses from discovery and the model policy; prompt.ts holds the
+ * text.
  *
  * Minor modes (minor.ts) are extra prompt biases on top of either major mode;
  * "align" makes the agent agree on what to build before building it, and its
@@ -21,7 +23,8 @@
  * every "mode" transcript entry, so it restores on /resume, /reload, /fork and /tree and
  * never leaks into another session. ~/.pi/agent/mode.json holds the shortcuts and the
  * default a new session starts from; `/mode default` (and the palette's "save as default")
- * is the only thing here that writes it.
+ * is the only thing here that writes it. The Delegate routing is global and never snapshotted:
+ * nothing here writes mode-delegate.json (Sova's Settings → Modes → Delegate does).
  */
 import {
 	CONFIG_DIR_NAME,
@@ -48,18 +51,22 @@ import {
 	type AlignEntryData,
 } from "./align.ts";
 import { ALIGN_OVERLAY_OPTIONS, alignWidget, createAlignViewer, type AlignViewer } from "./align-ui.ts";
+import { policyDenial, readPolicy } from "../subagents/policy.ts";
+import { DELEGATE_FILE_NAME, DELEGATE_PROFILE_INFO, DELEGATE_PROFILES, delegateKey, delegateReader, type DelegateBackend } from "./delegate.ts";
+import { WorkerProbe } from "./discovery.ts";
 import { isMinorMode, MINOR_MODES, parseMinorFlag, type MinorMode } from "./minor.ts";
 import { MODE_CATEGORY_ID, modeCategoryItems } from "./palette.ts";
-import { PlannerProbe } from "./planner.ts";
-import { applyModeSection, composePrompt, PLANNER_PRIMARY, statusLabel, type PlannerChoice } from "./prompt.ts";
+import { applyModeSection, composePrompt, DEFAULT_ROUTES, statusLabel } from "./prompt.ts";
+import { backendsOf, describeChoice, routeAll, routeNotice, type Discovery, type ProfileRoute } from "./routing.ts";
 import {
 	activeOf,
 	DEFAULT_ALIGN_VIEWER_SHORTCUT,
 	DEFAULT_MODE_SHORTCUT,
 	hasMinor,
-	isMode,
 	loadState,
 	MODE_ENTRY_TYPE,
+	MODES,
+	parseMode,
 	restoreActive,
 	saveState,
 	toggleMode,
@@ -70,8 +77,20 @@ import {
 } from "./state.ts";
 
 const STATE_FILE = join(getAgentDir(), "mode.json");
+const DELEGATE_FILE = join(getAgentDir(), DELEGATE_FILE_NAME);
 
-/** Tools removed from the orchestrator while strict claude-heavy is on. */
+/**
+ * How long one backend's discovery stands before a Delegate turn refreshes it in the background:
+ * a model list for 10 minutes; a failed discovery (CLI missing, timed out) for 1 minute, so a fix
+ * shows up soon without spawning the CLI every turn; a backend that wasn't loaded is asked again
+ * at the very next turn — asking costs one event, no process.
+ */
+const DISCOVERY_TTL_MS = { models: 10 * 60 * 1000, error: 60 * 1000, missing: 0 } as const;
+
+const discoveryTtl = (discovery: Discovery): number =>
+	"models" in discovery ? DISCOVERY_TTL_MS.models : discovery.missing ? DISCOVERY_TTL_MS.missing : DISCOVERY_TTL_MS.error;
+
+/** Tools removed from the orchestrator while strict delegate is on. */
 const STRICT_REMOVED_TOOLS = new Set(["edit", "write"]);
 
 /** What changed in this switch. Old entries carry only `mode`; `active` is absent before per-session state. */
@@ -82,8 +101,23 @@ export default function modeExtension(pi: ExtensionAPI): void {
 	let config: ModeState = loadState(STATE_FILE);
 	/** This session's active state. Resolved per session in session_start / session_tree; never global. */
 	let active: ModeActive = activeOf(config);
-	let planner: PlannerChoice = PLANNER_PRIMARY;
-	const probe = new PlannerProbe(pi);
+	/** The global Delegate routing, re-read (one stat) whenever it is consulted. */
+	const readDelegate = delegateReader(DELEGATE_FILE);
+	/** Which worker each profile uses now: the routing, assessed against discovery and the policy. */
+	let routes: readonly ProfileRoute[] = DEFAULT_ROUTES;
+	/** Last discovery per backend; absent = never probed (its tuples read as unverified). */
+	let discoveries: Partial<Record<DelegateBackend, Discovery>> = {};
+	/** When each backend's discovery landed. */
+	const discoveredAt: Partial<Record<DelegateBackend, number>> = {};
+	/** The routing the last applied probe ran for; a turn with a different one probes again. */
+	let probedKey: string | undefined;
+	/**
+	 * The probe in flight, by the routing it runs for. A second request for the same routing joins it
+	 * (keeping the strongest notify ask) instead of restarting it: restarting dropped the first
+	 * probe's result, and with it the fallback notice a switch into delegate had asked for.
+	 */
+	let inflight: { key: string; notify: boolean; done: Promise<void> } | undefined;
+	const probe = new WorkerProbe(pi);
 	/** Active-tools list captured before strict mode hid edit/write. */
 	let toolsSnapshot: string[] | undefined;
 	/** Serializes concurrent probes so a rapid toggle cannot apply a stale result. */
@@ -98,15 +132,25 @@ export default function modeExtension(pi: ExtensionAPI): void {
 	const viewerShortcutClash = viewerShortcut === (config.shortcut ?? DEFAULT_MODE_SHORTCUT) || viewerShortcut === config.minorShortcuts?.align;
 	const viewerKeyHint = viewerShortcutClash ? "/align" : viewerShortcut;
 
-	pi.registerFlag("major", { description: "Start in a mode: normal | claude-heavy", type: "string" });
+	pi.registerFlag("major", { description: "Start in a mode: normal | delegate (claude-heavy is read as delegate)", type: "string" });
 	pi.registerFlag("minor", {
 		description: `Start with minor modes on (comma-separated): ${MINOR_MODES.join(" | ")}, or none`,
 		type: "string",
 	});
 
 	function renderStatus(ctx: ExtensionContext): void {
-		const { text, tone } = statusLabel(active.mode, planner, active.strict, active.minorModes);
+		const { text, tone } = statusLabel(active.mode, routes, active.strict, active.minorModes);
 		ctx.ui.setStatus("mode", ctx.ui.theme.fg(tone, text));
+	}
+
+	/**
+	 * Route every profile of the routing as it is NOW (file and policy re-read) against the last
+	 * discovery. Synchronous and cheap: what a turn boundary runs.
+	 */
+	function recomputeRoutes(): void {
+		const settings = readDelegate();
+		const policy = readPolicy();
+		routes = routeAll(settings, discoveries, (choice) => policyDenial(policy, choice.backend, choice.model));
 	}
 
 	function applyStrictTools(): void {
@@ -120,20 +164,56 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		toolsSnapshot = undefined;
 	}
 
-	/** Probe asynchronously and refresh the status with the result; resolves the probe promise. */
-	function refreshPlanner(ctx: ExtensionContext, notifyOnFallback: boolean): Promise<PlannerChoice> {
+	/**
+	 * Discover every backend the current routing names, then re-route and refresh the status.
+	 * Resolves once the probe is applied (or dropped as stale); never rejects.
+	 */
+	function refreshRouting(ctx: ExtensionContext, notifyDegraded: boolean): Promise<void> {
+		const settings = readDelegate();
+		const key = delegateKey(settings);
+		if (inflight && inflight.key === key) {
+			inflight.notify ||= notifyDegraded;
+			return inflight.done;
+		}
 		const generation = ++probeGeneration;
-		const pending = probe.probe(ctx);
-		void pending.then((choice) => {
-			if (active.mode !== "claude-heavy") planner = PLANNER_PRIMARY;
-			else if (generation === probeGeneration) planner = choice;
-			else return; // A newer probe owns the planner choice.
-			renderStatus(ctx);
-			if (notifyOnFallback && choice.fallback && active.mode === "claude-heavy") {
-				ctx.ui.notify(`Planner fallback: ${choice.model} at ${choice.effort} (${PLANNER_PRIMARY.model} not offered)`, "warning");
+		// A changed routing supersedes the probe in flight; a notice that one was owed is carried over.
+		const run: { key: string; notify: boolean; done: Promise<void> } = { key, notify: notifyDegraded || !!inflight?.notify, done: Promise.resolve() };
+		run.done = (async () => {
+			const found = await Promise.all(backendsOf(settings).map(async (backend) => [backend, await probe.discover(ctx, backend)] as const));
+			if (inflight === run) inflight = undefined;
+			// A newer probe, or leaving delegate, owns the result.
+			if (generation !== probeGeneration || active.mode !== "delegate") return;
+			const now = Date.now();
+			for (const [backend, discovery] of found) {
+				discoveries = { ...discoveries, [backend]: discovery };
+				discoveredAt[backend] = now;
 			}
+			probedKey = key;
+			recomputeRoutes();
+			renderStatus(ctx);
+			if (!run.notify) return;
+			const notices = routes.map(routeNotice).filter((line): line is string => line !== undefined);
+			if (notices.length > 0) ctx.ui.notify(`Delegate routing:\n${notices.join("\n")}`, "warning");
+		})();
+		inflight = run;
+		return run.done;
+	}
+
+	/** Does this turn need a fresh probe: a routing not probed yet, or a backend whose discovery has aged out? */
+	function routingStale(): boolean {
+		const settings = readDelegate();
+		if (delegateKey(settings) !== probedKey) return true;
+		const now = Date.now();
+		return backendsOf(settings).some((backend) => {
+			const discovery = discoveries[backend];
+			return discovery === undefined || now - (discoveredAt[backend] ?? 0) >= discoveryTtl(discovery);
 		});
-		return pending;
+	}
+
+	/** Leaving delegate: forget the probe in flight so its result is dropped and the next entry starts fresh. */
+	function dropProbe(): void {
+		++probeGeneration;
+		inflight = undefined;
 	}
 
 	/**
@@ -156,14 +236,14 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		}
 		active = { ...active, mode: next };
 		appendSwitch({ mode: next });
-		if (next === "claude-heavy") {
+		if (next === "delegate") {
 			if (active.strict) applyStrictTools();
+			recomputeRoutes();
 			renderStatus(ctx);
-			ctx.ui.notify("Mode: claude-heavy", "info");
-			await refreshPlanner(ctx, true);
+			ctx.ui.notify("Mode: delegate", "info");
+			await refreshRouting(ctx, true);
 		} else {
-			planner = PLANNER_PRIMARY;
-			++probeGeneration; // Drop the result of any probe in flight.
+			dropProbe();
 			restoreTools();
 			renderStatus(ctx);
 			ctx.ui.notify("Mode: normal", "info");
@@ -220,8 +300,8 @@ export default function modeExtension(pi: ExtensionAPI): void {
 			next = restored;
 		} else if (reason === undefined || reason === "startup") {
 			// One-shot launch overrides on top of the default; never written to the file or the session.
-			const flag = pi.getFlag("major");
-			if (typeof flag === "string" && isMode(flag)) next = { ...next, mode: flag };
+			const flag = parseMode(pi.getFlag("major"));
+			if (flag !== undefined) next = { ...next, mode: flag };
 			const minorFlag = parseMinorFlag(pi.getFlag("minor"));
 			if (minorFlag) {
 				next = { ...next, minorModes: minorFlag.minorModes };
@@ -236,13 +316,15 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		}
 		active = next;
 		// A restore can land on a different strict flag than the tools currently reflect.
-		if (active.mode === "claude-heavy" && active.strict) applyStrictTools();
+		if (active.mode === "delegate" && active.strict) applyStrictTools();
 		else restoreTools();
-		renderStatus(ctx);
-		if (active.mode === "claude-heavy") void refreshPlanner(ctx, false);
-		else {
-			planner = PLANNER_PRIMARY;
-			++probeGeneration; // Drop the result of any probe in flight.
+		if (active.mode === "delegate") {
+			recomputeRoutes();
+			renderStatus(ctx);
+			void refreshRouting(ctx, false);
+		} else {
+			renderStatus(ctx);
+			dropProbe();
 		}
 	}
 
@@ -371,12 +453,33 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		}
 	}
 
+	/** One line per profile: the configured tuple(s) and, in delegate, what is actually in use. */
+	function routingLines(): string[] {
+		const settings = readDelegate();
+		if (active.mode === "delegate") recomputeRoutes();
+		return DELEGATE_PROFILES.map((profile) => {
+			const { primary, fallback } = settings.profiles[profile];
+			const configured = `${describeChoice(primary)}${fallback ? `, fallback ${describeChoice(fallback)}` : ", no fallback"}`;
+			const route = routes.find((r) => r.profile === profile);
+			const using =
+				active.mode !== "delegate" || !route
+					? ""
+					: route.via === "primary"
+						? route.primary.availability === "unverified" ? " — using primary (not verified)" : " — using primary"
+						: route.via === "fallback"
+							? ` — using FALLBACK (${route.primary.reason})`
+							: " — none available: will ask";
+			return `  ${DELEGATE_PROFILE_INFO[profile].label}: ${configured}${using}`;
+		});
+	}
+
 	function statusLines(): string[] {
 		const fileDefault = loadState(STATE_FILE);
 		return [
 			`mode: ${active.mode}`,
 			`default: ${activeSummary(activeOf(fileDefault))} (new sessions; /mode default sets it)`,
-			`planner: ${planner.model} at ${planner.effort}${planner.fallback ? " (fallback; fable unavailable)" : ""}`,
+			`delegate routing (${DELEGATE_FILE}):`,
+			...routingLines(),
 			`strict: ${active.strict ? "on" : "off"}`,
 			`minor: ${active.minorModes.length > 0 ? active.minorModes.join(", ") : "(none)"}`,
 			`shortcut: ${fileDefault.shortcut ?? DEFAULT_MODE_SHORTCUT}`,
@@ -385,7 +488,7 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		];
 	}
 
-	const usage = `Usage: /mode [normal|claude-heavy|status|default|strict on|strict off|${MINOR_MODES.map((minor) => `${minor} [on|off]`).join("|")}]`;
+	const usage = `Usage: /mode [${MODES.join("|")}|status|default|strict on|strict off|${MINOR_MODES.map((minor) => `${minor} [on|off]`).join("|")}]`;
 
 	// The ctrl+p "Mode" category; the palette asks for fresh rows on every open.
 	registerPaletteCategory(pi.events, {
@@ -444,7 +547,7 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		description: "Open the mode selector, or set a mode with an argument",
 		getArgumentCompletions: (argumentPrefix) => {
 			const minorItems = MINOR_MODES.flatMap((minor) => [minor, `${minor} on`, `${minor} off`]);
-			const items = ["normal", "claude-heavy", "status", "default", "strict on", "strict off", ...minorItems]
+			const items = [...MODES, "status", "default", "strict on", "strict off", ...minorItems]
 				.filter((value) => value.startsWith(argumentPrefix.trim()))
 				.map((value) => ({ value, label: value }));
 			return items.length > 0 ? items : null;
@@ -463,8 +566,9 @@ export default function modeExtension(pi: ExtensionAPI): void {
 				ctx.ui.notify(`${statusLines().join("\n")}\n${usage}`, "warning");
 				return;
 			}
-			if (isMode(arg)) {
-				await setMode(arg, ctx);
+			const mode = parseMode(arg); // "claude-heavy" still selects delegate
+			if (mode !== undefined) {
+				await setMode(mode, ctx);
 				return;
 			}
 			if (arg === "status") {
@@ -482,12 +586,12 @@ export default function modeExtension(pi: ExtensionAPI): void {
 				if (changed) {
 					active = { ...active, strict };
 					appendSwitch({ strict });
-					if (active.mode === "claude-heavy") {
+					if (active.mode === "delegate") {
 						if (strict) applyStrictTools();
 						else restoreTools();
 					}
 				}
-				const appliedNow = changed && active.mode === "claude-heavy";
+				const appliedNow = changed && active.mode === "delegate";
 				ctx.ui.notify(
 					`Strict mode ${strict ? "on" : "off"}${appliedNow ? ` (edit/write ${strict ? "removed from" : "restored to"} the orchestrator)` : ""}`,
 					"info",
@@ -507,7 +611,7 @@ export default function modeExtension(pi: ExtensionAPI): void {
 	});
 
 	pi.registerShortcut((config.shortcut ?? DEFAULT_MODE_SHORTCUT) as KeyId, {
-		description: "Toggle normal / claude-heavy mode",
+		description: "Toggle normal / delegate mode",
 		handler: async (ctx) => setMode(toggleMode(active.mode), ctx),
 	});
 
@@ -552,8 +656,25 @@ export default function modeExtension(pi: ExtensionAPI): void {
 	// pi >= 0.86 exposes mutable prompt sections and diffs them against what the model already
 	// has, so a toggle costs one small patch and keeps the cached prefix; older hosts without
 	// them (pi < 0.86) still take the whole-prompt append.
-	pi.on("before_agent_start", async (event) => {
-		const block = composePrompt(active, planner);
+	//
+	// Delegate's routing is re-read here, at every turn boundary: a routing or policy change reaches
+	// a session already in delegate from its next prompt. A changed routing (or stale discovery)
+	// re-probes in the background; until that lands, tuples of undiscovered backends are unverified
+	// and stay in use — spawn is the final check, and the prompt's retry rule covers a miss.
+	pi.on("before_agent_start", async (event, ctx) => {
+		if (active.mode === "delegate") {
+			const key = delegateKey(readDelegate());
+			recomputeRoutes();
+			// Announce only a routing the user changed; a timed refresh or the start-up probe joined
+			// here stays quiet unless whoever started it asked (a switch into delegate does).
+			if (routingStale()) void refreshRouting(ctx, probedKey !== undefined && key !== probedKey);
+			try {
+				renderStatus(ctx);
+			} catch {
+				// Status is best-effort here.
+			}
+		}
+		const block = composePrompt(active, routes);
 		const sections = (event.systemPromptOptions as { sections?: Record<string, string> } | undefined)?.sections;
 		if (sections) {
 			applyModeSection(sections, block);
@@ -581,6 +702,7 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		const data = entry.data;
 		if (data && "minor" in data) return new Text(theme.fg("dim", `── ${data.minor} ${data.on ? "on" : "off"} ──`), 0, 0);
 		if (data && "strict" in data) return new Text(theme.fg("dim", `── strict ${data.strict ? "on" : "off"} ──`), 0, 0);
+		// Shown as recorded: a pre-rename marker keeps its "claude-heavy" (history is not relabelled).
 		const mode = data?.mode ?? "normal";
 		return new Text(theme.fg("dim", `── mode → ${mode} ──`), 0, 0);
 	});

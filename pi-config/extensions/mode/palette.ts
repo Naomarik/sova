@@ -1,7 +1,7 @@
 /** Rows for the ctrl+p "Mode" category. Pure: the palette type is imported as a type only. */
 import type { MenuItem } from "../command-palette/contracts.ts";
 import { MINOR_DESCRIPTIONS, MINOR_MODES, type MinorMode } from "./minor.ts";
-import { hasMinor, type Mode, type ModeState } from "./state.ts";
+import { hasMinor, MODE_DESCRIPTIONS, MODES, type Mode, type ModeState } from "./state.ts";
 
 export interface ModeActions {
 	setMode(next: Mode): void | Promise<void>;
@@ -14,18 +14,13 @@ export interface ModeActions {
 
 export const MODE_CATEGORY_ID = "mode";
 
-const MODE_DESCRIPTIONS: Record<Mode, string> = {
-	normal: "Pi as usual",
-	"claude-heavy": "Orchestrate: delegate coding and planning to Claude Code workers",
-};
-
 /**
  * Major modes pick-and-close (radio, current ✓); minor modes toggle in place with a live marker;
  * then the align viewer, then "save as default". Everything above the last row is this session only.
  */
 export function modeCategoryItems(getState: () => Pick<ModeState, "mode" | "minorModes">, actions: ModeActions): MenuItem[] {
 	const current = getState().mode;
-	const majors: MenuItem[] = (["normal", "claude-heavy"] as const).map((mode) => ({
+	const majors: MenuItem[] = MODES.map((mode) => ({
 		id: `mode:${mode}`,
 		label: `${mode === current ? "✓" : " "} ${mode}`,
 		description: MODE_DESCRIPTIONS[mode],

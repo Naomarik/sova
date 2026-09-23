@@ -107,17 +107,22 @@
 </div></div>
       </section>
       <section class="docs-section" id="spec">
-        <h2 class="docs-h2">Spec</h2>
-        <div class="docs-demo">
-<div class="table-wrap"><table class="table">
-  <thead><tr><th>Property</th><th>Value</th></tr></thead>
-  <tbody>
-    <tr><td>Grid</td><td class="text-mono">24</td></tr>
-    <tr><td>Stroke</td><td class="text-mono">1.5px — the same in both themes</td></tr>
-    <tr><td>Caps / joins</td><td>round</td></tr>
-    <tr><td>Fill / stroke</td><td class="text-mono">fill="none" · stroke="currentColor"</td></tr>
-  </tbody>
-</table></div></div>
+        <h2 class="docs-h2">Scale &amp; spec</h2>
+        <div class="table-wrap"><table class="table">
+          <thead><tr><th>Property</th><th>Value</th><th>Measured on disk</th></tr></thead>
+          <tbody>
+          <tr><td class="text-mono">Count</td><td>37 files</td><td><code>assets/icons/functional/*.svg</code></td></tr>
+          <tr><td class="text-mono">Grid</td><td><code>viewBox="0 0 24 24"</code></td><td>37 of 37</td></tr>
+          <tr><td class="text-mono">Stroke</td><td><code>stroke-width="1.5"</code> — the same in both themes</td><td>37 of 37</td></tr>
+          <tr><td class="text-mono">Caps</td><td><code>stroke-linecap="round"</code></td><td>37 of 37</td></tr>
+          <tr><td class="text-mono">Joins</td><td><code>stroke-linejoin="round"</code></td><td>37 of 37</td></tr>
+          <tr><td class="text-mono">Fill</td><td><code>fill="none"</code></td><td>37 of 37</td></tr>
+          <tr><td class="text-mono">Color</td><td><code>stroke="currentColor"</code></td><td>37 of 37</td></tr>
+          </tbody>
+        </table></div>
+        <p class="measure"><b>Inline the SVG</b> so <code>currentColor</code> and the theme reach it; an <code>&lt;img&gt;</code> cannot follow either.</p>
+        <p class="measure"><b>Adding one:</b> copy the nearest file, keep the 24 viewBox, the 1.5 stroke and <code>currentColor</code>, draw on whole or half pixels, and ship it here. The last column is computed from the files, so an icon that breaks the spec shows up on this page.</p>
+        <p class="measure"><b>Provenance is unrecorded.</b> Nothing in the skill or its history says who drew the set or under what terms; treat the license as unknown until the owner confirms it.</p>
       </section>
       <section class="docs-section" id="styles">
         <h2 class="docs-h2">Styles</h2>

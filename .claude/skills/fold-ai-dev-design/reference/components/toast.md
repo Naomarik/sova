@@ -13,7 +13,7 @@ Rendered: `site/components/toast.html`
 | `.toast` | Floating strip, `--shadow-2` | Max 420px |
 | `.toast-body` | Message | Grows |
 | `.toast-action` | Trailing action | Usually Undo |
-| `.toast-stack` | Fixed container | Bottom centre, right from 768 |
+| `.toast-stack` | Fixed container | Bottom center, right from 768 |
 
 ## Tokens used
 
@@ -32,9 +32,6 @@ Rendered: `site/components/toast.html`
 </div>
 ```
 
-Every state is rendered together in the site page's state matrix. The `-hover`, `-focus`,
-`-active` and `-disabled` helper classes are **documentation scaffolding only** — production
-code uses the real pseudo-classes.
 
 ## DO / DON'T
 

@@ -18,7 +18,7 @@ export const ALIGN_INSTRUCTIONS = `# Minor mode: align
 Before building anything non-trivial, align with the user on what to build. Do not edit files or spawn implementation workers until the user has confirmed a plan.
 
 On any prompt that implies work (a feature, an investigated fix, a refactor, a migration, new files, or any multi-step change), do this first:
-1. Investigate the codebase and context behind the ask. In claude-heavy mode delegate this to a planning worker that does not edit; otherwise investigate yourself. Find the real constraints, existing patterns, and affected surfaces.
+1. Investigate the codebase and context behind the ask. In delegate mode give this to a non-editing Planning & specs worker (investigation that feeds a design is planning, not the Investigation profile); otherwise investigate yourself. Find the real constraints, existing patterns, and affected surfaces.
 2. Reply with an alignment block in exactly this markdown shape (surrounding prose may be brief; the block is captured into a viewer the user reads, so keep it self-contained):
 
 ## Alignment: <short title>

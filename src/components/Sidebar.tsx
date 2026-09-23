@@ -5,7 +5,7 @@ import { fetchTargets } from "../lib/api";
 import { type ArchiveGroupId, groupByArchiveDate, sessionsWord } from "../lib/archive";
 import { relativeTime, shortModel, tildePath } from "../lib/format";
 import { agentsHref, type GlancePart, usageGlance, usageHref } from "../lib/insights";
-import { isTopSession } from "../lib/regions";
+import { isMainThread, isTopSession } from "../lib/regions";
 import { groupRemotePlaceOf, remoteMarkOf, remoteMarkSuffix, remoteMarkTitle } from "../lib/remote-mark";
 import { summaryLineOf, summaryTitleOf } from "../lib/summary-row";
 import { remotePlaceOf, type TargetInfo } from "../lib/remote-session";
@@ -752,12 +752,14 @@ export function Sidebar(props: {
     clearTimeout(skeletonTimer);
   });
 
-  const all = () => props.sessions ?? [];
+  /** Main threads only (src/lib/regions.ts): every region, search hit and count reads this. */
+  const all = createMemo(() => (props.sessions ?? []).filter(isMainThread));
   /**
    * The selection lives in module state and is keyed by PATH, so a background poll can neither
    * reset it nor unpick a row whose object was rebuilt. The one thing a poll may change about it:
    * a session that is no longer in the list is no longer selected. `undefined` is a fetch in
    * flight, not an empty list — pruning against that would clear everything every few seconds.
+   * Pruned against the UNFILTERED list: a worker session is still in the list, just not drawn.
    */
   createEffect(() => {
     const list = props.sessions;

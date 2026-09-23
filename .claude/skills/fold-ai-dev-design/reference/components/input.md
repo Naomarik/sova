@@ -19,7 +19,7 @@ Rendered: `site/components/input.html`
 | `.textarea` | Multi-line, vertical resize | Min 88px |
 | `.input-mono` | Mono content | IDs, paths |
 | `.input-invalid` | Error border | Use with `aria-invalid="true"` |
-| `.input-hover / -focus / -disabled` | Static states | **Demo only** |
+| `.is-hover / .is-focus / .is-disabled` | Static states on `.input` | **Demo only** — production uses pseudo-classes |
 
 ## Tokens used
 
@@ -31,7 +31,7 @@ Rendered: `site/components/input.html`
 
 ## Variants & states
 
-### Labelled field
+### Labeled field
 
 ```html
 <div class="field">
@@ -57,9 +57,9 @@ Rendered: `site/components/input.html`
 </div>
 ```
 
-Every state is rendered together in the site page's state matrix. The `-hover`, `-focus`,
-`-active` and `-disabled` helper classes are **documentation scaffolding only** — production
-code uses the real pseudo-classes.
+Every state is rendered together in the site page's state matrix. The `.is-hover`,
+`.is-focus`, `.is-active` and `.is-disabled` helpers are **documentation scaffolding
+only** — production code uses the real pseudo-classes.
 
 ## DO / DON'T
 

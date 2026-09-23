@@ -13,9 +13,22 @@ const file = (name: string) => join(dir, name);
 
 describe("parseModePatch (POST /api/mode body)", () => {
   test("accepts a major mode, minor modes, or both; minors come back canonical and deduped", () => {
-    assert.deepEqual(parseModePatch({ mode: "claude-heavy" }), { mode: "claude-heavy" });
+    assert.deepEqual(parseModePatch({ mode: "delegate" }), { mode: "delegate" });
     assert.deepEqual(parseModePatch({ minorModes: ["align", "align"] }), { minorModes: ["align"] });
     assert.deepEqual(parseModePatch({ mode: "normal", minorModes: [] }), { mode: "normal", minorModes: [] });
+  });
+
+  test("the legacy name claude-heavy is accepted and passed on as delegate, never as itself", () => {
+    assert.deepEqual(parseModePatch({ mode: "claude-heavy" }), { mode: "delegate" });
+    assert.deepEqual(parseModePatch({ mode: "claude-heavy", minorModes: ["align"] }), { mode: "delegate", minorModes: ["align"] });
+    const f = file("legacy-post.json");
+    const patch = parseModePatch({ mode: "claude-heavy" });
+    assert.ok(!("error" in patch));
+    writeMode(patch, f);
+    assert.equal(JSON.parse(readFileSync(f, "utf8")).mode, "delegate", "POST /api/mode writes the canonical name");
+    // Case and look-alikes are not aliases.
+    for (const mode of ["Claude-Heavy", "heavy", "claude_heavy"]) assert.ok("error" in parseModePatch({ mode }), mode);
+    assert.equal((parseModePatch({ mode: "turbo" }) as { error: string }).error, "mode must be one of: normal, delegate");
   });
 
   test("rejects bad bodies and unknown names with a reason", () => {
@@ -39,31 +52,31 @@ describe("mode.json read/merge/write", () => {
     const onDisk = JSON.parse(readFileSync(f, "utf8"));
     assert.deepEqual(onDisk, { version: 1, mode: "normal", strict: true, shortcut: "alt+h", minorModes: ["align"], minorShortcuts: { align: "alt+a" } });
     assert.deepEqual(written, onDisk);
-    writeMode({ mode: "claude-heavy" }, f);
+    writeMode({ mode: "delegate" }, f);
     assert.deepEqual(JSON.parse(readFileSync(f, "utf8")).minorModes, ["align"]); // untouched by a major-only patch
   });
 
   test("the merge reads the fresh file (a TUI write in between survives)", () => {
     const f = file("fresh.json");
-    writeMode({ mode: "claude-heavy" }, f);
-    writeFileSync(f, JSON.stringify({ version: 1, mode: "claude-heavy", strict: true, minorModes: [] })); // "the TUI"
+    writeMode({ mode: "delegate" }, f);
+    writeFileSync(f, JSON.stringify({ version: 1, mode: "delegate", strict: true, minorModes: [] })); // "the TUI"
     writeMode({ minorModes: ["align"] }, f);
     const s = readMode(f);
     assert.equal(s.strict, true);
-    assert.equal(s.mode, "claude-heavy");
+    assert.equal(s.mode, "delegate");
   });
 
   test("a corrupt file merges from defaults instead of throwing", () => {
     const f = file("corrupt.json");
     writeFileSync(f, "{not json");
-    assert.equal(writeMode({ mode: "claude-heavy" }, f).mode, "claude-heavy");
+    assert.equal(writeMode({ mode: "delegate" }, f).mode, "delegate");
   });
 
   test("mergeMode is pure and normalizes", () => {
     const base = readMode(file("absent.json"));
-    const m = mergeMode(base, { mode: "claude-heavy" });
+    const m = mergeMode(base, { mode: "delegate" });
     assert.equal(base.mode, "normal");
-    assert.equal(m.mode, "claude-heavy");
+    assert.equal(m.mode, "delegate");
   });
 
   test("modeKey covers exactly mode + minorModes", () => {
@@ -71,12 +84,14 @@ describe("mode.json read/merge/write", () => {
     const strictOn: typeof a = { ...a, strict: true };
     assert.equal(modeKey(a), modeKey(strictOn));
     assert.notEqual(modeKey(a), modeKey({ ...a, minorModes: ["align"] }));
-    assert.notEqual(modeKey(a), modeKey({ ...a, mode: "claude-heavy" }));
+    assert.notEqual(modeKey(a), modeKey({ ...a, mode: "delegate" }));
   });
 
   test("modeInfo lists what exists", () => {
     const info = modeInfo(readMode(file("absent.json")));
-    assert.deepEqual(info.modes.map((m) => m.id), ["normal", "claude-heavy"]);
+    assert.deepEqual(info.modes.map((m) => m.id), ["normal", "delegate"]);
+    assert.ok(!JSON.stringify(info).includes("claude-heavy"), "the old name is never offered");
+    assert.match(info.modes[1]!.description, /^Orchestrate: /);
     assert.deepEqual(info.minors.map((m) => m.id), ["align"]);
     assert.ok(info.minors[0]!.description.length > 0);
   });
@@ -131,12 +146,12 @@ describe("resolveChatMode (one chat's own mode when it opens)", () => {
     const s = resolveChatMode(
       [
         { type: "message", data: {} },
-        entry({ mode: "claude-heavy", active: active("claude-heavy", false, []) }),
-        entry({ strict: true, active: active("claude-heavy", true, ["align"]) }),
+        entry({ mode: "delegate", active: active("delegate", false, []) }),
+        entry({ strict: true, active: active("delegate", true, ["align"]) }),
       ],
       f,
     );
-    assert.equal(s.mode, "claude-heavy");
+    assert.equal(s.mode, "delegate");
     assert.equal(s.strict, true);
     assert.deepEqual(s.minorModes, ["align"]);
     assert.equal(s.shortcut, "alt+m"); // the file still owns everything outside the active triple
@@ -146,11 +161,11 @@ describe("resolveChatMode (one chat's own mode when it opens)", () => {
     const f = defaultFile();
     const s = resolveChatMode(
       [
-        entry({ mode: "claude-heavy" }), // legacy: written under global semantics
+        entry({ mode: "delegate" }), // legacy: written under global semantics
         entry({ minor: "align", on: true }),
-        entry({ active: { version: 2, mode: "claude-heavy" } }), // unknown version
+        entry({ active: { version: 2, mode: "delegate" } }), // unknown version
         entry({ active: "nope" }),
-        { type: "custom", customType: "align-doc", data: { active: active("claude-heavy", false, []) } },
+        { type: "custom", customType: "align-doc", data: { active: active("delegate", false, []) } },
       ],
       f,
     );
@@ -158,24 +173,39 @@ describe("resolveChatMode (one chat's own mode when it opens)", () => {
     assert.deepEqual(s.minorModes, ["align"]);
   });
 
+  test("a pre-rename file and pre-rename snapshots resolve to delegate", () => {
+    const f = file("legacy-default.json");
+    writeFileSync(f, JSON.stringify({ version: 1, mode: "claude-heavy", strict: false, minorModes: [] }));
+    assert.equal(resolveChatMode([], f).mode, "delegate", "mode.json written by an older build");
+    assert.equal(readMode(f).mode, "delegate");
+    const legacyActive = { version: 1, mode: "claude-heavy", strict: true, minorModes: ["align"] };
+    const s = resolveChatMode([entry({ mode: "claude-heavy", active: legacyActive })], file("absent.json"));
+    assert.equal(s.mode, "delegate", "a transcript pinned before the rename");
+    assert.equal(s.strict, true);
+  });
+
   test("a missing file plus an entry: the entry alone decides", () => {
-    const s = resolveChatMode([entry({ mode: "claude-heavy", active: active("claude-heavy", false, ["align"]) })], file("absent.json"));
-    assert.equal(s.mode, "claude-heavy");
+    const s = resolveChatMode([entry({ mode: "delegate", active: active("delegate", false, ["align"]) })], file("absent.json"));
+    assert.equal(s.mode, "delegate");
     assert.deepEqual(s.minorModes, ["align"]);
   });
 
   test("it does not alias the entry's array (the caller may not mutate the session's state)", () => {
-    const a = active("claude-heavy", false, ["align"]);
-    const s = resolveChatMode([entry({ mode: "claude-heavy", active: a })], file("absent.json"));
+    const a = active("delegate", false, ["align"]);
+    const s = resolveChatMode([entry({ mode: "delegate", active: a })], file("absent.json"));
     s.minorModes.push("align");
-    assert.deepEqual(resolveChatMode([entry({ mode: "claude-heavy", active: a })], file("absent.json")).minorModes, ["align"]);
+    assert.deepEqual(resolveChatMode([entry({ mode: "delegate", active: a })], file("absent.json")).minorModes, ["align"]);
   });
 });
 
 describe("mode markers in the transcript", () => {
   test("customType mode renders as an info row; other custom entries stay hidden", () => {
-    const major = normalizeEntry({ type: "custom", customType: "mode", data: { mode: "claude-heavy" }, id: "m1" });
-    assert.deepEqual(major.map((i) => [i.kind, i.text]), [["info", "Mode → claude-heavy"]]);
+    const major = normalizeEntry({ type: "custom", customType: "mode", data: { mode: "delegate" }, id: "m1" });
+    assert.deepEqual(major.map((i) => [i.kind, i.text]), [["info", "Mode → delegate"]]);
+    const legacy = normalizeEntry({ type: "custom", customType: "mode", data: { mode: "claude-heavy" }, id: "m0" });
+    assert.deepEqual(legacy.map((i) => i.text), ["Mode → claude-heavy"], "a pre-rename marker is shown as recorded, never relabelled");
+    const unknown = normalizeEntry({ type: "custom", customType: "mode", data: { mode: "someday" }, id: "m5" });
+    assert.deepEqual(unknown.map((i) => i.text), ["Mode → someday"], "an unknown name is shown as written, never dropped");
     const minor = normalizeEntry({ type: "custom", customType: "mode", data: { minor: "align", on: false }, id: "m2" });
     assert.deepEqual(minor.map((i) => i.text), ["Minor mode: align off"]);
     assert.deepEqual(normalizeEntry({ type: "custom", customType: "mode", data: {}, id: "m3" }), []);
@@ -183,13 +213,13 @@ describe("mode markers in the transcript", () => {
   });
 
   test("a strict toggle renders; the active snapshot riding along is state, never a row", () => {
-    const on = normalizeEntry({ type: "custom", customType: "mode", data: { strict: true, active: { version: 1, mode: "claude-heavy", strict: true, minorModes: [] } }, id: "s1" });
+    const on = normalizeEntry({ type: "custom", customType: "mode", data: { strict: true, active: { version: 1, mode: "delegate", strict: true, minorModes: [] } }, id: "s1" });
     assert.deepEqual(on.map((i) => [i.kind, i.text]), [["info", "Strict mode on"]]);
     const off = normalizeEntry({ type: "custom", customType: "mode", data: { strict: false }, id: "s2" });
     assert.deepEqual(off.map((i) => i.text), ["Strict mode off"]);
     // A major switch still renders as the major switch, not as its snapshot's strict flag.
-    const major = normalizeEntry({ type: "custom", customType: "mode", data: { mode: "claude-heavy", active: { version: 1, mode: "claude-heavy", strict: true, minorModes: [] } }, id: "s3" });
-    assert.deepEqual(major.map((i) => i.text), ["Mode → claude-heavy"]);
+    const major = normalizeEntry({ type: "custom", customType: "mode", data: { mode: "delegate", active: { version: 1, mode: "delegate", strict: true, minorModes: [] } }, id: "s3" });
+    assert.deepEqual(major.map((i) => i.text), ["Mode → delegate"]);
     // An entry carrying only the snapshot has nothing to say in the transcript.
     assert.deepEqual(normalizeEntry({ type: "custom", customType: "mode", data: { active: { version: 1, mode: "normal", strict: false, minorModes: [] } }, id: "s4" }), []);
   });

@@ -12,6 +12,7 @@ import { cwdLabel } from "./lib/remote-session";
 import { createPoll } from "./lib/poll";
 import { homeFromSessionPath } from "./lib/format";
 import { reconcileTheme } from "./lib/theme";
+import { closeSettings, openSettings, settingsOpenAt } from "./lib/settings-nav";
 import type { RewindControl } from "./lib/inputs";
 import { activeTab, home, setActiveTab, setHome, toast } from "./lib/ui-state";
 import { sessionWorking, type UsageTotalView } from "./lib/workers";
@@ -172,8 +173,8 @@ export function App() {
     return items && items.length > 0 ? items : null;
   });
   const [creating, setCreating] = createSignal(false);
-  /** The Settings modal, opened from the sidebar foot's gear. */
-  const [settingsOpen, setSettingsOpen] = createSignal(false);
+  // The Settings modal is opened from the sidebar foot's gear, and at Modes by the mode menu's
+  // "Configure Delegate" (lib/settings-nav.ts holds which tab, so either can open it).
   /** Each open chat's rewind, for the Timeline's input rows. By path: a workspace has several
       chats open at once, and the pane must get the one whose session it is showing. */
   const [rewindControls, setRewindControls] = createSignal<Record<string, RewindControl>>({});
@@ -556,7 +557,7 @@ export function App() {
           insightsPage={insightsRoute()?.page ?? null}
           onRefresh={refresh}
           onNew={() => setCreating(true)}
-          onOpenSettings={() => setSettingsOpen(true)}
+          onOpenSettings={() => openSettings()}
         />
 
         {/* The workspace takes the whole second column, so it IS the main: no session head, and
@@ -740,9 +741,9 @@ export function App() {
           </Portal>
         )}
       </Show>
-      <Show when={settingsOpen()}>
+      <Show when={settingsOpenAt()}>
         <Portal>
-          <SettingsDialog onClose={() => setSettingsOpen(false)} />
+          <SettingsDialog initialTab={settingsOpenAt() ?? undefined} onClose={closeSettings} />
         </Portal>
       </Show>
       <GlobalRegions />

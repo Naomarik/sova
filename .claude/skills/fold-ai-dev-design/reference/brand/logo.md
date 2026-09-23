@@ -18,6 +18,19 @@ Rendered: `site/brand/logo.html`
 - `--color-ink` — Monochrome documents and print.
 - `--color-on-accent` — The inverse colorway, on an indigo field.
 
+## Scale & spec
+
+| Variant | File | Fill | Ground | Use |
+|---|---|---|---|---|
+| Symbol, inherit | `assets/logos/fold-symbol.svg` | `currentColor` | Any | The source of truth; context colors it |
+| Symbol, accent | `assets/logos/fold-symbol-accent.svg` | `#4A43D8` | Paper or surface | Default app bar |
+| Symbol, ink | `assets/logos/fold-symbol-ink.svg` | `#17171C` | Paper or surface | Monochrome documents, print |
+| Symbol, inverse | `assets/logos/fold-symbol-inverse.svg` | `#FFFFFF` | Accent fill | On indigo |
+
+**Clear space:** one panel width on every side. **Minimum size:** 16px for the symbol, 80px wide for the lockup. The wordmark is the symbol plus "Fold" set in Inter 640 at -0.03em, composed in markup — there is no wordmark file.
+
+**Placeholder disclosure.** The mark was generated for this system, not designed by a brand studio, and it is unregistered. Replace the four files in `assets/logos/` and nothing else changes.
+
 ## DO / DON'T
 
 - **DO** Use the `currentColor` source and let context color it — one file, every colorway.

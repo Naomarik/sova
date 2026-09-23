@@ -30,14 +30,11 @@ Rendered: `site/components/tooltip.html`
 <span class="tip" tabindex="0" aria-describedby="t-free">free memory<span class="tip-bubble" role="tooltip" id="t-free">Inside this machine's share, latest reading.</span></span>
 ```
 
-Every state is rendered together in the site page's state matrix. The `-hover`, `-focus`,
-`-active` and `-disabled` helper classes are **documentation scaffolding only** — production
-code uses the real pseudo-classes.
 
 ## DO / DON'T
 
 - **DO** Keep it to one sentence — a second sentence is a paragraph that found a hiding place.
-- **DO** Use `.tip-start` or `.tip-end` on a trigger in a first or last column — a centred bubble on an edge chip is clipped at phone width.
+- **DO** Use `.tip-start` or `.tip-end` on a trigger in a first or last column — a centered bubble on an edge chip is clipped at phone width.
 - **DO** Put the trigger on the term, not on an icon — the word is what the user is unsure of.
 - **DO** Give the trigger `tabindex="0"` and `aria-describedby` — a tooltip only a mouse can open is a tooltip half the users never see.
 - **DON'T** Make a tooltip the only place a fact lives — touch users may never open it; put the fact in the row or on the control.

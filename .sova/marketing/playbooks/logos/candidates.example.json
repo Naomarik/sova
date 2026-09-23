@@ -1,0 +1,27 @@
+{
+  "round": 1,
+  "grid": 32,
+  "brief": "Keep or replace the existing mark: compare it with two letter-first alternatives; one colour; must hold at 16px.",
+  "candidates": [
+    {
+      "slug": "existing-mark",
+      "name": "Current mark",
+      "idea": "The mark the project already ships: a rounded square with one diagonal cut, used as the favicon.",
+      "tradeoff": "Familiar to existing users; the cut closes up at 16px.",
+      "source": "public/example-logo.svg",
+      "changes": "fill #1f6feb replaced by currentColor; id attribute removed"
+    },
+    {
+      "slug": "example-notch",
+      "name": "Notch",
+      "idea": "The initial letter with a notch cut from a square body; the notch is the one detail.",
+      "tradeoff": "The strongest silhouette at 16px; reads as a generic letter without the wordmark."
+    },
+    {
+      "slug": "example-stack",
+      "name": "Stack",
+      "idea": "Three offset bars that read as a list, the thing the project manages.",
+      "tradeoff": "Specific to the product; close to many list and menu icons."
+    }
+  ]
+}

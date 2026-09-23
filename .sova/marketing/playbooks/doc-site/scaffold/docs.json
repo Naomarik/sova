@@ -1,0 +1,4 @@
+{
+  "dir": ".sova/marketing/site/src/content/docs",
+  "publish": ["getting-started.md", "more/example.md"]
+}

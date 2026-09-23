@@ -520,6 +520,33 @@ export interface ThemeList {
   error?: string;
 }
 
+// GET /api/playbooks?cwd=…       -> PlaybookCatalog (server/playbooks.ts: the shipped playbooks/,
+//                                  the user's ~/.pi/agent/sova/playbooks/, and the project's
+//                                  <cwd>/.sova/marketing/playbooks/, rescanned per request. Never
+//                                  fails: an unreadable user folder is `error`, and a cwd that can't
+//                                  be listed — none given, remote, missing — is `project.state`)
+// ---------------------------------------------------------------------------
+/** One entry in the Sova playbook catalog. */
+export interface PlaybookInfo {
+  id: string;                 // directory name; validate against /^[a-z0-9][a-z0-9-]*$/ (no traversal)
+  title: string;              // frontmatter title, else the id
+  description: string;        // frontmatter description, else ""
+  promptHint?: string;        // frontmatter promptHint: what the reader may want to specify for the first turn
+  source: "sova" | "user" | "project";
+  dir: string;                // ABSOLUTE directory holding the playbook (its PLAYBOOK.md, phases/, templates/)
+  body: string;               // PLAYBOOK.md body, frontmatter stripped
+  replacesSova?: boolean;     // a user playbook with the same id as a shipped one
+}
+
+/** GET /api/playbooks?cwd=<project cwd>  (cwd optional) */
+export interface PlaybookCatalog {
+  playbooks: PlaybookInfo[];
+  /** Whether project-local playbooks (from <cwd>/.sova/marketing/playbooks/) could be listed at all. */
+  project: { state: "ok" | "none" | "remote" | "missing"; message?: string };
+  /** Set when the user playbook directory could not be read; the catalog still lists what it could. */
+  error?: string;
+}
+
 // GET /api/settings              -> WebSettings
 // PUT /api/settings              -> WebSettings (400 bad body; only the keys below are accepted)
 // GET /api/settings/claude-status -> ClaudeCliStatus
@@ -677,6 +704,61 @@ export type GitSummary =
   | { state: "none"; where: GitWhere; cwd: string; moved?: true; checkedAt: number }
   /** Nothing could be read: `reason` is a sentence for the user (folder gone, target offline,
       git missing, took too long, a removed sshfs mount, git's own refusal). Never cached. */
+  | { state: "unavailable"; where: GitWhere; cwd: string; reason: string; checkedAt: number };
+
+// GET /api/sessions/context?path=<session file>&fresh=1 -> SessionSetup   (server/session-setup.ts:
+//                                  what pi will LOAD for the session's STORED cwd — the context
+//                                  files it writes into the prompt, and the skills it offers this
+//                                  session, each with its size on disk. Read from the chat runtime
+//                                  when this server holds it (the exact set that session prompts
+//                                  with), else from pi's own loader WITHOUT extensions — a lower
+//                                  bound, which `fromRuntime` says. Never remote: a target
+//                                  session's cwd is a local placeholder, so its answer is
+//                                  `state: "remote"` and the client shows the repository alone.
+//                                  400 a bad path, 404 a missing session file; a folder that can't
+//                                  be read is still a 200 whose `state` says so. Cached ~30s per
+//                                  folder; fresh=1 skips the cache but joins a read already running.)
+// ---------------------------------------------------------------------------
+/** One file pi loads, with what it costs on disk. */
+export interface SessionSetupFile {
+  path: string;
+  /** Bytes, as the file is on disk (never a decoded length). */
+  bytes: number;
+  /** Lines, counted the way `wc -l` counts them: newlines, plus one for a last line the file never
+      terminated. An empty file has none. */
+  lines: number;
+}
+
+/** One skill pi offers this session. `path` is its SKILL.md. */
+export interface SessionSetupSkill extends SessionSetupFile {
+  name: string;
+  description?: string;
+}
+
+export type SessionSetup =
+  | {
+      state: "ok";
+      where: { kind: "local" };
+      /** The folder that was read: the stored cwd, or its moved location (then `moved`). */
+      cwd: string;
+      moved?: true;
+      /** Context files, in the order pi layers them: global first, then ancestors, then the cwd. */
+      context: SessionSetupFile[];
+      /** Skills, in the order pi lists them to the model. A skill is OFFERED, not loaded: it loads
+          when it is used. */
+      skills: SessionSetupSkill[];
+      /** A `.pi/SYSTEM.md` that replaces the default prompt, when one is loaded. */
+      systemPrompt?: SessionSetupFile;
+      /** APPEND_SYSTEM.md sources, in the order they are appended. */
+      appendSystemPrompt?: SessionSetupFile[];
+      /** True when the read came from the open chat runtime — the exact set this session prompts
+          with. False: pi's loader without extensions, which cannot see a path an extension adds. */
+      fromRuntime: boolean;
+      checkedAt: number;
+    }
+  /** A target session: its cwd is a local placeholder, so its loadout can't be read here. */
+  | { state: "remote"; where: { kind: "remote"; target: string }; cwd: string; checkedAt: number }
+  /** Nothing could be read: `reason` is a sentence for the user. Never cached. */
   | { state: "unavailable"; where: GitWhere; cwd: string; reason: string; checkedAt: number };
 
 /** Longest group name, in characters, after trimming (SessionGroup.name; the server trims and

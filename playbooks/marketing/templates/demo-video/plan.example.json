@@ -1,0 +1,10 @@
+{
+  "baseUrl": "http://localhost:4817/",
+  "path": "/",
+  "width": 1280,
+  "height": 720,
+  "colorScheme": "light",
+  "file": "rename-item-1280-light.webm",
+  "shows": "Opening a sample item, renaming it, and seeing the list show the new name.",
+  "script": "await page.waitForTimeout(1200); await page.getByRole('link', { name: 'Example 1', exact: true }).click({ timeout: 5000 }); await page.waitForTimeout(1000); await page.getByRole('textbox', { name: 'Title', exact: true }).fill('Example 1, renamed', { timeout: 5000 }); await page.getByRole('button', { name: 'Save', exact: true }).click({ timeout: 5000 }); await page.getByRole('link', { name: 'Example 1, renamed', exact: true }).waitFor({ timeout: 5000 }); await page.waitForTimeout(2500);"
+}

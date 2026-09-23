@@ -22,6 +22,7 @@ import { checkTmpImage, deleteAttachment, MAX_ATTACHMENT_BYTES, readTmpImage, sa
 import { listFolders } from "./folders";
 import { listProjectFiles } from "./files";
 import { getGitSummary } from "./git-summary";
+import { getSessionSetup } from "./session-setup";
 import { assignSession, cleanGroupLabel, createGroup, deleteGroup, GROUP_LABEL_MAX, readGroups, updateGroup } from "./session-groups";
 import { promptGroup } from "./group-prompt";
 import { runFanout } from "./fanout";
@@ -33,6 +34,7 @@ import { switchMode } from "./mode";
 import { cachedClaudeModels, delegateInfo, delegateOptions, saveDelegateSettings, type DelegateSources } from "./delegate";
 import { readModelPolicy, writeModelPolicy } from "./model-policy";
 import { listThemes } from "./themes";
+import { listPlaybooks } from "./playbooks";
 import { readWebSettings, writeWebSettings } from "./web-settings";
 import { claudeCliStatus } from "./claude-status";
 import { modeInfo, parseModePatch, readMode } from "./mode-state";
@@ -384,6 +386,18 @@ app.get("/api/sessions/git", async (c) => {
   return c.json(await getGitSummary(path, { fresh: c.req.query("fresh") === "1" }));
 });
 
+// What pi will load for a session's folder (server/session-setup.ts): the context files it writes
+// into the prompt and the skills it offers this session, each with its size on disk — the empty
+// state of a session with no messages yet. Same 400/404 as the git route above; a folder that can't
+// be read is a 200 whose `state` says so; ?fresh=1 skips the ~30s cache. A target session answers
+// `state: "remote"` (its cwd is a local placeholder), and the client shows the repository alone.
+app.get("/api/sessions/context", async (c) => {
+  const path = resolveSessionPath(c.req.query("path"));
+  if (!path) return c.json({ error: "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)" }, 400);
+  if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
+  return c.json(await getSessionSetup(path, { fresh: c.req.query("fresh") === "1" }));
+});
+
 app.get("/api/models", async (c) => c.json(await listModels()));
 
 // The model policy (spec/12-settings-dialog.md §12): GET reads it (empty = nothing disabled), PUT
@@ -407,6 +421,12 @@ app.put("/api/settings/models", async (c) => {
 // in localStorage (§0), so there is nothing here to write. Never fails: a file we can't use comes
 // back as a row carrying its reason, and an unreadable folder as `error` beside the built-ins.
 app.get("/api/themes", (c) => c.json(listThemes()));
+
+// The composer's Playbooks dialog (server/playbooks.ts): the shipped playbooks/, the user's
+// ~/.pi/agent/sova/playbooks/ and the session cwd's .sova/marketing/playbooks/, rescanned per
+// request. Read-only, and never fails: a cwd that can't be listed (none, remote, missing) is
+// `project.state`, an unreadable user folder is `error`, and everything else is still listed.
+app.get("/api/playbooks", async (c) => c.json(await listPlaybooks(c.req.query("cwd"))));
 
 // Sova's own settings (server/web-settings.ts): today one experimental switch. GET reads the
 // stored value, PUT replaces it. The switch drives the `claude-code-provider` extension flag, so

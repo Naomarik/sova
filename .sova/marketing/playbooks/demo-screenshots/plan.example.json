@@ -1,0 +1,29 @@
+{
+  "baseUrl": "http://localhost:4817/",
+  "shots": [
+    {
+      "file": "home-1280-light.png",
+      "path": "/",
+      "width": 1280,
+      "height": 800,
+      "colorScheme": "light",
+      "prepare": null,
+      "shows": "The home screen with the three sample items you created, the first one open.",
+      "alt": "A browser page with a list of three items, Example 1 to Example 3, on the left; the right pane shows the details of Example 1.",
+      "hero": true,
+      "fullPage": false
+    },
+    {
+      "file": "home-475-dark.png",
+      "path": "/",
+      "width": 475,
+      "height": 900,
+      "colorScheme": "dark",
+      "prepare": "await page.getByRole('button', { name: 'Menu', exact: true }).click({ timeout: 5000 }); await page.getByText('Example 1', { exact: true }).waitFor({ timeout: 5000 });",
+      "shows": "The same screen on a narrow window in the dark theme, with the menu open over the list.",
+      "alt": "A narrow dark page with a menu panel open over a list whose first item is Example 1.",
+      "hero": false,
+      "fullPage": false
+    }
+  ]
+}

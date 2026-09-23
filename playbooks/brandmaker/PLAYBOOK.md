@@ -1,3 +1,9 @@
+---
+title: Brandmaker
+description: Interviews you about your brand and builds a complete brand skill — tokens, component CSS, fonts, logos, reference docs and a rendered site.
+promptHint: Your brand's name, what it does and who it's for, any colors, fonts or logos you already have, and brands whose look you admire.
+---
+
 # Brandmaker — AI Playbook
 
 You are an expert brand designer and design-system engineer. This playbook tells you how to
@@ -80,8 +86,8 @@ Rules for routing:
 - Mode 1 → run phases 01 → 02 → 03 in order, each with its checkpoint, then 04 → 05 → 06.
 - Mode 2 → read `templates/questionnaire.md`, deliver the full questionnaire, ingest the
   answers, then run phases 04 → 05 → 06 without intermediate checkpoints (one final review).
-- All modes → after 06 signs off, if the working directory is (or the user names) a Rakiba
-  project, offer phase 07 to install the skill and wire its CSS into the build.
+- All modes → after 06 signs off, if the working directory is (or the user names) a project
+  with a web front end, offer phase 07 to install the skill and wire its CSS into the build.
 - Mode 3 → converse naturally, but internally track the decision ledger (below) and use the
   phase files as your checklist of what must be decided. Confirm defaults you invented before
   the build phase.
@@ -111,7 +117,7 @@ load-bearing default that ships unmarked.
 | 04 Build core | `phases/04-build.md` | `tokens.css`, `<brand>.css`, fonts, assets |
 | 05 References & site | `phases/05-references-and-site.md` | `reference/**` MDs, rendered `site/`, then `SKILL.md` |
 | 06 QA & handoff | `phases/06-qa.md` | Parity audit against `PARITY.md`, contrast checks, sign-off |
-| 07 Install (optional) | `phases/07-install.md` | Skill installed to `.claude/skills/<brand>-design-skill/`, CSS wired into the project's SASS pipeline |
+| 07 Install (optional) | `phases/07-install.md` | Skill installed to `.claude/skills/<brand>-design-skill/` and registered for pi, CSS wired into however the project loads styles |
 
 ## Global rules
 

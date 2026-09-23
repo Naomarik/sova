@@ -61,15 +61,23 @@ while [ "$dir" != "/" ] && [ -n "$dir" ]; do
 done
 
 if [ -z "$PROJECT_NM" ]; then
-    echo "Error: could not find node_modules/playwright walking up from $PWD"
-    echo "  Install playwright locally: npm install playwright sharp"
-    exit 1
+    # The skill ships its own pinned install; a project that has no playwright of its own uses
+    # that one rather than being sent away to install a second copy beside it.
+    if [ -d "$SCRIPT_DIR/node_modules/playwright" ]; then
+        PROJECT_NM="$SCRIPT_DIR/node_modules"
+    else
+        echo "Error: could not find node_modules/playwright walking up from $PWD"
+        echo "  Install playwright locally: npm install playwright sharp"
+        exit 1
+    fi
 fi
 
 # Created atomically (temp symlink + mv -T): concurrent agents would otherwise
 # race between rm and ln, leaving a window where the import fails.
 SCRIPT_NM="$SCRIPT_DIR/node_modules"
-if [ -e "$SCRIPT_NM" ] && [ ! -L "$SCRIPT_NM" ]; then
+if [ "$PROJECT_NM" = "$SCRIPT_NM" ]; then
+    : # already this skill's own install: nothing to link
+elif [ -e "$SCRIPT_NM" ] && [ ! -L "$SCRIPT_NM" ]; then
     echo "Warning: $SCRIPT_NM exists and is not a symlink; leaving untouched" >&2
 elif [ "$(readlink "$SCRIPT_NM" 2>/dev/null)" != "$PROJECT_NM" ]; then
     TMP_NM="$SCRIPT_DIR/.node_modules.$$"

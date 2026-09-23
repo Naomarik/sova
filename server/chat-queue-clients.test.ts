@@ -24,6 +24,7 @@ mkdirSync(cwd, { recursive: true });
 
 const { acquireChat, disposeAllChats } = await import("./chat-manager");
 const { canonicalPath } = await import("./paths");
+const { playbookTurnText } = await import("../src/lib/playbooks");
 
 after(async () => {
   await disposeAllChats();
@@ -171,6 +172,30 @@ describe("the queue, seen by two tabs on one chat", () => {
     assert.equal(chat.session.pendingMessageCount, 0, "the SDK holds nothing of ours");
     const snap = mine.find((m) => m.type === "queue") as Extract<ChatServerMessage, { type: "queue" }>;
     assert.deepEqual(snap.items.map((i) => [i.kind, i.state, i.origin]), [["followUp", "queued", "server"]]);
+  });
+
+  test("a playbook sent mid-turn is a FOLLOW-UP behind the turn, never a steer into it", async () => {
+    // The Playbooks dialog sends through ChatView.send(text, false): a `prompt` frame even while
+    // streaming, where the composer's own mid-turn send is a `steer`. The frame type is the whole
+    // difference — the same text as a steer would be delivered INTO the running turn.
+    const { chat, me, mine } = await twoClients();
+    Object.defineProperty(chat.session, "isStreaming", { get: () => true, configurable: true });
+    const text = playbookTurnText({ title: "Brandmaker", dir: "/abs/playbooks/brandmaker", body: "# Brandmaker\n/skill:x $1\n" }, "Acme");
+    mine.length = 0;
+
+    chat.handle(me, { type: "prompt", text, clientId: "pb1" });
+    const ack = mine.find((m) => m.type === "send_ack") as Extract<ChatServerMessage, { type: "send_ack" }>;
+    assert.deepEqual(ack, { type: "send_ack", clientId: "pb1", queued: true }, "queued, so the row is removable");
+    const snap = mine.find((m) => m.type === "queue") as Extract<ChatServerMessage, { type: "queue" }>;
+    assert.deepEqual(snap.items.map((i) => [i.id, i.kind, i.origin]), [["pb1", "followUp", "client"]]);
+    assert.deepEqual([...chat.session.getSteeringMessages()], [], "nothing was steered into the turn");
+
+    // The collision check: the same text as a steer frame DOES become a steer, so the assertion
+    // above is about the frame type, not about something every mid-turn send does.
+    mine.length = 0;
+    chat.handle(me, { type: "steer", text, clientId: "pb2" });
+    const snap2 = [...mine].reverse().find((m) => m.type === "queue") as Extract<ChatServerMessage, { type: "queue" }>;
+    assert.deepEqual(snap2.items.find((i) => i.id === "pb2")?.kind, "steer");
   });
 
   test("tab B removes; tab A learns it was REMOVED, never infers delivered", async () => {

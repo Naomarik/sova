@@ -1,0 +1,74 @@
+---
+// Every page's frame. Colours, weights and faces come from brand.json. The theme is the brand's
+// visual.defaultTheme: "dark" or "light" is set on <html data-theme> and the reader's system
+// setting is ignored; only "system" follows prefers-color-scheme. Never both. No scripts, no
+// remote fonts, no analytics.
+import "../styles/site.css";
+import { brand, builtAt, colours, defaultTheme, favicons, markSvg, weights, wordmark } from "../lib/brand.mjs";
+
+interface Props {
+  title?: string;
+  description?: string;
+}
+const { title, description } = Astro.props;
+const base = import.meta.env.BASE_URL;
+const { fonts } = brand.visual;
+const built = builtAt();
+const fontFaces = fonts.files
+  .map((f) => {
+    const file = f.file.split("/").pop();
+    const format = { woff2: "woff2", woff: "woff", ttf: "truetype", otf: "opentype" }[file.split(".").pop().toLowerCase()];
+    return `@font-face{font-family:${JSON.stringify(f.family)};src:url("${base}brand/fonts/${file}") format("${format}");font-weight:${f.weight};font-display:swap}`;
+  })
+  .join("");
+// Both themes are complete, so the check can render each one; which applies is decided below.
+const vars = (scheme) => {
+  const c = colours(scheme);
+  return `--bg:${c.bg};--ink:${c.ink};--muted:${c.muted};--accent:${c.accent};--accent-ink:${c.accentInk};color-scheme:${scheme}`;
+};
+const themeCss =
+  fontFaces +
+  `:root{--sans:${JSON.stringify(fonts.sans)},system-ui,sans-serif;--mono:${JSON.stringify(fonts.mono)},ui-monospace,monospace;` +
+  `--w-body:${weights.body};--w-strong:${weights.strong};--w-wordmark:${weights.wordmark};--wordmark-tracking:${wordmark.tracking}}` +
+  (defaultTheme === "system"
+    ? `:root{${vars("light")}}@media (prefers-color-scheme: dark){:root{${vars("dark")}}}`
+    : `:root[data-theme="light"]{${vars("light")}}:root[data-theme="dark"]{${vars("dark")}}`);
+const mark = markSvg();
+const icons = favicons();
+---
+<!doctype html>
+<html lang={brand.language} data-theme={defaultTheme === "system" ? undefined : defaultTheme}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title ? `${title} · ${brand.name}` : `${brand.name} — ${brand.oneLiner}`}</title>
+    <meta name="description" content={description ?? brand.oneLiner} />
+    {/* Without a declared icon every browser requests /favicon.ico at the host root and gets a 404.
+        With light and dark mark variants the icon follows the browser's tab strip, not the page. */}
+    {icons.length === 0 && <link rel="icon" href="data:," />}
+    {icons.map((i) => <link rel="icon" href={`${base}${i.href}`} type="image/svg+xml" media={i.media} />)}
+    <style set:html={themeCss}></style>
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="wordmark" href={base}>
+        {mark && <Fragment set:html={mark} />}
+        <span>{brand.wordmark}</span>
+      </a>
+      <nav aria-label="Site">
+        <a href={`${base}docs/`}>Docs</a>
+        {brand.project.repo && <a href={brand.project.repo}>Repository</a>}
+      </nav>
+    </header>
+    <main>
+      <slot />
+    </main>
+    <footer class="site-footer">
+      <p>
+        {brand.name} · {brand.facts.licence} ·
+        {built.sha ? <> built from <code>{built.sha}</code> on {built.date}</> : <> built on {built.date}</>}
+        {brand.project.repo && <> · <a href={brand.project.repo}>{brand.project.repo.replace(/^https?:\/\//, "")}</a></>}
+      </p>
+    </footer>
+  </body>
+</html>

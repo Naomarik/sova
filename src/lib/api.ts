@@ -9,6 +9,7 @@ import type {
   GitSummary,
   ModeInfo,
   ModelInfo,
+  PlaybookCatalog,
   AssignGroupResult,
   BatchPromptResult,
   BatchRefusal,
@@ -17,6 +18,7 @@ import type {
   FanoutResult,
   SessionGroup,
   SessionInsight,
+  SessionSetup,
   SessionSummary,
   ThemeList,
   TmpAttachment,
@@ -138,6 +140,11 @@ export const getClaudeCliStatus = () => request<ClaudeCliStatus>("/api/settings/
     it, capped (truncated flags the cap). Cached both sides; the menu refetches when stale. */
 export const fetchFileIndex = (cwd: string) =>
   request<FileIndex>(`/api/files?cwd=${encodeURIComponent(cwd)}`);
+
+/** The Playbooks dialog's catalog: shipped, the user's, and (given a local cwd) the project's.
+    Never an error for a cwd it can't list — `project.state` says why instead. */
+export const fetchPlaybooks = (cwd: string | null) =>
+  request<PlaybookCatalog>(cwd ? `/api/playbooks?cwd=${encodeURIComponent(cwd)}` : "/api/playbooks");
 
 /** The default for new sessions, and what exists (GET /api/mode). */
 export const getMode = () => request<ModeInfo>("/api/mode");
@@ -511,6 +518,11 @@ export const fetchSessionInsight = (path: string) =>
     Use loadGitSummary (lib/git-summary.ts), which shares a request already running. */
 export const fetchGitSummary = (path: string, fresh = false) =>
   request<GitSummary>(`/api/sessions/git?path=${encodeURIComponent(path)}${fresh ? "&fresh=1" : ""}`);
+
+/** What pi loads for a session (context files, offered skills, system-prompt files), read for its
+    folder. `fresh` skips the server's cache. */
+export const fetchSessionSetup = (path: string, fresh = false) =>
+  request<SessionSetup>(`/api/sessions/context?path=${encodeURIComponent(path)}${fresh ? "&fresh=1" : ""}`);
 
 /**
  * `force` (chat only) lets the server open a session whose file was written recently by

@@ -1,0 +1,15 @@
+{
+  "name": "marketing-site",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "sync": "node scripts/sync-brand.mjs",
+    "dev": "node scripts/sync-brand.mjs && ASTRO_TELEMETRY_DISABLED=1 astro dev",
+    "build": "node scripts/sync-brand.mjs && ASTRO_TELEMETRY_DISABLED=1 astro build",
+    "preview": "ASTRO_TELEMETRY_DISABLED=1 astro preview",
+    "check": "node ../playbooks/doc-site/check-site.mjs"
+  },
+  "dependencies": {
+    "astro": "7.3.4"
+  }
+}

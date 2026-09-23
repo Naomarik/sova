@@ -4,6 +4,13 @@
 > Voice section and by [`spec/09-copy-deck.md`](../../spec/09-copy-deck.md). This page is about prose
 > written *about* Sova: README, notes, release notes, a website.
 
+**Superseded in part.** The pillars, the use/avoid words, and the shape rules now live in
+`.sova/marketing/brand.json` and are rendered into
+[`.sova/marketing/BRAND.md`](../../.sova/marketing/BRAND.md), which is what the marketing playbooks
+read. Where the two disagree, `brand.json` is the maintained copy. This page keeps what a rendered
+brand book has no room for: the reasoning, and the before/after examples that teach a rule by
+showing it broken first.
+
 ## The four pillars, applied to prose
 
 The skill's pillars are calm, concrete, warm, and candid, all at once. In UI copy they are
@@ -47,9 +54,13 @@ A page that only lists what works reads like a pitch, and this is not a pitch.
 - Relative dates only inside the app. In prose, write the date: "verified 2026-09-22 at `d3a6963`".
 - Tables for facts that line up. Prose for anything with a "because".
 - No emoji, no exclamation marks, no rhetorical questions.
-- **Keep the old `pi-web` name where it is the true one.** The state directory
-  `~/.pi/agent/pi-web/`, the `pi-web:*` browser keys and the `pi-web-theme/v1` schema are not
-  migrated yet; writing Sova there would be wrong. See [naming.md](naming.md).
+- **Keep the old `pi-web` name where it is the true one.** The state directory moved on
+  2026-09-22: new data is written under `~/.pi/agent/sova/`, and what is still spelled `pi-web` is
+  read-compatibility for data already written — the paths embedded in old transcripts and session
+  headers, the `pi-web:*` browser keys (read and mirrored to `sova:*`), the `pi-web-theme/v1`
+  schema, and the `pi-web-rewind` and `pi-web-fanout-member` session markers, which are still
+  written legacy-named on purpose so a rollback can read them. Writing `pi-web` in a *new* path is
+  wrong; naming one where it is still the recorded truth is right. See [naming.md](naming.md).
 
 ## Two examples
 

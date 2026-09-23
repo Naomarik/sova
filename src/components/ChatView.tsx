@@ -83,6 +83,8 @@ import { openCreated } from "../lib/fork-stage";
 import { FlyoutSession, type ThinkingControl, type UndoControl } from "./ComposerMenu";
 import { ConnectionBanner } from "./ConnectionBanner";
 import { SessionInfoDialog } from "./SessionInfoDialog";
+import { SessionSetupCard } from "./SessionSetup";
+import { PlaybooksDialog } from "./PlaybooksDialog";
 import type { ModeControl, ModeState } from "./ModeMenu";
 import type { ModelControl } from "./ModelMenu";
 import { type ForkMarker, HistoryItems, InfoRow, LiveEntries, type MessageActionsProvider, ThreadScroller, TranscriptSkeleton, TurnError } from "./Thread";
@@ -210,6 +212,7 @@ export function ChatView(props: {
   const [thinkingError, setThinkingError] = createSignal<{ target: string; from: string | null; body: string } | null>(null);
   /** The per-session info modal (§4h), opened from the composer flyout. */
   const [showInfo, setShowInfo] = createSignal(false);
+  const [showPlaybooks, setShowPlaybooks] = createSignal(false);
 
   /**
    * "Fan Out…" in the flyout, and the source it hands over (spec/14b "Entry points").
@@ -1270,7 +1273,8 @@ export function ChatView(props: {
                   <p class="empty-title">
                     New session in <code>{props.cwdLabel}</code>.
                   </p>
-                  <p class="empty-body">Nothing sent yet. Your first message becomes its title.</p>
+                  <SessionSetupCard path={props.path} />
+                  <p class="empty-body">Your first message becomes its title.</p>
                 </div>
               </Show>
             </>
@@ -1302,6 +1306,7 @@ export function ChatView(props: {
         thinking={thinkingControl}
         mode={modeControl}
         onShowInfo={() => setShowInfo(true)}
+        onPlaybooks={() => setShowPlaybooks(true)}
         onFanOut={fanOut()}
         undo={undoControl}
         onSend={send}
@@ -1323,6 +1328,31 @@ export function ChatView(props: {
           onClose={() => {
             setShowInfo(false);
             queueMicrotask(() => document.getElementById(paneId("composer-menu-trigger"))?.focus());
+          }}
+        />
+      </Show>
+      <Show when={showPlaybooks()}>
+        <PlaybooksDialog
+          path={props.path}
+          cwd={props.summary?.()?.cwd ?? null}
+          // What stops the composer's Send stops Send Playbook, with the same reason line; a model
+          // turned off in Settings → Models is said there too, rather than only as a refusal row.
+          blocked={blocked() ?? (offNow() ? { icon: "attention", text: offNow()! } : null)}
+          // Never a steer: a whole playbook mid-turn goes in as a follow-up the server queues
+          // behind the running turn (a removable queue row), not into the turn it would derail.
+          onSend={(text) => send(text, false, [])}
+          onClose={(sent) => {
+            setShowPlaybooks(false);
+            // After a send the next thing is the conversation (spec §4 "Focus"); otherwise back
+            // to the trigger the dialog was opened from.
+            if (sent) focusComposer();
+            else queueMicrotask(() => document.getElementById(paneId("composer-menu-trigger"))?.focus());
+          }}
+          // The view is going away under the open dialog (the session turned read-only): what was
+          // typed goes to the top of this session's draft, where restoreUnsent puts unsent turns.
+          onOrphan={(text) => {
+            const current = drafts.get(props.path);
+            setDraftText(props.path, current ? `${text}\n\n${current}` : text);
           }}
         />
       </Show>

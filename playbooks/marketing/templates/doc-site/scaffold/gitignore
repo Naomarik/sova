@@ -1,0 +1,7 @@
+# Renamed to .gitignore when the scaffold is copied into .sova/marketing/site/.
+node_modules/
+_site/
+.astro/
+_check/
+# Copied from the project by scripts/sync-brand.mjs on every dev/build; brand.json is the source.
+public/brand/

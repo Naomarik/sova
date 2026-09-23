@@ -1,0 +1,47 @@
+---
+// Home: the one line and the one paragraph verbatim from brand.json, how to try it, and one
+// real screenshot if the demo-screenshots playbook captured one. Everything here must also be
+// true in the README; if the site knows something the README doesn't, fix the README first.
+import Base from "../layouts/Base.astro";
+import { brand, runLines, screenshots } from "../lib/brand.mjs";
+
+const base = import.meta.env.BASE_URL;
+const shots = screenshots();
+// The manifest marks the shot to lead with; otherwise the first one listed.
+const hero = shots.find((s) => s.hero) ?? shots[0];
+---
+<Base>
+  <section class="intro">
+    <h1>{brand.oneLiner}</h1>
+    <p class="lede">{brand.paragraph}</p>
+  </section>
+
+  {hero && (
+    <figure class="shot">
+      <img src={`${base}brand/screenshots/${hero.file}`} alt={hero.alt} width={hero.width} />
+      <figcaption>{hero.shows}</figcaption>
+    </figure>
+  )}
+
+  <section>
+    <h2>Try it</h2>
+    {runLines.length === 1 ? (
+      <pre><code>{brand.project.install}
+{runLines[0]}</code></pre>
+    ) : (
+      <>
+        <pre><code>{brand.project.install}</code></pre>
+        {/* project.run as a list is one process per line; each needs its own terminal. */}
+        <p>Then start each of these in its own terminal:</p>
+        {runLines.map((line) => <pre><code>{line}</code></pre>)}
+      </>
+    )}
+    <p>Then open <code>{brand.project.demoUrl}</code>.{brand.project.demoNotes && ` ${brand.project.demoNotes}`}</p>
+    <p><a class="primary" href={`${base}docs/`}>Read the docs</a></p>
+  </section>
+
+  <section>
+    <h2>What it is not</h2>
+    <ul>{brand.notThis.map((line) => <li>{line}</li>)}</ul>
+  </section>
+</Base>

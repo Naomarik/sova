@@ -1,0 +1,127 @@
+---
+title: Write {{name}} announcement posts
+description: Drafts announcement and social posts in the brand's voice from the README's verified claims only, fitted to each platform's limits, with alt text for every image.
+promptHint: The occasion (first release, a new version, a feature), which platforms, and a link to point at (the repo, the site, a release).
+---
+
+# Write {{name}} announcement posts
+
+Posts that tell someone who has never heard of {{name}} what it does, what it doesn't, and
+where to try it, in the brand's voice, and never claiming more than the code supports. A
+post is the smallest document there is about the project, so every word in it has to be true.
+
+Paths are relative to the project root (see `.sova/marketing/TOOLS.md`). Beside this playbook:
+`count.mjs`, which measures drafts against each platform's limits.
+
+## 0. Read before writing
+
+1. `.sova/marketing/BRAND.md`: the one line, what it is not, the pillars, the use/avoid words,
+   and `social.audience` and `social.platforms`. `social.platforms` may be empty: that means
+   the platforms have **not been decided**, not "none" and not "all six".
+2. `.sova/marketing/claims.md`: the verified claims, each with a revision. **Every capability a
+   post mentions must be a `shipped` row there.** If the file doesn't exist, or is older than
+   the release you're announcing, stop and run **Rewrite the {{name}} README** first. A post
+   written from memory, a spec or a changelog draft is exactly the post this playbook exists to
+   prevent.
+3. The README as it is now, and `.sova/marketing/assets/` for screenshots
+   (`screenshots/manifest.json`) and video (`video/manifest.json`, only entries with
+   `verified.problems` empty).
+
+## 1. Align
+
+Ask the user, in one message, and wait:
+
+1. **The occasion.** First announcement, a release (which version, which claims are new), or one
+   feature. One occasion per set of drafts.
+2. **The link.** Repo, site, or a release page. Check it resolves (`curl -sI <url>`) before any
+   post uses it.
+3. **Platforms.** If `social.platforms` in `brand.json` lists some, recommend those and
+   confirm. If it is `[]`, they haven't been decided: **ask** which, recommending 1–3 from where
+   `social.audience` says the readers already are, and wait. Don't guess, and don't draft for
+   all six to be safe. Once the user answers, offer to record the choice in `brand.json`
+   (`social.platforms`) and re-run the generator (TOOLS.md), so the next run starts from it.
+4. **Media.** Which screenshot or video, if any, per platform.
+5. **Who posts.** Their account, their voice. First person singular or plural follows how the
+   README speaks.
+
+## 2. Draft
+
+Write one file per platform in `.sova/marketing/social/<YYYY-MM-DD>-<occasion>/<platform>.md`,
+named exactly `bluesky`, `mastodon`, `x`, `linkedin`, `hn` or `reddit`. The shape:
+
+```markdown
+Occasion: first release, v0.4.0
+Claims: claims.md rows "Imports a CSV file into a new list", "Saves each list as a plain JSON file"
+Link: https://example.com/your-app/
+Image: .sova/marketing/assets/screenshots/home-1280-light.png
+Alt: A browser page with a list of three items on the left; the right pane shows the first item's details.
+
+---
+The post, exactly as it will be pasted.
+---
+A second post, if this is a thread.
+```
+
+Above the first `---` are notes for the person posting; below it, each block between `---`
+lines is one post. For `hn` and `reddit` the first line below `---` is the title; for `hn` the
+rest is the text of your first comment, and the URL goes in `Link:`.
+
+### What every post does
+
+- **Stands alone.** Someone who sees only this post learns what {{name}} is and who it's for.
+  It uses the one line, or says the same thing in fewer words. **No link-only posts**, and no
+  "check this out" with a link.
+- **Says one thing it does and one thing it isn't.** The limit next to the feature is the
+  brand (`notThis`). A post that is all upside reads like an ad.
+- **Is concrete.** Name the command, the file, the number. "Saves each list as a JSON file in
+  your project, nothing uploaded" rather than "a privacy-first data experience".
+- **Follows the voice.** No superlatives, no exclamation marks, no urgency ("finally", "you
+  need this"), no rhetorical questions, no emoji unless the user asks. Use the `voice.use`
+  words, never the `voice.avoid` words. Spell for `language`.
+- **Claims nothing that isn't `shipped` in `claims.md`.** No benchmarks you didn't run, no user
+  counts, no "loved by", no roadmap items stated as features. "Next, we're working on…" is fine
+  only if the user asks for it and says so in those words.
+- **Has alt text for every image or video**: what is on screen, for someone who can't see it.
+  It is not a caption and not a sales line. Put it on the `Alt:` line; `count.mjs` fails a
+  draft with an image and no alt text.
+- **Mentions nobody** without the user's say-so: no @-handles, no tagging people or projects.
+
+### Per platform
+
+These limits are as this playbook was written. Platforms change them, so confirm with the
+platform before posting anything within 10% of one.
+
+| Platform | Length | Links | Media and alt text | Norms |
+|---|---|---|---|---|
+| `bluesky` | 300 characters per post | Counted in full. A link card appears if the URL is the last thing. | Up to 4 images, alt text on each. | Plain and short. A thread of 2–3 is fine; no hashtag runs. |
+| `mastodon` | 500 characters on most servers; check the user's server | Any URL counts as 23 | Up to 4 images, alt text on each: many readers filter out posts without it | Hashtags in CamelCase (`#OpenSource`) so screen readers read them; 1–3 at the end. |
+| `x` | 280 characters (standard accounts) | Any URL counts as 23 | Up to 4 images, alt text on each | One idea per post; a short thread if needed. |
+| `linkedin` | 3,000 characters; about the first 200 show before "see more" | Counted in full | One image or video, alt text | Lead with the useful sentence, not "Excited to announce". |
+| `hn` | Title at most 80 characters | Submit the URL; the text below the title is your first comment | None | Use `Show HN:` only if people can try it now. Factual title, no superlatives, no asking for votes. The first comment says who made it, why, and the limits. |
+| `reddit` | Title at most 300 characters | Link or text post, by subreddit | By subreddit | Read the subreddit's rules on self-promotion first and say which subreddit you checked. |
+
+## 3. Measure
+
+```sh
+node .sova/marketing/playbooks/social/count.mjs .sova/marketing/social/<YYYY-MM-DD>-<occasion>/*.md
+```
+
+It counts graphemes as the platform does (URLs weighed at 23 where that applies) and fails a
+draft that is over a limit, has a link-only post, or has an `Image:` without an `Alt:`. Fix
+and re-run until every file says `ok`. It also prints a `note:` (never a failure) for a draft
+whose platform isn't in `social.platforms`, and once when `social.platforms` is `[]`: those are
+settled with the user in step 1, not by the script.
+
+Then check by hand what no script can:
+
+- Every capability named in a post matches a `shipped` row in `claims.md`, and the `Claims:`
+  line lists them.
+- Grep the drafts for each `voice.avoid` word, and for `!`, "best", "fastest", "easy",
+  "simply" and "revolutionary".
+- Every link resolves, and every image path exists.
+
+## 4. Hand off
+
+Show the user each draft with its measured length, the claims it relies on, and the media with
+its alt text. Posting is theirs. Never post, schedule or send on their behalf. If the user edits
+a draft, re-run `count.mjs` and re-check the claims.

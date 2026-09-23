@@ -69,7 +69,7 @@ interface Row {
 /**
  * The composer's flyout (spec/04b-images.md §4b): one native popover anchored ABOVE whatever opened
  * it, in the model menu's visual family, with three panels. The ghost `plus` button opens the
- * **menu** panel (Attach images, Commands, Hide tool calls, Hide thinking, Session info, and in
+ * **menu** panel (Attach images, Commands, in chats Playbooks, Hide tool calls, Hide thinking, Session info, and in
  * chats Undo last turn); the
  * composer's model indicator (§4) opens the **model** panel (the Model row and this model's
  * Thinking ladder); the Model row opens the §4c **picker**, which comes back to the model panel.
@@ -90,6 +90,9 @@ export function ComposerMenu(props: {
   thinking?: ThinkingControl | null;
   /** Opens the per-session info modal (§4h). */
   onShowInfo?: () => void;
+  /** Chat sessions only: opens the Playbooks dialog, which sends a playbook as a turn. Absent,
+      like `onFanOut`, where nothing can be sent — a watch view holds no runtime. */
+  onPlaybooks?: () => void;
   /** Chat sessions with a reply: "Fan Out…" (§14b). Absent otherwise — a watch view holds no
       runtime, a TUI-live session is never touched, and a session with no reply has nothing to
       fork; §9 is explicit that the row is absent rather than disabled, because an absence needs
@@ -150,6 +153,19 @@ export function ComposerMenu(props: {
         props.onCommands();
       },
     });
+    if (props.onPlaybooks)
+      out.push({
+        id: "playbooks",
+        role: "menuitem",
+        icon: "file",
+        label: "Playbooks",
+        disabled: props.disabled,
+        describe: props.disabled,
+        run: () => {
+          close(true);
+          props.onPlaybooks?.();
+        },
+      });
     const path = session();
     // View preferences, not writes to the session: they work in read-only sessions too.
     if (path) {
@@ -477,7 +493,7 @@ export function ComposerMenu(props: {
           </Match>
           <Match when={panel() === "menu"}>
             <div class="model-menu-list composer-flyout-list" role="menu" aria-label="More actions" onKeyDown={onListKeyDown}>
-              <Index each={pick((r) => r.id === "attach" || r.id === "commands")}>{(x) => <Item r={x().r} index={x().index} />}</Index>
+              <Index each={pick((r) => r.id === "attach" || r.id === "commands" || r.id === "playbooks")}>{(x) => <Item r={x().r} index={x().index} />}</Index>
               {/* The rows are picked by id, so a row that matches no section is built and never
                   rendered: "Fan Out…" belongs to this one, after Session info (§14b). */}
               <Show when={pick((r) => r.id.startsWith("hide-") || r.id === "info" || r.id === "fanout").length > 0}>

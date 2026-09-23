@@ -1,0 +1,21 @@
+---
+import { getCollection } from "astro:content";
+import Base from "../../layouts/Base.astro";
+import { hasOwnH1, rewriteLinks, sortDocs, titleOf } from "../../lib/docs.mjs";
+
+export async function getStaticPaths() {
+  const docs = sortDocs(await getCollection("docs"));
+  return docs.map((entry) => ({ params: { slug: entry.id }, props: { entry, docs } }));
+}
+
+const { entry, docs } = Astro.props;
+const base = import.meta.env.BASE_URL;
+const html = rewriteLinks(entry.rendered?.html ?? "", entry, docs, base);
+---
+<Base title={titleOf(entry)} description={entry.data.description}>
+  <article class="doc">
+    {!hasOwnH1(entry) && <h1>{titleOf(entry)}</h1>}
+    <Fragment set:html={html} />
+  </article>
+  <p class="back"><a href={`${base}docs/`}>All docs</a></p>
+</Base>

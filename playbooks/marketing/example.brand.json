@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "name": "Kestrel",
+  "wordmark": "kestrel",
+  "oneLiner": "Read your service logs in a browser, on the machine that wrote them.",
+  "paragraph": "Kestrel tails the log files you point it at and serves them as a searchable page on localhost. It reads the files in place: there is no agent to install, no index to build and nothing is uploaded. Filters are saved per folder in a plain JSON file beside the logs. It is for one person on one machine, and it has no authentication, so keep it on localhost.",
+  "audience": "A developer who runs a handful of services locally and already reads their logs with tail and grep. They know what a log level and a regex are. They need to know which files Kestrel opens, that it never writes to them, and that it listens on localhost only.",
+  "notThis": [
+    "Not a log shipper or a hosted log service.",
+    "Not a metrics or tracing tool.",
+    "Not safe to expose beyond localhost."
+  ],
+  "language": "en-GB",
+  "voice": {
+    "pillars": [
+      { "name": "Calm", "means": "No superlatives, no urgency, no exclamation marks.", "prevents": "\"Blazing fast log search\"" },
+      { "name": "Concrete", "means": "Name the file, the port, the command, the count.", "prevents": "\"Seamless integration with your stack\"" },
+      { "name": "Candid", "means": "State the limit next to the feature.", "prevents": "A feature list with no edges" }
+    ],
+    "use": ["log file", "tail", "filter", "localhost", "on this machine"],
+    "avoid": ["platform", "observability", "seamless", "powerful", "cloud"],
+    "rules": ["Digits, always: \"3 files\", not \"three files\"."]
+  },
+  "visual": {
+    "colorway": "Near-monochrome. One amber accent, spent on the primary action and the live indicator only. Light by default, with a complete dark theme.",
+    "typography": "Inter for text and the wordmark (lowercase, weight 640, tight tracking). JetBrains Mono for log lines and commands.",
+    "palette": {
+      "light": { "bg": "#FAFAF7", "ink": "#1C1B19", "muted": "#6B6862", "accent": "#A35200", "accentInk": "#FFFFFF" },
+      "dark": { "bg": "#161513", "ink": "#EDEBE6", "muted": "#A29F98", "accent": "#F0A04B", "accentInk": "#161513" }
+    },
+    "fonts": { "sans": "Inter", "mono": "JetBrains Mono", "files": [] },
+    "designSystem": null,
+    "defaultTheme": "light",
+    "weights": ["400", "640"],
+    "wordmark": { "weight": "640", "tracking": "-0.03em" }
+  },
+  "mark": null,
+  "project": {
+    "repo": "https://github.com/example/kestrel",
+    "install": "npm install",
+    "run": "npm run dev",
+    "demoUrl": "http://localhost:4817/",
+    "demoNotes": "Point it at the sample logs with KESTREL_DIR=./fixtures/logs before npm run dev."
+  },
+  "social": {
+    "audience": "Developers who run services locally and read logs in a terminal; they read Hacker News and Mastodon.",
+    "platforms": ["hn", "mastodon", "bluesky"]
+  },
+  "facts": {
+    "licence": "MIT",
+    "hosting": "GitHub Pages",
+    "siteUrl": "https://example.github.io/kestrel/"
+  }
+}

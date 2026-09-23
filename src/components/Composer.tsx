@@ -117,6 +117,8 @@ export function Composer(props: {
   mode?: ModeControl | null;
   /** Opens this session's info modal from the flyout (§4h). */
   onShowInfo?: () => void;
+  /** Chat sessions only: opens the Playbooks dialog (the flyout's Playbooks row). */
+  onPlaybooks?: () => void;
   /** "Fan Out…" in the flyout, for a chat session that can be forked (§14b). */
   onFanOut?: () => void;
   /** Chat sessions only: the flyout's "Undo last turn" row. */
@@ -838,6 +840,7 @@ export function Composer(props: {
             model={props.model}
             thinking={props.thinking}
             onShowInfo={props.onShowInfo}
+            onPlaybooks={props.onPlaybooks}
             onFanOut={props.onFanOut}
             undo={props.undo}
             onRefocus={() => input.focus()}
@@ -972,17 +975,21 @@ export function Composer(props: {
               </button>
             </Show>
             <Show when={props.running && !props.readOnly}>
+              {/* Icon only, at every width: the 44px square is the form the actions row already
+                  collapses to under 480px, and the run-status row above says "Stopping…" — so the
+                  word was repeating what the status row and the glyph already say. */}
               <button
                 type="button"
-                class="button button-destructive"
+                class="button button-destructive button-icon"
+                aria-label="Stop"
+                title="Stop"
                 aria-disabled={props.stopping ? "true" : undefined}
                 onClick={() => {
                   if (!props.stopping) props.onAbort();
                   input.focus();
                 }}
               >
-                <Icon name="stop" small />
-                <span class="button-label">Stop</span>
+                <Icon name="stop" />
               </button>
             </Show>
           </div>

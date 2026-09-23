@@ -388,7 +388,9 @@ function remoteRefusal(remote: RemoteCwd): FilesResult {
     : { ok: false, status: 501, error: `This folder was an sshfs mount of ${remote.target} that Sova no longer creates. The @ menu lists local folders only` };
 }
 
-const defaultRemoteOf = (p: string): RemoteCwd | null => {
+/** The lexical remote reading of a resolved cwd: a target placeholder, a legacy mount, or null.
+    Exported for server/playbooks.ts, whose project scan refuses the same cwds on the same terms. */
+export const defaultRemoteOf = (p: string): RemoteCwd | null => {
   const target = parseTargetCwd(p);
   if (target) return { kind: "target", target: target.target };
   const legacy = parseLegacyMountCwd(p);

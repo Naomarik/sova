@@ -1,0 +1,20 @@
+---
+import { getCollection } from "astro:content";
+import Base from "../../layouts/Base.astro";
+import { sortDocs, titleOf } from "../../lib/docs.mjs";
+
+const base = import.meta.env.BASE_URL;
+const docs = sortDocs(await getCollection("docs"));
+---
+<Base title="Docs">
+  <h1>Docs</h1>
+  {docs.length === 0 && <p>No docs yet.</p>}
+  <ul class="doc-list">
+    {docs.map((d) => (
+      <li>
+        <a href={`${base}docs/${d.id}/`}>{titleOf(d)}</a>
+        {d.data.description && <p>{d.data.description}</p>}
+      </li>
+    ))}
+  </ul>
+</Base>

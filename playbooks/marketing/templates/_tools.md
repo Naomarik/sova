@@ -1,0 +1,95 @@
+# Tools for the {{name}} marketing playbooks
+
+Read this before any step that uses a browser, a helper script, or the generator.
+
+## Where you are
+
+Every path in these playbooks is relative to the **project root**: the folder that holds
+`.sova/`. From a playbook's own directory (`.sova/marketing/playbooks/<id>/`) that is four
+levels up. Run every command from the project root unless a step says otherwise.
+
+| Path | What it is | Who writes it |
+|---|---|---|
+| `.sova/marketing/brand.json` | The brand. The only file here you edit by hand. | You, with the user |
+| `.sova/marketing/BRAND.md` | The brand, readable. | Generator |
+| `.sova/marketing/playbooks/<id>/` | The six playbooks and their templates and scripts. | Generator |
+| `.sova/marketing/lib/` | Code the scripts share. | Generator |
+| `.sova/marketing/local.json` | This machine's paths: generator, Playwright, ffmpeg. Gitignored. | Generator |
+| `.sova/marketing/manifest.json` | Which files the generator owns. | Generator |
+| `.sova/marketing/claims.md` | Verified claims, each with a revision. | **Rewrite the README** |
+| `.sova/marketing/assets/` | Screenshots, video, logos. | The playbooks |
+| `.sova/marketing/site/` | The site and docs, an Astro project with its own `package.json`. | **Build the site and docs** |
+| `.sova/marketing/social/` | Post drafts. | **Write announcement posts** |
+
+A generated file starts with a comment saying so. Never edit one: change `brand.json` and
+re-run the generator. The generator never touches a file it didn't write, so everything the
+playbooks produce (`claims.md`, `assets/`, `site/`, `social/`) is safe from it.
+
+## Re-running the generator
+
+`local.json` records where the generator is on this machine. After any change to `brand.json`:
+
+```sh
+node "$(node -p 'require("./.sova/marketing/local.json").generator')" --project .
+```
+
+It prints every file it wrote, kept or skipped. Exit 1 means `brand.json` is invalid and the
+message names the field; exit 3 means it skipped a file it doesn't own, and names it. If
+`local.json` is missing (a fresh clone: it is gitignored), run the generator from Sova's
+`playbooks/marketing/scripts/generate.mjs` once by its full path.
+
+## The browser
+
+Screenshots, video, the logo sheet and the site check all use Sova's Playwright skill over CDP.
+Its location on this machine is `playwrightSkill` in `local.json`; if that is `null`, stop and
+tell the user — do not install a browser tool of your own. Read that skill's `SKILL.md` before
+the first browser step. The rules that matter most here:
+
+- **Drive only an app you started, on a port you checked.** The port the project runs on
+  must be **free before you start it** (`curl -s -o /dev/null -w '%{http_code}\n' <url>`
+  prints `000`) and **yours afterwards**: the process you started is still running, and the
+  page shows something only this project shows. A framework's default port (`3000`, `8080`,
+  a bundler's dev port) is where somebody else's dev server is most likely already answering,
+  often a live app with real data. **If a page loads data you did not create, you are on the
+  wrong port: stop, close it, and don't capture or record anything from it.** In the examples
+  below `4817` stands for the scratch port you chose and checked; it is not a default. If
+  `project.run` can't be moved off a taken port, ask the user.
+- **Start your own browser, and pass its port on every call.** `start-browser.sh --headless`
+  prints `PW_PORT=<port>`; prefix every later command with it. Never attach to a browser you
+  didn't start. Stop yours with `stop-browser.sh` when you are done.
+- **Run `pw.sh` from the skill's `scripts/` folder**, not from the project. `pw.sh` looks for
+  `node_modules/playwright` upward from the current directory. Some versions of the skill exit
+  with "could not find node_modules/playwright" in a project that has none, and running from
+  the skill's folder works with every version. Give it absolute file paths:
+
+  ```sh
+  ROOT="$PWD"                                   # the project root, captured before any cd
+  PWS="$(node -p 'require("./.sova/marketing/local.json").playwrightScripts')"
+  curl -s -o /dev/null -w '%{http_code}\n' http://localhost:4817/   # must print 000
+  # … start the app on 4817 (project.run), confirm it is yours, then:
+  "$PWS/start-browser.sh" --headless            # prints PW_PORT=<port>
+  (cd "$PWS" && PW_PORT=<port> ./pw.sh navigate http://localhost:4817/)
+  (cd "$PWS" && PW_PORT=<port> ./pw.sh resize 1280 800)
+  (cd "$PWS" && PW_PORT=<port> ./pw.sh eval "innerWidth")   # must print 1280
+  (cd "$PWS" && PW_PORT=<port> ./pw.sh screenshot "$ROOT/shot.png")
+  PW_PORT=<port> "$PWS/stop-browser.sh"
+  ```
+
+  Inside `( cd … && … )`, `$PWD` is already the skill folder; use `$ROOT`. Shell variables do
+  not survive between separate tool calls, so set `ROOT` and `PWS` again in each one.
+
+- **Resize after every navigation, then read `innerWidth` back.** A navigation resets the
+  viewport, and every command still reports success. A width you did not read back is a width
+  you do not have.
+- If `playwrightInstalled` in `local.json` is `false`, run `npm ci` in `playwrightScripts`
+  first. That installs into Sova's skill folder, not into this project.
+
+The helper scripts in the playbooks (`capture.mjs`, `record.mjs`, `check-sheet.mjs`,
+`check-site.mjs`) find Playwright through `local.json` themselves and connect to the browser
+named by `PW_PORT`. Run them with `node` from the project root. `SOVA_PLAYWRIGHT=<dir>`
+overrides the Playwright location if you need to.
+
+## ffmpeg
+
+`ffmpeg` and `ffprobe` in `local.json` are the binaries found on `PATH` when the generator ran,
+or `null`. The demo video playbook needs both to prove a recording plays.

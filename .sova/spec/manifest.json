@@ -138,8 +138,8 @@
       "requires": [
         "§app.settings-dialog/models"
       ],
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "reviewed"
     },
     "§app.settings-dialog/one-height": {
       "kind": "behavior",

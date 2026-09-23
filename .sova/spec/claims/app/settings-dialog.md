@@ -132,10 +132,21 @@ side by side when the panel has room and stacked under 640px.
   model keeps the effort only when the new model takes it. A blank row can't be saved.
 - **A stored pick is always shown.** When discovery doesn't list it, it stays in the select with
   "— not offered" (the backend answered without it; the row says so in error ink) or "— not
-  verified" (the backend couldn't answer; muted). Couldn't-answer is never read as gone: a
-  backend whose discovery fails gets one warn banner with **Check Again** carrying the reason,
-  its rows say only "Not verified: {backend} couldn't list its models.", and saves still go
-  through, with one "not verified" note per backend naming every slot on it.
+  verified" (the backend couldn't answer, or its answer isn't proof; muted). Couldn't-answer is
+  never read as gone: a backend whose discovery fails gets one warn banner with **Check Again**
+  carrying the reason, its rows say only "Not verified: {backend} couldn't list its models.", and
+  saves still go through, with one "not verified" note per backend naming every slot on it.
+- **A Claude Code alias the CLI's list omits is not gone.** The `claude` initialize model list is
+  remote and account-gated and alternates within minutes between a shape that carries the `[1m]`
+  aliases (`opus[1m]`, `claude-fable-5-1[1m]`) and one that does not, while the CLI accepts a valid
+  alias at runtime either way. So a shape-valid Claude Code model (an alias: no `/`, no leading
+  `-`, no whitespace) missing from a list the CLI did answer reads "— not verified" in the select
+  and, under its row, muted: "Not verified: the Claude Code CLI's model list doesn't include
+  {model} right now (the list varies). It will still be used." — the same soft state Delegate
+  routes it by. Only a shape-invalid Claude id, or a pi model its registry doesn't list, is "not
+  offered". The server's save check reads such a row the same way: never refused for absence from
+  the list, saved with that note; and its options list unions `[1m]` ids seen in recent discoveries
+  (30 minutes) so the picker doesn't flicker between the two shapes.
 - **Efforts.** A model's effort list is what its backend reported, cut to what the backend
   accepts; a model reporting none usable (no list, an empty one, or only efforts the backend
   refuses) takes every effort the backend accepts — the same rule Delegate routes by.
@@ -159,9 +170,10 @@ side by side when the panel has room and stacked under 640px.
   close with a warn banner above the foot: **Your Delegate changes aren't saved.** "Save them on
   this screen, or discard them and close." [Keep Editing] [Discard and Close]. A closed dialog
   forgets the draft; reopening starts from what's saved. The save replaces the whole file. The server
-  refuses a **changed** row its backend answered it can't run (model not offered, effort not
-  taken) and names it; a row that can't be checked, or that the policy refuses, saves with a warn
-  banner "Saved, with notes." A row left as it was stored never blocks a save.
+  refuses a **changed** row its backend answered it can't run (model not offered — for Claude Code,
+  only a shape-invalid id — or effort not taken) and names it; a row that can't be checked, or that
+  the policy refuses, saves with a warn banner "Saved, with notes." A row left as it was stored
+  never blocks a save.
 
 The file is `~/.pi/agent/mode-delegate.json` (shown in the footnote), global and shared with pi in
 the terminal. Chats already in Delegate — web and TUI — use a save from their next message; chats

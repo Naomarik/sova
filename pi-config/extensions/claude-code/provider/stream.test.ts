@@ -172,6 +172,29 @@ test("a turn without partial messages is replayed from the assistant frame", asy
 	assert.deepEqual(message.content[1], { type: "toolCall", id: "toolu_07", name: "bash", arguments: { command: "ls" } });
 });
 
+test("per-block assistant frames inside a streamed message are not replayed on top of the stream", async () => {
+	// The real CLI under --include-partial-messages: one assistant frame per
+	// content block, each carrying the final stop_reason, interleaved with
+	// the stream and with the tools/call control requests.
+	const { bridge } = fakeBridge(load("per-block-tools-turn.ndjson"));
+	const events = await collect(streamClaudeCode(bridge, model(), context()));
+	assert.deepEqual(types(events), [
+		"start",
+		"thinking_start", "thinking_end",
+		"text_start", "text_delta", "text_delta", "text_end",
+		"toolcall_start", "toolcall_delta", "toolcall_delta", "toolcall_end",
+		"toolcall_start", "toolcall_delta", "toolcall_delta", "toolcall_end",
+		"done",
+	]);
+	const terminal = last(events);
+	assert.equal(terminal.type === "done" && terminal.reason, "toolUse");
+	const message = finalMessage(terminal);
+	assert.deepEqual(message.content.slice(2), [
+		{ type: "toolCall", id: "toolu_PB_READ", name: "read", arguments: { path: "README.md" } },
+		{ type: "toolCall", id: "toolu_PB_BASH", name: "bash", arguments: { command: "git status --short" } },
+	]);
+});
+
 test("a failed result ends the stream with an error carrying the CLI message", async () => {
 	const { bridge } = fakeBridge(load("failed-turn.ndjson"));
 	const events = await collect(streamClaudeCode(bridge, model(), context()));
@@ -229,6 +252,68 @@ test("a delta for an unknown content block is reported, never dropped", async ()
 	assert.equal(terminal.type, "error");
 	const message = finalMessage(terminal);
 	assert.match(message.errorMessage ?? "", /unknown content block 4/);
+});
+
+/** No tool call on a terminal message may be half-built or carry adapter state. */
+function assertNoPartialToolCalls(content: ReturnType<typeof finalMessage>["content"]) {
+	for (const block of content) {
+		assert.ok(!Object.hasOwn(block, "partialJson"), "partialJson leaked onto the message");
+		assert.ok(!Object.hasOwn(block, "index"), "the CLI block index leaked onto the message");
+		if (block.type === "toolCall") assert.notDeepEqual(block.arguments, {}, `tool call ${block.id} kept empty arguments`);
+	}
+}
+
+test("a new message while a block is still open is a protocol error", async () => {
+	const frames = load("tool-turn.ndjson");
+	const open = frames.findIndex((f) => f.type === "stream" && f.event.type === "content_block_start");
+	const { bridge } = fakeBridge([...frames.slice(0, open + 1), { type: "stream", event: { type: "message_start" } }]);
+	const events = await collect(streamClaudeCode(bridge, model(), context()));
+	const terminal = last(events);
+	assert.equal(terminal.type, "error");
+	assert.match(finalMessage(terminal).errorMessage ?? "", /started a new message while content block 0 was open/);
+});
+
+test("a dying child's cut-off retry ahead of the next child's message ends cleanly", async () => {
+	// Recovered from a live session: the old child's tool_use never closed, and
+	// the replacement's thinking block reused index 0.
+	const { bridge } = fakeBridge(load("leaked-retry-turn.ndjson"));
+	const events = await collect(streamClaudeCode(bridge, model(), context()));
+	const terminal = last(events);
+	assert.equal(terminal.type, "error");
+	const message = finalMessage(terminal);
+	assert.match(message.errorMessage ?? "", /started a new message while content block 0 was open/);
+	assert.ok(!message.content.some((block) => block.type === "toolCall"), "the stale tool call survived");
+	assertNoPartialToolCalls(message.content);
+});
+
+test("an errored turn never persists a half-built tool call", async () => {
+	const frames = load("tool-turn.ndjson");
+	const delta = frames.findIndex((f) => f.type === "stream" && f.event.type === "content_block_delta" && f.event.delta.kind === "input_json");
+	const cut: ClaudeFrame[] = [
+		...frames.slice(0, delta),
+		{ type: "stream", event: { type: "content_block_delta", index: 1, delta: { kind: "input_json", partialJson: "{\"path\": \"a." } } },
+		{ type: "result", outcome: "error", message: "Claude Code reported a failed turn" },
+	];
+	const { bridge } = fakeBridge(cut);
+	const events = await collect(streamClaudeCode(bridge, model(), context()));
+	const terminal = last(events);
+	assert.equal(terminal.type, "error");
+	const message = finalMessage(terminal);
+	assert.ok(!message.content.some((block) => block.type === "toolCall"));
+	assertNoPartialToolCalls(message.content);
+});
+
+test("a delta of the wrong kind names the block it hit", async () => {
+	const frames: ClaudeFrame[] = [
+		{ type: "stream", event: { type: "message_start" } },
+		{ type: "stream", event: { type: "content_block_start", index: 2, block: { kind: "tool_use", id: "toolu_X", name: "mcp__pi__read", input: {} } } },
+		{ type: "stream", event: { type: "content_block_delta", index: 2, delta: { kind: "thinking", thinking: "hm" } } },
+	];
+	const { bridge } = fakeBridge(frames);
+	const events = await collect(streamClaudeCode(bridge, model(), context()));
+	const terminal = last(events);
+	assert.equal(terminal.type, "error");
+	assert.match(finalMessage(terminal).errorMessage ?? "", /thinking delta for toolCall block 2 \(toolu_X\)/);
 });
 
 test("abort mid-stream ends the turn and closes the bridge iterator", async () => {

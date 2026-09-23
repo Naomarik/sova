@@ -22,6 +22,9 @@
  *   - A held `tools/call` blocks with no deadline of the CLI's own.
  */
 import { createHash } from "node:crypto";
+import { appendFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import {
 	buildClaudeArgv, ClaudeTransport,
 	type ClaudeTransportLimits, type ClaudeTransportTimings, type SpawnImpl,
@@ -62,9 +65,9 @@ export interface SessionBridgeTimings {
 	termGraceMs: number;
 	pipeDrainMs: number;
 	/**
-	 * How long to wait, after an assistant message announced `tool_use`, for the
-	 * matching `tools/call` to arrive over the control channel. Only a protocol
-	 * fault trips this; normal dispatch is immediate.
+	 * How long a result pi already produced may wait for the CLI to dispatch
+	 * the `tools/call` it answers. A CLI dispatching one call at a time asks for
+	 * the next as soon as the previous is answered, so only a fault trips this.
 	 */
 	toolDispatchTimeoutMs: number;
 	/** How long a held call may wait for pi before the child is torn down. */
@@ -110,6 +113,22 @@ export interface SessionBridgeOptions {
 	limits?: Partial<SessionBridgeLimits>;
 	spawnImpl?: SpawnImpl;
 	signalGroupImpl?: (pid: number, signal: NodeJS.Signals) => void;
+	/** Diagnostics sink. Defaults to the opt-in log behind PI_CLAUDE_CODE_DEBUG=1. */
+	onDebug?: (entry: Record<string, unknown>) => void;
+}
+
+/** Opt-in (PI_CLAUDE_CODE_DEBUG=1) bridge diagnostics; never includes message text. */
+function debugLog(entry: Record<string, unknown>): void {
+	if (process.env.PI_CLAUDE_CODE_DEBUG !== "1") return;
+	try { appendFileSync(join(homedir(), ".pi", "agent", "claude-code-debug.log"), `${JSON.stringify({ at: new Date().toISOString(), ...entry })}\n`); }
+	catch { /* diagnostics are best-effort */ }
+}
+
+/** A frame's shape for diagnostics: its kind and block index, never its content. */
+function describeFrame(frame: ClaudeFrame): string {
+	if (frame.type === "stream") return "index" in frame.event ? `${frame.event.type}[${frame.event.index}]` : frame.event.type;
+	if (frame.type === "assistant") return `assistant(${frame.blocks.map((block) => block.kind).join(",")})`;
+	return frame.type;
 }
 
 // ---------------------------------------------------------------------------
@@ -364,21 +383,26 @@ class FrameQueue {
 // One CLI child, for one pi session
 // ---------------------------------------------------------------------------
 
+/** A tool_use block of the CLI's current message that pi has not answered yet. */
 interface PendingToolUse {
 	id: string;
 	/** Bare pi tool name, as `tools/call` will name it. */
 	name: string;
 	input: unknown;
+	/** The CLI's `tools/call` for this block, once dispatched. */
 	held?: HeldMcpCall;
+	/** pi's answer, when it came before the CLI dispatched the call. */
+	result?: McpToolResult;
 }
 
 interface TurnState {
 	queue: FrameQueue;
-	pending: PendingToolUse[];
-	/** The assistant message announced it is finished (message_stop / assistant frame). */
+	/** The assistant message announced it is finished (see track()). */
 	messageComplete: boolean;
 	/** Whether the finished message ended in tool_use. */
 	wantsTools: boolean;
+	/** Between a message_start and its message_stop: the message is being streamed. */
+	streaming: boolean;
 	dispatchTimer?: ReturnType<typeof setTimeout>;
 	signal?: AbortSignal;
 	onAbort?: () => void;
@@ -409,10 +433,19 @@ class CliSession {
 	}
 	private host?: PiMcpHost;
 	private turn?: TurnState;
-	/** Held `tools/call`s keyed by the CLI tool_use id pi will echo back. */
-	private held = new Map<string, HeldMcpCall>();
+	/**
+	 * The current CLI message's tool_use blocks, from announcement until pi's
+	 * result reaches the CLI. Session state, not turn state: the pi message
+	 * ends at the CLI message's end, and a `tools/call` may come later — the
+	 * CLI 2.1.280 dispatches an MCP tool not marked read-only only after the
+	 * previous call's result, so a message's second call is not even asked for
+	 * until pi has answered the first.
+	 */
+	private calls: PendingToolUse[] = [];
 	/** Held calls whose tool_use block has not been seen yet (dispatch can race). */
 	private unmatched: HeldMcpCall[] = [];
+	/** Bounds pi results waiting on a `tools/call` the CLI has yet to send. */
+	private dispatchTimer?: ReturnType<typeof setTimeout>;
 	private heldTimer?: ReturnType<typeof setTimeout>;
 	private recorded: string[] = [];
 	private meta?: string;
@@ -424,6 +457,14 @@ class CliSession {
 	/** Children this bridge has launched; each one needs its own --session-id. */
 	private launchAttempt = 0;
 	private failure?: string;
+	/**
+	 * Why the child's conversation no longer matches what pi saw, if it does
+	 * not: pi abandoned a turn mid-message, or the child spoke with no turn to
+	 * hear it. Such a child is never reused; the next turn restarts it.
+	 */
+	private desynced?: string;
+	/** An interrupt was sent; the CLI still owes that turn's `result` frame. */
+	private abortPending = false;
 
 	constructor(piSessionId: string, options: SessionBridgeOptions, cwd: string) {
 		this.piSessionId = piSessionId;
@@ -433,7 +474,7 @@ class CliSession {
 		this.limits = { ...LIMITS, ...options.limits };
 	}
 
-	isBusy(): boolean { return !!this.turn || this.held.size > 0; }
+	isBusy(): boolean { return !!this.turn || this.calls.length > 0 || this.restarting; }
 
 	// -- turn ---------------------------------------------------------------
 
@@ -445,11 +486,21 @@ class CliSession {
 		const next = transcriptFingerprint(request.messages);
 		const plan = this.plan(request, next);
 
-		// The turn is registered before anything is written to the child, so a
-		// frame that arrives during startup lands in this turn's queue instead of
-		// falling on the floor.
+		// The restart finishes before the turn exists, so no frame from the
+		// dying child can reach it, whatever the timing of its death. Nothing is
+		// written to the new child until the turn is registered below, so
+		// nothing it says in reply can fall on the floor either.
+		if (plan.restart) {
+			await this.restart(request, plan.reason);
+			if (signal?.aborted) {
+				// The fresh child never got the history; reusing it would drop it.
+				this.markDesynced("the turn was aborted before the restarted child was sent the history");
+				return;
+			}
+		}
+
 		const queue = new FrameQueue();
-		const turn: TurnState = { queue, pending: [], messageComplete: false, wantsTools: false, signal };
+		const turn: TurnState = { queue, messageComplete: false, wantsTools: false, streaming: false, signal };
 		this.turn = turn;
 
 		if (signal) {
@@ -457,16 +508,21 @@ class CliSession {
 			signal.addEventListener("abort", turn.onAbort, { once: true });
 		}
 
+		let drained = false;
 		try {
-			if (plan.restart) await this.restart(request, plan.reason);
 			this.deliver(request, plan);
 			this.recorded = next;
 			this.meta = turnMeta(request, this.cwd);
 			yield* queue.drain();
+			drained = true;
 		} finally {
 			if (turn.onAbort && signal) signal.removeEventListener("abort", turn.onAbort);
-			if (turn.dispatchTimer) clearTimeout(turn.dispatchTimer);
 			if (this.turn === turn) this.turn = undefined;
+			// pi stopped reading before the turn's end (stream.ts rejected a
+			// frame as a protocol error): the child is now ahead of pi's
+			// transcript by whatever it went on to say. An abort is not this;
+			// abortTurn() already asked the CLI to settle.
+			if (!drained && !signal?.aborted) this.markDesynced("pi abandoned the turn mid-message");
 			this.armHeldTimer();
 			this.lastUsed = Date.now();
 		}
@@ -483,6 +539,13 @@ class CliSession {
 		if (!this.started || !this.transport || this.transport.isClosed() || this.transport.hasExited()) {
 			return { restart: true, reason: "no live CLI process", results: [], user: undefined };
 		}
+		if (this.desynced) {
+			return { restart: true, reason: `the CLI fell out of step with pi: ${this.desynced}`, results: [], user: undefined };
+		}
+		if (this.abortPending) {
+			// Its late result would otherwise end this turn.
+			return { restart: true, reason: "an interrupted turn has not settled", results: [], user: undefined };
+		}
 		if (this.meta !== undefined && this.meta !== turnMeta(request, this.cwd)) {
 			return { restart: true, reason: "model, effort, system prompt, tool set or cwd changed", results: [], user: undefined };
 		}
@@ -492,10 +555,10 @@ class CliSession {
 		const tail = request.messages.slice(this.recorded.length);
 		const results = tail.filter((m): m is Extract<Message, { role: "toolResult" }> => m.role === "toolResult");
 		const user = [...tail].reverse().find((m) => m.role === "user");
-		if (this.held.size && results.length !== this.held.size) {
-			return { restart: true, reason: "pi answered only some of the held tool calls", results: [], user: undefined };
+		if (this.calls.length && results.length !== this.calls.length) {
+			return { restart: true, reason: "pi answered only some of the CLI's tool calls", results: [], user: undefined };
 		}
-		if (results.some((result) => !this.held.has(result.toolCallId))) {
+		if (results.some((result) => !this.calls.some((call) => call.id === result.toolCallId))) {
 			return { restart: true, reason: "a tool result did not match a held call", results: [], user: undefined };
 		}
 		if (!results.length && !user) {
@@ -504,15 +567,22 @@ class CliSession {
 		return { restart: false, reason: "", results, user };
 	}
 
-	/** Answer held calls first, then any newly arrived user message (steering). */
+	/**
+	 * Answer the CLI's tool calls first, then send any newly arrived user
+	 * message (steering). A call the CLI has not dispatched yet keeps its result
+	 * until it does.
+	 */
 	private deliver(request: ClaudeTurnRequest, plan: TurnPlan): void {
-		if (plan.restart) return; // restart() already sent the folded history.
-		for (const result of plan.results) {
-			const call = this.held.get(result.toolCallId);
-			if (!call) continue;
-			this.held.delete(result.toolCallId);
-			this.host?.answer(call, toMcpResult(result));
+		if (plan.restart) {
+			const folded = foldHistory(request.messages, this.limits);
+			this.sendUserMessage(folded.text, folded.images);
+			return;
 		}
+		for (const result of plan.results) {
+			const slot = this.calls.find((call) => call.id === result.toolCallId);
+			if (slot) slot.result = toMcpResult(result);
+		}
+		this.settleCalls();
 		if (plan.user) this.sendUserMessage(textOf(plan.user.content), imagesOf(plan.user.content));
 	}
 
@@ -551,8 +621,9 @@ class CliSession {
 			const why = await this.launchChild(request, claudeSessionId(this.piSessionId, this.launchAttempt));
 			this.launchAttempt++;
 			if (why === undefined) {
-				const folded = foldHistory(request.messages, this.limits);
-				this.sendUserMessage(folded.text, folded.images);
+				// A fresh child has heard nothing yet; runTurn() sends the history.
+				this.desynced = undefined;
+				this.abortPending = false;
 				return;
 			}
 			if (why !== SESSION_ID_TAKEN) throw new Error(`Claude ${why}`);
@@ -582,8 +653,9 @@ class CliSession {
 
 		const host = new PiMcpHost({
 			tools: () => this.currentTools,
-			respond: (id, response) => this.transport?.respond(id, response) ?? false,
-			respondError: (id, error) => this.transport?.respondError(id, error) ?? false,
+			// A host only ever answers its own child.
+			respond: (id, response) => transport.respond(id, response),
+			respondError: (id, error) => transport.respondError(id, error),
 			onHeldCall: (call) => this.onHeldCall(call),
 			onProtocolError: (message) => this.protocolError(message),
 		});
@@ -592,21 +664,29 @@ class CliSession {
 		// Only read when the handshake fails: a child that refuses its session id
 		// says so here and nowhere else.
 		let stderr = "";
+		// Hooks are bound to their own child. A child being torn down keeps
+		// streaming until the signal lands (the real CLI retries a failed held
+		// call), and none of that may reach the turn or host of its replacement.
+		// Output is dropped as soon as teardown detaches the child; its death is
+		// only ignored once a newer child has taken over.
+		const current = (): boolean => this.transport === transport;
+		const superseded = (): boolean => this.transport !== undefined && !current();
 		const transport = new ClaudeTransport({
 			timings: this.transportTimings(),
 			limits: { maxLineBytes: this.limits.maxLineBytes } satisfies ClaudeTransportLimits,
 			spawnImpl: this.options.spawnImpl,
 			signalGroupImpl: this.options.signalGroupImpl,
 			hooks: {
-				onEvent: (event) => this.onEvent(event as unknown as Record<string, unknown>),
+				onEvent: (event) => { if (current()) this.onEvent(event as unknown as Record<string, unknown>); },
 				onStderr: (text) => { if (stderr.length < 4096) stderr += text; },
 				// The MCP facade rides the control channel; returning false lets the
-				// transport refuse anything else as unsupported.
-				onControlRequest: (request) => this.host?.handleFrame(request.frame as unknown as Record<string, unknown>) ?? false,
-				onProtocolError: (message) => this.protocolError(message),
-				onStdinError: (message) => this.protocolError(message),
-				onProcessError: (message) => this.protocolError(message),
-				onClose: (code, signal) => this.onClose(code, signal),
+				// transport refuse anything else as unsupported, including a
+				// detached child's tools/call, which is never held.
+				onControlRequest: (request) => current() && (this.host?.handleFrame(request.frame as unknown as Record<string, unknown>) ?? false),
+				onProtocolError: (message) => { if (!superseded()) this.protocolError(message); },
+				onStdinError: (message) => { if (!superseded()) this.protocolError(message); },
+				onProcessError: (message) => { if (!superseded()) this.protocolError(message); },
+				onClose: (code, signal) => { if (!superseded()) this.onClose(code, signal); },
 			},
 		});
 		this.transport = transport;
@@ -648,16 +728,21 @@ class CliSession {
 		if (this.disposing) return;
 		this.disposing = true;
 		try {
-			this.rejectHeld(reason);
-			if (this.heldTimer) { clearTimeout(this.heldTimer); this.heldTimer = undefined; }
+			// Detach first: failing a held call makes the child retry, and that
+			// output must already find itself disowned.
 			const transport = this.transport;
+			const host = this.host;
+			const turn = this.turn;
 			this.transport = undefined; this.host = undefined; this.started = false;
+			this.rejectHeld(reason, host);
+			if (this.heldTimer) { clearTimeout(this.heldTimer); this.heldTimer = undefined; }
 			if (transport && !transport.isClosed()) {
 				await transport.shutdown();
 				await transport.whenClosed;
 			}
-			if (!this.restarting) {
-				this.turn?.queue.end();
+			// A turn registered while the child was dying belongs to its replacement.
+			if (!this.restarting && this.turn === turn) {
+				turn?.queue.end();
 				this.turn = undefined;
 			}
 		} finally {
@@ -671,6 +756,8 @@ class CliSession {
 		// Held calls must go first: the CLI is blocked on them and would never
 		// reach the point where it can honour an interrupt.
 		this.rejectHeld("the turn was aborted");
+		// pi stops reading at once; what the CLI says until its result is expected.
+		this.abortPending = true;
 		await transport.interrupt();
 		// Interrupt acknowledgment is not settlement; the CLI still owes a result
 		// frame with an aborted terminal reason, and that ends the turn naturally.
@@ -707,13 +794,40 @@ class CliSession {
 			return;
 		}
 		if (!frame) return;
+		// An interrupted turn settles with its result frame.
+		const settling = this.abortPending;
+		if (frame.type === "result") this.abortPending = false;
+		const turn = this.turn;
+		if (!turn || turn.queue.isEnded()) {
+			this.dropped(frame, settling);
+			return;
+		}
 		this.track(frame);
-		this.turn?.queue.push(frame);
+		turn.queue.push(frame);
 		if (frame.type === "result") {
-			this.turn?.queue.end();
+			turn.queue.end();
 			return;
 		}
 		this.checkBoundary();
+	}
+
+	/**
+	 * A frame no turn will ever see. Outside an interrupt's wind-down this means
+	 * pi's transcript and the child's conversation have parted, and every later
+	 * turn on this child would inherit the gap (and its stray deltas).
+	 */
+	private dropped(frame: ClaudeFrame, settling: boolean): void {
+		if (frame.type === "init") return; // Not conversation.
+		const shape = describeFrame(frame);
+		(this.options.onDebug ?? debugLog)({ event: "frame-dropped", session: this.piSessionId, frame: shape, settling });
+		if (settling) return;
+		this.markDesynced(`Claude sent ${shape} with no pi turn open`);
+	}
+
+	private markDesynced(reason: string): void {
+		if (this.desynced) return;
+		this.desynced = reason;
+		(this.options.onDebug ?? debugLog)({ event: "desynced", session: this.piSessionId, reason });
 	}
 
 	/** Follow the current assistant message's tool_use blocks and completion. */
@@ -723,36 +837,59 @@ class CliSession {
 		if (frame.type === "stream") {
 			const event = frame.event;
 			if (event.type === "message_start") {
-				turn.pending = []; turn.messageComplete = false; turn.wantsTools = false;
+				// The CLI calls the model again only once every tool call of the
+				// last message has its result; one it answered itself instead (it
+				// never asked pi) leaves the child's history differing from pi's.
+				if (this.calls.length) {
+					this.markDesynced("Claude moved on without dispatching a tool call pi answered");
+					this.rejectHeld("Claude started a new message");
+				}
+				turn.messageComplete = false; turn.wantsTools = false; turn.streaming = true;
 			} else if (event.type === "content_block_start" && event.block.kind === "tool_use") {
 				this.addPending(turn, event.block.id, event.block.name, event.block.input);
 			} else if (event.type === "content_block_stop") {
 				// The block's arguments are complete now; re-try any held call that
 				// arrived before we had the block to match it against.
-				this.rematch(turn);
+				this.rematch();
 			} else if (event.type === "message_delta") {
+				// Not the end: ending here would leave the message_stop that
+				// follows it to arrive with no turn open.
 				if (event.stopReason === "tool_use") turn.wantsTools = true;
 			} else if (event.type === "message_stop") {
-				turn.messageComplete = true;
+				turn.messageComplete = true; turn.streaming = false;
 			}
 			return;
 		}
 		if (frame.type === "assistant") {
 			for (const block of frame.blocks) {
-				if (block.kind === "tool_use") this.addPending(turn, block.id, block.name, block.input);
+				if (block.kind !== "tool_use") continue;
+				this.addPending(turn, block.id, block.name, block.input);
+				// A streamed tool_use starts with empty input; this frame carries
+				// the final arguments, which the tools/call matching compares.
+				const slot = this.calls.find((call) => call.id === block.id);
+				if (slot) slot.input = block.input;
 			}
-			if (frame.stopReason === "tool_use") turn.wantsTools = true;
-			turn.messageComplete = true;
-			this.rematch(turn);
+			// Under --include-partial-messages the CLI sends one assistant frame
+			// PER CONTENT BLOCK, just before that block's content_block_stop
+			// (2.1.280 on stdout: stop_reason null; the on-disk transcript later
+			// shows tool_use on each). Inside a streamed message it therefore says
+			// nothing about completion: taking it as the end handed pi the first
+			// tool call alone and dropped the rest of the message. Only a message
+			// that was never streamed (no message_start) ends here.
+			if (!turn.streaming) {
+				if (frame.stopReason === "tool_use") turn.wantsTools = true;
+				turn.messageComplete = true;
+			}
+			this.rematch();
 		}
 	}
 
 	private addPending(turn: TurnState, id: string, name: string, input: unknown): void {
-		if (turn.pending.some((p) => p.id === id)) return;
+		if (this.calls.some((p) => p.id === id)) return;
 		const bare = name.startsWith(PI_MCP_TOOL_PREFIX) ? name.slice(PI_MCP_TOOL_PREFIX.length) : name;
-		turn.pending.push({ id, name: bare, input });
+		this.calls.push({ id, name: bare, input });
 		turn.wantsTools = true;
-		this.rematch(turn);
+		this.rematch();
 	}
 
 	/**
@@ -760,54 +897,75 @@ class CliSession {
 	 * matched against the announced blocks: same name, and same arguments when
 	 * that distinguishes two calls of one tool. Arrival order breaks the tie.
 	 */
-	private rematch(turn: TurnState): void {
+	private rematch(): void {
 		if (!this.unmatched.length) return;
 		const rest: HeldMcpCall[] = [];
 		for (const call of this.unmatched) {
-			const exact = turn.pending.find((p) => !p.held && p.name === call.name && deepEqual(p.input, call.arguments));
-			const slot = exact ?? turn.pending.find((p) => !p.held && p.name === call.name);
+			const exact = this.calls.find((p) => !p.held && p.name === call.name && deepEqual(p.input, call.arguments));
+			const slot = exact ?? this.calls.find((p) => !p.held && p.name === call.name);
 			if (!slot) { rest.push(call); continue; }
 			slot.held = call;
-			this.held.set(slot.id, call);
 		}
 		this.unmatched = rest;
-		this.checkBoundary();
+		this.settleCalls();
+	}
+
+	/** Answer every dispatched call pi has a result for; bound the ones still owed a dispatch. */
+	private settleCalls(): void {
+		const host = this.host;
+		this.calls = this.calls.filter((slot) => {
+			if (!slot.held || !slot.result) return true;
+			host?.answer(slot.held, slot.result);
+			return false;
+		});
+		const owed = this.calls.some((slot) => slot.result);
+		if (!owed) {
+			if (this.dispatchTimer) { clearTimeout(this.dispatchTimer); this.dispatchTimer = undefined; }
+			return;
+		}
+		if (this.dispatchTimer) return;
+		this.dispatchTimer = setTimeout(() => {
+			this.dispatchTimer = undefined;
+			if (!this.calls.some((slot) => slot.result)) return;
+			this.markDesynced("Claude announced a tool call it never dispatched");
+			const turn = this.turn;
+			if (turn && !turn.queue.isEnded()) {
+				turn.queue.push({ type: "result", outcome: "error", message: "Claude announced a tool call it never dispatched" });
+				turn.queue.end();
+			}
+		}, this.timings.toolDispatchTimeoutMs);
 	}
 
 	private onHeldCall(call: HeldMcpCall): void {
 		this.lastUsed = Date.now();
-		const turn = this.turn;
-		if (!turn) {
-			// No turn is listening: nothing will ever answer this, so fail it fast
-			// rather than leave the CLI blocked forever.
-			this.host?.fail(call, "pi is not running a turn for this session");
+		this.unmatched.push(call);
+		this.rematch();
+		if (this.turn || !this.unmatched.includes(call)) {
+			// Dispatch may trail the message pi was handed; the call is pi's to answer.
+			if (!this.turn) this.armHeldTimer();
 			return;
 		}
-		this.unmatched.push(call);
-		this.rematch(turn);
+		// No turn is listening and pi never saw this call: nothing will ever
+		// answer it, so fail it fast rather than leave the CLI blocked forever.
+		this.unmatched = this.unmatched.filter((c) => c !== call);
+		this.host?.fail(call, "pi is not running a turn for this session");
+		if (!this.abortPending) this.markDesynced(`Claude called ${call.name} with no pi turn open`);
 	}
 
 	/**
-	 * End the pi message once the assistant message is finished AND every
-	 * announced tool_use has a held call. Ending earlier would hand pi a partial
-	 * batch and drop the rest of a parallel tool call.
+	 * End the pi message when the CLI's assistant message ends in tool_use. Not
+	 * before: its per-block frames are not the end, and ending on the first
+	 * would hand pi a partial batch. And not later, waiting for every
+	 * `tools/call`: a CLI that dispatches one call at a time asks for the next
+	 * only once pi has answered the last, which pi does only after this message
+	 * ends. Calls dispatched afterwards are matched and answered by deliver().
 	 */
 	private checkBoundary(): void {
 		const turn = this.turn;
 		if (!turn || turn.queue.isEnded()) return;
 		if (!turn.messageComplete || !turn.wantsTools) return;
-		if (!turn.pending.length) return;
-		if (turn.pending.every((p) => p.held)) {
-			if (turn.dispatchTimer) { clearTimeout(turn.dispatchTimer); turn.dispatchTimer = undefined; }
-			turn.queue.end();
-			return;
-		}
-		if (turn.dispatchTimer) return;
-		turn.dispatchTimer = setTimeout(() => {
-			if (this.turn !== turn || turn.queue.isEnded()) return;
-			turn.queue.push({ type: "result", outcome: "error", message: "Claude announced a tool call it never dispatched" });
-			turn.queue.end();
-		}, this.timings.toolDispatchTimeoutMs);
+		if (!this.calls.length) return;
+		turn.queue.end();
 	}
 
 	private protocolError(message: string): void {
@@ -833,10 +991,11 @@ class CliSession {
 		}
 	}
 
-	private rejectHeld(reason: string): void {
-		const calls = [...this.held.values(), ...this.unmatched];
-		this.held.clear(); this.unmatched = [];
-		for (const call of calls) this.host?.fail(call, `Tool call not completed: ${reason}`);
+	private rejectHeld(reason: string, host = this.host): void {
+		const calls = [...this.calls.flatMap((slot) => slot.held ? [slot.held] : []), ...this.unmatched];
+		this.calls = []; this.unmatched = [];
+		if (this.dispatchTimer) { clearTimeout(this.dispatchTimer); this.dispatchTimer = undefined; }
+		for (const call of calls) host?.fail(call, `Tool call not completed: ${reason}`);
 	}
 
 	/**
@@ -845,10 +1004,10 @@ class CliSession {
 	 */
 	private armHeldTimer(): void {
 		if (this.heldTimer) { clearTimeout(this.heldTimer); this.heldTimer = undefined; }
-		if (!this.held.size) return;
+		if (!this.calls.length) return;
 		this.heldTimer = setTimeout(() => {
 			this.heldTimer = undefined;
-			if (this.turn || !this.held.size) return;
+			if (this.turn || !this.calls.length) return;
 			void this.teardown("pi never returned results for the held tool calls");
 		}, this.timings.heldCallTimeoutMs);
 	}

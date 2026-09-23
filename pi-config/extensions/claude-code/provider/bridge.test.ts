@@ -8,12 +8,16 @@
  */
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
+import { readFileSync } from "node:fs";
 import { PassThrough, Writable } from "node:stream";
 import { test } from "node:test";
-import { Type, type Message, type Tool } from "@earendil-works/pi-ai";
+import { fileURLToPath } from "node:url";
+import { type Api, type AssistantMessageEvent, type Model, normalizeContext, Type, type Message, type Tool } from "@earendil-works/pi-ai";
 import {
 	claudeSessionId, foldHistory, getSessionBridge, isPrefix, resetSessionBridge, SessionBridge, transcriptFingerprint, uuidv5,
 } from "./session-bridge.ts";
+import { streamClaudeCode } from "./stream.ts";
+import { STATIC_MODELS } from "./index.ts";
 import type { ClaudeFrame, ClaudeTurnRequest } from "./types.ts";
 
 // ---------------------------------------------------------------------------
@@ -35,6 +39,8 @@ class FakeClaude extends EventEmitter {
 	private buffer = "";
 	/** Answer `initialize` automatically, as the CLI does. */
 	autoInitialize = true;
+	/** Keep running this long after EOF or a signal, like a CLI mid-request. */
+	lingerMs = 0;
 
 	constructor(_command: string, argv: string[], options: any, pid = 4242) {
 		super();
@@ -47,7 +53,7 @@ class FakeClaude extends EventEmitter {
 		});
 		// The real CLI exits on stdin EOF. Without this the fake would never
 		// close, and the bridge is right to keep waiting rather than assume death.
-		this.stdin.on("finish", () => { if (!this.exited) this.exit(0); });
+		this.stdin.on("finish", () => { if (!this.exited) this.die(); });
 	}
 
 	private ingest(text: string): void {
@@ -109,7 +115,11 @@ class FakeClaude extends EventEmitter {
 		});
 	}
 
-	kill(): boolean { this.killed = true; this.exit(0); return true; }
+	kill(): boolean { this.killed = true; this.die(); return true; }
+	private die(): void {
+		if (this.lingerMs) setTimeout(() => this.exit(0), this.lingerMs);
+		else this.exit(0);
+	}
 	exit(code = 0): void {
 		if (this.exited) return;
 		this.exited = true;
@@ -132,13 +142,16 @@ const tools: Tool[] = [
  * `--session-id` that already exists: one line on stderr, exit 1, and no answer
  * to `initialize`.
  */
-function harness({ refuseSessionId = 0 }: { refuseSessionId?: number } = {}) {
+function harness({ refuseSessionId = 0, manualInitialize = false }: { refuseSessionId?: number; manualInitialize?: boolean } = {}) {
 	const children: FakeClaude[] = [];
+	const debug: Record<string, unknown>[] = [];
 	const bridge = new SessionBridge({
+		onDebug: (entry) => debug.push(entry),
 		cwd: "/tmp/pi-bridge-test",
 		spawnImpl: ((command: string, argv: string[], options: any) => {
 			const child = new FakeClaude(command, argv, options, 5000 + children.length);
 			children.push(child);
+			if (manualInitialize) child.autoInitialize = false;
 			if (children.length <= refuseSessionId) {
 				const id = argv[argv.indexOf("--session-id") + 1];
 				child.autoInitialize = false;
@@ -154,7 +167,7 @@ function harness({ refuseSessionId = 0 }: { refuseSessionId?: number } = {}) {
 		},
 		timings: { requestTimeoutMs: 500, eofGraceMs: 20, termGraceMs: 20, pipeDrainMs: 5, toolDispatchTimeoutMs: 300, abortGraceMs: 200, heldCallTimeoutMs: 10_000 },
 	});
-	return { bridge, children };
+	return { bridge, children, debug };
 }
 
 function request(messages: Message[], overrides: Partial<ClaudeTurnRequest> = {}): ClaudeTurnRequest {
@@ -599,6 +612,581 @@ test("a tools/call with no turn listening is failed immediately", { timeout: 800
 	cli.toolCall("read", { path: "x" }, "orphan");
 	const answered = await cli.waitFor((f) => f.response?.request_id === "orphan");
 	assert.equal(answered.response.response.mcp_response.result.isError, true);
+	await bridge.disposeAll();
+});
+
+// ---------------------------------------------------------------------------
+// A dying child is not the current child
+// ---------------------------------------------------------------------------
+
+/** The tool_use ids a turn's frames announced, in order. */
+function announced(frames: ClaudeFrame[]): string[] {
+	return frames.flatMap((f) => f.type === "stream" && f.event.type === "content_block_start" && f.event.block.kind === "tool_use" ? [f.event.block.id] : []);
+}
+
+/**
+ * Like the real CLI: when a held call is failed by a restart, the old child
+ * calls the model again and streams a retry until the signal lands. With
+ * `complete` the retry message finishes and dispatches its tools/call.
+ */
+function retryOnFailure(cli: FakeClaude, requestId: string, complete: boolean): void {
+	cli.on("frame", (f) => {
+		if (f.type !== "control_response" || f.response?.request_id !== requestId) return;
+		if (complete) {
+			for (const frame of toolUseFrames("toolu_STALE", "bash", { command: "ls -la" })) cli.emitFrame(frame);
+			cli.toolCall("bash", { command: "ls -la" }, "stale-call");
+			return;
+		}
+		cli.emitFrame({ type: "stream_event", event: { type: "message_start", message: { usage: { input_tokens: 1, output_tokens: 0 } } } });
+		cli.emitFrame({ type: "stream_event", event: { type: "content_block_start", index: 0, content_block: { type: "tool_use", id: "toolu_STALE", name: "mcp__pi__bash", input: {} } } });
+		cli.emitFrame({ type: "stream_event", event: { type: "content_block_delta", index: 0, delta: { type: "input_json_delta", partial_json: "{\"command\": \"ls -" } } });
+	});
+}
+
+/** Turn 1 leaves one bash call held on child 1. */
+async function holdOneCall(bridge: SessionBridge, children: FakeClaude[]): Promise<Message[]> {
+	const m1 = [user("hi")];
+	await collectAfter(bridge.runTurn(request(m1)), async () => {
+		const cli = await child(children, 1);
+		await cli.waitFor((f) => f.request?.subtype === "initialize");
+		await cli.handshake();
+		for (const frame of toolUseFrames("toolu_1", "bash", { command: "ls" })) cli.emitFrame(frame);
+		cli.toolCall("bash", { command: "ls" }, "held-1");
+	});
+	return [...m1, assistantWithCall("toolu_1", "bash", { command: "ls" }), toolResult("toolu_1", "bash", "README.md")];
+}
+
+test("after a restart, the new turn carries no frame from the dying child", { timeout: 8000 }, async () => {
+	const { bridge, children } = harness();
+	const m2 = await holdOneCall(bridge, children);
+	retryOnFailure(children[0]!, "held-1", false);
+
+	// A model change restarts; the held call is failed and child 1 retries.
+	const frames = await collectAfter(bridge.runTurn(request(m2, { model: "opus" })), async () => {
+		const cli = await child(children, 2);
+		await cli.waitFor((f) => f.request?.subtype === "initialize");
+		await cli.handshake();
+		cli.emitFrame({ type: "stream_event", event: { type: "message_start", message: { usage: { input_tokens: 2, output_tokens: 0 } } } });
+		cli.emitFrame({ type: "stream_event", event: { type: "content_block_start", index: 0, content_block: { type: "thinking", thinking: "" } } });
+		cli.emitFrame({ type: "stream_event", event: { type: "content_block_delta", index: 0, delta: { type: "thinking_delta", thinking: "Let me look" } } });
+		cli.emitFrame({ type: "stream_event", event: { type: "content_block_stop", index: 0 } });
+		cli.emitFrame({ type: "result", subtype: "success", is_error: false, result: "ok" });
+	});
+
+	assert.equal(children.length, 2);
+	assert.deepEqual(announced(frames), [], "child 1's retry reached the new turn");
+	assert.equal(frames.filter((f) => f.type === "stream" && f.event.type === "message_start").length, 1);
+	const terminal = frames.at(-1);
+	assert.equal(terminal?.type === "result" && terminal.outcome, "success");
+	await bridge.disposeAll();
+});
+
+test("a dying child's leaked tool call does not cascade into another restart", { timeout: 8000 }, async () => {
+	const { bridge, children } = harness();
+	const m2 = await holdOneCall(bridge, children);
+	retryOnFailure(children[0]!, "held-1", true);
+
+	const frames = await collectAfter(bridge.runTurn(request(m2, { model: "opus" })), async () => {
+		const cli = await child(children, 2);
+		await cli.waitFor((f) => f.request?.subtype === "initialize");
+		await cli.handshake();
+		for (const frame of toolUseFrames("toolu_NEW", "read", { path: "a.txt" })) cli.emitFrame(frame);
+		cli.toolCall("read", { path: "a.txt" }, "held-new");
+	});
+	assert.deepEqual(announced(frames), ["toolu_NEW"]);
+
+	// pi answers every tool call the turn showed it; that must resume child 2.
+	const m3 = [...m2, ...announced(frames).flatMap((id) => [assistantWithCall(id, "read", { path: "a.txt" }), toolResult(id, "read", "body")])];
+	await collectAfter(bridge.runTurn(request(m3, { model: "opus" })), async () => {
+		const cli = children[1]!;
+		await cli.waitFor((f) => f.response?.request_id === "held-new");
+		cli.emitFrame({ type: "result", subtype: "success", is_error: false, result: "ok" });
+	});
+	assert.equal(children.length, 2, "answering the new child's calls must not restart it");
+	await bridge.disposeAll();
+});
+
+test("a child still dying after a failure never reaches its replacement's turn or host", { timeout: 8000 }, async () => {
+	const { bridge, children } = harness();
+	// Child 1 breaks the protocol, which tears it down outside any restart; it
+	// then takes a while to die, so child 2 is launched while it still talks.
+	await collectAfter(bridge.runTurn(request([user("hi")])), async () => {
+		const cli = await child(children, 1);
+		cli.lingerMs = 300;
+		await cli.waitFor((f) => f.request?.subtype === "initialize");
+		await cli.handshake();
+		cli.emitRaw("{not json");
+	});
+	const old = children[0]!;
+	const oldClosed = new Promise((resolve) => old.once("close", resolve));
+
+	const turn = collect(bridge.runTurn(request([user("hi"), user("again")])));
+	const cli = await child(children, 2);
+	await cli.waitFor((f) => f.request?.subtype === "initialize");
+	await cli.handshake();
+	for (const frame of toolUseFrames("toolu_STALE", "bash", { command: "ls -la" })) old.emitFrame(frame);
+	old.toolCall("bash", { command: "ls -la" }, "stale-call");
+	await oldClosed;
+	cli.emitFrame({ type: "result", subtype: "success", is_error: false, result: "ok" });
+	const frames = await turn;
+
+	assert.deepEqual(announced(frames), []);
+	const terminal = frames.at(-1);
+	assert.equal(terminal?.type === "result" && terminal.outcome, "success", "child 1's exit must not end child 2's turn");
+	assert.ok(!cli.sent.some((f) => f.response?.request_id === "stale-call"), "the new host answered the old child's tools/call");
+	assert.equal(children.length, 2);
+	await bridge.disposeAll();
+});
+
+// ---------------------------------------------------------------------------
+// One API message, one pi message: the CLI's per-block assistant frames
+// ---------------------------------------------------------------------------
+
+/** Raw CLI stdout lines of a recorded turn, control requests included. */
+function fixtureLines(name: string): string[] {
+	const path = fileURLToPath(new URL(`./fixtures/${name}`, import.meta.url));
+	return readFileSync(path, "utf8").split("\n").filter((line) => line.trim());
+}
+
+function streamOf(frames: ClaudeFrame[], type: string): ClaudeFrame[] {
+	return frames.filter((f) => f.type === "stream" && f.event.type === type);
+}
+
+/** Frames of a text-only message that ends the CLI turn. */
+function finalTextFrames(text: string): unknown[] {
+	return [
+		{ type: "stream_event", event: { type: "message_start", message: { usage: { input_tokens: 3, output_tokens: 0 } } } },
+		{ type: "stream_event", event: { type: "content_block_start", index: 0, content_block: { type: "text", text: "" } } },
+		{ type: "stream_event", event: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text } } },
+		{ type: "stream_event", event: { type: "content_block_stop", index: 0 } },
+		{ type: "assistant", message: { content: [{ type: "text", text }], stop_reason: "end_turn" } },
+		{ type: "stream_event", event: { type: "message_delta", delta: { stop_reason: "end_turn" }, usage: { input_tokens: 3, output_tokens: 4 } } },
+		{ type: "stream_event", event: { type: "message_stop" } },
+		{ type: "result", subtype: "success", is_error: false, result: text },
+	];
+}
+
+function piModel(): Model<Api> {
+	const definition = STATIC_MODELS.find((candidate) => candidate.id === "sonnet")!;
+	return { ...definition, provider: "claude-code-cli", api: "claude-code-cli", baseUrl: "claude-code-cli://local" } as Model<Api>;
+}
+
+/** Run one pi assistant message through stream.ts against the bridge. */
+async function piMessage(bridge: SessionBridge, messages: Message[], signal?: AbortSignal) {
+	const context = normalizeContext({ systemPrompt: "You are pi.", tools, messages });
+	const events: AssistantMessageEvent[] = [];
+	for await (const event of streamClaudeCode(bridge, piModel(), context, { sessionId: "pi-session-1", signal })) events.push(event);
+	const terminal = events.at(-1)!;
+	assert.ok(terminal.type === "done" || terminal.type === "error");
+	return terminal.type === "done" ? terminal.message : terminal.error;
+}
+
+test("a message sent as one assistant frame per block stays one pi message with every tool call", { timeout: 8000 }, async () => {
+	const { bridge, children, debug } = harness();
+	const m1 = [user("check the readme and the tree")];
+	const lines = fixtureLines("per-block-tools-turn.ndjson");
+	const frames = await collectAfter(bridge.runTurn(request(m1)), async () => {
+		const cli = await child(children, 1);
+		await cli.waitFor((f) => f.request?.subtype === "initialize");
+		await cli.handshake();
+		for (const line of lines) cli.emitRaw(line);
+	});
+
+	// The first tool_use's assistant frame and held call arrive mid-message;
+	// the pi message still runs to the message's own end.
+	assert.deepEqual(announced(frames), ["toolu_PB_READ", "toolu_PB_BASH"]);
+	assert.equal(frames.filter((f) => f.type === "assistant").length, 4);
+	const lastFrame = frames.at(-1);
+	assert.ok(lastFrame?.type === "stream" && lastFrame.event.type === "message_stop", "the turn ended before its message did");
+	assert.deepEqual(debug.filter((e) => e.event === "frame-dropped"), []);
+
+	// pi answers both calls; the same child carries on, and the next message
+	// sees nothing left over from the last one.
+	const m2 = [
+		...m1,
+		{ ...assistantWithCall("toolu_PB_READ", "read", { path: "README.md" }), content: [
+			{ type: "toolCall", id: "toolu_PB_READ", name: "read", arguments: { path: "README.md" } },
+			{ type: "toolCall", id: "toolu_PB_BASH", name: "bash", arguments: { command: "git status --short" } },
+		] } as Message,
+		toolResult("toolu_PB_READ", "read", "# readme"),
+		toolResult("toolu_PB_BASH", "bash", " M a.ts"),
+	];
+	const next = await collectAfter(bridge.runTurn(request(m2)), async () => {
+		const cli = children[0]!;
+		await cli.waitFor((f) => f.response?.request_id === "pb-read");
+		await cli.waitFor((f) => f.response?.request_id === "pb-bash");
+		for (const frame of finalTextFrames("Clean tree.")) cli.emitFrame(frame);
+	});
+	assert.equal(children.length, 1, "answering both calls must not restart the CLI");
+	const first = next[0];
+	assert.ok(first?.type === "stream" && first.event.type === "message_start", "a stray frame led the next message");
+	assert.equal(streamOf(next, "content_block_delta").length, 1);
+	assert.equal(next.at(-1)?.type === "result" && (next.at(-1) as { outcome: string }).outcome, "success");
+	await bridge.disposeAll();
+});
+
+test("through stream.ts, the per-block message reaches pi whole: thinking, text and both tool calls", { timeout: 8000 }, async () => {
+	const { bridge, children } = harness();
+	const lines = fixtureLines("per-block-tools-turn.ndjson");
+	const [message] = await Promise.all([
+		piMessage(bridge, [user("check the readme and the tree")]),
+		(async () => {
+			const cli = await child(children, 1);
+			await cli.waitFor((f) => f.request?.subtype === "initialize");
+			await cli.handshake();
+			for (const line of lines) cli.emitRaw(line);
+		})(),
+	]);
+	assert.equal(message.stopReason, "toolUse", message.errorMessage);
+	assert.deepEqual(message.content.map((block) => block.type), ["thinking", "text", "toolCall", "toolCall"]);
+	const calls = message.content.filter((block) => block.type === "toolCall");
+	assert.deepEqual(calls.map((call) => call.type === "toolCall" && call.arguments), [{ path: "README.md" }, { command: "git status --short" }]);
+	await bridge.disposeAll();
+});
+
+// ---------------------------------------------------------------------------
+// Tool dispatch order: what CLI 2.1.280 was observed to do live
+// ---------------------------------------------------------------------------
+
+function isToolsCall(frame: Record<string, any>): boolean {
+	return frame.type === "control_request" && frame.request?.message?.method === "tools/call";
+}
+
+/**
+ * Replay recorded stdout lines the way the real CLI paces them. It calls the
+ * model again (a later `message_start`) only once every tool call it sent has
+ * been answered; with `serial` — an MCP tool not marked read-only, the 2.1.280
+ * default — it also sends a `tools/call` only once the previous one is answered.
+ */
+async function replayLikeCli(cli: FakeClaude, lines: string[], { serial }: { serial: boolean }): Promise<void> {
+	const sentCalls: string[] = [];
+	const answered = (id: string) => cli.waitFor((f) => f.type === "control_response" && f.response?.request_id === id);
+	let messages = 0;
+	for (const line of lines) {
+		const frame = JSON.parse(line);
+		const startsMessage = frame.type === "stream_event" && frame.event?.type === "message_start" && messages++ > 0;
+		if (startsMessage || (serial && isToolsCall(frame))) for (const id of sentCalls) await answered(id);
+		if (isToolsCall(frame)) sentCalls.push(frame.request_id);
+		cli.emitRaw(line);
+	}
+}
+
+/**
+ * pi's agent loop, reduced to what the provider sees: stream one assistant
+ * message, execute its tool calls, call again with the results, until the
+ * message stops for any other reason.
+ */
+async function agentLoop(bridge: SessionBridge, messages: Message[], limit = 5): Promise<Message[]> {
+	const transcript = [...messages];
+	for (let i = 0; i < limit; i++) {
+		const message = await piMessage(bridge, transcript);
+		transcript.push(message as Message);
+		if (message.stopReason !== "toolUse") return transcript;
+		for (const block of message.content) {
+			if (block.type === "toolCall") transcript.push(toolResult(block.id, block.name, `pi ran ${block.name}`));
+		}
+	}
+	throw new Error("the agent loop never stopped");
+}
+
+function assistantMessages(transcript: Message[]) {
+	return transcript.filter((m): m is Extract<Message, { role: "assistant" }> => m.role === "assistant");
+}
+
+test("serially dispatched tool calls: pi gets both, answers both, and the final text arrives", { timeout: 8000 }, async () => {
+	const { bridge, children, debug } = harness();
+	const lines = [...fixtureLines("serial-tools-turn.ndjson"), ...finalTextFrames("Both done.").map((f) => JSON.stringify(f))];
+	const driving = (async () => {
+		const cli = await child(children, 1);
+		await cli.waitFor((f) => f.request?.subtype === "initialize");
+		await cli.handshake();
+		await replayLikeCli(cli, lines, { serial: true });
+	})();
+	const transcript = await agentLoop(bridge, [user("check the readme and the tree")]);
+	await driving;
+
+	const [calling, final] = assistantMessages(transcript);
+	assert.equal(calling?.stopReason, "toolUse", calling?.errorMessage);
+	assert.deepEqual(calling?.content.flatMap((b) => b.type === "toolCall" ? [[b.id, b.arguments]] : []), [
+		["toolu_SR_READ", { path: "README.md" }],
+		["toolu_SR_BASH", { command: "git status --short" }],
+	]);
+	assert.equal(final?.stopReason, "stop", final?.errorMessage);
+	assert.deepEqual(final?.content.map((b) => b.type === "text" && b.text), ["Both done."]);
+
+	// Each call got pi's own result, and the second was only asked for after
+	// the first was answered — the order the CLI imposes, not one pi chose.
+	const cli = children[0]!;
+	const answers = cli.sent.filter((f) => f.type === "control_response" && /^sr-/.test(f.response?.request_id));
+	assert.deepEqual(answers.map((f) => [f.response.request_id, f.response.response.mcp_response.result.content[0].text]), [
+		["sr-read", "pi ran read"],
+		["sr-bash", "pi ran bash"],
+	]);
+	assert.equal(children.length, 1);
+	assert.deepEqual(debug, []);
+	await bridge.disposeAll();
+});
+
+test("concurrently dispatched tool calls in the recorded order complete the same way", { timeout: 8000 }, async () => {
+	const { bridge, children, debug } = harness();
+	const lines = [...fixtureLines("per-block-tools-turn.ndjson"), ...finalTextFrames("Clean tree.").map((f) => JSON.stringify(f))];
+	const driving = (async () => {
+		const cli = await child(children, 1);
+		await cli.waitFor((f) => f.request?.subtype === "initialize");
+		await cli.handshake();
+		await replayLikeCli(cli, lines, { serial: false });
+	})();
+	const transcript = await agentLoop(bridge, [user("check the readme and the tree")]);
+	await driving;
+	const [calling, final] = assistantMessages(transcript);
+	assert.deepEqual(calling?.content.map((b) => b.type), ["thinking", "text", "toolCall", "toolCall"]);
+	assert.equal(final?.stopReason, "stop", final?.errorMessage);
+	assert.equal(children.length, 1);
+	assert.deepEqual(debug, []);
+	await bridge.disposeAll();
+});
+
+test("a tools/call that arrives after pi's message ended is held for pi, not failed", { timeout: 8000 }, async () => {
+	const { bridge, children, debug } = harness();
+	const lines = fixtureLines("serial-tools-turn.ndjson");
+	const late = lines.pop()!; // sr-bash, sent here with no pi turn open
+	const m1 = [user("check the readme and the tree")];
+	const first = await Promise.all([
+		piMessage(bridge, m1),
+		(async () => {
+			const cli = await child(children, 1);
+			await cli.waitFor((f) => f.request?.subtype === "initialize");
+			await cli.handshake();
+			for (const line of lines) cli.emitRaw(line);
+		})(),
+	]).then(([message]) => message);
+	assert.equal(first.stopReason, "toolUse", first.errorMessage);
+	const cli = children[0]!;
+	cli.emitRaw(late);
+	await new Promise((r) => setTimeout(r, 20));
+	assert.ok(!cli.sent.some((f) => f.response?.request_id === "sr-bash"), "the late call was failed before pi could answer it");
+
+	const results = first.content.flatMap((b) => b.type === "toolCall" ? [toolResult(b.id, b.name, `pi ran ${b.name}`)] : []);
+	const [final] = await Promise.all([
+		piMessage(bridge, [...m1, first as Message, ...results]),
+		(async () => {
+			await cli.waitFor((f) => f.response?.request_id === "sr-read");
+			await cli.waitFor((f) => f.response?.request_id === "sr-bash");
+			for (const frame of finalTextFrames("Done.")) cli.emitFrame(frame);
+		})(),
+	]);
+	assert.equal(final.stopReason, "stop", final.errorMessage);
+	assert.equal(children.length, 1);
+	assert.deepEqual(debug, []);
+	await bridge.disposeAll();
+});
+
+test("a call pi answered that the CLI never dispatches fails the turn and restarts the child", { timeout: 8000 }, async () => {
+	const { bridge, children, debug } = harness();
+	const lines = fixtureLines("serial-tools-turn.ndjson");
+	lines.pop(); // sr-bash is never sent
+	const m1 = [user("check the readme and the tree")];
+	const first = await Promise.all([
+		piMessage(bridge, m1),
+		(async () => {
+			const cli = await child(children, 1);
+			await cli.waitFor((f) => f.request?.subtype === "initialize");
+			await cli.handshake();
+			for (const line of lines) cli.emitRaw(line);
+		})(),
+	]).then(([message]) => message);
+	assert.equal(first.stopReason, "toolUse", first.errorMessage);
+
+	const results = first.content.flatMap((b) => b.type === "toolCall" ? [toolResult(b.id, b.name, `pi ran ${b.name}`)] : []);
+	const m2 = [...m1, first as Message, ...results];
+	const stuck = await piMessage(bridge, m2);
+	assert.equal(stuck.stopReason, "error");
+	assert.match(stuck.errorMessage ?? "", /never dispatched/);
+	assert.ok(debug.some((e) => e.event === "desynced"));
+
+	await collectAfter(bridge.runTurn(request([...m2, user("again")])), async () => {
+		const next = await child(children, 2);
+		await next.waitFor((f) => f.request?.subtype === "initialize");
+		await next.handshake();
+		next.emitFrame({ type: "result", subtype: "success", is_error: false, result: "ok" });
+	});
+	assert.equal(children.length, 2, "the child that skipped pi's result was reused");
+	await bridge.disposeAll();
+});
+
+test("a CLI that moves on without asking pi for an answered call is out of step", { timeout: 8000 }, async () => {
+	const { bridge, children, debug } = harness();
+	const lines = fixtureLines("serial-tools-turn.ndjson");
+	lines.pop(); // sr-bash is never sent: the CLI settles it on its own
+	const m1 = [user("check the readme and the tree")];
+	const first = await Promise.all([
+		piMessage(bridge, m1),
+		(async () => {
+			const cli = await child(children, 1);
+			await cli.waitFor((f) => f.request?.subtype === "initialize");
+			await cli.handshake();
+			for (const line of lines) cli.emitRaw(line);
+		})(),
+	]).then(([message]) => message);
+	const cli = children[0]!;
+	const results = first.content.flatMap((b) => b.type === "toolCall" ? [toolResult(b.id, b.name, `pi ran ${b.name}`)] : []);
+	const [final] = await Promise.all([
+		piMessage(bridge, [...m1, first as Message, ...results]),
+		(async () => {
+			await cli.waitFor((f) => f.response?.request_id === "sr-read");
+			for (const frame of finalTextFrames("Done.")) cli.emitFrame(frame);
+		})(),
+	]);
+	// The model's reply still reaches pi; the child is not trusted again.
+	assert.equal(final.stopReason, "stop", final.errorMessage);
+	assert.ok(debug.some((e) => e.event === "desynced" && /without dispatching/.test(String(e.reason))), JSON.stringify(debug));
+	await bridge.disposeAll();
+});
+
+// ---------------------------------------------------------------------------
+// A child that fell out of step with pi is not reused
+// ---------------------------------------------------------------------------
+
+test("a protocol error in stream.ts makes the next turn restart the child, and only the next", { timeout: 8000 }, async () => {
+	const { bridge, children, debug } = harness();
+	const [broken] = await Promise.all([
+		piMessage(bridge, [user("hi")]),
+		(async () => {
+			const cli = await child(children, 1);
+			await cli.waitFor((f) => f.request?.subtype === "initialize");
+			await cli.handshake();
+			cli.emitFrame({ type: "stream_event", event: { type: "message_start", message: { usage: { input_tokens: 1, output_tokens: 0 } } } });
+			cli.emitFrame({ type: "stream_event", event: { type: "content_block_delta", index: 3, delta: { type: "text_delta", text: "x" } } });
+		})(),
+	]);
+	assert.equal(broken.stopReason, "error");
+	assert.match(broken.errorMessage ?? "", /unknown content block 3/);
+	assert.ok(debug.some((e) => e.event === "desynced"));
+
+	// A clean append would normally continue on the same child.
+	await collectAfter(bridge.runTurn(request([user("hi"), user("again")])), async () => {
+		const cli = await child(children, 2);
+		await cli.waitFor((f) => f.request?.subtype === "initialize");
+		await cli.handshake();
+		const folded = await cli.waitFor((f) => f.type === "user");
+		assert.match(folded.message.content[0].text, /pi-conversation-history/);
+		cli.emitFrame({ type: "result", subtype: "success", is_error: false, result: "ok" });
+	});
+	assert.equal(children.length, 2, "the desynced child was reused");
+
+	// The flag died with the child it described.
+	await collectAfter(bridge.runTurn(request([user("hi"), user("again"), user("third")])), async () => {
+		const cli = children[1]!;
+		await cli.waitFor((f) => f.type === "user" && f.message.content[0]?.text === "third");
+		cli.emitFrame({ type: "result", subtype: "success", is_error: false, result: "ok" });
+	});
+	assert.equal(children.length, 2, "a healthy replacement must be reused");
+	await bridge.disposeAll();
+});
+
+test("a frame that arrives with no turn open is logged and restarts the child next turn", { timeout: 8000 }, async () => {
+	const { bridge, children, debug } = harness();
+	await collectAfter(bridge.runTurn(request([user("hi")])), async () => {
+		const cli = await child(children, 1);
+		await cli.waitFor((f) => f.request?.subtype === "initialize");
+		await cli.handshake();
+		cli.emitFrame({ type: "result", subtype: "success", is_error: false, result: "ok" });
+	});
+	const cli = children[0]!;
+	cli.emitFrame({ type: "stream_event", event: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "late" } } });
+	const until = Date.now() + 1000;
+	while (!debug.some((e) => e.event === "frame-dropped") && Date.now() < until) await new Promise((r) => setTimeout(r, 5));
+	assert.deepEqual(debug.find((e) => e.event === "frame-dropped")?.frame, "content_block_delta[0]");
+
+	await collectAfter(bridge.runTurn(request([user("hi"), user("again")])), async () => {
+		const next = await child(children, 2);
+		await next.waitFor((f) => f.request?.subtype === "initialize");
+		await next.handshake();
+		next.emitFrame({ type: "result", subtype: "success", is_error: false, result: "ok" });
+	});
+	assert.equal(children.length, 2);
+	await bridge.disposeAll();
+});
+
+test("an interrupted turn winding down is not a desync: the child is reused once it settles", { timeout: 8000 }, async () => {
+	const { bridge, children, debug } = harness();
+	const controller = new AbortController();
+	const [aborted] = await Promise.all([
+		piMessage(bridge, [user("long job")], controller.signal),
+		(async () => {
+			const cli = await child(children, 1);
+			await cli.waitFor((f) => f.request?.subtype === "initialize");
+			await cli.handshake();
+			cli.emitFrame({ type: "stream_event", event: { type: "message_start", message: { usage: { input_tokens: 5, output_tokens: 0 } } } });
+			cli.emitFrame({ type: "stream_event", event: { type: "content_block_start", index: 0, content_block: { type: "text", text: "" } } });
+			await cli.waitFor((f) => f.type === "user");
+			await new Promise((r) => setTimeout(r, 20));
+			controller.abort();
+		})(),
+	]);
+	assert.equal(aborted.stopReason, "aborted");
+	const cli = children[0]!;
+	await cli.waitFor((f) => f.request?.subtype === "interrupt");
+	// What the CLI still says before its result is the interrupt settling.
+	// The first frame still reaches the abandoned turn (its drain was waiting
+	// on it); the result arrives after pi let go of the turn entirely.
+	cli.emitFrame({ type: "stream_event", event: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "work" } } });
+	await new Promise((r) => setTimeout(r, 20));
+	cli.emitFrame({ type: "result", subtype: "error_during_execution", is_error: true, terminal_reason: "aborted_tools" });
+	const until = Date.now() + 1000;
+	while (!debug.some((e) => e.event === "frame-dropped") && Date.now() < until) await new Promise((r) => setTimeout(r, 5));
+	assert.deepEqual(debug.find((e) => e.event === "frame-dropped"), { event: "frame-dropped", session: "pi-session-1", frame: "result", settling: true });
+	assert.ok(!debug.some((e) => e.event === "desynced"), JSON.stringify(debug));
+
+	const [next] = await Promise.all([
+		piMessage(bridge, [user("long job"), user("never mind")]),
+		(async () => {
+			await cli.waitFor((f) => f.type === "user" && f.message.content[0]?.text === "never mind");
+			for (const frame of finalTextFrames("Stopped.")) cli.emitFrame(frame);
+		})(),
+	]);
+	assert.equal(next.stopReason, "stop", next.errorMessage);
+	assert.equal(children.length, 1, "an abort must not cost a restart");
+	await bridge.disposeAll();
+});
+
+test("a turn aborted during a restart sends the new child nothing, and the next turn restarts it", { timeout: 8000 }, async () => {
+	const { bridge, children } = harness({ manualInitialize: true });
+	const controller = new AbortController();
+	const frames = await collectAfter(bridge.runTurn(request([user("hi")]), controller.signal), async () => {
+		const cli = await child(children, 1);
+		const init = await cli.waitFor((f) => f.request?.subtype === "initialize");
+		controller.abort();
+		cli.emitFrame({ type: "control_response", response: { subtype: "success", request_id: init.request_id } });
+	});
+	assert.deepEqual(frames, []);
+	await new Promise((r) => setTimeout(r, 20));
+	assert.ok(!children[0]!.sent.some((f) => f.type === "user"), "the aborted turn's history reached the child with no turn to hear it");
+
+	// Otherwise this clean append would be sent as-is to a child that never
+	// received "hi".
+	await collectAfter(bridge.runTurn(request([user("hi"), user("again")])), async () => {
+		const cli = await child(children, 2);
+		const init = await cli.waitFor((f) => f.request?.subtype === "initialize");
+		cli.emitFrame({ type: "control_response", response: { subtype: "success", request_id: init.request_id } });
+		const folded = await cli.waitFor((f) => f.type === "user");
+		assert.match(folded.message.content[0].text, /## User\nhi/);
+		cli.emitFrame({ type: "result", subtype: "success", is_error: false, result: "ok" });
+	});
+	assert.equal(children.length, 2);
+	await bridge.disposeAll();
+});
+
+test("pi's tools make no read-only claim: the bridge copes with serial dispatch instead", { timeout: 8000 }, async () => {
+	const { bridge, children } = harness();
+	await collectAfter(bridge.runTurn(request([user("hi")])), async () => {
+		const cli = await child(children, 1);
+		await cli.waitFor((f) => f.request?.subtype === "initialize");
+		const [, , list] = await cli.handshake();
+		for (const tool of list!.response.response.mcp_response.result.tools) assert.equal(tool.annotations, undefined);
+		assert.equal(cli.env.CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY, undefined);
+		cli.emitFrame({ type: "result", subtype: "success", is_error: false, result: "ok" });
+	});
 	await bridge.disposeAll();
 });
 

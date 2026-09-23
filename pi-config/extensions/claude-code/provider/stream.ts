@@ -215,7 +215,15 @@ export function streamClaudeCode(
 			stream.push({ type: "done", reason: output.stopReason, message: output });
 			stream.end();
 		} catch (error) {
-			for (const block of blocks) delete (block as Partial<Block>).index;
+			// An errored message is persisted and replayed, so it must not carry a
+			// tool call that never finished (open, or with unparsed arguments):
+			// it would reach the transcript with `{}` arguments. Nor any adapter state.
+			for (let i = blocks.length - 1; i >= 0; i--) {
+				const block = blocks[i] as Partial<Block> & { partialJson?: string };
+				if (block.type === "toolCall" && (block.index !== undefined || block.partialJson !== undefined)) blocks.splice(i, 1);
+				delete block.index;
+				delete block.partialJson;
+			}
 			const aborted =
 				output.stopReason === "aborted" || options?.signal?.aborted || (error instanceof Error && error.name === "AbortError");
 			output.stopReason = aborted ? "aborted" : "error";
@@ -284,9 +292,14 @@ export function streamClaudeCode(
 
 		function handleEvent(event: Extract<ClaudeFrame, { type: "stream" }>["event"]): void {
 			switch (event.type) {
-				case "message_start":
+				case "message_start": {
+					// Content indexes restart with every message, so a block left open
+					// would capture the next message's deltas.
+					const open = blocks.find((block) => block.index !== undefined);
+					if (open) throw new ClaudeProtocolError(`Claude started a new message while content block ${open.index} was open`);
 					applyUsage(event.usage);
 					return;
+				}
 				case "content_block_start": {
 					sawStreamedContent = true;
 					const contentIndex = output.content.length;
@@ -332,7 +345,8 @@ export function streamClaudeCode(
 						} catch { /* arguments stay partial until the block ends */ }
 						stream.push({ type: "toolcall_delta", contentIndex, delta: event.delta.partialJson, partial: output });
 					} else {
-						throw new ClaudeProtocolError(`Claude sent a ${event.delta.kind} delta for a ${block.type} block`);
+						const id = block.type === "toolCall" ? ` (${block.id})` : "";
+						throw new ClaudeProtocolError(`Claude sent a ${event.delta.kind} delta for ${block.type} block ${event.index}${id}`);
 					}
 					return;
 				}

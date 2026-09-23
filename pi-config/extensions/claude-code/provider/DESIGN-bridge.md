@@ -111,12 +111,16 @@ turn. Each `streamSimple` call:
      folded into the active turn, which is what we want for steering).
    - both, in that order.
 3. Stream CLI output into normalized `BridgeEvent`s until either the CLI's `result` frame (→ `done`,
-   `stopReason: "stop"`) or every `tool_use` block of the current assistant message has arrived as a held
-   `tools/call` (→ `done`, `stopReason: "toolUse"`).
+   `stopReason: "stop"`) or the `message_stop` of an assistant message that ended in `tool_use`
+   (→ `done`, `stopReason: "toolUse"`).
 
-The `toolUse` end condition handles **parallel tool calls**: the assistant stream-json message lists its
-`tool_use` blocks, so the bridge knows how many `tools/call` to wait for before ending the pi message. Ending
-early would make pi execute a partial batch.
+*As built (superseding the original "wait for every `tools/call`" condition).* The end is the message's
+`message_stop`, never an earlier per-block `assistant` frame (the CLI sends one per content block) and never
+a later dispatch: CLI 2.1.280, live, sends the `tools/call` of an MCP tool not marked read-only only after
+the previous call is answered, and pi answers nothing until its message ends — waiting for every dispatch
+deadlocked. So announced calls are session state: a result pi returns for a call not yet dispatched is kept
+and answered the moment its `tools/call` arrives. Whether the CLI dispatches together or one at a time no
+longer matters, so pi's tools carry no `readOnlyHint`.
 
 Tool-call identity: pi's `ToolCall.id` is minted by the bridge from the JSON-RPC request id of the
 `tools/call` (`cc_<jsonrpc-id>`), **not** guessed from name+order. pi echoes it back as

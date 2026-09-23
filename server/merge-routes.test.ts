@@ -80,3 +80,22 @@ test("merged sessions use shared cwd refusal and placeholders, never mounted cre
   assert.equal((await request("POST", "/api/sessions", { cwd: dir })).status, 201);
   assert.equal((await app.request("/api/themes")).status, 200);
 });
+
+// Save as default (§4g) reaches mode.json only through a chat this server holds. This pins the
+// route's refusals and that none of them writes the file; it does NOT pin that a switch never
+// writes it — that path needs a held chat runtime, which this harness doesn't build.
+test("POST /api/mode { saveDefault: true } needs a held chat, and every refusal leaves mode.json unwritten", async () => {
+  const modeJson = join(dir, "mode.json");
+  assert.equal(existsSync(modeJson), false);
+  const noPath = await request("POST", "/api/mode", { saveDefault: true });
+  assert.equal(noPath.status, 400, "without ?path= there is no chat whose mode could be saved");
+  assert.match((await noPath.json() as { error: string }).error, /needs \?path=/);
+  const unheld = join(dir, "sessions", "--tmp--", "never-opened.jsonl");
+  assert.equal((await request("POST", `/api/mode?path=${encodeURIComponent(unheld)}`, { saveDefault: true })).status, 404);
+  assert.equal((await request("POST", `/api/mode?path=${encodeURIComponent(unheld)}`, { saveDefault: true, mode: "delegate" })).status, 400);
+  assert.equal((await request("POST", "/api/mode", { saveDefault: "yes" })).status, 400);
+  assert.equal(existsSync(modeJson), false, "no refusal wrote the default");
+  // The one write that needs no chat is still there: a patch without ?path= writes the default.
+  assert.equal((await request("POST", "/api/mode", { mode: "delegate" })).status, 200);
+  assert.equal(existsSync(modeJson), true);
+});

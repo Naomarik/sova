@@ -150,15 +150,24 @@ export const fetchPlaybooks = (cwd: string | null) =>
 export const getMode = () => request<ModeInfo>("/api/mode");
 
 /**
- * Switch one chat's mode (`path` = its session file): only that chat follows, from its next
- * message, and the reply says how (ChatModeResult.applies). Without `path` this writes the
- * default for new sessions instead and changes no open chat.
+ * POST /api/mode with a patch. With `path` (a session file) it switches that one chat: only it
+ * follows, from its next message, the reply says how (ChatModeResult.applies), and mode.json is not
+ * written. Without `path` this writes the default for new sessions instead and changes no open chat.
  */
 export const postMode = (patch: { mode?: string; minorModes?: string[] }, path?: string) =>
   request<ModeInfo | ChatModeResult>(`/api/mode${path ? `?path=${encodeURIComponent(path)}` : ""}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(patch),
+  });
+
+/** POST /api/mode?path=… { saveDefault: true }: that chat's OWN mode becomes the default new
+    sessions start from. Nothing is switched. Returns the file as written. */
+export const saveModeDefault = (path: string) =>
+  request<ModeInfo>(`/api/mode?path=${encodeURIComponent(path)}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ saveDefault: true }),
   });
 
 /** A local folder (string), or a folder on a configured target. */

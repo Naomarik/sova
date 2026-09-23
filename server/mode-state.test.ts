@@ -4,7 +4,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, test } from "node:test";
-import { appliesAfter, mergeMode, modeApplyPlan, modeInfo, modeKey, parseModePatch, readMode, resolveChatMode, writeMode } from "./mode-state";
+import { appliesAfter, defaultPatchOf, mergeMode, modeApplyPlan, modeInfo, modeKey, parseModePatch, parseModeRequest, readMode, resolveChatMode, writeMode } from "./mode-state";
 import { normalizeEntry } from "./transcript";
 
 const dir = mkdtempSync(join(tmpdir(), "pi-web-mode-test-"));
@@ -37,6 +37,54 @@ describe("parseModePatch (POST /api/mode body)", () => {
       assert.ok("error" in r, JSON.stringify(body));
     }
     assert.match((parseModePatch({ minorModes: ["nope"] }) as { error: string }).error, /Unknown minor mode: nope \(known: align, spec\)/);
+  });
+});
+
+describe("parseModeRequest (whole POST /api/mode body)", () => {
+  test("a patch is a patch, and never reads as the save-default instruction", () => {
+    assert.deepEqual(parseModeRequest({ mode: "delegate" }), { kind: "patch", patch: { mode: "delegate" } });
+    assert.deepEqual(parseModeRequest({ minorModes: ["align"] }), { kind: "patch", patch: { minorModes: ["align"] } });
+    assert.deepEqual(parseModeRequest({ mode: "claude-heavy" }), { kind: "patch", patch: { mode: "delegate" } });
+  });
+
+  test("saveDefault on its own is the instruction to save THIS chat's mode", () => {
+    assert.deepEqual(parseModeRequest({ saveDefault: true }), { kind: "saveDefault" });
+  });
+
+  test("saveDefault never rides along with a mode: two intentions in one body, one of them silently losing", () => {
+    const both = parseModeRequest({ saveDefault: true, mode: "delegate" });
+    assert.ok("error" in both);
+    assert.match((both as { error: string }).error, /send no mode or minorModes/);
+    assert.ok("error" in parseModeRequest({ saveDefault: true, minorModes: [] }));
+    assert.ok("error" in parseModeRequest({ saveDefault: "yes" }));
+  });
+
+  test("bad bodies are the same errors parseModePatch gives", () => {
+    for (const body of [null, [], "x", {}, { minorModes: ["nope"] }]) assert.ok("error" in parseModeRequest(body), JSON.stringify(body));
+  });
+});
+
+describe("defaultPatchOf (what Save as default writes)", () => {
+  test("exactly the three fields /mode default writes: mode, strict and the minors — never a shortcut or version", () => {
+    const state = { version: 1 as const, mode: "delegate" as const, strict: true, shortcut: "alt+h", minorModes: ["align" as const] };
+    const patch = defaultPatchOf(state);
+    assert.deepEqual(patch, { mode: "delegate", strict: true, minorModes: ["align"] });
+    assert.deepEqual(Object.keys(patch).sort(), ["minorModes", "mode", "strict"]);
+    // A copy: a later change to the chat's own list can't reach into what was handed to the write.
+    assert.notEqual(patch.minorModes, state.minorModes);
+  });
+
+  test("written over a file, it replaces those three and keeps everything else", () => {
+    const f = file("save-default.json");
+    writeFileSync(f, JSON.stringify({ version: 1, mode: "normal", strict: false, shortcut: "alt+h", minorModes: [] }));
+    const written = writeMode(defaultPatchOf({ mode: "delegate", strict: true, minorModes: ["align"] }), f);
+    assert.deepEqual({ mode: written.mode, strict: written.strict, minorModes: written.minorModes }, { mode: "delegate", strict: true, minorModes: ["align"] });
+    const onDisk = JSON.parse(readFileSync(f, "utf8"));
+    assert.equal(onDisk.strict, true, "strict is saved, as /mode default saves it");
+    assert.equal(onDisk.shortcut, "alt+h", "a field the save doesn't carry is kept");
+    // strict OFF is written too: a chat with strict off must be able to clear a default that has it on.
+    writeMode(defaultPatchOf({ mode: "delegate", strict: false, minorModes: [] }), f);
+    assert.equal(JSON.parse(readFileSync(f, "utf8")).strict, false);
   });
 });
 

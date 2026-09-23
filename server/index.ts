@@ -37,7 +37,7 @@ import { listThemes } from "./themes";
 import { listPlaybooks } from "./playbooks";
 import { readWebSettings, writeWebSettings } from "./web-settings";
 import { claudeCliStatus } from "./claude-status";
-import { modeInfo, parseModePatch, readMode } from "./mode-state";
+import { modeInfo, parseModeRequest, readMode } from "./mode-state";
 import { attachWebSockets } from "./ws";
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4800; // PORT=0: an ephemeral port (tests)
@@ -484,12 +484,13 @@ app.get("/api/settings/claude-status", async (c) => {
 });
 
 // The mode is per session (spec/04g-mode-menu.md §4g). ~/.pi/agent/mode.json is the default new sessions
-// start from; GET reads it, POST without ?path= writes it and changes no open chat.
+// start from; GET reads it, POST without ?path= writes it and changes no open chat. A switch never writes
+// it (chat-manager switchMode): the default moves when a caller asks for exactly that.
 app.get("/api/mode", (c) => c.json(modeInfo(readMode())));
 
 // With ?path=<session .jsonl>: switch that one held chat, from its next message (server/chat-manager
-// applyMode); in a chat with no messages yet that switch is also saved as the default (chat-manager
-// switchMode). Without it: write the default directly (server/mode.ts).
+// applyMode), or with { saveDefault: true } make that chat's own mode the default, switching nothing
+// (chat-manager saveModeDefault). Without it: write the default directly (server/mode.ts).
 app.post("/api/mode", async (c) => {
   const rawPath = c.req.query("path");
   const path = rawPath === undefined ? null : resolveSessionPath(rawPath);
@@ -501,12 +502,20 @@ app.post("/api/mode", async (c) => {
   } catch {
     return c.json({ error: "Expected JSON body { mode?, minorModes? }" }, 400);
   }
-  const patch = parseModePatch(body);
-  if ("error" in patch) return c.json({ error: patch.error }, 400);
-  if (path === null) return c.json(await switchMode(patch));
+  const request = parseModeRequest(body);
+  if ("error" in request) return c.json({ error: request.error }, 400);
+  if (request.kind === "saveDefault") {
+    // A chat's own mode is what is saved, so there has to be a chat: no path is a 400, not a write
+    // of whatever the file already says.
+    if (path === null) return c.json({ error: "saveDefault needs ?path=: it saves that chat's own mode" }, 400);
+    const chat = heldChat(path);
+    if (!chat) return c.json({ error: "That session isn't open on this server; open the chat first" }, 404);
+    return c.json(await chat.saveModeDefault());
+  }
+  if (path === null) return c.json(await switchMode(request.patch));
   const chat = heldChat(path);
   if (!chat) return c.json({ error: "That session isn't open on this server; open the chat first" }, 404);
-  return c.json(await chat.switchMode(patch));
+  return c.json(await chat.switchMode(request.patch));
 });
 
 app.get("/api/transcript", async (c) => {

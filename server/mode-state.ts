@@ -35,11 +35,17 @@ export function modeInfo(state: ModeState): ModeInfo {
   };
 }
 
-/** The two fields pi-web may change. */
+/** The fields pi-web may change. A POST body only ever carries the first two (parseModePatch never
+    reads `strict`); `strict` is written only by the save-as-default patch (defaultPatchOf). */
 export interface ModePatch {
   mode?: ModeState["mode"];
   minorModes?: ModeState["minorModes"];
+  strict?: ModeState["strict"];
 }
+
+/** What POST /api/mode was asked to do: change a chat's mode (or the default file, without a path),
+    or make THIS chat's mode the default new sessions start from. */
+export type ModeRequest = { kind: "patch"; patch: ModePatch } | { kind: "saveDefault" } | { error: string };
 
 /** Validate a POST /api/mode body. Unknown names are an error, not silently dropped. A legacy mode
     name ("claude-heavy") is read as the mode it now names, and only the canonical one goes on. */
@@ -62,7 +68,38 @@ export function parseModePatch(body: unknown): ModePatch | { error: string } {
   return patch;
 }
 
-/** Fresh file + our two fields. Every other field (strict, shortcuts, future ones we know) is kept. */
+/**
+ * A whole POST /api/mode body, patch or instruction (server/index.ts).
+ *
+ * `{ saveDefault: true }` stands alone on purpose: it means "whatever this chat is on now", so a
+ * body naming a mode as well is two intentions in one request, and one of them would silently win
+ * over the other. The save path takes the chat's own state (ChatSession.saveModeDefault), never a
+ * body's fields, so there is nothing for a mode field to mean here.
+ */
+export function parseModeRequest(body: unknown): ModeRequest {
+  const b = body !== null && typeof body === "object" && !Array.isArray(body) ? (body as Record<string, unknown>) : null;
+  if (b?.saveDefault !== undefined) {
+    if (b.saveDefault !== true) return { error: "saveDefault must be true" };
+    if (b.mode !== undefined || b.minorModes !== undefined)
+      return { error: "saveDefault saves this chat's own mode: send no mode or minorModes with it" };
+    return { kind: "saveDefault" };
+  }
+  const patch = parseModePatch(body);
+  return "error" in patch ? patch : { kind: "patch", patch };
+}
+
+/**
+ * What `Save as default` writes for a chat on `state`: its major mode, strict flag and minor modes —
+ * exactly the three fields `/mode default` writes in the TUI (saveDefault in
+ * pi-config/extensions/mode/index.ts), and nothing else, so shortcuts and any other field in the
+ * file are kept by writeMode's re-read. The minors are copied, never shared with the chat's state.
+ */
+export function defaultPatchOf(state: Pick<ModeState, "mode" | "strict" | "minorModes">): Required<ModePatch> {
+  return { mode: state.mode, strict: state.strict, minorModes: [...state.minorModes] };
+}
+
+/** Fresh file + the patch's fields. Every field the patch doesn't carry (strict unless it does, shortcuts,
+    future ones we know) is kept. */
 export function mergeMode(loaded: ModeState, patch: ModePatch): ModeState {
   return normalizeState({ ...loaded, ...patch });
 }

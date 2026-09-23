@@ -421,8 +421,14 @@ export interface UploadResult {
 //                                  mode "claude-heavy" — Delegate's old name — is accepted and read as "delegate",
 //                                  here and with ?path=; only "delegate" is ever written or returned)
 // POST /api/mode?path=… { mode?, minorModes? } -> ChatModeResult   (switches THAT chat only, from its next message;
-//                                  mode.json is not written. 400 bad body/unknown name/bad path,
+//                                  mode.json is not written — a switch changes nothing but this chat, new or not.
+//                                  400 bad body/unknown name/bad path,
 //                                  404 that session isn't held open by this server)
+// POST /api/mode?path=… { saveDefault: true } -> ModeInfo  (makes that chat's OWN mode and minor modes the
+//                                  default new sessions start from — the file GET /api/mode reads. Switches nothing.
+//                                  saveDefault stands alone: a body naming a mode as well is a 400, because the save
+//                                  takes the chat's state, never the body's fields. 400 without ?path=, no body,
+//                                  or saveDefault that isn't true; 404 that session isn't held open by this server)
 // ---------------------------------------------------------------------------
 
 /** Context-window fill of a session: last assistant entry's usage (input+cacheRead+cacheWrite)

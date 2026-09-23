@@ -1,8 +1,10 @@
 import { createMemo, createSignal, For, Show, type Accessor } from "solid-js";
 import type { ChatServerMessage, ModeInfo } from "../../shared/protocol";
-import { getMode, postMode } from "../lib/api";
+import { getMode, postMode, saveModeDefault } from "../lib/api";
+import { FOOT_NOTE, isDefaultMode, modeSummary, saveLabel, saveTitle, type ShownMode } from "../lib/mode-menu";
 import { usePaneId } from "../lib/pane-scope";
 import { openSettings } from "../lib/settings-nav";
+import { announce } from "../lib/ui-state";
 import { Banner, Icon } from "./ui";
 
 /** This chat's last WS "mode" message: the mode of THIS chat and how a switch applies here. */
@@ -31,6 +33,14 @@ const itemId = (it: Item) => `mode-${it.kind}-${it.id}`;
 // Lists of what exists (and the default for new sessions); fetched on first open, refreshed on
 // every open. Only `modes`/`minors` are read from it: what is checked comes from this chat.
 const [info, setInfo] = createSignal<ModeInfo | null>(null);
+/**
+ * What new sessions start from, as mode.json says: written ONLY by GET /api/mode (each open) and by
+ * the save's answer (the file as written). Never by a switch — a switch's reply is THIS chat's mode,
+ * and reading it here made the footer say "Already the default" after any minor toggle. null when
+ * the last read failed: unknown is never "already the default".
+ */
+const [defaultMode, setDefaultMode] = createSignal<ShownMode | null>(null);
+const shownOf = (m: Pick<ModeInfo, "mode" | "minorModes" | "strict">): ShownMode => ({ mode: m.mode, minorModes: [...m.minorModes], strict: m.strict });
 
 /**
  * The composer foot's mode switch (spec/04g-mode-menu.md §4g): a trigger plus a native popover menu. One
@@ -48,6 +58,8 @@ export function ModeMenu(props: { control: ModeControl }) {
   const [busy, setBusy] = createSignal(false);
   const [error, setError] = createSignal<{ title: string; body: string } | null>(null);
   const [active, setActive] = createSignal(0);
+  /** The save's own request. `busy` is the rows' (a switch): the button says "Saving…" only for this. */
+  const [saving, setSaving] = createSignal(false);
 
   // This chat's own state only. Before its WS "mode" message arrives there is nothing to show:
   // the default in `info()` is not this chat's mode, so the label stays "Mode" and nothing is checked.
@@ -72,6 +84,19 @@ export function ModeMenu(props: { control: ModeControl }) {
   };
   const name = () => `Mode: ${label()}${current()?.applies === "after-turn" ? ", applies after this turn" : ""}`;
 
+  /** This chat's mode as the footer reads it, or null before its "mode" message arrives. */
+  const shown = (): ShownMode | null => {
+    const c = current();
+    return c ? shownOf(c) : null;
+  };
+  /**
+   * Is what this chat is on already what new sessions start from? Read off the file's own
+   * `mode`/`strict`/`minorModes` (`defaultMode`: GET /api/mode on every open, or the save's answer),
+   * so the answer is the file's, not a guess from the last press or from a switch's reply.
+   */
+  const alreadyDefault = () => isDefaultMode(defaultMode(), shown());
+  const saveState = (): "idle" | "saving" | "done" => (saving() ? "saving" : alreadyDefault() ? "done" : "idle");
+
   const focusItem = (i: number) => {
     setActive(i);
     queueMicrotask(() => menu.querySelectorAll<HTMLElement>("[role^=menuitem]")[i]?.focus());
@@ -88,8 +113,11 @@ export function ModeMenu(props: { control: ModeControl }) {
     if (!keepError) setError(null);
     menu.showPopover();
     try {
-      setInfo(await getMode());
+      const read = await getMode();
+      setInfo(read);
+      setDefaultMode(shownOf(read));
     } catch {
+      setDefaultMode(null);
       if (!info()) setError({ title: "Couldn't load the modes.", body: "Your mode is unchanged. Close this and try again." });
     }
     const at = items().findIndex((it) => it.kind === "radio" && checked(it));
@@ -132,7 +160,41 @@ export function ModeMenu(props: { control: ModeControl }) {
     }
   };
 
+  /**
+   * `Save as default` (§4g): make THIS chat's mode the one new sessions start from. Nothing else
+   * moves — the chat keeps its mode, and no other chat hears about it. The mode extension re-reads
+   * mode.json at each session_start, so the next session starts on it, TUI included.
+   *
+   * The press is what the file gets: the request carries no mode of its own (the server takes this
+   * chat's), so a switch that lands between the click and the request cannot make the default
+   * something the user never saw. On success the answer — the file as written — becomes
+   * `defaultMode`, so `alreadyDefault` says so from the server's own copy.
+   *
+   * Pressable in a chat that can't switch (`applies: "new-chats"`) too: it saves the very state the
+   * menu is showing, which is still a mode someone can want new sessions to start from.
+   */
+  const saveAsDefault = async () => {
+    if (busy() || saving() || alreadyDefault()) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const written = await saveModeDefault(props.control.path); // the file as written, not this chat's copy
+      setDefaultMode(shownOf(written));
+      setInfo((i) => i ?? written); // the lists, in case the open-time read failed
+      const mode = shown();
+      announce(mode ? `Default mode saved: ${modeSummary(mode)}. New sessions start here.` : "Default mode saved. New sessions start here.");
+    } catch (err) {
+      const why = (err instanceof Error ? err.message : String(err)).replace(/\.$/, "");
+      setError({ title: "Couldn't save the default.", body: `${why}. Your mode is unchanged.` });
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const onKeyDown = (e: KeyboardEvent) => {
+    // Only the menu's own items take keys here: the footer's button is a button, and Enter or Space
+    // on it must press IT, not whichever row was last focused.
+    if (!(e.target as HTMLElement | null)?.closest?.("[role^=menuitem]")) return;
     const n = items().length;
     if (n === 0) return;
     const keys: Record<string, () => void> = {
@@ -280,10 +342,23 @@ export function ModeMenu(props: { control: ModeControl }) {
           </Show>
         </div>
 
-        <p class="mode-menu-foot">
-          <span class="text-mono">strict: {current()?.strict ? "on" : "off"}</span> · Before your first message it's also the
-          new default; after, this chat only. <code>/mode default</code> saves it any time.
-        </p>
+        <div class="mode-menu-foot">
+          <p class="mode-menu-foot-line">
+            <span class="text-mono">strict: {current()?.strict ? "on" : "off"}</span> · {FOOT_NOTE}
+          </p>
+          <button
+            type="button"
+            class="button button-ghost button-sm mode-menu-save"
+            aria-disabled={busy() || saving() || alreadyDefault() ? "true" : undefined}
+            title={saveTitle(shown(), alreadyDefault())}
+            onClick={() => void saveAsDefault()}
+          >
+            <Show when={alreadyDefault() && !saving()}>
+              <Icon name="check" small />
+            </Show>
+            {saveLabel(saveState())}
+          </button>
+        </div>
       </div>
     </>
   );

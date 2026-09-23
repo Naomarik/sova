@@ -15,12 +15,12 @@ import {
   SessionManager,
   type Theme,
 } from "@earendil-works/pi-coding-agent";
-import type { ChatClientMessage, ChatModeResult, ChatServerMessage, ModeApplies, QueueItem, RegenerateRefusal, RewindRefusal, SlashCommand } from "../shared/protocol";
+import type { ChatClientMessage, ChatModeResult, ChatServerMessage, ModeApplies, ModeInfo, QueueItem, RegenerateRefusal, RewindRefusal, SlashCommand } from "../shared/protocol";
 import { parseWakeNudge } from "../shared/wake";
 import { type QueueImage, type QueueKind, WebQueue, type WebQueueItem } from "./queue";
 import { decodeUsageTotal, decodeWorkers } from "./insights";
 import { readLive, readOwnLiveRecords, workerCountsOf } from "./live";
-import { appliesAfter, mergeMode, MINOR_MODES, modeApplyPlan, modeInfo, readMode, resolveChatMode, writeMode, type ModePatch, type ModeState } from "./mode-state";
+import { appliesAfter, defaultPatchOf, mergeMode, MINOR_MODES, modeApplyPlan, modeInfo, readMode, resolveChatMode, writeMode, type ModePatch, type ModeState } from "./mode-state";
 import { loadDefaults, saveDefaults } from "./web-defaults";
 import { modelAllowed, modelDenial, readModelPolicy } from "./model-policy";
 import { toContextInfo } from "./models";
@@ -875,9 +875,12 @@ class ChatSession {
   }
 
   /**
-   * A session with no user message on its branch yet — the "new session" whose mode, model and
-   * thinking changes also save as the next new session's defaults (mode.json / web-defaults).
-   * Mode markers, model and thinking entries never count; only a sent message stops it being new.
+   * A session with no user message on its branch yet — the "new session" whose MODEL and THINKING
+   * changes also save as the next new session's defaults (web-defaults). Modes are deliberately not
+   * in that set: switching a new chat's mode changes nothing anywhere else, and the one write that
+   * makes a mode the default is the explicit `Save as default` in the mode menu (saveModeDefault)
+   * or `/mode default` in the TUI. Mode markers, model and thinking entries never count; only a
+   * sent message stops it being new.
    */
   private isPristine(): boolean {
     return !this.session.sessionManager.getBranch().some((e) => e.type === "message" && e.message.role === "user");
@@ -885,14 +888,30 @@ class ChatSession {
 
   /**
    * POST /api/mode?path=: merge the patch into THIS chat's mode and apply it here; no other chat
-   * hears about it. In a session with no messages yet the switch is ALSO saved as the default
-   * the next new session starts from (mode.json — the same write `/mode default` makes, shared
-   * with the TUI); after the first message a switch is this chat's own, as before.
+   * hears about it, and nothing is written to mode.json. The default new sessions start from moves
+   * only when the user asks for it — the menu's `Save as default` (saveModeDefault), `/mode default`
+   * in the TUI, or a POST /api/mode with no ?path=. A new chat's switch stops being a side effect
+   * of being new.
    */
   async switchMode(patch: ModePatch): Promise<ChatModeResult> {
-    const plan = await this.applyMode(mergeMode(this.modeState, patch));
-    if (plan === "command" && this.isPristine()) writeMode(patch);
+    await this.applyMode(mergeMode(this.modeState, patch));
     return { ...modeInfo(this.modeState), applies: this.modeApplies };
+  }
+
+  /**
+   * POST /api/mode?path= { saveDefault: true }: make THIS chat's mode, strict flag and minor modes
+   * the default new sessions start from (~/.pi/agent/mode.json) — the same three fields `/mode
+   * default` writes in the TUI (defaultPatchOf). The write re-reads the file first, so shortcuts and
+   * anything else in it are kept. The file as written comes back, so the caller can say what is now
+   * the default without a second read.
+   *
+   * It switches nothing NOW: this chat keeps its mode and no open chat hears about it. The default
+   * is read at each session_start, so it moves new sessions from their next start — and, like any
+   * write of the default, a session that has never switched (no mode entry on its branch) follows
+   * it too from its next start or reopen. "Unchanged" is true now, not forever.
+   */
+  async saveModeDefault(): Promise<ModeInfo> {
+    return modeInfo(writeMode(defaultPatchOf(this.modeState)));
   }
 
   /**

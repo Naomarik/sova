@@ -1,4 +1,5 @@
-import type { GitSummary, SessionSetup, SessionSetupFile } from "../../shared/protocol";
+import { CHARS_PER_TOKEN, type GitCommit, type GitRepoSummary, type GitSummary, type SessionSetup, type SessionSetupFile } from "../../shared/protocol";
+import { formatTokens } from "./context";
 import { relativeTime, thousands, tildePath } from "./format";
 import { changesLabel, headLabel, linesNote, placeLabel, upstreamLabel } from "./git-summary";
 
@@ -21,10 +22,29 @@ export function linesLabel(n: number): string {
   return `${thousands(n)} ${n === 1 ? "line" : "lines"}`;
 }
 
-/** The figures a file row carries: "4.2 KB · 120 lines". */
-export function fileFacts(f: SessionSetupFile): string {
-  return `${sizeLabel(f.bytes)} · ${linesLabel(f.lines)}`;
+/** What a file's text costs a model, as the card says it: "≈4.1k tokens". The ≈ is not decoration —
+    the count comes from pi's own estimate (CHARS_PER_TOKEN), and a model's real count differs, which
+    the note under each section says in words. */
+export function tokenFacts(tokens: number): string {
+  return `≈${formatTokens(tokens)} tokens`;
 }
+
+/** Said under a section whose figures include a token count, so the unit is never a mystery and the
+    ≈ is never read as a measurement. */
+export const TOKEN_NOTE = `Token counts are estimates: ${CHARS_PER_TOKEN} characters per token.`;
+
+/** The figures a file row carries: "4.2 KB · 120 lines · ≈4.1k tokens". The token estimate is
+    dropped, not zeroed, when there is none to show — the rule the repository's own rows follow. */
+export function fileFacts(f: SessionSetupFile): string {
+  const facts = [sizeLabel(f.bytes), linesLabel(f.lines)];
+  if (typeof f.tokens === "number") facts.push(tokenFacts(f.tokens));
+  return facts.join(" · ");
+}
+
+/** Whether a figure carries a token estimate at all — what decides whether the section says what the
+    number means. */
+export const hasTokens = (f: SessionSetupFile): boolean => typeof f.tokens === "number";
+export const sumHasTokens = (s: LoadoutSum): boolean => s.tokens !== null;
 
 /** One row of the Context group. `role` says how a system-prompt file differs from a context file. */
 export interface ContextRow {
@@ -51,20 +71,30 @@ export function contextRows(s: Loaded, home: string | null): ContextRow[] {
   return layered(s).map(({ file, role }) => ({ file, label: tildePath(file.path, home), role }));
 }
 
-/** What a set of files adds up to on disk. */
+/** What a set of files adds up to on disk, and — when any of them was estimated — what sending
+    them would cost. */
 export interface LoadoutSum {
   bytes: number;
   lines: number;
+  /** null: no file in this set carried an estimate, so there is no total to state. */
+  tokens: number | null;
 }
 
 function sumFiles(files: readonly SessionSetupFile[]): LoadoutSum {
-  return files.reduce((a, f) => ({ bytes: a.bytes + f.bytes, lines: a.lines + f.lines }), { bytes: 0, lines: 0 });
+  const estimated = files.filter((f) => typeof f.tokens === "number");
+  return {
+    bytes: files.reduce((a, f) => a + f.bytes, 0),
+    lines: files.reduce((a, f) => a + f.lines, 0),
+    tokens: estimated.length > 0 ? estimated.reduce((a, f) => a + (f.tokens as number), 0) : null,
+  };
 }
 
-/** The figures an aggregate line carries: "40 KB · 1,940 lines" — the same two figures, in the
-    same order, as one file row, so the totals and the rows read as one column of numbers. */
+/** The figures an aggregate line carries: "40 KB · 1,940 lines · ≈9.7k tokens" — the same figures,
+    in the same order, as one file row, so the totals and the rows read as one column of numbers. */
 export function sumFacts(s: LoadoutSum): string {
-  return `${sizeLabel(s.bytes)} · ${linesLabel(s.lines)}`;
+  const facts = [sizeLabel(s.bytes), linesLabel(s.lines)];
+  if (s.tokens !== null) facts.push(tokenFacts(s.tokens));
+  return facts.join(" · ");
 }
 
 /** Nothing to add up: empty files sum to zero, and a zero total is never shown (gitView never
@@ -101,11 +131,17 @@ export const CONTEXT_NOTE = "Loaded into the prompt.";
 export const CONTEXT_NONE = "No context files. pi loads AGENTS.md or CLAUDE.md when a folder has one.";
 const NOT_FROM_RUNTIME = "Skills an extension adds aren't listed.";
 
+/** The note under Context. It carries what the token figures mean exactly when there are some. */
+export function contextNote(s: Loaded): string {
+  return sumHasTokens(contextSum(s)) ? `${CONTEXT_NOTE} ${TOKEN_NOTE}` : CONTEXT_NOTE;
+}
+
 /** The qualifier under the Skills label. Sova's own loader can't see a path an extension adds, so
-    a list it built says so rather than passing for the whole set. */
+    a list it built says so rather than passing for the whole set — and a list with token figures
+    says what they mean. */
 export function skillsNote(s: Loaded): string {
   const base = "Offered to this session. A skill loads when it is used.";
-  return s.fromRuntime ? base : `${base} ${NOT_FROM_RUNTIME}`;
+  return [base, s.fromRuntime ? null : NOT_FROM_RUNTIME, sumHasTokens(skillsSum(s)) ? TOKEN_NOTE : null].filter(Boolean).join(" ");
 }
 
 /** In place of an empty Skills list — with the same caveat, since an empty list Sova built itself
@@ -145,16 +181,26 @@ export type GitView =
       lines: { added: number; removed: number } | null;
       /** Why the sum or the tallies are short, or null when both are whole. */
       note: string | null;
-      commit: { oid: string; subject: string; ago: string } | null;
-      /** Shown in place of `commit` when there is none. */
+      /** The repository's recent commits, newest first — up to RECENT_COMMITS of them, fewer when
+          that is all there is. Empty in an unborn repository and when git log went unread. */
+      commits: { oid: string; subject: string; ago: string }[];
+      /** Shown in place of the commits when there are none. */
       noCommit: string | null;
     }
   | { kind: "line"; text: string };
 
+/** The commits a summary carries: `commits`, which this server always sends; else — the wire's
+    older shape, a client rebuilt against a server not yet restarted — the one `lastCommit` is, so
+    the card draws a log of one rather than nothing. A transitional read, not a permanent contract. */
+function commitsOf(g: GitRepoSummary): GitCommit[] {
+  if (g.commits) return g.commits;
+  return g.lastCommit ? [g.lastCommit] : [];
+}
+
 export function gitView(g: GitSummary, home: string | null, now: number): GitView {
   if (g.state === "none") return { kind: "line", text: `${placeLabel(g, home)} isn't inside a git repository.` };
   if (g.state === "unavailable") return { kind: "line", text: g.reason };
-  const c = g.lastCommit;
+  const commits = commitsOf(g);
   return {
     kind: "repo",
     head: headLabel(g),
@@ -162,8 +208,8 @@ export function gitView(g: GitSummary, home: string | null, now: number): GitVie
     changes: changesLabel(g),
     lines: g.added + g.removed > 0 ? { added: g.added, removed: g.removed } : null,
     note: linesNote(g) ?? (g.statusPartial ? "Git status was cut short, so these counts are lower bounds." : null),
-    commit: c ? { oid: c.oid.slice(0, 7), subject: c.subject, ago: agoLabel(c.at, now) } : null,
+    commits: commits.map((c) => ({ oid: c.oid.slice(0, 7), subject: c.subject, ago: agoLabel(c.at, now) })),
     // headLabel already says "no commits yet" for an unborn branch.
-    noCommit: c || g.unborn ? null : "The last commit couldn't be read.",
+    noCommit: commits.length > 0 || g.unborn ? null : "The last commits couldn't be read.",
   };
 }

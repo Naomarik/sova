@@ -661,6 +661,14 @@ export interface GitFileChange {
   lines: { added: number; removed: number } | "binary" | null;
 }
 
+/** One commit, as `git log` writes it: the raw oid, the subject as recorded, and when it was made.
+    Subjects are never relabelled or folded — the repository's own words are the record. */
+export interface GitCommit {
+  oid: string;
+  subject: string;
+  at: number;
+}
+
 /** Where the read ran: this machine, or the session's target. */
 export type GitWhere = { kind: "local" } | { kind: "remote"; target: string };
 
@@ -685,8 +693,16 @@ export interface GitRepoSummary {
   counts: { staged: number; unstaged: number; untracked: number; conflicted: number };
   /** Nothing staged, unstaged, untracked or conflicted — and the status read was whole. */
   clean: boolean;
-  /** The commit HEAD points at; null in an unborn repository or when git log failed. */
-  lastCommit: { oid: string; subject: string; at: number } | null;
+  /** The commit HEAD points at; null in an unborn repository or when git log failed. The newest
+      of `commits`, sent on its own because a reader that only ever needs the last one (the session
+      info modal) shouldn't have to take a list apart; a test pins the two to the same commit. */
+  lastCommit: GitCommit | null;
+  /** The repository's recent commits, newest first, at most `RECENT_COMMITS` of them
+      (server/git-summary.ts) — the new-session card's log. This server always sends it. Absent
+      only in the wire's older shape: a client rebuilt against a server that hasn't been restarted
+      yet reads `lastCommit` instead and shows the one commit it has. A transitional read, not a
+      permanent contract. */
+  commits?: GitCommit[];
   /** Changed paths, conflicted first, then by path; cut at the server's cap (`filesTotal`). */
   files: GitFileChange[];
   /** Changed paths git reported, before the cap. */
@@ -725,7 +741,7 @@ export type GitSummary =
 //                                  be read is still a 200 whose `state` says so. Cached ~30s per
 //                                  folder; fresh=1 skips the cache but joins a read already running.)
 // ---------------------------------------------------------------------------
-/** One file pi loads, with what it costs on disk. */
+/** One file pi loads, with what it costs on disk and what it would cost to send. */
 export interface SessionSetupFile {
   path: string;
   /** Bytes, as the file is on disk (never a decoded length). */
@@ -733,7 +749,21 @@ export interface SessionSetupFile {
   /** Lines, counted the way `wc -l` counts them: newlines, plus one for a last line the file never
       terminated. An empty file has none. */
   lines: number;
+  /** What this file's text costs a model, estimated the way pi estimates a prompt before sending
+      it — CHARS_PER_TOKEN, pi-ai's estimateTextTokens, never a tokenizer. The character count is
+      the decoded text's JS string length (UTF-16 code units), the same count pi makes. A real count
+      is the model's, so the card says ≈. This server always sends it for a file it lists. Absent
+      only in the wire's older shape (a client rebuilt against a server not yet restarted): the
+      reader shows bytes and lines rather than a 0 it would be inventing. A transitional read, not
+      a permanent contract. */
+  tokens?: number;
 }
+
+/** pi's own estimate of what text costs a model (pi-ai `estimateTextTokens`): the text's length in
+    characters — JS string length, UTF-16 code units — divided by this, rounded up. Sova never tokenizes — a real count belongs to the model, and this
+    is the rule pi budgets a prompt with. Shared so the server's estimate and the card's words
+    about it are the same number. */
+export const CHARS_PER_TOKEN = 4;
 
 /** One skill pi offers this session. `path` is its SKILL.md. */
 export interface SessionSetupSkill extends SessionSetupFile {

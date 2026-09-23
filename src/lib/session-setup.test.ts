@@ -5,10 +5,12 @@ import {
   agoLabel,
   CONTEXT_NONE,
   contextHeading,
+  contextNote,
   contextRows,
   contextSum,
   fileFacts,
   gitView,
+  hasTokens,
   isSumEmpty,
   linesLabel,
   loadoutView,
@@ -18,7 +20,9 @@ import {
   skillsNote,
   skillsSum,
   sumFacts,
+  sumHasTokens,
   systemContextSum,
+  TOKEN_NOTE,
 } from "./session-setup";
 
 type Loaded = Extract<SessionSetup, { state: "ok" }>;
@@ -75,6 +79,33 @@ test("lines: singular only for exactly 1, thousands separated", () => {
   assert.equal(fileFacts({ path: "/a", bytes: 1024, lines: 1 }), "1.0 KB · 1 line");
 });
 
+test("tokens: the same formatter the head uses, marked as an estimate, and never invented", () => {
+  // The same figures the context gauge shows (§4f): 812 · 8.4k · 237k · 1M.
+  assert.equal(fileFacts({ path: "/a", bytes: 1024, lines: 1, tokens: 812 }), "1.0 KB · 1 line · ≈812 tokens");
+  assert.equal(fileFacts({ path: "/a", bytes: 1024, lines: 1, tokens: 8400 }), "1.0 KB · 1 line · ≈8.4k tokens");
+  assert.equal(fileFacts({ path: "/a", bytes: 0, lines: 0, tokens: 0 }), "0 B · 0 lines · ≈0 tokens");
+  // No estimate: the figure is dropped, never drawn as 0 — a 0 would be a claim about the file.
+  assert.equal(fileFacts({ path: "/a", bytes: 1024, lines: 1 }), "1.0 KB · 1 line");
+  assert.equal(hasTokens({ path: "/a", bytes: 1, lines: 1 }), false);
+  assert.equal(hasTokens({ path: "/a", bytes: 1, lines: 1, tokens: 0 }), true);
+  assert.equal(sumFacts({ bytes: 2048, lines: 2, tokens: 8400 }), "2.0 KB · 2 lines · ≈8.4k tokens");
+  assert.equal(sumFacts({ bytes: 2048, lines: 2, tokens: null }), "2.0 KB · 2 lines");
+  assert.equal(sumHasTokens({ bytes: 0, lines: 0, tokens: null }), false);
+  assert.equal(sumHasTokens({ bytes: 0, lines: 0, tokens: 0 }), true);
+});
+
+test("the estimate's note appears with the figures, and only then", () => {
+  const estimated = setup({ context: [{ path: "/a/AGENTS.md", bytes: 400, lines: 2, tokens: 100 }] });
+  const silent = setup({ context: [{ path: "/a/AGENTS.md", bytes: 400, lines: 2 }] });
+  assert.equal(contextNote(silent), "Loaded into the prompt.");
+  assert.equal(contextNote(estimated), `Loaded into the prompt. ${TOKEN_NOTE}`);
+  assert.equal(TOKEN_NOTE, "Token counts are estimates: 4 characters per token.");
+  const skills = setup({ skills: [{ path: "/s/SKILL.md", name: "s", bytes: 400, lines: 2, tokens: 100 }] });
+  assert.equal(skillsNote(skills), `Offered to this session. A skill loads when it is used. ${TOKEN_NOTE}`);
+  assert.equal(skillsNote({ ...skills, fromRuntime: false }), `Offered to this session. A skill loads when it is used. Skills an extension adds aren't listed. ${TOKEN_NOTE}`);
+  assert.equal(skillsNote(setup({ skills: [{ path: "/s/SKILL.md", name: "s", bytes: 400, lines: 2 }] })), "Offered to this session. A skill loads when it is used.");
+});
+
 test("context: system prompt first, context files in order, appended sources last — each role said", () => {
   const rows = contextRows(
     setup({
@@ -108,31 +139,33 @@ test("empty lists: zero counts in the labels and a sentence each, never a blank 
   assert.equal(skillsNone(empty), "No skills offered to this session.");
 });
 
-test("sums: one aggregate line, and the two sections below add up to it to the byte", () => {
+test("sums: one aggregate line, and the two sections below add up to it to the byte and the token", () => {
   const s = setup({
-    systemPrompt: { path: "/p/.pi/SYSTEM.md", bytes: 1024, lines: 10 },
-    context: [{ path: "/a/AGENTS.md", bytes: 2048, lines: 20 }],
-    appendSystemPrompt: [{ path: "/p/.pi/APPEND_SYSTEM.md", bytes: 512, lines: 5 }],
-    skills: [{ path: "/s/k/SKILL.md", name: "k", bytes: 4096, lines: 40 }],
+    systemPrompt: { path: "/p/.pi/SYSTEM.md", bytes: 1024, lines: 10, tokens: 256 },
+    context: [{ path: "/a/AGENTS.md", bytes: 2048, lines: 20, tokens: 512 }],
+    appendSystemPrompt: [{ path: "/p/.pi/APPEND_SYSTEM.md", bytes: 512, lines: 5, tokens: 128 }],
+    skills: [{ path: "/s/k/SKILL.md", name: "k", bytes: 4096, lines: 40, tokens: 1024 }],
   });
   // the system prompt and the appended source are in the prompt, so they are in the Context sum
-  assert.deepEqual(contextSum(s), { bytes: 3584, lines: 35 });
-  assert.deepEqual(skillsSum(s), { bytes: 4096, lines: 40 });
+  assert.deepEqual(contextSum(s), { bytes: 3584, lines: 35, tokens: 896 });
+  assert.deepEqual(skillsSum(s), { bytes: 4096, lines: 40, tokens: 1024 });
   // the aggregate line's figures, figured the way one row's figures are
-  assert.equal(sumFacts(systemContextSum(s)), "7.5 KB · 75 lines");
+  assert.equal(sumFacts(systemContextSum(s)), "7.5 KB · 75 lines · ≈1.9k tokens");
   assert.deepEqual(systemContextSum(s), {
     bytes: contextSum(s).bytes + skillsSum(s).bytes,
     lines: contextSum(s).lines + skillsSum(s).lines,
+    tokens: (contextSum(s).tokens ?? 0) + (skillsSum(s).tokens ?? 0),
   });
   // and the line counts exactly the rows the card draws — no file summed that isn't listed
   const drawn = [...contextRows(s, null).map((r) => r.file), ...s.skills];
   assert.equal(drawn.length, contextRows(s, null).length + s.skills.length);
   assert.equal(drawn.reduce((n, f) => n + f.bytes, 0), systemContextSum(s).bytes);
   assert.equal(drawn.reduce((n, f) => n + f.lines, 0), systemContextSum(s).lines);
+  assert.equal(drawn.reduce((n, f) => n + (f.tokens ?? 0), 0), systemContextSum(s).tokens);
 });
 
 test("sums: a zero total is never drawn, and an empty file still gets its row", () => {
-  assert.deepEqual(systemContextSum(setup({})), { bytes: 0, lines: 0 });
+  assert.deepEqual(systemContextSum(setup({})), { bytes: 0, lines: 0, tokens: null });
   assert.equal(isSumEmpty(systemContextSum(setup({}))), true);
   const blank = setup({ context: [{ path: "/a/AGENTS.md", bytes: 0, lines: 0 }] });
   assert.equal(contextRows(blank, null).length, 1); // the list draws it
@@ -160,7 +193,7 @@ test("loadout: local reads get the groups; remote and unavailable get exactly on
   });
 });
 
-test("git repo: the Repository pane's words, the sum only when there is one, the commit shortened", () => {
+test("git repo: the Repository pane's words, the sum only when there is one, the commits shortened", () => {
   const v = gitView(
     repo({
       upstream: { name: "origin/main", ahead: 2, behind: 0 },
@@ -168,7 +201,11 @@ test("git repo: the Repository pane's words, the sum only when there is one, the
       counts: { staged: 1, unstaged: 2, untracked: 3, conflicted: 0 },
       added: 40,
       removed: 7,
-      lastCommit: { oid: "1a2b3c4d5e6f7a8b", subject: "fix the thing", at: NOW - 2 * 3600_000 },
+      commits: [
+        { oid: "1a2b3c4d5e6f7a8b", subject: "fix the thing", at: NOW - 2 * 3600_000 },
+        { oid: "9f8e7d6c5b4a3120", subject: "add the other thing", at: NOW - 26 * 3600_000 },
+        { oid: "0a1b2c3d4e5f6071", subject: "drop the old thing", at: NOW - 100 * 3600_000 },
+      ],
     }),
     "/home/u",
     NOW,
@@ -180,14 +217,22 @@ test("git repo: the Repository pane's words, the sum only when there is one, the
     changes: "1 staged · 2 unstaged · 3 untracked",
     lines: { added: 40, removed: 7 },
     note: null,
-    commit: { oid: "1a2b3c4", subject: "fix the thing", ago: "2h ago" },
+    commits: [
+      { oid: "1a2b3c4", subject: "fix the thing", ago: "2h ago" },
+      { oid: "9f8e7d6", subject: "add the other thing", ago: "yesterday" },
+      { oid: "0a1b2c3", subject: "drop the old thing", ago: "4d ago" },
+    ],
     noCommit: null,
   });
+  // The wire's older shape: only the newest commit. The card draws a log of one, not nothing.
+  const single = gitView(repo({ lastCommit: { oid: "1a2b3c4d5e6f7a8b", subject: "fix the thing", at: NOW - 2 * 3600_000 } }), "/home/u", NOW);
+  assert.equal(single.kind === "repo" && single.commits.length, 1);
+  assert.equal(single.kind === "repo" && single.commits[0]?.subject, "fix the thing");
   const clean = gitView(base, "/home/u", NOW);
   assert.equal(clean.kind === "repo" && clean.changes, "Clean");
   assert.equal(clean.kind === "repo" && clean.upstream, null); // no upstream: nothing said, not "None set"
   assert.equal(clean.kind === "repo" && clean.lines, null); // never "+0 −0"
-  assert.equal(clean.kind === "repo" && clean.noCommit, "The last commit couldn't be read.");
+  assert.equal(clean.kind === "repo" && clean.noCommit, "The last commits couldn't be read.");
   const unborn = gitView(repo({ unborn: true }), "/home/u", NOW);
   assert.equal(unborn.kind === "repo" && unborn.head, "main · no commits yet");
   assert.equal(unborn.kind === "repo" && unborn.noCommit, null);

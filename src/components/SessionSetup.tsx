@@ -4,8 +4,8 @@ import { fetchSessionSetup } from "../lib/api";
 import { loadGitSummary, UPSTREAM_TITLE } from "../lib/git-summary";
 import {
   CONTEXT_NONE,
-  CONTEXT_NOTE,
   contextHeading,
+  contextNote,
   contextRows,
   contextSum,
   fileFacts,
@@ -102,7 +102,7 @@ export function SessionSetupCard(props: { path: string }) {
                       </Show>
                     </div>
                     <Show when={rows().length > 0} fallback={<p class="setup-note">{CONTEXT_NONE}</p>}>
-                      <p class="setup-note">{CONTEXT_NOTE}</p>
+                      <p class="setup-note">{contextNote(s())}</p>
                       <ul class="setup-list">
                         <For each={rows()}>
                           {(r) => (
@@ -202,17 +202,21 @@ function GitFacts(props: { answer: Answer<GitSummary> }) {
                 )}
               </Show>
             </p>
-            <Show when={v().commit} fallback={<Show when={v().noCommit}>{(t) => <p class="setup-note">{t()}</p>}</Show>}>
-              {(c) => (
-                <p class="setup-git setup-commit">
-                  <Icon name="clock" small />
-                  <span class="setup-oid">{c().oid}</span>
-                  <span class="setup-subject" title={c().subject}>
-                    {c().subject}
-                  </span>
-                  <span class="setup-ago">{c().ago}</span>
-                </p>
-              )}
+            <Show when={v().commits.length > 0} fallback={<Show when={v().noCommit}>{(t) => <p class="setup-note">{t()}</p>}</Show>}>
+              <ul class="setup-list setup-commits">
+                <For each={v().commits}>
+                  {(c) => (
+                    <li class="setup-git setup-commit">
+                      <Icon name="clock" small />
+                      <span class="setup-oid">{c.oid}</span>
+                      <span class="setup-subject" title={c.subject}>
+                        {c.subject}
+                      </span>
+                      <span class="setup-ago">{c.ago}</span>
+                    </li>
+                  )}
+                </For>
+              </ul>
             </Show>
             <Show when={v().note}>{(n) => <p class="setup-note">{n()}</p>}</Show>
           </>

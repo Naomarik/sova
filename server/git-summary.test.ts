@@ -79,6 +79,7 @@ test("a clean repository: branch, clean, latest commit, and no files", async () 
   assert.equal(s.lastCommit?.subject, "the first — ünïcode subject");
   assert.equal(s.lastCommit?.oid, git(dir, "rev-parse", "HEAD").trim());
   assert.ok(Math.abs(s.lastCommit!.at - Date.now()) < 120_000);
+  assert.deepEqual(s.commits, [s.lastCommit]);
   assert.deepEqual(s.files, []);
   assert.equal(s.lines, "ok");
 });
@@ -153,11 +154,44 @@ test("an unborn repository: no commit, the branch it will create, lines against 
   assert.equal(s.unborn, true);
   assert.deepEqual(s.head, { kind: "branch", name: "main" });
   assert.equal(s.lastCommit, null);
+  assert.deepEqual(s.commits, []);
   assert.equal(s.lines, "ok");
   const by = Object.fromEntries(s.files.map((f) => [f.path, f]));
   assert.deepEqual(by["a.txt"]!.lines, { added: 2, removed: 0 });
   assert.equal(by["a.txt"]!.staged, "added");
   assert.equal(by["b.txt"]!.kind, "untracked");
+});
+
+test("the log carries the last three commits, newest first, and lastCommit is the newest of them", async () => {
+  const dir = repo({ "a.txt": "1\n" }, "first");
+  for (const subject of ["second", "third", "fourth"]) {
+    write(dir, "a.txt", `${subject}\n`);
+    git(dir, "commit", "-qam", subject);
+  }
+  const s = asRepo(await read(dir));
+  assert.equal(G.RECENT_COMMITS, 3);
+  assert.deepEqual(s.commits?.map((c) => c.subject), ["fourth", "third", "second"], "the newest first, one per commit, and no further back than three");
+  // The oids are the repository's own, in the same order: HEAD, HEAD~1, HEAD~2.
+  assert.deepEqual(s.commits?.map((c) => c.oid), ["HEAD", "HEAD~1", "HEAD~2"].map((r) => git(dir, "rev-parse", r).trim()));
+  assert.deepEqual(s.lastCommit, s.commits?.[0], "the single field names the same commit as the list's first");
+  // Times come from git, and run backwards down the list.
+  const times = s.commits!.map((c) => c.at);
+  assert.ok(times.every((t) => Math.abs(t - Date.now()) < 120_000), JSON.stringify(times));
+  assert.ok(times[0]! >= times[1]! && times[1]! >= times[2]!, JSON.stringify(times));
+});
+
+test("a subject is kept as git wrote it, and a cut log loses only the commit it cut", () => {
+  const sha = "a".repeat(40);
+  const record = (subject: string, at = 1_700_000_000) => `${sha}\0${at}\0${subject}\n`;
+  const whole = G.parseLog(record("one") + record("two — ünï \tcode"), true);
+  assert.deepEqual(whole.map((c) => c.subject), ["one", "two — ünï \tcode"], "the subject is never folded, trimmed or relabelled");
+  assert.equal(whole[0]?.at, 1_700_000_000_000);
+  // Cut by the section's byte cap: the half-record goes, the whole ones before it stay.
+  const cut = G.parseLog(record("one") + record("two") + `${sha}\0${1_700_000_000}\0half`, false);
+  assert.deepEqual(cut.map((c) => c.subject), ["one", "two"]);
+  // Nothing to read: an empty section, or git's refusal, is an empty list rather than a throw.
+  assert.deepEqual(G.parseLog("", false), []);
+  assert.deepEqual(G.parseLog("\n", true), []);
 });
 
 test("a detached HEAD names its commit", async () => {

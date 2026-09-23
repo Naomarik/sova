@@ -61,9 +61,15 @@ test("countLines counts the way wc -l does", () => {
   assert.equal(S.countLines(Buffer.from("\n\n")), 2);
 });
 
-test("bytes are bytes on disk, not characters", () => {
-  const dir = fresh({ "A.md": "é\n" }); // 0xc3 0xa9 0x0a: two characters, three bytes
-  assert.deepEqual(S.measureFile(join(dir, "A.md")), { bytes: 3, lines: 1 });
+test("bytes are bytes on disk, not characters — and tokens are the characters, not the bytes", () => {
+  // 4 × (0xc3 0xa9) + 0x0a: five characters, nine bytes. The estimate counts the DECODED text
+  // (5 characters → 2 tokens); an estimate taken from the byte count would say 3 here.
+  const dir = fresh({ "A.md": "éééé\n" });
+  assert.deepEqual(S.measureFile(join(dir, "A.md")), { bytes: 9, lines: 1, tokens: 2 });
+  const five = fresh({ "B.md": "abcd\n" }); // 5 bytes, 5 characters, 2 tokens: rounded up, never down
+  assert.deepEqual(S.measureFile(join(five, "B.md")), { bytes: 5, lines: 1, tokens: 2 });
+  const empty = fresh({ "C.md": "" });
+  assert.deepEqual(S.measureFile(join(empty, "C.md")), { bytes: 0, lines: 0, tokens: 0 });
 });
 
 test("a file that cannot be read has no size at all", () => {
@@ -91,8 +97,8 @@ test("an open chat's own loader is the answer, and the fallback is never asked",
   if (setup.state !== "ok") return;
   assert.equal(setup.fromRuntime, true);
   assert.equal(loaderCalls, 0);
-  assert.deepEqual(setup.context, [{ path: join(dir, "AGENTS.md"), bytes: 4, lines: 1 }]);
-  assert.deepEqual(setup.skills, [{ name: "a", path: join(cwd, "SKILL.md"), description: "does a", bytes: 8, lines: 2 }]);
+  assert.deepEqual(setup.context, [{ path: join(dir, "AGENTS.md"), bytes: 4, lines: 1, tokens: 1 }]);
+  assert.deepEqual(setup.skills, [{ name: "a", path: join(cwd, "SKILL.md"), description: "does a", bytes: 8, lines: 2, tokens: 2 }]);
   assert.equal(setup.cwd, cwd);
 });
 
@@ -114,9 +120,9 @@ test("a listed file is sized from disk, a project prompt source is reported when
   });
   assert.equal(setup.state, "ok");
   if (setup.state !== "ok") return;
-  assert.deepEqual(setup.context, [{ path: join(dir, "AGENTS.md"), bytes: 8, lines: 2 }]);
-  assert.deepEqual(setup.systemPrompt, { path: join(dir, "SYSTEM.md"), bytes: 4, lines: 1 });
-  assert.deepEqual(setup.appendSystemPrompt, [{ path: join(dir, "APPEND.md"), bytes: 4, lines: 1 }]);
+  assert.deepEqual(setup.context, [{ path: join(dir, "AGENTS.md"), bytes: 8, lines: 2, tokens: 2 }]);
+  assert.deepEqual(setup.systemPrompt, { path: join(dir, "SYSTEM.md"), bytes: 4, lines: 1, tokens: 1 });
+  assert.deepEqual(setup.appendSystemPrompt, [{ path: join(dir, "APPEND.md"), bytes: 4, lines: 1, tokens: 1 }]);
 });
 
 test("no prompt sources: the fields are absent, not empty", async () => {
@@ -219,7 +225,7 @@ test("a folder that is gone says which one, and is read at its moved location wh
   if (moved.state !== "ok") return;
   assert.equal(moved.cwd, dir);
   assert.equal(moved.moved, true);
-  assert.deepEqual(moved.context, [{ path: join(dir, "A.md"), bytes: 2, lines: 1 }]);
+  assert.deepEqual(moved.context, [{ path: join(dir, "A.md"), bytes: 2, lines: 1, tokens: 1 }]);
 });
 
 // ---------------------------------------------------------------------------

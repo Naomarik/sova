@@ -45,7 +45,7 @@ import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
 import { open } from "node:fs/promises";
 import { isAbsolute } from "node:path";
-import type { GitChange, GitFileChange, GitRepoSummary, GitSummary, GitWhere } from "../shared/protocol";
+import type { GitChange, GitCommit, GitFileChange, GitRepoSummary, GitSummary, GitWhere } from "../shared/protocol";
 import type { ExecResult } from "./files";
 import { classifyFailure, mappedNewCwd, parseLegacyMountCwd, parseTargetCwd, runOnTarget, type TargetRunResult } from "./targets";
 
@@ -63,6 +63,9 @@ const CAP = { top: 16 * 1024, status: 512 * 1024, log: 16 * 1024, numstat: 256 *
 const LOCAL_BYTE_CAP = 900 * 1024;
 /** Longest subject we send; git allows any length. */
 const SUBJECT_MAX = 300;
+/** How many commits one read carries. The card shows the repository's last few; a log is not a
+    listing, and past three the group stops being a glance at where the folder stands. */
+export const RECENT_COMMITS = 3;
 
 /** Injectable seams; every one has the real default. Tests swap them, callers never pass them. */
 export interface GitDeps {
@@ -102,7 +105,7 @@ export function gitScript(nonce: string): string {
     `if ! g 3 rev-parse --show-toplevel >/dev/null 2>&1; then m toperr -; { g 3 rev-parse --show-toplevel 2>&1 >/dev/null; m toperr $?; } | head -c ${CAP.top}; exit 0; fi`,
     `m top -; { g 3 rev-parse --show-toplevel 2>/dev/null; m top $?; } | head -c ${CAP.top}`,
     `m status -; { g 6 status --porcelain=v2 --branch -z --untracked-files=normal 2>/dev/null; m status $?; } | head -c ${CAP.status}`,
-    `m log -; { g 3 log -1 --format=%H%x00%ct%x00%s 2>/dev/null; m log $?; } | head -c ${CAP.log}`,
+    `m log -; { g 3 log -${RECENT_COMMITS} --format=%H%x00%ct%x00%s 2>/dev/null; m log $?; } | head -c ${CAP.log}`,
     // Worktree against HEAD, or against the empty tree before the first commit (hash-object, not a
     // hard-coded id: a sha256 repository has a different one).
     `if g 2 rev-parse -q --verify HEAD >/dev/null 2>&1; then b=HEAD; else b=$(g 2 hash-object -t tree /dev/null 2>/dev/null) || b=; fi`,
@@ -338,6 +341,23 @@ function lineCount(e: Omit<GitFileChange, "lines">, counts: Map<string, LineCoun
   return { added: c.added + src.added, removed: c.removed + src.removed };
 }
 
+/** `git log -n --format=%H%x00%ct%x00%s`: one commit per line, newest first, subject last so a
+    subject may hold anything but a newline. `whole` says the section was closed by its own marker:
+    a section the byte cap cut ends mid-record, and half a commit is dropped rather than guessed at
+    (a record cut exactly at a newline just lists one commit fewer). */
+export function parseLog(out: string, whole: boolean): GitCommit[] {
+  const lines = out.split("\n");
+  if (lines.at(-1) === "") lines.pop(); // the newline git writes after the last record
+  else if (!whole) lines.pop();
+  const commits: GitCommit[] = [];
+  for (const line of lines) {
+    const [oid, ct, ...subject] = line.split("\0");
+    const at = Number(ct) * 1000;
+    if (oid !== undefined && oid !== "" && Number.isFinite(at)) commits.push({ oid, subject: subject.join(" ").slice(0, SUBJECT_MAX), at });
+  }
+  return commits;
+}
+
 const TIMED_OUT = new Set([124, 137]); // timeout's own code, and SIGKILL's
 
 /** git's own words for a refusal: the last line, without "fatal: ". */
@@ -417,12 +437,8 @@ export function summarize(sections: Map<string, Section>, place: Place, checkedA
   }
 
   const lg = sections.get("log");
-  let lastCommit: GitRepoSummary["lastCommit"] = null;
-  if (lg?.code === 0) {
-    const [oid, ct, ...subject] = lg.out.replace(/\n$/, "").split("\0");
-    const at = Number(ct) * 1000;
-    if (oid && Number.isFinite(at)) lastCommit = { oid, subject: subject.join(" ").slice(0, SUBJECT_MAX), at };
-  }
+  // 0: git answered. null: the cap cut the section, and the commits that arrived whole still count.
+  const commits = lg && (lg.code === 0 || lg.code === null) ? parseLog(lg.out, lg.code === 0) : [];
 
   return {
     state: "repo",
@@ -433,7 +449,8 @@ export function summarize(sections: Map<string, Section>, place: Place, checkedA
     upstream: status.upstream === null ? null : status.ab ? { name: status.upstream, ...status.ab } : { name: status.upstream, gone: true },
     counts: tally,
     clean: files.length === 0 && !statusPartial,
-    lastCommit,
+    lastCommit: commits[0] ?? null,
+    commits,
     files: files.slice(0, MAX_GIT_FILES),
     filesTotal: files.length,
     statusPartial,

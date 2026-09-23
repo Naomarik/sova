@@ -32,7 +32,7 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { DefaultResourceLoader, getAgentDir } from "@earendil-works/pi-coding-agent";
-import type { SessionSetup, SessionSetupFile, SessionSetupSkill } from "../shared/protocol";
+import { CHARS_PER_TOKEN, type SessionSetup, type SessionSetupFile, type SessionSetupSkill } from "../shared/protocol";
 import { heldChat } from "./chat-manager";
 import { plan, readStoredCwd, type Plan } from "./git-summary";
 
@@ -48,16 +48,26 @@ export function countLines(buf: Buffer): number {
   return buf[buf.length - 1] === 10 ? newlines : newlines + 1;
 }
 
-/** A file's size on disk. null when it can't be read at all — gone since the caller listed it, a
-    directory, a permission bit: the row is dropped rather than reported as an empty file. */
-export function measureFile(path: string): { bytes: number; lines: number } | null {
+/** pi's own estimate of what a text costs a model: `pi-ai`'s `estimateTextTokens`, ceil(code units /
+    CHARS_PER_TOKEN) — `text.length`, UTF-16 code units, the same count pi makes (an emoji is 2). Sova never tokenizes — a real count belongs to the model, and this is the number
+    pi itself budgets a prompt with, so the card can say what a file costs before it is sent. */
+export function estimateTokens(text: string): number {
+  return Math.ceil(text.length / CHARS_PER_TOKEN);
+}
+
+/** A file's size on disk and what its text would cost. null when it can't be read at all — gone
+    since the caller listed it, a directory, a permission bit: the row is dropped rather than
+    reported as an empty file. */
+export function measureFile(path: string): { bytes: number; lines: number; tokens: number } | null {
   let buf: Buffer;
   try {
     buf = readFileSync(path);
   } catch {
     return null;
   }
-  return { bytes: buf.length, lines: countLines(buf) };
+  // Decoded once, for the estimate: pi counts the characters of the text it reads, not the bytes
+  // on disk, and the two differ for anything that isn't ASCII.
+  return { bytes: buf.length, lines: countLines(buf), tokens: estimateTokens(buf.toString("utf8")) };
 }
 
 /** What a loader found, whichever loader it was. Only paths: the contents are pi's business. */

@@ -1,10 +1,13 @@
 // Open/closed state for the sidebar's folder sections (spec/02-session-list.md §2 "Anatomy").
-// A folder head is a <summary>, so every one of them can be collapsed; unlike the Archive and its
-// date sections it is OPEN by default, because a folder is where the rows actually are.
+// A folder head is a <summary>, so every one of them can be collapsed, and like the Archive and its
+// date sections it is COLLAPSED by default: the Recent region already shows whatever is active, and
+// a folder that holds a working agent says so on its own head (`folderActive`).
 //
 // Pure on purpose: the rule is what a unit test can hold, and the component keeps the storage.
 
+import type { SessionSummary } from "../../shared/protocol";
 import { dualGet, dualSet } from "./storage-keys";
+import { sessionWorking } from "./workers";
 
 /** One key per region + folder. The region prefix is what keeps the same folder under Live & web
     separate from it inside a group or an Archive date section. */
@@ -27,10 +30,26 @@ export const storedFolderOpen = (raw: string | null | undefined): boolean | unde
 
 /**
  * Whether a folder section is open right now. It is forced open, WITHOUT changing the stored
- * choice, while a search is on (every hit has to be visible) or while it holds the selected
- * session (its `aria-current` row must not be hidden under the user) — the Archive date rule,
- * with the default flipped.
+ * choice, while a search is on (every hit has to be visible). Holding the selected session does
+ * NOT force it open: an active session is already in Recent, so the folder keeps the user's choice.
  */
-export function folderOpen(input: { stored?: boolean | undefined; searching: boolean; holdsSelected: boolean }): boolean {
-  return input.searching || input.holdsSelected || (input.stored ?? true);
+export function folderOpen(input: { stored?: boolean | undefined; searching: boolean }): boolean {
+  return input.searching || (input.stored ?? false);
 }
+
+/** Whether one session has an agent at work: pi replying in it (this tab's own run wins over the
+    fetched list), a TUI mid-turn, or subagents working. */
+export function sessionActive(
+  s: Pick<SessionSummary, "path" | "busy" | "live" | "workers">,
+  localRunning: Record<string, boolean> = {},
+): boolean {
+  if (sessionWorking(s) > 0) return true;
+  if (s.live) return /^running/i.test(s.live.status);
+  return !!(localRunning[s.path] ?? s.busy);
+}
+
+/** Whether a folder head shows its "agent at work" indicator: any of its sessions is active. */
+export const folderActive = (
+  sessions: readonly Pick<SessionSummary, "path" | "busy" | "live" | "workers">[],
+  localRunning: Record<string, boolean> = {},
+): boolean => sessions.some((s) => sessionActive(s, localRunning));

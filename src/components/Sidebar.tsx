@@ -39,7 +39,7 @@ import {
   startSelection,
   toggleSelection,
 } from "../lib/session-selection";
-import { folderOpen, folderOpenKey, readFolderOpenRaw, storedFolderOpen, writeFolderOpenRaw } from "../lib/folder-open";
+import { folderActive, folderOpen, folderOpenKey, readFolderOpenRaw, storedFolderOpen, writeFolderOpenRaw } from "../lib/folder-open";
 import { groupOpen as groupOpenRule, groupsRegionOpen as groupsRegionOpenRule } from "../lib/group-open";
 import { activeAgentCounts, activeTeamCount, sessionWorking } from "../lib/workers";
 import { ActionMenu } from "./ActionMenu";
@@ -430,8 +430,9 @@ function GroupList(props: {
           folderOpen({
             stored: openFolders()[key] ?? storedFolderOpen(readFolderOpenRaw(props.idPrefix, group.cwd)),
             searching: props.searching,
-            holdsSelected: group.sessions.some((s) => s.path === props.selected),
           });
+        // Folders start collapsed, so one holding an agent at work says so on its own head.
+        const active = () => folderActive(group.sessions, localRunning());
         const onFolderToggle = (e: Event & { currentTarget: HTMLDetailsElement }) => {
           const now = e.currentTarget.open;
           if (now === open()) return; // our own `open` update, not the user's
@@ -467,6 +468,12 @@ function GroupList(props: {
                 <span class="session-group-path">
                   <bdi>{remote ? remote.remoteCwd : tildePath(group.cwd, home())}</bdi>
                 </span>
+                <Show when={active()}>
+                  <span class="session-group-active" title="An agent is working in this folder">
+                    <span class="session-rail-dot" />
+                    <span class="visually-hidden">, an agent is working here</span>
+                  </span>
+                </Show>
                 <span class="text-num">{group.sessions.length}</span>
               </Dynamic>
             </summary>

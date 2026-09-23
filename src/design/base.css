@@ -1489,6 +1489,15 @@ html.is-resizing * {
   text-align: left;
 }
 .session-group-path > bdi { direction: ltr; unicode-bidi: isolate; }
+/* A folder holding an agent at work (§2 "Anatomy"): folders start collapsed, so the head carries
+   the row's Busy dot, pulsing the same way. One dot, never a count: the rows inside say how many. */
+.session-group-active {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  color: var(--status-info);
+}
+.session-group-active .session-rail-dot { animation: live-pulse 1.6s var(--ease-standard) infinite; }
 
 /* Every folder head is a <summary> (§2 "Anatomy"), so the folder collapses like the Archive's
    date sections do. The sticky and the surface move UP to the summary: a sticky heading inside a

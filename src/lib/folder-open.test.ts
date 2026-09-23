@@ -2,17 +2,18 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  folderActive,
   folderOpen,
   folderOpenKey,
   legacyFolderOpenKey,
   storedFolderOpen,
 } from "./folder-open";
 
-const quiet = { searching: false, holdsSelected: false };
+const quiet = { searching: false };
 
-test("open by default: a folder nobody has collapsed shows its rows", () => {
-  assert.equal(folderOpen({ ...quiet }), true);
-  assert.equal(folderOpen({ ...quiet, stored: undefined }), true);
+test("collapsed by default: a folder nobody has opened hides its rows", () => {
+  assert.equal(folderOpen({ ...quiet }), false);
+  assert.equal(folderOpen({ ...quiet, stored: undefined }), false);
 });
 
 test("the stored choice wins while nothing forces it open", () => {
@@ -20,15 +21,14 @@ test("the stored choice wins while nothing forces it open", () => {
   assert.equal(folderOpen({ ...quiet, stored: true }), true);
 });
 
-test("searching and the selected session force it open, collapsed or not", () => {
-  assert.equal(folderOpen({ stored: false, searching: true, holdsSelected: false }), true);
-  assert.equal(folderOpen({ stored: false, searching: false, holdsSelected: true }), true);
-  assert.equal(folderOpen({ stored: false, searching: true, holdsSelected: true }), true);
+test("searching forces it open, collapsed or not", () => {
+  assert.equal(folderOpen({ stored: false, searching: true }), true);
+  assert.equal(folderOpen({ stored: undefined, searching: true }), true);
 });
 
-test("a forced-open folder goes back to the stored choice when the force ends", () => {
+test("a forced-open folder goes back to the stored choice when the search ends", () => {
   const collapsed = { stored: false };
-  assert.equal(folderOpen({ ...collapsed, searching: true, holdsSelected: false }), true);
+  assert.equal(folderOpen({ ...collapsed, searching: true }), true);
   assert.equal(folderOpen({ ...collapsed, ...quiet }), false);
 });
 
@@ -39,9 +39,9 @@ test("only \"1\" and \"0\" are a choice; anything else is nobody having chosen",
   assert.equal(storedFolderOpen(undefined), undefined);
   assert.equal(storedFolderOpen(""), undefined);
   assert.equal(storedFolderOpen("true"), undefined);
-  // The distinction that matters: an unset key must not read as collapsed.
-  assert.equal(folderOpen({ ...quiet, stored: storedFolderOpen(null) }), true);
-  assert.equal(folderOpen({ ...quiet, stored: storedFolderOpen("0") }), false);
+  // The distinction that matters: an unset key must not read as a choice to open.
+  assert.equal(folderOpen({ ...quiet, stored: storedFolderOpen(null) }), false);
+  assert.equal(folderOpen({ ...quiet, stored: storedFolderOpen("1") }), true);
 });
 
 test("the key separates the same folder in different regions", () => {
@@ -56,4 +56,29 @@ test("the key separates the same folder in different regions", () => {
 test("the legacy pre-rebrand key is the same shape under the old prefix", () => {
   assert.equal(legacyFolderOpenKey("t", "/x"), "pi-web:folder-open-t-/x");
   assert.equal(folderOpenKey("t", "/x"), "sova:folder-open-t-/x");
+});
+
+const row = (over: Partial<{ path: string; busy: boolean; live: { pid: number; status: string; workers?: { working: number; total: number } } | null; workers: { working: number; total: number } }> = {}) => ({
+  path: "/s/a.jsonl",
+  busy: false,
+  live: null,
+  ...over,
+});
+
+test("folderActive: an idle folder shows no indicator", () => {
+  assert.equal(folderActive([]), false);
+  assert.equal(folderActive([row(), row({ path: "/s/b.jsonl", workers: { working: 0, total: 3 } })]), false);
+  assert.equal(folderActive([row({ live: { pid: 1, status: "Idle" } })]), false);
+});
+
+test("folderActive: any one busy row, TUI turn or working subagent lights the folder", () => {
+  assert.equal(folderActive([row(), row({ path: "/s/b.jsonl", busy: true })]), true);
+  assert.equal(folderActive([row({ live: { pid: 1, status: "Running: bash, read" } })]), true);
+  assert.equal(folderActive([row({ workers: { working: 2, total: 2 } })]), true);
+  assert.equal(folderActive([row({ live: { pid: 1, status: "Idle", workers: { working: 1, total: 1 } } })]), true);
+});
+
+test("folderActive: this tab's own run wins over the fetched busy flag, both ways", () => {
+  assert.equal(folderActive([row({ busy: false })], { "/s/a.jsonl": true }), true);
+  assert.equal(folderActive([row({ busy: true })], { "/s/a.jsonl": false }), false);
 });

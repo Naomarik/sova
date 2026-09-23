@@ -116,17 +116,21 @@
   group scrolls.
 - **Folder open/closed state.** Every folder is a `<details>` and its label a `<summary>`, in
   every region alike: Live & web, inside a user group, and inside an Archive date section. The
-  whole label toggles it and the chevron rotates 90° when open, as the Archive's sections do — but
-  a folder is **open by default**, because a folder is where the rows actually are; collapsing one
-  is how a long list is quieted, not how it starts.
+  whole label toggles it and the chevron rotates 90° when open, as the Archive's sections do, and
+  like them a folder is **collapsed by default**: whatever is active already shows in Recent, so a
+  folder starts as one line and opening it is how its rows are reached.
+  - A folder holding an agent at work — a row pi is replying in (this tab's own run first, then the
+    list's `busy`), a TUI session whose status is `Running…`, or a row with subagents working —
+    shows one pulsing Busy dot on its head, before the count (`folderActive`), so a collapsed
+    folder still says something is running inside it. Its name gains ", an agent is working here".
   - The user's choice per folder lives in `sessionStorage["pi-web:folder-open-{idPrefix}-{cwd}"]`
     (`"1"`/`"0"`, `folderOpenKey` in `src/lib/folder-open.ts`) for the browser session. The region
     prefix is part of the key, so the same folder under Live & web and inside a group are two
     separate choices — they are two sections, and one holds rows the other doesn't.
   - It opens **without** changing the stored choice while a search query is non-empty (every hit
-    has to be visible) or while it holds the selected session (its `aria-current` row must not be
-    hidden under the user). When the force ends it goes back to the stored choice. Same rule as an
-    Archive date section, with the default flipped (`folderOpen`).
+    has to be visible); when the search ends it goes back to the stored choice (`folderOpen`).
+    Unlike an Archive date section, holding the selected session does NOT force it open: an active
+    session is already in Recent, and the folder keeps the user's choice.
   - The heading keeps its element, its level and its `id`: it sits inside the `<summary>`, which
     is what toggles, and `aria-labelledby` on the `<details>` still points at it. The sticky
     behaviour moves to the `<summary>` — a sticky heading inside a summary has nothing to stick in.
@@ -864,8 +868,8 @@ usual folder groups inside each section. Sections, newest first, keyed on `lastA
 - **Collapsed by default.** Each section is a native `<details>`, so an open Archive first reads
   as five short lines (label + count), not a wall of rows. The whole 44px summary toggles it, and
   the chevron rotates 90° when open, like the Archive head. Folder groups inside an open section
-  collapse on the same rule as everywhere else, and open by default (see Folder open/closed
-  state), so opening a date section shows its folders with their rows.
+  collapse on the same rule as everywhere else, and are collapsed by default too (see Folder
+  open/closed state), so opening a date section shows its folders, each one line.
 - **Open/closed state** follows the Archive's rule: the user's choice per section lives in
   `sessionStorage["pi-web:archive-date-open-{id}"]` (`id` is `today`, `yesterday`, `week`,
   `month`, `older`; `"1"`/`"0"`), read on load and written on `toggle`. A section opens

@@ -26,7 +26,10 @@ export type FileMenuStatus = MentionIndexStatus;
  * appends "/" and the menu keeps drilling in, a file pick inserts the path and closes.
  */
 export function FileMenu(props: {
+  /** The rows drawn: the first matches, capped (capMentionEntries). */
   entries: MentionEntry[];
+  /** How many match in all — the head's count, never the drawn rows'. */
+  total: number;
   ids: string[];
   active: number;
   /** The token's current segment, for the no-match line. */
@@ -50,7 +53,8 @@ export function FileMenu(props: {
       (id) => id && queueMicrotask(() => document.getElementById(id)?.scrollIntoView({ block: "nearest" })),
     ),
   );
-  const count = createMemo(() => props.entries.length);
+  const count = createMemo(() => props.total);
+  const more = createMemo(() => props.total - props.entries.length);
 
   return (
     <div class="command-menu" id="file-menu" title={props.root}>
@@ -64,7 +68,7 @@ export function FileMenu(props: {
         </Show>
       </p>
       <Show
-        when={props.status.state === "ready" && count() > 0}
+        when={props.status.state === "ready" && props.entries.length > 0}
         fallback={
           <p class="command-menu-empty">
             <Show
@@ -116,6 +120,12 @@ export function FileMenu(props: {
             )}
           </For>
         </div>
+        {/* Outside the listbox, so it is never an option: arrows and clicks can't land on it. */}
+        <Show when={more() > 0}>
+          <p class="command-menu-empty" id="file-menu-more" onMouseDown={(e) => e.preventDefault()}>
+            …and {more()} more — keep typing to narrow.
+          </p>
+        </Show>
       </Show>
       <p class="command-menu-foot">
         <kbd>Enter</kbd> or <kbd>Tab</kbd> to complete · <kbd>Esc</kbd> to close

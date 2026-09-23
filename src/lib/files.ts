@@ -62,15 +62,23 @@ export function mentionQueryParts(query: string): { dir: string; segment: string
   return cut === -1 ? { dir: "", segment: unquoted } : { dir: unquoted.slice(0, cut + 1), segment: unquoted.slice(cut + 1) };
 }
 
-/**
- * The entries the token's current directory offers, filtered by its current segment. The current
- * directory is the query up to its last "/" ("" is the cwd itself); the segment after it filters.
- * Directories appear when anything non-ignored lives under them; matching is a case-insensitive
- * prefix on the name; hidden entries (".env") only match once the segment starts with ".".
- */
-export function mentionEntries(files: readonly string[], query: string): MentionEntry[] {
-  const { dir: dirPrefix, segment } = mentionQueryParts(query);
-  const lower = segment.toLowerCase();
+/** Name order within a level: case-insensitive, then a fixed tiebreak so "a" and "A" never swap.
+    The same ordering as `localeCompare(b, undefined, { sensitivity: "base" })`, built once — a
+    per-call options object made the sort most of the cost of a keystroke on a large level. */
+const byName = new Intl.Collator(undefined, { sensitivity: "base" }).compare;
+
+/** Every name one directory offers, sorted, per index. Built once per (index, directory) and
+    reused, so each keystroke only filters it — and the SAME entry object comes back for the same
+    name on every call, which is what lets the menu's <For> keep its rows across keystrokes
+    instead of rebuilding the list. Keyed by the index's files array: a refetched index is a new
+    array and gets fresh entries; the old one is collected with it. */
+const levels = new WeakMap<readonly string[], Map<string, MentionEntry[]>>();
+
+function levelEntries(files: readonly string[], dirPrefix: string): MentionEntry[] {
+  let byDir = levels.get(files);
+  if (!byDir) levels.set(files, (byDir = new Map()));
+  const hit = byDir.get(dirPrefix);
+  if (hit) return hit;
   const dirLower = dirPrefix.toLowerCase(); // the directory matches case-insensitively too ("SRC/c")
   const seen = new Set<string>();
   const out: MentionEntry[] = [];
@@ -81,15 +89,37 @@ export function mentionEntries(files: readonly string[], query: string): Mention
     const slash = rest.indexOf("/");
     const name = slash === -1 ? rest : rest.slice(0, slash);
     if (name === "" || seen.has(name)) continue;
-    if (name.startsWith(".") && !segment.startsWith(".")) continue;
-    if (!name.toLowerCase().startsWith(lower)) continue;
     seen.add(name);
     out.push({ name, path: f.slice(0, dirPrefix.length) + name, dir: slash !== -1 }); // the path in the index's own casing
   }
-  out.sort(
-    (a, b) => Number(b.dir) - Number(a.dir) || a.name.localeCompare(b.name, undefined, { sensitivity: "base" }) || (a.name < b.name ? -1 : 1),
-  );
+  out.sort((a, b) => Number(b.dir) - Number(a.dir) || byName(a.name, b.name) || (a.name < b.name ? -1 : 1));
+  byDir.set(dirPrefix, out);
   return out;
+}
+
+/**
+ * The entries the token's current directory offers, filtered by its current segment. The current
+ * directory is the query up to its last "/" ("" is the cwd itself); the segment after it filters.
+ * Directories appear when anything non-ignored lives under them; matching is a case-insensitive
+ * prefix on the name; hidden entries (".env") only match once the segment starts with ".".
+ * Every match, uncapped — the true count; `capMentionEntries` decides how many are drawn.
+ */
+export function mentionEntries(files: readonly string[], query: string): MentionEntry[] {
+  const { dir: dirPrefix, segment } = mentionQueryParts(query);
+  const lower = segment.toLowerCase();
+  const hidden = segment.startsWith(".");
+  return levelEntries(files, dirPrefix).filter((e) => (hidden || !e.name.startsWith(".")) && e.name.toLowerCase().startsWith(lower));
+}
+
+/** How many rows the @ menu draws. Measured on a 5660-name level: drawing every row blocked a
+    frame for ~400ms (~0.07ms a row), so 100 rows is a few ms. It is also past where scrolling
+    beats typing — the menu shows four or five rows at a time, and one more letter narrows
+    faster than twenty screens of scrolling. */
+export const MENTION_ROW_CAP = 100;
+
+/** The matches the menu draws, and how many it leaves out. Under the cap it is the same array. */
+export function capMentionEntries(entries: MentionEntry[], cap = MENTION_ROW_CAP): { shown: MentionEntry[]; more: number } {
+  return entries.length <= cap ? { shown: entries, more: 0 } : { shown: entries.slice(0, cap), more: entries.length - cap };
 }
 
 /** Replaces the token with the completed entry. A directory keeps the token (and so the menu)
@@ -143,10 +173,19 @@ export function shouldFetchIndex(args: { cwd: string | null | undefined; cached:
 
 const cache = new Map<string, { index: FileIndex; at: number }>();
 
-/** The session cwd's fresh index, or null when none was fetched (or it has gone stale). */
-export function cachedFileIndex(cwd: string): FileIndex | null {
+/** The session cwd's fresh index, or null when none was fetched (or it has gone stale). Decides
+    whether to FETCH; what the menu shows is `heldFileIndex`. */
+export function cachedFileIndex(cwd: string, now = Date.now()): FileIndex | null {
   const hit = cache.get(cwd);
-  return hit && Date.now() - hit.at < INDEX_TTL_MS ? hit.index : null;
+  return hit && now - hit.at < INDEX_TTL_MS ? hit.index : null;
+}
+
+/** The newest index fetched for the cwd, however old — what the open menu lists. Aging out is a
+    reason to refetch at the next opening, never to empty a menu the user is typing in: the fetch
+    is one attempt per opening, so an index that went stale mid-token used to leave the menu on
+    "Reading the folder…" until it was closed and reopened. */
+export function heldFileIndex(cwd: string): FileIndex | null {
+  return cache.get(cwd)?.index ?? null;
 }
 
 /**

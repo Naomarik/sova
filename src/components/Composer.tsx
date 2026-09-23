@@ -4,7 +4,9 @@ import { enterRunsLocal, insertCommand, localCommand, rankCommands, slashMenuSup
 import { commandOptionIds, SlashMenu } from "./SlashMenu";
 import {
   cachedFileIndex,
+  capMentionEntries,
   ensureFileIndex,
+  heldFileIndex,
   insertMention,
   mentionEntries,
   mentionIndexStatus,
@@ -317,21 +319,27 @@ export function Composer(props: {
   };
 
   // ---- @-mention autocomplete (combobox: focus stays in the textarea) -------------------
-  const mentionMatches = createMemo(() => {
+  // What the menu lists is the HELD index, however old: aging out only re-arms the next opening's
+  // fetch (the effect below), so a token open past the TTL keeps its rows.
+  /** Every match — the true count, for the head and the announcement. */
+  const mentionAll = createMemo(() => {
     indexTick(); // a fetch settling bumps this, so the derivation re-runs
     const token = mentionToken();
-    const idx = props.cwd ? cachedFileIndex(props.cwd) : null;
+    const idx = props.cwd ? heldFileIndex(props.cwd) : null;
     return token && idx ? mentionEntries(idx.files, token.query) : [];
   });
+  /** The rows drawn (capped); arrow keys, Enter and the ids index into these. */
+  const mentionCapped = createMemo(() => capMentionEntries(mentionAll()));
+  const mentionMatches = () => mentionCapped().shown;
   const mentionIds = createMemo(() => mentionOptionIds(mentionMatches()));
   const mentionTruncated = createMemo(() => {
     indexTick();
-    return props.cwd ? cachedFileIndex(props.cwd)?.truncated : undefined;
+    return props.cwd ? heldFileIndex(props.cwd)?.truncated : undefined;
   });
   const mentionStatus = createMemo<FileMenuStatus>(() => {
     indexTick();
     const cwd = props.cwd;
-    return mentionIndexStatus({ cwd, cached: !!(cwd && cachedFileIndex(cwd)), error: mentionError() });
+    return mentionIndexStatus({ cwd, cached: !!(cwd && heldFileIndex(cwd)), error: mentionError() });
   });
   /** Never while disabled. Streaming is fine: a completed path is ordinary prompt text. */
   const mentionOpen = () => {
@@ -490,7 +498,7 @@ export function Composer(props: {
   onCleanup(() => clearTimeout(mentionAnnounceTimer));
   createEffect(
     on(
-      () => (mentionOpen() ? (mentionStatus().state === "ready" ? mentionMatches().length : null) : null),
+      () => (mentionOpen() ? (mentionStatus().state === "ready" ? mentionAll().length : null) : null),
       (n) => {
         clearTimeout(mentionAnnounceTimer);
         if (n === null) return;
@@ -694,6 +702,7 @@ export function Composer(props: {
         <Show when={mentionOpen()}>
           <FileMenu
             entries={mentionMatches()}
+            total={mentionAll().length}
             ids={mentionIds()}
             active={mentionActive()}
             segment={mentionQueryParts(mentionToken()?.query ?? "").segment}

@@ -4,7 +4,7 @@
 
 A closed list and a searchable one. Options are 44px targets too — a menu is not somewhere to save vertical space, because the whole point of opening it is to hit one item.
 
-Rendered: `site/components/select.html`
+Rendered: `site/components/select.html#select`
 
 ## Styles
 

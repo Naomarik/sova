@@ -4,7 +4,7 @@
 
 The conversation with a worker: your turns, its turns, and the tools it ran. Tool turns are mono and visually quieter than either speaker — they're evidence, not dialogue.
 
-Rendered: `site/components/chat.html`
+Rendered: `site/components/chat.html#anatomy`
 
 ## Styles
 

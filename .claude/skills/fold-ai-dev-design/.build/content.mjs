@@ -404,7 +404,7 @@ const SPECS = {
       `**Weights:** regular \`${token('--fw-regular')}\` · medium \`${token('--fw-medium')}\` · semibold \`${token('--fw-semibold')}\` · display \`${token('--fw-display')}\` (display sizes only). Nothing else is on-system.`,
       '**Sizes are px, not rem** — in a dense product UI, rem drift across nested containers costs more than it buys. **Sizes and weights are the same in both themes** — no per-theme type adjustment ships.',
       '**The 72ch measure is opt-in.** `.measure` caps one element and `.prose` caps the running text inside a block; a bare `<p>` is never capped, because a `<p>` is a one-line status strip as often as it is prose, and a strip capped short still renders — the mistake is invisible.',
-      '**The fonts are real, not placeholders:** Inter and JetBrains Mono, variable, latin subset, SIL OFL 1.1, shipped in `fonts/` with their license texts. Swapping a face means replacing the `@font-face` block in `tokens.css` and the `--font-*` stacks — nothing else names a family.',
+      '**The fonts are real, not placeholders:** Inter and JetBrains Mono, variable, latin subset, shipped in `fonts/`. Swapping a face means replacing the `@font-face` block in `tokens.css` and the `--font-*` stacks — nothing else names a family.',
     ],
   },
   spacing: {
@@ -491,7 +491,6 @@ const SPECS = {
     prose: [
       '**Inline the SVG** so `currentColor` and the theme reach it; an `<img>` cannot follow either.',
       '**Adding one:** copy the nearest file, keep the 24 viewBox, the 1.5 stroke and `currentColor`, draw on whole or half pixels, and ship it here. The last column is computed from the files, so an icon that breaks the spec shows up on this page.',
-      '**Provenance is unrecorded.** Nothing in the skill or its history says who drew the set or under what terms; treat the license as unknown until the owner confirms it.',
     ],
   },
 };

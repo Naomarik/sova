@@ -4,7 +4,7 @@
 
 A 44px field with a real label. The placeholder is never the label — it disappears the moment someone types, and a form you cannot re-read is a form you cannot check.
 
-Rendered: `site/components/input.html`
+Rendered: `site/components/input.html#anatomy`
 
 ## Styles
 

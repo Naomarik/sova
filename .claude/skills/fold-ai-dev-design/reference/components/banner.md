@@ -4,7 +4,7 @@
 
 An in-flow, persistent statement of fact. A banner carries the fact itself — unlike a toast, which is allowed to disappear because the fact lives somewhere else.
 
-Rendered: `site/components/banner.html`
+Rendered: `site/components/banner.html#variants`
 
 ## Styles
 

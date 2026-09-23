@@ -39,14 +39,23 @@ if (!linkBad) ok(`${linkTotal} local references, all resolve`);
 
 // -------------------------------------------- 2. every doc names a real page
 console.log('\n== each reference doc points at a shipped page');
-let pageBad = 0, pageTotal = 0;
+let pageBad = 0, pageTotal = 0, anchored = 0, anchorsOk = 0;
 for (const md of files.filter((f) => f.includes('/reference/') && f.endsWith('.md'))) {
   pageTotal++;
   const rel = readFileSync(md, 'utf8').match(/^Rendered: `([^`]+)`$/m)?.[1];
   if (!rel) { bad(`${relative(ROOT, md)} — no Rendered line`); pageBad++; continue; }
-  if (!existsSync(`${ROOT}/${rel}`)) { bad(`${relative(ROOT, md)} → missing ${rel}`); pageBad++; }
+  const [path, frag] = rel.split('#');
+  if (!existsSync(`${ROOT}/${path}`)) { bad(`${relative(ROOT, md)} → missing ${path}`); pageBad++; continue; }
+  if (!frag) { bad(`${relative(ROOT, md)} → ${path} cites no #section-id`); pageBad++; continue; }
+  anchored++;
+  const esc = frag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  if (!new RegExp(`\\bid="${esc}"`).test(readFileSync(`${ROOT}/${path}`, 'utf8'))) {
+    bad(`${relative(ROOT, md)} → #${frag} not an id in ${path}`); pageBad++; continue;
+  }
+  anchorsOk++;
 }
 if (!pageBad) ok(`${pageTotal} reference docs, each pointing at a page that exists`);
+if (!pageBad) ok(`${anchored} anchored docs, ${anchorsOk} anchors verified as ids in their page`);
 
 // -------------------------------------------------------------- 3. counts
 console.log('\n== counts in prose vs files on disk');
@@ -178,6 +187,19 @@ const legacy = /\.(?:button|input)-(?:hover|focus|active|disabled)\b|class="[^"]
 const legacyHits = files.filter((f) => /\.(css|md|html|mjs)$/.test(f) && f !== SELF && legacy.test(readFileSync(f, 'utf8')));
 legacyHits.length ? bad(`component-shaped demo state classes in ${legacyHits.map((f) => relative(ROOT, f)).join(', ')}`)
                   : ok('demo state helpers are all in the is- namespace');
+
+// ------------------------------------------------------- 5d. no licensing
+// The skill carries no licensing or provenance content, by decision. The two
+// upstream font texts (fonts/*-OFL.txt) stay and are excluded; .build/ is not
+// shipped and holds this scanner's own pattern.
+console.log('\n== no licensing content in the shipped docs');
+const licRe = /licen[cs]e|OFL|redistribution/i;
+const licFiles = [`${ROOT}/SKILL.md`, `${ROOT}/tokens.css`,
+  ...files.filter((f) => (f.includes('/reference/') && f.endsWith('.md')) || (f.includes('/site/') && f.endsWith('.html')))];
+const licHits = licFiles.flatMap((f) => readFileSync(f, 'utf8').split('\n').map((l, i) => [f, i + 1, l]))
+  .filter(([, , l]) => licRe.test(l));
+licHits.length ? licHits.forEach(([f, n, l]) => bad(`${relative(ROOT, f)}:${n} — ${l.match(licRe)[0]}`))
+               : ok(`no licensing content (${licFiles.length} files)`);
 
 // -------------------------------------------------------------- 6. hygiene
 console.log('\n== hygiene');

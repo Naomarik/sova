@@ -4,7 +4,7 @@
 
 Where you are, and the way back up. The last item is the current page and is never a link — a link that reloads the page you are on is a small betrayal of trust.
 
-Rendered: `site/components/breadcrumb.html`
+Rendered: `site/components/breadcrumb.html#anatomy`
 
 ## Styles
 

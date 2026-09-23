@@ -112,7 +112,7 @@
         <p class="measure"><b>Weights:</b> regular <code>400</code> · medium <code>530</code> · semibold <code>600</code> · display <code>640</code> (display sizes only). Nothing else is on-system.</p>
         <p class="measure"><b>Sizes are px, not rem</b> — in a dense product UI, rem drift across nested containers costs more than it buys. <b>Sizes and weights are the same in both themes</b> — no per-theme type adjustment ships.</p>
         <p class="measure"><b>The 72ch measure is opt-in.</b> <code>.measure</code> caps one element and <code>.prose</code> caps the running text inside a block; a bare <code>&lt;p&gt;</code> is never capped, because a <code>&lt;p&gt;</code> is a one-line status strip as often as it is prose, and a strip capped short still renders — the mistake is invisible.</p>
-        <p class="measure"><b>The fonts are real, not placeholders:</b> Inter and JetBrains Mono, variable, latin subset, SIL OFL 1.1, shipped in <code>fonts/</code> with their license texts. Swapping a face means replacing the <code>@font-face</code> block in <code>tokens.css</code> and the <code>--font-*</code> stacks — nothing else names a family.</p>
+        <p class="measure"><b>The fonts are real, not placeholders:</b> Inter and JetBrains Mono, variable, latin subset, shipped in <code>fonts/</code>. Swapping a face means replacing the <code>@font-face</code> block in <code>tokens.css</code> and the <code>--font-*</code> stacks — nothing else names a family.</p>
       </section>
       <section class="docs-section" id="styles">
         <h2 class="docs-h2">Styles</h2>

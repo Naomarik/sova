@@ -4,7 +4,7 @@
 
 Three steps and a flat default, in neutral black only. The rule people get wrong: in dark, elevation is carried by surface lightness, not a heavier shadow — a black shadow on a near-black background is invisible.
 
-Rendered: `site/foundations/shadow.html`
+Rendered: `site/foundations/shadow.html#spec`
 
 ## Styles
 

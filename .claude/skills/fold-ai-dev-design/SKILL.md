@@ -58,7 +58,7 @@ fold-ai-dev-design/
 ├── SKILL.md                    # this file — the whole system in prose
 ├── tokens.css                  # every decision as a custom property + @font-face
 ├── fold-ai-dev.css             # 25 components + utilities; loads after tokens
-├── fonts/                      # Inter + JetBrains Mono, variable, latin, SIL OFL 1.1
+├── fonts/                      # Inter + JetBrains Mono, variable, latin
 ├── assets/
 │   ├── logos/                  # symbol in 3 colorways + a currentColor source
 │   └── icons/functional/       # 37 line icons, shipped locally — never a library reference
@@ -389,18 +389,18 @@ comments): `yes`, `no`, or `partial` with what is missing.
 
 | Component | Variants | Sizes | Key rule | Ported |
 |---|---|---|---|---|
-| Button | primary, secondary, destructive, ghost, icon | sm 36 · md 44 · lg 52 | One primary per view. Destructive outlined, never filled. | yes |
+| Button | primary, secondary, destructive, ghost, icon | sm 36 · md 44 · lg 52 | One primary per view. Destructive outlined, never filled. | partial — no `.button-lg` |
 | Chip | success, warn, error, info, accent, solid, count | one | Status is round. A dot *and* the word — never hue alone. | yes |
-| Input | text, textarea, mono, invalid | md 44 | Label always present; placeholder is never the label. A field is a column unless you say `.field-row`. | yes |
-| Select | select, combobox | md 44 | Options are 44px targets too. | partial — no combobox |
-| Toggle | checkbox, radio, switch | 18px box / 40px switch | The label row is the target, not the 18px box. | partial — switch only |
-| Card | resting, raised, interactive | — | Interactive cards need a focus ring, not just a hover. | yes |
+| Input | text, textarea, mono, invalid | md 44 | Label always present; placeholder is never the label. A field is a column unless you say `.field-row`. | partial — no `.field-row`; no `.input-invalid` rule (invalid is styled through `.input[aria-invalid="true"]`, not the class) |
+| Select | select, combobox | md 44 | Options are 44px targets too. | partial — no combobox (`.combobox-list`, `.combobox-option`) |
+| Toggle | checkbox, radio, switch | 18px box / 40px switch | The label row is the target, not the 18px box. | partial — no `.toggle-radio` |
+| Card | resting, raised, interactive | — | Interactive cards need a focus ring, not just a hover. | partial — no `.card-raised`, `.card-interactive` |
 | App bar | — | 56px | Brand, context, and status. Never actions that belong to content. | no |
 | Rail & bottom bar | rail, bottombar | 44px items | One or the other, never both. Bottom under 768px. | no |
 | Tabs | — | 44px | Tabs switch views; they never submit. State goes in the URL. | yes |
 | Breadcrumb | — | — | Last item is current and not a link. | no |
 | Banner | success, warn, error, info | — | In-flow and persistent. Carries the fact itself. | yes |
-| Toast | with action | — | Transient. **Never the only copy of a fact.** | yes |
+| Toast | with action | — | Transient. **Never the only copy of a fact.** | partial — no `.toast-action` |
 | Empty state | — | — | Live fact first, absence second. | yes |
 | Skeleton | line, title, row | — | Matches the shape of what's loading, or it's a lie. | yes |
 | List & row | interactive, selected, group label | 44px row | Whole row is the target. | yes |
@@ -409,13 +409,13 @@ comments): `yes`, `no`, or `partial` with what is missing.
 | Filter bar | filter, set, order, count | md 44 | The count lives in the bar with the filters it answers to. A set filter says its value in words, never by tint alone. | no |
 | Meter | measure, ghost | 6px track | Number first, bar second, **never a bar alone**. The third term is context, not the denominator. | yes |
 | Modal | — | ≤520px | Becomes a sheet at folded width. | yes |
-| Sheet | — | ≤85vh | Arrives inside the thumb arc. | partial — a folded-width state of `.modal` |
+| Sheet | — | ≤85vh | Arrives inside the thumb arc. | partial — no `.sheet`; only `.sheet-grip`, as a folded-width state of `.modal` |
 | Popover | — | ≥200px | Items are 44px. Never the only path to an action. | no |
 | Tooltip | on a term, on a figure, start · end aligned | ≤32ch | One sentence, on hover and keyboard focus. **Never the only place a fact lives.** | no |
 | Run timeline | done, running, waiting, failed | — | Every step says what happened; a failure says what it did *not* touch. | no |
 | Diff viewer | unified, split ≥768 | — | Added/removed carry a gutter sign as well as a color. Split measures its `.diff`, not the window. | no |
 | Approval bar | — | — | Sticky at folded width, inline from unfolded — measured on its `.pane`. Destructive apart from primary. | no |
-| Chat thread | worker, user, tool | — | Tool turns are mono and visually quieter than either speaker. | yes |
+| Chat thread | worker, user, tool | — | Tool turns are mono and visually quieter than either speaker. | partial — no `.message-tool` |
 
 Sova's own `.timeline` is a different component (its session axis), not Run timeline; the chip
 status-word mapping lives in `reference/components/chip.md`.
@@ -473,12 +473,3 @@ status-word mapping lives in `reference/components/chip.md`.
 The `--brand-*` layer beneath these holds the raw hex per theme. **Consume the semantic tokens,
 never the brand layer** — a component that reads `--brand-indigo` directly stops following the
 theme.
-
-## Licensing
-
-| Asset | Source | License | Redistribution |
-|---|---|---|---|
-| Inter (`fonts/Inter-Variable.woff2`) | The Inter Project Authors | SIL OFL 1.1 — `fonts/Inter-OFL.txt` | Permitted, with the license text; not sold on its own. |
-| JetBrains Mono (`fonts/JetBrainsMono-Variable.woff2`) | The JetBrains Mono Project Authors | SIL OFL 1.1 — `fonts/JetBrainsMono-OFL.txt` | Permitted, with the license text; not sold on its own. |
-| Marks (`assets/logos/`) | Generated for this system — a placeholder | None claimed; unregistered | Free to replace or discard. |
-| Icons (`assets/icons/functional/`) | **Provenance unknown — owner to confirm** | **Unknown** | Unconfirmed. Do not relicense or redistribute the set outside this project until the owner confirms who drew it. |

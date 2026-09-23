@@ -4,7 +4,7 @@
 
 A bounded surface with an optional head and foot. Cards get one radius step more than their contents so nesting reads as nesting, and an interactive card needs a focus ring — not just a hover, which half your users never see.
 
-Rendered: `site/components/card.html`
+Rendered: `site/components/card.html#variants`
 
 ## Styles
 

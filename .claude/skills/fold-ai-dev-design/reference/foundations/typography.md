@@ -4,7 +4,7 @@
 
 Inter for what a person reads, JetBrains Mono for what a machine produced. The mono does the technical work so the sans can stay calm — which is why run IDs, paths and diffs are always mono and prose never is.
 
-Rendered: `site/foundations/typography.html`
+Rendered: `site/foundations/typography.html#spec`
 
 ## Styles
 
@@ -47,7 +47,7 @@ Rendered: `site/foundations/typography.html`
 
 **The 72ch measure is opt-in.** `.measure` caps one element and `.prose` caps the running text inside a block; a bare `<p>` is never capped, because a `<p>` is a one-line status strip as often as it is prose, and a strip capped short still renders — the mistake is invisible.
 
-**The fonts are real, not placeholders:** Inter and JetBrains Mono, variable, latin subset, SIL OFL 1.1, shipped in `fonts/` with their license texts. Swapping a face means replacing the `@font-face` block in `tokens.css` and the `--font-*` stacks — nothing else names a family.
+**The fonts are real, not placeholders:** Inter and JetBrains Mono, variable, latin subset, shipped in `fonts/`. Swapping a face means replacing the `@font-face` block in `tokens.css` and the `--font-*` stacks — nothing else names a family.
 
 ## DO / DON'T
 

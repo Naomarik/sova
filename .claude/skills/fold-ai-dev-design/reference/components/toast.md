@@ -4,7 +4,7 @@
 
 A transient acknowledgment with an optional escape hatch. The rule that keeps it honest: a toast is never the only copy of a fact — if it vanishes and the information is gone, it should have been a banner.
 
-Rendered: `site/components/toast.html`
+Rendered: `site/components/toast.html#anatomy`
 
 ## Styles
 

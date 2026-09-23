@@ -4,7 +4,7 @@
 
 A measured number against what bounds it — 31 GB free of 48 GB allocated, on a 64 GB machine. Number first, bar second, and never a bar alone: a bar answers "roughly how full" and refuses "how much", which is the question the person placing a worktree is actually asking.
 
-Rendered: `site/components/meter.html`
+Rendered: `site/components/meter.html#anatomy`
 
 ## Styles
 

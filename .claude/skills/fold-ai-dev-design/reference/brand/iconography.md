@@ -4,7 +4,7 @@
 
 37 line icons on a 24px grid, shipped as local files. They inherit color from context via `currentColor`, which is what lets one file serve both themes and every surface it lands on.
 
-Rendered: `site/brand/iconography.html`
+Rendered: `site/brand/iconography.html#spec`
 
 ## Styles
 
@@ -31,8 +31,6 @@ Rendered: `site/brand/iconography.html`
 **Inline the SVG** so `currentColor` and the theme reach it; an `<img>` cannot follow either.
 
 **Adding one:** copy the nearest file, keep the 24 viewBox, the 1.5 stroke and `currentColor`, draw on whole or half pixels, and ship it here. The last column is computed from the files, so an icon that breaks the spec shows up on this page.
-
-**Provenance is unrecorded.** Nothing in the skill or its history says who drew the set or under what terms; treat the license as unknown until the owner confirms it.
 
 ## DO / DON'T
 

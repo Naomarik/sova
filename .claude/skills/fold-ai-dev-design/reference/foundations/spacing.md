@@ -4,7 +4,7 @@
 
 A 4px base and nine steps. This is a compact ops tool: surfaces live in space-2 through space-5, and space-7 upward appears only where there is one idea on the screen. You're scanning a queue, not reading an article.
 
-Rendered: `site/foundations/spacing.html`
+Rendered: `site/foundations/spacing.html#spec`
 
 ## Styles
 

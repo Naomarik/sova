@@ -4,7 +4,7 @@
 
 One sentence behind a term or a figure, for the user who wants it defined once. It opens on hover and on keyboard focus, and it is never the only place a fact lives — a touch user may never open it, so anything a decision depends on goes in the row or on the control instead.
 
-Rendered: `site/components/tooltip.html`
+Rendered: `site/components/tooltip.html#term`
 
 ## Styles
 

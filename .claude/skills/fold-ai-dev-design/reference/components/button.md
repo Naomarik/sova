@@ -4,7 +4,7 @@
 
 The decision, made tappable. One primary per view — the thing the user came to do — and destructive actions are outlined rather than filled, because a filled red button is the most tappable thing on screen, which is exactly backwards.
 
-Rendered: `site/components/button.html`
+Rendered: `site/components/button.html#variants`
 
 ## Styles
 

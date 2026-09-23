@@ -4,7 +4,7 @@
 
 Three ways to put something on top. At folded width a modal becomes a bottom sheet, so the decision arrives inside the thumb arc rather than in the middle of a screen nobody can reach one-handed.
 
-Rendered: `site/components/overlay.html`
+Rendered: `site/components/overlay.html#modal`
 
 ## Styles
 

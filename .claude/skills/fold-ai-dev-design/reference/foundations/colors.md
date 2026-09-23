@@ -4,7 +4,7 @@
 
 One saturated color, spent carefully. Fold Indigo marks the primary action and the live run; everything else is ink, paper, and four status hues. The rule that matters: full-strength indigo is 5% of any composition — spend it on decoration and "this needs you" stops meaning anything.
 
-Rendered: `site/foundations/colors.html`
+Rendered: `site/foundations/colors.html#spec`
 
 ## Styles
 

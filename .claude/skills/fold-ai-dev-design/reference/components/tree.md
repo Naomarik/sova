@@ -4,7 +4,7 @@
 
 A hierarchy that belongs to the data — a worktree's files, a scope, a set of nested groups. A branch is a `<details>`, so it collapses with no script at all; a tree that needs JavaScript to open is a tree that shows one row when the script fails.
 
-Rendered: `site/components/tree.html`
+Rendered: `site/components/tree.html#anatomy`
 
 ## Styles
 

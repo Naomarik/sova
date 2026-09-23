@@ -4,7 +4,7 @@
 
 Tabs switch views; they never submit. And the active tab belongs in the address — a view you cannot link to or reload back into is a view the user will lose.
 
-Rendered: `site/components/tabs.html`
+Rendered: `site/components/tabs.html#anatomy`
 
 ## Styles
 

@@ -4,7 +4,7 @@
 
 A scannable column of things to decide on. The whole row is the target — 44px tall with 12px padding, because the target grew and the row didn't.
 
-Rendered: `site/components/list.html`
+Rendered: `site/components/list.html#anatomy`
 
 ## Styles
 

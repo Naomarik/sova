@@ -4,7 +4,7 @@
 
 Two panels hinged at a center crease — the device seen from above. One color plus one opacity, which is what lets it survive a favicon and a 16px sidebar. It ships as a swappable placeholder: replace four files and nothing else in the system changes.
 
-Rendered: `site/brand/logo.html`
+Rendered: `site/brand/logo.html#spec`
 
 ## Styles
 

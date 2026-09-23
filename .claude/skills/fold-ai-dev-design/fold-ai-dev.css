@@ -100,7 +100,12 @@
 .button-ghost.is-hover { background: var(--color-sunken); color: var(--color-ink); }
 .button.is-focus    { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
 .button.is-active   { background: var(--color-sunken); transform: translateY(1px); }
-.button-primary.is-active { background: var(--color-accent-hover); }
+/* Each variant's active helper mirrors its own `:hover, :active` rule above —
+   production gives the two pseudo-classes identical styles, so these must match
+   the `.is-hover` helpers or the matrix documents a state that never renders. */
+.button-primary.is-active { background: var(--color-accent-hover); border-color: var(--color-accent-hover); }
+.button-destructive.is-active { background: var(--status-error-bg); }
+.button-ghost.is-active { background: var(--color-sunken); color: var(--color-ink); }
 .button.is-disabled { opacity: .42; cursor: not-allowed; }
 
 /* Demo helper. */

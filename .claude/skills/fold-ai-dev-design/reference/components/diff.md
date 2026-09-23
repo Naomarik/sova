@@ -4,7 +4,7 @@
 
 The core review act. Unified when folded, side-by-side when unfolded — and added and removed lines carry a gutter sign as well as a color, because the one screen where color blindness must not cost you anything is the one where you approve a change.
 
-Rendered: `site/components/diff.html`
+Rendered: `site/components/diff.html#anatomy`
 
 ## Styles
 

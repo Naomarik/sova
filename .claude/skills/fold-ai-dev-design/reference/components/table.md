@@ -4,7 +4,7 @@
 
 Aligned columns for comparing runs. Below 768px a table is not a table — it stacks into rows, because horizontal scroll on a phone is a defeat, not a fallback. **The 768 is its `.table-wrap`, not the window**: a five-column table in a 660px pane inside a 933px window has to stack too, and a media query cannot see that.
 
-Rendered: `site/components/table.html`
+Rendered: `site/components/table.html#anatomy`
 
 ## Styles
 

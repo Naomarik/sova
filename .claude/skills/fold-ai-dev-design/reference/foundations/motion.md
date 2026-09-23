@@ -4,7 +4,7 @@
 
 One curve, three durations, and a written rule about what never moves. Motion is a foundation here rather than a flourish — without one sanctioned duration, every consumer invents their own transitions and the product starts to feel assembled rather than built.
 
-Rendered: `site/foundations/motion.html`
+Rendered: `site/foundations/motion.html#spec`
 
 ## Styles
 

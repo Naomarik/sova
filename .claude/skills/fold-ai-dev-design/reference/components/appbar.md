@@ -4,7 +4,7 @@
 
 Brand, context, and status — nothing else. Actions that belong to the content belong in the content; an app bar that collects them becomes a junk drawer the user has to search.
 
-Rendered: `site/components/appbar.html`
+Rendered: `site/components/appbar.html#anatomy`
 
 ## Styles
 

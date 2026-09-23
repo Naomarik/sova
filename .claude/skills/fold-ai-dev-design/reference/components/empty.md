@@ -4,7 +4,7 @@
 
 The live fact first, the absence second. "Nothing needs you right now" states only an absence; "4 runs working. Nothing to decide yet." tells the user the system is alive and their queue is genuinely clear.
 
-Rendered: `site/components/empty.html`
+Rendered: `site/components/empty.html#anatomy`
 
 ## Styles
 

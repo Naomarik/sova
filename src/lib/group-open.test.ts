@@ -4,7 +4,7 @@ import { test } from "node:test";
 import { groupOpen, groupsRegionOpen } from "./group-open";
 
 const region = (o: Partial<Parameters<typeof groupsRegionOpen>[0]> = {}) =>
-  groupsRegionOpen({ searching: false, draggingGrouped: false, ...o });
+  groupsRegionOpen({ searching: false, draggingGrouped: false, composing: false, ...o });
 
 test("a group section is collapsed until the user opens it on this page", () => {
   assert.equal(groupOpen(undefined), false); // fresh load, and every load after
@@ -26,6 +26,22 @@ test("a search and a grouped drag force the region open without changing the cho
   assert.equal(region({ chosen: false, draggingGrouped: true }), true);
   // …and when the force lifts, the choice the user made is still the one that answers.
   assert.equal(region({ chosen: false }), false);
+});
+
+test("the new-group field forces the region open without changing the choice", () => {
+  assert.equal(region({ composing: true }), true);
+  // The `+` sits on the head, so it can be pressed with the region shut: the field it opens must
+  // still show, over an explicit "closed" too…
+  assert.equal(region({ chosen: false, composing: true }), true);
+  // …and when the field closes the user's own state answers again: closed if they never opened
+  // it, closed if they closed it, open if they opened it.
+  assert.equal(region({ composing: false }), false);
+  assert.equal(region({ chosen: false, composing: false }), false);
+  assert.equal(region({ chosen: true, composing: false }), true);
+});
+
+test("the choice is not the rule's business: composing answers the same over every choice", () => {
+  for (const chosen of [undefined, true, false]) assert.equal(region({ chosen, composing: true }), true);
 });
 
 test("nothing outside this page can open either one: the inputs are the whole rule", () => {

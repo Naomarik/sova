@@ -1710,18 +1710,29 @@ summary.sidebar-region-head .icon-twist { transition: transform var(--dur-fast) 
 }
 
 /* ---- GROUPS (§2 "Groups"). The user's own sections, the pane's first region: a
-   "New group" row, then one <details> per group with the same summary/body grammar
-   as an Archive date section, each a drop target while a row is being dragged.
-   A group is additive, so its rows keep every other region's shape. -------------- */
+   head with a `+` that makes a group, then one <details> per group with the same
+   summary/body grammar as an Archive date section, each a drop target while a row is
+   being dragged. A group is additive, so its rows keep every other region's shape. -- */
 
-/* The region's one action, wearing a list row. Quieter than a session row on purpose:
-   it makes a group, it isn't one. */
-.group-new { color: var(--color-ink-2); }
-.group-new .list-title { color: inherit; font-weight: var(--fw-regular); }
-.group-new .icon { flex: none; color: var(--color-ink-muted); }
+/* The region's one action: a `+` at the right end of the region head. On the head so
+   it is there with the region shut (the field it opens forces the region open), and
+   at the end so the name and count keep their place. Quiet like a group's `⋯` — muted
+   until the head is hovered or the `+` has focus — with the full 44px target, hung into
+   the head's right padding so the glyph lines up with the `⋯` of the groups below. */
+.sidebar-region-head .group-new-toggle {
+  flex: none;
+  width: var(--tap-min);
+  min-height: var(--tap-min);
+  margin-left: auto;
+  margin-right: calc(var(--space-4) * -1 + var(--space-1));
+  color: var(--color-ink-muted);
+  transition: color var(--dur-fast) var(--ease-standard);
+}
+.sidebar-groups-summary:hover .group-new-toggle,
+.sidebar-region-head .group-new-toggle:focus-visible { color: var(--color-ink); }
 
-/* The name field (New group, Rename) sits where a row or a tool button was, so a
-   section doesn't jump when it appears. */
+/* The name field (New group, Rename) opens where the region's rows start, or where a
+   tool button was, so a section doesn't jump when it appears. */
 .group-field-row { padding: var(--space-2) var(--space-4); }
 .group-tools .group-field { padding: var(--space-2) var(--space-4); }
 .group-field { display: flex; align-items: center; gap: var(--space-2); }

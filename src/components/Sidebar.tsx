@@ -80,7 +80,7 @@ const [openGroups, setOpenGroups] = createSignal<Record<string, boolean>>({});
     the same reason: the folder rules mint fresh folder objects on every poll, so every folder section
     in the list is rebuilt a few seconds after the user collapses one. */
 const [openFolders, setOpenFolders] = createSignal<Record<string, boolean>>({});
-/** The "New group" row has turned into its name field. */
+/** The Groups head's `+` has opened the new-group name field. */
 const [newGroupField, setNewGroupField] = createSignal(false);
 
 /** Collapsed on every page load, and never persisted (`lib/group-open`): the module state above
@@ -883,8 +883,8 @@ export function Sidebar(props: {
   const sections = createMemo(() => groupSections(hits(), sessionGroups(), searching()));
   /** A group's rows, from the same hit list the sections were built from. */
   const rowsOf = (id: string) => hits().filter((s) => s.groupId === id);
-  /** With no query the region always stands: it holds the "New group" row, the feature's front
-      door. While searching it appears only when a group has a match — or when a row is in flight
+  /** With no query the region always stands: its head carries the `+` that makes a group, the
+      feature's front door. While searching it appears only when a group has a match — or when a row is in flight
       and needs its "Remove from …" target, which a fruitless search would otherwise hide. */
   const groupsShown = () => !searching() || sections().length > 0 || !!dragging()?.groupId;
 
@@ -893,13 +893,34 @@ export function Sidebar(props: {
       is component state, not module state: the region is one node that outlives every poll. */
   const [groupsChosen, setGroupsChosen] = createSignal<boolean | undefined>(undefined);
   /** Forced open, without touching the choice, while a search is on (a matching group must not
-      hide its hits) or while a grouped row is in flight (its drop targets live in here). */
+      hide its hits), while a grouped row is in flight (its drop targets live in here), or while the
+      new-group field is showing (it lives in here too, and the `+` can be pressed on a shut region). */
   const groupsRegionOpen = () =>
-    groupsRegionOpenRule({ chosen: groupsChosen(), searching: searching(), draggingGrouped: !!dragging()?.groupId });
+    groupsRegionOpenRule({
+      chosen: groupsChosen(),
+      searching: searching(),
+      draggingGrouped: !!dragging()?.groupId,
+      composing: newGroupField(),
+    });
   const onGroupsRegionToggle = (e: Event & { currentTarget: HTMLDetailsElement }) => {
     const open = e.currentTarget.open;
     if (open === groupsRegionOpen()) return; // our own `open` update, not the user's
     setGroupsChosen(open);
+  };
+
+  /** The head's `+`. Held so the field can hand focus back to it: the field unmounts when it
+      closes, and without this the caret would drop to <body>. */
+  let newGroupToggle: HTMLButtonElement | undefined;
+  /** Every way the new-group field closes — saved, cancelled, Escape, an empty blur — ends here.
+      Focus goes back to the `+` only if it would otherwise be lost: a blur that saved because the
+      user clicked or tabbed to something focusable has already put the caret where they wanted it.
+      Checked a frame later, when that move (or the fall to <body>) has landed. */
+  const closeNewGroup = () => {
+    setNewGroupField(false);
+    requestAnimationFrame(() => {
+      const at = document.activeElement;
+      if (!at || at === document.body || !at.isConnected) newGroupToggle?.focus();
+    });
   };
 
   // A groupId this tab doesn't know means the local group list is behind (another tab, another
@@ -1296,33 +1317,43 @@ export function Sidebar(props: {
                   <span class="sidebar-region-count">
                     · {searching() ? `${sections().length} of ${sessionGroups().length}` : sessionGroups().length}
                   </span>
+                  {/* Making a group is the region's one action, a `+` at the head's right end.
+                      Not while searching: the field it opens is hidden then, and a fruitless search
+                      hides the whole region. Its click and keydown stop here, as the group head's
+                      `⋯` does, so a press is never read as a press on the summary. Fanout is NOT
+                      here — it is a creation gesture, not a curation one, and its front door is the
+                      welcome screen beside New Session (§14b "Entry points"). */}
+                  <Show when={!searching()}>
+                    <button
+                      ref={newGroupToggle}
+                      type="button"
+                      class="button button-icon button-ghost group-new-toggle"
+                      aria-label="New group"
+                      title="New group"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setNewGroupField(true);
+                      }}
+                      onKeyDown={(e) => e.stopPropagation()}
+                    >
+                      <Icon name="plus" small />
+                    </button>
+                  </Show>
                 </h2>
               </summary>
-              {/* Making a group is the region's one action, and it stays where it is: the field
-                  replaces the row in place, so nothing moves while the user types. Fanout is NOT
-                  here — it is a creation gesture, not a curation one, and its front door is the
-                  welcome screen beside New Session (§14b "Entry points"). */}
-              <Show when={!searching()}>
-                <Show
-                  when={newGroupField()}
-                  fallback={
-                    <button type="button" class="list-row list-row-interactive group-new" onClick={() => setNewGroupField(true)}>
-                      <Icon name="plus" small />
-                      <span class="list-title">New group</span>
-                    </button>
-                  }
-                >
-                  <div class="group-field-row">
-                    <GroupNameField
-                      label="New group name"
-                      onDone={(name) => {
-                        setNewGroupField(false);
-                        void createGroup(name);
-                      }}
-                      onCancel={() => setNewGroupField(false)}
-                    />
-                  </div>
-                </Show>
+              {/* The field opens where the region's rows start, forcing the region open while it
+                  shows (lib/group-open), and hands focus back to the `+` when it closes. */}
+              <Show when={!searching() && newGroupField()}>
+                <div class="group-field-row">
+                  <GroupNameField
+                    label="New group name"
+                    onDone={(name) => {
+                      closeNewGroup();
+                      void createGroup(name);
+                    }}
+                    onCancel={closeNewGroup}
+                  />
+                </div>
               </Show>
               <Show when={!searching() && sessionGroups().length === 0}>
                 <p class="sidebar-region-note">No groups yet. Make one, then drag a session into it.</p>

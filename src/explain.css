@@ -13,6 +13,11 @@
 .explain-card-failed,
 .explain-card-failed:hover { background: none; cursor: default; }
 .explain-card-failed > .icon:first-child { visibility: hidden; }
+/* A running run isn't a target either: the page doesn't exist yet. The live pulse (base.css, the
+   sanctioned one) sits in the chevron's 16px slot, so the row doesn't shift when it settles. */
+.explain-card-running,
+.explain-card-running:hover { background: none; cursor: default; }
+.explain-card-live { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; }
 /* The fatal reason and the advisory note both hang under the row, aligned past the chevron.
    The note is informational: muted caption, no status colour. */
 .explain-card .report-error,

@@ -20,6 +20,7 @@ import {
   type LiveState,
   type LiveUserState,
 } from "../lib/live";
+import { appendItems } from "../lib/explain";
 import { isObj, str } from "../lib/message";
 import { ensureModelPolicy, modelEnabled, modelPolicy } from "../lib/model-policy";
 import { openFailureView } from "../lib/open-failure";
@@ -547,7 +548,7 @@ export function ChatView(props: {
         // Rows written outside a turn (mode markers, …). Before hello there is nothing to append
         // to: hello's own items carry them.
         case "append":
-          setItems((list) => (list ? [...list, ...msg.items] : list));
+          setItems((list) => (list ? appendItems(list, msg.items) : list));
           break;
         case "mode":
           setModeState({ mode: msg.mode, minorModes: msg.minorModes, strict: msg.strict, applies: msg.applies });

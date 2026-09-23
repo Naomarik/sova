@@ -25,6 +25,7 @@ import {
 	newId,
 	normalizeMeta,
 	oneParagraph,
+	runningEntryData,
 	pageWarnings,
 	scanExternalRefs,
 	slugify,
@@ -34,7 +35,7 @@ import {
 	type ExplainEntryData,
 	type KnownMeta,
 } from "./store.ts";
-import { EXPLAIN_TOOLS, forkable, startExplainWorker, webAccessExtension } from "./worker.ts";
+import { EXPLAIN_TOOLS, WORKER_MARK_EXTENSION, forkable, startExplainWorker, webAccessExtension } from "./worker.ts";
 
 function tmp(prefix = "explain-test-"): string {
 	return mkdtempSync(join(tmpdir(), prefix));
@@ -167,6 +168,23 @@ test("entryData is the exact envelope, with error only on failure", () => {
 	assert.deepEqual(Object.keys(entryData(meta)), ["id", "topic", "summary", "createdAt", "parentSessionId", "model"], "a clean run carries neither");
 	assert.equal("model" in entryData({ ...meta, model: "" }), false, "an unknown model is absent, never an empty string");
 	assert.equal(EXPLAIN_ENTRY_TYPE, "explain-doc");
+	assert.equal("status" in entryData(meta), false, "a final entry never carries status");
+	assert.equal("status" in entryData(meta, { kind: "error", text: "x" }), false);
+});
+
+test("runningEntryData is the provisional envelope: known fields, empty summary, status running", () => {
+	assert.deepEqual(runningEntryData(known()), {
+		id: "topic-abc",
+		topic: "vector clocks",
+		summary: "",
+		createdAt: "2026-09-20T10:00:00.000Z",
+		parentSessionId: "sess-1",
+		model: "zai/glm-5.3",
+		status: "running",
+	});
+	assert.equal("model" in runningEntryData(known({ model: "" })), false, "an unknown model is absent here too");
+	const data = runningEntryData(known());
+	assert.equal("error" in data || "note" in data, false);
 });
 
 // ── child prompt ───────────────────────────────────────────────────────────
@@ -245,7 +263,7 @@ test("begin creates the store, forks a persisted parent, and rejects an empty to
 	const root = tmp();
 	const env = { PI_AGENT_DIR: root } as NodeJS.ProcessEnv;
 	const sessionFile = join(root, "parent.jsonl");
-	writeFileSync(sessionFile, '{"type":"user"}\n');
+	writeFileSync(sessionFile, '{"type":"session","id":"sess-1"}\n{"type":"message","message":{"role":"user"}}\n');
 	const { runs, rec } = harness(env);
 	try {
 		assert.throws(() => runs.begin({ topic: "   ", cwd: "/repo", parentSessionId: "sess-1", model: "zai/glm-5.3" }), /Nothing to explain/);
@@ -276,12 +294,34 @@ test("an unpersisted parent session still explains, unforked", () => {
 		writeFileSync(join(root, "empty.jsonl"), "");
 		assert.equal(forkable(join(root, "empty.jsonl")), false, "an empty file is not a forkable session");
 		assert.equal(forkable(undefined), false);
+		assert.equal(forkable(join(root, "never-written.jsonl")), false, "a missing file is not forkable");
+		assert.equal(forkable(root), false, "a directory is not forkable");
+
+		// A brand-new session whose first input is /explain: pi wrote only the header.
+		const header = join(root, "header-only.jsonl");
+		writeFileSync(header, '{"type":"session","version":3,"id":"sess-1","cwd":"/repo"}\n');
+		assert.equal(forkable(header), false, "a header-only file would fork an EMPTY conversation");
+		const headerRun = runs.begin({ topic: "raft", cwd: "/repo", parentSessionId: "sess-1", parentSessionFile: header, model: "m" });
+		assert.equal(headerRun.forked, false, "the UI must not claim a fork of nothing");
+		assert.equal("forkSession" in rec.started[1].spec, false);
+
+		writeFileSync(header, '{"type":"session","version":3,"id":"sess-1","cwd":"/repo"}\n{"type":"message","id":"a","message":{"role":"user","content":"hi"}}\n');
+		assert.equal(forkable(header), true, "one real message makes it forkable");
+
+		// The hit sits past the first read chunk and straddles a chunk boundary.
+		const big = join(root, "big.jsonl");
+		const mark = '"type":"message"';
+		const pad = 64 * 1024 - 5;
+		writeFileSync(big, `${"x".repeat(pad)}${mark}\n`);
+		assert.equal(forkable(big), true, "a mark split across two reads is still found");
+		writeFileSync(big, `${'{"type":"custom"}\n'.repeat(10_000)}`);
+		assert.equal(forkable(big), false, "custom entries alone are not a conversation");
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}
 });
 
-test("a settled child is validated and recorded as one explain-doc entry", () => {
+test("a spawned child records a running entry; once settled and validated, the final entry supersedes it", () => {
 	const root = tmp();
 	const env = { PI_AGENT_DIR: root } as NodeJS.ProcessEnv;
 	const { runs, rec } = harness(env);
@@ -290,11 +330,16 @@ test("a settled child is validated and recorded as one explain-doc entry", () =>
 		writeFileSync(join(started.dir, "index.html"), PAGE);
 		writeFileSync(join(started.dir, "meta.json"), JSON.stringify({ id: started.id, summary: "It is a retry queue with a vector clock." }));
 
+		assert.equal(rec.entries.length, 1, "the running entry lands as soon as the child is spawned");
+		assert.deepEqual(rec.entries[0].data, runningEntryData({ ...known(), id: started.id }));
+
 		rec.started[0].settle({ outcome: "success", finalOutput: "wrote the page", model: "zai/glm-5.4" });
 
-		assert.equal(rec.entries.length, 1);
-		assert.equal(rec.entries[0].type, "explain-doc");
-		assert.deepEqual(rec.entries[0].data, {
+		assert.equal(rec.entries.length, 2);
+		assert.equal(rec.entries[1].type, "explain-doc");
+		assert.equal(rec.entries[1].data.id, rec.entries[0].data.id, "the final entry supersedes the running one by id");
+		assert.equal("status" in rec.entries[1].data, false, "the final entry carries no status");
+		assert.deepEqual(rec.entries[1].data, {
 			id: started.id,
 			topic: "vector clocks",
 			summary: "It is a retry queue with a vector clock.",
@@ -302,7 +347,7 @@ test("a settled child is validated and recorded as one explain-doc entry", () =>
 			parentSessionId: "sess-1",
 			model: "zai/glm-5.4",
 		});
-		assert.equal("error" in rec.entries[0].data, false);
+		assert.equal("error" in rec.entries[1].data, false);
 		assert.equal(JSON.parse(readFileSync(join(started.dir, "meta.json"), "utf8")).model, "zai/glm-5.4", "the model the child actually ran on is recorded");
 		assert.equal(rec.wakes.length, 1);
 		assert.ok(rec.wakes[0].includes(`${started.dir}/index.html`));
@@ -321,18 +366,20 @@ test("a failed child and a child that wrote nothing both record a failure entry"
 	try {
 		const failed = runs.begin({ topic: "consensus", cwd: "/repo", parentSessionId: "sess-1", model: "m" });
 		rec.started[0].settle({ outcome: "error", error: "provider rejected the request", finalOutput: "" });
-		assert.equal(rec.entries[0].data.id, failed.id);
-		assert.match(rec.entries[0].data.error!, /worker error; provider rejected the request/);
-		assert.equal(rec.entries[0].data.summary, "");
+		assert.equal(rec.entries[0].data.status, "running");
+		assert.equal(rec.entries[1].data.id, failed.id);
+		assert.equal("status" in rec.entries[1].data, false, "a failed entry is final too");
+		assert.match(rec.entries[1].data.error!, /worker error; provider rejected the request/);
+		assert.equal(rec.entries[1].data.summary, "");
 		assert.ok(rec.wakes[0].includes("failed"));
 		assert.equal(rec.notes.at(-1)!.level, "warning");
 
 		const silent = runs.begin({ topic: "paxos", cwd: "/repo", parentSessionId: "sess-1", model: "m" });
 		rec.started[1].settle({ outcome: "success", finalOutput: "I decided not to write it." });
-		assert.equal(rec.entries[1].data.id, silent.id);
-		assert.match(rec.entries[1].data.error!, /no index.html/);
-		assert.equal("note" in rec.entries[1].data, false);
-		assert.equal(rec.entries[1].data.summary, "I decided not to write it.", "the final message is kept so the row is not blank");
+		assert.equal(rec.entries[3].data.id, silent.id);
+		assert.match(rec.entries[3].data.error!, /no index.html/);
+		assert.equal("note" in rec.entries[3].data, false);
+		assert.equal(rec.entries[3].data.summary, "I decided not to write it.", "the final message is kept so the row is not blank");
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}
@@ -349,7 +396,8 @@ test("a complete page whose run died afterwards gets note, not error: it still o
 
 		rec.started[0].settle({ outcome: "aborted", error: "killed mid follow-up", finalOutput: "done" });
 
-		const data = rec.entries[0].data;
+		const data = rec.entries[1].data;
+		assert.equal("status" in data, false, "a noted entry is final too");
 		assert.equal("error" in data, false, "the page is on disk; nothing fatal happened to the reader");
 		assert.match(data.note!, /worker aborted; killed mid follow-up/);
 		assert.equal(data.summary, "Retry with jitter.");
@@ -395,11 +443,36 @@ test("concurrency is capped and stopAll stops every live child", async () => {
 		for (let n = 0; n < MAX_LIVE; n++) runs.begin({ topic: `topic ${n}`, cwd: "/repo", parentSessionId: "sess-1", model: "m" });
 		assert.equal(runs.live, MAX_LIVE);
 		assert.equal(new Set(rec.started.map((s) => s.spec.id)).size, MAX_LIVE, "same-millisecond runs get distinct ids");
+		assert.equal(rec.entries.length, MAX_LIVE, "one running entry per spawned child");
 		assert.throws(() => runs.begin({ topic: "one too many", cwd: "/repo", parentSessionId: "sess-1", model: "m" }), /already running/);
+		assert.equal(rec.entries.length, MAX_LIVE, "a refused spawn leaves no phantom running entry");
 		await runs.stopAll();
 		assert.equal(runs.live, 0);
 		assert.ok(rec.started.every((s) => s.killed));
-		assert.equal(rec.entries.length, 0, "a stopped child records nothing");
+		assert.ok(rec.entries.every((e) => e.data.status === "running"), "a stopped child records no final entry");
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("a spawn that throws records no running entry and no run", () => {
+	const root = tmp();
+	const env = { PI_AGENT_DIR: root } as NodeJS.ProcessEnv;
+	const entries: ExplainEntryData[] = [];
+	const runs = new ExplainRuns({
+		env,
+		now: () => Date.parse("2026-09-20T10:00:00.000Z"),
+		appendEntry: (data) => entries.push(data),
+		notify: () => {},
+		wake: () => {},
+		start: () => {
+			throw new Error("spawn pi ENOENT");
+		},
+	});
+	try {
+		assert.throws(() => runs.begin({ topic: "monads", cwd: "/repo", parentSessionId: "sess-1", model: "m" }), /ENOENT/);
+		assert.deepEqual(entries, []);
+		assert.equal(runs.live, 0);
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}
@@ -470,9 +543,14 @@ class FakeChild extends EventEmitter {
 	}
 }
 
+/** The `-e` sources in argv order. */
+function extensionArgs(args: string[]): string[] {
+	return args.flatMap((arg, i) => (arg === "-e" ? [args[i + 1]] : []));
+}
+
 const flush = (ms = 5) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
-test("the worker forks the parent, restricts tools, loads no extensions, and reports its outcome", async () => {
+test("the worker forks the parent, restricts tools, loads only the worker marker, and reports its outcome", async () => {
 	const child = new FakeChild();
 	const calls: { command: string; args: string[] }[] = [];
 	const settles: any[] = [];
@@ -495,8 +573,12 @@ test("the worker forks the parent, restricts tools, loads no extensions, and rep
 
 	const args = calls[0].args;
 	assert.deepEqual(args.slice(args.indexOf("--mode"), args.indexOf("--mode") + 2), ["--mode", "rpc"]);
-	assert.deepEqual(args.slice(args.indexOf("--tools"), args.indexOf("--tools") + 2), ["--tools", EXPLAIN_TOOLS.join(",")]);
+	// With any -e source the runner restricts built-ins by exclusion (an allowlist would strip extension tools).
+	const excluded = args[args.indexOf("--exclude-tools") + 1].split(",");
+	assert.ok(excluded.length > 0 && excluded.every((tool) => !EXPLAIN_TOOLS.includes(tool)), "only tools outside EXPLAIN_TOOLS are excluded");
+	assert.equal(args.includes("--tools"), false);
 	assert.ok(args.includes("--no-extensions"), "the child cannot spawn children of its own");
+	assert.deepEqual(extensionArgs(args), [WORKER_MARK_EXTENSION], "the marker and nothing else");
 	assert.deepEqual(args.slice(args.indexOf("--fork"), args.indexOf("--fork") + 2), ["--fork", "/tmp/parent.jsonl"]);
 	assert.deepEqual(args.slice(args.indexOf("--model"), args.indexOf("--model") + 2), ["--model", "zai/glm-5.3"]);
 	assert.deepEqual(args.slice(args.indexOf("--thinking"), args.indexOf("--thinking") + 2), ["--thinking", "high"]);
@@ -522,6 +604,29 @@ test("the worker forks the parent, restricts tools, loads no extensions, and rep
 	await handle.kill();
 	await flush();
 	assert.equal(settles.length, 1, "teardown after a recorded run does not settle twice");
+});
+
+test("the worker marker is loaded first, before web search", () => {
+	assert.ok(WORKER_MARK_EXTENSION.endsWith(join("subagents", "worker-mark.ts")));
+	assert.ok(existsSync(WORKER_MARK_EXTENSION), "resolved from worker.ts's own location");
+	const calls: string[][] = [];
+	const child = new FakeChild();
+	const handle = startExplainWorker(
+		{
+			id: "x-1",
+			task: "t",
+			cwd: process.cwd(),
+			extensions: ["/agent/npm/node_modules/pi-web-access"],
+			spawnImpl: (_command, args) => {
+				calls.push(args);
+				return child as unknown as ChildProcess;
+			},
+			timings: { requestTimeoutMs: 400, abortGraceMs: 20, termGraceMs: 20 },
+		},
+		{ onSettled: () => {} },
+	);
+	assert.deepEqual(extensionArgs(calls[0]), [WORKER_MARK_EXTENSION, "/agent/npm/node_modules/pi-web-access"], "mark first, like every subagents pi worker");
+	void handle.kill();
 });
 
 test("web search is offered only when pi already installed it", () => {

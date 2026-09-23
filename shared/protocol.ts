@@ -238,6 +238,12 @@ export interface ExplanationInfo {
   /** The model that produced the page, as the extension spawned it (e.g. "zai/glm-5.3"). Absent
       on older stores. */
   model?: string;
+  /** LIVE ONLY: the /explain run was spawned and has not settled, so there is no page yet and
+      `summary` is "". Appears ONLY on a transcript row's `report.explain`, and only until the
+      run's final entry (same `id`) replaces it; never in SessionInsight.explanations or
+      GET /api/explanations, which carry openable pages only. A finished entry has no status at
+      all — there is no "done" value. */
+  status?: "running";
 }
 
 /** Status and metrics of an align document. status: explicit "implementing"/"confirmed" first,

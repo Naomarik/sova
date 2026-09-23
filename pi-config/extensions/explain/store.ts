@@ -51,6 +51,13 @@ export type KnownMeta = Omit<ExplainMeta, "summary">;
  *           unfinished work rather than a clean result.
  *
  * At most one of them is ever set, and a successful run sets neither.
+ *
+ * `status: "running"` marks the provisional entry appended when the child is
+ * spawned, so the row is visible for the whole run and not only at the end.
+ * The value space is exactly "running" or absent: the final entry (same `id`,
+ * appended when the run settles) never carries the field, so it supersedes the
+ * running one and every entry written before the field existed stays valid.
+ * A running entry has an empty summary and never `error` or `note`.
  */
 export interface ExplainEntryData {
 	id: string;
@@ -62,6 +69,8 @@ export interface ExplainEntryData {
 	model?: string;
 	error?: string;
 	note?: string;
+	/** Only on the provisional entry of a run still in progress; see above. */
+	status?: "running";
 }
 
 /** What went wrong, and whether it cost the reader the page. */
@@ -318,6 +327,15 @@ export function entryData(meta: ExplainMeta, problem?: ExplainProblem): ExplainE
 	if (meta.model) data.model = meta.model;
 	if (problem?.text) data[problem.kind] = problem.text;
 	return data;
+}
+
+/**
+ * The provisional entry for a run that has just been spawned: what the parent
+ * knows, an empty summary, and `status: "running"`. Its final entry (same id,
+ * from `entryData`) supersedes it when the run settles.
+ */
+export function runningEntryData(known: KnownMeta): ExplainEntryData {
+	return { ...entryData({ ...known, summary: "" }), status: "running" };
 }
 
 /** True when a directory already holds an explanation. */

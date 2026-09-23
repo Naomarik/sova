@@ -435,6 +435,11 @@ function addOutlineSnapshot(list: OutlineSnapshot[], e: Rec): void {
 /** One explain-doc entry's data, as server/transcript.ts explainRow reads it. */
 function decodeExplanation(data: unknown): ExplanationInfo | null {
   if (!isRec(data)) return null;
+  // A running entry (appended at spawn, before the page exists) is not an explanation yet: the
+  // strip and its count list openable pages only. hasPage() in explanations() would drop it too;
+  // rejecting it here makes the intent explicit and keeps the count honest even if that store
+  // check changes. The run's final entry (same id) carries no status and flows through as before.
+  if (data.status === "running") return null;
   const id = str(data.id);
   const topic = str(data.topic);
   const createdAt = str(data.createdAt);
@@ -785,7 +790,8 @@ function overlayOutline(disk: SessionOutline | null, live: unknown): SessionOutl
  * entry whose store dir is gone are both left out, so the strip count and the gallery grid match
  * the pages that actually serve. A failure is shown once, as its failed thread row, and counted
  * nowhere. An entry carrying `note` DOES have a page — the run broke after writing it — so it is
- * listed, with the note, and stays linkable.
+ * listed, with the note, and stays linkable. A running entry (spawned, no page yet) never
+ * reaches here: decodeExplanation drops it.
  */
 async function explanations(facts: SessionFacts): Promise<ExplanationInfo[]> {
   const byId = new Map<string, ExplanationInfo>();

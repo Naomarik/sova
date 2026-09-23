@@ -40,8 +40,12 @@ and the child is told never to open a browser.
 The child gets `read`, `grep`, `find`, `ls`, `bash`, `write` and `edit`, plus web
 search/fetch **only** when `pi-web-access` is already installed in
 `~/.pi/agent/npm/node_modules` — "trivially available", never an install on the
-critical path of a slash command. It loads no other extensions, so it cannot
-spawn workers of its own.
+critical path of a slash command. The only other extension it loads — first, on
+top of `--no-extensions`, exactly like every subagents pi worker — is the subagents
+worker marker, `../subagents/worker-mark.ts`: at its own session_start the child
+writes one `subagents-worker-session` custom entry into its session, and Sova
+keeps sessions carrying it out of its Recent list. Nothing else of the subagents
+extension comes along, so it cannot spawn workers of its own.
 
 ## The store (kept forever)
 
@@ -104,13 +108,26 @@ child that mistypes its own session id or model cannot poison the store.
 
 ## What the parent records
 
-When the child settles, the **parent process** — not the child — validates the
-store and appends one custom entry to the parent session:
+The **parent process** — not the child — appends two custom entries to the parent
+session per run, with the same `id`. As soon as the child is spawned (a refused
+spawn records nothing), a running entry, so the row is visible for the whole run:
+
+```json
+{ "type": "custom", "customType": "explain-doc",
+  "data": { "id": "…", "topic": "…", "summary": "", "createdAt": "…", "parentSessionId": "…", "model": "…", "status": "running" } }
+```
+
+When the child settles, it validates the store and appends the final entry, which
+supersedes the running one:
 
 ```json
 { "type": "custom", "customType": "explain-doc",
   "data": { "id": "…", "topic": "…", "summary": "…", "createdAt": "…", "parentSessionId": "…", "model": "…" } }
 ```
+
+`status` is exactly `"running"` or absent: a final entry never carries it (there
+is no `"done"`), so every entry written before the field existed is already a
+final one. The TUI renders a running entry as `[explaining] <topic> — working…`.
 
 A run that went wrong carries exactly one of two extra fields, and they mean
 different things to whoever renders the entry:
@@ -155,10 +172,13 @@ and the user still sees the `explain-doc` entry and the answer.
 ## Limits
 
 - At most 3 explanations run at once; each one is a whole pi process.
-- A brand-new session has no file on disk yet, so there is nothing to fork: the
-  child then starts fresh and works from the topic and the working directory.
-  Everything else is identical.
-- Session shutdown or `/reload` stops live children. Their store directories
+- A brand-new session has no conversation to fork: either no file on disk yet,
+  or a file that is only pi's header line (its first input was `/explain`). The
+  parent forks only a file holding at least one `"type":"message"` line;
+  otherwise the child starts fresh and works from the topic and the working
+  directory. Everything else is identical.
+- Session shutdown or `/reload` stops live children and records no final entry,
+  so the running entry is the last one for that id. Their store directories
   stay; an unfinished one simply has no page in it.
 
 ## Source
@@ -168,13 +188,13 @@ and the user still sees the `explain-doc` entry and the answer.
 | `store.ts` | The on-disk contract: ids, paths, `meta.json`, validation and repair, the session-entry shape |
 | `prompt.ts` | The child's instructions |
 | `worker.ts` | The forked child, hosted through `../subagents/runner.ts` |
-| `explain.ts` | Run lifecycle: start, settle, validate, record, wake |
+| `explain.ts` | Run lifecycle: start, record running, settle, validate, record final, wake |
 | `identity.ts` | Which session is the parent, and which file the child forks |
 | `index.ts` | Pi wiring only: the command, the entry renderer, shutdown |
 
 `worker.ts` imports the subagents extension's `SubagentRunner` **as a class**: it
 already owns the exact argv this needs (`--fork`, `--no-extensions`, tool
-restriction, `-e <installed package>`), the RPC handshake, the settle/outcome
+restriction, `-e <worker marker>` then `-e <installed package>`), the RPC handshake, the settle/outcome
 distinction, and the abort → SIGTERM → SIGKILL teardown. No manager, no registry,
 no `agent_*` tools: these children never appear in `/agents`, and this extension
 stops its own.

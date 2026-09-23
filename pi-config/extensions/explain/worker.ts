@@ -4,17 +4,21 @@
  *
  * Why that runner and not our own process handling: it already owns the exact
  * argv this feature needs (`--fork`, `--no-extensions`, tool restriction,
- * `-e <installed package>`), the RPC handshake, the settle/outcome distinction,
+ * `-e <source>`), the RPC handshake, the settle/outcome distinction,
  * and the abort → SIGTERM → SIGKILL teardown. It is imported as a class, not as
  * an extension: no manager, no registry, no `agent_*` tools, nothing of the
- * subagents extension's state is touched, and the child still loads no
+ * subagents extension's state is touched, and the child discovers no
  * extensions of its own.
  *
  * The child is NOT a subagent in the `/agents` sense: it never appears in that
- * monitor, and this extension stops its own children at session shutdown.
+ * monitor, and this extension stops its own children at session shutdown. It
+ * does load the subagents worker marker (`../subagents/worker-mark.ts`) first,
+ * like every subagents pi worker: the child's own session then carries a
+ * `subagents-worker-session` entry, and Sova keeps it out of its session list.
  */
-import { existsSync, statSync } from "node:fs";
+import { closeSync, existsSync, openSync, readSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { SubagentRunner, type SpawnOptions } from "../subagents/runner.ts";
 import { agentDir } from "./store.ts";
 
@@ -34,7 +38,7 @@ export interface ExplainWorkerSpec {
 	effort?: string;
 	/** Parent session file to copy; omitted for an unpersisted parent. */
 	forkSession?: string;
-	/** Extra extension sources for the child (web search, when it is already installed). */
+	/** Extra extension sources for the child (web search, when it is already installed); loaded after the worker marker. */
 	extensions?: string[];
 	/** @internal Test seam. */
 	spawnImpl?: SpawnOptions["spawnImpl"];
@@ -54,14 +58,46 @@ export interface ExplainWorkerHandlers {
 	onSettled(result: { outcome: ExplainOutcome; error?: string; finalOutput: string; model?: string }): void;
 }
 
-/** A parent session can be forked only once pi has actually written its file. */
+/**
+ * The subagents worker marker, loaded FIRST into the child on top of
+ * `--no-extensions` — the same order subagents uses (`MARKER_EXTENSION`). Its
+ * session_start entry is what hides the child's session from Sova's Recent
+ * list; nothing else of the subagents extension comes with it. Resolved from
+ * this file's own location, the way `../subagents/runner.ts` is imported.
+ */
+export const WORKER_MARK_EXTENSION = fileURLToPath(new URL("../subagents/worker-mark.ts", import.meta.url));
+
+const MESSAGE_MARK = '"type":"message"';
+const SCAN_CHUNK = 64 * 1024;
+
+/**
+ * A parent session can be forked only once it holds a real conversation: pi
+ * writes the header line the moment a session starts, so a brand-new session
+ * whose first input is `/explain` has a file that is only that header — and a
+ * fork of it is EMPTY while the UI would claim "forked". So: at least one
+ * `"type":"message"` line. Read in chunks with an early exit on the first hit,
+ * never JSON-parsed (a substring test; only adversarial JSON could fool it, and
+ * session files are not that). Unreadable or missing means not forkable.
+ */
 export function forkable(sessionFile: string | undefined): sessionFile is string {
 	if (!sessionFile) return false;
+	let fd: number | undefined;
 	try {
-		const stats = statSync(sessionFile);
-		return stats.isFile() && stats.size > 0;
+		fd = openSync(sessionFile, "r");
+		const buffer = Buffer.alloc(SCAN_CHUNK);
+		// Keep a tail across chunk boundaries so a mark split between two reads is still found.
+		let carry = "";
+		for (;;) {
+			const read = readSync(fd, buffer, 0, SCAN_CHUNK, null);
+			if (read <= 0) return false;
+			const text = carry + buffer.toString("latin1", 0, read);
+			if (text.includes(MESSAGE_MARK)) return true;
+			carry = text.slice(-(MESSAGE_MARK.length - 1));
+		}
 	} catch {
-		return false;
+		return false; // Missing, a directory, unreadable: nothing to fork.
+	} finally {
+		if (fd !== undefined) closeSync(fd);
 	}
 }
 
@@ -90,7 +126,7 @@ export function startExplainWorker(spec: ExplainWorkerSpec, handlers: ExplainWor
 			...(spec.model ? { model: spec.model } : {}),
 			...(spec.effort ? { effort: spec.effort } : {}),
 			...(spec.forkSession ? { forkSession: spec.forkSession } : {}),
-			...(spec.extensions?.length ? { extensions: spec.extensions } : {}),
+			extensions: [WORKER_MARK_EXTENSION, ...(spec.extensions ?? [])],
 			...(spec.spawnImpl ? { spawnImpl: spec.spawnImpl } : {}),
 			...(spec.timings ? { timings: spec.timings } : {}),
 		},

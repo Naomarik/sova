@@ -8,6 +8,13 @@
  * that appends to the parent session. A child cannot append to a session it
  * does not own, and a forked child owns a *copy*, so any attempt from over
  * there would be written into the wrong file.
+ *
+ * Two entries per run, same `id`: a provisional `status: "running"` entry once
+ * the child is spawned (so the row is visible for the whole run), then the
+ * final entry, without `status`, when it settles; the later entry supersedes
+ * the earlier one for readers deduping by id. A run stopped at shutdown
+ * records no final entry; its running entry is the last word, exactly as a
+ * crashed parent would leave it.
  */
 import { buildChildPrompt } from "./prompt.ts";
 import {
@@ -15,6 +22,7 @@ import {
 	entryData,
 	newId,
 	normalizeMeta,
+	runningEntryData,
 	storeDir,
 	storeExists,
 	validateStore,
@@ -184,6 +192,8 @@ export class ExplainRuns {
 			{ onSettled: (result) => this.finish(id, result) },
 		);
 		this.runs.set(id, { known, dir, handle });
+		// Only now: a refused spawn threw above and must leave no phantom running row.
+		this.record(runningEntryData(known));
 		return { id, dir, forked: Boolean(forkSession), webSearch: Boolean(webAccess) };
 	}
 

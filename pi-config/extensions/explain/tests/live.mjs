@@ -145,10 +145,12 @@ try {
 
 	await waitFor("index.html", () => fs.existsSync(path.join(dir, "index.html")) && fs.statSync(path.join(dir, "index.html")).size > 0);
 	await waitFor("meta.json", () => fs.existsSync(path.join(dir, "meta.json")));
-	const lines = await waitFor("the explain-doc entry", () => {
+	// The running entry lands at spawn; wait for the final one (same id, no status).
+	const lines = await waitFor("the final explain-doc entry", () => {
 		const found = entryLines(sessionFile);
-		return found.length ? found : undefined;
+		return found.some((line) => !line.includes('"status":"running"')) ? found : undefined;
 	});
+	assert.ok(lines.some((line) => line.includes('"status":"running"')), "the running entry should precede the final one");
 
 	const html = fs.readFileSync(path.join(dir, "index.html"), "utf8");
 	const meta = JSON.parse(fs.readFileSync(path.join(dir, "meta.json"), "utf8"));

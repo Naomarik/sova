@@ -7,11 +7,15 @@
  *
  *   /explain <topic>   parent (here)          child (one pi process)
  *   ────────────────   ────────────────────   ──────────────────────────────
- *   command handler →  create the store dir,  read/grep/bash/write, research,
- *                      build the prompt,      write index.html + meta.json,
- *                      fork the session       then stop
+ *   command handler →  create the store dir,  marks its own session as a
+ *                      build the prompt,      worker (worker-mark.ts), then
+ *                      fork the session,      read/grep/bash/write, research,
+ *                      append `explain-doc`   write index.html + meta.json,
+ *                      {status:"running"}     then stop
  *                   ←  validate the store,
- *                      append `explain-doc`,
+ *                      append the final
+ *                      `explain-doc` (same
+ *                      id, no status),
  *                      wake the parent agent
  *
  * The parent conversation is untouched: the child works in a *copy* of the
@@ -72,6 +76,8 @@ export default function explainExtension(pi: ExtensionAPI): void {
 	pi.registerEntryRenderer<ExplainEntryData>(EXPLAIN_ENTRY_TYPE, (entry, _options, theme) => {
 		const data = entry.data;
 		if (!data) return undefined;
+		// Provisional entry of a run still in progress; its final entry (same id) renders as below.
+		if (data.status === "running") return new Text(`${theme.fg("warning", "[explaining]")} ${data.topic} — ${theme.fg("dim", "working…")}`, 0, 0);
 		const label = data.error ? theme.fg("error", "[explain failed]") : theme.fg("accent", "[explain]");
 		const detail = data.error ? data.error : data.summary || data.id;
 		return new Text(`${label} ${data.topic} — ${theme.fg("dim", detail)}`, 0, 0);

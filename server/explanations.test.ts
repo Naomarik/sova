@@ -315,6 +315,83 @@ describe("transcript: explain-doc rows", () => {
   });
 });
 
+describe("transcript: running explain-doc entries", () => {
+  const running = (over: Partial<ExplanationInfo> = {}) => ({ ...info(over), summary: "", model: "zai/glm-5.3", status: "running" });
+  const chain = (...entries: ReturnType<typeof explainEntry>[]) =>
+    entries.map((e, i) => (i === 0 ? e : { ...e, parentId: entries[i - 1]!.id }));
+
+  test("a running entry is one row with explain.status running, no error, topic as preview", () => {
+    const rows = normalizeEntries([explainEntry(running(), "e1")]);
+    assert.equal(rows.length, 1);
+    const it = rows[0]!;
+    assert.equal(it.kind, "report");
+    assert.equal(it.report?.source, "explain-doc");
+    assert.equal(it.report?.explain?.status, "running");
+    assert.equal(it.report?.explain?.summary, "");
+    assert.equal(it.report?.body, "");
+    assert.equal(it.report?.preview, "How the watch pipeline works");
+    assert.equal(it.report?.error, undefined);
+    assert.equal("error" in (it.report?.explain ?? {}), false);
+  });
+
+  test("running then finished with the same id is ONE row: the finished one", () => {
+    const rows = normalizeEntries(chain(explainEntry(running(), "e1"), explainEntry(info(), "e2")));
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0]!.id, "e2");
+    assert.deepEqual(rows[0]!.report?.explain, info());
+    assert.equal("status" in (rows[0]!.report?.explain ?? {}), false);
+    // A failed settle also replaces the running row, carrying its error.
+    const failed = normalizeEntries(chain(explainEntry(running(), "e1"), explainEntry({ ...info(), error: "worker error" }, "e2")));
+    assert.equal(failed.length, 1);
+    assert.equal(failed[0]!.report?.error, "worker error");
+    assert.equal("status" in (failed[0]!.report?.explain ?? {}), false);
+  });
+
+  test("a finished-only legacy entry renders exactly as before", () => {
+    const rows = normalizeEntries([explainEntry(info(), "e1")]);
+    assert.equal(rows.length, 1);
+    const it = rows[0]!;
+    assert.equal(it.id, "e1");
+    assert.equal(it.kind, "report");
+    assert.equal(it.text, "One honest paragraph about the watcher.");
+    assert.deepEqual(Object.keys(it.report ?? {}).sort(), ["body", "explain", "preview", "source", "truncated"]);
+    assert.deepEqual(it.report?.explain, info());
+    assert.equal("status" in (it.report?.explain ?? {}), false);
+  });
+
+  test("two runs, each running then finished, are two rows in settle order", () => {
+    const rows = normalizeEntries(chain(
+      explainEntry(running({ id: "one" }), "e1"),
+      explainEntry(running({ id: "two" }), "e2"),
+      explainEntry(info({ id: "one" }), "e3"),
+      explainEntry(info({ id: "two" }), "e4"),
+    ));
+    assert.deepEqual(rows.map((r) => [r.id, r.report?.explain?.id, r.report?.explain?.status]), [["e3", "one", undefined], ["e4", "two", undefined]]);
+  });
+
+  test("one run still running beside a finished one: both rows, only the live one has status", () => {
+    const rows = normalizeEntries(chain(explainEntry(info({ id: "one" }), "e1"), explainEntry(running({ id: "two" }), "e2")));
+    assert.deepEqual(rows.map((r) => r.report?.explain?.status), [undefined, "running"]);
+  });
+
+  test("id-less entries are no dedupe key; unknown customs dropped; align-doc newest-wins intact", () => {
+    const align = (id: string, revision: number) => ({
+      type: "custom", id, parentId: null, timestamp: "2026-09-20T00:00:00.000Z", customType: "align-doc",
+      data: { version: 1, doc: { title: "T", markdown: "## T", questions: [], revision } },
+    });
+    const rows = normalizeEntries([
+      align("a1", 1),
+      explainEntry({ ...info(), id: 7 }, "bad"), // non-string id: no row, and never hides "xyz"
+      explainEntry(running(), "e1"),
+      { type: "custom", id: "u1", parentId: null, timestamp: "2026-09-20T00:00:00.000Z", customType: "something-else", data: { id: "xyz" } },
+      align("a2", 2),
+      explainEntry(info(), "e2"),
+    ] as any);
+    assert.deepEqual(rows.map((r) => r.id), ["a2", "e2"]);
+    assert.equal(rows[0]!.report?.align?.revision, 2);
+  });
+});
+
 describe("insights: session explanations", () => {
   function session(id: string, entries: unknown[]): string {
     const path = join(sessionsDir, `2026-09-20T00-00-00-000Z_${id}.jsonl`);
@@ -366,6 +443,25 @@ describe("insights: session explanations", () => {
     const list = (await getSessionInsight(session("sess-b", []))).explanations ?? [];
     assert.deepEqual(list.map((x) => x.id), ["bbb"]);
     for (const x of list) assert.equal("error" in x, false);
+  });
+
+  test("a running entry is never listed, even when a page with its id already serves", async () => {
+    // The store dir names no session, so only the branch entry could list it: the running filter
+    // alone keeps it out, not the store's hasPage().
+    store({ id: "live-run", parentSessionId: "", topic: "Being written" });
+    const running = { ...info({ id: "live-run", parentSessionId: "sess-run" }), summary: "", status: "running" };
+    assert.deepEqual((await getSessionInsight(session("sess-run", [explainEntry(running, "e1")]))).explanations, []);
+    // Once the final entry lands (same id, no status), it flows through as before.
+    const settled = session("sess-run", [explainEntry(running, "e1"), { ...explainEntry(info({ id: "live-run", parentSessionId: "sess-run" }), "e2"), parentId: "e1" }]);
+    const list = (await getSessionInsight(settled)).explanations ?? [];
+    assert.deepEqual(list.map((x) => x.id), ["live-run"]);
+    assert.equal("status" in list[0]!, false);
+    // A failed settle stays excluded, exactly as a failed entry always was.
+    const failed = session("sess-run-f", [
+      explainEntry({ ...running, parentSessionId: "sess-run-f" }, "e1"),
+      { ...explainEntry({ ...info({ id: "live-run", parentSessionId: "sess-run-f" }), error: "worker error" }, "e2"), parentId: "e1" },
+    ]);
+    assert.deepEqual((await getSessionInsight(failed)).explanations, []);
   });
 
   test("a session with no explanations gets an empty list", async () => {

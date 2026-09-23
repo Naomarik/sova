@@ -258,10 +258,15 @@ function alignRow(id: string, entry: Entry): TranscriptItem[] {
 
 const EXPLAIN_DOC = "explain-doc";
 
-/** A finished /explain: data is the ExplanationInfo the explainer wrote alongside its page in the
-    store (server/explanations.ts). The row carries it verbatim for the gallery/strip; `preview` is
-    the topic and `body` the summary, so the collapsed row reads without opening the page. Entries
-    without an id, a topic or a createdAt are the extension mid-write: no row. */
+/** An /explain run, in one of two shapes (the extension appends both, same `id`; normalizeEntries
+    renders only the newest per id):
+    - running: appended at spawn with `status: "running"` and summary "". The row carries
+      `explain.status = "running"`; there is no page yet, so nothing may link to it.
+    - finished: the ExplanationInfo the explainer wrote alongside its page in the store
+      (server/explanations.ts), with no status at all. Old sessions hold only this shape.
+    The row carries the data verbatim for the gallery/strip; `preview` is the topic and `body` the
+    summary, so the collapsed row reads without opening the page. Entries without an id, a topic
+    or a createdAt are the extension mid-write: no row. */
 function explainRow(id: string, entry: Entry): TranscriptItem[] {
   const d: any = entry.data;
   if (!d || typeof d !== "object") return [];
@@ -274,6 +279,7 @@ function explainRow(id: string, entry: Entry): TranscriptItem[] {
     parentSessionId: s(d.parentSessionId),
   };
   if (!explain.id || !explain.topic || !explain.createdAt) return [];
+  if (d.status === "running") explain.status = "running";
   // The two halves of "the run went wrong" (pi-config/extensions/explain/store.ts
   // ExplainEntryData), at most one ever set. `error` is fatal — no page was written, nothing to
   // open — and also goes on `report.error`, where every other report row puts its failure, so
@@ -291,6 +297,13 @@ function explainRow(id: string, entry: Entry): TranscriptItem[] {
   it.report = { source: EXPLAIN_DOC, body: explain.summary, preview: explain.topic, truncated: false, explain };
   if (err) it.report.error = err;
   return [it];
+}
+
+/** The dedupe key of an explain-doc entry (its data.id), or null for anything else. */
+function explainKey(entry: Entry): string | null {
+  if (entry.type !== "custom" || entry.customType !== EXPLAIN_DOC) return null;
+  const d: any = entry.data;
+  return d && typeof d === "object" && typeof d.id === "string" ? d.id : null;
 }
 
 /** Normalize one parsed JSONL entry into 0..n TranscriptItems. The header line yields none. */
@@ -343,7 +356,17 @@ export function normalizeEntries(entries: Entry[]): TranscriptItem[] {
   // Align-doc entries are revisions of one document: only the newest renders (none if it's cleared).
   let newestAlign = -1;
   entries.forEach((e, i) => { if (isAlignDoc(e)) newestAlign = i; });
-  entries.forEach((e, i) => { if (!isAlignDoc(e) || i === newestAlign) out.push(...normalizeEntry(e, `line${i}`, state)); });
+  // Each /explain run appends a running entry at spawn and a final one (same data.id) at settle:
+  // per id, only the newest renders, so a settled run is one row. Entries without a string id
+  // are no key (explainRow drops them anyway).
+  const newestExplain = new Map<string, number>();
+  entries.forEach((e, i) => { const k = explainKey(e); if (k !== null) newestExplain.set(k, i); });
+  entries.forEach((e, i) => {
+    if (isAlignDoc(e) && i !== newestAlign) return;
+    const k = explainKey(e);
+    if (k !== null && newestExplain.get(k) !== i) return;
+    out.push(...normalizeEntry(e, `line${i}`, state));
+  });
   return out;
 }
 

@@ -10,10 +10,13 @@
 // revealed until a tap lands on another message or outside every one.
 //
 // The first tap can never fire an invisible action, and that takes BOTH halves of the design: a
-// hidden strip is `pointer-events: none` so the press misses it, and the reveal is applied on the
-// `click` the tap produces rather than on `pointerup`. Measured, revealing at pointerup is not
-// enough — a touch's compatibility mouse events are synthesised AFTER touchend, so a strip made
-// interactive there is hit by the very tap that revealed it, and one tap copied the message.
+// hidden strip's CONTENTS are `pointer-events: none` so the press misses the button, and the
+// reveal is applied on the `click` the tap produces rather than on `pointerup`. Measured,
+// revealing at pointerup is not enough — a touch's compatibility mouse events are synthesised
+// AFTER touchend, so a strip made interactive there is hit by the very tap that revealed it, and
+// one tap copied the message. The strip's own BOX stays hit-testable while hidden (base.css,
+// "the band is the row's"): that is what keeps the pointer inside `.entry` on its way down to a
+// button, and a tap on that box reveals the row instead of pressing anything.
 
 /** Marks the one host whose strip a tap revealed. base.css reads it; nothing else writes it. */
 export const REVEALED_ATTR = "data-actions-revealed";

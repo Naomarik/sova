@@ -441,7 +441,6 @@ i.icon {
 .empty-body  { color: var(--color-ink-muted); margin: 0; max-width: 44ch; }
 .empty-action{ margin-top: var(--space-3); }
 
-
 /* The setup card under a new session's title (spec/03 §3): what pi loads, what it offers, the
    repository. A contained surface in the centred column, read left-aligned; names lead, figures
    trail in mono tabular muted, so the eye scans names first. */
@@ -1798,8 +1797,9 @@ a.group-option { color: inherit; text-decoration: none; }
   border-radius: var(--r-full);
 }
 
-/* The state pill: one per row, a 26px round chip carrying a dot and nothing
-   else. Tone comes from .chip-accent (TUI) or .chip-info (Busy). */
+/* The state pill: one per row. Busy is a 26px round chip carrying a dot and
+   nothing else; TUI narrows it to the word chip below. Tone comes from
+   .chip-accent (TUI) or .chip-info (Busy). */
 .session-rail-state {
   width: 26px;
   height: 26px;
@@ -1809,6 +1809,38 @@ a.group-option { color: inherit; text-decoration: none; }
   background: var(--color-surface);
 }
 .session-rail-state:hover { border-color: var(--color-border-strong); }
+/* TUI says its word: a small accent chip reading TUI, static, no dot. Word
+   versus dot is what tells it from Busy with the pulse off and the tone unseen.
+   Declared after .session-rail-state, whose width/height/padding it overrides. */
+.session-rail-tui {
+  /* On the same line as the words beside it: the rail's content starts at the row link's own
+     padding, while the title's first line is a --lh-body 1.55 box (22.475px at --fs-body) whose
+     centre sits 2.5px lower — so a 16px box needs +2.5px to centre on it (measured: the chip's
+     centre was 229 against the line's 231.5). The rail's own top padding is shared with Busy, so
+     the nudge is this chip's, not the rail's. */
+  margin-top: 2.5px;
+  width: auto;
+  height: auto;
+  min-height: 16px;
+  padding: 0 1px;
+  /* NOT a chip: the outline is what made it read as one. Transparent rather than `border: 0` keeps
+     the 1px box — the geometry above is tuned against it, and the shared
+     `.session-rail-state:hover` rule is what brings the outline back as a hover affordance. The
+     surface fill stays: on a hovered or current row the row itself is --color-accent-tint, where
+     accent ink needs a plate under it to hold its contrast. */
+  border-color: transparent;
+  /* .session-rail-item's `font: inherit` out-cascades .chip's own type, so this sets its own.
+     --fw-semibold, not the chip default --fw-medium: at 16px tall and three letters, the word is
+     the whole chip, and the weight is what keeps it reading as a label rather than a smudge. */
+  font: var(--fw-semibold) var(--fs-micro)/1 var(--font-mono);
+  /* Two points under the system's smallest step, at the user's request. This is a deliberate
+     off-scale size for this ONE chip: the type scale bottoms out at --fs-micro (11px) and a token
+     below it would be a system-wide claim, not a local one. What carries the meaning is the
+     button's aria-label and title, not the glyph size. */
+  font-size: 9px;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
 .session-rail-dot {
   width: 7px;
   height: 7px;
@@ -1816,9 +1848,9 @@ a.group-option { color: inherit; text-decoration: none; }
   background: currentColor;
   flex: none;
 }
-/* The pulse now rides on Busy (.chip-live lands there), and TUI is static:
-   a pulse means work in flight, which a mid-turn session is and an idle TUI
-   isn't. Still at most ONE moving thing per row. */
+/* The pulse rides on Busy's dot (.chip-live lands there), and the TUI word
+   chip is static: a pulse means work in flight, which a mid-turn session is
+   and an idle TUI isn't. Still at most ONE moving thing per row. */
 .session-rail-state.chip-live .session-rail-dot,
 .session-rail-count-live .icon {
   animation: live-pulse 1.6s var(--ease-standard) infinite;
@@ -4455,14 +4487,25 @@ a.chip:hover { color: var(--color-ink); border-color: var(--color-border-strong)
    QUIET UNTIL ASKED FOR, and asked for by every input: the strip is hidden with
    OPACITY, never `display` — it is in the DOM, in the accessibility tree, tabbable
    and its height is reserved, so a message never moves when one appears. A mouse
-   reveals it by being anywhere over the message region (`.entry`, the whole row);
-   a keyboard reveals it by focusing into it (`:focus-within`, reached by Tab while
-   invisible); touch reveals it by a tap on the message, which src/lib/message-reveal.ts
-   records as `[data-actions-revealed]` on the same host and keeps until a tap lands
-   elsewhere. A hidden strip is `pointer-events: none`, which is what makes the first
-   tap safe: it is hit-tested against the row, so it can never fire an action nobody
-   could see. `.message-actions-open` holds the strip open through the states that
-   outlive a pointer — an armed confirm, Copy's check, a refusal.
+   reveals it by being anywhere over the message region (`.entry`, the whole row:
+   the bubble AND its action band); a keyboard reveals it by focusing into it
+   (`:focus-within`, reached by Tab while invisible); touch reveals it by a tap on
+   the message, which src/lib/message-reveal.ts records as `[data-actions-revealed]`
+   on the same host and keeps until a tap lands elsewhere. `.message-actions-open`
+   holds the strip open through the states that outlive a pointer — an armed
+   confirm, Copy's check, a refusal.
+
+   the band is the row's. the strip hangs below the bubble and a row is
+   `display: contents`, so it has no box of its own: the pointer keeps `.entry:hover`
+   only while it is over one of the row's children, all the way down to a button.
+   so the strip's box owns the whole thread gap above it — pulled up by the gap and
+   padded back down by the same amount less the old 4px lift, which leaves the icons
+   where they were and the row's flow height unchanged — and a hidden strip's BOX is
+   hit-testable while its CONTENTS are not (`pointer-events: none` on the children).
+   that second half is what keeps the first tap safe: a tap on an unseen button
+   lands on the strip box, reveals the row and presses nothing. the band's height
+   IS `.thread`'s gap (`--space-4`): change that gap and this margin and padding
+   change with it.
 
    Revealed, the ink is a semantic colour at full opacity, never alpha over the page —
    `--color-ink-muted` is 4.7:1 or better on every surface a message sits on (paper,
@@ -4478,13 +4521,17 @@ a.chip:hover { color: var(--color-ink); border-color: var(--color-border-strong)
   flex-wrap: wrap;
   gap: var(--space-1);
   max-width: min(100%, var(--measure));
-  min-height: var(--control-sm);
-  margin-top: calc(var(--space-1) * -1);
+  /* border-box: the band is added to the 36px row, not taken from it. */
+  min-height: calc(var(--control-sm) + var(--space-4) - var(--space-1));
+  /* Own the thread gap above (the row's hover band); the padding puts the icons back
+     where the old 4px lift had them, so the flow height is unchanged. */
+  margin-top: calc(var(--space-4) * -1);
+  padding-top: calc(var(--space-4) - var(--space-1));
   opacity: 0;
-  /* The one thing hiding takes away: a hidden strip cannot be pressed. */
-  pointer-events: none;
   transition: opacity var(--dur-fast) var(--ease-standard);
 }
+/* The one thing hiding takes away: a hidden strip's buttons cannot be pressed. */
+.message-actions > * { pointer-events: none; }
 /* Under a message of yours, which reads from the end like its own head. */
 .message-actions-end { justify-content: flex-end; }
 
@@ -4496,12 +4543,18 @@ a.chip:hover { color: var(--color-ink); border-color: var(--color-border-strong)
    finger — touch goes through [data-actions-revealed] instead. */
 @media (hover: hover) and (pointer: fine) {
   .entry:hover > .message-actions,
-  .message-actions-host:hover > .message-actions { opacity: 1; pointer-events: auto; }
+  .message-actions-host:hover > .message-actions { opacity: 1; }
+  .entry:hover > .message-actions > *,
+  .message-actions-host:hover > .message-actions > * { pointer-events: auto; }
 }
 .entry[data-actions-revealed] > .message-actions,
 .message-actions-host[data-actions-revealed] > .message-actions,
 .message-actions:focus-within,
-.message-actions-open { opacity: 1; pointer-events: auto; }
+.message-actions-open { opacity: 1; }
+.entry[data-actions-revealed] > .message-actions > *,
+.message-actions-host[data-actions-revealed] > .message-actions > *,
+.message-actions:focus-within > *,
+.message-actions-open > * { pointer-events: auto; }
 
 .message-action {
   position: relative;

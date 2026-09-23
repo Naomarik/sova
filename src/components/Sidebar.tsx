@@ -261,17 +261,17 @@ function SessionRow(props: { session: SessionSummary; selected: string | null; n
             <span class="toggle-box" />
           </label>
         </Show>
-        {/* At most one state: live wins over busy. TUI is static now; Busy is what pulses. */}
+        {/* At most one state: live wins over busy. TUI is a static word; Busy is a pulsing dot. */}
         <Show when={s().live}>
           <button
             type="button"
             tabindex="-1"
-            class="session-rail-item session-rail-state chip chip-accent"
+            class="session-rail-item session-rail-state session-rail-tui chip chip-accent"
             aria-label={`Open in a TUI. Pid ${s().live!.pid}, status ${s().live!.status}.`}
             title={tuiTitle()}
             onClick={() => toast(tuiTitle())}
           >
-            <span class="session-rail-dot" />
+            TUI
           </button>
         </Show>
         <Show when={isBusy()}>

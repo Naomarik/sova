@@ -40,8 +40,8 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   `playwright/` — CDP browser automation via `scripts/start-browser.sh` + `scripts/pw.sh`; read its
   SKILL.md before any browser work (own browser per caller, `resize` must follow `navigate`, a bare
   `console` reloads the page).
-- `pi-config/` — the user's pi config and extensions (merged in from Naomarik/pi-config with history;
-  `~/pi-config` is a compat symlink to it). It is self-contained — its `install.sh` and README must
+- `pi-config/` — the user's pi config and extensions, in this repository with no separate home.
+  `~/pi-config` is a compat symlink to it. It is self-contained — its `install.sh` and README must
   keep working on a plain copy of the directory, with no imports from Sova. Shared, not owned by any
   team. `~/.pi/agent` symlinks into this directory, so an edit here changes the user's LIVE TUI on
   its next `/reload`, and every

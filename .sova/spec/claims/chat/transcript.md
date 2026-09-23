@@ -276,6 +276,11 @@ closed, and the markdown on the left when open.
   caption size. Path chips work in it (§4b). Error is `--status-error` caption text. Session and
   the truncation note are `--color-ink-muted` captions. The body is parsed only when the row is
   first opened, so a transcript with dozens of reports stays cheap.
+- **Explain rows: running.** An `/explain` run appends its `explain-doc` entry twice under one
+  `data.id`: at spawn with `status: "running"` and an empty summary, and at settle with no
+  `status`. Per id, only the newest entry renders (as with align-doc), so a settled run is one
+  row, and a live append replaces the running row in place. A running row is not a link — there
+  is no page yet — and reads "Explaining {topic}" with the live pulse where the chevron sits.
 - **Other long extension messages** (intercom messages, team questions, broker reports): any
   `custom_message` longer than 200 characters or spanning lines gets the same row, with its
   customType in place of the agent and no chip. Markdown, not `<pre>`: these payloads are

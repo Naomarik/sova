@@ -186,6 +186,12 @@ and again when the count changes, at most once a second. When there are none, an
   - **Extension commands** may add `custom` entries, which render as **info rows** (or
     **unknown** rows with the Raw entry disclosure). They may also send `ui_request`s (§6), or
     produce nothing visible.
+  - **A persisted running row.** An extension command may also append a `custom` entry at the
+    start of its run that the thread renders as a live, self-updating row for the run's
+    duration, then append the result under the same id when the run settles; the result row
+    replaces the running row in place, live and on reload. `/explain` does this (§3 report,
+    "Explain rows"). Unlike the "Ran" row, it is persisted: a reload mid-run shows it still
+    running.
 - **Reload.** The persisted entries render the same way. The local "Ran" row is local only and
   isn't restored.
 - **Unknown commands.** A `/word` that isn't in the list is sent and rendered as an ordinary

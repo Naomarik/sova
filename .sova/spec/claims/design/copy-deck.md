@@ -23,7 +23,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Archive head | Archive · {n} · searching: Archive · {hits} of {total} |
 | Archive date sections | Today · Yesterday · Last 7 days · Last 30 days · Older (each with its count) |
 | Groups region head (§2 "Groups") | Groups · {n} where n = **groups** · searching: Groups · {matching groups} of {all groups} |
-| New group row | New group |
+| New group button (the `+` on the Groups region head) | wordless `+` · `aria-label` and `title`: New group |
 | Group name field (New group, Rename) | placeholder Group name · `aria-label` "New group name" / "Rename “{name}”" · button `Save` · Enter saves, blur saves, Escape cancels |
 | Group section label | {name} (own case, no eyebrow), then its count · `title`: {name} |
 | Empty group | No sessions yet. Drag one here. |

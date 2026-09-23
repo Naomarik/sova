@@ -600,17 +600,19 @@ appear in a group and below it at once. A session belongs to **at most one** gro
     <h2 class="sidebar-region-head" id="r-groups">
       <svg class="icon icon-sm icon-twist" aria-hidden="true">…chevron-right…</svg>
       Groups <span class="sidebar-region-count">· 2</span>
+      <!-- The region's one action, at the head's right end: there with the region shut, and
+           hidden while searching. Click and keydown stop here, as a group's `⋯` does, or they
+           would toggle the region. Fanout is NOT here — it creates sessions rather than curating
+           them, and its front door is the welcome screen beside New Session (§14b "Entry points"). -->
+      <button type="button" class="button button-icon button-ghost group-new-toggle"
+              aria-label="New group" title="New group">
+        <svg class="icon icon-sm" aria-hidden="true">…plus…</svg>
+      </button>
     </h2>
   </summary>
 
-  <!-- The region's one action. It replaces nothing, so it never moves: hidden while searching.
-       Fanout is NOT here — it creates sessions rather than curating them, and its front door is
-       the welcome screen beside New Session (§14b "Entry points"). -->
-  <button type="button" class="list-row list-row-interactive group-new">
-    <svg class="icon icon-sm" aria-hidden="true">…plus…</svg>
-    <span class="list-title">New group</span>
-  </button>
-  <!-- While it (or a Rename) is being typed: the field sits exactly where the row was. -->
+  <!-- While a new group's name is being typed: the field opens where the region's rows start,
+       hidden while searching. -->
   <div class="group-field-row">
     <form class="group-field" aria-label="New group name">
       <input class="input" type="text" maxlength="60" placeholder="Group name" aria-label="New group name">
@@ -665,9 +667,9 @@ appear in a group and below it at once. A session belongs to **at most one** gro
 ```
 
 - **Placement.** Above Live & web, below the search field. The region is always rendered — with no
-groups it holds the `New group` row and the note "No groups yet. Make one, then drag a session
-into it." — because that row is the feature's front door, the way the top region keeps its head
-when it is empty.
+groups it holds its head, with the `+` that makes a group, and the note "No groups yet. Make one,
+then drag a session into it." — because that `+` is the feature's front door, the way the top
+region keeps its head when it is empty.
 - **Order.** Groups keep their creation order, so a rename or a new group never shuffles the list.
 Within a group, rows and folder groups follow the usual rule (newest `lastActiveAt` first), and
 the folder labels are `h4`, one level under the group's own label.
@@ -690,19 +692,32 @@ opening the region lasts as long as the page does and no longer, so a reload alw
 This is the deliberate exception to the Archive's rule (§2 "Regions"), and there is no storage key
 to read — `src/lib/group-open.ts` is the whole rule, inputs only.
 - **Forced open** — without changing the choice, exactly as the Archive is — while a search is on
-(a matching group must not hide its hits) and while a grouped row is being dragged (the group
-sections and the "Remove from …" target it needs are inside the region).
+(a matching group must not hide its hits), while a grouped row is being dragged (the group
+sections and the "Remove from …" target it needs are inside the region), and while the new-group
+name field is showing (it opens in the region's body, and a shut region would hide the field the
+user just asked for). When the field closes the choice answers again, so a region the user never
+opened is shut again.
 - **A group inside it is a `<details>` too**, like an Archive date section, and collapsed by
 default on the same terms: memory only, no storage key, reopened by hand each page.
 - **Empty.** An empty group stays visible with `0` and "No sessions yet. Drag one here.": it is
 what a group is when the user makes it, and a drop target is what fills it. While a search is on,
 a group with no matching session is left out entirely. A **fanout** group never reaches this
 state: it dissolves itself on the write that empties it (§14 "Emptying a group").
-- **Creating.** `New group` turns that row into the name field (focused), so the section never
-moves. The field saves on Enter, saves what is there when it loses focus, and cancels on Escape or
-when empty. `POST /api/session-groups`, then the group appears empty at the end of the region —
-collapsed like every other, with its `0` showing; the region it lands in is open, because the user
-is standing in it.
+- **Creating.** The region's one action is a `+` at the right end of its head
+(`.button-icon.button-ghost`, `aria-label` and `title` "New group"), not a row: a row read as one
+of the things it makes and sat inside the list it adds to. On the head it is there with the region
+shut, and at the end the name and count keep their place. It is quiet like a group's `⋯` — the
+count's muted ink, coming up to full ink when the head is hovered or the `+` has focus — with the
+standard 44px target, hung into the head's right padding so its glyph lines up with the `⋯` of the
+groups below. It stops its own click and keydown, as the `⋯` does, so a press on it is not also a
+press on the summary; and it is hidden while searching, with the field it opens. Pressing it opens
+the name field (focused) where the region's rows start, forcing the region open if it was shut.
+The field saves on Enter, saves what is there when it loses focus, and cancels on Escape or when
+empty. However it closes, focus goes back to the `+`, because the field is gone and the caret
+would otherwise drop to `<body>` — unless the blur that closed it already moved focus somewhere
+focusable, checked a frame later. `POST /api/session-groups`, then the group appears empty at the
+end of the region — collapsed like every other, with its `0` showing; the region it lands in is
+open, because the user is standing in it.
 - **The actions menu.** A group's three actions live behind one `⋯` trigger on the group's own
 name row, in the `<summary>` after the count — not in a tool row under the section, which cost
 every group three buttons' worth of height whether or not anyone wanted them. The trigger is
@@ -763,7 +778,10 @@ heading nobody can rely on. The label is a `<summary>`, so Enter or
 Space opens and closes the section and AT announces expanded or collapsed. The `⋯` trigger inside
 it keeps the section's own gestures: it stops click and keydown, so Enter or Space on the trigger
 opens the menu and does not also toggle the section, and Tab reaches the trigger after the
-summary. Escape closes the menu (and any screen it is showing) and returns focus to it. The
+summary. Escape closes the menu (and any screen it is showing) and returns focus to it. The region
+head's `+` is a named button (`aria-label` "New group") inside its `<summary>`, and it keeps the
+region's gestures the same way: it stops click and keydown, so Enter or Space on it opens the name
+field and does not also toggle the region. When the field closes it hands focus back to the `+`. The
 `Remove from …` row is a drop target only, not a control: the popover path is what a keyboard
 uses. Contrast is the region head's (ink-2 on sunken, 7.65 dark / 7.22 light); the drop state adds
 the accent tint and a dashed accent edge, never a pulse.

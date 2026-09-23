@@ -401,6 +401,8 @@ which draws them on the session's axis; the strip keeps no history of its own.
      disclosure and no collapse state. The body scrolls inside `--outline-max`; it doesn't fold.
 - **Explanations.** When the session has any, the summary gains
   `<span class="outline-count outline-explained">· Explained {n}</span>` after the topic count,
+  counting finished, openable pages only (a run still in progress shows in the thread as its
+  running row, and is counted and listed nowhere until its final entry lands),
   and the body opens with a ghost `Open {n} Explanations` button — the existing gallery dialog
   (`aria-haspopup="dialog"`) — followed by `Latest · {topic} · {relative time}`. This dialog is
   **unchanged** and stays session-scoped; every explanation on the machine is the landing page's

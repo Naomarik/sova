@@ -1,5 +1,5 @@
 import { createEffect, createMemo, createResource, createSignal, For, onMount, Show } from "solid-js";
-import type { ModelInfo, ThemeInfo } from "../../shared/protocol";
+import type { ThemeInfo } from "../../shared/protocol";
 import { getClaudeCliStatus, getThemes, getWebSettings, putModelPolicy, putWebSettings } from "../lib/api";
 import { tildePath } from "../lib/format";
 import {
@@ -20,6 +20,7 @@ import {
   type ModelPolicy,
 } from "../lib/model-policy";
 import { ensureModels } from "../lib/models";
+import { providerGrouper, type ProviderGroup } from "../lib/provider-groups";
 import { createPoll } from "../lib/poll";
 import {
   DEFAULT_RECENT_COUNT,
@@ -319,15 +320,6 @@ function GeneralPanel() {
   );
 }
 
-/** One provider and the models it serves, as the list draws them. */
-interface ProviderGroup {
-  provider: string;
-  models: ModelInfo[];
-  /** A provider with no models of its own: the Claude Code backend, or a name the policy holds
-      that this machine has no credentials for. Its switches still apply to the whole group. */
-  note?: string;
-}
-
 /**
  * Settings → Models (spec/12-settings-dialog.md §12). One row per provider, its models behind a
  * twisty, and two switches on every row: Enabled, which decides whether the model may be used at
@@ -376,31 +368,13 @@ function ModelsPanel() {
   };
 
   /** Model rows grouped by provider, name-sorted — the same order the model picker lists — plus
-      the Claude Code backend and any provider the policy names that has no models here. */
-  const groups = createMemo<ProviderGroup[]>(() => {
-    const byProvider = new Map<string, ModelInfo[]>();
-    for (const m of models() ?? []) {
-      const list = byProvider.get(m.provider.toLowerCase());
-      if (list) list.push(m);
-      else byProvider.set(m.provider.toLowerCase(), [m]);
-    }
-    const rows: ProviderGroup[] = [...byProvider.entries()]
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([provider, list]) => ({ provider, models: list.sort((a, b) => a.id.localeCompare(b.id)) }));
-    // The Claude Code backend is a provider of its own: one switch over every Claude worker, its
-    // own default model included. It has no rows here because its models are the CLI's, not pi's.
-    rows.unshift({ provider: CLAUDE_CODE_PROVIDER, models: [], note: "Claude Code workers" });
-    const p = policy();
-    if (p) {
-      const named = new Set(
-        [...p.disabledProviders, ...p.subagentDisabledProviders].map((x) => x.toLowerCase()),
-      );
-      for (const provider of [...named].sort())
-        if (!rows.some((row) => row.provider === provider))
-          rows.push({ provider, models: [], note: "No models on this machine" });
-    }
-    return rows;
-  });
+      the Claude Code backend and any provider the policy names that has no models here. The
+      grouping follows `models()` alone, so a switch never rebuilds a group (see provider-groups). */
+  // The Claude Code backend is a provider of its own: one switch over every Claude worker, its
+  // own default model included. It has no rows here because its models are the CLI's, not pi's.
+  const grouper = providerGrouper({ provider: CLAUDE_CODE_PROVIDER, models: [], note: "Claude Code workers" });
+  const baseGroups = createMemo(() => grouper.byModels(models() ?? []));
+  const groups = createMemo<ProviderGroup[]>(() => grouper.withPolicy(baseGroups(), policy()));
 
   /** Every query token must appear in the provider name or in one of its model refs. */
   const tokens = createMemo(() => query().toLowerCase().split(/\s+/).filter(Boolean));

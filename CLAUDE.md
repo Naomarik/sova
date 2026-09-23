@@ -22,7 +22,7 @@ orphans real data:
 - the `pi-web-rewind` / `pi-web-fanout-member` session markers are still WRITTEN legacy-named on
   purpose (a rollback must be able to read them); both spellings parse.
 A move of the worktree breaks the absolute symlinks in
-`~/.pi/agent/` (`settings.json`, `keybindings.json`, `models.json`, `vision-delegate.json`), so
+`~/.pi/agent/` (`keybindings.json`, `models.json`, `vision-delegate.json`), so
 re-run `pi-config/install.sh` after one (`--check` verifies them without changing anything).
 
 ## Layout & ownership
@@ -43,8 +43,9 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
 - `pi-config/` — the user's pi config and extensions, in this repository with no separate home.
   `~/pi-config` is a compat symlink to it. It is self-contained — its `install.sh` and README must
   keep working on a plain copy of the directory, with no imports from Sova. Shared, not owned by any
-  team. `~/.pi/agent` symlinks into this directory, so an edit here changes the user's LIVE TUI on
-  its next `/reload`, and every
+  team. `~/.pi/agent` symlinks `keybindings.json`, `models.json`, `vision-delegate.json` and the
+  extensions into this directory, so an edit here changes the user's LIVE TUI on its next `/reload`,
+  and every
   runtime Sova embeds. Treat it like `shared/protocol.ts`: coordinate before changing any contract
   Sova parses (sessions live registry `sessions/live/*.json`, usage-status cache, subagents
   teams/snapshots, topic-outline state, command-palette `model-favorites.json`, the model policy
@@ -88,8 +89,10 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
 - `npm test` — unit tests (`server/*.test.ts`, `src/lib/*.test.ts`). They're ESM TypeScript with
   extensionless imports, so they run under `tsx --test`; plain `node --test <file>` fails with
   ERR_MODULE_NOT_FOUND.
-- `pi-config/install.sh` links `pi-config/` into `~/.pi/agent`; `pi-config/install.sh --check` verifies
-  that without changing anything.
+- `pi-config/install.sh` links `pi-config/` into `~/.pi/agent`, except `settings.json`: that is a seed
+  deep-merged into a real `~/.pi/agent/settings.json` (seed keys win, runtime keys such as the chosen
+  model stay there and never in the repo). `--check` verifies links and seed keys without changing
+  anything; `--save` copies live values of seed-declared keys back into the seed.
 
 ## Dev-server restart pitfall (worker suicide)
 

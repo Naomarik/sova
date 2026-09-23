@@ -1,11 +1,9 @@
 {
-  "lastChangelogVersion": "0.87.0",
-  "defaultProvider": "ollama-cloud",
-  "defaultModel": "deepseek-v4.1-flash",
   "defaultThinkingLevel": "medium",
   "hideThinkingBlock": true,
   "theme": "dark",
   "tuiMode": "fullscreen",
+  "enableInstallTelemetry": false,
   "packages": [
     "npm:pi-web-access@0.29.0",
     {

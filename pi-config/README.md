@@ -15,7 +15,7 @@ installs with `install.sh` alone, without the web app.
 
 | Path | What it is |
 | --- | --- |
-| `settings.json` | Pi settings, including the pinned package list |
+| `settings.json` | Seed for pi's settings, including the pinned package list; merged into the live file by `install.sh`, not linked |
 | `vision-delegate.json` | Fallback vision models and budget for the `vision-delegate` extension |
 | `keybindings.json` | Key overrides |
 | `models.json` | Extra providers and model overrides (local Ollama and Ollama Cloud) |
@@ -35,7 +35,7 @@ installs with `install.sh` alone, without the web app.
 | `extensions/usage-status/` | Subscription usage (Ollama Cloud, OpenAI Codex, Claude, Z.ai, DeepSeek balance) in the footer, plus a `/usage` overlay. Its `fetch.ts` (fetchers, cache, lock) is imported by Sova |
 | `extensions/wake-nudge.ts` | Lets the model schedule one-shot wakeups |
 | `extensions/working-subagent-count.ts` | Busy subagent and team-member counts on the "Working" line and in an idle widget |
-| `install.sh` | Symlinks the config files and every `extensions/*` directory and single-file `extensions/*.ts` extension into `~/.pi/agent`, and `pi-sessions` into `~/.local/bin` |
+| `install.sh` | Merges `settings.json` into `~/.pi/agent/settings.json`, symlinks the other config files and every `extensions/*` directory and single-file `extensions/*.ts` extension into `~/.pi/agent`, and `pi-sessions` into `~/.local/bin` |
 
 Each extension directory has its own README with usage and verification steps.
 `claude-code` only works alongside `subagents` and needs an installed,
@@ -50,7 +50,8 @@ stop with this Pi session; they do not provide peer-to-peer worker messaging.
 
 `settings.json` pins every third-party package to an exact version or commit,
 so `pi update --extensions` leaves them alone. To move one, run
-`pi install <source>@<new version>`; pi rewrites the entry.
+`pi install <source>@<new version>`; pi rewrites the entry in the live
+`~/.pi/agent/settings.json`, and `install.sh --save` copies it back here.
 
 | Package | Pinned | Notes |
 | --- | --- | --- |
@@ -64,7 +65,7 @@ so `pi update --extensions` leaves them alone. To move one, run
 ## Install
 
 Requirements: pi installed globally (`npm i -g @earendil-works/pi-coding-agent`;
-this config tracks 0.85.1) and Node.js. Nothing is installed into this
+this config is used with 0.87.0; Sova's own `package.json` pins 0.86.1) and Node.js. Nothing is installed into this
 directory: there is no `package.json`, and the extensions load through pi.
 `claude-code` also needs an authenticated `claude` CLI.
 
@@ -79,8 +80,7 @@ pi            # installs missing pinned packages on first start
 A copy of this directory can live anywhere. `install.sh` resolves its own
 location, and the links it creates point at the real path of the copy.
 
-For each of `settings.json`, `keybindings.json`, `models.json`,
-`vision-delegate.json`, every
+For each of `keybindings.json`, `models.json`, `vision-delegate.json`, every
 `extensions/*/` directory and every `extensions/*.ts` file, `install.sh`
 creates a symlink in the agent directory. It also links
 `extensions/sessions/bin/pi-sessions.ts` to `~/.local/bin/pi-sessions`. An
@@ -91,18 +91,44 @@ else `~/.pi/agent`.
 
 Edits in the checkout take effect in pi on the next `/reload`.
 
+`settings.json` is not linked, because pi writes runtime state into its
+settings file: the model last picked in the TUI (`defaultProvider`,
+`defaultModel`), `lastChangelogVersion`, `/settings` changes, `pi install`.
+Linked, all of that landed in this repository. Instead `settings.json` here is
+a seed that `install.sh` deep-merges over the live `~/.pi/agent/settings.json`
+and writes there as a regular file: every key the seed declares takes the
+seed's value, and every other live key is kept as it was. Arrays such as
+`packages` are replaced, not concatenated. With no live file, the seed is
+copied as is. When the merge changes the live file, its previous content is
+copied to `settings.json.bak` first; a symlink left by an older `install.sh` is
+replaced without writing into its target. The seed pins no provider or model,
+and runtime keys are deliberately not tracked: they live only in the live file.
+
+Config moves between the two files explicitly:
+
+- outward: edit the seed and re-run `install.sh`;
+- back: after a deliberate change in the TUI or with `pi install`, run
+  `./install.sh --save`. It copies the live values of the keys the seed already
+  declares into the seed and lists them; a key the seed does not declare is
+  never added, so a model choice stays out. Declaring a new key is an edit to
+  the seed.
+
 `./install.sh --check` changes nothing. It exits nonzero if any of those links
-is missing or points elsewhere, or if the agent's `extensions/` directory holds
+is missing or points elsewhere, if the agent's `extensions/` directory holds
 anything that is not a symlink into this checkout (for example a hand-copied
-extension file).
+extension file), or if `~/.pi/agent/settings.json` is a symlink, is missing, or
+differs from the seed in any key the seed declares (each is printed with the
+seed's and the live value).
 
 ### Credentials and external tools
 
-This repository holds no credentials. Each machine needs these logins:
+This repository holds no credentials and pins no default model: pick one with
+`/model` (or `Ctrl+P`) and pi remembers it in the live settings file. Each
+machine needs the logins for the providers it uses:
 
 | Needed for | Credential | Where it lives | How to set it up |
 | --- | --- | --- | --- |
-| Default model (`zai` / `glm-5.3` in `settings.json`) | Z.ai API key | `~/.pi/agent/auth.json`, key `zai` | `/login` in pi, or `ZAI_API_KEY` |
+| `zai` provider | Z.ai API key | `~/.pi/agent/auth.json`, key `zai` | `/login` in pi, or `ZAI_API_KEY` |
 | `ollama-cloud` provider (`models.json`) | Ollama API key | `auth.json`, key `ollama-cloud` | `/login` in pi |
 | `openai-codex` models | ChatGPT Plus/Pro OAuth | `auth.json`, key `openai-codex` | `/login` in pi |
 | `deepseek` provider (built-in catalog: `deepseek-flash`, `deepseek-v4-pro`), and the DeepSeek balance in `usage-status` | DeepSeek API key | `auth.json`, key `deepseek` | `/login` in pi, or `DEEPSEEK_API_KEY` |
@@ -123,12 +149,15 @@ tests and the `pi-sessions` CLI need Node's built-in type stripping (Node ≥ 22
 
 Credentials (`auth.json`), sessions, the model catalog cache, model favorites
 and the trust list are runtime state or secrets and are ignored by
-`.gitignore`. `models.json` contains no keys; the local Ollama entry's
+`.gitignore`. The runtime keys pi writes into its settings file (the chosen
+model, `lastChangelogVersion`, ...) stay in `~/.pi/agent/settings.json`; see
+Install. `models.json` contains no keys; the local Ollama entry's
 `apiKey` is the literal placeholder Ollama expects.
 
 ## Tests
 
 ```sh
+node --test install.test.mjs
 cd extensions/subagents && node tests/run.mjs && node tests/smoke.mjs && node tests/team-smoke.mjs
 cd extensions/claude-code && node tests/run.mjs && node tests/smoke.mjs && node tests/ui-permissions.mjs
 cd extensions/extension-toggle && node --test index.test.ts
@@ -144,7 +173,8 @@ cd extensions/topic-outline && node test.mjs
 cd extensions/vision-delegate && node tests/run.mjs
 ```
 
-These make no model requests. The subagent and Claude tests resolve the
+These make no model requests. `install.test.mjs` runs a copy of `install.sh`
+against a temporary `HOME` and agent directory. The subagent and Claude tests resolve the
 globally installed pi package through the subagents TypeScript loader; no
 dependencies are installed in this repository. Opt-in live tests that do make
 small requests (`--live`) are described in each extension's README. A separate

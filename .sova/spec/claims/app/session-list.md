@@ -9,6 +9,10 @@
     <a class="brand" href="#/"><svg class="icon" aria-hidden="true">…sova-mark…</svg>sova</a>
     <span class="sidebar-spacer"></span>
     <button class="button" type="button"><svg class="icon" aria-hidden="true">…plus…</svg>New Session</button>
+    <!-- unfolded (≥768) only: collapses the pane into the spine (§2 "The spine") -->
+    <button class="button button-icon sidebar-spine-toggle" type="button" aria-expanded="true"
+            aria-label="Collapse sessions pane" title="Collapse sessions pane · Ctrl/⌘+B">
+      <svg class="icon" aria-hidden="true">…panel-collapse…</svg></button>
   </div>
 
   <div class="sidebar-search" role="search">
@@ -101,6 +105,162 @@
   </nav>
 </aside>
 ```
+
+This is the **expanded** pane. From 768px up the pane has a second, collapsed form — the spine,
+§2 "The spine" — which replaces the head, the search, the list and the foot inside the same
+`aside`. The head's last item is the button that collapses it: an icon button to the **right** of
+New Session, a rounded square with a divider and a chevron pointing left (`panel-collapse.svg`).
+Below 768px the button is not rendered, because the pane there is the whole screen and has
+nothing to collapse into.
+
+## §app.session-list/spine — The spine
+
+The sessions pane, collapsed. From 768px up the pane is either **expanded** (everything above) or
+the **spine**: a 64px (`--spine-width`) column of 44px targets, in the same
+`aside[aria-label="Sessions"]`. It is the same pane in a narrower form, not a navigation rail —
+Sova still has one destination (§1 "No rail and no bottom bar") — so it carries the pane's own
+things: New Session, search, the sessions that moved last, the region counts, the live tallies and
+the foot's doorways. The code, the CSS and this spec call it the spine; the UI never does. Every
+label a person reads says "sessions pane".
+
+```html
+<aside class="app-sidebar" aria-label="Sessions">
+  <div class="spine">
+    <div class="spine-head">
+      <button class="button button-icon spine-item" type="button" aria-expanded="false"
+              aria-label="Expand sessions pane" title="Expand sessions pane · Ctrl/⌘+B">…panel-expand…</button>
+      <button class="button button-icon spine-item" type="button"
+              aria-label="New Session" title="New Session">…plus…</button>
+      <button class="button button-icon spine-item" type="button"
+              aria-label="Search sessions" title="Search sessions · /">…search…</button>
+    </div>
+    <nav class="spine-tiles pane" aria-label="Recent sessions">
+      <a class="spine-tile" href="#/s/…" aria-current="page"
+         title="{title} · {folder} · {model}{the row link's state clauses}"
+         aria-label="{the same string}">
+        <span class="spine-monogram" aria-hidden="true">AW</span>
+        <!-- at most one: -live (TUI) | -busy (pi is replying) | -working (subagents) -->
+        <span class="spine-dot spine-dot-live" aria-hidden="true"></span>
+      </a>
+    </nav>
+    <!-- omitted when both regions are empty -->
+    <div class="spine-regions">
+      <button class="button button-icon spine-item spine-region" type="button"
+              aria-label="Live &amp; web · 12 sessions" title="Live &amp; web · 12 sessions">…chat…<span class="spine-count">12</span></button>
+      <button class="button button-icon spine-item spine-region" type="button"
+              aria-label="Archive · 40 sessions" title="Archive · 40 sessions">…archive…<span class="spine-count">40</span></button>
+    </div>
+    <!-- omitted when both tallies are 0 -->
+    <div class="spine-stats">
+      <button class="button button-icon spine-item spine-stat" type="button"
+              aria-label="3 subagents working now" title="3 subagents working now">…worker…<span class="spine-count">3</span></button>
+      <button class="button button-icon spine-item spine-stat" type="button"
+              aria-label="2 sessions open in a TUI" title="2 sessions open in a TUI">…terminal…<span class="spine-count">2</span></button>
+    </div>
+    <div class="spine-foot">
+      <a class="button button-icon spine-item" href="#/usage"
+         aria-label="{the usage glance sentence, else Usage}" title="{the same}">…gauge…</a>
+      <a class="button button-icon spine-item" href="#/agents"
+         aria-label="{the agents sentence, else Agents}" title="{the same}">…worker…</a>
+      <button class="button button-icon spine-item" type="button" aria-label="Settings" title="Settings">…settings…</button>
+    </div>
+  </div>
+</aside>
+```
+
+- **Collapsing and expanding.** Three ways, all the same toggle: the head's
+  `.sidebar-spine-toggle` (expanded), the spine's first item (collapsed), and **Ctrl+B** (⌘+B on
+  macOS) from anywhere in the app, from 768px up. Below 768px Ctrl/⌘+B does nothing and the
+  head's toggle is not rendered: collapse is a desktop affordance. Each button says what it will do — "Collapse sessions pane" /
+  "Expand sessions pane" — in its `aria-label`, and the same words plus the shortcut in its
+  `title`; `aria-expanded` is `true` on the head's button and `false` on the spine's. The glyphs
+  are one drawing mirrored: a rounded square, a divider a third of the way in, and a chevron in
+  the wide side pointing where the divider will go — left to collapse (`panel-collapse.svg`),
+  right to expand (`panel-expand.svg`).
+- **Remembered, per browser.** The state persists in `localStorage["sova:sidebar-collapsed"]`,
+  mirrored to the legacy `pi-web:sidebar-collapsed`, `"1"` collapsed and `"0"` expanded, written
+  through `dualSet` like every other `sova:` key. Anything else reads as expanded. This is the
+  one thing about the pane's size that persists — the dragged width still doesn't (§1 "Resizing
+  the sessions pane") — because collapsing is a standing choice about the screen, not a posture
+  for one task, and a pane that springs back open on every reload undoes it.
+- **What a toggle says and where focus goes.** Every toggle, by button or by key, announces
+  "Sessions pane collapsed." or "Sessions pane expanded." through the one polite live region
+  (`announce()`). The pressed button is unmounted by the swap, so focus moves to the toggle of the
+  new state — Expand after collapsing, Collapse after expanding — **but only when focus was inside
+  the pane at the moment of the toggle**. Ctrl/⌘+B pressed from the composer, or a click with
+  focus elsewhere, leaves focus where it was: the toggle must not steal it.
+- **The open session stays in sight.** When the spine appears, the open session's tile, if it is
+  among the Recent rows, is scrolled into view with `block: "nearest"`.
+- **Unfolded only.** Below 768px the stored value is ignored, not cleared: the pane renders
+  expanded, as it always has, because folded it is the whole screen. Widen the window and the
+  spine comes back.
+- **One knob.** While collapsed the app writes `--spine-width` into the inline `--sidebar-width`
+  on `<html>`, and `.app` carries `data-spine="on"` (absent when expanded). The grid, the Subagents
+  pane's width and `--measure` all read `--sidebar-width`, so they follow with no rule of their
+  own, and `.pane-resizer` is not rendered while the stored choice is collapsed (§1 "The spine
+  column").
+- **The head** — Expand, New Session, and Search sessions. New Session opens the New Session
+  dialog, exactly as the head's button does. Search sessions expands the pane and moves focus to
+  the search field: a search needs the list to show its hits in. Its `title` is "Search sessions ·
+  /", the app's hint style (like "Collapse sessions pane · Ctrl/⌘+B"); its accessible name stays
+  "Search sessions". The `/` key does the same thing: while collapsed it expands the pane and
+  focuses the field, and expanded it just focuses the field (never from inside a text field).
+- **The tiles are Recent** (§2 "Recent"): the same sessions, in the same order, as many as the
+  Settings count says — flat, no folders. A tile is a link to its session, 44 × 44, with a
+  two-letter **monogram** in `--font-mono`, computed by `monogram()` in `src/lib/spine.ts`: the
+  first letters of the title's first two words, or the first two letters of a one-word title,
+  uppercased in the string itself (in code points, so an emoji stays whole). A title with no
+  words has no monogram, and the tile shows the `chat` icon instead. The monogram is a
+  place-marker, not a name — two sessions can share one — so the tile's `title` and `aria-label`
+  are **one string**: "{title} · {folder} · {model}", the folder and model given the row's own
+  treatment (`~`-shortened path, or the remote placement; a session with no model drops that
+  part), followed verbatim by the clauses the row link's accessible name carries (§2
+  "Accessibility") — ", open in a TUI", ", pi is replying in this session", ", {n} subagents
+  working now", and the remote mark's suffix. The open session's tile carries
+  `aria-current="page"` and the row's current tint.
+  With no Recent sessions the `nav` is still rendered, empty, so the groups below it don't move.
+- **One status dot per tile**, top-right, from the row rail's own states and tones:
+  `.spine-dot-live` (a TUI has it — `--color-accent`, static), `.spine-dot-busy` (pi is replying —
+  `--status-info`, pulsing), `.spine-dot-working` (≥1 subagent working — a hollow
+  `--color-ink-muted` ring, pulsing). The row can show a TUI pill and a worker count at once; a
+  tile has room for one mark, so it shows the first that holds of **TUI, Busy, working** — the
+  rail's own "TUI wins" order, then the aggregate last. The tile's name still says all of them.
+- **Region counts.** Live & web and the Archive, each an icon over its count and named
+  "{Region} · {n} sessions" in its `title` and `aria-label`. **A button is shown exactly when its
+  region is on screen in the expanded pane**, and `n` is the count that region shows now: with no
+  search, the plain totals ("60 sessions", "321 sessions"); with a search on, each region's hit
+  count — "22 sessions" while the Live & web head reads "22 of 60", "5 sessions" while the
+  Archive's reads "5 of 321". One rule decides both the region and its button (`showTop` /
+  `showArchive` in `Sidebar.tsx`); a button derived from anything else, such as the Archive's
+  total, is a door onto a region a no-hit search has removed. When neither region is on screen
+  the whole `.spine-regions` box is omitted, not only its buttons — an empty box still draws its
+  divider. Pressing a button expands the pane, scrolls that region into view, and moves focus to
+  its first row: Live & web's first folder head or link, the Archive's own `<summary>`. The
+  Archive's open state is **left to the user** — it is their stored choice, and the button never
+  forces it open. If the region is gone by the time the pane has expanded, focus goes to the
+  head's collapse toggle.
+- **Live tallies.** "{n} subagents working now" — `activeAgentCounts(…).agents`: subagents
+  working right now in fresh host sessions, idle and waiting workers counting 0, the same figure
+  the expanded foot's Agents row shows — and
+  "{n} sessions open in a TUI" (the same count as the `N TUI` chip under the search), each only at
+  n ≥ 1, with `.spine-stats` omitted when both are 0. They are **facts, not doorways**: nothing
+  opens. Pointer users get the sentence as the `title`; a tap raises the same sentence as a toast,
+  the rail's precedent (§2 "Accessibility" — there is no hover on touch).
+- **The foot** — Usage (`#/usage`), Agents (`#/agents`) and Settings, the expanded foot's three
+  doorways. The glance sentences are not dropped at 64px, only unprinted: Usage's `title` and
+  `aria-label` are the usage glance in full words (`glanceText()`), and Agents' are the agents
+  sentence (`agentsSentence()`, e.g. "3 active agents in 2 sessions, 1 team"). Each falls back to
+  "Usage" / "Agents" only when its sentence is empty — no usage cache to read, no live agents.
+  What has no room is the printed text, not the fact.
+  A doorway to the page on screen carries `aria-current="page"` and the tint.
+- **Layout.** Five groups top to bottom — head, tiles, regions, tallies, foot — each a column
+  of 44px items centred with `--space-1` between and `--space-2` above and below, split by
+  `--color-border` rules. The tiles are the scroll region (`.pane`) and take the height that's
+  left; the other four are pinned. They cost 529px with every item shown, so the tiles keep a
+  floor of one tile (60px), and on a window shorter than that the whole spine scrolls instead.
+  Neither scrollbar is drawn: a 10px bar in a 64px column pushes every item off the shared axis.
+  **The cost:** nothing shows that the tiles scroll, beyond the tile cut at the edge. Recent is 5
+  by default and 20 at most, and every tile is also a row in the expanded pane.
 
 ## §app.session-list/content-rules — Content rules
 
@@ -1016,7 +1176,8 @@ Sidebar ground `--color-surface`. Row hover and `:focus-within` `--color-sunken`
 Title `--color-ink`, `--fw-medium`, `--fs-body`. Summary `--fs-micro`, `--lh-micro`,
 `--color-ink-2`. Meta `--color-ink-muted`, `--fs-caption`.
 
-**The rail.** A 30px column with `margin: 0 2px` — a 34px gutter, title 34px from the
+**The rail** (a session row's status column, inside the expanded pane — not the spine, which is
+the whole pane collapsed). A 30px column with `margin: 0 2px` — a 34px gutter, title 34px from the
 panel edge. Rail padding is `--space-2` on **top only**, matching the row link: the horizontal
 breathing room is the margin, so the 30px box stays symmetrical and the 26px pill centres in it
 4px off the panel edge, with the count on the same axis. Items stack centred with `--space-1`.
@@ -1026,6 +1187,25 @@ The state pill is 26 × 26, `--r-full`, `--stroke-thin`
 borderless, 16px tall, `--font-mono` `--fs-micro` tabular in `--color-ink-muted`
 (`--color-ink` on hover), with an 11px `worker` icon. `live-pulse` runs on the Busy dot and on
 `.session-rail-count-live .icon`, nothing else in the row.
+
+**The spine.** `--spine-width` 64px, `.app-sidebar`'s `border-right` kept; 44px items leave 9.5px
+either side of the 63px content box, so a focus ring (2px offset + 2px width) clears the edge.
+`.spine` is a flex column; `.spine-head`, `.spine-regions`, `.spine-stats` and `.spine-foot` are
+`flex: none` columns, gap `--space-1`, padding `--space-2` 0, each after the head with a
+`--stroke-thin` `--color-border` top rule; `.spine-head`'s top padding is `(56px − --tap-min) / 2`,
+so Expand centres where the head's Collapse did. `.spine-tiles` is `.pane` with `flex: 1`, the same
+gap, padding and rule, and `min-height: --tap-min + 2 × --space-2`. `.spine-item` is a ghost
+`.button-icon`: transparent border and ground, `--color-ink-muted`; hover and press
+`--color-sunken` with `--color-ink`; `[aria-current="page"]` `--color-accent-tint` with
+`--color-ink`. `.spine-region` / `.spine-stat` stack the 16px icon over `.spine-count`, 2px apart;
+the count is `--font-mono` `--fs-micro` tabular, line-height 1, `--color-ink-muted` (`inherit` on
+hover). `.spine-tile` is 44 × 44, `--r-md`, `--color-ink-2` monogram in `--font-mono`
+`--fs-mono` `--fw-medium` (the capitals are in the string, from `monogram()`; the tile's
+`text-transform: uppercase` is redundant, not the mechanism); hover `--color-sunken` / `--color-ink`, current
+`--color-accent-tint` / `--color-ink`, focus the standard ring. `.spine-dot` is 8px, `--r-full`,
+`--space-1` in from the tile's top-right corner: `-live` `--color-accent` fill, `-busy`
+`--status-info` fill, `-working` a `--stroke-icon` `--color-ink-muted` ring with no fill.
+`live-pulse` runs on `-busy` and `-working` and on nothing else in the spine.
 
 **Lines 2 and 3.** `.list-line` is `display: flex`, `align-items: center`, gap `--space-2`,
 `min-width: 0`, `flex-wrap: nowrap`. The line's `2px` top margin moves off `.list-summary` /
@@ -1055,12 +1235,17 @@ word never does.
 
 - **Landmarks.** `aside[aria-label="Sessions"]` > `nav[aria-label="Session list"]`. Each group is
   a `section` labelled by its `h2`. Rows are plain links in a `ul`, so the browser provides
-  Tab/Enter behavior with no roving tabindex.
+  Tab/Enter behavior with no roving tabindex. Collapsed, the `aside` keeps its name and holds
+  `nav[aria-label="Recent sessions"]` instead; every spine item is a real tab stop in reading
+  order, with an `aria-label` and a `title` — the skill's rule, "an unlabeled icon is a guess",
+  applied to every one. The spine's toggle carries `aria-expanded`, and Ctrl/⌘+B does the same
+  as pressing it.
 - **Selected row.** Mark the link with `aria-current="page"` and the shell with
   `.session-row-shell-current`.
-- **The rail is the one sanctioned wordless status in the system.** Everywhere else, status is a
-  dot **and** the word. Session rows are the exception, and it is a deliberate one: at 320px the
-  words cost more title than they buy. What carries the state instead:
+- **The rail and the spine's tile dots are the two sanctioned wordless statuses in the
+  system.** Everywhere else, status is a dot **and** the word. Session rows are the first
+  exception, and it is a deliberate one: at 320px the words cost more title than they buy. What
+  carries the state instead:
   1. **The pill's border and tone** — a bordered 26px pill on `--color-surface`, accent for TUI
      and info for Busy, so the dot is never a bare hue floating in a row.
   2. **Static vs pulsing**, which separates TUI from Busy without depending on hue at all.
@@ -1073,6 +1258,24 @@ word never does.
   5. **The row link's own name repeats the state** in a `.visually-hidden` span (", open in a
      TUI", ", pi is replying in this session", ", {n} subagents working now"). A screen-reader
      user hears the state while arrowing the list, without ever reaching the rail buttons.
+- **The spine's dot is the second, and it is argued, not inherited.** A 44px tile holding a
+  two-letter monogram has no room for a word — the rail's 9px `TUI` chip would cover the monogram
+  it marks — and the spine exists to be narrow. What carries the state instead:
+  1. **Shape and motion, not hue alone.** TUI is a filled static dot, Busy a filled pulsing dot,
+     working a hollow pulsing ring: motion separates TUI from the other two, and fill separates
+     Busy from working. That is one channel more than the rail has.
+  2. **The tile's `aria-label` is the row link's accessible name**, state suffix and all, so a
+     screen-reader user hears exactly what they hear on the row.
+  3. **The `title`** names the session and folder; the state words are one gesture away in the
+     session itself, which is where the tile goes — unlike the rail's pill, the tile IS the link,
+     so a tap opens the session rather than raising a toast.
+  4. **It is opt-in.** The spine is a state the user chose, and the rail, with its tallies and
+     words, is one Ctrl/⌘+B away.
+
+  **The cost, plainly:** a sighted user sees a dot and no word, and under
+  `prefers-reduced-motion` the pulse stops on its end state, so TUI and Busy — both filled — differ
+  by hue alone (working keeps its ring). The rail has the same limit. A TUI session that is also
+  running subagents shows only its TUI dot; the tile's name still carries both.
 - **Rail buttons are `tabindex="-1"` on purpose.** They are affordances, not destinations: two
   extra tab stops per row would add hundreds to a 278-row list, and the same facts are already in
   the row link's name. They stay real buttons so pointer users get a `title` and AT can address
@@ -1099,8 +1302,9 @@ word never does.
 - **The cost, stated.** A sighted touch user still sees a coloured dot and no word until they tap
   it or open the session (§3's `.run-status` and the head say which it is). The toast is a second
   gesture and it isn't discoverable — nothing on the row says the dot can be tapped. We accept
-  that for the sidebar and nowhere else. If a second wordless status is ever proposed, this is
-  the precedent to argue against, not with.
+  that for the sessions pane — its rows and, collapsed, its tiles — and nowhere else. The
+  spine's dot was argued against this bullet above, not waved through it; a third wordless status
+  has two precedents to argue against, and neither is a licence.
 - **Contrast.** Ink on surface is 12.34 (dark) and 17.86 (light). Muted on surface is 4.96 and
   5.74. Muted on tint is 5.06 and 4.68. Accent on surface is 4.67 and 6.81. Accent on tint is
   4.76 and 5.55. All clear AA 4.5.

@@ -32,7 +32,9 @@ reader can't tell from a stale one.
   `--space-7` and up appear only where there is one idea on the screen
 - **Radius:** `--r-none`, `--r-xs`, `--r-sm`, `--r-md`, `--r-lg`, `--r-xl`, `--r-full`
 - **Stroke and size:** `--stroke-thin`, `--stroke-icon`, `--tap-min`, `--row-height`,
-  `--control-sm`, `--control-md`, `--control-lg`, `--sidebar-width`, `--composer-max`, `--tool-output-max`,
+  `--control-sm`, `--control-md`, `--control-lg`, `--sidebar-width`, `--spine-width` (64px, the
+  sessions pane collapsed — written into `--sidebar-width` by the app, never read by a CSS rule
+  directly, §1 "The spine column"), `--composer-max`, `--tool-output-max`,
   `--outline-max`, `--main-min`, `--subagents-width`, `--subagents-list-width`
 - **Elevation:** `--shadow-1`, `--shadow-2`, `--shadow-3`
 - **Focus and motion:** `--focus-ring`, `--focus-width`, `--focus-offset`, `--focus-color`,

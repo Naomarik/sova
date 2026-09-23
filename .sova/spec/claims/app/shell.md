@@ -15,10 +15,10 @@ unfolded (≥768)                                  folded (<768)
 
 ```html
 <a class="button skip-link" href="#transcript">Skip to Transcript</a>
-<div class="app" data-view="list|session">
+<div class="app" data-view="list|session" data-spine="on"?>   <!-- data-spine: ≥768, pane collapsed -->
   <aside class="app-sidebar" aria-label="Sessions">…§2…</aside>
   <main class="app-main">…§3 head, transcript, composer…</main>
-  <!-- ≥768 only; CSS hides it folded -->
+  <!-- ≥768 only; CSS hides it folded; not rendered while the pane is collapsed -->
   <div class="pane-resizer" role="separator" aria-orientation="vertical"
        aria-label="Resize the sessions pane" title="Drag to resize · Double-click to reset"></div>
 </div>
@@ -29,7 +29,8 @@ unfolded (≥768)                                  folded (<768)
   `.app-workspace` instead of `.app-main`, holding N panes and one group composer. The sidebar,
   the resizer and the portals are unchanged, the second column keeps the same width and floor,
   and below 768px the workspace is the one column, tabs-only.
-- **Columns.** `.app` is `height: 100dvh`. At 768px and up the grid is `--sidebar-width` (320px)
+- **Columns.** `.app` is `height: 100dvh`. At 768px and up the grid is `--sidebar-width` (320px
+  by default, 64px while the sessions pane is collapsed into the spine — §1 "The spine column")
   plus `1fr`, with a border between the columns. Below 768px it's one column, and `data-view`
   decides which one shows: `list` when no session is selected, `session` when one is. The shell
   is window chrome, so it uses `@media` rather than a container query, the same reasoning the
@@ -46,7 +47,11 @@ unfolded (≥768)                                  folded (<768)
   id routes to `#/` with a toast rather than rendering an empty frame.
 - **No rail and no bottom bar.** Sova has one destination, so there's no nav to place. This is
   a deliberate departure from the skill's three-pane desktop shell: the ≥1120 `desktop` band adds
-  nothing here.
+  nothing here. **The spine is not a rail.** It is the sessions pane collapsed to 64px (§2 "The
+  spine"): it holds the pane's own contents, it replaces the pane rather than sitting beside it,
+  and it links to no destination the expanded pane doesn't already link to. So the skill's
+  `.rail` / `.navitem` component stays unported, and the spine is built from `.button-icon` and
+  its own `.spine*` classes.
 - **Dialogs** follow the skill's modal pattern and become a bottom sheet under 768px
   automatically (`.modal` restyles itself).
 - **Toasts** go in one `.toast-stack` portal. Use them only for "Copied path." / "Copied output."
@@ -182,21 +187,37 @@ sidebar list escapes `.app`'s clip and makes the document scroll) — and it wri
   target.
 - **Unfolded only.** `display: none` below 768px. Folded is a single full-width column with no
   divider and nothing to divide, so there is no handle to find.
+- **Absent while the stored choice is collapsed.** `App.tsx` renders the handle only while the
+  collapse choice (§2 "The spine") is expanded, whatever the window's width: a 64px column of
+  fixed items has no width to choose, and a drag that "expanded" it would be a second, hidden way
+  to do what the toggle does. It gates on the stored choice rather than on the spine being on
+  screen because the handle's `resize` listener re-clamps the token it reads: left mounted, it
+  would pull the 64px `--sidebar-width` back up to the 300 floor. Folded is unchanged — below
+  768px CSS already hides the strip, so a folded window with a collapsed choice shows no handle
+  either way.
 - **The drag.** Pointer events with pointer capture, mouse and touch alike; `touch-action: none`
   on the strip keeps a touch drag from scrolling the page. While a drag is live the root carries
   `is-resizing`, and `html.is-resizing, html.is-resizing *` force `cursor: col-resize` and
   `user-select: none` — the pointer leaves the 12px strip on the first move, so the cursor and
   the selection guard have to hold across the transcript it runs over.
-- **Clamp.** `240 … min(560, viewport − 440 − the Subagents pane)`. 440 is `--main-min`, the
+- **Clamp.** `300 … min(560, viewport − 440 − the Subagents pane)`. The floor is the head's: at
+  a 320px pane it has 295px inside (the 1px `border-right` is inside the width), and brand 63 +
+  New Session 144 + the collapse toggle 44 + three 8px gaps take 275, so the head needs
+  275 + 2 × 12 of padding + 1 = **300** — measured, the toggle overhangs the padding by 1px at
+  299. The old floor of 240 predates the toggle and would clip it. 440 is `--main-min`, the
   transcript's floor; the Subagents term is its real width **only while it is a static third
   column** (≥1280px), because below that it overlays the main pane and reserves nothing. The
   clamp is re-applied on `resize` and `orientationchange`, so shrinking the window pulls an
   over-wide pane back rather than squeezing the transcript out.
-- **Default 320px on every load, and nothing is persisted.** This is a decision, not an
+- **Default 320px on every load, and the width is not persisted.** This is a decision, not an
   omission: a width is a posture for the task in front of you, not a preference, and a
   remembered one is a setting you have to notice and undo. Double-clicking the handle resets to
-  320 for the same reason — the way back is always one gesture.
-- **One knob, three consumers.** `--sidebar-width` feeds the `.app` grid's first column, the
+  320 for the same reason — the way back is always one gesture. **Collapsed or expanded is
+  persisted** (§2 "The spine"): that is a standing choice about the screen, not a posture, and it
+  is undone by the same one gesture that made it. Expanding restores the width the pane had
+  when it collapsed, within the load; a reload expands to 320.
+- **One knob, three consumers.** `--sidebar-width` (while collapsed, holding `--spine-width`,
+  §1 "The spine column") feeds the `.app` grid's first column, the
   Subagents pane's `width: min(--subagents-width, 100% − --sidebar-width − --space-8)`, and
   `--measure`'s `clamp(72ch, 100vw − --sidebar-width − …, 110ch)` (§3 "Column width"). So
   dragging the pane reflows the transcript's line length **live**, under the pointer, and the
@@ -210,5 +231,25 @@ sidebar list escapes `.app`'s clip and makes the document scroll) — and it wri
   fix, if this is revisited, is `tabindex="0"` plus arrow keys and the three `aria-value*`
   attributes; until then this is written down rather than unnoticed.
 
----
+## §app.shell/spine-column — The spine column
 
+From 768px up, collapsing the sessions pane (§2 "The spine") narrows the grid's first column to
+`--spine-width` — 64px, in `tokens.css`'s layout sizes beside `--sidebar-width` — and nothing
+else about the shell changes.
+
+- **One knob, not a second grid.** The app writes `--spine-width`'s value into the inline
+  `--sidebar-width` on `<html>`, the same property the resizer writes. The `.app` grid, the
+  Subagents pane's `min(--subagents-width, 100% − --sidebar-width − --space-8)`, its third-column
+  grid at 1280px and `--measure`'s clamp all read `--sidebar-width`, so the transcript's column
+  widens and the Subagents pane gets its room with **no** collapsed-state rule in the CSS. A rule
+  that restated the width per consumer would be a second source for it, and the first to drift.
+- **`data-spine="on"` on `.app`** while collapsed; absent, not `"off"`, when expanded. It is a
+  hook for the state, not a layout switch — the column width comes from the knob above.
+- **No resizer.** `.pane-resizer` is not rendered while the stored collapse choice is on — not
+  merely while the spine is on screen — because its `resize` listener would re-clamp the 64px
+  token back up to the 300 floor (§1 "Resizing the sessions pane"). Folded, CSS hides the strip
+  anyway, so nothing changes there. `.app-sidebar`'s 1px `border-right` stays the divider.
+- **Folded is unaffected.** Below 768px the pane renders expanded whatever is stored, the grid is
+  one column, and `data-spine` is not set.
+
+---

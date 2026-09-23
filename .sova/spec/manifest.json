@@ -60,13 +60,13 @@
     },
     "§app.session-list/accessibility": {
       "kind": "behavior",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "verified"
     },
     "§app.session-list/anatomy": {
       "kind": "behavior",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "verified"
     },
     "§app.session-list/archive-by-date": {
       "kind": "behavior",
@@ -120,8 +120,8 @@
     },
     "§app.session-list/tokens": {
       "kind": "note",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "verified"
     },
     "§app.settings-dialog/general": {
       "kind": "behavior",
@@ -158,8 +158,8 @@
     },
     "§app.shell/resizing-the-sessions-pane": {
       "kind": "behavior",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "verified"
     },
     "§app.shell/the-open-failure-banner": {
       "kind": "behavior",
@@ -253,8 +253,8 @@
     },
     "§app/shell": {
       "kind": "surface",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "verified"
     },
     "§app/subagents-pane": {
       "kind": "surface",
@@ -783,18 +783,18 @@
     },
     "§design.ground-rules/color-budget": {
       "kind": "note",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "verified"
     },
     "§design.ground-rules/icons": {
       "kind": "note",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "verified"
     },
     "§design.ground-rules/motion": {
       "kind": "note",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "verified"
     },
     "§design.ground-rules/theme": {
       "kind": "note",
@@ -823,8 +823,8 @@
     },
     "§design/deviations": {
       "kind": "note",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "verified"
     },
     "§design/ground-rules": {
       "kind": "note",
@@ -1019,6 +1019,24 @@
       "kind": "behavior",
       "authority": "accepted",
       "evidence": "verified"
+    },
+    "§app.session-list/spine": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.session-list/recent",
+        "§app.session-list/accessibility",
+        "§app.shell/spine-column"
+      ]
+    },
+    "§app.shell/spine-column": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.shell/resizing-the-sessions-pane"
+      ]
     }
   }
 }

@@ -123,6 +123,7 @@ and `fill="none" stroke="currentColor"`.
 |---|---|
 | `sova-mark.svg` | Brand mark in the sidebar head (accent colored). Astra's Fold, drawn on the system grid; the earlier `pi-web-mark.svg` is kept on disk but unused |
 | `plus.svg` | New Session |
+| `panel-collapse.svg` / `panel-expand.svg` | Collapse sessions pane (the head's last button) / Expand sessions pane (the spine's first item), §2 "The spine": a rounded square, a divider a third in, and a chevron in the wide side pointing left / right. One drawing, mirrored. New, drawn on the system grid |
 | `search.svg` | Search field glyph; tool card for `grep` / `find` / `ls` |
 | `close.svg` | Clear search, close dialog |
 | `chevron-left.svg` | Back to list (folded width only) |
@@ -179,7 +180,8 @@ Spend `--color-accent` on only three things:
 
 1. The one primary button in view (Send, or Create Session inside the dialog).
 2. The live indicator (`.chip-live` and `.live-dot`), and every TUI mark — the sidebar row's
-   rail pill, the head's `TUI` chip, the `N TUI` count — all of which are accent but **static**
+   rail pill, the spine tile's `.spine-dot-live`, the head's `TUI` chip, the `N TUI` count — all
+   of which are accent but **static**
    (see Motion).
 3. Focus rings and links.
 
@@ -193,7 +195,9 @@ fade in over `--dur-base`. Only two things loop:
 
 - The `live-pulse` on `.chip-live .chip-dot` and `.live-dot`. It means work is happening now.
   In the sidebar's row rail that is `.session-rail-state.chip-live .session-rail-dot` (Busy) and
-  `.session-rail-count-live .icon`, at most one of them per row.
+  `.session-rail-count-live .icon`, at most one of them per row. In the collapsed pane (the
+  spine, §2) it is `.spine-dot-busy` and `.spine-dot-working`, one dot per tile, and nothing else
+  in the spine moves.
 - The skeleton sweep.
 
 **TUI never pulses — Busy and running tools own the pulse.** This holds on every surface: the

@@ -10,6 +10,7 @@ import {
   movePane,
   neighbourOf,
   PANE_MIN_WIDTH,
+  paneWidths,
   readMode,
   stepFrom,
   TABS_ONLY_WIDTH,
@@ -165,8 +166,14 @@ export function GroupView(props: {
   /** Under this the head's tools don't fit beside the name, so they become one menu (§14). */
   const [narrowHead, setNarrowHead] = createSignal(window.innerWidth < HEAD_MENU_WIDTH);
   const [viewport, setViewport] = createSignal(window.innerWidth);
-  /** Pane widths the user stepped, in memory only: a width is a posture for the task at hand. */
-  const [widths, setWidths] = createSignal<Record<string, number>>({});
+  /**
+   * A pane's width, in memory only: a number the user stepped it to, or `"fit"` — the one posture
+   * that follows the row (`Fit All`, §14 "Layout: split"). A number is a posture for the task at
+   * hand and is kept through a resize; "fit" is a standing instruction to stand in the row with no
+   * scrollbar, and is re-derived every time the row changes — a pane with no entry joins it while
+   * any pane in the row is "fit" (paneWidths). Nothing here is persisted, like §1's sessions pane.
+   */
+  const [widths, setWidths] = createSignal<Record<string, number | "fit">>({});
   // Another group, another posture: its own remembered layout, and nobody's widths.
   createEffect(
     on(gid, (next) => {
@@ -461,7 +468,39 @@ export function GroupView(props: {
   onCleanup(() => window.removeEventListener("keydown", onKeyDown));
 
   // ---- Pane actions --------------------------------------------------------
-  const widthOf = (key: string) => widths()[key] ?? defaultPaneWidth(viewport());
+  /**
+   * The row's own content width, measured: what an unstepped pane fills. A ResizeObserver rather
+   * than a read at render, because the row is in the document only after the render that asks for
+   * this number — and because the sidebar's own resizer and the window move it without either of
+   * them being a signal here. 0 until the first callback, which the observer delivers after the
+   * row's first layout, before that frame paints.
+   *
+   * The content box, fractional, never `clientWidth`: clientWidth is rounded, and at a fractional
+   * zoom it can round UP, so N floored shares of it could still pass the real row by half a pixel
+   * and bring the scrollbar back. The row has no padding or border, so its content box is the row.
+   * The division floors (autoPaneWidth, fitPaneWidth).
+   */
+  const [rowWidth, setRowWidth] = createSignal(0);
+  const watchRow = (el: HTMLElement) => {
+    // The observer fires once on observe, after the row's first layout and before that frame paints,
+    // so the fitted width is what the first painted frame shows (a read here is too early: a ref
+    // callback runs before the element is in the document).
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[entries.length - 1];
+      if (entry) setRowWidth(entry.contentRect.width);
+    });
+    observer.observe(el);
+    onCleanup(() => observer.disconnect());
+  };
+  /** Every pane's width in the row right now (paneWidths: stepped, fitted, or the row's share),
+      derived from what the user chose and what the row measures, never stored. */
+  const paneWidthMap = createMemo(() => paneWidths(panes(), widths(), rowWidth(), viewport()));
+  /**
+   * A pane's width: what the user stepped it to, else what the row has room for. The two are one
+   * expression on purpose — `Wider`/`Narrower` start from the number on screen, so a pane that
+   * auto-fit to 560px must BE 560px here, or the first press would jump it back to 34vw.
+   */
+  const widthOf = (key: string) => paneWidthMap()[key] ?? defaultPaneWidth(viewport());
   const resize = (key: string, direction: 1 | -1) => {
     const now = widthOf(key);
     const next = stepFrom(now, direction);
@@ -480,14 +519,19 @@ export function GroupView(props: {
    * any viewport without this). The pane carries an inline `min-width: 0` alongside the width,
    * because the stylesheet's floor would otherwise quietly re-apply (inline beats it; no CSS
    * change needed). Memory only, like every width: a posture, not a setting.
+   *
+   * A row nobody has stepped is already this wide (autoPaneWidth), so the press usually only says
+   * the number — but it is not a no-op even then: it leaves the panes FITTED, which is the posture
+   * that keeps following the row through a resize (unstepped panes also follow; a pane stepped to a
+   * number does not). What it still uniquely changes is a row full of stepped widths, and the
+   * widths below the floor that only this may set.
    */
   const fitAll = () => {
-    const row = document.querySelector<HTMLElement>('.workspace-row[data-mode="split"]');
     const n = panes().length;
-    const w = fitPaneWidth(row?.clientWidth ?? 0, n);
-    setWidths((m) => {
-      const next = { ...m };
-      for (const key of panes()) next[key] = w;
+    const w = fitPaneWidth(rowWidth(), n);
+    setWidths(() => {
+      const next: Record<string, "fit"> = {};
+      for (const key of panes()) next[key] = "fit";
       return next;
     });
     announce(`Fitted ${n} ${n === 1 ? "member" : "members"} at ${w} pixels each${w < PANE_MIN_WIDTH ? ", below the 440 floor a single pane keeps" : ""}.`);
@@ -1011,7 +1055,7 @@ export function GroupView(props: {
             />
           )}
         </Show>
-        <div class="workspace-row" data-mode={mode()} aria-label="Members">
+        <div class="workspace-row" data-mode={mode()} aria-label="Members" ref={watchRow}>
           <For each={panes()}>
             {(key) => {
               const paneId = paneIdFor(key);

@@ -40,6 +40,71 @@ export function defaultPaneWidth(viewport: number): number {
   return Math.min(720, Math.max(PANE_MIN_WIDTH, Math.round(viewport * 0.34)));
 }
 
+/**
+ * The width a pane NOBODY has stepped stands at: the share of the leftover space this pane can take
+ * without the row scrolling — the row's own width minus the widths the user chose, divided among
+ * the panes that are still on their default, floored — and never below `defaultPaneWidth`, the
+ * posture those panes have always had. 34vw is a guess at a comfortable column, made without
+ * knowing how wide this row is; when the guess leaves the row half empty, the measured answer wins.
+ *
+ * What this can and cannot do, all on purpose:
+ *  - it can only ever WIDEN a default pane. A fit narrower than 34vw is a row with no room to give,
+ *    which is not what an "auto-fit" is for: there the default already overflows, the row scrolls,
+ *    and nothing new is needed to say so;
+ *  - it stops at `PANE_MAX_WIDTH` (1040px), the ceiling every width here keeps. So the strip to the
+ *    right of the last pane is gone only while the row's share is under the ceiling; a row wider
+ *    than that (one member in any row past 1040px, two past 2080px) keeps a strip, because a wider
+ *    reading column is not what the ceiling is for;
+ *  - it does not touch a pane the user has stepped. A chosen width is a posture, and filling the row
+ *    by rewriting one is the bug this product already paid for (GroupView.tsx's `gid` memo);
+ *  - it re-runs on a resize, because it is derived, never stored: an unstepped pane follows the row,
+ *    which is what the 34vw default did before it.
+ *
+ * `chosen` is the widths the user stepped, whose panes are out of this calculation entirely. The
+ * row's borders need no subtraction: panes are border-box and the seam is a pane's own left border.
+ * `rowWidth` may be fractional (a ResizeObserver's content box at any zoom): the division floors,
+ * so the widths never add up past the row by half a pixel.
+ */
+export function autoPaneWidth(rowWidth: number, count: number, chosen: readonly number[], viewport: number): number {
+  const basis = defaultPaneWidth(viewport);
+  const free = count - chosen.length;
+  if (free <= 0 || !Number.isFinite(rowWidth) || rowWidth <= 0) return basis;
+  const leftover = rowWidth - chosen.reduce((a, w) => a + w, 0);
+  return clampWidth(Math.max(basis, Math.floor(leftover / free)));
+}
+
+/** A pane's width as the user left it, in memory only: a number they stepped it to, or `"fit"`
+    (`Fit all`), the posture that follows the row. A pane with no entry was never set. */
+export type PaneWidthChoice = number | "fit";
+
+/**
+ * Every pane's width in the row, from what the user chose (spec/14-workspaces.md "Layout: split"):
+ *  - a stepped number stands as it is;
+ *  - a `"fit"` pane takes `fitPaneWidth` of the row, whatever the row is now;
+ *  - a pane with no entry takes `autoPaneWidth` — unless the row is FITTED (any pane in it is
+ *    `"fit"`), and then it joins the fit: a member added after `Fit all`, or one that comes back,
+ *    must not stand at 34vw beside panes fitted under it and push the row into a scrollbar.
+ * Only the panes in `keys` count: a width left behind by a member that came out of the group is
+ * neither space someone chose nor a fit the row is in.
+ */
+export function paneWidths(
+  keys: readonly string[],
+  chosen: Readonly<Record<string, PaneWidthChoice>>,
+  rowWidth: number,
+  viewport: number,
+): Record<string, number> {
+  const inRow = keys.map((key) => chosen[key]);
+  const fitted = inRow.some((c) => c === "fit");
+  const fit = fitPaneWidth(rowWidth, keys.length);
+  const auto = autoPaneWidth(rowWidth, keys.length, inRow.filter((c): c is number => typeof c === "number"), viewport);
+  const out: Record<string, number> = {};
+  for (const key of keys) {
+    const c = chosen[key];
+    out[key] = typeof c === "number" ? c : c === "fit" || fitted ? fit : auto;
+  }
+  return out;
+}
+
 /** Wider (+1) / Narrower (-1), clamped. Returns the current width when it can't move. */
 export const stepWidth = (current: number, direction: 1 | -1): number => clampWidth(current + direction * PANE_WIDTH_STEP);
 
@@ -59,6 +124,10 @@ export const stepFrom = (current: number, direction: 1 | -1): number =>
  * in the row with no scrollbar — the row's inner width divided by the pane count. Panes are
  * `border-box` and the seam is a pane's own left border, so there is nothing to subtract: N of
  * these widths never exceed the row. Floored, not rounded, for the same reason.
+ *
+ * This is the width a default pane REACHES on its own (autoPaneWidth), which is why an explicit Fit
+ * on a row nobody has stepped is mostly a statement rather than a change — and why the button still
+ * exists: it is the way back from stepped widths, and the only width allowed under the floor.
  *
  * NOT floored at `PANE_MIN_WIDTH`, and that is the whole point of the action: 440 was chosen for
  * a transcript and a composer each on their own, and 4×440 = 1760px means a 4-way comparison

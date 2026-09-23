@@ -2,9 +2,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  autoPaneWidth,
   clampWidth,
   defaultPaneWidth,
   fitPaneWidth,
+  paneWidths,
   movePane,
   neighbourOf,
   PANE_MAX_WIDTH,
@@ -67,6 +69,73 @@ test("fitPaneWidth divides the row so N panes never overflow it", () => {
   assert.equal(fitPaneWidth(-5, 4), PANE_MIN_WIDTH);
   assert.equal(fitPaneWidth(Number.NaN, 4), PANE_MIN_WIDTH);
   assert.equal(fitPaneWidth(1120, 0), PANE_MIN_WIDTH);
+});
+
+test("autoPaneWidth fills the row's leftover space, and only when the default leaves some", () => {
+  // The screenshot's case: a 1440 viewport (34vw = 490) inside a 1160px row, two members.
+  assert.equal(defaultPaneWidth(1440), 490);
+  assert.equal(autoPaneWidth(1160, 2, [], 1440), 580, "2 × 490 = 980 left 180px of row empty");
+  // No room to give: the panes are already wider than their share, so the default posture stands
+  // and the row scrolls — an auto-fit never squeezes a pane to make room for itself.
+  assert.equal(autoPaneWidth(1160, 4, [], 1440), 490, "4 × 490 overflows: not the case autofit is for");
+  assert.equal(autoPaneWidth(600, 2, [], 1440), 490);
+  // Measured row unknown yet (0): the default, never a division by nothing.
+  assert.equal(autoPaneWidth(0, 2, [], 1440), 490);
+  assert.equal(autoPaneWidth(1160, 0, [], 1440), 490);
+  // A single member gets the whole row, up to the stepped ceiling that keeps a column readable.
+  assert.equal(autoPaneWidth(1160, 1, [], 1440), PANE_MAX_WIDTH);
+  assert.equal(autoPaneWidth(900, 1, [], 1440), 900);
+  // A row narrower than the default: the default stands and the row scrolls, exactly as it did
+  // before this existed — an auto-fit widens, it never narrows.
+  assert.equal(autoPaneWidth(400, 1, [], 1440), 490);
+});
+
+test("autoPaneWidth shares what the user's own widths left — never rewrites one of them", () => {
+  // One pane stepped to the ceiling: the other takes what is left of the row, not half of it.
+  assert.equal(autoPaneWidth(1600, 2, [PANE_MAX_WIDTH], 1440), 560);
+  // Every pane stepped: nothing is left on a default, so the default posture answers (and is only
+  // used if a pane is added later).
+  assert.equal(autoPaneWidth(1600, 2, [600, 600], 1440), 490);
+  // A stepped width wider than the row leaves nothing: the default stands, the row scrolls.
+  assert.equal(autoPaneWidth(1000, 2, [1040], 1440), 490);
+  // Three panes, one chosen at 700, in a row with room: the other two split what is left, and the
+  // row's own widths add up to the row — the leftover is not divided by all three.
+  assert.equal(autoPaneWidth(1700, 3, [700], 1440), 500);
+  assert.equal(700 + 2 * autoPaneWidth(1700, 3, [700], 1440), 1700);
+  // What is left is too little for the default posture: the default stands (the row may scroll),
+  // rather than an auto-fit shrinking a pane nobody asked to shrink.
+  assert.equal(autoPaneWidth(1600, 3, [700], 1440), 490);
+});
+
+test("autoPaneWidth floors a fractional row, so the shares never pass it by a fraction", () => {
+  // A ResizeObserver content box at a fractional zoom: 2 × 560 = 1120 would pass 1119.6 by 0.4px.
+  assert.equal(autoPaneWidth(1119.6, 2, [], 1440), 559);
+  assert.equal(fitPaneWidth(1119.6, 2), 559);
+});
+
+test("paneWidths: a stepped number stands, a fitted pane takes the row's share, the rest auto-fit", () => {
+  assert.deepEqual(paneWidths(["a", "b"], {}, 1160, 1440), { a: 580, b: 580 });
+  assert.deepEqual(paneWidths(["a", "b"], { a: 800 }, 1600, 1440), { a: 800, b: 800 });
+  assert.deepEqual(paneWidths(["a", "b"], { a: 800, b: "fit" }, 1600, 1440), { a: 800, b: 800 });
+  assert.deepEqual(paneWidths(["a", "b"], { a: 1040, b: "fit" }, 1000, 1440), { a: 1040, b: 500 });
+});
+
+test("paneWidths: a member added to a fitted row joins the fit, and the row still has no scrollbar", () => {
+  const row = 1120;
+  const fitted = { a: "fit", b: "fit" } as const;
+  const w = paneWidths(["a", "b", "c"], fitted, row, 1440);
+  // Without the rule, c would auto-fit at 34vw (490) beside two panes at 373: 1236px in a 1120 row.
+  assert.deepEqual(w, { a: 373, b: 373, c: 373 });
+  assert.ok(w.a! + w.b! + w.c! <= row);
+  // A member that comes back with its own "fit" entry, or with none, stands in the same fit.
+  assert.deepEqual(paneWidths(["a", "c"], { a: "fit", b: "fit" }, row, 1440), { a: 560, c: 560 });
+});
+
+test("paneWidths: only the panes in the row count — a departed member's width is no one's choice", () => {
+  // A "fit" left by a member that came out doesn't make the row fitted…
+  assert.deepEqual(paneWidths(["a", "b"], { gone: "fit" }, 1160, 1440), { a: 580, b: 580 });
+  // …and a number left by one doesn't take space from the row's share.
+  assert.deepEqual(paneWidths(["a", "b"], { gone: 1040 }, 1160, 1440), { a: 580, b: 580 });
 });
 
 test("a fitted width leaves the stepped range deliberately: Wider returns, Narrower holds", () => {

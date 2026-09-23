@@ -4,6 +4,7 @@ import "./design/base.css";
 import "./app.css";
 import { App } from "./App";
 import { applyStoredTheme, clearTheme, clearTypography } from "./lib/theme";
+import { applyStoredSpine } from "./lib/spine";
 import "./sw-register";
 
 /**
@@ -39,5 +40,8 @@ if (themeResetRequested()) {
   clearTheme();
   clearTypography();
 } else applyStoredTheme();
+// The collapsed sessions pane, the same way: a reload of a collapsed window must not flash the
+// full pane first (lib/spine.ts).
+applyStoredSpine();
 
 render(() => <App />, document.getElementById("root")!);

@@ -12,6 +12,8 @@ import { cwdLabel } from "./lib/remote-session";
 import { createPoll } from "./lib/poll";
 import { homeFromSessionPath } from "./lib/format";
 import { reconcileTheme } from "./lib/theme";
+import { rememberedWidth, spine, spineWidth } from "./lib/spine";
+import { applySidebarWidth } from "./lib/sidebar-width";
 import { closeSettings, openSettings, settingsOpenAt } from "./lib/settings-nav";
 import type { RewindControl } from "./lib/inputs";
 import { activeTab, home, setActiveTab, setHome, toast } from "./lib/ui-state";
@@ -87,6 +89,18 @@ const AGENTS_POLL_MS = 5_000;
 /** The explanations store only changes when a /explain subagent finishes; the sidebar row can wait. */
 const EXPLAIN_POLL_MS = 60_000;
 const folded = () => window.matchMedia("(max-width: 767px)").matches;
+
+/** Live `matchMedia` (the ExplainGallery pattern): the spine is a desktop affordance, so it only
+    shows while the viewport is unfolded, and a resize across 768px swaps it in or out. */
+function createMediaQuery(query: string) {
+  const mql = window.matchMedia(query);
+  const [matches, setMatches] = createSignal(mql.matches);
+  const onChange = () => setMatches(mql.matches);
+  mql.addEventListener("change", onChange);
+  onCleanup(() => mql.removeEventListener("change", onChange));
+  return matches;
+}
+
 export function App() {
   const [listError, setListError] = createSignal<string | null>(null);
   /** Bumped on every successful list load, so views can tell a fresh list from a stale one. */
@@ -201,6 +215,15 @@ export function App() {
   const [now, setNow] = createSignal(Date.now());
 
   const refresh = () => void refetch();
+  /** The sessions pane as the 64px spine (lib/spine.ts): the user's choice, on a wide viewport. */
+  const unfolded = createMediaQuery("(min-width: 768px)");
+  const collapsed = () => spine() && unfolded();
+  // One knob: the collapsed pane is `--sidebar-width` set to `--spine-width`, and nothing else in the
+  // CSS knows about it. Expanding writes back the width the resizer last applied.
+  createEffect(() => {
+    const root = document.documentElement;
+    applySidebarWidth(root, collapsed() ? spineWidth(root) : rememberedWidth());
+  });
   const onFocus = () => {
     setNow(Date.now());
     refresh();
@@ -545,8 +568,13 @@ export function App() {
       >
         {skipLabel()}
       </a>
-      <div class="app" data-view={groupRoute() ? "workspace" : route() || insightsRoute() ? "session" : "list"}>
+      <div
+        class="app"
+        data-spine={collapsed() ? "on" : undefined}
+        data-view={groupRoute() ? "workspace" : route() || insightsRoute() ? "session" : "list"}
+      >
         <Sidebar
+          unfolded={unfolded()}
           sessions={sidebarSessions()}
           loading={sessions.loading}
           error={listError()}
@@ -708,7 +736,10 @@ export function App() {
           )}
         </Show>
 
-        <SidebarResizer />
+        {/* Nothing to drag while collapsed, and unmounting is what drops its resize listener. */}
+        <Show when={!spine()}>
+          <SidebarResizer />
+        </Show>
       </div>
 
       <Show when={creating()}>

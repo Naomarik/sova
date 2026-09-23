@@ -1409,9 +1409,13 @@ html.is-resizing * {
 
 
 /* ---- SIDEBAR. Brand + actions, search + counts, grouped session list.
-   Budget at 320px: 296 inside. Brand ~73 + Refresh 44 + New Session ~137 +
-   3 gaps of 8 = ~278. The live count lives with the session count below,
-   not here — the head has no room for a fourth item. ------------------- */
+   Budget at 320px: 295 inside (the 1px border-right is inside the width).
+   Brand 63 + New Session 144 + the spine toggle 44 + 3 gaps of 8 = 275; the
+   spacer takes the other 20 (it was 72 before the toggle). 275 + 2 × 12 of
+   padding + the border = 300, the drag floor: measured, the toggle overhangs
+   the padding by 1px at 299. 240 no longer holds the head. The live count
+   lives with the session count below, not here — the head has no room for
+   another item. ---------------------------------------------------------- */
 
 .sidebar-head {
   display: flex;
@@ -1440,6 +1444,149 @@ html.is-resizing * {
 .sidebar-spacer { flex: 1; min-width: 0; }
 .sidebar-head .button { flex: none; }
 .sidebar-head .button:not(.button-icon) { padding: 0 var(--space-3); }
+
+/* ---- THE SPINE. The sessions pane collapsed (§2 "The spine"), unfolded only:
+   one --spine-width column of 44px targets that replaces the head, search,
+   list and foot. It is the SAME pane, not a nav rail — none of the skill's
+   .rail/.navitem rules apply, and the column's width is not set here: the
+   app writes --spine-width into --sidebar-width, so the grid, the Subagents
+   math and --measure all follow from the one knob with no override below.
+   64 = 44 + 2 × 10: the focus ring (2 offset + 2 width) clears the column
+   edge on both sides. Items are ghosts — muted ink, no border, --color-sunken
+   under the pointer — because a column of bordered squares is louder than
+   the list it stands in for. Colour appears only on a tile's status dot, and
+   a tile's dot is the only thing in the spine that moves. -------------- */
+
+/* The pinned groups cost 529px of height (10 items), so on a short window the
+   tiles would shrink to nothing: they keep one tile's height, and past that
+   the whole spine scrolls instead. Both scrollbars are hidden for the reason
+   given at .spine-tiles. */
+.spine {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+}
+.spine::-webkit-scrollbar { display: none; }
+.spine-head,
+.spine-regions,
+.spine-stats,
+.spine-foot {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-2) 0;
+}
+/* The expand button lands where the head's collapse button was, vertically:
+   the head is 56px tall, so its 44px items centre 6px down. */
+.spine-head { padding-top: calc((56px - var(--tap-min)) / 2); }
+.spine-regions,
+.spine-stats,
+.spine-foot { border-top: var(--stroke-thin) solid var(--color-border); }
+.spine-foot { padding-bottom: calc(var(--space-2) + env(safe-area-inset-bottom)); }
+
+/* The one scroll region. A scrollbar in a 64px column would take 10px off one
+   side and push every tile off the axis the buttons share, so it is hidden;
+   the tiles still scroll by wheel, touch and focus, and each one is also a row
+   in the expanded pane. */
+.spine-tiles {
+  flex: 1;                          /* compose with .pane */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-2) 0;
+  border-top: var(--stroke-thin) solid var(--color-border);
+  scrollbar-width: none;
+}
+.spine-tiles::-webkit-scrollbar { display: none; }
+/* One tile, always. Two classes, to outrank .pane's `min-height: 0` below. */
+.spine > .spine-tiles { min-height: calc(var(--tap-min) + 2 * var(--space-2)); }
+
+.spine-item {
+  flex: none;
+  border-color: transparent;
+  background: transparent;
+  color: var(--color-ink-muted);
+}
+.spine-item:hover,
+.spine-item:active { background: var(--color-sunken); color: var(--color-ink); }
+.spine-item[aria-current="page"] { background: var(--color-accent-tint); color: var(--color-ink); }
+
+/* A count under its icon, not beside it: 44px has no room for both across. */
+.spine-region,
+.spine-stat { flex-direction: column; gap: 2px; }
+.spine-count {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-ink-muted);
+}
+.spine-item:hover .spine-count { color: inherit; }
+
+/* A recent session: its monogram in a 44px square. The row's grounds, kept —
+   --color-sunken under the pointer, --color-accent-tint when it is the open
+   session. `position: relative` anchors the dot. */
+.spine-tile {
+  position: relative;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--tap-min);
+  height: var(--tap-min);
+  border-radius: var(--r-md);
+  color: var(--color-ink-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono);
+  font-weight: var(--fw-medium);
+  line-height: 1;
+  letter-spacing: 0;
+  text-transform: uppercase;
+  text-decoration: none;
+  transition: background-color var(--dur-fast) var(--ease-standard),
+              color var(--dur-fast) var(--ease-standard);
+}
+.spine-tile:hover { background: var(--color-sunken); color: var(--color-ink); }
+.spine-tile:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.spine-tile[aria-current="page"],
+.spine-tile[aria-current="page"]:hover { background: var(--color-accent-tint); color: var(--color-ink); }
+
+/* The status dot, top-right corner, one per tile, the row rail's tones:
+     live     a TUI has it      --color-accent, static (TUI never pulses)
+     busy     pi is replying    --status-info, pulsing
+     working  subagents at work a --color-ink-muted RING, pulsing
+   Busy and working both move, so they differ in SHAPE as well as hue —
+   filled vs hollow — and motion alone tells live from both. Under
+   prefers-reduced-motion tokens.css stops the pulse on its end state, full
+   opacity, so live and busy differ by hue and the tile's name only: the row
+   rail's own stated limit, inherited, not a new one. */
+.spine-dot {
+  position: absolute;
+  top: var(--space-1);
+  right: var(--space-1);
+  width: 8px;
+  height: 8px;
+  border-radius: var(--r-full);
+  background: currentColor;
+  pointer-events: none;
+}
+.spine-dot-live    { color: var(--color-accent); }
+.spine-dot-busy    { color: var(--status-info); }
+.spine-dot-working {
+  color: var(--color-ink-muted);
+  background: transparent;
+  border: var(--stroke-icon) solid currentColor;
+}
+.spine-dot-busy,
+.spine-dot-working { animation: live-pulse 1.6s var(--ease-standard) infinite; }
 
 .sidebar-search {
   display: flex;

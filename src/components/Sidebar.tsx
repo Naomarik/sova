@@ -8,7 +8,7 @@ import { agentsHref, type GlancePart, usageGlance, usageHref } from "../lib/insi
 import { isMainThread, isTopSession } from "../lib/regions";
 import { groupRemotePlaceOf, remoteMarkOf, remoteMarkSuffix, remoteMarkTitle } from "../lib/remote-mark";
 import { summaryLineOf, summaryTitleOf } from "../lib/summary-row";
-import { remotePlaceOf, type TargetInfo } from "../lib/remote-session";
+import { cwdLabel, remotePlaceOf, type TargetInfo } from "../lib/remote-session";
 import { recentCount, recentSessions } from "../lib/recent";
 import { type CwdGroup, groupByActivity, groupByCreation } from "../lib/session-order";
 import {
@@ -27,6 +27,7 @@ import {
 } from "../lib/session-groups";
 import { announce, home, localRunning, sessionContext, toast } from "../lib/ui-state";
 import { dualGet, dualSet } from "../lib/storage-keys";
+import { monogram, setSpine, spine } from "../lib/spine";
 import { createHoldGesture } from "../lib/hold-select";
 import {
   clearSelection,
@@ -115,6 +116,13 @@ export const sessionHref = (path: string) => `#/s/${encodeURIComponent(path)}`;
 /** "3 subagents working now" / "1 subagent working now" — rail title, toast and hidden row text. */
 const workingNow = (n: number) => `${n} ${n === 1 ? "subagent" : "subagents"} working now`;
 
+/** The row's state clauses, appended to its link's name (and to a spine tile's), so both say the same. */
+const TUI_CLAUSE = ", open in a TUI";
+const BUSY_CLAUSE = ", pi is replying in this session";
+
+/** Busy (§2): this tab's own run wins over the last fetched list; Live wins over both. */
+const sessionBusy = (s: SessionSummary) => !s.live && !!(localRunning()[s.path] ?? s.busy);
+
 /**
  * One session row: a wordless status rail on the left, then the link itself. The rail buttons are
  * out of the tab order on purpose (a long list must not add two tab stops per row), so the link
@@ -132,8 +140,7 @@ function SessionRow(props: { session: SessionSummary; selected: string | null; n
     const m = mark();
     return m ? remoteMarkTitle(m, props.targets.find((t) => t.name === m.place.target)?.host) : "";
   };
-  // Busy (§2): this tab's own run wins over the last fetched list; Live wins over both.
-  const isBusy = () => !s().live && !!(localRunning()[s().path] ?? s().busy);
+  const isBusy = () => sessionBusy(s());
   const tuiTitle = () => `Open in a TUI · pid ${s().live!.pid} · ${s().live!.status}`;
   const working = () => sessionWorking(s());
   /** The row's context fill: the open session's live value wins over the list's tail value, and a
@@ -385,10 +392,10 @@ function SessionRow(props: { session: SessionSummary; selected: string | null; n
         </div>
         {/* AT parity with the old chips: the rail is wordless, so the state lives in the link's name. */}
         <Show when={s().live}>
-          <span class="visually-hidden">, open in a TUI</span>
+          <span class="visually-hidden">{TUI_CLAUSE}</span>
         </Show>
         <Show when={isBusy()}>
-          <span class="visually-hidden">, pi is replying in this session</span>
+          <span class="visually-hidden">{BUSY_CLAUSE}</span>
         </Show>
         <Show when={working()}>{(n) => <span class="visually-hidden">, {workingNow(n())}</span>}</Show>
         {/* Remote-ness is a fact a row is picked by, so it rides the link's name — the same deal the
@@ -689,6 +696,28 @@ function agentsSentence(agents: AgentsInsight | undefined): string | undefined {
   return clauses.length > 0 ? clauses.join(", ") : undefined;
 }
 
+/** A spine tile's title and accessible name: "{title} · {folder} · {model}", then the clauses the
+    row's own link carries, verbatim, so the two surfaces can't drift. */
+function tileLabel(s: SessionSummary): string {
+  const head = [s.title, cwdLabel(s, home()), s.model ? shortModel(s.model) : ""].filter(Boolean).join(" · ");
+  const working = sessionWorking(s);
+  const mark = remoteMarkOf(s);
+  return (
+    head +
+    (s.live ? TUI_CLAUSE : "") +
+    (sessionBusy(s) ? BUSY_CLAUSE : "") +
+    (working ? `, ${workingNow(working)}` : "") +
+    (mark ? remoteMarkSuffix(mark) : "")
+  );
+}
+
+/** The one dot a tile carries, if any: the rail's order, live over busy over working. */
+function tileDot(s: SessionSummary): "live" | "busy" | "working" | null {
+  if (s.live) return "live";
+  if (sessionBusy(s)) return "busy";
+  return sessionWorking(s) ? "working" : null;
+}
+
 /** Agents foot row: live agents, their sessions, then active teams; 0s are left out. */
 function AgentsGlance(props: { agents: AgentsInsight | undefined }) {
   const parts = () => agentsParts(props.agents);
@@ -720,16 +749,45 @@ export function Sidebar(props: {
   insightsPage: "usage" | "agents" | null;
   /** Opens the Settings dialog from the foot's gear. */
   onOpenSettings(): void;
+  /** The viewport is ≥768px: the only width where the pane can collapse to the spine. */
+  unfolded: boolean;
 }) {
   const [query, setQuery] = createSignal("");
   const [showSkeleton, setShowSkeleton] = createSignal(false);
   const skeletonTimer = setTimeout(() => setShowSkeleton(true), 300);
   let search!: HTMLInputElement;
+  let aside!: HTMLElement;
   // The tab's copy of the group list: the pane's region and the session pane's menu share it.
   onMount(() => void loadSessionGroups());
 
-  // "/" anywhere outside a text field focuses search; Escape leaves selection mode.
+  /** The pane as the spine on screen: the stored choice, where the viewport allows it. */
+  const collapsed = () => spine() && props.unfolded;
+  /** Each state's own toggle. The one pressed is unmounted by the swap, so focus would fall to
+      <body>: it moves to the toggle of the new state instead, when it was in the pane at all. */
+  let collapseToggle: HTMLButtonElement | undefined;
+  let expandToggle: HTMLButtonElement | undefined;
+  const setCollapsed = (on: boolean, refocus = true) => {
+    if (on === spine()) return;
+    const hadFocus = aside.contains(document.activeElement);
+    setSpine(on);
+    announce(on ? "Sessions pane collapsed." : "Sessions pane expanded.");
+    if (refocus && hadFocus) queueMicrotask(() => (on ? expandToggle : collapseToggle)?.focus());
+  };
+  /** The spine's Search, and "/" while collapsed: open the pane and put the cursor in the field. */
+  const expandToSearch = () => {
+    setCollapsed(false, false);
+    queueMicrotask(() => search.focus());
+  };
+
+  // "/" anywhere outside a text field focuses search; Escape leaves selection mode; Ctrl/⌘+B
+  // collapses or expands the pane.
   const onKey = (e: KeyboardEvent) => {
+    if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "b") {
+      if (!props.unfolded) return; // collapse is a desktop affordance
+      e.preventDefault();
+      setCollapsed(!spine());
+      return;
+    }
     const t = e.target as HTMLInputElement | null;
     // Typing, not merely focused on a control: a row's checkbox is an <input> too, and Escape on
     // one has to leave selection mode like Escape anywhere else (src/lib/session-selection.ts).
@@ -751,7 +809,8 @@ export function Sidebar(props: {
     if (e.key !== "/" || e.metaKey || e.ctrlKey || e.altKey) return;
     if (inText) return;
     e.preventDefault();
-    search.focus();
+    if (collapsed()) expandToSearch();
+    else search.focus();
   };
   document.addEventListener("keydown", onKey);
   onCleanup(() => {
@@ -808,6 +867,14 @@ export function Sidebar(props: {
     return groupByArchiveDate(sorted, new Date(props.now)).map((d) => ({ ...d, groups: groupByActivity(d.items) }));
   });
   const archiveTotal = () => all().filter((s) => !isTop(s)).length;
+  /**
+   * Whether each region is on screen right now — ONE rule, read by the region's own `<Show>` and
+   * by the spine's count button, which is that region's door. Deriving the spine's boxes from
+   * anything else (a total, say) puts a door on the rail that opens onto nothing: under a search
+   * with no hits the Archive's total is still 321 while the region itself is gone.
+   */
+  const showTop = () => !!props.sessions && all().length > 0 && (topHits().length > 0 || !query().trim());
+  const showArchive = () => archiveHits().length > 0;
 
   // Groups (§2 "Groups"): the user's own sections, above every region. They cut across regions — a
   // group can hold a TUI-live session and an archived one — so they read the whole search-hit list,
@@ -881,319 +948,501 @@ export function Sidebar(props: {
     search.focus();
   };
 
+  /** A region count on the spine: open the pane and bring that region into view. The Archive is
+      scrolled to, never forced open — its open state is the user's stored choice. */
+  const expandToRegion = (find: () => HTMLElement | null | undefined, focus: (el: HTMLElement) => HTMLElement | null | undefined) => {
+    setCollapsed(false, false);
+    queueMicrotask(() => {
+      const el = find();
+      el?.scrollIntoView({ block: "start" });
+      // The pressed item is gone with the spine: focus goes into the region, else to the toggle.
+      const target = el ? focus(el) : null;
+      if (target) target.focus({ preventScroll: true });
+      else collapseToggle?.focus();
+    });
+  };
+  const agentsWorking = () => activeAgentCounts(props.agents).agents;
+  const tuiSentence = () => `${liveCount()} ${liveCount() === 1 ? "session" : "sessions"} open in a TUI`;
 
-  return (
-    <aside class="app-sidebar" aria-label="Sessions">
-      <div class="sidebar-head">
-        <a class="brand" href="#/">
-          <span class="icon" style={{ "--icon": "url(/icons/sova-mark.svg)" }} aria-hidden="true" />
-          sova
-        </a>
-        <span class="sidebar-spacer" />
-        <button type="button" class="button" onClick={() => props.onNew()}>
-          <Icon name="plus" />
-          New Session
-        </button>
-      </div>
+  /**
+   * The collapsed pane: one 44px item per action the expanded pane offers, reading the same memos,
+   * so a count can't disagree with the list it stands for. Wordless, so every item carries its
+   * sentence as a title and an accessible name.
+   */
+  const Spine = () => {
+    let tiles!: HTMLElement;
+    // The open session's tile, if it is among the recent ones, starts in view.
+    onMount(() => tiles.querySelector<HTMLElement>('[aria-current="page"]')?.scrollIntoView({ block: "nearest" }));
+    return (
+      <div class="spine">
+        <div class="spine-head">
+          <button
+            ref={expandToggle}
+            type="button"
+            class="button button-icon spine-item"
+            aria-expanded="false"
+            title="Expand sessions pane · Ctrl/⌘+B"
+            aria-label="Expand sessions pane"
+            onClick={() => setCollapsed(false)}
+          >
+            <Icon name="panel-expand" />
+          </button>
+          <button type="button" class="button button-icon spine-item" title="New Session" aria-label="New Session" onClick={() => props.onNew()}>
+            <Icon name="plus" />
+          </button>
+          <button type="button" class="button button-icon spine-item" title="Search sessions · /" aria-label="Search sessions" onClick={expandToSearch}>
+            <Icon name="search" />
+          </button>
+        </div>
 
-      <div class="sidebar-search" role="search">
-        <label class="visually-hidden" for="session-search">
-          Search sessions
-        </label>
-        <div class="search">
-          <Icon name="search" />
-          <input
-            ref={search}
-            class="input"
-            id="session-search"
-            type="search"
-            placeholder="Title, folder, or model"
-            aria-describedby="session-count"
-            autocomplete="off"
-            spellcheck={false}
-            value={query()}
-            onInput={(e) => setQuery(e.currentTarget.value)}
-            onKeyDown={(e) => {
-              if (e.key !== "Escape") return;
-              e.preventDefault();
-              if (query()) setQuery("");
-              else search.blur();
+        <nav ref={tiles} class="spine-tiles pane" aria-label="Recent sessions">
+          <For each={recent()}>
+            {(s) => {
+              const label = () => tileLabel(s);
+              const dot = () => tileDot(s);
+              return (
+                <a
+                  class="spine-tile"
+                  href={sessionHref(s.path)}
+                  aria-current={props.selected === s.path ? "page" : undefined}
+                  title={label()}
+                  aria-label={label()}
+                >
+                  <Show when={monogram(s.title)} fallback={<Icon name="chat" />}>
+                    {(m) => (
+                      <span class="spine-monogram" aria-hidden="true">
+                        {m()}
+                      </span>
+                    )}
+                  </Show>
+                  <Show when={dot()}>{(d) => <span class={`spine-dot spine-dot-${d()}`} aria-hidden="true" />}</Show>
+                </a>
+              );
             }}
-          />
-          <Show when={query()}>
-            <button type="button" class="button button-icon" aria-label="Clear Search" onClick={clear}>
-              <Icon name="close" small />
-            </button>
-          </Show>
-        </div>
-        <div class="spread">
-          <p class="search-count" id="session-count" aria-live="polite">
-            <Show when={props.sessions}>
-              <Show when={query().trim()} fallback={`${all().length} sessions`}>
-                {hits().length} of {all().length} sessions
-              </Show>
-            </Show>
-          </p>
-          {/* Always every live session, even while the search filters. */}
-          <Show when={liveCount() > 0}>
-            <Chip tone="accent" count title="Sessions open in a TUI">
-              {liveCount()} TUI
-            </Chip>
-          </Show>
-          {/* The keyboard's (and the unsure pointer's) door into selection mode: press-and-hold is
-              the accelerator, never the only way in (§2 "Selecting several sessions"). */}
-          <Show when={props.sessions && all().length > 0 && !selectionMode()}>
-            <button
-              type="button"
-              class="button button-sm button-ghost sidebar-select-start"
-              title="Select several sessions to rename, group or archive them"
-              onClick={() => {
-                startSelection();
-                announce("Selecting sessions. Pick rows with their checkboxes.");
-              }}
-            >
-              <Icon name="check" small />
-              Select
-            </button>
-          </Show>
-        </div>
-      </div>
+          </For>
+        </nav>
 
-      {/* Inside the sidebar, above the list: the rows it acts on stay on screen, on a phone too. */}
-      <Show when={selectionMode()}>
-        <SelectionToolbar sessions={all()} onRefresh={props.onRefresh} />
-      </Show>
-
-      <nav class="sidebar-list pane" aria-label="Session list" aria-busy={props.sessions === undefined && props.loading ? "true" : undefined}>
-        <Show when={props.error}>
-          <div class="transcript-banner">
-            <Banner
-              tone="error"
-              title="Couldn't read your sessions."
-              body={
-                <>
-                  <code>~/.pi/agent/sessions</code> wasn't changed. Check the server is running, then retry. <span class="text-muted">({props.error})</span>
-                </>
-              }
-              action={
-                <button type="button" class="button button-sm" onClick={() => props.onRefresh()}>
-                  Retry
-                </button>
-              }
-            />
-          </div>
-        </Show>
-
-        <Show when={props.sessions === undefined && props.loading && showSkeleton()}>
-          <div class="stack-2">
-            <For each={[1, 2, 3, 4, 5, 6]}>{() => <div class="skeleton skeleton-row" />}</For>
-          </div>
-        </Show>
-
-        <Show when={props.sessions && all().length === 0}>
-          <div class="empty">
-            <p class="empty-title">
-              0 sessions in <code>~/.pi/agent/sessions</code>.
-            </p>
-            <p class="empty-body">
-              Start one here, or run <code>pi</code> in a terminal. It'll show up in this list.
-            </p>
-            <button type="button" class="button empty-action" onClick={() => props.onNew()}>
-              New Session
-            </button>
-          </div>
-        </Show>
-
-        <Show when={all().length > 0 && hits().length === 0}>
-          <div class="empty">
-            <p class="empty-title">
-              0 of {all().length} match “{query().trim()}”.
-            </p>
-            <p class="empty-body">We search titles, folders, and models.</p>
-            <button type="button" class="button empty-action" onClick={clear}>
-              Clear Search
-            </button>
-          </div>
-        </Show>
-
-        {/* Recent (§2 "Recent"), above everything: a flat list, no folder sections — with 5 rows a
-            folder head per row would be the region. It is a shortcut, not a place a session lives,
-            so every row appears again in Live & web or the Archive below, and the region carries
-            no controls: the count is Settings › General's, and only its. */}
-        <Show when={props.sessions && recent().length > 0}>
-          <section class="sidebar-region sidebar-recent" aria-labelledby="r-recent">
-            <h2 class="sidebar-region-head" id="r-recent" title={`The ${recent().length} sessions that moved last. Change how many in Settings, under General.`}>
-              Recent <span class="sidebar-region-count">· {recent().length}</span>
-            </h2>
-            <ul class="list">
-              <For each={recent()}>
-                {(s) => <SessionRow session={s} selected={props.selected} now={props.now} targets={targets()} />}
-              </For>
-            </ul>
-          </section>
-        </Show>
-
-        {/* The user's own groups, above every region (§2 "Groups"): the same rows and folder
-            groups as below, plus the two controls that make a group and name it. */}
-        <Show when={groupsShown()}>
-          <details class="sidebar-region sidebar-groups" aria-labelledby="r-groups" open={groupsRegionOpen()} onToggle={onGroupsRegionToggle}>
-            {/* The heading stays a heading, and keeps its level (the folder-head pattern): the
-                <summary> is what toggles, the <h2> inside it is what the outline and
-                `aria-labelledby` read. The Archive's head is a bare <summary>; this region has to
-                keep its `r-groups` heading, which every region above and below it has too. */}
-            <summary class="sidebar-groups-summary">
-              <h2 class="sidebar-region-head" id="r-groups">
-                <Icon name="chevron-right" small class="icon-twist" />
-                Groups{" "}
-                <span class="sidebar-region-count">
-                  · {searching() ? `${sections().length} of ${sessionGroups().length}` : sessionGroups().length}
-                </span>
-              </h2>
-            </summary>
-            {/* Making a group is the region's one action, and it stays where it is: the field
-                replaces the row in place, so nothing moves while the user types. Fanout is NOT
-                here — it is a creation gesture, not a curation one, and its front door is the
-                welcome screen beside New Session (§14b "Entry points"). */}
-            <Show when={!searching()}>
-              <Show
-                when={newGroupField()}
-                fallback={
-                  <button type="button" class="list-row list-row-interactive group-new" onClick={() => setNewGroupField(true)}>
-                    <Icon name="plus" small />
-                    <span class="list-title">New group</span>
-                  </button>
+        {/* Each count is a door into its region, so a 0 is no door at all: the section it would
+            scroll to is not on screen. Both at 0, the box goes with them — an empty one would
+            still draw its divider. */}
+        <Show when={showTop() || showArchive()}>
+          <div class="spine-regions">
+            <Show when={showTop()}>
+              <button
+                type="button"
+                class="button button-icon spine-item spine-region"
+                title={`Live & web · ${sessionsWord(topHits().length)}`}
+                aria-label={`Live & web · ${sessionsWord(topHits().length)}`}
+                onClick={() =>
+                  expandToRegion(
+                    () => document.getElementById("r-top")?.closest("section"),
+                    (el) => el.querySelector<HTMLElement>("summary, a"),
+                  )
                 }
               >
-                <div class="group-field-row">
-                  <GroupNameField
-                    label="New group name"
-                    onDone={(name) => {
-                      setNewGroupField(false);
-                      void createGroup(name);
-                    }}
-                    onCancel={() => setNewGroupField(false)}
-                  />
-                </div>
-              </Show>
+                <Icon name="chat" />
+                <span class="spine-count text-num">{topHits().length}</span>
+              </button>
             </Show>
-            <Show when={!searching() && sessionGroups().length === 0}>
-              <p class="sidebar-region-note">No groups yet. Make one, then drag a session into it.</p>
-            </Show>
-            <For each={sections().map((s) => s.group)}>
-              {(group) => (
-                <GroupBlock group={group} sessions={rowsOf(group.id)} selected={props.selected} now={props.now} targets={targets()} searching={searching()} onChanged={props.onRefresh} />
-              )}
-            </For>
-            {/* Only while a grouped row is in flight: dropping here takes it out of its group. */}
-            <Show when={dragging()?.groupId}>
-              <div
-                class="group-remove"
-                classList={{ "group-remove-over": dropTarget() === "remove" }}
-                onDragOver={(e) => {
-                  if (!dragHasRow(e)) return;
-                  e.preventDefault();
-                  if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
-                  if (dropTarget() !== "remove") setDropTarget("remove");
-                }}
-                onDragLeave={(e) => {
-                  if (dropTarget() === "remove" && leftTarget(e, e.currentTarget)) setDropTarget(null);
-                }}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  if (groupDragPath(e)) void applyDrop(null).then((changed) => changed && props.onRefresh());
-                }}
+            <Show when={showArchive()}>
+              <button
+                type="button"
+                class="button button-icon spine-item spine-region"
+                title={`Archive · ${sessionsWord(archiveHits().length)}`}
+                aria-label={`Archive · ${sessionsWord(archiveHits().length)}`}
+                onClick={() =>
+                  expandToRegion(
+                    () => aside.querySelector<HTMLElement>(".sidebar-archive > summary"),
+                    (el) => el,
+                  )
+                }
               >
-                <Icon name="close" small />
-                Remove from {quoted(groupNameOf(sessionGroups(), dragging()?.groupId ?? undefined) ?? "its group")}
-              </div>
+                <Icon name="archive" />
+                <span class="spine-count text-num">{archiveHits().length}</span>
+              </button>
             </Show>
-          </details>
+          </div>
         </Show>
 
-        {/* Hidden when a search empties it; kept with a note when there's simply nothing on top. */}
-        <Show when={props.sessions && all().length > 0 && (topHits().length > 0 || !query().trim())}>
-          <section class="sidebar-region" aria-labelledby="r-top">
-            <h2 class="sidebar-region-head" id="r-top">
-              Live &amp; web{" "}
-              <span class="sidebar-region-count">
-                · {query().trim() ? `${topHits().length} of ${all().length - archiveTotal()}` : topHits().length}
-              </span>
-            </h2>
-            <Show
-              when={topHits().length > 0}
-              fallback={<p class="sidebar-region-note">0 sessions open in a TUI, or started here and not archived. The archive below has the rest.</p>}
-            >
-              <GroupList groups={topGroups()} selected={props.selected} now={props.now} idPrefix="t" targets={targets()} searching={searching()} />
+        {/* Status, not navigation: each says its sentence as a toast, and never opens the pane. */}
+        <Show when={agentsWorking() > 0 || liveCount() > 0}>
+          <div class="spine-stats">
+            <Show when={agentsWorking() > 0}>
+              <button
+                type="button"
+                class="button button-icon spine-item spine-stat"
+                title={workingNow(agentsWorking())}
+                aria-label={workingNow(agentsWorking())}
+                onClick={() => toast(workingNow(agentsWorking()))}
+              >
+                <Icon name="worker" />
+                <span class="spine-count text-num">{agentsWorking()}</span>
+              </button>
             </Show>
-          </section>
+            <Show when={liveCount() > 0}>
+              <button type="button" class="button button-icon spine-item spine-stat" title={tuiSentence()} aria-label={tuiSentence()} onClick={() => toast(tuiSentence())}>
+                <Icon name="terminal" />
+                <span class="spine-count text-num">{liveCount()}</span>
+              </button>
+            </Show>
+          </div>
         </Show>
 
-        <Show when={archiveHits().length > 0}>
-          <details class="sidebar-region sidebar-archive" open={archiveOpen()} onToggle={onArchiveToggle}>
-            <summary class="sidebar-region-head">
-              <Icon name="chevron-right" small class="icon-twist" />
-              <span>Archive</span>
-              <span class="sidebar-region-count">
-                · {query().trim() ? `${archiveHits().length} of ${archiveTotal()}` : archiveHits().length}
-              </span>
-            </summary>
-            <For each={archiveSections()}>
-              {(d) => (
-                <details class="archive-date" open={dateOpen(d)} onToggle={(e) => onDateToggle(d, e)}>
-                  <summary class="list-group-label archive-date-label">
-                    <Icon name="chevron-right" small class="icon-twist" />
-                    <span class="archive-date-name">{d.label}</span>
-                    <span class="text-num">{d.items.length}</span>
-                  </summary>
-                  <GroupList groups={d.groups} selected={props.selected} now={props.now} idPrefix={`a-${d.id}`} targets={targets()} searching={searching()} />
-                </details>
-              )}
-            </For>
-            {/* Cleanup ignores the search, so it's hidden while one filters the list. */}
-            <Show when={!query().trim()}>
-              <ArchiveCleanup sessions={all()} selected={props.selected} onDeleted={() => props.onRefresh()} />
-            </Show>
-          </details>
-        </Show>
-      </nav>
-
-      <div class="sidebar-foot">
-        <a
-          class="list-row list-row-interactive insights-row"
-          href={usageHref()}
-          aria-current={props.insightsPage === "usage" ? "page" : undefined}
-          title={glanceText() || undefined}
-          aria-label={glanceText() || undefined}
-        >
-          <Icon name="gauge" />
-          <span class="insights-row-text" classList={{ "usage-glance": glance().length > 0 }}>
-            <UsageGlance parts={glance()} />
-          </span>
-        </a>
-        <div class="sidebar-foot-row">
+        <div class="spine-foot">
           <a
-            class="list-row list-row-interactive insights-row sidebar-foot-link"
+            class="button button-icon spine-item"
+            href={usageHref()}
+            aria-current={props.insightsPage === "usage" ? "page" : undefined}
+            title={glanceText() || "Usage"}
+            aria-label={glanceText() || "Usage"}
+          >
+            <Icon name="gauge" />
+          </a>
+          <a
+            class="button button-icon spine-item"
             href={agentsHref()}
             aria-current={props.insightsPage === "agents" ? "page" : undefined}
-            title={agentsSentence(props.agents)}
-            aria-label={agentsSentence(props.agents)}
+            title={agentsSentence(props.agents) ?? "Agents"}
+            aria-label={agentsSentence(props.agents) ?? "Agents"}
           >
             <Icon name="worker" />
-            <span class="insights-row-text">
-              <AgentsGlance agents={props.agents} />
-            </span>
           </a>
-          <button
-            type="button"
-            class="button button-icon sidebar-settings"
-            title="Settings"
-            aria-label="Settings"
-            onClick={() => props.onOpenSettings()}
-          >
-            <Icon name="settings" small />
+          <button type="button" class="button button-icon spine-item" title="Settings" aria-label="Settings" onClick={() => props.onOpenSettings()}>
+            <Icon name="settings" />
           </button>
         </div>
       </div>
+    );
+  };
+
+  return (
+    <aside ref={aside} class="app-sidebar" aria-label="Sessions">
+      {/* Collapsed, the pane's own body is not in the DOM at all — nothing hidden-but-readable. */}
+      <Show when={!collapsed()} fallback={<Spine />}>
+        <div class="sidebar-head">
+          <a class="brand" href="#/">
+            <span class="icon" style={{ "--icon": "url(/icons/sova-mark.svg)" }} aria-hidden="true" />
+            sova
+          </a>
+          <span class="sidebar-spacer" />
+          <button type="button" class="button" onClick={() => props.onNew()}>
+            <Icon name="plus" />
+            New Session
+          </button>
+          <Show when={props.unfolded}>
+            <button
+              ref={collapseToggle}
+              type="button"
+              class="button button-icon sidebar-spine-toggle"
+              aria-expanded="true"
+              title="Collapse sessions pane · Ctrl/⌘+B"
+              aria-label="Collapse sessions pane"
+              onClick={() => setCollapsed(true)}
+            >
+              <Icon name="panel-collapse" />
+            </button>
+          </Show>
+        </div>
+
+        <div class="sidebar-search" role="search">
+          <label class="visually-hidden" for="session-search">
+            Search sessions
+          </label>
+          <div class="search">
+            <Icon name="search" />
+            <input
+              ref={search}
+              class="input"
+              id="session-search"
+              type="search"
+              placeholder="Title, folder, or model"
+              aria-describedby="session-count"
+              autocomplete="off"
+              spellcheck={false}
+              value={query()}
+              onInput={(e) => setQuery(e.currentTarget.value)}
+              onKeyDown={(e) => {
+                if (e.key !== "Escape") return;
+                e.preventDefault();
+                if (query()) setQuery("");
+                else search.blur();
+              }}
+            />
+            <Show when={query()}>
+              <button type="button" class="button button-icon" aria-label="Clear Search" onClick={clear}>
+                <Icon name="close" small />
+              </button>
+            </Show>
+          </div>
+          <div class="spread">
+            <p class="search-count" id="session-count" aria-live="polite">
+              <Show when={props.sessions}>
+                <Show when={query().trim()} fallback={`${all().length} sessions`}>
+                  {hits().length} of {all().length} sessions
+                </Show>
+              </Show>
+            </p>
+            {/* Always every live session, even while the search filters. */}
+            <Show when={liveCount() > 0}>
+              <Chip tone="accent" count title="Sessions open in a TUI">
+                {liveCount()} TUI
+              </Chip>
+            </Show>
+            {/* The keyboard's (and the unsure pointer's) door into selection mode: press-and-hold is
+                the accelerator, never the only way in (§2 "Selecting several sessions"). */}
+            <Show when={props.sessions && all().length > 0 && !selectionMode()}>
+              <button
+                type="button"
+                class="button button-sm button-ghost sidebar-select-start"
+                title="Select several sessions to rename, group or archive them"
+                onClick={() => {
+                  startSelection();
+                  announce("Selecting sessions. Pick rows with their checkboxes.");
+                }}
+              >
+                <Icon name="check" small />
+                Select
+              </button>
+            </Show>
+          </div>
+        </div>
+
+        {/* Inside the sidebar, above the list: the rows it acts on stay on screen, on a phone too. */}
+        <Show when={selectionMode()}>
+          <SelectionToolbar sessions={all()} onRefresh={props.onRefresh} />
+        </Show>
+
+        <nav class="sidebar-list pane" aria-label="Session list" aria-busy={props.sessions === undefined && props.loading ? "true" : undefined}>
+          <Show when={props.error}>
+            <div class="transcript-banner">
+              <Banner
+                tone="error"
+                title="Couldn't read your sessions."
+                body={
+                  <>
+                    <code>~/.pi/agent/sessions</code> wasn't changed. Check the server is running, then retry. <span class="text-muted">({props.error})</span>
+                  </>
+                }
+                action={
+                  <button type="button" class="button button-sm" onClick={() => props.onRefresh()}>
+                    Retry
+                  </button>
+                }
+              />
+            </div>
+          </Show>
+
+          <Show when={props.sessions === undefined && props.loading && showSkeleton()}>
+            <div class="stack-2">
+              <For each={[1, 2, 3, 4, 5, 6]}>{() => <div class="skeleton skeleton-row" />}</For>
+            </div>
+          </Show>
+
+          <Show when={props.sessions && all().length === 0}>
+            <div class="empty">
+              <p class="empty-title">
+                0 sessions in <code>~/.pi/agent/sessions</code>.
+              </p>
+              <p class="empty-body">
+                Start one here, or run <code>pi</code> in a terminal. It'll show up in this list.
+              </p>
+              <button type="button" class="button empty-action" onClick={() => props.onNew()}>
+                New Session
+              </button>
+            </div>
+          </Show>
+
+          <Show when={all().length > 0 && hits().length === 0}>
+            <div class="empty">
+              <p class="empty-title">
+                0 of {all().length} match “{query().trim()}”.
+              </p>
+              <p class="empty-body">We search titles, folders, and models.</p>
+              <button type="button" class="button empty-action" onClick={clear}>
+                Clear Search
+              </button>
+            </div>
+          </Show>
+
+          {/* Recent (§2 "Recent"), above everything: a flat list, no folder sections — with 5 rows a
+              folder head per row would be the region. It is a shortcut, not a place a session lives,
+              so every row appears again in Live & web or the Archive below, and the region carries
+              no controls: the count is Settings › General's, and only its. */}
+          <Show when={props.sessions && recent().length > 0}>
+            <section class="sidebar-region sidebar-recent" aria-labelledby="r-recent">
+              <h2 class="sidebar-region-head" id="r-recent" title={`The ${recent().length} sessions that moved last. Change how many in Settings, under General.`}>
+                Recent <span class="sidebar-region-count">· {recent().length}</span>
+              </h2>
+              <ul class="list">
+                <For each={recent()}>
+                  {(s) => <SessionRow session={s} selected={props.selected} now={props.now} targets={targets()} />}
+                </For>
+              </ul>
+            </section>
+          </Show>
+
+          {/* The user's own groups, above every region (§2 "Groups"): the same rows and folder
+              groups as below, plus the two controls that make a group and name it. */}
+          <Show when={groupsShown()}>
+            <details class="sidebar-region sidebar-groups" aria-labelledby="r-groups" open={groupsRegionOpen()} onToggle={onGroupsRegionToggle}>
+              {/* The heading stays a heading, and keeps its level (the folder-head pattern): the
+                  <summary> is what toggles, the <h2> inside it is what the outline and
+                  `aria-labelledby` read. The Archive's head is a bare <summary>; this region has to
+                  keep its `r-groups` heading, which every region above and below it has too. */}
+              <summary class="sidebar-groups-summary">
+                <h2 class="sidebar-region-head" id="r-groups">
+                  <Icon name="chevron-right" small class="icon-twist" />
+                  Groups{" "}
+                  <span class="sidebar-region-count">
+                    · {searching() ? `${sections().length} of ${sessionGroups().length}` : sessionGroups().length}
+                  </span>
+                </h2>
+              </summary>
+              {/* Making a group is the region's one action, and it stays where it is: the field
+                  replaces the row in place, so nothing moves while the user types. Fanout is NOT
+                  here — it is a creation gesture, not a curation one, and its front door is the
+                  welcome screen beside New Session (§14b "Entry points"). */}
+              <Show when={!searching()}>
+                <Show
+                  when={newGroupField()}
+                  fallback={
+                    <button type="button" class="list-row list-row-interactive group-new" onClick={() => setNewGroupField(true)}>
+                      <Icon name="plus" small />
+                      <span class="list-title">New group</span>
+                    </button>
+                  }
+                >
+                  <div class="group-field-row">
+                    <GroupNameField
+                      label="New group name"
+                      onDone={(name) => {
+                        setNewGroupField(false);
+                        void createGroup(name);
+                      }}
+                      onCancel={() => setNewGroupField(false)}
+                    />
+                  </div>
+                </Show>
+              </Show>
+              <Show when={!searching() && sessionGroups().length === 0}>
+                <p class="sidebar-region-note">No groups yet. Make one, then drag a session into it.</p>
+              </Show>
+              <For each={sections().map((s) => s.group)}>
+                {(group) => (
+                  <GroupBlock group={group} sessions={rowsOf(group.id)} selected={props.selected} now={props.now} targets={targets()} searching={searching()} onChanged={props.onRefresh} />
+                )}
+              </For>
+              {/* Only while a grouped row is in flight: dropping here takes it out of its group. */}
+              <Show when={dragging()?.groupId}>
+                <div
+                  class="group-remove"
+                  classList={{ "group-remove-over": dropTarget() === "remove" }}
+                  onDragOver={(e) => {
+                    if (!dragHasRow(e)) return;
+                    e.preventDefault();
+                    if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+                    if (dropTarget() !== "remove") setDropTarget("remove");
+                  }}
+                  onDragLeave={(e) => {
+                    if (dropTarget() === "remove" && leftTarget(e, e.currentTarget)) setDropTarget(null);
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    if (groupDragPath(e)) void applyDrop(null).then((changed) => changed && props.onRefresh());
+                  }}
+                >
+                  <Icon name="close" small />
+                  Remove from {quoted(groupNameOf(sessionGroups(), dragging()?.groupId ?? undefined) ?? "its group")}
+                </div>
+              </Show>
+            </details>
+          </Show>
+
+          {/* Hidden when a search empties it; kept with a note when there's simply nothing on top. */}
+          <Show when={showTop()}>
+            <section class="sidebar-region" aria-labelledby="r-top">
+              <h2 class="sidebar-region-head" id="r-top">
+                Live &amp; web{" "}
+                <span class="sidebar-region-count">
+                  · {query().trim() ? `${topHits().length} of ${all().length - archiveTotal()}` : topHits().length}
+                </span>
+              </h2>
+              <Show
+                when={topHits().length > 0}
+                fallback={<p class="sidebar-region-note">0 sessions open in a TUI, or started here and not archived. The archive below has the rest.</p>}
+              >
+                <GroupList groups={topGroups()} selected={props.selected} now={props.now} idPrefix="t" targets={targets()} searching={searching()} />
+              </Show>
+            </section>
+          </Show>
+
+          <Show when={showArchive()}>
+            <details class="sidebar-region sidebar-archive" open={archiveOpen()} onToggle={onArchiveToggle}>
+              <summary class="sidebar-region-head">
+                <Icon name="chevron-right" small class="icon-twist" />
+                <span>Archive</span>
+                <span class="sidebar-region-count">
+                  · {query().trim() ? `${archiveHits().length} of ${archiveTotal()}` : archiveHits().length}
+                </span>
+              </summary>
+              <For each={archiveSections()}>
+                {(d) => (
+                  <details class="archive-date" open={dateOpen(d)} onToggle={(e) => onDateToggle(d, e)}>
+                    <summary class="list-group-label archive-date-label">
+                      <Icon name="chevron-right" small class="icon-twist" />
+                      <span class="archive-date-name">{d.label}</span>
+                      <span class="text-num">{d.items.length}</span>
+                    </summary>
+                    <GroupList groups={d.groups} selected={props.selected} now={props.now} idPrefix={`a-${d.id}`} targets={targets()} searching={searching()} />
+                  </details>
+                )}
+              </For>
+              {/* Cleanup ignores the search, so it's hidden while one filters the list. */}
+              <Show when={!query().trim()}>
+                <ArchiveCleanup sessions={all()} selected={props.selected} onDeleted={() => props.onRefresh()} />
+              </Show>
+            </details>
+          </Show>
+        </nav>
+
+        <div class="sidebar-foot">
+          <a
+            class="list-row list-row-interactive insights-row"
+            href={usageHref()}
+            aria-current={props.insightsPage === "usage" ? "page" : undefined}
+            title={glanceText() || undefined}
+            aria-label={glanceText() || undefined}
+          >
+            <Icon name="gauge" />
+            <span class="insights-row-text" classList={{ "usage-glance": glance().length > 0 }}>
+              <UsageGlance parts={glance()} />
+            </span>
+          </a>
+          <div class="sidebar-foot-row">
+            <a
+              class="list-row list-row-interactive insights-row sidebar-foot-link"
+              href={agentsHref()}
+              aria-current={props.insightsPage === "agents" ? "page" : undefined}
+              title={agentsSentence(props.agents)}
+              aria-label={agentsSentence(props.agents)}
+            >
+              <Icon name="worker" />
+              <span class="insights-row-text">
+                <AgentsGlance agents={props.agents} />
+              </span>
+            </a>
+            <button
+              type="button"
+              class="button button-icon sidebar-settings"
+              title="Settings"
+              aria-label="Settings"
+              onClick={() => props.onOpenSettings()}
+            >
+              <Icon name="settings" small />
+            </button>
+          </div>
+        </div>
+      </Show>
     </aside>
   );
 }

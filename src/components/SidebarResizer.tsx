@@ -4,10 +4,13 @@ import {
   clampSidebarWidth,
   DEFAULT_SIDEBAR_WIDTH,
 } from "../lib/sidebar-width";
+import { rememberedWidth, rememberExpandedWidth } from "../lib/spine";
 
 /** Drag handle on the right edge of the sessions pane (≥768px; CSS hides it below that).
  *  It writes `--sidebar-width` on <html> directly — no signal, no persistence, so every
- *  load starts at 320px. Mouse and touch only: there is deliberately no keyboard path. */
+ *  load starts at 320px. Mouse and touch only: there is deliberately no keyboard path.
+ *  Unmounted while the pane is collapsed to the spine (App.tsx): its resize listener would
+ *  re-clamp the 64px token up to the floor. Every write is remembered so expanding restores it. */
 export function SidebarResizer() {
   const root = document.documentElement;
 
@@ -25,16 +28,18 @@ export function SidebarResizer() {
     return Number.isFinite(raw) ? raw : DEFAULT_SIDEBAR_WIDTH;
   };
 
-  let applied = DEFAULT_SIDEBAR_WIDTH;
+  let applied = rememberedWidth();
   const setWidth = (width: number) => {
     const next = clampSidebarWidth(width, window.innerWidth, subagentsWidth());
     if (next === applied) return; // Don't thrash: only write when the rounded value changes.
     applied = next;
     applySidebarWidth(root, next);
+    rememberExpandedWidth(applied);
   };
 
-  // On mount, plant the default so a stale inline value can never linger.
-  onMount(() => applySidebarWidth(root, (applied = DEFAULT_SIDEBAR_WIDTH)));
+  // On mount, plant the remembered width (the default on a fresh load) so a stale inline value —
+  // the spine's 64px, say — can never linger.
+  onMount(() => applySidebarWidth(root, (applied = rememberedWidth())));
 
   let handle!: HTMLDivElement;
   let startX = 0;

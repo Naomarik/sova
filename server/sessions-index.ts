@@ -1,8 +1,8 @@
 import { statSync } from "node:fs";
-import { open, readdir, stat, unlink } from "node:fs/promises";
+import { type FileHandle, open, readdir, stat, unlink } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { CURRENT_SESSION_FORMAT, type SessionSummary } from "../shared/protocol";
-import { type LiveRecord, readLive, readOwnLiveRecords, workerCountsOf } from "./live";
+import { type LiveRecord, type RawLiveRecord, readLive, readOwnLiveRecords, workerCountsOf } from "./live";
 import { LIVE_DIR, resolveSessionPath, sessionPathShape, SESSIONS_DIR } from "./paths";
 import { isWebSession, removeWebSession } from "./web-sessions";
 import { parseWakeNudge } from "../shared/wake";
@@ -31,12 +31,14 @@ const SUMMARY_MAX = 200;
 export type WindowResolver = (ref: string) => number | null;
 
 /** Cached per (mtime, size). `contextModel` is the ref the window is looked up under; it is kept
- *  beside the summary because the window depends on the caller's runtime, not on the file. */
+ *  beside the summary because the window depends on the caller's runtime, not on the file.
+ *  `outline` is how far the outline read got, which the next read of the grown file starts from. */
 interface CacheEntry {
   mtimeMs: number;
   size: number;
   summary: BaseSummary;
   contextModel: string | null;
+  outline: OutlineScan | null;
 }
 
 const cache = new Map<string, CacheEntry>();
@@ -145,59 +147,119 @@ async function readTailModel(path: string, size: number): Promise<string | null>
   }
 }
 
+/** One `topic-outline` snapshot, as the summary row shows it. */
+interface TailOutline {
+  now: string;
+  gist: string;
+  generatedAt: number;
+  topics: number;
+}
+
 /**
- * The topic-outline's latest snapshot, scanned backwards from EOF exactly like readTailModel:
- * the last `topic-outline` custom entry's rolling "now" line, its "overall" gist, when it was
+ * How far a file's outline read got, kept with its cached summary so that the next read, once the
+ * file has only grown, starts where this one stopped (readOutline).
+ */
+interface OutlineScan {
+  /** The latest outline found, carried from earlier reads while the file only grows. */
+  found: TailOutline | null;
+  /** The file size this read went up to: a smaller file next time was not appended to. */
+  size: number;
+  /** Just past the last newline this read saw: where the first line it could not read WHOLE
+      starts. The next read starts here, so a line a writer was halfway through is read again. */
+  resume: number;
+  /** The bytes just before `resume`. Other bytes there next time mean the file was rewritten, not
+      appended to (SessionManager.open() migrates old files in place, from whichever process opens
+      them), so nothing is carried. */
+  mark: Buffer;
+}
+
+const MARK_BYTES = 64;
+
+/**
+ * The topic-outline's latest snapshot in [floor, size), scanned backwards like readTailModel: the
+ * last `topic-outline` custom entry's rolling "now" line, its "overall" gist, when it was
  * generated, and how many topics that same entry carried. The gist is the sidebar's summary row
  * (the "now" line is the fallback for snapshots without one); the live record's broadcast
  * may be newer (outlineOverlay). The count comes from the ACCEPTED entry (the one whose "now"
- * reads), so it always describes the snapshot shown next to it.
- * null when the window has none (topic-outline off, older sessions, or a very long tail).
+ * reads), so it always describes the snapshot shown next to it. `found` is null when the range has
+ * none; `resume` is OutlineScan's. null when the file was truncated under the read.
  */
-async function readTailOutline(path: string, size: number): Promise<{ now: string; gist: string; generatedAt: number; topics: number } | null> {
+async function scanOutline(fh: FileHandle, size: number, floor: number): Promise<{ found: TailOutline | null; resume: number } | null> {
+  let resume = -1; // set by the first newline met walking back from `size`
+  let end = size;
+  let carry = Buffer.alloc(0); // bytes after the first newline seen so far: a line's start is still unread
+  while (end > floor) {
+    const start = Math.max(floor, end - CHUNK);
+    const chunk = Buffer.alloc(end - start);
+    const { bytesRead } = await fh.read(chunk, 0, chunk.length, start);
+    if (bytesRead < chunk.length) return null; // truncated under us: the next request retries
+    end = start;
+    const buf = carry.length ? Buffer.concat([chunk, carry]) : chunk;
+    // Complete lines are those after a newline in this buffer (or all of it at BOF).
+    let stop = buf.length;
+    for (;;) {
+      const i = stop > 0 ? buf.lastIndexOf(NL, stop - 1) : -1;
+      if (i < 0 && start > 0) break; // line start not read yet: carry it into the next chunk
+      if (resume < 0) resume = start + i + 1;
+      const line = buf.subarray(i + 1, stop);
+      if (line.includes('"topic-outline"')) {
+        try {
+          const e = JSON.parse(line.toString("utf-8"));
+          const data = e?.type === "custom" && e?.customType === "topic-outline" ? e.data : null;
+          if (data && typeof data.now === "string") {
+            const now = summaryLine(data.now);
+            // An empty "now" (drafting/none) is no summary: keep scanning for one that reads.
+            if (now) {
+              const found = {
+                now,
+                gist: typeof data.overall === "string" ? summaryLine(data.overall) : "",
+                generatedAt: typeof data.generatedAt === "number" && Number.isFinite(data.generatedAt) ? data.generatedAt : 0,
+                topics: Array.isArray(data.topics) ? data.topics.length : 0,
+              };
+              return { found, resume };
+            }
+          }
+        } catch {
+          // torn trailing line or not JSON: skip
+        }
+      }
+      if (i < 0) return { found: null, resume };
+      stop = i;
+    }
+    carry = buf.subarray(0, stop);
+  }
+  // No newline in the range: the line it ends in started before `floor`, and stays unread.
+  return { found: null, resume: resume < 0 ? floor : resume };
+}
+
+/** The MARK_BYTES before `offset` (fewer near the start of the file, or if it got shorter). */
+async function bytesBefore(fh: FileHandle, offset: number): Promise<Buffer> {
+  const from = Math.max(0, offset - MARK_BYTES);
+  const buf = Buffer.alloc(offset - from);
+  const { bytesRead } = await fh.read(buf, 0, buf.length, from);
+  return buf.subarray(0, bytesRead);
+}
+
+/**
+ * The file's latest outline for its summary, and how far the read got.
+ *
+ * If the file has only grown since the read `prev` — it is no shorter, and the bytes just before
+ * where `prev` stopped are the same — only the bytes after that point are read, and `prev`'s
+ * outline is carried unless they hold a newer one. The tail window alone lost the outline of a
+ * live session whose writer appended more than MAX_TAIL past its last snapshot (an image read back
+ * is ~150 KB a line), which emptied the row until the next snapshot while the thread's strip, which
+ * reads the whole file, still showed it. Anything else — a first read, a file that shrank or was
+ * rewritten — reads the last MAX_TAIL bytes afresh, as every read did before. What is carried is
+ * this process's own: each server that lists a file reads its growth for itself.
+ * null when the file was truncated under the read.
+ */
+async function readOutline(path: string, size: number, prev: OutlineScan | null): Promise<OutlineScan | null> {
   const fh = await open(path, "r");
   try {
-    const floor = Math.max(0, size - MAX_TAIL);
-    let end = size;
-    let carry = Buffer.alloc(0); // bytes after the first newline seen so far: a line's start is still unread
-    while (end > floor) {
-      const start = Math.max(floor, end - CHUNK);
-      const chunk = Buffer.alloc(end - start);
-      const { bytesRead } = await fh.read(chunk, 0, chunk.length, start);
-      if (bytesRead < chunk.length) return null; // truncated under us: the next request retries
-      end = start;
-      const buf = carry.length ? Buffer.concat([chunk, carry]) : chunk;
-      // Complete lines are those after a newline in this buffer (or all of it at BOF).
-      let stop = buf.length;
-      for (;;) {
-        const i = stop > 0 ? buf.lastIndexOf(NL, stop - 1) : -1;
-        if (i < 0 && start > 0) break; // line start not read yet: carry it into the next chunk
-        const line = buf.subarray(i + 1, stop);
-        if (line.includes('"topic-outline"')) {
-          try {
-            const e = JSON.parse(line.toString("utf-8"));
-            const data = e?.type === "custom" && e?.customType === "topic-outline" ? e.data : null;
-            if (data && typeof data.now === "string") {
-              const now = summaryLine(data.now);
-              // An empty "now" (drafting/none) is no summary: keep scanning for one that reads.
-              if (now)
-                return {
-                  now,
-                  gist: typeof data.overall === "string" ? summaryLine(data.overall) : "",
-                  generatedAt: typeof data.generatedAt === "number" && Number.isFinite(data.generatedAt) ? data.generatedAt : 0,
-                  topics: Array.isArray(data.topics) ? data.topics.length : 0,
-                };
-            }
-          } catch {
-            // torn trailing line or not JSON: skip
-          }
-        }
-        if (i < 0) return null;
-        stop = i;
-      }
-      carry = buf.subarray(0, stop);
-    }
-    return null;
+    const grown = prev !== null && size >= prev.size && (await bytesBefore(fh, prev.resume)).equals(prev.mark);
+    const scan = await scanOutline(fh, size, grown ? Math.max(0, prev.resume - 1) : Math.max(0, size - MAX_TAIL));
+    if (!scan) return null;
+    return { found: scan.found ?? (grown ? prev.found : null), size, resume: scan.resume, mark: await bytesBefore(fh, scan.resume) };
   } finally {
     await fh.close();
   }
@@ -421,7 +483,8 @@ async function summarize(path: string, resolveWindow?: WindowResolver): Promise<
     if (!head || typeof head.header.id !== "string") return null;
     const h = head.header;
     const model = (await readTailModel(path, st.size)) ?? head.model;
-    const outline = await readTailOutline(path, st.size);
+    const scan = await readOutline(path, st.size, hit?.outline ?? null);
+    const outline = scan?.found ?? null;
     const ctx = await readTailContext(path, st.size);
     const cwd = typeof h.cwd === "string" ? h.cwd : "";
     // An older session format is fanout-source metadata (legacyFormat ⇔ version ≠ current,
@@ -447,7 +510,7 @@ async function summarize(path: string, resolveWindow?: WindowResolver): Promise<
       ...(remote ? { target: remote.target, remoteCwd: remote.remoteCwd } : {}),
       ...(format !== CURRENT_SESSION_FORMAT ? { legacyFormat: true as const } : {}),
     };
-    const entry: CacheEntry = { mtimeMs: st.mtimeMs, size: st.size, summary, contextModel: ctx?.model ?? null };
+    const entry: CacheEntry = { mtimeMs: st.mtimeMs, size: st.size, summary, contextModel: ctx?.model ?? null, outline: scan };
     cache.set(path, entry);
     return withWindow(entry, resolveWindow);
   } catch {
@@ -459,12 +522,22 @@ function liveField(l: LiveRecord | undefined): SessionSummary["live"] {
   return l ? { pid: l.pid, status: l.status, ...(l.workers ? { workers: l.workers } : {}) } : null;
 }
 
-/** The live record's outline broadcast can be newer than the file's last `topic-outline` entry
+/**
+ * The outline broadcast a row is overlaid with: a foreign writer's (a TUI, another server) when
+ * its record carries one, else this server's own, for a chat it hosts. `readLive` leaves our own
+ * records out, because they never mean somebody else holds the file, so without this a hosted
+ * chat's row had only the file's tail to go on while its thread's Current goal strip read this same
+ * record (getSessionInsight, `includeOwn`).
+ */
+function liveOutline(l: LiveRecord | undefined, own: RawLiveRecord | undefined): unknown {
+  return l?.outline ?? own?.rec?.presence?.outline;
+}
+
+/** A live outline broadcast (liveOutline) can be newer than the file's last `topic-outline` entry
  *  (insights' overlayOutline, reduced to the summary line + topic count): prefer it when it's at
  *  least as new. The broadcast's `topics` is an array of heading strings, so its length is the
  *  count; a broadcast without that array leaves the file's count alone. */
-function outlineOverlay(s: BaseSummary, l: LiveRecord | undefined): { outlineNow?: string; outlineGist?: string; outlineAt?: number; outlineTopics?: number } {
-  const outline = l?.outline;
+function outlineOverlay(s: BaseSummary, outline: unknown): { outlineNow?: string; outlineGist?: string; outlineAt?: number; outlineTopics?: number } {
   if (!outline || typeof outline !== "object") return {};
   const o = outline as { now?: unknown; overall?: unknown; generatedAt?: unknown; topics?: unknown };
   if (typeof o.now !== "string" || !o.now.trim()) return {};
@@ -541,7 +614,7 @@ export async function listSessions(): Promise<SessionSummary[]> {
     // the list is that nobody has written in it, which renaming it doesn't change.
     out.push({
       ...withTitle(s, titles),
-      ...outlineOverlay(s, l),
+      ...outlineOverlay(s, liveOutline(l, ownRec)),
       live: liveField(l),
       workers: l?.workers ?? (ownRec ? workerCountsOf(ownRec.rec) : undefined),
       origin: isWebSession(s.id) ? "web" : "external",
@@ -581,7 +654,7 @@ export async function getSessionSummary(path: string, resolveWindow?: WindowReso
   const worker = await workerSessions.isWorker(s.path).catch(() => false);
   return {
     ...withTitle(s, readSessionTitles()),
-    ...outlineOverlay(s, l),
+    ...outlineOverlay(s, liveOutline(l, ownRec)),
     live: liveField(l),
     workers: l?.workers ?? (ownRec ? workerCountsOf(ownRec.rec) : undefined),
     origin: isWebSession(s.id) ? "web" : "external",

@@ -1,7 +1,8 @@
 // Run: npx tsx --test server/sessions-context.test.ts
 // Uses a throwaway PI_CODING_AGENT_DIR in the OS temp dir; ~/.pi is never read or written.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { spawn } from "node:child_process";
+import { appendFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
@@ -9,13 +10,19 @@ import { after, test } from "node:test";
 const agentDir = mkdtempSync(join(tmpdir(), "pi-web-context-test-"));
 process.env.PI_CODING_AGENT_DIR = agentDir; // before the modules below compute their paths
 const sessionsDir = join(agentDir, "sessions", "--tmp-context-test--");
+const liveDir = join(agentDir, "sessions", "live");
 mkdirSync(sessionsDir, { recursive: true });
-mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
+mkdirSync(liveDir, { recursive: true });
 
-const { getSessionSummary } = await import("./sessions-index");
+const { getSessionSummary, listSessions } = await import("./sessions-index");
 const { canonicalPath } = await import("./paths");
 
-after(() => rmSync(agentDir, { recursive: true, force: true }));
+/** A live pid that isn't this process: a terminal holding a session, as far as the registry knows. */
+const sleeper = spawn("sleep", ["60"], { stdio: "ignore" });
+after(() => {
+  sleeper.kill();
+  rmSync(agentDir, { recursive: true, force: true });
+});
 
 /** A session file made of `lines` (objects, or raw strings for torn ones) after the header and a
  *  first user message — a zero-input husk would be hidden from the list. `tail` is appended
@@ -128,4 +135,103 @@ test("the window is null without a resolver and the resolved number with one", a
   });
   assert.deepEqual(s?.context, { tokens: 1500, window: 200_000 });
   assert.deepEqual(refs, ["anthropic/claude-opus-5"]);
+});
+
+// ---- The outline across growth, and a hosted chat's own live record ---------------------------
+
+/** A tool result the size of a screenshot `read`: two of these push anything before them out of
+ *  the summary's 256 KB tail window, which is what emptied a live session's row. */
+function bulk(id: string, bytes: number) {
+  return { type: "message", id, parentId: null, message: { role: "toolResult", toolCallId: "t", content: [{ type: "text", text: "x".repeat(bytes) }] } };
+}
+
+/** Appends whole lines, as a writer does. */
+function append(path: string, ...lines: unknown[]) {
+  appendFileSync(path, lines.map((l) => (typeof l === "string" ? l : JSON.stringify(l))).join("\n") + "\n");
+}
+
+/** A sessions-extension live record for `sessionFile`, owned by `pid`, broadcasting `outline`. */
+function liveRecord(name: string, sessionFile: string, pid: number, outline: unknown) {
+  writeFileSync(
+    join(liveDir, `${name}.json`),
+    JSON.stringify({ heartbeat: Date.now(), session: { sessionFile, pid, mode: "rpc", status: "idle" }, presence: { status: "idle", outline } }),
+  );
+}
+
+test("an outline that growth pushes out of the tail window is carried, not lost", async () => {
+  const lines = [outlineEntry("reading screenshots", 1000, [topic("t1", "A"), topic("t2", "B")], "Transcript bugs: duplicated messages")];
+  const p = session("outline-carried", lines);
+  assert.equal((await getSessionSummary(p))?.outlineGist, "Transcript bugs: duplicated messages");
+  append(p, bulk("r1", 150_000), bulk("r2", 150_000));
+  const s = await getSessionSummary(p);
+  assert.equal(s?.outlineGist, "Transcript bugs: duplicated messages");
+  assert.equal(s?.outlineNow, "reading screenshots");
+  assert.equal(s?.outlineAt, 1000);
+  assert.equal(s?.outlineTopics, 2);
+  // The same bytes read cold, by a server that never watched them grow, are past the window: the
+  // outline above is the carried one, not the product of a longer read.
+  const cold = session("outline-carried-cold", lines);
+  append(cold, bulk("r1", 150_000), bulk("r2", 150_000));
+  assert.equal((await getSessionSummary(cold))?.outlineGist, undefined);
+});
+
+test("growth that brings a newer outline shows it, and one with nothing to say keeps the carried one", async () => {
+  const p = session("outline-newer", [outlineEntry("early", 1000, [topic("t1", "A")], "First purpose")]);
+  await getSessionSummary(p);
+  append(p, bulk("r1", 300_000));
+  assert.equal((await getSessionSummary(p))?.outlineGist, "First purpose");
+  append(p, outlineEntry("", 2000, [], "Still drafting")); // an empty "now" is no summary, as in a cold read
+  assert.equal((await getSessionSummary(p))?.outlineGist, "First purpose");
+  append(p, outlineEntry("later", 3000, [topic("t1", "A"), topic("t2", "B")], "Second purpose"));
+  const s = await getSessionSummary(p);
+  assert.equal(s?.outlineGist, "Second purpose");
+  assert.equal(s?.outlineAt, 3000);
+  assert.equal(s?.outlineTopics, 2);
+});
+
+test("an outline torn mid-append at one read is read once its writer finishes the line", async () => {
+  const line = JSON.stringify(outlineEntry("finished the line", 2000, [topic("t1", "A")], "Torn, then whole"));
+  const cut = Math.floor(line.length / 2);
+  const p = session("outline-torn-then-whole", [outlineEntry("before", 1000, [], "Before the tear")], line.slice(0, cut));
+  assert.equal((await getSessionSummary(p))?.outlineGist, "Before the tear");
+  appendFileSync(p, `${line.slice(cut)}\n`);
+  assert.equal((await getSessionSummary(p))?.outlineGist, "Torn, then whole");
+});
+
+test("a file that shrank is read afresh: nothing is carried across it", async () => {
+  const p = session("outline-shrunk", [outlineEntry("soon gone", 1000, [topic("t1", "A")], "Rewritten away")]);
+  assert.equal((await getSessionSummary(p))?.outlineGist, "Rewritten away");
+  session("outline-shrunk", []); // the same path, rewritten shorter: header and first message only
+  assert.equal((await getSessionSummary(p))?.outlineGist, undefined);
+});
+
+test("a file rewritten longer, not appended to, is read afresh too", async () => {
+  const p = session("outline-rewritten", [outlineEntry("old", 1000, [], "Before the rewrite")]);
+  assert.equal((await getSessionSummary(p))?.outlineGist, "Before the rewrite");
+  // The same path with other bytes where the outline was, and more of them: a size check alone
+  // would take this for growth and carry the outline the new file doesn't have.
+  session("outline-rewritten", [bulk("r1", 2_000)]);
+  assert.equal((await getSessionSummary(p))?.outlineGist, undefined);
+});
+
+test("a hosted chat's row takes its outline from this server's own live record, which doesn't make it live", async () => {
+  const p = session("outline-own-record", []); // no outline within reach in the file
+  liveRecord(`p${process.pid}-own00001`, p, process.pid, { now: "Reading the screenshots", overall: "Transcript bugs", topics: ["A", "B", "C"], generatedAt: 5000 });
+  const s = await getSessionSummary(p);
+  assert.equal(s?.outlineGist, "Transcript bugs");
+  assert.equal(s?.outlineNow, "Reading the screenshots");
+  assert.equal(s?.outlineTopics, 3);
+  assert.equal(s?.live, null); // presence stays a foreign writer's word alone
+  const listed = (await listSessions()).find((x) => x.path === p);
+  assert.equal(listed?.outlineGist, "Transcript bugs");
+  assert.equal(listed?.outlineTopics, 3);
+  assert.equal(listed?.live, null);
+});
+
+test("a foreign writer's outline is preferred to this server's own", async () => {
+  const p = session("outline-both-records", []);
+  liveRecord(`p${process.pid}-own00002`, p, process.pid, { now: "ours", overall: "This server's view", topics: [], generatedAt: 5000 });
+  liveRecord(`p${sleeper.pid}-tui00002`, p, sleeper.pid!, { now: "theirs", overall: "The terminal's view", topics: [], generatedAt: 5000 });
+  assert.equal((await getSessionSummary(p))?.outlineGist, "The terminal's view");
+  assert.equal((await listSessions()).find((x) => x.path === p)?.outlineGist, "The terminal's view");
 });

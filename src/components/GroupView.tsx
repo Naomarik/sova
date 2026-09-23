@@ -512,13 +512,15 @@ export function GroupView(props: {
   };
   /**
    * `Fit all` (§14 "Layout: split"): every pane to the ONE width at which they all stand in the
-   * row with no scrollbar — the row's own client width divided by the pane count, measured at the
-   * press. That width is allowed below the 440 floor, which nothing else is: the floor exists for
+   * row with no scrollbar — the row's measured width (its content box, `rowWidth()`) divided by
+   * the pane count, floored, and capped at `PANE_MAX_WIDTH`. The press stores the posture, not the
+   * number, so that width is re-derived every time the row changes. That width is allowed below the
+   * 440 floor, which nothing else is: the floor exists for
    * a transcript and a composer each on their own, and a comparison the user asked to see side by
    * side is the one thing worth trading it for (4×440 = 1760px, so a 4-way fanout never fits at
-   * any viewport without this). The pane carries an inline `min-width: 0` alongside the width,
-   * because the stylesheet's floor would otherwise quietly re-apply (inline beats it; no CSS
-   * change needed). Memory only, like every width: a posture, not a setting.
+   * any viewport without this). A pane fitted under 440px carries an inline `min-width: 0`
+   * alongside the width, because the stylesheet's floor would otherwise quietly re-apply (inline
+   * beats it; no CSS change needed). Memory only, like every width: a posture, not a setting.
    *
    * A row nobody has stepped is already this wide (autoPaneWidth), so the press usually only says
    * the number — but it is not a no-op even then: it leaves the panes FITTED, which is the posture

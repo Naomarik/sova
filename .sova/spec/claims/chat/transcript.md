@@ -553,6 +553,255 @@ page with two parts, in this order:
 | Empty (new session) | `.empty`. Title: "New session in `~/webapps/pi-web`." Body: "Nothing sent yet. Your first message becomes its title." No action; focus the composer instead. Show it only while the thread has **zero rows**, counting local rows such as "Ran `/cmd`" (§4d) and model-change info rows. Once any row exists, the thread renders normally with no empty state |
 | Agent/server error (`type:"error"`, not busy) | `.banner.banner-error` placed as the last item of the thread (in flow, so it stays in the record). Title: "The turn stopped with an error." Body: "{message}. Your messages are kept. Send again to retry." |
 
+## §chat.transcript/setup-card — Setup card
+
+A new session's empty state (the "Empty (new session)" row of States, above) carries a card
+between its title and its body: what pi loads into the prompt, the skills it offers this session,
+and the repository around its folder. Its commit log and its token figures are
+§chat.transcript/setup-card-figures; its words are the [copy deck](../design/copy-deck.md)'s
+main-pane rows.
+
+```html
+<div class="empty">
+  <p class="empty-title">New session in <code>~/webapps/pi-web</code>.</p>
+  <section class="setup-card" aria-label="Session setup">
+    <!-- the loadout: these three groups, or one line in their place -->
+    <div class="setup-group">                          <!-- omitted when it adds up to 0 B · 0 lines -->
+      <p class="setup-sum" title="Everything pi loads into the prompt, plus the skills it offers.">
+        <span class="setup-sum-label">System context</span>
+        <span class="setup-sum-facts">40 KB · 687 lines · ≈10.2k tokens</span>
+      </p>
+    </div>
+    <div class="setup-group">…Context (/setup-card-context)…</div>
+    <div class="setup-group">…Skills (/setup-card-skills)…</div>
+    <div class="setup-group">
+      <h2 class="text-eyebrow setup-label">Repository</h2>
+      …(/setup-card-repository)…
+    </div>
+  </section>
+  <p class="empty-body">…</p>
+</div>
+```
+
+- **When it shows.** Only inside that empty state, so only while the thread has zero rows, local
+  rows included. The first row takes the empty state away, and the card with it.
+- **It lands whole.** It asks two things at once, the loadout (`GET /api/sessions/context`) and
+  the repository (`GET /api/sessions/git`), and draws nothing until both have answered, whether
+  each answered with data or with a failure. There is no skeleton and no placeholder: the card
+  appears in one step under the title and never grows in a second. A read that doesn't answer
+  keeps the whole card away.
+- **Read once.** It reads when it appears, and again only if it is asked about a different
+  session; then it disappears until both new answers are in. An answer that arrives after the
+  card has gone, or for a session it no longer shows, is dropped. Nothing on it polls, refreshes
+  or links: no Refresh button, no timer, no anchors, and a commit's age is worked out when the
+  card draws and doesn't tick. Either answer can be the server's cached read of that folder, up
+  to 30s old for the loadout and 10s for the repository, and a repository read already running
+  for the same session is joined rather than repeated.
+- **Order.** The loadout comes first and Repository last, every time. For a local folder pi's
+  loader could read, the loadout is the `System context` line, then Context, then Skills. In
+  every other case it is a single line (below). Each group after the first sits under a 1px
+  `--color-border` rule.
+- **The one aggregate line.** `System context` leading, its figures trailing in the shape a row
+  uses. It adds up every Context row and every Skills row, which is exactly the two groups under
+  it, so it is the sum of their two totals. Its `title` is the one sentence saying so:
+  "Everything pi loads into the prompt, plus the skills it offers." It carries no heading, because
+  it is a line and not a section. It is left out when it would read `0 B · 0 lines`, that is when
+  there are no files or only empty ones. It is not what the prompt costs before the first
+  message: it counts each offered skill's SKILL.md whole, and a skill loads only when it is used
+  (/setup-card-skills). The title's "plus the skills it offers" is what says so.
+- **One line in place of Context and Skills.** A `.setup-note` in its own group, with no
+  aggregate line:
+  - A remote session: "Skills and context files are read on {target}, so they aren't listed
+    here." Its folder is a placeholder on this machine, so the loadout is never read here. The
+    Repository group still reads the target.
+  - A folder that couldn't be read: the server's own sentence, such as "This session's folder no
+    longer exists: {cwd}." or "Sova couldn't read this folder's setup: {message}." The same holds
+    for a session file with no header, a folder that isn't an absolute path, and a removed sshfs
+    mount. The Repository group places the folder the same way, so for a missing folder and for
+    those three it says the same sentence again under its own heading.
+- **Couldn't read.** When a request fails outright (the server is unreachable, or it refused the
+  request), the loadout's place says "Couldn't read what pi loads here. {message}" and the
+  Repository group says "Couldn't read this session's repository. {message}". The message is the
+  request's own: "The Sova server isn't reachable.", the server's error text, or the HTTP status
+  line. The two fail independently, so one failure never hides the other group.
+- **Width.** The card is at most 560px wide and left-aligned inside the centred empty state. It is
+  its own inline-size container. Under 420px across, every row, the aggregate line and each
+  group's total put their figures on their own line under the name, left-aligned, and the group
+  padding tightens from `--space-4`/`--space-5` to `--space-3`/`--space-4`.
+- **Accessibility.** The card is a `section` with `aria-label="Session setup"`. Context, Skills
+  and Repository are `h2`s (the session head's title is the `h1`). The aggregate line has no
+  heading. Icons are `aria-hidden`. Rows aren't focusable, so what a row's `title` carries (a full
+  path, a skill's description) is available on hover only.
+
+## §chat.transcript/setup-card-context — Setup card: Context
+
+The files pi puts into the prompt, in the order it loads them.
+
+```html
+<div class="setup-group">
+  <div class="setup-head">
+    <h2 class="text-eyebrow setup-label">Context · 3</h2>
+    <span class="setup-total">31 KB · 475 lines · ≈7.9k tokens</span>   <!-- omitted at 0 B · 0 lines -->
+  </div>
+  <p class="setup-note">Loaded into the prompt. Token counts are estimates: 4 characters per token.</p>
+  <ul class="setup-list">
+    <li class="setup-row" title="/home/user/.pi/agent/AGENTS.md">
+      <span class="setup-name"><span class="setup-path">~/.pi/agent/AGENTS.md</span></span>
+      <span class="setup-facts">2.1 KB · 48 lines · ≈530 tokens</span>
+    </li>
+    <li class="setup-row" title="/home/user/webapps/pi-web/CLAUDE.md">…</li>
+    <li class="setup-row" title="/home/user/webapps/pi-web/.pi/APPEND_SYSTEM.md">
+      <span class="setup-name">
+        <span class="setup-path">~/webapps/pi-web/.pi/APPEND_SYSTEM.md</span>
+        <span class="setup-role">appended to the system prompt</span>
+      </span>
+      <span class="setup-facts">1.9 KB · 17 lines · ≈480 tokens</span>
+    </li>
+  </ul>
+</div>
+```
+
+- **Heading and count.** `Context · {n}`, where n is the rows listed, SYSTEM.md and
+  APPEND_SYSTEM.md rows included. With none it reads `Context · 0`.
+- **The total beside the label** (`.setup-total`) is the rows added up, in the rows' own figures
+  (/setup-card-figures). It is left out when the rows add up to `0 B · 0 lines`.
+- **Load order, and each row's role.** A `SYSTEM.md` that replaces the default prompt comes
+  first, marked "replaces the system prompt", because it is the prompt the rest is added to. The
+  context files follow in the order pi layers them (global, then ancestors, then the folder),
+  with no role. The APPEND_SYSTEM.md sources come last, in the order they are appended, each
+  marked "appended to the system prompt". The role is muted caption text after the path, not a
+  chip.
+- **The row.** The path with the home folder written `~` (the full path when it isn't under home,
+  or before home is known), on one line and cut with an ellipsis when it doesn't fit. The full
+  path is in the row's `title`. Then the role, if any, then the figures.
+- **Where the list comes from.** The same read as Skills (/setup-card-skills): the session's own
+  chat when this server holds it, otherwise pi's loader for the folder. Sizes are measured on disk
+  when the server reads, never taken from the loader. A file the loader names but Sova can't read
+  (gone since, a directory, a permission bit) is left out of the list rather than shown empty.
+- **The note.** "Loaded into the prompt." The token sentence joins it exactly when at least one
+  row carries a token estimate. This server sends one for every file it lists, so in practice the
+  sentence is there whenever there are rows. The note is shown only when there are rows.
+- **Empty.** With no rows there is no note, no list and no total, only "No context files. pi loads
+  AGENTS.md or CLAUDE.md when a folder has one." The same line stands when every file pi names
+  was one Sova couldn't read.
+- **A total never counts a file the list doesn't show.** One list makes the rows, this group's
+  total and its share of the `System context` line, and a file left out of the list is left out of
+  all three.
+
+## §chat.transcript/setup-card-skills — Setup card: Skills
+
+The skills pi offers this session: what it is **offered**, not what is loaded.
+
+```html
+<div class="setup-group">
+  <div class="setup-head">
+    <h2 class="text-eyebrow setup-label">Skills · 2</h2>
+    <span class="setup-total">9.3 KB · 212 lines · ≈2.3k tokens</span>   <!-- omitted at 0 B · 0 lines -->
+  </div>
+  <p class="setup-note">Offered to this session. A skill loads when it is used. Skills an extension adds aren't listed. Token counts are estimates: 4 characters per token.</p>
+  <ul class="setup-list">
+    <li class="setup-row" title="/home/user/.pi/agent/skills/pdf/SKILL.md&#10;Read and fill in PDF forms.">
+      <span class="setup-name"><span class="setup-path">pdf</span></span>
+      <span class="setup-facts">4.2 KB · 120 lines · ≈1.1k tokens</span>
+    </li>
+    <li class="setup-row" title="…">…</li>
+  </ul>
+</div>
+```
+
+- **Heading and count.** `Skills · {n}`, where n is the rows listed. The total beside the label
+  follows Context's rule and is left out at `0 B · 0 lines`.
+- **Offered, not loaded.** The rows are the skills pi lists to the model, in its order. A skill
+  loads when it is used, and the note's first two sentences say so. A row's figures are its whole
+  SKILL.md file, so they are not something the session carries before it uses that skill.
+- **The row.** The skill's name, in the mono `.setup-path` face, with no path on screen and no
+  role. The `title` holds the SKILL.md's full path, then on a new line its description, trimmed.
+  A skill with a blank description or none gets only the path. A SKILL.md Sova can't read is left
+  out of the list and its totals.
+- **Where the list comes from, and its caveat.** When this server holds the session's chat, the
+  list is that chat's own set, extension-added skill paths included. Otherwise (a session this
+  server doesn't hold open, such as one a TUI owns) Sova asks pi's own loader for the folder
+  without extensions, which can't see a skill path an extension adds. The list is then a lower
+  bound, and the note says so: "Skills an extension adds aren't listed."
+- **The note.** "Offered to this session. A skill loads when it is used.", then the caveat when
+  Sova's loader built the list, then the token sentence (/setup-card-figures) when any row
+  carries an estimate.
+- **Empty.** With no rows there is no note, no list and no total, only "No skills offered to this
+  session." It keeps the caveat ("… Skills an extension adds aren't listed.") when Sova's loader
+  built the list, since an empty list from that loader may be missing exactly the skills an
+  extension adds. A remote session never reads as one with no skills: it gets the single line in
+  place of both groups (/setup-card).
+
+## §chat.transcript/setup-card-repository — Setup card: Repository
+
+The whole repository that contains the session's folder: the folder it was renamed to, when it
+moved, or the folder on the session's target. It is read-only git, and nothing fetches. The
+heading is `Repository`, with no count and no total.
+
+```html
+<div class="setup-group">
+  <h2 class="text-eyebrow setup-label">Repository</h2>
+  <p class="setup-git">
+    …branch icon… <span class="setup-git-head">main</span>
+    <span class="setup-sep">·</span>                          <!-- this and the next only with an upstream -->
+    <span title="Counted against the upstream as this repository last fetched it. Sova never fetches.">2 ahead origin/main</span>
+  </p>
+  <p class="setup-git">
+    …file icon… <span>2 staged · 3 unstaged · 1 untracked</span>
+    <span class="setup-num"><span class="setup-add">+120</span> <span class="setup-del">−40</span></span>   <!-- only when non-zero -->
+  </p>
+  <ul class="setup-list setup-commits">
+    <li class="setup-git setup-commit">…clock icon… <span class="setup-oid">12a9ff6</span>
+      <span class="setup-subject" title="spec: the three commits' claims, promoted from their draft">spec: the three commits' claims, promoted from their draft</span>
+      <span class="setup-ago">2h ago</span></li>
+  </ul>
+  <p class="setup-note">…at most one note, when there is one…</p>
+</div>
+```
+
+- **The head line.** A branch icon, then the head: `{branch}`, or `{branch} · no commits yet` in
+  an unborn repository, or `Detached at {7-character oid}` (`Detached` when git named no commit).
+  Only when the branch tracks an upstream does a `·` follow, then `Level with {upstream}`,
+  `{a} ahead, {b} behind {upstream}` (only the sides that aren't zero), or `{upstream} is gone`
+  when that ref no longer exists locally. "Level with", not "up to date": the count is against
+  the upstream ref as this repository last saw it, and the words' `title` says "Counted against
+  the upstream as this repository last fetched it. Sova never fetches." A branch with no upstream
+  shows nothing after the head.
+- **The changes line.** A file icon, then `Clean`, or the tallies that aren't zero, joined by `·`,
+  in the order conflicted, staged, unstaged, untracked. A path with both staged and unstaged
+  changes counts in both, so the tallies can add up to more paths than changed. An untracked
+  folder that git collapsed counts once. Then `+{added} −{removed}` (U+2212, add and delete ink),
+  only when either is above zero. That is the worktree against HEAD (against the empty tree
+  before the first commit), staged and unstaged together, summed over every path git counted.
+  Untracked and binary files count no lines. The card lists no changed paths.
+- **Commits.** Up to three rows, newest first (/setup-card-figures). An unborn repository shows
+  none and no line in their place, since the head already says "no commits yet". Any other
+  repository with none to show gets "The last commits couldn't be read." in their place.
+- **A cut status.** When git status's output hit its size cap, every count is a lower bound. The
+  changes line reads `At least {tallies}`, or `Not fully read` when nothing was tallied, and
+  never `Clean`. The note says "Git status was cut short, so these counts are lower bounds."
+  unless a line-count note takes the slot. Only a whole status can say a repository is unborn:
+  with a cut status, an unborn repository's head shows the branch name alone, and since git log
+  has nothing to read, the commits' place says "The last commits couldn't be read."
+- **The note**, at most one, after the commits. When git couldn't count every tracked path, the
+  line-count note is one of: "Line counts stopped at the size limit. Paths past it say "not
+  counted"." · "Counting lines took too long in this repository. Rows say "not counted"." ·
+  "Git couldn't count lines here. Rows say "not counted"." Then the `±` sums only the paths
+  counted, and it is absent when none were. The line-count note wins the slot over the
+  cut-status note, and a cut status is still marked by the changes line's "At least". These are
+  the repository's shared sentences, and the per-path "not counted" rows they name aren't on this
+  card.
+- **Not a repository.** One line: "{folder} isn't inside a git repository.", the folder written
+  `~/…` here or `{target}:{path}` on a target.
+- **Unavailable.** One line, the server's own sentence, for example "Git isn't installed on this
+  machine.", "Git took longer than 12s in this folder. Nothing was changed.", "{target} didn't
+  answer: {error}." or "This session's folder no longer exists: {cwd}." A failure is never cached,
+  so the next card to appear reads again.
+- **The group's two error lines.** The request itself failing reads "Couldn't read this session's
+  repository. {message}" (/setup-card). Git failing on the far side of a request that did answer
+  reads as the unavailable line. Each stands alone in the group, with no head line, changes line
+  or commits.
+
 ## §chat.transcript/setup-card-figures — Setup card: the commit log and the token figures
 
 A new session's setup card lists the context files pi loads, the skills it offers, and the

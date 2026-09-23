@@ -808,8 +808,8 @@
     },
     "§design.overview/class-index": {
       "kind": "note",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "verified"
     },
     "§design.overview/file-map": {
       "kind": "note",
@@ -996,6 +996,26 @@
       "evidence": "unreviewed"
     },
     "§chat.transcript/setup-card-figures": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified"
+    },
+    "§chat.transcript/setup-card": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified"
+    },
+    "§chat.transcript/setup-card-context": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified"
+    },
+    "§chat.transcript/setup-card-repository": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified"
+    },
+    "§chat.transcript/setup-card-skills": {
       "kind": "behavior",
       "authority": "accepted",
       "evidence": "verified"

@@ -2065,3 +2065,65 @@ test("extension flags follow the -e sources as --name value / --name; a malforme
 	assert.equal(bad.runner.status, "error");
 	assert.match(bad.runner.error ?? "", /Invalid extension flag --Bad Name/);
 });
+
+// ── claude-code-cli models: set over RPC, never argv ────────────────────────
+
+test("a claude-code-cli model is kept out of argv and set over RPC after readiness, before the task prompt", async () => {
+	const h = makeRunner({ model: "claude-code-cli/opus[1m]", effort: "medium", extensions: ["/x/claude-code/index.ts"], flags: { "claude-code-provider": true } });
+	await flush();
+	const args = h.spawnCalls[0].args;
+	assert.ok(!args.includes("--model"), "argv-time validation would refuse a provider that registers at session_start");
+	assert.deepEqual(args.slice(args.indexOf("--thinking"), args.indexOf("--thinking") + 2), ["--thinking", "medium"], "effort stays argv");
+	const e = args.indexOf("-e");
+	assert.deepEqual(args.slice(e, e + 3), ["-e", "/x/claude-code/index.ts", "--claude-code-provider"]);
+	// Readiness first: only get_state is on the wire.
+	assert.deepEqual(h.child.sentLines().map((l) => l.type), ["get_state"]);
+	assert.equal(h.runner.status, "starting");
+	const state = h.child.sentLines()[0];
+	h.child.reply(state.id, true, { sessionId: "sess-1", sessionFile: "/tmp/sess-1.jsonl", model: { provider: "zai", id: "glm-5.3" }, thinkingLevel: "medium" });
+	await flush();
+	// Then set_model, and still no prompt: the task never runs on the child's default model.
+	assert.deepEqual(h.child.sentLines().map((l) => l.type), ["get_state", "set_model"]);
+	const set = h.child.sentLines()[1];
+	assert.equal(set.provider, "claude-code-cli");
+	assert.equal(set.modelId, "opus[1m]");
+	assert.equal(h.runner.status, "starting");
+	h.child.reply(set.id, true, { provider: "claude-code-cli", id: "opus[1m]" });
+	await flush();
+	assert.deepEqual(h.child.sentLines().map((l) => l.type), ["get_state", "set_model", "prompt"]);
+	assert.equal(h.runner.model, "claude-code-cli/opus[1m]", "the runner reports the model it set, not the default get_state showed");
+	const prompt = h.child.sentLines()[2];
+	assert.equal(prompt.message, "count to three");
+	h.child.reply(prompt.id, true);
+	await flush();
+	assert.equal(h.runner.status, "running");
+	await fin(h);
+});
+
+test("a refused set_model fails the worker before any task prompt", async () => {
+	const h = makeRunner({ model: "claude-code-cli/opus[1m]" });
+	await flush();
+	const state = h.child.sentLines()[0];
+	h.child.reply(state.id, true, { sessionId: "sess-1", sessionFile: "/tmp/sess-1.jsonl", model: null, thinkingLevel: "medium" });
+	await flush();
+	const set = h.child.sentLines()[1];
+	assert.equal(set.type, "set_model");
+	h.child.reply(set.id, false, undefined, "Model not found: claude-code-cli/opus[1m]");
+	await flush();
+	assert.equal(h.runner.status, "error");
+	assert.match(h.runner.error ?? "", /Model claude-code-cli\/opus\[1m\] could not be set on the worker \(Model not found: claude-code-cli\/opus\[1m\]\); the task was not started/);
+	assert.ok(!h.child.sentLines().some((l) => l.type === "prompt"), "no prompt after a refused set_model");
+	assert.equal(h.runner.taskOutcome, "error");
+	await h.runner.whenClosed;
+	assert.equal(h.counts.exits, 1);
+});
+
+test("every other model keeps --model argv and never sends set_model", async () => {
+	const h = makeRunner({ model: "ollama-cloud/kimi-k3", effort: "low" });
+	await boot(h.child);
+	const args = h.spawnCalls[0].args;
+	assert.deepEqual(args, ["--mode", "rpc", "--model", "ollama-cloud/kimi-k3", "--thinking", "low", "--no-extensions"]);
+	assert.deepEqual(h.child.sentLines().map((l) => l.type), ["get_state", "prompt"]);
+	assert.equal(h.runner.status, "running");
+	await fin(h);
+});

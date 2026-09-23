@@ -5,10 +5,11 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import * as os from "node:os";
-import { MARKER_EXTENSION, MEMBER_EXTENSION, MEMBER_MCP, REMOTE_EXTENSION, REMOTE_MCP, REMOTE_MCP_TOOL_TIMEOUT_MS, registerSubagents, boundedText, installedPackageDir, type SubagentsOptions } from "./index.ts";
+import { CLAUDE_CODE_EXTENSION, MARKER_EXTENSION, MEMBER_EXTENSION, MEMBER_MCP, REMOTE_EXTENSION, REMOTE_MCP, REMOTE_MCP_TOOL_TIMEOUT_MS, registerSubagents, boundedText, installedPackageDir, type SubagentsOptions } from "./index.ts";
+import { CLAUDE_PROVIDER_FLAG } from "../claude-code/provider/index.ts";
 import { placeholderDir } from "../remote/argv.ts";
 import { REMOTE_MCP_ENV, REMOTE_MCP_SERVER_NAME, REMOTE_SESSION_EVENT, decodeRemoteMcpIdentity } from "../remote/workers.ts";
-import { SubagentRunner } from "./runner.ts";
+import { CLAUDE_CODE_PROVIDER_FLAG, SubagentRunner } from "./runner.ts";
 import { MEMBER_ENV, awaitResponse, decodeMemberContext, memberPaths, readInbox, requestId, writeRequest, type MailboxRequest } from "./mailbox.ts";
 
 import { BACKEND_DIALOG_EVENT, BACKEND_REGISTER_EVENT, BACKEND_DISCOVER_EVENT, registerBackend, type BackendRegistration } from "./contracts.ts";
@@ -2333,4 +2334,23 @@ test("worker session marker: one subagents-worker-session entry at session_start
 	} finally {
 		if (prev === undefined) delete process.env[MEMBER_ENV]; else process.env[MEMBER_ENV] = prev;
 	}
+});
+
+test("a pi worker on a claude-code-cli model gets the claude-code extension and its provider switch; other models get neither", async () => {
+	const h = harness();
+	h.ctx.modelRegistry.find = (p: string, m: string) => (p === "claude-code-cli" && m === "opus[1m]") || (p === "ollama-cloud" && m === "kimi-k3") ? { provider: p, id: m } : undefined;
+	try {
+		await h.call("agent_spawn", { prompt: "1M task", model: "claude-code-cli/opus[1m]", effort: "low" });
+		const scoped = h.workers[0];
+		assert.equal(scoped.model, "claude-code-cli/opus[1m]", "the ref reaches the runner unchanged; the runner sets it over RPC");
+		assert.deepEqual(scoped.extensions, [MARKER_EXTENSION, CLAUDE_CODE_EXTENSION], "the marker, then the claude-code extension");
+		assert.deepEqual(scoped.flags, { "claude-code-provider": true });
+		assert.equal(CLAUDE_CODE_EXTENSION, path.join(fs.realpathSync(path.resolve(fileURLToPath(new URL("../claude-code", import.meta.url)))), "index.ts"), "the sibling directory, by real path");
+		assert.equal(CLAUDE_CODE_PROVIDER_FLAG, CLAUDE_PROVIDER_FLAG, "the switch the provider extension registers");
+		await h.call("agent_spawn", { prompt: "plain task", model: "ollama-cloud/kimi-k3" });
+		const plain = h.workers[1];
+		assert.equal(plain.model, "ollama-cloud/kimi-k3");
+		assert.deepEqual(plain.extensions, [MARKER_EXTENSION]);
+		assert.equal(plain.flags, undefined);
+	} finally { await h.close(); }
 });

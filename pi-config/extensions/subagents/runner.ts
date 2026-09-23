@@ -114,6 +114,24 @@ const DEFAULT_LIMITS: RunnerLimits = {
 };
 
 /** One stdio MCP server entry, in the shape Claude Code's mcp.json expects. */
+/**
+ * The claude-code extension's pi provider (claude-code/provider/index.ts: CLAUDE_PROVIDER_ID and
+ * CLAUDE_PROVIDER_FLAG; the literals are repeated here so this extension loads without that one).
+ * The provider is registered at the child's session_start, and only under `--claude-code-provider`,
+ * so it does not exist when pi validates `--model` argv: a model of it is set over RPC instead
+ * (`set_model`, after readiness and before the task; see begin()).
+ */
+export const CLAUDE_CODE_CLI_PROVIDER = "claude-code-cli";
+export const CLAUDE_CODE_PROVIDER_FLAG = "claude-code-provider";
+/** The provider/model of a `claude-code-cli/<id>` ref, or undefined for every other model (argv as today). */
+export function rpcScopedModel(model: string | undefined): { provider: string; modelId: string } | undefined {
+	if (!model) return undefined;
+	const slash = model.indexOf("/");
+	if (slash < 1 || slash === model.length - 1) return undefined;
+	const provider = model.slice(0, slash);
+	return provider === CLAUDE_CODE_CLI_PROVIDER ? { provider, modelId: model.slice(slash + 1) } : undefined;
+}
+
 export interface McpServerSpec {
 	command: string;
 	args: string[];
@@ -126,6 +144,7 @@ export interface SpawnOptions {
 	groupId: string;
 	name: string;
 	task: string;
+	/** "provider/modelId", passed as `--model`; a claude-code-cli ref is set over RPC instead (rpcScopedModel). */
 	model?: string;
 	effort?: string;
 	tools?: string[];
@@ -308,6 +327,8 @@ export class SubagentRunner implements Worker {
 	endedAt?: number;
 	lastActivity = Date.now();
 	steerCount = 0;
+	/** A model kept out of argv and set over RPC once the child is ready (rpcScopedModel). */
+	private readonly rpcModel: { provider: string; modelId: string } | undefined;
 	unreadCount = 0;
 
 	private proc: ChildProcess | null = null;
@@ -402,6 +423,7 @@ export class SubagentRunner implements Worker {
 		this.extensions = [...(options.extensions ?? [])];
 		this.forked = Boolean(options.forkSession);
 		this.model = options.model;
+		this.rpcModel = options.adopt ? undefined : rpcScopedModel(options.model);
 		this.effort = options.effort;
 		this.onChange = handlers.onChange;
 		const adopt = options.adopt;
@@ -502,7 +524,8 @@ export class SubagentRunner implements Worker {
 
 	private buildArgs(options: SpawnOptions): string[] | null {
 		const args = ["--mode", "rpc"];
-		if (options.model) args.push("--model", options.model);
+		// A provider that only exists after the child's extensions ran cannot pass argv validation: set later.
+		if (options.model && !this.rpcModel) args.push("--model", options.model);
 		if (options.effort) args.push("--thinking", options.effort);
 		if (options.tools && options.extensions?.length) {
 			// `--tools` is an allowlist over built-in AND extension tools, so it
@@ -572,6 +595,24 @@ export class SubagentRunner implements Worker {
 			const model = state.data.model;
 			if (model?.id) this.model = model.provider ? `${model.provider}/${model.id}` : String(model.id);
 			if (typeof state.data.thinkingLevel === "string") this.effort = state.data.thinkingLevel;
+			this.touch();
+		}
+		// The RPC-set model goes in here: the child is ready (its extensions have run session_start,
+		// so the provider exists if it is going to) and no prompt has been sent, so a refusal fails
+		// the worker before any work runs on the child's default model.
+		if (this.rpcModel) {
+			const { provider, modelId } = this.rpcModel;
+			const askedAt = Date.now();
+			const res = await this.request("set_model", { provider, modelId });
+			if (this.closed || this.killInitiated || this.leaderExited) return;
+			if (!res || res.success !== true) {
+				const reason = res ? String(res.error ?? "set_model rejected") : `no set_model response within ${Date.now() - askedAt}ms (timeout or process exit)`;
+				this.taskOutcome = "error";
+				this.fail(`Model ${provider}/${modelId} could not be set on the worker (${reason}); the task was not started. The ${provider} provider must be registered in the child (the claude-code extension with --claude-code-provider).`);
+				return;
+			}
+			const set = res.data;
+			this.model = set?.id ? (set.provider ? `${set.provider}/${set.id}` : String(set.id)) : `${provider}/${modelId}`;
 			this.touch();
 		}
 		// Submit the task. Status leaves `starting` HERE — not at spawn — so the

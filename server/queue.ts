@@ -41,11 +41,11 @@ import type { QueueGoneReason, QueueItem, QueueRemoveRefusal } from "../shared/p
  *
  * So presence is read from the REAL queue, through the ONLY public reader of it that exists in the
  * copy pi-web resolves: `Agent.hasQueuedMessages()` (`AgentSession.agent` is public,
- * agent-session.d.ts:196). `Agent.peekQueuedMessages()` would answer far more precisely and is
- * declared in OTHER builds of pi-agent-core — it is NOT in the 0.86.1 nested under
- * pi-coding-agent, in neither the .d.ts nor the .js. Nothing here may depend on it;
- * server/chat-queue-clients.test.ts pins its absence against a real session so a design cannot be
- * built on it again.
+ * agent-session.d.ts:196). `Agent.peekQueuedMessages()` (a preview of the messages selected for the
+ * next turn) would answer far more precisely. It was absent from the 0.86.1 this was designed
+ * against and arrived with the 0.87.1 pin (pi-agent-core `agent.d.ts:100`); the bump adopted
+ * nothing, so nothing here depends on it. server/chat-queue-clients.test.ts pins its presence
+ * against a real session, so using it, or losing it again, is a decision rather than a drift.
  *
  * That leaves ONE BIT — "is anything at all queued, either kind" — and every rule is built from it
  * plus two sound readings of the mirror:
@@ -96,10 +96,10 @@ export interface SdkQueueView {
    * `Agent.hasQueuedMessages()` — true iff either REAL queue still holds a message.
    *
    * FALSE IS THE ONLY PROOF OF DELIVERY THERE IS, and it is the whole reason this interface
-   * exists. It is also ALL the SDK gives us: `peekQueuedMessages()` exists in some builds of
-   * pi-agent-core but NOT in the copy pi-web resolves (0.86.1 nested under pi-coding-agent — it is
-   * in neither the .d.ts nor the .js), so the real queue can be asked whether it is empty and
-   * nothing more. Every rule below is built from that one bit plus the mirror.
+   * exists. It was also ALL the SDK gave us when this was built: `peekQueuedMessages()` was not in
+   * the 0.86.1 pi-web resolved then (it is in the 0.87.1 pinned now, unused; see the header), so
+   * the real queue is asked whether it is empty and nothing more. Every rule below is built from
+   * that one bit plus the mirror.
    */
   hasQueued(): boolean;
   /**
@@ -580,8 +580,8 @@ export class WebQueue {
     const item = this.inFlight;
     if (!item) return "no";
     if (!this.deps.sdk.hasQueued()) return "no";
-    // Something is queued, but `hasQueuedMessages()` is BOTH queues at once and 0.86.1 offers
-    // nothing finer in public API. Two narrowings:
+    // Something is queued, but `hasQueuedMessages()` is BOTH queues at once and nothing finer is
+    // used (0.87's `peekQueuedMessages()` exists but is not adopted; see the header). Two narrowings:
     //
     // 1. Our KIND's mirror is empty ⇒ its real queue is empty ⇒ ours is gone and what is queued
     //    belongs to someone else. GUARDED, because the bare form is unsound: the SDK splices on

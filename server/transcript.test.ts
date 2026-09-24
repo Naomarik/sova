@@ -10,6 +10,7 @@ import { after, describe, test } from "node:test";
 import { attachmentsRoot, checkTmpImage, inlineTmpImages, MAX_ATTACHMENTS_PER_ROW, readTmpImage } from "./attachments";
 import { findTmpImagePaths } from "../shared/tmp-paths";
 import { parseReport, previewLine } from "./reports";
+import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { normalizeEntries, normalizeEntry } from "./transcript";
 
 const created: string[] = [];
@@ -644,6 +645,31 @@ describe("pi 0.86.0 entries the TUI keeps out of the conversation", () => {
     const rows = normalizeEntries([system, userEntry("hi"), usage]);
     assert.deepEqual(rows.map((r) => [r.id, r.kind]), [["u1", "user"]]);
     assert.ok(rows.every((r) => r.kind !== "unknown"), "nothing renders as an unrecognized entry");
+  });
+});
+
+describe("pi 0.87.0 context edits", () => {
+  test("a context_edit, as the real SessionManager writes it, renders nothing and leaves its target's row alone", () => {
+    // Built by the pinned SDK itself, not by hand: this is the entry pi appends when it drops an
+    // abandoned attempt after a retried error (`_omitRecoveryAttempt`), and the one an extension
+    // gets from appendContextEdit with a replacement.
+    const sm = SessionManager.inMemory("/tmp");
+    sm.appendMessage({ role: "user", content: [{ type: "text", text: "hi" }], timestamp: 1 });
+    const failed = sm.appendMessage({
+      role: "assistant", content: [], provider: "p", model: "m", api: "openai-completions", stopReason: "error",
+      errorMessage: "overloaded", timestamp: 2,
+      usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+    });
+    sm.appendContextEdit(failed, null);
+    sm.appendContextEdit(failed, { content: [{ type: "text", text: "replaced for the model" }] });
+    const entries = sm.getEntries() as Record<string, any>[];
+    const edits = entries.filter((e) => e.type === "context_edit");
+    assert.equal(edits.length, 2, "the SDK wrote both edits as context_edit entries");
+    for (const edit of edits) assert.deepEqual(normalizeEntry(edit), [], `${JSON.stringify(edit)} renders nothing`);
+    const rows = normalizeEntries(entries);
+    assert.ok(rows.every((r) => r.kind !== "unknown"), "nothing renders as an unrecognized entry");
+    assert.deepEqual(rows, normalizeEntries(entries.filter((e) => e.type !== "context_edit")),
+      "the rows are exactly those without the edits: the edited message keeps its recorded row");
   });
 });
 

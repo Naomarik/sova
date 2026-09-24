@@ -317,6 +317,13 @@ export function normalizeEntry(entry: Entry, fallbackId = "?", state?: { model?:
       // "cache_warm"). It contributes to session totals only (see transcript-usage.ts),
       // never to the conversation; unknown `kind` values are still usage.
       return [];
+    case "context_edit":
+      // pi 0.87.0+: an append-only edit (omit, or replace the content of) to what an earlier
+      // entry sends the MODEL. pi writes one itself on every retried error and overflow recovery
+      // (`_omitRecoveryAttempt`), and emits it as entry_appended. Raw history, usage and the
+      // chat are unchanged — pi's own chat shows nothing for it, only /tree lists it — so the
+      // edited message keeps its row and the edit renders nothing, not an unknown row.
+      return [];
     case "message":
       return normalizeMessage(entry, id, state);
     case "model_change":

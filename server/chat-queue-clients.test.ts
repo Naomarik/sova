@@ -83,13 +83,12 @@ const types = (log: ChatServerMessage[]) => log.map((m) => m.type);
 
 describe("the SDK surface this feature stands on, in the copy the repo actually resolves", () => {
   test("every queue member pi-web calls exists on a REAL session", async () => {
-    // THIS TEST EXISTS BECAUSE THE OBVIOUS READING WAS WRONG. `Agent.peekQueuedMessages()` is
-    // declared in the pi-agent-core shipped with the globally installed pi (0.87.0, the path
-    // CLAUDE.md names) and is absent from the 0.86.1 copy nested under node_modules that pi-web
-    // actually imports — .d.ts and .js alike. A design was built on it, and a typecheck happened
-    // to catch it; nothing in the unit suites would have, because a fake answers whatever it is
-    // told to. Reading a package proves what that copy says; only calling it through the repo's
-    // own import proves what pi-web will run.
+    // THIS TEST EXISTS BECAUSE THE OBVIOUS READING WAS WRONG. `Agent.peekQueuedMessages()` was
+    // declared in the pi-agent-core shipped with the globally installed pi (0.87.0) while the
+    // 0.86.1 copy pi-web actually imported had none — .d.ts and .js alike. A design was built on
+    // it, and a typecheck happened to catch it; nothing in the unit suites would have, because a
+    // fake answers whatever it is told to. Reading a package proves what that copy says; only
+    // calling it through the repo's own import proves what pi-web will run.
     const { chat } = await twoClients();
     const session = chat.session;
     for (const name of ["steer", "prompt", "clearQueue", "getSteeringMessages", "getFollowUpMessages", "abort"] as const) {
@@ -100,12 +99,13 @@ describe("the SDK surface this feature stands on, in the copy the repo actually 
     assert.equal(session.agent.hasQueuedMessages(), false, "an idle session holds nothing");
     assert.deepEqual([...session.getSteeringMessages()], []);
     assert.deepEqual([...session.getFollowUpMessages()], []);
-    // And the one that is NOT there, pinned so a future pin bump that adds it is a decision
-    // somebody makes rather than a silent change of meaning under the queue.
+    // And the one that arrived with the 0.87.1 pin, pinned so its presence stays a decision
+    // somebody made: the bump adopted nothing, and server/queue.ts still reads the queue through
+    // the members above only.
     assert.equal(
-      (session.agent as unknown as Record<string, unknown>).peekQueuedMessages,
-      undefined,
-      "peekQueuedMessages is absent in the resolved 0.86.1; server/queue.ts must not depend on it",
+      typeof (session.agent as unknown as Record<string, unknown>).peekQueuedMessages,
+      "function",
+      "peekQueuedMessages is present in the resolved pi (0.87.0+); server/queue.ts does not use it",
     );
   });
 });

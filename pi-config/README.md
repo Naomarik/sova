@@ -67,7 +67,7 @@ so `pi update --extensions` leaves them alone. To move one, run
 ## Install
 
 Requirements: pi installed globally (`npm i -g @earendil-works/pi-coding-agent`;
-this config is used with 0.87.0; Sova's own `package.json` pins 0.86.1) and Node.js. Nothing is installed into this
+this config is used with 0.87.0; Sova's own `package.json` pins 0.87.1) and Node.js. Nothing is installed into this
 directory: there is no `package.json`, and the extensions load through pi.
 `claude-code` also needs an authenticated `claude` CLI.
 

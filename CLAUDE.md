@@ -1,6 +1,6 @@
 # Sova
 
-Webapp interface for the pi coding agent (npm: `@earendil-works/pi-coding-agent`, pinned **0.86.1**).
+Webapp interface for the pi coding agent (npm: `@earendil-works/pi-coding-agent`, pinned **0.87.1**).
 Single local user. Goals: list all sessions, view transcripts, chat in webapp-owned sessions,
 live-watch sessions that are open in the CLI/TUI, spawn new sessions.
 
@@ -184,16 +184,20 @@ branch (the full reasoning lives in that branch's commit messages and `§workspa
   props.group.id)`) so equality gating happens where you can see it. The green build catches
   none of this: the bug is between two re-runs, not inside either.
 
-## pi SDK facts (verified against the installed package, 0.86.1)
+## pi SDK facts (verified against the installed package, 0.87.1)
 
-Pi package on disk: `/home/user/.local/share/mise/installs/node/25.2.1/lib/node_modules/@earendil-works/pi-coding-agent/`
-(docs/ and examples/sdk/ there are authoritative — read them, not your memory).
+Pi package on disk: the repo-pinned copy Sova runs, `node_modules/@earendil-works/pi-coding-agent/`
+(docs/ and examples/sdk/ there are authoritative — read them, not your memory). Under pnpm it is a
+link into `node_modules/.pnpm/`, and its own dependencies (pi-ai, pi-tui, pi-agent-core, typebox)
+sit BESIDE its real path, not nested under it: resolve them from `realpath` of the package. The
+global pi the TUI runs (`/home/user/.local/share/mise/installs/node/25.2.1/lib/node_modules/…`)
+is a separate install and may be another version — a fact read there is not a fact about Sova.
 
 - Sessions: `~/.pi/agent/sessions/--<cwd with /→->--/<iso-ts>_<uuidv7>.jsonl`.
   Line 1 header: `{"type":"session","version":3,id,timestamp,cwd}`.
   Entries have `id`/`parentId` (tree). Types: `message`, `custom`, `model_change`,
-  `thinking_level_change`, `usage` (0.86.0+), `compaction`, `session_info`, `label`, `branch_summary`
-  (`SessionEntry` union, `dist/core/session-manager.d.ts:117`).
+  `thinking_level_change`, `usage` (0.86.0+), `compaction`, `session_info`, `label`, `branch_summary`,
+  `context_edit` (0.87.0+) (`SessionEntry` union, `dist/core/session-manager.d.ts:128`).
   Cheap listing: read only the first few lines; first user `message` = title; first `model_change` = model.
   Docs: `docs/session-format.md`.
 - **Sova writes `custom` entries with `customType: "pi-web-rewind"`** (`data: {targetId, fromLeafId}`)
@@ -219,14 +223,14 @@ TS strict, ESM, no new dependencies without asking. Server normalizes JSONL entr
 `TranscriptItem`; frontend renders those, and renders live streaming from the raw passthrough events.
 Frontend is SolidJS (NOT React): signals/stores, `<For>/<Show>`, `onCleanup` for WS teardown.
 
-## Backend notes (SDK surprises, pi 0.86.1)
+## Backend notes (SDK surprises, pi 0.87.1)
 
 - `SessionManager.open(path)` is NOT read-only: `loadEntriesFromFile` appends `"\n"` to a trailing
-  partial line (`dist/core/session-manager.js:322`) and `_rewriteFile()` (`:709`) rewrites the whole
-  file when migrating old versions (`:677`). Never call it on a file a TUI may own —
+  partial line (`dist/core/session-manager.js:367`) and `_rewriteFile()` (`:754`) rewrites the whole
+  file when migrating old versions (`:722`). Never call it on a file a TUI may own —
   transcript/watch use our own parser (`server/transcript.ts`); `open()` only for webapp-owned chats.
 - `SessionManager.create(cwd)` defers writing the file until the first assistant reply
-  (`_persist()`, `dist/core/session-manager.js:740` — byte-identical to 0.85.1).
+  (`_persist()`, `dist/core/session-manager.js:785` — body byte-identical from 0.85.1 through 0.87.1).
   `POST /api/sessions` writes the header line itself so the new session exists on disk immediately.
 - pi's `theme` singleton is not re-exported from the package entry (`dist/index.d.ts` exports
   `initTheme`/`Theme` only, though `theme` exists on `modes/interactive/theme/theme.ts`). The
@@ -240,25 +244,26 @@ Frontend is SolidJS (NOT React): signals/stores, `<For>/<Show>`, `onCleanup` for
   write them too: `message` entries with `role:"system"` (the prompt/tool loadout — `content`,
   `sections`, `toolsAdded`/`toolsRemoved`; `SystemMessage` in pi-ai `dist/types.d.ts:331`) and
   top-level `type:"usage"` entries (`UsageEntry`, `session-manager.d.ts:36`, written by
-  `SessionManager.appendUsage()`; only caller is `dist/core/cache-warmer.js:241` with
+  `SessionManager.appendUsage()`; only caller is `dist/core/cache-warmer.js:249` with
   `kind:"cache_warm"`). Cache warming is ON by default (`getCacheWarmingMode()` →`"streaming"`,
   `dist/core/settings-manager.js:637`), so expect these in webapp-owned sessions. The webapp hides
-  both from the transcript (`server/transcript.ts:165` and `:292`) and counts only the usage ones in
+  both from the transcript (`server/transcript.ts:173` and `:315`) and counts only the usage ones in
   session totals (`server/transcript-usage.ts:66`, deduped by entry id). They never move context
-  fill: `contextForBranch` reads assistant-message usage only (`server/transcript.ts:361`).
+  fill: `contextForBranch` reads assistant-message usage only (`server/transcript.ts:402`).
   `compaction` entries also gained a `systemMessage` field (additive; we ignore it).
 - **`steer()`/`followUp()` now run extension `input` handlers** (`source` defaults to `"interactive"`,
   `dist/core/agent-session.js` `_queueUserInput`); on 0.85.1 they bypassed them entirely
   (0.85.1 `steer()` went straight to `_queueSteer`). Narrow blast radius: `prompt()` ALREADY ran them
-  on 0.85.1 (`agent-session.js:842`), and `server/chat-manager.ts:499-501` only calls `steer()` when
-  `isStreaming && !text.startsWith("/")` — every other web send already went through `prompt()`. So
+  on 0.85.1 (`agent-session.js:842`), and `handOffQueued` (`server/chat-manager.ts:693-694`) only
+  calls `steer()` while streaming, for a steer item whose text is not a `/command` — every other web
+  send goes through `prompt()`. So
   the pi-config handlers (`vision-delegate`, which describes attached images for non-vision models,
   and `wake-nudge`) have always run against our runtimes; the genuinely new case is the mid-stream
   steer. A handler returning `{action:"handled"}` silently swallows the message
-  (`dist/core/extensions/runner.js:1008`); returning `null`/`undefined` is the safe fall-through, and
+  (`dist/core/extensions/runner.js:1112`); returning `null`/`undefined` is the safe fall-through, and
   neither of ours returns `handled`. A mid-stream steer that CARRIES IMAGES while the active model
   cannot see them waits on `vision-delegate`'s describe call before it is queued
-  (`pi-config/extensions/vision-delegate/index.ts:150-161`), so it can land after the turn it meant
+  (`pi-config/extensions/vision-delegate/index.ts:180-191`), so it can land after the turn it meant
   to interrupt — nothing is dropped, and plain steers are unaffected.
 - Unidentified writers (e.g. a headless/orchestrating pi, not in the live registry): `/ws/chat` refuses
   (`code:"busy"`, close 4409) a session the server doesn't hold whose mtime is < 120s old
@@ -271,10 +276,10 @@ Frontend is SolidJS (NOT React): signals/stores, `<For>/<Show>`, `onCleanup` for
   Writes re-read + merge (safe with several servers); reads use the startup copy plus this
   server's own adds, so ids another running server adds show as "web" here only after a restart.
 - Opening a chat runtime must not write: the SDK appends model_change/thinking_level_change at
-  construction (empty sessions, or no thinking entry on the branch — `dist/core/sdk.js:260-272`,
-  unchanged from 0.85.1). `openSession` defers those two
+  construction (empty sessions, or no thinking entry on the branch — `dist/core/sdk.js:261-272`,
+  the same appends since 0.85.1). `openSession` defers those two
   appends and replays them right before the first prompt/steer; a never-prompted session stays untouched.
-- Images: 0.86.1 `ImageContent` is still `{type:"image", data, mimeType}` (pi-ai `dist/types.d.ts:256`)
+- Images: 0.87.1 `ImageContent` is still `{type:"image", data, mimeType}` (pi-ai `dist/types.d.ts:256`)
   for prompt/steer/followUp AND storage
   (sdk.md's `source:{type:"base64"}` example is stale). Model favorites are the
   command-palette's `~/.pi/agent/model-favorites.json` (`{version:1, models:[{provider,id}]}`), read
@@ -282,3 +287,26 @@ Frontend is SolidJS (NOT React): signals/stores, `<For>/<Show>`, `onCleanup` for
   picker's star and Ctrl+F → `PUT /api/models/favorite`). A malformed file lists no favorites and
   refuses every write; it is never overwritten.
 - Context fill = input+cacheRead+cacheWrite of the last assistant usage on the branch; a compaction after it → `context: null` until the next reply (window: SDK registry, else models-store.json).
+- pi 0.87.0 made the `SessionManager` canonical for model context: every request is built from
+  `sessionManager.buildSessionProjection()` (`dist/core/agent-session.js` `prepareNextTurnWithContext`),
+  and `agent.state.messages` is overwritten from it (`_refreshFinalizedContext`, `:418`). ASSIGNING
+  `agent.state.messages` no longer reaches the model — append through the session's SessionManager
+  and call `session.refreshContext()` (`agent-session.d.ts:314`); the `btw` extension's side-thread
+  seed does exactly that (`seedBtwSession`). Sova assigns it nowhere.
+- pi 0.87.0 `context_edit` entries (`ContextEditEntry`, `session-manager.d.ts`: `targetId`,
+  `replacement: {content} | null`) change what an earlier entry sends the model, never raw history.
+  pi writes one ITSELF on every auto-retry and overflow recovery (`_omitRecoveryAttempt`,
+  `agent-session.js:667`, emitted as `entry_appended`), so webapp-owned sessions get them. The
+  transcript renders nothing for them (`normalizeEntry`) and the edited message keeps its row;
+  `contextForBranch` does not treat one as staleness (pi's own accounting does: usage before a later
+  edit is not the context size) — in practice pi's only trailing edit is followed by a retry reply
+  or a compaction, both of which already reset the fill.
+- pi 0.87.0 defers a `prompt()` made while `agent_settled` is being emitted (session listeners
+  included, `agent-session.js:531-553`): it resolves at once, and its turn runs inside the
+  PREVIOUS `prompt()`'s promise, whose rejection then carries the deferred turn's error. An item
+  still held when the queue wakes on `agent_settled` is handed off synchronously inside that window,
+  so its turn takes this path: it still starts, and its failure surfaces through the previous
+  call's failure handling, which every `prompt()` call site in `server/chat-manager.ts` attaches
+  (`.catch`, or the returned `turn`).
+- `Agent.peekQueuedMessages()` exists from 0.87.0 (pi-agent-core `agent.d.ts:100`) but Sova's queue
+  deliberately does not use it; `server/chat-queue-clients.test.ts` pins its presence.

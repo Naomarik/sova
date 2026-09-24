@@ -19,8 +19,8 @@ export const REPO = path.resolve(PI_CONFIG, "..");
 export const POLICY_TEMPLATE = path.join(PI_CONFIG, "sandbox-policy");
 export const PLATFORM_DIR = process.platform === "darwin" ? "darwin" : "linux";
 
-// Sova embeds the repo-pinned pi (node_modules, 0.86.1); PI_PACKAGE_DIR overrides (e.g. the global
-// 0.87 the TUI runs) so the same suite can be pointed at either.
+// Sova embeds the repo-pinned pi (node_modules, 0.87.1); PI_PACKAGE_DIR overrides (e.g. the global
+// pi the TUI runs) so the same suite can be pointed at either.
 export const packageDir = process.env.PI_PACKAGE_DIR ?? path.join(REPO, "node_modules/@earendil-works/pi-coding-agent");
 // Resolve from the real path: under pnpm the package's dependencies sit beside it, not under the link.
 const packageReal = realpathSync(packageDir);

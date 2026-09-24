@@ -596,9 +596,8 @@ class ChatSession {
       // for the session's life. server/queue.ts's header has the full account.
       hasQueued: () => this.session.agent.hasQueuedMessages(),
       // The mirror, read ONLY as a change detector against our own earlier reading of it
-      // (server/queue.ts sdkHolds). `peekQueuedMessages()` would answer more precisely, but it is
-      // NOT in the pi-agent-core copy pi-web resolves — 0.86.1 nested under pi-coding-agent has it
-      // in neither the .d.ts nor the .js, whatever a different install of the package may show.
+      // (server/queue.ts sdkHolds). `peekQueuedMessages()` would answer more precisely; it arrived
+      // with the 0.87.1 pin and is deliberately not used yet (server/queue.ts's header).
       mirrorTotal: () => this.session.getSteeringMessages().length + this.session.getFollowUpMessages().length,
       mirrorFor: (kind) => (kind === "steer" ? this.session.getSteeringMessages() : this.session.getFollowUpMessages()).length,
       // Same public pair; a read of the live array's current contents, never a copy anyone mutates.
@@ -1058,8 +1057,10 @@ class ChatSession {
    * ACCEPT one user message: the write guards run NOW and throw on refusal, and the turn itself
    * runs on. Returns the in-flight turn so a caller can attach failure handling — it is NOT
    * something to await before answering a request, because the SDK's `prompt()` resolves on TURN
-   * COMPLETION (`AgentSession.prompt` in agent-session.js runs the whole agent loop; :937 in the
-   * pinned 0.86.1), so awaiting N of them in a row
+   * COMPLETION (`AgentSession.prompt` in agent-session.js runs the whole agent loop; :1207 in the
+   * pinned 0.87.1 — and a prompt() made while agent_settled is being emitted is deferred: it
+   * resolves at once and its turn runs inside the PREVIOUS prompt()'s promise), so awaiting N of
+   * them in a row
    * runs N turns end to end. Acceptance is everything up to handing the text to the SDK: a TUI
    * owning the file, a foreign writer, a closed runtime. Blank text with no image is a no-op.
    */

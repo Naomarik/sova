@@ -68,6 +68,9 @@ type HarnessOptions = {
 	confirm?: boolean;
 	entries?: any[];
 	idle?: boolean;
+	/** pi ≥0.87: every request is built from the session's SessionManager (`refreshContext()`), so
+	    an assignment to agent.state.messages never reaches the model. Default: the older contract. */
+	canonical?: boolean;
 };
 
 function harness(options: HarnessOptions = {}) {
@@ -137,9 +140,10 @@ function harness(options: HarnessOptions = {}) {
 			isStreaming: false,
 			subscribe: () => () => {},
 			async prompt(text: string) {
+				if (options.canonical) session.refreshContext();
 				record.seed = [...agent.state.messages];
 				prompts.push(text);
-				agent.state.messages.push(
+				const exchange = [
 					{ role: "user", content: [{ type: "text", text }], timestamp: Date.now() },
 					{
 						role: "assistant",
@@ -151,11 +155,22 @@ function harness(options: HarnessOptions = {}) {
 						stopReason: "stop",
 						timestamp: Date.now(),
 					},
-				);
+				];
+				if (!options.canonical) {
+					agent.state.messages.push(...exchange);
+					return;
+				}
+				for (const message of exchange) sessionOptions.sessionManager.appendMessage(message);
+				session.refreshContext();
 			},
 			async abort() {},
 			dispose() {},
 		};
+		if (options.canonical) {
+			session.refreshContext = () => {
+				agent.state.messages = [...sessionOptions.sessionManager.buildSessionContext().messages];
+			};
+		}
 		return { session };
 	}
 
@@ -306,6 +321,28 @@ test("restored notes seed the next headless exchange (thread continuity)", async
 	assert.ok(seedTexts.includes("first"));
 	assert.ok(seedTexts.includes("answer to first"));
 	assert.equal(h.entries.filter((e) => e.customType === "btw-note").length, 2);
+});
+
+test("pi 0.87: restored notes reach the canonical session context (thread continuity)", async () => {
+	const h = harness({ entries: [noteEntry(details("first"))], canonical: true });
+	await h.start();
+	await h.run("btw", "second");
+
+	const seedTexts = h.sessions[0].seed.map((m: any) => m.content[0].text);
+	assert.ok(seedTexts.includes("first"), "the restored exchange is in what the model is sent");
+	assert.ok(seedTexts.includes("answer to first"));
+});
+
+test("pi 0.87: inject hands off the same side thread as under the older contract", async () => {
+	const handoff = async (canonical: boolean) => {
+		const h = harness({ entries: [noteEntry(details("first"))], confirm: true, canonical });
+		await h.start();
+		await h.run("btw", "second");
+		return injectedThread(h);
+	};
+	const legacy = await handoff(false);
+	assert.match(legacy, /first[\s\S]*second/);
+	assert.equal(await handoff(true), legacy);
 });
 
 test("an exchange stored as both kinds (TUI --save) is restored once", async () => {

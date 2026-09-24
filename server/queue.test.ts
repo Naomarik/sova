@@ -296,7 +296,7 @@ describe("the outgoing queue", () => {
     // Once something else has been in the queue alongside ours, "something is queued" can never be
     // attributed to ours again: the reading that would un-stick it ("the mirror holds exactly one
     // item, of our kind") is satisfied just as well by OURS HAVING BEEN DELIVERED and the foreign
-    // one remaining. No public API in 0.86.1 separates those, so the refusal is permanent rather
+    // one remaining. No public API this queue reads separates those, so the refusal is permanent rather
     // than probabilistic — which is why the copy must not promise "try again in a moment".
     r.sdk.deliver("followUp");
     const after = await r.queue.remove("a");

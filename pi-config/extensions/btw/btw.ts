@@ -260,6 +260,30 @@ function formatModelRef(model: Pick<SessionModel, "provider" | "id" | "api">): s
   return `${model.provider}/${model.id} (${model.api})`;
 }
 
+/**
+ * Give a fresh BTW session its seed history. pi 0.87 builds provider context from the
+ * SessionManager (`refreshContext()` re-reads it), so an assignment to `agent.state.messages`
+ * is overwritten before the first request and the side thread silently loses the main thread.
+ * Older pi has no `refreshContext` and sends `agent.state.messages` as it is.
+ *
+ * Returns where the side thread starts in `session.state.messages`, counted from the end: the
+ * canonical projection may add or reshape entries ahead of it, never after.
+ */
+function seedBtwSession(
+  session: AgentSession,
+  sessionManager: SessionManager,
+  seed: { messages: Message[]; sideThreadStartIndex: number },
+): number {
+  const refresh = (session as { refreshContext?: () => void }).refreshContext;
+  if (typeof refresh !== "function") {
+    session.agent.state.messages = seed.messages as typeof session.state.messages;
+    return seed.sideThreadStartIndex;
+  }
+  for (const message of seed.messages) sessionManager.appendMessage(message);
+  refresh.call(session);
+  return Math.max(0, session.state.messages.length - (seed.messages.length - seed.sideThreadStartIndex));
+}
+
 function buildBtwSeedState(
   ctx: ExtensionCommandContext,
   thread: BtwDetails[],
@@ -1654,8 +1678,9 @@ export function registerBtw(pi: ExtensionAPI, deps: BtwDeps = {}) {
       throw new Error(settings.fallbackReason || "No active model selected.");
     }
 
+    const sessionManager = SessionManager.inMemory();
     const { session } = await createSession({
-      sessionManager: SessionManager.inMemory(),
+      sessionManager,
       model: settings.model,
       modelRegistry: ctx.modelRegistry as AgentSession["modelRegistry"],
       thinkingLevel: settings.thinkingLevel,
@@ -1664,10 +1689,8 @@ export function registerBtw(pi: ExtensionAPI, deps: BtwDeps = {}) {
       resourceLoader: createBtwResourceLoader(ctx),
     });
 
-    const { messages: seedMessages, sideThreadStartIndex } = buildBtwSeedState(ctx, pendingThread, mode, settings.model);
-    if (seedMessages.length > 0) {
-      session.agent.state.messages = seedMessages as typeof session.state.messages;
-    }
+    const seed = buildBtwSeedState(ctx, pendingThread, mode, settings.model);
+    const sideThreadStartIndex = seed.messages.length > 0 ? seedBtwSession(session, sessionManager, seed) : 0;
 
     return { session, mode, subscriptions: new Set(), sideThreadStartIndex };
   }

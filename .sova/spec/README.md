@@ -11,17 +11,17 @@ and labels. [USAGE.md](USAGE.md) has the commands.
   2026-09-23. Their prose was kept whole, and only the headings changed, to carry IDs. Their
   records say `"authority": "migrated", "evidence": "unreviewed"`. The text carries the
   requirement it had in `spec/`. Nobody has checked the code against it since the move, so a
-  migrated claim is not evidence that a feature works. The migration's parity check shows the
+  migrated claim is not evidence that a feature works. The migration's parity check showed the
   text was carried over intact, and nothing about the code.
 - **The old paths are redirects**, not a second authority. `spec/*.md` point here. Old paths,
   H1/H2 headings and `§N` citations resolve through `migration/legacy-map.json`, including those
   in source comments, which are never rewritten. A deeper heading kept its text, so search for
   it in the new file. `spec/brainstorms/` is research, not requirement.
-- **The pilot is history.** Its manual Stage A candidates are archived byte-exact in
-  `migration/pilot/`. `§chat/composer` keeps its ID, now with the migrated text. The pilot's
+- **The pilot is history.** Its manual Stage A candidates were archived byte-exact in
+  `migration/pilot/`, now only in Git history ([migration/README.md](migration/README.md)). `§chat/composer` keeps its ID, now with the migrated text. The pilot's
   other IDs are retired, their successors are listed in the legacy map, and they are never
   reused. `pilot/` and `reviews/baseline/` are that experiment's evidence and stay unchanged.
-  Their references to `claims/*.md` mean `migration/pilot/claims/*.md`.
+  Their references to `claims/*.md` mean that archive's `claims/*.md`.
 - **Proposals are drafts.** A proposed change is written in a full copy under `drafts/NAME/`,
   and never in `claims/` or `manifest.json`. An agreed draft is approved intent, not current
   behavior. Only the part that has been implemented and verified is promoted, and only
@@ -36,7 +36,7 @@ and labels. [USAGE.md](USAGE.md) has the commands.
 |---|---|
 | `manifest.json` | One record per ID: `kind` (`surface`, `behavior`, `section`, `note`), `requires`, `members`, `code`, and the labels `authority` and `evidence`. Relations only; prose never. |
 | `claims/<ns>/<name>.md` | One document. The H1 `# §ns/name — Title` is its lede, and each H2 `## §ns.name/slug — Title` is a child. Plain H3 and deeper are prose inside that child. |
-| `migration/` | The port: `legacy-map.json`, `inventory.json` with hashes, the exact original bytes in `legacy/head/` (HEAD `c4d7993`) and `legacy/worktree/` (uncommitted variants), the archived pilot, and the transform and parity scripts. [migration/README.md](migration/README.md) explains them. |
+| `migration/` | `legacy-map.json`, which resolves old paths and `§N`. The original bytes are at `git show c4d7993:spec/<file>`; the one-time scripts and pilot archive are in Git history. [migration/README.md](migration/README.md) says where. |
 | `drafts/` | Proposed changes, one full copy per draft. Local only. |
 | `reviews/` | Review packets and records; `reviews/baseline/` holds the pilot's frozen inputs. Local only. |
 | `pilot/` | The Stage A pilot's report, findings and planning comparison. Local only. |
@@ -56,7 +56,7 @@ and labels. [USAGE.md](USAGE.md) has the commands.
 
 `.gitignore` keeps local-only material out of commits. It stays on disk, and is never deleted:
 `pilot/` (session metrics and paths), `reviews/` and `drafts/` (verbatim copies of source), and
-`migration/legacy/worktree/` (edits that were never committed). Everything else here is meant to
+`migration/legacy/worktree/` (edits that were never committed, if you still have them). Everything else here is meant to
 be committed.
 
 Commit by explicit path, never `git add -A` or `git add .`. The docs, the tools, the redirect
@@ -70,13 +70,8 @@ git add -p CLAUDE.md CONTRIBUTING.md pi-config/README.md pi-config/extensions/mo
 git diff --cached --stat
 ```
 
-`migration/` must go in whole, minus the ignored `legacy/worktree/`. Its parity check,
-`node .sova/spec/migration/verify.mjs`, needs `legacy/head/`, both JSON files, `pilot/` and the
-scripts. Here it exits 0, full parity. A clean clone lacks the local-only bytes, so there it
-checks the current docs fully but can't rebuild the draft, and exits 3, partial, naming what it
-couldn't check ([details](migration/README.md#checking-the-record)). `legacy-map.json` and
-`inventory.json` do list the draft's headings (including `spec/04i-playbooks.md`'s) and the
-hashes of the uncommitted files, though no body text.
+The migration's one-time parity check and its inputs were removed once the move was done; the
+commit before their removal still has them ([migration/README.md](migration/README.md)).
 
 The second line is `-p` because those files may carry unrelated edits from other sessions. Review
 the staged list before committing, and check it holds nothing from the local-only paths. Don't

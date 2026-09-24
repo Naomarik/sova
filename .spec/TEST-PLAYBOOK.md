@@ -121,7 +121,7 @@ These apply to you and to every worker you start. Put the relevant ones in every
      to prove the draft tool ignores it.
    - The draft tool's own Git calls clear `GIT_*` and force `core.fsmonitor=false`, but still read the
      caller's `HOME` global config: always run it with `HOME=$RUN/home` (`fx.tool` and `run.mjs` do).
-   - Scripts of the candidate that call `git` themselves inside `$CO` (`migration/verify.mjs`, `migrate.mjs`)
+   - Scripts of the candidate that call `git` themselves inside `$CO`
      share MAIN's config: run them through `run.mjs` with `$GITENV` (from `env.sh`), which forces
      `core.fsmonitor=false` and `core.hooksPath=/dev/null` for every Git call they make.
    - `fx.mjs` and `fixture-notes.mjs` resolve every path by realpath and refuse anything not strictly inside
@@ -243,7 +243,7 @@ the caller's instructions plus these permitted defaults, save it as `$RUN/accept
 - **`authorize.servicePort`**: `null` (S rows BLOCKED) or a port to probe. Never 4800 or 4810 unless the
   probe proves them free; never stop whatever holds them.
 - **`authorize.localMigrationInputs`**: `true` only if the caller explicitly allows reading the local-only
-  `.sova/spec/{pilot,drafts,migration/legacy/worktree}` for the full-parity row MIG-2. Otherwise BLOCKED.
+  `.sova/spec/{pilot,drafts,migration/legacy/worktree}` for the full-parity row MIG-2. Otherwise BLOCKED. MIG-2 is retired, so nothing reads them now.
 
 **Stop conditions** (check before each wave, and before every expensive step: A-tier actors, L, S):
 
@@ -294,7 +294,7 @@ cat > "$RUN/env.sh" <<EOF
 export MAIN="$MAIN" RUN="$RUN" CO="$CO" ART="$ART" PLAYBOOK="$PLAYBOOK"
 GITP="$GITP"
 PRIV="--private .sova/spec/pilot --private .sova/spec/reviews --private .sova/spec/drafts --private .sova/spec/migration/legacy/worktree"
-# For scripts that run git themselves inside \$CO (verify.mjs, migrate.mjs): pass these through run.mjs --env
+# For scripts that run git themselves inside \$CO: pass these through run.mjs --env
 GITENV="--env GIT_CONFIG_COUNT=2 --env GIT_CONFIG_KEY_0=core.fsmonitor --env GIT_CONFIG_VALUE_0=false --env GIT_CONFIG_KEY_1=core.hooksPath --env GIT_CONFIG_VALUE_1=/dev/null"
 EOF
 echo "run root: $RUN   (every later command starts with: source $RUN/env.sh)"
@@ -882,11 +882,11 @@ Run each case against the draft tool (as evidence input and inside the spec tree
 
 | ID | Claim | Tier | Scenario | Oracle |
 |---|---|---|---|---|
-| MIG-1 | A published copy checks the current docs fully and reports partial parity honestly | M | `node .sova/spec/migration/verify.mjs` in `$CO` via `run.mjs $GITENV --watch "$CO"` (no local-only inputs) | Exit 3; `UNAVAILABLE` lines name what was skipped; "partial" printed; no writes. Reported as partial, never as full parity |
-| MIG-2 | With the local-only inputs, parity is full | M | Only with `authorize.localMigrationInputs`: copy exactly `.sova/spec/{pilot,drafts/legacy-working,migration/legacy/worktree}` from MAIN into `$RUN/fixtures/MIG-2/` (a fixture copy of `$CO`'s `.sova/spec`), run `verify.mjs` there via `run.mjs $GITENV` | Exit 0; else BLOCKED "local inputs not authorized" (never attempted, never read). Retention: the private copy stays in `$RUN/fixtures/MIG-2/` only, is listed in artifacts by path and hash (never contents), is never shared, and the report tells the caller it exists so they can delete it |
-| MIG-3 | The migration is reproducible and reversible | M | Only with `authorize.localMigrationInputs`, and only in MIG-2's isolated copy (the build needs the local-only `legacy/worktree/` originals, which `$CO` lacks by design): `node migration/migrate.mjs build --out "$RUN/fixtures/MIG-2/mig-out"` there via `run.mjs $GITENV --watch <copy>`. Compare `mig-out/current/{manifest.json,claims}` with the copy's current `manifest.json` and `claims/`, and `mig-out/draft/` with `drafts/legacy-working/spec/` | `current` byte-equal (or, for files changed by a promotion since migration, the same difference `verify.mjs` reports as a note); `draft` byte-equal or differences matching `verify.mjs`'s note; no writes in the copy's `.sova/spec` or in `$CO`. Without authorization: BLOCKED "local inputs not authorized". Never run the build in `$CO`, where it would fail on the missing originals |
-| MIG-4 | Legacy `§N` citations resolve | M | The `verify.mjs` output of MIG-1 | Line "§N citations: … all resolve" present; `§4h` noted as known absent |
-| PUB-1 | Local-only material is ignored for commits | M | Fixture Git repo = copy of `$CO/.sova/spec` + `.gitignore`, plus synthetic `pilot/x`, `reviews/x`, `drafts/x`, `migration/legacy/worktree/x`; plain `git check-ignore -q -- <path>` per exact path (never `-v`: it also lists negation rules) | All four ignored; `manifest.json`, `claims/`, `tools/`, `migration/*.mjs` not ignored |
+| MIG-1 | A published copy checks the current docs fully and reports partial parity honestly | M | Retired: the one-time `verify.mjs`/`migrate.mjs` and their inputs were removed after the move; the originals are `git show c4d7993:spec/<file>` | Not run; report as retired |
+| MIG-2 | With the local-only inputs, parity is full | M | Retired: the one-time `verify.mjs`/`migrate.mjs` and their inputs were removed after the move; the originals are `git show c4d7993:spec/<file>` | Not run; report as retired |
+| MIG-3 | The migration is reproducible and reversible | M | Retired: the one-time `verify.mjs`/`migrate.mjs` and their inputs were removed after the move; the originals are `git show c4d7993:spec/<file>` | Not run; report as retired |
+| MIG-4 | Legacy `§N` citations resolve | M | Read `$CO/.sova/spec/migration/legacy-map.json` `sections` and `$CO/.sova/spec/manifest.json`; for each `sections` entry's `legacy` path, `git -C "$CO" cat-file -e c4d7993:<file>` via `run.mjs $GITENV` | Every entry but `§4h` names an `id` declared in the manifest; every original exists at `c4d7993` except `§4i`'s (`spec/04i-playbooks.md`, untracked then); `§4h` is marked absent; no writes |
+| PUB-1 | Local-only material is ignored for commits | M | Fixture Git repo = copy of `$CO/.sova/spec` + `.gitignore`, plus synthetic `pilot/x`, `reviews/x`, `drafts/x`, `migration/legacy/worktree/x`; plain `git check-ignore -q -- <path>` per exact path (never `-v`: it also lists negation rules) | All four ignored; `manifest.json`, `claims/`, `tools/`, `migration/legacy-map.json` not ignored |
 | PUB-2 | The README's publishing command stages no local-only path | M | In a fixture repo holding the candidate's publishable tree plus synthetic private files, run the README's first `git add` line exactly | `git diff --cached --name-only` contains no path under `pilot/`, `reviews/`, `drafts/`, `migration/legacy/worktree/` |
 | PUB-3 | Claims publish as Markdown only: every `*.md` under `claims/` outside the re-ignored `node_modules/`, `dist/`, `tmp/` and `.agent/` directories (topic-named ones such as `secrets.md` included) is publishable despite the root `*secret*`/`*credential*` rules, and nothing else under `claims/` is | M | Fixture Git repo (built with `fx`) holding `$CO/.gitignore` (the root file), `$CO/.sova/spec/{.gitignore,README.md,USAGE.md,manifest.json,claims,tools}` and `migration/` minus `legacy/worktree/`, plus a read-only copy of MAIN's `.git/info/exclude` as the fixture's `.git/info/exclude`. Add `claims/app/secrets.md` and `claims/secrets/topic.md` (expected trackable), and `claims/secrets/config.json`, `claims/credentials/config.txt`, `claims/app/.env`, `claims/node_modules/pkg/README.md` (expected ignored). Classify each exact path with plain `git check-ignore -q -- <path>` (exit 0 = ignored), then run `git add -n` over the README's documented `.sova/spec` paths | The two topic files are not ignored and appear in the `add -n` output; the other four are ignored and absent. Every current `claims/**/*.md` (the observer lists them from `$CO`), `manifest.json`, `README.md`, `USAGE.md`, `.gitignore` and `tools/*.mjs` appear in the `add -n` output. Never classify from `check-ignore -v` output or from its exit status over several paths: `-v` also prints the negation rule (`!/claims/**/*.md`) for paths that are trackable. The contract is Markdown only under `claims/`; support files live outside `claims/` or need an explicit policy review, so any non-`.md` file found under the current `claims/` is reported |
 | PUB-4 | Snapshot bytes stay local | M | In the PUB-1 repo, after a draft snapshot and a review packet exist: plain `git check-ignore -q -- <path>` on each exact file under `drafts/*/evidence/objects/` and `reviews/objects/` | Every one ignored |

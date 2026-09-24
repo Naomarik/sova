@@ -135,12 +135,12 @@ intact; only their headings changed, to carry IDs. Those records carry `authorit
 and `evidence: unreviewed`: the text is the requirement, and nothing has checked that the code
 does it. Verify the implementation before you claim a feature.
 - Old paths and `§N` citations resolve through `.sova/spec/migration/legacy-map.json`. That
-  covers the ones in source comments, which stay as written. The exact original bytes are in
-  `.sova/spec/migration/legacy/`. Edits to those docs that were uncommitted at migration time
+  covers the ones in source comments, which stay as written. The exact original bytes are at
+  `git show c4d7993:spec/<file>`. Edits to those docs that were uncommitted at migration time
   (and the untracked `spec/04i-playbooks.md`) are the draft `.sova/spec/drafts/legacy-working/`,
   not the current docs. Drafts, reviews and the pilot are local only (`.sova/spec/.gitignore`);
   commit by explicit path, as `.sova/spec/README.md` shows, never `git add -A`.
-- The pilot's candidates (`.sova/spec/pilot/`, `.sova/spec/migration/pilot/`) are a historical
+- The pilot's candidates (`.sova/spec/pilot/`; the archived copy is in Git history) are a historical
   experiment, not the requirement.
 - **Before a task that changes behavior, follow the spec discipline.** If your system prompt
   already includes the `# Minor mode: spec` block, follow it without rereading. Otherwise read

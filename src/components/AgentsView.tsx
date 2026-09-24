@@ -148,6 +148,10 @@ function AgentGroup(props: { s: LiveAgentSession; workers: WorkerInfo[]; title: 
 function AgentsSections(props: { agents: Poll<AgentsInsight>; now: number; titleOf(path: string | null): string | null }) {
   const a = () => props.agents.data();
   const teams = () => activeTeams(a());
+  /** Every member restored after a restart: nothing runs, so the team isn't active until one resumes. */
+  const restoredOnly = (t: TeamInfo) => t.members.length > 0 && t.members.every((m) => m.worker?.status === "restored");
+  const activeCount = () => teams().filter((t) => !restoredOnly(t)).length;
+  const restoredCount = () => teams().length - activeCount();
   const liveSessions = () => (a()?.sessions ?? []).filter(isHostSession);
   const solo = () =>
     liveSessions()
@@ -174,8 +178,11 @@ function AgentsSections(props: { agents: Poll<AgentsInsight>; now: number; title
           <h2 class="insights-section-head" id="ins-teams">
             <Icon name="worker" small />
             Teams
-            <Show when={teams().length > 0}>
-              <span class="insights-section-count">· {teams().length} active</span>
+            <Show when={activeCount() > 0}>
+              <span class="insights-section-count">· {activeCount()} active</span>
+            </Show>
+            <Show when={restoredCount() > 0}>
+              <span class="insights-section-count">· {restoredCount()} restored</span>
             </Show>
           </h2>
           <Switch>

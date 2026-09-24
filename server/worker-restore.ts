@@ -103,7 +103,8 @@ function tokens(u: WorkerUsage): TokenUsage {
 }
 
 function totalOf(usages: WorkerUsage[], asOf: number | undefined): TokenUsageTotal {
-  const t: TokenUsageTotal = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, workers: usages.length };
+  // Nothing publishes these workers, so every one of them was rebuilt from its record: restored.
+  const t: TokenUsageTotal = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, workers: usages.length, restored: usages.length };
   let cost = 0;
   for (const u of usages) {
     t.input += u.input; t.output += u.output; t.cacheRead += u.cacheRead; t.cacheWrite += u.cacheWrite;
@@ -116,12 +117,14 @@ function totalOf(usages: WorkerUsage[], asOf: number | undefined): TokenUsageTot
 
 function workerInfo(m: FoldedWorkerManifest, summary: WorkerTranscriptSummary | null, usage: WorkerUsage, snapshotAt: number | undefined): WorkerInfo {
   const status = statusOf(m);
-  const model = summary?.model ?? m.spec?.model;
+  // The model it was spawned with, as the live record names it ("haiku", not the transcript's
+  // "claude/claude-haiku-4-5-…"), so a row reads the same before and after the session is hosted.
+  const model = m.spec?.model ?? summary?.model;
   const w: WorkerInfo = { id: m.workerId, name: m.name ?? m.workerId, status, working: false, backend: m.backend };
   if (model) w.model = model;
   const provider = m.backend === "claude-code" ? "claude code" : modelProvider(model);
   if (provider) w.provider = provider;
-  const effort = summary?.effort ?? m.spec?.effort;
+  const effort = m.spec?.effort ?? summary?.effort;
   if (effort) w.effort = effort;
   if (m.ref?.kind === "pi-session-file") w.sessionFile = m.ref.locator;
   const sessionId = m.ref?.kind === "claude-session-id" ? m.ref.locator : m.ref?.sessionId;

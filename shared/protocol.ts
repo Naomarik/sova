@@ -1686,6 +1686,9 @@ export interface TokenUsageTotal extends TokenUsage {
   workers: number;
   /** ms: some of it is a restored worker's last snapshot (Claude cost), true as of then. */
   asOf?: number;
+  /** How many of `workers` were restored after a server restart (their spend rebuilt from their
+      records). Absent or 0 when none were. */
+  restored?: number;
 }
 export interface WorkerInfo {
   id: string; name: string; status: WorkerStatus; working: boolean;

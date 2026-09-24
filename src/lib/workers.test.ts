@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  lifetimeIncludes,
   activeAgentCounts,
   activeTeamCount,
   capTitle,
@@ -279,4 +280,12 @@ test("capTitle keeps tooltips short, cutting at a word boundary", () => {
   assert.equal(capTitle("ab cdefghij", 5), "ab cd…", "boundary too early would gut it — hard cut instead");
   assert.equal(capTitle("abcd efghij", 6), "abcd…");
   assert.equal(capTitle("exactly ten", 11), "exactly ten", "max is inclusive");
+});
+
+test("lifetimeIncludes names only what applies: evicted, restored, both, or nothing", () => {
+  const listed = [{ usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 } }, {}];
+  assert.equal(lifetimeIncludes({ workers: 1 }, listed), "", "before any restart, nothing evicted: no parenthesis");
+  assert.equal(lifetimeIncludes({ workers: 3 }, listed), " (includes evicted)");
+  assert.equal(lifetimeIncludes({ workers: 1, restored: 1 }, listed), " (includes restored)");
+  assert.equal(lifetimeIncludes({ workers: 2, restored: 2 }, listed), " (includes evicted and restored)");
 });

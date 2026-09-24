@@ -233,6 +233,18 @@ export const asOfClock = (ms: number): string => clockTime(new Date(ms).toISOStr
 /** A worker whose usage couldn't be read at all: the pane says "unavailable", never 0. */
 export const usageUnavailable = (w: Pick<WorkerInfo, "usageSource">): boolean => w.usageSource === "unavailable";
 
+/**
+ * The lifetime line's parenthesis, naming only what applies: " (includes evicted)" when the Σ
+ * covers workers the list doesn't show with usage, " (includes restored)" when some were rebuilt
+ * after a restart, both, or "" for neither.
+ */
+export function lifetimeIncludes(total: { workers: number; restored?: number }, listed: readonly Pick<WorkerInfo, "usage">[]): string {
+  const parts: string[] = [];
+  if (total.workers > listed.filter((w) => w.usage).length) parts.push("evicted");
+  if ((total.restored ?? 0) > 0) parts.push("restored");
+  return parts.length ? ` (includes ${parts.join(" and ")})` : "";
+}
+
 /** `ag_03`, `ag_03 and ag_05`, `ag_03, ag_05, and ag_07` (serial comma). */
 export function idList(ids: readonly string[]): string {
   if (ids.length <= 2) return ids.join(" and ");

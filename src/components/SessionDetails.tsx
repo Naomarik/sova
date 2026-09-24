@@ -24,7 +24,7 @@ import {
   visiblePath,
 } from "../lib/git-summary";
 import { copyText, home, toast } from "../lib/ui-state";
-import { asOfClock, formatCost, idList, sessionWorking, usageHeadline, usageTitle, usageTotal } from "../lib/workers";
+import { asOfClock, formatCost, idList, lifetimeIncludes, sessionWorking, usageHeadline, usageTitle, usageTotal } from "../lib/workers";
 import { Banner, CopyButton, Icon } from "./ui";
 import { sessionHref } from "./Sidebar";
 import { GroupWithParent, MoveToGroupMenu } from "./Groups";
@@ -214,7 +214,8 @@ export function SessionDetails(props: {
                       </>
                     )}
                   </Show>{" "}
-                  across {total().workers} {total().workers === 1 ? "worker" : "workers"} (includes evicted and restored).
+                  across {total().workers} {total().workers === 1 ? "worker" : "workers"}
+                  {lifetimeIncludes(total(), workers())}.
                 </p>
               )}
             </Show>
@@ -746,7 +747,8 @@ function Cells(props: { usage: TokenUsage & { asOf?: number }; cost: boolean }) 
 function SpendRow(props: { row: ModelSpend; cost: boolean }) {
   return (
     <tr>
-      <td class="text-mono" title={props.row.model}>
+      {/* One line: "glm-5.3" broke at its hyphen. The table scrolls sideways instead. */}
+      <td class="text-mono" style={{ "white-space": "nowrap" }} title={props.row.model}>
         {compactModel(props.row.model) ?? props.row.model}
       </td>
       <td>{originLabel(props.row.origin)}</td>

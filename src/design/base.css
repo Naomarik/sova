@@ -4565,7 +4565,9 @@ a.chip:hover { color: var(--color-ink); border-color: var(--color-border-strong)
 .meta-line > * { flex: none; white-space: nowrap; }
 .meta-line-shrink {
   flex: 0 1 auto;
-  min-width: 3ch;
+  /* Enough for a short id whole ("haiku", "glm-5.3"): at 3ch one read "h…", which says nothing.
+     Longer ids still ellipsize; past this floor the row's own tail clips instead. */
+  min-width: 8ch;
   overflow: hidden;
   text-overflow: ellipsis;
 }

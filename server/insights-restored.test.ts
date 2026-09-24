@@ -141,6 +141,7 @@ test("the lifetime Σ covers every branch and every readable worker, and names t
   assert.equal(total.input, 110 + 7 + 5 + 1000);
   assert.equal(total.output, 20 + 70 + 5 + 1000);
   assert.equal(total.asOf, T0 + 5 * 60_000, "the oldest snapshot in the Σ bounds it");
+  assert.equal(total.restored, 4, "unhosted: every counted worker was rebuilt from its record");
   assert.deepEqual(insight.usage!.workersTotal, total);
 });
 
@@ -204,4 +205,44 @@ test("resumeWorker runs only the subagents extension's own agent-resume, and pas
   const refused = await resumeWorker(host(refusing), "ag_03");
   assert.deepEqual(refused, { ok: false, status: 409, error: "ag_03 is already running." });
   assert.equal(after, 2, "afterCommand runs whether the handler took it or threw");
+});
+
+test("a team member's spend is a team row, hosted or not, under the model it was spawned with", async () => {
+  const path = canonicalPath(join(sessionsDir, "2026-09-24T11-00-00-000Z_team.jsonl"));
+  const team = {
+    type: "custom", id: "t1", parentId: "e1", timestamp: iso(1), customType: "subagents-team-v1",
+    data: { version: 1, op: "create", team: { id: "team_01", name: "duo", objective: "", createdAt: T0 },
+      members: [{ workerId: "ag_02", role: "checker", backend: "claude-code", model: "haiku", ownedPaths: [], addedAt: T0 }] },
+  };
+  writeFileSync(path, jsonl(
+    { type: "session", version: 3, id: "team", timestamp: iso(0), cwd: "/tmp/restored-test" },
+    { type: "message", id: "e1", parentId: null, timestamp: iso(0), message: { role: "user", content: [{ type: "text", text: "hi" }] } },
+    team,
+    manifest("m1", "t1", {
+      workerId: "ag_02", backend: "claude-code", name: "checker", status: "waiting",
+      spec: { cwd: "/tmp/restored-test", model: "haiku", taskPreview: "check", wake: true },
+      team: { teamId: "team_01", role: "checker" },
+      ref: { v: 1, backend: "claude-code", kind: "claude-session-id", locator: claudeId },
+    }),
+  ));
+  const rowsOf = (insight: Awaited<ReturnType<typeof getSessionInsight>>) =>
+    insight.usage!.models.filter((m) => m.origin !== "main").map((m) => `${m.origin}:${m.model}`);
+
+  const unhosted = await getSessionInsight(path);
+  assert.deepEqual(rowsOf(unhosted), ["team:haiku"], "spawn model, not the transcript's claude-haiku-4-5 id");
+  assert.equal(unhosted.workers![0]!.model, "haiku");
+
+  const file = join(liveDir, `p${process.pid}-team.json`);
+  writeFileSync(file, JSON.stringify({
+    heartbeat: Date.now(),
+    session: { sessionFile: path, pid: process.pid, mode: "rpc", status: "idle" },
+    presence: { status: "idle", workers: [
+      { id: "ag_02", name: "checker", status: "restored", backend: "claude-code", model: "haiku", usageSource: "transcript", usage: { input: 7, output: 70, cacheRead: 700, cacheWrite: 0 } },
+    ] },
+  }));
+  try {
+    assert.deepEqual(rowsOf(await getSessionInsight(path)), ["team:haiku"], "hosted: the same row, not subagents");
+  } finally {
+    rmSync(file, { force: true });
+  }
 });

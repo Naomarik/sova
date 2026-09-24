@@ -636,7 +636,10 @@ export function decodeUsageTotal(presence: Rec | undefined): TokenUsageTotal | u
   if (!isRec(presence?.workerUsage)) return undefined;
   const usage = decodeUsage(presence.workerUsage);
   const asOf = num(presence.workerUsage.asOf);
-  return usage ? { ...usage, workers: count(presence.workerUsage.workers), ...(asOf !== undefined ? { asOf } : {}) } : undefined;
+  const restored = count(presence.workerUsage.restored);
+  return usage
+    ? { ...usage, workers: count(presence.workerUsage.workers), ...(asOf !== undefined ? { asOf } : {}), ...(restored > 0 ? { restored } : {}) }
+    : undefined;
 }
 
 /** `hosted`: the record is one of this server's own runtimes, the only place Sova can resume a
@@ -880,6 +883,10 @@ export async function getSessionInsight(path: string): Promise<SessionInsight> {
   const restored = live || facts.workerRecords.all.length === 0 ? null : await restorer.restore(facts.workerRecords.all, facts.workerRecords.active);
   const workers = live ? decodeWorkers(presence, live.pid === process.pid) : restored && restored.workers.length > 0 ? restored.workers : null;
   const usageTotal = live ? decodeUsageTotal(presence) : restored?.usageTotal;
+  // Teams first: joinTeams gives each member its teamId, and a member's spend is a "team" row. Built
+  // after, the hosted view filed members under subagents while the file view (which knows the
+  // team from the record) said team.
+  const teams = joinTeams(facts, path, workers);
   const usage = buildUsage(facts, workers, usageTotal);
   // A worker's own transcript is the only record of what it loaded (see server/worker-skills.ts).
   // mtime-cached, because this endpoint is polled every 3s while the pane is open.
@@ -889,7 +896,7 @@ export async function getSessionInsight(path: string): Promise<SessionInsight> {
     ...(facts.outlines.length > 0 ? { outlines: facts.outlines } : {}),
     compactions: facts.compactions,
     ...(facts.rewinds.length > 0 ? { rewinds: facts.rewinds } : {}),
-    teams: joinTeams(facts, path, workers),
+    teams,
     workers: workers ?? [],
     ...(hasSkills(facts.skills) ? { skills: facts.skills } : {}),
     ...(skillsLoaded ? { workerSkills: skillsLoaded } : {}),

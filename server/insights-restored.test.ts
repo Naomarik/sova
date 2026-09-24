@@ -23,7 +23,7 @@ mkdirSync(claudeProject, { recursive: true });
 const { decodeWorkers, getSessionInsight } = await import("./insights");
 const { canonicalPath } = await import("./paths");
 const { resumeWorker, resumeCommandOf } = await import("./worker-resume");
-const { resolvedModel } = await import("./worker-restore");
+const { resolvedModel } = await import("../pi-config/extensions/subagents/worker-transcript.ts");
 
 after(() => rmSync(root, { recursive: true, force: true }));
 
@@ -250,14 +250,14 @@ test("a team member's spend is a team row, hosted or not, under the model it act
   }
 });
 
-test("resolvedModel (the extension's rule): transcript model, else the snapshot's biggest row, else the spawn model", () => {
+test("resolvedModel (the protocol's one copy): transcript model, else the snapshot's biggest row, else the spawn model", () => {
   const row = (model: string, input: number) => ({ model, input, output: 0, cacheRead: 0, cacheWrite: 0 });
   const m = (byModel: ReturnType<typeof row>[] = [], backend = "claude-code") => ({
     v: 1, workerId: "ag_09", backend, at: 0, spec: { cwd: "/tmp", model: "haiku", taskPreview: "", wake: false },
     usageSnapshot: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, byModel, source: "snapshot" },
   }) as any;
-  assert.equal(resolvedModel(m(), { model: "claude/claude-haiku-4-5-20251001" } as any), "claude-haiku-4-5-20251001", "the running record's form: no claude/ prefix");
-  assert.equal(resolvedModel(m([row("claude/claude-sonnet-5", 1), row("claude/claude-haiku-4-5-20251001", 9)]), null), "claude-haiku-4-5-20251001");
-  assert.equal(resolvedModel(m(), null), "haiku", "nothing resolved yet: the spawn model");
-  assert.equal(resolvedModel(m([], "pi"), { model: "zai/glm-5.3" } as any), "zai/glm-5.3", "pi refs keep their provider");
+  assert.equal(resolvedModel(m(), { summary: { model: "claude/claude-haiku-4-5-20251001" } as any }), "claude-haiku-4-5-20251001", "the running record's form: no claude/ prefix");
+  assert.equal(resolvedModel(m([row("claude/claude-sonnet-5", 1), row("claude/claude-haiku-4-5-20251001", 9)]), undefined), "claude-haiku-4-5-20251001");
+  assert.equal(resolvedModel(m(), undefined), "haiku", "nothing resolved yet: the spawn model");
+  assert.equal(resolvedModel(m([], "pi"), { summary: { model: "zai/glm-5.3" } as any }), "zai/glm-5.3", "pi refs keep their provider");
 });

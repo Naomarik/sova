@@ -12,6 +12,7 @@ import type { TokenUsage, TokenUsageTotal, WorkerInfo, WorkerStatus } from "../s
 import {
   type FoldedWorkerManifest,
   readWorkerManifests,
+  resolvedModel,
   resolveWorkerUsage,
   type WorkerTranscriptAdapters,
   type WorkerTranscriptSummary,
@@ -115,27 +116,11 @@ function totalOf(usages: WorkerUsage[], asOf: number | undefined): TokenUsageTot
   return t;
 }
 
-/**
- * The model a worker ran under, named as its running record names it ("claude-haiku-4-5-…", so
- * "haiku-4.5" running, restored and resumed alike, never the spawn alias "haiku" in some states):
- * the transcript's last reply, else the record's usage snapshot's biggest row, else the spawn
- * model. "claude/" (the adapter's prefix) goes for claude-code only; pi refs keep their provider.
- * The same rule as the subagents extension's resolvedModel (subagents/restored.ts), which the
- * server can't import: that file's types reach the extension's whole graph.
- */
-export function resolvedModel(m: FoldedWorkerManifest, summary: WorkerTranscriptSummary | null): string | undefined {
-  const bare = (id: string | undefined) => (id && m.backend === "claude-code" && id.startsWith("claude/") ? id.slice("claude/".length) : id);
-  const fromTranscript = bare(summary?.model);
-  if (fromTranscript) return fromTranscript;
-  const rows = m.usageSnapshot?.byModel ?? [];
-  const size = (r: (typeof rows)[number]) => r.input + r.output + r.cacheRead + r.cacheWrite;
-  const biggest = rows.length ? rows.reduce((a, b) => (size(b) > size(a) ? b : a)) : undefined;
-  return bare(biggest?.model) || m.spec?.model;
-}
-
 function workerInfo(m: FoldedWorkerManifest, summary: WorkerTranscriptSummary | null, usage: WorkerUsage, snapshotAt: number | undefined): WorkerInfo {
   const status = statusOf(m);
-  const model = resolvedModel(m, summary);
+  // The model it ran under, as its running record names it (haiku-4.5 in every state): the
+  // protocol's one rule, shared with the subagents extension.
+  const model = resolvedModel(m, summary ? { summary } : undefined);
   const w: WorkerInfo = { id: m.workerId, name: m.name ?? m.workerId, status, working: false, backend: m.backend };
   if (model) w.model = model;
   const provider = m.backend === "claude-code" ? "claude code" : modelProvider(model);

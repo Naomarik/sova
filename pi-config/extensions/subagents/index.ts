@@ -17,7 +17,7 @@ import { TeamModal } from "./team-modal.ts";
 import { attachTeamWidget, type TeamWidgetHandle, type TeamWidgetUi } from "./team-widget.ts";
 import { piModels, matchingModels, type CatalogModel } from "./models.ts";
 import { backendDenial, policyDenial, readPolicy } from "./policy.ts";
-import { BUILTIN_TOOLS as BUILTIN_TOOL_NAMES, CLAUDE_CODE_PROVIDER_FLAG, rpcScopedModel, SubagentRunner } from "./runner.ts";
+import { BUILTIN_TOOLS as BUILTIN_TOOL_NAMES, claudeCodeProviderLoad, SubagentRunner } from "./runner.ts";
 import { BACKEND_DIALOG_EVENT, BACKEND_DISCOVER_EVENT, BACKEND_REGISTER_EVENT, type BackendDialogEvent, type BackendRegistration, type SteerMode, type SteerResult, type Worker, type WorkerFactory } from "./contracts.ts";
 import {
 	MAX_LABEL_CHARS,
@@ -230,14 +230,10 @@ const REMOTE_DIR = realpathOr(path.join(SELF_DIR, "..", "remote"));
 export const REMOTE_EXTENSION = path.join(REMOTE_DIR, "index.ts");
 export const REMOTE_MCP = path.join(REMOTE_DIR, "mcp-server.ts");
 /**
- * The claude-code extension (a sibling directory, never under SELF_DIR), resolved through this
- * file's real path so the ~/.pi/agent/extensions/subagents symlink finds it in the checkout. A pi
- * worker on a `claude-code-cli/<id>` model loads it with `-e` and `--claude-code-provider`: the
- * provider registers at the child's session_start, after which the runner sets the model over RPC
- * (runner.ts rpcScopedModel). Every other model keeps `--model` argv and loads nothing extra.
+ * The claude-code extension (runner.ts claudeCodeProviderLoad): a pi worker on a
+ * `claude-code-cli/<id>` model loads it with `-e` and `--claude-code-provider`.
  */
-const CLAUDE_CODE_DIR = realpathOr(path.join(SELF_DIR, "..", "claude-code"));
-export const CLAUDE_CODE_EXTENSION = path.join(CLAUDE_CODE_DIR, "index.ts");
+export { CLAUDE_CODE_EXTENSION } from "./runner.ts";
 /**
  * claude bounds every MCP tool call with MCP_TOOL_TIMEOUT (ms) read from ITS OWN process env
  * (a per-server env in mcp.json is ignored; default 60 s, too short for a remote build).
@@ -874,9 +870,7 @@ export function registerSubagents(
 				: spec.extensions?.map((source) => resolveExtensionSource(source, ctx.cwd));
 			// A claude-code-cli model: the provider's extension and switch, after the session's own
 			// (remote sessions get both; the flags merge into the same argv).
-			const scopedModel = rpcScopedModel(model);
-			const extensions = [MARKER_EXTENSION, ...(remote ? [REMOTE_EXTENSION] : []), ...(own ?? []), ...(scopedModel ? [CLAUDE_CODE_EXTENSION] : [])];
-			const piFlags = scopedModel ? { ...(flags ?? {}), [CLAUDE_CODE_PROVIDER_FLAG]: true as const } : flags;
+			const { extensions, flags: piFlags } = claudeCodeProviderLoad(model, [MARKER_EXTENSION, ...(remote ? [REMOTE_EXTENSION] : []), ...(own ?? [])], flags);
 			let forkSession: string | undefined;
 			if (spec.fork) {
 				forkSession = ctx.sessionManager.getSessionFile();

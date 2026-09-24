@@ -19,7 +19,7 @@
 import { closeSync, existsSync, openSync, readSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { SubagentRunner, type SpawnOptions } from "../subagents/runner.ts";
+import { claudeCodeProviderLoad, SubagentRunner, type SpawnOptions } from "../subagents/runner.ts";
 import { agentDir } from "./store.ts";
 
 /** Everything the child needs to research a topic and write the two store files. */
@@ -114,6 +114,8 @@ export function webAccessExtension(env: NodeJS.ProcessEnv = process.env): string
 /** Start the child. The caller owns the handle and must kill it at shutdown. */
 export function startExplainWorker(spec: ExplainWorkerSpec, handlers: ExplainWorkerHandlers): ExplainWorkerHandle {
 	let settled = false;
+	// A claude-code-cli model needs its provider's extension and switch in the child.
+	const load = claudeCodeProviderLoad(spec.model, [WORKER_MARK_EXTENSION, ...(spec.extensions ?? [])], undefined);
 	const runner = new SubagentRunner(
 		{
 			id: `explain-${spec.id}`,
@@ -126,7 +128,8 @@ export function startExplainWorker(spec: ExplainWorkerSpec, handlers: ExplainWor
 			...(spec.model ? { model: spec.model } : {}),
 			...(spec.effort ? { effort: spec.effort } : {}),
 			...(spec.forkSession ? { forkSession: spec.forkSession } : {}),
-			extensions: [WORKER_MARK_EXTENSION, ...(spec.extensions ?? [])],
+			extensions: load.extensions,
+			...(load.flags ? { flags: load.flags } : {}),
 			...(spec.spawnImpl ? { spawnImpl: spec.spawnImpl } : {}),
 			...(spec.timings ? { timings: spec.timings } : {}),
 		},

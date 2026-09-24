@@ -30,6 +30,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { StringDecoder } from "node:string_decoder";
+import { fileURLToPath } from "node:url";
 import type { Worker, SteerMode } from "./contracts.ts";
 import { summarizeFileChange } from "./codefold.ts";
 
@@ -130,6 +131,33 @@ export function rpcScopedModel(model: string | undefined): { provider: string; m
 	if (slash < 1 || slash === model.length - 1) return undefined;
 	const provider = model.slice(0, slash);
 	return provider === CLAUDE_CODE_CLI_PROVIDER ? { provider, modelId: model.slice(slash + 1) } : undefined;
+}
+
+/**
+ * The claude-code extension (a sibling directory of subagents/), resolved through this file's real
+ * path so the ~/.pi/agent/extensions symlinks find it in the checkout.
+ */
+const CLAUDE_CODE_DIR = realpathOr(path.join(path.dirname(realpathOr(fileURLToPath(import.meta.url))), "..", "claude-code"));
+export const CLAUDE_CODE_EXTENSION = path.join(CLAUDE_CODE_DIR, "index.ts");
+function realpathOr(p: string): string {
+	try {
+		return fs.realpathSync(p);
+	} catch {
+		return path.resolve(p);
+	}
+}
+/**
+ * A pi child on a `claude-code-cli/<id>` model loads the claude-code extension (last) with
+ * `--claude-code-provider`, so the provider exists when the runner sets the model over RPC.
+ * Every other model gets the inputs back unchanged.
+ */
+export function claudeCodeProviderLoad(
+	model: string | undefined,
+	extensions: string[],
+	flags: Record<string, string | true> | undefined,
+): { extensions: string[]; flags: Record<string, string | true> | undefined } {
+	if (!rpcScopedModel(model)) return { extensions, flags };
+	return { extensions: [...extensions, CLAUDE_CODE_EXTENSION], flags: { ...(flags ?? {}), [CLAUDE_CODE_PROVIDER_FLAG]: true } };
 }
 
 export interface McpServerSpec {

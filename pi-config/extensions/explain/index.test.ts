@@ -7,10 +7,11 @@
  */
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 import type { ChildProcess } from "node:child_process";
 import { ExplainRuns, MAX_LIVE, failureWakeText, oneLineError, wakeMessage, wakeText, type ExplainHost } from "./explain.ts";
 import { parentIdentity } from "./identity.ts";
@@ -627,6 +628,37 @@ test("the worker marker is loaded first, before web search", () => {
 	);
 	assert.deepEqual(extensionArgs(calls[0]), [WORKER_MARK_EXTENSION, "/agent/npm/node_modules/pi-web-access"], "mark first, like every subagents pi worker");
 	void handle.kill();
+});
+
+test("a claude-code-cli model loads the claude-code extension last, with its provider flag; other models load neither", () => {
+	const argvFor = (model: string): string[] => {
+		const calls: string[][] = [];
+		const handle = startExplainWorker(
+			{
+				id: "cc-1",
+				task: "t",
+				cwd: process.cwd(),
+				model,
+				extensions: ["/agent/npm/node_modules/pi-web-access"],
+				spawnImpl: (_command, args) => {
+					calls.push(args);
+					return new FakeChild() as unknown as ChildProcess;
+				},
+				timings: { requestTimeoutMs: 400, abortGraceMs: 20, termGraceMs: 20 },
+			},
+			{ onSettled: () => {} },
+		);
+		void handle.kill();
+		return calls[0];
+	};
+	const claudeCode = join(realpathSync(fileURLToPath(new URL("../claude-code", import.meta.url))), "index.ts");
+	const scoped = argvFor("claude-code-cli/opus[1m]");
+	assert.deepEqual(extensionArgs(scoped), [WORKER_MARK_EXTENSION, "/agent/npm/node_modules/pi-web-access", claudeCode], "the claude-code extension last, by real path");
+	assert.ok(scoped.includes("--claude-code-provider"));
+	const plain = argvFor("zai/glm-5.3");
+	assert.deepEqual(extensionArgs(plain), [WORKER_MARK_EXTENSION, "/agent/npm/node_modules/pi-web-access"]);
+	assert.equal(plain.includes("--claude-code-provider"), false);
+	assert.equal(plain.some((arg) => arg.endsWith(join("claude-code", "index.ts"))), false);
 });
 
 test("web search is offered only when pi already installed it", () => {

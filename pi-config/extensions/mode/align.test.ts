@@ -150,7 +150,7 @@ const BOLD_NO_ANCHOR = `The Opus investigation came back. Report above has full 
 
 **Findings**
 - The hard part is already done by in-flight uncommitted work: session ids are plumbed.
-- What's missing is purely pi-web server side: resolve the file and tail it.
+- What's missing is purely Sova server side: resolve the file and tail it.
 - CC's JSONL is tailable line by line.
 
 **Approach** (recommended option a, ~1–1.5 days incl. tests)

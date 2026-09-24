@@ -94,7 +94,7 @@ test("timelineEntries keeps model, thinking and mode rows in order", () => {
     { id: "u1", kind: "user", text: "hi", raw: {} },
     info("i1", "Model: anthropic/claude-opus-5", "2026-09-20T10:00:00.000Z"),
     info("i2", "Thinking: high"),
-    info("i3", "Mode → claude-heavy"),
+    info("i3", "Mode → delegate"),
     info("i4", "Minor mode: align on"),
     info("i5", "Strict mode off"),
     info("i6", "Session name: something"),
@@ -103,7 +103,7 @@ test("timelineEntries keeps model, thinking and mode rows in order", () => {
   assert.deepEqual(entries, [
     { id: "i1", text: "Model: anthropic/claude-opus-5", at: "2026-09-20T10:00:00.000Z" },
     { id: "i2", text: "Thinking: high" },
-    { id: "i3", text: "Mode → claude-heavy" },
+    { id: "i3", text: "Mode → delegate" },
     { id: "i4", text: "Minor mode: align on" },
     { id: "i5", text: "Strict mode off" },
   ]);

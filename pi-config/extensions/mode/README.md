@@ -13,9 +13,8 @@ configurable worker — backend · model · effort — with an optional fallback
 | **Routine implementation** | Mechanical, well-specified, low-risk changes | `claude-code` · `opus[1m]` · `low` | none |
 | **Complex implementation** | Ambiguous, cross-cutting, or high-risk changes | `claude-code` · `opus[1m]` · `medium` | none |
 
-The defaults are what this mode always did (it was called **claude-heavy**
-until 2026-09: fable/medium planning with an opus/high fallback, opus low for
-mechanical work and medium where precision matters). Investigation is new and
+The defaults: fable/medium planning with an opus/high fallback, opus low for
+mechanical work and medium where precision matters. Investigation is
 deliberately conservative: read-only work on the same model as implementation,
 at its cheapest effort.
 
@@ -48,7 +47,7 @@ edit" is a prompt-level rule the orchestrator checks.
 | --- | --- |
 | `ctrl+p` → **Mode**, or bare `/mode` | Open the mode selector (see below) |
 | `alt+m` | Toggle normal ↔ delegate |
-| `/mode normal` · `/mode delegate` | Set explicitly (`/mode claude-heavy` still works and selects delegate) |
+| `/mode normal` · `/mode delegate` | Set explicitly |
 | `/mode status` | Show this session's mode, the default for new sessions, the Delegate routing (and, in delegate, what each profile is actually using), the spec writer (and, with spec on, what it is actually using), strict flag, minor modes, state file |
 | `/mode default` | Save this session's mode, strict flag and minor modes as the default for new sessions (the only command here that writes `mode.json`) |
 | `/mode strict on\|off` | Also remove `edit`/`write` from the orchestrator while in delegate (off by default) |
@@ -56,7 +55,7 @@ edit" is a prompt-level rule the orchestrator checks.
 | `/mode spec [on\|off]` | Toggle (or set) the `spec` minor mode |
 | `/align`, or `alt+a` | Open the read-only alignment-doc viewer (see below) |
 | `/align status` · `/align clear` · `/align export [path]` · `/align on\|off` | Summarize, clear, write the doc to a file (default `.pi/align.md`), or toggle align |
-| `pi --major delegate` | Start that launch in a mode (not persisted; `--major claude-heavy` still works) |
+| `pi --major delegate` | Start that launch in a mode (not persisted) |
 | `pi --minor align` | Start that launch with these minor modes on, comma-separated; `none` clears them (not persisted) |
 
 Note: `--mode` is pi's own flag (the output mode: `text | json | rpc`), so the
@@ -270,18 +269,6 @@ next reload; there are none by default. An optional `"viewerShortcut"`
 (default `"alt+a"`) opens the alignment-doc viewer. Files written before minor modes
 existed load with no minor modes on.
 
-### The rename
-
-Delegate was called `claude-heavy`. That name is a **permanent read alias**
-(`LEGACY_MODE_ALIASES` in `state.ts`): it is accepted by `/mode`, `--major`,
-`mode.json`, the per-session snapshots in transcripts, and Sova's API. Recorded
-history is not relabelled: an old `── mode → claude-heavy ──` marker still
-reads exactly that, in the TUI and in Sova. The name is never written: every new marker, snapshot and `mode.json` write says
-`delegate`, and an existing `mode.json` becomes canonical on its next write.
-Transcripts are never rewritten. (A build from before the rename reads a
-`delegate` snapshot as unknown and falls back to the default — the one-way
-cost of the rename.)
-
 ## Delegate routing
 
 `~/.pi/agent/mode-delegate.json` holds the four profiles. It is **its own
@@ -416,7 +403,7 @@ block with renamed headings is not captured.
 
 ```sh
 cd extensions/mode
-node --test index.test.ts     # pure state/prompt/minor/palette logic, the legacy alias
+node --test index.test.ts     # pure state/prompt/minor/palette logic
 node --test delegate.test.ts  # the routing file: defaults, parsing, persistence, per-turn re-read
 node --test routing.test.ts   # primary → fallback → ask, discovery failure, policy
 node --test spec.test.ts      # the spec writer file: parsing, persistence, per-turn re-read

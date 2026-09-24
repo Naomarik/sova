@@ -44,7 +44,7 @@ test("the file is its own, never mode.json", () => {
 	}
 });
 
-test("defaults preserve the claude-heavy routing and add a conservative Investigation", () => {
+test("defaults: fable planning, opus implementation, and a conservative Investigation", () => {
 	const d = delegateDefaults();
 	assert.deepEqual(Object.keys(d.profiles), [...DELEGATE_PROFILES]);
 	assert.deepEqual(DELEGATE_PROFILES, ["planning", "investigation", "routine", "complex"]);

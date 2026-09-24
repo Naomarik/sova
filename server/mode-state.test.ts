@@ -7,7 +7,7 @@ import { after, describe, test } from "node:test";
 import { appliesAfter, defaultPatchOf, mergeMode, modeApplyPlan, modeInfo, modeKey, parseModePatch, parseModeRequest, readMode, resolveChatMode, writeMode } from "./mode-state";
 import { normalizeEntry } from "./transcript";
 
-const dir = mkdtempSync(join(tmpdir(), "pi-web-mode-test-"));
+const dir = mkdtempSync(join(tmpdir(), "sova-mode-test-"));
 after(() => rmSync(dir, { recursive: true, force: true }));
 const file = (name: string) => join(dir, name);
 
@@ -18,21 +18,8 @@ describe("parseModePatch (POST /api/mode body)", () => {
     assert.deepEqual(parseModePatch({ mode: "normal", minorModes: [] }), { mode: "normal", minorModes: [] });
   });
 
-  test("the legacy name claude-heavy is accepted and passed on as delegate, never as itself", () => {
-    assert.deepEqual(parseModePatch({ mode: "claude-heavy" }), { mode: "delegate" });
-    assert.deepEqual(parseModePatch({ mode: "claude-heavy", minorModes: ["align"] }), { mode: "delegate", minorModes: ["align"] });
-    const f = file("legacy-post.json");
-    const patch = parseModePatch({ mode: "claude-heavy" });
-    assert.ok(!("error" in patch));
-    writeMode(patch, f);
-    assert.equal(JSON.parse(readFileSync(f, "utf8")).mode, "delegate", "POST /api/mode writes the canonical name");
-    // Case and look-alikes are not aliases.
-    for (const mode of ["Claude-Heavy", "heavy", "claude_heavy"]) assert.ok("error" in parseModePatch({ mode }), mode);
-    assert.equal((parseModePatch({ mode: "turbo" }) as { error: string }).error, "mode must be one of: normal, delegate");
-  });
-
   test("rejects bad bodies and unknown names with a reason", () => {
-    for (const body of [null, [], "x", {}, { mode: "turbo" }, { minorModes: "align" }, { minorModes: ["align", "nope"] }, { minorModes: [1] }, { strict: true }]) {
+    for (const body of [null, [], "x", {}, { mode: "turbo" }, { mode: "Delegate" }, { minorModes: "align" }, { minorModes: ["align", "nope"] }, { minorModes: [1] }, { strict: true }]) {
       const r = parseModePatch(body);
       assert.ok("error" in r, JSON.stringify(body));
     }
@@ -44,7 +31,6 @@ describe("parseModeRequest (whole POST /api/mode body)", () => {
   test("a patch is a patch, and never reads as the save-default instruction", () => {
     assert.deepEqual(parseModeRequest({ mode: "delegate" }), { kind: "patch", patch: { mode: "delegate" } });
     assert.deepEqual(parseModeRequest({ minorModes: ["align"] }), { kind: "patch", patch: { minorModes: ["align"] } });
-    assert.deepEqual(parseModeRequest({ mode: "claude-heavy" }), { kind: "patch", patch: { mode: "delegate" } });
   });
 
   test("saveDefault on its own is the instruction to save THIS chat's mode", () => {
@@ -138,7 +124,6 @@ describe("mode.json read/merge/write", () => {
   test("modeInfo lists what exists", () => {
     const info = modeInfo(readMode(file("absent.json")));
     assert.deepEqual(info.modes.map((m) => m.id), ["normal", "delegate"]);
-    assert.ok(!JSON.stringify(info).includes("claude-heavy"), "the old name is never offered");
     assert.match(info.modes[1]!.description, /^Orchestrate: /);
     assert.deepEqual(info.minors.map((m) => m.id), ["align", "spec"]);
     assert.ok(info.minors[0]!.description.length > 0);
@@ -221,17 +206,6 @@ describe("resolveChatMode (one chat's own mode when it opens)", () => {
     assert.deepEqual(s.minorModes, ["align"]);
   });
 
-  test("a pre-rename file and pre-rename snapshots resolve to delegate", () => {
-    const f = file("legacy-default.json");
-    writeFileSync(f, JSON.stringify({ version: 1, mode: "claude-heavy", strict: false, minorModes: [] }));
-    assert.equal(resolveChatMode([], f).mode, "delegate", "mode.json written by an older build");
-    assert.equal(readMode(f).mode, "delegate");
-    const legacyActive = { version: 1, mode: "claude-heavy", strict: true, minorModes: ["align"] };
-    const s = resolveChatMode([entry({ mode: "claude-heavy", active: legacyActive })], file("absent.json"));
-    assert.equal(s.mode, "delegate", "a transcript pinned before the rename");
-    assert.equal(s.strict, true);
-  });
-
   test("a missing file plus an entry: the entry alone decides", () => {
     const s = resolveChatMode([entry({ mode: "delegate", active: active("delegate", false, ["align"]) })], file("absent.json"));
     assert.equal(s.mode, "delegate");
@@ -250,8 +224,6 @@ describe("mode markers in the transcript", () => {
   test("customType mode renders as an info row; other custom entries stay hidden", () => {
     const major = normalizeEntry({ type: "custom", customType: "mode", data: { mode: "delegate" }, id: "m1" });
     assert.deepEqual(major.map((i) => [i.kind, i.text]), [["info", "Mode → delegate"]]);
-    const legacy = normalizeEntry({ type: "custom", customType: "mode", data: { mode: "claude-heavy" }, id: "m0" });
-    assert.deepEqual(legacy.map((i) => i.text), ["Mode → claude-heavy"], "a pre-rename marker is shown as recorded, never relabelled");
     const unknown = normalizeEntry({ type: "custom", customType: "mode", data: { mode: "someday" }, id: "m5" });
     assert.deepEqual(unknown.map((i) => i.text), ["Mode → someday"], "an unknown name is shown as written, never dropped");
     const minor = normalizeEntry({ type: "custom", customType: "mode", data: { minor: "align", on: false }, id: "m2" });

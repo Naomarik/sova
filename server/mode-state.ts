@@ -1,7 +1,7 @@
 // The mode extension's settings file (~/.pi/agent/mode.json), owned by pi-config's mode extension.
 // The mode itself is per session; this file is the DEFAULT new sessions start from. We import
 // exactly its three pure modules (state.ts, minor.ts, and delegate.ts in server/delegate.ts:
-// node:fs/node:path only) so validation, the mode and minor-mode lists, the legacy mode alias and
+// node:fs/node:path only) so validation, the mode and minor-mode lists and
 // the restore rule have one source of truth. Nothing else from pi-config. See CLAUDE.md.
 import { createHash } from "node:crypto";
 import { join } from "node:path";
@@ -35,7 +35,7 @@ export function modeInfo(state: ModeState): ModeInfo {
   };
 }
 
-/** The fields pi-web may change. A POST body only ever carries the first two (parseModePatch never
+/** The fields Sova may change. A POST body only ever carries the first two (parseModePatch never
     reads `strict`); `strict` is written only by the save-as-default patch (defaultPatchOf). */
 export interface ModePatch {
   mode?: ModeState["mode"];
@@ -47,8 +47,7 @@ export interface ModePatch {
     or make THIS chat's mode the default new sessions start from. */
 export type ModeRequest = { kind: "patch"; patch: ModePatch } | { kind: "saveDefault" } | { error: string };
 
-/** Validate a POST /api/mode body. Unknown names are an error, not silently dropped. A legacy mode
-    name ("claude-heavy") is read as the mode it now names, and only the canonical one goes on. */
+/** Validate a POST /api/mode body. Unknown names are an error, not silently dropped. */
 export function parseModePatch(body: unknown): ModePatch | { error: string } {
   if (body === null || typeof body !== "object" || Array.isArray(body)) return { error: "Expected JSON body { mode?, minorModes? }" };
   const b = body as Record<string, unknown>;

@@ -188,8 +188,6 @@ function normalizeMessage(entry: Entry, id: string, state?: { model?: string }):
 function modeMarker(entry: Entry, id: string): TranscriptItem[] {
   const d = entry.data;
   if (d && typeof d.minor === "string" && typeof d.on === "boolean") return [item(id, "info", entry, `Minor mode: ${d.minor} ${d.on ? "on" : "off"}`)];
-  // Shown as recorded: a marker from before the rename keeps saying "claude-heavy". History is not
-  // relabelled; only restoring and switching read that name as delegate (state.ts parseMode).
   if (d && typeof d.mode === "string") return [item(id, "info", entry, `Mode → ${d.mode}`)];
   if (d && typeof d.strict === "boolean") return [item(id, "info", entry, `Strict mode ${d.strict ? "on" : "off"}`)];
   return [];

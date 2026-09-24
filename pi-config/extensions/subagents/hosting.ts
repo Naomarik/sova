@@ -11,8 +11,9 @@
  *   unset | "inline"   DEFAULT. Workers are plain child processes of this
  *                      process, exactly as before hosting existed: no host
  *                      process, no socket, no ~/.pi/agent/sova/workers
- *                      registry, no worker-registry session entries, no
- *                      adoption; session_shutdown kills every worker.
+ *                      registry, no adoption; session_shutdown kills every
+ *                      worker. (Every worker, inline or hosted, still gets its
+ *                      durable manifest record in the owner session: registry.ts.)
  *   "host"             Each new worker runs under its own detached host with
  *                      a unix socket and a registry entry; a later session
  *                      start re-adopts or finalizes them.

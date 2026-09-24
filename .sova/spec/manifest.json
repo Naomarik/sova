@@ -281,8 +281,12 @@
     },
     "§chat.composer/composer-flyout": {
       "kind": "behavior",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/ComposerMenu.tsx",
+        "src/components/ChatView.tsx"
+      ]
     },
     "§chat.composer/disabled-states": {
       "kind": "behavior",
@@ -683,8 +687,8 @@
     },
     "§design.copy-deck/composer-flyout": {
       "kind": "note",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "verified"
     },
     "§design.copy-deck/connection": {
       "kind": "note",
@@ -813,8 +817,8 @@
     },
     "§design.overview/file-map": {
       "kind": "note",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "reviewed"
     },
     "§design/copy-deck": {
       "kind": "note",
@@ -1037,6 +1041,110 @@
       "requires": [
         "§app.shell/resizing-the-sessions-pane"
       ]
+    },
+    "§chat.playbooks/classes": {
+      "kind": "note",
+      "authority": "accepted",
+      "evidence": "verified"
+    },
+    "§chat.playbooks/entry-point": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/ComposerMenu.tsx",
+        "src/components/ChatView.tsx"
+      ]
+    },
+    "§chat.playbooks/rules": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "server/playbooks.ts",
+        "src/lib/playbooks.ts",
+        "src/components/PlaybooksDialog.tsx",
+        "src/components/ChatView.tsx"
+      ]
+    },
+    "§chat.playbooks/states": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "src/components/PlaybooksDialog.tsx"
+      ]
+    },
+    "§chat.playbooks/the-modal": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/PlaybooksDialog.tsx",
+        "src/components/ChatView.tsx"
+      ]
+    },
+    "§chat.playbooks/the-project-listing": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/playbooks.ts",
+        "src/lib/playbooks.ts",
+        "src/components/PlaybooksDialog.tsx"
+      ]
+    },
+    "§chat.playbooks/tokens": {
+      "kind": "note",
+      "authority": "accepted",
+      "evidence": "reviewed"
+    },
+    "§chat.playbooks/what-gets-sent": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/lib/playbooks.ts",
+        "src/components/PlaybooksDialog.tsx",
+        "src/components/ChatView.tsx",
+        "server/chat-manager.ts"
+      ]
+    },
+    "§chat.playbooks/when-sending-stops-being-possible": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "src/components/PlaybooksDialog.tsx",
+        "src/components/ChatView.tsx"
+      ]
+    },
+    "§chat.playbooks/where-playbooks-come-from": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/playbooks.ts",
+        "src/lib/playbooks.ts",
+        "src/components/PlaybooksDialog.tsx"
+      ]
+    },
+    "§chat/playbooks": {
+      "kind": "surface",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/playbooks.ts",
+        "src/lib/playbooks.ts",
+        "src/components/PlaybooksDialog.tsx",
+        "src/components/ChatView.tsx",
+        "src/components/ComposerMenu.tsx"
+      ]
+    },
+    "§design.copy-deck/playbooks": {
+      "kind": "note",
+      "authority": "accepted",
+      "evidence": "reviewed"
     }
   }
 }

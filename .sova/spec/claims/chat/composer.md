@@ -148,7 +148,8 @@ Commands) and took the model trigger and the session's own facts out of the head
 composer is where the session is acted on, and the head is for reading.
 
 **One popover, two triggers, three panels.** The `plus` button opens the **menu** panel — Attach
-images, Commands, Session info. The model indicator in `.composer-foot` (§4) opens the **model**
+images, Commands, Playbooks, Hide tool calls, Hide thinking, Session info, Fan Out… and Undo
+last turn, each present only where it applies (below). The model indicator in `.composer-foot` (§4) opens the **model**
 panel — the Model row and this model's Thinking ladder, the two things the indicator is the label
 for. The Model row opens the §4c **picker** as the third panel, which comes back to the model
 panel it was opened from. Each trigger anchors the popover above **itself**: the math is the same,
@@ -171,9 +172,13 @@ it.
       <span class="composer-flyout-label">Attach images</span>
     </div>
     <div class="mode-option composer-flyout-item" role="menuitem" id="composer-flyout-commands" tabindex="-1">…Commands…</div>
+    <!-- chat sessions only; aria-disabled while the composer is; see §4i -->
+    <div class="mode-option composer-flyout-item" role="menuitem" id="composer-flyout-playbooks" tabindex="-1">…Playbooks…</div>
 
     <div class="composer-flyout-sep" role="separator"></div>
+    …Hide tool calls, Hide thinking (menuitemcheckbox)…
     <div class="mode-option composer-flyout-item" role="menuitem" id="composer-flyout-info" tabindex="-1">…Session info…</div>
+    …Fan Out… (§14b), then Undo last turn after its own separator (§13)…
   </div>
 </div>
 
@@ -219,13 +224,23 @@ it.
   first row that isn't disabled. **`Ctrl+P` / `⌘P`** opens the flyout straight on the picker (and
   closes it if the picker is already in front), with `preventDefault()` so print never fires. It's
   bound in chat sessions only; watch sessions print as usual.
-- **Rows.** Attach images, Commands and Session info are the menu panel's; Model and Thinking are
-  the model panel's.
+- **Rows.** The menu panel's, in order: Attach images, Commands, Playbooks, Hide tool calls, Hide
+  thinking, Session info, Fan Out… (§14b) and, after its own separator, Undo last turn (§13).
+  §9 "Composer flyout" is the inventory. Model and Thinking are the model panel's.
   - **Attach images** opens the composer's hidden file picker (§4b). `aria-disabled` and
     `aria-describedby="composer-reason"` while the composer is disabled.
   - **Commands** closes the flyout and opens the slash menu exactly as the old button did (§4d).
     `aria-disabled` when the composer is disabled or there's no command list; then its `title` is
     "No commands available".
+  - **Playbooks** closes the flyout and opens the Playbooks dialog (§4i) on its catalog step, or
+    on the playbook whose unsent text it kept.
+    You pick a recipe, optionally add a line, and `Send Playbook` sends it into this chat as your
+    turn. Mid-turn it goes as a **follow-up** that runs after the current turn, never a steer.
+    **Chat sessions only**: it is present where `onPlaybooks` is passed, and absent in a watch
+    view (TUI-live included). While the composer is disabled it is `aria-disabled` with
+    `aria-describedby="composer-reason"`, like Attach images. Focus follows the rule under
+    Behavior: after `Send Playbook` it goes to the textarea; closing the dialog unsent returns it
+    to the `plus` trigger.
   - **Model** is the model panel's first row: the current id in mono with its provider, and a
     chevron. It's the picker's trigger: `aria-haspopup="true"`, and while a switch is pending it's `aria-busy` with a
     `.live-dot` before the target id, and `aria-disabled` (§4c "Pending"). Choosing applies
@@ -238,7 +253,8 @@ it.
     open so that echo is visible, including when it lands on a different level than the one
     picked. While the agent is running or the composer is blocked, every row is `aria-disabled`
     with the reason in `title`.
-  - **Session info** closes the flyout and opens §4h.
+  - **Session info** closes the flyout and opens §4h. Chat sessions only: a watch view doesn't pass
+    `onShowInfo`, so the row is absent there.
 - **Changing the model re-reads the ladder.** The server re-clamps on a model switch and sends
   `{type:"thinking"}` again, so the group re-renders for the new model: switching from a model at
   `low` to one whose ladder is `off · high · max` shows those three, checked wherever the server

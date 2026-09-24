@@ -129,7 +129,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 |---|---|
 | Trigger | `aria-label` / `title`: More Actions |
 | Menu panel `aria-label` | More actions |
-| Menu panel rows | Attach images · Commands · Session info |
+| Menu panel rows | Attach images · Commands · Playbooks · Hide tool calls · Hide thinking · Session info · Fan Out… · Undo last turn (in this order, each only where it applies: Playbooks in chat sessions, §4i; Session info in chat sessions; Fan Out… per §14b; Undo last turn per §13) |
 | Model panel `aria-label` | Model and thinking |
 | Model panel rows | Model · the Thinking group |
 | Model row | {id} · {provider} (`title`: {provider/id}) · no model: Choose model |
@@ -143,6 +143,26 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Thinking error: timeout | The server didn't confirm the change. You're still on `{level}`. |
 | Thinking error: other | {server message}. You're still on `{level}`. |
 | Thinking error action | Dismiss |
+
+## §design.copy-deck/playbooks — Playbooks (§4i)
+
+| Where | Copy |
+|---|---|
+| Flyout row (§4) | Playbooks · chat sessions only, absent in a watch view · while the composer is blocked: `aria-disabled`, described by the composer's reason |
+| Modal title | step 1: Playbooks · step 2: {title}, the playbook's own |
+| Group headings | Sova · Yours · This project (a group with no rows has no heading) |
+| Row | {title} · under it {description}, one line, truncated, the full text in the row's `title` · no description: the title alone · frontmatter title missing, empty or whitespace-only: the id |
+| Step 1 foot | `Close` |
+| Loading | skeleton rows after 300ms, no words |
+| Load failed | `.banner-error` **Couldn't load the playbooks.** {error} · action `Retry` |
+| Empty (no rows in any group) | No playbooks yet. |
+| User folder unreadable | We couldn't read your playbooks folder, so yours aren't listed. {error} |
+| This project, remote | the server's message: This session's files live on {target}. Project playbooks are read from local folders only · retired sshfs mount: This folder was an sshfs mount of {target} that Sova no longer creates. Project playbooks are read from local folders only · client fallback, no message sent: This session's files live on its target, so project playbooks aren't listed. |
+| This project, missing | the server's message: cwd must be an absolute path · {path} doesn't exist · {path} is not a folder · Sova can't read {path} ({code}) · Sova couldn't read {path}/.sova/marketing/playbooks: {error} · client fallback, no message sent: We couldn't read this session's folder, so project playbooks aren't listed. |
+| Step 2 body | {description} (the title is in the modal head, not repeated) · textarea label: Anything to add · hint: {promptHint} verbatim, or no hint |
+| Buttons, step 2 | `Back` · `Send Playbook` (the label never changes; there is no in-flight label) |
+| Send blocked | the composer's reason for that state, with its icon, beside `Back` (§9 Composer, Connection) · model turned off: {ref} is turned off in Settings → Models. Pick another model, then send this again. |
+| The sent turn (verbatim, §4i) | Playbook: {title} — {absolute dir} / Read the files in that directory as the playbook directs. / blank line / {body} · with your text: then a line `---`, a blank line, {your text, trimmed} |
 
 ## §design.copy-deck/images — Images
 

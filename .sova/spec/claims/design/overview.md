@@ -96,6 +96,7 @@ and in the codebase point at the file whose number matches.
 | [04e-markdown.md](../chat/markdown.md) | §4e · Markdown and code | Markdown rendering and code blocks. |
 | [04f-context-window.md](../chat/context-window.md) | §4f · Context window | The context readout in the session head: plain text, the sidebar ring, steps toward the limit. |
 | [04g-mode-menu.md](../chat/mode-menu.md) | §4g · Mode menu | Per-chat mode switching and the mode menu. |
+| [04i-playbooks.md](../chat/playbooks.md) | §4i · Playbooks | Markdown recipes from the composer flyout: the three provenance groups, the two-step modal, and what gets sent into the chat. |
 | [05-new-session-dialog.md](../app/new-session-dialog.md) | §5 · New Session dialog | Creating a session: the modal, the in-place folder picker, fields, and validation. |
 | [06-extension-dialogs.md](../app/extension-dialogs.md) | §6 · Extension dialogs (`ui_request`, optional in MVP) | Extension-driven `ui_request` dialogs. |
 | [07-deviations.md](deviations.md) | §7 · Deviations from, and extensions to, fold-ai-dev | Where Sova departs from or extends fold-ai-dev. |

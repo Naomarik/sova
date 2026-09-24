@@ -8,7 +8,9 @@
  */
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
-import { readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { PassThrough, Writable } from "node:stream";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
@@ -142,12 +144,16 @@ const tools: Tool[] = [
  * `--session-id` that already exists: one line on stderr, exit 1, and no answer
  * to `initialize`.
  */
-function harness({ refuseSessionId = 0, manualInitialize = false }: { refuseSessionId?: number; manualInitialize?: boolean } = {}) {
+/** An empty CLI projects dir, so no test reads the real ~/.claude. */
+const EMPTY_PROJECTS = mkdtempSync(join(tmpdir(), "pi-bridge-projects-"));
+
+function harness({ refuseSessionId = 0, manualInitialize = false, projectsRoot = EMPTY_PROJECTS }: { refuseSessionId?: number; manualInitialize?: boolean; projectsRoot?: string } = {}) {
 	const children: FakeClaude[] = [];
 	const debug: Record<string, unknown>[] = [];
 	const bridge = new SessionBridge({
 		onDebug: (entry) => debug.push(entry),
 		cwd: "/tmp/pi-bridge-test",
+		projectsRoot,
 		spawnImpl: ((command: string, argv: string[], options: any) => {
 			const child = new FakeClaude(command, argv, options, 5000 + children.length);
 			children.push(child);
@@ -419,6 +425,29 @@ test("a --session-id the CLI already wrote is probed past, not retried forever",
 	assert.equal(children.length, 3, "each refusal costs one spawn and no more");
 	const ids = children.map((c) => c.argv[c.argv.indexOf("--session-id") + 1]);
 	assert.deepEqual(ids, [0, 1, 2].map((n) => claudeSessionId("pi-session-1", n)));
+	await bridge.disposeAll();
+});
+
+/**
+ * The bug this guards: the launch counter lived only in memory, so a new
+ * process re-probed launches 0..32 while a real session had already used
+ * 0..42, and every turn failed with "session id already in use, for 33 ids in
+ * a row". The first launch now starts past the records on disk.
+ */
+test("a new bridge starts past the session records a previous process left", { timeout: 8000 }, async () => {
+	const root = mkdtempSync(join(tmpdir(), "pi-bridge-projects-"));
+	const dir = join(root, "-tmp-pi-bridge-test");
+	mkdirSync(dir);
+	for (let n = 0; n <= 42; n++) writeFileSync(join(dir, `${claudeSessionId("pi-session-1", n)}.jsonl`), "{}\n");
+	const { bridge, children } = harness({ projectsRoot: root });
+	await collectAfter(bridge.runTurn(request([user("hi")])), async () => {
+		const cli = await child(children, 1);
+		await cli.waitFor((f) => f.request?.subtype === "initialize");
+		await cli.handshake();
+		cli.emitFrame({ type: "result", subtype: "success", is_error: false, result: "ok" });
+	});
+	assert.equal(children.length, 1, "no id on disk is probed");
+	assert.equal(children[0].argv[children[0].argv.indexOf("--session-id") + 1], claudeSessionId("pi-session-1", 43));
 	await bridge.disposeAll();
 });
 

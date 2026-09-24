@@ -29,7 +29,7 @@ import { applySandbox, onSandboxAppend, sandboxCommandOf, sandboxMessage, type S
 import { contextForBranch, normalizeEntries, normalizeEntry } from "./transcript";
 import { mappedNewCwd, parseLegacyMountCwd, targetOfCwd } from "./targets";
 import { claudeCodeProviderEnabled } from "./web-settings";
-import { ForeignWriteGuard, markOwned, recentForeignWriteAgeSec } from "./write-guard";
+import { ForeignWriteGuard, markOwned, markOwnedStat, recentForeignWriteAgeSec } from "./write-guard";
 
 const GUARD_POLL_MS = 3000;
 
@@ -656,9 +656,29 @@ class ChatSession {
       if (reason) {
         this.foreignWrite = reason;
         this.broadcast({ type: "error", code: "recent", message: this.busyMessage() });
-      }
+      } else this.persistVerified();
     }
     if (this.foreignWrite) throw new BusyError(this.busyMessage(), "recent");
+  }
+
+  /** The file as the guard last verified it is ours: record it, so a restarted server knows. */
+  private persistVerified(): void {
+    const v = this.guard?.verified();
+    if (v) markOwnedStat(this.path, v);
+  }
+
+  /** A silent guard check: records our writes when every appended line is ours; a foreign line
+      marks the chat foreign (reported to the next client, as before) and records nothing. */
+  private recordOwnWrites(): void {
+    if (this.foreignWrite || !this.guard) return;
+    let reason: string | null;
+    try {
+      reason = this.guard.check();
+    } catch (err) {
+      reason = `session file unreadable: ${err instanceof Error ? err.message : err}`;
+    }
+    if (reason) this.foreignWrite = reason;
+    else this.persistVerified();
   }
 
   /**
@@ -809,7 +829,10 @@ class ChatSession {
         if (this.session.isStreaming) this.session.abort().catch(() => {});
         return;
       }
-      if (this.clients.size === 0) return;
+      if (this.clients.size === 0) {
+        this.recordOwnWrites(); // nobody to tell, but the stat still has to be current for a restart
+        return;
+      }
       try {
         this.assertNoForeignWrites();
       } catch {
@@ -1418,8 +1441,10 @@ class ChatSession {
     } catch (err) {
       console.error("[chat] runtime dispose failed", err);
     }
-    // Remember the state we left the file in, so reopening soon isn't mistaken for a foreign write.
-    if (!this.foreignWrite) markOwned(this.path);
+    // Remember the state we left the file in, so reopening soon — by this process or the next one,
+    // after a restart — isn't mistaken for a foreign write. Only what the guard verifies: the
+    // shutdown appends are our SessionManager's own entries, and anything else records nothing.
+    this.recordOwnWrites();
   }
 
   /**

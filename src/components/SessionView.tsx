@@ -3,7 +3,7 @@ import { createStore, reconcile } from "solid-js/store";
 import type { SessionInsight, SessionSummary, TeamInfo, WorkerInfo } from "../../shared/protocol";
 import { fetchSessionInsight } from "../lib/api";
 import { agentsHref } from "../lib/insights";
-import { shortModel } from "../lib/format";
+import { relativeTime, shortModel } from "../lib/format";
 import { sourceBlocked } from "../lib/fanout";
 import { PaneScopeProvider, type PaneScope } from "../lib/pane-scope";
 import { cwdLabel } from "../lib/remote-session";
@@ -26,7 +26,7 @@ export type WatchWhy = "tui" | "recent";
 /** How the open session is shown. Decided once when it's opened, then changed only by events. */
 export type Decision =
   | { path: string; mode: "chat"; force: boolean; autofocus?: boolean }
-  | { path: string; mode: "watch"; why: WatchWhy; ageSec?: number; listVersion: number };
+  | { path: string; mode: "watch"; why: WatchWhy; listVersion: number };
 
 /** Session insight (outline, teams) reloads this long after the session's file last changed. */
 const SESSION_INSIGHT_DEBOUNCE_MS = 1500;
@@ -126,17 +126,12 @@ export function SessionView(props: {
   // session gets a new view and a new decision.
   const [decision, setDecision] = createSignal<Decision>(initial());
 
+  /** "just now" / "2m ago": when the file last changed, live (the list refreshes, the clock ticks). */
+  const changedWhen = () => relativeTime(s().lastActiveAt, props.now);
   const openChat = (force: boolean) => setDecision({ path, mode: "chat", force, autofocus: true });
   const onRefused = (kind: ChatRefusal) => {
     props.onRefresh();
-    const age = Math.round((Date.now() - Date.parse(s().lastActiveAt)) / 1000);
-    setDecision({
-      path,
-      mode: "watch",
-      why: kind === "busy" ? "tui" : "recent",
-      ageSec: Number.isFinite(age) && age >= 0 ? age : undefined,
-      listVersion: props.listVersion,
-    });
+    setDecision({ path, mode: "watch", why: kind === "busy" ? "tui" : "recent", listVersion: props.listVersion });
   };
 
   // Remount the view (and its socket) when the mode or force flag changes.
@@ -391,7 +386,9 @@ export function SessionView(props: {
                           <Banner
                             tone="warn"
                             title="Another pi process may be writing this session."
-                            body={`${w().ageSec !== undefined ? `It changed ${w().ageSec}s ago` : "It changed"} from a process we can't identify, and no TUI claims it, so we only read it. Chatting here would put 2 writers on one file.`}
+                            // The age is read live from the list row against App's clock: a number captured at
+                            // connect time froze while the 120s it counts toward ran out.
+                            body={`${changedWhen() ? `It changed ${changedWhen()}` : "It changed"} from a process we can't identify, and no TUI claims it, so we only read it. Chatting here would put 2 writers on one file.`}
                             action={
                               <button type="button" class="button button-sm" onClick={() => openChat(true)}>
                                 Chat Anyway

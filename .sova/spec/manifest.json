@@ -1176,6 +1176,129 @@
       "kind": "note",
       "authority": "accepted",
       "evidence": "reviewed"
+    },
+    "§chat.sandbox/backends": {
+      "kind": "behavior",
+      "requires": [],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/sandbox/backend.ts",
+        "pi-config/extensions/sandbox/backends/linux-bwrap.ts",
+        "pi-config/extensions/sandbox/backends/unsupported.ts"
+      ]
+    },
+    "§chat.sandbox/fail-closed": {
+      "kind": "behavior",
+      "requires": [],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/sandbox/backend.ts",
+        "pi-config/extensions/sandbox/backends/linux-bwrap.ts",
+        "pi-config/extensions/sandbox/backends/unsupported.ts",
+        "pi-config/extensions/sandbox/index.ts",
+        "pi-config/extensions/sandbox/tools.ts"
+      ]
+    },
+    "§chat.sandbox/limits": {
+      "kind": "note",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/sandbox/tools.ts",
+        "pi-config/extensions/sandbox/backends/linux-bwrap.ts"
+      ]
+    },
+    "§chat.sandbox/off-is-today": {
+      "kind": "behavior",
+      "requires": [],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/sandbox/index.ts",
+        "pi-config/extensions/sandbox/tools.ts"
+      ]
+    },
+    "§chat.sandbox/policy-file": {
+      "kind": "behavior",
+      "requires": [],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/sandbox/policy.ts",
+        "pi-config/extensions/sandbox/backends/linux-bwrap.ts",
+        "pi-config/extensions/sandbox/tools.ts",
+        "pi-config/extensions/sandbox/index.ts",
+        "pi-config/sandbox-policy/linux/policy.json",
+        "pi-config/sandbox-policy/linux/CLAUDE.md",
+        "pi-config/sandbox-policy/darwin/policy.json",
+        "pi-config/sandbox-policy/darwin/CLAUDE.md",
+        "pi-config/install.sh",
+        "scripts/hermetic-agent-dir.mjs"
+      ]
+    },
+    "§chat.sandbox/project-tightening": {
+      "kind": "behavior",
+      "requires": [],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/sandbox/policy.ts"
+      ]
+    },
+    "§chat.sandbox/toggle": {
+      "kind": "behavior",
+      "requires": [],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/sandbox/index.ts",
+        "pi-config/extensions/sandbox/state.ts",
+        "pi-config/extensions/sandbox/tools.ts"
+      ]
+    },
+    "§chat.sandbox/what-on-enforces": {
+      "kind": "behavior",
+      "requires": [],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/sandbox/backend.ts",
+        "pi-config/extensions/sandbox/backends/linux-bwrap.ts",
+        "pi-config/extensions/sandbox/policy.ts",
+        "pi-config/extensions/sandbox/proxy.ts",
+        "pi-config/extensions/sandbox/env.ts",
+        "pi-config/extensions/sandbox/tools.ts"
+      ]
+    },
+    "§chat.sandbox/workers": {
+      "kind": "behavior",
+      "requires": [],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/subagents/index.ts",
+        "pi-config/extensions/claude-code/transport.ts",
+        "pi-config/extensions/claude-code/runner.ts",
+        "pi-config/extensions/sandbox/index.ts",
+        "pi-config/extensions/sandbox/state.ts",
+        "pi-config/extensions/sandbox/policy.ts",
+        "pi-config/extensions/sandbox/tools.ts"
+      ]
+    },
+    "§chat/sandbox": {
+      "kind": "surface",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/sandbox/index.ts",
+        "pi-config/extensions/sandbox/state.ts",
+        "pi-config/extensions/sandbox/tools.ts",
+        "pi-config/extensions/sandbox/policy.ts",
+        "pi-config/extensions/sandbox/backend.ts",
+        "pi-config/extensions/sandbox/README.md"
+      ]
     }
   }
 }

@@ -145,7 +145,7 @@ These apply to you and to every worker you start. Put the relevant ones in every
    caller-authorized credential variable, by name, through `run.mjs --pass-env NAME`. Never use a bare
    `VAR=… command` prefix: it inherits your whole environment, including API keys and `CLAUDE_CONFIG_DIR`.
    The offline C runs already go through `run.mjs`, with `--no-approve --no-extensions`.
-7. **No network, installs or scripts by default.** No `npm install`, no package scripts, no downloads. A
+7. **No network, installs or scripts by default.** No `pnpm install`, no package scripts, no downloads. A
    dependency install happens only when `acceptance.json` authorizes it, only inside `$CO`, with
    `--ignore-scripts`. Never symlink MAIN's `node_modules` into the checkout (builds would write caches into
    MAIN).
@@ -234,8 +234,8 @@ the caller's instructions plus these permitted defaults, save it as `$RUN/accept
     otherwise use a fresh, unforked session and disclose that actor and observer share a model.
 - **`authorize.dependencyInstall`**: `null`, or the exact command the caller approved, run in `$CO` with an
   isolated HOME and cache and a clean environment, for example
-  `cd "$CO" && env -i PATH="$PATH" HOME="$RUN/home" TMPDIR="$RUN/tmp" npm_config_cache="$RUN/npm-cache" npm ci --ignore-scripts`
-  (network; no registry token is passed). Never the real `~/.npm`, never MAIN's `node_modules`. `null` makes T-SERVER and all S rows BLOCKED.
+  `cd "$CO" && env -i PATH="$PATH" HOME="$RUN/home" TMPDIR="$RUN/tmp" pnpm_config_store_dir="$RUN/pnpm-store" pnpm_config_cache_dir="$RUN/pnpm-cache" pnpm install --frozen-lockfile --ignore-scripts`
+  (network; no registry token is passed). Never the real pnpm store or cache, never MAIN's `node_modules`. `null` makes T-SERVER and all S rows BLOCKED.
 - **`authorize.isolatedCredentials`**: `null`, or how the caller provides a model credential to
   `$RUN/agent` without you copying it (for example "env var `X_API_KEY` is set in the orchestrator's
   environment for provider `x`, model `x/y`"). The value never goes on argv or into `--env`: pass it by name
@@ -370,7 +370,7 @@ Environment for every system-under-test command: `HOME=$RUN/home TMPDIR=$RUN/tmp
 PI_CODING_AGENT_DIR=$RUN/agent PI_OFFLINE=1` (L drops `PI_OFFLINE`). `run.mjs`, `fx.mjs` and
 `pi-capture.sh` set or pass these for you.
 
-`npm run dev:hermetic` exists (`scripts/hermetic-agent-dir.mjs`): it builds `<checkout>/.agent` and
+`pnpm run dev:hermetic` exists (`scripts/hermetic-agent-dir.mjs`): it builds `<checkout>/.agent` and
 starts the server on the fixed port 4810. This playbook uses its own `$RUN/agent` and a probed port instead.
 If you use the script for S rows, run it in `$CO` only, and probe 4810 first.
 

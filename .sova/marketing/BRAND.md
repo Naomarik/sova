@@ -109,11 +109,11 @@ Fixed-color copies, for where `currentColor` has nothing to inherit (a README, a
 
 | | |
 |---|---|
-| Install | `npm ci` |
-| Run | `npm run dev:server`<br>`npm run dev:web` (2 processes, each in its own terminal) |
+| Install | `pnpm install --frozen-lockfile` |
+| Run | `pnpm run dev:server`<br>`pnpm run dev:web` (2 processes, each in its own terminal) |
 | Demo URL | http://localhost:5173/ |
 | Repository | https://github.com/Naomarik/sova |
-| Demo notes | The two run commands are two processes, each in its own terminal: `npm run dev:server` serves the API and WebSockets on port 4800, and `npm run dev:web` serves the app through Vite on port 5173, proxying `/api` and `/ws` to 4800. By default the server uses your real `~/.pi/agent` (sessions, credentials, extensions). For a demo, and always on a machine that already runs Sova on 4800 or 5173, build a scratch agent directory with `npm run hermetic:agent-dir` and start both off the default ports: `PORT=4810 PI_CODING_AGENT_DIR=$PWD/.agent npm run dev:server` and `SOVA_PORT=4810 npm run dev:web -- --port 5176`, then open http://localhost:5176/. The scratch directory starts with no provider credentials, so a chat there fails until you log in against that directory (`/login`, see `docs/getting-started.md`). |
+| Demo notes | The two run commands are two processes, each in its own terminal: `pnpm run dev:server` serves the API and WebSockets on port 4800, and `pnpm run dev:web` serves the app through Vite on port 5173, proxying `/api` and `/ws` to 4800. By default the server uses your real `~/.pi/agent` (sessions, credentials, extensions). For a demo, and always on a machine that already runs Sova on 4800 or 5173, build a scratch agent directory with `pnpm run hermetic:agent-dir` and start both off the default ports: `PORT=4810 PI_CODING_AGENT_DIR=$PWD/.agent pnpm run dev:server` and `SOVA_PORT=4810 pnpm run dev:web --port 5176`, then open http://localhost:5176/. The scratch directory starts with no provider credentials, so a chat there fails until you log in against that directory (`/login`, see `docs/getting-started.md`). |
 
 ## Social
 

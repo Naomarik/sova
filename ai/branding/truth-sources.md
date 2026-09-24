@@ -45,7 +45,7 @@ for example, `src/lib/typography.ts` and `server/fork.ts` were on disk and untra
 picker and session forking were real in the tree and absent from the commit. Cite the commit,
 or say "in the working tree on <date>" and mean it.
 
-Then, for anything the user can see, open it. `npm run dev:server` and `npm run dev:web` from
+Then, for anything the user can see, open it. `pnpm run dev:server` and `pnpm run dev:web` from
 `README.md`, or the app already running, and look at the screen. A route that exists and a
 screen that renders are two different facts.
 

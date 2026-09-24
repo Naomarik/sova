@@ -3,7 +3,7 @@ import { createStore, reconcile } from "solid-js/store";
 import { Portal } from "solid-js/web";
 import type { ChatServerMessage, ContextInfo, SandboxInfo, SessionSummary, SlashCommand, TeamInfo, TranscriptItem, WorkerInfo } from "../../shared/protocol";
 import { createFork, fetchTranscriptWithContext, setSandbox, setSessionArchived, wsUrl } from "../lib/api";
-import { contextStateFor, usageTokens, windowOf } from "../lib/context";
+import { contextStateFor, messageContextTokens, windowOf } from "../lib/context";
 import {
   addPendingPrompt,
   applyEvent,
@@ -328,7 +328,7 @@ export function ChatView(props: {
         // Context fill at turn end: the finished assistant message carries the final usage
         // (no extra server push). A compaction makes it stale until the next reply.
         if (isObj(ev) && ev.type === "message_end" && isObj(ev.message) && ev.message.role === "assistant") {
-          const tokens = usageTokens(ev.message.usage);
+          const tokens = messageContextTokens(ev.message);
           if (tokens !== null) setSessionContext(props.path, { tokens, window: windowOf(sessionContext()[props.path]) });
         }
         if (isObj(ev) && ev.type === "compaction_start") setCompacting(true);

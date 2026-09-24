@@ -14,8 +14,9 @@ import { Banner, Chip, Icon } from "./ui";
 
 /** Within this distance of the end, the transcript follows new content. */
 const FOLLOW_PX = 80;
-/** The server's /ws/watch message for a path that doesn't exist (close 4404). */
-const FILE_GONE = "Session file not found";
+/** The server's /ws/watch messages for a transcript that isn't there (close 4404): a pi path
+    that doesn't exist, or a Claude session id with no record under ~/.claude/projects. */
+const FILE_GONE = new Set(["Session file not found", "Unknown Claude Code session"]);
 
 /** Settled states carry "as of" their end (else last activity); running ones don't. */
 /** One list section: a team and the workers of it this session lists, or the teamless ones. */
@@ -543,7 +544,7 @@ function WorkerTranscript(props: {
           break;
         case "error":
           // A missing file stays missing: stop, rather than cycle through reconnects.
-          if (msg.message === FILE_GONE) {
+          if (FILE_GONE.has(msg.message)) {
             setGone(true);
             socket.close();
           } else setError(msg.message);

@@ -18,6 +18,11 @@ directly on `node` ≥ 23.6 with no dependencies, and you can import them.
 ~/.pi/agent/sessions/live/<id>.json        directory mode 0700
 ```
 
+The directory is `<agent dir>/sessions/live`, where the agent dir is pi's own:
+`$PI_CODING_AGENT_DIR` when set (a leading `~` expanded, as pi's `getAgentDir()`
+does), else `~/.pi/agent`. A writer and its readers must agree on it: Sova's
+server resolves it through pi's `getAgentDir()`.
+
 - `<id>` is `p<pid>-<8 hex>`, for example `p48213-3fa9c2d1`. The file stem **is** the
   identity: ignore any file whose `session.id` doesn't match its stem.
 - Each pi process owns exactly one file. It writes the whole record to a
@@ -246,7 +251,7 @@ A standalone node script in `bin/pi-sessions.ts`. It doesn't need pi installed
 | `pi-sessions serve` | *deferred*: local HTTP/SSE bridge for webapps |
 
 Every command accepts `--dir <path>` (default: `$PI_SESSIONS_DIR`, else
-`~/.pi/agent/sessions/live`). Exit codes: `0` ok, `1` runtime or record error
+`$PI_CODING_AGENT_DIR/sessions/live`, else `~/.pi/agent/sessions/live`). Exit codes: `0` ok, `1` runtime or record error
 (focus refused, for example), `2` usage error, with the usage text on stderr.
 Sessions in `snapshot`, `menu` and the watch snapshots are sorted
 needs-input/error first, then working (most recent first), then the rest by

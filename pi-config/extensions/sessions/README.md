@@ -8,6 +8,11 @@ socket, and the directory is the registry:
 ~/.pi/agent/sessions/live/<id>.json        <id> = p<pid>-<8 hex>, dir mode 0700
 ```
 
+`~/.pi/agent` here and below is pi's agent directory: `$PI_CODING_AGENT_DIR`
+when it is set (a leading `~` expanded, as pi itself does it; `agent-dir.ts`),
+else `~/.pi/agent`. So a hermetic pi or Sova runtime keeps its live records
+in its own agent directory, where Sova's server looks for them too.
+
 - Each process writes its whole record to a dotfile temp and `rename(2)`s it
   into place, so readers never see a partial file. It rewrites right away on
   any change. Otherwise it writes a heartbeat at least 3 s apart, checked on a
@@ -101,7 +106,7 @@ labelled separately. Unseen markers are local to this pi instance and reset on r
 
 ## Config
 
-`~/.pi/agent/sessions.json` (optional). It's read at session start and never
+`~/.pi/agent/sessions.json` (optional; in `$PI_CODING_AGENT_DIR` when set). It's read at session start and never
 written. A missing or malformed file means defaults:
 
 ```json
@@ -153,7 +158,7 @@ directory. `install.sh` symlinks it to `~/.local/bin/pi-sessions`.
 | `menu [--format dmenu\|json]` | walker/dmenu-ready `<label>\t<id>` lines, or a JSON array |
 
 - `--dir <path>` works on every command. It defaults to `$PI_SESSIONS_DIR`,
-  else `~/.pi/agent/sessions/live`.
+  else `$PI_CODING_AGENT_DIR/sessions/live`, else `~/.pi/agent/sessions/live`.
 - Exit codes: `0` ok, `1` runtime/record error (including a refused focus),
   `2` usage error, with the usage text on stderr. `--help` also exits 2.
 - `watch` diffs content and dedupes heartbeat noise: the 3–4 s rewrites and

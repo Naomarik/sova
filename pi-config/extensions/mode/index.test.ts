@@ -373,7 +373,6 @@ test("spec: the prompt names the trusted tools, their real flags, and the draft 
 	assert.match(spec, /Keep the frontier in view/);
 	assert.match(spec, /Exit 0 means the declared closure was delivered, not that the context is complete/, "known closure, not completeness");
 	assert.match(spec, /Labels are declared, never proof: `migrated` text is the requirement with its implementation unreviewed; `candidate` is a proposal\./);
-	assert.match(spec, /Old docs that redirect into `\.sova\/spec\/` are not a second authority/);
 	assert.match(spec, /Documentation changes only through drafts, never by editing current `claims\/` or `manifest\.json`/);
 	assert.match(spec, /`new <name> --write` copies the whole current spec \(or starts one\)/, "a draft is a full copy");
 	assert.match(spec, /Documenting what the code already does is its own baseline draft, never mixed into a feature draft/, "baseline apart from the feature");

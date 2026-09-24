@@ -318,16 +318,26 @@ icons. Under a message of yours it is end-aligned like the message head (`.messa
 - **Quiet until the message is asked about, and every input can ask.** The strip is hidden with
   `opacity` alone — always in the DOM, always in the accessibility tree, always tabbable, and its
   height is always reserved, so a message never moves when a strip appears or leaves. A mouse
-  reveals it by being anywhere over the message region, the whole row and not just the bubble; a
-  keyboard reveals it by focusing into it (`:focus-within`, reached by Tab while it is invisible);
-  touch reveals it by a TAP on the message, which stays until a tap lands on another message or
-  outside every one. A hidden strip takes no pointer (`pointer-events: none`), and that is what
-  makes the first tap safe: it is hit-tested against the row, so it can never fire an action
-  nobody could see. Hover is scoped to a fine pointer, because a coarse one leaves `:hover` stuck
-  on the last thing tapped. A press that travelled is a scroll, not a tap, and reveals nothing.
+  reveals it by being anywhere over the message region: the whole row (`.entry`), not just the
+  bubble, and the row includes its **action band**. A row is `display: contents` and has no box
+  of its own, so the strip's box takes over the thread's `--space-4` gap above it (a
+  `−--space-4` top margin, padded back down by `--space-4 − --space-1`): the band starts at the
+  bubble's bottom edge, the icons stay where they were, the row's flow height doesn't change,
+  and the pointer never leaves the row on its way down to a button. A keyboard reveals the strip
+  by focusing into it (`:focus-within`, reached by Tab while it is invisible); touch reveals it by
+  a TAP on the message, which stays until a tap lands on another message or outside every one.
+  **A hidden strip's box takes the pointer and its buttons don't** (`pointer-events: none` on the
+  strip's children only), and that is what makes the first tap safe: a tap where an unseen button
+  is lands on the strip's box, reveals the row, and presses nothing. The reveal is applied on the
+  `click` the tap produces, not at `pointerup`, because a touch's compatibility mouse events
+  arrive after `touchend` and would press a strip made live any earlier. Hover is scoped to a
+  fine pointer (`(hover: hover) and (pointer: fine)`), because a coarse one leaves `:hover` stuck
+  on the last thing tapped. A press that travelled more than 10px is a scroll, not a tap, and
+  reveals nothing.
   Three states hold the strip open regardless of the pointer: an armed confirm, Copy's check, and
   a refusal the row is keeping. Revealed, hover and focus still deepen the ink
-  (`--color-ink-muted` → `--color-ink-2`); quiet is a semantic colour at full opacity, never alpha —
+  (`--color-ink-muted` → `--color-ink-2`), and a coarse pointer, with no hover to deepen it,
+  starts at `--color-ink-2`; quiet is a semantic colour at full opacity, never alpha —
   muted measures 4.7:1 or better on every surface a message sits on, in both themes, where a 0.6
   alpha measured 2.4:1 and failed the 3:1 a glyph needs. Each button is 44px wide and reaches 44px
   tall through an `::after` extension, so the visual row stays 36px and messages keep their
@@ -554,8 +564,8 @@ page with two parts, in this order:
 |---|---|
 | No session selected (unfolded) | The landing page below, not a bare `.empty`: `.welcome` fills `.app-main`, its `.welcome-head` holds the `.empty` opening (`chat` icon in `.empty-mark`, title "48 sessions across 7 folders.", body "Pick one to read it, or start a new one.", an `.empty-action` cluster with `New Session` and `Fan Out…`), and the Explained grid follows when there is one. No composer |
 | Loading transcript (after 300ms) | Three placeholder messages in `.thread`: a right-aligned `.skeleton` 40% × 44px, then a left `.skeleton-title` plus 3 `.skeleton-line` at 92/78/60%, then a `.skeleton-row` at 60% width. Put `aria-busy="true"` on the `section`. The head renders straight away from the `SessionSummary` |
-| Error | `.banner.banner-error` in `.transcript-inner`. Title: "Couldn't load this transcript." Body: "The file at `{path}` wasn't changed. {server message}." Action: `Retry` |
-| Empty (new session) | `.empty`. Title: "New session in `~/webapps/pi-web`." Body: "Nothing sent yet. Your first message becomes its title." No action; focus the composer instead. Show it only while the thread has **zero rows**, counting local rows such as "Ran `/cmd`" (§4d) and model-change info rows. Once any row exists, the thread renders normally with no empty state |
+| Error (a watched TUI session) | `.banner.banner-error` in `.transcript-inner`. Title: "Couldn't load this transcript." Body: "The file at `{path}` wasn't changed. {server message}." Action: `Retry`. A chat the server refuses to open shows §app.shell's open-failure banner instead |
+| Empty (new session) | `.empty` with no icon: the title "New session in `~/webapps/pi-web`.", then the setup card (§chat.transcript/setup-card), then the footnote `.empty-body` "Your first message becomes its title." No action; the composer has focus. Show it only while the thread has **zero rows**, counting local rows such as "Ran `/cmd`" (§4d) and model-change info rows. Once any row exists, the thread renders normally with no empty state |
 | Agent/server error (`type:"error"`, not busy) | `.banner.banner-error` placed as the last item of the thread (in flow, so it stays in the record). Title: "The turn stopped with an error." Body: "{message}. Your messages are kept. Send again to retry." |
 
 ## §chat.transcript/setup-card — Setup card

@@ -180,9 +180,10 @@ Spend `--color-accent` on only three things:
 
 1. The one primary button in view (Send, or Create Session inside the dialog).
 2. The live indicator (`.chip-live` and `.live-dot`), and every TUI mark — the sidebar row's
-   rail pill, the spine tile's `.spine-dot-live`, the head's `TUI` chip, the `N TUI` count — all
-   of which are accent but **static**
-   (see Motion).
+   rail `TUI` chip (`.session-rail-tui`, the word, no dot), the spine tile's `.spine-dot-live`,
+   the session head's `TUI` chip (`.chip.chip-accent`, dot and word) and the `{n} TUI` count
+   under search (`.chip.chip-accent.chip-count`, dot and count) — all of which are accent but
+   **static** (see Motion).
 3. Focus rings and links.
 
 Selected rows and user bubbles take `--color-accent-tint`. Anything else that "needs color" is a
@@ -195,14 +196,16 @@ fade in over `--dur-base`. Only two things loop:
 
 - The `live-pulse` on `.chip-live .chip-dot` and `.live-dot`. It means work is happening now.
   In the sidebar's row rail that is `.session-rail-state.chip-live .session-rail-dot` (Busy) and
-  `.session-rail-count-live .icon`, at most one of them per row. In the collapsed pane (the
-  spine, §2) it is `.spine-dot-busy` and `.spine-dot-working`, one dot per tile, and nothing else
-  in the spine moves.
+  `.session-rail-count-live .icon`, at most one of them per row; a folder head holding an agent
+  at work pulses the same dot (`.session-group-active .session-rail-dot`). In the collapsed pane
+  (the spine, §2) it is `.spine-dot-busy` and `.spine-dot-working`, one dot per tile, and nothing
+  else in the spine moves.
 - The skeleton sweep.
 
 **TUI never pulses — Busy and running tools own the pulse.** This holds on every surface: the
-sidebar row's rail pill (§2), the session head's `TUI` chip (§3), and the `N TUI` count under
-search all take `.chip-accent` **without** `.chip-live`. A TUI holding a file open is
+sidebar row's rail `TUI` chip (§2), the spine's `.spine-dot-live`, the session head's `TUI` chip
+(§3), and the `{n} TUI` count under search. The three chips take `.chip-accent` **without**
+`.chip-live`. A TUI holding a file open is
 *ownership*, and a count of them is a tally; neither is work in flight. What moves is our own
 run: Busy in a row, the composer's `.run-status` live dot, a Running tool card, and a
 live-sourced Working chip. This inverts the rule this file used to state ("the pulse belongs to

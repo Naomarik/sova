@@ -10,8 +10,13 @@
   "claims": {
     "§app.insights/aggregate-chips-live-vs-working": {
       "kind": "behavior",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/Sidebar.tsx",
+        "src/components/SessionView.tsx",
+        "src/design/base.css"
+      ]
     },
     "§app.insights/compaction-row": {
       "kind": "behavior",
@@ -61,12 +66,20 @@
     "§app.session-list/accessibility": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified"
+      "evidence": "verified",
+      "code": [
+        "src/components/Sidebar.tsx",
+        "src/design/base.css"
+      ]
     },
     "§app.session-list/anatomy": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified"
+      "evidence": "verified",
+      "code": [
+        "src/components/Sidebar.tsx",
+        "src/design/base.css"
+      ]
     },
     "§app.session-list/archive-by-date": {
       "kind": "behavior",
@@ -85,8 +98,13 @@
         "§chat.composer/behavior",
         "§chat.context-window/sidebar-ring"
       ],
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/Sidebar.tsx",
+        "src/design/base.css",
+        "src/lib/folder-open.ts"
+      ]
     },
     "§app.session-list/groups": {
       "kind": "behavior",
@@ -607,8 +625,15 @@
     },
     "§chat.transcript/message-actions": {
       "kind": "behavior",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/MessageActions.tsx",
+        "src/lib/message-reveal.ts",
+        "src/components/Thread.tsx",
+        "src/design/base.css",
+        "src/app.css"
+      ]
     },
     "§chat.transcript/open-questions": {
       "kind": "note",
@@ -617,8 +642,14 @@
     },
     "§chat.transcript/states": {
       "kind": "behavior",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/ChatView.tsx",
+        "src/components/WatchView.tsx",
+        "src/components/Thread.tsx",
+        "src/App.tsx"
+      ]
     },
     "§chat.transcript/streaming": {
       "kind": "behavior",
@@ -788,7 +819,7 @@
     "§design.ground-rules/color-budget": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "verified"
+      "evidence": "reviewed"
     },
     "§design.ground-rules/icons": {
       "kind": "note",

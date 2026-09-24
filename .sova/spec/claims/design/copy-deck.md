@@ -13,10 +13,11 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Search placeholder | Title, folder, or model |
 | Count | `{n} sessions` · filtered: `{visible} of {total} sessions` |
 | TUI count chip (count row under search) | `{n} TUI` (only when n ≥ 1), static — a count is not work in flight. `title`: "Sessions open in a TUI" |
-| Row TUI pill (rail) | wordless, static · `aria-label`: "Open in a TUI. Pid {pid}, status {status}." · `title`: "Open in a TUI · pid {pid} · {status}" |
-| Row Busy pill (rail) | wordless, pulsing · `aria-label` and `title`: "pi is replying in this session" |
+| Row TUI chip (rail) | `TUI`, static, no dot · `aria-label` (replaces the visible word in the accessible name): "Open in a TUI. Pid {pid}, status {status}." · `title`: "Open in a TUI · pid {pid} · {status}" · tap: the `title` as a toast |
+| Row Busy dot (rail) | wordless, pulsing · `aria-label` and `title`: "pi is replying in this session" · tap: the same as a toast |
 | Row worker count (rail) | `{n}` + worker icon · `aria-label` and `title`: "{n} subagents working now" |
 | Row link hidden suffix | ", open in a TUI" · ", pi is replying in this session" · ", {n} subagents working now" |
+| Folder head, an agent at work in it | Busy's dot, wordless, pulsing · `title`: "An agent is working in this folder" · hidden clause in the heading: ", an agent is working here" |
 | Untitled row | Untitled (muted) |
 | Draft row (a never-sent session with a stored draft) | title Untitled (muted) · line 2: `pencil` icon, then the draft's first non-empty line, about 80 characters · image-only: `1 image` / `2 images` · accessible name and `title`: Draft: {preview} |
 | Top region head | Live & web · {n} · searching: Live & web · {hits} of {total} |
@@ -48,8 +49,8 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 |---|---|
 | No session selected | **{n} sessions across {m} folders.** Pick one to read it, or start a new one. · buttons: `New Session` · `Fan Out…` (§14b's fresh-prompt entry, beside it) |
 | No session selected, Explained grid | section head: Explained `{n}` (shown only when {n} ≥ 1; the tiles' own copy is §10) |
-| Transcript load error | **Couldn't load this transcript.** The file at `{path}` wasn't changed. {server message} · button: `Retry` |
-| New empty session | **New session in `{cwd}`.** Nothing sent yet. Your first message becomes its title. |
+| Transcript load error (a watched TUI session) | **Couldn't load this transcript.** The file at `{path}` wasn't changed. {server message} · button: `Retry` · a chat that can't open says §app.shell's open-failure words instead |
+| New empty session | **New session in `{cwd}`.** · the setup card (the rows below) · then the footnote: Your first message becomes its title. |
 | New empty session, setup card figures | a file row or a section total: `{size} · {n} lines · ≈{tokens} tokens` (the token figure only when the server sent one) · under Context: "Loaded into the prompt." then, with token figures, "Token counts are estimates: 4 characters per token." · under Skills, with token figures: the same sentence after its note · commits: `{short oid} {subject} {age}` per row, or "The last commits couldn't be read." |
 | New empty session, setup card | `aria-label` "Session setup" · aggregate line `System context` with its figures, `title` "Everything pi loads into the prompt, plus the skills it offers." · in place of Context and Skills, a remote session: "Skills and context files are read on {target}, so they aren't listed here."; an unreadable folder: the server's sentence, e.g. "This session's folder no longer exists: {cwd}." · a failed request: "Couldn't read what pi loads here. {message}" · "Couldn't read this session's repository. {message}" |
 | New empty session, setup card Context | heading `Context · {n}` · roles "replaces the system prompt" · "appended to the system prompt" · none: "No context files. pi loads AGENTS.md or CLAUDE.md when a folder has one." (its note is in the figures row above) |

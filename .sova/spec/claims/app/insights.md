@@ -121,18 +121,18 @@ ellipsis.
 
 ## §app.insights/aggregate-chips-live-vs-working — Aggregate chips: "Live" vs "Working"
 
-- **Live** is session-level: a TUI has the file open. It keeps the accent everywhere, but §2's
-  sidebar row carries it as a wordless, **static** rail pill and the session head as a worded,
-  **static** `TUI` chip. The pulse moved to Busy and to running work; no TUI mark pulses
-  anywhere (§0 Motion).
+- **Live** is session-level: a TUI has the file open. It keeps the accent everywhere and says
+  the same word everywhere: §2's sidebar row carries it as a **static** `TUI` chip in the rail
+  (no dot), and the session head as a **static** `TUI` chip. The pulse moved to Busy and to
+  running work; no TUI mark pulses anywhere (§0 Motion).
 - **Working** is worker-level: a subagent is mid-task. On a member row it's
   `.chip-accent.chip-live` "Working", and pulses only when live-sourced (see Team cards).
 - **Aggregates are neutral** `.chip.chip-count`, with no dot and no pulse, so each row has only
   one pulsing thing:
   - **Session rows (§2):** no chip at all. The count is `{n}` + a `worker` icon in the row's
-    left rail (`.session-rail-count`), under the state pill, when `live?.workers?.working ≥ 1`.
+    left rail (`.session-rail-count`), under the row's state, when `live?.workers?.working ≥ 1`.
     Hidden at 0 or when absent. `.session-rail-count-live` pulses the icon only, and only on a
-    row whose pill is static.
+    row with no Busy dot, whose pulse would otherwise be a second moving thing.
   - **Session head:** a link chip before Live. With a live team it stays worded —
     `<a class="chip chip-count" href="#/agents/{teamId}">Team · {n} working</a>`, pointing at
     the busiest live team when there are several. Without a team it matches the rail's

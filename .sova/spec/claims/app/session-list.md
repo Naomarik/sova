@@ -36,19 +36,23 @@
          Both omitted here for length. -->
     <details class="session-group" aria-labelledby="g-1" open>
       <summary class="session-group-head">
-        <h2 class="list-group-label" id="g-1" title="/home/user/webapps/pi-web">
+        <h3 class="list-group-label" id="g-1" title="/home/user/webapps/pi-web">
           <svg class="icon icon-sm icon-twist" aria-hidden="true">…chevron-right…</svg>
           <svg class="icon icon-sm" aria-hidden="true">…folder…</svg>
           <span class="session-group-path"><bdi>~/webapps/pi-web</bdi></span>
+          <!-- only while an agent works in the folder: Busy's dot, pulsing (Content rules) -->
+          <span class="session-group-active" title="An agent is working in this folder">
+            <span class="session-rail-dot"></span><span class="visually-hidden">, an agent is working here</span></span>
           <span class="text-num">4</span>
-        </h2>
+        </h3>
       </summary>
       <ul class="list">
-        <!-- The rail is the row's state, on the LEFT, wordless. Every row has one, even
-             an empty one, so every title starts on the same edge:
+        <!-- The rail is the row's state, on the LEFT: the word TUI, or Busy's bare dot, then a
+             worker count. Every row has one, even an empty one, so every title starts on the
+             same edge:
 
                [=] ~/webapps/pi-web                              4
-             ( o )  Add a watch endpoint for TUI sessions
+              TUI   Add a watch endpoint for TUI sessions
               3 ⚙   Wiring /ws/watch to the session tailer       (7)
                     2h ago · claude-opus-5                        ◔
             2├──30px──┤2├───────── 270 at a 320px sidebar ─────────┤
@@ -60,16 +64,17 @@
         -->
         <li class="session-row-shell session-row-shell-current">
           <div class="session-rail">
-            <!-- at most one state pill: TUI (accent, static) or Busy (info, pulsing) -->
+            <!-- at most one state: the TUI word (accent, static) or, when nothing holds it in a
+                 TUI, Busy — <button class="session-rail-item session-rail-state chip chip-info
+                 chip-live"> holding one <span class="session-rail-dot"> and no word (info, pulsing) -->
             <button type="button" tabindex="-1"
-                    class="session-rail-item session-rail-state chip chip-accent"
-                    aria-label="Open in a TUI" title="Open in a TUI · pid 8124 · working">
-              <span class="session-rail-dot"></span>
-            </button>
+                    class="session-rail-item session-rail-state session-rail-tui chip chip-accent"
+                    aria-label="Open in a TUI. Pid 8124, status working."
+                    title="Open in a TUI · pid 8124 · working">TUI</button>
             <!-- only when n > 0; .session-rail-count-live pulses the icon, never the figure -->
             <button type="button" tabindex="-1"
                     class="session-rail-item session-rail-count session-rail-count-live"
-                    aria-label="3 subagents working" title="3 subagents working now">
+                    aria-label="3 subagents working now" title="3 subagents working now">
               <span class="text-num">3</span><span class="icon icon-sm"
                     style="--icon:url(/icons/worker.svg)"></span>
             </button>
@@ -97,7 +102,7 @@
                 </span>
               </div>
             </div>
-            <span class="visually-hidden">, open in a TUI, 3 subagents working</span>
+            <span class="visually-hidden">, open in a TUI</span><span class="visually-hidden">, 3 subagents working now</span>
           </a>
         </li>
       </ul>
@@ -283,8 +288,9 @@ label a person reads says "sessions pane".
     list's `busy`), a TUI session whose status is `Running…`, or a row with subagents working —
     shows one pulsing Busy dot on its head, before the count (`folderActive`), so a collapsed
     folder still says something is running inside it. Its name gains ", an agent is working here".
-  - The user's choice per folder lives in `sessionStorage["pi-web:folder-open-{idPrefix}-{cwd}"]`
-    (`"1"`/`"0"`, `folderOpenKey` in `src/lib/folder-open.ts`) for the browser session. The region
+  - The user's choice per folder lives in `sessionStorage["sova:folder-open-{idPrefix}-{cwd}"]`,
+    mirrored to the legacy `pi-web:folder-open-{idPrefix}-{cwd}` (`"1"`/`"0"`, `folderOpenKey` in
+    `src/lib/folder-open.ts`, written through `dualSet`) for the browser session. The region
     prefix is part of the key, so the same folder under Live & web and inside a group are two
     separate choices — they are two sections, and one holds rows the other doesn't.
   - It opens **without** changing the stored choice while a search query is non-empty (every hit
@@ -393,7 +399,9 @@ label a person reads says "sessions pane".
   since the line is what it rides on.
 - **Row line 3.** Relative `lastActiveAt` ("just now", "4m ago", "2h ago", "yesterday", "Mar 4"),
   then ` · `, then the model in mono. Show only the part after the first `/` and put the full
-  `provider/model` in `title`. If `model` is null, omit the separator and the model. A remote row
+  `provider/model` in `title`. If `model` is null, omit the separator and the model. The line is
+  `--fs-micro`, the model's mono included: two facts, never a sentence, under a title and a summary
+  that carry the row (Tokens below). A remote row
   opens the line with its remote mark ("Remote sessions" above); the time follows the line's own
   gap.
 
@@ -410,9 +418,10 @@ label a person reads says "sessions pane".
 - **Row state lives in a left rail.** Every row is a `li.session-row-shell`: a 30px
   `.session-rail` column with a **2px horizontal margin** of its own, then the row link — a 34px
   gutter in all. The margin is where the breathing room lives: not padding inside the rail, and
-  not a margin on the pill, so the rail's box (x=2…32) stays symmetrical and everything in it
-  centres on one axis. The 26px pill therefore sits **4px** off the panel edge — the 2px margin
-  plus 2px of centring slack — and the count centres under it on that same axis.
+  not a margin on an item, so the rail's box (x=2…32) stays symmetrical and everything in it
+  centres on one axis, x=17. Busy's 26px box therefore sits **4px** off the panel edge — the 2px
+  margin plus 2px of centring slack — and the TUI chip and the count, each as wide as its own
+  content, centre on that same axis (measured: 16.99 for both).
   The rail is deliberately **outboard** of the
   list's 16px text inset: it is a gutter the eye skips, not a column of content, and the titles
   start a bare 2px right of where the old rows' text did. The rail is reserved on **every** row, including the ones
@@ -422,12 +431,25 @@ label a person reads says "sessions pane".
   `.session-row-shell-current`), so the rail is skin, not a dead zone. Rail items are
   `<button type="button" tabindex="-1">` — pointer and AT affordances, never tab stops
   (Accessibility below).
-- **The rail is wordless.** It carries at most two things, stacked: a 26px state pill, then a
-  worker count. This is the one place in the product where a status ships without its word, and
-  the trade is written down under Accessibility.
-- **TUI pill.** Shown when `live !== null`: `.session-rail-item.session-rail-state.chip.chip-accent`
-  holding one `.session-rail-dot` — a 7px accent dot in a 26px round bordered pill.
-  `aria-label` "Open in a TUI. Pid {pid}, status {status}.", `title`
+- **One word, one dot.** The rail carries at most two things, stacked: a state, then a worker
+  count. TUI ships its word, `TUI`, in a chip narrower than the rail's slot, so it costs no title.
+  Busy stays a wordless dot, and with the spine's tile dots it is one of the two sanctioned
+  wordless statuses; the trade is written down under Accessibility.
+- **Each item sits on the title's first line.** The rail starts at the row link's own top padding,
+  and the title's first line is a `--lh-body` box (22.475px at `--fs-body`), so each item is
+  placed by that line box rather than by a literal: Busy's box *is* the line's height, and the
+  16px TUI chip and a lone 16px count each take `calc((--fs-body × --lh-body − 16px) / 2)`
+  (3.24px) above them. Measured at HEAD: the TUI chip's centre, a lone count's and Busy's dot's
+  are each on the first line's centre (delta 0.00, 0.01 and 0.01px).
+- **TUI chip.** Shown when `live !== null`:
+  `.session-rail-item.session-rail-state.session-rail-tui.chip.chip-accent` holding the text
+  `TUI` — the same word as the session head's `TUI` chip and the sidebar's `{n} TUI` count — and
+  no dot. It is a `--color-surface` plate with **no outline at rest**: its 1px border is
+  transparent and turns `--color-border-strong` on hover (`.session-rail-tui:hover`), the rail's
+  only hover outline. It measures **20.2 × 16**: the word (16.2px at 9px mono, untracked) plus
+  1px of padding and a 1px border each side. Its width is the word's (`width: auto`, no fixed
+  `width` or `height`, `min-height: 16px`), so a raised minimum font size widens the chip rather
+  than clipping the word. `aria-label` "Open in a TUI. Pid {pid}, status {status}.", `title`
   "Open in a TUI · pid {pid} · {status}".
 
   - **Static. No `.chip-live`**, here and in the session head's `TUI` chip alike (§0 Motion,
@@ -436,37 +458,47 @@ label a person reads says "sessions pane".
     and a row that pulses all day while nothing moves teaches people that the pulse means
     nothing. The pulse now means exactly "work in flight", which is Busy.
   - **Hue.** Accent, unchanged: the accent's meaning is still "a TUI has this".
-- **Busy pill.** Shown when `busy === true`, meaning the server is mid-turn on a session Sova
-  holds: `.session-rail-item.session-rail-state.chip.chip-info.chip-live`, same 26px pill, info
-  dot, **pulsing**. `aria-label` and `title` both "pi is replying in this session".
+- **Busy dot.** Shown when pi is replying in the session — this tab's own run first, then the
+  list's `busy` — and nothing holds it in a TUI:
+  `.session-rail-item.session-rail-state.chip.chip-info.chip-live` holding one 7px info
+  `.session-rail-dot`, **pulsing**, and no word. The dot is bare: no ring and no plate. Its
+  button is an invisible 26px-wide box exactly as tall as the title's first line
+  (`calc(--fs-body × --lh-body)`, 22.475px), so the dot centres on that line with no nudge and
+  costs the rail no more height than the line beside it; the width keeps a comfortable hit area.
+  It has no hover outline. `aria-label` and `title` both "pi is replying in this session".
 
   - **The pulse is Busy's now.** `.chip-live` lands here, and only here, in a session row. It is
     real work in flight, and it ends when the turn does.
-  - **Hue.** Info (`--status-info`, 5.94 dark / 6.36 light on the pill's surface), not the
-    accent. Busy is our own run; the accent stays reserved for "a TUI has this".
-  - **At most one pill.** TUI and Busy never co-occur — Sova never holds a TUI-owned session —
-    and if both ever arrive, **TUI wins** and Busy is hidden: the TUI owns the file, so our view
-    of busy is stale.
-  - **What tells the two apart.** Tone (accent vs info), and static vs pulsing. One dot glyph
-    can't also carry a shape difference, so shape is not a third channel here; the honest list
-    of carriers is tone, motion, `title`, `aria-label`, and the row link's hidden suffix.
-- **Worker count.** `.session-rail-item.session-rail-count`, under the pill, only when
+  - **Hue.** Info (`--status-info`), not the accent. Busy is our own run; the accent stays
+    reserved for "a TUI has this".
+  - **At most one state.** TUI and Busy never co-occur — Sova never holds a TUI-owned session —
+    and if both ever arrive, **TUI wins** and Busy is hidden (`sessionBusy` is false for a row
+    with `live`): the TUI owns the file, so our view of busy is stale.
+  - **What tells the two apart.** Tone (accent vs info); form — a 20.2 × 16 plate reading `TUI`
+    against a bare 7px dot; and static vs pulsing. Form is the channel that survives both a
+    reader who can't separate the hues and `prefers-reduced-motion`, which stops the pulse. The
+    full list of carriers is tone, form and word, motion, `title`, `aria-label`, and the row
+    link's hidden suffix.
+- **Worker count.** `.session-rail-item.session-rail-count`, under the state, only when
   `live?.workers?.working ≥ 1`: a tabular `--fs-micro` figure and an 11px `worker` icon in
   `--color-ink-muted`, 16px tall, no pill and no border — it is an aggregate, not a state, and it
   must not read as a second status. `aria-label` and `title` both "{n} subagents working now". `.session-rail-count-live` pulses **the icon only**, never the figure: a moving
   numeral can't be read. Still at most **one** moving thing per row, so the count pulses only on
-  rows whose pill is static (TUI), and a Busy row's count sits still.
+  rows without Busy, and a Busy row's count sits still. Alone in the rail, the count centres on
+  the title's first line like the TUI chip; under a state it takes `−--space-1` of margin, which
+  cancels the rail's gap, so it tucks up against the state.
 - **320px budget.** The rail costs a **34px** gutter (2px margin + 30px column + 2px margin) and
-  gives back the whole right end of the row. The pill's left edge is **4px** in and its 26px box
-  ends at x=30; the title block starts **34px** in on every row and runs
+  gives back the whole right end of the row. Busy's 26px box runs from x=4 to x=30 and the TUI
+  chip, centred on the same axis, from about x=6.9 to x=27.1; the title block starts **34px** in
+  on every row and runs
   **320 − 34 − 16 = 270px** — against the old worst case of about **150px**, when
   `2 working` (~64) + `TUI` (~48) + two 12px gaps sat to the right of the title. That is +120px,
   about **80% more title**, and it is the same 270px on every row: a stateless row no longer
   reads wider than a live one.
 
-  The title column moved 2px right when the pill got its breathing room, and that is the trade as
-  accepted: 2px of gutter buys a round button that isn't touching the panel edge, and 2px off a
-  270px column is invisible where the pill's margin is not.
+  The title column moved 2px right when the rail got its breathing room, and that is the trade as
+  accepted: 2px of gutter buys a state that isn't touching the panel edge, and 2px off a 270px
+  column is invisible where the rail's margin is not.
 
   **Re-checked with the topic chip and the context ring** (measured in Chromium over the real
   stylesheets, at a 320px viewport and at 1280 with the sidebar at its 320px default):
@@ -489,10 +521,10 @@ label a person reads says "sessions pane".
     320 — still wider than the title column ever was before the rail. The mark is `flex: none`,
     the text still truncates first, and no row grows: the dot sits inside the meta line's own
     line box.
-  - **No row grew.** A title + summary + meta row measures **77.14px** with the additions and
-    **77.14px** without them, and `.list-main` is **60.14px** either way: the chip is pinned to
-    the summary's own 14.3px line box and the 12px ring is shorter than the meta line's 19.38px.
-    The rail's 54px floor is still the floor.
+  - **No row grew.** The chip is pinned to the summary's own 14.3px line box and the 12px ring
+    is shorter than the meta line's, which is a 14.3px micro line too. Measured at HEAD (1280
+    viewport, 320px sidebar): a title + summary + meta row is **72.06px** (its link 71.06px) and
+    a title + meta row **55.77px** (54.77px).
 
   Those are the nominal figures. A real pane also spends its 1px right border and a 10px
   scrollbar, so the title column in Chrome is about **259px** at a 1280 viewport and **250px** at
@@ -500,16 +532,16 @@ label a person reads says "sessions pane".
   have not been re-measured. Both sides of the comparison are quoted without the scrollbar.
 
   **Row height.** The rail can set the row's height, because the shell is
-  `align-items: flex-start` and the taller column wins. A row with **both** rail items stacks
-  8 (top padding) + 26 (pill) + 4 (gap) + 16 (count) = **54px**. Measured at 320px, the link side
-  of a title-plus-meta row is already **60px** (76px with a summary line), so the full rail fits
-  inside the height the text already makes and **no row grows** — a both-items row and a bare row
-  both measure 60px. The 54px figure is the floor the
-  rail would impose if a row ever lost its meta line — still above `--row-height` 44, and still
-  one 44px-plus target. That is the acceptable trade:
-  the rail is bounded by a number smaller than the row it sits in, and the alternative —
-  squeezing the pill or dropping the count — spends a readable state to save height we are not
-  spending.
+  `align-items: flex-start` and the taller column wins. Measured at HEAD, the rail is 8px (its top
+  padding) when empty, 27.24px with a TUI chip or a lone count (8 + 3.24 + 16), 30.47px with Busy
+  (8 + 22.47), **43.24px** with TUI and a count (8 + 3.24 + 16 + 16, the count's negative margin
+  cancelling the 4px gap) and **46.47px** with Busy and a count (8 + 22.47 + 16) — the tallest
+  it gets. The link side of a title-plus-meta row is already **54.77px** (71.06px with a summary
+  line), so the full rail fits inside the height the text already makes and **no row grows**.
+  46.47px is the most the rail could impose, on a row that had lost its meta line — 2.5px over
+  `--row-height` 44, and still one 44px-plus target. That is the acceptable trade: the rail is
+  bounded by a number smaller than the row it sits in, and the alternative — squeezing the state
+  or dropping the count — spends a readable state to save height we are not spending.
 - **Other placements.** None for v1. The open session already shows its own run state (the
   `.run-status` line and the author's `.live-dot`, §3), so the session head doesn't repeat Busy.
   It doesn't count toward the "N TUI" chip either.
@@ -1192,19 +1224,34 @@ after).
 Sidebar ground `--color-surface`. Row hover and `:focus-within` `--color-sunken`, both on
 `.session-row-shell`; open row `--color-accent-tint` on `.session-row-shell-current`.
 Title `--color-ink`, `--fw-medium`, `--fs-body`. Summary `--fs-micro`, `--lh-micro`,
-`--color-ink-2`. Meta `--color-ink-muted`, `--fs-caption`.
+`--color-ink-2`. Meta (line 3) `--color-ink-muted`, `--fs-micro`, `--lh-micro`, scoped to
+`.session-row .list-meta`; the model's `.text-mono` inherits that size rather than keeping its
+own. `.list-meta` elsewhere stays caption.
 
 **The rail** (a session row's status column, inside the expanded pane — not the spine, which is
 the whole pane collapsed). A 30px column with `margin: 0 2px` — a 34px gutter, title 34px from the
 panel edge. Rail padding is `--space-2` on **top only**, matching the row link: the horizontal
-breathing room is the margin, so the 30px box stays symmetrical and the 26px pill centres in it
-4px off the panel edge, with the count on the same axis. Items stack centred with `--space-1`.
-The state pill is 26 × 26, `--r-full`, `--stroke-thin`
-`--color-border` on `--color-surface` (`--color-border-strong` on hover), with a 7px
-`currentColor` dot; its tone is `.chip-accent` (TUI) or `.chip-info` (Busy). The count is
+breathing room is the margin, so the 30px box stays symmetrical and every item centres on its
+x=17 axis. Items stack centred with `--space-1`.
+`.session-rail-state` (Busy) is `width: 26px`, `height: calc(--fs-body × --lh-body)`, padding 0,
+a `--stroke-thin` transparent border and no background, holding a 7px `--r-full`
+`currentColor` `.session-rail-dot`; tone `.chip-info`. `.session-rail-tui`, declared after it so
+it wins at equal specificity, turns that box into the word chip: `width: auto`, `height: auto`,
+`min-height: 16px`, padding `0 1px`, `margin-top: calc((--fs-body × --lh-body − 16px) / 2)`,
+the border still transparent (`--color-border-strong` on `:hover`), `--color-surface` behind it
+— on a hovered or current row the row is `--color-accent-tint`, and accent ink needs a plate to
+hold its contrast — tone `.chip-accent`, and its own type: `--fw-semibold` `--font-mono` at
+**9px**, line-height 1, `letter-spacing: 0`, uppercase. It sets its own type because
+`.session-rail-item`'s `font: inherit` out-cascades `.chip`'s. The 9px is an **off-scale size
+for this one chip**, at the user's request: the scale bottoms out at `--fs-micro` (11px), and a
+token below it would be a system-wide claim rather than a local one; the button's `aria-label`
+and `title` carry the meaning, not the glyph size. The count is
 borderless, 16px tall, `--font-mono` `--fs-micro` tabular in `--color-ink-muted`
-(`--color-ink` on hover), with an 11px `worker` icon. `live-pulse` runs on the Busy dot and on
-`.session-rail-count-live .icon`, nothing else in the row.
+(`--color-ink` on hover), with an 11px `worker` icon; as the rail's first item it takes the TUI
+chip's `margin-top`, and after a state `margin-top: −--space-1`. `live-pulse` runs on the Busy
+dot and on `.session-rail-count-live .icon`, nothing else in the row; the folder head's
+`.session-group-active` (`--status-info`, inline-flex, `flex: none`) pulses the same
+`.session-rail-dot`.
 
 **The spine.** `--spine-width` 64px, `.app-sidebar`'s `border-right` kept; 44px items leave 9.5px
 either side of the 63px content box, so a focus ring (2px offset + 2px width) clears the edge.
@@ -1243,7 +1290,10 @@ animation and no transition on either; the fill's colour is never `currentColor`
 Chips elsewhere take the compact chip box: padding 1px / `--space-2`, gap `--space-1`, 5px dot,
 line-height 1.2 (font stays `--fs-micro` mono, uppercase); an icon inside a `.chip-count` is
 12px. Group
-label `--font-mono`, `--fs-mono`, `--color-ink-muted`. Row link padding `--space-2` `--space-4`
+label `--font-mono`, `--fs-mono`, `--color-ink-muted`, padding `--space-3` `--space-4`
+`--space-2`; a collapsed folder's label takes `--space-3` at the bottom too, so its padding is
+even, and the folder after a collapsed one drops the `--space-4` top margin that otherwise
+separates an open folder's last row from the next divider. Row link padding `--space-2` `--space-4`
 `--space-2` 0 (the rail replaces its left padding), `min-height: --row-height`. Head
 `min-height: 56px`, border `--color-border`. Brand is
 `--fw-display`, letter-spacing −.03em, and `--fs-heading-s`. The mark takes `--color-accent`; the
@@ -1251,8 +1301,9 @@ word never does.
 
 ## §app.session-list/accessibility — Accessibility
 
-- **Landmarks.** `aside[aria-label="Sessions"]` > `nav[aria-label="Session list"]`. Each group is
-  a `section` labelled by its `h2`. Rows are plain links in a `ul`, so the browser provides
+- **Landmarks.** `aside[aria-label="Sessions"]` > `nav[aria-label="Session list"]`. Each folder is
+  a `<details>` labelled (`aria-labelledby`) by the heading in its `<summary>`: an `h3`, or an `h4`
+  inside a user group. Rows are plain links in a `ul`, so the browser provides
   Tab/Enter behavior with no roving tabindex. Collapsed, the `aside` keeps its name and holds
   `nav[aria-label="Recent sessions"]` instead; every spine item is a real tab stop in reading
   order, with an `aria-label` and a `title` — the skill's rule, "an unlabeled icon is a guess",
@@ -1260,20 +1311,26 @@ word never does.
   as pressing it.
 - **Selected row.** Mark the link with `aria-current="page"` and the shell with
   `.session-row-shell-current`.
-- **The rail and the spine's tile dots are the two sanctioned wordless statuses in the
-  system.** Everywhere else, status is a dot **and** the word. Session rows are the first
-  exception, and it is a deliberate one: at 320px the words cost more title than they buy. What
-  carries the state instead:
-  1. **The pill's border and tone** — a bordered 26px pill on `--color-surface`, accent for TUI
-     and info for Busy, so the dot is never a bare hue floating in a row.
-  2. **Static vs pulsing**, which separates TUI from Busy without depending on hue at all.
-     Note the limit honestly: one dot glyph can't also differ in *shape*, so the two pills are
-     the same silhouette. Motion, not form, is the non-color channel.
-  3. **`title`** on each rail button — "Open in a TUI · pid {pid} · {status}", "pi is replying in
+- **Busy in the rail and the spine's tile dots are the two sanctioned wordless statuses in the
+  system.** Everywhere else, status is a dot **and** the word. Busy in a session row is the first
+  exception, and it is a deliberate one: at 320px its word costs more title than it buys. The
+  folder head's Busy dot is the same mark carried up to a collapsed folder, not a third status;
+  it has its `title` ("An agent is working in this folder") and its hidden clause (", an agent is
+  working here"). The TUI state is not an exception: it ships its word, `TUI`, in a chip narrower
+  than the rail's slot. What carries the rail's state:
+  1. **Tone** — accent for TUI, on a `--color-surface` plate so the word holds its contrast on a
+     tinted row; info for Busy's bare dot.
+  2. **Form and word** — a 20.2 × 16 plate reading `TUI` against a bare 7px dot. This separates
+     the two without hue and without motion, so they stay apart for a reader who can't separate
+     the hues, under `prefers-reduced-motion`.
+  3. **Static vs pulsing** — the channel reduced motion removes.
+  4. **`title`** on each rail button — "Open in a TUI · pid {pid} · {status}", "pi is replying in
      this session", "{n} subagents working now".
-  4. **`aria-label`** on each rail button, so the state has a real accessible name and isn't a
-     nameless button.
-  5. **The row link's own name repeats the state** in a `.visually-hidden` span (", open in a
+  5. **`aria-label`** on each rail button, so the state has a real accessible name and isn't a
+     nameless button. On the TUI chip it also keeps the visible `TUI` from being read twice: an
+     `aria-label` replaces the element's text content in its accessible name rather than adding
+     to it, so the button's name is exactly "Open in a TUI. Pid {pid}, status {status}."
+  6. **The row link's own name repeats the state** in a `.visually-hidden` span (", open in a
      TUI", ", pi is replying in this session", ", {n} subagents working now"). A screen-reader
      user hears the state while arrowing the list, without ever reaching the rail buttons.
 - **The spine's dot is the second, and it is argued, not inherited.** A 44px tile holding a
@@ -1281,18 +1338,18 @@ word never does.
   it marks — and the spine exists to be narrow. What carries the state instead:
   1. **Shape and motion, not hue alone.** TUI is a filled static dot, Busy a filled pulsing dot,
      working a hollow pulsing ring: motion separates TUI from the other two, and fill separates
-     Busy from working. That is one channel more than the rail has.
+     Busy from working. The rail says `TUI` in words where the tile can only mark it.
   2. **The tile's `aria-label` is the row link's accessible name**, state suffix and all, so a
      screen-reader user hears exactly what they hear on the row.
   3. **The `title`** names the session and folder; the state words are one gesture away in the
-     session itself, which is where the tile goes — unlike the rail's pill, the tile IS the link,
+     session itself, which is where the tile goes — unlike the rail's buttons, the tile IS the link,
      so a tap opens the session rather than raising a toast.
   4. **It is opt-in.** The spine is a state the user chose, and the rail, with its tallies and
      words, is one Ctrl/⌘+B away.
 
   **The cost, plainly:** a sighted user sees a dot and no word, and under
   `prefers-reduced-motion` the pulse stops on its end state, so TUI and Busy — both filled — differ
-  by hue alone (working keeps its ring). The rail has the same limit. A TUI session that is also
+  by hue alone (working keeps its ring). The rail doesn't share that limit: its TUI is a word. A TUI session that is also
   running subagents shows only its TUI dot; the tile's name still carries both.
 - **Rail buttons are `tabindex="-1"` on purpose.** They are affordances, not destinations: two
   extra tab stops per row would add hundreds to a 278-row list, and the same facts are already in
@@ -1300,7 +1357,8 @@ word never does.
   them directly.
 - **Touch.** There is no hover on touch, so tapping a rail button raises its sentence as a toast
   — the same text as its `title`. The button sits outside the row link, so the tap doesn't open
-  the session. The pill is 26px, under the 44px target minimum: it is an optional affordance for
+  the session. Each rail button is under the 44px target minimum (Busy's box is 26 × 22.47, the
+  TUI chip 20.2 × 16, the count about 20 × 16): it is an optional affordance for
   a fact the row already carries in its name, not a control, and the 44px target is the row
   itself.
 - **The topic chip and the context ring are inert, and AT gets nothing from them.** Both carry a
@@ -1317,8 +1375,9 @@ word never does.
   mark follows the same precedent with one exception, stated under "Remote sessions": its fact
   rides the row link's accessible name as a short clause, so a screen-reader user hears which
   rows are remote — the one fact the list is scanned for once a group mixes them.
-- **The cost, stated.** A sighted touch user still sees a coloured dot and no word until they tap
-  it or open the session (§3's `.run-status` and the head say which it is). The toast is a second
+- **The cost, stated.** On a Busy row a sighted touch user still sees a coloured dot and no word
+  until they tap it or open the session (§3's `.run-status` and the head say which it is); a TUI
+  row says `TUI`. The toast is a second
   gesture and it isn't discoverable — nothing on the row says the dot can be tapped. We accept
   that for the sessions pane — its rows and, collapsed, its tiles — and nowhere else. The
   spine's dot was argued against this bullet above, not waved through it; a third wordless status

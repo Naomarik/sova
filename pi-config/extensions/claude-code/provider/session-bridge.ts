@@ -25,6 +25,7 @@ import { createHash } from "node:crypto";
 import { appendFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { claudeProjectsRoot, claudeSessionId, nextFreeLaunch } from "./session-records.ts";
 import {
 	buildClaudeArgv, ClaudeTransport,
 	type ClaudeTransportLimits, type ClaudeTransportTimings, type SpawnImpl,
@@ -105,6 +106,12 @@ export interface SessionBridgeOptions {
 	executable?: string;
 	/** Working directory for the CLI child. Defaults to the current process cwd. */
 	cwd?: string;
+	/**
+	 * The CLI's projects directory, where each child's session record lands.
+	 * Defaults to `$CLAUDE_CONFIG_DIR/projects` (from `env`, then this process)
+	 * or `~/.claude/projects`.
+	 */
+	projectsRoot?: string;
 	/** Extra child environment, merged after the nested-session markers are dropped. */
 	env?: Record<string, string>;
 	mcpToolTimeoutMs?: number;
@@ -137,53 +144,21 @@ function describeFrame(frame: ClaudeFrame): string {
 }
 
 // ---------------------------------------------------------------------------
-// uuid5, for a CLI session id derived from the pi session
+// CLI session ids, derived from the pi session (see session-records.ts)
 // ---------------------------------------------------------------------------
 
-/** RFC 4122 namespace URL. */
-const NAMESPACE_URL = "6ba7b811-9dad-11d1-80b4-00c04fd430c8";
-
-/**
- * RFC 4122 v5 (SHA-1) UUID. No `uuid` dependency exists here — pi-config
- * extensions are restricted to node builtins — so it is derived directly.
- * Checked against the RFC vector
- * `uuid5(DNS, "python.org") === 886313e1-3b8a-5372-9b90-0c9aee199e5d`.
- */
-export function uuidv5(namespace: string, name: string): string {
-	const hex = namespace.replace(/-/g, "");
-	if (!/^[0-9a-fA-F]{32}$/.test(hex)) throw new Error("uuidv5: namespace is not a UUID");
-	const digest = createHash("sha1").update(Buffer.from(hex, "hex")).update(Buffer.from(name, "utf8")).digest();
-	const bytes = Buffer.from(digest.subarray(0, 16));
-	bytes[6] = (bytes[6]! & 0x0f) | 0x50; // version 5
-	bytes[8] = (bytes[8]! & 0x3f) | 0x80; // RFC 4122 variant
-	const s = bytes.toString("hex");
-	return `${s.slice(0, 8)}-${s.slice(8, 12)}-${s.slice(12, 16)}-${s.slice(16, 20)}-${s.slice(20)}`;
-}
-
-/**
- * The CLI `--session-id` for the `launch`-th child of a pi session.
- *
- * `--session-id` CREATES a record; it never re-attaches to one. Handed an id
- * that already exists the CLI prints `Session ID <id> is already in use.` on
- * stderr and exits 1 before answering `initialize`, so a *stable* id would make
- * every relaunch after the first child's death fail forever. Each launch
- * therefore gets its own id, still derived from the pi session id so the
- * records stay attributable to it. Launch 0 keeps the bare `pi:<id>` name, so
- * an existing session's first child is unchanged.
- */
-export function claudeSessionId(piSessionId: string, launch = 0): string {
-	return uuidv5(NAMESPACE_URL, launch === 0 ? `pi:${piSessionId}` : `pi:${piSessionId}#${launch}`);
-}
+export { claudeSessionId, uuidv5 } from "./session-records.ts";
 
 /** stderr of a child that was handed a `--session-id` some earlier child took. */
 const SESSION_ID_TAKEN_RE = /session id\b.*\bis already in use/i;
 /** "Claude <why>" for that case; distinguished from a real handshake failure. */
 const SESSION_ID_TAKEN = "was handed a session id already in use";
 /**
- * How far past `launchAttempt` to probe for a free id. The counter lives in
- * memory, so a new Sova process starts back at 0 and has to walk past the
- * records the previous one left on disk; each collision costs one fast-failing
- * spawn (~150 ms).
+ * How far past `launchAttempt` to probe for a free id. Each launch first skips
+ * past the records already on disk (`nextFreeLaunch`), so a new process does
+ * not re-probe the ids the previous one took; the probes are the safety net
+ * for a record the scan could not see (another cwd, a record written between
+ * the scan and the spawn). Each collision costs one fast-failing spawn (~150 ms).
  */
 const SESSION_ID_PROBES = 32;
 
@@ -666,6 +641,9 @@ class CliSession {
 		this.recorded = [];
 		this.meta = undefined;
 
+		// Start past every record on disk: the counter is only in memory, so
+		// after a process restart it would otherwise re-probe ids already taken.
+		this.launchAttempt = this.firstFreeLaunch();
 		// Walk forward until the CLI accepts an id: a collision is survivable and
 		// costs one fast-failing spawn, whereas reusing an id is fatal for good.
 		for (let probe = 0; probe <= SESSION_ID_PROBES; probe++) {
@@ -680,6 +658,17 @@ class CliSession {
 			if (why !== SESSION_ID_TAKEN) throw new Error(`Claude ${why}`);
 		}
 		throw new Error(`Claude ${SESSION_ID_TAKEN}, for ${SESSION_ID_PROBES + 1} ids in a row`);
+	}
+
+	/** `launchAttempt`, or the launch after the last record on disk if that is later. Never throws. */
+	private firstFreeLaunch(): number {
+		try {
+			const projectsRoot = this.options.projectsRoot
+				?? claudeProjectsRoot({ CLAUDE_CONFIG_DIR: this.options.env?.CLAUDE_CONFIG_DIR ?? process.env.CLAUDE_CONFIG_DIR });
+			return nextFreeLaunch(this.piSessionId, { cwd: this.cwd, projectsRoot, from: this.launchAttempt });
+		} catch {
+			return this.launchAttempt; // the probes still cover it
+		}
 	}
 
 	/**

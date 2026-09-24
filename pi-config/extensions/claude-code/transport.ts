@@ -189,7 +189,8 @@ export function resultMatches(e: Record<string, any>, uuid: string): boolean {
 	return e.user_message_uuid === uuid || ids.includes(uuid);
 }
 export function applyResultUsage(usage: ClaudeUsage, e: Record<string, any>): void {
-	// modelUsage and total_cost_usd are process-cumulative; never sum results.
+	// modelUsage and total_cost_usd are cumulative over the whole Claude session (under --resume
+	// they include the resumed history, verified in the worker-resume e2e); never sum results.
 	if (record(e.modelUsage)) {
 		const values = Object.values(e.modelUsage).filter(record);
 		usage.input = values.reduce((n, u) => n + number(u.inputTokens), 0);
@@ -273,11 +274,17 @@ export interface ClaudeArgvOptions {
 	env?: Record<string, string>;
 	maxBudgetUsd?: number;
 	/**
-	 * A stable CLI session id (`--session-id`), so a restarted host re-attaches to
-	 * one Claude session record instead of littering new ones. Absent for
+	 * A CLI session id (`--session-id`) that CREATES the record under this id; the
+	 * CLI refuses an id already in use, and it never re-attaches (that is `resume`).
+	 * The provider bridge derives one per launch from the pi session id. Absent for
 	 * subagent workers, which let the CLI pick their session.
 	 */
 	sessionId?: string;
+	/**
+	 * An existing CLI session to continue (`--resume <id>`): a restored subagent
+	 * worker brought back after a restart. Exclusive with sessionId.
+	 */
+	resume?: string;
 	/** Opaque `--settings` JSON (the sandbox extension's, while a session's sandbox is on); never interpreted here. */
 	settingsJson?: string;
 }
@@ -301,6 +308,11 @@ export function buildClaudeArgv(o: ClaudeArgvOptions): ClaudeArgvResult {
 	if (o.sessionId !== undefined) {
 		if (!UUID.test(o.sessionId)) return { error: "Invalid sessionId: the CLI requires a canonical UUID" };
 		args.push("--session-id", o.sessionId);
+	}
+	if (o.resume !== undefined) {
+		if (o.sessionId !== undefined) return { error: "sessionId and resume are exclusive: --session-id creates a session, --resume continues one" };
+		if (!UUID.test(o.resume)) return { error: "Invalid resume: the CLI requires a canonical session UUID" };
+		args.push("--resume", o.resume);
 	}
 	if (o.settingsJson !== undefined) args.push("--settings", o.settingsJson);
 	if (o.model) args.push("--model", o.model);

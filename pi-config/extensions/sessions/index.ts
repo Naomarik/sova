@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { homedir, hostname } from "node:os";
+import { hostname } from "node:os";
+import { agentDir } from "./agent-dir.ts";
 import { join } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { createPresenceChannel, type IntercomExtensionEvent, type PresenceChannel, type PresenceChannelOptions } from "./presence.ts";
@@ -23,12 +24,12 @@ export interface SessionsConfig { budgetBytes: number }
 export interface SessionsDeps {
   /** Test seam: substitute a fake presence-channel factory. */
   createChannel?: (options: PresenceChannelOptions) => PresenceChannel;
-  /** Test seam: defaults to ~/.pi/agent/sessions.json. */
+  /** Test seam: defaults to <agent dir>/sessions.json (agent-dir.ts). */
   configPath?: string;
 }
 
 /** Sync, tolerant, never written back. Parse errors ⇒ defaults. */
-export function loadConfig(path = join(homedir(), ".pi", "agent", "sessions.json")): SessionsConfig {
+export function loadConfig(path = join(agentDir(), "sessions.json")): SessionsConfig {
   const config: SessionsConfig = { budgetBytes: RECORD_BUDGET };
   try {
     const raw = JSON.parse(readFileSync(path, "utf8"));
@@ -204,6 +205,8 @@ export default function sessions(pi: ExtensionAPI, deps: SessionsDeps = {}) {
         startedAt: w.startedAt, lastActivity: w.lastActivity, endedAt: w.endedAt, outcome: w.outcome,
         // Counts only, already normalized by the snapshot decoder.
         usage: w.usage ? { ...w.usage } : undefined,
+        restored: w.restored, usageSource: w.usageSource, usageAsOf: w.usageAsOf,
+        interruptedAt: w.interruptedAt, resumable: w.resumable,
       })),
       activity, workerCounts: countWorkers(workers),
       // The Σ covers workers the 40-row cap (and retention) dropped, so it is never recomputed here.

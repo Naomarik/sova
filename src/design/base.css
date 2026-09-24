@@ -4566,7 +4566,9 @@ a.chip:hover { color: var(--color-ink); border-color: var(--color-border-strong)
 .meta-line > * { flex: none; white-space: nowrap; }
 .meta-line-shrink {
   flex: 0 1 auto;
-  min-width: 3ch;
+  /* Enough for a short id whole ("haiku", "glm-5.3"): at 3ch one read "h…", which says nothing.
+     Longer ids still ellipsize; past this floor the row's own tail clips instead. */
+  min-width: 8ch;
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -4640,6 +4642,21 @@ a.chip:hover { color: var(--color-ink); border-color: var(--color-border-strong)
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* A restored worker's note under the head: what the restart did, and Resume Worker when this
+   server can do it. Sunken, like other context strips; the button sits at the end. */
+.subagents-restored {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  padding: var(--space-2) var(--space-4);
+  border-bottom: var(--stroke-thin) solid var(--color-border);
+  background: var(--color-sunken);
+  flex: none;
+}
+.subagents-restored > .usage-note { flex: 1 1 18rem; min-width: 0; }
+.subagents-restored-error { flex-basis: 100%; color: var(--status-error); }
 
 .subagents-transcript {           /* compose with .pane */
   flex: 1;

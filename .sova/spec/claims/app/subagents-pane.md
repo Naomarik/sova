@@ -117,9 +117,12 @@ the way it came.
 
 **The token Σ** sits beside the working count as a second neutral chip, `{n} tokens` in mono
 (`.subagents-usage`), left out when nothing has been spent. It is a **session-lifetime** total:
-every worker this session ever started, including the ones the manager's retention cap and the
-live record's 40-row cap dropped, so it is normally larger than the rows add up to and it never
-goes down. The headline is input + output, the §chat/context-window token format. Everything the headline hides
+every worker this session ever started, on any branch, including the ones the manager's
+retention cap and the live record's 40-row cap dropped, so it is normally larger than the rows add
+up to. While the runtime runs it never goes down. After a server restart it is **rebuilt from the
+workers' transcripts** (§app.worker-restore/usage-from-transcripts), which may give a different
+total than the one shown before: the rebuild counts what the live count left out (cache-warm
+calls), and a Claude Code worker's cost is its last snapshot's. The headline is input + output, the §chat/context-window token format. Everything the headline hides
 is in the `title`: `{in} in · {out} out · {cacheRead} cache read · {cacheWrite} cache write`,
 the cost (`$0.72`, `<$0.01`) when a backend reports one, and the head count it covers
 ("57 subagents so far"). Under 520px of pane the chip goes and the working count stays: one
@@ -183,7 +186,7 @@ list/detail. From 1280 the column is 40vw and asks its own box, so it's side by 
   (`WorkerInfo.provider`): `claude code` for that backend, else the model ref's own provider, else
   the one pi's cached catalogs give for a bare id. The provider, the tokens, the "as of" time and
   "last task failed" keep their room, and the **model id is the only part that shrinks**
-  (`.meta-line-shrink`, ellipsized, 3ch floor). A number that's been clipped is worse than a name
+  (`.meta-line-shrink`, ellipsized, 8ch floor, so a short id such as `haiku` or `glm-5.3` stays whole). A number that's been clipped is worse than a name
   that has, the model is the one fact already known from elsewhere, and a provider that clipped
   would be the least useful half of `zai · glm-5.3`. A worker whose provider can't be derived shows
   none: the pane never guesses one. Separators are `.meta-line-sep` dots, `aria-hidden`.
@@ -203,13 +206,21 @@ list/detail. From 1280 the column is 40vw and asks its own box, so it's side by 
   | `done` | `.chip.chip-success` Done | `{provider}` · `{model}` · `{tokens}` · as of `{HH:MM}` |
   | `error` | `.chip.chip-error` Failed | `{provider}` · `{model}` · `{tokens}` · as of `{HH:MM}` |
   | `killed` | `.chip` + dot, Stopped | `{provider}` · `{model}` · `{tokens}` · as of `{HH:MM}` |
+  | `restored` | `.chip` + dot, Restored | `{provider}` · `{model}` · `{tokens}` · as of `{HH:MM}` |
+  | `restored`, mid-task at the restart (`interruptedAt`) | `.chip.chip-warn` Interrupted | `{provider}` · `{model}` · `{tokens}` · as of `{HH:MM}` |
 
   **Tokens** are that worker's own running total (input + output, mono, the same §chat/context-window format and
   the same split-and-cost `title` as the head's Σ). A worker that has spent nothing yet shows
   none, and so does a worker from a pi-config that doesn't publish counts: the meta line then
   reads exactly as it did before. It is one worker's spend, never the Σ.
   "As of" is `endedAt`, else `lastActivity`, mono 24-hour, the full ISO time in `title`. **Only a
-  live-sourced Working or Starting chip pulses**, so each row has one pulsing thing at most. While
+  live-sourced Working or Starting chip pulses**, so each row has one pulsing thing at most.
+  **Restored** workers (§app.worker-restore/restore) are the ones the session recorded before a
+  server restart: no process runs them and they never pulse. One that was idle at the restart
+  reads Restored, one that was mid-task reads Interrupted (warn: the turn it was on never
+  finished), and one that had ended keeps its ending's chip. Usage rebuilt from a snapshot says
+  so in the `title` ("$0.41 as of {HH:MM}"), and a worker whose usage can't be read shows
+  "usage unavailable" in the tokens' place, never 0. While
   the pane's connection is down, nothing pulses and every row reads "as of" the last update.
 - **Order.** Working first, then the most recent activity first. Rows keep their identity across
   updates, so a row never jumps under the pointer except when its status changes.
@@ -223,7 +234,15 @@ list/detail. From 1280 the column is 40vw and asks its own box, so it's side by 
 ## §app.subagents-pane/transcript-view — Transcript view
 
 A nested, read-only session view: **no composer, no Send, no Steer, no Stop, no attach**, and
-no disabled composer with a reason either. A worker's session belongs to its worker, and the
+no disabled composer with a reason either. The one exception is a restored worker
+(§app.worker-restore/restore). Under its view head, a `usage-note` says what happened: a
+`restored` one reads "Not running since a server restart." (interrupted: "Not running since a
+server restart; it was mid-task at {HH:MM}, and that turn never finished."). When the worker is
+`resumable` (a session this server hosts, on a backend that resumes), the note adds "Resuming
+starts it idle; nothing is sent to it." and a **Resume Worker** button (`.button.button-sm`,
+"Resuming…" while busy) follows (§app.worker-restore/resume). A worker that had ended shows only
+that sentence and the button. A failed resume adds an alert, "Couldn't resume {name}. {reason}
+Nothing else changed." The transcript itself stays read-only. A worker's session belongs to its worker, and the
 webapp never writes to it (CLAUDE.md: no file locking).
 
 ```html

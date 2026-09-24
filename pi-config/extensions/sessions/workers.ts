@@ -1,5 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { WORKER_EFFORT_MAX, WORKER_OUTCOMES, WORKER_SESSION_FILE_MAX, WORKER_SESSION_ID_MAX, type WorkerEntry, type WorkerUsage, type WorkerUsageTotal } from "./schema.ts";
+import { WORKER_EFFORT_MAX, WORKER_OUTCOMES, WORKER_SESSION_FILE_MAX, WORKER_SESSION_ID_MAX, WORKER_USAGE_SOURCES, type WorkerEntry, type WorkerUsage, type WorkerUsageTotal } from "./schema.ts";
 
 /** schema.ts WorkerEntry: the v1 summary plus optional backend/session/effort/timing/outcome/usage. */
 export type WorkerSummary = WorkerEntry;
@@ -33,8 +33,10 @@ const bounded = (value: unknown, limit: number): value is string =>
 function decodeUsageTotal(data: unknown): WorkerUsageTotal | undefined {
 	const usage = usageOf(data);
 	if (!usage) return;
-	const workers = (data as Record<string, unknown>).workers;
-	return { ...usage, workers: typeof workers === "number" && Number.isSafeInteger(workers) && workers >= 0 ? workers : 0 };
+	const { workers, asOf, restored } = data as Record<string, unknown>;
+	return { ...usage, workers: typeof workers === "number" && Number.isSafeInteger(workers) && workers >= 0 ? workers : 0,
+		...(time(asOf) ? { asOf } : {}),
+		...(typeof restored === "number" && Number.isSafeInteger(restored) && restored > 0 ? { restored } : {}) };
 }
 
 function decodeSnapshot(data: unknown): WorkersSnapshot | undefined {
@@ -63,7 +65,13 @@ function decodeSnapshot(data: unknown): WorkersSnapshot | undefined {
 			...(time(w.lastActivity) ? { lastActivity: w.lastActivity } : {}),
 			...(time(w.endedAt) ? { endedAt: w.endedAt } : {}),
 			...((WORKER_OUTCOMES as readonly unknown[]).includes(w.outcome) ? { outcome: w.outcome as WorkerEntry["outcome"] } : {}),
-			...(usageOf(w.usage) ? { usage: usageOf(w.usage) } : {}) });
+			...(usageOf(w.usage) ? { usage: usageOf(w.usage) } : {}),
+			// Restored workers (rebuilt after a restart; no process): see schema.ts WorkerEntry.
+			...(w.restored === true ? { restored: true as const } : {}),
+			...((WORKER_USAGE_SOURCES as readonly unknown[]).includes(w.usageSource) ? { usageSource: w.usageSource as WorkerEntry["usageSource"] } : {}),
+			...(time(w.usageAsOf) ? { usageAsOf: w.usageAsOf } : {}),
+			...(time(w.interruptedAt) ? { interruptedAt: w.interruptedAt } : {}),
+			...(typeof w.resumable === "boolean" ? { resumable: w.resumable } : {}) });
 	}
 	const workerUsage = decodeUsageTotal((data as Record<string, unknown>).workerUsage);
 	return { version: 1, workers, ...(workerUsage ? { workerUsage } : {}) };

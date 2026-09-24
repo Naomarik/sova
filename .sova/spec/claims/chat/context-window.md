@@ -145,6 +145,18 @@ thousands.
 | Streaming | It keeps the last reply's value until the turn ends, then updates. It never animates and never pulses |
 | Watch view | Same rules, from the same data |
 
+## §chat.context-window/last-reply — Which reply counts
+
+"The last reply" is the last assistant reply on the branch that **measured the context**. Two
+kinds of reply are passed over: one that ended in an error or was aborted (`stopReason` `error`
+or `aborted`), whether or not it reports usage, and one whose usage reports zero input, cache read
+and cache write. A failed request, such as a provider error, says nothing about the context.
+The readout shows the most recent earlier reply that does measure it. A compaction met first
+still means "compacted", and no qualifying reply means nothing is shown, as the States table
+says. It never drops to 0% because of a failed reply. The same rule holds everywhere the fill is
+shown: the head's value from the server, the client's recount of the loaded transcript and of a
+live reply as it ends, and the sidebar ring read from the file's tail.
+
 ## §chat.context-window/width-budget — Width budget: what collapses first
 
 It collapses by the **head's** width (a named container on `.session-head`, with an `@media`

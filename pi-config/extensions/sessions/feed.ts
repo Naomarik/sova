@@ -9,7 +9,7 @@
  */
 import { createHash } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
+import { liveDirOf } from "./agent-dir.ts";
 import { join } from "node:path";
 import { countWorkers, deriveState, parseLiveRecord, type LiveRecord, type SessionState } from "./schema.ts";
 
@@ -41,8 +41,9 @@ export type FeedEvent =
 
 export type FeedState = Map<string, { record: LiveRecord; hash: string; fresh: boolean }>;
 
+/** <agent dir>/sessions/live, honouring PI_CODING_AGENT_DIR like pi itself (agent-dir.ts). */
 export function defaultLiveDir(): string {
-  return join(homedir(), ".pi", "agent", "sessions", "live");
+  return liveDirOf();
 }
 
 export function pidAlive(pid: number): boolean {

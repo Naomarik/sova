@@ -95,6 +95,51 @@ test("a sandboxed launch (settings, dontAsk, no host prompt) reaches the CLI as 
 	assert.ok(!plain.argv.includes("--settings"));
 });
 
+test("resume: --resume <id> with the sandbox settings and system prompt, idle after initialize, no user message, no completion", async (t) => {
+	const id = "6c852daa-6abf-4bbd-9ef5-8950d9330968";
+	const json = '{"sandbox":{"enabled":true}}';
+	const f = fixture({ resume: { sessionId: id }, settingsJson: json, permissionMode: "dontAsk", systemPrompt: "be terse" }); cleanup(t, f);
+	await tick();
+	assert.equal(f.argv[f.argv.indexOf("--resume") + 1], id);
+	assert.ok(!f.argv.includes("--session-id"), "--session-id would create a new record, or collide with this one");
+	assert.equal(f.argv[f.argv.indexOf("--settings") + 1], json);
+	assert.equal(f.argv[f.argv.indexOf("--permission-mode") + 1], "dontAsk");
+	assert.ok(f.argv.includes("--append-system-prompt-file"));
+	assert.equal(f.runner.sessionId, id);
+	assert.equal(f.runner.usageScope, "session", "its CLI usage covers the whole resumed session: the manager must add nothing on top");
+	f.child.ack(); await tick();
+	assert.equal(f.child.users().length, 0, "never auto-continues: the old task is not re-sent");
+	assert.equal(f.runner.status, "waiting"); assert.equal(f.runner.isSettled(), true);
+	assert.equal(f.settled.length, 0, "no completion is re-emitted");
+	// A steer continues the same session.
+	const accepted = f.runner.steer("next step");
+	await tick();
+	const user = f.child.users().at(-1);
+	assert.equal(user.message.content[0].text, "next step");
+	f.child.out({ type: "user", isReplay: true, uuid: user.uuid, session_id: id });
+	assert.deepEqual(await accepted, { ok: true });
+	f.child.out({ type: "result", subtype: "success", user_message_uuid: user.uuid, session_id: id, result: "OK" });
+	await tick();
+	assert.equal(f.runner.status, "waiting"); assert.equal(f.settled.length, 1); assert.equal(f.runner.finalOutput(), "OK");
+});
+
+test("resume of a session the CLI cannot find fails with its reason and no completion; no id refuses to launch", async (t) => {
+	const f = fixture({ resume: { sessionId: "00000000-0000-4000-8000-000000000000" } }); cleanup(t, f);
+	await tick();
+	f.child.stderr.write("No conversation found with session ID: 00000000-0000-4000-8000-000000000000\n");
+	await tick();
+	f.child.close(1);
+	await sleep(30);
+	assert.equal(f.runner.status, "error");
+	assert.match(f.runner.error!, /Could not resume Claude session .*No conversation found/);
+	assert.equal(f.settled.length, 0); assert.equal(f.exits, 1);
+	const none = fixture({ resume: {} }); cleanup(t, none);
+	await tick();
+	assert.deepEqual(none.argv, []);
+	assert.match(none.runner.error!, /no Claude session id/);
+	assert.equal(none.settled.length, 0);
+});
+
 test("correlation ignores stale replay/results and duplicate results, supports UUID array", async (t) => {
 	const f = fixture(); cleanup(t, f); await ready(f);
 	f.child.result({ uuid: "wrong" }); assert.equal(f.settled.length, 0);

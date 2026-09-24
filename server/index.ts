@@ -28,7 +28,7 @@ import { assignSession, cleanGroupLabel, createGroup, deleteGroup, GROUP_LABEL_M
 import { promptGroup } from "./group-prompt";
 import { runFanout } from "./fanout";
 import { runFork } from "./fork";
-import type { FanoutRequest, ForkRequest } from "../shared/protocol";
+import type { FanoutRequest, ForkRequest, WorkerResumeResult } from "../shared/protocol";
 import { findTarget, isTargetName, listRemoteFolders, listTargets, normalizeRemotePath, targetDir, targetsFile, validateNewSessionCwd } from "./targets";
 import { isExplanationId, listExplanations, readExplanationPage } from "./explanations";
 import { switchMode } from "./mode";
@@ -42,6 +42,7 @@ import { readSummarizerSettings, writeSummarizerSettings } from "./topic-outline
 import { claudeCliStatus } from "./claude-status";
 import { modeInfo, parseModeRequest, readMode } from "./mode-state";
 import { parseSandboxBody } from "./sandbox-state";
+import { WORKER_ID_RE } from "./worker-resume";
 import { attachWebSockets } from "./ws";
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4800; // PORT=0: an ephemeral port (tests)
@@ -581,6 +582,20 @@ app.post("/api/sandbox", async (c) => {
   const chat = heldChat(path);
   if (!chat) return c.json({ error: "That session isn't open on this server; open the chat first" }, 404);
   return c.json(await chat.applySandbox(parsed.on));
+});
+
+// Resume one restored subagent worker of a held chat, idle (server/worker-resume.ts): the subagents
+// extension's own `agent-resume` handler runs; its refusal comes back as the 409's reason.
+app.post("/api/workers/resume", async (c) => {
+  const path = resolveSessionPath(c.req.query("path"));
+  if (!path) return c.json({ error: "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)" }, 400);
+  const id = c.req.query("id") ?? "";
+  if (!WORKER_ID_RE.test(id)) return c.json({ error: "Invalid or missing ?id= (a worker id like ag_03)" }, 400);
+  const chat = heldChat(path);
+  if (!chat) return c.json({ error: "That session isn't open on this server; open the chat first" }, 404);
+  const outcome = await chat.resumeWorker(id);
+  if (!outcome.ok) return c.json({ error: outcome.error }, outcome.status);
+  return c.json({ worker: chat.workerInfo(id) } satisfies WorkerResumeResult);
 });
 
 app.get("/api/transcript", async (c) => {

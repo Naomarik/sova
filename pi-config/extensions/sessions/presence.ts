@@ -21,7 +21,7 @@
  */
 import { randomUUID } from "node:crypto";
 import { mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
+import { liveDirOf } from "./agent-dir.ts";
 import { join } from "node:path";
 import { fit, parseLiveRecord, RECORD_BUDGET, SCHEMA_VERSION, type LiveRecord, type Presence, type SessionMeta } from "./schema.ts";
 import { pidAlive } from "./feed.ts";
@@ -51,7 +51,7 @@ export interface PresenceChannelOptions {
   /** Current roster metadata; called on every write so name/model/status stay live. */
   info(): Omit<SessionMeta, "id" | "endpointEpoch">;
   onEvent(event: IntercomExtensionEvent): void;
-  /** Test override; defaults to ~/.pi/agent/sessions/live. */
+  /** Test override; defaults to <agent dir>/sessions/live (agent-dir.ts: PI_CODING_AGENT_DIR, else ~/.pi/agent). */
   dir?: string;
   /** Test override; defaults to 2000ms. */
   pollMs?: number;
@@ -73,7 +73,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 const bytes = (value: unknown) => Buffer.byteLength(JSON.stringify(value));
 
 export function createPresenceChannel(options: PresenceChannelOptions): PresenceChannel {
-  const dir = options.dir ?? join(homedir(), ".pi", "agent", "sessions", "live");
+  const dir = options.dir ?? liveDirOf();
   const pollMs = options.pollMs ?? 2_000;
   const heartbeatMs = options.heartbeatMs ?? HEARTBEAT_MS;
   const budget = options.budgetBytes ?? RECORD_BUDGET;

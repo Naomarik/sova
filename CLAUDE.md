@@ -50,13 +50,21 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   run a command on a target), `server/model-favorites.ts` imports
   `pi-config/extensions/command-palette/favorites.ts` (`ModelFavorites`: the one reader and
   writer of `model-favorites.json`, with its lock, re-read and atomic rename, for the TUI palette
-  and Sova's picker alike), and `server/insights.ts` imports
-  `pi-config/extensions/usage-status/fetch.ts`, so an edit to any of these can break Sova's
-  typecheck. Keep them pi-runtime-free (node builtins and, for the mode trio, each other only), and
-  import nothing else from pi-config at runtime. `minor.ts` also reads its sibling `spec-mode.md` once at load, and
+  and Sova's picker alike), `server/insights.ts` imports
+  `pi-config/extensions/usage-status/fetch.ts`, and the worker-transcript protocol is imported by
+  `server/insights.ts`, `worker-restore.ts`, `worker-adapters.ts`, `transcript-usage.ts` and
+  `claude-transcript.ts`: `pi-config/extensions/subagents/worker-transcript.ts` (types, the one
+  manifest fold `readWorkerManifests`, usage helpers), `subagents/adapters/index.ts` and `pi.ts`,
+  `claude-code/transcript-adapter.ts` and `claude-code/provider/session-records.ts` (the per-backend
+  readers: locating a worker's transcript and counting its usage, for restored workers and for
+  every `/ws/watch` usage total; the dev watcher does not watch these, so an edit there reaches a
+  running server only at its next restart). So an edit to any of these can break Sova's
+  typecheck. Keep them pi-runtime-free (node builtins and, for the mode trio and the protocol set,
+  each other only), and import nothing else from pi-config at runtime. `minor.ts` also reads its sibling `spec-mode.md` once at load, and
   refuses to load if that file's shell block is malformed. One test-only exception: `server/claude-models.test.ts` imports
   `pi-config/extensions/claude-code/transport.ts` (builtins only) to pin the server's Claude
-  model-discovery argv to the extension's; the server itself never imports claude-code. `argv.ts` is also the quoting boundary: every path that reaches a far shell is
+  model-discovery argv to the extension's; beyond that and the protocol set above, the server never
+  imports claude-code. `argv.ts` is also the quoting boundary: every path that reaches a far shell is
   single-quote-escaped there, and callers spawn its argv without a local shell. The web mode switch calls that extension's
   `/mode` command handler directly (`ChatSession.applyMode`), so its arguments are a contract too.
   Sova has no sshfs/mount support: a remote session's cwd is always its local placeholder, and

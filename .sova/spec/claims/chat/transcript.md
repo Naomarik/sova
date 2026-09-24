@@ -505,6 +505,22 @@ Driven by `ChatServerMessage.event`.
   reconnects, the banner goes away. The snapshot replaces the list, and scroll position is
   kept if the user wasn't following.
 
+## §chat.transcript/own-writes-across-restart — The server's own writes survive a restart
+
+A session file that changed recently, from a process Sova can't identify and that no TUI claims,
+opens read-only for 120 seconds, with the banner "It changed {just now | 2m ago} from a process we
+can't identify, and no TUI claims it, so we only read it. Chatting here would put 2 writers on one
+file." The age is live: it counts on while the banner is up, instead of freezing at connect time.
+
+The server's own writes are not "a process we can't identify", **across a restart too**. It
+keeps the size and modification time it last left each file in, in `owned-writes.json` under
+Sova's state root (the most recent 500), and a file whose size and time both still match opens
+for chat at once. A stat is recorded only where the write is certainly the server's: a file it
+just created, an entry a runtime it held just appended, and a stretch its write guard verified
+entry by entry as its own. Any later append by anyone breaks the match, and a TUI-live session is
+refused before this check. A missing or corrupt file means nothing is known to be the server's,
+and the 120-second rule applies.
+
 ## §chat.transcript/landing-page — Landing page (`#/`)
 
 With no session selected the main pane is not an empty state with a grid bolted on — it is one

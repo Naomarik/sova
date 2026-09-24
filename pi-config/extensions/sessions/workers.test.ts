@@ -202,3 +202,18 @@ test("token counts pass through per worker, and the lifetime total arrives besid
 	assert.equal(changes.length, before + 1);
 	h.fire("session_shutdown");
 });
+
+test("restored workers and the usage Σ extras pass through the snapshot decoder, validated", () => {
+	const h = harness();
+	let seen: WorkerSummary[] = [];
+	let total: WorkerUsageTotal | undefined;
+	subscribeWorkers(h.pi, (workers, usage) => { seen = workers; total = usage; });
+	h.events.emit(WORKERS_SNAPSHOT_EVENT, { version: 1,
+		workers: [{ id: "ag_01", name: "w", status: "restored", restored: true, usageSource: "none", usageAsOf: 3, interruptedAt: 4, resumable: false },
+			{ id: "ag_02", name: "x", status: "restored", restored: 1, usageSource: "bogus", usageAsOf: "3", interruptedAt: null, resumable: "yes" }],
+		workerUsage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, workers: 2, asOf: 9, restored: 2 } });
+	assert.deepEqual(seen[0], { id: "ag_01", name: "w", status: "restored", restored: true, usageSource: "none", usageAsOf: 3, interruptedAt: 4, resumable: false });
+	assert.deepEqual(seen[1], { id: "ag_02", name: "x", status: "restored" });
+	assert.deepEqual(total, { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, workers: 2, asOf: 9, restored: 2 });
+	h.fire("session_shutdown");
+});

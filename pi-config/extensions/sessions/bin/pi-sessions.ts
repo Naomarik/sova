@@ -27,7 +27,8 @@ commands:
   menu [--format dmenu|json]              launcher lines "<label>\\t<id>" (default dmenu)
 
 options:
-  --dir <path>   live directory (default: $PI_SESSIONS_DIR or ~/.pi/agent/sessions/live)
+  --dir <path>   live directory (default: $PI_SESSIONS_DIR, else $PI_CODING_AGENT_DIR/sessions/live,
+                 else ~/.pi/agent/sessions/live)
   --help         show this text
 
 Output is JSON on stdout. Exit codes: 0 ok, 1 runtime/record error, 2 usage error.

@@ -45,7 +45,7 @@ test("xhigh and max need an explicit non-null map entry", () => {
 });
 
 test("input passes through verbatim; a model without one has no input key", () => {
-  const favorites = new Set(["anthropic/claude-opus-5"]);
+  const favorites = (provider: string, id: string) => provider === "anthropic" && id === "claude-opus-5";
   const vision = toModelInfo({ provider: "anthropic", id: "claude-opus-5", input: ["text", "image"] }, favorites);
   assert.deepEqual(vision.input, ["text", "image"]);
   assert.equal(vision.favorite, true);
@@ -61,7 +61,7 @@ test("input passes through verbatim; a model without one has no input key", () =
 });
 
 test("toModelInfo carries the context window, and leaves it out when nothing knows it", () => {
-  const favorites = new Set<string>();
+  const favorites = () => false;
   assert.equal(toModelInfo({ provider: "anthropic", id: "claude-opus-5" }, favorites, 200_000).contextWindow, 200_000);
   // Absent, not 0 or null: a cost preview must be able to say "unknown" (same rule as ContextInfo.window).
   for (const unknown of [null, undefined, 0]) {

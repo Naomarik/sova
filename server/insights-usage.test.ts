@@ -110,6 +110,7 @@ test("an absent key falls back to the last known reading, with the older-session
   assert.deepEqual(ds.windows, []);
   assert.equal(ds.error, LAST_KNOWN_REASON);
   assert.equal(ds.error, "an older pi session is rewriting the cache (run /reload in it)");
+  assert.equal(ds.lastKnown, true);
 });
 
 test("a window provider's absent key comes back the same way", async () => {
@@ -126,6 +127,7 @@ test("a window provider's absent key comes back the same way", async () => {
   const claude = byId((await getUsageInsight()).providers, "claude");
   assert.equal(claude.state, "ok");
   assert.equal(claude.error, LAST_KNOWN_REASON);
+  assert.equal(claude.lastKnown, true);
   assert.deepEqual(claude.windows, [
     { label: "5h", pct: 96, resetsAt: "2026-09-19T07:50:00.621229+00:00" },
     { label: "7d", pct: 41 },
@@ -148,7 +150,58 @@ test("a present key is never replaced by the store, whatever it says", async () 
     assert.equal(ds.state, state, JSON.stringify(data));
     assert.equal(ds.balance, undefined);
     assert.notEqual(ds.error, LAST_KNOWN_REASON);
+    assert.equal(ds.lastKnown, undefined);
   }
+});
+
+test("plan, limitReached, level and extraUsage pass through; malformed ones are dropped", async () => {
+  writeCache({
+    claude: { state: "ok", fiveHour: { pct: 10 }, extraUsage: { enabled: true, pct: 42.5 } },
+    openai: { state: "ok", plan: "plus", limitReached: true, windows: [{ label: "7d", pct: 100 }] },
+    zai: { state: "ok", level: "pro", fiveHour: { label: "5h", pct: 12 } },
+  });
+  const ps = (await getUsageInsight()).providers;
+  assert.deepEqual(byId(ps, "claude").extraUsage, { enabled: true, pct: 42.5 });
+  assert.equal(byId(ps, "openai").plan, "plus");
+  assert.equal(byId(ps, "openai").limitReached, true);
+  assert.equal(byId(ps, "zai").level, "pro");
+  assert.equal(byId(ps, "claude").lastKnown, undefined);
+
+  writeCache({
+    claude: { state: "ok", fiveHour: { pct: 10 }, extraUsage: { enabled: true } },
+    openai: { state: "ok", plan: 7, limitReached: "yes", windows: [{ label: "7d", pct: 1 }] },
+    zai: { state: "ok", level: "", fiveHour: { label: "5h", pct: 12 } },
+  });
+  const qs = (await getUsageInsight()).providers;
+  assert.deepEqual(byId(qs, "claude").extraUsage, { enabled: true }); // switch on, no reading
+  for (const key of ["plan", "limitReached", "level"] as const) {
+    assert.equal(byId(qs, "openai")[key], undefined);
+    assert.equal(byId(qs, "zai")[key], undefined);
+  }
+  // A claude without extra_usage in the source carries none.
+  writeCache({});
+  assert.equal(byId((await getUsageInsight()).providers, "claude").extraUsage, undefined);
+});
+
+test("a last-known reading keeps its plan, level and extra usage", async () => {
+  clearStore();
+  writeCache({
+    claude: { state: "ok", fiveHour: { pct: 10 }, extraUsage: { enabled: true, pct: 5 } },
+    openai: { state: "ok", plan: "pro", windows: [{ label: "7d", pct: 1 }] },
+    zai: { state: "ok", level: "lite", fiveHour: { label: "5h", pct: 12 } },
+  });
+  await getUsageInsight();
+  writeFileSync(
+    usageFile,
+    JSON.stringify({ schemaVersion: 2, fetchedAt: Date.now(), nextFetchAt: null, ollama: { state: "ok", usedPct: 1 }, errors: {}, pad: "z" }),
+  );
+  resetLastKnownCache(); // read back from disk, the path a restarted server takes
+  const ps = (await getUsageInsight()).providers;
+  assert.deepEqual(byId(ps, "claude").extraUsage, { enabled: true, pct: 5 });
+  assert.equal(byId(ps, "openai").plan, "pro");
+  assert.equal(byId(ps, "zai").level, "lite");
+  for (const id of ["claude", "openai", "zai"] as const) assert.equal(byId(ps, id).lastKnown, true);
+  assert.equal(byId(ps, "ollama").lastKnown, undefined);
 });
 
 test("a stored reading older than 24h is ignored", async () => {

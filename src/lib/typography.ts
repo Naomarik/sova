@@ -131,3 +131,84 @@ export function effectiveStack(kind: FontKind, themeTokens: Record<string, strin
   if (pick) return pick.stack;
   return themeTokens[kind === "text" ? "font-body" : "font-mono"];
 }
+
+/**
+ * Text size (§12 "Typography"): one of three steps this browser puts over every `--fs-*` token,
+ * whatever face and theme are on. Medium is today's scale exactly and writes nothing; Small and
+ * Large are about 7% either way, a point on body text — enough to see, not enough to reflow a
+ * screen into a different layout. Only the type sizes move: line heights are ratios and follow on
+ * their own, and paddings, 44px targets and icon boxes stay put, so a larger size never costs a
+ * target and a smaller one never shrinks one.
+ */
+export type TextSize = "small" | "medium" | "large";
+
+export const TEXT_SIZES: readonly { id: TextSize; label: string }[] = [
+  { id: "small", label: "Small" },
+  { id: "medium", label: "Medium" },
+  { id: "large", label: "Large" },
+];
+
+/** The default: the scale tokens.css ships, with nothing written over it. */
+export const DEFAULT_TEXT_SIZE: TextSize = "medium";
+
+export const TEXT_SIZE_KEY = "sova:text-size";
+/** The pre-rebrand spelling, mirrored while the rename bridge is open (storage-keys.ts). */
+export const LEGACY_TEXT_SIZE_KEY = "pi-web:text-size";
+
+/** The multiplier for a theme's own size, which the tables below can't know in advance. */
+export const TEXT_SCALE: Readonly<Record<TextSize, number>> = { small: 0.93, medium: 1, large: 1.07 };
+
+/** tokens.css's `--fs-*` scale, step by step. Held here so Small and Large are written as
+    rounded, reviewable numbers rather than whatever a multiplier lands on; a test holds this
+    table against tokens.css so the two cannot drift. */
+export const FS_DEFAULT: Readonly<Record<string, number>> = {
+  "display-xl": 40,
+  "display-l": 29,
+  "heading-m": 20,
+  "heading-s": 16,
+  body: 14.5,
+  caption: 12.5,
+  mono: 12.5,
+  micro: 11,
+};
+
+/** The default scale × TEXT_SCALE, to the nearest half pixel — except micro on Small, held at
+    10.5 rather than 10: it is the chip and eyebrow step, and 10px caps stop reading as letters. */
+const FS_STEPPED: Readonly<Record<"small" | "large", Readonly<Record<string, number>>>> = {
+  small: { "display-xl": 37, "display-l": 27, "heading-m": 18.5, "heading-s": 15, body: 13.5, caption: 11.5, mono: 11.5, micro: 10.5 },
+  large: { "display-xl": 43, "display-l": 31, "heading-m": 21.5, "heading-s": 17, body: 15.5, caption: 13.5, mono: 13.5, micro: 12 },
+};
+
+/** Anything that is not one of the three ids is the default: a hand-edited or future value can't
+    reach a custom property. */
+export function parseTextSize(raw: string | null | undefined): TextSize {
+  return raw === "small" || raw === "large" || raw === "medium" ? raw : DEFAULT_TEXT_SIZE;
+}
+
+/** Null when there is nothing to store: Medium removes the key, as Theme default does for fonts. */
+export const serializeTextSize = (size: TextSize): string | null => (size === DEFAULT_TEXT_SIZE ? null : size);
+
+/** Half-pixel rounding, as the tables above use. */
+const halfPx = (n: number) => Math.round(n * 2) / 2;
+
+/**
+ * What a size writes, keyed by custom property: nothing at Medium. A step the theme sets in px is
+ * the theme's own size scaled and rounded, so a theme's type ramp keeps its shape; a step it sets
+ * another way (em) is scaled in `calc()`; a step it leaves alone takes the table above. `theme.ts`
+ * writes these last, over the theme's own `--fs-*`, which is why this has to know them.
+ */
+export function textSizeProperties(size: TextSize, themeTokens: Record<string, string>): Record<string, string> {
+  if (size === "medium") return {};
+  const out: Record<string, string> = {};
+  const scale = TEXT_SCALE[size];
+  for (const step of Object.keys(FS_DEFAULT)) {
+    const own = themeTokens[`fs-${step}`]?.trim();
+    let value: string;
+    if (own === undefined || own === "") value = `${FS_STEPPED[size][step]}px`;
+    else if (/^\d+(\.\d+)?px$/.test(own)) value = `${halfPx(parseFloat(own) * scale)}px`;
+    else if (own === "0") value = "0";
+    else value = `calc(${own} * ${scale})`;
+    out[`--fs-${step}`] = value;
+  }
+  return out;
+}

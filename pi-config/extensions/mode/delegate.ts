@@ -228,12 +228,17 @@ export function loadDelegate(path: string): DelegateSettings {
 	}
 }
 
-/** Atomic write (tmp + rename), canonical shape. Sova's settings screen is the writer. */
-export function saveDelegate(path: string, settings: DelegateSettings): void {
+/** Write JSON atomically (tmp + rename), so a reader never sees half a file. */
+export function writeJsonAtomic(path: string, value: unknown): void {
 	mkdirSync(dirname(path), { recursive: true });
 	const temporary = `${path}.tmp-${process.pid}`;
-	writeFileSync(temporary, `${JSON.stringify(normalizeDelegate(settings), null, 2)}\n`);
+	writeFileSync(temporary, `${JSON.stringify(value, null, 2)}\n`);
 	renameSync(temporary, path);
+}
+
+/** Atomic write (tmp + rename), canonical shape. Sova's settings screen is the writer. */
+export function saveDelegate(path: string, settings: DelegateSettings): void {
+	writeJsonAtomic(path, normalizeDelegate(settings));
 }
 
 /** Identity of a routing: two settings with the same key route every profile identically. */
@@ -243,10 +248,10 @@ export const delegateKey = (settings: DelegateSettings): string =>
 /**
  * A reader that re-parses only when the file's stat (mtime, size, inode — an atomic rename is a new
  * inode) changes — what a turn boundary calls, so a per-turn re-read costs one stat. A missing
- * file is not negatively cached.
+ * file is not negatively cached: it reads as `missing()` every time.
  */
-export function delegateReader(path: string): () => DelegateSettings {
-	let cache: { stamp: string; settings: DelegateSettings } | undefined;
+export function statCachedReader<T>(path: string, load: (path: string) => T, missing: () => T): () => T {
+	let cache: { stamp: string; value: T } | undefined;
 	return () => {
 		let stamp: string;
 		try {
@@ -254,9 +259,12 @@ export function delegateReader(path: string): () => DelegateSettings {
 			stamp = `${stat.mtimeMs}:${stat.size}:${stat.ino}`;
 		} catch {
 			cache = undefined;
-			return delegateDefaults();
+			return missing();
 		}
-		if (cache?.stamp !== stamp) cache = { stamp, settings: loadDelegate(path) };
-		return cache.settings;
+		if (cache?.stamp !== stamp) cache = { stamp, value: load(path) };
+		return cache.value;
 	};
 }
+
+/** The Delegate routing as a turn boundary reads it (statCachedReader). */
+export const delegateReader = (path: string): (() => DelegateSettings) => statCachedReader(path, loadDelegate, delegateDefaults);

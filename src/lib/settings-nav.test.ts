@@ -1,7 +1,19 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { closeSettings, openSettings, SETTINGS_TABS, settingsOpenAt } from "./settings-nav";
+import { clearSettingsSection, closeSettings, openSettings, SETTINGS_TABS, settingsOpenAt, settingsSection } from "./settings-nav";
+
+test("Configure Spec opens Modes at the Spec section, and a plain open asks for none", () => {
+  openSettings("modes", "spec");
+  assert.equal(settingsOpenAt(), "modes");
+  assert.equal(settingsSection(), "spec");
+  clearSettingsSection();
+  assert.equal(settingsSection(), null, "the section clears once it has scrolled into view");
+  openSettings("modes", "spec");
+  openSettings("modes");
+  assert.equal(settingsSection(), null, "a later open without a section forgets the earlier one");
+  closeSettings();
+});
 
 test("Settings opens at the tab asked for, and closes", () => {
   assert.equal(settingsOpenAt(), null, "closed until something opens it");
@@ -28,7 +40,7 @@ test("the mode menu's Configure Delegate opens Settings and switches nothing", (
   // postMode call, so this chat's mode is never touched by it.
   const menu = readFileSync(new URL("../components/ModeMenu.tsx", import.meta.url), "utf8");
   const action = /if \(it\.kind === "action"\) \{([\s\S]*?)\n    \}/.exec(menu)?.[1] ?? "";
-  assert.match(action, /openSettings\("modes"\)/);
+  assert.match(action, /openSettings\("modes", it\.id === CONFIGURE_SPEC\.id \? "spec" : null\)/, "Configure Spec opens Modes at its section; Configure Delegate at the top");
   assert.match(action, /return;/);
   assert.doesNotMatch(action, /postMode|setBusy/);
   assert.ok(menu.indexOf('if (it.kind === "action")') < menu.indexOf("postMode(patch"), "the action returns before the switch");

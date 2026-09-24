@@ -14,7 +14,7 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { type Api, type AssistantMessageEvent, type Model, normalizeContext, Type, type Message, type Tool } from "@earendil-works/pi-ai";
 import {
-	claudeSessionId, foldHistory, getSessionBridge, isPrefix, resetSessionBridge, SessionBridge, transcriptFingerprint, uuidv5,
+	claudeSessionId, foldHistory, getSessionBridge, isPrefix, LIMITS, resetSessionBridge, SessionBridge, transcriptFingerprint, uuidv5,
 } from "./session-bridge.ts";
 import { streamClaudeCode } from "./stream.ts";
 import { STATIC_MODELS } from "./index.ts";
@@ -246,7 +246,7 @@ test("the fingerprint is cumulative, so appends are prefixes and edits are not",
 	assert.ok(!isPrefix(transcriptFingerprint(appended), transcriptFingerprint(base)));
 });
 
-const FOLD_LIMITS = { maxLineBytes: 1, maxIdleSessions: 1, maxFoldedResultChars: 100, maxFoldedChars: 10_000 };
+const FOLD_LIMITS = { maxLineBytes: 1, maxIdleSessions: 1, maxFoldedResultChars: 100, maxFoldedReportChars: 1_000, maxFoldedChars: 10_000 };
 const JOINED_HEADER = "This conversation started before you joined it, possibly with a different model. What follows is a condensed transcript, not a verbatim record: reasoning is omitted and tool output may be truncated. Treat it as context you are being told about, not as your own memory.";
 const RESTARTED_HEADER = "Your session was restarted, so this is a condensed, lossy replay of the conversation so far: reasoning is omitted and tool output may be truncated. Treat it as context you are being told about, not as your own verbatim memory.";
 const FOLD_CLOSING = "Continue from here by answering the latest user message above.";
@@ -326,13 +326,39 @@ test("folded history is labelled lossy and carries images out of band", () => {
 		assistantWithCall("toolu_1", "read", { path: "a.txt" }),
 		toolResult("toolu_1", "read", "file body"),
 	];
-	const folded = foldHistory(messages, { maxLineBytes: 1, maxIdleSessions: 1, maxFoldedResultChars: 100, maxFoldedChars: 10_000 });
+	const folded = foldHistory(messages, { maxLineBytes: 1, maxIdleSessions: 1, maxFoldedResultChars: 100, maxFoldedReportChars: 1_000, maxFoldedChars: 10_000 });
 	assert.ok(folded.text.startsWith(`<conversation-history>\n${RESTARTED_HEADER}\n\n## User\nhello`), folded.text);
 	assert.match(folded.text, /## User\nhello/);
 	assert.match(folded.text, /tool call `read`/);
 	assert.match(folded.text, /file body/);
 	assert.equal(folded.images.length, 1);
 	assert.equal(folded.images[0]!.data, "AAAA");
+});
+
+test("a folded agent_transcript result under the report cap survives whole, prefixed or not", () => {
+	const report = `${"r".repeat(29_990)}\nEND-REPORT`;
+	for (const name of ["agent_transcript", "mcp__sova__agent_transcript", "agent_wait"]) {
+		const folded = foldHistory([user("go"), toolResult("toolu_1", name, report)], LIMITS);
+		assert.ok(folded.text.includes(`returned\n${report}\n</conversation-history>`), name);
+	}
+});
+
+test("a clipped tool result keeps its head and tail around an omission marker", () => {
+	const body = `${"x".repeat(19_980)}\nSENTINEL-TAIL-LINE`;
+	assert.equal(body.length, 19_999);
+	const folded = foldHistory([user("go"), toolResult("toolu_1", "bash", body)], LIMITS);
+	const clipped = folded.text.slice(folded.text.indexOf("returned\n") + 9, folded.text.indexOf("\n</conversation-history>"));
+	const marker = `\n… [truncated: ${body.length - LIMITS.maxFoldedResultChars} chars omitted]\n`;
+	assert.ok(clipped.endsWith("\nSENTINEL-TAIL-LINE"));
+	assert.ok(clipped.includes(marker));
+	assert.equal(clipped.length, LIMITS.maxFoldedResultChars + marker.length);
+	assert.equal(clipped, `${body.slice(0, 4_800)}${marker}${body.slice(-3_200)}`);
+});
+
+test("a folded tool result under its cap is verbatim", () => {
+	const body = "y".repeat(LIMITS.maxFoldedResultChars);
+	const folded = foldHistory([user("go"), toolResult("toolu_1", "bash", body)], LIMITS);
+	assert.equal(folded.text, `<conversation-history>\n${RESTARTED_HEADER}\n\n## User\ngo\n\n## Tool \`bash\` (id toolu_1) returned\n${body}\n</conversation-history>\n\n${FOLD_CLOSING}`);
 });
 
 // ---------------------------------------------------------------------------

@@ -48,6 +48,7 @@ test("composed member header is exact and deterministic", () => {
 			"- tests: none declared",
 			"Declared ownership is advisory coordination, not a lock: all members share one filesystem, so avoid editing paths another member owns unless your task says to.",
 			"Messages from teammates, an orchestrator or the parent session can arrive as new instructions in your session. You have no tool to reply to teammates directly, so put anything meant for them in your final answer; the parent session coordinates, and your final answer is your report.",
+			"If your final answer would run past about 3,500 characters, write the full report to a file and make your final message that file's path plus a short summary.",
 			"",
 			"[Your task]",
 			"Do the thing.",

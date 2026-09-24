@@ -207,6 +207,9 @@ const OWNERSHIP_LINE =
 	"Declared ownership is advisory coordination, not a lock: all members share one filesystem, so avoid editing paths another member owns unless your task says to.";
 const COMMON_TOOLS =
 	"team_msg sends a message to a teammate by role or worker ID (or \"all\"); the parent session delivers it into their session, so they see it at their next step or wake up if idle. team_inbox re-reads what was delivered to you. team_ask sends a question to the operator (the parent session and its user); the answer arrives later as a new message in your session, so keep working on what does not depend on it or end your turn.";
+/** A long final answer is cut in the parent's completion message and in a Claude parent's history; a file survives both. */
+export const LONG_REPORT_LINE =
+	"If your final answer would run past about 3,500 characters, write the full report to a file and make your final message that file's path plus a short summary.";
 const NO_SPAWN = "You cannot spawn, add or stop workers, and nothing you do reaches outside this team; the parent session remains the authority.";
 const mcpName = (tool: string) => `mcp__${MCP_SERVER_NAME}__${tool}`;
 /** Claude sees MCP tools under the server prefix; the header spells out the exact call names once. */
@@ -257,6 +260,7 @@ export function composeMemberPrompt(
 		...(others.length ? others.map((o) => `- ${o.role}${o.orchestrator ? " (orchestrator)" : ""}: ${ownership(o.ownedPaths)}`) : ["- none"]),
 		OWNERSHIP_LINE,
 		...coordinationLines(member, tooling),
+		LONG_REPORT_LINE,
 		"",
 		"[Your task]",
 		task,

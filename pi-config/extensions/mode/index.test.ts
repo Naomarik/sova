@@ -11,13 +11,15 @@ import { delegateDefaults, type DelegateSettings } from "./delegate.ts";
 import {
 	applyModeSection,
 	buildDelegatePrompt,
+	buildSpecWriterPrompt,
 	composePrompt,
 	DEFAULT_ROUTES,
 	DELEGATE_ALIGN_BRIDGE,
 	MODE_SECTION,
 	statusLabel,
 } from "./prompt.ts";
-import { routeAll, type Discovery } from "./routing.ts";
+import { routeAll, routeWriter, type Discovery } from "./routing.ts";
+import { specDefaults, type SpecSettings } from "./spec.ts";
 import {
 	activeOf,
 	DEFAULT_ALIGN_VIEWER_SHORTCUT,
@@ -339,7 +341,7 @@ test("spec: the prompt names the trusted tools, their real flags, and the draft 
 	const here = dirname(fileURLToPath(import.meta.url));
 	const coreDir = join(here, "../spec/core");
 	// Every tool the prompt runs from $core ships in the linked directory, and so does the README it points to.
-	const named = [...spec.matchAll(/"\$core\/([\w.-]+\.mjs)"/g)].map((m) => m[1]);
+	const named = [...new Set([...spec.matchAll(/"\$core\/([\w.-]+\.mjs)"/g)].map((m) => m[1]))];
 	assert.deepEqual(named, ["sova-spec.mjs", "sova-spec-draft.mjs"]);
 	assert.ok(spec.includes("`sova-spec-review.mjs`, see `$core/../README.md`"));
 	for (const tool of [...named, "sova-spec-review.mjs"]) assert.ok(existsSync(join(coreDir, tool)), `${tool} ships beside this extension`);
@@ -352,7 +354,7 @@ test("spec: the prompt names the trusted tools, their real flags, and the draft 
 	for (const tool of named) assert.match(usage(tool, "--no-such-flag"), /unknown flag --no-such-flag/, `${tool} reports an unknown flag`);
 	const flags = new Set(spec.match(/--[a-z][a-z-]*/g));
 	for (const flag of flags) assert.ok(named.some((tool) => !usage(tool, flag).includes(`unknown flag ${flag}`)), `${flag} is a real flag`);
-	for (const flag of ["--spec", "--commit", "--snapshot", "--doc-only", "--plan", "--write", "--verification"]) assert.ok(flags.has(flag), `${flag} is named`);
+	for (const flag of ["--spec", "--commit", "--snapshot", "--doc-only", "--plan", "--write", "--verification", "--changed", "--base"]) assert.ok(flags.has(flag), `${flag} is named`);
 	// Every draft command the prompt names is one the draft tool advertises.
 	const draftUsage = usage("sova-spec-draft.mjs", "--no-such-flag");
 	for (const cmd of ["new", "status", "diff", "check", "evidence", "promote", "recover"]) {
@@ -384,12 +386,24 @@ test("spec: the prompt names the trusted tools, their real flags, and the draft 
 	assert.match(spec, /except `manifest-not-found`: no spec yet, so start a draft\./, "no spec is a start, not an error");
 	assert.match(spec, /Promote only what is implemented and verified\. A refusal is resolved, never forced\./);
 	assert.match(spec, /Write `"requires": \[\]` only after investigating; otherwise omit the key/);
+	// Mandatory: every behavior change is spec'd, and only a declared no-behavior change is exempt.
+	assert.match(spec, /Every behavior change is spec'd\. Exempt: work changing no behavior \(refactor, tests, tooling\); say you claim the exemption\./);
+	assert.match(spec, /Behavior no claim covers gets a new claim in a feature draft before coding\./, "the claim comes before the code");
+	assert.ok(spec.indexOf("Before coding:") < spec.indexOf("before coding.") && spec.indexOf("before coding.") < spec.indexOf("Documentation changes only through drafts"), "the new claim is a before-coding step");
+	// Only what the task changed is claimed; neighbours are linked, never spec'd.
+	assert.match(spec, /Claim only files the task changed \(each record's `code`\); unchanged dependencies are not spec'd; `requires` names only existing claims\./);
+	// The finish gate: the changed-file census, run on the draft until it is promoted.
+	assert.match(spec, /Before finishing:\n- `node "\$core\/sova-spec\.mjs" census --changed --root <project root> --json` must report no in-boundary changed file unclaimed \(`--spec` the draft's `spec\/` until promoted; `--base <rev>` once committed\)\. Pre-existing unclaimed files aren't the task's job\./);
+	// Promotion is no longer conditional on a commit: promote, or say why not.
+	assert.match(spec, /- Read `\$core\/\.\.\/PROMOTE\.md`; promote what you verified, or say in your reply why not\./);
+	assert.doesNotMatch(spec, /Before `git commit`, if/, "the old conditional is gone");
+	assert.match(spec, /A `conflict` is whole-file: re-apply in a new draft from current\./);
 	assert.match(spec, /never put `§` IDs or spec annotations in source code/);
 	assert.match(spec, /authorizes its drafts, evidence and promotions as one bounded batch; no dialog per claim, and nothing at session start/);
 	assert.match(spec, /No check, record, evidence or promotion proves correctness; no tool checks meaning\./);
 	assert.match(spec, /only the passages and unknowns relevant to its part, quoted literally/, "workers get the relevant slice, not the graph");
 	assert.doesNotMatch(spec, /\{[A-Z_]+\}/);
-	assert.ok(spec.split(/\s+/).length <= 520, "short enough to ride every turn");
+	assert.ok(spec.split(/\s+/).length <= 610, "short enough to ride every turn");
 });
 
 test("mode helpers", () => {
@@ -505,6 +519,69 @@ test("a configured fallback that can't run is never offered for the retry", () =
 	const unverified = buildDelegatePrompt(routeAll(delegateDefaults(), { "claude-code": { error: "timeout" } }, () => null));
 	assert.match(unverified, /- Planning & specs .*; fallback backend "claude-code", model "opus\[1m\]", effort "high"\./);
 	assert.match(prompt, /retry once with that profile's fallback only if one is listed above as its fallback/);
+});
+
+const WRITER: SpecSettings = {
+	version: 1,
+	writer: { primary: { backend: "claude-code", model: "opus[1m]", effort: "medium" }, fallback: { backend: "pi", model: "zai/glm-5.3", effort: "high" } },
+};
+const piOffering = (...ids: string[]): Discovery => ({ models: ids.map((id) => ({ id, efforts: ["off", "low", "medium", "high"] })) });
+
+test("spec writer: a paragraph after the spec block only while spec is on and a writer is set", () => {
+	const spec = buildMinorPrompt("spec");
+	const writer = routeWriter(WRITER, { "claude-code": offering("opus[1m]"), pi: piOffering("zai/glm-5.3") }, () => null)!;
+	const paragraph = buildSpecWriterPrompt(writer);
+	const specOn = withMinor(defaults(), "spec", true);
+	// On: spec block verbatim, then the paragraph — spec-mode.md itself is untouched.
+	assert.equal(composePrompt(specOn, ALL_OK, writer), `${spec}\n\n${paragraph}`);
+	assert.equal(buildMinorPrompt("spec"), readFileSync(join(dirname(fileURLToPath(import.meta.url)), "spec-mode.md"), "utf8").trimEnd());
+	// Under delegate, with align: the paragraph rides with the spec block, after everything else.
+	assert.equal(
+		composePrompt({ ...defaults(), mode: "delegate", minorModes: ["align", "spec"] }, ALL_OK, writer),
+		`${buildDelegatePrompt(ALL_OK)}\n\n${DELEGATE_ALIGN_BRIDGE}\n\n${buildMinorPrompt("align")}\n\n${spec}\n\n${paragraph}`,
+	);
+	// Off: a writer set but spec off contributes nothing, in either major mode.
+	assert.equal(composePrompt(defaults(), ALL_OK, writer), undefined);
+	assert.equal(composePrompt(withMinor(defaults(), "align", true), ALL_OK, writer), buildMinorPrompt("align"));
+	assert.equal(composePrompt({ ...defaults(), mode: "delegate" }, ALL_OK, writer), buildDelegatePrompt(ALL_OK));
+	// No writer (null): today's behaviour — the session writes the spec itself.
+	assert.equal(routeWriter(specDefaults(), {}, () => null), null);
+	assert.equal(composePrompt(specOn, ALL_OK, null), spec);
+	assert.equal(composePrompt(specOn, ALL_OK), spec);
+	for (const block of [composePrompt(specOn, ALL_OK), composePrompt(defaults(), ALL_OK, writer) ?? ""]) assert.doesNotMatch(block ?? "", /Spec writer/);
+});
+
+test("spec writer: the paragraph names the exact worker, the drafts-only rule, and the retry", () => {
+	const onPrimary = buildSpecWriterPrompt(routeWriter(WRITER, { "claude-code": offering("opus[1m]"), pi: piOffering("zai/glm-5.3") }, () => null)!);
+	assert.match(onPrimary, /^Spec writer: draft claims and evidence records are written by one worker, spawned with agent_spawn on exactly this backend, model and effort → backend "claude-code", model "opus\[1m\]", effort "medium"; fallback backend "pi", model "zai\/glm-5\.3", effort "high"\. /);
+	assert.match(onPrimary, /Give it the relevant spec passages quoted literally, the files the task changed, and the verification you did\./);
+	assert.match(onPrimary, /It writes only under `\.sova\/spec\/drafts\/`, never current `claims\/` or `manifest\.json`; you check its draft, run the checks and the census, and promote yourself\./);
+	assert.match(onPrimary, /retry once with the fallback only if one is listed above, and say so; otherwise ask the user which model to use — never substitute one of your own\.$/);
+	assert.equal(onPrimary.match(/\n/g), null, "one paragraph");
+	// No fallback configured: a failed primary means asking.
+	const alone = buildSpecWriterPrompt(routeWriter({ version: 1, writer: { primary: WRITER.writer!.primary, fallback: null } }, { "claude-code": offering("opus[1m]") }, () => null)!);
+	assert.match(alone, /effort "medium"; no fallback — if it fails, ask the user\./);
+	// Primary unavailable: the fallback, disclosed, and the retry rule is not repeated.
+	const fallback = buildSpecWriterPrompt(routeWriter(WRITER, { "claude-code": { models: [{ id: "opus[1m]", efforts: ["low"] }] }, pi: piOffering("zai/glm-5.3") }, () => null)!);
+	assert.match(fallback, /→ backend "pi", model "zai\/glm-5\.3", effort "high"\. This is the configured FALLBACK: the primary \(backend "claude-code", model "opus\[1m\]", effort "medium"\) is unavailable — opus\[1m\] does not support effort "medium" \(supports: low\)\. Tell the user the first time you use it; do not retry the primary unless asked\./);
+	assert.doesNotMatch(fallback, /retry once/);
+	// Neither can run (policy and discovery): rendered as Delegate renders a profile with no worker.
+	const none = buildSpecWriterPrompt(
+		routeWriter(WRITER, { "claude-code": offering("opus[1m]"), pi: piOffering("zai/glm-5.3") }, (c) => (c.backend === "claude-code" ? "Backend claude-code is disabled for subagents by user settings." : "zai/glm-5.3 is off for subagents.")) as NonNullable<ReturnType<typeof routeWriter>>,
+	);
+	assert.match(none, /→ NO AVAILABLE WORKER \(Backend claude-code is disabled for subagents by user settings\.; zai\/glm-5\.3 is off for subagents\.\)\. Before handing off spec writing, tell the user and ask which model to use; do not choose one yourself\./);
+	assert.doesNotMatch(none, /retry once/);
+	assert.doesNotMatch(none, /\{[A-Z_]+\}/);
+});
+
+test("status label: a spec writer off its primary is shown while spec is on", () => {
+	const fallback = routeWriter(WRITER, { "claude-code": { models: [{ id: "opus[1m]", efforts: ["low"] }] }, pi: piOffering("zai/glm-5.3") }, () => null);
+	const none = routeWriter(WRITER, {}, () => "denied");
+	const ok = routeWriter(WRITER, {}, () => null);
+	assert.deepEqual(statusLabel("normal", ALL_OK, false, ["spec"], fallback), { text: "normal · spec · writer:fallback", tone: "warning" });
+	assert.deepEqual(statusLabel("normal", ALL_OK, false, ["spec"], none), { text: "normal · spec · writer:ask", tone: "warning" });
+	assert.deepEqual(statusLabel("normal", ALL_OK, false, ["spec"], ok), { text: "normal · spec", tone: "accent" });
+	assert.deepEqual(statusLabel("normal", ALL_OK, false, [], fallback), { text: "normal", tone: "dim" }, "spec off: the writer never shows");
 });
 
 test("DEFAULT_ROUTES: every default profile on its primary, unverified until probed", () => {

@@ -757,4 +757,48 @@ await commands.get("mode").handler("normal", ctx);
 	assert.match((await lateStart({ systemPrompt: "base" })).systemPrompt, /- Routine implementation .* → backend "claude-code", model "opus\[1m\]", effort "low"/);
 }
 
+// ── Spec writer: re-read at the turn boundary and probed while spec is on, outside delegate too ──
+{
+	const specFile = path.join(process.env.PI_CODING_AGENT_DIR, "mode-spec.json");
+	const writeSpec = (settings) => {
+		writeFileSync(`${specFile}.tmp`, JSON.stringify(settings));
+		renameSync(`${specFile}.tmp`, specFile);
+	};
+	const all = ["low", "medium", "high", "xhigh", "max"];
+	offered = [{ id: "claude-fable-5-1[1m]", name: "Fable", efforts: all }, { id: "opus[1m]", name: "Opus", efforts: ["low"] }];
+	await commands.get("mode").handler("normal", ctx);
+	await commands.get("mode").handler("spec on", ctx);
+	listCalls = 0;
+	let prompt = (await beforeAgentStart({ systemPrompt: "base" }, ctx)).systemPrompt;
+	assert.match(prompt, /# Minor mode: spec/);
+	assert.doesNotMatch(prompt, /Spec writer:/, "no writer set: no paragraph, the session writes the spec itself");
+	await flush();
+	assert.equal(listCalls, 0, "no writer, not in delegate: nothing to probe");
+
+	writeSpec({ version: 1, writer: { primary: { backend: "claude-code", model: "opus[1m]", effort: "medium" }, fallback: { backend: "claude-code", model: "claude-fable-5-1[1m]", effort: "high" } } });
+	const noticesBefore = store.notices.length;
+	prompt = (await beforeAgentStart({ systemPrompt: "base" }, ctx)).systemPrompt;
+	assert.match(prompt, /# Minor mode: spec\n[\s\S]*\n\nSpec writer: .* → backend "claude-code", model "opus\[1m\]", effort "medium";/, "re-read at the turn boundary, on the last discovery until this probe lands");
+	assert.doesNotMatch(prompt, /# Mode: delegate/, "the writer needs no delegate");
+	await flush();
+	await flush();
+	assert.equal(listCalls, 1, "outside delegate, spec on probes the writer's backend");
+	assert.equal(store.status.get("mode"), "<warning>normal · spec · writer:fallback</warning>");
+	assert.ok(
+		store.notices.slice(noticesBefore).some((n) => n.level === "warning" && /^Spec writer: fallback claude-code · claude-fable-5-1\[1m\] · high \(opus\[1m\] does not support effort "medium"/.test(n.message)),
+		"a writer on its fallback is announced",
+	);
+	prompt = (await beforeAgentStart({ systemPrompt: "base" }, ctx)).systemPrompt;
+	assert.match(prompt, /Spec writer: .* → backend "claude-code", model "claude-fable-5-1\[1m\]", effort "high"\. This is the configured FALLBACK/);
+	await commands.get("mode").handler("status", ctx);
+	assert.match(store.notices.at(-1).message, /^spec writer \(.*mode-spec\.json\): claude-code · opus\[1m\] · medium, fallback claude-code · claude-fable-5-1\[1m\] · high — using FALLBACK/m);
+
+	// Spec off: no block, no paragraph, nothing probed; the file stays as it was.
+	await commands.get("mode").handler("spec off", ctx);
+	assert.equal(await beforeAgentStart({ systemPrompt: "base" }, ctx), undefined);
+	assert.equal(store.status.get("mode"), "<dim>normal</dim>");
+	assert.ok(existsSync(specFile), "nothing here writes or removes the writer file");
+	rmSync(specFile);
+}
+
 console.log("mode smoke tests passed");

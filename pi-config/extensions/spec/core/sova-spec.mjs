@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 // sova-spec: read-only core for a project's .sova/spec. Node stdlib only; never writes.
-// Commands: check | scope §id | impact §id | census.  Flags: --root DIR, --spec DIR, --json, --budget BYTES.
+// Commands: check | scope §id | impact §id | census [--changed [--base REV]].  Flags: --root DIR, --spec DIR, --json, --budget BYTES.
 // Exit: 0 usable known closure (never completeness), 1 relevant unknown/stale/unread, 2 untrustworthy.
-import { readFileSync, readdirSync, lstatSync, existsSync } from "node:fs";
+import { readFileSync, readdirSync, lstatSync, existsSync, realpathSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { join, resolve, dirname, relative, posix } from "node:path";
 
@@ -27,7 +28,8 @@ function parseArgs(argv) {
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--json") o.json = true;
-    else if (a === "--root" || a === "--spec" || a === "--budget") {
+    else if (a === "--changed") o.changed = true;
+    else if (a === "--root" || a === "--spec" || a === "--budget" || a === "--base") {
       if (i + 1 >= argv.length) { o.usage = `${a} needs a value`; break; }
       o[a.slice(2)] = argv[++i];
     } else if (a === "--help" || a === "-h") o.help = true;
@@ -52,9 +54,11 @@ function parseArgs(argv) {
     else if (!/^\d+$/.test(o.budget) || !Number.isSafeInteger(Number(o.budget))) o.usage = "--budget takes a non-negative integer byte count";
     else o.budget = Number(o.budget);
   }
+  if (!o.usage && o.base !== undefined && !o.changed) o.usage = "--base applies to census --changed only";
+  if (!o.usage && o.changed && cmd !== "census") o.usage = "--changed applies to census only";
   return o;
 }
-const USAGE = "usage: sova-spec <check | scope §id | impact §id | census> [--root DIR] [--spec DIR] [--json] [--budget BYTES]";
+const USAGE = "usage: sova-spec <check | scope §id | impact §id | census [--changed [--base REV]]> [--root DIR] [--spec DIR] [--json] [--budget BYTES]";
 
 // --spec: a project-relative directory holding manifest.json (default .sova/spec). → {rel} | {why}
 function specDir(raw) {
@@ -434,18 +438,13 @@ function check(ctx) {
   return { counts: { records: ctx.claims.size, declarations: ctx.decls.size, kinds, labels, requiresEdges: edges, codePaths: code.length }, declarations, frontier, code };
 }
 
-function census(ctx) {
+// The manifest boundary. → {include, exclude, skipped, inBoundary} | null (missing: warned) | false (invalid: error).
+function readBoundary(ctx) {
   const b = ctx.m.boundary;
-  const claimed = new Map();
-  for (const [id, r] of ctx.claims) for (const c of r.code ?? []) claimed.set(posix.normalize(toPosix(c)), [...(claimed.get(posix.normalize(toPosix(c))) ?? []), id]);
-  const code = codeUnion(ctx, [...ctx.claims.keys()]);
-  if (b === undefined) {
-    add("warn", "boundary-missing", "manifest has no boundary {include, exclude}; no file population is named, so nothing is counted");
-    return { census: { boundary: null, claimed: code.map((c) => c.path), unclaimed: null, outside: null }, code };
-  }
+  if (b === undefined) { add("warn", "boundary-missing", "manifest has no boundary {include, exclude}; no file population is named, so nothing is counted"); return null; }
   const bad = !b || !Array.isArray(b.include) || !b.include.every((p) => typeof p === "string") ||
     (b.exclude !== undefined && !(Array.isArray(b.exclude) && b.exclude.every((e) => typeof e?.path === "string")));
-  if (bad) { add("error", "boundary-invalid", "boundary needs include: [path] and exclude: [{path, reason}]"); return { census: null, code }; }
+  if (bad) { add("error", "boundary-invalid", "boundary needs include: [path] and exclude: [{path, reason}]"); return false; }
   const norm = (p) => posix.normalize(toPosix(p)).replace(/\/$/, "");
   const include = b.include.map(norm), exclude = (b.exclude ?? []).map((e) => ({ path: norm(e.path), reason: e.reason }));
   for (const e of exclude) if (typeof e.reason !== "string" || !e.reason.trim()) add("warn", "boundary-exclude-reason", `exclude ${e.path} states no reason`);
@@ -453,6 +452,18 @@ function census(ctx) {
   // No spec graph is ever census population: all of .sova/spec (current, drafts, reviews) and the chosen --spec.
   const own = [DEFAULT_SPEC, ctx.specRel];
   const skipped = (p) => own.some((o) => under(p, o)) || exclude.some((e) => under(p, e.path));
+  return { include, exclude, under, skipped, inBoundary: (p) => include.some((i) => under(p, i)) && !skipped(p) };
+}
+
+function census(ctx, changed) {
+  const claimed = new Map();
+  for (const [id, r] of ctx.claims) for (const c of r.code ?? []) claimed.set(posix.normalize(toPosix(c)), [...(claimed.get(posix.normalize(toPosix(c))) ?? []), id]);
+  if (changed) return censusChanged(ctx, changed.base, claimed);
+  const code = codeUnion(ctx, [...ctx.claims.keys()]);
+  const bd = readBoundary(ctx);
+  if (bd === null) return { census: { boundary: null, claimed: code.map((c) => c.path), unclaimed: null, outside: null }, code };
+  if (bd === false) return { census: null, code };
+  const { include, exclude, skipped, inBoundary } = bd;
   const files = [], symlinks = [];
   const walk = (rel) => {
     const abs = join(ctx.root, rel), fail = (e) => add("warn", "census-unreadable", `${rel}: ${e}; its files are not counted`, { file: rel });
@@ -468,7 +479,6 @@ function census(ctx) {
     if (!existsSync(join(ctx.root, inc))) { add("warn", "boundary-path-missing", `include ${inc} does not exist`); continue; }
     if (!skipped(inc)) walk(inc);
   }
-  const inBoundary = (p) => include.some((i) => under(p, i)) && !skipped(p);
   const uniq = [...new Set(files)].sort();
   if (symlinks.length) add("note", "census-symlinks", `${symlinks.length} symlink(s) inside the boundary were not followed`);
   return {
@@ -481,6 +491,70 @@ function census(ctx) {
       symlinks: symlinks.sort(),
     },
     code,
+  };
+}
+
+// ---------------------------------------------------------------- git (read-only plumbing, no shell)
+function git(root, args) {
+  const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith("GIT_")));
+  const r = spawnSync("git", ["-c", "core.fsmonitor=false", "-C", root, ...args], {
+    shell: false, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, stdio: ["ignore", "pipe", "pipe"],
+    env: { ...env, GIT_TERMINAL_PROMPT: "0", GIT_OPTIONAL_LOCKS: "0" },
+  });
+  return r.error ? { status: null, error: r.error.code } : { status: r.status, out: r.stdout, err: String(r.stderr ?? "") };
+}
+const nulList = (out) => out.split("\0").filter((p) => p && !p.endsWith("/"));
+
+// Files the task changed: differing between base and the working tree, plus untracked non-ignored files.
+// Deleted files are dropped (nothing to claim). Paths are relative to the project root. → {commit, paths} | null (error added)
+function changedFiles(root, base) {
+  const top = git(root, ["rev-parse", "--show-toplevel"]);
+  if (top.status !== 0) { add("error", "not-git", `census --changed needs a Git work tree: ${top.error ? `git cannot run (${top.error})` : top.err.trim()}`); return null; }
+  const prefix = toPosix(relative(realpathSync(top.out.trim()), realpathSync(root)));
+  if (prefix.startsWith("..")) { add("error", "not-git", "the project root is outside the Git work tree git reports"); return null; }
+  // An enclosing repository that ignores this project and tracks nothing in it would report no changes, falsely.
+  if (prefix && git(root, ["-C", top.out.trim(), "check-ignore", "-q", "--", `${prefix}/`]).status === 0 &&
+      git(root, ["ls-files", "--", "."]).out === "") { add("error", "not-git", `the enclosing repository ${top.out.trim()} ignores this project`); return null; }
+  const rev = git(root, ["rev-parse", "--verify", "--quiet", "--end-of-options", `${base}^{commit}`]);
+  if (rev.status !== 0) { add("error", "bad-rev", `--base ${base} does not name a commit`); return null; }
+  const commit = rev.out.trim();
+  const diff = git(root, ["diff", "--name-only", "-z", "--no-renames", "--no-ext-diff", "--no-textconv", "--diff-filter=d", "--relative", commit, "--", "."]);
+  const others = git(root, ["ls-files", "-z", "--others", "--exclude-standard", "--", "."]);
+  for (const [r, what] of [[diff, "diff"], [others, "ls-files"]]) if (r.status !== 0) { add("error", "git-failed", `git ${what}: ${r.error ?? r.err.trim()}`); return null; }
+  return { commit, paths: [...new Set([...nulList(diff.out), ...nulList(others.out)])].sort() };
+}
+
+function censusChanged(ctx, base, claimed) {
+  const ch = changedFiles(ctx.root, base);
+  if (!ch) return { census: null };
+  const bd = readBoundary(ctx);
+  if (bd === false) return { census: null };
+  // The spec graph itself is never population, not even as outside.
+  const paths = ch.paths.filter((p) => ![DEFAULT_SPEC, ctx.specRel].some((o) => p === o || p.startsWith(o + "/")));
+  const files = [], symlinks = [];
+  for (const p of paths) {
+    if (bd && !bd.inBoundary(p)) continue;
+    const s = safePath(ctx.root, p);
+    if (s.state === "present") files.push(p);
+    else if (s.why === "symlink") symlinks.push(p);
+  }
+  const entry = (p) => ({ path: p, claims: claimed.get(p) });
+  const head = { mode: "changed", base: { rev: base, commit: ch.commit }, changed: ch.paths.length };
+  // Without a boundary no population is named: claims are still shown, nothing is judged unclaimed.
+  if (!bd) return { census: { ...head, boundary: null, claimed: files.filter((p) => claimed.has(p)).map(entry), unclaimed: null, outside: null } };
+  const unclaimed = files.filter((p) => !claimed.has(p));
+  for (const p of unclaimed) add("warn", "changed-unclaimed", `${p} changed and no record's code claims it`, { file: p });
+  if (symlinks.length) add("note", "census-symlinks", `${symlinks.length} changed symlink(s) inside the boundary were not followed`);
+  return {
+    census: {
+      ...head,
+      boundary: { include: bd.include, exclude: bd.exclude },
+      files: files.length,
+      claimed: files.filter((p) => claimed.has(p)).map(entry),
+      unclaimed,
+      outside: paths.filter((p) => !bd.inBoundary(p)),
+      symlinks,
+    },
   };
 }
 
@@ -502,7 +576,14 @@ function human(out) {
     L.push(`records ${out.counts.records}, declarations ${out.counts.declarations}, requires edges ${out.counts.requiresEdges}, code paths ${out.counts.codePaths}`,
       `labels: authority ${fmt(lb.authority)}; evidence ${fmt(lb.evidence)}; unlabeled ${lb.unlabeled} (declared, not verified)`);
   }
-  if (out.census) {
+  if (out.census?.mode === "changed") {
+    const c = out.census;
+    L.push(`changed since ${c.base.rev} (${c.base.commit.slice(0, 12)}): ${c.changed} file(s)`);
+    if (c.boundary) L.push(`boundary include ${c.boundary.include.join(", ")}; exclude ${c.boundary.exclude.map((e) => `${e.path} (${e.reason ?? "no reason"})`).join(", ") || "none"}`,
+      `in boundary ${c.files}, claimed ${c.claimed.length}, unclaimed ${c.unclaimed.length}, outside ${c.outside.length}`);
+    L.push(...c.claimed.map((e) => `  claimed ${e.path} (${e.claims.join(", ")})`), ...(c.unclaimed ?? []).map((f) => `  unclaimed ${f}`),
+      ...(c.outside ?? []).map((f) => `  outside boundary ${f}`), ...(c.symlinks ?? []).map((f) => `  symlink not followed ${f}`));
+  } else if (out.census) {
     const c = out.census;
     if (c.boundary) L.push(`boundary include ${c.boundary.include.join(", ")}; exclude ${c.boundary.exclude.map((e) => `${e.path} (${e.reason ?? "no reason"})`).join(", ") || "none"}`,
       `files ${c.files}, claimed ${c.claimed.length}, unclaimed ${c.unclaimed.length}`, ...c.unclaimed.map((f) => `  unclaimed ${f}`), ...c.outside.map((f) => `  mapped outside boundary ${f}`));
@@ -533,7 +614,7 @@ function main(argv) {
         if ((opt.cmd === "scope" || opt.cmd === "impact") && !ctx.claims.has(opt.id)) add("error", "unknown-id", `${opt.id} has no manifest record`, { id: opt.id });
         else if (broken && opt.cmd !== "check") add("note", "untrusted", "graph errors prevent a trustworthy result; fix them first");
         else {
-          const run = { check: () => check(ctx), census: () => census(ctx), scope: () => scope(ctx, opt.id, opt.budget), impact: () => impact(ctx, opt.id) }[opt.cmd];
+          const run = { check: () => check(ctx), census: () => census(ctx, opt.changed && { base: opt.base ?? "HEAD" }), scope: () => scope(ctx, opt.id, opt.budget), impact: () => impact(ctx, opt.id) }[opt.cmd];
           out = { ...out, ...(opt.id ? { id: opt.id } : {}), ...run(), notice: NOTICE };
         }
       }

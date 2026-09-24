@@ -1,29 +1,44 @@
 import { createSignal, For, Match, Show, Switch } from "solid-js";
 import type { UsageBalance, UsageInsight, UsageProvider, UsageWindow } from "../../shared/protocol";
 import { refreshUsage } from "../lib/api";
-import { clockTime, duration, relativeTime, shortDate, thousands } from "../lib/format";
-import { meterTone, money, pct, PROVIDER_NAME, providerChip, providerProblem, windowLabel } from "../lib/insights";
+import { duration, relativeIn, relativeTime } from "../lib/format";
+import {
+  balanceBreakdown,
+  extraUsageMeter,
+  meterReset,
+  meterTone,
+  money,
+  pct,
+  planLabel,
+  PROVIDER_NAME,
+  providerChip,
+  providerProblem,
+  usageSummary,
+  usesLine,
+  windowLabel,
+} from "../lib/insights";
 import type { Poll } from "../lib/poll";
 import { InsightsPage, iso, ListSkeleton } from "./InsightsPage";
 import { Banner, Chip, CountChip, Icon } from "./ui";
 
+/** The bar under a meter's number: aria-hidden (the number is the value), never animated. */
+function Track(props: { pct: number }) {
+  const tone = () => meterTone({ label: "", pct: props.pct });
+  return (
+    <div class="meter-track" aria-hidden="true">
+      <span
+        class="meter-fill"
+        classList={{ "meter-fill-warn": tone() === "warn", "meter-fill-error": tone() === "error" }}
+        style={{ "--meter-pct": `${Math.min(100, Math.max(0, props.pct))}%` }}
+      />
+    </div>
+  );
+}
+
 function Meter(props: { w: UsageWindow; now: number }) {
-  const tone = () => meterTone(props.w);
-  const resetAt = () => (props.w.resetsAt ? Date.parse(props.w.resetsAt) : NaN);
+  const reset = () => meterReset(props.w, props.now);
   /** The window already reset: the reading describes a window that's gone. */
-  const past = () => resetAt() <= props.now;
-  const reset = () => {
-    const at = resetAt();
-    if (Number.isNaN(at)) return null;
-    if (past()) return { lead: "Reset at ", time: clockTime(props.w.resetsAt!), rest: ". New reading at the next refresh." };
-    const left = at - props.now;
-    return { lead: left < 86_400_000 ? `Resets in ${duration(left)}` : `Resets ${shortDate(at, props.now)}` };
-  };
-  /** MCP quota counts, when the source reports them: "12 of 1,000 uses". */
-  const uses = () => {
-    const { used, limit } = props.w;
-    return props.w.label === "mcp" && used !== undefined && limit !== undefined ? `${thousands(used)} of ${thousands(limit)} uses` : null;
-  };
+  const past = () => Boolean(reset()?.time);
   return (
     <div class="meter" classList={{ "meter-ghost": past() }}>
       <p class="meter-head">
@@ -38,13 +53,7 @@ function Meter(props: { w: UsageWindow; now: number }) {
           {pct(props.w)}%<span class="meter-of"> used</span>
         </span>
       </p>
-      <div class="meter-track" aria-hidden="true">
-        <span
-          class="meter-fill"
-          classList={{ "meter-fill-warn": tone() === "warn", "meter-fill-error": tone() === "error" }}
-          style={{ "--meter-pct": `${Math.min(100, Math.max(0, props.w.pct))}%` }}
-        />
-      </div>
+      <Track pct={props.w.pct} />
       <Show when={reset()}>
         {(r) => (
           <p class="meter-context" title={props.w.resetsAt}>
@@ -56,7 +65,31 @@ function Meter(props: { w: UsageWindow; now: number }) {
           </p>
         )}
       </Show>
-      <Show when={uses()}>{(u) => <p class="meter-context">{u()}</p>}</Show>
+      <Show when={usesLine(props.w)}>{(u) => <p class="meter-context">{u()}</p>}</Show>
+    </div>
+  );
+}
+
+/**
+ * Claude's pay-as-you-go spend past the plan: a quota fill against the extra-usage cap, or, when
+ * the source only says it's switched on, the head alone reading "On" (no bar, like a balance).
+ */
+function ExtraMeter(props: { x: { pct: number } | { on: true } }) {
+  const fill = () => ("pct" in props.x ? props.x.pct : null);
+  return (
+    <div class="meter">
+      <p class="meter-head">
+        <span class="meter-label">Extra usage</span>
+        <Show when={fill() !== null} fallback={<span class="meter-value">On</span>}>
+          <span class="meter-value">
+            {Math.round(fill()!)}%<span class="meter-of"> used</span>
+          </span>
+        </Show>
+      </p>
+      <Show when={fill() !== null}>
+        <Track pct={fill()!} />
+        <p class="meter-context">Of your extra-usage spend cap</p>
+      </Show>
     </div>
   );
 }
@@ -66,12 +99,6 @@ function Meter(props: { w: UsageWindow; now: number }) {
  * without the bar, and no reset — there's nothing to reset.
  */
 function Balance(props: { b: UsageBalance }) {
-  const breakdown = () => {
-    const parts: string[] = [];
-    if (props.b.granted > 0) parts.push(`Granted ${money(props.b.granted, props.b.currency)}`);
-    if (props.b.toppedUp > 0) parts.push(`Topped up ${money(props.b.toppedUp, props.b.currency)}`);
-    return parts.length ? parts.join(" \u00b7 ") : null;
-  };
   return (
     <>
       <div class="meter">
@@ -79,7 +106,7 @@ function Balance(props: { b: UsageBalance }) {
           <span class="meter-label">Balance</span>
           <span class="meter-value">{money(props.b.total, props.b.currency)}</span>
         </p>
-        <Show when={breakdown()}>{(b) => <p class="meter-context">{b()}</p>}</Show>
+        <Show when={balanceBreakdown(props.b)}>{(b) => <p class="meter-context">{b()}</p>}</Show>
       </div>
       <Show when={!props.b.available}>
         <p class="usage-note">This balance can't fund calls. They'll fail until it's topped up.</p>
@@ -89,55 +116,55 @@ function Balance(props: { b: UsageBalance }) {
 }
 
 /**
- * One provider: a group head (name, chip) over one `.list-row` per window, or one row carrying
- * the balance, or one row carrying the note when the provider isn't ok.
+ * One provider's card: name, plan subtitle and chip in the head; its meters (or balance) and
+ * notes in the body, or the one note that replaces them when the provider isn't ok.
  */
-function UsageGroup(props: { p: UsageProvider; now: number }) {
+function UsageCard(props: { p: UsageProvider; now: number }) {
   const problem = () => providerProblem(props.p);
+  const headId = () => `u-${props.p.id}`;
   return (
-    <section class="insights-group" aria-labelledby={`u-${props.p.id}`}>
-      <h2 class="list-group-label insights-group-head" id={`u-${props.p.id}`}>
-        <span class="insights-group-name">{PROVIDER_NAME[props.p.id]}</span>
+    <article class="card usage-card" aria-labelledby={headId()}>
+      <header class="card-head">
+        <div class="usage-card-heading">
+          <h3 class="card-title" id={headId()}>
+            {PROVIDER_NAME[props.p.id]}
+          </h3>
+          <Show when={planLabel(props.p)}>{(plan) => <p class="usage-card-plan text-caption text-muted">{plan()}</p>}</Show>
+        </div>
         <Show when={providerChip(props.p)}>{(c) => <Chip tone={c().tone}>{c().text}</Chip>}</Show>
-      </h2>
-      <ul class="list">
+      </header>
+      <div class="card-body">
         <Show
           when={problem()}
           fallback={
-            <Show
-              when={props.p.balance}
-              fallback={
-                <For each={props.p.windows}>
-                  {(w) => (
-                    <li class="list-row usage-row">
-                      <Meter w={w} now={props.now} />
-                    </li>
-                  )}
-                </For>
-              }
-            >
-              {(b) => (
-                <li class="list-row usage-row">
-                  <Balance b={b()} />
-                </li>
-              )}
-            </Show>
+            <>
+              <Show when={props.p.balance} fallback={<For each={props.p.windows}>{(w) => <Meter w={w} now={props.now} />}</For>}>
+                {(b) => <Balance b={b()} />}
+              </Show>
+              <Show when={extraUsageMeter(props.p)}>{(x) => <ExtraMeter x={x()} />}</Show>
+              <Show when={props.p.limitReached}>
+                <p class="usage-note">Usage limit reached. Calls may fail until it resets.</p>
+              </Show>
+              <Show when={props.p.lastKnown}>
+                <p class="usage-card-caption text-caption text-muted" title={props.p.error}>
+                  Last stored reading — an older pi session is rewriting the cache.
+                </p>
+              </Show>
+            </>
           }
         >
           {(pr) => (
-            <li class="list-row usage-row">
-              <p class="usage-note">
-                {pr().lead}
-                <Show when={pr().code}>
-                  <code>{pr().code}</code>
-                </Show>
-                {pr().rest}
-              </p>
-            </li>
+            <p class="usage-note">
+              {pr().lead}
+              <Show when={pr().code}>
+                <code>{pr().code}</code>
+              </Show>
+              {pr().rest}
+            </p>
           )}
         </Show>
-      </ul>
-    </section>
+      </div>
+    </article>
   );
 }
 
@@ -197,8 +224,9 @@ function UsageBody(props: {
                 <Banner tone="warn" icon="clock" title={`Usage is ${duration(age())} old.`} body={`Couldn't refresh: ${failure()}`} action={retry()} />
               )}
             </Show>
-            <div class="card insights-list">
-              <For each={data().providers}>{(p) => <UsageGroup p={p} now={props.now} />}</For>
+            <Show when={usageSummary(data(), props.now)}>{(lead) => <p class="usage-lead">{lead()}</p>}</Show>
+            <div class="insights-grid">
+              <For each={data().providers}>{(p) => <UsageCard p={p} now={props.now} />}</For>
             </div>
           </>
         )}
@@ -210,6 +238,11 @@ function UsageBody(props: {
 /** `#/usage`: subscription usage limits, from the usage-status extension's cache file. */
 export function UsageView(props: { usage: Poll<UsageInsight>; now: number; titleRef(el: HTMLHeadingElement): void }) {
   const fetchedAt = () => props.usage.data()?.fetchedAt ?? null;
+  /** " · next refresh in 3m" while the cache's next fetch is ahead; a passed one says nothing. */
+  const nextRefresh = () => {
+    const next = props.usage.data()?.nextFetchAt;
+    return next ? relativeIn(iso(next), props.now) : null;
+  };
   const [refreshing, setRefreshing] = createSignal(false);
   const [refreshError, setRefreshError] = createSignal<string | null>(null);
   /** Refresh Usage: the server fetches every provider now; the result replaces the poll's value. */
@@ -232,7 +265,12 @@ export function UsageView(props: { usage: Poll<UsageInsight>; now: number; title
       title="Usage"
       meta={
         <Show when={fetchedAt()} fallback={<span>Not read yet</span>}>
-          {(f) => <span title={iso(f())}>Updated {relativeTime(iso(f()), props.now)}</span>}
+          {(f) => (
+            <>
+              <span title={iso(f())}>Updated {relativeTime(iso(f()), props.now)}</span>
+              <Show when={nextRefresh()}>{(n) => <span title={iso(props.usage.data()!.nextFetchAt!)}> · next refresh {n()}</span>}</Show>
+            </>
+          )}
         </Show>
       }
       refreshLabel="Refresh Usage"

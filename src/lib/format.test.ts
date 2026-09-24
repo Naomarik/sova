@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { compactModel, shortModel } from "./format";
+import { compactModel, relativeIn, shortModel } from "./format";
 
 test("shortModel drops the provider only", () => {
   assert.equal(shortModel("anthropic/claude-opus-5"), "claude-opus-5");
@@ -26,4 +26,16 @@ test("compactModel leaves ids it doesn't recognize alone", () => {
   assert.equal(compactModel("openai/gpt-4-1"), "gpt-4.1");
   assert.equal(compactModel(null), null);
   assert.equal(compactModel(undefined), null);
+});
+
+test("relativeIn: a future time as 'in {rel}'; passed or unreadable is null", () => {
+  const now = Date.parse("2026-09-19T05:33:00Z");
+  const at = (ms: number) => new Date(now + ms).toISOString();
+  assert.equal(relativeIn(at(20_000), now), "in under a minute");
+  assert.equal(relativeIn(at(3 * 60_000), now), "in 3m");
+  assert.equal(relativeIn(at(2 * 3_600_000), now), "in 2h");
+  assert.equal(relativeIn(at(30 * 3_600_000), now), "in 1d");
+  assert.equal(relativeIn(at(0), now), null);
+  assert.equal(relativeIn(at(-5000), now), null);
+  assert.equal(relativeIn("nope", now), null);
 });

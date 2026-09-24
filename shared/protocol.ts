@@ -423,6 +423,13 @@ export interface UploadResult {
 // GET  /api/models              -> ModelInfo[]                       (available models; favorite=true mirrors the TUI Ctrl+P palette.
 //                                  EVERY model with credentials, disabled ones included: Settings → Models has to list what it
 //                                  can turn back on. Pickers filter with the policy; the server refuses what the policy forbids)
+// PUT  /api/models/favorite { ref: "provider/id", favorite: boolean } -> ModelFavoriteResult   (stars or unstars one
+//                                  model in the command-palette's ~/.pi/agent/model-favorites.json, through the palette's
+//                                  own ModelFavorites: re-read under its lock, then an atomic replace, so the TUI's Ctrl+F
+//                                  and this share one file and one writer. The ref splits at its first "/" and is not checked
+//                                  against the available models. 400 bad body or ref; 409 "Favorites are locked; retry…"
+//                                  (another writer mid-save); 500 anything else the store refused — a malformed file is
+//                                  reported, never overwritten)
 // GET  /api/attachment?path=…   -> image bytes (TmpAttachment.path; only /tmp/<name> or <agent dir>/{sova,pi-web}/attachments/
 //                                  <session id>/<name>, .png|jpg|jpeg|webp|gif, ≤ 20MB; 400 bad shape, 403 resolves
 //                                  outside /tmp / the attachments root or too large, 404 missing)
@@ -456,6 +463,13 @@ export interface ContextInfo { tokens: number; window: number | null }
 //                                          CHANGED tuple its backend answered it can't run; unverifiable or
 //                                          policy-denied tuples save with a warning. Delegate sessions — TUI and
 //                                          web — pick it up at their next turn; normal mode never reads it)
+// GET /api/settings/spec                -> SpecSettingsInfo (~/.pi/agent/mode-spec.json; missing → writer null)
+// GET /api/settings/spec/options        -> DelegateOptions (the same discovery as delegate/options)
+// PUT /api/settings/spec SpecSettings   -> SpecSaveResult (replaces the writer; writer null = none, the session
+//                                          writes the spec itself. 400 bad shape, or a CHANGED tuple its backend
+//                                          answered it can't run; unverifiable or policy-denied tuples save with a
+//                                          warning. Sessions with spec on, in either major mode, pick it up at
+//                                          their next turn)
 // ---------------------------------------------------------------------------
 
 // GET /api/settings/summarizer  -> SummarizerSettingsInfo (~/.pi/agent/topic-outline.json's `summarizers`; missing
@@ -630,12 +644,26 @@ export interface ClaudeCliStatus {
 }
 
 
+/** PUT /api/models/favorite's body. */
+export interface ModelFavoriteRequest {
+  /** "provider/id", as in ModelInfo.ref. */
+  ref: string;
+  favorite: boolean;
+}
+
+/** PUT /api/models/favorite's answer: the state now on disk for that ref (the request's, echoed). */
+export interface ModelFavoriteResult {
+  ref: string;
+  favorite: boolean;
+}
+
 export interface ModelInfo {
   /** "provider/modelId" — the canonical ref used in set_model. */
   ref: string;
   provider: string;
   id: string;
-  /** Mirrors the command-palette extension's favorites when its storage is readable. */
+  /** Mirrors the command-palette extension's favorites when its storage is readable (a malformed
+      file lists none). Toggled with PUT /api/models/favorite. */
   favorite: boolean;
   /** Thinking levels this model supports, ladder order (off…max). Mirrors pi 0.86.0
       getSupportedThinkingLevels: thinkingLevelMap nulls are dropped, xhigh/max need an explicit
@@ -1290,6 +1318,31 @@ export interface DelegateSaveResult extends DelegateSettingsInfo {
   warnings: string[];
 }
 
+/** The spec minor mode's writer (pi-config/extensions/mode/spec.ts, ~/.pi/agent/mode-spec.json): the
+    worker that writes draft claims and evidence while spec is on, under either major mode.
+    `writer: null` = none: the session writes the spec itself. `fallback: null` = none: an
+    unavailable primary makes the session ask the user rather than pick a model. */
+export interface SpecSettings {
+  version: 1;
+  writer: { primary: WorkerChoice; fallback: WorkerChoice | null } | null;
+}
+
+/** GET /api/settings/spec. `backends[].efforts` is every effort the backend accepts at all, as in
+    DelegateSettingsInfo. */
+export interface SpecSettingsInfo {
+  settings: SpecSettings;
+  writer: { label: string; description: string };
+  backends: { id: DelegateBackendId; label: string; efforts: string[] }[];
+  /** Absolute path of the file, for the screen's footnote. */
+  file: string;
+}
+
+/** PUT /api/settings/spec: what is now stored, plus anything saved that could not be verified or
+    that the policy refuses, one sentence each. */
+export interface SpecSaveResult extends SpecSettingsInfo {
+  warnings: string[];
+}
+
 /** Where a switch stands for the one chat it was sent to: "now" = its next message follows it;
     "after-turn" = switched mid-turn, so messages queued in this turn keep the old one;
     "new-chats" = this chat can't take a switch at all (the mode extension isn't loaded in it, or
@@ -1572,6 +1625,18 @@ export interface UsageProvider {
       calls are not fundable. */
   balance?: UsageBalance;
   error?: string;
+  /** OpenAI's plan name as the source sends it (e.g. "plus"). Absent when not reported. */
+  plan?: string;
+  /** OpenAI says the account hit its usage limit (`limit_reached`, or `allowed: false`). */
+  limitReached?: boolean;
+  /** Z.ai's coding-plan level as the source sends it (e.g. "pro"). Absent when not reported. */
+  level?: string;
+  /** Claude's pay-as-you-go spend past the plan. `pct`: share of the extra-usage spend cap used,
+      absent when the source reports the switch without a reading. */
+  extraUsage?: { enabled: boolean; pct?: number };
+  /** The cache no longer carries this provider (an older pi rewrote it), so this is the reading
+      the server last stored for it (at most 24h old); `error` says why. */
+  lastKnown?: boolean;
 }
 export interface UsageInsight {
   available: boolean;

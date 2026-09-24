@@ -127,6 +127,27 @@ function usageBalance(data: Rec): UsageBalance | null {
   return null;
 }
 
+/**
+ * What a provider's ok reading carries besides its windows, each only when valid: OpenAI's
+ * `plan` and `limitReached`, Z.ai's `level`, Claude's `extraUsage` (`pct` optional, as the
+ * extension renders "on" without one).
+ */
+function usageExtras(id: UsageProvider["id"], data: Rec): Pick<UsageProvider, "plan" | "limitReached" | "level" | "extraUsage"> {
+  if (id === "openai") {
+    const plan = str(data.plan);
+    return { ...(plan ? { plan } : {}), ...(data.limitReached === true ? { limitReached: true } : {}) };
+  }
+  if (id === "zai") {
+    const level = str(data.level);
+    return level ? { level } : {};
+  }
+  if (id === "claude" && isRec(data.extraUsage) && typeof data.extraUsage.enabled === "boolean") {
+    const pct = num(data.extraUsage.pct);
+    return { extraUsage: pct === undefined ? { enabled: data.extraUsage.enabled } : { enabled: data.extraUsage.enabled, pct } };
+  }
+  return {};
+}
+
 function usageProvider(id: UsageProvider["id"], data: unknown, error: unknown): UsageProvider {
   const err = str(error);
   const withError = (p: UsageProvider): UsageProvider => (err ? { ...p, error: err } : p);
@@ -160,7 +181,7 @@ function usageProvider(id: UsageProvider["id"], data: unknown, error: unknown): 
             : [usageWindow("month", { pct: data.usedPct })];
     const valid = windows.filter((w): w is UsageWindow => w !== null);
     // "ok" without a readable window is what the extension renders as "n/a"
-    return valid.length ? withError({ id, state: "ok", windows: valid }) : unrecognized("state ok without a readable window");
+    return valid.length ? withError({ id, state: "ok", windows: valid, ...usageExtras(id, data) }) : unrecognized("state ok without a readable window");
   }
   const known = ["nologin", "expired", "nokey", "badkey", "na"] as const;
   const s = known.find((k) => k === state);
@@ -256,7 +277,7 @@ export async function refreshUsageInsight(): Promise<UsageInsight> {
 /** The stored reading for a provider the cache didn't mention, or the "no data" answer as-is. */
 function lastKnown(p: UsageProvider): UsageProvider {
   const prev = lastKnownUsage(p.id);
-  return prev ? { ...prev, error: LAST_KNOWN_REASON } : p;
+  return prev ? { ...prev, error: LAST_KNOWN_REASON, lastKnown: true } : p;
 }
 
 // ---------------------------------------------------------------------------

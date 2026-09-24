@@ -145,6 +145,9 @@ refresh when the palette reopens. Failed writes show an error without changing
 the star; invalid files are never silently overwritten. If a crashed process
 leaves `model-favorites.json.lock`, remove that empty directory only after
 confirming no other palette is saving, then retry.
+Sova's web model picker reads and writes the same file by importing
+`favorites.ts` itself, so keep that module free of Pi runtime imports (node
+builtins only).
 
 ## Verification
 

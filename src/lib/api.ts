@@ -8,6 +8,7 @@ import type {
   FolderListing,
   GitSummary,
   ModeInfo,
+  ModelFavoriteResult,
   ModelInfo,
   PlaybookCatalog,
   AssignGroupResult,
@@ -34,6 +35,9 @@ import type {
   DelegateSaveResult,
   DelegateSettings,
   DelegateSettingsInfo,
+  SpecSaveResult,
+  SpecSettings,
+  SpecSettingsInfo,
   SummarizerSettings,
   SummarizerSettingsInfo,
 } from "../../shared/protocol";
@@ -108,6 +112,10 @@ export const listFolders = (path?: string, hidden = false) => {
 
 export const listModels = () => request<ModelInfo[]>("/api/models");
 
+/** Star or unstar one model in the command-palette's favorites file, shared with the TUI. */
+export const putModelFavorite = (ref: string, favorite: boolean) =>
+  request<ModelFavoriteResult>("/api/models/favorite", { method: "PUT", body: JSON.stringify({ ref, favorite }) });
+
 /** The unified model policy: what may be used at all, and what subagents may additionally use
     (Settings → Models, §12). Both halves apply everywhere — this browser, the TUI, and workers. */
 export const getModelPolicy = () => request<ModelPolicy>("/api/settings/models");
@@ -127,6 +135,16 @@ export const getDelegateOptions = () => request<DelegateOptions>("/api/settings/
 /** Replace the whole routing. Delegate sessions everywhere pick it up at their next turn. */
 export const putDelegateSettings = (settings: DelegateSettings) =>
   request<DelegateSaveResult>("/api/settings/delegate", { method: "PUT", body: JSON.stringify(settings) });
+
+/** The spec writer (Settings → Modes → Spec): which worker writes draft claims and evidence while spec is on. */
+export const getSpecSettings = () => request<SpecSettingsInfo>("/api/settings/spec");
+
+/** What each worker backend offers for the writer: the same discovery as Delegate's. */
+export const getSpecOptions = () => request<DelegateOptions>("/api/settings/spec/options");
+
+/** Replace the writer (`writer: null` = none). Sessions with spec on pick it up at their next turn. */
+export const putSpecSettings = (settings: SpecSettings) =>
+  request<SpecSaveResult>("/api/settings/spec", { method: "PUT", body: JSON.stringify(settings) });
 
 /** Which model writes the summary line (the topic-outline extension's file; missing → its defaults). */
 export const getSummarizerSettings = () => request<SummarizerSettingsInfo>("/api/settings/summarizer");

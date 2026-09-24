@@ -12,21 +12,22 @@ import { sessionWorking } from "./workers";
 export type SelectableSession = Pick<SessionSummary, "path" | "id" | "title" | "archived" | "origin" | "busy" | "live" | "workers">;
 
 /**
- * Why this session can't be archived right now, or null when it can. Four rules, from two places
- * that already enforce them one row at a time: the session pane's Archive button refuses a
- * TUI-live session and one with working subagents before it asks (SessionDetails' ArchiveAction),
- * and the route refuses a non-web-spawned or mid-turn session with a 409 (`archiveSession` in
- * server/sessions-index.ts). Stated here so a bulk press can say all four BEFORE it writes
- * anything, rather than discovering the server's two as failures. An archived session is never
- * blocked: unarchiving is always allowed.
+ * Why this session can't be archived right now, or null when it can. Four rules, all enforced by
+ * the route with a 409 (`archiveSession` in server/sessions-index.ts); the session pane's Archive
+ * button also states the TUI and subagent ones before it asks (SessionDetails' ArchiveAction).
+ * Stated here so a bulk press can say them BEFORE it writes anything, rather than discovering
+ * them as failures. This is the list's view, a poll old: a subagent started since is caught by
+ * the route, and its sentence comes back as a failure (archiveSummary). An archived session is
+ * never blocked: unarchiving is always allowed.
  */
 export function archiveBlockReason(s: SelectableSession): string | null {
   if (s.archived) return null;
   if (s.live) return "open in a TUI";
   if (s.origin !== "web") return "not started in Sova";
   if (s.busy) return "mid-turn";
-  const n = sessionWorking(s);
-  if (n > 0) return `${n} ${n === 1 ? "subagent" : "subagents"} working`;
+  // No count of its own: blockedSentence prefixes the number of SESSIONS, and "1 2 subagents
+  // working" read as nonsense. "1 with subagents working" reads at any count.
+  if (sessionWorking(s) > 0) return "with subagents working";
   return null;
 }
 

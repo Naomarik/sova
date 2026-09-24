@@ -16,6 +16,7 @@
  *   decides that a denied tuple is not the one to name, and the denial is carried through to the
  *   status and the prompt so the reroute is never silent.
  */
+import type { SpecSettings } from "./spec.ts";
 import { DELEGATE_PROFILE_INFO, DELEGATE_PROFILES, effectiveEfforts, modelShapeError, type DelegateBackend, type DelegateProfileId, type DelegateSettings, type WorkerChoice } from "./delegate.ts";
 
 /** One backend's discovery: the models it offers (efforts when it reports them), or why it could not say. */
@@ -70,24 +71,31 @@ export function assess(choice: WorkerChoice, discovery: Discovery | undefined, d
 	return { choice, availability: "ok" };
 }
 
-export interface ProfileRoute {
-	profile: DelegateProfileId;
-	/** The worker to name for this profile, or null: ask the user. */
+/** Which worker one primary/fallback pair uses: the primary, else its fallback, else nobody. */
+export interface SlotRoute {
+	/** The worker to name, or null: ask the user. */
 	use: WorkerChoice | null;
 	via: "primary" | "fallback" | "none";
 	primary: ChoiceStatus;
 	fallback: ChoiceStatus | null;
 }
 
+export interface ProfileRoute extends SlotRoute {
+	profile: DelegateProfileId;
+}
+
 export type Assessor = (choice: WorkerChoice) => ChoiceStatus;
 
+export function routeSlot(slot: { primary: WorkerChoice; fallback: WorkerChoice | null }, assessChoice: Assessor): SlotRoute {
+	const primaryStatus = assessChoice(slot.primary);
+	const fallbackStatus = slot.fallback ? assessChoice(slot.fallback) : null;
+	if (usable(primaryStatus)) return { use: slot.primary, via: "primary", primary: primaryStatus, fallback: fallbackStatus };
+	if (fallbackStatus && usable(fallbackStatus)) return { use: fallbackStatus.choice, via: "fallback", primary: primaryStatus, fallback: fallbackStatus };
+	return { use: null, via: "none", primary: primaryStatus, fallback: fallbackStatus };
+}
+
 export function routeProfile(profile: DelegateProfileId, settings: DelegateSettings, assessChoice: Assessor): ProfileRoute {
-	const { primary, fallback } = settings.profiles[profile];
-	const primaryStatus = assessChoice(primary);
-	const fallbackStatus = fallback ? assessChoice(fallback) : null;
-	if (usable(primaryStatus)) return { profile, use: primary, via: "primary", primary: primaryStatus, fallback: fallbackStatus };
-	if (fallbackStatus && usable(fallbackStatus)) return { profile, use: fallbackStatus.choice, via: "fallback", primary: primaryStatus, fallback: fallbackStatus };
-	return { profile, use: null, via: "none", primary: primaryStatus, fallback: fallbackStatus };
+	return { profile, ...routeSlot(settings.profiles[profile], assessChoice) };
 }
 
 /** Every profile, canonical order, assessed against per-backend discovery and the policy. */
@@ -98,6 +106,19 @@ export function routeAll(
 ): ProfileRoute[] {
 	const assessChoice: Assessor = (choice) => assess(choice, discoveries[choice.backend], denial(choice));
 	return DELEGATE_PROFILES.map((profile) => routeProfile(profile, settings, assessChoice));
+}
+
+/**
+ * The spec writer (spec.ts), assessed exactly like a Delegate profile; null when none is set (the
+ * session writes the spec itself).
+ */
+export function routeWriter(
+	settings: SpecSettings,
+	discoveries: Partial<Record<DelegateBackend, Discovery>>,
+	denial: (choice: WorkerChoice) => string | null,
+): SlotRoute | null {
+	if (!settings.writer) return null;
+	return routeSlot(settings.writer, (choice) => assess(choice, discoveries[choice.backend], denial(choice)));
 }
 
 /** The backends a routing names, primary and fallback alike: what a probe has to discover. */
@@ -113,13 +134,16 @@ export function backendsOf(settings: DelegateSettings): DelegateBackend[] {
 
 export const describeChoice = (choice: WorkerChoice): string => `${choice.backend} · ${choice.model} · ${choice.effort}`;
 
-/** One line per profile that is not on its primary, for notifications and /mode status. */
+/** One line per profile (or the spec writer) that is not on its primary, for notifications and /mode status. */
 export function routeNotice(route: ProfileRoute): string | undefined {
-	const label = DELEGATE_PROFILE_INFO[route.profile].label;
+	return slotNotice(DELEGATE_PROFILE_INFO[route.profile].label, route);
+}
+
+export function slotNotice(label: string, route: SlotRoute, asker = "the orchestrator"): string | undefined {
 	if (route.via === "fallback") return `${label}: fallback ${describeChoice(route.use!)} (${route.primary.reason ?? "primary unavailable"})`;
 	if (route.via === "none") {
 		const why = [route.primary.reason, route.fallback?.reason].filter(Boolean).join("; ");
-		return `${label}: no available worker — ${why || "primary unavailable"}${route.fallback ? "" : ", and no fallback is set"}; the orchestrator will ask before routing this work`;
+		return `${label}: no available worker — ${why || "primary unavailable"}${route.fallback ? "" : ", and no fallback is set"}; ${asker} will ask before routing this work`;
 	}
 	return undefined;
 }

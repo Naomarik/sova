@@ -2,7 +2,7 @@ import { statSync } from "node:fs";
 import { type FileHandle, open, readdir, stat, unlink } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { CURRENT_SESSION_FORMAT, type SessionSummary } from "../shared/protocol";
-import { type LiveRecord, type RawLiveRecord, readLive, readOwnLiveRecords, workerCountsOf } from "./live";
+import { type LiveRecord, type RawLiveRecord, readLive, readOwnLiveRecords, workerCountsOf, workingSubagents } from "./live";
 import { LIVE_DIR, resolveSessionPath, sessionPathShape, SESSIONS_DIR } from "./paths";
 import { isWebSession, removeWebSession } from "./web-sessions";
 import { parseWakeNudge } from "../shared/wake";
@@ -667,6 +667,8 @@ export async function getSessionSummary(path: string, resolveWindow?: WindowReso
   };
 }
 
+export const SUBAGENTS_WORKING = "Subagents are working in this session. Stop them or wait for them to finish before archiving.";
+
 export type ArchiveResult =
   | { ok: true; summary: SessionSummary }
   | { ok: false; status: 404 | 409; error: string };
@@ -674,7 +676,9 @@ export type ArchiveResult =
 /**
  * POST /api/sessions/archive: set or clear the manual archive mark of a web-spawned session.
  * Only Sova's own id list changes; the session file is never touched. Archiving a session
- * that's live in a TUI is refused (it would stay on top anyway); unarchiving always works.
+ * that's live in a TUI is refused (it would stay on top anyway), and so is one that's mid-turn or
+ * has subagents working (archiving closes its runtime, which would kill them); unarchiving always
+ * works.
  */
 export async function archiveSession(path: string, archived: boolean): Promise<ArchiveResult> {
   const s = await getSessionSummary(path, await windowResolver());
@@ -687,6 +691,12 @@ export async function archiveSession(path: string, archived: boolean): Promise<A
   }
   if (archived && isSessionBusy(s.path)) {
     return { ok: false, status: 409, error: "The agent is mid-turn; abort or wait before archiving." };
+  }
+  // Archiving disposes the held runtime and its subagents die with it, so it waits for them. Read
+  // fresh here, never from the summary the browser's list was built on: that list is a poll, and a
+  // subagent started since it ran is exactly the one this must not kill.
+  if (archived && workingSubagents(s.path) > 0) {
+    return { ok: false, status: 409, error: SUBAGENTS_WORKING };
   }
   // An empty husk — no user message anywhere in the file — never shows in the archive (the list
   // skips it), so archiving one deletes the file outright instead of marking an id whose row can
@@ -804,7 +814,8 @@ export async function cleanupSessions(req: CleanupRequest): Promise<CleanupResul
       skipped.live++;
       continue;
     }
-    if (isSessionBusy(path)) {
+    // Working subagents count as busy: deleting disposes the runtime, which would kill them.
+    if (isSessionBusy(path) || workingSubagents(path) > 0) {
       skipped.busy++;
       continue;
     }

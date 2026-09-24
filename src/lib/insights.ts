@@ -1,8 +1,9 @@
 // Presentation rules for the insights surfaces (docs/insights-research.md "## UX"): labels,
 // status words and chips, derived from the /api/insights/* payloads. No fetching here.
 
-import type { AgentsInsight, TeamInfo, TeamMember, UsageInsight, UsageProvider, UsageWindow } from "../../shared/protocol";
+import type { AgentsInsight, TeamInfo, TeamMember, UsageBalance, UsageInsight, UsageProvider, UsageWindow } from "../../shared/protocol";
 import type { Tone } from "../components/ui";
+import { clockTime, duration, shortDate, thousands } from "./format";
 import { isHostSession } from "./workers";
 
 export const PROVIDER_NAME: Record<UsageProvider["id"], string> = {
@@ -120,6 +121,109 @@ export function providerProblem(p: UsageProvider): { lead?: string; code?: strin
       if (p.windows.length > 0) return null;
       return { rest: `Couldn't fetch usage: ${(p.error ?? "unknown error").replace(/\.$/, "")}. We'll try again at the next refresh.` };
   }
+}
+
+/**
+ * When a window resets, in the meter context's forms: "in 2h 17m" under 24h, else "Sep 25".
+ * `past` when the reset already happened (the reading describes a window that's gone). Null
+ * without a readable `resetsAt`: a reset is never estimated.
+ */
+export function resetWhen(resetsAt: string | undefined, now: number): { past: true } | { past: false; when: string } | null {
+  const at = resetsAt ? Date.parse(resetsAt) : NaN;
+  if (Number.isNaN(at)) return null;
+  if (at <= now) return { past: true };
+  const left = at - now;
+  return { past: false, when: left < 86_400_000 ? `in ${duration(left)}` : shortDate(at, now) };
+}
+
+/**
+ * A meter's reset line: "Resets in 2h 17m", "Resets Sep 25", or, past, "Reset at " + the clock
+ * time (mono) + ". New reading at the next refresh.". Null when the window sends no reset.
+ */
+export function meterReset(w: UsageWindow, now: number): { lead: string; time?: string; rest?: string } | null {
+  const r = resetWhen(w.resetsAt, now);
+  if (!r) return null;
+  if (r.past) return { lead: "Reset at ", time: clockTime(w.resetsAt!), rest: ". New reading at the next refresh." };
+  return { lead: `Resets ${r.when}` };
+}
+
+/** MCP quota counts, when the source reports them: "12 of 1,000 uses". */
+export function usesLine(w: UsageWindow): string | null {
+  const { used, limit } = w;
+  return w.label === "mcp" && used !== undefined && limit !== undefined ? `${thousands(used)} of ${thousands(limit)} uses` : null;
+}
+
+/** A balance's context: the non-zero parts of "Granted $x" and "Topped up $y"; null when both are 0. */
+export function balanceBreakdown(b: UsageBalance): string | null {
+  const parts: string[] = [];
+  if (b.granted > 0) parts.push(`Granted ${money(b.granted, b.currency)}`);
+  if (b.toppedUp > 0) parts.push(`Topped up ${money(b.toppedUp, b.currency)}`);
+  return parts.length ? parts.join(" \u00b7 ") : null;
+}
+
+/** The card's plan subtitle, from OpenAI's `plan` or Z.ai's `level`: "plus" → "Plus plan". */
+export function planLabel(p: UsageProvider): string | null {
+  const raw = (p.plan ?? p.level)?.trim();
+  if (!raw) return null;
+  const name = raw.charAt(0).toUpperCase() + raw.slice(1);
+  return /plan$/i.test(name) ? name : `${name} plan`;
+}
+
+/** Claude's extra-usage meter, when it's switched on: a quota fill when there's a reading, else "On". */
+export function extraUsageMeter(p: UsageProvider): { pct: number } | { on: true } | null {
+  const x = p.extraUsage;
+  if (!x?.enabled) return null;
+  return x.pct === undefined ? { on: true } : { pct: x.pct };
+}
+
+/** A not-ok provider's sentence in the summary lead; null for `na` and for anything readable. */
+function stateSentence(p: UsageProvider): string | null {
+  const name = PROVIDER_NAME[p.id];
+  switch (p.state) {
+    case "nologin":
+      return `${name} isn't signed in.`;
+    case "expired":
+      return `${name}'s sign-in expired.`;
+    case "nokey":
+      return `${name} needs an API key.`;
+    case "badkey":
+      return `${name}'s API key was refused.`;
+    case "error":
+      return p.windows.length > 0 || p.balance ? null : `${name}'s usage couldn't be fetched.`;
+    default:
+      return null;
+  }
+}
+
+/** The one sentence a provider adds to the summary lead, by the head chip's order; null = nothing to say. */
+function providerSentence(p: UsageProvider, now: number): string | null {
+  const name = PROVIDER_NAME[p.id];
+  const state = stateSentence(p);
+  if (state) return state;
+  if (p.state !== "ok" && p.state !== "error") return null;
+  if (p.balance && !p.balance.available) return `${name} is out of credit.`;
+  const resets = (w: UsageWindow) => {
+    const r = resetWhen(w.resetsAt, now);
+    return r && !r.past ? ` \u2014 resets ${r.when}` : "";
+  };
+  const full = p.windows.filter((w) => w.pct >= 100);
+  const quota = full.find((w) => !isShortWindow(w));
+  if (quota) return `${name}'s ${windowLabel(quota)} quota is used up${resets(quota)}.`;
+  if (full[0]) return `${name}'s ${windowLabel(full[0])} window is rate-limited${resets(full[0])}.`;
+  const near = p.windows.filter((w) => w.pct >= 80).sort((a, b) => b.pct - a.pct)[0];
+  if (near) return `${name}'s ${windowLabel(near)} window is at ${pct(near)}%.`;
+  if (p.limitReached) return `${name}'s usage limit is reached.`;
+  return null;
+}
+
+/**
+ * The Usage page's summary lead: one sentence per provider that needs attention, in payload
+ * order, space-joined; "All providers under limits." when none does. Null without data.
+ */
+export function usageSummary(u: UsageInsight | undefined, now: number): string | null {
+  if (!u?.available) return null;
+  const sentences = u.providers.map((p) => providerSentence(p, now)).filter((x): x is string => x !== null);
+  return sentences.length ? sentences.join(" ") : "All providers under limits.";
 }
 
 /** Sidebar-foot abbreviation per provider. */

@@ -584,6 +584,7 @@ export function App() {
           agents={agents.data()}
           insightsPage={insightsRoute()?.page ?? null}
           onRefresh={refresh}
+          onArchiveChanged={onArchived}
           onNew={() => setCreating(true)}
           onOpenSettings={() => openSettings()}
         />

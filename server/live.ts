@@ -110,3 +110,30 @@ export function readLive(): Map<string, LiveRecord> {
   }
   return out;
 }
+
+/** How recent a heartbeat must be for the archive guard to believe a record's worker count.
+    Looser than OWN_FRESH_MS on purpose: a false "working" costs the user a wait, a false "idle"
+    kills their subagents. The dev-server restart gate uses the same 30s. */
+export const WORKING_FRESH_MS = 30_000;
+/** SCHEMA.md: a heartbeat this far in the future is garbage, not fresh. */
+const FUTURE_SKEW_MS = 5 * 60_000;
+
+/**
+ * Subagents working in the session at `path` right now, read fresh from every live record for
+ * that file — this server's own embedded runtime AND any other process hosting it (a TUI,
+ * another Sova server). The sessions extension rewrites its record ~150ms after the subagent
+ * manager's worker snapshot changes, so this is as fresh as the server can see without
+ * importing pi-config; the list's `workers` field is the same data, but a poll old in the
+ * browser. Dead pids are already dropped by readLiveRecords; stale heartbeats are ignored here.
+ * The largest count wins when several processes claim the file.
+ */
+export function workingSubagents(path: string, records: RawLiveRecord[] = readLiveRecords({ includeOwn: true }), now = Date.now()): number {
+  let working = 0;
+  for (const r of records) {
+    if (r.sessionFile !== path) continue;
+    const beat = typeof r.rec?.heartbeat === "number" ? r.rec.heartbeat : 0;
+    if (now - beat > WORKING_FRESH_MS || beat - now > FUTURE_SKEW_MS) continue;
+    working = Math.max(working, workerCountsOf(r.rec)?.working ?? 0);
+  }
+  return working;
+}

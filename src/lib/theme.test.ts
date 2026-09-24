@@ -33,9 +33,9 @@ Object.assign(globalThis, {
   },
 });
 
-const { activeThemeId, applyTheme, applyStoredTheme, clearTheme, clearTypography, droppedThemeId, LEGACY_THEME_KEY, reconcileTheme, setTypography, THEME_KEY, typography } =
+const { activeThemeId, applyTheme, applyStoredTheme, clearTheme, clearTypography, droppedThemeId, LEGACY_THEME_KEY, reconcileTheme, setTextSize, setTypography, textSize, THEME_KEY, typography } =
   await import("./theme");
-const { LEGACY_TYPOGRAPHY_KEY, TYPOGRAPHY_KEY, fontById } = await import("./typography");
+const { LEGACY_TEXT_SIZE_KEY, LEGACY_TYPOGRAPHY_KEY, TEXT_SIZE_KEY, TYPOGRAPHY_KEY, fontById } = await import("./typography");
 
 const reset = () => {
   style.clear();
@@ -44,6 +44,7 @@ const reset = () => {
   meta.content = "#1E1E26";
   clearTheme();
   clearTypography();
+  setTextSize("medium");
   store.clear(); // clearTypography persists "nothing" by removing the key; start every test empty
 };
 
@@ -227,4 +228,49 @@ test("clearTypography (Use Theme Fonts, ?theme=default) drops both kinds and the
   assert.equal(style.has("--font-mono"), false);
   assert.equal(store.has(TYPOGRAPHY_KEY), false);
   assert.equal(activeThemeId(), "a", "the theme itself is untouched");
+});
+
+/* ---- Text size over the theme (§12 "Typography") ----------------------------------------- */
+
+test("Medium writes no size; Small and Large write every --fs-* step and persist under both keys", () => {
+  reset();
+  assert.equal([...style.keys()].some((k) => k.startsWith("--fs-")), false);
+  setTextSize("small");
+  assert.equal(style.get("--fs-body"), "13.5px");
+  assert.equal(style.get("--fs-micro"), "10.5px");
+  assert.equal([...style.keys()].filter((k) => k.startsWith("--fs-")).length, 8);
+  assert.equal(store.get(TEXT_SIZE_KEY), "small");
+  assert.equal(store.get(LEGACY_TEXT_SIZE_KEY), "small");
+  setTextSize("large");
+  assert.equal(style.get("--fs-body"), "15.5px");
+  setTextSize("medium");
+  assert.equal([...style.keys()].some((k) => k.startsWith("--fs-")), false, "Medium takes every size off");
+  assert.equal(store.has(TEXT_SIZE_KEY), false, "and stores nothing");
+  assert.equal(store.has(LEGACY_TEXT_SIZE_KEY), false);
+});
+
+test("a size scales the theme's own px sizes and survives a theme switch", () => {
+  reset();
+  setTextSize("large");
+  applyTheme({ id: "a", base: "dark", tokens: { "fs-body": "16px", "fs-caption": "1em" } });
+  assert.equal(style.get("--fs-body"), "17px", "16 × 1.07 = 17.12, to the half pixel");
+  assert.equal(style.get("--fs-caption"), "calc(1em * 1.07)");
+  assert.equal(style.get("--fs-mono"), "13.5px", "a step the theme leaves alone takes the table");
+  applyTheme({ id: "b", base: "light", tokens: {} });
+  assert.equal(style.get("--fs-body"), "15.5px");
+  setTextSize("medium");
+  applyTheme({ id: "a", base: "dark", tokens: { "fs-body": "16px" } });
+  assert.equal(style.get("--fs-body"), "16px", "at Medium the theme's value is verbatim");
+});
+
+test("the stored size is painted by the pre-paint call; junk reads as Medium", () => {
+  reset();
+  store.set(TEXT_SIZE_KEY, "small");
+  applyStoredTheme();
+  assert.equal(textSize(), "small");
+  assert.equal(style.get("--fs-body"), "13.5px");
+  store.set(TEXT_SIZE_KEY, "huge");
+  applyStoredTheme();
+  assert.equal(textSize(), "medium");
+  assert.equal(style.has("--fs-body"), false);
 });

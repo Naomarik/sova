@@ -8,6 +8,7 @@ node sova-spec.mjs check                [--root DIR] [--spec DIR] [--json]
 node sova-spec.mjs scope  §ns/name      [--root DIR] [--spec DIR] [--json] [--budget BYTES]
 node sova-spec.mjs impact §ns/name      [--root DIR] [--spec DIR] [--json]
 node sova-spec.mjs census               [--root DIR] [--spec DIR] [--json]
+node sova-spec.mjs census --changed [--base REV] [--root DIR] [--spec DIR] [--json]
 ```
 
 `--spec` picks which spec graph to read. It's a directory relative to the project root, and it
@@ -25,8 +26,8 @@ parent.
 | Exit | Meaning |
 |---|---|
 | 0 | Usable output over the known declared closure. **Never** a completeness claim. |
-| 1 | Relevant unknown, stale, unresolved, or unread content: dangling edge, missing `requires`, a code path that is missing, refused (absolute, outside the root, through a symlink), unreadable or not a regular file, provenance moved/changed/missing/refused/unreadable, budget left passages unread (including the requested one), no census boundary, unreadable census directory. |
-| 2 | Output can't be trusted: usage error, unreadable or unsupported manifest, malformed record, bad declaration, a symlink anywhere on the claims path or in the claims tree, an unreadable claims file or directory, an unknown seed, or an internal error. Scope and impact return no passages while the graph is malformed. A malformed record never enters the graph. |
+| 1 | Relevant unknown, stale, unresolved, or unread content: dangling edge, missing `requires`, a code path that is missing, refused (absolute, outside the root, through a symlink), unreadable or not a regular file, provenance moved/changed/missing/refused/unreadable, budget left passages unread (including the requested one), no census boundary, unreadable census directory, a changed file in the boundary that no record claims (`changed-unclaimed`, one per file). |
+| 2 | Output can't be trusted: usage error, unreadable or unsupported manifest, malformed record, bad declaration, a symlink anywhere on the claims path or in the claims tree, an unreadable claims file or directory, an unknown seed, or an internal error. For `census --changed`: no Git work tree, or an enclosing repository that ignores the project (`not-git`), a `--base` that doesn't name a commit (`bad-rev`), or a failed Git command (`git-failed`). Scope and impact return no passages while the graph is malformed. A malformed record never enters the graph. |
 
 `--json` prints one object: `tool: "sova-spec"`, `command`, `spec` (the normalized graph
 directory), `root`, `exit` (equal to the process status), and `findings[]` (`severity`
@@ -120,6 +121,13 @@ to the project root. New fields are only ever added. Other tools read this outpu
   directory. That covers current docs, drafts and reviews, whichever graph is read. Symlinks are listed and
   never followed. It reports which boundary files are claimed or unclaimed, and which mapped paths
   lie outside the boundary.
+- **census --changed**: checks only the files a task changed. Those are the files that differ between
+  `--base` (default `HEAD`) and the working tree, plus untracked files that aren't ignored.
+  Deletions are dropped. Git runs as read-only plumbing, without a shell. The boundary rules are
+  the same. `census` then holds `mode: "changed"`, `base: {rev, commit}`, `changed` (the count),
+  `claimed: [{path, claims}]`, `unclaimed`, `outside` (changed files beyond the boundary, which
+  aren't failures) and `symlinks`. Each unclaimed file is a `changed-unclaimed` warning. With no
+  boundary it still lists the claimed files, but `unclaimed` and `outside` are null.
 
 ## Evidence
 

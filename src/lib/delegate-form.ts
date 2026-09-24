@@ -21,6 +21,9 @@ import type {
 
 export type Slot = "primary" | "fallback";
 
+/** What a worker row needs of a settings screen's info: the backends and every effort each accepts. */
+export type BackendsInfo = Pick<DelegateSettingsInfo, "backends">;
+
 /** A row being edited. Blank model/effort = not chosen yet; the form can't be saved like that. */
 export interface DraftChoice {
   backend: DelegateBackendId;
@@ -35,7 +38,7 @@ export type DraftSettings = {
 
 export const cloneSettings = (s: DelegateSettings | DraftSettings): DraftSettings => JSON.parse(JSON.stringify(s));
 
-const sameChoice = (a: DraftChoice | null, b: DraftChoice | null) =>
+export const sameChoice = (a: DraftChoice | null, b: DraftChoice | null) =>
   !a || !b ? !a && !b : a.backend === b.backend && a.model === b.model && a.effort === b.effort;
 
 export function sameSettings(a: DraftSettings | DelegateSettings, b: DraftSettings | DelegateSettings): boolean {
@@ -110,7 +113,7 @@ export function modelSelectOptions(options: DelegateOptions | undefined, choice:
 }
 
 /** The effort select: what the model takes; what the backend accepts when discovery can't say. */
-export function effortSelectOptions(info: DelegateSettingsInfo, options: DelegateOptions | undefined, choice: DraftChoice): string[] {
+export function effortSelectOptions(info: BackendsInfo, options: DelegateOptions | undefined, choice: DraftChoice): string[] {
   const efforts = modelEfforts(options, choice.backend, choice.model) ?? info.backends.find((b) => b.id === choice.backend)?.efforts ?? [];
   return choice.effort && !efforts.includes(choice.effort) ? [choice.effort, ...efforts] : efforts;
 }
@@ -121,13 +124,17 @@ export interface SlotIssue {
   text: string;
 }
 
-/** What the row says about its pick, or null when there's nothing to say. Mirrors the server's save check. */
+/**
+ * What the row says about its pick, or null when there's nothing to say. Mirrors the server's save
+ * check. `owner` names what reroutes a policy-denied pick: Delegate, or the spec writer's settings.
+ */
 export function slotIssue(
-  info: DelegateSettingsInfo,
+  info: BackendsInfo,
   options: DelegateOptions | undefined,
   choice: DraftChoice,
   other: DraftChoice | null,
   slot: Slot,
+  owner = "Delegate",
 ): SlotIssue | null {
   const label = info.backends.find((b) => b.id === choice.backend)?.label ?? choice.backend;
   if (!choice.model) return { tone: "muted", text: "Choose a model." };
@@ -145,7 +152,7 @@ export function slotIssue(
     return { tone: "muted", text: `Not verified: the Claude Code CLI's model list doesn't include ${choice.model} right now (the list varies). It will still be used.` };
   if (!model) return { tone: "error", text: `${label} doesn't offer ${choice.model}.` };
   if (!model.efforts.includes(choice.effort)) return { tone: "error", text: `${choice.model} doesn't take ${choice.effort} effort.` };
-  if (model.denied) return { tone: "warn", text: `${model.denied}. Delegate uses the fallback, or asks.` };
+  if (model.denied) return { tone: "warn", text: `${model.denied}. ${owner} uses the fallback, or asks.` };
   return null;
 }
 

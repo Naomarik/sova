@@ -1,13 +1,14 @@
 import { createEffect, createMemo, createResource, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import type { AgentsInsight, ContextInfo, SessionGroup, SessionSummary, UsageInsight } from "../../shared/protocol";
-import { fetchTargets } from "../lib/api";
+import { fetchTargets, listSessions, setSessionArchived } from "../lib/api";
 import { type ArchiveGroupId, groupByArchiveDate, sessionsWord } from "../lib/archive";
 import { relativeTime, shortModel, tildePath } from "../lib/format";
 import { agentsHref, type GlancePart, usageGlance, usageHref } from "../lib/insights";
 import { isMainThread, isTopSession } from "../lib/regions";
 import { groupRemotePlaceOf, remoteMarkOf, remoteMarkSuffix, remoteMarkTitle } from "../lib/remote-mark";
 import { summaryLineOf, summaryTitleOf } from "../lib/summary-row";
+import { type ArchiveDrag, archiveDragOf, archivedDropToast, blockedDropSentence, leftWindow, outsideDropEffect, outsideLabel, outsideTarget } from "../lib/drag-archive";
 import { cwdLabel, remotePlaceOf, type TargetInfo } from "../lib/remote-session";
 import { recentCount, recentSessions } from "../lib/recent";
 import { type CwdGroup, groupByActivity, groupByCreation } from "../lib/session-order";
@@ -65,10 +66,19 @@ const legacyArchiveDateKey = (id: ArchiveGroupId) => `pi-web:archive-date-open-$
  * The row being dragged, and the drop target under the pointer. Module state, because one drag
  * spans the row that started it and the group sections it passes over, and a tab can only drag
  * one thing at a time. `groupId` is where the row is now, which is what decides whether a drop
- * moves it or does nothing.
+ * moves it or does nothing; `archive` is what a drop outside the sidebar would do, decided when
+ * the drag starts (lib/drag-archive).
  */
-const [dragging, setDragging] = createSignal<{ path: string; groupId: string | null } | null>(null);
-const [dropTarget, setDropTarget] = createSignal<string | "remove" | null>(null);
+const [dragging, setDragging] = createSignal<{ path: string; groupId: string | null; title: string; archive: ArchiveDrag } | null>(null);
+/** A group id, "remove", or one of the two outside-the-sidebar states. */
+const [dropTarget, setDropTarget] = createSignal<string | "remove" | "archive" | "archive-blocked" | null>(null);
+const isOutsideTarget = (t: string | null): t is "archive" | "archive-blocked" => t === "archive" || t === "archive-blocked";
+/** The words of the row that says what a drop outside the pane would do, or null when none shows. */
+const outsideText = (): string | null => {
+  const d = dragging();
+  const t = dropTarget();
+  return d && isOutsideTarget(t) ? outsideLabel(t, d.archive, d.title) : null;
+};
 
 /** Whether a drag over `element` has left it: a dragleave fires whenever the pointer crosses into
     a child, so the drop state must only clear once the pointer is outside the whole target. */
@@ -224,7 +234,9 @@ function SessionRow(props: { session: SessionSummary; selected: string | null; n
         // Once it has, this press is a drag: it must not also become a hold mid-flight.
         endPress();
         setGroupDragData(e, s().path);
-        setDragging({ path: s().path, groupId: s().groupId ?? null });
+        // Busy as the row shows it: this tab's own run is newer than the last fetched list.
+        const archive = archiveDragOf({ ...s(), busy: localRunning()[s().path] ?? s().busy });
+        setDragging({ path: s().path, groupId: s().groupId ?? null, title: s().title, archive });
       }}
       onDragEnd={() => {
         setDragging(null);
@@ -270,48 +282,51 @@ function SessionRow(props: { session: SessionSummary; selected: string | null; n
             <span class="toggle-box" />
           </label>
         </Show>
-        {/* At most one state: live wins over busy. TUI is a static word; Busy is a pulsing dot. */}
-        <Show when={s().live}>
-          <button
-            type="button"
-            tabindex="-1"
-            class="session-rail-item session-rail-state session-rail-tui chip chip-accent"
-            aria-label={`Open in a TUI. Pid ${s().live!.pid}, status ${s().live!.status}.`}
-            title={tuiTitle()}
-            onClick={() => toast(tuiTitle())}
-          >
-            TUI
-          </button>
-        </Show>
-        <Show when={isBusy()}>
-          <button
-            type="button"
-            tabindex="-1"
-            class="session-rail-item session-rail-state chip chip-info chip-live"
-            aria-label="pi is replying in this session"
-            title="pi is replying in this session"
-            onClick={() => toast("pi is replying in this session")}
-          >
-            <span class="session-rail-dot" />
-          </button>
-        </Show>
-        <Show when={working()}>
-          {(n) => (
+        {/* At most one state: live wins over busy. TUI is a static word; Busy is a pulsing dot.
+            The wrapper is layout-neutral outside selection mode; in it, it hangs the state under
+            the checkbox so the box alone decides where the row's middle is. */}
+        <div class="session-rail-states">
+          <Show when={s().live}>
             <button
               type="button"
               tabindex="-1"
-              class="session-rail-item session-rail-count"
-              // One moving thing per row: the icon only pulses when Busy isn't already pulsing.
-              classList={{ "session-rail-count-live": !isBusy() }}
-              aria-label={workingNow(n())}
-              title={workingNow(n())}
-              onClick={() => toast(workingNow(n()))}
+              class="session-rail-item session-rail-state session-rail-tui chip chip-accent"
+              aria-label={`Open in a TUI. Pid ${s().live!.pid}, status ${s().live!.status}.`}
+              title={tuiTitle()}
+              onClick={() => toast(tuiTitle())}
             >
-              <span class="text-num">{n()}</span>
-              <Icon name="worker" small />
+              TUI
             </button>
-          )}
-        </Show>
+          </Show>
+          <Show when={isBusy()}>
+            <button
+              type="button"
+              tabindex="-1"
+              class="session-rail-item session-rail-state chip chip-info chip-live"
+              aria-label="pi is replying in this session"
+              title="pi is replying in this session"
+              onClick={() => toast("pi is replying in this session")}
+            >
+              <span class="session-rail-dot" />
+            </button>
+          </Show>
+          <Show when={working()}>
+            {(n) => (
+              <button
+                type="button"
+                tabindex="-1"
+                class="session-rail-item session-rail-count"
+                // One moving thing per row: the figure only pulses when Busy isn't already pulsing.
+                classList={{ "session-rail-count-live": !isBusy() }}
+                aria-label={workingNow(n())}
+                title={workingNow(n())}
+                onClick={() => toast(workingNow(n()))}
+              >
+                <span class="text-num">{n()}</span>
+              </button>
+            )}
+          </Show>
+        </div>
       </div>
       <a
         class="list-row list-row-interactive session-row"
@@ -753,6 +768,8 @@ export function Sidebar(props: {
   selected: string | null;
   now: number;
   onRefresh(): void;
+  /** After a drag out of the pane archives a session, or its Undo brings it back. */
+  onArchiveChanged(path: string, archived: boolean): void;
   onNew(): void;
   usage: UsageInsight | undefined;
   agents: AgentsInsight | undefined;
@@ -770,6 +787,95 @@ export function Sidebar(props: {
   let aside!: HTMLElement;
   // The tab's copy of the group list: the pane's region and the session pane's menu share it.
   onMount(() => void loadSessionGroups());
+
+  /**
+   * Dragging a row out of the pane archives it (§2 "Groups", "Dragging"). The boundary is this
+   * <aside>, not the list: anywhere else in the window is "outside". Listening only while a row
+   * is in flight. The composer's own window guard (Composer.tsx) still keeps the row's text/plain
+   * path out of its field; this adds the archive on top, and only a drop archives — never a
+   * dragend, which is also what Esc and a drop off the window end with.
+   */
+  const outside = (e: DragEvent) => !(e.target instanceof Node && aside.contains(e.target));
+  const onWindowDragOver = (e: DragEvent) => {
+    const d = dragging();
+    if (!d || !dragHasRow(e)) return;
+    if (!outside(e)) {
+      if (isOutsideTarget(dropTarget())) setDropTarget(null);
+      return;
+    }
+    // Always ours out here, archived row or not: nothing else in the page may take the path.
+    e.preventDefault();
+    const t = outsideTarget(d.archive, false);
+    if (e.dataTransfer) e.dataTransfer.dropEffect = outsideDropEffect(t);
+    if (dropTarget() !== t) setDropTarget(t);
+  };
+  const onWindowDragLeave = (e: DragEvent) => {
+    if (isOutsideTarget(dropTarget()) && leftWindow(e, { width: innerWidth, height: innerHeight })) setDropTarget(null);
+  };
+  const onWindowDrop = (e: DragEvent) => {
+    const d = dragging();
+    if (!d || !groupDragPath(e) || !outside(e)) return;
+    e.preventDefault();
+    setDragging(null);
+    setDropTarget(null);
+    void archiveByDrag(d);
+  };
+  createEffect(() => {
+    if (!dragging()) return;
+    // An <iframe> (the Explained cards, a rendered page) is its own document: a dragover over one
+    // never reaches this window, so the state would go stale there. base.css lets the pointer
+    // through them while a row is in flight.
+    document.documentElement.toggleAttribute("data-row-drag", true);
+    addEventListener("dragover", onWindowDragOver);
+    document.addEventListener("dragleave", onWindowDragLeave);
+    addEventListener("drop", onWindowDrop);
+    onCleanup(() => {
+      document.documentElement.removeAttribute("data-row-drag");
+      removeEventListener("dragover", onWindowDragOver);
+      document.removeEventListener("dragleave", onWindowDragLeave);
+      removeEventListener("drop", onWindowDrop);
+    });
+  });
+
+  const archiveByDrag = async (d: { path: string; archive: ArchiveDrag }) => {
+    const blocked = blockedDropSentence(d.archive);
+    if (blocked) {
+      toast(blocked);
+      announce(blocked);
+      return;
+    }
+    if (d.archive.kind !== "archive") return; // already archived: the gesture does nothing
+    try {
+      await setSessionArchived(d.path, true);
+    } catch (err) {
+      const failed = `Couldn't archive this session. ${(err as Error).message}`;
+      toast(failed);
+      announce(failed);
+      return;
+    }
+    // A never-sent session is deleted rather than archived (lib/drag-archive), and only the list
+    // can tell which happened: whether this tab still had a draft on the server is not known here.
+    const deleted = (await listSessions().catch(() => null))?.every((s) => s.path !== d.path) ?? false;
+    const done = archivedDropToast(deleted);
+    // Keyed: the next archive's toast replaces this one, so only the latest Undo is on screen.
+    toast(done.text, done.undo ? { key: "archive-undo", action: { label: "Undo", run: () => undoArchive(d.path) } } : undefined);
+    announce(done.text);
+    props.onArchiveChanged(d.path, true);
+  };
+  const undoArchive = async (path: string) => {
+    try {
+      await setSessionArchived(path, false);
+    } catch (err) {
+      const failed = `Couldn't unarchive this session. ${(err as Error).message}`;
+      toast(failed);
+      announce(failed);
+      return;
+    }
+    const done = "Moved back to Live & web.";
+    toast(done);
+    announce(done);
+    props.onArchiveChanged(path, false);
+  };
 
   /** The pane as the spine on screen: the stored choice, where the viewport allows it. */
   const collapsed = () => spine() && props.unfolded;
@@ -1148,7 +1254,7 @@ export function Sidebar(props: {
   };
 
   return (
-    <aside ref={aside} class="app-sidebar" aria-label="Sessions">
+    <aside ref={aside} class="app-sidebar" aria-label="Sessions" data-drop={dropTarget() === "archive" ? "archive" : undefined}>
       {/* Collapsed, the pane's own body is not in the DOM at all — nothing hidden-but-readable. */}
       <Show when={!collapsed()} fallback={<Spine />}>
         <div class="sidebar-head">
@@ -1444,6 +1550,17 @@ export function Sidebar(props: {
                 <ArchiveCleanup sessions={all()} selected={props.selected} onDeleted={() => props.onRefresh()} />
               </Show>
             </details>
+          </Show>
+
+          {/* Only while a row is outside the pane: what a drop there does, at the end of the list.
+              Nothing renders in the main pane. An archived row shows nothing — it's already there. */}
+          <Show when={outsideText()}>
+            {(label) => (
+              <div class="archive-drop" classList={{ "archive-drop-blocked": dropTarget() === "archive-blocked" }} aria-hidden="true">
+                <Icon name="archive" small />
+                <span class="archive-drop-text">{label()}</span>
+              </div>
+            )}
           </Show>
         </nav>
 

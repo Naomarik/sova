@@ -82,6 +82,11 @@ export interface SessionBridgeLimits {
 	maxIdleSessions: number;
 	/** Characters of any one tool result folded into restarted history. */
 	maxFoldedResultChars: number;
+	/**
+	 * The same, for a subagent retrieval tool (`agent_transcript`, `agent_wait`):
+	 * its result is a worker's report, and the report IS the deliverable.
+	 */
+	maxFoldedReportChars: number;
 	/** Characters of the whole folded history message. */
 	maxFoldedChars: number;
 }
@@ -90,9 +95,9 @@ const TIMINGS: SessionBridgeTimings = {
 	requestTimeoutMs: 30_000, eofGraceMs: 1_500, termGraceMs: 2_000, pipeDrainMs: 250,
 	toolDispatchTimeoutMs: 30_000, heldCallTimeoutMs: 3_600_000, abortGraceMs: 5_000,
 };
-const LIMITS: SessionBridgeLimits = {
+export const LIMITS: SessionBridgeLimits = {
 	maxLineBytes: 4 * 1024 * 1024, maxIdleSessions: 4,
-	maxFoldedResultChars: 8_000, maxFoldedChars: 512 * 1024,
+	maxFoldedResultChars: 8_000, maxFoldedReportChars: 48_000, maxFoldedChars: 512 * 1024,
 };
 
 export interface SessionBridgeOptions {
@@ -273,6 +278,19 @@ function imagesOf(content: unknown): ImageContent[] {
 		!!b && typeof b === "object" && (b as { type?: unknown }).type === "image");
 }
 
+/** A subagent retrieval tool, under pi's name or the CLI's `mcp__<server>__` one. */
+const REPORT_TOOL_RE = /(?:^|__)agent_(?:transcript|wait)$/;
+
+/**
+ * Clip one folded tool result to `cap` characters, keeping its head AND tail:
+ * a report's conclusion is at its end, so a head-only clip loses what matters.
+ */
+function clipResult(text: string, cap: number): string {
+	if (text.length <= cap) return text;
+	const head = Math.ceil(cap * 0.6);
+	return `${text.slice(0, head)}\n… [truncated: ${text.length - cap} chars omitted]\n${text.slice(text.length - (cap - head))}`;
+}
+
 export interface FoldedHistory {
 	text: string;
 	images: ImageContent[];
@@ -304,10 +322,10 @@ const FOLD_HEADERS: Record<Exclude<FoldMode, "first">, string> = {
  * picks the framing (see FoldMode).
  *
  * Lossy on purpose, and the prose says so to the model: thinking blocks and
- * their signatures are gone, tool results are truncated, and the CLI's own
- * prompt cache and tool bookkeeping start over. Images cannot be folded into
- * text, so they ride the same message as real image blocks; their place in the
- * narrative is marked inline.
+ * their signatures are gone, long tool results keep only their head and tail,
+ * and the CLI's own prompt cache and tool bookkeeping start over. Images cannot
+ * be folded into text, so they ride the same message as real image blocks;
+ * their place in the narrative is marked inline.
  */
 export function foldHistory(messages: readonly Message[], limits: SessionBridgeLimits, mode: FoldMode = "restarted"): FoldedHistory {
 	const foldable = messages.filter((m) => m.role !== "system");
@@ -345,7 +363,8 @@ export function foldHistory(messages: readonly Message[], limits: SessionBridgeL
 			for (const image of found) images.push(image);
 			const suffix = found.length ? `\n[${found.length} image(s) returned by this tool, included below]` : "";
 			const label = message.isError ? "failed" : "returned";
-			parts.push(`## Tool \`${message.toolName}\` (id ${message.toolCallId}) ${label}\n${clip(textOf(message.content), limits.maxFoldedResultChars)}${suffix}`);
+			const cap = REPORT_TOOL_RE.test(message.toolName) ? limits.maxFoldedReportChars : limits.maxFoldedResultChars;
+			parts.push(`## Tool \`${message.toolName}\` (id ${message.toolCallId}) ${label}\n${clipResult(textOf(message.content), cap)}${suffix}`);
 		}
 	}
 

@@ -1287,7 +1287,7 @@ details[open] > .tree-row .tree-twist { transform: rotate(90deg); }
   background: currentColor;
   animation: run-pulse 1.6s var(--ease-standard) infinite;
 }
-@keyframes run-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
+@keyframes run-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .4; } }
 
 
 /* =============================================================================

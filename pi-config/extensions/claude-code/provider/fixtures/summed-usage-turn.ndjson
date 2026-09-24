@@ -1,0 +1,9 @@
+{"type":"system","subtype":"init","session_id":"sess-9","model":"sonnet"}
+{"type":"stream_event","session_id":"sess-9","event":{"type":"message_start","message":{"usage":{"input_tokens":33,"output_tokens":3,"cache_read_input_tokens":265186,"cache_creation_input_tokens":1805}}}}
+{"type":"stream_event","session_id":"sess-9","event":{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}}
+{"type":"stream_event","session_id":"sess-9","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"All seven steps done."}}}
+{"type":"assistant","session_id":"sess-9","message":{"content":[{"type":"text","text":"All seven steps done."}],"stop_reason":null,"usage":{"input_tokens":33,"output_tokens":3,"cache_read_input_tokens":265186,"cache_creation_input_tokens":1805}}}
+{"type":"stream_event","session_id":"sess-9","event":{"type":"content_block_stop","index":0}}
+{"type":"stream_event","session_id":"sess-9","event":{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"input_tokens":33,"output_tokens":690,"cache_read_input_tokens":265186,"cache_creation_input_tokens":1805}}}
+{"type":"stream_event","session_id":"sess-9","event":{"type":"message_stop"}}
+{"type":"result","subtype":"success","is_error":false,"session_id":"sess-9","num_turns":7,"result":"All seven steps done.","total_cost_usd":1.9,"usage":{"input_tokens":103,"output_tokens":2682,"cache_read_input_tokens":1044193,"cache_creation_input_tokens":8437}}

@@ -1,6 +1,6 @@
 import { For, Show } from "solid-js";
-import { setTypography, typography } from "../lib/theme";
-import { fontById, type FontKind, fontsOf, isThemeDefault } from "../lib/typography";
+import { setTextSize, setTypography, textSize, typography } from "../lib/theme";
+import { fontById, type FontKind, fontsOf, isThemeDefault, TEXT_SIZES } from "../lib/typography";
 import { announce } from "../lib/ui-state";
 
 /**
@@ -58,6 +58,43 @@ function FontSelect(props: { kind: FontKind; label: string; hint: string }) {
   );
 }
 
+/**
+ * Text size: three native radios in one fieldset, so the legend names the group, arrow keys move
+ * the choice, and a screen reader says which is checked with no ARIA of our own. Radios rather
+ * than a slider — there are three discrete steps, and each says its name. Medium is the default
+ * and the way back; it is not part of Use Theme Fonts, because a size is not the theme's.
+ */
+function TextSizeField() {
+  return (
+    <fieldset class="field settings-type-size" aria-describedby="typography-size-hint">
+      <legend class="field-label">Text size</legend>
+      <div class="settings-type-size-options">
+        <For each={TEXT_SIZES}>
+          {(opt) => (
+            <label class="toggle">
+              <input
+                type="radio"
+                name="typography-size"
+                value={opt.id}
+                checked={textSize() === opt.id}
+                onChange={() => {
+                  setTextSize(opt.id);
+                  announce(`Text size is now ${opt.label}.`);
+                }}
+              />
+              <span class="toggle-box" aria-hidden="true" />
+              {opt.label}
+            </label>
+          )}
+        </For>
+      </div>
+      <span class="field-hint" id="typography-size-hint">
+        Every text on the page, in this browser. Medium is the default.
+      </span>
+    </fieldset>
+  );
+}
+
 export function TypographySection() {
   const reset = () => {
     setTypography({ text: null, mono: null });
@@ -78,6 +115,7 @@ export function TypographySection() {
         <FontSelect kind="text" label="Text" hint="Everything you read: the sidebar, messages, and headings." />
         <FontSelect kind="mono" label="Code" hint="Paths, ids, diffs, and code blocks." />
       </div>
+      <TextSizeField />
       {/* The preview inherits the root faces: it is what the page renders, not a picture of it.
           The mono block's two lines are the same length so a misaligned column is visible. */}
       <div class="settings-type-preview" aria-label="Preview of the current fonts">

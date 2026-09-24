@@ -29,8 +29,17 @@ runs the tools itself.
 ## Core (read-only)
 
 ```sh
-node core/sova-spec.mjs <check | census | scope '<§id>' [--budget <bytes>] | impact '<§id>'> [--root DIR] [--spec DIR] [--json]
+node core/sova-spec.mjs <check | census [--changed [--base <rev>]] | scope '<§id>' [--budget <bytes>] | impact '<§id>'> [--root DIR] [--spec DIR] [--json]
 ```
+
+`census --changed` checks one task's files instead of the whole boundary. It
+takes the files that differ between `--base` (default `HEAD`) and the working
+tree, plus untracked files that aren't ignored, and drops deletions. Then it
+lists the ones inside the boundary as claimed (with their §IDs) or unclaimed.
+Changed files outside the boundary are listed but don't count against it.
+Each unclaimed file is a `changed-unclaimed` finding (exit 1). No Git work
+tree (`not-git`) or a `--base` that isn't a commit (`bad-rev`) exits 2. Git is
+run read-only, without a shell.
 
 Quote IDs, because `§` is not a shell word character. `--budget` is accepted by
 `scope` only; with any other command it's a usage error. `--spec` reads another

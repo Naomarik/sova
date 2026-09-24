@@ -229,26 +229,15 @@ export function SelectionToolbar(props: { sessions: SessionSummary[]; onRefresh(
         </button>
       </div>
       <div class="sidebar-select-actions">
-        {/* Rename: only ever at one session. At two there is nothing for one field to mean. */}
-        <Show when={plan().canRename}>
-          <button
-            type="button"
-            class="button button-sm"
-            aria-expanded={renaming() ? "true" : "false"}
-            aria-disabled={busy() ? "true" : undefined}
-            title={running() || (one()?.originalTitle ? `Renamed in Sova. Originally ${quoted(one()!.originalTitle!)}` : "Rename this session in Sova")}
-            onClick={() => !busy() && setRenaming((r) => !r)}
-          >
-            <Icon name="pencil" small />
-            Rename
-          </button>
-        </Show>
+        {/* Move, then Rename, then Archive, side by side: one row at any sidebar width.
+            Rename and Archive are icons, named by their aria-labels and titles. */}
         <ActionMenu
           label={`Move ${sessionsWord(plan().count)} into a group`}
           title="Move into group"
-          text="Move to group"
+          text="Move"
           icon="folder"
           class="button-sm"
+          align="start"
         >
           {(menu) => (
             <Show
@@ -307,16 +296,29 @@ export function SelectionToolbar(props: { sessions: SessionSummary[]; onRefresh(
             </Show>
           )}
         </ActionMenu>
+        {/* Rename: only ever at one session. At two there is nothing for one field to mean. */}
+        <Show when={plan().canRename}>
+          <button
+            type="button"
+            class="button button-sm button-icon"
+            aria-label="Rename this session"
+            aria-expanded={renaming() ? "true" : "false"}
+            aria-disabled={busy() ? "true" : undefined}
+            title={running() || (one()?.originalTitle ? `Renamed in Sova. Originally ${quoted(one()!.originalTitle!)}` : "Rename this session in Sova")}
+            onClick={() => !busy() && setRenaming((r) => !r)}
+          >
+            <Icon name="pencil" />
+          </button>
+        </Show>
         <button
           type="button"
-          class={plan().mode === "unarchive" ? "button button-sm" : "button button-sm button-destructive"}
+          class={plan().mode === "unarchive" ? "button button-sm button-icon sidebar-select-archive" : "button button-sm button-icon button-destructive sidebar-select-archive"}
           aria-label={archiveAria()}
           aria-disabled={plan().disabled || busy() ? "true" : undefined}
-          title={running() || plan().disabled || undefined}
+          title={running() || plan().disabled || archiveAria()}
           onClick={() => !busy() && void runArchive()}
         >
-          <Icon name="archive" small />
-          {archiveLabel()}
+          <Icon name="archive" />
         </button>
       </div>
       {/* The reason the archive control can't run, in words, before it is pressed — and the one

@@ -1,0 +1,3 @@
+{"type":"system","subtype":"init","session_id":"sess-10"}
+{"type":"assistant","message":{"content":[{"type":"text","text":"Done."}],"stop_reason":"end_turn"}}
+{"type":"result","subtype":"success","is_error":false,"num_turns":1,"result":"Done.","usage":{"input_tokens":11,"output_tokens":5,"cache_read_input_tokens":7,"cache_creation_input_tokens":3}}

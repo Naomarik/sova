@@ -1,7 +1,7 @@
 /** The delegate system-prompt text, prompt composition, and status labels. Pure functions: unit-testable. */
 import { DELEGATE_PROFILE_INFO, DELEGATE_PROFILES, delegateDefaults, type DelegateProfileId, type WorkerChoice } from "./delegate.ts";
 import { buildMinorPrompt, type MinorMode } from "./minor.ts";
-import { routeAll, usable, type ProfileRoute } from "./routing.ts";
+import { routeAll, usable, type ProfileRoute, type SlotRoute } from "./routing.ts";
 import type { Mode, ModeState } from "./state.ts";
 
 /** Before any probe: every profile on its primary, unverified. What a fresh Delegate session starts from. */
@@ -9,10 +9,11 @@ export const DEFAULT_ROUTES: readonly ProfileRoute[] = routeAll(delegateDefaults
 
 const spawnArgs = (choice: WorkerChoice): string => `backend "${choice.backend}", model "${choice.model}", effort "${choice.effort}"`;
 
-/** One bullet per profile: what it covers, and the exact worker to spawn — or that there is none. */
-function profileLine(route: ProfileRoute): string {
-	const info = DELEGATE_PROFILE_INFO[route.profile];
-	const head = `- ${info.label} (${info.description.charAt(0).toLowerCase()}${info.description.slice(1)})`;
+/**
+ * What follows "→" for one routed slot: the exact worker to spawn and its retry, the disclosed
+ * fallback, or that there is none. `work` names what waits on asking ("delegating this kind of work").
+ */
+function routeTarget(route: SlotRoute, work: string): string {
 	if (route.via === "primary") {
 		// Only a fallback that can run is offered for the retry; one that can't is named with its
 		// reason, so a failed primary leads to asking, never to a retry that is known to fail.
@@ -21,13 +22,19 @@ function profileLine(route: ProfileRoute): string {
 			: usable(route.fallback)
 				? `; fallback ${spawnArgs(route.fallback.choice)}`
 				: `; its configured fallback (${spawnArgs(route.fallback.choice)}) can't run — ${route.fallback.reason} — so if the primary fails, ask the user`;
-		return `${head} → ${spawnArgs(route.use!)}${fallback}.`;
+		return `${spawnArgs(route.use!)}${fallback}.`;
 	}
 	if (route.via === "fallback") {
-		return `${head} → ${spawnArgs(route.use!)}. This is the configured FALLBACK: the primary (${spawnArgs(route.primary.choice)}) is unavailable — ${route.primary.reason}. Tell the user the first time you use it; do not retry the primary unless asked.`;
+		return `${spawnArgs(route.use!)}. This is the configured FALLBACK: the primary (${spawnArgs(route.primary.choice)}) is unavailable — ${route.primary.reason}. Tell the user the first time you use it; do not retry the primary unless asked.`;
 	}
 	const reasons = [route.primary.reason, route.fallback?.reason].filter(Boolean).join("; ");
-	return `${head} → NO AVAILABLE WORKER (${reasons}${route.fallback ? "" : "; no fallback is set"}). Before delegating this kind of work, tell the user and ask which model to use; do not choose one yourself.`;
+	return `NO AVAILABLE WORKER (${reasons}${route.fallback ? "" : "; no fallback is set"}). Before ${work}, tell the user and ask which model to use; do not choose one yourself.`;
+}
+
+/** One bullet per profile: what it covers, and the exact worker to spawn — or that there is none. */
+function profileLine(route: ProfileRoute): string {
+	const info = DELEGATE_PROFILE_INFO[route.profile];
+	return `- ${info.label} (${info.description.charAt(0).toLowerCase()}${info.description.slice(1)}) → ${routeTarget(route, "delegating this kind of work")}`;
 }
 
 const DELEGATE_INSTRUCTIONS = `# Mode: delegate
@@ -57,16 +64,37 @@ export function buildDelegatePrompt(routes: readonly ProfileRoute[]): string {
 export const DELEGATE_ALIGN_BRIDGE = `The align minor mode is on and takes precedence over delegation: for any ask that needs alignment, spawn at most a non-editing Planning & specs worker to investigate (never the Investigation profile for this — it is design work), emit the alignment block yourself, and spawn no implementation worker until the user has confirmed.`;
 
 /**
+ * Appended to the spec block while a spec writer is set (spec.ts, mode-spec.json), under either major
+ * mode: the writing goes to that one worker, the checking and promoting stay with the session. With
+ * no writer there is no paragraph, and the session writes the spec itself.
+ */
+export function buildSpecWriterPrompt(route: SlotRoute): string {
+	const retry =
+		route.via === "primary"
+			? " If its spawn fails because its model is unavailable, retry once with the fallback only if one is listed above, and say so; otherwise ask the user which model to use — never substitute one of your own."
+			: "";
+	return `Spec writer: draft claims and evidence records are written by one worker, spawned with agent_spawn on exactly this backend, model and effort → ${routeTarget(route, "handing off spec writing")} Give it the relevant spec passages quoted literally, the files the task changed, and the verification you did. It writes only under \`.sova/spec/drafts/\`, never current \`claims/\` or \`manifest.json\`; you check its draft, run the checks and the census, and promote yourself.${retry}`;
+}
+
+/**
  * Everything to append to this turn's system prompt: delegate block first, then minor blocks in
  * registry order. Takes just the session-scoped triple, so a `ModeActive` satisfies it too.
+ * `writer` is the routed spec writer, or null when none is set.
  */
-export function composePrompt(state: Pick<ModeState, "mode" | "strict" | "minorModes">, routes: readonly ProfileRoute[]): string | undefined {
+export function composePrompt(
+	state: Pick<ModeState, "mode" | "strict" | "minorModes">,
+	routes: readonly ProfileRoute[],
+	writer: SlotRoute | null = null,
+): string | undefined {
 	const blocks: string[] = [];
 	if (state.mode === "delegate") {
 		const delegate = buildDelegatePrompt(routes);
 		blocks.push(state.minorModes.includes("align") ? `${delegate}\n\n${DELEGATE_ALIGN_BRIDGE}` : delegate);
 	}
-	for (const minor of state.minorModes) blocks.push(buildMinorPrompt(minor));
+	for (const minor of state.minorModes) {
+		const block = buildMinorPrompt(minor);
+		blocks.push(minor === "spec" && writer ? `${block}\n\n${buildSpecWriterPrompt(writer)}` : block);
+	}
 	return blocks.length > 0 ? blocks.join("\n\n") : undefined;
 }
 
@@ -97,6 +125,8 @@ export function statusLabel(
 	routes: readonly ProfileRoute[],
 	strict: boolean,
 	minorModes: readonly MinorMode[],
+	/** The routed spec writer while spec is on; off its primary it reads `writer:fallback` / `writer:ask`. */
+	writer: SlotRoute | null = null,
 ): { text: string; tone: StatusTone } {
 	const extras: string[] = [];
 	let degraded = false;
@@ -109,6 +139,10 @@ export function statusLabel(
 		if (strict) extras.push("strict");
 	}
 	extras.push(...minorModes);
+	if (writer && writer.via !== "primary" && minorModes.includes("spec")) {
+		extras.push(writer.via === "fallback" ? "writer:fallback" : "writer:ask");
+		degraded = true;
+	}
 	return {
 		text: [mode, ...extras].join(" · "),
 		tone: degraded ? "warning" : mode === "delegate" || minorModes.length > 0 ? "accent" : "dim",

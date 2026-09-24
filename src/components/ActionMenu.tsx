@@ -68,6 +68,9 @@ export function ActionMenu(props: {
   /** A toolbar trigger says what it opens in words: the icon-only "⋯" is the default, and this
       turns it into a labelled button with a chevron, like every other menu trigger with room. */
   text?: string;
+  /** Which trigger edge the panel lines up with. "end" (default) suits a trailing "⋯"; "start"
+      suits a leading trigger, whose panel would otherwise hang off to the left and be clamped. */
+  align?: "start" | "end";
   /**
    * The trigger lives inside a `<summary>`. Two things follow, and both are load-bearing:
    *
@@ -120,7 +123,7 @@ export function ActionMenu(props: {
     const maxTop = Math.max(EDGE_GAP, innerHeight - EDGE_GAP - box.height);
     const maxLeft = Math.max(EDGE_GAP, innerWidth - EDGE_GAP - box.width);
     menu.style.setProperty("--menu-top", `${Math.round(Math.min(Math.max(top, EDGE_GAP), maxTop))}px`);
-    menu.style.setProperty("--menu-left", `${Math.round(Math.min(Math.max(r.right - box.width, EDGE_GAP), maxLeft))}px`);
+    menu.style.setProperty("--menu-left", `${Math.round(Math.min(Math.max(props.align === "start" ? r.left : r.right - box.width, EDGE_GAP), maxLeft))}px`);
   };
 
   const openMenu = () => {

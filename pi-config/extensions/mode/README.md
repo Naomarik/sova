@@ -49,7 +49,7 @@ edit" is a prompt-level rule the orchestrator checks.
 | `ctrl+p` → **Mode**, or bare `/mode` | Open the mode selector (see below) |
 | `alt+m` | Toggle normal ↔ delegate |
 | `/mode normal` · `/mode delegate` | Set explicitly (`/mode claude-heavy` still works and selects delegate) |
-| `/mode status` | Show this session's mode, the default for new sessions, the Delegate routing (and, in delegate, what each profile is actually using), strict flag, minor modes, state file |
+| `/mode status` | Show this session's mode, the default for new sessions, the Delegate routing (and, in delegate, what each profile is actually using), the spec writer (and, with spec on, what it is actually using), strict flag, minor modes, state file |
 | `/mode default` | Save this session's mode, strict flag and minor modes as the default for new sessions (the only command here that writes `mode.json`) |
 | `/mode strict on\|off` | Also remove `edit`/`write` from the orchestrator while in delegate (off by default) |
 | `/mode align [on\|off]` | Toggle (or set) the `align` minor mode |
@@ -94,6 +94,8 @@ The footer always shows the current mode:
   can run; the orchestrator asks before routing that work)
 - `delegate · strict`
 - `normal · align` (accent: a minor mode is on)
+- `normal · spec · writer:fallback` (warning: the spec writer is on its
+  fallback; `writer:ask` when neither can run)
 - `delegate · strict · align`
 
 Every switch appends a `── mode → … ──` marker to the transcript; minor-mode
@@ -108,7 +110,9 @@ Minor modes are extra instructions toggled independently of the major mode:
 zero or more can be active at once, in normal or delegate. Their blocks
 are appended after the delegate block (when in delegate) in registry order
 (`align`, then `spec`). Only `align` adds a bridge sentence to the delegate
-block; `spec` composes with either major mode and with `align` unchanged.
+block; `spec` composes with either major mode and with `align` unchanged, and
+carries one paragraph of its own when a spec writer is set (see **Spec
+writer**).
 
 - **align** — before building anything non-trivial, the agent investigates
   (in delegate, through a non-editing **Planning & specs** worker — never the
@@ -117,9 +121,15 @@ block; `spec` composes with either major mode and with `align` unchanged.
   architecture, UX, scope and trade-offs, then stops and waits for
   confirmation. Questions, explicit commands, pointed-at one-liners and
   confirmations are exempt. Text in `minor.ts`.
-- **spec** — for work that changes behavior, the agent scopes it from the
-  project's `.sova/spec/` documentation, and changes that documentation only
-  through drafts, promoted once implemented and verified. The discipline itself
+- **spec** — every behavior change is spec'd: the agent scopes it from the
+  project's `.sova/spec/` documentation, writes a claim for behavior no claim
+  covers in a feature draft before coding, claims only the files the task
+  changed, checks with `census --changed` before finishing that none of them is
+  left unclaimed, and promotes what it verified (or says why it could not).
+  Work that changes no behavior — refactors, tests, tooling — is exempt, and
+  the agent says it is claiming the exemption. The documentation changes only
+  through drafts; a promotion `conflict` is whole-file, so it is re-applied in
+  a new draft from current. The discipline itself
   is [`spec-mode.md`](spec-mode.md), and nowhere else. `minor.ts` reads it at
   load: the injected block is that file byte for byte, minus trailing
   whitespace, and its one `sh` block is the shell prefix `minor.ts` exports as
@@ -353,6 +363,45 @@ transcripts carry the mode, never the routing.
   policy on its own; nothing here routes around a denied provider to a model
   nobody configured.
 
+## Spec writer
+
+`~/.pi/agent/mode-spec.json` (`spec.ts`) names the worker that writes the spec
+while the `spec` minor mode is on — in **either** major mode, since spec is
+independent of Delegate:
+
+```json
+{ "version": 1, "writer": {
+    "primary":  { "backend": "claude-code", "model": "opus[1m]", "effort": "medium" },
+    "fallback": null } }
+```
+
+- `writer: null` (the default, and what a missing or unreadable file reads as)
+  means none: the session writes draft claims and evidence itself, as before.
+  A primary that doesn't parse reads as no writer (there is no default worker
+  to fall back to); a fallback that doesn't parse, or repeats the primary,
+  reads as none.
+- Tuples are exactly Delegate's (`WorkerChoice`, `parseChoice`), and the file
+  is its own for the same reason `mode-delegate.json` is. Edit it in Sova
+  (Settings → Modes → Spec, with a **None — this session writes the spec**
+  choice) or by hand; nothing in this extension writes it.
+- **Global, read at every turn boundary, never snapshotted.** A session with
+  spec on re-reads it (one `stat`) in `before_agent_start`; with spec off it is
+  never read.
+- **Routed and probed like a Delegate profile** (`routeWriter` in
+  `routing.ts`): primary, else the disclosed fallback, else nobody — ask. Its
+  backends are discovered whenever spec is on, outside delegate too, with the
+  same TTLs; a writer off its primary shows in the footer and is announced.
+- **The prompt.** When spec is on and a writer is set, one paragraph follows
+  the spec block (`buildSpecWriterPrompt` in `prompt.ts`; `spec-mode.md` stays
+  byte-identical): spawn that one worker with `agent_spawn` on exactly that
+  backend, model and effort to write draft claims and record evidence; give it
+  the relevant spec passages quoted literally, the files the task changed and
+  the verification done; it writes only under `.sova/spec/drafts/`, never
+  `claims/` or `manifest.json`; the session checks its draft and promotes. An
+  unavailable model means one retry on the listed fallback, disclosed, else
+  asking the user — never a substitute. A writer that can't run at all is
+  rendered as Delegate renders a profile with no worker.
+
 ## Limits
 
 Delegation bias and profile choice are instruction-level: the orchestrator
@@ -370,6 +419,7 @@ cd extensions/mode
 node --test index.test.ts     # pure state/prompt/minor/palette logic, the legacy alias
 node --test delegate.test.ts  # the routing file: defaults, parsing, persistence, per-turn re-read
 node --test routing.test.ts   # primary → fallback → ask, discovery failure, policy
+node --test spec.test.ts      # the spec writer file: parsing, persistence, per-turn re-read
 node --test align.test.ts     # alignment-doc parser, status, restore, scroll math
 node tests/smoke.mjs          # real index.ts against a fake pi host, no model requests
 ```

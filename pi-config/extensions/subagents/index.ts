@@ -370,18 +370,92 @@ function loadDefinition(name: string): { systemPrompt: string; model?: string } 
 	return { systemPrompt: body, model: frontmatter.model as string | undefined };
 }
 
-/** All tool text is capped; the caller can read the complete snapshot using read. */
-export function boundedText(text: string): string {
-	const truncated = truncateHead(text, { maxBytes: 50 * 1024, maxLines: 2000 });
-	if (!truncated.truncated) return text;
-	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagents-output-"));
-	const file = path.join(dir, "output.txt");
+/**
+ * Every tool text stays under this many characters. The Claude Code CLI replaces any MCP tool
+ * result over 50,000 characters with a 2 KB preview, so a Claude parent would otherwise lose
+ * both the tail and the snapshot path. A byte cap at this value is also a character cap.
+ */
+export const TOOL_TEXT_MAX_CHARS = 47_000;
+/** Default and maximum page of a final answer that agent_transcript returns per call. */
+export const FINAL_ANSWER_PAGE_CHARS = 40_000;
+/** Header lines (status, error, session) above a final-answer page are clipped to this. */
+const TRANSCRIPT_HEADER_MAX_CHARS = 4_000;
+/** The completion message quotes this much of the summary. */
+const WAKE_PREVIEW_CHARS = 4_000;
+
+/** A private copy of `text` in a fresh temporary directory; returns its path. */
+function writeSnapshot(prefix: string, name: string, text: string): string {
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+	const file = path.join(dir, name);
 	fs.writeFileSync(file, text, { mode: 0o600 });
-	return `${truncated.content}\n\n[Output truncated at 50KB/2000 lines. Full snapshot: ${file}]`;
+	return file;
 }
 
-const toolResult = (text: string, details: Record<string, unknown> = {}) => ({
-	content: [{ type: "text" as const, text: boundedText(text) }],
+const snapshotLine = (file: string) =>
+	`[Output truncated at ${TOOL_TEXT_MAX_CHARS.toLocaleString("en-US")} bytes/2000 lines. Full snapshot: ${file}]`;
+
+/** All tool text is capped; the caller can read the complete snapshot using read. */
+export function boundedText(text: string): string {
+	const truncated = truncateHead(text, { maxBytes: TOOL_TEXT_MAX_CHARS - 300, maxLines: 2000 });
+	if (!truncated.truncated) return text;
+	return `${truncated.content}\n\n${snapshotLine(writeSnapshot("pi-subagents-output-", "output.txt", text))}`;
+}
+
+const clipHeader = (text: string) =>
+	text.length > TRANSCRIPT_HEADER_MAX_CHARS ? `${text.slice(0, TRANSCRIPT_HEADER_MAX_CHARS)}…` : text;
+const count = (n: number) => n.toLocaleString("en-US");
+
+/**
+ * One page of a final answer: `header` (clipped), then a range line when the page is not the
+ * whole answer or the caller asked for a range, then the page verbatim. Pages at consecutive
+ * offsets concatenate to the answer exactly; the text never reaches TOOL_TEXT_MAX_CHARS.
+ */
+export function finalAnswerPage(
+	id: string,
+	header: string,
+	answer: string,
+	offset = 0,
+	limit = FINAL_ANSWER_PAGE_CHARS,
+	ranged = false,
+): { text: string; page: { total: number; offset: number; end: number; nextOffset?: number } } {
+	const start = Math.min(Math.max(0, Math.floor(offset)), answer.length);
+	const size = Math.min(Math.max(1, Math.floor(limit)), FINAL_ANSWER_PAGE_CHARS);
+	const end = Math.min(answer.length, start + size);
+	const more = end < answer.length;
+	const page = { total: answer.length, offset: start, end, ...(more ? { nextOffset: end } : {}) };
+	const head = clipHeader(header);
+	if (!ranged && start === 0 && !more) return { text: `${head}\n${answer}`, page };
+	const range =
+		`[Final answer: ${count(answer.length)} chars; this page is chars ${count(start)}–${count(end)}` +
+		(more ? `; next page: agent_transcript {"id":"${id}","offset":${end}}.]` : "; end of answer.]");
+	return { text: `${head}\n${range}\n${answer.slice(start, end)}`, page };
+}
+
+/**
+ * The full:true text. The snapshot path (when anything is cut) comes first and the current
+ * task's final answer comes before the retained items, so no downstream head cap can hide
+ * either; the whole text stays under TOOL_TEXT_MAX_CHARS. The snapshot holds `header` plus
+ * every retained item, uncut.
+ */
+export function fullTranscriptText(id: string, header: string, answer: string, items: string): string {
+	const head = clipHeader(header);
+	const answerBlock = !answer
+		? ""
+		: answer.length <= FINAL_ANSWER_PAGE_CHARS
+			? `[Current task's final answer, ${count(answer.length)} chars:]\n${answer}\n[End of final answer.]`
+			: `[Current task's final answer: ${count(answer.length)} chars, too long to include here; read it whole with agent_transcript {"id":"${id}","offset":0}, then each next offset it names.]`;
+	const top = [head, answerBlock].filter(Boolean).join("\n\n");
+	const whole = `${top}\n\n${items}`;
+	if (whole.length < TOOL_TEXT_MAX_CHARS - 300 && whole.split("\n").length <= 2000) return whole;
+	const file = writeSnapshot("pi-subagents-output-", "output.txt", `${header}\n\n${items}`);
+	const first = snapshotLine(file);
+	const room = TOOL_TEXT_MAX_CHARS - 300 - first.length - top.length;
+	const kept = room > 0 ? truncateHead(items, { maxBytes: room, maxLines: 2000 }).content : "";
+	return [first, top, kept ? `${kept}\n[Retained items cut here; the snapshot has the rest.]` : ""].filter(Boolean).join("\n\n");
+}
+
+const toolResult = (text: string, details: Record<string, unknown> = {}, bounded = false) => ({
+	content: [{ type: "text" as const, text: bounded ? text : boundedText(text) }],
 	details,
 });
 
@@ -485,10 +559,8 @@ export function registerSubagents(
 			if (!groups[i].agents.length) { groups.splice(i, 1); evictedRuns++; }
 		}
 	};
-	const result = (text: string, details: Record<string, unknown> = {}) => toolResult(
-		text,
-		{ ...details, retention: { maxFinished: MAX_FINISHED, evictedWorkers, evictedRuns } },
-	);
+	const retention = () => ({ maxFinished: MAX_FINISHED, evictedWorkers, evictedRuns });
+	const result = (text: string, details: Record<string, unknown> = {}) => toolResult(text, { ...details, retention: retention() });
 	const live = () => [...agents, ...rollingBack].filter((a) => !a.isFinished());
 	const findAgent = (id: string) => {
 		const exact = agents.find((a) => a.id === id);
@@ -701,18 +773,35 @@ export function registerSubagents(
 			.filter(Boolean)
 			.join("\n");
 	};
-	const summary = (a: Worker) =>
+	const summaryHeader = (a: Worker) =>
 		[
 			`### ${a.id} (${a.name}) — ${a.status}${a.taskOutcome ? ` · task ${a.taskOutcome}` : ""}`,
 			a.error ? `Error: ${a.error}` : "",
 			a.sessionFile || a.sessionId ? `Session: ${a.sessionFile ?? a.sessionId}` : "",
 			`Model: ${a.model ?? "child default"} · thinking: ${a.effort ?? "default"}${a.backend && a.backend !== "pi" ? ` · backend: ${a.backend}` : ""}`,
-			// Busy workers show live tool activity instead of a premature "no output";
-			// settled ones keep the final-answer line the completion message quotes.
-			a.finalOutput() || (a.isSettled() ? "(no output for this task)" : recentActivity(a)),
 		]
 			.filter(Boolean)
 			.join("\n");
+	const summary = (a: Worker) =>
+		// Busy workers show live tool activity instead of a premature "no output";
+		// settled ones keep the final-answer line the completion message quotes.
+		`${summaryHeader(a)}\n${a.finalOutput() || (a.isSettled() ? "(no output for this task)" : recentActivity(a))}`;
+	/**
+	 * A cut completion message: the preview, one line naming the final answer's size and a
+	 * private file holding it verbatim, then the trailer Sova's report parser anchors on
+	 * (server/reports.ts), which must stay the last line.
+	 */
+	const completionPreview = (a: Worker, text: string): string => {
+		const answer = a.finalOutput();
+		let where: string;
+		try {
+			const file = writeSnapshot("pi-subagents-report-", `${a.id}-final-answer.md`, answer || text);
+			where = `${answer ? "Final answer" : "Full message"}: ${count((answer || text).length)} chars, whole in ${file}; or page it with agent_transcript {"id":"${a.id}","offset":0}.`;
+		} catch {
+			where = `${answer ? "Final answer" : "Full message"}: ${count((answer || text).length)} chars; page it with agent_transcript {"id":"${a.id}","offset":0}.`;
+		}
+		return `${text.slice(0, WAKE_PREVIEW_CHARS)}\n[${where}]\n[Use agent_transcript for more.]`;
+	};
 	const onSettled = (a: Worker) => {
 		if (shuttingDown || !agents.includes(a)) return;
 		pruneFinished();
@@ -740,7 +829,7 @@ export function registerSubagents(
 				{
 					customType: "subagent-complete",
 					display: true,
-					content: text.length > 4000 ? `${text.slice(0, 4000)}\n[Use agent_transcript for more.]` : text,
+					content: text.length > WAKE_PREVIEW_CHARS ? completionPreview(a, text) : text,
 				},
 				{ deliverAs: "followUp", triggerTurn: wake },
 			);
@@ -1275,6 +1364,7 @@ export function registerSubagents(
 			"Use agent_spawn to parallelise independent work; it returns immediately and does not block you.",
 			"Use agent_models to find requested worker models by name before spawning when the exact ID is unknown; it uses this session's registry, not a separate CLI search.",
 			"Use agent_wait only when you genuinely need a subagent's result before continuing; by default a finished subagent wakes you with its result when you are idle.",
+			"Tell a worker whose report may run past about 3,500 characters to write it to a file and end with that file's path plus a short summary; the completion message quotes only the first 4,000 characters.",
 			"For Pi workers, pass extensions: [\"npm:pi-web-access\"] for web tools or fork: true for conversation history; these options are not supported by Claude workers.",
 			"Use agent_spawn with backend: \"claude-code\" to delegate to Claude Code when its extension is installed. Claude uses its own model IDs (e.g. sonnet, opus), native tools, and backendOptions permission/settings policy; it does not inherit Pi's model, effort, tools, or history.",
 			"Claude workers default to bypassPermissions (no permission prompts); set backendOptions.permissionMode to acceptEdits, manual, dontAsk, or plan for a restrictive policy. Do not assume a queued follow-up has executed; inspect agent_list or agent_transcript.",
@@ -1338,7 +1428,7 @@ export function registerSubagents(
 		name: "agent_list",
 		label: "List Subagents",
 		description:
-			"List subagents grouped by run, with status, model and usage. Output capped at 50KB/2000 lines with full snapshot path.",
+			"List subagents grouped by run, with status, model and usage. Output capped at 47,000 bytes/2000 lines with full snapshot path.",
 		parameters: Type.Object({}),
 		async execute(_id, _params, _signal, _update, ctx) {
 			context(ctx);
@@ -1381,27 +1471,37 @@ export function registerSubagents(
 		name: "agent_transcript",
 		label: "Read Subagent",
 		description:
-			"Read current-task output, or retained in-memory transcript with full=true (not necessarily complete history). While a worker is still working, returns bounded recent tool activity instead of a final answer. Output capped at 50KB/2000 lines with snapshot path. sessionFile identifies canonical history when available; otherwise sessionId identifies the backend session.",
-		parameters: Type.Object({ id: Nonempty, full: Type.Optional(Type.Boolean()) }),
+			`Read current-task output, or retained in-memory transcript with full=true (not necessarily complete history). The current task's final answer is returned whole, in pages of up to ${FINAL_ANSWER_PAGE_CHARS} chars: a longer answer carries a header with its total size, this page's range and the next offset to pass. offset/limit (chars) select a page. While a worker is still working, returns bounded recent tool activity instead of a final answer. full=true puts any snapshot path first and the final answer (when it fits) before the retained items; every result stays under ${TOOL_TEXT_MAX_CHARS} chars. sessionFile identifies canonical history when available; otherwise sessionId identifies the backend session.`,
+		parameters: Type.Object({
+			id: Nonempty,
+			full: Type.Optional(Type.Boolean()),
+			offset: Type.Optional(Type.Integer({ minimum: 0, description: "Character offset into the current task's final answer (default 0). Ignored with full=true." })),
+			limit: Type.Optional(Type.Integer({ minimum: 1, maximum: FINAL_ANSWER_PAGE_CHARS, description: `Characters of the final answer to return (default and maximum ${FINAL_ANSWER_PAGE_CHARS}). Ignored with full=true.` })),
+		}),
 		async execute(_id, params, _signal, _update, ctx) {
 			context(ctx);
 			const a = findAgent(params.id);
-			return result(
-				params.full
-					? `${a.id} (${a.name}) — ${a.status}\nSession: ${a.sessionFile ?? a.sessionId ?? "unavailable"}\n${a.transcriptOmitted?.items ? `[Retained transcript: ${a.transcriptOmitted.items} earlier item(s) omitted, approximately ${a.transcriptOmitted.approxBytes} bytes.]\n` : ""}\n${a.transcript.map((t) => `[${t.kind}${t.toolName ? `:${t.toolName}` : ""}] ${t.text}`).join("\n")}`
-					: summary(a),
-				{
-					id: a.id,
-					backend: a.backend ?? "pi",
-					status: a.status,
-					taskOutcome: a.taskOutcome,
-					error: a.error,
-					sessionFile: a.sessionFile,
-					sessionId: a.sessionId,
-					transcriptOmitted: a.transcriptOmitted ? { ...a.transcriptOmitted } : undefined,
-					usage: { ...a.usage },
-				},
-			);
+			const answer = a.finalOutput();
+			const details = {
+				id: a.id,
+				backend: a.backend ?? "pi",
+				status: a.status,
+				taskOutcome: a.taskOutcome,
+				error: a.error,
+				sessionFile: a.sessionFile,
+				sessionId: a.sessionId,
+				transcriptOmitted: a.transcriptOmitted ? { ...a.transcriptOmitted } : undefined,
+				usage: { ...a.usage },
+			};
+			if (params.full) {
+				const header = `${a.id} (${a.name}) — ${a.status}\nSession: ${a.sessionFile ?? a.sessionId ?? "unavailable"}${a.transcriptOmitted?.items ? `\n[Retained transcript: ${a.transcriptOmitted.items} earlier item(s) omitted, approximately ${a.transcriptOmitted.approxBytes} bytes.]` : ""}`;
+				const items = a.transcript.map((t) => `[${t.kind}${t.toolName ? `:${t.toolName}` : ""}] ${t.text}`).join("\n");
+				return toolResult(fullTranscriptText(a.id, header, answer, items), { ...details, finalAnswerChars: answer.length, retention: retention() }, true);
+			}
+			// No answer yet: the bounded summary (recent activity or the no-output line).
+			if (!answer) return result(summary(a), details);
+			const { text, page } = finalAnswerPage(a.id, summaryHeader(a), answer, params.offset, params.limit, params.offset !== undefined || params.limit !== undefined);
+			return toolResult(text, { ...details, finalAnswer: page, retention: retention() }, true);
 		},
 	});
 	pi.registerTool({
@@ -1460,7 +1560,7 @@ export function registerSubagents(
 		name: "agent_wait",
 		label: "Wait For Subagents",
 		description:
-			"Wait for current tasks, not child process exits. Failed tasks also settle; inspect each error. Timeout/cancellation does not stop workers. Output capped at 50KB/2000 lines with full snapshot path.",
+			"Wait for current tasks, not child process exits. Failed tasks also settle; inspect each error. Timeout/cancellation does not stop workers. Output capped at 47,000 bytes/2000 lines with full snapshot path.",
 		parameters: Type.Object({
 			ids: Type.Optional(Type.Array(Nonempty, { minItems: 1 })),
 			group: Type.Optional(Nonempty),
@@ -1637,7 +1737,7 @@ export function registerSubagents(
 		name: "team_list",
 		label: "List Teams",
 		description:
-			"List teams with each member's role (orchestrators marked), declared ownership, exact worker ID and actual status, plus recent control actions including member messages, orchestrator steers and operator questions (requested, accepted-or-queued, failed, unknown; never proof of execution). Pruned members and teams from earlier sessions are shown as unavailable with a reason. Output capped at 50KB/2000 lines with full snapshot path.",
+			"List teams with each member's role (orchestrators marked), declared ownership, exact worker ID and actual status, plus recent control actions including member messages, orchestrator steers and operator questions (requested, accepted-or-queued, failed, unknown; never proof of execution). Pruned members and teams from earlier sessions are shown as unavailable with a reason. Output capped at 47,000 bytes/2000 lines with full snapshot path.",
 		parameters: Type.Object({ team: Type.Optional(Type.String({ minLength: 1, description: "Team ID or unique name." })) }, { additionalProperties: false }),
 		async execute(_id, params, _signal, _update, ctx) {
 			context(ctx);

@@ -4,17 +4,23 @@
 // resolves to, what a stored value reads as, and what a choice writes. Painting and precedence
 // over the theme are theme.test.ts's.
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { checkValue } from "../../shared/theme";
 import {
   effectiveStack,
+  FS_DEFAULT,
   fontById,
   isThemeDefault,
   MONO_FONTS,
   NO_TYPOGRAPHY,
+  parseTextSize,
   parseTypography,
+  serializeTextSize,
   serializeTypography,
   TEXT_FONTS,
+  TEXT_SCALE,
+  textSizeProperties,
   typographyProperties,
 } from "./typography";
 
@@ -92,4 +98,33 @@ test("effectiveStack: the pick beats the theme's token, which beats the default"
   assert.equal(effectiveStack("text", theme, { text: "inter", mono: null }), fontById("text", "inter")!.stack);
   assert.equal(effectiveStack("mono", theme, { text: "inter", mono: null }), theme["font-mono"]); // the other kind is untouched
   assert.equal(effectiveStack("text", {}, NO_TYPOGRAPHY), undefined); // tokens.css's default, not restated here
+});
+
+/* ---- Text size ---------------------------------------------------------------------------- */
+
+test("FS_DEFAULT is tokens.css's scale, step for step", () => {
+  const css = readFileSync(new URL("../design/tokens.css", import.meta.url), "utf8");
+  const found = Object.fromEntries([...css.matchAll(/--fs-([a-z-]+):\s*([\d.]+)px/g)].map((m) => [m[1], Number(m[2])]));
+  assert.deepEqual(found, FS_DEFAULT);
+});
+
+test("Small and Large are the default scale × TEXT_SCALE to the half pixel, micro on Small held at 10.5", () => {
+  for (const size of ["small", "large"] as const) {
+    const props = textSizeProperties(size, {});
+    for (const [step, px] of Object.entries(FS_DEFAULT)) {
+      const want = size === "small" && step === "micro" ? 10.5 : Math.round(px * TEXT_SCALE[size] * 2) / 2;
+      assert.equal(props[`--fs-${step}`], `${want}px`, `${size} ${step}`);
+      const moved = size === "small" ? want < px : want > px;
+      assert.ok(moved, `${size} ${step} actually moves`);
+    }
+  }
+  assert.deepEqual(textSizeProperties("medium", { "fs-body": "16px" }), {});
+});
+
+test("a stored size is one of three ids; anything else is Medium, and Medium stores nothing", () => {
+  assert.equal(parseTextSize("small"), "small");
+  assert.equal(parseTextSize("large"), "large");
+  for (const junk of [null, undefined, "", "Large", "xl", '"small"']) assert.equal(parseTextSize(junk), "medium");
+  assert.equal(serializeTextSize("medium"), null);
+  assert.equal(serializeTextSize("large"), "large");
 });

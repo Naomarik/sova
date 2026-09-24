@@ -11,6 +11,7 @@ import { disposeAllChats, getModelRuntime, heldChat, warmClaudeCodeProvider } fr
 import { canonicalPath, resolveSessionPath } from "./paths";
 import { stateRoot } from "./state-root";
 import { claudeCodeModelCount, listModels, listRegistryModels, resolveContext } from "./models";
+import { setFavorite } from "./model-favorites";
 import { markOwned } from "./write-guard";
 import { addWebSession } from "./web-sessions";
 import { draftForClient, setDraft } from "./drafts";
@@ -32,6 +33,7 @@ import { findTarget, isTargetName, listRemoteFolders, listTargets, normalizeRemo
 import { isExplanationId, listExplanations, readExplanationPage } from "./explanations";
 import { switchMode } from "./mode";
 import { cachedClaudeModels, delegateInfo, delegateOptions, saveDelegateSettings, type DelegateSources } from "./delegate";
+import { saveSpecSettings, specInfo, specOptions } from "./spec-settings";
 import { readModelPolicy, writeModelPolicy } from "./model-policy";
 import { listThemes } from "./themes";
 import { listPlaybooks } from "./playbooks";
@@ -400,6 +402,18 @@ app.get("/api/sessions/context", async (c) => {
 });
 
 app.get("/api/models", async (c) => c.json(await listModels()));
+// Star/unstar one model (the picker's favorite toggle), written through the command-palette's own
+// store (server/model-favorites.ts), so the TUI's Ctrl+P list and every picker read the same file.
+app.put("/api/models/favorite", async (c) => {
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: 'Expected { ref: "provider/id", favorite: boolean }' }, 400);
+  }
+  const result = setFavorite(body);
+  return c.json(result.body, result.status);
+});
 
 // The model policy (spec/12-settings-dialog.md §12): GET reads it (empty = nothing disabled), PUT
 // replaces the whole policy. It is a rule, not a filter — this server refuses a disabled model on
@@ -472,6 +486,22 @@ app.put("/api/settings/delegate", async (c) => {
     return c.json({ error: "Expected JSON body { version: 1, profiles }" }, 400);
   }
   const result = await saveDelegateSettings(body, delegateSources);
+  return "error" in result ? c.json({ error: result.error }, 400) : c.json(result);
+});
+
+// Settings → Modes → Spec: which worker writes the spec while the spec minor mode is on. The file is
+// the mode extension's; every session with spec on re-reads it at its next turn boundary, in either
+// major mode. Discovery and the save check are Delegate's.
+app.get("/api/settings/spec", (c) => c.json(specInfo()));
+app.get("/api/settings/spec/options", async (c) => c.json(await specOptions(delegateSources)));
+app.put("/api/settings/spec", async (c) => {
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "Expected JSON body { version: 1, writer }" }, 400);
+  }
+  const result = await saveSpecSettings(body, delegateSources);
   return "error" in result ? c.json({ error: result.error }, 400) : c.json(result);
 });
 

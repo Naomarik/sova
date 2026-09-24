@@ -39,7 +39,10 @@ node pi-config/extensions/spec/core/sova-spec.mjs check --spec .sova/spec/drafts
   whole passages and names the rest as unread.
 - **`impact §id`** lists what `requires` it, directly or indirectly.
 - **`check`** validates the whole graph. **`census`** needs a `boundary` in the manifest. This one
-  has none, so it reports `boundary-missing`.
+  has none, so it reports `boundary-missing`. **`census --changed [--base REV]`** checks only the
+  files your task changed: the ones that differ from `REV` (default `HEAD`), plus untracked files.
+  Each changed file inside the boundary is either claimed (listed with its §IDs) or reported as
+  `changed-unclaimed` (exit 1). Changed files outside the boundary are listed, not failed.
 - **`--spec DIR`** reads a draft's graph instead of the current one.
 
 Exit `0` means the declared closure was delivered, never that it is complete. Exit `1` means

@@ -55,19 +55,26 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   custom entry, and Sova restores it with `restoreActive` from `state.ts`; mode
   `mode-delegate.json` = Delegate's global routing (four profiles, each backend/model/effort plus
   an optional fallback), written by Sova's Settings → Modes → Delegate and re-read by every
-  Delegate session at each turn boundary — never snapshotted into a session).
+  Delegate session at each turn boundary — never snapshotted into a session; mode `mode-spec.json`
+  = the spec minor mode's writer (one backend/model/effort plus an optional fallback, or `null`: the
+  session writes the spec itself), written by Settings → Modes → Spec and re-read the same way by
+  every session with spec on, in either major mode).
   The major mode `delegate` was `claude-heavy` until 2026-09. `claude-heavy` is a permanent READ
   alias (`parseMode`/`LEGACY_MODE_ALIASES` in `state.ts`: `/mode`, `--major`, `mode.json`, session
   snapshots, `POST /api/mode`) and is never written; recorded transcript markers are displayed as
   written ("Mode → claude-heavy"), never relabelled.
-  Not covered by Sova's tsconfig, with two exceptions: the server imports
-  `pi-config/extensions/mode/state.ts`, `minor.ts` and `delegate.ts` (`server/mode-state.ts`,
-  `server/delegate.ts`; hence `allowImportingTsExtensions`), and
+  Not covered by Sova's tsconfig, with these exceptions: the server imports
+  `pi-config/extensions/mode/state.ts`, `minor.ts`, `delegate.ts` and `spec.ts` (`server/mode-state.ts`,
+  `server/delegate.ts`, `server/spec-settings.ts`; hence `allowImportingTsExtensions`),
   `server/targets.ts` imports `pi-config/extensions/remote/argv.ts` (the target schema,
   validation and the single argv builder that both the `remote` extension and the web server use to
-  run a command on a target), so an edit to any of the four can break Sova's typecheck. Keep
-  them pi-runtime-free (node builtins and, for the mode trio, each other only), and import nothing
-  else from pi-config at runtime. `minor.ts` also reads its sibling `spec-mode.md` once at load, and
+  run a command on a target), `server/model-favorites.ts` imports
+  `pi-config/extensions/command-palette/favorites.ts` (`ModelFavorites`: the one reader and
+  writer of `model-favorites.json`, with its lock, re-read and atomic rename, for the TUI palette
+  and Sova's picker alike), and `server/insights.ts` imports
+  `pi-config/extensions/usage-status/fetch.ts`, so an edit to any of these can break Sova's
+  typecheck. Keep them pi-runtime-free (node builtins and, for the mode trio, each other only), and
+  import nothing else from pi-config at runtime. `minor.ts` also reads its sibling `spec-mode.md` once at load, and
   refuses to load if that file's shell block is malformed. One test-only exception: `server/claude-models.test.ts` imports
   `pi-config/extensions/claude-code/transport.ts` (builtins only) to pin the server's Claude
   model-discovery argv to the extension's; the server itself never imports claude-code. `argv.ts` is also the quoting boundary: every path that reaches a far shell is
@@ -266,6 +273,9 @@ Frontend is SolidJS (NOT React): signals/stores, `<For>/<Show>`, `onCleanup` for
   appends and replays them right before the first prompt/steer; a never-prompted session stays untouched.
 - Images: 0.86.1 `ImageContent` is still `{type:"image", data, mimeType}` (pi-ai `dist/types.d.ts:256`)
   for prompt/steer/followUp AND storage
-  (sdk.md's `source:{type:"base64"}` example is stale). Model favorites come READ-ONLY from the
-  command-palette's `~/.pi/agent/model-favorites.json` (`{version:1, models:[{provider,id}]}`).
+  (sdk.md's `source:{type:"base64"}` example is stale). Model favorites are the
+  command-palette's `~/.pi/agent/model-favorites.json` (`{version:1, models:[{provider,id}]}`), read
+  and written through that extension's own `ModelFavorites` (`server/model-favorites.ts`; the
+  picker's star and Ctrl+F → `PUT /api/models/favorite`). A malformed file lists no favorites and
+  refuses every write; it is never overwritten.
 - Context fill = input+cacheRead+cacheWrite of the last assistant usage on the branch; a compaction after it → `context: null` until the next reply (window: SDK registry, else models-store.json).

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { delegateDefaults, type DelegateSettings, type WorkerChoice } from "./delegate.ts";
-import { assess, fromBackendModels, backendsOf, routeAll, routeNotice, routeProfile, usable, type Discovery } from "./routing.ts";
+import { assess, fromBackendModels, backendsOf, routeAll, routeNotice, routeProfile, routeWriter, slotNotice, usable, type Discovery } from "./routing.ts";
 
 const fable: WorkerChoice = { backend: "claude-code", model: "claude-fable-5-1[1m]", effort: "medium" };
 const opusHigh: WorkerChoice = { backend: "claude-code", model: "opus[1m]", effort: "high" };
@@ -145,4 +145,20 @@ test("fromBackendModels keeps ids and reported efforts, nothing invented", () =>
 		]),
 		{ models: [{ id: "opus[1m]", efforts: ["low", "high"] }, { id: "haiku" }] },
 	);
+});
+
+test("routeWriter: the spec writer routes like a profile — primary, disclosed fallback, else ask; none set is null", () => {
+	assert.equal(routeWriter({ version: 1, writer: null }, { "claude-code": claude("opus[1m]") }, () => null), null);
+	const settings = { version: 1 as const, writer: { primary: fable, fallback: glm } };
+	const onPrimary = routeWriter(settings, { "claude-code": claude("claude-fable-5-1[1m]") }, () => null)!;
+	assert.equal(onPrimary.via, "primary");
+	assert.equal(onPrimary.fallback?.availability, "unverified", "pi not probed: kept in use");
+	const denied = routeWriter(settings, { "claude-code": claude("claude-fable-5-1[1m]"), pi: { models: [{ id: "zai/glm-5.3", efforts: ["high"] }] } }, (c) => (c.backend === "claude-code" ? "no claude for subagents" : null))!;
+	assert.equal(denied.via, "fallback");
+	assert.deepEqual(denied.use, glm);
+	assert.equal(slotNotice("Spec writer", denied, "the agent"), "Spec writer: fallback pi · zai/glm-5.3 · high (no claude for subagents)");
+	const nobody = routeWriter({ version: 1, writer: { primary: fable, fallback: null } }, {}, () => "off")!;
+	assert.equal(nobody.via, "none");
+	assert.equal(nobody.use, null);
+	assert.equal(slotNotice("Spec writer", nobody, "the agent"), "Spec writer: no available worker — off, and no fallback is set; the agent will ask before routing this work");
 });

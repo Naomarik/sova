@@ -756,3 +756,99 @@ for (const [name, mk] of [["directory", (r) => mkdirSync(join(r, "app.txt"))]]) 
     assert.equal(j.exit, 1);
   });
 }
+
+// --- census --changed: a temporary Git repository ---
+
+function g(root, ...args) {
+  const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith("GIT_")));
+  const r = spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "-C", root, ...args], { encoding: "utf8", env });
+  assert.equal(r.status, 0, `git ${args.join(" ")}: ${r.stderr}`);
+  return r.stdout.trim();
+}
+// base() plus a boundary over lib/, with lib/claimed.js claimed by §chat.input/draft, committed.
+function repo() {
+  const root = base({ boundary: { include: ["lib"], exclude: [{ path: "lib/vendor", reason: "third party" }] } },
+    { "§chat.input/draft": { kind: "behavior", requires: [], code: ["lib/claimed.js"] } });
+  for (const f of ["lib/claimed.js", "lib/other.js", "lib/gone.js", "lib/vendor/v.js", "top.txt"]) write(root, f, "1\n");
+  write(root, ".gitignore", "*.log\n");
+  g(root, "init", "-q"); g(root, "add", "-A"); g(root, "commit", "-qm", "base");
+  return root;
+}
+
+test("census --changed: nothing changed → exit 0, empty lists", () => {
+  const j = run(repo(), "census", "--changed");
+  assert.equal(j.census.mode, "changed");
+  assert.equal(j.census.base.rev, "HEAD");
+  assert.match(j.census.base.commit, /^[0-9a-f]{40}$/);
+  assert.deepEqual([j.census.claimed, j.census.unclaimed, j.census.outside], [[], [], []]);
+  assert.equal(j.exit, 0, JSON.stringify(j.findings));
+});
+
+test("census --changed: claimed change passes with its §IDs; outside and spec edits are never failures", () => {
+  const root = repo();
+  write(root, "lib/claimed.js", "2\n");
+  write(root, "top.txt", "2\n");
+  write(root, "lib/vendor/v.js", "2\n");
+  write(root, ".sova/spec/claims/core/net.md", "# §core/net\n\nNetwork, edited.\n");
+  const j = run(root, "census", "--changed");
+  assert.deepEqual(j.census.claimed, [{ path: "lib/claimed.js", claims: ["§chat.input/draft"] }]);
+  assert.deepEqual(j.census.unclaimed, []);
+  assert.deepEqual(j.census.outside, ["lib/vendor/v.js", "top.txt"]);
+  assert.ok(!JSON.stringify(j.census).includes(".sova/spec"));
+  assert.equal(j.exit, 0, JSON.stringify(j.findings));
+});
+
+test("census --changed: unclaimed tracked and untracked changes → changed-unclaimed per file, exit 1; deletions and ignored files dropped", () => {
+  const root = repo();
+  write(root, "lib/other.js", "2\n");
+  write(root, "lib/new.js", "new\n");
+  write(root, "lib/debug.log", "ignored\n");
+  rmSync(join(root, "lib/gone.js"));
+  const j = run(root, "census", "--changed");
+  assert.deepEqual(j.census.unclaimed, ["lib/new.js", "lib/other.js"]);
+  assert.deepEqual(j.findings.filter((f) => f.code === "changed-unclaimed").map((f) => f.file), ["lib/new.js", "lib/other.js"]);
+  assert.ok(!JSON.stringify(j.census).includes("gone.js") && !JSON.stringify(j.census).includes("debug.log"));
+  assert.equal(j.exit, 1);
+  const h = spawnSync(process.execPath, [CLI, "census", "--changed", "--root", root], { encoding: "utf8" });
+  assert.equal(h.status, 1);
+  assert.match(h.stdout, /unclaimed lib\/new\.js/);
+});
+
+test("census --changed --base: committed work since the base counts; a bad rev → bad-rev exit 2", () => {
+  const root = repo();
+  const first = g(root, "rev-parse", "HEAD");
+  write(root, "lib/other.js", "2\n");
+  g(root, "commit", "-qam", "task");
+  assert.equal(run(root, "census", "--changed").exit, 0, "HEAD sees nothing");
+  const j = run(root, "census", "--changed", "--base", first);
+  assert.deepEqual(j.census.unclaimed, ["lib/other.js"]);
+  assert.equal(j.census.base.commit, first);
+  assert.equal(j.exit, 1);
+  for (const bad of ["no-such-rev", "--output=x"]) {
+    const b = run(root, "census", "--changed", "--base", bad);
+    hasCode(b, "bad-rev");
+    assert.equal(b.exit, 2);
+  }
+  assert.ok(!readdirSync(root).includes("x"));
+});
+
+test("census --changed: not a Git repository → not-git exit 2; no boundary → boundary-missing exit 1", () => {
+  const j = run(base({ boundary: { include: ["."], exclude: [] } }), "census", "--changed");
+  hasCode(j, "not-git");
+  assert.equal(j.exit, 2);
+  const root = base();
+  g(root, "init", "-q"); g(root, "add", "-A"); g(root, "commit", "-qm", "base");
+  write(root, "app.txt", "2\n");
+  const m = run(root, "census", "--changed");
+  hasCode(m, "boundary-missing");
+  assert.deepEqual(m.census.claimed, [{ path: "app.txt", claims: ["§chat.input/send"] }]);
+  assert.equal(m.census.unclaimed, null);
+  assert.equal(m.exit, 1);
+});
+
+test("census --changed: flag misuse is a usage error", () => {
+  const root = base();
+  hasCode(run(root, "check", "--changed"), "usage");
+  hasCode(run(root, "census", "--base", "HEAD"), "usage");
+  hasCode(run(root, "census", "--changed", "--base"), "usage");
+});

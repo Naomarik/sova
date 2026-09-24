@@ -315,7 +315,7 @@ i.icon {
   background: var(--color-accent);
   flex: none;
 }
-@keyframes live-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
+@keyframes live-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .4; } }
 
 
 /* ---- INPUT & TEXTAREA. Label always present; placeholder is never it. ---- */
@@ -1135,6 +1135,16 @@ button.list-row { width: 100%; border: 0; background: none; text-align: left; }
   font-weight: var(--fw-semibold);
   letter-spacing: var(--ls-heading-s);
 }
+/* Text size: three radios on one line — they fit the folded sheet — each a 44px label row. */
+.settings-type-size { margin: 0; padding: 0; border: 0; min-width: 0; }
+.settings-type-size > legend { padding: 0; }
+.settings-type-size-options { display: flex; flex-wrap: wrap; column-gap: var(--space-5); }
+.settings-type-size .toggle { justify-content: flex-start; }
+/* A radio's look, scoped here: the round box, and a ring of surface inside the accent fill so the
+   checked one reads as a radio's dot in shape, not only in hue. (The skill's .toggle-radio is not
+   ported; this is the one radio row that needs it.) */
+.settings-type-size .toggle-box { border-radius: var(--r-full); }
+.settings-type-size input:checked ~ .toggle-box { box-shadow: inset 0 0 0 3px var(--color-surface); }
 /* Side by side from ~2 fields' worth of width; stacked under that (the folded sheet). */
 .settings-type-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--space-3); }
 
@@ -1876,6 +1886,38 @@ summary.sidebar-region-head .icon-twist { transition: transform var(--dur-fast) 
 .group-remove-over .icon { color: var(--color-ink); }
 /* The row in flight: the source dims, so the group that lights up is the only live thing. */
 .session-row-dragging { opacity: .5; }
+/* A row dragged out of the pane (§2 "Dragging"): the drop archives it. Outlined in the error
+   colour with a light error tint, as a destructive button is — never filled, never a pulse.
+   Pinned to the bottom of the list, so it shows however far the list is scrolled. */
+.archive-drop {
+  position: sticky;
+  bottom: var(--space-2);
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--row-height);
+  margin: var(--space-2) var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border: var(--stroke-icon) dashed var(--status-error);
+  border-radius: var(--r-md);
+  background: var(--status-error-bg);
+  font-size: var(--fs-caption);
+  color: var(--color-ink);
+}
+.archive-drop .icon { flex: none; color: var(--status-error); }
+.archive-drop-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Refused (open in a TUI, mid-turn…): the reason, muted, with no tint. */
+.archive-drop-blocked {
+  border-color: var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-ink-muted);
+}
+.archive-drop-blocked .icon { color: var(--color-ink-muted); }
+/* An iframe is its own document and would swallow the drag's dragover: see through it. */
+[data-row-drag] iframe { pointer-events: none; }
+/* The pane's own edge says the pointer has left it with a drop that archives. */
+.app-sidebar[data-drop="archive"] { box-shadow: inset calc(-1 * var(--stroke-icon)) 0 0 var(--status-error); }
 
 /* The Move into group menu (§2 "Groups"): the mode menu's shell and rows (§4g), with one
    group per line, a check on the current one, and a plus on "New group…". */
@@ -1937,6 +1979,12 @@ a.group-option { color: inherit; text-decoration: none; }
    the row's skin rather than a dead zone beside it. --------------------- */
 
 .session-row-shell {
+  /* The title is one step under --fs-body: a long list of 14.5px titles read
+     loud next to everything else in the pane. Derived, not literal, so it
+     follows Settings → Text size. Its first line box is what the rail items
+     centre on (below), so both live here, on the element both descend from. */
+  --session-title-fs: calc(var(--fs-body) - 1px);
+  --session-title-line: calc(var(--session-title-fs) * var(--lh-body));
   display: flex;
   align-items: flex-start;
   border-bottom: var(--stroke-thin) solid var(--color-border);
@@ -1996,14 +2044,14 @@ a.group-option { color: inherit; text-decoration: none; }
 }
 
 /* The state item: one per row. Busy is a bare 7px dot — no ring, no plate — in
-   a button as tall as the title's first line (a --lh-body box at --fs-body), so
+   a button as tall as the title's first line (--session-title-line), so
    the dot centres on that line with no nudge and costs the rail no more height
    than the line beside it. 26px wide keeps a comfortable hit area; the box is
    invisible. TUI overrides this into the word chip below. Tone comes from
    .chip-accent (TUI) or .chip-info (Busy). */
 .session-rail-state {
   width: 26px;
-  height: calc(var(--fs-body) * var(--lh-body));
+  height: var(--session-title-line);
   padding: 0;
   gap: 0;
   border: var(--stroke-thin) solid transparent;
@@ -2014,11 +2062,11 @@ a.group-option { color: inherit; text-decoration: none; }
    Declared after .session-rail-state, whose width/height/padding it overrides. */
 .session-rail-tui {
   /* On the same line as the words beside it: the rail's content starts at the row link's own
-     padding, while the title's first line is a --lh-body 1.55 box (22.475px at --fs-body) whose
-     centre sits half the difference lower — so the 16px box takes (line − 16px) / 2 ≈ 3.24px, the
-     same nudge as a lone count (measured to 0.0px; the old literal 2.5px left it 0.74px high).
-     Busy needs none: its box IS the line. */
-  margin-top: calc((var(--fs-body) * var(--lh-body) - 16px) / 2);
+     padding, while the title's first line is a --lh-body 1.55 box (--session-title-line, 20.925px
+     at the 13.5px title) whose centre sits half the difference lower — so the 16px box takes
+     (line − 16px) / 2 ≈ 2.46px, the same nudge as a lone count. Busy needs none: its box IS the
+     line. */
+  margin-top: calc((var(--session-title-line) - 16px) / 2);
   width: auto;
   height: auto;
   min-height: 16px;
@@ -2037,8 +2085,9 @@ a.group-option { color: inherit; text-decoration: none; }
   /* Two points under the system's smallest step, at the user's request. This is a deliberate
      off-scale size for this ONE chip: the type scale bottoms out at --fs-micro (11px) and a token
      below it would be a system-wide claim, not a local one. What carries the meaning is the
-     button's aria-label and title, not the glyph size. */
-  font-size: 9px;
+     button's aria-label and title, not the glyph size. Derived from --fs-micro (9px at the
+     default Text size) so the word follows Settings → Text size with the rest of the rail. */
+  font-size: calc(var(--fs-micro) - 2px);
   letter-spacing: 0;
   text-transform: uppercase;
 }
@@ -2053,15 +2102,18 @@ a.group-option { color: inherit; text-decoration: none; }
 /* The pulse rides on Busy's dot (.chip-live lands there), and the TUI word
    chip is static: a pulse means work in flight, which a mid-turn session is
    and an idle TUI isn't. Still at most ONE moving thing per row. */
-.session-rail-state.chip-live .session-rail-dot,
-.session-rail-count-live .icon {
+.session-rail-state.chip-live .session-rail-dot {
+  animation: live-pulse 1.6s var(--ease-standard) infinite;
+}
+/* The worker count pulses its figure on the same live-pulse as every other
+   pulse. Reduced motion stops it the same way — tokens.css collapses it. */
+.session-rail-count-live .text-num {
   animation: live-pulse 1.6s var(--ease-standard) infinite;
 }
 
-/* The worker count: a figure and a worker icon, no pill and no border — it is
-   an aggregate, not a state, and it must not read as a second status. */
+/* The worker count: a bare figure, no icon, no pill and no border — it is an
+   aggregate, not a state, and it must not read as a second status. */
 .session-rail-count {
-  gap: 2px;
   height: 16px;
   color: var(--color-ink-muted);
   font-family: var(--font-mono);
@@ -2071,10 +2123,12 @@ a.group-option { color: inherit; text-decoration: none; }
 /* Alone in the rail, the count centres its 16px box on the title's first line,
    as the TUI chip does. Under Busy it tucks up against the dot's line box: the
    rail's 4px gap would stack the pair taller than a summary-less row. */
-.session-rail-count:first-child { margin-top: calc((var(--fs-body) * var(--lh-body) - 16px) / 2); }
+.session-rail-count:first-child { margin-top: calc((var(--session-title-line) - 16px) / 2); }
 .session-rail-state + .session-rail-count { margin-top: calc(-1 * var(--space-1)); }
 .session-rail-count:hover { color: var(--color-ink); }
-.session-rail-count .icon { width: 11px; height: 11px; }
+/* Outside selection mode the state wrapper is not a box: its items are the
+   rail's own flex children, so their gap, margins and axis are unchanged. */
+.session-rail-states { display: contents; }
 
 /* ---- SELECTING SEVERAL SESSIONS (spec/02 §2). A press held on a row turns the
    list into a picker: the rail — the column that already carries a row's state —
@@ -2092,13 +2146,24 @@ a.group-option { color: inherit; text-decoration: none; }
   -webkit-touch-callout: none;    /* iOS: the hold is ours, not the OS callout's */
 }
 /* The 30px rail is a gutter the eye skips; a checkbox is a target a thumb aims
-   at, so in selection mode — and only then — the gutter becomes a 44px column. */
-.session-row-shell-selecting .session-rail { width: var(--control-md); }
+   at, so in selection mode — and only then — the gutter becomes a 44px column,
+   stretched to the row's full height with the checkbox in its middle rather
+   than on the title's line: it picks the whole row, not the title. */
+.session-row-shell-selecting .session-rail {
+  position: relative;
+  width: var(--control-md);
+  align-self: stretch;
+  justify-content: center;
+  padding: 0;
+}
+/* While picking, the rail is the checkbox's alone: the state (TUI, Busy, the
+   worker count) is hidden, so every row centres its checkbox the same way and
+   nothing moves beside it. The row link's hidden suffix still names the state. */
+.session-row-shell-selecting .session-rail-states { display: none; }
 .session-select {
   width: 100%;
   min-height: var(--control-md);
   justify-content: center;
-  margin-top: calc(var(--space-2) * -1);   /* centres the box on the title's line */
 }
 /* A tick, not just a filled square: the shared .toggle-box is the switch's box
    here, so the checkbox's own mark is drawn where it is used. Never hue alone. */
@@ -2122,9 +2187,9 @@ a.group-option { color: inherit; text-decoration: none; }
 .session-row-shell-selected { box-shadow: inset 2px 0 0 var(--color-accent); }
 
 /* The toolbar: a band between the search and the list, so it never floats over
-   the rows it is about. It stacks rather than scrolls sideways — at 320px four
-   controls do not fit on one line, and a control off the edge is a control that
-   isn't there. */
+   the rows it is about. The actions are ONE row — Move as a word, Rename and
+   Archive as 44px icons, all three together at the leading edge — so they fit a
+   320px sidebar without wrapping. */
 .sidebar-select-bar {
   display: flex;
   flex-direction: column;
@@ -2142,7 +2207,6 @@ a.group-option { color: inherit; text-decoration: none; }
 .sidebar-select-count { margin: 0; font-size: var(--fs-caption); color: var(--color-ink-muted); }
 .sidebar-select-actions {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2);
 }
@@ -2164,6 +2228,7 @@ a.group-option { color: inherit; text-decoration: none; }
 }
 .session-row.list-row-interactive:hover,
 .session-row[aria-current="page"] { background: none; }
+.session-row .list-title { font-size: var(--session-title-fs); line-height: var(--lh-body); }
 /* The draft pencil leading line 1: 1em square so it follows the title's own size (the Typography
    setting included), muted like every row icon, on the text's baseline-ish centre. Inline, so it
    takes title width — the title truncates a little earlier — and never adds a line. */
@@ -3008,15 +3073,19 @@ a.group-option { color: inherit; text-decoration: none; }
   border-top: var(--stroke-thin) solid var(--color-border);
 }
 .model-menu-group .list-group-label { padding: var(--space-2) var(--space-3) var(--space-1); }
+/* A row is the option plus its favorite star. The star is the option's sibling (an option's
+   content is presentational), laid over the option's right padding so the row's fill and the
+   active ring still span the whole row. */
+.model-row { position: relative; }
 .model-option {
   display: flex;
   align-items: center;
   gap: var(--space-2);
   min-height: var(--control-md);
-  padding: 0 var(--space-3);
+  padding: 0 var(--control-md) 0 var(--space-3);
   cursor: pointer;
 }
-.model-option:hover,
+.model-row:hover > .model-option,
 .model-option[data-active] { background: var(--color-sunken); }
 /* The keyboard position (aria-activedescendant) draws the focus ring: focus
    stays in the search input, so the ring is the only place it can show. */
@@ -3055,6 +3124,25 @@ a.group-option { color: inherit; text-decoration: none; }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* Starred: accent, always shown. Not starred: muted, and on a pointer device only on the hovered
+   or active row, so the list isn't a column of stars. Starred rows are also the Favorites group,
+   so the state never rests on the accent alone. */
+.model-option-star {
+  position: absolute;
+  top: 0;
+  right: 0;
+  height: 100%;
+  border-radius: 0;
+}
+.model-option-star:hover,
+.model-option-star:active { background: transparent; color: var(--color-ink); }
+.model-option-star[aria-pressed="true"],
+.model-option-star[aria-pressed="true"]:hover { color: var(--color-accent); }
+@media (hover: hover) {
+  .model-option-star[aria-pressed="false"] { opacity: 0; }
+  .model-row:hover > .model-option-star,
+  .model-option[data-active] + .model-option-star { opacity: 1; }
+}
 .model-menu-empty {
   margin: 0;
   padding: var(--space-5) var(--space-4);
@@ -3070,6 +3158,7 @@ a.group-option { color: inherit; text-decoration: none; }
   font-size: var(--fs-caption);
   color: var(--color-ink-muted);
 }
+.model-menu-foot-line { display: block; }
 @media (max-width: 767px) {
   .model-menu {
     top: auto;
@@ -3893,11 +3982,11 @@ a.group-option { color: inherit; text-decoration: none; }
 /* An empty state inside a section is one idea among several: compact. */
 .insights-section .empty { padding: var(--space-5) var(--space-4); }
 
-/* Both pages are lists, not card grids: one card per page or section, a group head per
-   provider, team, or session (the sidebar's group-label style, the item's chips or id at its
-   right end), a row per window or worker. Capped and left-aligned: a row stretched across a
-   wide pane is hard to read, and uneven cards side by side leave holes. The section's empty
-   card takes the same cap, so a Teams empty above a Subagents list lines up with it. */
+/* The Agents page is a list, not a card grid: one card per section, a group head per team or
+   session (the sidebar's group-label style, the item's chips or id at its right end), a row per
+   worker. Capped and left-aligned: a row stretched across a wide pane is hard to read. The
+   section's empty card takes the same cap, so a Teams empty above a Subagents list lines up
+   with it. (The Usage page is a grid of provider cards, below.) */
 .insights-list,
 .insights-section > .card { max-width: 720px; }
 .insights-group + .insights-group { border-top: var(--stroke-thin) solid var(--color-border); }
@@ -3908,25 +3997,23 @@ a.group-option { color: inherit; text-decoration: none; }
 .insights-skeleton-head { display: block; width: 88px; height: 11px; margin: 0; }
 .insights-skeleton-row { display: block; width: 100%; height: 20px; margin: 0; }
 
-/* Usage: a row per window. Wide enough, two cells: the words on the left, the number over its
-   bar in a fixed right cell, so every bar in the list starts and ends at the same x.
-   Narrower, the meter stacks as it always has. */
-.usage-row { flex-direction: column; align-items: stretch; gap: var(--space-2); }
-.usage-row > .meter { width: 100%; }
-@container insights (min-width: 520px) {
-  .usage-row > .meter {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 200px;
-    column-gap: var(--space-5);
-    row-gap: var(--space-1);
-    align-items: baseline;
-  }
-  .usage-row > .meter > .meter-head { display: contents; }
-  .usage-row > .meter .meter-label { grid-column: 1; grid-row: 1; }
-  .usage-row > .meter .meter-value { grid-column: 2; grid-row: 1; justify-self: end; }
-  .usage-row > .meter > .meter-track { grid-column: 2; grid-row: 2; align-self: center; }
-  .usage-row > .meter > .meter-context { grid-column: 1; }
+/* Usage: a summary sentence, then one card per provider in a grid — 1 column, 2 when the
+   named insights container is at least 640px, 3 at 1000px. Each card stacks its meters. */
+.usage-lead { margin: 0; max-width: 72ch; font-size: var(--fs-body); line-height: var(--lh-body); color: var(--color-ink); }
+.insights-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-4); }
+@container insights (min-width: 640px) {
+  .insights-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+@container insights (min-width: 1000px) {
+  .insights-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+.usage-card .card-body { display: flex; flex-direction: column; gap: var(--space-4); }
+/* The number reads first: weight, not size or hue. */
+.usage-card .meter-value { font-weight: var(--fw-semibold); }
+/* Title over its plan caption; the chip keeps the head's right end. */
+.usage-card-heading { flex: 1; min-width: 0; }
+.usage-card-plan,
+.usage-card-caption { margin: 0; }
 .usage-note { margin: 0; font-size: var(--fs-caption); color: var(--color-ink-2); }
 .usage-note code { font-family: var(--font-mono); font-size: var(--fs-mono); }
 

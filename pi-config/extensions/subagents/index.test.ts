@@ -1251,6 +1251,98 @@ test("large output is truncated with a private complete snapshot", () => {
 	}
 });
 
+/** A report-shaped answer of about `chars` characters: numbered lines, some multibyte, a unique last line. */
+const longAnswer = (chars: number) => {
+	const lines: string[] = [];
+	for (let i = 0, n = 0; n < chars; i++) {
+		const line = i % 7 ? `- finding ${i}: the parser keeps line ${i} verbatim` : `## Section ${i} — naïve café 🌍`;
+		lines.push(line);
+		n += line.length + 1;
+	}
+	return `${lines.join("\n")}\nEND OF REPORT`;
+};
+/** The Claude Code CLI swaps any MCP tool result longer than this for a 2 KB preview. */
+const CLI_TOOL_RESULT_CHARS = 50_000;
+
+test("agent_transcript pages a 60 KB final answer whole; each page fits the CLI's tool-result limit", async () => {
+	const h = harness();
+	try {
+		await h.call("agent_spawn", { prompt: "task" });
+		const worker = h.workers[0];
+		worker.output = longAnswer(60_000);
+		worker.settle();
+		let pages = "";
+		let params: any = { id: worker.id };
+		for (let calls = 0; calls < 10; calls++) {
+			const r = await h.call("agent_transcript", params);
+			const text: string = r.content[0].text;
+			assert.ok(text.length < CLI_TOOL_RESULT_CHARS, `page text is ${text.length} chars`);
+			const range = text.match(/\n\[Final answer: ([\d,]+) chars; this page is chars [\d,]+–[\d,]+; (?:next page: agent_transcript \{"id":"ag_01","offset":(\d+)\}|end of answer)\.\]\n/);
+			assert.ok(range, "a paged answer names its size, range and next offset");
+			assert.equal(Number(range[1].replace(/,/g, "")), worker.output.length);
+			pages += text.slice(range.index! + range[0].length);
+			if (!range[2]) break;
+			assert.equal(r.details.finalAnswer.nextOffset, Number(range[2]));
+			params = { id: worker.id, offset: Number(range[2]) };
+		}
+		assert.equal(pages, worker.output);
+		// An explicit small range works the same way and states it.
+		const r = await h.call("agent_transcript", { id: worker.id, offset: 5, limit: 10 });
+		assert.ok(r.content[0].text.endsWith(`\n${worker.output.slice(5, 15)}`));
+		assert.deepEqual(r.details.finalAnswer, { total: worker.output.length, offset: 5, end: 15, nextOffset: 15 });
+	} finally { await h.close(); }
+});
+
+test("full transcript leads with the snapshot path and the whole final answer despite 100 KB of tool traffic", async () => {
+	const h = harness();
+	try {
+		await h.call("agent_spawn", { prompt: "task" });
+		const worker = h.workers[0];
+		const answer = longAnswer(20_000);
+		worker.output = answer;
+		worker.transcript = [
+			{ kind: "task", text: "investigate" },
+			...Array.from({ length: 100 }, (_, i) => ({ kind: "tool", toolName: "Bash", text: `cat file${i}\n${"x".repeat(1_000)}` })),
+			{ kind: "assistant", text: answer },
+		];
+		worker.settle();
+		const text: string = (await h.call("agent_transcript", { id: worker.id, full: true })).content[0].text;
+		assert.ok(text.length < CLI_TOOL_RESULT_CHARS, `full text is ${text.length} chars`);
+		assert.ok(text.includes(answer), "the final answer is whole");
+		const snapshot = text.slice(0, 300).match(/Full snapshot: (\S+)\]/);
+		assert.ok(snapshot, "the snapshot path is within the first 300 chars");
+		try {
+			const saved = fs.readFileSync(snapshot[1], "utf8");
+			assert.ok(saved.includes("cat file99\n") && saved.endsWith(`[assistant] ${answer}`), "the snapshot keeps every retained item");
+		} finally { fs.rmSync(path.dirname(snapshot[1]), { recursive: true }); }
+	} finally { await h.close(); }
+});
+
+test("a cut completion message keeps its trailer last and names a file holding the whole answer", async () => {
+	const h = harness();
+	try {
+		await h.call("agent_spawn", { prompt: "task" });
+		const worker = h.workers[0];
+		const answer = longAnswer(20_000);
+		worker.output = answer;
+		worker.settle();
+		const content: string = h.messages[0][0].content;
+		// Sova's report parser (server/reports.ts) anchors on this trailer at the very end.
+		assert.ok(content.endsWith("\n[Use agent_transcript for more.]"));
+		const file = content.match(/^\[Final answer: ([\d,]+) chars, whole in (\S+); or page it with agent_transcript \{"id":"ag_01","offset":0\}\.\]$/m);
+		assert.ok(file, "the size/path line precedes the trailer");
+		assert.equal(Number(file[1].replace(/,/g, "")), answer.length);
+		try {
+			assert.equal(fs.readFileSync(file[2], "utf8"), answer);
+			assert.equal(fs.statSync(file[2]).mode & 0o777, 0o600);
+		} finally { fs.rmSync(path.dirname(file[2]), { recursive: true }); }
+		// A message that fits is sent as is: no file, no trailer.
+		worker.output = "short";
+		worker.settle();
+		assert.doesNotMatch(h.messages[1][0].content, /Final answer:|agent_transcript/);
+	} finally { await h.close(); }
+});
+
 test("a settled worker wakes an idle parent by default; wake:false and kills only queue", async () => {
 	const h = harness();
 	try {

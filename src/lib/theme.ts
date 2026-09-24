@@ -17,10 +17,17 @@ import { createSignal } from "solid-js";
 import type { ThemeList, ThemeTokens } from "../../shared/protocol";
 import { CSS_PROPERTY, DEFAULT_THEME_ID, type ThemeBase } from "../../shared/theme";
 import {
+  DEFAULT_TEXT_SIZE,
+  LEGACY_TEXT_SIZE_KEY,
   LEGACY_TYPOGRAPHY_KEY,
   NO_TYPOGRAPHY,
+  parseTextSize,
   parseTypography,
+  serializeTextSize,
   serializeTypography,
+  TEXT_SIZE_KEY,
+  type TextSize,
+  textSizeProperties,
   TYPOGRAPHY_KEY,
   type Typography,
   typographyProperties,
@@ -65,6 +72,11 @@ const ALL_PROPERTIES = Object.values(CSS_PROPERTY);
 const [typography, setTypographySignal] = createSignal<Typography>(NO_TYPOGRAPHY);
 export { typography };
 
+/** The Text size choice (§12 "Typography"): the same painter, the same precedence — written
+    after the theme, so a Small or Large scales whatever sizes the theme set. */
+const [textSize, setTextSizeSignal] = createSignal<TextSize>(DEFAULT_TEXT_SIZE);
+export { textSize };
+
 /** The theme currently on the document, so a typography change can repaint it. Null is the
     built-in dark with nothing written. */
 let worn: StoredTheme | null = null;
@@ -88,8 +100,28 @@ function writeStoredTypography(t: Typography): void {
   }
 }
 
+export function readStoredTextSize(): TextSize {
+  try {
+    return parseTextSize(dualGet(localStorage, TEXT_SIZE_KEY, LEGACY_TEXT_SIZE_KEY));
+  } catch {
+    return DEFAULT_TEXT_SIZE;
+  }
+}
+
+function writeStoredTextSize(size: TextSize): void {
+  try {
+    const raw = serializeTextSize(size);
+    if (raw === null) dualRemove(localStorage, TEXT_SIZE_KEY, LEGACY_TEXT_SIZE_KEY);
+    else dualSet(localStorage, TEXT_SIZE_KEY, LEGACY_TEXT_SIZE_KEY, raw);
+  } catch {
+    // Persistence is a convenience; the size still holds for this page.
+  }
+}
+
 /** The one painter. Theme tokens first, then the pick on top: a kind left on Theme default
-    writes nothing, so the theme's own face (or tokens.css's) is what stays. */
+    writes nothing, so the theme's own face (or tokens.css's) is what stays. The text size goes
+    last — Medium writes nothing, and the clear above takes a previous Small or Large off, since
+    every `--fs-*` is a theme property too. */
 function paint(theme: StoredTheme | null): void {
   const root = document.documentElement;
   // Clear first: the theme being taken off may have set a key this one doesn't, and a leftover
@@ -105,6 +137,7 @@ function paint(theme: StoredTheme | null): void {
     root.removeAttribute("data-theme");
   }
   for (const [property, value] of Object.entries(typographyProperties(typography()))) root.style.setProperty(property, value);
+  for (const [property, value] of Object.entries(textSizeProperties(textSize(), theme?.tokens ?? {}))) root.style.setProperty(property, value);
   setMetaThemeColor(theme?.tokens.bg ?? DEFAULT_THEME_COLOR);
   worn = theme;
 }
@@ -120,6 +153,14 @@ export function setTypography(patch: Partial<Typography>): Typography {
   writeStoredTypography(next);
   paint(worn);
   return next;
+}
+
+/** Small, Medium or Large. Applies immediately and persists; Medium removes the key. Called from
+    Settings → Themes → Typography. */
+export function setTextSize(size: TextSize): void {
+  setTextSizeSignal(size);
+  writeStoredTextSize(size);
+  paint(worn);
 }
 
 /** Use Theme Fonts, and the `?theme=default` escape hatch: no pick at all, key removed. */
@@ -189,9 +230,10 @@ export function clearTheme(): void {
     forbids, and a reconcile against the server happens after boot (App.tsx). */
 export function applyStoredTheme(): void {
   setTypographySignal(readStoredTypography());
+  setTextSizeSignal(readStoredTextSize());
   const stored = readStoredTheme();
   if (stored) applyTheme(stored);
-  else paint(null); // no theme, but the font pick still has to be on before first paint
+  else paint(null); // no theme, but the font pick and text size still have to be on before first paint
 }
 
 /** Two token maps hold the same values — the poll's answer against what we're wearing. */

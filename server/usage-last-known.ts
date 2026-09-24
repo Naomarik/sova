@@ -38,9 +38,23 @@ export function hasReading(p: UsageProvider): boolean {
   return p.state === "ok" && (p.windows.length > 0 || !!p.balance);
 }
 
-/** What we keep: the reading itself, without whatever fetch error rode along with it. */
+/**
+ * What we keep: the reading itself (windows or balance, and the plan, level, limit and extra
+ * usage that came with it), without whatever fetch error rode along with it.
+ */
 function keep(id: UsageProvider["id"], p: UsageProvider): UsageProvider {
-  return { id, state: "ok", windows: p.windows, ...(p.balance ? { balance: p.balance } : {}) };
+  return {
+    id,
+    state: "ok",
+    windows: p.windows,
+    ...(p.balance ? { balance: p.balance } : {}),
+    ...(typeof p.plan === "string" ? { plan: p.plan } : {}),
+    ...(p.limitReached === true ? { limitReached: true } : {}),
+    ...(typeof p.level === "string" ? { level: p.level } : {}),
+    ...(isRec(p.extraUsage) && typeof p.extraUsage.enabled === "boolean"
+      ? { extraUsage: typeof p.extraUsage.pct === "number" ? { enabled: p.extraUsage.enabled, pct: p.extraUsage.pct } : { enabled: p.extraUsage.enabled } }
+      : {}),
+  };
 }
 
 const empty = (): Store => ({ version: 1, savedAt: 0, providers: {} });

@@ -35,9 +35,11 @@ import { setShowSummaries, showSummaries } from "../lib/summary-line";
 import { activeThemeId, applyTheme, droppedThemeId, reconcileTheme, typography } from "../lib/theme";
 import type { SettingsTab } from "../lib/settings-nav";
 import { delegateDirty, resetDelegateDraft } from "../lib/delegate-draft";
+import { resetSpecDraft, specDirty } from "../lib/spec-draft";
 import { effectiveStack } from "../lib/typography";
 import { announce, home } from "../lib/ui-state";
 import { DelegateSettingsSection } from "./DelegateSettings";
+import { SpecSettingsSection } from "./SpecSettings";
 import { SummarizerSettingsSection } from "./SummarizerSettings";
 import { TypographySection } from "./TypographySection";
 import { Banner, Icon, trapFocus } from "./ui";
@@ -115,20 +117,27 @@ export function SettingsDialog(props: { onClose(): void; initialTab?: SettingsTa
     }
   };
 
-  /** Close was asked for over unsaved Delegate edits: the foot asks what to do with them. */
+  /** Close was asked for over unsaved Modes edits (Delegate or Spec): the foot asks what to do with them. */
   const [closeHeld, setCloseHeld] = createSignal(false);
+  const modesDirty = () => delegateDirty() || specDirty();
+  /** Which unsaved screens the hold names: "Delegate", "Spec", or both. */
+  const unsavedNames = () => [delegateDirty() && "Delegate", specDirty() && "Spec"].filter(Boolean).join(" and ");
+  const resetModesDrafts = () => {
+    resetDelegateDraft();
+    resetSpecDraft();
+  };
   /** Every way out (Close, Esc, the scrim) comes through here, so none of them drops a draft silently. */
   const requestClose = () => {
-    if (delegateDirty()) {
+    if (modesDirty()) {
       setTab("modes");
       setCloseHeld(true);
       return;
     }
-    resetDelegateDraft();
+    resetModesDrafts();
     props.onClose();
   };
   const discardAndClose = () => {
-    resetDelegateDraft();
+    resetModesDrafts();
     props.onClose();
   };
 
@@ -200,6 +209,7 @@ export function SettingsDialog(props: { onClose(): void; initialTab?: SettingsTa
           <Show when={tab() === "modes"}>
             <div class="settings-panel" role="tabpanel" id="settings-panel-modes" aria-labelledby="settings-tab-modes">
               <DelegateSettingsSection />
+              <SpecSettingsSection />
             </div>
           </Show>
           {/* Mounted only while its tab is, like Modes: it asks the same backend discovery. */}
@@ -256,11 +266,11 @@ export function SettingsDialog(props: { onClose(): void; initialTab?: SettingsTa
             </div>
           </Show>
         </div>
-        <Show when={closeHeld() && delegateDirty()}>
+        <Show when={closeHeld() && modesDirty()}>
           <div class="settings-close-held">
             <Banner
               tone="warn"
-              title="Your Delegate changes aren't saved."
+              title={`Your ${unsavedNames()} changes aren't saved.`}
               body="Save them on this screen, or discard them and close."
               action={
                 <span class="settings-close-held-actions">

@@ -20,12 +20,18 @@ export interface ModeControl {
 /** radio: the major mode; check: a minor mode; action: opens a settings screen, switches nothing. */
 type Item = { kind: "radio" | "check" | "action"; id: string; description: string; label?: string };
 
-/** The one action: a gear on Delegate's row, since Delegate's routing lives in Settings → Modes. */
+/** The actions: a gear on Delegate's row and on spec's, since both settings live in Settings → Modes. */
 const CONFIGURE_DELEGATE: Item = {
   kind: "action",
   id: "configure-delegate",
   label: "Configure Delegate",
   description: "Which worker each kind of work goes to",
+};
+const CONFIGURE_SPEC: Item = {
+  kind: "action",
+  id: "configure-spec",
+  label: "Configure Spec",
+  description: "Which worker writes the spec",
 };
 
 const itemId = (it: Item) => `mode-${it.kind}-${it.id}`;
@@ -67,10 +73,10 @@ export function ModeMenu(props: { control: ModeControl }) {
   const items = createMemo<Item[]>(() => {
     const i = info();
     if (!i) return [];
-    // The gear follows Delegate in the roving order, as it follows it on the row.
+    // Each gear follows its row in the roving order, as it follows it on the row.
     return [
       ...i.modes.flatMap((m) => (m.id === "delegate" ? [{ kind: "radio" as const, ...m }, CONFIGURE_DELEGATE] : [{ kind: "radio" as const, ...m }])),
-      ...i.minors.map((m) => ({ kind: "check" as const, ...m })),
+      ...i.minors.flatMap((m) => (m.id === "spec" ? [{ kind: "check" as const, ...m }, CONFIGURE_SPEC] : [{ kind: "check" as const, ...m }])),
     ];
   });
   const checked = (it: Item) => {
@@ -129,10 +135,10 @@ export function ModeMenu(props: { control: ModeControl }) {
 
   const activate = async (it: Item) => {
     if (it.kind === "action") {
-      // Opens Settings at Modes → Delegate. This chat's mode is left exactly as it is.
+      // Opens Settings at Modes (→ Delegate, or → Spec). This chat's mode is left exactly as it is.
       closedByChoice = true;
       closeMenu();
-      openSettings("modes");
+      openSettings("modes", it.id === CONFIGURE_SPEC.id ? "spec" : null);
       return;
     }
     const c = current();
@@ -232,7 +238,7 @@ export function ModeMenu(props: { control: ModeControl }) {
       </span>
     </div>
   );
-  // A sibling of Delegate's row, not inside it: a button nested in a menuitemradio loses its role.
+  // A sibling of its row, not inside it: a button nested in a menuitemradio (or menuitemcheckbox) loses its role.
   const Gear = (p: { it: Item; index: number }) => (
     <button
       type="button"
@@ -251,6 +257,20 @@ export function ModeMenu(props: { control: ModeControl }) {
       <Icon name="settings" small />
     </button>
   );
+  /** A row, with its gear beside it when an action follows it in the roving order. */
+  const WithGear = (p: { it: Item; index: number }) => {
+    const gear = () => (items()[p.index + 1]?.kind === "action" ? items()[p.index + 1]! : null);
+    return (
+      <Show when={gear()} fallback={<Row it={p.it} index={p.index} />}>
+        {(g) => (
+          <div class="mode-option-row" role="none">
+            <Row it={p.it} index={p.index} />
+            <Gear it={g()} index={p.index + 1} />
+          </div>
+        )}
+      </Show>
+    );
+  };
   const group = (kind: Item["kind"]) => items().map((it, index) => ({ it, index })).filter((x) => x.it.kind === kind);
 
   return (
@@ -316,28 +336,14 @@ export function ModeMenu(props: { control: ModeControl }) {
             <div class="list-group-label" id={paneId("mode-group-major")}>
               Major mode
             </div>
-            <For each={group("radio")}>
-              {(x) => {
-                const gear = () => (items()[x.index + 1]?.kind === "action" ? items()[x.index + 1]! : null);
-                return (
-                  <Show when={gear()} fallback={<Row it={x.it} index={x.index} />}>
-                    {(g) => (
-                      <div class="mode-option-row" role="none">
-                        <Row it={x.it} index={x.index} />
-                        <Gear it={g()} index={x.index + 1} />
-                      </div>
-                    )}
-                  </Show>
-                );
-              }}
-            </For>
+            <For each={group("radio")}>{(x) => <WithGear it={x.it} index={x.index} />}</For>
           </div>
           <Show when={group("check").length > 0}>
             <div class="model-menu-group" role="group" aria-labelledby={paneId("mode-group-minor")}>
               <div class="list-group-label" id={paneId("mode-group-minor")}>
                 Minor modes
               </div>
-              <For each={group("check")}>{(x) => <Row it={x.it} index={x.index} />}</For>
+              <For each={group("check")}>{(x) => <WithGear it={x.it} index={x.index} />}</For>
             </div>
           </Show>
         </div>

@@ -23,7 +23,7 @@ the parent session so old references cannot target unrelated new workers.
 | `agent_models`     | Discover loaded backends and exact model IDs using the active registry/CLI.    |
 | `agent_spawn`      | Start a batch and return agent/run IDs without waiting for tasks.              |
 | `agent_list`       | Show workers grouped by run, including model, status, task outcome, and usage. |
-| `agent_transcript` | Read current-task output; while busy, bounded recent activity; `full: true` for retained history. |
+| `agent_transcript` | Read current-task output, whole, paged by `offset`/`limit`; while busy, bounded recent activity; `full: true` for retained history. |
 | `agent_steer`      | Send new instructions; wait for RPC acceptance, not task completion.           |
 | `agent_kill`       | Stop one worker, a run, or all workers; await process termination.             |
 | `agent_wait`       | Wait for selected tasks to settle; report failures and timeouts explicitly.    |
@@ -98,7 +98,12 @@ Agent options work both inside `agents` and in the single-worker shorthand:
 - `wake`: default `true`. When the worker settles while the parent is idle, the
   completion message starts a parent turn, so the main agent can act on the
   result without the user typing. `false` only queues the result for the next
-  turn. A worker the parent killed never wakes it.
+  turn. A worker the parent killed never wakes it. The message quotes the first
+  4,000 characters of the report; a longer one adds a line with the final
+  answer's size and a private `/tmp/pi-subagents-report-*/<id>-final-answer.md`
+  holding it verbatim, before the closing `[Use agent_transcript for more.]`
+  (Sova parses that trailer as the last line). Team members are told to write
+  reports longer than about 3,500 characters to a file and end with its path.
 - `extensions`: extension sources the child loads with `-e` on top of
   `--no-extensions`: a path, `npm:name` or `git:host/owner/repo`. Packages Pi has
   already installed for the user (`~/.pi/agent/npm/node_modules/<name>`,
@@ -489,10 +494,21 @@ deleted; retain its path/ID if you need to inspect it later.
 
 The runner bounds its retained transcript and individual items. Older or oversized
 content is marked as omitted; the child's `sessionFile` is the canonical history.
-Tool text is capped at 50KB/2000 lines plus a truncation notice. Oversized tool
-results include a private `/tmp/pi-subagents-output-*/output.txt` snapshot that
-the `read` tool can open. This applies to all subagent tools. Snapshots remain
-until removed or system temporary-file cleanup.
+Tool text is capped at 47,000 bytes/2000 lines plus a truncation notice, under
+the 50,000 characters above which the Claude Code CLI replaces an MCP tool result
+with a 2 KB preview. Oversized tool results include a private
+`/tmp/pi-subagents-output-*/output.txt` snapshot that the `read` tool can open.
+This applies to all subagent tools. Snapshots remain until removed or system
+temporary-file cleanup.
+
+`agent_transcript` returns the current task's final answer whole instead: in
+pages of at most 40,000 characters (`limit`, default and maximum), starting at
+`offset` (default 0). A page that is not the whole answer, or any call that
+passes `offset`/`limit`, carries a line such as
+`[Final answer: 60,000 chars; this page is chars 0–40,000; next page: agent_transcript {"id":"ag_01","offset":40000}.]`
+and `details.finalAnswer` (`total`, `offset`, `end`, `nextOffset`). With
+`full: true` the snapshot line comes first, then the final answer (when it fits
+in one page; otherwise a pointer to paging), then as many retained items as fit.
 
 Shutdown first asks Pi to abort so it can clean up active tools, then escalates to
 SIGTERM and finally SIGKILL if needed. Only the tracked child is signalled; no

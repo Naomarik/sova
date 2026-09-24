@@ -43,7 +43,7 @@ Binary: ~/.local/bin/claude → versions/2.1.277. One process, `--model haiku`, 
 - `interrupt` with no active task gets a correlated `control_response` with subtype `success`, both before any task and immediately after a result. The next task was not affected. A missing interrupt response was not observed, so the runner's handling of one (reject redirect, keep the idle worker, block new turns until answered, stop at the 30s control deadline) is defensive and untested against the live CLI.
 - Interrupting pure text generation (after the first `text_delta`, no tool) acknowledged `success` and produced a result with `subtype: "error_during_execution"`, `is_error: true`, `terminal_reason: "aborted_streaming"`, `usage` zeros, and `modelUsage` unchanged. The runner treats any `aborted*` terminal reason as aborted.
 - `num_turns` is per result (1, 1, 1 on successive plain tasks; 2 on the interrupted generation; 0 on `/compact`). Summing it is correct.
-- `modelUsage` token counts and `total_cost_usd` are cumulative for the process; `usage` is per result. The runner assigns from `modelUsage` and takes the maximum cost (no summing).
+- `modelUsage` token counts and `total_cost_usd` are cumulative for the process; `usage` is per result, and a result's `usage` is the sum over every API call in that turn (each tool step), not the last call's context. The runner assigns from `modelUsage` and takes the maximum cost (no summing).
 - `/compact` sent as a stream-json user message emitted `system/compact_boundary` and a success result with an empty `result`. `session_id` stayed the same across compaction and all turns.
 
 ## Still unverified

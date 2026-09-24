@@ -1,8 +1,9 @@
 import { createEffect, createMemo, createSignal, For, on, onMount, Show, type Accessor, type JSX } from "solid-js";
 import type { ModelInfo } from "../../shared/protocol";
 import { loadModelPolicy, usableModels } from "../lib/model-policy";
-import { loadModels, modelList } from "../lib/models";
+import { loadModels, modelList, toggleFavorite } from "../lib/models";
 import { usePaneId } from "../lib/pane-scope";
+import { announce } from "../lib/ui-state";
 import { Banner, Icon } from "./ui";
 
 /** What the chat view exposes so the header can show and change its model. */
@@ -47,6 +48,8 @@ export function ModelPicker(props: {
   const [loading, setLoading] = createSignal(false);
   const [showSkeleton, setShowSkeleton] = createSignal(false);
   const [loadError, setLoadError] = createSignal(false);
+  /** The last star/unstar that failed (already rolled back), until Dismiss or the next toggle. */
+  const [starError, setStarError] = createSignal<{ id: string; favorite: boolean; message: string } | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -105,6 +108,46 @@ export function ModelPicker(props: {
     props.onChosen(); // choosing the current model just closes, per §4c
   };
 
+  /**
+   * Star or unstar a row without choosing it. The row moves between groups at once (the shared
+   * cache flips before the server answers) and stays the active option, so it's scrolled to where
+   * it landed — and again if the save fails and it moves back.
+   */
+  const star = (m: ModelInfo) => {
+    const favorite = !m.favorite;
+    setStarError(null);
+    holdHover = true;
+    setActive(m.ref);
+    scrollActive();
+    toggleFavorite(m.ref, favorite).then(
+      () => announce(favorite ? `Added ${m.id} to favorites.` : `Removed ${m.id} from favorites.`),
+      (error: unknown) => {
+        setStarError({ id: m.id, favorite, message: error instanceof Error ? error.message : String(error) });
+        if (active() === m.ref) scrollActive();
+      },
+    );
+  };
+
+  /**
+   * When a star moves its row, another row slides under a pointer that hasn't moved, and the
+   * browser fires mouseenter on it — which would take the active option away from the row just
+   * starred. So hovering is ignored after a star until the pointer really moves (the browser's
+   * own after-layout mousemove repeats the last position, so it doesn't count).
+   */
+  let holdHover = false;
+  let lastPointer: { x: number; y: number } | null = null;
+  const hover = (ref: string) => {
+    if (!holdHover) setActive(ref);
+  };
+  const onPointerMove = (e: MouseEvent) => {
+    const still = lastPointer?.x === e.clientX && lastPointer.y === e.clientY;
+    lastPointer = { x: e.clientX, y: e.clientY };
+    if (!holdHover || still) return;
+    holdHover = false;
+    const ref = (e.target as Element).closest<HTMLElement>(".model-row")?.dataset.ref;
+    if (ref) setActive(ref);
+  };
+
   const move = (delta: number) => {
     const list = flat();
     if (list.length === 0) return;
@@ -113,8 +156,15 @@ export function ModelPicker(props: {
     setActive(list[next]!.ref);
   };
 
-  /** ↑ ↓ PageUp PageDown and Enter, from the input or the listbox. */
+  /** ↑ ↓ PageUp PageDown, Enter and Ctrl+F, from the input or the listbox. */
   const navKey = (e: KeyboardEvent): boolean => {
+    // Ctrl+F stars the active row, as in the TUI palette. Ctrl only: ⌘F stays the browser's find.
+    if (e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "f") {
+      e.preventDefault();
+      const m = flat().find((x) => x.ref === active());
+      if (m) star(m);
+      return true;
+    }
     const keys: Record<string, () => void> = {
       ArrowDown: () => move(1),
       ArrowUp: () => move(-1),
@@ -149,27 +199,48 @@ export function ModelPicker(props: {
     search.setSelectionRange(end, end);
   };
 
+  // The star is the option's sibling, not its child: an option's content is presentational, so a
+  // button inside it would be unreachable. It's out of the tab order (focus stays in the input or
+  // listbox, and Tab closes the menu); Ctrl+F is its keyboard path.
   const Option = (p: { m: ModelInfo }) => (
-    <div
-      class="model-option"
-      role="option"
-      id={optionId(p.m.ref)}
-      aria-selected={p.m.ref === props.control.model() ? "true" : "false"}
-      aria-disabled={blocked() ? "true" : undefined}
-      data-active={active() === p.m.ref ? "" : undefined}
-      onMouseEnter={() => setActive(p.m.ref)}
-      onMouseDown={(e) => e.preventDefault() /* keep focus where it is (input or listbox) */}
-      onClick={() => choose(p.m.ref)}
-    >
-      <Icon name="check" small class="model-option-check" />
-      <span class="model-option-id">{p.m.id}</span>
-      {/* Metadata, not status: only for models that take images, and never when input is unknown. */}
-      <Show when={p.m.input?.includes("image")}>
-        <span class="model-option-vision" title="Accepts images">
-          vision
-        </span>
-      </Show>
-      <span class="model-option-provider">{p.m.provider}</span>
+    <div class="model-row" role="none" data-ref={p.m.ref}>
+      <div
+        class="model-option"
+        role="option"
+        id={optionId(p.m.ref)}
+        aria-selected={p.m.ref === props.control.model() ? "true" : "false"}
+        aria-disabled={blocked() ? "true" : undefined}
+        data-active={active() === p.m.ref ? "" : undefined}
+        onMouseEnter={() => hover(p.m.ref)}
+        onMouseDown={(e) => e.preventDefault() /* keep focus where it is (input or listbox) */}
+        onClick={() => choose(p.m.ref)}
+      >
+        <Icon name="check" small class="model-option-check" />
+        <span class="model-option-id">{p.m.id}</span>
+        {/* Metadata, not status: only for models that take images, and never when input is unknown. */}
+        <Show when={p.m.input?.includes("image")}>
+          <span class="model-option-vision" title="Accepts images">
+            vision
+          </span>
+        </Show>
+        <span class="model-option-provider">{p.m.provider}</span>
+      </div>
+      <button
+        type="button"
+        class="button button-icon button-ghost model-option-star"
+        tabindex="-1"
+        aria-pressed={p.m.favorite ? "true" : "false"}
+        aria-label={`Favorite ${p.m.ref}`}
+        title={`${p.m.favorite ? "Remove from" : "Add to"} favorites (Ctrl+F)`}
+        onMouseEnter={() => hover(p.m.ref)}
+        onMouseDown={(e) => e.preventDefault() /* same: never take focus from the menu */}
+        onClick={(e) => {
+          lastPointer = { x: e.clientX, y: e.clientY };
+          star(p.m);
+        }}
+      >
+        <Icon name="star" small />
+      </button>
     </div>
   );
 
@@ -213,6 +284,25 @@ export function ModelPicker(props: {
         />
       </Show>
 
+      <Show when={starError()}>
+        {(err) => (
+          <Banner
+            tone="error"
+            title={
+              <>
+                Couldn't {err().favorite ? "add" : "remove"} <code>{err().id}</code> {err().favorite ? "to" : "from"} favorites.
+              </>
+            }
+            body={`${err().message.replace(/\.?$/, ".")} Your favorites are unchanged.`}
+            action={
+              <button type="button" class="button button-sm button-ghost" onMouseDown={(e) => e.preventDefault()} onClick={() => setStarError(null)}>
+                Dismiss
+              </button>
+            }
+          />
+        )}
+      </Show>
+
       <div
         class="model-menu-list"
         id={paneId("model-listbox")}
@@ -223,6 +313,7 @@ export function ModelPicker(props: {
         aria-busy={loading() && !modelList() ? "true" : undefined}
         ref={listbox}
         onKeyDown={onListKey}
+        onMouseMove={onPointerMove}
       >
         <Show when={!modelList() && showSkeleton()}>
           <For each={[1, 2, 3, 4]}>{() => <div class="skeleton skeleton-row" />}</For>
@@ -275,6 +366,10 @@ export function ModelPicker(props: {
       <p class="model-menu-foot">
         <kbd>↑</kbd>
         <kbd>↓</kbd> to move · <kbd>Enter</kbd> to choose · <kbd>Esc</kbd> to close
+        {/* Its own line: at 360px the four hints can't share one without rewording the first three. */}
+        <span class="model-menu-foot-line">
+          <kbd>Ctrl</kbd>+<kbd>F</kbd> to add or remove a favorite
+        </span>
       </p>
     </>
   );

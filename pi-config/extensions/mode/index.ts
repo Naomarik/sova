@@ -25,6 +25,10 @@
  * default a new session starts from; `/mode default` (and the palette's "save as default")
  * is the only thing here that writes it. The Delegate routing is global and never snapshotted:
  * nothing here writes mode-delegate.json (Sova's Settings → Modes → Delegate does).
+ *
+ * The spec minor mode's writer (spec.ts, ~/.pi/agent/mode-spec.json, written by Settings → Modes →
+ * Spec) is global the same way: while spec is on, under either major mode, it is re-read at every
+ * turn boundary, routed like a Delegate profile and probed through the same discovery.
  */
 import {
 	CONFIG_DIR_NAME,
@@ -57,7 +61,8 @@ import { WorkerProbe } from "./discovery.ts";
 import { isMinorMode, MINOR_MODES, parseMinorFlag, type MinorMode } from "./minor.ts";
 import { MODE_CATEGORY_ID, modeCategoryItems } from "./palette.ts";
 import { applyModeSection, composePrompt, DEFAULT_ROUTES, statusLabel } from "./prompt.ts";
-import { backendsOf, describeChoice, routeAll, routeNotice, type Discovery, type ProfileRoute } from "./routing.ts";
+import { backendsOf, describeChoice, routeAll, routeNotice, routeWriter, slotNotice, type Discovery, type ProfileRoute, type SlotRoute } from "./routing.ts";
+import { SPEC_FILE_NAME, SPEC_WRITER_LABEL, specBackends, specKey, specReader } from "./spec.ts";
 import {
 	activeOf,
 	DEFAULT_ALIGN_VIEWER_SHORTCUT,
@@ -78,6 +83,7 @@ import {
 
 const STATE_FILE = join(getAgentDir(), "mode.json");
 const DELEGATE_FILE = join(getAgentDir(), DELEGATE_FILE_NAME);
+const SPEC_FILE = join(getAgentDir(), SPEC_FILE_NAME);
 
 /**
  * How long one backend's discovery stands before a Delegate turn refreshes it in the background:
@@ -103,13 +109,17 @@ export default function modeExtension(pi: ExtensionAPI): void {
 	let active: ModeActive = activeOf(config);
 	/** The global Delegate routing, re-read (one stat) whenever it is consulted. */
 	const readDelegate = delegateReader(DELEGATE_FILE);
+	/** The global spec writer (mode-spec.json), re-read (one stat) whenever spec is on and it is consulted. */
+	const readSpec = specReader(SPEC_FILE);
 	/** Which worker each profile uses now: the routing, assessed against discovery and the policy. */
 	let routes: readonly ProfileRoute[] = DEFAULT_ROUTES;
+	/** Which worker writes the spec now, while spec is on and a writer is set; null otherwise. */
+	let writerRoute: SlotRoute | null = null;
 	/** Last discovery per backend; absent = never probed (its tuples read as unverified). */
 	let discoveries: Partial<Record<DelegateBackend, Discovery>> = {};
 	/** When each backend's discovery landed. */
 	const discoveredAt: Partial<Record<DelegateBackend, number>> = {};
-	/** The routing the last applied probe ran for; a turn with a different one probes again. */
+	/** The routing (probeScope key) the last applied probe ran for; a turn with a different one probes again. */
 	let probedKey: string | undefined;
 	/**
 	 * The probe in flight, by the routing it runs for. A second request for the same routing joins it
@@ -139,19 +149,34 @@ export default function modeExtension(pi: ExtensionAPI): void {
 	});
 
 	function renderStatus(ctx: ExtensionContext): void {
-		const { text, tone } = statusLabel(active.mode, routes, active.strict, active.minorModes);
+		const { text, tone } = statusLabel(active.mode, routes, active.strict, active.minorModes, writerRoute);
 		ctx.ui.setStatus("mode", ctx.ui.theme.fg(tone, text));
 	}
 
 	/**
-	 * Route every profile of the routing as it is NOW (file and policy re-read) against the last
-	 * discovery. Synchronous and cheap: what a turn boundary runs.
+	 * Route every profile of the routing (in delegate) and the spec writer (while spec is on) as they
+	 * are NOW (files and policy re-read) against the last discovery. Synchronous and cheap: what a
+	 * turn boundary runs. Normal mode never reads the Delegate file; spec off never reads the writer's.
 	 */
 	function recomputeRoutes(): void {
-		const settings = readDelegate();
 		const policy = readPolicy();
-		routes = routeAll(settings, discoveries, (choice) => policyDenial(policy, choice.backend, choice.model));
+		const denial = (choice: { backend: DelegateBackend; model: string }) => policyDenial(policy, choice.backend, choice.model);
+		if (active.mode === "delegate") routes = routeAll(readDelegate(), discoveries, denial);
+		writerRoute = hasMinor(active, "spec") ? routeWriter(readSpec(), discoveries, denial) : null;
 	}
+
+	/**
+	 * What a probe covers now: the Delegate routing while in delegate, the spec writer while spec is
+	 * on and one is set. `key` identifies it; no backends means nothing to probe.
+	 */
+	function probeScope(): { key: string; backends: DelegateBackend[] } {
+		const delegate = active.mode === "delegate" ? readDelegate() : undefined;
+		const spec = hasMinor(active, "spec") ? readSpec() : undefined;
+		const backends = new Set<DelegateBackend>([...(delegate ? backendsOf(delegate) : []), ...(spec ? specBackends(spec) : [])]);
+		return { key: JSON.stringify([delegate ? delegateKey(delegate) : null, spec ? specKey(spec) : null]), backends: [...backends] };
+	}
+
+	const probeWanted = (): boolean => probeScope().backends.length > 0;
 
 	function applyStrictTools(): void {
 		if (toolsSnapshot === undefined) toolsSnapshot = pi.getActiveTools();
@@ -169,8 +194,7 @@ export default function modeExtension(pi: ExtensionAPI): void {
 	 * Resolves once the probe is applied (or dropped as stale); never rejects.
 	 */
 	function refreshRouting(ctx: ExtensionContext, notifyDegraded: boolean): Promise<void> {
-		const settings = readDelegate();
-		const key = delegateKey(settings);
+		const { key, backends } = probeScope();
 		if (inflight && inflight.key === key) {
 			inflight.notify ||= notifyDegraded;
 			return inflight.done;
@@ -179,10 +203,10 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		// A changed routing supersedes the probe in flight; a notice that one was owed is carried over.
 		const run: { key: string; notify: boolean; done: Promise<void> } = { key, notify: notifyDegraded || !!inflight?.notify, done: Promise.resolve() };
 		run.done = (async () => {
-			const found = await Promise.all(backendsOf(settings).map(async (backend) => [backend, await probe.discover(ctx, backend)] as const));
+			const found = await Promise.all(backends.map(async (backend) => [backend, await probe.discover(ctx, backend)] as const));
 			if (inflight === run) inflight = undefined;
-			// A newer probe, or leaving delegate, owns the result.
-			if (generation !== probeGeneration || active.mode !== "delegate") return;
+			// A newer probe, or leaving delegate and spec, owns the result.
+			if (generation !== probeGeneration || !probeWanted()) return;
 			const now = Date.now();
 			for (const [backend, discovery] of found) {
 				discoveries = { ...discoveries, [backend]: discovery };
@@ -192,8 +216,10 @@ export default function modeExtension(pi: ExtensionAPI): void {
 			recomputeRoutes();
 			renderStatus(ctx);
 			if (!run.notify) return;
-			const notices = routes.map(routeNotice).filter((line): line is string => line !== undefined);
+			const notices = active.mode === "delegate" ? routes.map(routeNotice).filter((line): line is string => line !== undefined) : [];
 			if (notices.length > 0) ctx.ui.notify(`Delegate routing:\n${notices.join("\n")}`, "warning");
+			const writerNotice = writerRoute ? slotNotice(SPEC_WRITER_LABEL, writerRoute, "the agent") : undefined;
+			if (writerNotice) ctx.ui.notify(writerNotice, "warning");
 		})();
 		inflight = run;
 		return run.done;
@@ -201,16 +227,16 @@ export default function modeExtension(pi: ExtensionAPI): void {
 
 	/** Does this turn need a fresh probe: a routing not probed yet, or a backend whose discovery has aged out? */
 	function routingStale(): boolean {
-		const settings = readDelegate();
-		if (delegateKey(settings) !== probedKey) return true;
+		const { key, backends } = probeScope();
+		if (key !== probedKey) return true;
 		const now = Date.now();
-		return backendsOf(settings).some((backend) => {
+		return backends.some((backend) => {
 			const discovery = discoveries[backend];
 			return discovery === undefined || now - (discoveredAt[backend] ?? 0) >= discoveryTtl(discovery);
 		});
 	}
 
-	/** Leaving delegate: forget the probe in flight so its result is dropped and the next entry starts fresh. */
+	/** Nothing left to probe (neither delegate nor a spec writer): forget the probe in flight so its result is dropped and the next entry starts fresh. */
 	function dropProbe(): void {
 		++probeGeneration;
 		inflight = undefined;
@@ -243,10 +269,13 @@ export default function modeExtension(pi: ExtensionAPI): void {
 			ctx.ui.notify("Mode: delegate", "info");
 			await refreshRouting(ctx, true);
 		} else {
-			dropProbe();
 			restoreTools();
+			recomputeRoutes();
 			renderStatus(ctx);
 			ctx.ui.notify("Mode: normal", "info");
+			// The spec writer, if one is set, is still probed; otherwise nothing is.
+			if (probeWanted()) void refreshRouting(ctx, false);
+			else dropProbe();
 		}
 	}
 
@@ -257,9 +286,16 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		}
 		active = withMinor(active, minor, on);
 		appendSwitch({ minor, on });
+		if (minor === "spec") recomputeRoutes();
 		renderStatus(ctx);
 		if (minor === "align") syncAlignWidget(ctx);
 		ctx.ui.notify(`Minor mode: ${minor} ${on ? "on" : "off"}`, "info");
+		// Spec on probes its writer's backends (and announces a writer that can't run); off, and
+		// outside delegate, there is nothing left to probe.
+		if (minor === "spec") {
+			if (probeWanted()) void refreshRouting(ctx, on);
+			else dropProbe();
+		}
 	}
 
 	/** One-line summary of an active state, for the notifications and the `default:` status line. */
@@ -318,14 +354,10 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		// A restore can land on a different strict flag than the tools currently reflect.
 		if (active.mode === "delegate" && active.strict) applyStrictTools();
 		else restoreTools();
-		if (active.mode === "delegate") {
-			recomputeRoutes();
-			renderStatus(ctx);
-			void refreshRouting(ctx, false);
-		} else {
-			renderStatus(ctx);
-			dropProbe();
-		}
+		recomputeRoutes();
+		renderStatus(ctx);
+		if (probeWanted()) void refreshRouting(ctx, false);
+		else dropProbe();
 	}
 
 	// ── Alignment doc (align minor mode) ─────────────────────────────────────────
@@ -473,6 +505,24 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		});
 	}
 
+	/** The spec writer: what is configured and, while spec is on, what is actually in use. */
+	function writerLine(): string {
+		const { writer } = readSpec();
+		if (!writer) return `spec writer (${SPEC_FILE}): none — the session writes the spec itself`;
+		if (hasMinor(active, "spec")) recomputeRoutes();
+		const configured = `${describeChoice(writer.primary)}${writer.fallback ? `, fallback ${describeChoice(writer.fallback)}` : ", no fallback"}`;
+		const route = writerRoute;
+		const using =
+			!hasMinor(active, "spec") || !route
+				? ""
+				: route.via === "primary"
+					? route.primary.availability === "unverified" ? " — using primary (not verified)" : " — using primary"
+					: route.via === "fallback"
+						? ` — using FALLBACK (${route.primary.reason})`
+						: " — none available: will ask";
+		return `spec writer (${SPEC_FILE}): ${configured}${using}`;
+	}
+
 	function statusLines(): string[] {
 		const fileDefault = loadState(STATE_FILE);
 		return [
@@ -480,6 +530,7 @@ export default function modeExtension(pi: ExtensionAPI): void {
 			`default: ${activeSummary(activeOf(fileDefault))} (new sessions; /mode default sets it)`,
 			`delegate routing (${DELEGATE_FILE}):`,
 			...routingLines(),
+			writerLine(),
 			`strict: ${active.strict ? "on" : "off"}`,
 			`minor: ${active.minorModes.length > 0 ? active.minorModes.join(", ") : "(none)"}`,
 			`shortcut: ${fileDefault.shortcut ?? DEFAULT_MODE_SHORTCUT}`,
@@ -660,21 +711,22 @@ export default function modeExtension(pi: ExtensionAPI): void {
 	// Delegate's routing is re-read here, at every turn boundary: a routing or policy change reaches
 	// a session already in delegate from its next prompt. A changed routing (or stale discovery)
 	// re-probes in the background; until that lands, tuples of undiscovered backends are unverified
-	// and stay in use — spawn is the final check, and the prompt's retry rule covers a miss.
+	// and stay in use — spawn is the final check, and the prompt's retry rule covers a miss. The spec
+	// writer is re-read and probed the same way whenever spec is on, in either major mode.
 	pi.on("before_agent_start", async (event, ctx) => {
-		if (active.mode === "delegate") {
-			const key = delegateKey(readDelegate());
+		if (active.mode === "delegate" || hasMinor(active, "spec")) {
+			const { key } = probeScope();
 			recomputeRoutes();
 			// Announce only a routing the user changed; a timed refresh or the start-up probe joined
 			// here stays quiet unless whoever started it asked (a switch into delegate does).
-			if (routingStale()) void refreshRouting(ctx, probedKey !== undefined && key !== probedKey);
+			if (probeWanted() && routingStale()) void refreshRouting(ctx, probedKey !== undefined && key !== probedKey);
 			try {
 				renderStatus(ctx);
 			} catch {
 				// Status is best-effort here.
 			}
 		}
-		const block = composePrompt(active, routes);
+		const block = composePrompt(active, routes, writerRoute);
 		const sections = (event.systemPromptOptions as { sections?: Record<string, string> } | undefined)?.sections;
 		if (sections) {
 			applyModeSection(sections, block);

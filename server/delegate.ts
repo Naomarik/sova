@@ -32,8 +32,8 @@ import { CLAUDE_CODE_PROVIDER } from "./models";
 
 // Settings → Modes → Delegate (spec/12-settings-dialog.md "Modes"): which worker each kind of
 // Delegate work goes to. The file (~/.pi/agent/mode-delegate.json) and its rules are the mode
-// extension's (pi-config/extensions/mode/delegate.ts, imported as one of the server's three pure
-// mode modules); this module adds what only the server can: the models each backend actually
+// extension's (pi-config/extensions/mode/delegate.ts, imported as one of the server's pure mode
+// modules); this module adds what only the server can: the models each backend actually
 // offers, the policy's view of them, and a save that refuses what discovery says cannot run.
 // Every Delegate session — TUI or web — re-reads the file at its next turn boundary.
 
@@ -203,7 +203,7 @@ const sessionScoped = (backend: DelegateBackendOptions, model: string): boolean 
  * the list omits is a warning, never an error — the same reading the mode extension routes by
  * (routing.ts assess). pi's registry is local and reliable: there absence stands.
  */
-export function checkChoice(choice: WorkerChoice, options: DelegateOptions): { error?: string; warning?: string } {
+export function checkChoice(choice: WorkerChoice, options: DelegateOptions, owner = "Delegate"): { error?: string; warning?: string } {
   const backend = options.backends.find((b) => b.id === choice.backend);
   if (!backend || backend.models === null)
     return { warning: `not verified — ${BACKEND_LABELS[choice.backend]} couldn't list its models${backend?.error ? ` (${backend.error})` : ""}` };
@@ -215,7 +215,7 @@ export function checkChoice(choice: WorkerChoice, options: DelegateOptions): { e
   if (!model) return { error: `${choice.model} isn't offered by ${BACKEND_LABELS[choice.backend]}` };
   if (!model.efforts.includes(choice.effort))
     return { error: `${choice.model} doesn't take effort "${choice.effort}" (it takes ${model.efforts.join(", ") || "none"})` };
-  if (model.denied) return { warning: `${model.denied}; Delegate uses the fallback or asks` };
+  if (model.denied) return { warning: `${model.denied}; ${owner} uses the fallback or asks` };
   return {};
 }
 
@@ -234,32 +234,50 @@ export async function saveDelegateSettings(
   if ("error" in parsed) return parsed;
   const stored = loadDelegate(file);
   const options = await delegateOptions(sources);
+  const slots = DELEGATE_PROFILES.flatMap((id) =>
+    (["primary", "fallback"] as const).map((slot) => ({
+      label: `${DELEGATE_PROFILE_INFO[id].label} ${slot}`,
+      choice: parsed.profiles[id][slot],
+      stored: stored.profiles[id][slot],
+    })),
+  );
+  const verdict = verifySlots(slots, options);
+  if ("error" in verdict) return verdict;
+  saveDelegate(file, parsed);
+  return { ...delegateInfo(file), warnings: verdict.warnings };
+}
+
+/**
+ * The save check both worker settings share (Delegate's profiles, the spec writer): a CHANGED tuple
+ * its backend authoritatively cannot run is an error; one that can't be checked, or that the policy
+ * refuses, is a warning; a tuple left as it was stored never blocks the save. Slots on a backend
+ * that couldn't list its models get one sentence per backend, not one per slot.
+ */
+export function verifySlots(
+  slots: { label: string; choice: WorkerChoice | null; stored: WorkerChoice | null | undefined }[],
+  options: DelegateOptions,
+  owner = "Delegate",
+): { warnings: string[] } | { error: string } {
   const errors: string[] = [];
   const warnings: string[] = [];
-  /** Slots on a backend that couldn't list its models: one sentence per backend, not one per slot. */
   const unlisted = new Map<DelegateBackend, string[]>();
-  for (const id of DELEGATE_PROFILES) {
-    const label = DELEGATE_PROFILE_INFO[id].label;
-    for (const slot of ["primary", "fallback"] as const) {
-      const choice = parsed.profiles[id][slot];
-      if (!choice) continue;
-      if (options.backends.find((b) => b.id === choice.backend)?.models === null) {
-        unlisted.set(choice.backend, [...(unlisted.get(choice.backend) ?? []), `${label} ${slot}`]);
-        continue;
-      }
-      const verdict = checkChoice(choice, options);
-      const unchanged = sameChoice(choice, stored.profiles[id][slot]);
-      if (verdict.error && !unchanged) errors.push(`${label} ${slot}: ${verdict.error}`);
-      else if (verdict.error || verdict.warning) warnings.push(`${label} ${slot}: ${verdict.error ?? verdict.warning}`);
+  for (const { label, choice, stored } of slots) {
+    if (!choice) continue;
+    if (options.backends.find((b) => b.id === choice.backend)?.models === null) {
+      unlisted.set(choice.backend, [...(unlisted.get(choice.backend) ?? []), label]);
+      continue;
     }
+    const verdict = checkChoice(choice, options, owner);
+    const unchanged = sameChoice(choice, stored);
+    if (verdict.error && !unchanged) errors.push(`${label}: ${verdict.error}`);
+    else if (verdict.error || verdict.warning) warnings.push(`${label}: ${verdict.error ?? verdict.warning}`);
   }
   if (errors.length > 0) return { error: `${errors.join(". ")}.` };
-  for (const [backend, slots] of unlisted) {
+  for (const [backend, labels] of unlisted) {
     const why = options.backends.find((b) => b.id === backend)?.error;
-    warnings.unshift(`Not verified, because ${BACKEND_LABELS[backend]} couldn't list its models${why ? ` (${why})` : ""}: ${slots.join(", ")}`);
+    warnings.unshift(`Not verified, because ${BACKEND_LABELS[backend]} couldn't list its models${why ? ` (${why})` : ""}: ${labels.join(", ")}`);
   }
-  saveDelegate(file, parsed);
-  return { ...delegateInfo(file), warnings };
+  return { warnings };
 }
 
 export type { DelegateSettings };

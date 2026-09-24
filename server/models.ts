@@ -4,6 +4,7 @@ import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import type { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import type { ContextInfo, ModelInfo } from "../shared/protocol";
 import { getModelRuntime } from "./chat-manager";
+import { readFavorites } from "./model-favorites";
 import type { BranchContext } from "./transcript";
 import { claudeCodeProviderEnabled } from "./web-settings";
 
@@ -79,23 +80,6 @@ export async function resolveContext(ctx: BranchContext | null): Promise<Context
   return ctx ? toContextInfo(ctx, await getModelRuntime()) : null;
 }
 
-/** The command-palette extension's favorites (READ-ONLY here): {version:1, models:[{provider,id}]}. */
-const FAVORITES_FILE = join(getAgentDir(), "model-favorites.json");
-
-function readFavorites(): Set<string> {
-  try {
-    const data = JSON.parse(readFileSync(FAVORITES_FILE, "utf8"));
-    if (data?.version !== 1 || !Array.isArray(data.models)) return new Set();
-    return new Set(
-      data.models
-        .filter((m: any) => typeof m?.provider === "string" && typeof m?.id === "string")
-        .map((m: any) => `${m.provider}/${m.id}`),
-    );
-  } catch {
-    return new Set(); // missing or corrupt: no favorites
-  }
-}
-
 /** Models with configured auth (what the palette lists without a scoped-model setting). */
 export async function listModels(): Promise<ModelInfo[]> {
   const favorites = readFavorites();
@@ -145,7 +129,8 @@ export async function claudeCodeModelCount(): Promise<number> {
  */
 export function toModelInfo(
   m: { provider: string; id: string; reasoning?: boolean; thinkingLevelMap?: Record<string, string | null>; input?: ("text" | "image")[] },
-  favorites: Set<string>,
+  /** The command-palette's favorites (`readFavorites` in model-favorites.ts). */
+  isFavorite: (provider: string, id: string) => boolean,
   /** Tokens, from the cached resolver; null/undefined when neither source knows the model. */
   window?: number | null,
 ): ModelInfo {
@@ -154,7 +139,7 @@ export function toModelInfo(
     ref,
     provider: m.provider,
     id: m.id,
-    favorite: favorites.has(ref),
+    favorite: isFavorite(m.provider, m.id),
     thinkingLevels: supportedThinkingLevels(m),
   };
   if (Array.isArray(m.input)) info.input = m.input;

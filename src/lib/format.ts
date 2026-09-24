@@ -18,6 +18,20 @@ export function relativeTime(iso: string, now = Date.now()): string {
   return `${MONTHS[d.getMonth()]} ${d.getDate()}${sameYear ? "" : `, ${d.getFullYear()}`}`;
 }
 
+/** How long until a future time, for "next refresh in {rel}": "in 3m", "in 2h", "in 1d"; under a
+    minute "in under a minute". Null when the time is unreadable or already passed. */
+export function relativeIn(iso: string, now = Date.now()): string | null {
+  const t = Date.parse(iso);
+  if (Number.isNaN(t) || t <= now) return null;
+  const sec = Math.round((t - now) / 1000);
+  if (sec < 60) return "in under a minute";
+  const min = Math.round(sec / 60);
+  if (min < 60) return `in ${min}m`;
+  const hr = Math.round(min / 60);
+  if (hr < 24) return `in ${hr}h`;
+  return `in ${Math.round(hr / 24)}d`;
+}
+
 /** 24-hour clock for absolute timestamps. */
 export function clockTime(iso: string): string {
   const d = new Date(iso);

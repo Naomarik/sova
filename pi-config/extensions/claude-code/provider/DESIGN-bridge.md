@@ -165,11 +165,17 @@ treat it as context you are being told about, not as your own memory>
 ...
 ## Assistant tool call `<name>` (id <id>)
 ## Tool `<name>` (id <id>) returned
-<text, truncated>
+<text, clipped: first 60% … [truncated: N chars omitted] last 40%>
 </conversation-history>
 
 Continue from here by answering the latest user message above.
 ```
+
+Each tool result is clipped to `maxFoldedResultChars` (8,000), or `maxFoldedReportChars` (48,000) for the
+subagent retrieval tools `agent_transcript` / `agent_wait` (matched with or without an `mcp__<server>__`
+prefix): a worker's report is the deliverable, and every restart re-folds it. A clipped result keeps its head
+and its tail, joined by `\n… [truncated: N chars omitted]\n`, so a report's conclusion survives; a result
+within its cap is folded verbatim. The whole folded body is still bounded by `maxFoldedChars` (512 KiB).
 
 Images cannot be folded into text, so they ride the same user message as stream-json `image` content blocks
 alongside the text block. What is lost: thinking content and signatures, exact prompt-cache state, the CLI's

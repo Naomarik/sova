@@ -11,9 +11,9 @@
  */
 import type { Message, Tool } from "@earendil-works/pi-ai";
 
-/** Names the MCP facade uses for pi's tools: pi tool `read` is `mcp__pi__read`. */
-export const PI_MCP_SERVER_NAME = "pi";
-export const PI_MCP_TOOL_PREFIX = `mcp__${PI_MCP_SERVER_NAME}__`;
+/** Names the MCP facade uses for pi's tools: pi tool `read` is `mcp__sova__read`. */
+export const MCP_SERVER_NAME = "sova";
+export const MCP_TOOL_PREFIX = `mcp__${MCP_SERVER_NAME}__`;
 
 export class ClaudeProtocolError extends Error {
 	constructor(message: string) {
@@ -74,7 +74,7 @@ export interface ClaudeTurnRequest {
 	/** pi's session id, so the bridge can reuse one CLI process per pi session. */
 	sessionId?: string;
 	systemPrompt?: string;
-	/** pi's tools, to be exposed through the MCP facade as `mcp__pi__<name>`. */
+	/** pi's tools, to be exposed through the MCP facade as `mcp__sova__<name>`. */
 	tools: Tool[];
 	/** The full normalized transcript for this turn. */
 	messages: Message[];
@@ -260,7 +260,7 @@ export function parseClaudeFrame(value: unknown): ClaudeFrame | undefined {
 
 /** Map an MCP facade tool name back to the pi tool name pi will execute. */
 export function toPiToolName(name: string, tools: readonly Tool[]): string {
-	const bare = name.startsWith(PI_MCP_TOOL_PREFIX) ? name.slice(PI_MCP_TOOL_PREFIX.length) : name;
+	const bare = name.startsWith(MCP_TOOL_PREFIX) ? name.slice(MCP_TOOL_PREFIX.length) : name;
 	if (tools.some((tool) => tool.name === bare)) return bare;
 	const lower = bare.toLowerCase();
 	return tools.find((tool) => tool.name.toLowerCase() === lower)?.name ?? bare;

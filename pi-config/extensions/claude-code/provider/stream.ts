@@ -99,6 +99,26 @@ async function* untilAborted<T>(source: AsyncIterable<T>, signal: AbortSignal | 
 /** Mutable per-block state; `index` is the CLI's content index, not pi's. */
 type Block = (ThinkingContent | TextContent | (ToolCall & { partialJson: string })) & { index: number };
 
+const SECTION_OPEN_TAG = /^<[a-z][a-z0-9_-]*>$/;
+
+/**
+ * Drop the untagged block pi puts ahead of its tagged sections (the preamble).
+ *
+ * pi renders a structured prompt as a bare preamble followed by sections wrapped
+ * `<name>\n…\n</name>`, joined with blank lines; section names follow pi's
+ * `SYSTEM_PROMPT_SECTION_NAME` (`/^[a-z][a-z0-9_-]*$/`). This finds the first line,
+ * at index > 0, that is exactly an opening tag (`<name>` alone on its line) and
+ * returns everything from that line onward, joined with "\n" and otherwise
+ * unchanged. When the first such line is line 0, or there is none (a tagless
+ * prompt such as compaction's summarizer), the input comes back verbatim.
+ * Nothing from the first tag line onward is ever altered.
+ */
+export function dropLeadingUntaggedSection(text: string): string {
+	const lines = text.split("\n");
+	const first = lines.findIndex((line) => SECTION_OPEN_TAG.test(line));
+	return first > 0 ? lines.slice(first).join("\n") : text;
+}
+
 /**
  * Run one assistant message through `bridge` and map its frames to pi-ai events.
  * `options.onPayload` may replace the request before it reaches the bridge;
@@ -114,7 +134,8 @@ export function streamClaudeCode(
 	// The CLI takes one system prompt for the process, so fold later system
 	// messages into the leading one rather than sending them mid-conversation.
 	const transcript = collapseSystemMessages(context);
-	const systemPrompt = getCurrentSystemPrompt(transcript.messages);
+	// pi's preamble names pi; this provider sends only the tagged sections.
+	const systemPrompt = dropLeadingUntaggedSection(getCurrentSystemPrompt(transcript.messages));
 	const tools = getCurrentTools(transcript.messages);
 
 	(async () => {
@@ -132,9 +153,11 @@ export function streamClaudeCode(
 		let sawToolCall = false;
 		let sawStreamedContent = false;
 		let responded = false;
+		let sawUsage = false;
 
 		const applyUsage = (usage: ClaudeUsage | undefined): void => {
 			if (!usage) return;
+			sawUsage = true;
 			output.usage.input = usage.input;
 			output.usage.output = usage.output;
 			output.usage.cacheRead = usage.cacheRead;
@@ -235,7 +258,14 @@ export function streamClaudeCode(
 		function handleFrame(frame: ClaudeFrame): void {
 			if (frame.type === "init") return;
 			if (frame.type === "result") {
-				applyUsage(frame.usage);
+				// The result's `usage` is the SUM over every API call in the CLI turn
+				// (every tool step since the user prompt), not this message's. Its
+				// input + cache counts would read as a context many times the real
+				// one (and trigger compaction), and its output as this message's
+				// output. So the last call's own usage, from message_start /
+				// message_delta / assistant, stands. The sum is used only when this
+				// message saw no usage at all, where an upper bound beats zeros.
+				if (!sawUsage) applyUsage(frame.usage);
 				if (frame.outcome === "aborted") {
 					output.stopReason = "aborted";
 					output.errorMessage = frame.message ?? "Claude Code cancelled the turn";

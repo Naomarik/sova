@@ -224,21 +224,22 @@ One long-lived `claude -p --input-format stream-json --output-format stream-json
 process per pi session, held in a process-global map keyed by the pi session id
 (`provider/session-bridge.ts`), launched with `--tools "" --setting-sources ""
 --strict-mcp-config --permission-mode dontAsk --permission-prompts none
---allowedTools mcp__pi`. Its `initialize` names one SDK-hosted MCP server, `pi`,
+--allowedTools mcp__sova`. Its `initialize` names one SDK-hosted MCP server, `sova`,
 that the extension answers in-process over the control channel
 (`provider/mcp-host.ts`): `tools/list` is built from the tools pi hands to
-`streamSimple` each turn, so the model sees `mcp__pi__read`, `mcp__pi__bash`,
+`streamSimple` each turn, so the model sees `mcp__sova__read`, `mcp__sova__bash`,
 etc. When the model calls one, the CLI's `tools/call` is **held open**; the
 provider ends pi's assistant message with `stopReason: "toolUse"`, pi executes
 the tool with its own permissions and hooks, and the next `streamSimple` call
 carries the result, which resolves the held call (text and images, `isError`
 for tool failures). The CLI never runs a tool itself: `--tools ""` plus
-`--strict-mcp-config` leave it nothing but `mcp__pi__*`, and the `--allowedTools`
+`--strict-mcp-config` leave it nothing but `mcp__sova__*`, and the `--allowedTools`
 rule is what stops don't-ask mode from auto-denying them.
 
 `stream_event` frames map onto pi's `text_*`/`thinking_*`/`toolcall_*` events
-(`provider/stream.ts`); usage comes from the per-result `usage` (never the
-cumulative `total_cost_usd`). Esc / abort sends the CLI an `interrupt`. A model,
+(`provider/stream.ts`); usage comes from each API call's own `usage` (never the
+`result` frame's `usage`, a sum over the turn's tool steps, unless the message
+carried none; never the cumulative `total_cost_usd`). Esc / abort sends the CLI an `interrupt`. A model,
 effort, system-prompt or tool-set change between turns restarts the CLI process
 (`set_model` is probe-verified but v1 restarts for everything, see
 `provider/DESIGN-bridge.md`). Thinking levels map onto the CLI's effort ladder
@@ -284,7 +285,7 @@ divergence is stated, and are confirmed by `docs/protocol-probes.md`.
   after a rewind or compaction pays a full re-send.
 - **Policy drift.** The control protocol is undocumented and version-sensitive;
   probes cover 2.1.276–2.1.278 only. A CLI update can change frame shapes or
-  the permission handling that `--allowedTools mcp__pi` relies on; the bridge
+  the permission handling that `--allowedTools mcp__sova` relies on; the bridge
   fails loud rather than guessing.
 - Two retry layers (CLI-internal and pi) exist; rate limits surface as errors.
 - **Process lifetime.** One CLI process per pi session lives until the session
@@ -299,7 +300,7 @@ divergence is stated, and are confirmed by `docs/protocol-probes.md`.
 - Divergences from the investigation, consciously: it proposed
   `--permission-mode manual --permission-prompts host` and answering
   `can_use_tool` for every SDK tool; this build uses `dontAsk` + `--allowedTools
-  mcp__pi` so one round trip per tool call instead of two (pi's own permission
+  mcp__sova` so one round trip per tool call instead of two (pi's own permission
   hooks already gate execution). It proposed `set_model` for model switches; v1
   restarts instead, which is deterministic and shares the fold path. It proposed
   the temp-file `--append-system-prompt-file`; this build passes

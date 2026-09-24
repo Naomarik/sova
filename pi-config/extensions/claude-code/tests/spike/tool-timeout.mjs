@@ -63,7 +63,7 @@ function run(o) {
             const m = e.request.message;
             if (!(m.id !== undefined && m.id !== null && m.method)) { answer(e.request_id, { mcp_response: { jsonrpc: "2.0", result: {}, id: 0 } }); continue; }
             const reply = (result) => answer(e.request_id, { mcp_response: { jsonrpc: "2.0", id: m.id, result } });
-            if (m.method === "initialize") { reply({ protocolVersion: m.params?.protocolVersion ?? "2025-06-18", capabilities: { tools: {} }, serverInfo: { name: "pi", version: "0.0.1" } }); continue; }
+            if (m.method === "initialize") { reply({ protocolVersion: m.params?.protocolVersion ?? "2025-06-18", capabilities: { tools: {} }, serverInfo: { name: "sova", version: "0.0.1" } }); continue; }
             if (m.method === "tools/list") { reply({ tools: TOOLS }); continue; }
             if (m.method === "tools/call") {
               out.callAt = Date.now();
@@ -124,8 +124,8 @@ function run(o) {
 }
 
 const PROMPT = "Call the echo_tool tool with text 'hi', then tell me the secret word and nothing else.";
-const MCP_ARGS = ["--allowedTools", "mcp__pi", "--model", "sonnet"];
-const MCP_INIT = { subtype: "initialize", sdkMcpServers: ["pi"] };
+const MCP_ARGS = ["--allowedTools", "mcp__sova", "--model", "sonnet"];
+const MCP_INIT = { subtype: "initialize", sdkMcpServers: ["sova"] };
 
 console.log("\n######## e1: hold 200s, no MCP_TOOL_TIMEOUT set — where is the default wall? ########");
 const SKIP = process.argv.includes("--only-late");
@@ -139,7 +139,7 @@ console.log(" e2:", JSON.stringify({ exit: e2.exit, answers: e2.answers.map((a) 
 console.log("\n######## e3: MCP_TOOL_TIMEOUT=6000 + sdkMcpServerConfigs{pi:{timeout:60000}} — does the per-server override win? ########");
 const e3 = SKIP ? {exit:0,answers:[]} : await run({
   args: MCP_ARGS, env: { MCP_TOOL_TIMEOUT: "6000" },
-  init: { subtype: "initialize", sdkMcpServers: ["pi"], sdkMcpServerConfigs: { pi: { timeout: 60000 } } },
+  init: { subtype: "initialize", sdkMcpServers: ["sova"], sdkMcpServerConfigs: { sova: { timeout: 60000 } } },
   prompts: [PROMPT], holdMs: 20000, hostMcp: true,
 });
 console.log(" e3:", JSON.stringify({ exit: e3.exit, answers: e3.answers.map((a) => a.slice(0, 120)) }));

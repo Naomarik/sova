@@ -386,11 +386,11 @@ test("writes are refused once the process is gone", async () => {
 test("control requests correlate by id: success, rejection, timeout and extra fields", async () => {
 	const h = harness();
 	h.transport.launch("claude", [], { cwd: "/tmp" });
-	const init = h.transport.control("initialize", { sdkMcpServers: [{ name: "pi" }] });
+	const init = h.transport.control("initialize", { sdkMcpServers: [{ name: "sova" }] });
 	const frame = h.child.writes[0];
 	assert.equal(frame.type, "control_request");
 	assert.equal(typeof frame.request_id, "string");
-	assert.deepEqual(frame.request, { subtype: "initialize", sdkMcpServers: [{ name: "pi" }] });
+	assert.deepEqual(frame.request, { subtype: "initialize", sdkMcpServers: [{ name: "sova" }] });
 	// A response for another request never settles this one.
 	h.child.out({ type: "control_response", response: { request_id: "other", subtype: "success" } });
 	await tick();
@@ -412,9 +412,9 @@ test("control requests correlate by id: success, rejection, timeout and extra fi
 test("request() returns the CLI's own payload, and control() reduces it to the ack", async () => {
 	const h = harness();
 	h.transport.launch("claude", [], { cwd: "/tmp" });
-	const listed = h.transport.request("mcp_message", { server_name: "pi", message: { method: "tools/list" } });
+	const listed = h.transport.request("mcp_message", { server_name: "sova", message: { method: "tools/list" } });
 	const frame = h.child.writes[0];
-	assert.deepEqual(frame.request, { subtype: "mcp_message", server_name: "pi", message: { method: "tools/list" } });
+	assert.deepEqual(frame.request, { subtype: "mcp_message", server_name: "sova", message: { method: "tools/list" } });
 	h.child.out({ type: "control_response", response: { request_id: frame.request_id, subtype: "success", response: { tools: [{ name: "read_file" }] } } });
 	assert.deepEqual(await listed, { ack: true, response: { tools: [{ name: "read_file" }] }, error: undefined });
 	// A rejection carries its message; a payload-less success has no response.
@@ -437,13 +437,13 @@ test("an MCP request over the control channel round-trips by request id", async 
 		onControlRequest: (request) => {
 			if (request.subtype !== "mcp_message") return false;
 			const message = (request.frame.request as any).message;
-			assert.equal((request.frame.request as any).server_name, "pi");
+			assert.equal((request.frame.request as any).server_name, "sova");
 			h.transport.respond(request.requestId, { mcp_response: { jsonrpc: "2.0", id: message.id, result: { content: [{ type: "text", text: "ok" }] } } });
 			return true;
 		},
 	});
 	h.transport.launch("claude", [], { cwd: "/tmp" });
-	h.child.out({ type: "control_request", request_id: "rpc-1", request: { subtype: "mcp_message", server_name: "pi", message: { jsonrpc: "2.0", id: 7, method: "tools/call", params: { name: "read_file" } } } });
+	h.child.out({ type: "control_request", request_id: "rpc-1", request: { subtype: "mcp_message", server_name: "sova", message: { jsonrpc: "2.0", id: 7, method: "tools/call", params: { name: "read_file" } } } });
 	await tick();
 	assert.deepEqual(h.child.writes, [{
 		type: "control_response",
@@ -463,7 +463,7 @@ test("an owner can answer inbound control requests generically; unhandled ones a
 		},
 	});
 	h.transport.launch("claude", [], { cwd: "/tmp" });
-	h.child.out({ type: "control_request", request_id: "m1", request: { subtype: "mcp_message", server_name: "pi", message: { method: "tools/list" } } });
+	h.child.out({ type: "control_request", request_id: "m1", request: { subtype: "mcp_message", server_name: "sova", message: { method: "tools/list" } } });
 	h.child.out({ type: "control_request", request_id: "x1", request: { subtype: "invented" } });
 	h.child.out({ type: "control_request", request: { subtype: "mcp_message" } });
 	await tick();

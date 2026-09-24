@@ -90,7 +90,7 @@ No `uuid` dependency is available (pi-config extensions are node-builtins-only),
 `cwd` = the pi session cwd. Env = `process.env` minus `CLAUDECODE` and `CLAUDE_CODE_ENTRYPOINT` (runner.ts does
 exactly this), plus `MCP_TOOL_TIMEOUT` (see §2). `shell: false`, `detached` off Windows, piped stdio.
 
-`sdkMcpServers: ["pi"]` goes in the `initialize` control request, not argv.
+`sdkMcpServers: ["sova"]` goes in the `initialize` control request, not argv.
 
 ### Per-turn protocol
 
@@ -145,24 +145,30 @@ approve; otherwise restart).
 ### Restart with folded history
 
 Lossy by construction; the code comment says so. The whole prior transcript becomes ONE stream-json user
-message:
+message, framed by `FoldMode`:
+
+- `first` — the pi session has never had a CLI child and the transcript is a single user message: that
+  message is sent as-is, with no wrapper.
+- `joined` — the first child for a conversation that already has history (model switch, reopened or forked
+  session). Header: "This conversation started before you joined it, possibly with a different model. …"
+- `restarted` — a live child was replaced. Header: "Your session was restarted, so this is a condensed, lossy
+  replay of the conversation so far: …"
 
 ```
-<pi-conversation-history>
-This conversation was restored after the Claude Code process restarted. Below is a condensed,
-lossy transcript of what came before. Thinking blocks and their signatures are gone; tool results
-may be truncated. Treat it as context, not as your own verbatim memory.
+<conversation-history>
+<joined or restarted header: condensed transcript, reasoning omitted, tool output may be truncated;
+treat it as context you are being told about, not as your own memory>
 
 ## User
 ...
 ## Assistant
 ...
-## Tool call <id>: <name>
-arguments: {...}
-result: <text, truncated>
-</pi-conversation-history>
+## Assistant tool call `<name>` (id <id>)
+## Tool `<name>` (id <id>) returned
+<text, truncated>
+</conversation-history>
 
-Continue the conversation. The user's next message follows.
+Continue from here by answering the latest user message above.
 ```
 
 Images cannot be folded into text, so they ride the same user message as stream-json `image` content blocks
@@ -180,8 +186,8 @@ runner.ts shutdown ladder (EOF → SIGTERM → SIGKILL on the process group). No
 
 ### Usage
 
-The probes are explicit: `modelUsage` and `total_cost_usd` are **process-cumulative**, `usage` is per result,
-and `num_turns` is per result and may be summed. So the bridge keeps the previous cumulative snapshot and
+The probes are explicit: `modelUsage` and `total_cost_usd` are **process-cumulative**, `usage` is per result
+(the sum over every API call in the turn, each tool step, not the last call's), and `num_turns` is per result and may be summed. So the bridge keeps the previous cumulative snapshot and
 emits the **difference** per pi turn. Cost is `max`, never a sum, then differenced the same way.
 
 ### Cleanup
@@ -193,9 +199,9 @@ emits the **difference** per pi turn. Cost is `max`, never a sum, then differenc
 
 ## 2. mcp-host.ts
 
-An in-process MCP server named `pi`, spoken over the control channel. No socket, no subprocess.
+An in-process MCP server named `sova`, spoken over the control channel. No socket, no subprocess.
 
-- **Inbound**: `control_request` with `request.subtype === "mcp_message"`, `request.server_name === "pi"`,
+- **Inbound**: `control_request` with `request.subtype === "mcp_message"`, `request.server_name === "sova"`,
   `request.message` = a JSON-RPC 2.0 request/notification.
 - **Outbound**: `control_response` `{ subtype: "success", request_id, response: { mcp_response: <JSON-RPC reply> } }`.
   A notification is answered with a reply carrying an empty result.
@@ -204,12 +210,12 @@ Methods:
 
 - `initialize` — protocol handshake; advertise `tools` capability only.
 - `tools/list` — **regenerated every turn** from `getCurrentTools(context.messages)`. Names are
-  `mcp__pi__<piToolName>`; description is pi's verbatim; `inputSchema` is
+  `mcp__sova__<piToolName>`; description is pi's verbatim; `inputSchema` is
   `toToolDeclaration(tool).parameters`. The JSON round-trip inside `toToolDeclaration` is required, not
   cosmetic: it is what strips typebox's symbol keys and `undefined` fields, which plain `JSON.stringify(tool
   .parameters)` would otherwise mangle. Extension-registered tools are included for free, because
   `getCurrentTools` already resolves them.
-- `tools/call` — parse `mcp__pi__<name>` back to the pi tool name, register a **held** call keyed by the
+- `tools/call` — parse `mcp__sova__<name>` back to the pi tool name, register a **held** call keyed by the
   JSON-RPC id, notify the bridge so it emits the pi `toolCall` and ends the pi message with
   `stopReason: "toolUse"`, and return nothing yet. The JSON-RPC response is sent later, once pi's
   `toolResult` arrives in the next `streamSimple` call.
@@ -370,7 +376,7 @@ they disagree with this section, this section is what the code does.
    CLI's built-in default is ~27.8 h, so a tighter value only lowers the ceiling. `heldCallTimeoutMs` is
    still the bound that actually matters.
 
-Also settled by the spike and now in the code: `--allowedTools mcp__pi` is mandatory (without it `dontAsk`
+Also settled by the spike and now in the code: `--allowedTools mcp__sova` is mandatory (without it `dontAsk`
 auto-denies every MCP call and `tools/call` never arrives); a notification must still be answered with the
 dummy `{jsonrpc, result:{}, id:0}`; the MCP image result is flat `{type, data, mimeType}` because the CLI
 converts to the Anthropic source shape itself; and a failed tool is not a failed turn.
@@ -381,7 +387,11 @@ divergence).
 
 **Usage differencing turned out to be unnecessary.** §1 planned to difference the CLI's cumulative
 `modelUsage` / `total_cost_usd`. `parseClaudeFrame` reads the per-message Anthropic passthrough usage
-instead, which is already per-turn, so there is nothing to difference and no cumulative state to keep.
+instead, which is already per API call, so there is nothing to difference and no cumulative state to keep.
+The terminal `result` frame's `usage` is the per-turn sum over every call, so `stream.ts` ignores it for
+any message that carried its own usage: the last step would otherwise report the whole turn's tokens as
+its context (10 steps at ~105k read as 1.03M and triggered a needless compaction). It is used only when a
+message saw no message-level usage at all.
 
 ## Session cwd (decided)
 

@@ -90,7 +90,7 @@ class FakeClaude extends EventEmitter {
 	/** Send one mcp_message and wait for the correlated control_response. */
 	mcp(message: unknown, requestId = `req-${Math.random().toString(36).slice(2)}`): Promise<Record<string, any>> {
 		const answered = this.waitFor((f) => f.type === "control_response" && f.response?.request_id === requestId);
-		this.emitFrame({ type: "control_request", request_id: requestId, request: { subtype: "mcp_message", server_name: "pi", message } });
+		this.emitFrame({ type: "control_request", request_id: requestId, request: { subtype: "mcp_message", server_name: "sova", message } });
 		return answered;
 	}
 
@@ -98,7 +98,7 @@ class FakeClaude extends EventEmitter {
 	toolCall(name: string, args: unknown, requestId: string, rpcId = 99): void {
 		this.emitFrame({
 			type: "control_request", request_id: requestId,
-			request: { subtype: "mcp_message", server_name: "pi", message: { jsonrpc: "2.0", id: rpcId, method: "tools/call", params: { name, arguments: args } } },
+			request: { subtype: "mcp_message", server_name: "sova", message: { jsonrpc: "2.0", id: rpcId, method: "tools/call", params: { name, arguments: args } } },
 		});
 	}
 
@@ -209,7 +209,7 @@ async function collect(frames: AsyncIterable<ClaudeFrame>): Promise<ClaudeFrame[
 function toolUseFrames(id: string, name: string, args: Record<string, unknown>): unknown[] {
 	return [
 		{ type: "stream_event", event: { type: "message_start", message: { usage: { input_tokens: 10, output_tokens: 0 } } } },
-		{ type: "stream_event", event: { type: "content_block_start", index: 0, content_block: { type: "tool_use", id, name: `mcp__pi__${name}`, input: {} } } },
+		{ type: "stream_event", event: { type: "content_block_start", index: 0, content_block: { type: "tool_use", id, name: `mcp__sova__${name}`, input: {} } } },
 		{ type: "stream_event", event: { type: "content_block_delta", index: 0, delta: { type: "input_json_delta", partial_json: JSON.stringify(args) } } },
 		{ type: "stream_event", event: { type: "content_block_stop", index: 0 } },
 		{ type: "stream_event", event: { type: "message_delta", delta: { stop_reason: "tool_use" }, usage: { input_tokens: 10, output_tokens: 5 } } },
@@ -246,6 +246,79 @@ test("the fingerprint is cumulative, so appends are prefixes and edits are not",
 	assert.ok(!isPrefix(transcriptFingerprint(appended), transcriptFingerprint(base)));
 });
 
+const FOLD_LIMITS = { maxLineBytes: 1, maxIdleSessions: 1, maxFoldedResultChars: 100, maxFoldedChars: 10_000 };
+const JOINED_HEADER = "This conversation started before you joined it, possibly with a different model. What follows is a condensed transcript, not a verbatim record: reasoning is omitted and tool output may be truncated. Treat it as context you are being told about, not as your own memory.";
+const RESTARTED_HEADER = "Your session was restarted, so this is a condensed, lossy replay of the conversation so far: reasoning is omitted and tool output may be truncated. Treat it as context you are being told about, not as your own verbatim memory.";
+const FOLD_CLOSING = "Continue from here by answering the latest user message above.";
+
+test("first fold of a lone user message is that message, unwrapped", () => {
+	const system = { role: "system", content: "sys", timestamp: 0 } as unknown as Message;
+	const folded = foldHistory([system, user("fix the bug")], FOLD_LIMITS, "first");
+	assert.equal(folded.text, "fix the bug");
+	assert.deepEqual(folded.images, []);
+	assert.ok(!folded.text.includes("conversation-history"));
+});
+
+test("first fold of a lone user message keeps its image placeholder and images", () => {
+	const lone: Message = { role: "user", content: [{ type: "text", text: "look" }, { type: "image", data: "AAAA", mimeType: "image/png" }], timestamp: 1 };
+	const folded = foldHistory([lone], FOLD_LIMITS, "first");
+	assert.equal(folded.text, "look\n[1 image(s) attached to this message, included below]");
+	assert.equal(folded.images.length, 1);
+	assert.equal(folded.images[0]!.data, "AAAA");
+});
+
+test("first fold of a multi-message history is framed as joined", () => {
+	const folded = foldHistory([user("one"), user("two")], FOLD_LIMITS, "first");
+	assert.equal(folded.text, `<conversation-history>\n${JOINED_HEADER}\n\n## User\none\n\n## User\ntwo\n</conversation-history>\n\n${FOLD_CLOSING}`);
+	assert.deepEqual(folded.text, foldHistory([user("one"), user("two")], FOLD_LIMITS, "joined").text);
+});
+
+test("first fold of a lone tool result falls back to joined", () => {
+	const folded = foldHistory([toolResult("toolu_1", "read", "body")], FOLD_LIMITS, "first");
+	assert.ok(folded.text.startsWith(`<conversation-history>\n${JOINED_HEADER}\n\n## Tool \`read\``), folded.text);
+	assert.ok(folded.text.endsWith(`</conversation-history>\n\n${FOLD_CLOSING}`));
+});
+
+test("restarted fold uses the restart header, even for a lone user message", () => {
+	const folded = foldHistory([user("hi")], FOLD_LIMITS, "restarted");
+	assert.equal(folded.text, `<conversation-history>\n${RESTARTED_HEADER}\n\n## User\nhi\n</conversation-history>\n\n${FOLD_CLOSING}`);
+	assert.ok(!folded.text.includes("pi-conversation-history"));
+});
+
+test("the bridge sends a new session's first prompt unwrapped, and a later restart wrapped", { timeout: 8000 }, async () => {
+	const { bridge, children } = harness();
+	await collectAfter(bridge.runTurn(request([user("hello")])), async () => {
+		const cli = await child(children, 1);
+		await cli.waitFor((f) => f.request?.subtype === "initialize");
+		await cli.handshake();
+		const sent = await cli.waitFor((f) => f.type === "user");
+		assert.deepEqual(sent.message.content, [{ type: "text", text: "hello" }]);
+		cli.emitFrame({ type: "result", subtype: "success", is_error: false, result: "ok" });
+	});
+	await collectAfter(bridge.runTurn(request([user("different")])), async () => {
+		const cli = await child(children, 2);
+		await cli.waitFor((f) => f.request?.subtype === "initialize");
+		await cli.handshake();
+		const sent = await cli.waitFor((f) => f.type === "user");
+		assert.equal(sent.message.content[0].text, `<conversation-history>\n${RESTARTED_HEADER}\n\n## User\ndifferent\n</conversation-history>\n\n${FOLD_CLOSING}`);
+		cli.emitFrame({ type: "result", subtype: "success", is_error: false, result: "ok" });
+	});
+	await bridge.disposeAll();
+});
+
+test("the bridge frames a new session's multi-message history as joined", { timeout: 8000 }, async () => {
+	const { bridge, children } = harness();
+	await collectAfter(bridge.runTurn(request([user("one"), user("two")])), async () => {
+		const cli = await child(children, 1);
+		await cli.waitFor((f) => f.request?.subtype === "initialize");
+		await cli.handshake();
+		const sent = await cli.waitFor((f) => f.type === "user");
+		assert.ok(sent.message.content[0].text.startsWith(`<conversation-history>\n${JOINED_HEADER}\n\n`));
+		cli.emitFrame({ type: "result", subtype: "success", is_error: false, result: "ok" });
+	});
+	await bridge.disposeAll();
+});
+
 test("folded history is labelled lossy and carries images out of band", () => {
 	const messages: Message[] = [
 		user("hello"),
@@ -254,7 +327,7 @@ test("folded history is labelled lossy and carries images out of band", () => {
 		toolResult("toolu_1", "read", "file body"),
 	];
 	const folded = foldHistory(messages, { maxLineBytes: 1, maxIdleSessions: 1, maxFoldedResultChars: 100, maxFoldedChars: 10_000 });
-	assert.match(folded.text, /LOSSY/);
+	assert.ok(folded.text.startsWith(`<conversation-history>\n${RESTARTED_HEADER}\n\n## User\nhello`), folded.text);
 	assert.match(folded.text, /## User\nhello/);
 	assert.match(folded.text, /tool call `read`/);
 	assert.match(folded.text, /file body/);
@@ -276,7 +349,7 @@ test("argv, env and the MCP handshake match the spike's recorded shapes", { time
 	// auto-denies every MCP call and tools/call never arrives.
 	assert.ok(cli.argv.includes("-p"));
 	assert.deepEqual(cli.argv.slice(cli.argv.indexOf("--tools"), cli.argv.indexOf("--tools") + 2), ["--tools", ""]);
-	assert.deepEqual(cli.argv.slice(cli.argv.indexOf("--allowedTools"), cli.argv.indexOf("--allowedTools") + 2), ["--allowedTools", "mcp__pi"]);
+	assert.deepEqual(cli.argv.slice(cli.argv.indexOf("--allowedTools"), cli.argv.indexOf("--allowedTools") + 2), ["--allowedTools", "mcp__sova"]);
 	assert.equal(cli.argv[cli.argv.indexOf("--session-id") + 1], claudeSessionId("pi-session-1"));
 	assert.equal(cli.argv[cli.argv.indexOf("--permission-mode") + 1], "dontAsk");
 	assert.equal(cli.env.MCP_TOOL_TIMEOUT, "86400000");
@@ -284,13 +357,13 @@ test("argv, env and the MCP handshake match the spike's recorded shapes", { time
 	assert.equal(cli.env.CLAUDE_CODE_ENTRYPOINT, undefined);
 
 	const initialize = await cli.waitFor((f) => f.request?.subtype === "initialize");
-	assert.deepEqual(initialize.request.sdkMcpServers, ["pi"]);
+	assert.deepEqual(initialize.request.sdkMcpServers, ["sova"]);
 
 	const [init, ready, list] = await cli.handshake();
 	assert.equal(init!.response.response.mcp_response.result.protocolVersion, "2025-11-25");
 	// A notification has no id but still has to be answered, or the CLI wedges.
 	assert.deepEqual(ready!.response.response.mcp_response, { jsonrpc: "2.0", result: {}, id: 0 });
-	// tools/list publishes BARE names; the mcp__pi__ prefix only appears on the way back.
+	// tools/list publishes BARE names; the mcp__sova__ prefix only appears on the way back.
 	const listed = list!.response.response.mcp_response.result.tools;
 	assert.deepEqual(listed.map((t: any) => t.name), ["read", "bash"]);
 	assert.equal(listed[0].description, "Read a file");
@@ -497,8 +570,8 @@ test("a diverged transcript restarts the child with folded history", { timeout: 
 	assert.equal(children.length, 2, "divergence must restart the child");
 	const folded = children[1]!.sent.find((f) => f.type === "user")!;
 	const text = folded.message.content.map((b: any) => b.text ?? "").join("");
-	assert.match(text, /pi-conversation-history/);
-	assert.match(text, /LOSSY/);
+	assert.ok(text.startsWith(`<conversation-history>\n${RESTARTED_HEADER}\n\n`), text);
+	assert.ok(text.endsWith(`</conversation-history>\n\n${FOLD_CLOSING}`), text);
 	assert.match(text, /different/);
 	assert.ok(!text.includes("\n## User\ntwo"), "the rewound message must not be replayed");
 	await bridge.disposeAll();
@@ -638,7 +711,7 @@ function retryOnFailure(cli: FakeClaude, requestId: string, complete: boolean): 
 			return;
 		}
 		cli.emitFrame({ type: "stream_event", event: { type: "message_start", message: { usage: { input_tokens: 1, output_tokens: 0 } } } });
-		cli.emitFrame({ type: "stream_event", event: { type: "content_block_start", index: 0, content_block: { type: "tool_use", id: "toolu_STALE", name: "mcp__pi__bash", input: {} } } });
+		cli.emitFrame({ type: "stream_event", event: { type: "content_block_start", index: 0, content_block: { type: "tool_use", id: "toolu_STALE", name: "mcp__sova__bash", input: {} } } });
 		cli.emitFrame({ type: "stream_event", event: { type: "content_block_delta", index: 0, delta: { type: "input_json_delta", partial_json: "{\"command\": \"ls -" } } });
 	});
 }
@@ -1069,7 +1142,7 @@ test("a protocol error in stream.ts makes the next turn restart the child, and o
 		await cli.waitFor((f) => f.request?.subtype === "initialize");
 		await cli.handshake();
 		const folded = await cli.waitFor((f) => f.type === "user");
-		assert.match(folded.message.content[0].text, /pi-conversation-history/);
+		assert.ok(folded.message.content[0].text.startsWith(`<conversation-history>\n${RESTARTED_HEADER}\n`));
 		cli.emitFrame({ type: "result", subtype: "success", is_error: false, result: "ok" });
 	});
 	assert.equal(children.length, 2, "the desynced child was reused");
@@ -1299,6 +1372,22 @@ test("a cwd change restarts the child, like a model change", { timeout: 8000 }, 
 
 	assert.equal(children.length, 2, "a cwd change must restart the child");
 	assert.equal(children[1]!.cwd, "/tmp/after");
+	await bridge.disposeAll();
+});
+
+test("a system prompt differing only in its untagged lead-in restarts the child: the strip is the stream's job", { timeout: 8000 }, async () => {
+	const { bridge, children } = harness();
+	const finish = async (n: number) => {
+		const cli = await child(children, n);
+		await cli.waitFor((f) => f.request?.subtype === "initialize");
+		await cli.handshake();
+		cli.emitFrame({ type: "result", subtype: "success", is_error: false, result: "ok" });
+	};
+	const sections = "<tools>\n- read\n</tools>\n\n<cwd>\n/x\n</cwd>";
+	const first = [user("hi")];
+	await collectAfter(bridge.runTurn(request(first, { systemPrompt: `You are pi.\n\n${sections}` })), () => finish(1));
+	await collectAfter(bridge.runTurn(request([...first, user("again")], { systemPrompt: `You are sova.\n\n${sections}` })), () => finish(2));
+	assert.equal(children.length, 2, "the bridge hashes the prompt it is given, lead-in included");
 	await bridge.disposeAll();
 });
 

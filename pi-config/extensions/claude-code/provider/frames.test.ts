@@ -1,7 +1,7 @@
 /** The validation boundary: what the adapter accepts, ignores, and refuses. */
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { ClaudeProtocolError, parseClaudeFrame, PI_MCP_TOOL_PREFIX, toPiToolName } from "./types.ts";
+import { ClaudeProtocolError, parseClaudeFrame, MCP_TOOL_PREFIX, toPiToolName } from "./types.ts";
 import { Type, type Tool } from "@earendil-works/pi-ai";
 
 const tools: Tool[] = [{ name: "read", description: "", parameters: Type.Object({}) }];
@@ -54,8 +54,8 @@ test("corrupt frames throw instead of being smoothed over", () => {
 });
 
 test("MCP facade names map back to pi tool names", () => {
-	assert.equal(toPiToolName(`${PI_MCP_TOOL_PREFIX}read`, tools), "read");
-	assert.equal(toPiToolName("mcp__pi__Read", tools), "read");
+	assert.equal(toPiToolName(`${MCP_TOOL_PREFIX}read`, tools), "read");
+	assert.equal(toPiToolName("mcp__sova__Read", tools), "read");
 	// A native Claude tool name (facade bypassed) is passed through untouched.
 	assert.equal(toPiToolName("Bash", tools), "Bash");
 });

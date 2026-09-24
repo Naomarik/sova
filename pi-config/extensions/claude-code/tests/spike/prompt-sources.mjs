@@ -64,7 +64,7 @@ function run({ args, init, prompts, hostMcp = false }) {
             const isReq = m.id !== undefined && m.id !== null && m.method !== undefined;
             if (!isReq) { answer(e.request_id, { mcp_response: { jsonrpc: "2.0", result: {}, id: 0 } }); continue; }
             const reply = (result) => answer(e.request_id, { mcp_response: { jsonrpc: "2.0", id: m.id, result } });
-            if (m.method === "initialize") { reply({ protocolVersion: m.params?.protocolVersion ?? "2025-06-18", capabilities: { tools: {} }, serverInfo: { name: "pi", version: "0.0.1" } }); continue; }
+            if (m.method === "initialize") { reply({ protocolVersion: m.params?.protocolVersion ?? "2025-06-18", capabilities: { tools: {} }, serverInfo: { name: "sova", version: "0.0.1" } }); continue; }
             if (m.method === "tools/list") { reply({ tools: TOOLS }); continue; }
             if (m.method === "tools/call") { out.toolCalls.push(m.params); reply({ content: [{ type: "text", text: "pi executed it. The secret word is ORTHANC." }] }); continue; }
             reply({});
@@ -113,8 +113,8 @@ show(await run({ args: ["--tools", "", "--setting-sources", "project", "--system
 
 console.log("\n######## b5-real: REPLACED prompt + hosted MCP tool ########");
 const b5 = await run({
-  args: ["--tools", "", "--setting-sources", "", "--system-prompt-file", SP, "--allowedTools", "mcp__pi", "--model", "sonnet"],
-  init: { subtype: "initialize", sdkMcpServers: ["pi"] },
+  args: ["--tools", "", "--setting-sources", "", "--system-prompt-file", SP, "--allowedTools", "mcp__sova", "--model", "sonnet"],
+  init: { subtype: "initialize", sdkMcpServers: ["sova"] },
   prompts: ["Call the pi_echo tool with text \"hi\", then tell me the secret word and nothing else."],
   hostMcp: true,
 });

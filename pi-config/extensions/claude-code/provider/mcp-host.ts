@@ -14,7 +14,7 @@
  *     waits for the control_response, so a silent notification wedges the
  *     handshake. It is answered with a dummy `{jsonrpc, result: {}, id: 0}`.
  *   - `tools/call` arrives with a BARE tool name (`read`), while the model's
- *     `tool_use` block names the prefixed form (`mcp__pi__read`). So tools/list
+ *     `tool_use` block names the prefixed form (`mcp__sova__read`). So tools/list
  *     publishes bare names and the prefix only ever appears on the way back.
  *
  * `tools/call` is HELD: the reply is not sent when the call arrives. The bridge
@@ -23,7 +23,7 @@
  * has a timeout of its own; the bridge owns every held call's fate.
  */
 import { toToolDeclaration, type Tool } from "@earendil-works/pi-ai";
-import { PI_MCP_SERVER_NAME } from "./types.ts";
+import { MCP_SERVER_NAME } from "./types.ts";
 
 /** The protocol version echoed back when the CLI does not name one. */
 export const MCP_FALLBACK_PROTOCOL_VERSION = "2025-11-25";
@@ -100,7 +100,7 @@ export class PiMcpHost {
 	private protocolVersion = MCP_FALLBACK_PROTOCOL_VERSION;
 	private initialized = false;
 
-	constructor(hooks: McpHostHooks, serverName: string = PI_MCP_SERVER_NAME) {
+	constructor(hooks: McpHostHooks, serverName: string = MCP_SERVER_NAME) {
 		this.hooks = hooks;
 		this.serverName = serverName;
 	}

@@ -16,8 +16,8 @@
  * folded into one user message. The fold is lossy and says so.
  *
  * Verified against CLI 2.1.278 by the team's protocol spike:
- *   - `initialize` with `sdkMcpServers: ["pi"]` works under `-p` stream-json.
- *   - `--allowedTools mcp__pi` is MANDATORY. Without it `--permission-mode
+ *   - `initialize` with `sdkMcpServers: ["sova"]` works under `-p` stream-json.
+ *   - `--allowedTools mcp__sova` is MANDATORY. Without it `--permission-mode
  *     dontAsk` auto-denies every MCP call and `tools/call` never reaches us.
  *   - A held `tools/call` blocks with no deadline of the CLI's own.
  */
@@ -32,7 +32,7 @@ import {
 import type { ImageContent, Message, TextContent, Tool } from "@earendil-works/pi-ai";
 import { PiMcpHost, type HeldMcpCall, type McpContent, type McpToolResult } from "./mcp-host.ts";
 import {
-	parseClaudeFrame, PI_MCP_SERVER_NAME, PI_MCP_TOOL_PREFIX,
+	parseClaudeFrame, MCP_SERVER_NAME, MCP_TOOL_PREFIX,
 	type ClaudeFrame, type ClaudeSessionBridge, type ClaudeTurnRequest,
 } from "./types.ts";
 
@@ -279,7 +279,29 @@ export interface FoldedHistory {
 }
 
 /**
- * Collapse a transcript into ONE user message for a restarted CLI child.
+ * How a folded transcript is framed for the child that receives it.
+ *
+ * - `first`: this pi session has never had a CLI child. If the transcript
+ *   (system messages aside) is exactly one user message, that message is sent
+ *   as-is: nothing came before it, so there is nothing to disclaim. Anything
+ *   else falls back to `joined`.
+ * - `joined`: the first child for a conversation that already has history
+ *   (a model switch mid-conversation, a reopened or forked session). No Claude
+ *   child ever ran for it, so the header says the conversation predates this
+ *   one rather than that anything restarted.
+ * - `restarted`: a live child was replaced (model/effort/system prompt change,
+ *   rewind, aborted turn, crash) and the conversation carries on across it.
+ */
+export type FoldMode = "first" | "joined" | "restarted";
+
+const FOLD_HEADERS: Record<Exclude<FoldMode, "first">, string> = {
+	joined: "This conversation started before you joined it, possibly with a different model. What follows is a condensed transcript, not a verbatim record: reasoning is omitted and tool output may be truncated. Treat it as context you are being told about, not as your own memory.",
+	restarted: "Your session was restarted, so this is a condensed, lossy replay of the conversation so far: reasoning is omitted and tool output may be truncated. Treat it as context you are being told about, not as your own verbatim memory.",
+};
+
+/**
+ * Collapse a transcript into ONE user message for a fresh CLI child; `mode`
+ * picks the framing (see FoldMode).
  *
  * Lossy on purpose, and the prose says so to the model: thinking blocks and
  * their signatures are gone, tool results are truncated, and the CLI's own
@@ -287,7 +309,17 @@ export interface FoldedHistory {
  * text, so they ride the same message as real image blocks; their place in the
  * narrative is marked inline.
  */
-export function foldHistory(messages: readonly Message[], limits: SessionBridgeLimits): FoldedHistory {
+export function foldHistory(messages: readonly Message[], limits: SessionBridgeLimits, mode: FoldMode = "restarted"): FoldedHistory {
+	const foldable = messages.filter((m) => m.role !== "system");
+	if (mode === "first") {
+		const only = foldable.length === 1 ? foldable[0]! : undefined;
+		if (only?.role !== "user") mode = "joined";
+		else {
+			const found = imagesOf(only.content);
+			const suffix = found.length ? `\n[${found.length} image(s) attached to this message, included below]` : "";
+			return { text: `${textOf(only.content)}${suffix}`, images: found };
+		}
+	}
 	const images: ImageContent[] = [];
 	const parts: string[] = [];
 	const clip = (text: string, cap: number) =>
@@ -319,15 +351,13 @@ export function foldHistory(messages: readonly Message[], limits: SessionBridgeL
 
 	const body = clip(parts.join("\n\n"), limits.maxFoldedChars);
 	const text = [
-		"<pi-conversation-history>",
-		"The previous Claude Code process was restarted, so this is a condensed, LOSSY replay of the",
-		"conversation so far. Reasoning blocks and their signatures are gone and tool output may be",
-		"truncated. Treat it as context you are being told about, not as your own verbatim memory.",
+		"<conversation-history>",
+		FOLD_HEADERS[mode],
 		"",
 		body,
-		"</pi-conversation-history>",
+		"</conversation-history>",
 		"",
-		"Continue the conversation from here, answering the most recent user message above.",
+		"Continue from here by answering the latest user message above.",
 	].join("\n");
 	return { text, images };
 }
@@ -451,6 +481,8 @@ class CliSession {
 	private meta?: string;
 	private currentTools: readonly Tool[] = [];
 	private started = false;
+	/** A child has ever completed its handshake: later folds are restarts, not first contact. */
+	private everStarted = false;
 	private disposing = false;
 	/** True while a child is being replaced: the turn outlives the old process. */
 	private restarting = false;
@@ -537,7 +569,7 @@ class CliSession {
 	 */
 	private plan(request: ClaudeTurnRequest, next: string[]): TurnPlan {
 		if (!this.started || !this.transport || this.transport.isClosed() || this.transport.hasExited()) {
-			return { restart: true, reason: "no live CLI process", results: [], user: undefined };
+			return { restart: true, reason: "no live CLI process", results: [], user: undefined, first: !this.everStarted };
 		}
 		if (this.desynced) {
 			return { restart: true, reason: `the CLI fell out of step with pi: ${this.desynced}`, results: [], user: undefined };
@@ -574,7 +606,7 @@ class CliSession {
 	 */
 	private deliver(request: ClaudeTurnRequest, plan: TurnPlan): void {
 		if (plan.restart) {
-			const folded = foldHistory(request.messages, this.limits);
+			const folded = foldHistory(request.messages, this.limits, plan.first ? "first" : "restarted");
 			this.sendUserMessage(folded.text, folded.images);
 			return;
 		}
@@ -645,7 +677,7 @@ class CliSession {
 			tools: [], // No built-ins: every tool the model can reach is pi's.
 			// MANDATORY. Under dontAsk an unlisted MCP server is auto-denied and
 			// the held tools/call never reaches this host at all.
-			allowedTools: [`mcp__${PI_MCP_SERVER_NAME}`],
+			allowedTools: [`mcp__${MCP_SERVER_NAME}`],
 			sessionId,
 		});
 		if ("error" in built) throw new Error(`Claude argv rejected: ${built.error}`);
@@ -700,13 +732,13 @@ class CliSession {
 		});
 		this.started = true;
 
-		const fields: Record<string, unknown> = { sdkMcpServers: [PI_MCP_SERVER_NAME] };
+		const fields: Record<string, unknown> = { sdkMcpServers: [MCP_SERVER_NAME] };
 		if (this.options.sendSystemPrompt !== false && request.systemPrompt) {
 			fields.systemPrompt = [request.systemPrompt];
 			fields.systemPromptSnapshot = false;
 		}
 		const ack = await transport.control("initialize", fields);
-		if (ack === true) return undefined;
+		if (ack === true) { this.everStarted = true; return undefined; }
 		// Tear down before reading stderr: the child's last words arrive before
 		// its close, and teardown is what waits for that close.
 		await this.teardown("Claude failed the initialize handshake");
@@ -886,7 +918,7 @@ class CliSession {
 
 	private addPending(turn: TurnState, id: string, name: string, input: unknown): void {
 		if (this.calls.some((p) => p.id === id)) return;
-		const bare = name.startsWith(PI_MCP_TOOL_PREFIX) ? name.slice(PI_MCP_TOOL_PREFIX.length) : name;
+		const bare = name.startsWith(MCP_TOOL_PREFIX) ? name.slice(MCP_TOOL_PREFIX.length) : name;
 		this.calls.push({ id, name: bare, input });
 		turn.wantsTools = true;
 		this.rematch();
@@ -1018,6 +1050,8 @@ interface TurnPlan {
 	reason: string;
 	results: Extract<Message, { role: "toolResult" }>[];
 	user: Message | undefined;
+	/** No child has ever run for this pi session; the fold is first contact. */
+	first?: boolean;
 }
 
 /** pi's tool result as an MCP `CallToolResult`. */

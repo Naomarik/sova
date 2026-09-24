@@ -1355,6 +1355,23 @@ export interface ChatModeResult extends ModeInfo {
   applies: ModeApplies;
 }
 
+/** This chat's sandbox (pi-config/extensions/sandbox, §chat/sandbox), from the extension's newest
+    `sandbox` entry on the branch. `status` is the extension's own line ("Sandbox on ·
+    workspace-write · full enforcement"); `enforcement` is "none" while off. */
+export interface SandboxInfo {
+  on: boolean;
+  enforcement: "full" | "partial" | "unavailable" | "none";
+  status: string;
+}
+
+/** POST /api/sandbox?path=…: "command" = the extension's /sandbox handler ran (its answer in
+    `sandbox`, also sent as a "sandbox" message); "unsupported" = no sandbox extension in this
+    runtime, nothing happened; "skip" = a TUI or foreign writer owns the file, nothing written. */
+export interface SandboxApplyResult {
+  outcome: "command" | "unsupported" | "skip";
+  sandbox?: SandboxInfo;
+}
+
 /** WS /ws/chat?path= — full-duplex chat for webapp-owned sessions. */
 export type ChatClientMessage =
   /** `clientId` is the SENDER'S OWN id for this send, chosen before the round trip. When the send
@@ -1501,6 +1518,9 @@ export type ChatServerMessage =
   /** THIS chat's own mode, and how the last switch applies to it. Sent after hello and after
       every switch of this chat. No other chat's switch, and no write of the default, sends one. */
   | { type: "mode"; mode: string; minorModes: string[]; strict: boolean; applies: ModeApplies }
+  /** THIS chat's sandbox, sent after hello and on every change, ONLY when its runtime has the
+      sandbox extension's /sandbox command. Absent = no extension: no row, no shield. */
+  | ({ type: "sandbox" } & SandboxInfo)
   /** Slash commands available in this session (sent right after hello, and again after a runtime
       reload). Same enumeration as pi rpc get_commands: extension commands, prompt templates, skills.
       TUI built-ins (/tree, /model, …) are not included. Send one as a normal prompt "/name args". */

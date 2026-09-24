@@ -3,6 +3,8 @@ import { modelProvider, shortModel } from "../lib/format";
 import { ensureModels, thinkingLevelsFor } from "../lib/models";
 import { confirmActivate, confirmReset } from "../lib/confirm-step";
 import { hideThinking, hideTools, setHideThinking, setHideTools } from "../lib/ui-state";
+import { sandboxRowTitle } from "../lib/sandbox";
+import type { SandboxInfo } from "../../shared/protocol";
 import { ModelPicker, type ModelControl } from "./ModelMenu";
 import { usePaneId } from "../lib/pane-scope";
 import { Icon, type IconName } from "./ui";
@@ -23,6 +25,15 @@ export interface UndoControl {
   /** Why it can't run now ("Stop first…", nothing to undo, composer disabled), else null. */
   blocked: Accessor<string | null>;
   run(): void;
+}
+
+/** What the chat view exposes so the flyout can flip this chat's sandbox (§chat/sandbox). */
+export interface SandboxControl {
+  /** The runtime's last "sandbox" message; null = no sandbox extension, so there is no row. */
+  state: Accessor<SandboxInfo | null>;
+  /** A flip is on its way to the server. */
+  pending: Accessor<boolean>;
+  set(on: boolean): void;
 }
 
 /** The flyout's three panels: the "+" button's root menu, the indicator's model panel, and the
@@ -100,6 +111,8 @@ export function ComposerMenu(props: {
   onFanOut?: () => void;
   /** Chat sessions only: "Undo last turn", a two-step row (the first click arms it). */
   undo?: UndoControl | null;
+  /** Chat sessions whose runtime has the sandbox extension: the Sandbox row. */
+  sandbox?: SandboxControl | null;
   /** Puts focus back in the textarea after a choice. */
   onRefocus(): void;
   /** Called once on mount with the handle the composer's model indicator opens this menu by. */
@@ -186,6 +199,21 @@ export function ComposerMenu(props: {
         run: () => setHideThinking(path, !hideThinking(path)),
       });
     }
+    // Only when the runtime has the sandbox extension; without it the row doesn't exist.
+    const sandbox = props.sandbox;
+    const sbx = sandbox?.state();
+    if (sandbox && sbx)
+      out.push({
+        id: "sandbox",
+        role: "menuitemcheckbox",
+        label: "Sandbox",
+        checked: sbx.on,
+        busy: sandbox.pending(),
+        disabled: props.disabled || sandbox.pending(),
+        describe: props.disabled,
+        title: props.disabled ? undefined : sandboxRowTitle(sbx), // disabled: the composer's reason line says why
+        run: () => sandbox.set(!sbx.on), // stays open: the check (and the shield) is the feedback
+      });
     if (props.onShowInfo)
       out.push({
         id: "info",
@@ -496,9 +524,9 @@ export function ComposerMenu(props: {
               <Index each={pick((r) => r.id === "attach" || r.id === "commands" || r.id === "playbooks")}>{(x) => <Item r={x().r} index={x().index} />}</Index>
               {/* The rows are picked by id, so a row that matches no section is built and never
                   rendered: "Fan Out…" belongs to this one, after Session info (§14b). */}
-              <Show when={pick((r) => r.id.startsWith("hide-") || r.id === "info" || r.id === "fanout").length > 0}>
+              <Show when={pick((r) => r.id.startsWith("hide-") || r.id === "sandbox" || r.id === "info" || r.id === "fanout").length > 0}>
                 <div class="composer-flyout-sep" role="separator" />
-                <Index each={pick((r) => r.id.startsWith("hide-") || r.id === "info" || r.id === "fanout")}>
+                <Index each={pick((r) => r.id.startsWith("hide-") || r.id === "sandbox" || r.id === "info" || r.id === "fanout")}>
                   {(x) => <Item r={x().r} index={x().index} />}
                 </Index>
               </Show>

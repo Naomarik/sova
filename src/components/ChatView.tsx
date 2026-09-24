@@ -1,8 +1,8 @@
 import { batch, createEffect, createMemo, createSignal, For, Match, on, onCleanup, Show, Switch } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { Portal } from "solid-js/web";
-import type { ChatServerMessage, ContextInfo, SessionSummary, SlashCommand, TeamInfo, TranscriptItem, WorkerInfo } from "../../shared/protocol";
-import { createFork, fetchTranscriptWithContext, setSessionArchived, wsUrl } from "../lib/api";
+import type { ChatServerMessage, ContextInfo, SandboxInfo, SessionSummary, SlashCommand, TeamInfo, TranscriptItem, WorkerInfo } from "../../shared/protocol";
+import { createFork, fetchTranscriptWithContext, setSandbox, setSessionArchived, wsUrl } from "../lib/api";
 import { contextStateFor, usageTokens, windowOf } from "../lib/context";
 import {
   addPendingPrompt,
@@ -81,7 +81,7 @@ import { isTurnStart } from "../lib/turn";
 import { entryIdOf } from "../lib/jump";
 import { Composer, type ComposerReason } from "./Composer";
 import { openCreated } from "../lib/fork-stage";
-import { FlyoutSession, type ThinkingControl, type UndoControl } from "./ComposerMenu";
+import { FlyoutSession, type SandboxControl, type ThinkingControl, type UndoControl } from "./ComposerMenu";
 import { ConnectionBanner } from "./ConnectionBanner";
 import { SessionInfoDialog } from "./SessionInfoDialog";
 import { SessionSetupCard } from "./SessionSetup";
@@ -253,6 +253,9 @@ export function ChatView(props: {
   const [commands, setCommands] = createSignal<SlashCommand[]>([]);
   /** The global mode and how it applies to this chat (WS "mode"). */
   const [modeState, setModeState] = createSignal<ModeState | null>(null);
+  /** This chat's sandbox (WS "sandbox"), null while its runtime has no sandbox extension. */
+  const [sandbox, setSandboxState] = createSignal<SandboxInfo | null>(null);
+  const [sandboxPending, setSandboxPending] = createSignal(false);
   /** Local "Ran /name args" rows; `tui` marks one that asked for a UI Sova can't show. */
   const [commandRows, setCommandRows] = createSignal<{ label: string; tui: boolean }[]>([]);
   /** Subagents working now (WS "workers"); 0 until the first one arrives. */
@@ -393,6 +396,7 @@ export function ChatView(props: {
             setCompacting(false);
           });
           setModel(msg.model);
+          setSandboxState(null); // a "sandbox" message follows when the runtime has the extension
           batch(() => {
             setThinking(msg.thinking);
             setPendingThinking(null);
@@ -552,6 +556,9 @@ export function ChatView(props: {
           break;
         case "mode":
           setModeState({ mode: msg.mode, minorModes: msg.minorModes, strict: msg.strict, applies: msg.applies });
+          break;
+        case "sandbox":
+          setSandboxState({ on: msg.on, enforcement: msg.enforcement, status: msg.status });
           break;
         case "event":
           queue.push(msg.event);
@@ -991,6 +998,22 @@ export function ChatView(props: {
   };
   /** The composer foot's mode switch (§4g): this chat's WS "mode" state and its session file. */
   const modeControl: ModeControl = { state: modeState, path: props.path };
+  /** The flyout's Sandbox row: the extension answers with a toast and a "sandbox" message. */
+  const sandboxControl: SandboxControl = {
+    state: sandbox,
+    pending: sandboxPending,
+    set: (on) => {
+      setSandboxPending(true);
+      setSandbox(props.path, on)
+        .then((r) => {
+          if (r.outcome === "skip") toast("Sandbox unchanged: another writer has this session. Nothing was written.");
+          if (r.sandbox) setSandboxState(r.sandbox);
+          if (r.sandbox) announce(r.sandbox.status);
+        })
+        .catch((err) => toast(`Sandbox unchanged: ${err instanceof Error ? err.message : String(err)}`))
+        .finally(() => setSandboxPending(false));
+    },
+  };
 
   // Mirror this session's run state for the sidebar's Busy chip (the list refetches on settle).
   const setMine = (running: boolean | undefined) =>
@@ -1306,6 +1329,7 @@ export function ChatView(props: {
         model={modelControl}
         thinking={thinkingControl}
         mode={modeControl}
+        sandbox={sandboxControl}
         onShowInfo={() => setShowInfo(true)}
         onPlaybooks={() => setShowPlaybooks(true)}
         onFanOut={fanOut()}

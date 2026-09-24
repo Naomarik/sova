@@ -754,3 +754,18 @@ describe("attachments root (composer-draft uploads)", () => {
     }
   });
 });
+
+// §chat.transcript: the sandbox extension's `sandbox` entry (one per flip) is state, not a row.
+// The web draws no marker for it; the composer's shield says the state instead.
+test("the sandbox extension's entries render as nothing, on and off alike", () => {
+  const entries = [
+    { type: "message", id: "u1", parentId: null, message: { role: "user", content: "hi", timestamp: 1 } },
+    { type: "custom", id: "s1", parentId: "u1", customType: "sandbox", data: { version: 1, on: true, level: "workspace-write", backend: "linux-bwrap", enforcement: "full" } },
+    { type: "custom", id: "s2", parentId: "s1", customType: "sandbox", data: { version: 1, on: true, level: "workspace-write", backend: "linux-bwrap", enforcement: "unavailable", reasons: ["bwrap missing"] } },
+    { type: "custom", id: "s3", parentId: "s2", customType: "sandbox", data: { version: 1, on: false, level: "workspace-write", backend: "none", enforcement: "none" } },
+  ];
+  for (const e of entries.slice(1)) assert.deepEqual(normalizeEntry(e), [], e.id);
+  const items = normalizeEntries(entries);
+  assert.equal(items.length, 1);
+  assert.ok(!JSON.stringify(items).includes("Sandbox"), "no sandbox text reaches the transcript");
+});

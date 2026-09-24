@@ -11,6 +11,7 @@ import type {
   ModelFavoriteResult,
   ModelInfo,
   PlaybookCatalog,
+  SandboxApplyResult,
   AssignGroupResult,
   BatchPromptResult,
   BatchRefusal,
@@ -200,6 +201,15 @@ export const saveModeDefault = (path: string) =>
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ saveDefault: true }),
+  });
+
+/** POST /api/sandbox?path=… { on }: flip that held chat's sandbox from its next tool call.
+    "unsupported" when its runtime has no sandbox extension (the row isn't shown then). */
+export const setSandbox = (path: string, on: boolean) =>
+  request<SandboxApplyResult>(`/api/sandbox?path=${encodeURIComponent(path)}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ on }),
   });
 
 /** A local folder (string), or a folder on a configured target. */

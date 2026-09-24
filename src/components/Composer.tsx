@@ -46,7 +46,8 @@ import { inputsText } from "../lib/input-count";
 import { dragHasRow } from "../lib/session-groups";
 import { showInputsOnTimelineLabel } from "../lib/timeline";
 import { showWorkersLabel, teamNote, type WorkingSplit, workersRunningLabel, workersWorkingLabel } from "../lib/workers";
-import { ComposerMenu, type ComposerMenuApi, type ThinkingControl, type UndoControl } from "./ComposerMenu";
+import { ComposerMenu, type ComposerMenuApi, type SandboxControl, type ThinkingControl, type UndoControl } from "./ComposerMenu";
+import { sandboxBadge } from "../lib/sandbox";
 import type { ModelControl } from "./ModelMenu";
 import { ModeMenu, type ModeControl } from "./ModeMenu";
 import { Icon, type IconName } from "./ui";
@@ -123,6 +124,8 @@ export function Composer(props: {
   onFanOut?: () => void;
   /** Chat sessions only: the flyout's "Undo last turn" row. */
   undo?: UndoControl | null;
+  /** Chat sessions with the sandbox extension: the flyout's Sandbox row and the foot's shield. */
+  sandbox?: SandboxControl | null;
   /** `text` already names each attachment's path; `attachments` are for the optimistic row. */
   onSend(text: string, steer: boolean, attachments: UploadResult[]): boolean;
   onAbort(): void;
@@ -843,6 +846,7 @@ export function Composer(props: {
             onPlaybooks={props.onPlaybooks}
             onFanOut={props.onFanOut}
             undo={props.undo}
+            sandbox={props.sandbox}
             onRefocus={() => input.focus()}
             onApi={setMenu}
           />
@@ -1041,6 +1045,15 @@ export function Composer(props: {
               )}
             </Show>
           </span>
+          <Show when={sandboxBadge(props.sandbox?.state() ?? null)}>
+            {(b) => (
+              <span class={`composer-sandbox composer-sandbox-${b().tone}`} title={b().label}>
+                <Icon name="shield" small />
+                <Show when={b().word}>{(w) => <span aria-hidden="true">{w()}</span>}</Show>
+                <span class="visually-hidden">{b().label}</span>
+              </span>
+            )}
+          </Show>
           <Show when={props.mode}>{(c) => <ModeMenu control={c()} />}</Show>
         </div>
       </form>

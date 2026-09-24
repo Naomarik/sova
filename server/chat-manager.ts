@@ -15,7 +15,7 @@ import {
   SessionManager,
   type Theme,
 } from "@earendil-works/pi-coding-agent";
-import type { ChatClientMessage, ChatModeResult, ChatServerMessage, ModeApplies, ModeInfo, QueueItem, RegenerateRefusal, RewindRefusal, SlashCommand } from "../shared/protocol";
+import type { ChatClientMessage, ChatModeResult, ChatServerMessage, ModeApplies, ModeInfo, QueueItem, RegenerateRefusal, RewindRefusal, SandboxApplyResult, SlashCommand } from "../shared/protocol";
 import { parseWakeNudge } from "../shared/wake";
 import { type QueueImage, type QueueKind, WebQueue, type WebQueueItem } from "./queue";
 import { decodeUsageTotal, decodeWorkers } from "./insights";
@@ -24,6 +24,7 @@ import { appliesAfter, defaultPatchOf, mergeMode, MINOR_MODES, modeApplyPlan, mo
 import { loadDefaults, saveDefaults } from "./web-defaults";
 import { modelAllowed, modelDenial, readModelPolicy } from "./model-policy";
 import { toContextInfo } from "./models";
+import { applySandbox, onSandboxAppend, sandboxCommandOf, sandboxMessage, type SandboxHost } from "./sandbox-state";
 import { contextForBranch, normalizeEntries, normalizeEntry } from "./transcript";
 import { mappedNewCwd, parseLegacyMountCwd, targetOfCwd } from "./targets";
 import { claudeCodeProviderEnabled } from "./web-settings";
@@ -847,6 +848,7 @@ class ChatSession {
         // for entries with nothing to show, so most appends broadcast nothing.
         const items = normalizeEntry((event as { entry: Record<string, any> }).entry);
         if (items.length) this.broadcast({ type: "append", items });
+        onSandboxAppend(this.sandboxHost, (event as { entry: unknown }).entry);
       }
       if (event.type === "agent_settled" && this.modeApplies === "after-turn") {
         // A mid-turn switch reaches the next prompt from here on.
@@ -855,6 +857,7 @@ class ChatSession {
       }
     });
     this.broadcast(this.commands()); // extension commands exist only after bindExtensions
+    this.sendSandbox((m) => this.broadcast(m));
     // The same rule the extension's own session_start runs, so both agree on this session's mode.
     this.modeState = resolveChatMode(session.sessionManager.getBranch());
     this.modeApplies = this.modeCommand() ? "now" : "new-chats";
@@ -969,6 +972,42 @@ class ChatSession {
     return plan;
   }
 
+  /** The sandbox extension's /sandbox command in this runtime (server/sandbox-state.ts). */
+  private sandboxCommand() {
+    return sandboxCommandOf(this.session.extensionRunner);
+  }
+
+  /** This chat's "sandbox" message, only when the extension is loaded: without it, nothing is sent. */
+  private sendSandbox(send: (msg: ChatServerMessage) => void): void {
+    if (this.sandboxCommand()) send(sandboxMessage(this.session.sessionManager.getBranch()));
+  }
+
+  private get sandboxHost(): SandboxHost {
+    return {
+      command: () => this.sandboxCommand(),
+      foreign: () => {
+        try {
+          assertNotLive(this.path);
+        } catch {
+          return true;
+        }
+        return this.disposed || this.hasForeignWrites();
+      },
+      commandContext: () => this.session.extensionRunner.createCommandContext(),
+      beforeCommand: () => this.flushDeferredAppends(), // open-time entries go before the extension's
+      afterCommand: () => {
+        if (!this.foreignWrite) markOwned(this.path); // the extension's entry is our write
+      },
+      branch: () => this.session.sessionManager.getBranch(),
+      broadcast: (msg) => this.broadcast(msg),
+    };
+  }
+
+  /** POST /api/sandbox?path=: flip this chat's sandbox from its next tool call (applySandbox). */
+  applySandbox(on: boolean): Promise<SandboxApplyResult> {
+    return applySandbox(this.sandboxHost, on);
+  }
+
   commands(): ChatServerMessage {
     try {
       return { type: "commands", commands: listCommands(this.session) };
@@ -1000,6 +1039,7 @@ class ChatSession {
     // would show an empty thread over a full queue.
     client.send({ type: "queue", items: this.queue.snapshot() });
     client.send(this.modeMessage());
+    this.sendSandbox((m) => client.send(m));
     const snap = this.workersSnapshot();
     if (snap) client.send(snap);
   }
@@ -1299,6 +1339,7 @@ class ChatSession {
     }
     this.modeState = resolveChatMode(this.session.sessionManager.getBranch());
     this.broadcast(this.modeMessage());
+    this.sendSandbox((m) => this.broadcast(m)); // the extension re-restores on session_tree too
   }
 
   broadcast(msg: ChatServerMessage): void {

@@ -130,6 +130,8 @@ export function restoreActive(entries: readonly { type: string; customType?: str
 /** One status line, the same words in the TUI and Sova: "Sandbox on · workspace-write · full enforcement". */
 export function describeActive(active: Pick<SandboxActive, "on" | "level" | "enforcement" | "reasons">): string {
 	if (!active.on) return "Sandbox off";
+	// On but enforced nowhere (a remote target runs the tools on its host): say why, never "none enforcement".
+	if (active.enforcement === "none") return `Sandbox on · ${active.reasons?.length ? active.reasons.join("; ") : "not enforced"}`;
 	const tail = active.enforcement === "unavailable"
 		? `unavailable${active.reasons?.length ? `: ${active.reasons.join("; ")}` : ""} (tools refuse)`
 		: `${active.enforcement} enforcement${active.enforcement === "partial" && active.reasons?.length ? ` (${active.reasons.join("; ")})` : ""}`;
@@ -139,6 +141,7 @@ export function describeActive(active: Pick<SandboxActive, "on" | "level" | "enf
 /** The transcript marker for one change (copy deck): "Sandbox → on · workspace-write · full enforcement". */
 export function markerText(active: Pick<SandboxActive, "on" | "level" | "enforcement" | "reasons">): string {
 	if (!active.on) return "Sandbox → off";
+	if (active.enforcement === "none") return `Sandbox → on · ${active.reasons?.length ? active.reasons.join("; ") : "not enforced"}`;
 	const reason = active.reasons?.length && active.enforcement !== "full" ? ` · ${active.reasons.join("; ")}` : "";
 	return `Sandbox → on · ${active.level} · ${active.enforcement} enforcement${reason}`;
 }

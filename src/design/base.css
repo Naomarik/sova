@@ -2709,6 +2709,24 @@ a.group-option { color: inherit; text-decoration: none; }
 .composer-model[aria-disabled="true"]:hover .composer-model-id { color: var(--color-ink-2); }
 .composer-model[aria-disabled="true"]:active { transform: none; }
 
+/* The sandbox shield (§chat.composer): shown only while this chat's sandbox is on. Full
+   enforcement is a quiet ink glyph; anything less adds its word and a status color, so the
+   state never rests on hue. It sits at the right end, before the mode switch, which then
+   gives up its own auto margin. */
+.composer-sandbox {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: none;
+  margin-left: auto;
+  color: var(--color-ink-2);
+  white-space: nowrap;
+  cursor: default;
+}
+.composer-sandbox-warn { color: var(--status-warn); }
+.composer-sandbox-error { color: var(--status-error); }
+.composer-foot .composer-sandbox ~ .mode-trigger { margin-left: 0; }
+
 
 /* ---- COMPOSER: narrow width. Below 480px of the composer, Send / Steer /
    Stop keep their icon and move their word into .button-label, which

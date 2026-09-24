@@ -41,6 +41,7 @@ import { readWebSettings, writeWebSettings } from "./web-settings";
 import { readSummarizerSettings, writeSummarizerSettings } from "./topic-outline-settings";
 import { claudeCliStatus } from "./claude-status";
 import { modeInfo, parseModeRequest, readMode } from "./mode-state";
+import { parseSandboxBody } from "./sandbox-state";
 import { attachWebSockets } from "./ws";
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4800; // PORT=0: an ephemeral port (tests)
@@ -563,6 +564,24 @@ app.post("/api/mode", async (c) => {
   const chat = heldChat(path);
   if (!chat) return c.json({ error: "That session isn't open on this server; open the chat first" }, 404);
   return c.json(await chat.switchMode(request.patch));
+});
+
+// The sandbox extension's on/off for one held chat (§chat/sandbox): its /sandbox handler runs
+// directly (server/sandbox-state.ts). "unsupported" when the runtime has no sandbox extension.
+app.post("/api/sandbox", async (c) => {
+  const path = resolveSessionPath(c.req.query("path"));
+  if (!path) return c.json({ error: "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)" }, 400);
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    body = undefined;
+  }
+  const parsed = parseSandboxBody(body);
+  if ("error" in parsed) return c.json({ error: parsed.error }, 400);
+  const chat = heldChat(path);
+  if (!chat) return c.json({ error: "That session isn't open on this server; open the chat first" }, 404);
+  return c.json(await chat.applySandbox(parsed.on));
 });
 
 app.get("/api/transcript", async (c) => {

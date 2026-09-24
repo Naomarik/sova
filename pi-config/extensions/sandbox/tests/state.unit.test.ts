@@ -39,4 +39,9 @@ test("status and marker copy", () => {
 	assert.equal(markerText({ ...on, enforcement: "partial", reasons: ["no socat"] }), "Sandbox → on · workspace-write · partial enforcement · no socat");
 	assert.equal(markerText({ ...on, on: false }), "Sandbox → off");
 	assert.match(describeActive({ ...on, enforcement: "unavailable", reasons: ["bwrap missing"] }), /unavailable: bwrap missing \(tools refuse\)/);
+	// On under a remote target: enforced nowhere, and the line says why.
+	assert.equal(describeActive({ ...on, enforcement: "none", reasons: ["not enforced on remote"] }), "Sandbox on · not enforced on remote");
+	assert.equal(describeActive({ ...on, enforcement: "none" }), "Sandbox on · not enforced");
+	assert.doesNotMatch(describeActive({ ...on, enforcement: "none" }), /none enforcement/);
+	assert.equal(markerText({ ...on, enforcement: "none", reasons: ["not enforced on remote"] }), "Sandbox → on · not enforced on remote");
 });

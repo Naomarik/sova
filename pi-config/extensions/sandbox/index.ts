@@ -366,7 +366,7 @@ export default function sandbox(pi: ExtensionAPI) {
 			ui = ctx.hasUI ? ctx.ui : undefined;
 			const arg = args.trim();
 			if (!arg || arg === "status") {
-				notify(remote && active.on ? `${describeActive(active)} (${NOT_ON_REMOTE})` : describeActive(active));
+				notify(describeActive(active));
 				return;
 			}
 			const want = parseOnOff(arg);

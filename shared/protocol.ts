@@ -1629,6 +1629,13 @@ export type WatchServerMessage =
 // POST /api/upload?draft=<session path> -> UploadResult 201  (same, saved durably in that session's folder
 //                                  <agent dir>/sova/attachments/<session id>/; 400 invalid session path, 404 no such session)
 // GET /api/insights/session?path=  -> SessionInsight    (400/404 semantics like /api/transcript)
+// POST /api/workers/resume?path=<session>&id=<ag_NN> -> WorkerResumeResult  (resumes one `restored`
+//                                  worker of a session THIS server hosts, idle: nothing is sent to it.
+//                                  400 bad path/id, 404 session not hosted here, 409 not resumable
+//                                  (with the reason), 500 the backend failed to start it.)
+
+/** POST /api/workers/resume's answer: the worker as the runtime now lists it. */
+export interface WorkerResumeResult { worker: WorkerInfo | null }
 
 export interface UsageWindow { label: string; pct: number; resetsAt?: string; /** Raw counts when the provider exposes them (e.g. z.ai MCP calls: used/limit). */
   used?: number; limit?: number; /** Model-family scope when the window only covers a subset (e.g. Claude's "7d scoped" Fable window). */
@@ -1667,13 +1674,19 @@ export interface UsageInsight {
   providers: UsageProvider[]; // fixed order: claude, openai, ollama, zai, deepseek
 }
 
-export type WorkerStatus = "starting" | "running" | "waiting" | "stopping" | "done" | "error" | "killed";
+/** `restored`: a worker a server restart took down, rebuilt from its durable record and transcript.
+    No process runs for it; it is idle until the user resumes it (never automatically). */
+export type WorkerStatus = "starting" | "running" | "waiting" | "stopping" | "done" | "error" | "killed" | "restored";
 /** Cumulative token counts. Non-negative integers; `cost` is USD and only present when the
     backend reports one. */
 export interface TokenUsage { input: number; output: number; cacheRead: number; cacheWrite: number; cost?: number }
 /** A token Σ plus the number of workers it covers — a session-lifetime count that can exceed the
     workers currently listed, because evicted ones keep counting. */
-export interface TokenUsageTotal extends TokenUsage { workers: number }
+export interface TokenUsageTotal extends TokenUsage {
+  workers: number;
+  /** ms: some of it is a restored worker's last snapshot (Claude cost), true as of then. */
+  asOf?: number;
+}
 export interface WorkerInfo {
   id: string; name: string; status: WorkerStatus; working: boolean;
   model?: string; backend?: string; preview?: string;
@@ -1699,6 +1712,21 @@ export interface WorkerInfo {
   /** Tokens this worker has used so far (both backends report them). Absent for a worker that
       has spent nothing yet, and from live records written by an older pi-config. */
   usage?: TokenUsage;
+  /** Where `usage` comes from. `transcript`: recomputed from its own transcript (exact tokens;
+      cost only when the backend records one). `snapshot`: the last number the worker reported
+      before the restart, true as of `usageAsOf`. `unavailable`: its transcript couldn't be read
+      and nothing was reported, so `usage` is absent — never read that as 0. Absent on a running
+      worker's live number and from older writers. */
+  usageSource?: "transcript" | "snapshot" | "unavailable";
+  /** ms: part of `usage` is the worker's last report before the restart and was true then — all
+      of it for `snapshot`, only the cost for a `transcript` Claude worker (its transcript records
+      tokens, never cost). */
+  usageAsOf?: number;
+  /** ms: a restored worker died mid-turn at about this time; the turn's answer never arrived. */
+  interruptedAt?: number;
+  /** A restored worker can be resumed from here: the session is hosted by this server and the
+      backend resumes natively. Absent otherwise (a TUI session, a backend without resume). */
+  resumable?: boolean;
 }
 export interface TeamMember {
   workerId: string; role: string; orchestrator: boolean; backend: string; model?: string;
@@ -1777,7 +1805,11 @@ export interface RewindInfo {
 /** Where a model's tokens were spent: the main thread, plain subagents, or team members. */
 export type SpendOrigin = "main" | "subagents" | "team";
 /** One model's token spend from one origin; cost is USD when reported. */
-export interface ModelSpend extends TokenUsage { model: string; origin: SpendOrigin }
+export interface ModelSpend extends TokenUsage {
+  model: string; origin: SpendOrigin;
+  /** ms: part of this row is a restored worker's last reported snapshot, true as of then. */
+  asOf?: number;
+}
 /** This session's token spend. `models` holds one row per model × origin — a mid-session model
     switch adds a row. Main rows tally the active branch's assistant usage (rewinds don't count);
     worker rows come from the live record's per-worker usage, so they cover listed workers only —
@@ -1788,6 +1820,9 @@ export interface SessionUsage {
   main: TokenUsage;
   models: ModelSpend[];
   workersTotal?: TokenUsageTotal;
+  /** Ids of listed workers whose usage couldn't be read (no transcript, nothing reported): they
+      are in no row and in no Σ, so every total above is a lower bound while this is non-empty. */
+  unavailable?: string[];
 }
 /** One skill the session's prompt OFFERED. pi records the offered set as a diffed prompt section,
     so a skill appears only in the system entries that introduced or changed it: `from` is the entry

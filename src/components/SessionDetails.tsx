@@ -24,7 +24,7 @@ import {
   visiblePath,
 } from "../lib/git-summary";
 import { copyText, home, toast } from "../lib/ui-state";
-import { formatCost, sessionWorking, usageHeadline, usageTitle, usageTotal } from "../lib/workers";
+import { asOfClock, formatCost, idList, sessionWorking, usageHeadline, usageTitle, usageTotal } from "../lib/workers";
 import { Banner, CopyButton, Icon } from "./ui";
 import { sessionHref } from "./Sidebar";
 import { GroupWithParent, MoveToGroupMenu } from "./Groups";
@@ -181,12 +181,40 @@ export function SessionDetails(props: {
               </div>
             </Show>
             <p class="usage-note">Main thread counts the active branch only.</p>
+            {/* A worker the restart left with no readable transcript and no report: its spend is
+                unknown, so it is named here rather than counted as 0 anywhere. */}
+            <Show when={u().unavailable?.length ? u().unavailable : null}>
+              {(ids) => (
+                <p class="usage-note">
+                  Usage unavailable for <span class="text-mono">{idList(ids())}</span>: we couldn't read{" "}
+                  {ids().length === 1 ? "its transcript" : "their transcripts"}, so the totals above leave{" "}
+                  {ids().length === 1 ? "it" : "them"} out.
+                </p>
+              )}
+            </Show>
             <Show when={u().workersTotal}>
               {(total) => (
                 <p class="usage-note text-muted" title={usageTitle(total(), total().workers)}>
                   Subagent lifetime: {formatTokens(usageHeadline(total()))} tokens
-                  <Show when={formatCost(total().cost)}>{(cost) => <> · {cost()}</>}</Show> across {total().workers}{" "}
-                  {total().workers === 1 ? "worker" : "workers"} (includes evicted).
+                  <Show when={formatCost(total().cost)}>
+                    {(cost) => (
+                      <>
+                        {" · "}
+                        {cost()}
+                        <Show when={total().asOf}>
+                          {(at) => (
+                            <>
+                              {" as of "}
+                              <span class="text-mono" title={new Date(at()).toISOString()}>
+                                {asOfClock(at())}
+                              </span>
+                            </>
+                          )}
+                        </Show>
+                      </>
+                    )}
+                  </Show>{" "}
+                  across {total().workers} {total().workers === 1 ? "worker" : "workers"} (includes evicted and restored).
                 </p>
               )}
             </Show>
@@ -669,7 +697,7 @@ function Fact(props: { label: string; children: JSX.Element }) {
 }
 
 /** The four token columns and, when any row reports one, the cost. */
-function Cells(props: { usage: TokenUsage; cost: boolean }) {
+function Cells(props: { usage: TokenUsage & { asOf?: number }; cost: boolean }) {
   const cell = (n: number) => (
     <td align="right" class="text-mono text-num">
       {formatTokens(n)}
@@ -694,7 +722,19 @@ function Cells(props: { usage: TokenUsage; cost: boolean }) {
               </>
             }
           >
-            {(cost) => cost()}
+            {(cost) => (
+              <>
+                {cost()}
+                {/* Part of it is a restored worker's last report (Claude transcripts carry no cost). */}
+                <Show when={props.usage.asOf}>
+                  {(at) => (
+                    <span class="text-muted" title={new Date(at()).toISOString()}>
+                      {" "}as of {asOfClock(at())}
+                    </span>
+                  )}
+                </Show>
+              </>
+            )}
           </Show>
         </td>
       </Show>

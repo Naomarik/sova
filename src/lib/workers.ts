@@ -1,5 +1,6 @@
 import type { AgentsInsight, LiveAgentSession, SessionSummary, TeamInfo, WorkerInfo } from "../../shared/protocol";
 import { formatTokens } from "./context";
+import { clockTime } from "./format";
 
 /** Subagents working now in a session, TUI-run or web-run; 0 when none or unknown.
     `workers` is top-level from newer servers; older ones only set it under `live`. */
@@ -224,6 +225,18 @@ export function capTitle(text: string | null | undefined, max = 300): string | u
   const cut = t.slice(0, max);
   const space = cut.lastIndexOf(" ");
   return `${(space > max * 0.6 ? cut.slice(0, space) : cut).trimEnd()}…`;
+}
+
+/** `14:06` for an epoch-ms "as of" stamp; empty for a bad one. */
+export const asOfClock = (ms: number): string => clockTime(new Date(ms).toISOString());
+
+/** A worker whose usage couldn't be read at all: the pane says "unavailable", never 0. */
+export const usageUnavailable = (w: Pick<WorkerInfo, "usageSource">): boolean => w.usageSource === "unavailable";
+
+/** `ag_03`, `ag_03 and ag_05`, `ag_03, ag_05, and ag_07` (serial comma). */
+export function idList(ids: readonly string[]): string {
+  if (ids.length <= 2) return ids.join(" and ");
+  return `${ids.slice(0, -1).join(", ")}, and ${ids[ids.length - 1]}`;
 }
 
 /** `$1.24`, `$0.08`, `<$0.01`; nothing at all when the backend reported no cost. */

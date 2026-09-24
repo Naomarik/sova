@@ -1,12 +1,12 @@
 import { createEffect, createMemo, createSignal, For, on, onCleanup, Show } from "solid-js";
 import type { TeamInfo, TeamMember, TranscriptItem, WatchServerMessage, WorkerInfo } from "../../shared/protocol";
-import { claudeWatchUrl, wsUrl } from "../lib/api";
+import { ApiError, claudeWatchUrl, resumeWorker, wsUrl } from "../lib/api";
 import { clockTime, compactModel, shortModel } from "../lib/format";
 import { memberStatus } from "../lib/insights";
 import { createReconnectingSocket } from "../lib/socket";
 import { formatTokens } from "../lib/context";
-import { capTitle, sortWorkers, sourceKey, sourceName, sourceOf, transcriptUsage, usageHeadline, usageTitle,
-  type TranscriptSource, type UsageView, workerLabel, workersNoun, workerTeam, workerUsage } from "../lib/workers";
+import { asOfClock, capTitle, sortWorkers, sourceKey, sourceName, sourceOf, transcriptUsage, usageHeadline, usageTitle,
+  usageUnavailable, type TranscriptSource, type UsageView, workerLabel, workersNoun, workerTeam, workerUsage } from "../lib/workers";
 import { ConnectionBanner } from "./ConnectionBanner";
 import type { PaneInsight } from "./SessionPane";
 import { HistoryItems, TranscriptSkeleton } from "./Thread";
@@ -39,7 +39,7 @@ export type AgentsView = "list" | "detail";
 /** Shown to the reader right now: `display: none` (the other half of a narrow pane) is not. */
 const shown = (el: Element | null | undefined): el is HTMLElement => !!el && (el as HTMLElement).checkVisibility();
 
-const SETTLED = new Set<WorkerInfo["status"]>(["waiting", "done", "error", "killed"]);
+const SETTLED = new Set<WorkerInfo["status"]>(["waiting", "done", "error", "killed", "restored"]);
 const asOf = (w: WorkerInfo): number | undefined => (SETTLED.has(w.status) ? w.endedAt ?? w.lastActivity : undefined);
 
 /**
@@ -52,6 +52,8 @@ const asOf = (w: WorkerInfo): number | undefined => (SETTLED.has(w.status) ? w.e
  * the first workers arrive, when it settles once — one worker opens on it, more on the list.
  */
 export function SubagentPane(props: {
+  /** The session these workers belong to: where Resume Worker is sent. */
+  path: string;
   chatWorkers: WorkerInfo[] | null;
   /** App's insight, polled while the pane is open: even while chatting, the teams give workers
       their role names. */
@@ -286,7 +288,15 @@ export function SubagentPane(props: {
                         </>
                       )}
                     </Show>
-                    <Show when={watched() ?? workerUsage(w())}>
+                    <Show
+                      when={watched() ?? workerUsage(w())}
+                      fallback={
+                        <Show when={usageUnavailable(w())}>
+                          <MetaSep />
+                          <span>usage unavailable</span>
+                        </Show>
+                      }
+                    >
                       {(u) => (
                         <>
                           <MetaSep />
@@ -309,6 +319,9 @@ export function SubagentPane(props: {
                   </p>
                 </div>
               </header>
+              <Show when={w().status === "restored" || w().resumable}>
+                <RestoredBar path={props.path} worker={w()} name={label(w())} />
+              </Show>
               <Show
                 when={sourceKey(w())}
                 keyed
@@ -317,9 +330,11 @@ export function SubagentPane(props: {
                     <p class="empty-title">Its transcript isn't available in Sova.</p>
                     <p class="empty-body">
                       <code>{label(w())}</code>{" "}
-                      {w().backend === "claude-code"
-                        ? "is starting — no Claude session yet."
-                        : "runs on a pi that doesn't publish its session file yet."}
+                      {w().status === "restored"
+                        ? "left no transcript we can find."
+                        : w().backend === "claude-code"
+                          ? "is starting — no Claude session yet."
+                          : "runs on a pi that doesn't publish its session file yet."}
                       <Show when={w().preview}>
                         {(p) => (
                           <>
@@ -350,6 +365,65 @@ export function SubagentPane(props: {
   );
 }
 
+/**
+ * What a restart did to this worker, and the one thing to do about it. Resume starts it again
+ * from its own transcript, idle: nothing is sent to it, so its next task is still yours to give.
+ * The button shows only where this server can do that (`resumable`: a session it hosts, on a
+ * backend that resumes); anywhere else the sentence stands alone.
+ */
+function RestoredBar(props: { path: string; worker: WorkerInfo; name: string }) {
+  const [busy, setBusy] = createSignal(false);
+  const [error, setError] = createSignal<string | null>(null);
+  createEffect(on(() => props.worker.id, () => setError(null), { defer: true }));
+  const interrupted = () => props.worker.interruptedAt;
+  const resume = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await resumeWorker(props.path, props.worker.id);
+    } catch (err) {
+      setError(err instanceof ApiError || err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div class="subagents-restored">
+      <p class="usage-note">
+        <Show when={props.worker.status === "restored"}>
+          Not running since a server restart
+          <Show when={interrupted()} fallback=".">
+            {(at) => (
+              <>
+                ; it was mid-task at{" "}
+                <span class="text-mono" title={new Date(at()).toISOString()}>
+                  {asOfClock(at())}
+                </span>
+                , and that turn never finished.
+              </>
+            )}
+          </Show>
+        </Show>
+        <Show when={props.worker.resumable}>
+          {props.worker.status === "restored" ? " " : ""}Resuming starts it idle; nothing is sent to it.
+        </Show>
+      </p>
+      <Show when={props.worker.resumable}>
+        <button type="button" class="button button-sm" disabled={busy()} aria-busy={busy() ? "true" : undefined} onClick={() => void resume()}>
+          {busy() ? "Resuming…" : "Resume Worker"}
+        </button>
+      </Show>
+      <Show when={error()}>
+        {(message) => (
+          <p class="usage-note subagents-restored-error" role="alert">
+            Couldn't resume {props.name}. {message()} Nothing else changed.
+          </p>
+        )}
+      </Show>
+    </div>
+  );
+}
+
 /** A worker's status chip, worded as on the Agents page; only a live-sourced working one pulses. */
 function StatusChip(props: { worker: WorkerInfo; liveSource: boolean }) {
   const status = () => memberStatus({ worker: props.worker } as TeamMember, props.liveSource);
@@ -367,13 +441,14 @@ function WorkerMeta(props: { worker: WorkerInfo; liveSource: boolean; class: str
   const provider = () => props.worker.provider;
   const model = () => compactModel(props.worker.model);
   const usage = () => workerUsage(props.worker);
+  const unavailable = () => !usage() && usageUnavailable(props.worker);
   const failed = () => memberStatus({ worker: props.worker } as TeamMember, props.liveSource).failed;
   /** Without a live source every row reads "as of" its last update. */
   const at = () => asOf(props.worker) ?? (props.liveSource ? undefined : props.worker.lastActivity);
   const iso = (t: number) => new Date(t).toISOString();
   const lead = () => provider() || model() || usage();
   return (
-    <Show when={lead() || at() !== undefined || failed()}>
+    <Show when={lead() || unavailable() || at() !== undefined || failed()}>
       <span class={`${props.class} meta-line`}>
         <Show when={provider()}>
           {(p) => <span>{p()}</span>}
@@ -402,13 +477,19 @@ function WorkerMeta(props: { worker: WorkerInfo; liveSource: boolean; class: str
             </>
           )}
         </Show>
+        <Show when={unavailable()}>
+          <Show when={provider() || model()}>
+            <MetaSep />
+          </Show>
+          <span title="Its transcript couldn't be read, and it reported nothing before the restart.">usage unavailable</span>
+        </Show>
         <Show when={at()}>
           {(t) => (
             <>
-              <Show when={lead()}>
+              <Show when={lead() || unavailable()}>
                 <MetaSep />
               </Show>
-              <span>{lead() ? "as of" : "As of"}</span>
+              <span>{lead() || unavailable() ? "as of" : "As of"}</span>
               <span class="text-mono" title={iso(t())}>
                 {clockTime(iso(t()))}
               </span>

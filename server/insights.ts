@@ -37,6 +37,9 @@ import { collectSkills, hasSkills } from "./skills";
 import { activeBranch, parseLines } from "./transcript";
 import { LAST_KNOWN_REASON, lastKnownUsage, rememberUsage } from "./usage-last-known";
 import { workerSkills } from "./worker-skills";
+import { defaultAdapters } from "./worker-adapters";
+import { WorkerRestorer } from "./worker-restore";
+import { LEGACY_REGISTRY_ENTRY_TYPE, WORKER_MANIFEST_ENTRY_TYPE, type WorkerTranscriptAdapters } from "../pi-config/extensions/subagents/worker-transcript.ts";
 
 // Read-only views over what the user's pi extensions leave on disk (sources and shapes:
 // docs/insights-research.md "Data sources"). The one writer is refreshUsageInsight, which
@@ -285,6 +288,8 @@ function lastKnown(p: UsageProvider): UsageProvider {
 // topic-outline snapshot, compactions. One parse per (mtime, size), active branch only.
 
 const TEAM_ENTRY = "subagents-team-v1";
+/** The durable per-worker records the protocol fold reads (readWorkerManifests). */
+const WORKER_RECORD_TYPES: ReadonlySet<unknown> = new Set([WORKER_MANIFEST_ENTRY_TYPE, LEGACY_REGISTRY_ENTRY_TYPE]);
 /** The explain extension's completion entry; server/transcript.ts turns it into a report row. */
 const EXPLAIN_ENTRY = "explain-doc";
 const TEAM_ID = /^team_\d+$/;
@@ -315,6 +320,10 @@ interface SessionFacts {
   usage: { main: ModelSpendTotal; models: ModelSpendTotal[] };
   /** Which skills the branch's prompt offered, and which were loaded: see skills.ts. */
   skills: SessionSkills;
+  /** The durable worker records (registry/manifest entries) on EVERY branch, in file order, and
+      the ones on the active branch: what worker-restore.ts rebuilds workers from when nothing
+      publishes them live. Only these entries are kept, never the whole file. */
+  workerRecords: { all: Rec[]; active: Rec[] };
 }
 
 const FACTS_MAX = 64;
@@ -517,6 +526,9 @@ function extractFacts(text: string): SessionFacts {
   const entries = parseLines(text);
   const header = entries.find((e) => e.type === "session");
   const branch = activeBranch(entries);
+  const isWorkerRecord = (e: Rec) => e.type === "custom" && WORKER_RECORD_TYPES.has(e.customType);
+  const branchIds = new Set(branch.map((e) => e.id));
+  const allRecords = entries.filter(isWorkerRecord);
   for (const e of branch) {
     if (e.type === "custom" && e.customType === TEAM_ENTRY) addTeamEntry(teams, e.data);
     else if (e.type === "custom" && e.customType === "topic-outline") {
@@ -557,10 +569,11 @@ function extractFacts(text: string): SessionFacts {
     sessionId: (header ? str(header.id) : undefined) ?? null,
     usage: { main, models },
     skills: collectSkills(branch),
+    workerRecords: { all: allRecords, active: allRecords.filter((e) => branchIds.has(e.id)) },
   };
 }
 
-const EMPTY_FACTS: SessionFacts = { teams: [], reports: new Map(), outline: null, outlines: [], compactions: [], rewinds: [], explanations: [], sessionId: null, usage: { main: zeroSpend(""), models: [] }, skills: { offered: [], used: [] } };
+const EMPTY_FACTS: SessionFacts = { teams: [], reports: new Map(), outline: null, outlines: [], compactions: [], rewinds: [], explanations: [], sessionId: null, usage: { main: zeroSpend(""), models: [] }, skills: { offered: [], used: [] }, workerRecords: { all: [], active: [] } };
 
 async function sessionFacts(path: string): Promise<SessionFacts> {
   try {
@@ -586,7 +599,7 @@ async function sessionFacts(path: string): Promise<SessionFacts> {
 
 const FRESH_MS = 15_000;
 const FUTURE_SLACK_MS = 5 * 60_000;
-const WORKER_STATUSES = new Set<WorkerStatus>(["starting", "running", "waiting", "stopping", "done", "error", "killed"]);
+const WORKER_STATUSES = new Set<WorkerStatus>(["starting", "running", "waiting", "stopping", "done", "error", "killed", "restored"]);
 const WORKER_ALIASES: Record<string, WorkerStatus> = {
   busy: "running",
   working: "running",
@@ -597,8 +610,9 @@ const WORKER_ALIASES: Record<string, WorkerStatus> = {
   failed: "error",
   stopped: "killed",
 };
-/** Settled statuses, same set working-subagent-count.ts treats as not working. */
-const IDLE = new Set<WorkerStatus>(["waiting", "done", "error", "killed"]);
+/** Settled statuses, same set working-subagent-count.ts treats as not working. A restored worker
+    has no process at all, so it is idle too. */
+const IDLE = new Set<WorkerStatus>(["waiting", "done", "error", "killed", "restored"]);
 
 function workerStatus(v: unknown): WorkerStatus {
   const s = typeof v === "string" ? v.trim().toLowerCase() : "";
@@ -621,10 +635,13 @@ function decodeUsage(v: unknown): TokenUsage | undefined {
 export function decodeUsageTotal(presence: Rec | undefined): TokenUsageTotal | undefined {
   if (!isRec(presence?.workerUsage)) return undefined;
   const usage = decodeUsage(presence.workerUsage);
-  return usage ? { ...usage, workers: count(presence.workerUsage.workers) } : undefined;
+  const asOf = num(presence.workerUsage.asOf);
+  return usage ? { ...usage, workers: count(presence.workerUsage.workers), ...(asOf !== undefined ? { asOf } : {}) } : undefined;
 }
 
-function decodeWorker(w: unknown): WorkerInfo | null {
+/** `hosted`: the record is one of this server's own runtimes, the only place Sova can resume a
+    restored worker. Anyone else's `resumable` (a TUI's) is dropped. */
+function decodeWorker(w: unknown, hosted: boolean): WorkerInfo | null {
   if (!isRec(w) || typeof w.id !== "string") return null;
   const status = workerStatus(w.status);
   const out: WorkerInfo = { id: w.id, name: str(w.name) ?? w.id, status, working: !IDLE.has(status) };
@@ -651,12 +668,22 @@ function decodeWorker(w: unknown): WorkerInfo | null {
   if (w.outcome === "success" || w.outcome === "error" || w.outcome === "aborted") out.outcome = w.outcome;
   const usage = decodeUsage(w.usage);
   if (usage) out.usage = usage;
+  // Restored workers (subagents extension): where their number came from, and since when. The
+  // record's "none" is the wire's "unavailable": no number, and the pane must not read 0.
+  const source = w.usageSource === "none" ? "unavailable" : w.usageSource;
+  if (source === "transcript" || source === "snapshot" || source === "unavailable") out.usageSource = source;
+  if (out.usageSource === "unavailable") delete out.usage;
+  const asOf = num(w.usageAsOf);
+  if (asOf !== undefined && out.usageSource !== "unavailable") out.usageAsOf = asOf;
+  const interrupted = num(w.interruptedAt);
+  if (interrupted !== undefined) out.interruptedAt = interrupted;
+  if (hosted && w.resumable === true) out.resumable = true;
   return out;
 }
 
-export function decodeWorkers(presence: Rec | undefined): WorkerInfo[] {
+export function decodeWorkers(presence: Rec | undefined, hosted = false): WorkerInfo[] {
   if (!Array.isArray(presence?.workers)) return [];
-  return presence.workers.map(decodeWorker).filter((w: WorkerInfo | null): w is WorkerInfo => w !== null);
+  return presence.workers.map((w: unknown) => decodeWorker(w, hosted)).filter((w: WorkerInfo | null): w is WorkerInfo => w !== null);
 }
 
 function sessionState(presence: Rec | undefined, session: Rec): LiveAgentSession["state"] {
@@ -697,7 +724,7 @@ async function liveSession({ sessionFile, pid, rec }: RawLiveRecord): Promise<Li
   const presence = isRec(rec.presence) ? rec.presence : undefined;
   const heartbeat = num(rec.heartbeat) ?? 0;
   const age = Date.now() - heartbeat;
-  const workers = decodeWorkers(presence);
+  const workers = decodeWorkers(presence, pid === process.pid);
   const wc = isRec(presence?.workerCounts) ? presence.workerCounts : null;
   const workerCounts = wc
     ? { total: count(wc.total), working: count(wc.working), waiting: count(wc.waiting), done: count(wc.done), error: count(wc.error), killed: count(wc.killed) }
@@ -831,6 +858,13 @@ async function explanations(facts: SessionFacts): Promise<ExplanationInfo[]> {
   return sortExplanations([...byId.values()]);
 }
 
+/** The adapters restored workers are read with; tests swap them (setWorkerAdapters). */
+let adapters: () => WorkerTranscriptAdapters = defaultAdapters;
+const restorer = new WorkerRestorer(() => adapters());
+export function setWorkerAdapters(next: WorkerTranscriptAdapters | null): void {
+  adapters = next ? () => next : defaultAdapters;
+}
+
 /** `path` must already be validated with resolveSessionPath(). Never throws. */
 export async function getSessionInsight(path: string): Promise<SessionInsight> {
   const facts = await sessionFacts(path);
@@ -841,8 +875,11 @@ export async function getSessionInsight(path: string): Promise<SessionInsight> {
     live = undefined;
   }
   const presence = isRec(live?.rec.presence) ? live.rec.presence : undefined;
-  const workers = live ? decodeWorkers(presence) : null;
-  const usageTotal = live ? decodeUsageTotal(presence) : undefined;
+  // Nothing publishes this session's workers: rebuild them from its own durable records, all
+  // restored or ended, none working (worker-restore.ts).
+  const restored = live || facts.workerRecords.all.length === 0 ? null : await restorer.restore(facts.workerRecords.all, facts.workerRecords.active);
+  const workers = live ? decodeWorkers(presence, live.pid === process.pid) : restored && restored.workers.length > 0 ? restored.workers : null;
+  const usageTotal = live ? decodeUsageTotal(presence) : restored?.usageTotal;
   const usage = buildUsage(facts, workers, usageTotal);
   // A worker's own transcript is the only record of what it loaded (see server/worker-skills.ts).
   // mtime-cached, because this endpoint is polled every 3s while the pane is open.
@@ -870,15 +907,20 @@ function buildUsage(
   workers: WorkerInfo[] | null,
   usageTotal: TokenUsageTotal | undefined,
 ): SessionUsage | undefined {
-  const byKey = new Map<string, { t: ModelSpendTotal; origin: SpendOrigin }>();
+  const byKey = new Map<string, { t: ModelSpendTotal; origin: SpendOrigin; asOf?: number }>();
   for (const m of facts.usage.models) byKey.set(`main:${m.model}`, { t: { ...m }, origin: "main" });
+  const unavailable: string[] = [];
   for (const w of workers ?? []) {
+    if (w.usageSource === "unavailable") unavailable.push(w.id); // unknown, which is not 0
     if (!w.usage) continue; // nothing spent yet / older pi-config
     const origin: SpendOrigin = w.teamId ? "team" : "subagents";
     const model = w.model || "unknown";
     const key = `${origin}:${model}`;
     const acc = byKey.get(key) ?? { t: zeroSpend(model), origin };
     addUsage(acc.t, w.usage);
+    // A snapshot row is only as true as its oldest part: that is the time it can claim.
+    // (a Claude worker's cost alone can be one: its transcript records tokens, never cost).
+    if (w.usageAsOf !== undefined) acc.asOf = Math.min(acc.asOf ?? Infinity, w.usageAsOf);
     byKey.set(key, acc);
   }
   const order = { main: 0, subagents: 1, team: 2 } as const;
@@ -886,12 +928,13 @@ function buildUsage(
   accs.sort((a, b) => order[a.origin] - order[b.origin] || a.t.model.localeCompare(b.t.model));
   const total = zeroSpend("");
   for (const a of accs) addUsage(total, a.t);
-  if (!spentSpend(total)) return undefined;
+  if (!spentSpend(total) && unavailable.length === 0) return undefined;
   return {
     total: toUsage(total),
     main: toUsage(facts.usage.main),
-    models: accs.map((a) => spendOf(a.t, a.origin)),
+    models: accs.map((a) => ({ ...spendOf(a.t, a.origin), ...(a.asOf !== undefined ? { asOf: a.asOf } : {}) })),
     ...(usageTotal ? { workersTotal: usageTotal } : {}),
+    ...(unavailable.length > 0 ? { unavailable } : {}),
   };
 }
 

@@ -219,6 +219,7 @@ export function SessionPane(props: {
           </Match>
           <Match when={tab() === "agents"}>
             <SubagentPane
+              path={props.path}
               chatWorkers={props.chatWorkers}
               insight={props.insight}
               selected={props.selected}

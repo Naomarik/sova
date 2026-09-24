@@ -1,3 +1,5 @@
+import { claudeUsageAccumulator } from "../pi-config/extensions/claude-code/transcript-adapter.ts";
+import { piUsageAccumulator } from "../pi-config/extensions/subagents/adapters/pi.ts";
 import { parseLines } from "./transcript";
 
 /**
@@ -25,11 +27,6 @@ export interface TokenUsage {
  */
 export type UsageTally = (text: string, part: "snapshot" | "append") => TokenUsage;
 
-type Entry = Record<string, any>;
-
-const amount = (value: unknown): number =>
-  typeof value === "number" && Number.isFinite(value) && value > 0 ? value : 0;
-
 /** Zero is "nothing counted yet"; a total is only sent once something was. */
 const spent = (u: TokenUsage): boolean => u.input + u.output + u.cacheRead + u.cacheWrite > 0;
 
@@ -40,65 +37,34 @@ export function totalOf(u: TokenUsage): TokenUsage | undefined {
   return { input: u.input, output: u.output, cacheRead: u.cacheRead, cacheWrite: u.cacheWrite, ...(cost === undefined ? {} : { cost }) };
 }
 
-function tally(add: (total: TokenUsage, entries: Entry[], seen: Set<string>) => void): UsageTally {
-  let total: TokenUsage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0 };
-  let seen = new Set<string>();
+/**
+ * A tally over one of the worker-transcript protocol's usage accumulators — the same parse the
+ * subagents extension and restored workers use (pi-config/extensions/subagents/adapters/pi.ts,
+ * claude-code/transcript-adapter.ts), so a header ticking live and a worker rebuilt after a
+ * restart can't count one file two ways.
+ */
+function tally(acc: { add(entries: readonly unknown[]): void; usage(): TokenUsage; reset(): void }): UsageTally {
   return (text, part) => {
-    if (part === "snapshot") {
-      total = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0 };
-      seen = new Set<string>();
-    }
-    add(total, parseLines(text), seen);
-    return { ...total };
+    if (part === "snapshot") acc.reset();
+    acc.add(parseLines(text));
+    const u = acc.usage();
+    return { input: u.input, output: u.output, cacheRead: u.cacheRead, cacheWrite: u.cacheWrite, cost: u.cost ?? 0 };
   };
 }
 
 /**
- * pi sessions: every assistant message's own `usage` plus every `usage` entry, deduplicated by id.
- * This is what the session has spent, including branches a rewind later abandoned —
- * unlike the context-fill number in transcript.ts, which is the last message only.
+ * pi sessions: every assistant message's own `usage`, every top-level `usage` entry (pi 0.86.0+
+ * work outside the conversation, e.g. kind "cache_warm"), and the usage a tool result, compaction
+ * or branch summary carries — deduplicated by entry id. This is what the session has spent,
+ * including branches a rewind later abandoned, unlike the context-fill number in transcript.ts,
+ * which is the last message only. A forked session's copied history is not its spend and is
+ * left out (the accumulator's fork boundary).
  */
-export const piUsageTally = (): UsageTally =>
-  tally((total, entries, seen) => {
-    for (const e of entries) {
-      // Assistant messages, plus pi 0.86.0+ top-level `usage` entries: work outside the
-      // conversation (e.g. kind "cache_warm") that still counts towards session totals.
-      const u = e.type === "usage" ? e.usage : e.type === "message" && e.message?.role === "assistant" ? e.message.usage : undefined;
-      if (!u) continue;
-      const id = typeof e.id === "string" ? e.id : undefined;
-      if (id) {
-        if (seen.has(id)) continue;
-        seen.add(id);
-      }
-      total.input += amount(u.input);
-      total.output += amount(u.output);
-      total.cacheRead += amount(u.cacheRead);
-      total.cacheWrite += amount(u.cacheWrite);
-      total.cost = (total.cost ?? 0) + amount(u.cost?.total);
-    }
-  });
+export const piUsageTally = (): UsageTally => tally(piUsageAccumulator());
 
 /**
- * Claude Code sessions: assistant lines deduplicated by `message.id`, which CC
- * repeats across lines with the same (already cumulative for that message) usage.
- * Sidechain lines count too: a worker's own Task agents are its spend. CC's JSONL
- * carries no cost, so none is reported.
+ * Claude Code sessions: assistant lines deduplicated by `message.id`, which CC repeats across
+ * lines with the same (already cumulative for that message) usage. Sidechain lines count too: a
+ * worker's own Task agents are its spend. CC's JSONL carries no cost, so none is reported.
  */
-export const claudeUsageTally = (): UsageTally =>
-  tally((total, entries, seen) => {
-    for (const e of entries) {
-      if (e.type !== "assistant") continue;
-      const message = e.message;
-      const u = message?.usage;
-      if (!u) continue;
-      const id = typeof message.id === "string" ? message.id : typeof e.uuid === "string" ? e.uuid : undefined;
-      if (id) {
-        if (seen.has(id)) continue;
-        seen.add(id);
-      }
-      total.input += amount(u.input_tokens);
-      total.output += amount(u.output_tokens);
-      total.cacheRead += amount(u.cache_read_input_tokens);
-      total.cacheWrite += amount(u.cache_creation_input_tokens);
-    }
-  });
+export const claudeUsageTally = (): UsageTally => tally(claudeUsageAccumulator());

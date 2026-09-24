@@ -16,7 +16,7 @@ From strongest to weakest evidence that a feature exists:
 2. **A test that exercises it**, at that revision. Strong, and it tells you the intended edges.
 3. **The README at that revision.** Usually right, because it's maintained, but it has described
    working-tree features before they were committed. Check it against 1.
-4. **`spec/*.md`.** A design contract. Written before the code, and sometimes for code that never
+4. **`.sova/spec/`.** A design contract. Written before the code, and sometimes for code that never
    came. A spec section is *what it should be*, not *what it is*. Treat it as a plan until 1 confirms.
 5. **`pi-config/extensions/*/README.md`.** Accurate for the extension itself, but the extension
    running in the TUI doesn't mean Sova surfaces it.
@@ -59,7 +59,7 @@ reader skims and put it in a note, a table column, or a footer.
 
 For something in the spec you haven't confirmed in code:
 
-> The spec describes a Timeline tab (`spec/13-timeline.md`). Not verified in code for this note.
+> The spec describes a Timeline tab (`.sova/spec/claims/chat/timeline.md`). Not verified in code for this note.
 
 Never write "supports", "includes", or "lets you" about the second kind.
 

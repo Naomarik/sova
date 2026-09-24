@@ -7,12 +7,12 @@
 
    Part A · element defaults, scrollbars, code, focus
    Part B · system components, ported from fold-ai-dev.css (v1.8.0) — only the
-            ones spec/overview.md uses; same class names, same rules
+            ones the design notes use; same class names, same rules
    Part C · Sova components (app shell, session list, transcript, composer)
    Part D · utilities
 
    Naming stays flat and hyphenated: .component, .component-variant.
-   Every class here is described in spec/overview.md.
+   Every class here is described in the design notes (.sova/spec/claims/design/overview.md).
    ============================================================================= */
 
 

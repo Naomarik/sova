@@ -27,8 +27,7 @@ Calm and concrete does not mean reluctant to explain why the tool is useful.
   optional, and link its setup instructions.
 - Read the installer. A command that installs but does not launch must not be described as
   running the app. Keep the published release URL unless a new release has actually shipped.
-- Check current names against code. New state uses `sova`; legacy `pi-web` spellings remain for
-  compatibility. Do not repeat old migration plans as current facts.
+- Check current names against code: state, keys and paths all use `sova`.
 
 ## Editing rules
 

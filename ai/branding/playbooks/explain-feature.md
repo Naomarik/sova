@@ -20,7 +20,7 @@ Five beats, in this order. Most explanations fit in five sentences to five short
   find the spec, write "the spec describes" and stop there.
 - **One noun per concept, introduced once.** If the spec calls it a group and the UI calls it a
   group, don't call it a folder or a collection for variety.
-- **Quote copy exactly.** The strings in `spec/09-copy-deck.md` and on screen are the copy.
+- **Quote copy exactly.** The strings in `.sova/spec/claims/design/copy-deck.md` and on screen are the copy.
   Paraphrasing a button label makes the reader hunt.
 - **Say what it isn't when it's close to something it isn't.** A workspace is not a project.
   A worker is not a session. Watching is not chatting.
@@ -32,7 +32,7 @@ Five beats, in this order. Most explanations fit in five sentences to five short
 
 > **Archive.** A session Sova started can be moved out of the top of the list with `Archive
 > Session` in the session head. The transcript file isn't moved or changed; the session's id is
-> added to `~/.pi/agent/pi-web/archived-sessions.json`, and the row moves under Archive in the
+> added to `~/.pi/agent/sova/archived-sessions.json`, and the row moves under Archive in the
 > sidebar, grouped by date. `Unarchive Session` reverses it. A session open in a TUI can't be
 > archived while it's live; the button is disabled with "Open in a TUI. It stays on top while
 > live."
@@ -43,5 +43,4 @@ Five beats, in this order. Most explanations fit in five sentences to five short
 
 That example was first drafted from the copy deck alone and named the wrong file; reading the
 route's handler corrected it. Before publishing it, the writer would also open the app and press
-the button. Do the same. (The archive file is under `~/.pi/agent/pi-web/` at this revision; the
-directory keeps that name until the state migration lands — see [naming.md](../naming.md).)
+the button. Do the same.

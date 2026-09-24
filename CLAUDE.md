@@ -4,24 +4,8 @@ Webapp interface for the pi coding agent (npm: `@earendil-works/pi-coding-agent`
 Single local user. Goals: list all sessions, view transcripts, chat in webapp-owned sessions,
 live-watch sessions that are open in the CLI/TUI, spawn new sessions.
 
-The remote is `github.com/Naomarik/sova` (renamed from `Naomarik/pi-web`). The worktree is
-`~/webapps/sova` and the state directory is `~/.pi/agent/sova/`: both moved on 2026-09-22, and both
-are written at the new name ONLY. What is still spelled `pi-web` is read-compatibility for data
-already written, and it is load-bearing — transcripts are never rewritten, so deleting one of these
-orphans real data:
-- `~/.pi/agent/pi-web/...` paths embedded in transcripts and session headers (attachments, remote
-  placeholder cwds, connect dirs) → `unlegacyStatePath` (`server/state-root.ts`). There is no
-  fallback for the state root itself: a half-finished move must fail loudly, not read old data.
-- session cwds recorded under `~/webapps/pi-web` (98 of them here) → `<state root>/path-map.json`,
-  applied by `movedPath` (`server/path-map.ts`) at the boundaries that OPEN or LIST a folder:
-  `resolveOpenCwd`, `/api/files` and `/api/folders`. Never at display: a session's stored cwd is
-  its identity and stays as recorded. Placeholder cwds are refused as remote BEFORE the map runs,
-  so a remote session can never be re-read as a moved local folder.
-- `pi-web:*` browser keys → new `sova:*` keys written, legacy read and mirrored
-  (`src/lib/storage-keys.ts`); `pi-web-theme/v1` still accepted beside `sova-theme/v1`.
-- the `pi-web-rewind` / `pi-web-fanout-member` session markers are still WRITTEN legacy-named on
-  purpose (a rollback must be able to read them); both spellings parse.
-A move of the worktree breaks the absolute symlinks in
+The remote is `github.com/Naomarik/sova`. The worktree is `~/webapps/sova` and the state
+directory is `~/.pi/agent/sova/`. A move of the worktree breaks the absolute symlinks in
 `~/.pi/agent/` (`keybindings.json`, `models.json`, `vision-delegate.json`), so
 re-run `pi-config/install.sh` after one (`--check` verifies them without changing anything).
 
@@ -32,8 +16,7 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
 - `src/` — SolidJS + TS frontend (Vite, vite-plugin-solid; HMR = live reload). Owned by **frontend**, except `src/design/`.
 - `src/design/`, `public/`, `.sova/spec/claims/` + `.sova/spec/manifest.json` — design tokens, base CSS,
   fonts/icons, and the product documentation (the UX spec). Owned by **designer**.
-- `.sova/spec/` — the product documentation and its tools; see **Product documentation** below. `spec/*.md`
-  are redirects from the old paths, and `spec/brainstorms/` is research. Neither is a requirement.
+- `.sova/spec/` — the product documentation and its tools; see **Product documentation** below.
 - `.claude/skills/` — project skills, registered for pi by `.pi/settings.json` (`"skills": ["../.claude/skills"]`;
   the folder is also trusted in `~/.pi/agent/trust.json`, or pi prompts each session).
   `fold-ai-dev-design/` — the design system skill (copied from foldaidev). READ IT.
@@ -59,10 +42,6 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   = the spec minor mode's writer (one backend/model/effort plus an optional fallback, or `null`: the
   session writes the spec itself), written by Settings → Modes → Spec and re-read the same way by
   every session with spec on, in either major mode).
-  The major mode `delegate` was `claude-heavy` until 2026-09. `claude-heavy` is a permanent READ
-  alias (`parseMode`/`LEGACY_MODE_ALIASES` in `state.ts`: `/mode`, `--major`, `mode.json`, session
-  snapshots, `POST /api/mode`) and is never written; recorded transcript markers are displayed as
-  written ("Mode → claude-heavy"), never relabelled.
   Not covered by Sova's tsconfig, with these exceptions: the server imports
   `pi-config/extensions/mode/state.ts`, `minor.ts`, `delegate.ts` and `spec.ts` (`server/mode-state.ts`,
   `server/delegate.ts`, `server/spec-settings.ts`; hence `allowImportingTsExtensions`),
@@ -80,10 +59,8 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   model-discovery argv to the extension's; the server itself never imports claude-code. `argv.ts` is also the quoting boundary: every path that reaches a far shell is
   single-quote-escaped there, and callers spawn its argv without a local shell. The web mode switch calls that extension's
   `/mode` command handler directly (`ChatSession.applyMode`), so its arguments are a contract too.
-  Sova has no sshfs/mount support (removed 2026-09-22): a remote session's cwd is always its
-  local placeholder, every tool runs on the target, and a session stored under the old mount root
-  `~/.pi/agent/mounts/<target>` is refused at open (`parseLegacyMountCwd`, a permanent guard) rather
-  than opened as a local session in an empty directory. The watcher does NOT watch
+  Sova has no sshfs/mount support: a remote session's cwd is always its local placeholder, and
+  every tool runs on the target. The watcher does NOT watch
   `pi-config/extensions/remote/**`, so edits there (argv.ts) don't restart the running
   server — it keeps the old code until its next restart.
   Tests run per extension (see `pi-config/README.md`). `pi-config/install.sh` must stay standalone,
@@ -130,18 +107,11 @@ Rules:
 ## Product documentation
 
 `.sova/spec/` is the requirement for what Sova does: `manifest.json` plus `claims/<ns>/<name>.md`,
-under `§` IDs. The committed root `spec/*.md` docs moved there on 2026-09-23 with their prose
-intact; only their headings changed, to carry IDs. Those records carry `authority: migrated`
-and `evidence: unreviewed`: the text is the requirement, and nothing has checked that the code
-does it. Verify the implementation before you claim a feature.
-- Old paths and `§N` citations resolve through `.sova/spec/migration/legacy-map.json`. That
-  covers the ones in source comments, which stay as written. The exact original bytes are at
-  `git show c4d7993:spec/<file>`. Edits to those docs that were uncommitted at migration time
-  (and the untracked `spec/04i-playbooks.md`) are the draft `.sova/spec/drafts/legacy-working/`,
-  not the current docs. Drafts, reviews and the pilot are local only (`.sova/spec/.gitignore`);
-  commit by explicit path, as `.sova/spec/README.md` shows, never `git add -A`.
-- The pilot's candidates (`.sova/spec/pilot/`; the archived copy is in Git history) are a historical
-  experiment, not the requirement.
+under `§` IDs. A record labelled `authority: migrated`, `evidence: unreviewed` carries prose that
+is the requirement, but nothing has checked that the code does it. Verify the implementation
+before you claim a feature.
+- Drafts and reviews are local only (`.sova/spec/.gitignore`); commit by explicit path, as
+  `.sova/spec/README.md` shows, never `git add -A`.
 - **Before a task that changes behavior, follow the spec discipline.** If your system prompt
   already includes the `# Minor mode: spec` block, follow it without rereading. Otherwise read
   `pi-config/extensions/mode/spec-mode.md`, the same text, and follow it. It applies in Sova
@@ -193,7 +163,7 @@ Pi package on disk: `/home/user/.local/share/mise/installs/node/25.2.1/lib/node_
   (`SessionEntry` union, `dist/core/session-manager.d.ts:117`).
   Cheap listing: read only the first few lines; first user `message` = title; first `model_change` = model.
   Docs: `docs/session-format.md`.
-- **Sova writes `custom` entries with `customType: "pi-web-rewind"`** (`data: {targetId, fromLeafId}`)
+- **Sova writes `custom` entries with `customType: "sova-rewind"`** (`data: {targetId, fromLeafId}`)
   into webapp-owned session files. `navigateTree(id, {summarize:false})` only moves the in-memory
   leaf and `SessionManager.open()` takes the file's LAST entry as the leaf, so without this marker a
   reload or restart reverts a rewind. It is invisible (normalizeEntry renders unknown custom types as

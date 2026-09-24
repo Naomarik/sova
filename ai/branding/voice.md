@@ -1,7 +1,7 @@
 # Voice
 
 > Part of [Sova branding](overview.md). The product's UI copy is governed by the design skill's
-> Voice section and by [`spec/09-copy-deck.md`](../../spec/09-copy-deck.md). This page is about prose
+> Voice section and by [`.sova/spec/claims/design/copy-deck.md`](../../.sova/spec/claims/design/copy-deck.md). This page is about prose
 > written *about* Sova: README, notes, release notes, a website.
 
 **Superseded in part.** The pillars, the use/avoid words, and the shape rules now live in
@@ -54,13 +54,6 @@ A page that only lists what works reads like a pitch, and this is not a pitch.
 - Relative dates only inside the app. In prose, write the date: "verified 2026-09-22 at `d3a6963`".
 - Tables for facts that line up. Prose for anything with a "because".
 - No emoji, no exclamation marks, no rhetorical questions.
-- **Keep the old `pi-web` name where it is the true one.** The state directory moved on
-  2026-09-22: new data is written under `~/.pi/agent/sova/`, and what is still spelled `pi-web` is
-  read-compatibility for data already written — the paths embedded in old transcripts and session
-  headers, the `pi-web:*` browser keys (read and mirrored to `sova:*`), the `pi-web-theme/v1`
-  schema, and the `pi-web-rewind` and `pi-web-fanout-member` session markers, which are still
-  written legacy-named on purpose so a rollback can read them. Writing `pi-web` in a *new* path is
-  wrong; naming one where it is still the recorded truth is right. See [naming.md](naming.md).
 
 ## Two examples
 

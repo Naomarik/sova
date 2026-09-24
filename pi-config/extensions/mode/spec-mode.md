@@ -15,7 +15,7 @@ Every behavior change is spec'd. Exempt: work changing no behavior (refactor, te
 Before coding:
 1. Name the root ID(s) and why. Run `scope`, and `impact` on anything others require. Work from the returned passages as written.
 2. Keep the frontier in view: uninvestigated requires, dangling edges, unread passages, missing code. Exit 0 means the declared closure was delivered, not that the context is complete; 1, relevant gaps; 2, an unreadable spec, except `manifest-not-found`: no spec yet, so start a draft.
-3. Reconcile what the task relies on against source. Labels are declared, never proof: `migrated` text is the requirement with its implementation unreviewed; `candidate` is a proposal. Old docs that redirect into `.sova/spec/` are not a second authority. A test found by name is candidate evidence until you read its assertions.
+3. Reconcile what the task relies on against source. Labels are declared, never proof: `migrated` text is the requirement with its implementation unreviewed; `candidate` is a proposal. A test found by name is candidate evidence until you read its assertions.
 4. Behavior no claim covers gets a new claim in a feature draft before coding.
 
 Documentation changes only through drafts, never by editing current `claims/` or `manifest.json`: `node "$core/sova-spec-draft.mjs" <command> --root <project root> --json`.

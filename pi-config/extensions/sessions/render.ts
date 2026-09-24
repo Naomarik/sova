@@ -74,13 +74,15 @@ export function workerGlyph(status: string): string {
   const state = workerState(s);
   // workerState() maps unknown text to "running"; only real running words get ●.
   if (state === "running" && !/^(running|busy|working|active)$/.test(s)) return "·";
+  // Restored after a restart: no process, so never the running dot.
+  if (state === "restored") return "○";
   return state === "waiting" ? "◇" : state === "done" ? "✓" : state === "error" || state === "killed" ? "✗" : "●";
 }
-const WORKER_COLOR: Record<string, Color> = { "●": "accent", "◇": "warning", "✓": "success", "✗": "error", "·": "dim" };
+const WORKER_COLOR: Record<string, Color> = { "●": "accent", "◇": "warning", "✓": "success", "✗": "error", "·": "dim", "○": "dim" };
 
 /** Running first, then waiting, then finished newest first; ties keep input order. */
 export function sortWorkers(workers: readonly WorkerEntry[]): WorkerEntry[] {
-  const rank = (w: WorkerEntry) => { const g = workerGlyph(w.status); return g === "◇" ? 1 : g === "✓" || g === "✗" ? 2 : 0; };
+  const rank = (w: WorkerEntry) => { const g = workerGlyph(w.status); return g === "◇" || g === "○" ? 1 : g === "✓" || g === "✗" ? 2 : 0; };
   const at = (w: WorkerEntry) => w.lastActivity ?? w.endedAt ?? w.startedAt ?? 0;
   return workers.map((w, i) => ({ w, i })).sort((a, b) => rank(a.w) - rank(b.w)
     || (rank(a.w) === 2 ? at(b.w) - at(a.w) : 0) || a.i - b.i).map(x => x.w);

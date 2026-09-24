@@ -25,11 +25,14 @@ export type { FocusTarget };
 
 export const SCHEMA_VERSION = 2;
 export type SessionState = "working" | "idle" | "needs-input" | "error";
-export type WorkerState = "starting" | "running" | "waiting" | "stopping" | "done" | "error" | "killed";
+/** "restored": a worker known only from its durable record after a restart (no process; resumable on demand). */
+export type WorkerState = "starting" | "running" | "waiting" | "stopping" | "done" | "error" | "killed" | "restored";
 export type OutlineState = "none" | "drafting" | "fresh" | "updating" | "stale" | "failed-keeping-last";
 
 export const SESSION_STATES: readonly SessionState[] = ["working", "idle", "needs-input", "error"];
-export const WORKER_STATES: readonly WorkerState[] = ["starting", "running", "waiting", "stopping", "done", "error", "killed"];
+export const WORKER_STATES: readonly WorkerState[] = ["starting", "running", "waiting", "stopping", "done", "error", "killed", "restored"];
+/** Where a restored worker's usage came from; "none" = unavailable, never 0. */
+export const WORKER_USAGE_SOURCES: readonly NonNullable<WorkerEntry["usageSource"]>[] = ["transcript", "snapshot", "none"];
 export const OUTLINE_STATES: readonly OutlineState[] = ["none", "drafting", "fresh", "updating", "stale", "failed-keeping-last"];
 export const SESSION_MODES: readonly NonNullable<SessionMeta["mode"]>[] = ["tui", "rpc", "json", "print"];
 export const WORKER_OUTCOMES: readonly NonNullable<WorkerEntry["outcome"]>[] = ["success", "error", "aborted"];
@@ -87,6 +90,16 @@ export interface WorkerEntry {
   outcome?: "success" | "error" | "aborted";
   /** Token counts this worker has used so far. Counts only, never text; cost in USD when the backend reports one. */
   usage?: WorkerUsage;
+  /** Rebuilt from the owner session's durable record after a restart; no process runs for it. */
+  restored?: true;
+  /** For a restored worker: where `usage` came from ("none" = unavailable, never 0). */
+  usageSource?: "transcript" | "snapshot" | "none";
+  /** For usageSource "snapshot" (or a snapshot cost): when the snapshot was taken, ms epoch. */
+  usageAsOf?: number;
+  /** A restored worker that died mid-turn: its last known activity, ms epoch. */
+  interruptedAt?: number;
+  /** A restored worker its owner can bring back (agent_resume). */
+  resumable?: boolean;
 }
 
 /** Cumulative token counts. Non-negative integers; `cost` is USD and may be fractional. */
@@ -94,9 +107,15 @@ export interface WorkerUsage { input: number; output: number; cacheRead: number;
 
 /** Σ across every worker the session ever spawned, including ones retention dropped.
  *  `workers` is that lifetime count, so it can exceed `workers.length` and workerCounts.total. */
-export interface WorkerUsageTotal extends WorkerUsage { workers: number }
+export interface WorkerUsageTotal extends WorkerUsage {
+  workers: number;
+  /** Newest snapshot time among the parts of the Σ that came from a snapshot, ms epoch. */
+  asOf?: number;
+  /** How many workers in the Σ are restored ones (rebuilt after a restart). */
+  restored?: number;
+}
 
-/** working = starting|running|stopping (and unknown statuses). */
+/** working = starting|running|stopping (and unknown statuses). A restored worker counts in total only. */
 export interface WorkerCounts { total: number; working: number; waiting: number; done: number; error: number; killed: number }
 
 export interface Outline {
@@ -196,7 +215,8 @@ function parseUsage(value: unknown): WorkerUsage | undefined {
 function parseUsageTotal(value: unknown): WorkerUsageTotal | undefined {
   const usage = parseUsage(value);
   if (!usage || !isObj(value)) return;
-  return { ...usage, workers: count(value.workers) ? value.workers : 0 };
+  return compact({ ...usage, workers: count(value.workers) ? value.workers : 0,
+    asOf: num(value.asOf) ? value.asOf : undefined, restored: count(value.restored) && value.restored > 0 ? value.restored : undefined });
 }
 
 function parseWorker(value: unknown): WorkerEntry | undefined {
@@ -214,6 +234,11 @@ function parseWorker(value: unknown): WorkerEntry | undefined {
     endedAt: num(value.endedAt) ? value.endedAt : undefined,
     outcome: oneOf(value.outcome, WORKER_OUTCOMES),
     usage: parseUsage(value.usage),
+    restored: value.restored === true ? true : undefined,
+    usageSource: oneOf(value.usageSource, WORKER_USAGE_SOURCES),
+    usageAsOf: num(value.usageAsOf) ? value.usageAsOf : undefined,
+    interruptedAt: num(value.interruptedAt) ? value.interruptedAt : undefined,
+    resumable: typeof value.resumable === "boolean" ? value.resumable : undefined,
   });
 }
 
@@ -371,6 +396,11 @@ export function workerState(status: string): WorkerState {
   return oneOf(s, WORKER_STATES) ?? WORKER_ALIASES[s] ?? "running";
 }
 
+/** Rebuilt after a restart with no process: never working, not finished either. */
+export function isRestoredWorker(worker: WorkerEntry): boolean {
+  return workerState(worker.status) === "restored";
+}
+
 export function isFinishedWorker(worker: WorkerEntry): boolean {
   const s = workerState(worker.status);
   return s === "done" || s === "error" || s === "killed";
@@ -381,6 +411,7 @@ export function countWorkers(workers: WorkerEntry[]): WorkerCounts {
   for (const w of workers) {
     counts.total++;
     const s = workerState(w.status);
+    if (s === "restored") continue;
     if (s === "waiting" || s === "done" || s === "error" || s === "killed") counts[s]++;
     else counts.working++;
   }
@@ -413,7 +444,7 @@ export function fit(record: LiveRecord, budget = RECORD_BUDGET): LiveRecord {
     }
     while (p.workers.length && bytes(record) > budget) {
       let index = -1;
-      for (let i = p.workers.length - 1; i >= 0; i--) if (isFinishedWorker(p.workers[i])) { index = i; break; }
+      for (let i = p.workers.length - 1; i >= 0; i--) if (isFinishedWorker(p.workers[i]) || isRestoredWorker(p.workers[i])) { index = i; break; }
       p.workers.splice(index === -1 ? p.workers.length - 1 : index, 1);
     }
   } catch { /* never throw from a writer path */ }

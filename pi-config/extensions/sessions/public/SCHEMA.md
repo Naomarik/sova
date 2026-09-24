@@ -107,7 +107,10 @@ enforce them, and the reference reader enforces them again.
 **WorkerEntry**: `id` ✔ (150), `name` ✔ (120), `status` ✔ (80, free text),
 `model` (100), `preview` (180), `backend` (32, v2), `sessionFile` (1024, v2, optional),
 `sessionId` (64, v2, optional), `effort` (32, v2, optional), `startedAt`/`lastActivity`/`endedAt`
-(ms epoch, v2), `outcome` (`success`|`error`|`aborted`, v2), `usage` (WorkerUsage, v2).
+(ms epoch, v2), `outcome` (`success`|`error`|`aborted`, v2), `usage` (WorkerUsage, v2),
+and, for a restored worker (v2, all optional): `restored` (`true`), `usageSource`
+(`transcript`|`snapshot`|`none`), `usageAsOf` (ms epoch), `interruptedAt` (ms epoch),
+`resumable` (boolean).
 `sessionFile` is the absolute path of that worker's own transcript JSONL, never its
 contents (same rule as `session.sessionFile`); consumers may read it but must never
 write to it. `sessionId` is the worker's backend session id (for `claude-code`
@@ -119,12 +122,20 @@ level, else the parent's at spawn, then the child's own reported one; `claude-co
 the resolved effort, `medium` by default). It is free text, not an enum, since the
 levels are backend-specific. Same rule: empty or over-limit ⇒ dropped, never truncated;
 absent means the writer didn't publish one (records written before it existed).
-Worker status is normalized to `starting|running|waiting|stopping|done|error|killed`,
+A **restored** worker was rebuilt after a restart from the owner session's durable
+worker record; no process runs for it. Its status is `restored` while it was alive
+at the restart (`interruptedAt` set when it died mid-turn), or its recorded ending
+(`done|error|killed`) with `restored: true` when it had already ended. `usageSource`
+says where its `usage` came from: its own transcript, the last snapshot the manager
+recorded (as of `usageAsOf`), or `none`, meaning unavailable, which must never be
+shown as 0. `resumable` is true when its owner can bring it back (idle) on demand.
+Worker status is normalized to `starting|running|waiting|stopping|done|error|killed|restored`,
 and common aliases map onto those (`busy` ⇒ running, `completed` ⇒ done, …).
 **Unknown ⇒ `running`**. `waiting` means steerable/idle. It does not mean the worker succeeded.
 
 **WorkerCounts**: `total`, `working` (starting+running+stopping+unknown),
 `waiting`, `done`, `error`, `killed`. All are required non-negative integers.
+A `restored` worker counts in `total` only: it is never working (it has no process).
 
 **WorkerUsage** (v2): `input`, `output`, `cacheRead`, `cacheWrite` (required
 non-negative integers, cumulative for that worker) and `cost` (USD, only when the
@@ -132,6 +143,8 @@ backend reports one). Counts only — a record never carries worker text beyond 
 bounded `preview`. Individual bad values read as 0 rather than dropping the worker.
 
 **WorkerUsageTotal** (v2, `presence.workerUsage`): the same fields plus `workers`,
+optional `asOf` (ms epoch: the newest snapshot time among the parts of the Σ that
+came from a snapshot) and optional `restored` (how many workers in the Σ are restored),
 and it is a **session-lifetime Σ**: it covers every worker the session ever spawned,
 including ones dropped by the writer's 40-row cap, by the manager's retention cap, or
 by `fit()`. So `workerUsage.workers` may exceed both `workers.length` and
@@ -183,7 +196,7 @@ this order:
 3. `presence.preview` truncated to 600 characters
 4. `presence.outline.overall` and `presence.outline.topics`
 5. `presence.workers[].usage`: every row's own counts, all at once
-6. `presence.workers`: finished ones (`done|error|killed`) go first regardless
+6. `presence.workers`: finished (`done|error|killed`) and `restored` ones go first regardless
    of position, then entries are removed from the end
 
 `workerCounts` and `workerUsage` still reflect every worker, so

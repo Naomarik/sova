@@ -204,6 +204,8 @@ export default function sessions(pi: ExtensionAPI, deps: SessionsDeps = {}) {
         startedAt: w.startedAt, lastActivity: w.lastActivity, endedAt: w.endedAt, outcome: w.outcome,
         // Counts only, already normalized by the snapshot decoder.
         usage: w.usage ? { ...w.usage } : undefined,
+        restored: w.restored, usageSource: w.usageSource, usageAsOf: w.usageAsOf,
+        interruptedAt: w.interruptedAt, resumable: w.resumable,
       })),
       activity, workerCounts: countWorkers(workers),
       // The Σ covers workers the 40-row cap (and retention) dropped, so it is never recomputed here.

@@ -11,6 +11,8 @@ import {
 	WorkerTranscriptAdapters,
 	noneAdapter,
 	parseJsonLines,
+	isInterrupted,
+	hasEnded,
 	readWorkerManifests,
 	resolveWorkerUsage,
 	sumWorkerUsage,
@@ -292,4 +294,31 @@ test("readWorkerManifests: newest wins per field; spec/team merge one level; leg
 	assert.equal("kind" in w, false);
 	// Without activeEntryIds no branch flag is set.
 	assert.equal(readWorkerManifests(entries).manifests.get("ag_02")?.onActiveBranch, undefined);
+});
+
+test("readWorkerManifests: a resume record clears the ending; launch is replaced whole; interrupted vs ended", () => {
+	const rec = (at: number, fields: Record<string, unknown>) => custom(WORKER_MANIFEST_ENTRY_TYPE, { v: 1, kind: "worker-manifest", workerId: "ag_04", backend: "claude-code", at, ...fields });
+	const entries = [
+		rec(1, { status: "running", launch: { systemPrompt: "a", tools: ["x"] }, spec: { cwd: "/w", taskPreview: "t", wake: true } }),
+		rec(2, { status: "waiting", settledAt: 2, taskOutcome: "success" }),
+		rec(3, { status: "error", endedAt: 3, error: "boom", taskOutcome: "error" }),
+	];
+	const ended = readWorkerManifests(entries).manifests.get("ag_04")!;
+	assert.equal(hasEnded(ended), true);
+	assert.equal(isInterrupted(ended), false);
+	assert.equal(ended.settledAt, 2);
+
+	const resumed = readWorkerManifests([...entries, rec(4, { resumedAt: 4, status: "waiting", launch: { systemPrompt: "b" } })]).manifests.get("ag_04")!;
+	assert.equal(resumed.status, "waiting");
+	assert.equal(resumed.endedAt, undefined);
+	assert.equal(resumed.error, undefined);
+	assert.equal(resumed.taskOutcome, undefined);
+	assert.equal(resumed.resumedAt, 4);
+	assert.equal(resumed.settledAt, 2);
+	assert.deepEqual(resumed.launch, { systemPrompt: "b" });
+	assert.equal(resumed.spec?.cwd, "/w");
+
+	assert.equal(isInterrupted(readWorkerManifests(entries.slice(0, 1)).manifests.get("ag_04")!), true);
+	assert.equal(isInterrupted({ status: "lost" }), true);
+	assert.equal(isInterrupted({ status: "waiting" }), false);
 });

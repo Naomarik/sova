@@ -290,10 +290,24 @@ export interface WorkerManifest {
 	ref?: WorkerTranscriptRef;
 	/** Last usage the live runner reported; source "snapshot", asOf = when. */
 	usageSnapshot?: WorkerUsage;
+	/**
+	 * running = spawned or working on a task; waiting = settled, idle. At restore,
+	 * running or lost means the worker died mid-turn (interrupted, see isInterrupted).
+	 */
 	status?: WorkerManifestStatus;
 	taskOutcome?: WorkerTurnOutcome;
 	endedAt?: number;
 	error?: string;
+	/** Last settle (ms epoch). */
+	settledAt?: number;
+	/**
+	 * When the worker was brought back idle by a resume. A record carrying it
+	 * clears status, taskOutcome, endedAt and error folded so far; its own fields
+	 * then apply.
+	 */
+	resumedAt?: number;
+	/** Extension-owned spawn spec needed to resume; opaque to every other reader. Newest replaces whole. */
+	launch?: Record<string, unknown>;
 	/** Newest record time folded in (ms epoch). */
 	at: number;
 }
@@ -381,7 +395,12 @@ function legacyRef(backend: string, sessionId: unknown, sessionFile: unknown, cw
 function mergeManifest(previous: WorkerManifest | undefined, record: WorkerManifestRecord): WorkerManifest {
 	const { kind: _kind, ...fields } = record;
 	if (!previous) return { ...fields } as WorkerManifest;
-	const merged: WorkerManifest = { ...previous, ...fields, at: Math.max(previous.at, record.at) };
+	let base = previous;
+	if (typeof record.resumedAt === "number") {
+		const { status: _s, taskOutcome: _o, endedAt: _e, error: _x, ...kept } = previous;
+		base = kept;
+	}
+	const merged: WorkerManifest = { ...base, ...fields, at: Math.max(previous.at, record.at) };
 	if (previous.spec && record.spec) merged.spec = { ...previous.spec, ...record.spec };
 	if (previous.team && record.team) merged.team = { ...previous.team, ...record.team };
 	return merged;
@@ -420,6 +439,16 @@ export function readWorkerManifests(entries: readonly unknown[], options: { acti
 		manifests.set(record.workerId, next);
 	}
 	return { manifests, refused };
+}
+
+/** The worker was mid-turn when its owner went away: status still running, or lost. */
+export function isInterrupted(manifest: Pick<WorkerManifest, "status">): boolean {
+	return manifest.status === "running" || manifest.status === "lost";
+}
+
+/** Terminal: the worker's process had ended on its own (or was killed) before the restart. */
+export function hasEnded(manifest: Pick<WorkerManifest, "status">): boolean {
+	return manifest.status === "done" || manifest.status === "error" || manifest.status === "killed";
 }
 
 // ---------------------------------------------------------------------------

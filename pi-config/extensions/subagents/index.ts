@@ -46,7 +46,7 @@ import { MCP_SERVER_NAME } from "./member-mcp.ts";
 import { WorkerRegistryRecorder, type WorkerLaunchSpec } from "./registry.ts";
 import { readWorkerManifests, viewWorker, type FoldedWorkerManifest, type WorkerTranscriptView } from "./worker-transcript.ts";
 import { defaultWorkerTranscriptAdapters } from "./adapters/index.ts";
-import { RestoredWorker, isRestored } from "./restored.ts";
+import { RestoredWorker, isRestored, resolvedModel } from "./restored.ts";
 import { WorkerHosting, detachRequested, type HostingOptions } from "./hosting.ts";
 import { legacyPlaceholderRoot, placeholderDir, placeholderRoot, toRemotePath } from "../remote/argv.ts";
 import {
@@ -1595,6 +1595,11 @@ export function registerSubagents(
 			}, signal);
 			worker = group.agents[0];
 			if (base) usageBase.set(worker, base);
+			// The label it ran under (e.g. claude-haiku-4-5-…, not the spawn alias "haiku") until the
+			// runner reports its own model: a Claude worker's first init comes with its next turn.
+			// A listed entry already carries it (resolved at restore, or reported by its last runner).
+			const model = current?.model ?? resolvedModel(manifest, view?.view);
+			if (model) worker.model = model;
 			const deadline = Date.now() + RESUME_READY_MS;
 			while (worker.status !== "waiting" && !worker.isFinished() && Date.now() < deadline) {
 				if (signal?.aborted) throw new Error(`Stopped waiting for ${id}; it is still starting (inspect with agent_list).`);

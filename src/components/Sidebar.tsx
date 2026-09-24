@@ -25,7 +25,8 @@ import {
   setGroupDragData,
   setSessionGroup,
 } from "../lib/session-groups";
-import { announce, home, localRunning, sessionContext, toast } from "../lib/ui-state";
+import { announce, hasLocalDraft, home, localRunning, sessionContext, toast } from "../lib/ui-state";
+import { showsDraftMark } from "../lib/draft-mark";
 import { dualGet, dualSet } from "../lib/storage-keys";
 import { monogram, setSpine, spine } from "../lib/spine";
 import { createHoldGesture } from "../lib/hold-select";
@@ -330,7 +331,15 @@ function SessionRow(props: { session: SessionSummary; selected: string | null; n
         }}
       >
         <div class="list-main">
+          {/* An unsent draft in any session that has been sent in: a pencil before the title, so
+              it's found again without opening every row. Line 1, not the rail — the rail is the
+              session's state, and a draft is the user's own, not the session's. The pencil is
+              decorative; the hidden word puts "Draft" in the row's accessible name. */}
           <p class="list-title" classList={{ "list-title-muted": s().title === "Untitled" }} title={s().title}>
+            <Show when={showsDraftMark(s(), hasLocalDraft(s().path))}>
+              <Icon name="pencil" small class="list-title-draft" />
+              <span class="visually-hidden">Draft. </span>
+            </Show>
             {s().title}
           </p>
           {/* A never-sent session kept in the list by its stored draft: line 2 says so, in the place

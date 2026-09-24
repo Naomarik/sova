@@ -9,7 +9,7 @@ import { parseWakeNudge } from "../shared/wake";
 import { RECENT_WRITE_MS } from "./write-guard";
 import { isArchived, setArchived } from "./archived-sessions";
 import { dropGroupAssignments, readAssignments } from "./session-groups";
-import { draftPreview, dropDrafts, readDrafts } from "./drafts";
+import { draftCounts, draftPreview, dropDrafts, readDrafts } from "./drafts";
 import { dropSessionTitles, readSessionTitles } from "./session-titles";
 import { removeSessionAttachments } from "./attachments";
 import { disposeHeldChat, getModelRuntime, isSessionBusy } from "./chat-manager";
@@ -599,12 +599,13 @@ export async function listSessions(): Promise<SessionSummary[]> {
     // a session. cleanupSessions("husks") still finds and deletes them by path.
     // Exception: a husk with a stored composer draft (text or images) is a new session the user
     // is writing in, not an abandoned stub, so it is listed as a draft row (draftPreview).
+    const draft = drafts[s.id];
+    const hasDraft = draftCounts(draft);
     let preview: string | undefined;
     if (s.title === "Untitled") {
       const st2 = await stat(s.path).catch(() => null);
       if (st2 && (await isZeroInput(s.path, st2.size))) {
-        const draft = drafts[s.id];
-        if (!draft || (!draft.text.trim() && !draft.attachments?.length)) continue;
+        if (!hasDraft) continue;
         preview = draftPreview(draft.text, draft.attachments);
       }
     }
@@ -623,6 +624,7 @@ export async function listSessions(): Promise<SessionSummary[]> {
       ...(groups[s.id] !== undefined ? { groupId: groups[s.id] } : {}),
       busy: isSessionBusy(s.path),
       ...(preview !== undefined ? { draftPreview: preview } : {}),
+      ...(hasDraft ? { hasDraft: true as const } : {}),
     });
   }
   out.sort((a, b) => b.lastActiveAt.localeCompare(a.lastActiveAt));
@@ -693,8 +695,7 @@ export async function archiveSession(path: string, archived: boolean): Promise<A
   if (archived) {
     const st = await stat(s.path).catch(() => null);
     if (st && (await isZeroInput(s.path, st.size))) {
-      const draft = readDrafts()[s.id];
-      if (!draft || (!draft.text.trim() && !draft.attachments?.length)) {
+      if (!draftCounts(readDrafts()[s.id])) {
         await disposeHeldChat(s.path, "Session archived; its runtime was closed.");
         await unlink(s.path);
         cache.delete(s.path);

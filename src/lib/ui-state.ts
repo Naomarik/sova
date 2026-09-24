@@ -5,6 +5,7 @@ import { createSignal } from "solid-js";
 import { fetchDraft, putDraft } from "./api";
 import type { UploadResult } from "../../shared/protocol";
 import type { ContextState } from "./context";
+import { draftCounts } from "./draft-mark";
 import { createDraftSaver, type DraftPayload } from "./draft-save";
 import { dualGet, dualSet } from "./storage-keys";
 import { makeToast, placeToast, type Toast, type ToastOptions } from "./toast";
@@ -85,6 +86,19 @@ const storeAttachments = (path: string, list: UploadResult[]) =>
     return next;
   });
 
+/** Whether each session this tab knows the draft of holds one (lib/draft-mark), by path. A signal,
+    unlike `drafts`, so the sidebar's pencil follows every write; a path absent here is unknown
+    to this tab, and the row falls back to the listing's `hasDraft`. */
+const [draftPresence, setDraftPresence] = createSignal<Record<string, boolean>>({});
+export const hasLocalDraft = (path: string): boolean | undefined => draftPresence()[path];
+
+/** Re-derives `path`'s presence from the in-memory draft. Called by every writer after it writes;
+    changes the signal only when the answer does, so a keystroke doesn't re-render the list. */
+const syncPresence = (path: string) => {
+  const has = draftCounts(drafts.get(path) ?? "", draftAttachments(path));
+  setDraftPresence((m) => (m[path] === has ? m : { ...m, [path]: has }));
+};
+
 /** Paths whose draft this tab already knows: loaded from the server, or written here. A known path
     never asks the server again, and a load that lands after a local write never overwrites it. */
 const draftKnown = new Set<string>();
@@ -101,6 +115,7 @@ export function setDraftText(path: string, text: string): void {
   draftKnown.add(path);
   if (text) drafts.set(path, text);
   else drafts.delete(path);
+  syncPresence(path);
   scheduleSave(path);
 }
 
@@ -108,6 +123,7 @@ export function setDraftText(path: string, text: string): void {
 export function setDraftAttachments(path: string, list: UploadResult[]): void {
   draftKnown.add(path);
   storeAttachments(path, list);
+  syncPresence(path);
   scheduleSave(path);
 }
 
@@ -117,6 +133,7 @@ export function clearDraft(path: string): void {
   draftKnown.add(path);
   drafts.delete(path);
   storeAttachments(path, []);
+  syncPresence(path);
   scheduleSave(path);
 }
 
@@ -151,6 +168,7 @@ export async function loadDraft(path: string): Promise<DraftPayload> {
   // flight, and losing a row the user can see leaves its file orphaned on disk — the worse bug.
   // (Deleting a file goes through Remove: setDraftAttachments, or clearDraft after a send.)
   storeAttachments(path, mergeAttachments(draftAttachments(path), stored.attachments));
+  syncPresence(path);
   return local();
 }
 

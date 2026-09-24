@@ -105,6 +105,13 @@ export interface SessionSummary {
   remoteCwd?: string;
   /** Composer draft stored for this session: the draft's first non-empty line, ~80 chars. Present only on a session with no user message anywhere that has a stored draft — that is what keeps a never-sent new session in the list (sidebar). */
   draftPreview?: string;
+  /** This session has a stored composer draft: non-blank text or at least one image, the same
+      test that lists a never-sent session. Set on ANY session, never-sent ones included (those
+      also carry `draftPreview`, and their row says so on line 2 instead). The sidebar puts a
+      pencil before the title from it, until this tab knows the draft itself — the tab's own copy
+      wins, so a send or a cleared composer drops the pencil before the next list refresh.
+      Absent: no draft, or an older server. */
+  hasDraft?: true;
   /** This session's file is in a session format older than the server's current
       (⇔ header `version` ≠ CURRENT_SESSION_FORMAT, server-computed — the client never compares
       numbers itself). The fanout source rules refuse such a file (`old-format`: forking reads

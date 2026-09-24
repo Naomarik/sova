@@ -154,6 +154,13 @@ export function dropDrafts(ids: string[]): void {
   else drafts = next;
 }
 
+/** Whether a stored draft is one: non-blank text or at least one image. What lists a never-sent
+    session (draftPreview) and marks any other session's row (hasDraft); the client's own copy of
+    the rule is src/lib/draft-mark.ts. */
+export function draftCounts(draft: Draft | undefined): draft is Draft {
+  return !!draft && (!!draft.text.trim() || !!draft.attachments?.length);
+}
+
 /** The sidebar line for a draft: its first non-empty line, capped like a session title; an
     images-only draft reads "1 image" / "N images". */
 export function draftPreview(text: string, attachments: readonly unknown[] = []): string {

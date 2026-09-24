@@ -114,6 +114,31 @@ test("listSessions: a husk with a draft is listed with draftPreview; one without
   assert.equal((await listSessions()).some((s) => s.path === withDraft), false);
 });
 
+test("listSessions: hasDraft marks every session holding a draft — text or images — and no other", async () => {
+  const text = session("has-text", "asked already");
+  const images = session("has-images", "asked already");
+  const none = session("has-none", "asked already");
+  const blank = session("has-blank", "asked already");
+  const husk = session("has-husk");
+  setDraft("has-text", "a follow-up");
+  setDraft("has-images", "  \n", [upload("has-images")]);
+  setDraft("has-husk", "never sent");
+  // Another writer's whitespace-only entry (setDraft itself never stores one): no draft.
+  const disk = onDisk();
+  writeFileSync(draftsFile, JSON.stringify({ ...disk, drafts: { ...disk.drafts, "has-blank": { text: " \t\n", updatedAt: "t" } } }));
+  const list = await listSessions();
+  const row = (p: string) => list.find((s) => s.path === p);
+  assert.equal(row(text)?.hasDraft, true);
+  assert.equal(row(images)?.hasDraft, true, "an image-only draft counts");
+  assert.equal(row(none)?.hasDraft, undefined);
+  assert.equal(row(blank)?.hasDraft, undefined, "whitespace-only text is no draft");
+  assert.equal(row(husk)?.hasDraft, true, "a never-sent session carries it beside draftPreview");
+  assert.equal(row(husk)?.draftPreview, "never sent");
+  setDraft("has-text", "");
+  assert.equal((await listSessions()).find((s) => s.path === text)?.hasDraft, undefined, "clearing the draft drops it");
+  dropDrafts(["has-images", "has-husk", "has-blank"]);
+});
+
 test("cleanupSessions: deleting a husk drops its draft", async () => {
   const path = session("husk-gone");
   const old = new Date(Date.now() - 3_600_000);

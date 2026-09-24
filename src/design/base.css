@@ -2164,10 +2164,21 @@ a.group-option { color: inherit; text-decoration: none; }
 }
 .session-row.list-row-interactive:hover,
 .session-row[aria-current="page"] { background: none; }
+/* The draft pencil leading line 1: 1em square so it follows the title's own size (the Typography
+   setting included), muted like every row icon, on the text's baseline-ish centre. Inline, so it
+   takes title width — the title truncates a little earlier — and never adds a line. */
+.list-title > .list-title-draft {
+  width: 1em;
+  height: 1em;
+  margin-right: var(--space-1);
+  vertical-align: -0.125em;
+  color: var(--color-ink-muted);
+}
 
 /* ---- ROW LINES 2 AND 3: text plus one indicator. The indicators ride the
    lines BELOW the title, never line 1 — the old right-hand chips squeezed the
-   title, which is why the state moved to the left rail. `.list-line` is the
+   title, which is why the state moved to the left rail. (The draft pencil that
+   can lead line 1 is not an indicator: it is inline text, above.) `.list-line` is the
    shared wrapper: the text flexes and truncates, the indicator is `flex: none`,
    so the chip and the ring land on a common right edge all the way down the
    list. That column is what makes the rings scannable — a ring that shifted

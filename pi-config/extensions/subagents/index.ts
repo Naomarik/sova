@@ -44,9 +44,9 @@ import {
 } from "./mailbox.ts";
 import { MCP_SERVER_NAME } from "./member-mcp.ts";
 import { WorkerRegistryRecorder, type WorkerLaunchSpec } from "./registry.ts";
-import { readWorkerManifests, viewWorker, type FoldedWorkerManifest, type WorkerTranscriptView } from "./worker-transcript.ts";
+import { readWorkerManifests, resolvedModel, viewWorker, type FoldedWorkerManifest, type WorkerTranscriptView } from "./worker-transcript.ts";
 import { defaultWorkerTranscriptAdapters } from "./adapters/index.ts";
-import { RestoredWorker, isRestored, resolvedModel } from "./restored.ts";
+import { RestoredWorker, isRestored } from "./restored.ts";
 import { WorkerHosting, detachRequested, type HostingOptions } from "./hosting.ts";
 import { legacyPlaceholderRoot, placeholderDir, placeholderRoot, toRemotePath } from "../remote/argv.ts";
 import {

@@ -11,7 +11,7 @@ import * as path from "node:path";
 import { registerSubagents } from "./index.ts";
 import { BACKEND_REGISTER_EVENT } from "./contracts.ts";
 import { WORKER_MANIFEST_ENTRY_TYPE } from "./registry.ts";
-import { resolvedModel } from "./restored.ts";
+import { resolvedModel } from "./worker-transcript.ts";
 
 const SNAPSHOT = "subagents:workers-snapshot";
 const NO_POLICY_FILE = path.join(os.tmpdir(), "subagents-tests-absent-policy.json");

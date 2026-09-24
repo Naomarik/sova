@@ -13,24 +13,7 @@
  * No process, UI or manager dependency.
  */
 import type { AgentStatus, AgentUsage, SteerResult, TaskOutcome, TranscriptItem, Worker } from "./contracts.ts";
-import { hasEnded, isInterrupted, type FoldedWorkerManifest, type UsageSource, type WorkerTranscriptView } from "./worker-transcript.ts";
-
-/**
- * The model a worker ran on, in the form its running runner reports (so a label never changes
- * between states): the transcript's last reply, else the largest row (by tokens) of its last
- * usage snapshot, else the spawn spec's model. The claude-code adapter names models
- * "claude/<id>"; a running Claude worker reports the bare <id>, so the prefix is dropped there.
- * Sova's unhosted path (server/worker-restore.ts) applies the same rule.
- */
-export function resolvedModel(manifest: FoldedWorkerManifest, view: Pick<WorkerTranscriptView, "summary"> | undefined): string | undefined {
-	const bare = (model: string | undefined) => model && manifest.backend === "claude-code" && model.startsWith("claude/") ? model.slice("claude/".length) : model;
-	const fromTranscript = bare(view?.summary?.model);
-	if (fromTranscript) return fromTranscript;
-	const rows = manifest.usageSnapshot?.byModel ?? [];
-	const size = (r: (typeof rows)[number]) => r.input + r.output + r.cacheRead + r.cacheWrite;
-	const biggest = rows.length ? rows.reduce((a, b) => (size(b) > size(a) ? b : a)) : undefined;
-	return bare(biggest?.model) || manifest.spec?.model;
-}
+import { hasEnded, isInterrupted, resolvedModel, type FoldedWorkerManifest, type UsageSource, type WorkerTranscriptView } from "./worker-transcript.ts";
 
 /** Why this worker cannot be resumed, or undefined when it can. */
 export type ResumeRefusal = string | undefined;

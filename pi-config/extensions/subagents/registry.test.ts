@@ -181,7 +181,7 @@ test("manager: team members carry teamId and role in their registry spec", async
 	await h.close();
 });
 
-test("inline transport: no registry records and no registry directory", async () => {
+test("inline transport: the durable record is written all the same, but no registry directory and no host", async () => {
 	const h = harness(false);
 	h.start();
 	await h.call("agent_spawn", { prompt: "task one", name: "one" });
@@ -189,7 +189,7 @@ test("inline transport: no registry records and no registry directory", async ()
 	h.workers[0].change();
 	await new Promise((r) => setTimeout(r, 150));
 	h.workers[0].exit();
-	assert.deepEqual(h.appended.filter((e) => e.customType === WORKER_MANIFEST_ENTRY_TYPE), []);
+	assert.deepEqual(h.appended.filter((e) => e.customType === WORKER_MANIFEST_ENTRY_TYPE).map((e) => e.data.status), ["running", "done"], "a pi session id alone is no transcript ref yet");
 	assert.equal(h.workers[0].spawnImpl, undefined);
 	assert.equal(h.workers[0].adopt, undefined);
 	assert.deepEqual(fs.readdirSync(h.root), []);

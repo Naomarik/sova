@@ -37,7 +37,8 @@ import { summarizeFileChange } from "./codefold.ts";
 /** Pi's built-in tool names. `--tools` and `--exclude-tools` also govern extension tools, so restriction must be phrased per case. */
 export const BUILTIN_TOOLS: readonly string[] = ["read", "bash", "powershell", "edit", "write", "grep", "find", "ls"];
 
-export type AgentStatus = "starting" | "running" | "waiting" | "stopping" | "done" | "error" | "killed";
+/** "restored": rebuilt from the owner's durable record after a restart; no process (see restored.ts). */
+export type AgentStatus = "starting" | "running" | "waiting" | "stopping" | "done" | "error" | "killed" | "restored";
 
 /** Outcome of the most recently completed task. Undefined while a task is running. */
 export type TaskOutcome = "success" | "error" | "aborted";

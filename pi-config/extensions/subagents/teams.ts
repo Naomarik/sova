@@ -154,7 +154,7 @@ export interface TeamView {
 }
 
 export const PRUNED_REASON = "Removed from the manager by finished-worker retention; last known status shown.";
-export const HISTORY_REASON = "Recorded in an earlier session or before reload; workers are session-scoped and were stopped. History only, never live.";
+export const HISTORY_REASON = "Recorded in an earlier session or before reload; its workers were stopped. agent_resume brings a member back idle, which makes the team live again.";
 
 /** Display/comparison normalization for names and roles: trimmed, internal whitespace collapsed. */
 export function normalizeLabel(value: string): string {
@@ -352,6 +352,8 @@ function emptyCounts(): Record<MemberState, number> {
 
 export function memberState(observed: WorkerObservation | undefined): MemberState {
 	if (!observed) return "unavailable";
+	// Rebuilt after a restart, no process: not a member anyone can reach until agent_resume.
+	if (observed.status === "restored") return "unavailable";
 	if (observed.status === "killed") return "stopped";
 	if (observed.status === "stopping") return "stopping";
 	if (!observed.settled && !observed.finished) return "working";

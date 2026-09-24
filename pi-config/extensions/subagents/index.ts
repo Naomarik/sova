@@ -43,7 +43,10 @@ import {
 	type MailboxResponse,
 } from "./mailbox.ts";
 import { MCP_SERVER_NAME } from "./member-mcp.ts";
-import { WorkerRegistryRecorder } from "./registry.ts";
+import { WorkerRegistryRecorder, type WorkerLaunchSpec } from "./registry.ts";
+import { readWorkerManifests, viewWorker, type FoldedWorkerManifest, type WorkerTranscriptView } from "./worker-transcript.ts";
+import { defaultWorkerTranscriptAdapters } from "./adapters/index.ts";
+import { RestoredWorker, isRestored } from "./restored.ts";
 import { WorkerHosting, detachRequested, type HostingOptions } from "./hosting.ts";
 import { legacyPlaceholderRoot, placeholderDir, placeholderRoot, toRemotePath } from "../remote/argv.ts";
 import {
@@ -314,6 +317,12 @@ interface BatchRequest {
 	 * rolls the whole batch back exactly like a factory failure.
 	 */
 	beforeCommit?(group: AgentGroup): void;
+	/**
+	 * agent_resume: start the ONE spec as this existing worker again, reopening its own backend
+	 * session idle (SpawnOptions.resume). Its id and group are kept, no ID is reserved, it is never
+	 * hosted, and its durable record is written only once it is up (resumeWorker).
+	 */
+	resume?: { id: string; groupId: string; groupLabel: string; sessionId?: string; sessionFile?: string };
 }
 /** @internal Test seams for the member mailbox. */
 export interface SubagentsOptions {
@@ -520,8 +529,28 @@ export function registerSubagents(
 	};
 	const groups: AgentGroup[] = [];
 	const teams = new TeamStore();
-	// Worker identity records in this (owner) session file; see registry.ts.
-	const registry = new WorkerRegistryRecorder((customType, data) => pi.appendEntry(customType, data));
+	// Worker transcripts of every backend, read through one protocol (worker-transcript.ts);
+	// a backend extension may register its own adapter with its registration.
+	const adapters = defaultWorkerTranscriptAdapters();
+	// A resumed worker's runner counts only what it spends from now on; what its earlier
+	// processes spent is its base, so the lifetime Σ never drops on a resume.
+	const usageBase = new WeakMap<Worker, UsageSum & { turns: number }>();
+	const addWorkerUsage = (total: UsageSum, a: Worker): UsageSum => {
+		addUsage(total, a);
+		const base = usageBase.get(a);
+		if (base) { total.input += base.input; total.output += base.output; total.cacheRead += base.cacheRead; total.cacheWrite += base.cacheWrite; total.cost += base.cost; }
+		return total;
+	};
+	const lifetimeUsage = (a: Worker) => ({ ...addWorkerUsage(emptySum(), a), turns: amount(a.usage?.turns) + (usageBase.get(a)?.turns ?? 0) });
+	// The durable per-worker record in this (owner) session file, for every worker of every
+	// backend and transport (registry.ts, worker-transcript.ts).
+	const registry = new WorkerRegistryRecorder((customType, data) => pi.appendEntry(customType, data), lifetimeUsage);
+	// Each published worker's launch spec, written once with its first record (resume needs it).
+	const launches = new WeakMap<Worker, WorkerLaunchSpec>();
+	// Workers of earlier processes, from the manifest fold at session_start: every branch's,
+	// with their transcript view. Those on the active branch are listed as RestoredWorkers;
+	// the rest only count toward the lifetime Σ. A resumed worker leaves this map.
+	const restoredViews = new Map<string, { manifest: FoldedWorkerManifest; view: WorkerTranscriptView }>();
 	// Detachable workers: host processes that outlive this manager (see hosting.ts).
 	const hosting = new WorkerHosting(options.hosting);
 	let counter = 0;
@@ -562,12 +591,13 @@ export function registerSubagents(
 		: "";
 	const pruneFinished = () => {
 		if (shuttingDown) return;
-		for (const a of agents) if (a.isFinished() && !a.processAlive) finished.add(a);
+		// Restored workers are records, not retained runs: retention never evicts them.
+		for (const a of agents) if (a.isFinished() && !a.processAlive && !isRestored(a)) finished.add(a);
 		while (finished.size > MAX_FINISHED) {
 			const a = finished.values().next().value!;
 			finished.delete(a);
 			teams.recordEviction(a.id, { status: a.status, taskOutcome: a.taskOutcome, error: a.error });
-			addUsage(evictedUsage, a);
+			addWorkerUsage(evictedUsage, a);
 			agents.splice(agents.indexOf(a), 1);
 			const group = groups.find(g => g.id === a.groupId);
 			if (group) group.agents = group.agents.filter(worker => worker !== a);
@@ -618,15 +648,39 @@ export function registerSubagents(
 	// Lifetime Σ across every worker this session ever spawned: the live list plus what
 	// retention already evicted. It is not the sum of the published rows, and must not be
 	// recomputed from them.
+	// Restored workers of earlier processes are in it exactly once: listed ones through `agents`,
+	// those of other branches through restoredViews; a resumed one through its runner's base.
 	const sessionUsage = () => {
 		const total: UsageSum = { ...evictedUsage };
-		for (const a of agents) addUsage(total, a);
-		return { ...publicUsage(total), workers: agents.length + evictedWorkers };
+		let workers = agents.length + evictedWorkers;
+		let restored = 0;
+		let asOf = 0;
+		for (const a of agents) {
+			addWorkerUsage(total, a);
+			if (isRestored(a)) { restored++; asOf = Math.max(asOf, a.usageAsOf ?? 0); }
+		}
+		for (const { manifest, view } of restoredViews.values()) {
+			if (agents.some((a) => a.id === manifest.workerId)) continue;
+			const u = view.usage;
+			total.input += u.input; total.output += u.output; total.cacheRead += u.cacheRead; total.cacheWrite += u.cacheWrite; total.cost += u.cost ?? 0;
+			workers++; restored++;
+			asOf = Math.max(asOf, (u.source === "snapshot" ? u.asOf : u.costSource === "snapshot" ? u.costAsOf : undefined) ?? 0);
+		}
+		return { ...publicUsage(total), workers, ...(asOf ? { asOf } : {}), ...(restored ? { restored } : {}) };
 	};
 	const usageField = (a: Worker) => {
-		const usage = addUsage(emptySum(), a);
+		const usage = addWorkerUsage(emptySum(), a);
 		return spent(usage) ? { usage: publicUsage(usage) } : {};
 	};
+	/** A restored worker's public extras (sessions/schema.ts WorkerEntry). "none" usage is unavailable, never 0. */
+	const restoredFields = (a: Worker) => isRestored(a)
+		? {
+			// Asked now, not at restore: a backend extension may have loaded since.
+			restored: true as const, usageSource: a.usageSource, resumable: resumeRefusal(a.manifest) === undefined,
+			...(a.usageAsOf ? { usageAsOf: a.usageAsOf } : {}),
+			...(a.interruptedAt ? { interruptedAt: a.interruptedAt } : {}),
+		}
+		: {};
 	const publishWorkers = () => pi.events?.emit(WORKERS_SNAPSHOT_EVENT, {
 		version: 1,
 		...(shuttingDown ? {} : { workerUsage: sessionUsage() }),
@@ -651,7 +705,8 @@ export function registerSubagents(
 				? { outcome: a.taskOutcome } : {}),
 			// Token counts this worker has used so far (cumulative, both backends);
 			// a worker that has spent nothing yet carries no usage at all.
-			...usageField(a),
+			...(isRestored(a) && a.usageSource === "none" ? {} : usageField(a)),
+			...restoredFields(a),
 		})),
 	});
 	// Answer immediately even before session_start, regardless of extension order.
@@ -751,7 +806,7 @@ export function registerSubagents(
 		// registered. The post-spawn refresh handles those; never retain them here.
 		if (shuttingDown || !agents.includes(a)) return;
 		registry.finish(a, hosting.lost(a.id) ? "lost" : undefined);
-		if (a.isFinished() && !a.processAlive) finished.add(a);
+		if (a.isFinished() && !a.processAlive && !isRestored(a)) finished.add(a);
 		pruneFinished();
 		scheduleRefresh();
 	};
@@ -822,6 +877,8 @@ export function registerSubagents(
 	};
 	const onSettled = (a: Worker) => {
 		if (shuttingDown || !agents.includes(a)) return;
+		// Idle again: status, outcome and a usage snapshot in the durable record.
+		registry.settled(a);
 		pruneFinished();
 		scheduleRefresh();
 		if (shuttingDown || !activeCtx) return;
@@ -1021,11 +1078,13 @@ export function registerSubagents(
 				remoteMcp: undefined,
 			};
 		});
-		const groupId = `run_${String(++groupCounter).padStart(2, "0")}`;
+		const resuming = request.resume;
+		if (resuming && (specs.length !== 1 || total !== 1)) throw new Error("A resume starts exactly one worker.");
+		const groupId = resuming ? resuming.groupId : `run_${String(++groupCounter).padStart(2, "0")}`;
 		// Reserve IDs durably before starting processes. Reload must never reuse an
 		// ID still present in the conversation for an unrelated new worker.
-		pi.appendEntry("subagents-counters-v2", { agentCounter: counter + total, groupCounter });
-		const label = request.groupLabel ?? `run ${groupCounter} · ${specs[0].name ?? specs[0].agentType ?? "agents"}`;
+		if (!resuming) pi.appendEntry("subagents-counters-v2", { agentCounter: counter + total, groupCounter });
+		const label = resuming ? resuming.groupLabel : request.groupLabel ?? `run ${groupCounter} · ${specs[0].name ?? specs[0].agentType ?? "agents"}`;
 		const group: AgentGroup = { id: groupId, label, createdAt: Date.now(), agents: [] };
 		let committed = false;
 		let abandoned = false;
@@ -1035,7 +1094,7 @@ export function registerSubagents(
 			for (const [index, { spec, cwd, model, tools, systemPrompt, extensions, forkSession, backend, prepared: backendPrepared, flags, remoteMcp }] of prepared.entries()) {
 				for (let i = 0; i < (spec.count ?? 1); i++) {
 					const base = spec.name ?? spec.agentType ?? "agent";
-					const id = `ag_${String(++counter).padStart(2, "0")}`;
+					const id = resuming ? resuming.id : `ag_${String(++counter).padStart(2, "0")}`;
 					const teamMember = request.team?.members[index];
 					// A member's identity and private mailbox exist before its process
 					// does. Pi children read the identity from their environment
@@ -1045,7 +1104,7 @@ export function registerSubagents(
 					const tooling = teamMember ? memberTooling(spec.backend ?? "pi") : "none";
 					const name = (spec.count ?? 1) > 1 ? `${base}-${i + 1}` : base;
 					// Hosted: the runner's spawnImpl starts a detached host instead of the worker itself.
-					const hostedWorker = hosting.active();
+					const hostedWorker = !resuming && hosting.active();
 					if (hostedWorker) launched.push(id);
 					const hosted = hostedWorker
 						? hosting.launch({
@@ -1082,6 +1141,7 @@ export function registerSubagents(
 							...(env && tooling === "pi" ? { env } : {}),
 							...(Object.keys(mcpServers).length ? { mcpServers } : {}),
 							...hosted,
+							...(resuming ? { resume: { ...(resuming.sessionId ? { sessionId: resuming.sessionId } : {}), ...(resuming.sessionFile ? { sessionFile: resuming.sessionFile } : {}) } } : {}),
 							id,
 							groupId,
 							name,
@@ -1097,6 +1157,20 @@ export function registerSubagents(
 					);
 					group.agents.push(runner);
 					hosting.bind(id, runner);
+					// What resume needs to start it again: the raw spec (resolved again against the
+					// session's state at resume time, like a spawn), with pi's inherited model written out.
+					launches.set(runner, {
+						backend: spec.backend ?? "pi",
+						...(spec.cwd === undefined ? {} : { cwd: spec.cwd }),
+						...(model === undefined ? {} : { model }),
+						...(spec.effort === undefined ? {} : { effort: spec.effort }),
+						...(spec.tools === undefined ? {} : { tools: [...spec.tools] }),
+						...(spec.systemPrompt === undefined ? {} : { systemPrompt: spec.systemPrompt }),
+						...(spec.agentType === undefined ? {} : { agentType: spec.agentType }),
+						...(spec.extensions === undefined ? {} : { extensions: [...spec.extensions] }),
+						...(spec.backendOptions === undefined ? {} : { backendOptions: spec.backendOptions }),
+						...(teamMember?.orchestrator ? { orchestrator: true } : {}),
+					});
 				}
 			}
 			request.beforeCommit?.(group);
@@ -1137,14 +1211,16 @@ export function registerSubagents(
 			if (failures.length) throw new Error(`${String(error)}; rollback cleanup failed (still owned for shutdown): ${failures.join("; ")}`, { cause: error });
 			throw error;
 		}
-		groups.push(group);
+		const existing = resuming && groups.find((g) => g.id === group.id);
+		if (existing) existing.agents.push(...group.agents);
+		else groups.push(group);
 		agents.push(...group.agents);
 		committed = true;
-		// Team batches are one worker per member, in member order. Only hosted
-		// workers are recorded: the inline transport writes nothing new.
-		group.agents.forEach((worker, i) => {
+		// Team batches are one worker per member, in member order. Every worker of every
+		// backend and transport gets its durable record; a resumed one once it is up.
+		if (!resuming) group.agents.forEach((worker, i) => {
 			const member = request.team?.members[i];
-			if (hosting.owns(worker.id)) registry.track(worker, member && { teamId: request.team!.teamId, role: member.role });
+			registry.track(worker, member && { teamId: request.team!.teamId, role: member.role, ...(member.orchestrator ? { orchestrator: true } : {}) }, launches.get(worker));
 		});
 		// Synchronous startup failures now have registered IDs; discarded batches
 		// never wake the parent. Only replay callbacks for returned workers.
@@ -1375,6 +1451,188 @@ export function registerSubagents(
 	};
 	/** Detached team views for tools now and the team workspace/widget later. */
 	const teamViews = (): TeamView[] => teams.views(observeWorker);
+	// ── Restore and resume ──────────────────────────────────────────────────
+	// A worker's process never outlives its manager (a restart, reload or session switch
+	// ends it), but its durable record (registry.ts) and its own backend session do. At
+	// session_start every recorded worker that is not live comes back as a RestoredWorker:
+	// listed, counted, read-only. agent_resume starts it again ON DEMAND, idle, in its own
+	// backend session; nothing is ever resumed or continued automatically.
+	/** Why a recorded worker cannot be resumed, or undefined. */
+	const resumeRefusal = (m: FoldedWorkerManifest): string | undefined => {
+		if (adapters.get(m.backend).capabilities().resume !== "native") return `backend ${m.backend} cannot resume workers (its transcript adapter declares resume: none)`;
+		if (!m.ref) return "no backend session was recorded for it (it never got that far)";
+		if (m.backend !== "pi" && !backends.has(m.backend)) return `backend ${m.backend} is not loaded`;
+		return undefined;
+	};
+	const removeWorker = (a: Worker) => {
+		const index = agents.indexOf(a);
+		if (index !== -1) agents.splice(index, 1);
+		finished.delete(a);
+		const group = groups.find((g) => g.id === a.groupId);
+		if (group) {
+			group.agents = group.agents.filter((w) => w !== a);
+			if (!group.agents.length) groups.splice(groups.indexOf(group), 1);
+		}
+	};
+	const idNumber = (id: string) => Number(/^ag_(\d+)$/.exec(id)?.[1] ?? Number.MAX_SAFE_INTEGER);
+	/** In ID order, so a worker listed again (branch switch, failed resume) keeps its place. */
+	const insertWorker = (a: Worker, label: string) => {
+		const ordered = (list: Worker[]) => {
+			const at = list.findIndex((w) => idNumber(w.id) > idNumber(a.id));
+			if (at === -1) list.push(a); else list.splice(at, 0, a);
+		};
+		let group = groups.find((g) => g.id === a.groupId);
+		if (!group) {
+			group = { id: a.groupId, label, createdAt: a.startedAt, agents: [] };
+			groups.push(group);
+		}
+		ordered(group.agents);
+		ordered(agents);
+	};
+	/** List the restored workers recorded on the active branch; the others only count toward the Σ. */
+	const applyBranch = (ctx: ExtensionContext) => {
+		if (shuttingDown) return;
+		const branch = ctx.sessionManager.getBranch?.() ?? ctx.sessionManager.getEntries();
+		const active = new Set(branch.map((e) => e.id).filter((id): id is string => typeof id === "string"));
+		const { manifests } = readWorkerManifests(ctx.sessionManager.getEntries(), { activeEntryIds: active });
+		for (const a of [...agents]) if (isRestored(a) && !manifests.get(a.id)?.onActiveBranch) removeWorker(a);
+		const listed = [...restoredViews.values()]
+			.filter(({ manifest }) => manifests.get(manifest.workerId)?.onActiveBranch && !agents.some((a) => a.id === manifest.workerId))
+			.sort((x, y) => idNumber(x.manifest.workerId) - idNumber(y.manifest.workerId));
+		for (const { manifest, view } of listed)
+			insertWorker(new RestoredWorker(manifest, view, resumeRefusal(manifest)), `${manifest.groupId ?? "run_restored"} · restored`);
+		refresh();
+	};
+	let restoreGeneration = 0;
+	/** Rebuild earlier processes' workers from every branch's records and their transcripts. */
+	const restoreWorkers = async (ctx: ExtensionContext): Promise<void> => {
+		const generation = ++restoreGeneration;
+		const { manifests } = readWorkerManifests(ctx.sessionManager.getEntries());
+		const pending = [...manifests.values()].filter((m) => !agents.some((a) => a.id === m.workerId));
+		// Reads are independent and never throw (viewWorker); the list appears once all are in.
+		const views = await Promise.all(pending.map(async (manifest) => ({ manifest, view: await viewWorker(manifest, adapters, { items: "tail", limit: 40 }) })));
+		if (shuttingDown || generation !== restoreGeneration) return;
+		for (const entry of views) if (!agents.some((a) => a.id === entry.manifest.workerId)) restoredViews.set(entry.manifest.workerId, entry);
+		applyBranch(ctx);
+	};
+	/** How long a resumed worker may take to come up idle (pi startup, Claude initialize). */
+	const RESUME_READY_MS = 180_000;
+	const resumingIds = new Set<string>();
+	/**
+	 * agent_resume and /agent-resume: start a recorded worker again in its own backend session,
+	 * IDLE — no prompt is sent and no completion is announced; the next steer is its next task.
+	 * The parent's CURRENT sandbox and remote state apply, exactly as at spawn (spawnBatch). A
+	 * team member's history team becomes live again and gets a fresh mailbox. Resolves once the
+	 * worker is waiting; on failure the earlier entry stays and the reason is thrown.
+	 */
+	const resumeWorker = async (ctx: ExtensionContext, rawId: string, signal?: AbortSignal): Promise<Worker> => {
+		const id = rawId.trim();
+		if (!/^ag_\d+$/.test(id)) throw new Error(`Resume takes one worker ID (ag_NN); got "${rawId.trim().slice(0, 80)}".`);
+		if (resumingIds.has(id)) throw new Error(`${id} is already being resumed.`);
+		const current = agents.find((a) => a.id === id);
+		if (current && !current.isFinished()) throw new Error(`${id} is live (${current.status}); use agent_steer to give it work.`);
+		const manifest = readWorkerManifests(ctx.sessionManager.getEntries()).manifests.get(id);
+		if (!manifest) throw new Error(`No record of ${id} in this session; only workers recorded in this session file can be resumed.`);
+		const refusal = resumeRefusal(manifest);
+		if (refusal) throw new Error(`Cannot resume ${id}: ${refusal}.`);
+		const launch = (manifest.launch ?? {}) as Partial<WorkerLaunchSpec>;
+		const pick = <T,>(value: T | undefined, key: string) => (value === undefined ? {} : { [key]: value });
+		const spec = {
+			// The worker's own session holds its history; the task is only its label here.
+			prompt: manifest.spec?.taskPreview?.trim() || `(resumed ${id})`,
+			name: manifest.name ?? manifest.team?.role ?? id,
+			...(manifest.backend === "pi" ? {} : { backend: manifest.backend }),
+			...pick(launch.model ?? manifest.spec?.model, "model"),
+			...pick(launch.effort ?? manifest.spec?.effort, "effort"),
+			...pick(launch.tools ?? manifest.spec?.tools, "tools"),
+			...pick(launch.systemPrompt, "systemPrompt"),
+			...pick(launch.agentType, "agentType"),
+			...pick(launch.cwd ?? manifest.spec?.cwd, "cwd"),
+			wake: manifest.spec?.wake ?? true,
+			...pick(launch.extensions, "extensions"),
+			...pick(launch.backendOptions, "backendOptions"),
+		} as Spec;
+		const ref = manifest.ref!;
+		const identity = ref.kind === "pi-session-file"
+			? { sessionFile: ref.locator, ...(ref.sessionId ? { sessionId: ref.sessionId } : {}) }
+			: { sessionId: ref.locator };
+		// Team membership: its history team becomes live again (as when a hosted member is re-adopted).
+		let team: BatchRequest["team"];
+		if (manifest.team && teams.adoptHistoryTeam(manifest.team.teamId)) {
+			const teamName = teamViews().find((t) => t.id === manifest.team!.teamId)?.name ?? manifest.team.teamId;
+			team = { teamId: manifest.team.teamId, teamName, members: [{ role: manifest.team.role, orchestrator: manifest.team.orchestrator === true || launch.orchestrator === true }] };
+			ensureMailbox();
+		}
+		// What it spent before: its listed entry's lifetime, or its off-branch view. An evicted
+		// worker's usage is already in evictedUsage, so it carries no base.
+		const view = restoredViews.get(id);
+		const base = current
+			? lifetimeUsage(current)
+			: view ? { input: view.view.usage.input, output: view.view.usage.output, cacheRead: view.view.usage.cacheRead, cacheWrite: view.view.usage.cacheWrite, cost: view.view.usage.cost ?? 0, turns: view.view.usage.turns ?? 0 } : undefined;
+		const groupLabel = current ? (groups.find((g) => g.id === current.groupId)?.label ?? `${current.groupId} · resumed`) : `${manifest.groupId ?? "run_restored"} · resumed`;
+		resumingIds.add(id);
+		// Never two entries with one ID (the live record refuses duplicate IDs): the earlier one
+		// steps aside while the new process starts, and comes back if it fails.
+		if (current) removeWorker(current);
+		let worker: Worker | undefined;
+		try {
+			const group = await spawnBatch(ctx, {
+				specs: [spec], team,
+				resume: { id, groupId: manifest.groupId ?? current?.groupId ?? "run_restored", groupLabel, ...identity },
+			}, signal);
+			worker = group.agents[0];
+			if (base) usageBase.set(worker, base);
+			const deadline = Date.now() + RESUME_READY_MS;
+			while (worker.status !== "waiting" && !worker.isFinished() && Date.now() < deadline) {
+				if (signal?.aborted) throw new Error(`Stopped waiting for ${id}; it is still starting (inspect with agent_list).`);
+				await new Promise((resolve) => setTimeout(resolve, 100));
+			}
+			if (worker.status !== "waiting") {
+				const reason = worker.error ?? (worker.isFinished() ? `it ended (${worker.status})` : `not ready within ${RESUME_READY_MS / 1000}s`);
+				const failed = worker;
+				worker = undefined;
+				removeWorker(failed);
+				if (!failed.isFinished()) void failed.kill("resume did not come up");
+				throw new Error(`Could not resume ${id}: ${reason}`);
+			}
+			registry.resumed(worker);
+			restoredViews.delete(id);
+			return worker;
+		} catch (error) {
+			if (!worker && current && !agents.some((a) => a.id === id)) insertWorker(current, groupLabel);
+			throw error;
+		} finally {
+			resumingIds.delete(id);
+			refresh();
+		}
+	};
+	const resumedText = (a: Worker) =>
+		`Resumed ${a.id} (${a.name}) idle in its own ${a.backend ?? "pi"} session ${a.sessionFile ?? a.sessionId ?? ""}; nothing was sent to it. Give it work with agent_steer.`;
+	pi.registerTool({
+		name: "agent_resume",
+		label: "Resume Subagent",
+		description:
+			"Bring back a worker listed as restored (its process ended with an earlier server, reload or session) by starting it again in its OWN backend session: pi reopens its session file, Claude resumes its session. It comes back idle (waiting) with its history; nothing is sent to it and no completion is reported, so use agent_steer to give it work. The session's current sandbox and remote state apply, as at spawn; a team member rejoins its team. Refused for a live worker, an unknown ID, or a backend that cannot resume.",
+		promptSnippet: "Resume a restored subagent idle in its own session",
+		parameters: Type.Object({ id: Type.String({ pattern: "^ag_\\d+$", description: "Exact worker ID (ag_NN)." }) }, { additionalProperties: false }),
+		async execute(_id, params, signal, _update, ctx) {
+			context(ctx);
+			const a = await resumeWorker(ctx, params.id, signal);
+			return result(resumedText(a), { id: a.id, backend: a.backend ?? "pi", status: a.status, sessionFile: a.sessionFile, sessionId: a.sessionId });
+		},
+	});
+	// The same operation for Sova's Resume Worker button (POST /api/workers/resume calls this
+	// handler directly): args "<ag_NN>"; resolves once the worker is idle, throws the reason.
+	pi.registerCommand("agent-resume", {
+		description: "Resume a restored subagent idle in its own session: /agent-resume ag_NN",
+		handler: async (args: string, ctx: ExtensionContext) => {
+			context(ctx);
+			const a = await resumeWorker(ctx, args);
+			if (ctx.hasUI) {
+				try { ctx.ui.notify(resumedText(a), "info"); } catch { /* The UI may be gone. */ }
+			}
+		},
+	});
 	pi.registerTool({
 		name: "agent_models",
 		label: "Subagent Models",
@@ -1465,6 +1723,17 @@ export function registerSubagents(
 		},
 	});
 
+	const listUsage = (a: Worker) => {
+		if (isRestored(a) && a.usageSource === "none") return "usage unavailable";
+		const u = lifetimeUsage(a);
+		const asOf = isRestored(a) && a.usageAsOf ? ` (as of ${new Date(a.usageAsOf).toISOString().slice(11, 16)} UTC)` : "";
+		return `${u.turns} turns · ↑${Math.round(u.input)} ↓${Math.round(u.output)}${asOf}`;
+	};
+	const restoredNote = (a: Worker) => {
+		if (!isRestored(a)) return "";
+		const refusal = resumeRefusal(a.manifest);
+		return ` · restored after a restart${a.interruptedAt ? ", interrupted mid-task" : ""}; ${refusal ? `cannot resume: ${refusal}` : "agent_resume brings it back idle"}`;
+	};
 	pi.registerTool({
 		name: "agent_list",
 		label: "List Subagents",
@@ -1481,12 +1750,12 @@ export function registerSubagents(
 									`${g.id} — ${g.label}`,
 									...g.agents.map(
 										(a) =>
-											`  ${a.id} ${a.name} [${a.backend ?? "pi"}] ${a.status}${a.taskOutcome ? `/${a.taskOutcome}` : ""} ${a.model ?? "child default"} · ${a.usage.turns} turns · ↑${a.usage.input} ↓${a.usage.output}${a.error ? ` · error: ${a.error}` : ""}`,
+											`  ${a.id} ${a.name} [${a.backend ?? "pi"}] ${a.status}${a.taskOutcome ? `/${a.taskOutcome}` : ""} ${a.model ?? "child default"} · ${listUsage(a)}${a.error ? ` · error: ${a.error}` : ""}${restoredNote(a)}`,
 									),
 								].join("\n"),
 							)
 							.join("\n\n") +
-							"\n\nwaiting = idle and steerable (check task outcome); stopping = terminating; done/killed = process ended; error = failure (cleanup may still be in progress)."
+							"\n\nwaiting = idle and steerable (check task outcome); stopping = terminating; done/killed = process ended; error = failure (cleanup may still be in progress); restored = no process since a restart (agent_resume)."
 					: "No subagents have been spawned."].filter(Boolean).join("\n\n"),
 				{
 					agents: agents.map((a) => ({
@@ -1502,7 +1771,9 @@ export function registerSubagents(
 						sessionFile: a.sessionFile,
 						sessionId: a.sessionId,
 						error: a.error,
-						usage: { ...a.usage },
+						// Lifetime: a resumed worker's earlier processes included.
+						usage: { ...a.usage, ...lifetimeUsage(a) },
+						...(isRestored(a) ? { restored: true, usageSource: a.usageSource, resumable: resumeRefusal(a.manifest) === undefined, ...(a.interruptedAt ? { interruptedAt: a.interruptedAt } : {}) } : {}),
 					})),
 				},
 			);
@@ -1658,7 +1929,7 @@ export function registerSubagents(
 		"Declared ownership is advisory, not a lock; members share the filesystem.",
 		"Members have team_msg/team_inbox/team_ask (messages to teammates are delivered by this extension; questions arrive here as team-question messages — answer them with agent_steer on that worker ID). An orchestrator member also has team_roster/team_steer over its own team. Claude members get the same tools from an MCP server (mcp__team__<tool>).",
 		"Steer or stop members with agent_steer/agent_kill using exact worker IDs; team_list shows roles beside actual status. No member can spawn, add or stop workers.",
-		"Members are session-scoped: reload, session switch or quit stops them.",
+		"Members are session-scoped: reload, session switch or quit stops them; agent_resume brings one back idle, rejoining its team.",
 	];
 	/** Runs inside spawnBatch before publication, so a failure rolls the batch back. */
 	const memberRecords = (members: readonly { role: string; ownedPaths: string[]; orchestrator: boolean }[], group: AgentGroup, addedAt: number): PersistedMember[] =>
@@ -2039,7 +2310,7 @@ export function registerSubagents(
 			try {
 				for (const { dir, meta } of hosting.candidates()) {
 					if (shuttingDown) return;
-					if (agents.some((a) => a.id === meta.id)) continue;
+					if (agents.some((a) => a.id === meta.id && !isRestored(a))) continue;
 					const backend = meta.backend === "pi" ? undefined : backends.get(meta.backend);
 					if (meta.backend !== "pi" && !backend) continue; // Its extension is not loaded (yet); stays detached.
 					let prepared: Record<string, unknown> = {};
@@ -2077,6 +2348,10 @@ export function registerSubagents(
 						continue;
 					}
 					hosting.bind(meta.id, worker);
+					// Its host kept it running: the live worker replaces its restored entry (its
+					// replayed log carries all its usage, so the restored view leaves the Σ).
+					for (const ghost of agents.filter((a) => a.id === meta.id && isRestored(a))) removeWorker(ghost);
+					restoredViews.delete(meta.id);
 					let group = groups.find((g) => g.id === meta.groupId);
 					if (!group) {
 						group = { id: meta.groupId, label: meta.groupLabel ?? `${meta.groupId} · re-adopted`, createdAt: meta.createdAt, agents: [] };
@@ -2123,6 +2398,8 @@ export function registerSubagents(
 		teams.reserveCounter(ctx.sessionManager.getEntries());
 		teams.restoreHistory(ctx.sessionManager.getBranch?.() ?? []);
 		hosting.setOwner(ctx.sessionManager.getSessionId?.(), ctx.sessionManager.getSessionFile?.());
+		// Asynchronous (transcript reads): earlier processes' workers appear once read.
+		void restoreWorkers(ctx).catch(() => { /* Best effort: the records stay for the next start. */ });
 		if (hosting.active()) {
 			try {
 				hosting.reap();
@@ -2138,7 +2415,8 @@ export function registerSubagents(
 		if (shuttingDown) return;
 		// Live members stay session-owned; only read-only history follows the branch.
 		teams.restoreHistory(ctx.sessionManager.getBranch?.() ?? []);
-		refresh();
+		// Restored workers follow the branch like history does; the Σ does not.
+		applyBranch(ctx);
 	});
 	pi.on("session_shutdown", async () => {
 		// Read at dispose time: the embedding process sets it only when it is going away.
@@ -2190,6 +2468,8 @@ export function registerSubagents(
 		finished.clear();
 		teams.clear();
 		registry.clear();
+		restoredViews.clear();
+		restoreGeneration++;
 		// Only a root this instance created is removed; an injected root is the caller's.
 		// A registry mailbox goes only once no worker of this owner remains to use it.
 		if (mailboxRoot && (mailboxOwned || (!options.mailboxRoot && !detached.size && hosting.ownerEmpty()))) {

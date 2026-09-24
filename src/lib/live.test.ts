@@ -465,3 +465,35 @@ test("a chat-wide refusal still returns every message no departure spoke for", (
   // With nothing handed back — the ordinary busy/recent/config case — everything comes back.
   assert.deepEqual(unsentRows(s).map((r) => r.text), ["first", "second"]);
 });
+
+// pi 0.87 appends a resize note to a user message's stored text (shared/image-note.ts); these are
+// the verbatim text blocks pi 0.87.1 wrote in a hermetic session.
+const NOTED = "Two images. Reply with just OK.\n\n[Image: original 2560x1600, displayed at 2000x1250. Multiply coordinates by 1.28 to map to original image.]\n[Image: original 3000x1000, displayed at 2000x667. Multiply coordinates by 1.50 to map to original image.]";
+const PNG = { type: "image", data: "AAAA", mimeType: "image/png" };
+
+test("a user message_start no row waits for shows the text without pi's image resize notes", () => {
+  const [s, set] = store();
+  applyEvent(set, { type: "message_start", message: { role: "user", content: [{ type: "text", text: NOTED }, PNG, PNG] } });
+  const row = s.entries[0];
+  assert.equal(row?.kind, "user");
+  if (row?.kind === "user") {
+    assert.equal(row.text, "Two images. Reply with just OK.");
+    assert.equal(row.images?.length, 2);
+  }
+  // Only on a message carrying the images: a typed look-alike is shown as written.
+  applyEvent(set, { type: "message_start", message: { role: "user", content: [{ type: "text", text: NOTED }] } });
+  const plain = s.entries[1];
+  if (plain?.kind === "user") assert.equal(plain.text, NOTED);
+  else assert.fail("expected a user row");
+});
+
+test("a noted message_start claims the row whose typed text it carries, not the first open one", () => {
+  const [s, set] = store();
+  addPendingPrompt(set, "earlier words");
+  addPendingPrompt(set, "Two images. Reply with just OK.");
+  applyEvent(set, { type: "message_start", message: { role: "user", content: [{ type: "text", text: NOTED }, PNG, PNG] } });
+  assert.deepEqual(
+    s.entries.map((e) => (e.kind === "user" ? [e.text, !!e.started] : e.kind)),
+    [["earlier words", false], ["Two images. Reply with just OK.", true]],
+  );
+});

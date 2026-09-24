@@ -3,6 +3,7 @@ import { existsSync, readFileSync, statSync, unlinkSync, writeFileSync } from "n
 import { open } from "node:fs/promises";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { CURRENT_SESSION_FORMAT, type ForkEditor, type ForkRefusal, type ForkRefusalCode, type ForkRequest, type ForkResult, type SessionSummary, type TmpAttachment } from "../shared/protocol";
+import { stripImageNotes } from "../shared/image-note";
 import { inlineTmpImages, MAX_ATTACHMENT_BYTES } from "./attachments";
 import { activeConfigFailure, FANOUT_MEMBER_ENTRIES, heldChat } from "./chat-manager";
 import { readLive } from "./live";
@@ -210,7 +211,8 @@ export function findOnBranch(branch: readonly Entry[], entryId: string): { entry
 export function editorFor(entry: Entry, readBytes: (path: string) => Buffer | null = readIfPresent): ForkEditor | undefined {
   if (entry?.type !== "message" || entry.message?.role !== "user") return undefined;
   const content = entry.message?.content;
-  const raw = typeof content === "string" ? content : textOf(content);
+  // Without pi 0.87's image resize notes: the images come along, and sending them again adds new ones.
+  const raw = typeof content === "string" ? content : stripImageNotes(textOf(content), content);
   const { text, attachments } = inlineTmpImages(raw, true);
   const stored = imageBlobs(content);
 

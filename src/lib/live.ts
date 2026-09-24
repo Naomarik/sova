@@ -3,6 +3,7 @@
 // refetches the normalized transcript and resets this.
 
 import { produce, type SetStoreFunction } from "solid-js/store";
+import { stripImageNotes } from "../../shared/image-note";
 import type { TmpAttachment, UploadResult } from "../../shared/protocol";
 import { imagesFromContent } from "./images";
 import { contentText, isObj, str } from "./message";
@@ -355,7 +356,9 @@ export function applyEvent(set: SetStoreFunction<LiveState>, event: unknown) {
             // is what keeps two queued messages from swapping labels when the steer ahead of the
             // follow-up is delivered first. Each start claims one row, so the same words sent
             // twice are still two messages, and a start no row waits for is a new one.
-            const text = contentText(msg.content);
+            // Without pi 0.87's image resize notes, as the transcript shows it — which also lets the
+            // row this tab sent match by its typed text.
+            const text = stripImageNotes(contentText(msg.content), msg.content);
             const open = s.entries.filter((e): e is Extract<LiveEntry, { kind: "user" }> => e.kind === "user" && !e.started);
             const row = open.find((e) => e.text === text) ?? open.find((e) => e.state === "delivered") ?? open[0];
             if (row) {

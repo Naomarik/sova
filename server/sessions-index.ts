@@ -5,6 +5,7 @@ import { CURRENT_SESSION_FORMAT, type SessionSummary } from "../shared/protocol"
 import { type LiveRecord, type RawLiveRecord, readLive, readOwnLiveRecords, workerCountsOf, workingSubagents } from "./live";
 import { LIVE_DIR, resolveSessionPath, sessionPathShape, SESSIONS_DIR } from "./paths";
 import { isWebSession, removeWebSession } from "./web-sessions";
+import { stripImageNotes } from "../shared/image-note";
 import { parseWakeNudge } from "../shared/wake";
 import { RECENT_WRITE_MS } from "./write-guard";
 import { isArchived, setArchived } from "./archived-sessions";
@@ -71,7 +72,8 @@ function summaryLine(s: string): string {
 function userText(content: unknown): string {
   if (typeof content === "string") return content;
   if (Array.isArray(content)) {
-    for (const b of content) if (b?.type === "text" && typeof b.text === "string") return b.text;
+    // Without pi 0.87's image resize notes: a title is the text as typed.
+    for (const b of content) if (b?.type === "text" && typeof b.text === "string") return stripImageNotes(b.text, content);
   }
   return "";
 }

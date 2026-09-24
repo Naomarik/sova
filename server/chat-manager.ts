@@ -16,6 +16,7 @@ import {
   type Theme,
 } from "@earendil-works/pi-coding-agent";
 import type { ChatClientMessage, ChatModeResult, ChatServerMessage, ModeApplies, ModeInfo, QueueItem, RegenerateRefusal, RewindRefusal, SandboxApplyResult, SlashCommand } from "../shared/protocol";
+import { stripImageNotes } from "../shared/image-note";
 import { parseWakeNudge } from "../shared/wake";
 import { type QueueImage, type QueueKind, WebQueue, type WebQueueItem } from "./queue";
 import { decodeUsageTotal, decodeWorkers } from "./insights";
@@ -433,7 +434,8 @@ export async function rewindSession(
     if (late) return late;
     hooks.beforeMarker();
     sm.appendCustomEntry(REWIND_ENTRY, { targetId: entryId, fromLeafId });
-    return { ok: true, editorText: result.editorText ?? "" };
+    // Without pi 0.87's image resize notes: the composer gets the text as typed, not the model's copy.
+    return { ok: true, editorText: stripImageNotes(result.editorText ?? "", target.message.content) };
   } catch (err) {
     return { ok: false, reason: "internal", message: err instanceof Error ? err.message : String(err) };
   }

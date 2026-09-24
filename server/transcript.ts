@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import type { AlignReportInfo, EntryKind, ExplanationInfo, TranscriptItem } from "../shared/protocol";
+import { stripImageNotes } from "../shared/image-note";
 import { parseWakeNudge } from "../shared/wake";
 import { inlineTmpImages } from "./attachments";
 import { isReport, parseReport, previewLine } from "./reports";
@@ -128,7 +129,8 @@ function normalizeMessage(entry: Entry, id: string, state?: { model?: string }):
         return [it];
       }
       const it = item(id, "user", entry, undefined, undefined, contentImages(m.content));
-      const { text, attachments } = inlineTmpImages(contentText(m.content, false), true);
+      // pi 0.87's image resize notes are for the model: the row shows the text as typed.
+      const { text, attachments } = inlineTmpImages(stripImageNotes(raw, m.content), true);
       if (text !== undefined) it.text = text;
       if (attachments) it.attachments = attachments;
       return [it];

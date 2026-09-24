@@ -10,7 +10,7 @@ html, body, #root { height: 100%; }
 
 .list-title-muted { color: var(--color-ink-muted); }
 
-/* Skeleton shapes from spec/03-transcript.md §3 "Loading transcript". */
+/* Skeleton shapes from the transcript spec "Loading transcript". */
 .skeleton-bubble { align-self: flex-end; width: 40%; height: var(--row-height); }
 .skeleton-w92 { width: 92%; }
 .skeleton-w78 { width: 78%; }
@@ -23,7 +23,7 @@ html, body, #root { height: 100%; }
 /* Transcript entry wrapper (data-entry anchor for outline jumps); adds no box to the thread. */
 .entry { display: contents; }
 
-/* Archive date sections (spec/02-session-list.md §2 "Archive by date"): each a <details> whose summary is
+/* Archive date sections: each a <details> whose summary is
    the eyebrow label (twist, name, count), collapsed by default; a rule between sections. */
 .archive-date + .archive-date { border-top: var(--stroke-thin) solid var(--color-border); }
 .archive-date-label {
@@ -47,7 +47,7 @@ html, body, #root { height: 100%; }
 /* Folder groups inside an open section: a hairline under the date row. */
 .archive-date[open] > .session-group:first-of-type { border-top: var(--stroke-thin) solid var(--color-border); }
 
-/* Archive cleanup (§2 "Archive cleanup"): one quiet button closing the open Archive. */
+/* Archive cleanup: one quiet button closing the open Archive. */
 .archive-tools {
   display: flex;
   justify-content: flex-end;
@@ -74,7 +74,7 @@ html, body, #root { height: 100%; }
 .cleanup-choice[aria-disabled="true"] { cursor: default; }
 
 
-/* Subagents pane sections (§11): a team's members under the team, plain subagents under their
+/* Subagents pane sections: a team's members under the team, plain subagents under their
    own head, so the two kinds are never one list. The head, its name, its count and its nested
    list are base.css §List groups; what's left here is this pane's own delta — the team's
    objective, indented to the head's gutter.
@@ -83,8 +83,8 @@ html, body, #root { height: 100%; }
 .subagents-group-objective { padding: 0 var(--space-4); margin-bottom: var(--space-2); }
 
 
-/* ---- WORKSPACE (#/g/<id>). A group's sessions on screen at once
-   (spec/14-workspaces.md): `split` lays the panes out in one horizontally
+/* ---- WORKSPACE (#/g/<id>). A group's sessions on screen at once:
+   `split` lays the panes out in one horizontally
    scrolled row, `tabs` shows one at a time while all of them stay mounted
    (hidden, so their streams keep running). `.workspace` replaces `.app-main`
    in the shell grid's second column, so it carries that column's box model.
@@ -246,14 +246,14 @@ html, body, #root { height: 100%; }
 .workspace-promoted { flex: none; gap: var(--space-2); max-width: 340px; overflow: hidden; }
 .workspace-promoted > .button { flex: none; }
 
-/* The group composer (spec/14-workspaces.md "The group composer"): the workspace's
+/* The group composer: the workspace's
    one primary, full width of the main column, under the pane row. */
 .group-composer { flex: none; }
 .group-composer-targets { color: var(--color-ink-2); white-space: nowrap; }
 /* Its banners sit above the row, inside the composer, so a refusal is attached
    to the box that caused it rather than floating over the panes. */
 .group-composer .banner { margin-bottom: var(--space-2); }
-/* While the workspace is open, a pane's Send is not the accent one: §0 allows a
+/* While the workspace is open, a pane's Send is not the accent one: the ground rules allow a
    single primary in view, and the choice worth marking is "this goes to all". */
 .workspace-pane .composer .button-primary {
   background: var(--color-surface);
@@ -261,7 +261,7 @@ html, body, #root { height: 100%; }
   color: var(--color-ink);
 }
 
-/* A collapsed pane composer (§14 "Pane composers while the group composer is in
+/* A collapsed pane composer (the workspace spec "Pane composers while the group composer is in
    use"): the row keeps its full height and every control keeps its tap target —
    what goes is the foot, which is reference rather than action. The reason stays
    in the accessibility tree, because a disabled composer that collapses must not
@@ -293,7 +293,7 @@ html, body, #root { height: 100%; }
 /* A menu row's second line: the group a session would LEAVE, or a disabled row's reason. */
 .mode-option-note { display: block; font-size: var(--fs-caption); color: var(--color-ink-muted); }
 
-/* ---- FANOUT (§14b). The dialog's rows and preview, the fork marker a member
+/* ---- FANOUT. The dialog's rows and preview, the fork marker a member
    draws in its transcript, and the partial-creation banner's lines. Token
    values only; the modal, field and picker families are base.css's. -------- */
 
@@ -312,7 +312,7 @@ html, body, #root { height: 100%; }
   border-radius: var(--r-md);
 }
 .fanout-row-model { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-/* The fill takes §4f's steps, class for class, so 80% looks the same here as in the head. */
+/* The fill takes the context window spec's steps, class for class, so 80% looks the same here as in the head. */
 .fanout-row-fill { display: inline; font-family: var(--font-mono); font-variant-numeric: tabular-nums; flex: none; font-size: var(--fs-caption); color: var(--color-ink-2); white-space: nowrap; }
 .fanout-count { flex: none; display: flex; align-items: center; gap: var(--space-2); }
 .fanout-add { align-self: flex-start; margin-top: var(--space-2); }
@@ -328,7 +328,7 @@ html, body, #root { height: 100%; }
 .fork-marker { display: flex; align-items: center; gap: var(--space-2); }
 .workspace-align { flex: none; }
 
-/* The Groups region head (spec/02-session-list.md §2 "Groups"): a <details> like the Archive, but
+/* The Groups region head: a <details> like the Archive, but
    its <summary> wraps the region's own <h2> so the heading and `aria-labelledby` survive the
    twist. base.css styles the h2; everything the summary itself needs is here. */
 .sidebar-groups > summary.sidebar-groups-summary {
@@ -346,12 +346,12 @@ html, body, #root { height: 100%; }
 /* Collapsed, the head is the region's last row: the region rule below it is the only divider. */
 .sidebar-groups:not([open]) > summary > .sidebar-region-head { border-bottom: 0; }
 
-/* The Recent region (spec/02-session-list.md §2 "Recent"): a flat list, so it has no folder
+/* The Recent region: a flat list, so it has no folder
    <details> to close it off the way every other region does. The rule under the last row is what
    separates the shortcut from the Groups head below it. */
 .sidebar-recent > .list { padding-bottom: var(--space-1); }
 
-/* The Settings modal's height (spec/12-settings-dialog.md "One height"). Without this the dialog
+/* The Settings modal's height. Without this the dialog
    is as tall as whichever tab is open — Themes ran to the viewport cap and Experimental to a few
    hundred pixels — so switching tabs resized the window under the pointer and moved the rail's
    own buttons out from under it. One height for every tab: the panel scrolls instead.

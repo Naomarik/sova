@@ -42,8 +42,8 @@ what the spike must execute. I am treating it as strong prior, not as the verdic
 
 ### Registry
 
-`globalThis[Symbol.for("pi-web.claude-code.session-bridges")]` → `Map<piSessionId, SessionBridge>`.
-Process-global because pi-web shares one `ModelRuntime` across sessions and `/reload` re-registers extensions;
+`globalThis[Symbol.for("sova.claude-code.session-bridges")]` → `Map<piSessionId, SessionBridge>`.
+Process-global because Sova shares one `ModelRuntime` across sessions and `/reload` re-registers extensions;
 a module-level map would be re-created and leak the old children.
 
 The same global holds a once-only flag for the process exit hooks (`exit`, `SIGINT`, `SIGTERM`,
@@ -62,7 +62,7 @@ enough) therefore killed the pi session permanently — every later turn failed 
 initialize", a model switch included. Deriving the id from the pi session keeps the records attributable
 without making a relaunch impossible.
 
-The launch counter lives in the bridge, so a new pi-web process starts back at 0 and walks forward past the
+The launch counter lives in the bridge, so a new Sova process starts back at 0 and walks forward past the
 records the previous one left: `spawnFresh` treats that stderr line as a collision, bumps the counter and
 spawns again, up to `SESSION_ID_PROBES` (32) times. Each collision costs one fast-failing spawn (~150 ms); any
 other handshake failure still throws on the first attempt.

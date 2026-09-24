@@ -7,22 +7,21 @@
 
 import { createSignal } from "solid-js";
 import { applySidebarWidth, DEFAULT_SIDEBAR_WIDTH } from "./sidebar-width";
-import { dualGet, dualSet } from "./storage-keys";
+import { readKey, writeKey } from "./storage-keys";
 
-/** "1" collapsed, "0" expanded. The legacy spelling is read and mirrored (storage-keys.ts). */
+/** "1" collapsed, "0" expanded. */
 export const SPINE_KEY = "sova:sidebar-collapsed";
-export const LEGACY_SPINE_KEY = "pi-web:sidebar-collapsed";
 
 /** The collapsed width when the `--spine-width` token can't be read (tokens.css). */
 export const FALLBACK_SPINE_WIDTH = 64;
 
 /** The stored choice: only "1" collapses. Absent, "0" or anything else is the expanded pane. */
 export function readSpine(store: Storage): boolean {
-  return dualGet(store, SPINE_KEY, LEGACY_SPINE_KEY) === "1";
+  return readKey(store, SPINE_KEY) === "1";
 }
 
 export function writeSpine(store: Storage, on: boolean): void {
-  dualSet(store, SPINE_KEY, LEGACY_SPINE_KEY, on ? "1" : "0");
+  writeKey(store, SPINE_KEY, on ? "1" : "0");
 }
 
 /** The user's choice, whatever the viewport. Collapsed-on-screen is `spine() && unfolded` (App.tsx). */

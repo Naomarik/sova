@@ -1,9 +1,9 @@
-# §chat/playbooks — 04i · Playbooks
+# §chat/playbooks — Playbooks
 > Part of the Sova design spec · [overview](../design/overview.md)
 
 A playbook is a markdown recipe an agent runs against a project: "audit this repo's
 accessibility", "write the launch notes". The recipe does not depend on any one project. You
-pick one from the composer flyout (§4), add a line of your own if you want, and it goes into the
+pick one from the composer flyout (§chat/composer), add a line of your own if you want, and it goes into the
 current chat as your turn, through the chat's ordinary send path.
 
 ## §chat.playbooks/where-playbooks-come-from — Where playbooks come from
@@ -40,7 +40,7 @@ case-insensitively, with the id breaking ties, so the order never depends on `re
 client groups and sorts the same way again (`src/lib/playbooks.ts`).
 
 **An unreadable user folder** doesn't fail the request. The catalog carries `error`, still lists
-everything else, and the dialog shows a caption line above the groups (§9). A user folder that
+everything else, and the dialog shows a caption line above the groups (§design/copy-deck). A user folder that
 doesn't exist is simply empty.
 
 ## §chat.playbooks/the-project-listing — The project listing
@@ -52,21 +52,20 @@ it couldn't:
 |---|---|---|
 | `ok` | The cwd is a local folder and its playbooks folder was read (or doesn't exist) | Its playbooks under This project. With none, no heading |
 | `none` | No cwd was sent | Nothing |
-| `remote` | The cwd is on a remote target, or is a retired sshfs mount | A caption note below the groups |
+| `remote` | The cwd is on a remote target | A caption note below the groups |
 | `missing` | The cwd is relative, doesn't exist, isn't a folder, or can't be read. It is also `missing` when `<cwd>/.sova/marketing/playbooks/` exists but can't be read | A caption note below the groups |
 
 The note is the **server's `message`**, which names the target or the folder and the actual
-fault. A client fallback is used only when the server sent no message (§9).
+fault. A client fallback is used only when the server sent no message (§design/copy-deck).
 
-**Remote is decided lexically, before `path-map.json`.** This is exactly how `/api/files`
-(`server/files.ts`) decides it. A relative cwd is refused as `missing`, then a remote cwd is
-refused, all before any filesystem call. Only a cwd that survives both goes through
-`movedPath()` and then `stat`. This order matters: a remote placeholder must never be read as a
-moved local folder, and a dead mount must never be stat'ed.
+**Remote is decided lexically.** This is exactly how `/api/files` (`server/files.ts`) decides
+it. A relative cwd is refused as `missing`, then a remote cwd is refused, all before any
+filesystem call. Only a cwd that survives both is `stat`ed. This order matters: a remote
+placeholder must never be read as a local folder.
 
 ## §chat.playbooks/entry-point — Entry point
 
-The composer flyout's menu panel has a **Playbooks** row after Commands (§4 "Composer flyout").
+The composer flyout's menu panel has a **Playbooks** row after Commands (§chat.composer/composer-flyout).
 It closes the flyout and opens the dialog on step 1, or on step 2 of the playbook you left text
 in (below).
 
@@ -76,7 +75,7 @@ in (below).
 - **Disabled while the composer is blocked.** The row is `aria-disabled`, with
   `aria-describedby="composer-reason"` pointing at the composer's own reason line. That covers
   connecting, reconnecting, not connected, an archived pane, saving a turn, and a model switch in
-  flight (§4 "Disabled states"). It is the same treatment Attach images gets, not `Fan Out…`'s
+  flight (§chat.composer/disabled-states). It is the same treatment Attach images gets, not `Fan Out…`'s
   absence.
 
 ## §chat.playbooks/the-modal — The modal
@@ -138,7 +137,7 @@ modal**, and only one renders at a time: step 2 never stacks on step 1. The moda
   nested controls. The title sits over the description. The description **truncates to one
   line**, and the full text is in the row's `title`. A playbook with no description shows only
   its title. Activating a row goes to step 2.
-- **Keyboard** follows the flyout's roving-tabindex pattern (§4 "Keyboard"): exactly one row is in
+- **Keyboard** follows the flyout's roving-tabindex pattern (§chat/composer "Keyboard"): exactly one row is in
   the Tab order, `↑`/`↓` move across all groups and wrap, and `Home`/`End` jump to the ends. The
   modal takes focus on open, and when the catalog arrives focus moves to the **first row**. The
   same happens after `Retry`: its button disappears with the banner, and focus would otherwise
@@ -159,7 +158,7 @@ modal**, and only one renders at a time: step 2 never stacks on step 1. The moda
   shows that playbook's own text, which is empty if you never wrote any.
 - **`Send Playbook`** hands the text (below) to the chat's send. If the socket accepts it, the
   dialog closes and **focus goes to the composer's textarea** (`composer-input`, through
-  `ChatView`'s `focusComposer()`), as after any send (§4 "Focus"). A close without sending
+  `ChatView`'s `focusComposer()`), as after any send (§chat/composer "Focus"). A close without sending
   (`Close` or `Esc` on step 1, or the scrim on either step) returns focus to the `plus` trigger
   (`composer-menu-trigger`) instead. If the socket refuses it right away, the dialog stays open
   with everything as it was. The label never changes, and there is no
@@ -210,11 +209,11 @@ separator and no filler. The body goes through **verbatim**. The SDK expands pro
 and skills on the way in, so anything that looks like one must arrive intact.
 
 The first line is always plain prose, so **the text can never begin with `/`**, which Sova would
-dispatch as an extension command (§4d). It names the **absolute** directory because the body
+dispatch as an extension command (§chat/slash-commands). It names the **absolute** directory because the body
 refers to its `phases/` and `templates/` by relative path, and the session's cwd is a different
 folder.
 
-The transcript shows the result as your message (§3), with no special styling.
+The transcript shows the result as your message (§chat/transcript), with no special styling.
 
 **Mid-turn it is a follow-up, never a steer.** The dialog always sends a `prompt` frame
 (`ChatView.send(text, false, [])`), even while a turn is streaming. The server's `acceptPrompt`
@@ -222,7 +221,7 @@ queues a streaming-time prompt as `kind: "followUp"`, which shows as a **removab
 `handOffQueued` then hands it to `session.prompt(text, { streamingBehavior: "followUp" })` while
 the turn is still streaming, or starts it as the next turn once that one has ended, so it
 **runs after the current turn**. That is the opposite of the composer's own mid-turn Send, which
-becomes `Steer` and sends `{type:"steer"}` into the running turn (§4 "While streaming"). The
+becomes `Steer` and sends `{type:"steer"}` into the running turn (§chat/composer "While streaming"). The
 difference is deliberate: a whole playbook steered into a running turn would derail it. A line
 of steering is a correction; a playbook is a new job.
 
@@ -274,6 +273,6 @@ ack, and the same restore on refusal as any other message.
 No new ones. The modal's own set, the list rows' `--row-height` minimum, `--fs-caption` and
 `--color-ink-muted` for descriptions and notes.
 
-**All user-facing strings are in §9 · Copy deck.**
+**All user-facing strings are in §design/copy-deck.**
 
 ---

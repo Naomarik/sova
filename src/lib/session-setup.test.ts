@@ -80,7 +80,7 @@ test("lines: singular only for exactly 1, thousands separated", () => {
 });
 
 test("tokens: the same formatter the head uses, marked as an estimate, and never invented", () => {
-  // The same figures the context gauge shows (§4f): 812 · 8.4k · 237k · 1M.
+  // The same figures the context gauge shows: 812 · 8.4k · 237k · 1M.
   assert.equal(fileFacts({ path: "/a", bytes: 1024, lines: 1, tokens: 812 }), "1.0 KB · 1 line · ≈812 tokens");
   assert.equal(fileFacts({ path: "/a", bytes: 1024, lines: 1, tokens: 8400 }), "1.0 KB · 1 line · ≈8.4k tokens");
   assert.equal(fileFacts({ path: "/a", bytes: 0, lines: 0, tokens: 0 }), "0 B · 0 lines · ≈0 tokens");

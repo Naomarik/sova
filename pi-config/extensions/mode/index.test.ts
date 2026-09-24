@@ -27,7 +27,6 @@ import {
 	defaults,
 	hasMinor,
 	isMode,
-	LEGACY_MODE_ALIASES,
 	loadState,
 	MODE_DESCRIPTIONS,
 	MODES,
@@ -169,7 +168,7 @@ test("parseMinorFlag", () => {
 
 test("minor mode names never collide with /mode keywords", () => {
 	for (const minor of MINOR_MODES) {
-		assert.ok(![...MODES, ...Object.keys(LEGACY_MODE_ALIASES), "status", "strict", "default"].includes(minor), minor);
+		assert.ok(![...MODES, "status", "strict", "default"].includes(minor), minor);
 		assert.match(minor, /^[a-z-]+$/, "must match the /mode minor-toggle pattern");
 	}
 });
@@ -374,7 +373,6 @@ test("spec: the prompt names the trusted tools, their real flags, and the draft 
 	assert.match(spec, /Keep the frontier in view/);
 	assert.match(spec, /Exit 0 means the declared closure was delivered, not that the context is complete/, "known closure, not completeness");
 	assert.match(spec, /Labels are declared, never proof: `migrated` text is the requirement with its implementation unreviewed; `candidate` is a proposal\./);
-	assert.match(spec, /Old docs that redirect into `\.sova\/spec\/` are not a second authority/);
 	assert.match(spec, /Documentation changes only through drafts, never by editing current `claims\/` or `manifest\.json`/);
 	assert.match(spec, /`new <name> --write` copies the whole current spec \(or starts one\)/, "a draft is a full copy");
 	assert.match(spec, /Documenting what the code already does is its own baseline draft, never mixed into a feature draft/, "baseline apart from the feature");
@@ -409,7 +407,6 @@ test("spec: the prompt names the trusted tools, their real flags, and the draft 
 test("mode helpers", () => {
 	assert.ok(isMode("normal"));
 	assert.ok(isMode("delegate"));
-	assert.ok(!isMode("claude-heavy"), "the legacy name is read by parseMode, never a mode itself");
 	assert.ok(!isMode("build"));
 	assert.deepEqual(MODES, ["normal", "delegate"]);
 	assert.deepEqual(Object.keys(MODE_DESCRIPTIONS), [...MODES], "one description per canonical mode, nothing else");
@@ -424,43 +421,12 @@ test("mode helpers", () => {
 	assert.equal(parseShortcut(42), undefined);
 });
 
-test("parseMode reads canonical names and the permanent legacy alias, nothing else", () => {
+test("parseMode reads the mode names, nothing else", () => {
 	assert.equal(parseMode("normal"), "normal");
 	assert.equal(parseMode("delegate"), "delegate");
-	assert.equal(parseMode("claude-heavy"), "delegate");
-	for (const bad of ["Claude-Heavy", "heavy", "", " delegate", "toString", "__proto__", "constructor", undefined, null, 1, {}, ["delegate"]]) {
+	for (const bad of ["Delegate", "heavy", "", " delegate", "toString", "__proto__", "constructor", undefined, null, 1, {}, ["delegate"]]) {
 		assert.equal(parseMode(bad), undefined, `rejected: ${JSON.stringify(bad)}`);
 	}
-	for (const target of Object.values(LEGACY_MODE_ALIASES)) assert.ok(isMode(target), "every alias maps to a canonical mode");
-});
-
-test("legacy claude-heavy migrates through every state.ts parser and is written back canonical", () => {
-	// mode.json (the default for new sessions)
-	assert.equal(normalizeState({ version: 1, mode: "claude-heavy", strict: true }).mode, "delegate");
-	const dir = tmp();
-	try {
-		const path = join(dir, "mode.json");
-		writeFileSync(path, JSON.stringify({ version: 1, mode: "claude-heavy", strict: false, minorModes: ["align"] }));
-		const loaded = loadState(path);
-		assert.equal(loaded.mode, "delegate");
-		saveState(path, loaded);
-		assert.equal(JSON.parse(readFileSync(path, "utf8")).mode, "delegate", "the next write is canonical");
-		assert.doesNotMatch(readFileSync(path, "utf8"), /claude-heavy/);
-	} finally {
-		rmSync(dir, { recursive: true, force: true });
-	}
-	// a session's own snapshot
-	assert.deepEqual(normalizeActive({ version: 1, mode: "claude-heavy", strict: true, minorModes: ["align"] }), {
-		version: 1,
-		mode: "delegate",
-		strict: true,
-		minorModes: ["align"],
-	});
-	assert.deepEqual(
-		restoreActive([{ type: "custom", customType: "mode", data: { mode: "claude-heavy", active: { version: 1, mode: "claude-heavy", strict: false, minorModes: [] } } }]),
-		{ version: 1, mode: "delegate", strict: false, minorModes: [] },
-		"a transcript pinned before the rename restores into delegate",
-	);
 });
 
 test("delegate prompt names every profile's exact worker and leaves no placeholders", () => {

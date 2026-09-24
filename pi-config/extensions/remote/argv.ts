@@ -340,17 +340,9 @@ export function parseListDirsOutput(stdout: string): { path: string; dirs: strin
 // ---------------------------------------------------------------------------
 // local placeholder cwd
 
-/** Local directory standing in for a remote cwd: <agentDir>/sova/targets/<name>/<remote/abs/path>.
- *  Renamed with the product (the pi-web state root moved to sova/); sessions stored before the
- *  rename carry the legacy root in their headers, so parsers accept BOTH spellings —
- *  legacyPlaceholderRoot exists for exactly those reads (never for new writes). */
+/** Local directory standing in for a remote cwd: <agentDir>/sova/targets/<name>/<remote/abs/path>. */
 export function placeholderRoot(agentDir: string, name: string): string {
 	return join(agentDir, "sova", "targets", name);
-}
-
-/** The pre-rebrand placeholder root: read-side only (old session headers, old worker spawn cwds). */
-export function legacyPlaceholderRoot(agentDir: string, name: string): string {
-	return join(agentDir, "pi-web", "targets", name);
 }
 
 export function placeholderDir(agentDir: string, name: string, remotePath: string): string {

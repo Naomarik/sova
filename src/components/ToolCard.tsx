@@ -71,7 +71,7 @@ export function ToolCard(props: {
   status: ToolStatus;
   output?: string;
   images?: string[];
-  /** /tmp image paths named in the output (§4b "Path attachments"). */
+  /** /tmp image paths named in the output. */
   attachments?: TmpAttachment[];
 }) {
   const [showAll, setShowAll] = createSignal(false);

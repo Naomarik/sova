@@ -9,7 +9,7 @@ import { Banner } from "./ui";
 import { RetryButton, sentence, WorkerSlotRow } from "./WorkerSlotRow";
 
 /**
- * Settings → Modes → Delegate (spec/12-settings-dialog.md "Modes"): which worker — backend, model,
+ * Settings → Modes → Delegate: which worker — backend, model,
  * effort — each kind of Delegate work goes to, with an optional fallback. The choices come from
  * what each backend actually offers (GET …/delegate/options); nothing here is free text. The file
  * is global and shared with the terminal: chats already in Delegate use a save from their next

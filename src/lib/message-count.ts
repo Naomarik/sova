@@ -1,4 +1,4 @@
-// The fanout dialog's fork note (spec/14b-fanout.md, §9 "Fork note"): "Each member gets the whole
+// The fanout dialog's fork note: "Each member gets the whole
 // conversation up to message {n}". The number has to mean what the words say — MESSAGES, not
 // rendered rows. A rendered transcript holds one row per content block (an assistant reply with
 // text, thinking and two tool calls is four rows and one message), plus info rows a conversation

@@ -33,9 +33,9 @@ Object.assign(globalThis, {
   },
 });
 
-const { activeThemeId, applyTheme, applyStoredTheme, clearTheme, clearTypography, droppedThemeId, LEGACY_THEME_KEY, reconcileTheme, setTextSize, setTypography, textSize, THEME_KEY, typography } =
+const { activeThemeId, applyTheme, applyStoredTheme, clearTheme, clearTypography, droppedThemeId, reconcileTheme, setTextSize, setTypography, textSize, THEME_KEY, typography } =
   await import("./theme");
-const { LEGACY_TEXT_SIZE_KEY, LEGACY_TYPOGRAPHY_KEY, TEXT_SIZE_KEY, TYPOGRAPHY_KEY, fontById } = await import("./typography");
+const { TEXT_SIZE_KEY, TYPOGRAPHY_KEY, fontById } = await import("./typography");
 
 const reset = () => {
   style.clear();
@@ -70,8 +70,6 @@ test("applyTheme writes each key onto the property CSS_PROPERTY names, verbatim"
   assert.equal(meta.content, "#282a36");
   assert.equal(activeThemeId(), "dracula");
   assert.deepEqual(JSON.parse(store.get(THEME_KEY)!).id, "dracula");
-  // The legacy pre-rebrand key is mirrored, so a rollback build wears the same theme.
-  assert.deepEqual(JSON.parse(store.get(LEGACY_THEME_KEY)!).id, "dracula");
 });
 
 test("applyTheme drops the previous theme's keys: no value outlives the theme that set it", () => {
@@ -81,27 +79,6 @@ test("applyTheme drops the previous theme's keys: no value outlives the theme th
   assert.equal(style.get("--color-bg"), "#fff");
   assert.equal(style.has("--font-mono"), false);
   assert.equal(attributes.get("data-theme"), "light");
-});
-
-test("rename bridge: a theme stored only under the legacy key still applies, and clearing removes both", () => {
-  reset();
-  store.set(LEGACY_THEME_KEY, JSON.stringify({ id: "dracula", base: "dark", tokens: info().tokens }));
-  applyStoredTheme();
-  assert.equal(activeThemeId(), "dracula", "legacy-only choice is read");
-  assert.equal(attributes.get("data-theme"), "dark");
-  clearTheme();
-  assert.equal(store.has(THEME_KEY), false);
-  assert.equal(store.has(LEGACY_THEME_KEY), false, "a clear removes the legacy mirror too");
-});
-
-test("rename bridge: legacy typography choice reads; a pick writes both spellings", () => {
-  reset();
-  store.set(LEGACY_TYPOGRAPHY_KEY, JSON.stringify({ text: "inter", mono: null }));
-  applyStoredTheme();
-  assert.equal(typography().text, "inter", "legacy-only pick is read");
-  setTypography({ text: "ibm-plex-sans" });
-  assert.equal(JSON.parse(store.get(TYPOGRAPHY_KEY)!).text, "ibm-plex-sans");
-  assert.equal(JSON.parse(store.get(LEGACY_TYPOGRAPHY_KEY)!).text, "ibm-plex-sans");
 });
 
 test("clearTheme leaves no attribute at all — that is what renders the default dark", () => {
@@ -151,7 +128,7 @@ test("reconcileTheme: a file edited elsewhere re-applies; an unchanged one touch
   assert.equal(style.get("--color-bg"), "#111111");
 });
 
-/* ---- Typography over the theme (§12 "Typography"): pick > theme > default -------------- */
+/* ---- Typography over the theme: pick > theme > default -------------- */
 
 const INTER = fontById("text", "inter")!.stack;
 const FIRA = fontById("mono", "fira-code")!.stack;
@@ -230,7 +207,7 @@ test("clearTypography (Use Theme Fonts, ?theme=default) drops both kinds and the
   assert.equal(activeThemeId(), "a", "the theme itself is untouched");
 });
 
-/* ---- Text size over the theme (§12 "Typography") ----------------------------------------- */
+/* ---- Text size over the theme ----------------------------------------- */
 
 test("Medium writes no size; Small and Large write every --fs-* step and persist under both keys", () => {
   reset();
@@ -240,13 +217,11 @@ test("Medium writes no size; Small and Large write every --fs-* step and persist
   assert.equal(style.get("--fs-micro"), "10.5px");
   assert.equal([...style.keys()].filter((k) => k.startsWith("--fs-")).length, 8);
   assert.equal(store.get(TEXT_SIZE_KEY), "small");
-  assert.equal(store.get(LEGACY_TEXT_SIZE_KEY), "small");
   setTextSize("large");
   assert.equal(style.get("--fs-body"), "15.5px");
   setTextSize("medium");
   assert.equal([...style.keys()].some((k) => k.startsWith("--fs-")), false, "Medium takes every size off");
   assert.equal(store.has(TEXT_SIZE_KEY), false, "and stores nothing");
-  assert.equal(store.has(LEGACY_TEXT_SIZE_KEY), false);
 });
 
 test("a size scales the theme's own px sizes and survives a theme switch", () => {

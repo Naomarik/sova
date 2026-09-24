@@ -1,7 +1,6 @@
 // What pi will LOAD for a session's folder: the context files it writes into the prompt, and the
 // skills it offers this session, each with its size on disk. GET /api/sessions/context
-// (shared/protocol.ts SessionSetup), rendered in the empty state of a session with no messages yet
-// (spec/03-transcript.md §3).
+// (shared/protocol.ts SessionSetup), rendered in the empty state of a session with no messages yet.
 //
 // Two sources, one shape:
 //
@@ -19,8 +18,7 @@
 // rules, they move with pi, and a second copy would drift; both sources above are pi's own code.
 //
 // WHICH FOLDER is the other thing that must not be answered twice: `readStoredCwd` and `plan` come
-// from git-summary, so the remote classification, the removed-sshfs-mount refusal and the rename
-// bridge (state-root rebase, then path-map.json) are the same ones the Git section applies. A
+// from git-summary, so the remote classification is the same one the Git section applies. A
 // remote session's cwd is a LOCAL PLACEHOLDER — reading it would describe Sova's own disk — so the
 // answer is `state: "remote"` and the client shows the repository alone (which does read the
 // target).
@@ -120,8 +118,6 @@ export interface SetupDeps {
   runtime?: (sessionPath: string) => Loadout | null;
   /** pi's own read for a folder (default: DefaultResourceLoader, noExtensions). */
   loader?: (cwd: string) => Promise<Loadout>;
-  /** Stored cwd → the folder a local read happens in (default: targets.mappedNewCwd). */
-  mapCwd?: (cwd: string) => string;
   /** Whether a local path exists (default: fs.existsSync). */
   exists?: (path: string) => boolean;
   now?: () => number;
@@ -158,8 +154,8 @@ export function clearSetupCache(): void {
 }
 
 /** One folder's answer. Never throws: a loader that blew up is a `reason` in words. */
-async function read(cwd: string, moved: boolean, sessionPath: string, deps: SetupDeps, now: () => number): Promise<SessionSetup> {
-  const base = { where: { kind: "local" } as const, cwd, ...(moved ? { moved: true as const } : {}), checkedAt: now() };
+async function read(cwd: string, sessionPath: string, deps: SetupDeps, now: () => number): Promise<SessionSetup> {
+  const base = { where: { kind: "local" } as const, cwd, checkedAt: now() };
   const unavailable = (reason: string): SessionSetup => ({ state: "unavailable", reason, ...base });
   if (!(deps.exists ?? existsSync)(cwd)) return unavailable(`This session's folder no longer exists: ${cwd}.`);
 
@@ -196,8 +192,8 @@ async function read(cwd: string, moved: boolean, sessionPath: string, deps: Setu
  * SETUP_TTL_MS; `fresh` skips the cache but joins a read already in flight. Never throws: every
  * failure is a `state: "unavailable"` with the reason in words.
  *
- * The key is the folder, not the session: two sessions in one repository share the same answer, and
- * `moved` is part of the answer so it is part of the key. No concurrency limit — the fallback read
+ * The key is the folder, not the session: two sessions in one repository share the same answer. No
+ * concurrency limit — the fallback read
  * is one settings read plus a handful of small file reads (~20ms here), and the runtime path is
  * free.
  */
@@ -214,19 +210,19 @@ export async function getSessionSetup(sessionPath: string, opts: { fresh?: boole
   }
   let p: Plan;
   try {
-    p = plan(stored, { mapCwd: deps.mapCwd });
+    p = plan(stored);
   } catch (err) {
     return { state: "unavailable", where: { kind: "local" }, cwd: stored, reason: `Sova couldn't place this session's folder: ${(err as Error)?.message || "unknown error"}.`, checkedAt: now() };
   }
   if (p.kind === "refuse") return p.summary(now());
   if (p.kind === "remote") return { state: "remote", where: { kind: "remote", target: p.target }, cwd: p.place.cwd, checkedAt: now() };
 
-  const key = JSON.stringify([p.place.cwd, p.place.moved ?? false]);
+  const key = p.place.cwd;
   const hit = cache.get(key);
   if (!opts.fresh && hit && now() - hit.checkedAt < SETUP_TTL_MS) return hit;
   const existing = inflight.get(key);
   if (existing) return existing;
-  const run = read(p.place.cwd, p.place.moved === true, sessionPath, deps, now)
+  const run = read(p.place.cwd, sessionPath, deps, now)
     .then((setup) => {
       // A failure is never served from the cache, and neither is the answer before it: a folder
       // that was missing a moment ago may exist now.

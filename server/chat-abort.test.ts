@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 import type { ChatServerMessage } from "../shared/protocol";
 
-const agentDir = mkdtempSync(join(tmpdir(), "pi-web-abort-test-"));
+const agentDir = mkdtempSync(join(tmpdir(), "sova-abort-test-"));
 process.env.PI_CODING_AGENT_DIR = agentDir; // before chat-manager computes its paths
 after(() => rmSync(agentDir, { recursive: true, force: true }));
 const { drainQueueThenAbort } = await import("./chat-manager");

@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 
-const agentDir = mkdtempSync(join(tmpdir(), "pi-web-groups-index-"));
+const agentDir = mkdtempSync(join(tmpdir(), "sova-groups-index-"));
 process.env.PI_CODING_AGENT_DIR = agentDir; // before the modules below compute their paths
 const sessionsDir = join(agentDir, "sessions", "--tmp-groups-index--");
 mkdirSync(sessionsDir, { recursive: true });
@@ -56,7 +56,7 @@ const grouped = () => {
 test("a listing carries groupId only for grouped rows, and KEEPS the assignment of a member whose file is gone", async () => {
   const group = grouped();
   const a = session(ID_A, "Grouped session");
-  const b = session(ID_B, "Soon deleted outside pi-web");
+  const b = session(ID_B, "Soon deleted outside Sova");
   assignSession(ID_A, group);
   assignSession(ID_B, group);
 
@@ -65,7 +65,7 @@ test("a listing carries groupId only for grouped rows, and KEEPS the assignment 
   assert.equal(byId.get(ID_A)!.groupId, group);
   assert.equal(byId.get(ID_B)!.groupId, group, "both rows are grouped while both files exist");
 
-  // Deleted by someone other than pi-web's cleanup. The assignment SURVIVES: the workspace's
+  // Deleted by someone other than Sova's cleanup. The assignment SURVIVES: the workspace's
   // "This session's file is gone" pane is that assignment rendered (spec 14-workspaces "Gone
   // from disk"), and a listing-pass prune would race the pane's own Remove From Group gesture —
   // the member would vanish silently instead of showing its state. Only Archive cleanup prunes,

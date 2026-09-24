@@ -1,4 +1,4 @@
-// Reveal-on-intent for the message-action strips (spec/03 "Message actions").
+// Reveal-on-intent for the message-action strips.
 //
 // A strip is always in the DOM, always in the accessibility tree and always tabbable; what the
 // reveal changes is whether it is PAINTED and hit-testable — `opacity` plus `pointer-events` in

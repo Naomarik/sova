@@ -1,4 +1,4 @@
-// The sidebar's Recent region (spec/02-session-list.md §2 "Recent") and the one preference behind
+// The sidebar's Recent region and the one preference behind
 // it: how many rows it shows.
 //
 // Recent is a SHORTCUT, not a region in the pane rule's sense. It is additive the way a group is:
@@ -12,13 +12,11 @@
 import { createSignal } from "solid-js";
 import type { SessionSummary } from "../../shared/protocol";
 import { isMainThread } from "./regions";
-import { dualGet, dualSet } from "./storage-keys";
+import { readKey, writeKey } from "./storage-keys";
 
-/** §12 "General": the count lives in localStorage, like the theme. It is this browser's, not the
+/** The settings dialog spec's "General" tab: the count lives in localStorage, like the theme. It is this browser's, not the
     machine's — there is no server endpoint for it, and the server list is unchanged by it. */
 export const RECENT_COUNT_KEY = "sova:recent-count";
-/** The pre-rebrand spelling, read and mirrored while the rename bridge is open (storage-keys.ts). */
-export const LEGACY_RECENT_COUNT_KEY = "pi-web:recent-count";
 
 /** Enough rows to be worth a region, few enough that Groups and Live & web stay above the fold. */
 export const DEFAULT_RECENT_COUNT = 5;
@@ -119,7 +117,7 @@ export function recentSessions(sessions: readonly SessionSummary[], count: unkno
 
 function readStoredCount(): number {
   try {
-    return normalizeRecentCount(dualGet(localStorage, RECENT_COUNT_KEY, LEGACY_RECENT_COUNT_KEY));
+    return normalizeRecentCount(readKey(localStorage, RECENT_COUNT_KEY));
   } catch {
     // A blocked or full localStorage means the default, never a broken boot.
     return DEFAULT_RECENT_COUNT;
@@ -127,7 +125,7 @@ function readStoredCount(): number {
 }
 
 const [recentCount, setCount] = createSignal(readStoredCount());
-/** How many rows Recent shows right now. Read by the sidebar; written only from §12's General tab. */
+/** How many rows Recent shows right now. Read by the sidebar; written only from the settings dialog spec's General tab. */
 export { recentCount };
 
 /** Stores the count and moves the region in the same tick. Out-of-range input is clamped, so this
@@ -136,7 +134,7 @@ export function setRecentCount(value: unknown): number {
   const n = normalizeRecentCount(value);
   setCount(n);
   try {
-    dualSet(localStorage, RECENT_COUNT_KEY, LEGACY_RECENT_COUNT_KEY, String(n));
+    writeKey(localStorage, RECENT_COUNT_KEY, String(n));
   } catch {
     // Persistence is a convenience; the choice still holds for this page.
   }

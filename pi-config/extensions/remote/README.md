@@ -89,11 +89,8 @@ retried. An unknown or invalid target name makes every tool refuse, and never fa
 execution.
 
 **Paths.** Sova opens target sessions in a local placeholder,
-`<agentDir>/sova/targets/<name>/<remote/abs/path>`, which maps back to `/remote/abs/path`. Session
-headers written before the rebrand name the `pi-web/targets/...` root; both roots classify as
-remote, and only the `sova` one is ever written (`placeholderRoot` / `legacyPlaceholderRoot` in
-`argv.ts`). From
-any other directory, the local cwd maps to the entry's `cwd` (or the far login directory), and
+`<agentDir>/sova/targets/<name>/<remote/abs/path>` (`placeholderRoot` in `argv.ts`), which maps
+back to `/remote/abs/path`. From any other directory, the local cwd maps to the entry's `cwd` (or the far login directory), and
 `~/…` maps to the far `$HOME`.
 
 ## Workers (subagents of a remote session)
@@ -108,8 +105,7 @@ and far scripts as the session itself (`workers.ts` is the contract the subagent
 
 How the subagents extension knows: this extension emits `remote:session` on `pi.events` at session
 start (and again on `remote:discover`), since `pi.getFlag("target")` is only answered for the
-extension that registered the flag; a placeholder cwd (`<agentDir>/sova/targets/<name>/<far path>`, or
-its legacy `pi-web/` spelling)
+extension that registered the flag; a placeholder cwd (`<agentDir>/sova/targets/<name>/<far path>`)
 is the fallback. A target that failed to load is announced with `error`, and the session then refuses
 to spawn workers at all — never a worker with local tools in an empty placeholder.
 

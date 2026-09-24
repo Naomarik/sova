@@ -52,8 +52,7 @@ plans. Don't run the installer against your real home merely to validate its doc
 | `themes/` | Built-in JSON themes |
 | `pi-config/` | Optional pi configuration and extensions |
 | `scripts/install.sh` | Published-release installer |
-| `.sova/spec/` | Product documentation, migrated from `spec/`; verify implementation before claiming a feature. Propose changes in a draft ([USAGE](.sova/spec/USAGE.md)) |
-| `spec/` | Redirects from the old paths, and research in `spec/brainstorms/`; not requirements |
+| `.sova/spec/` | Product documentation; verify implementation before claiming a feature. Propose changes in a draft ([USAGE](.sova/spec/USAGE.md)) |
 
 Use strict TypeScript and ESM; ask before adding dependencies. Read [CLAUDE.md](CLAUDE.md) for
 architecture, ownership, and session-write safety before changing backend code. Treat live TUI
@@ -66,11 +65,9 @@ Check for active work before editing. The default watcher gates restarts while s
 do not force a restart during someone else's work. For backend work, running `pnpm start` without
 watch avoids edit-triggered restarts. Frontend HMR does not restart the backend.
 
-## Compatibility and extensions
+## State and extensions
 
-Legacy `pi-web` strings remain where existing transcripts and browser state depend on them.
-Do not bulk-rename them or rewrite transcripts to remove them. Current app state is written under
-`~/.pi/agent/sova/`.
+App state is written under `~/.pi/agent/sova/`.
 
 `pi-config/` is a standalone-installable bundle. Keep its installer and documentation
 self-contained: its `install.sh` must work on a plain copy of the directory, with no imports from

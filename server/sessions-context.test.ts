@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 
-const agentDir = mkdtempSync(join(tmpdir(), "pi-web-context-test-"));
+const agentDir = mkdtempSync(join(tmpdir(), "sova-context-test-"));
 process.env.PI_CODING_AGENT_DIR = agentDir; // before the modules below compute their paths
 const sessionsDir = join(agentDir, "sessions", "--tmp-context-test--");
 const liveDir = join(agentDir, "sessions", "live");
@@ -72,10 +72,10 @@ test("an outline entry with an empty topics array counts 0", async () => {
 test("the gist comes from the same entry as the now line", async () => {
   const p = session("outline-gist", [
     outlineEntry("early work", 1000, [topic("t1", "A")], "Fixing the auth flow"),
-    outlineEntry("Committed dc63576 with all checks green", 2000, [topic("t1", "A")], "pi-web theming: palette, fonts, Themes tab"),
+    outlineEntry("Committed dc63576 with all checks green", 2000, [topic("t1", "A")], "Sova theming: palette, fonts, Themes tab"),
   ]);
   const s = await getSessionSummary(p);
-  assert.equal(s?.outlineGist, "pi-web theming: palette, fonts, Themes tab");
+  assert.equal(s?.outlineGist, "Sova theming: palette, fonts, Themes tab");
   assert.equal(s?.outlineNow, "Committed dc63576 with all checks green");
 });
 

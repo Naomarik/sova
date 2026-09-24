@@ -14,7 +14,7 @@ import { join } from "node:path";
 import { after, describe, test } from "node:test";
 import type { ChatServerMessage } from "../shared/protocol";
 
-const agentDir = mkdtempSync(join(tmpdir(), "pi-web-queue-clients-test-"));
+const agentDir = mkdtempSync(join(tmpdir(), "sova-queue-clients-test-"));
 process.env.PI_CODING_AGENT_DIR = agentDir; // before chat-manager computes its paths
 const sessionsDir = join(agentDir, "sessions", "--tmp-queueclients--");
 mkdirSync(sessionsDir, { recursive: true });
@@ -82,13 +82,13 @@ const until = async (ready: () => boolean) => {
 const types = (log: ChatServerMessage[]) => log.map((m) => m.type);
 
 describe("the SDK surface this feature stands on, in the copy the repo actually resolves", () => {
-  test("every queue member pi-web calls exists on a REAL session", async () => {
+  test("every queue member Sova calls exists on a REAL session", async () => {
     // THIS TEST EXISTS BECAUSE THE OBVIOUS READING WAS WRONG. `Agent.peekQueuedMessages()` was
     // declared in the pi-agent-core shipped with the globally installed pi (0.87.0) while the
-    // 0.86.1 copy pi-web actually imported had none — .d.ts and .js alike. A design was built on
+    // 0.86.1 copy Sova actually imported had none — .d.ts and .js alike. A design was built on
     // it, and a typecheck happened to catch it; nothing in the unit suites would have, because a
     // fake answers whatever it is told to. Reading a package proves what that copy says; only
-    // calling it through the repo's own import proves what pi-web will run.
+    // calling it through the repo's own import proves what Sova will run.
     const { chat } = await twoClients();
     const session = chat.session;
     for (const name of ["steer", "prompt", "clearQueue", "getSteeringMessages", "getFollowUpMessages", "abort"] as const) {
@@ -154,8 +154,8 @@ describe("the queue, seen by two tabs on one chat", () => {
     assert.deepEqual(types(theirs), types(mine), "neither tab has a story the other lacks");
   });
 
-  test("a SERVER-originated prompt mid-turn goes through pi-web's queue, not straight to the SDK", async () => {
-    // The invariant clearQueue() depends on: AT MOST ONE pi-web item inside the SDK, across BOTH
+  test("a SERVER-originated prompt mid-turn goes through Sova's queue, not straight to the SDK", async () => {
+    // The invariant clearQueue() depends on: AT MOST ONE Sova item inside the SDK, across BOTH
     // kinds. `acceptPrompt` is the path a group batch prompt and a remote status probe take
     // (server/group-prompt.ts), and it used to hand a follow-up straight to `session.prompt()`
     // whenever the session was streaming — which would put a second item of ours in the SDK
@@ -356,7 +356,7 @@ describe("regenerate, seen by two tabs on one chat", () => {
   });
 
   test("a reply to a WAKE NUDGE is refused, and NOTHING is written", async () => {
-    // A wake nudge is a role:"user" entry pi-web's own scheduler wrote. Replaying it would put
+    // A wake nudge is a role:"user" entry Sova's own scheduler wrote. Replaying it would put
     // "[wake_nudge …] Scheduled wakeup fired (set 4m17s ago)" back on the branch as if the user had
     // typed it, with an elapsed time that is now a lie.
     const path = wakeSession();

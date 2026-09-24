@@ -22,9 +22,9 @@ const valid = JSON.stringify({
 });
 
 test("buildPrompt carries the anchor request and asks overall to lead with the subject", () => {
-  const prompt = buildPrompt(input({ purpose: "make pi-web themable: palette and fonts" }));
+  const prompt = buildPrompt(input({ purpose: "make Sova themable: palette and fonts" }));
   assert.ok(prompt.includes("SESSION ANCHOR"));
-  assert.ok(prompt.includes("make pi-web themable: palette and fonts"));
+  assert.ok(prompt.includes("make Sova themable: palette and fonts"));
   // The anchor is stated before the messages it anchors, so a truncated tail never loses it.
   assert.ok(prompt.indexOf("SESSION ANCHOR") < prompt.indexOf("NEW MESSAGES:"));
   // The anchor is offered, never asserted: it can be a mid-session message on an older session.
@@ -46,11 +46,11 @@ test("buildPrompt says the anchor is unknown rather than leaving the section emp
 test("earliestUserRequest reads the branch, not the delta's first follow-up", () => {
   const entries = [
     { id: "u1", type: "message", message: { role: "user", content: [{ type: "text", text: "  " }] } },
-    { id: "u2", type: "message", message: { role: "user", content: [{ type: "text", text: "make pi-web themable" }] } },
+    { id: "u2", type: "message", message: { role: "user", content: [{ type: "text", text: "make Sova themable" }] } },
     { id: "a1", type: "message", message: { role: "assistant", content: [{ type: "text", text: "on it" }] } },
     { id: "u3", type: "message", message: { role: "user", content: [{ type: "text", text: "also fix the placeholder" }] } },
   ];
-  assert.equal(earliestUserRequest(entries), "make pi-web themable");
+  assert.equal(earliestUserRequest(entries), "make Sova themable");
   // A follow-up-only view (compaction ate the opening) still yields the earliest text it has.
   assert.equal(earliestUserRequest(entries.slice(2)), "also fix the placeholder");
   assert.equal(earliestUserRequest([]), "");
@@ -248,15 +248,15 @@ test("lastHeading survives snapshot round-trip; old snapshots restore without it
 test("the anchor request is kept once, survives snapshots, and older snapshots restore empty", () => {
   const store = new OutlineStore();
   assert.equal(store.purpose, "");
-  store.notePurpose("## Make pi-web themable — palette and fonts");
+  store.notePurpose("## Make Sova themable — palette and fonts");
   // First one wins: later requests are topics, not a new reason for the session to exist.
   store.notePurpose("also fix the placeholder text");
-  assert.equal(store.purpose, "Make pi-web themable — palette and fonts");
+  assert.equal(store.purpose, "Make Sova themable — palette and fonts");
   const data = store.snapshot();
-  assert.equal(data.purpose, "Make pi-web themable — palette and fonts");
+  assert.equal(data.purpose, "Make Sova themable — palette and fonts");
   const restored = new OutlineStore();
   restored.restore([{ id: "s", type: "custom", customType: "topic-outline", data }]);
-  assert.equal(restored.purpose, "Make pi-web themable — palette and fonts");
+  assert.equal(restored.purpose, "Make Sova themable — palette and fonts");
   const { purpose: _p, ...old } = data;
   const legacy = new OutlineStore();
   legacy.restore([{ id: "s", type: "custom", customType: "topic-outline", data: old }]);

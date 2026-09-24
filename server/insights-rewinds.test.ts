@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 
-const agentDir = mkdtempSync(join(tmpdir(), "pi-web-rewinds-test-"));
+const agentDir = mkdtempSync(join(tmpdir(), "sova-rewinds-test-"));
 process.env.PI_CODING_AGENT_DIR = agentDir; // before the modules below compute their paths
 const sessionsDir = join(agentDir, "sessions", "--tmp-rewinds-test--");
 mkdirSync(sessionsDir, { recursive: true });
@@ -48,8 +48,8 @@ function session(): string {
           ],
         },
       }) +
-      line({ type: "custom", id: "m1", parentId: "c1", timestamp: "2026-09-20T00:04:00.000Z", customType: "pi-web-rewind", data: { targetId: "u2", fromLeafId: "a2" } }) +
-      line({ type: "custom", id: "m2", parentId: "m1", timestamp: "2026-09-20T00:05:00.000Z", customType: "pi-web-rewind", data: {} }),
+      line({ type: "custom", id: "m1", parentId: "c1", timestamp: "2026-09-20T00:04:00.000Z", customType: "sova-rewind", data: { targetId: "u2", fromLeafId: "a2" } }) +
+      line({ type: "custom", id: "m2", parentId: "m1", timestamp: "2026-09-20T00:05:00.000Z", customType: "sova-rewind", data: {} }),
   );
   return canonicalPath(path);
 }

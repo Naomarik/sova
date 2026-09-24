@@ -1,6 +1,6 @@
 /**
  * Pure mode-state handling for the mode switcher. No pi imports: unit-testable with node --test,
- * and imported by pi-web's server, so this file must stay runtime-free.
+ * and imported by Sova's server, so this file must stay runtime-free.
  *
  * Two shapes live here. `ModeState` is the file at ~/.pi/agent/mode.json: the shortcuts, plus the
  * mode/strict/minorModes triple that is now only the **default for new sessions**. `ModeActive` is
@@ -12,7 +12,7 @@ import { MINOR_MODES, normalizeMinorModes, type MinorMode } from "./minor.ts";
 
 export type Mode = "normal" | "delegate";
 
-/** Canonical modes, in menu order. Only these are ever written. */
+/** The modes, in menu order. */
 export const MODES: readonly Mode[] = ["normal", "delegate"];
 
 /** One line per mode: the palette rows and Sova's mode menu both show it. */
@@ -20,14 +20,6 @@ export const MODE_DESCRIPTIONS: Record<Mode, string> = {
 	normal: "Pi as usual",
 	delegate: "Orchestrate: route planning, investigation and implementation to workers by profile",
 };
-
-/**
- * Names a mode was once written under. Read everywhere a mode is parsed — mode.json, session
- * snapshots, launch flags, /mode arguments, Sova's API — and never written: "claude-heavy" is
- * what Delegate was called until 2026-09, and transcripts and files carrying it are never
- * rewritten, so this alias is permanent.
- */
-export const LEGACY_MODE_ALIASES: Readonly<Record<string, Mode>> = { "claude-heavy": "delegate" };
 
 export interface ModeState {
 	version: 1;
@@ -52,16 +44,14 @@ export function defaults(): ModeState {
 	return { version: 1, mode: "normal", strict: false, minorModes: [] };
 }
 
-/** A canonical mode name. Legacy names are not modes; `parseMode` reads them. */
+/** A mode name. */
 export function isMode(value: unknown): value is Mode {
 	return typeof value === "string" && (MODES as readonly string[]).includes(value);
 }
 
-/** The mode a stored or typed name means: canonical names as is, legacy aliases mapped, else undefined. */
+/** The mode a stored or typed name means, else undefined. */
 export function parseMode(value: unknown): Mode | undefined {
-	if (isMode(value)) return value;
-	if (typeof value !== "string" || !Object.hasOwn(LEGACY_MODE_ALIASES, value)) return undefined;
-	return LEGACY_MODE_ALIASES[value];
+	return isMode(value) ? value : undefined;
 }
 
 export function toggleMode(mode: Mode): Mode {
@@ -152,7 +142,7 @@ export function normalizeActive(value: unknown): ModeActive | undefined {
 /**
  * The newest usable snapshot on a session branch, or undefined when the session never switched
  * anything (only legacy markers, or no `mode` entry at all) — the caller then uses the default.
- * Shared with pi-web so the server and the extension restore by the same rule. Never throws.
+ * Shared with Sova so the server and the extension restore by the same rule. Never throws.
  */
 export function restoreActive(entries: readonly { type: string; customType?: string; data?: unknown }[]): ModeActive | undefined {
 	if (!Array.isArray(entries)) return undefined;
@@ -182,7 +172,7 @@ export function loadState(path: string): ModeState {
 	}
 }
 
-/** Atomic write so a crash cannot corrupt the defaults file. Only `/mode default` and pi-web write it. */
+/** Atomic write so a crash cannot corrupt the defaults file. Only `/mode default` and Sova write it. */
 export function saveState(path: string, state: ModeState): void {
 	mkdirSync(dirname(path), { recursive: true });
 	const temporary = `${path}.tmp-${process.pid}`;

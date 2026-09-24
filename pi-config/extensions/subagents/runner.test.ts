@@ -251,10 +251,10 @@ test("spawn args: model, effort, tools, no-extensions, system prompt", async () 
 test("getPiInvocation re-invokes argv[1] only when that script belongs to pi itself", async () => {
 	const root = await mkdtemp(path.join(tmpdir(), "pi-invocation-"));
 	try {
-		// A host that loads this extension inside its own process (pi-web's server): argv[1] exists
+		// A host that loads this extension inside its own process (Sova's server): argv[1] exists
 		// but it is not pi, so the worker must be the real `pi` — re-running that file is what killed
-		// every pi-backend worker spawned from a pi-web-hosted session.
-		await writeFile(path.join(root, "package.json"), JSON.stringify({ name: "pi-web" }));
+		// every pi-backend worker spawned from a Sova-hosted session.
+		await writeFile(path.join(root, "package.json"), JSON.stringify({ name: "sova" }));
 		const host = path.join(root, "server.ts");
 		await writeFile(host, "");
 		assert.deepEqual(getPiInvocation(["--mode", "rpc"], host), { command: "pi", args: ["--mode", "rpc"] });
@@ -297,6 +297,58 @@ test("empty tools allowlist uses --no-tools, absent tools uses no flag", async (
 	await boot(absent.child);
 	assert.ok(!absent.spawnCalls[0].args.some((a) => a === "--no-tools" || a === "--tools"));
 	await fin(absent);
+});
+
+test("resume reopens the worker's own session file idle: --session, never --fork, no prompt, no completion", async () => {
+	const h = makeRunner({ resume: { sessionFile: "/tmp/w.jsonl" }, forkSession: "/tmp/parent.jsonl" });
+	try {
+		const args = h.spawnCalls[0].args;
+		assert.deepEqual(args.slice(args.indexOf("--session"), args.indexOf("--session") + 2), ["--session", "/tmp/w.jsonl"]);
+		assert.ok(!args.includes("--fork"));
+		await boot(h.child, { stateData: { sessionId: "w", sessionFile: "/tmp/w.jsonl", model: null, thinkingLevel: "low" } });
+		assert.deepEqual(h.child.sentLines().map((l) => l.type), ["get_state"], "never a prompt: it never auto-continues");
+		assert.equal(h.runner.status, "waiting");
+		assert.equal(h.runner.isSettled(), true);
+		assert.equal(h.runner.taskOutcome, undefined);
+		assert.equal(h.counts.settled, 0, "no completion is re-emitted");
+		assert.equal((h.runner as { usageScope?: string }).usageScope, undefined, "pi counts only this process's spend: the manager adds the earlier spend as a base");
+		assert.ok(!h.runner.transcript.some((t) => t.kind === "task"), "the old task is not presented as sent");
+		// Steering an idle resumed worker is a fresh prompt, and its settle is announced normally.
+		const p = h.runner.steer("continue");
+		const line = await lastSteerLine(h.child);
+		h.child.reply(line.id, true);
+		assert.deepEqual(await p, { ok: true });
+		assistant(h.child, "done again");
+		settle(h.child);
+		await flush();
+		assert.equal(h.counts.settled, 1);
+		assert.equal(h.runner.finalOutput(), "done again");
+	} finally {
+		await fin(h);
+	}
+});
+
+test("resume without an absolute session file fails without spawning and without a completion", async () => {
+	for (const resume of [{}, { sessionFile: "relative.jsonl" }]) {
+		const h = makeRunner({ resume });
+		await flush();
+		assert.equal(h.spawnCalls.length, 0);
+		assert.equal(h.runner.status, "error");
+		assert.match(h.runner.error!, /no absolute pi session file/);
+		assert.equal(h.counts.settled, 0);
+		await fin(h);
+	}
+});
+
+test("a resumed worker that dies before it is ready emits no completion", async () => {
+	const h = makeRunner({ resume: { sessionFile: "/tmp/w.jsonl" } });
+	await flush();
+	h.child.close(1);
+	await flush();
+	assert.equal(h.runner.status, "error");
+	assert.equal(h.counts.settled, 0);
+	assert.equal(h.counts.exits, 1);
+	await fin(h);
 });
 
 test("extensions and forkSession become -e and --fork child args after --no-extensions", async () => {

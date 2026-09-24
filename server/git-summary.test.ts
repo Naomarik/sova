@@ -58,7 +58,7 @@ function repo(files: Record<string, string> = { "a.txt": "1\n2\n3\n" }, subject 
 }
 /** The summary of a local cwd, read through the real script. */
 const read = (cwd: string, deps: Parameters<typeof G.getGitSummary>[2] = {}) =>
-  G.getGitSummary("/sessions/x.jsonl", {}, { storedCwd: async () => cwd, mapCwd: (c) => c, ...deps });
+  G.getGitSummary("/sessions/x.jsonl", {}, { storedCwd: async () => cwd, ...deps });
 function asRepo(s: GitSummary): GitRepoSummary {
   assert.equal(s.state, "repo", JSON.stringify(s));
   return s as GitRepoSummary;
@@ -294,7 +294,7 @@ test("a session file's header decides the folder", async () => {
 });
 
 // ---------------------------------------------------------------------------
-// which folder: remote, legacy mount, moved
+// which folder: remote
 
 test("a remote placeholder runs on its target through the real builder — never locally — and quotes a hostile folder", async () => {
   const hostile = join(scratch, `it's $(touch PWNED) ; "q" repo`);
@@ -308,7 +308,6 @@ test("a remote placeholder runs on its target through the real builder — never
   const s = await G.getGitSummary("/sessions/x.jsonl", {}, {
     storedCwd: async () => T.targetDir("here", hostile),
     runLocal: async () => ((local = true), { code: 0, stdout: "", truncated: false }),
-    mapCwd: () => assert.fail("a placeholder is never path-mapped"),
   });
   assert.equal(local, false);
   const r = asRepo(s);
@@ -334,26 +333,6 @@ test("remote failures say what happened: unknown target, a folder that isn't the
   assert.match((offline as { reason: string }).reason, /here didn't answer: ssh: connect to host x: No route to host/);
 });
 
-test("a legacy sshfs mount cwd is refused lexically: no run, no fs, no mapping", async () => {
-  const s = await G.getGitSummary("/s.jsonl", {}, {
-    storedCwd: async () => join(T.legacyMountsRoot(), "box", "home", "u"),
-    runLocal: () => assert.fail("never run"),
-    runRemote: () => assert.fail("never run"),
-    exists: () => assert.fail("never stat'ed"),
-    mapCwd: () => assert.fail("never mapped"),
-  });
-  assert.equal(s.state, "unavailable");
-  assert.match((s as { reason: string }).reason, /sshfs mount of box/);
-});
-
-test("a moved local cwd is read at its new place and says so; the stored cwd is only mapped, never rewritten", async () => {
-  const dir = repo();
-  const s = asRepo(await G.getGitSummary("/s.jsonl", {}, { storedCwd: async () => "/old/name", mapCwd: (c) => (c === "/old/name" ? dir : c) }));
-  assert.equal(s.cwd, dir);
-  assert.equal(s.moved, true);
-  assert.equal(asRepo(await read(dir)).moved, undefined);
-});
-
 // ---------------------------------------------------------------------------
 // cache and in-flight sharing
 
@@ -374,7 +353,7 @@ test("cache: a second read within the TTL runs nothing; fresh re-runs; concurren
   assert.equal(runs, 1, "three concurrent callers, one run");
   await read(dir, deps);
   assert.equal(runs, 1, "inside the TTL: served from the cache");
-  await G.getGitSummary("/s.jsonl", { fresh: true }, { storedCwd: async () => dir, mapCwd: (c) => c, ...deps });
+  await G.getGitSummary("/s.jsonl", { fresh: true }, { storedCwd: async () => dir, ...deps });
   assert.equal(runs, 2, "fresh skips the cache");
   clock += G.GIT_TTL_MS;
   await read(dir, deps);

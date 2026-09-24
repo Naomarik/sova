@@ -1,7 +1,7 @@
 /**
  * model-policy: enforces the global half of `~/.pi/agent/model-policy.json` in this session.
  *
- * The file says which providers and models may be used at all (see policy.ts). pi-web's Settings →
+ * The file says which providers and models may be used at all (see policy.ts). Sova's Settings →
  * Models tab writes it; this extension is what makes "disabled" mean disabled inside a running pi,
  * where the built-in `/model` picker and `ctrl+p` cycling belong to pi and list everything the
  * registry has. Nothing here ever picks another model for you: a refusal names the model and the
@@ -48,7 +48,7 @@
  *      captured while the model was still allowed. Turning the model off stops it.
  *
  * Subagents are not enforced here: the subagents extension reads the same file per spawn and per
- * discovery, which covers TUI and pi-web sessions alike.
+ * discovery, which covers TUI and Sova sessions alike.
  */
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { globalDenial, readPolicy } from "./policy.ts";

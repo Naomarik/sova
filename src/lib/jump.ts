@@ -56,7 +56,7 @@ export function registerTranscript(path: string, el: HTMLElement | null): void {
  * computes its own leaf the same way (`readActiveBranch` then `normalizeEntry`, server/fanout.ts),
  * and the two only agree if this side holds up its half.
  *
- * A rewound session is what separates them: its last FILE line is always a rewind marker (`pi-web-rewind`, legacy-spelled while the rename bridge is open — the server also accepts `sova-rewind`),
+ * A rewound session is what separates them: its last FILE line is always a rewind marker (`sova-rewind`),
  * which renders as nothing and is not on the active branch at all. Send that id and the server
  * correctly calls it stale — and the user is told to reopen and fork from a message identical to
  * the one on screen, which is an instruction that cannot be followed. The failure lands here

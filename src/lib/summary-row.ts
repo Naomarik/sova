@@ -1,7 +1,7 @@
 import type { SessionSummary } from "../../shared/protocol";
 
 /**
- * The session list's summary line (spec/02-session-list.md §2): what the session is FOR.
+ * The session list's summary line: what the session is FOR.
  *
  * The outline writes two lines per snapshot — `outlineGist` ("what this session is about") and
  * `outlineNow` ("what the agent is doing this second"). The row truncates after a few words in a

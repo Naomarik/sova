@@ -1,4 +1,4 @@
-// @-mention completion for the composer (spec/04h-file-mentions.md): find the "@token" at the
+// @-mention completion for the composer: find the "@token" at the
 // caret — quote-aware, because a completed path with spaces is inserted as @"My Docs/… — derive
 // the one-level entries the token's current directory offers from a cached FileIndex, and splice
 // a picked entry back into the text. The index itself is fetched once per session cwd and reused

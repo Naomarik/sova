@@ -31,7 +31,7 @@ So the check was run against the real directory instead. With the toggle ON, pol
 `~/.pi/agent/sessions/live` every 50 ms for 20 s across the whole warm window: **the directory
 never changed**, while `/api/models` went to 4. The warm-up publishes no presence record at all,
 so there is nothing to leak (presence appears to be gated on TUI mode; the warm-up binds "rpc").
-The records present at the time belonged to pids 2407682 and 2796572 — two other pi-web servers,
+The records present at the time belonged to pids 2407682 and 2796572 — two other Sova servers,
 not this worker's.
 
 **Correction this forces:** "hermetic .agent isolates everything" is NOT true in general. Any
@@ -95,7 +95,7 @@ No chat turn was run.
 - `10fef28` **Dev proxy unreachable.** `vite.config.ts` proxied to `localhost`, which resolves to
   `::1` only on this host while the server binds `127.0.0.1` — so `npm run dev:web` could not reach
   `npm run dev:server` at all; every `/api` and `/ws` call was ECONNREFUSED. Pre-existing.
-  `PI_WEB_HOST` overrides.
+  `SOVA_HOST` overrides.
 
 ## Gates (after every commit above)
 

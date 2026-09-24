@@ -309,9 +309,13 @@ const STATUS: Record<string, { text: string; tone?: Tone | "accent"; working?: b
   done: { text: "Done", tone: "success" },
   error: { text: "Failed", tone: "error" },
   killed: { text: "Stopped" },
+  // A server restart took it down; it is back on record, not running, until someone resumes it.
+  restored: { text: "Restored" },
   // Old-format subagent-complete reports ("… finished its task.").
   finished: { text: "Done", tone: "success" },
 };
+
+const INTERRUPTED: (typeof STATUS)[string] = { text: "Interrupted", tone: "warn" };
 
 /**
  * `liveSource`: the member's worker comes from a fresh live record. Otherwise nothing may claim to
@@ -320,7 +324,8 @@ const STATUS: Record<string, { text: string; tone?: Tone | "accent"; working?: b
 export function memberStatus(m: TeamMember, liveSource: boolean): MemberStatus {
   const w = m.worker;
   if (w) {
-    const s = STATUS[w.status] ?? STATUS.running!;
+    // Restored mid-turn: the turn it was on never finished, which is the fact worth the chip.
+    const s = w.status === "restored" && w.interruptedAt !== undefined ? INTERRUPTED : (STATUS[w.status] ?? STATUS.running!);
     const live = liveSource && !!s.working;
     return {
       text: s.text,

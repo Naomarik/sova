@@ -1,8 +1,7 @@
 {
   "purpose": "Acceptance suite for shared/theme.ts. The grammar is NOT restated here \u2014 it is quoted from the normative file.",
   "normative_source": {
-    "file": "spec/00-ground-rules.md",
-    "md5_at_verification": "5d4b4f47f4052cd05ddf021e33dd2f9c",
+    "file": ".sova/spec/claims/design/ground-rules.md",
     "lines": {
       "27": "the 27 color keys",
       "28": "shadow-1..shadow-3",
@@ -97,7 +96,7 @@
     "dark_light_byte_gate": "0 mismatches across 60 values \u2014 unchanged",
     "key_counts_from_the_file": "27 color keys, 3 shadow keys, 3 font stacks"
   },
-  "scrim_item": "CLOSED. spec/00 line 27 names scrim and skeleton-sweep among the 27 color keys; line 28 is shadow-1..3 alone on the open charset. All three scrim vectors reject under the current rule and would have passed under the old one \u2014 which is exactly what makes them a regression test rather than a description of a past bug. Keep them: if the split is ever undone, these three fail first, and the single-paren image-set variant fails even if someone adds a paren limit to the raw row without a name allowlist.",
+  "scrim_item": "CLOSED. ground-rules.md line 27 names scrim and skeleton-sweep among the 27 color keys; line 28 is shadow-1..3 alone on the open charset. All three scrim vectors reject under the current rule and would have passed under the old one \u2014 which is exactly what makes them a regression test rather than a description of a past bug. Keep them: if the split is ever undone, these three fail first, and the single-paren image-set variant fails even if someone adds a paren limit to the raw row without a name allowlist.",
   "supplementary_vectors": [
     {
       "key": "bg",
@@ -137,7 +136,7 @@
     "test": "expect(validate('scrim', 'url(//attacker.example/x.png)')).toBe(rejected)",
     "status": "PASSING",
     "before_the_fix": "FAILED \u2014 scrim sat on the open-charset row, which had no function-name allowlist and no paren limit",
-    "after_the_fix": "passes \u2014 spec/00 line 27 lists scrim among the 27 color keys, so the name allowlist applies",
-    "verified": "run against a validator built from spec/00 lines 27-32 at md5 5d4b4f47f4052cd05ddf021e33dd2f9c"
+    "after_the_fix": "passes \u2014 ground-rules.md line 27 lists scrim among the 27 color keys, so the name allowlist applies",
+    "verified": "run against a validator built from ground-rules.md lines 27-32"
   }
 }

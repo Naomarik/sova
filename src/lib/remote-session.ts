@@ -1,7 +1,5 @@
-// Remote-target sessions on the frontend (spec/05-new-session-dialog.md §5 "Remote"). A remote session's local
-// cwd is a placeholder that mirrors the remote folder: <home>/.pi/agent/sova/targets/<name><remoteCwd> — and,
-// for sessions stored before the rename, the legacy <home>/.pi/agent/pi-web/targets/<name><remoteCwd>. Both
-// spellings classify as remote here; a pre-rebrand placeholder must never reappear as a local folder. So the
+// Remote-target sessions on the frontend. A remote session's local
+// cwd is a placeholder that mirrors the remote folder: <home>/.pi/agent/sova/targets/<name><remoteCwd>. So the
 // existing /api/cwds recents already carry the remote ones. Kept free of the api module so it's testable.
 
 import type { TargetInfo } from "../../shared/protocol";
@@ -9,8 +7,8 @@ import { tildePath } from "./format";
 
 export type { TargetInfo };
 
-/** New spelling first, then the legacy pre-rebrand root. Either marks a placeholder cwd. */
-const MARKS = ["/.pi/agent/sova/targets/", "/.pi/agent/pi-web/targets/"] as const;
+/** Marks a placeholder cwd. */
+const MARK = "/.pi/agent/sova/targets/";
 
 /** Unreachable per the last probe ("offline", or "error"): listed, marked, and browsing says why. */
 export const targetDown = (t: TargetInfo) => !!t.status && t.status !== "ok" && t.status !== "unknown";
@@ -23,17 +21,14 @@ export interface RemotePlace {
 
 /** The target and remote folder a placeholder cwd stands for, or null for an ordinary local folder. */
 export function splitRemoteCwd(cwd: string): RemotePlace | null {
-  for (const MARK of MARKS) {
-    const i = cwd.indexOf(MARK);
-    if (i < 0) continue;
-    const rest = cwd.slice(i + MARK.length);
-    const slash = rest.indexOf("/");
-    const target = slash < 0 ? rest : rest.slice(0, slash);
-    if (!target) continue;
-    const tail = slash < 0 ? "" : rest.slice(slash).replace(/\/+$/, "");
-    return { target, remoteCwd: tail || "/" };
-  }
-  return null;
+  const i = cwd.indexOf(MARK);
+  if (i < 0) return null;
+  const rest = cwd.slice(i + MARK.length);
+  const slash = rest.indexOf("/");
+  const target = slash < 0 ? rest : rest.slice(0, slash);
+  if (!target) return null;
+  const tail = slash < 0 ? "" : rest.slice(slash).replace(/\/+$/, "");
+  return { target, remoteCwd: tail || "/" };
 }
 
 export const isRemoteCwd = (cwd: string) => splitRemoteCwd(cwd) !== null;

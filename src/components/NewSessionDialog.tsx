@@ -42,12 +42,12 @@ function TargetStatus(props: { target: TargetInfo; checking: boolean }) {
 }
 
 /**
- * Asks for a folder, creates an empty webapp-owned session, and hands it back (spec/05-new-session-dialog.md §5).
+ * Asks for a folder, creates an empty webapp-owned session, and hands it back.
  * The folder is chosen, never typed: the Folder field opens the folder picker in place. The Remote
  * tab does the same on a configured target, and can start the agent that connects a new one.
  *
- * The type field (§05 "Type") chooses what the dialog starts: One session — this, the default —
- * or Fan out…, which creates nothing here: it closes this dialog and opens §14b's on a fresh
+ * The type field chooses what the dialog starts: One session — this, the default —
+ * or Fan out…, which creates nothing here: it closes this dialog and opens the fanout dialog on a fresh
  * prompt, carrying the chosen folder as its cwd. That handoff is fanout's entry at every window
  * width and on every route: the folded shell hides .app-main (the welcome CTA with it), and a
  * session view has no welcome screen at all.
@@ -58,14 +58,14 @@ export function NewSessionDialog(props: {
   knownCwds: string[];
   onCreated(s: SessionSummary): void;
   onCancel(): void;
-  /** Fan Out… was pressed: hand the chosen folder to §14b's fresh-mode dialog. */
+  /** Fan Out… was pressed: hand the chosen folder to the fanout dialog's fresh mode. */
   onFanOut(cwd: string): void;
 }) {
   const prefillRemote = splitRemoteCwd(props.prefill);
   const [cwds] = createResource(() => listCwds().catch(() => props.knownCwds));
   const [where, setWhere] = createSignal<Where>(prefillRemote ? "remote" : "local");
-  /** What the dialog starts (§05 "Type"): One session is the default and everything below reads
-   *  as it always did; Fan out… doesn't create here — it hands the folder to §14b's dialog. */
+  /** What the dialog starts: One session is the default and everything below reads
+   *  as it always did; Fan out… doesn't create here — it hands the folder to the fanout dialog. */
   const [kind, setKind] = createSignal<"one" | "fanout">("one");
   const [cwd, setCwd] = createSignal(prefillRemote ? "" : props.prefill);
   const [place, setPlace] = createSignal<{ target: string | null; remoteCwd: string }>(
@@ -145,7 +145,7 @@ export function NewSessionDialog(props: {
     e?.preventDefault();
     if (pending() || connecting() || !ready()) return;
     if (kind() === "fanout") {
-      // No POST, nothing created: this dialog closes and §14b's opens on a fresh prompt with the
+      // No POST, nothing created: this dialog closes and the fanout dialog opens on a fresh prompt with the
       // folder the field shows. `ready()` above is the same gate Create Session uses, so the
       // handoff never arrives without a folder.
       props.onFanOut(cwd().trim());
@@ -187,7 +187,7 @@ export function NewSessionDialog(props: {
     setKind(k);
     setPicking(false);
     setFieldError(null);
-    // Fresh-mode fanout is N sessions in one LOCAL folder (§14b's route has no remote shape), so
+    // Fresh-mode fanout is N sessions in one LOCAL folder (the fanout route has no remote shape), so
     // the tabs leave while fanout is chosen: there is no tab whose choice could carry over.
     if (k === "fanout") setWhere("local");
   };
@@ -231,7 +231,7 @@ export function NewSessionDialog(props: {
         }}
       >
         <div class="modal-head">
-          {/* The title moves with the type (§09): "Fan out" is the title the dialog it opens
+          {/* The title moves with the type: "Fan out" is the title the dialog it opens
               carries, so the handoff reads as one flow rather than a second question. */}
           <h2 class="modal-title" id="ns-title">
             {kind() === "fanout" ? "Fan out" : "New Session"}
@@ -241,8 +241,8 @@ export function NewSessionDialog(props: {
           <Show when={failed()}>
             <Banner tone="error" title="Couldn't create the session." body="Nothing was written. Try again." />
           </Show>
-          {/* The type field is first (§05 "Type"): One session is the default and everything
-              below it reads as it always did; Fan out… re-aims the same folder choice at §14b's
+          {/* The type field is first: One session is the default and everything
+              below it reads as it always did; Fan out… re-aims the same folder choice at the fanout dialog's
               dialog instead of creating here. */}
           <div class="field">
             <span class="field-label" id="ns-type">

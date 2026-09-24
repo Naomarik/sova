@@ -37,7 +37,8 @@ import { summarizeFileChange } from "./codefold.ts";
 /** Pi's built-in tool names. `--tools` and `--exclude-tools` also govern extension tools, so restriction must be phrased per case. */
 export const BUILTIN_TOOLS: readonly string[] = ["read", "bash", "powershell", "edit", "write", "grep", "find", "ls"];
 
-export type AgentStatus = "starting" | "running" | "waiting" | "stopping" | "done" | "error" | "killed";
+/** "restored": rebuilt from the owner's durable record after a restart; no process (see restored.ts). */
+export type AgentStatus = "starting" | "running" | "waiting" | "stopping" | "done" | "error" | "killed" | "restored";
 
 /** Outcome of the most recently completed task. Undefined while a task is running. */
 export type TaskOutcome = "success" | "error" | "aborted";
@@ -214,6 +215,12 @@ export interface SpawnOptions {
 	 * `ended`: the host is dead and the worker gone; the log is only read back.
 	 */
 	adopt?: { replaying(): boolean; sessionId?: string; sessionFile?: string; sent?: readonly string[]; ended?: boolean };
+	/**
+	 * Continue this worker's own backend session after a restart (agent_resume): the child
+	 * opens it (pi `--session <file>`, claude `--resume <id>`) and comes up IDLE — no task
+	 * prompt is sent and no completion is announced; `task` is only the record's label.
+	 */
+	resume?: { sessionId?: string; sessionFile?: string };
 	/** @internal Test overrides. */
 	timings?: Partial<RunnerTimings>;
 	/** @internal Test overrides. */
@@ -264,7 +271,7 @@ function owningPackageName(script: string): string | null {
  * current script under the current runtime, fall back to a `pi` on PATH.
  *
  * DIVERGENCE from the example (pi-config, deliberate): `argv[1]` is only pi when this process IS
- * pi. pi-web loads this extension inside its own server, where argv[1] is `server/index.ts` — it
+ * pi. Sova loads this extension inside its own server, where argv[1] is `server/index.ts` — it
  * exists, so the example's check accepts it, and the worker dies on that file's extensionless
  * TypeScript imports before it ever starts (observed: `node server/index.ts --mode rpc …` →
  * ERR_MODULE_NOT_FOUND for `./chat-manager`). So the script is re-invoked only when the package it
@@ -436,6 +443,8 @@ export class SubagentRunner implements Worker {
 	private compactionActivity = 0;
 	/** Adopt mode (see SpawnOptions.adopt): the process was started by an earlier manager. */
 	private readonly adopted: boolean;
+	/** Resume mode (see SpawnOptions.resume): the child reopens its own session idle. */
+	private readonly resumed: boolean;
 	/** Adopt mode: the replayed initial task's user message was seen; later unarmed user messages are steers. */
 	private adoptedTaskSeen = false;
 	/** Request IDs must not collide with responses replayed from the earlier manager's requests. */
@@ -456,6 +465,9 @@ export class SubagentRunner implements Worker {
 		this.onChange = handlers.onChange;
 		const adopt = options.adopt;
 		this.adopted = Boolean(adopt);
+		this.resumed = !adopt && Boolean(options.resume);
+		// A resumed worker owes no completion, not even for a failed reopen: nothing was asked of it.
+		if (this.resumed) this.settleAnnounced = true;
 		this.reqPrefix = adopt ? `req-a${Date.now().toString(36)}-` : "req-";
 		if (adopt) {
 			this.sessionId = adopt.sessionId;
@@ -482,7 +494,8 @@ export class SubagentRunner implements Worker {
 	// ── lifecycle ────────────────────────────────────────────────────────────
 
 	private start(options: SpawnOptions): void {
-		this.push("task", options.task);
+		if (this.resumed) this.push("system", `Resuming session ${options.resume!.sessionFile ?? ""}; idle until steered`);
+		else this.push("task", options.task);
 		const args = this.adopted ? [] : this.buildArgs(options);
 		if (!args) return; // fail() already ran
 
@@ -586,7 +599,16 @@ export class SubagentRunner implements Worker {
 			if (value !== true) args.push(value);
 		}
 		// A fork copies the parent's session file into a new one; the parent's file is never written by the child.
-		if (options.forkSession) args.push("--fork", options.forkSession);
+		if (this.resumed) {
+			// Verified in pi's CLI (dist/main.js resolveSessionPath): an argument containing "/" is
+			// opened as that exact file, with no cross-project prompt; the child appends to it.
+			if (!options.resume?.sessionFile || !path.isAbsolute(options.resume.sessionFile)) {
+				this.taskOutcome = "error";
+				this.fail("Cannot resume: no absolute pi session file was recorded for this worker");
+				return null;
+			}
+			args.push("--session", options.resume.sessionFile);
+		} else if (options.forkSession) args.push("--fork", options.forkSession);
 
 		if (options.systemPrompt?.trim()) {
 			try {
@@ -642,6 +664,15 @@ export class SubagentRunner implements Worker {
 			const set = res.data;
 			this.model = set?.id ? (set.provider ? `${set.provider}/${set.id}` : String(set.id)) : `${provider}/${modelId}`;
 			this.touch();
+		}
+		if (this.resumed) {
+			// Resume: the child reopened its own session and stays idle. No prompt, and no
+			// completion to announce: the next steer starts the next task.
+			this.status = "waiting";
+			this.initialPromptAccepted = true;
+			this.settleAnnounced = true;
+			this.push("system", "Session reopened; waiting for instructions");
+			return;
 		}
 		// Submit the task. Status leaves `starting` HERE — not at spawn — so the
 		// UI reflects a working agent as soon as the prompt is on the wire (and

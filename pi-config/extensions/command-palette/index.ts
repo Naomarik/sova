@@ -31,7 +31,7 @@ const groups: [string, [string, string, string?][]][] = [
 export function modelItems(pi: ExtensionAPI, ctx: ExtensionContext, favorites?: FavoriteStore, policyFile?: string): MenuItem[] {
   const scoped = ctx.scopedModels;
   const models = scoped.length ? scoped.map(entry => entry.model) : ctx.modelRegistry.getAvailable();
-  // Models turned off in pi-web's Settings → Models are not choices: the palette is a picker, and
+  // Models turned off in Sova's Settings → Models are not choices: the palette is a picker, and
   // listing one here would offer a model the session refuses to run (../model-policy/policy.ts).
   const policy = readPolicy(policyFile);
   return models.filter(model => globallyEnabled(policy, "pi", `${model.provider}/${model.id}`)).map(model => {

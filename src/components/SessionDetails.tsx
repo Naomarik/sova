@@ -24,16 +24,26 @@ import {
   visiblePath,
 } from "../lib/git-summary";
 import { copyText, home, toast } from "../lib/ui-state";
-import { formatCost, sessionWorking, usageHeadline, usageTitle, usageTotal } from "../lib/workers";
+import { asOfClock, formatCost, idList, lifetimeIncludes, sessionWorking, usageHeadline, usageTitle, usageTotal } from "../lib/workers";
 import { Banner, CopyButton, Icon } from "./ui";
 import { sessionHref } from "./Sidebar";
 import { GroupWithParent, MoveToGroupMenu } from "./Groups";
+
+/** The distinct "as of" times of the snapshot-cost rows, oldest first, as `21:08` or `21:08 and
+    22:25`; null when no row carries one. */
+function snapshotTimes(rows: readonly ModelSpend[]): string | null {
+  const times = [...new Set(rows.flatMap((r) => (r.asOf !== undefined && (r.cost ?? 0) > 0 ? [r.asOf] : [])))].sort((a, b) => a - b);
+  return times.length ? idList([...new Set(times.map(asOfClock))]) : null;
+}
+
+/** A table cell that never wraps. */
+const oneLine = { "white-space": "nowrap" } as const;
 
 /** Long machine facts wrap instead of widening the sheet. */
 const wrapMono = { margin: 0, "overflow-wrap": "anywhere" } as const;
 
 /**
- * What a session is and what it has spent (spec/04-composer.md §4h), read-only: the body of the Session
+ * What a session is and what it has spent, read-only: the body of the Session
  * info modal and the session pane's Session tab, one implementation for both. Its parent owns
  * the data and the scroll box; this renders sections as siblings for a flex column with gaps.
  *
@@ -181,12 +191,48 @@ export function SessionDetails(props: {
               </div>
             </Show>
             <p class="usage-note">Main thread counts the active branch only.</p>
+            <Show when={snapshotTimes(rows())}>
+              {(times) => (
+                <p class="usage-note">
+                  * Cost as of <span class="text-mono">{times()}</span>, the last report before the restart.
+                </p>
+              )}
+            </Show>
+            {/* A worker the restart left with no readable transcript and no report: its spend is
+                unknown, so it is named here rather than counted as 0 anywhere. */}
+            <Show when={u().unavailable?.length ? u().unavailable : null}>
+              {(ids) => (
+                <p class="usage-note">
+                  Usage unavailable for <span class="text-mono">{idList(ids())}</span>: we couldn't read{" "}
+                  {ids().length === 1 ? "its transcript" : "their transcripts"}, so the totals above leave{" "}
+                  {ids().length === 1 ? "it" : "them"} out.
+                </p>
+              )}
+            </Show>
             <Show when={u().workersTotal}>
               {(total) => (
                 <p class="usage-note text-muted" title={usageTitle(total(), total().workers)}>
                   Subagent lifetime: {formatTokens(usageHeadline(total()))} tokens
-                  <Show when={formatCost(total().cost)}>{(cost) => <> · {cost()}</>}</Show> across {total().workers}{" "}
-                  {total().workers === 1 ? "worker" : "workers"} (includes evicted).
+                  <Show when={formatCost(total().cost)}>
+                    {(cost) => (
+                      <>
+                        {" · "}
+                        {cost()}
+                        <Show when={total().asOf}>
+                          {(at) => (
+                            <>
+                              {" as of "}
+                              <span class="text-mono" title={new Date(at()).toISOString()}>
+                                {asOfClock(at())}
+                              </span>
+                            </>
+                          )}
+                        </Show>
+                      </>
+                    )}
+                  </Show>{" "}
+                  across {total().workers} {total().workers === 1 ? "worker" : "workers"}
+                  {lifetimeIncludes(total(), workers())}.
                 </p>
               )}
             </Show>
@@ -234,7 +280,7 @@ export function SessionDetails(props: {
               <Fact label="Archived">{archived() ? "Yes" : "No"}</Fact>
               <Fact label="Group">{groupNameOf(sessionGroups(), s().groupId) ?? "None"}</Fact>
               {/* Lineage from the session header, read-only: Sova never writes it. It says this
-                  session was branched from that file — never at which entry (spec/14 "Data"). */}
+                  session was branched from that file — never at which entry. */}
               <Show when={s().parent}>
                 {(parent) => (
                   <Fact label="Forked from">
@@ -519,11 +565,6 @@ function RepositoryFacts(props: { summary: GitRepoSummary; now: number }) {
       <p class="text-mono" style={wrapMono} title={s().root}>
         {rootLabel(s(), home())}
       </p>
-      <Show when={s().moved}>
-        <p class="usage-note text-muted">
-          This folder moved since the session started. Read at <span class="text-mono">{s().cwd}</span>.
-        </p>
-      </Show>
       <dl class="stack-2" style={{ margin: 0 }}>
         <Fact label="Branch">
           <span class="text-mono" style={wrapMono}>
@@ -615,7 +656,7 @@ function GitFileRow(props: { file: GitFileChange }) {
 }
 
 /**
- * Archive/Unarchive for a web-spawned session (spec/02-session-list.md §2 "Archiving"). Archiving closes the
+ * Archive/Unarchive for a web-spawned session. Archiving closes the
  * session's runtime, so it's refused while the session is live in a TUI (it would stay on top
  * anyway) and while its subagents work (they'd stop with it); unarchiving always works.
  */
@@ -669,7 +710,7 @@ function Fact(props: { label: string; children: JSX.Element }) {
 }
 
 /** The four token columns and, when any row reports one, the cost. */
-function Cells(props: { usage: TokenUsage; cost: boolean }) {
+function Cells(props: { usage: TokenUsage & { asOf?: number }; cost: boolean }) {
   const cell = (n: number) => (
     <td align="right" class="text-mono text-num">
       {formatTokens(n)}
@@ -682,7 +723,9 @@ function Cells(props: { usage: TokenUsage; cost: boolean }) {
       {cell(props.usage.cacheRead)}
       {cell(props.usage.cacheWrite)}
       <Show when={props.cost}>
-        <td align="right" class="text-mono text-num">
+        {/* A snapshot cost carries a muted mark; its time is in the note under the table, so the
+            row stays one line and the column keeps its width. */}
+        <td align="right" class="text-mono text-num" style={oneLine}>
           <Show
             when={formatCost(props.usage.cost)}
             fallback={
@@ -694,7 +737,19 @@ function Cells(props: { usage: TokenUsage; cost: boolean }) {
               </>
             }
           >
-            {(cost) => cost()}
+            {(cost) => (
+              <>
+                {cost()}
+                {/* Part of it is a restored worker's last report (Claude transcripts carry no cost). */}
+                <Show when={props.usage.asOf}>
+                  {(at) => (
+                    <span class="text-muted" title={`As of ${asOfClock(at())}`}>
+                      *
+                    </span>
+                  )}
+                </Show>
+              </>
+            )}
           </Show>
         </td>
       </Show>
@@ -706,10 +761,12 @@ function Cells(props: { usage: TokenUsage; cost: boolean }) {
 function SpendRow(props: { row: ModelSpend; cost: boolean }) {
   return (
     <tr>
-      <td class="text-mono" title={props.row.model}>
+      {/* One line per row ("glm-5.3" broke at its hyphen, "Main thread" at its space): the table
+          scrolls sideways instead of rows growing taller. */}
+      <td class="text-mono" style={oneLine} title={props.row.model}>
         {compactModel(props.row.model) ?? props.row.model}
       </td>
-      <td>{originLabel(props.row.origin)}</td>
+      <td style={oneLine}>{originLabel(props.row.origin)}</td>
       <Cells usage={props.row} cost={props.cost} />
     </tr>
   );

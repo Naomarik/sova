@@ -1,5 +1,5 @@
 // Run: npx tsx --test src/lib/path-attachments.test.ts
-// Render-level checks for §4b path chips: the HTML markdown emits, and where chips never go.
+// Render-level checks for the images spec path chips: the HTML markdown emits, and where chips never go.
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import type { TmpAttachment } from "../../shared/protocol";
@@ -77,12 +77,12 @@ describe("findTmpImagePaths (plain-text rows split on it)", () => {
   });
 });
 
-describe("legacy pi-web uploads (/tmp/pi-web-<uuid>.<ext>)", () => {
-  const web = `/tmp/pi-web-${uuid}.png`;
+describe("Sova uploads (/tmp/sova-<uuid>.<ext>)", () => {
+  const web = `/tmp/sova-${uuid}.png`;
 
   test("short name keeps the prefix and 4 uuid characters", () => {
-    assert.equal(shortName(web.slice(5)), "pi-web-a587….png");
-    assert.equal(shortName("pi-web-notauuid.png"), "pi-web-notauuid.png");
+    assert.equal(shortName(web.slice(5)), "sova-a587….png");
+    assert.equal(shortName("sova-notauuid.png"), "sova-notauuid.png");
   });
 
   test("a path glued after a sentence is found; one in a code fence is not", () => {
@@ -98,14 +98,14 @@ describe("legacy pi-web uploads (/tmp/pi-web-<uuid>.<ext>)", () => {
     assert.equal(stripPastedPaths(`look at this\n${web}\n${path}`), "look at this");
     assert.equal(stripPastedPaths(`a ${web} b`), "a b");
     assert.equal(stripPastedPaths(web), "");
-    assert.equal(stripPastedPaths("compare /tmp/pi-web-notauuid.png."), "compare /tmp/pi-web-notauuid.png.");
+    assert.equal(stripPastedPaths("compare /tmp/sova-notauuid.png."), "compare /tmp/sova-notauuid.png.");
     assert.equal(stripPastedPaths(`\`${web}\``), `\`${web}\``);
   });
 });
 
-describe("legacy draft attachments (<agent dir>/pi-web/attachments/<sessionId>/pi-web-<uuid>.<ext>)", () => {
+describe("draft attachments (<agent dir>/sova/attachments/<sessionId>/sova-<uuid>.<ext>)", () => {
   const sid = "019a1b2c-3d4e-7f80-9a1b-2c3d4e5f6a7b";
-  const att = `/home/me/.pi/agent/pi-web/attachments/${sid}/pi-web-${uuid}.png`;
+  const att = `/home/me/.pi/agent/sova/attachments/${sid}/sova-${uuid}.png`;
 
   test("is recognised, and stripped from a user row like a /tmp upload", () => {
     assert.deepEqual(findTmpImagePaths(`what's wrong here?\n${att}`).map((m) => m.path), [att]);
@@ -114,9 +114,9 @@ describe("legacy draft attachments (<agent dir>/pi-web/attachments/<sessionId>/p
   });
 
   test("lookalikes outside that tail stay text", () => {
-    const noSession = `/home/me/.pi/agent/pi-web/attachments/pi-web-${uuid}.png`;
-    const otherRoot = `/home/me/.pi/agent/pi-web/uploads/${sid}/pi-web-${uuid}.png`;
-    const nested = `/home/me/.pi/agent/pi-web/attachments/${sid}/deeper/pi-web-${uuid}.png`;
+    const noSession = `/home/me/.pi/agent/sova/attachments/sova-${uuid}.png`;
+    const otherRoot = `/home/me/.pi/agent/sova/uploads/${sid}/sova-${uuid}.png`;
+    const nested = `/home/me/.pi/agent/sova/attachments/${sid}/deeper/sova-${uuid}.png`;
     for (const p of [noSession, otherRoot, nested]) {
       assert.deepEqual(findTmpImagePaths(`see ${p}`), [], p);
       assert.equal(stripPastedPaths(`see ${p}`), `see ${p}`);
@@ -124,7 +124,7 @@ describe("legacy draft attachments (<agent dir>/pi-web/attachments/<sessionId>/p
   });
 
   test("the gone note names no folder", () => {
-    const html = chipHtml({ path: att, name: `pi-web-${uuid}.png`, mimeType: "image/png", available: false });
+    const html = chipHtml({ path: att, name: `sova-${uuid}.png`, mimeType: "image/png", available: false });
     assert.match(html, /<span class="path-chip-note">· No longer on disk<\/span>/);
     assert.doesNotMatch(html, /\/tmp/);
   });

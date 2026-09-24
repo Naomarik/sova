@@ -14,7 +14,7 @@ export type LiveBlock =
   | { type: "toolCall"; id: string; name: string; argsText: string; args?: unknown };
 
 /**
- * Where an outgoing message of ours stands (spec/03 "A queued message"):
+ * Where an outgoing message of ours stands:
  * "sending" = this tab put it on the socket and the server hasn't acknowledged it (its input
  * handlers may still be running, and it may never be queued at all); "queued" = the server says
  * it holds it, so it can still be taken back; "delivered" = the agent has taken it (the server's

@@ -24,9 +24,9 @@ const sameReq = (a: AnyCleanup, b: AnyCleanup): boolean => {
 };
 
 /**
- * The Archive's Clean Up… button (spec/02-session-list.md §2 "Archive cleanup"): it opens a picker of
+ * The Archive's Clean Up… button: it opens a picker of
  * the actions; each asks the server for a dry run, confirms with its real numbers, then deletes and
- * refreshes the list. The picker also lists the Archive's own rows one at a time (§2 "Deleting one
+ * refreshes the list. The picker also lists the Archive's own rows one at a time (the session list "Deleting one
  * session"), through the same dry-run-then-confirm flow.
  */
 export function ArchiveCleanup(props: { sessions: SessionSummary[]; selected: string | null; onDeleted(): void }) {
@@ -181,7 +181,7 @@ function CleanupPicker(props: { checking: AnyCleanup | null; sessions: SessionSu
               }}
             </For>
           </ul>
-          {/* One at a time (spec/02-session-list.md §2 "Deleting one session"): the Archive's own
+          {/* One at a time: the Archive's own
               rows, newest first; only ones the server can delete. Hidden when there are none. */}
           <Show when={props.sessions.length > 0}>
             <p class="message-text cleanup-intro">Or pick one archived session to delete for good.</p>

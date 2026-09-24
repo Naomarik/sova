@@ -1,7 +1,7 @@
 /**
  * Mode switcher: normal ↔ delegate, plus independently toggleable minor modes.
  *
- * delegate (called claude-heavy until 2026-09; that name is still read everywhere) re-instructs
+ * delegate re-instructs
  * the main agent (per turn, in before_agent_start) to act as a pure orchestrator that routes work
  * to background workers by four profiles — Planning & specs, Investigation, Routine and Complex
  * implementation — each a configurable backend · model · effort with an optional fallback
@@ -142,7 +142,7 @@ export default function modeExtension(pi: ExtensionAPI): void {
 	const viewerShortcutClash = viewerShortcut === (config.shortcut ?? DEFAULT_MODE_SHORTCUT) || viewerShortcut === config.minorShortcuts?.align;
 	const viewerKeyHint = viewerShortcutClash ? "/align" : viewerShortcut;
 
-	pi.registerFlag("major", { description: "Start in a mode: normal | delegate (claude-heavy is read as delegate)", type: "string" });
+	pi.registerFlag("major", { description: "Start in a mode: normal | delegate", type: "string" });
 	pi.registerFlag("minor", {
 		description: `Start with minor modes on (comma-separated): ${MINOR_MODES.join(" | ")}, or none`,
 		type: "string",
@@ -617,7 +617,7 @@ export default function modeExtension(pi: ExtensionAPI): void {
 				ctx.ui.notify(`${statusLines().join("\n")}\n${usage}`, "warning");
 				return;
 			}
-			const mode = parseMode(arg); // "claude-heavy" still selects delegate
+			const mode = parseMode(arg);
 			if (mode !== undefined) {
 				await setMode(mode, ctx);
 				return;
@@ -754,7 +754,6 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		const data = entry.data;
 		if (data && "minor" in data) return new Text(theme.fg("dim", `── ${data.minor} ${data.on ? "on" : "off"} ──`), 0, 0);
 		if (data && "strict" in data) return new Text(theme.fg("dim", `── strict ${data.strict ? "on" : "off"} ──`), 0, 0);
-		// Shown as recorded: a pre-rename marker keeps its "claude-heavy" (history is not relabelled).
 		const mode = data?.mode ?? "normal";
 		return new Text(theme.fg("dim", `── mode → ${mode} ──`), 0, 0);
 	});

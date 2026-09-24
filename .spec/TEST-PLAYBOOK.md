@@ -49,7 +49,7 @@ verdict's `reason`.
 | `pi-config/extensions/mode/spec-mode.md` | The discipline text. The mode injects it; Sova's `CLAUDE.md` points at it |
 | `pi-config/extensions/mode/minor.ts`, `index.ts`, `prompt.ts`, `index.test.ts`, `tests/smoke.mjs` | The minor mode, its composition and tests |
 | `CLAUDE.md` (section "Product documentation") | Sova's standing rule: follow `spec-mode.md` whether or not the mode is on; never turn a mode on |
-| `.sova/spec/{README.md,USAGE.md,manifest.json,.gitignore}`, `claims/`, `tools/`, `migration/` | Sova's own documentation, its vendored tools and its migration record |
+| `.sova/spec/{README.md,USAGE.md,manifest.json,.gitignore}`, `claims/`, `tools/` | Sova's own documentation and its vendored tools |
 
 The system in one paragraph each:
 
@@ -86,8 +86,8 @@ The system in one paragraph each:
 State observed while writing (2026-09-23), **for orientation only; never assert these numbers**:
 `check` on the candidate exits 1 with 23 claim files, 190 records (120 behavior, 52 note, 18 surface),
 all `migrated`/`unreviewed`, 21 `requires` edges on 8 records, 112 `requires-uninvestigated` warnings,
-0 code paths; the vendored `.sova/spec/tools/*.mjs` hashed equal to the canonical `core/*.mjs`; the legacy
-`spec/*.md` were redirect stubs. Rows compute expectations from the files at run time.
+0 code paths; the vendored `.sova/spec/tools/*.mjs` hashed equal to the canonical `core/*.mjs`. Rows
+compute expectations from the files at run time.
 
 ## 2. Hard rules
 
@@ -121,7 +121,7 @@ These apply to you and to every worker you start. Put the relevant ones in every
      to prove the draft tool ignores it.
    - The draft tool's own Git calls clear `GIT_*` and force `core.fsmonitor=false`, but still read the
      caller's `HOME` global config: always run it with `HOME=$RUN/home` (`fx.tool` and `run.mjs` do).
-   - Scripts of the candidate that call `git` themselves inside `$CO` (`migration/verify.mjs`, `migrate.mjs`)
+   - Scripts of the candidate that call `git` themselves inside `$CO`
      share MAIN's config: run them through `run.mjs` with `$GITENV` (from `env.sh`), which forces
      `core.fsmonitor=false` and `core.hooksPath=/dev/null` for every Git call they make.
    - `fx.mjs` and `fixture-notes.mjs` resolve every path by realpath and refuse anything not strictly inside
@@ -130,10 +130,8 @@ These apply to you and to every worker you start. Put the relevant ones in every
      repository's toplevel and common Git dir are inside `$RUN/fixtures`. Escape-test canaries live elsewhere
      inside `$RUN/fixtures`, never outside it.
 5. **The candidate is frozen once.** Copy exactly the allowlisted dirty paths (section 5), with hashes and
-   deletions, verify twice. Never blanket-copy `.sova/`: `pilot/`, `reviews/`, `drafts/` and
-   `migration/legacy/worktree/` are local-only originals and stay where they are. Research
-   (`spec/brainstorms/`) is removed from the checkout physically, not filtered out of grep output. A file
-   the candidate needs but did not include is the old HEAD version; nothing about it may be claimed tested.
+   deletions, verify twice. Never blanket-copy `.sova/`: `pilot/`, `reviews/` and `drafts/` are local-only
+   originals and stay where they are. A file the candidate needs but did not include is the old HEAD version; nothing about it may be claimed tested.
 6. **No credentials in the system under test, none in logs.** Never copy `auth.json` or keys, never print
    the environment, never pass credentials on a command line. The harness that orchestrates may use its own
    approved auth for workers; the tested pi/Sova runtime runs only from `$RUN/agent`. If a tier needs model
@@ -207,7 +205,6 @@ the caller's instructions plus these permitted defaults, save it as `$RUN/accept
   },
   "budget": { "maxWallMinutes": 240, "maxModelCostUSD": null },
   "authorize": {
-    "localMigrationInputs": false,
     "dependencyInstall": null,
     "isolatedCredentials": null,
     "servicePort": null,
@@ -242,8 +239,6 @@ the caller's instructions plus these permitted defaults, save it as `$RUN/accept
   (`run.mjs --pass-env X_API_KEY --online`, which logs the name only). `null` makes the INT rows (tier L) BLOCKED.
 - **`authorize.servicePort`**: `null` (S rows BLOCKED) or a port to probe. Never 4800 or 4810 unless the
   probe proves them free; never stop whatever holds them.
-- **`authorize.localMigrationInputs`**: `true` only if the caller explicitly allows reading the local-only
-  `.sova/spec/{pilot,drafts,migration/legacy/worktree}` for the full-parity row MIG-2. Otherwise BLOCKED.
 
 **Stop conditions** (check before each wave, and before every expensive step: A-tier actors, L, S):
 
@@ -293,8 +288,8 @@ cat > "$RUN/env.sh" <<EOF
 [ -n "\${BASH_VERSION:-}" ] || { echo 'run under bash'; exit 1; }
 export MAIN="$MAIN" RUN="$RUN" CO="$CO" ART="$ART" PLAYBOOK="$PLAYBOOK"
 GITP="$GITP"
-PRIV="--private .sova/spec/pilot --private .sova/spec/reviews --private .sova/spec/drafts --private .sova/spec/migration/legacy/worktree"
-# For scripts that run git themselves inside \$CO (verify.mjs, migrate.mjs): pass these through run.mjs --env
+PRIV="--private .sova/spec/pilot --private .sova/spec/reviews --private .sova/spec/drafts"
+# For scripts that run git themselves inside \$CO: pass these through run.mjs --env
 GITENV="--env GIT_CONFIG_COUNT=2 --env GIT_CONFIG_KEY_0=core.fsmonitor --env GIT_CONFIG_VALUE_0=false --env GIT_CONFIG_KEY_1=core.hooksPath --env GIT_CONFIG_VALUE_1=/dev/null"
 EOF
 echo "run root: $RUN   (every later command starts with: source $RUN/env.sh)"
@@ -333,7 +328,7 @@ node "$RUN/harness/freeze.mjs" plan "$MAIN" "$RUN/allowlist.txt" "$ART/candidate
 Read `manifest.json`: `entries` (path, action write/delete, sha256, mode, git status, rename origin),
 `excludedDirty` (dirty paths left out, for example concurrent UI work in `src/`), `denied` (secret-like or
 private paths, and every symlink not approved by a `+link <path>` rule or whose target would leave the checkout), `ignoredSkipped` (ignored paths under an include, never copied), `stagedChanges`.
-If a dirty path under `pi-config/extensions/spec/`, `pi-config/extensions/mode/`, `.sova/spec/`, `spec/`
+If a dirty path under `pi-config/extensions/spec/`, `pi-config/extensions/mode/`, `.sova/spec/`
 or `server/mode-state*` is in `excludedDirty`, add a rule, re-plan, and note why. The five instruction
 files at the end of the allowlist are **mixed**: they may carry unrelated edits; list them in
 `run-plan.md` as mixed. Rows that depend on them (CAN-6, MODE-9/10) report on the frozen bytes, and the
@@ -384,7 +379,7 @@ guard snapshot and compare (`guard.mjs compare … --worktree "$CO"`, saved as
 |---|---|---|
 | W1 setup evidence | you | ISO-1..5 (from S2–S5 output), T-VENDOR |
 | W2 existing suites | you or 1 mechanical worker | T-SPEC, T-MODE, T-SMOKE, T-SERVER |
-| W3 mechanical | mechanical workers, one category group each: CORE; DR-NEW..DR-EV; DR-PR..DR-MAL; RV + SEC; LIVE + MIG + PUB + CAN + REG + SEM | all M rows |
+| W3 mechanical | mechanical workers, one category group each: CORE; DR-NEW..DR-EV; DR-PR..DR-MAL; RV + SEC; LIVE + PUB + CAN + REG + SEM | all M rows |
 | W4 offline CLI | 1 mechanical worker | MODE-1, 2, 3, 7, 9, 10, 12, 13, CAN-4, CAN-5 (C rows plus the two prefix/install M rows) |
 | W5 agent simulation | 1 fresh actor per ACT run (section 7.3), then observers | AG rows, REG-6 |
 | W6 optional | only if enabled and authorized | INT rows (tier L), MODE-14 (tier S), T-SERVER install |
@@ -715,7 +710,7 @@ prose is true of code.
 |---|---|---|---|---|
 | ISO-1 | The run never changes MAIN's watched population: HEAD, symbolic ref, refs, packed-refs, index entries, config, config.worktree, HEAD reflog, stash, info/exclude, hooks, worktree list, tracked, untracked non-ignored and listed private bytes (other ignored paths and the object store are not covered; the report says so) | M | `guard.mjs` snapshot before S3, after every wave, after teardown; compare | Every compare exits 0; the only notes are this run's worktree add/remove and index stat refreshes. Any diff: run INCONCLUSIVE, nothing reverted |
 | ISO-2 | The checkout holds exactly the frozen candidate, and MAIN did not drift while freezing | M | `freeze.mjs verify` after apply (pass 2) and in W7 (pass 3) | `ok: true` in both; `drift`, `mismatch`, `deniedStillPresent`, `appearedSinceFreeze` empty; `$CO` HEAD equals the manifest's `head` |
-| ISO-3 | Private and research paths are physically absent from the checkout | M | `find "$CO/spec/brainstorms" "$CO/.sova/spec/pilot" "$CO/.sova/spec/reviews" "$CO/.sova/spec/drafts" "$CO/.sova/spec/migration/legacy/worktree" "$CO/.agent" "$CO/node_modules"` | None exists (unless T-SERVER's authorized install created `node_modules`, recorded) |
+| ISO-3 | Private paths are physically absent from the checkout | M | `find "$CO/.sova/spec/pilot" "$CO/.sova/spec/reviews" "$CO/.sova/spec/drafts" "$CO/.agent" "$CO/node_modules"` | None exists (unless T-SERVER's authorized install created `node_modules`, recorded) |
 | ISO-4 | The candidate's module closure resolves inside the checkout; the spec tools need only Node builtins | M | `freeze.mjs closure` over the spec core and mode files (S4) | `missing` empty; for the three `core/*.mjs`, every bare specifier starts with `node:` |
 | ISO-5 | The system under test ran only from the isolated agent dir; the real one is untouched; no credential copied | M | Compare `home-pi-before.txt`/`after` (settings, mode, mode-delegate, model-policy, trust, models-store, models, keybindings, vision-delegate hashes; auth.json size/mtime; extensions listing); inspect `$RUN/agent` links and `auth.json` | Identical before/after (harness worker sessions under `~/.pi/agent/sessions` are not watched and are disclosed separately); every link in `$RUN/agent/extensions` resolves into `$CO`; `$RUN/agent/auth.json` is `{}` or the caller's documented mechanism |
 | ISO-6 | Artifacts are complete and shareable | M | `report.mjs` | Every PASS/FAIL has existing evidence; `sharingBlockers` empty (else share nothing until redacted) |
@@ -777,9 +772,8 @@ plus the files its records map.
 
 | ID | Claim | Tier | Scenario | Oracle |
 |---|---|---|---|---|
-| LIVE-1 | The migrated docs load, and what `check` reports matches the files | M | `check --root "$CO"`; the observer recounts from `manifest.json` and `claims/` | Exit 1 and every warning is `requires-uninvestigated`; no errors; `records` = `declarations` = manifest keys; claim file count = `.md` files under `claims/`; `labels` equal the recount (all records `migrated`/`unreviewed` if the recount says so); warnings = behaviors without a `requires` key; `requiresEdges` = the sum of `requires` lengths. Numbers recorded, not compared to section 1 |
-| LIVE-2 | A surface's scope returns every section of the migrated document, subsections included (the pilot's omitted-seams regression) | M | `scope '§chat/composer'` | First passage is the seed; **every** H2 declared in `claims/chat/composer.md` appears as a passage (including `…/disabled-states` and `…/accessibility`), each with reason `child` and text equal to the file's lines for its span. Passages from other files, reached through `requires`, may follow and are allowed; the oracle is "all own H2s present", not "only own H2s" |
-| LIVE-3 | Old paths are redirects, not a second authority, and resolve | M | Read `$CO/spec/*.md` (not brainstorms) and `migration/legacy-map.json` `sections` | Ordinary entries: `id` is a current record and `current` exists, and the stub names its `.sova/spec` successor and carries no requirement prose. Two declared exceptions, validated as such, not as current records: `§4h` has only an `absent` statement, no record, no claims file and no stub (and MIG-1's output lists it as known absent); `§4i` has `current: null` and a `draft` path, its stub `spec/04i-playbooks.md` says it was never committed and is a local-only draft, and `§chat/playbooks` is **not** a current record. Any other entry without `id`/`current` is a FAIL |
+| LIVE-1 | The current docs load, and what `check` reports matches the files | M | `check --root "$CO"`; the observer recounts from `manifest.json` and `claims/` | Exit 1 and every warning is `requires-uninvestigated`; no errors; `records` = `declarations` = manifest keys; claim file count = `.md` files under `claims/`; `labels` equal the recount (all records `migrated`/`unreviewed` if the recount says so); warnings = behaviors without a `requires` key; `requiresEdges` = the sum of `requires` lengths. Numbers recorded, not compared to section 1 |
+| LIVE-2 | A surface's scope returns every section of its document, subsections included | M | `scope '§chat/composer'` | First passage is the seed; **every** H2 declared in `claims/chat/composer.md` appears as a passage (including `…/disabled-states` and `…/accessibility`), each with reason `child` and text equal to the file's lines for its span. Passages from other files, reached through `requires`, may follow and are allowed; the oracle is "all own H2s present", not "only own H2s" |
 | LIVE-4 | USAGE.md's commands behave as documented | M | `check`; `scope '§workspace/groups' --budget 4000`; `scope '§workspace.groups/decisions'`; `impact '§chat.composer/behavior'`; `census` | Exits as USAGE says (check 1; census 1 `boundary-missing`); budget run: `used` ≤ 4000 and every omitted passage named; impact frontier non-empty |
 | LIVE-5 | A review preview of a current closure writes nothing and shows its blockers | M | `sova-spec-review.mjs prepare '§chat/composer' --root "$CO" --name acc-live` (no `--write`) | Exit 0, `written: false`; `blockers` include `requires-uninvestigated`; no write in `$CO` |
 | LIVE-6 | A draft preview of the current docs writes nothing and would copy everything | M | `sova-spec-draft.mjs new acc-live --root "$CO"` (no `--write`) | Exit 0, `written: false`; `files` = manifest + every file under `claims/`; no write in `$CO` |
@@ -878,17 +872,13 @@ Run each case against the draft tool (as evidence input and inside the spec tree
 | SEC-4 | Topic-named docs and code are allowed; credential data is refused | M | `claims/app/secrets.md` + `lib/secrets.ts` mapped and evidenced; then `secrets.json`, `config/secrets.prod.yaml`, `.env.local`, `id_rsa`, `server.pem`, `.GIT/config`, `.Ssh/key` | First set captured and promotable; each second-set path refused by both tools (case-insensitive dirs) |
 | SEC-5 | A `--log` must be a regular, non-secret file | M | `--log` of a directory, of `x/.env`, of a symlink | `log-refused` exit 1 each |
 
-### 10.8 Migration and publication (MIG, PUB)
+### 10.8 Publication (PUB)
 
 | ID | Claim | Tier | Scenario | Oracle |
 |---|---|---|---|---|
-| MIG-1 | A published copy checks the current docs fully and reports partial parity honestly | M | `node .sova/spec/migration/verify.mjs` in `$CO` via `run.mjs $GITENV --watch "$CO"` (no local-only inputs) | Exit 3; `UNAVAILABLE` lines name what was skipped; "partial" printed; no writes. Reported as partial, never as full parity |
-| MIG-2 | With the local-only inputs, parity is full | M | Only with `authorize.localMigrationInputs`: copy exactly `.sova/spec/{pilot,drafts/legacy-working,migration/legacy/worktree}` from MAIN into `$RUN/fixtures/MIG-2/` (a fixture copy of `$CO`'s `.sova/spec`), run `verify.mjs` there via `run.mjs $GITENV` | Exit 0; else BLOCKED "local inputs not authorized" (never attempted, never read). Retention: the private copy stays in `$RUN/fixtures/MIG-2/` only, is listed in artifacts by path and hash (never contents), is never shared, and the report tells the caller it exists so they can delete it |
-| MIG-3 | The migration is reproducible and reversible | M | Only with `authorize.localMigrationInputs`, and only in MIG-2's isolated copy (the build needs the local-only `legacy/worktree/` originals, which `$CO` lacks by design): `node migration/migrate.mjs build --out "$RUN/fixtures/MIG-2/mig-out"` there via `run.mjs $GITENV --watch <copy>`. Compare `mig-out/current/{manifest.json,claims}` with the copy's current `manifest.json` and `claims/`, and `mig-out/draft/` with `drafts/legacy-working/spec/` | `current` byte-equal (or, for files changed by a promotion since migration, the same difference `verify.mjs` reports as a note); `draft` byte-equal or differences matching `verify.mjs`'s note; no writes in the copy's `.sova/spec` or in `$CO`. Without authorization: BLOCKED "local inputs not authorized". Never run the build in `$CO`, where it would fail on the missing originals |
-| MIG-4 | Legacy `§N` citations resolve | M | The `verify.mjs` output of MIG-1 | Line "§N citations: … all resolve" present; `§4h` noted as known absent |
-| PUB-1 | Local-only material is ignored for commits | M | Fixture Git repo = copy of `$CO/.sova/spec` + `.gitignore`, plus synthetic `pilot/x`, `reviews/x`, `drafts/x`, `migration/legacy/worktree/x`; plain `git check-ignore -q -- <path>` per exact path (never `-v`: it also lists negation rules) | All four ignored; `manifest.json`, `claims/`, `tools/`, `migration/*.mjs` not ignored |
-| PUB-2 | The README's publishing command stages no local-only path | M | In a fixture repo holding the candidate's publishable tree plus synthetic private files, run the README's first `git add` line exactly | `git diff --cached --name-only` contains no path under `pilot/`, `reviews/`, `drafts/`, `migration/legacy/worktree/` |
-| PUB-3 | Claims publish as Markdown only: every `*.md` under `claims/` outside the re-ignored `node_modules/`, `dist/`, `tmp/` and `.agent/` directories (topic-named ones such as `secrets.md` included) is publishable despite the root `*secret*`/`*credential*` rules, and nothing else under `claims/` is | M | Fixture Git repo (built with `fx`) holding `$CO/.gitignore` (the root file), `$CO/.sova/spec/{.gitignore,README.md,USAGE.md,manifest.json,claims,tools}` and `migration/` minus `legacy/worktree/`, plus a read-only copy of MAIN's `.git/info/exclude` as the fixture's `.git/info/exclude`. Add `claims/app/secrets.md` and `claims/secrets/topic.md` (expected trackable), and `claims/secrets/config.json`, `claims/credentials/config.txt`, `claims/app/.env`, `claims/node_modules/pkg/README.md` (expected ignored). Classify each exact path with plain `git check-ignore -q -- <path>` (exit 0 = ignored), then run `git add -n` over the README's documented `.sova/spec` paths | The two topic files are not ignored and appear in the `add -n` output; the other four are ignored and absent. Every current `claims/**/*.md` (the observer lists them from `$CO`), `manifest.json`, `README.md`, `USAGE.md`, `.gitignore` and `tools/*.mjs` appear in the `add -n` output. Never classify from `check-ignore -v` output or from its exit status over several paths: `-v` also prints the negation rule (`!/claims/**/*.md`) for paths that are trackable. The contract is Markdown only under `claims/`; support files live outside `claims/` or need an explicit policy review, so any non-`.md` file found under the current `claims/` is reported |
+| PUB-1 | Local-only material is ignored for commits | M | Fixture Git repo = copy of `$CO/.sova/spec` + `.gitignore`, plus synthetic `pilot/x`, `reviews/x`, `drafts/x`; plain `git check-ignore -q -- <path>` per exact path (never `-v`: it also lists negation rules) | All three ignored; `manifest.json`, `claims/`, `tools/` not ignored |
+| PUB-2 | The README's publishing command stages no local-only path | M | In a fixture repo holding the candidate's publishable tree plus synthetic private files, run the README's first `git add` line exactly | `git diff --cached --name-only` contains no path under `pilot/`, `reviews/`, `drafts/` |
+| PUB-3 | Claims publish as Markdown only: every `*.md` under `claims/` outside the re-ignored `node_modules/`, `dist/`, `tmp/` and `.agent/` directories (topic-named ones such as `secrets.md` included) is publishable despite the root `*secret*`/`*credential*` rules, and nothing else under `claims/` is | M | Fixture Git repo (built with `fx`) holding `$CO/.gitignore` (the root file), `$CO/.sova/spec/{.gitignore,README.md,USAGE.md,manifest.json,claims,tools}`, plus a read-only copy of MAIN's `.git/info/exclude` as the fixture's `.git/info/exclude`. Add `claims/app/secrets.md` and `claims/secrets/topic.md` (expected trackable), and `claims/secrets/config.json`, `claims/credentials/config.txt`, `claims/app/.env`, `claims/node_modules/pkg/README.md` (expected ignored). Classify each exact path with plain `git check-ignore -q -- <path>` (exit 0 = ignored), then run `git add -n` over the README's documented `.sova/spec` paths | The two topic files are not ignored and appear in the `add -n` output; the other four are ignored and absent. Every current `claims/**/*.md` (the observer lists them from `$CO`), `manifest.json`, `README.md`, `USAGE.md`, `.gitignore` and `tools/*.mjs` appear in the `add -n` output. Never classify from `check-ignore -v` output or from its exit status over several paths: `-v` also prints the negation rule (`!/claims/**/*.md`) for paths that are trackable. The contract is Markdown only under `claims/`; support files live outside `claims/` or need an explicit policy review, so any non-`.md` file found under the current `claims/` is reported |
 | PUB-4 | Snapshot bytes stay local | M | In the PUB-1 repo, after a draft snapshot and a review packet exist: plain `git check-ignore -q -- <path>` on each exact file under `drafts/*/evidence/objects/` and `reviews/objects/` | Every one ignored |
 
 ### 10.9 Canonical, vendored and standalone tools (CAN)
@@ -1011,11 +1001,8 @@ The default candidate allowlist (S3). Review it against MAIN's `git status` befo
 + pi-config/extensions/mode/README.md
 + pi-config/extensions/mode/tests/smoke.mjs
 + server/mode-state.test.ts
-# The documentation, its migration record and the legacy redirect stubs:
+# The documentation:
 + .sova/spec/
-+ spec/
-# Research is never part of the candidate, tracked or not:
-- spec/brainstorms/
 # Instructions that point at the docs. MIXED: these may also carry unrelated edits from other sessions.
 + CLAUDE.md
 + CONTRIBUTING.md
@@ -1141,7 +1128,7 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { lstatSync, readFileSync, readlinkSync, writeFileSync, mkdirSync, rmSync, symlinkSync, chmodSync, existsSync, realpathSync } from "node:fs";
 import { join, dirname, resolve, isAbsolute, posix, sep } from "node:path";
-const DENY = ["spec/brainstorms/", ".sova/spec/pilot/", ".sova/spec/reviews/", ".sova/spec/drafts/", ".sova/spec/migration/legacy/worktree/",
+const DENY = [".sova/spec/pilot/", ".sova/spec/reviews/", ".sova/spec/drafts/",
   ".agent/", "node_modules/", ".git/"];
 const SECRET = /(^|\/)(\.env(\..*)?|auth\.json|credentials(\.json)?|\.netrc|\.npmrc|id_(rsa|dsa|ecdsa|ed25519)(\.pub)?|[^/]*\.(pem|key|p12|pfx))$/i;
 const sha = (b) => createHash("sha256").update(b).digest("hex");
@@ -1732,8 +1719,7 @@ console.log(JSON.stringify({ dir, canary, sentinels, flags }));
 ## Appendix: a committed candidate
 
 If the feature is committed (a branch or commit `C` holding exactly the candidate), skip the freeze: `git
--C "$MAIN" $GITP worktree add --detach "$CO" C` (as in S4), then remove `spec/brainstorms/` from `$CO` (tracked
-research is still excluded physically) and confirm `.sova/spec/{pilot,reviews,drafts,migration/legacy/worktree}`
+-C "$MAIN" $GITP worktree add --detach "$CO" C` (as in S4), then confirm `.sova/spec/{pilot,reviews,drafts}`
 are absent (they are ignored, so a clean checkout lacks them). ISO-2 becomes "`git -C $CO $GITP rev-parse HEAD` =
-`C` and `git -C $CO $GITP status --porcelain` shows only the brainstorms deletion". Everything else is unchanged,
+`C` and `git -C $CO $GITP status --porcelain` is empty". Everything else is unchanged,
 and the guard still runs, because MAIN may still be live.

@@ -1,4 +1,4 @@
-// Bare "/new" in the composer (spec/04d-slash-commands.md §4d): a fresh session in the chat's folder, and the
+// Bare "/new" in the composer: a fresh session in the chat's folder, and the
 // chat it was typed in goes to the Archive. Kept free of the api module so it's testable.
 
 /** The folder "/new" starts in: the chat's own, else the most recently active session's. */

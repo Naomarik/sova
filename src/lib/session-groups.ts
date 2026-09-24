@@ -1,6 +1,5 @@
-// Session groups (spec/02-session-list.md §2 "Groups"): the user's own grouping of sessions, shown as a
-// region above Live & web. Server-side (~/.pi/agent/sova/session-groups.json — the state root moved
-// from the legacy pi-web/ spelling with the rename), so every tab and
+// Session groups: the user's own grouping of sessions, shown as a
+// region above Live & web. Server-side (~/.pi/agent/sova/session-groups.json), so every tab and
 // server sees the same groups, and purely additive: a grouped session keeps its place in Live &
 // web or the Archive. A session is in at most one group.
 //
@@ -66,7 +65,7 @@ export function orderedMembers(sessions: readonly SessionSummary[], group: Sessi
 }
 
 /**
- * What each tab SHOWS (spec/14-workspaces.md "A pane"). A tab's job is to tell one member from
+ * What each tab SHOWS. A tab's job is to tell one member from
  * another inside this group, and a title often can't: every member of a fork shares the source's
  * title, so a strip of five tabs reading "Retry with jitter" names nothing. The rule is the first
  * thing that distinguishes it — the label if the user set one, else the model (with a repeat
@@ -105,11 +104,11 @@ export function tabLabels(members: readonly { title: string; model?: string | nu
 }
 
 /**
- * The pane names in member order (§14 "A pane", §14b "Member labels"): the same string the pane
+ * The pane names in member order: the same string the pane
  * head shows, the pane's aria-label carries and the live region prefixes every fact with —
  * "{label} · {model}", "{title} · {model}", or for members that share a title with no label (the
  * canonical `opus ×3` fanout) the model with its `#n` ALONE: "claude-opus-5 #2". The suffix
- * already names the model, and appending " · claude-opus-5" would make the name stutter; §14b
+ * already names the model, and appending " · claude-opus-5" would make the name stutter; the fanout spec
  * says that suffix is how repeats are distinguished "until a label is set", numbered in member
  * order — which is `memberTabs`' numbering, shared rather than re-derived, so the tab strip and
  * the pane head can never disagree about which #2 is which (they did, exactly there, before this
@@ -156,31 +155,27 @@ export const quoted = (name: string) => `“${name}”`;
 // ---------------------------------------------------------------------------
 
 /** The session path is carried under this type, so the composer's image drop (which reads files)
-    and this drag never mistake each other for one of their own. `LEGACY_GROUP_DRAG_TYPE` is the
-    pre-rebrand spelling: drags write BOTH and drops/dragovers accept either, so a drag started by
-    an old build of this app (another window not yet reloaded) still lands. */
+    and this drag never mistake each other for one of their own. */
 export const GROUP_DRAG_TYPE = "application/x-sova-session";
-export const LEGACY_GROUP_DRAG_TYPE = "application/x-pi-web-session";
 
-/** Marks a drag as "this row wants a group": the path under both our types, a readable fallback
+/** Marks a drag as "this row wants a group": the path under our type, a readable fallback
     under text/plain (a drag out of the window, a drop on anything else). */
 export function setGroupDragData(e: DragEvent, path: string): void {
   if (!e.dataTransfer) return;
   e.dataTransfer.setData(GROUP_DRAG_TYPE, path);
-  e.dataTransfer.setData(LEGACY_GROUP_DRAG_TYPE, path);
   e.dataTransfer.setData("text/plain", path);
   e.dataTransfer.effectAllowed = "move";
 }
 
 /** The session path a drop carries, or null when the drag is something else (files, text). */
 export function groupDragPath(e: DragEvent): string | null {
-  const path = e.dataTransfer?.getData(GROUP_DRAG_TYPE) || e.dataTransfer?.getData(LEGACY_GROUP_DRAG_TYPE);
+  const path = e.dataTransfer?.getData(GROUP_DRAG_TYPE);
   return path ? path : null;
 }
 
 /** Whether this drag event carries one of our rows (a dragover can't read the data, only the types). */
 export function dragHasRow(e: DragEvent): boolean {
-  return !!e.dataTransfer && (e.dataTransfer.types.includes(GROUP_DRAG_TYPE) || e.dataTransfer.types.includes(LEGACY_GROUP_DRAG_TYPE));
+  return !!e.dataTransfer && e.dataTransfer.types.includes(GROUP_DRAG_TYPE);
 }
 
 // ---------------------------------------------------------------------------
@@ -267,7 +262,7 @@ export async function setSessionGroup(
 }
 
 /**
- * Sets or clears ONE member's label (§14 "Data": trimmed, 1–`GROUP_LABEL_MAX` characters,
+ * Sets or clears ONE member's label (trimmed, 1–`GROUP_LABEL_MAX` characters,
  * optional) — the pane head's `Rename` gesture. Same store update shape as `setGroupOrder`: the
  * server's whole group replaces the tab's copy, so the pane names (which read the label) move in
  * the same tick. A label describes the session, not the group, so it rides the member entry and

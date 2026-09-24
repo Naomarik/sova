@@ -209,6 +209,19 @@ test("a stable session id is passed only when asked for, and must be a UUID", ()
 	assert.ok(!argvFor().args!.includes("--session-id"));
 });
 
+test("resume continues an existing session with --resume, never --session-id", () => {
+	const id = "886313e1-3b8a-5372-9b90-0c9aee199e5d";
+	const args = argvFor({ resume: id }).args!;
+	assert.deepEqual(args.slice(args.indexOf("--resume"), args.indexOf("--resume") + 2), ["--resume", id]);
+	assert.ok(!args.includes("--session-id"));
+	// Sandbox settings ride along unchanged.
+	const sandboxed = argvFor({ resume: id, settingsJson: "{\"sandbox\":{}}" }).args!;
+	assert.ok(sandboxed.includes("--resume") && sandboxed.includes("--settings"));
+	for (const bad of ["", "not-a-uuid", "--fork-session"]) assert.deepEqual(argvFor({ resume: bad }), { error: "Invalid resume: the CLI requires a canonical session UUID" }, bad);
+	assert.match(argvFor({ resume: id, sessionId: id }).error!, /exclusive/);
+	assert.ok(!argvFor().args!.includes("--resume"));
+});
+
 test("argv validation fails closed, in the order a launcher must report it", () => {
 	for (const tool of ["--dangerously-skip-permissions", " --permission-mode", "Bash\n--foo", "Bash\x00", ""]) {
 		assert.deepEqual(argvFor({ allowedTools: [tool] }), { error: "Invalid allowedTools: flags and control characters are not allowed" });

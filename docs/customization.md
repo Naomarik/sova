@@ -33,8 +33,8 @@ the app; a theme does not bundle font files. Invalid values appear with an error
 rather than being applied.
 
 A custom theme with the same id as a built-in replaces it. If a theme becomes unreadable, fix or
-remove its file and reopen Settings → Themes. For a browser-side reset, clear both `sova:theme`
-and the compatibility key `pi-web:theme` from local storage, then reload.
+remove its file and reopen Settings → Themes. For a browser-side reset, clear `sova:theme` from
+local storage, then reload.
 
 ## Model choices
 

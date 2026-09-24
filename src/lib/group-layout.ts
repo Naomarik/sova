@@ -1,12 +1,11 @@
-// How one workspace is laid out (spec/14-workspaces.md "Layout: split" / "Layout: tabs"): split
+// How one workspace is laid out: split
 // (panes side by side in one horizontally scrolled row) or tabs (one pane shown, all of them
 // mounted so every stream keeps running).
 //
 // What is persisted, and what isn't, is deliberate:
 //   - the layout is remembered per group for the browser session
-//     (`sessionStorage["sova:group-view-{id}"]`, read and mirrored at the legacy `pi-web:`
-//     spelling while the rename bridge is open), because it is a posture, not a setting;
-//   - a pane's width is memory only, for the same reason §1's sessions pane isn't persisted;
+//     (`sessionStorage["sova:group-view-{id}"]`), because it is a posture, not a setting;
+//   - a pane's width is memory only, for the same reason the app shell's sessions pane isn't persisted;
 //   - the member ORDER is the server's (`SessionGroup.members`), never storage — it is what the
 //     group is, and every tab and every server must see the same one.
 //
@@ -15,7 +14,7 @@
 
 export type GroupLayoutMode = "split" | "tabs";
 
-import { dualGet, dualSet } from "./storage-keys";
+import { readKey, writeKey } from "./storage-keys";
 
 /** A pane narrower than this can't hold a transcript and a composer; the floor for every width. */
 export const PANE_MIN_WIDTH = 440;
@@ -25,12 +24,10 @@ export const PANE_MAX_WIDTH = 1040;
 export const PANE_WIDTH_STEP = 120;
 /** Below this viewport width a split row has no room for two panes: the workspace is tabs only. */
 export const TABS_ONLY_WIDTH = 768;
-/** Below this the head's tools can't stand beside the group's name, and become one menu (§14). */
+/** Below this the head's tools can't stand beside the group's name, and become one menu. */
 export const HEAD_MENU_WIDTH = 640;
 
 const KEY = (id: string) => `sova:group-view-${id}`;
-/** The pre-rebrand spelling, read and mirrored while the rename bridge is open (storage-keys.ts). */
-const LEGACY_KEY = (id: string) => `pi-web:group-view-${id}`;
 
 export const clampWidth = (px: number): number => Math.min(PANE_MAX_WIDTH, Math.max(PANE_MIN_WIDTH, Math.round(px)));
 
@@ -78,7 +75,7 @@ export function autoPaneWidth(rowWidth: number, count: number, chosen: readonly 
 export type PaneWidthChoice = number | "fit";
 
 /**
- * Every pane's width in the row, from what the user chose (spec/14-workspaces.md "Layout: split"):
+ * Every pane's width in the row, from what the user chose:
  *  - a stepped number stands as it is;
  *  - a `"fit"` pane takes `fitPaneWidth` of the row, whatever the row is now;
  *  - a pane with no entry takes `autoPaneWidth` — unless the row is FITTED (any pane in it is
@@ -120,7 +117,7 @@ export const stepFrom = (current: number, direction: 1 | -1): number =>
   current < PANE_MIN_WIDTH && direction === -1 ? current : stepWidth(current, direction);
 
 /**
- * `Fit all` (spec/14-workspaces.md "Layout: split"): the one width at which `count` panes stand
+ * `Fit all`: the one width at which `count` panes stand
  * in the row with no scrollbar — the row's inner width divided by the pane count. Panes are
  * `border-box` and the seam is a pane's own left border, so there is nothing to subtract: N of
  * these widths never exceed the row. Floored, not rounded, for the same reason.
@@ -166,7 +163,7 @@ export function neighbourOf(list: readonly string[], removed: string): string | 
 /** The stored layout for this group, or null when it has never been chosen here. */
 export function readMode(id: string): GroupLayoutMode | null {
   try {
-    const v = dualGet(sessionStorage, KEY(id), LEGACY_KEY(id));
+    const v = readKey(sessionStorage, KEY(id));
     return v === "split" || v === "tabs" ? v : null;
   } catch {
     return null;
@@ -175,7 +172,7 @@ export function readMode(id: string): GroupLayoutMode | null {
 
 export function writeMode(id: string, mode: GroupLayoutMode): void {
   try {
-    dualSet(sessionStorage, KEY(id), LEGACY_KEY(id), mode);
+    writeKey(sessionStorage, KEY(id), mode);
   } catch {
     // The choice still holds for this page; remembering it is a convenience.
   }

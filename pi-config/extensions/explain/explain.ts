@@ -90,11 +90,11 @@ export const WAKE_MESSAGE_TYPE = "explain-complete";
  *
  * `display: false` on purpose. This text is addressed to the AGENT ("reply in at
  * most two sentences…"), not to the user, and a displayed custom message is
- * rendered as a transcript row by pi and by pi-web alike — which showed the user
+ * rendered as a transcript row by pi and by Sova alike — which showed the user
  * our own prompt plumbing between the explanation card and the agent's reply.
  * Hiding it costs nothing: custom messages participate in LLM context regardless
  * of `display`, so the wake still happens, and the user already sees the
- * `explain-doc` entry plus the agent's answer. (Found in a real pi-web transcript
+ * `explain-doc` entry plus the agent's answer. (Found in a real Sova transcript
  * by backend-dev, not in a test.)
  */
 export function wakeMessage(text: string): { customType: string; content: string; display: boolean } {
@@ -104,8 +104,8 @@ export function wakeMessage(text: string): { customType: string; content: string
 /** Two sentences, and the second one is the instruction that keeps it to two. */
 export function wakeText(topic: string, dir: string): string {
 	return [
-		`[/explain] The explanation of "${topic}" is written: ${dir}/index.html (viewable in pi-web).`,
-		"Reply in at most two sentences — the store path and that it is viewable in pi-web. Do not open a browser, do not re-explain the topic.",
+		`[/explain] The explanation of "${topic}" is written: ${dir}/index.html (viewable in Sova).`,
+		"Reply in at most two sentences — the store path and that it is viewable in Sova. Do not open a browser, do not re-explain the topic.",
 	].join("\n");
 }
 
@@ -119,8 +119,8 @@ export function failureWakeText(topic: string, error: string): string {
 /** The page is there and opens; the run around it did not end cleanly. */
 export function noteWakeText(topic: string, dir: string, note: string): string {
 	return [
-		`[/explain] The explanation of "${topic}" is written: ${dir}/index.html (viewable in pi-web), but the run did not finish cleanly: ${note}`,
-		"Reply in at most two sentences — the store path, that it is viewable in pi-web, and that it may be unfinished. Do not open a browser, do not re-explain the topic.",
+		`[/explain] The explanation of "${topic}" is written: ${dir}/index.html (viewable in Sova), but the run did not finish cleanly: ${note}`,
+		"Reply in at most two sentences — the store path, that it is viewable in Sova, and that it may be unfinished. Do not open a browser, do not re-explain the topic.",
 	].join("\n");
 }
 

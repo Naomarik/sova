@@ -1,4 +1,4 @@
-# §app/insights — 10 · Insights
+# §app/insights — Insights
 > Part of the Sova design spec · [overview](../design/overview.md)
 
 What the user's pi extensions publish, read-only: subscription usage (usage-status), teams and
@@ -15,7 +15,7 @@ while reported states (read from a session file after the fact) never pulse and 
   - **`#/usage`** covers subscription limits.
   - **`#/agents`** covers teams and subagents. Team deep links are `#/agents/{teamId}`.
 
-  The head is full at 320px (§2). A third sidebar region would scroll away and mix non-session
+  The head is full at 320px (§app/session-list). A third sidebar region would scroll away and mix non-session
   data into the session list. An overlay would hide the transcript. The foot is always visible,
   sits in the folded thumb arc, and needs no rail. At folded width both pages use
   `data-view="session"` and show `.app-back`.
@@ -23,9 +23,9 @@ while reported states (read from a session file after the fact) never pulse and 
   `#/agents/{teamId}`, via `history.replaceState`, so no extra history entry is added.
 - **Per session:** `details.outline` (the Current goal strip) sits directly under `.session-head`,
   above the live banner.
-  Compactions stay in the transcript, at the point where they happened (§3 items).
+  Compactions stay in the transcript, at the point where they happened (§chat/transcript items).
 - **Aggregates:** neutral count chips on session rows and in the session head.
-- **All explanations:** the landing page at `#/`, under the opening (§3). The sidebar foot has no
+- **All explanations:** the landing page at `#/`, under the opening (§chat/transcript). The sidebar foot has no
   Explained row — a grid of pages is not a doorway that fits a 44px row.
 - No toasts, and nothing is announced on a poll.
 
@@ -122,14 +122,14 @@ ellipsis.
 ## §app.insights/aggregate-chips-live-vs-working — Aggregate chips: "Live" vs "Working"
 
 - **Live** is session-level: a TUI has the file open. It keeps the accent everywhere and says
-  the same word everywhere: §2's sidebar row carries it as a **static** `TUI` chip in the rail
+  the same word everywhere: §app/session-list's sidebar row carries it as a **static** `TUI` chip in the rail
   (no dot), and the session head as a **static** `TUI` chip. The pulse moved to Busy and to
-  running work; no TUI mark pulses anywhere (§0 Motion).
+  running work; no TUI mark pulses anywhere (§design.ground-rules/motion).
 - **Working** is worker-level: a subagent is mid-task. On a member row it's
   `.chip-accent.chip-live` "Working", and pulses only when live-sourced (see Team cards).
 - **Aggregates are neutral** `.chip.chip-count`, with no dot and no pulse, so each row has only
   one pulsing thing:
-  - **Session rows (§2):** no chip at all. The count is `{n}` + a `worker` icon in the row's
+  - **Session rows (§app/session-list):** no chip at all. The count is `{n}` + a `worker` icon in the row's
     left rail (`.session-rail-count`), under the row's state, when `live?.workers?.working ≥ 1`.
     Hidden at 0 or when absent. `.session-rail-count-live` pulses the icon only, and only on a
     row with no Busy dot, whose pulse would otherwise be a second moving thing.
@@ -179,7 +179,7 @@ Both pages share one shell: a `.session-head` and a `.insights.pane` containing
   <div class="insights-inner">
     <!-- 0 live sessions: ONE .empty here and nothing else (no section heads) -->
     <section class="insights-section" aria-labelledby="ins-teams">
-      <h2 class="insights-section-head" id="ins-teams">…worker icon-sm… Teams <span class="insights-section-count">· 2 active</span></h2>
+      <h2 class="insights-section-head" id="ins-teams">…worker icon-sm… Teams <span class="insights-section-count">· 2 active</span><span class="insights-section-count">· 1 restored</span></h2>
       <div class="insights-grid">…team cards, or .empty…</div>
     </section>
     <section class="insights-section" aria-labelledby="ins-agents"><!-- only with non-team workers -->
@@ -192,7 +192,7 @@ Both pages share one shell: a `.session-head` and a `.insights.pane` containing
 
 - **Split.** Usage and agents never share a page. The Agents page runs Teams first, then
   Subagents, and leaves out Subagents when no session has solo workers. With 0 live sessions,
-  the whole Agents body is one `.empty` (§9).
+  the whole Agents body is one `.empty` (§design/copy-deck).
 - **Head meta (Agents).** The format is `{w} working · {n} pi sessions running`. Drop
   "{w} working · " when w is 0, and use "1 pi session running" when n is 1.
 - **Grid.** `.insights-grid` has 1 column. It becomes 2 columns when the `insights` container is
@@ -276,7 +276,7 @@ Both pages share one shell: a `.session-head` and a `.insights.pane` containing
   | A balance with `available: false` | `.chip.chip-error` "Out of credit" (waits for a top-up) |
   | `error` set and `windows` (or a balance) kept | none: the kept reading is shown with no chip and no note |
 - **Provider not ok.** The body is a single `.usage-note` (`nologin`, `expired`, `nokey`,
-  `badkey`, `na`, or `error` with no windows; see §9), with no chip and no meters. Commands in
+  `badkey`, `na`, or `error` with no windows; see §design/copy-deck), with no chip and no meters. Commands in
   the note go in `<code>`.
 - **Whole file.**
   - The Usage page's head meta always shows "Updated {rel}" from `fetchedAt`, or "Not read yet".
@@ -356,7 +356,7 @@ the table above. When no session has solo workers, the section is omitted.
 ## §app.insights/insight-strip — Insight strip (current goal and explanations)
 
 The strip holds **only the newest topic-outline summary** — the goal the agent is on now — and
-labels it "Current goal". Every earlier summary lives on the session pane's Timeline tab (§13),
+labels it "Current goal". Every earlier summary lives on the session pane's Timeline tab (§chat/timeline),
 which draws them on the session's axis; the strip keeps no history of its own.
 
 ```html
@@ -406,9 +406,9 @@ which draws them on the session's axis; the strip keeps no history of its own.
   and the body opens with a ghost `Open {n} Explanations` button — the existing gallery dialog
   (`aria-haspopup="dialog"`) — followed by `Latest · {topic} · {relative time}`. This dialog is
   **unchanged** and stays session-scoped; every explanation on the machine is the landing page's
-  grid instead (§3), which is a page and not a dialog.
+  grid instead (§chat/transcript), which is a page and not a dialog.
 - **Every explain link opens in the same tab.** The gallery's cards, the landing page's grid
-  (§3), the transcript's report row and the session pane's explain row are all plain links to
+  (§chat/transcript), the transcript's report row and the session pane's explain row are all plain links to
   `/explain/:id` with no `target`. In an installed app a new tab is a new window whose history
   has one entry, so Back couldn't return to Sova; in place, it can. `/explain/:id` stays a
   standalone document for direct links. None of them carries the `external` icon or a "new tab"
@@ -440,7 +440,7 @@ which draws them on the session's axis; the strip keeps no history of its own.
   - Leave out an empty `now` (the summary then shows only the label and count), and likewise an
     empty `overall`.
 - **Open Timeline.** A second ghost button beside the gallery one, opening the session pane on
-  its Timeline tab (§13): this goal's topics and every past summary's as chapter markers, with
+  its Timeline tab (§chat/timeline): this goal's topics and every past summary's as chapter markers, with
   this session's inputs, tool density and idle gaps drawn in between them. It is always there,
   explanations or not — the summaries are what the axis is built from, and the Timeline is where
   the goals before this one went. It shares `.outline-explained-open`, so the two sit on
@@ -449,16 +449,16 @@ which draws them on the session's axis; the strip keeps no history of its own.
   heading, then the time at the end), then its `.outline-bullets`, then Jump. The head row is
   not a control — no pointer cursor, no hover underline. `.outline-hash` appears only on
   `manual` topics. The time is `at` in mono
-  24-hour format, with the date prefix when the day isn't today (§3 timestamps). **That time is
+  24-hour format, with the date prefix when the day isn't today (§chat/transcript timestamps). **That time is
   the summary's own** — when the summarizer wrote the topic, not when the conversation it
-  describes happened. It is fine in a list, which claims no order beyond its own; §13's axis
+  describes happened. It is fine in a list, which claims no order beyond its own; §chat/timeline's axis
   can't use it, and replaces it with the anchored message's time, falling back to this one,
   flagged, when the anchor is gone.
 - **`updating` / `drafting`.** Put a `.live-dot` after `.outline-label` (a summarizer is running
   now), and the state line reads "Updating".
 - **Jump to Message.**
   - It scrolls the transcript item whose entry id equals `entryId` into view, then stops
-    auto-follow, so Jump to Latest appears (§3).
+    auto-follow, so Jump to Latest appears (§chat/transcript).
   - Leave it out when `entryId` is null or the item isn't rendered (it was compacted away). That
     is decided each time the strip opens, and when a topic arrives while it's open; a Jump that
     finds its item gone since then removes itself instead of scrolling nowhere. A topic without
@@ -469,7 +469,7 @@ which draws them on the session's axis; the strip keeps no history of its own.
 
 ## §app.insights/compaction-row — Compaction row
 
-The compaction `info` row (§3) becomes a disclosure. It's fed by
+The compaction `info` row (§chat/transcript) becomes a disclosure. It's fed by
 `SessionInsight.compactions`, matched to the row by id.
 
 ```html

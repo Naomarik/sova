@@ -1,5 +1,4 @@
-// Selecting several sessions in the sidebar (spec/02-session-list.md §2 "Selecting several
-// sessions"): what a selection is, what the toolbar may offer it, and what a bulk archive says
+// Selecting several sessions in the sidebar: what a selection is, what the toolbar may offer it, and what a bulk archive says
 // afterwards. The pure part runs under `tsx --test`; the store at the bottom is the tab's own
 // selection, module state for the same reason the drag and the open groups are — every folder,
 // group and Recent row is rebuilt on each poll of the list, and a selection must outlive that.

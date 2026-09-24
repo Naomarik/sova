@@ -6,7 +6,7 @@ import type { ClaudeCliStatus } from "../shared/protocol";
  *
  * Deliberately the smallest possible question. The claude-code extension owns the real protocol
  * work (pi-config/extensions/claude-code), and the server does not import it: those modules are
- * under active development and a server-side import would make pi-web's typecheck depend on them.
+ * under active development and a server-side import would make Sova's typecheck depend on them.
  * `claude --version` needs none of that, and the model count the status line pairs it with comes
  * from the shared runtime (server/models.ts), which is what the picker will actually show.
  */

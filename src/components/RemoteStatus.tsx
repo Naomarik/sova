@@ -1,7 +1,6 @@
 // The remote session's chips: the always-on identity chip (pane + head), the connection chip
-// (head + pane row), the pane's check/reconnect controls, and the sidebar group's connection dot
-// (spec/01-app-shell.md "Remote session chips", spec/02-session-list.md "Remote sessions"). All
-// read src/lib/remote-status.ts.
+// (head + pane row), the pane's check/reconnect controls, and the sidebar group's connection dot.
+// All read src/lib/remote-status.ts.
 
 import { createSignal, onCleanup, Show } from "solid-js";
 import type { SessionSummary } from "../../shared/protocol";

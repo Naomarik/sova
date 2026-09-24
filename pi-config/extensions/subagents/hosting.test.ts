@@ -13,10 +13,9 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { registerSubagents } from "./index.ts";
-import { DETACH_WORKERS, LEGACY_DETACH_WORKERS, TRANSPORT_ENV, WorkerHosting, detachRequested, hostingRequested, sentLines, workerTransport } from "./hosting.ts";
-import { LEGACY_WORKERS_ROOT, NEW_WORKERS_ROOT, defaultWorkersRoot } from "./workers-dir.ts";
+import { DETACH_WORKERS, TRANSPORT_ENV, WorkerHosting, detachRequested, hostingRequested, sentLines, workerTransport } from "./hosting.ts";
 import { HostTransport, attachTransport, hostedSpawnImpl, pingHost } from "./host-transport.ts";
-import { WORKER_REGISTRY_ENTRY_TYPE } from "./registry.ts";
+import { WORKER_MANIFEST_ENTRY_TYPE } from "./registry.ts";
 import { deadDir, files, listOwner, pidAlive, procStartTime, reap, readJson, socketPath, workerDir, writeMeta, type WorkerMeta } from "./workers-dir.ts";
 
 const skip = process.platform === "win32";
@@ -97,13 +96,6 @@ function fakeHost(sock: string, lines: string[]) {
 
 // ── switch ───────────────────────────────────────────────────────────────────
 
-test("rename bridge: workers registry root prefers sova/, falls back to legacy pi-web/, fresh installs get sova/", () => {
-	const only = (paths: string[]) => ({ existsSync: (p: fs.PathLike) => paths.includes(String(p)) });
-	assert.equal(defaultWorkersRoot(only([])), NEW_WORKERS_ROOT, "fresh state: new root is where a registry would be made");
-	assert.equal(defaultWorkersRoot(only([LEGACY_WORKERS_ROOT])), LEGACY_WORKERS_ROOT, "pre-move: the old registry is the one that exists");
-	assert.equal(defaultWorkersRoot(only([NEW_WORKERS_ROOT, LEGACY_WORKERS_ROOT])), NEW_WORKERS_ROOT, "post-move: the moved registry wins");
-});
-
 test("transport switch: unset/inline/unknown are inline, only 'host' hosts; the detach global never enables hosting", (t) => {
 	assert.equal(TRANSPORT_ENV, "PI_WORKER_TRANSPORT");
 	assert.equal(workerTransport({}), "inline");
@@ -122,16 +114,6 @@ test("transport switch: unset/inline/unknown are inline, only 'host' hosts; the 
 	}
 	g[DETACH_WORKERS] = "yes";
 	assert.equal(detachRequested(), false, "only boolean true detaches");
-	// Rename bridge: the legacy pi-web:detach-workers symbol still requests detach, either symbol alone.
-	const savedLegacy = g[LEGACY_DETACH_WORKERS];
-	t.after(() => { if (savedLegacy === undefined) delete g[LEGACY_DETACH_WORKERS]; else g[LEGACY_DETACH_WORKERS] = savedLegacy; });
-	delete g[DETACH_WORKERS];
-	g[LEGACY_DETACH_WORKERS] = true;
-	assert.equal(detachRequested(), true, "legacy symbol alone (pre-rename server) still detaches");
-	g[DETACH_WORKERS] = true;
-	g[LEGACY_DETACH_WORKERS] = false;
-	assert.equal(detachRequested(), true, "new symbol alone");
-	delete g[LEGACY_DETACH_WORKERS];
 	// WorkerHosting.active(): env at call time, and only for a persisted owner session.
 	const root = tempRoot(t);
 	const h = new WorkerHosting({ root });
@@ -462,7 +444,7 @@ test("detach flag: true leaves hosted workers running (registry 'detached'); uns
 	await until(() => readJson<WorkerMeta>(files(dir).meta)?.state === "running", 8000, "running");
 	const running = readJson<WorkerMeta>(files(dir).meta)!;
 	hostPids.push(running.hostPid!);
-	assert.deepEqual(m1.appended.filter((e) => e.customType === WORKER_REGISTRY_ENTRY_TYPE).map((e) => e.data.workerId), ["ag_01"]);
+	assert.deepEqual(m1.appended.filter((e) => e.customType === WORKER_MANIFEST_ENTRY_TYPE).map((e) => e.data.workerId), ["ag_01"]);
 	g[DETACH_WORKERS] = true;
 	await m1.shutdown();
 	const detached = readJson<WorkerMeta>(files(dir).meta)!;
@@ -563,7 +545,7 @@ test("dead host mid-turn: log replayed, worker finalized as lost, registry recor
 	assert.equal(meta.backendSessionId, "pi-sess", "kept for a manual resume");
 	const list = await m.call("agent_list", {});
 	assert.equal(list.details.agents[0].status, "error");
-	const final = m.appended.filter((e) => e.customType === WORKER_REGISTRY_ENTRY_TYPE).map((e) => e.data);
+	const final = m.appended.filter((e) => e.customType === WORKER_MANIFEST_ENTRY_TYPE).map((e) => e.data);
 	assert.deepEqual(final.map((r) => [r.workerId, r.status]), [["ag_04", "lost"]]);
 	// The ending itself is new to every manager: one failure report, never a success.
 	assert.equal(m.messages.length, 1);
@@ -587,7 +569,7 @@ test("dead host after a clean exit: status.json decides, a completion after cons
 	assert.equal(readJson<WorkerMeta>(path.join(deadDir(root), archived, "meta.json"))!.state, "exited");
 	assert.equal(m.messages.length, 1);
 	assert.match(m.messages[0].content, /late answer/);
-	const final = m.appended.filter((e) => e.customType === WORKER_REGISTRY_ENTRY_TYPE).map((e) => e.data);
+	const final = m.appended.filter((e) => e.customType === WORKER_MANIFEST_ENTRY_TYPE).map((e) => e.data);
 	assert.notEqual(final.at(-1)?.status, "lost");
 	await m.shutdown();
 });

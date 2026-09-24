@@ -1,19 +1,19 @@
-# §app/settings-dialog — 12 · Settings dialog
+# §app/settings-dialog — Settings dialog
 > Part of the Sova design spec · [overview](../design/overview.md)
 
 The sidebar foot's Agents row ends in a gear. It opens the Settings modal: a left tab rail and
 one panel, wider than the product's question-asking modals because two panes have to fit beside
-each other (§0 and §7 record the deviation). There is no route and no URL — Settings is a modal
+each other (§design/ground-rules and §design/deviations record the deviation). There is no route and no URL — Settings is a modal
 the session stays behind, closed by the scrim, Esc, or its Close button.
 
 The rail is the structure: each settings screen is one tab — General, Models, Modes, Themes,
 Experimental.
 Tabs move with the arrow keys as well as the pointer, and the selected tab has focus on open: the
 two have to name the same screen. The gear opens General; the mode menu's **Configure Delegate** gear
-(§4g) opens Modes directly, and nothing else about the chat changes. Which tab is open lives in
+(§chat/mode-menu) opens Modes directly, and nothing else about the chat changes. Which tab is open lives in
 `src/lib/settings-nav.ts`, so a control deep in a pane can open it without a callback chain. The
 active tab is the only filled thing in the rail — an accent tint, never an accent label, because
-§0 spends accent on the primary, live, and focus — and the rail carries no fill of its own, so
+§design/ground-rules spends accent on the primary, live, and focus — and the rail carries no fill of its own, so
 that tint has something to read against in both themes. Under 768px the same markup arrives as a
 sheet: the panel draws the sheet's grip, the rail turns into a horizontal strip above it, and the
 active tab keeps its tint.
@@ -42,7 +42,7 @@ switch is a rule every session obeys. The panel says so in one line, because "se
 with a shared config file is otherwise an open question.
 
 - **Sessions in Recent** — how many rows the sidebar's Recent region shows
-(spec/02-session-list.md §2 "Recent"). A number field, **3 to 20, 5 by default**. This is the
+(§app.session-list/recent). A number field, **3 to 20, 5 by default**. This is the
 **only** control for that count: the region itself carries none, because a count settable in two
 places is a count that disagrees in one of them.
 
@@ -56,7 +56,7 @@ places is a count that disagrees in one of them.
   caret. Leaving the field is where an unusable draft is repaired to the nearest count that works,
   and the polite region says the new count so the repair isn't silent.
 
-  The value persists in `localStorage["pi-web:recent-count"]`, like the theme and for the same
+  The value persists in `localStorage["sova:recent-count"]`, like the theme and for the same
   reason: it is this browser's, not the machine's. A stored value that is not a whole number in
   range is the default; a number out of range is clamped.
 
@@ -114,7 +114,7 @@ read, an error banner offers Retry and touches nothing.
 ## §app.settings-dialog/modes — Modes
 
 The third tab. Today it holds one section, **Delegate**: which worker each kind of Delegate work
-goes to (§4g names the mode; `pi-config/extensions/mode/README.md` owns the behaviour). Normal mode
+goes to (§chat/mode-menu names the mode; `pi-config/extensions/mode/README.md` owns the behaviour). Normal mode
 has nothing to configure, so it has no section.
 
 Delegate routes four kinds of work, in this order: **Planning & specs** (non-editing design,
@@ -202,7 +202,7 @@ face, each being the Typography pick below if there is one, else the theme's own
 default. A sample in a face the page wouldn't show is a preview of nothing. Both the swatches and
 the sample render values out of a file the user may never
 have chosen, which is why those values are checked when the file is read rather than when a
-theme is applied (§0): by the time a card draws, there is nothing left to sanitize. A user file that took a built-in's id says so — `Dark base · User · replaces
+theme is applied (§design/ground-rules): by the time a card draws, there is nothing left to sanitize. A user file that took a built-in's id says so — `Dark base · User · replaces
 the built-in` — because a Dracula that isn't ours is the one surprise this folder can spring, and
 the card is where it should be legible rather than in a log. Every user card carries its file's full
 path in `title`. The swatches are the only place in the product that paints a color the current
@@ -215,7 +215,7 @@ is what says "selected" in shape, because the tint and the edge alone are a colo
 **Choosing applies immediately.** There is no Save and no preview mode: the row you check is the
 theme the window is wearing before your finger leaves the key, because a theme you have to
 commit to is a theme you can't compare. The choice is the id, and it persists in `localStorage`
-under `sova:theme` (legacy `pi-web:theme` read and mirrored), read and applied before first paint (§0) so a reload never flashes the
+under `sova:theme`, read and applied before first paint (§design/ground-rules) so a reload never flashes the
 default first. A stored id that no longer resolves — the file was deleted or renamed — falls back
 to `dark`, and the list shows `dark` checked.
 
@@ -233,7 +233,7 @@ parser sometimes can't give. **A file that parses but holds a value we won't emi
 the value, and the shapes that would have worked — "a hex value, or one call to `rgb`, `rgba`,
 `hsl`, `hsla`, `oklch`, `oklab`, `lab`, `lch`, `color-mix`, or `color`". A rejection that only
 says *invalid* sends you looking for a typo in a value that hasn't got one; the fix is almost
-always a spelling we don't take, so the copy names the ones we do (§0).
+always a spelling we don't take, so the copy names the ones we do (§design/ground-rules).
 
 ### Typography
 
@@ -250,8 +250,8 @@ The first option in each list is **Theme default**, and it is the initial state:
 faces, which for every shipped theme are Inter and JetBrains Mono. Picking Inter or JetBrains
 Mono explicitly is a different thing from Theme default — a theme that names some other face in
 its file loses to an explicit pick and wins over Theme default. The pick is over the theme, not
-part of it: switching themes keeps it, and it persists in `localStorage["pi-web:typography"]`
-as catalogue ids (§0). **Use Theme Fonts** takes both picks off and is disabled while there are
+part of it: switching themes keeps it, and it persists in `localStorage["sova:typography"]`
+as catalogue ids (§design/ground-rules). **Use Theme Fonts** takes both picks off and is disabled while there are
 none; `?theme=default` takes them off too.
 
 It applies as you pick, like the theme. The preview under the two lists — a heading, two lines

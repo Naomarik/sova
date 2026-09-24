@@ -38,7 +38,7 @@ const TABS: readonly { id: TabId; label: string }[] = [
 const isTab = (id: string | null): id is TabId => TABS.some((t) => t.id === id);
 
 /**
- * The session detail pane (spec/11-subagents-pane.md §11): a head, a tab strip, and one tab's panel. Session
+ * The session detail pane: a head, a tab strip, and one tab's panel. Session
  * is the Session info modal's body (SessionDetails); Timeline is the session's one time axis;
  * Agents is the subagents pane it grew out
  * of; Skills says which skills loaded and when, here and in each worker; Explain lists this
@@ -219,6 +219,7 @@ export function SessionPane(props: {
           </Match>
           <Match when={tab() === "agents"}>
             <SubagentPane
+              path={props.path}
               chatWorkers={props.chatWorkers}
               insight={props.insight}
               selected={props.selected}

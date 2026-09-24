@@ -4,7 +4,7 @@ import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import type { ModelPolicy } from "../shared/protocol";
 
 /**
- * The unified model policy (spec/12-settings-dialog.md §12): which providers and models may be
+ * The unified model policy: which providers and models may be
  * used at all, and which of the still-allowed ones subagents may be given.
  *
  * The FILE SHAPE is a contract with `pi-config/extensions/model-policy/policy.ts` (the TUI's
@@ -16,7 +16,7 @@ import type { ModelPolicy } from "../shared/protocol";
  *      "subagentDisabledProviders":[], "subagentDisabledModels":[]}
  *
  * The bare keys are the global prohibition; the `subagent*` keys narrow what is still allowed.
- * This module owns pi-web's side: read tolerantly, write atomically and canonically (lowercase,
+ * This module owns Sova's side: read tolerantly, write atomically and canonically (lowercase,
  * deduped, sorted), never importing the extension (server files stay pi-config-free except the
  * four documented imports).
  *

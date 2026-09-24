@@ -1,4 +1,4 @@
-// Markdown for assistant-text (spec/04e-markdown.md §4e). markdown-it with html:false, so any HTML in
+// Markdown for assistant-text. markdown-it with html:false, so any HTML in
 // model output is escaped text, never rendered. Every tag we emit ourselves is built from
 // escaped parts. highlight.js runs on its `common` set plus a few extras, never auto-detect.
 
@@ -115,7 +115,7 @@ export function highlightByPath(source: string, path: string): { html: string; l
     : { html: esc(source), lang: "" };
 }
 
-/** Only these become links (§4e); anything else renders as its text. */
+/** Only these become links; anything else renders as its text. */
 const LINKABLE = /^(https?:\/\/|mailto:)/i;
 const EXTERNAL_NOTE = '<span class="visually-hidden"> (opens in a new tab)</span>';
 
@@ -133,7 +133,7 @@ interface RenderEnv {
 
 const md = new MarkdownIt({ html: false, linkify: true, typographer: false });
 
-// Parse every link and image so unsafe ones still render as their text (§4e: "renders as its
+// Parse every link and image so unsafe ones still render as their text ("renders as its
 // link text, unlinked"). Safety comes from the renderers below, which emit an href/src only for
 // http(s)/mailto links, remote-image links, and data:image thumbnails.
 md.validateLink = () => true;
@@ -142,7 +142,7 @@ md.validateLink = () => true;
 md.renderer.rules.s_open = () => "<del>";
 md.renderer.rules.s_close = () => "</del>";
 
-// ---- /tmp image paths in prose → chips (§4b "Path attachments") ------------------------
+// ---- /tmp image paths in prose → chips ------------------------
 // Text tokens never hold code spans or fences, so a path in code stays text. Only paths the
 // server listed for this row become chips.
 md.renderer.rules.text = (tokens, idx, _opts, e) => {

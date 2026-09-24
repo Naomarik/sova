@@ -1,6 +1,5 @@
 /**
- * The Typography catalogue and its persistence shape (spec/12-settings-dialog.md §12
- * "Typography", spec/00-ground-rules.md §0 "Theme"): the closed list of faces this browser can
+ * The Typography catalogue and its persistence shape: the closed list of faces this browser can
  * put over a theme, and the read/validate/serialize of the choice.
  *
  * This module is pure — no DOM, no signals, no theme import — so the tests below can hold it
@@ -23,7 +22,7 @@ export interface FontOption {
   /** The stack written to the custom property. The tail is the default's own tail, so a glyph the
       face lacks still falls through to the same system fonts it would today. */
   stack: string;
-  /** One line under the label where a face needs one (§09). */
+  /** One line under the label where a face needs one. */
   note?: string;
 }
 
@@ -68,10 +67,8 @@ export interface Typography {
 
 export const NO_TYPOGRAPHY: Typography = Object.freeze({ text: null, mono: null });
 
-/** §12: the choice persists here, like the theme and for the same reason — it is this browser's. */
+/** The settings dialog spec: the choice persists here, like the theme and for the same reason — it is this browser's. */
 export const TYPOGRAPHY_KEY = "sova:typography";
-/** The pre-rebrand spelling, read and mirrored while the rename bridge is open (storage-keys.ts). */
-export const LEGACY_TYPOGRAPHY_KEY = "pi-web:typography";
 
 /** True when nothing is overridden: the theme's own faces are what's on screen. */
 export const isThemeDefault = (t: Typography): boolean => t.text === null && t.mono === null;
@@ -124,7 +121,7 @@ export function typographyProperties(t: Typography): Record<string, string> {
 /**
  * The face a surface would actually show for a given theme: the pick, else the theme's own
  * token, else undefined (meaning tokens.css's default). The theme card sample and the Typography
- * preview both ask this, so a preview never shows a face the page wouldn't (§12).
+ * preview both ask this, so a preview never shows a face the page wouldn't.
  */
 export function effectiveStack(kind: FontKind, themeTokens: Record<string, string>, t: Typography): string | undefined {
   const pick = fontById(kind, kind === "text" ? t.text : t.mono);
@@ -133,7 +130,7 @@ export function effectiveStack(kind: FontKind, themeTokens: Record<string, strin
 }
 
 /**
- * Text size (§12 "Typography"): one of three steps this browser puts over every `--fs-*` token,
+ * Text size: one of three steps this browser puts over every `--fs-*` token,
  * whatever face and theme are on. Medium is today's scale exactly and writes nothing; Small and
  * Large are about 7% either way, a point on body text — enough to see, not enough to reflow a
  * screen into a different layout. Only the type sizes move: line heights are ratios and follow on
@@ -152,8 +149,6 @@ export const TEXT_SIZES: readonly { id: TextSize; label: string }[] = [
 export const DEFAULT_TEXT_SIZE: TextSize = "medium";
 
 export const TEXT_SIZE_KEY = "sova:text-size";
-/** The pre-rebrand spelling, mirrored while the rename bridge is open (storage-keys.ts). */
-export const LEGACY_TEXT_SIZE_KEY = "pi-web:text-size";
 
 /** The multiplier for a theme's own size, which the tables below can't know in advance. */
 export const TEXT_SCALE: Readonly<Record<TextSize, number>> = { small: 0.93, medium: 1, large: 1.07 };

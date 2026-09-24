@@ -1,7 +1,7 @@
 /**
  * The user's model policy, applied to a summarizer at the moment it is about to run.
  *
- * A summary is a model call like any other, so a backend turned off in pi-web's Settings → Models
+ * A summary is a model call like any other, so a backend turned off in Sova's Settings → Models
  * must not be called. The check cannot live where the chain is built: that happens once per
  * session, and a model turned off ten minutes later would keep being summarized with until the
  * next reload. Wrapping each backend moves the check to the call, where "off" means off from the

@@ -1,4 +1,4 @@
-// Reading the session files of claude-code subagents (spec/11-subagents-pane.md §11 "Subagents").
+// Reading the session files of claude-code subagents.
 //
 // A worker on the claude-code backend has no pi session file; it writes its own Claude Code
 // transcript at ~/.claude/projects/<cwd-slug>/<sessionId>.jsonl. The live record gives us only
@@ -9,18 +9,16 @@
 // same TranscriptItem rows server/transcript.ts produces for pi sessions — including a synthetic,
 // pi-shaped `raw` message, so the existing frontend renders these rows with no special case.
 
-import { readdirSync, realpathSync } from "node:fs";
-import { homedir } from "node:os";
-import { join, sep } from "node:path";
+import { existsSync } from "node:fs";
+import { sep } from "node:path";
+import { locateClaudeSession } from "../pi-config/extensions/claude-code/transcript-adapter.ts";
+import { claudeProjectsRoot } from "../pi-config/extensions/claude-code/provider/session-records.ts";
 import type { EntryKind, TranscriptItem } from "../shared/protocol";
 import { parseLines } from "./transcript";
 
 type Entry = Record<string, any>;
 
 const RESULT_TEXT_MAX = 2000;
-
-/** Claude session ids are v4-ish UUIDs; anything else never reaches the filesystem. */
-const SESSION_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Line types that carry no conversation: CLI bookkeeping we never render. */
 const SKIPPED_TYPES = new Set(["attachment", "cost-state", "queue-operation", "last-prompt", "atis-latch"]);
@@ -35,57 +33,21 @@ const TOOL_NAMES: Record<string, string> = {
   Grep: "grep",
 };
 
-/** ~/.claude (or $CLAUDE_CONFIG_DIR) /projects. Read per call: tests set the env var. */
-function projectsDir(): string {
-  return join(process.env.CLAUDE_CONFIG_DIR || join(homedir(), ".claude"), "projects");
-}
-
 /** id → resolved file. Session files never move, so a hit is only re-checked by the caller's read. */
 const resolved = new Map<string, string>();
 
-function canonical(p: string): string | null {
-  try {
-    return realpathSync(p);
-  } catch {
-    return null;
-  }
-}
-
 /**
- * The transcript file of a Claude Code session, or null. The id must be a UUID (it is used as a
- * file name), and the resolved file must still be inside the projects dir after realpath, so a
- * symlink planted in a project dir can't read anything else. ~350 project dirs, one readdir each,
- * then cached.
+ * The transcript file of a Claude Code session, or null: the claude-code transcript adapter's own
+ * locator (a UUID only, realpath'd inside ~/.claude/projects or $CLAUDE_CONFIG_DIR/projects, so a
+ * planted symlink can't read anything else), cached here because the insight poll asks every 3s.
  */
 export function resolveClaudeSession(id: string): string | null {
-  if (!SESSION_ID_RE.test(id)) return null;
-  const base = canonical(projectsDir());
-  if (!base) return null;
   const cached = resolved.get(id);
-  if (cached && cached.startsWith(base + sep) && canonical(cached)) return cached;
-  const file = `${id}.jsonl`;
-  let projects: string[];
-  try {
-    projects = readdirSync(base, { withFileTypes: true })
-      .filter((d) => d.isDirectory())
-      .map((d) => d.name);
-  } catch {
-    return null;
-  }
-  for (const project of projects) {
-    let names: string[];
-    try {
-      names = readdirSync(join(base, project));
-    } catch {
-      continue; // unreadable project dir: keep looking
-    }
-    if (!names.includes(file)) continue;
-    const real = canonical(join(base, project, file));
-    if (!real || !real.startsWith(base + sep)) continue; // escaped the projects dir
-    resolved.set(id, real);
-    return real;
-  }
-  return null;
+  if (cached && existsSync(cached) && cached.startsWith(claudeProjectsRoot() + sep)) return cached;
+  const file = locateClaudeSession(id);
+  if (file) resolved.set(id, file);
+  else resolved.delete(id);
+  return file;
 }
 
 /** Test seam: forget cached lookups (the projects dir is per-process otherwise). */

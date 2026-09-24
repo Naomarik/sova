@@ -33,7 +33,7 @@ const userMsg = (text: string) =>
 
 /** A session file fixture in a fresh temp dir; returns its path. */
 function fixture(lines: string[]): string {
-  const dir = mkdtempSync(join(tmpdir(), "pi-web-cleanup-"));
+  const dir = mkdtempSync(join(tmpdir(), "sova-cleanup-"));
   const path = join(dir, `2026-01-01T00-00-00-000Z_${ID}.jsonl`);
   writeFileSync(path, `${lines.join("\n")}\n`);
   return path;

@@ -98,8 +98,8 @@ export interface DelegateSettings {
 const claude = (model: string, effort: string): WorkerChoice => ({ backend: "claude-code", model, effort });
 
 /**
- * The built-in routing. Planning, Routine and Complex are what claude-heavy always did (fable at
- * medium with an opus/high fallback; opus low for mechanical work, medium where precision matters).
+ * The built-in routing. Planning is fable at medium with an opus/high fallback; Routine and Complex
+ * are opus low for mechanical work, medium where precision matters.
  * Investigation is new and deliberately conservative: opus at low — read-only work on the same
  * model the implementation profiles use, at their cheapest effort. None but Planning has a
  * fallback, as before: an unavailable model makes the orchestrator ask.

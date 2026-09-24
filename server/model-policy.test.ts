@@ -7,7 +7,7 @@ import { test } from "node:test";
 
 // Point BOTH the server module and (would it be loaded) the extensions' policy.ts at a scratch
 // agent dir: getAgentDir() reads PI_CODING_AGENT_DIR per call, so no real file is touched.
-const dir = mkdtempSync(join(tmpdir(), "pi-web-model-policy-"));
+const dir = mkdtempSync(join(tmpdir(), "sova-model-policy-"));
 mkdirSync(join(dir, "subagents"), { recursive: true });
 process.env.PI_CODING_AGENT_DIR = dir;
 const { EMPTY_POLICY, modelAllowed, modelDenial, readModelPolicy, writeModelPolicy } = await import("./model-policy");

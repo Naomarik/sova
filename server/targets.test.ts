@@ -9,9 +9,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 
-const agentDir = mkdtempSync(join(tmpdir(), "pi-web-targets-test-"));
+const agentDir = mkdtempSync(join(tmpdir(), "sova-targets-test-"));
 process.env.PI_CODING_AGENT_DIR = agentDir; // before the modules below compute their paths
-const scratch = mkdtempSync(join(tmpdir(), "pi-web-targets-scratch-"));
+const scratch = mkdtempSync(join(tmpdir(), "sova-targets-scratch-"));
 after(() => {
   rmSync(agentDir, { recursive: true, force: true });
   rmSync(scratch, { recursive: true, force: true });
@@ -88,28 +88,10 @@ test("placeholder layout mirrors the remote path and round-trips", () => {
 });
 
 test("local cwds are not remote: outside the root, the bare root, sibling prefixes", () => {
-  assert.equal(T.parseTargetCwd("/home/user/webapps/pi-web"), null);
+  assert.equal(T.parseTargetCwd("/home/user/webapps/sova"), null);
   assert.equal(T.parseTargetCwd(join(agentDir, "sova", "targets")), null);
   assert.equal(T.parseTargetCwd(join(agentDir, "sova", "targets-other", "x", "y")), null);
   assert.equal(T.parseTargetCwd(`${join(agentDir, "sova", "targets")}/`), null);
-});
-
-test("RENAME BRIDGE: a placeholder cwd written under the legacy root is still remote, never local", () => {
-  // Session headers created before the state move name `<agent dir>/pi-web/targets/…` and are
-  // never rewritten. Misreading one as an ordinary local folder would run the session's tools on
-  // THIS machine against a path that only mirrors the target's — the failure this bridge exists
-  // to prevent. parseTargetCwd re-anchors through unlegacyStatePath before it classifies.
-  const legacyRoot = join(agentDir, "pi-web", "targets");
-  const legacyDir = join(legacyRoot, "acme-prod", "home", "deploy", "acme-site");
-  assert.deepEqual(T.parseTargetCwd(legacyDir), { target: "acme-prod", remoteCwd: "/home/deploy/acme-site" });
-  assert.equal(T.targetOfCwd(legacyDir), "acme-prod");
-  assert.equal(T.remoteCwdOfCwd(legacyDir), "/home/deploy/acme-site");
-  // The target's own root maps to remote "/", exactly as the new spelling does.
-  assert.equal(T.remoteCwdOfCwd(join(legacyRoot, "acme-prod")), "/");
-  // The bare legacy root is not itself a placeholder, and neither is a sibling that merely
-  // shares its prefix: the legacy spelling gets the same boundaries as the new one, not looser.
-  assert.equal(T.parseTargetCwd(legacyRoot), null);
-  assert.equal(T.parseTargetCwd(join(agentDir, "pi-web", "targets-other", "x", "y")), null);
 });
 
 test("targetInfo: label defaults to the name; kind shows the environment layer; host is credential-free", () => {
@@ -216,28 +198,8 @@ test("listTargets never waits past its cap: a slow probe reports unknown now and
 });
 
 // ---------------------------------------------------------------------------
-// Legacy sshfs mount cwds. pi-web once mounted targets under <agentDir>/mounts/<name>; a session
-// stored there has its files on the target, not here, so opening it is refused (chat-manager).
-// The check is lexical: no fs, no schema, no targets.json.
 
 const mthost = { name: "mthost", label: "mt host", kind: "ssh", ssh: { user: "u", host: "example.invalid" }, cwd: "/srv/app" } as const;
-
-test("parseLegacyMountCwd: a cwd under the legacy mounts root names its target; anything else is null", () => {
-  T.writeTargets([mthost as never, local as never]);
-  const root = T.legacyMountsRoot();
-  assert.equal(root, join(agentDir, "mounts"));
-  assert.deepEqual(T.parseLegacyMountCwd(join(root, "acme-prod", "x")), { target: "acme-prod" });
-  assert.deepEqual(T.parseLegacyMountCwd(join(root, "acme-prod")), { target: "acme-prod" });
-  assert.equal(T.parseLegacyMountCwd(`${root}-other/x`), null); // a sibling prefix is never a match
-  assert.equal(T.parseLegacyMountCwd(root), null); // the root itself names no target
-  assert.equal(T.parseLegacyMountCwd(T.targetDir("mthost", "/srv/app")), null); // a placeholder is a remote session
-  assert.equal(T.parseLegacyMountCwd("/home/user/webapps/pi-web"), null);
-  // parseTargetCwd knows placeholders only: a legacy mount cwd is not a remote session
-  assert.deepEqual(T.parseTargetCwd(T.targetDir("mthost", "/srv/app")), { target: "mthost", remoteCwd: "/srv/app" });
-  assert.equal(T.targetOfCwd(T.targetDir("mthost", "/srv/app")), "mthost");
-  assert.equal(T.parseTargetCwd(join(root, "mthost", "x")), null);
-  assert.equal(T.parseTargetCwd("/home/user/webapps/pi-web"), null);
-});
 
 test("TargetInfo carries no mount field", async () => {
   const infos = await T.listTargets(0); // don't wait on probes
@@ -251,6 +213,7 @@ after(() => server.close());
 test("POST /api/sessions: a placeholder request creates the placeholder; { cwd } stats a plain local folder", async () => {
   const post = (body: unknown) =>
     app.request("/api/sessions", { method: "POST", body: JSON.stringify(body), headers: { "content-type": "application/json" } });
+  T.writeTargets([mthost as never, local as never]);
   const r = await post({ target: "here", remoteCwd: "/srv/app" });
   assert.equal(r.status, 201);
   const s = (await r.json()) as { cwd: string; target?: string; remoteCwd?: string; mounted?: boolean };
@@ -270,19 +233,3 @@ test("POST /api/sessions: a placeholder request creates the placeholder; { cwd }
   assert.equal(missing.status, 400);
 });
 
-test("a session stored inside a legacy sshfs mount cwd is refused, never opened as a local session", async () => {
-  const legacy = join(T.legacyMountsRoot(), "mthost", "work");
-  mkdirSync(legacy, { recursive: true }); // exists and is empty: exactly the silent-local-session trap
-  const r = await app.request("/api/sessions", { method: "POST", body: JSON.stringify({ cwd: legacy }), headers: { "content-type": "application/json" } });
-  assert.equal(r.status, 400); // new sessions must not be created in removed mounts either
-  assert.match((await r.json() as { error: string }).error, /removed sshfs mount/);
-  // Simulate a historical file directly: the create endpoint now prevents this trap.
-  const dir = join(agentDir, "sessions", "--legacy--");
-  mkdirSync(dir, { recursive: true });
-  const path = join(dir, "2026-09-22T00-00-00-000Z_legacy-mount.jsonl");
-  writeFileSync(path, JSON.stringify({ type: "session", version: 3, id: "legacy-mount", timestamp: "2026-09-22T00:00:00.000Z", cwd: legacy }) + "\n");
-  const { acquireChat, activeConfigFailure, ConfigError } = await import("./chat-manager");
-  await assert.rejects(acquireChat(path), (e: Error) => e instanceof ConfigError && /a feature Sova no longer has/.test(e.message) && /mthost/.test(e.message));
-  assert.ok(activeConfigFailure(path), "memoized for good: the empty directory existing does not clear it");
-  await assert.rejects(acquireChat(path), (e: Error) => e instanceof ConfigError); // the memo answers, no runtime is built
-});

@@ -1,7 +1,7 @@
 // Run: npx tsx --test server/web-settings.test.ts
 // Uses a throwaway PI_CODING_AGENT_DIR in the OS temp dir; ~/.pi is never read or written.
 //
-// pi-web's own settings store (server/web-settings.ts): the experimental Claude Code provider
+// Sova's own settings store (server/web-settings.ts): the experimental Claude Code provider
 // switch. What matters here is that it defaults OFF under every kind of damage — a missing file,
 // junk, a foreign version, a non-boolean — because a settings file that fails open would turn on
 // an experimental provider nobody asked for. The write path is re-read + merge, like
@@ -12,7 +12,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
-const agentDir = mkdtempSync(join(tmpdir(), "pi-web-web-settings-"));
+const agentDir = mkdtempSync(join(tmpdir(), "sova-web-settings-"));
 process.env.PI_CODING_AGENT_DIR = agentDir; // before the module below computes its path
 const FILE = join(agentDir, "sova", "settings.json");
 

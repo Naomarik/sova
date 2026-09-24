@@ -68,3 +68,14 @@ test("pi tally counts top-level usage entries once, across appends, and resets o
   assert.deepEqual(totalOf(tally(jsonl(warm("w3")), "snapshot")),
     { input: 0, output: 0, cacheRead: 50_000, cacheWrite: 0, cost: 0.015 });
 });
+
+test("pi tally keeps a forked session's copied usage: no fork cut-off for main sessions", () => {
+  const tally = piUsageTally();
+  const text = jsonl(
+    { type: "session", version: 3, id: "fork", timestamp: "2026-09-24T12:00:00.000Z", parentSession: "/tmp/parent.jsonl" },
+    // Copied from the parent: stamped before the fork, and no worker marker follows.
+    { ...piMessage("p1", piUsage(100, 10, 0, 0, 0.1)), timestamp: "2026-09-24T11:00:00.000Z" },
+    { ...piMessage("f1", piUsage(1, 1, 0, 0, 0.01), "p1"), timestamp: "2026-09-24T12:05:00.000Z" },
+  );
+  assert.deepEqual(totalOf(tally(text, "snapshot")), { input: 101, output: 11, cacheRead: 0, cacheWrite: 0, cost: 0.11 });
+});

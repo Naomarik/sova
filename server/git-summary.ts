@@ -35,10 +35,8 @@
 // folder for GIT_TTL_MS with concurrent callers sharing one read; failures are never cached.
 //
 // Which folder. The session's STORED cwd (its header) is its identity and is never rewritten.
-// Remote placeholders and the removed sshfs mounts root are classified lexically first — a
-// placeholder must never be re-read as a moved local folder, and a dead mount is never touched —
-// and only then does a local cwd go through the rename bridge (targets.mappedNewCwd: the state-root
-// rebase, then path-map.json), the same composition a chat open applies.
+// Remote placeholders are classified lexically first: a placeholder is never read as a local
+// folder.
 
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
@@ -47,7 +45,7 @@ import { open } from "node:fs/promises";
 import { isAbsolute } from "node:path";
 import type { GitChange, GitCommit, GitFileChange, GitRepoSummary, GitSummary, GitWhere } from "../shared/protocol";
 import type { ExecResult } from "./files";
-import { classifyFailure, mappedNewCwd, parseLegacyMountCwd, parseTargetCwd, runOnTarget, type TargetRunResult } from "./targets";
+import { classifyFailure, parseTargetCwd, runOnTarget, type TargetRunResult } from "./targets";
 
 /** How long a read stays fresh. */
 export const GIT_TTL_MS = 10_000;
@@ -77,8 +75,6 @@ export interface GitDeps {
   runRemote?: (target: string, script: string, remoteCwd: string) => Promise<TargetRunResult>;
   /** Whether a local path exists (default: fs.existsSync); asked only after a failed run. */
   exists?: (path: string) => boolean;
-  /** Stored cwd → the folder a local read happens in (default: targets.mappedNewCwd). */
-  mapCwd?: (cwd: string) => string;
   now?: () => number;
   nonce?: () => string;
 }
@@ -366,7 +362,7 @@ function gitMessage(out: string): string {
   return line.replace(/^(fatal|error): /, "");
 }
 
-export type Place = { where: GitWhere; cwd: string; moved?: true };
+export type Place = { where: GitWhere; cwd: string };
 
 /** The one GitSummary variant a refusal can produce, so a caller that never runs git can still
     answer in that shape (server/session-setup.ts). */
@@ -374,7 +370,7 @@ export type Unavailable = Extract<GitSummary, { state: "unavailable" }>;
 
 /** A finished run's sections as a GitSummary. Pure: the transports and the clock are the caller's. */
 export function summarize(sections: Map<string, Section>, place: Place, checkedAt: number): GitSummary {
-  const base = { where: place.where, cwd: place.cwd, ...(place.moved ? { moved: true as const } : {}), checkedAt };
+  const base = { where: place.where, cwd: place.cwd, checkedAt };
   const unavailable = (reason: string): GitSummary => ({ state: "unavailable", where: place.where, cwd: place.cwd, reason, checkedAt });
   const on = place.where.kind === "remote" ? ` on ${place.where.target}` : "";
   if (sections.has("nogit")) return unavailable(`Git isn't installed${on || " on this machine"}.`);
@@ -504,29 +500,22 @@ async function slot<T>(run: () => Promise<T>): Promise<T> {
 }
 
 /** Where a stored cwd is read, decided lexically — no fs call before this answers. Exported with
-    `plan` because it is the ONLY classification of a stored cwd: a remote placeholder, a removed
-    sshfs mount and the rename bridge must be decided the same way everywhere they are asked. */
+    `plan` because it is the ONLY classification of a stored cwd: a remote placeholder must be
+    decided the same way everywhere it is asked. */
 export type Plan =
   | { kind: "local"; place: Place }
   | { kind: "remote"; target: string; place: Place }
   | { kind: "refuse"; summary: (now: number) => Unavailable };
 
-/** `mapCwd` is the only seam `plan` uses, so a caller with no git of its own can pass just that. */
-export function plan(stored: string, deps: Pick<GitDeps, "mapCwd">): Plan {
+export function plan(stored: string): Plan {
   const remote = parseTargetCwd(stored);
   if (remote) return { kind: "remote", target: remote.target, place: { where: { kind: "remote", target: remote.target }, cwd: remote.remoteCwd } };
-  const legacy = parseLegacyMountCwd(stored);
-  if (legacy) {
-    const reason = `This folder was an sshfs mount of ${legacy.target} that Sova no longer creates. Its repository lives on ${legacy.target}.`;
-    return { kind: "refuse", summary: (now) => ({ state: "unavailable", where: { kind: "local" }, cwd: stored, reason, checkedAt: now }) };
-  }
   if (!isAbsolute(stored)) {
     // Never resolved against the server's own directory: that would describe Sova's repository.
     const reason = `This session's folder isn't an absolute path: ${stored}.`;
     return { kind: "refuse", summary: (now) => ({ state: "unavailable", where: { kind: "local" }, cwd: stored, reason, checkedAt: now }) };
   }
-  const cwd = (deps.mapCwd ?? mappedNewCwd)(stored);
-  return { kind: "local", place: { where: { kind: "local" }, cwd, ...(cwd !== stored ? { moved: true as const } : {}) } };
+  return { kind: "local", place: { where: { kind: "local" }, cwd: stored } };
 }
 
 /** read(), with an ordinary failure — a seam or a spawn that threw — as an answer, not a throw. */
@@ -594,15 +583,13 @@ export async function getGitSummary(sessionPath: string, opts: { fresh?: boolean
   }
   let p: Plan;
   try {
-    p = plan(stored, deps);
+    p = plan(stored);
   } catch (err) {
     return { state: "unavailable", where: { kind: "local" }, cwd: stored, reason: `Sova couldn't place this session's folder: ${(err as Error)?.message || "unknown error"}.`, checkedAt: now() };
   }
   if (p.kind === "refuse") return p.summary(now());
-  // One folder, one entry: a local key is the folder read (after the map, so a session under the
-  // old name and one under the new share it), a remote key is target + remote cwd. `moved` is part
-  // of the answer, so it is part of the key too.
-  const key = JSON.stringify([p.place.where, p.place.cwd, p.place.moved ?? false]);
+  // One folder, one entry: a local key is the folder read, a remote key is target + remote cwd.
+  const key = JSON.stringify([p.place.where, p.place.cwd]);
   const hit = cache.get(key);
   if (!opts.fresh && hit && now() - hit.checkedAt < GIT_TTL_MS) return hit;
   const existing = inflight.get(key);

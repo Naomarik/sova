@@ -28,7 +28,7 @@ import {
 } from "../lib/session-groups";
 import { announce, hasLocalDraft, home, localRunning, sessionContext, toast } from "../lib/ui-state";
 import { showsDraftMark } from "../lib/draft-mark";
-import { dualGet, dualSet } from "../lib/storage-keys";
+import { readKey, writeKey } from "../lib/storage-keys";
 import { monogram, setSpine, spine } from "../lib/spine";
 import { createHoldGesture } from "../lib/hold-select";
 import {
@@ -56,11 +56,8 @@ import { Banner, Chip, Icon } from "./ui";
 import { showSummaries } from "../lib/summary-line";
 
 const ARCHIVE_KEY = "sova:archive-open";
-/** Pre-rebrand spellings: read and mirrored while the rename bridge is open (lib/storage-keys.ts). */
-const LEGACY_ARCHIVE_KEY = "pi-web:archive-open";
 /** One key per Archive date section, same "1"/"0" values as ARCHIVE_KEY. */
 const archiveDateKey = (id: ArchiveGroupId) => `sova:archive-date-open-${id}`;
-const legacyArchiveDateKey = (id: ArchiveGroupId) => `pi-web:archive-date-open-${id}`;
 
 /**
  * The row being dragged, and the drop target under the pointer. Module state, because one drag
@@ -132,7 +129,7 @@ const workingNow = (n: number) => `${n} ${n === 1 ? "subagent" : "subagents"} wo
 const TUI_CLAUSE = ", open in a TUI";
 const BUSY_CLAUSE = ", pi is replying in this session";
 
-/** Busy (§2): this tab's own run wins over the last fetched list; Live wins over both. */
+/** Busy: this tab's own run wins over the last fetched list; Live wins over both. */
 const sessionBusy = (s: SessionSummary) => !s.live && !!(localRunning()[s.path] ?? s.busy);
 
 /**
@@ -142,7 +139,7 @@ const sessionBusy = (s: SessionSummary) => !s.live && !!(localRunning()[s.path] 
  */
 function SessionRow(props: { session: SessionSummary; selected: string | null; now: number; targets: TargetInfo[] }) {
   const s = () => props.session;
-  /** The row's own remote mark (§2 "Remote sessions"): one row answers for itself, never its
+  /** The row's own remote mark: one row answers for itself, never its
       group's first row. */
   const mark = () => remoteMarkOf(s());
   /** Line 2: the outline's gist (what the session is for), the now line only as a fallback. */
@@ -166,7 +163,7 @@ function SessionRow(props: { session: SessionSummary; selected: string | null; n
   };
   /**
    * Press-and-hold — a mouse button held down, a thumb held on the row — selects this session and
-   * turns the sidebar into selection mode (§2 "Selecting several sessions"). The press is off the
+   * turns the sidebar into selection mode. The press is off the
    * moment it stops being a press in place: a drag, a scroll (the list moving under a still
    * finger is `pointercancel` on touch and a `scroll` event on a mouse wheel), or the row going
    * away. What the fired hold leaves behind — a `click`, and on touch a `contextmenu` — is
@@ -225,7 +222,7 @@ function SessionRow(props: { session: SessionSummary; selected: string | null; n
         "session-row-shell-selected": selecting() && chosen(),
       }}
       // The row itself is the drag source (the link inside is not: a browser drags links natively,
-      // and that drag carries a URL, not a session). §2 "Groups": drag a row onto a group section.
+      // and that drag carries a URL, not a session). The session list's "Groups": drag a row onto a group section.
       // In selection mode there is no drag at all: a press there is a hold or a toggle.
       draggable={selecting() ? "false" : "true"}
       onDragStart={(e) => {
@@ -375,16 +372,14 @@ function SessionRow(props: { session: SessionSummary; selected: string | null; n
               just did: the row truncates after a few words, and "Committed dc63576…" tells a reader
               nothing about which session this is. Older snapshots carry no gist — those still show
               the "now" line rather than nothing, and the tooltip always has both. */}
-          {/* Settings → General can hide it; the chip goes with it, the draft preview above stays. */}
+          {/* Settings → General can hide it; the topic count goes with it, the draft preview above stays. */}
           <Show when={showSummaries() && !s().draftPreview && summaryText()}>
             <div class="list-line list-summary-row">
               <p class="list-summary" title={summaryTitle()}>{summaryText()}</p>
               <Show when={s().outlineTopics}>
                 {(n) => (
                   <Show when={n() > 0}>
-                    <span class="chip chip-count session-topics" title={`${n()} topics in this session`}>
-                      <span class="text-num">{n()}</span>
-                    </span>
+                    <span class="session-topics text-num" title={`${n()} topics in this session`}>{n()}</span>
                   </Show>
                 )}
               </Show>
@@ -432,11 +427,11 @@ function SessionRow(props: { session: SessionSummary; selected: string | null; n
   );
 }
 
-/** Sessions grouped by folder: the markup of spec/02-session-list.md §2 "Anatomy". The ORDER is the
+/** Sessions grouped by folder: the markup of the session list "Anatomy". The ORDER is the
     caller's — `groupByCreation` for Live & web, `groupByActivity` for the Archive and for a group
     (src/lib/session-order.ts) — so this component never decides what "newest" means.
     `level` is the heading level a folder label takes: h3 directly under a region, h4 inside a
-    group, where the group's own label already sits at h3. Every folder collapses (§2 "Folder
+    group, where the group's own label already sits at h3. Every folder collapses (the session list "Folder
     open/closed state"), so `searching` — which forces every one of them open — comes in too. */
 function GroupList(props: {
   groups: CwdGroup[];
@@ -450,8 +445,8 @@ function GroupList(props: {
   return (
     <For each={props.groups}>
       {(group, gi) => {
-        // The label's remote form is the group's only while every row runs at one target and folder
-        // (§2 "Remote sessions"): a mixed group keeps the plain folder label and its rows' marks speak.
+        // The label's remote form is the group's only while every row runs at one target and folder:
+        // a mixed group keeps the plain folder label and its rows' marks speak.
         const remote = groupRemotePlaceOf(group.sessions, group.cwd);
         const host = () => (remote ? props.targets.find((t) => t.name === remote.target)?.host : undefined);
         const label = (name: string) => props.targets.find((t) => t.name === name)?.label || name;
@@ -524,12 +519,12 @@ function GroupList(props: {
 
 /**
  * One user-made group: a collapsible section above Live & web that holds the same folder groups and
- * rows as every other region (spec/02-session-list.md §2 "Groups"). It keeps its own Rename and Delete, and
+ * rows as every other region. It keeps its own Rename and Delete, and
  * it is a drop target while a row is being dragged. An empty group stays visible — that is what a
  * group is when the user makes it, and dragging a row in is how it fills.
  */
 function GroupBlock(props: {
-  /** The group itself: its identity is what keeps this section mounted across list polls (§2 "Groups"). */
+  /** The group itself: its identity is what keeps this section mounted across list polls. */
   group: SessionGroup;
   /** The rows it holds right now, from the sidebar's search-hit list. */
   sessions: SessionSummary[];
@@ -789,7 +784,7 @@ export function Sidebar(props: {
   onMount(() => void loadSessionGroups());
 
   /**
-   * Dragging a row out of the pane archives it (§2 "Groups", "Dragging"). The boundary is this
+   * Dragging a row out of the pane archives it ("Dragging"). The boundary is this
    * <aside>, not the list: anywhere else in the window is "outside". Listening only while a row
    * is in flight. The composer's own window guard (Composer.tsx) still keeps the row's text/plain
    * path out of its field; this adds the archive on top, and only a drop archives — never a
@@ -971,10 +966,10 @@ export function Sidebar(props: {
   // Each region groups by cwd on its own, so a folder can appear in both.
   const topGroups = createMemo(() => groupByCreation(topHits()));
   /**
-   * Recent (§2 "Recent"): the handful of sessions that moved last, said once more at the very top.
+   * Recent: the handful of sessions that moved last, said once more at the very top.
    * Purely additive, like a group — every row here is still in Live & web or the Archive below —
    * and built from `hits()`, so it narrows with the search and can never carry a row the rest of
-   * the sidebar is hiding. How many rows is `recentCount()`, and §12's General tab is the only
+   * the sidebar is hiding. How many rows is `recentCount()`, and the settings dialog spec's General tab is the only
    * place that writes it: this region has no controls of its own.
    */
   const recent = createMemo(() => recentSessions(hits(), recentCount()));
@@ -993,7 +988,7 @@ export function Sidebar(props: {
   const showTop = () => !!props.sessions && all().length > 0 && (topHits().length > 0 || !query().trim());
   const showArchive = () => archiveHits().length > 0;
 
-  // Groups (§2 "Groups"): the user's own sections, above every region. They cut across regions — a
+  // Groups: the user's own sections, above every region. They cut across regions — a
   // group can hold a TUI-live session and an archived one — so they read the whole search-hit list,
   // not one region's slice.
   const searching = () => !!query().trim();
@@ -1006,7 +1001,7 @@ export function Sidebar(props: {
   const groupsShown = () => !searching() || sections().length > 0 || !!dragging()?.groupId;
 
   /** The Groups region's own twist. Collapsed on every load and memory-only — unlike the Archive
-      there is no stored choice to read, so nothing a past visit did can open it (§2 "Groups"). It
+      there is no stored choice to read, so nothing a past visit did can open it. It
       is component state, not module state: the region is one node that outlives every poll. */
   const [groupsChosen, setGroupsChosen] = createSignal<boolean | undefined>(undefined);
   /** Forced open, without touching the choice, while a search is on (a matching group must not
@@ -1052,8 +1047,8 @@ export function Sidebar(props: {
     void loadSessionGroups();
   });
 
-  // Collapsed by default; the user's own choice persists for the tab (spec/02-session-list.md §2 "Regions").
-  const [storedOpen, setStoredOpen] = createSignal(dualGet(sessionStorage, ARCHIVE_KEY, LEGACY_ARCHIVE_KEY) === "1");
+  // Collapsed by default; the user's own choice persists for the tab.
+  const [storedOpen, setStoredOpen] = createSignal(readKey(sessionStorage, ARCHIVE_KEY) === "1");
   /** Forced open while searching, when the top is empty, or when the open session is archived. */
   const forcedOpen = () =>
     !!query().trim() || topHits().length === 0 || archiveHits().some((s) => s.path === props.selected);
@@ -1062,11 +1057,11 @@ export function Sidebar(props: {
     const open = e.currentTarget.open;
     if (open === archiveOpen()) return; // our own `open` update, not the user's
     setStoredOpen(open);
-    dualSet(sessionStorage, ARCHIVE_KEY, LEGACY_ARCHIVE_KEY, open ? "1" : "0");
+    writeKey(sessionStorage, ARCHIVE_KEY, open ? "1" : "0");
   };
   // Date sections: collapsed by default, each remembering its own choice the same way.
   const [storedDateOpen, setStoredDateOpen] = createSignal<Partial<Record<ArchiveGroupId, boolean>>>({});
-  const dateStored = (id: ArchiveGroupId) => storedDateOpen()[id] ?? dualGet(sessionStorage, archiveDateKey(id), legacyArchiveDateKey(id)) === "1";
+  const dateStored = (id: ArchiveGroupId) => storedDateOpen()[id] ?? readKey(sessionStorage, archiveDateKey(id)) === "1";
   /** Forced open while searching, or when it holds the open session. */
   const dateOpen = (d: { id: ArchiveGroupId; items: SessionSummary[] }) =>
     !!query().trim() || d.items.some((s) => s.path === props.selected) || dateStored(d.id);
@@ -1074,7 +1069,7 @@ export function Sidebar(props: {
     const open = e.currentTarget.open;
     if (open === dateOpen(d)) return; // our own `open` update, not the user's
     setStoredDateOpen((m) => ({ ...m, [d.id]: open }));
-    dualSet(sessionStorage, archiveDateKey(d.id), legacyArchiveDateKey(d.id), open ? "1" : "0");
+    writeKey(sessionStorage, archiveDateKey(d.id), open ? "1" : "0");
   };
   const liveCount = () => all().filter((s) => s.live).length;
   const glance = createMemo(() => usageGlance(props.usage));
@@ -1327,7 +1322,7 @@ export function Sidebar(props: {
               </Chip>
             </Show>
             {/* The keyboard's (and the unsure pointer's) door into selection mode: press-and-hold is
-                the accelerator, never the only way in (§2 "Selecting several sessions"). */}
+                the accelerator, never the only way in. */}
             <Show when={props.sessions && all().length > 0 && !selectionMode()}>
               <button
                 type="button"
@@ -1402,7 +1397,7 @@ export function Sidebar(props: {
             </div>
           </Show>
 
-          {/* Recent (§2 "Recent"), above everything: a flat list, no folder sections — with 5 rows a
+          {/* Recent, above everything: a flat list, no folder sections — with 5 rows a
               folder head per row would be the region. It is a shortcut, not a place a session lives,
               so every row appears again in Live & web or the Archive below, and the region carries
               no controls: the count is Settings › General's, and only its. */}
@@ -1419,7 +1414,7 @@ export function Sidebar(props: {
             </section>
           </Show>
 
-          {/* The user's own groups, above every region (§2 "Groups"): the same rows and folder
+          {/* The user's own groups, above every region: the same rows and folder
               groups as below, plus the two controls that make a group and name it. */}
           <Show when={groupsShown()}>
             <details class="sidebar-region sidebar-groups" aria-labelledby="r-groups" open={groupsRegionOpen()} onToggle={onGroupsRegionToggle}>
@@ -1439,7 +1434,7 @@ export function Sidebar(props: {
                       hides the whole region. Its click and keydown stop here, as the group head's
                       `⋯` does, so a press is never read as a press on the summary. Fanout is NOT
                       here — it is a creation gesture, not a curation one, and its front door is the
-                      welcome screen beside New Session (§14b "Entry points"). */}
+                      welcome screen beside New Session. */}
                   <Show when={!searching()}>
                     <button
                       ref={newGroupToggle}

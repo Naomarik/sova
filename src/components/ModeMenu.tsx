@@ -49,7 +49,7 @@ const [defaultMode, setDefaultMode] = createSignal<ShownMode | null>(null);
 const shownOf = (m: Pick<ModeInfo, "mode" | "minorModes" | "strict">): ShownMode => ({ mode: m.mode, minorModes: [...m.minorModes], strict: m.strict });
 
 /**
- * The composer foot's mode switch (spec/04g-mode-menu.md §4g): a trigger plus a native popover menu. One
+ * The composer foot's mode switch: a trigger plus a native popover menu. One
  * major mode (menuitemradio, picking closes) and any minor modes (menuitemcheckbox, toggling
  * stays open). The mode is per chat: only this chat follows, from its next message.
  */
@@ -167,7 +167,7 @@ export function ModeMenu(props: { control: ModeControl }) {
   };
 
   /**
-   * `Save as default` (§4g): make THIS chat's mode the one new sessions start from. Nothing else
+   * `Save as default`: make THIS chat's mode the one new sessions start from. Nothing else
    * moves — the chat keeps its mode, and no other chat hears about it. The mode extension re-reads
    * mode.json at each session_start, so the next session starts on it, TUI included.
    *
@@ -288,7 +288,7 @@ export function ModeMenu(props: { control: ModeControl }) {
         onClick={() => (open() ? closeMenu() : void openMenu())}
       >
         <Icon name="sliders" small />
-        {/* Two parts, so a narrow foot ellipsizes the minor modes before the major one (§4g). */}
+        {/* Two parts, so a narrow foot ellipsizes the minor modes before the major one. */}
         <span class="mode-trigger-label">{current()?.mode ?? "Mode"}</span>
         <Show when={current()?.minorModes.length}>
           <span class="mode-trigger-label mode-trigger-minor">· {current()!.minorModes.join(" · ")}</span>

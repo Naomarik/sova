@@ -37,10 +37,10 @@ export interface SandboxControl {
 }
 
 /** The flyout's three panels: the "+" button's root menu, the indicator's model panel, and the
-    §4c picker the model panel opens. */
+    the model menu's picker the model panel opens. */
 export type FlyoutPanel = "menu" | "model" | "picker";
 
-/** What the composer gets on mount so a second trigger — the model indicator (§4) — can open
+/** What the composer gets on mount so a second trigger — the model indicator — can open
     this one popover, anchored above itself. */
 export interface ComposerMenuApi {
   /** Shows the flyout on `panel`, anchored above `anchor` (the "+" trigger when it's omitted). */
@@ -78,12 +78,12 @@ interface Row {
 }
 
 /**
- * The composer's flyout (spec/04b-images.md §4b): one native popover anchored ABOVE whatever opened
+ * The composer's flyout: one native popover anchored ABOVE whatever opened
  * it, in the model menu's visual family, with three panels. The ghost `plus` button opens the
  * **menu** panel (Attach images, Commands, in chats Playbooks, Hide tool calls, Hide thinking, Session info, and in
  * chats Undo last turn); the
- * composer's model indicator (§4) opens the **model** panel (the Model row and this model's
- * Thinking ladder); the Model row opens the §4c **picker**, which comes back to the model panel.
+ * composer's model indicator opens the **model** panel (the Model row and this model's
+ * Thinking ladder); the Model row opens the model menu's **picker**, which comes back to the model panel.
  * Ctrl/⌘+P opens the picker.
  */
 export function ComposerMenu(props: {
@@ -95,18 +95,18 @@ export function ComposerMenu(props: {
   onAttach(): void;
   /** Opens the slash menu, exactly as the old Commands button did. */
   onCommands(): void;
-  /** Chat sessions only: the model picker's controls (§4c). */
+  /** Chat sessions only: the model picker's controls. */
   model?: ModelControl | null;
   /** Chat sessions only: this session's thinking ladder. */
   thinking?: ThinkingControl | null;
-  /** Opens the per-session info modal (§4h). */
+  /** Opens the per-session info modal. */
   onShowInfo?: () => void;
   /** Chat sessions only: opens the Playbooks dialog, which sends a playbook as a turn. Absent,
       like `onFanOut`, where nothing can be sent — a watch view holds no runtime. */
   onPlaybooks?: () => void;
-  /** Chat sessions with a reply: "Fan Out…" (§14b). Absent otherwise — a watch view holds no
+  /** Chat sessions with a reply: "Fan Out…". Absent otherwise — a watch view holds no
       runtime, a TUI-live session is never touched, and a session with no reply has nothing to
-      fork; §9 is explicit that the row is absent rather than disabled, because an absence needs
+      fork; the copy deck is explicit that the row is absent rather than disabled, because an absence needs
       no explanation and a disabled row invites a question with no answer. */
   onFanOut?: () => void;
   /** Chat sessions only: "Undo last turn", a two-step row (the first click arms it). */
@@ -230,8 +230,8 @@ export function ComposerMenu(props: {
       out.push({
         id: "fanout",
         role: "menuitem",
-        // branch, not worker: every fanout surface marks a fork with the branch icon (§14b's fork
-        // marker, `Align to Fork`), and worker.svg already means Agents (§3's working count).
+        // branch, not worker: every fanout surface marks a fork with the branch icon (the fanout spec's fork
+        // marker, `Align to Fork`), and worker.svg already means Agents (the transcript spec's working count).
         icon: "branch",
         label: "Fan Out…",
         title: "Fork this session N ways and compare the answers",
@@ -523,7 +523,7 @@ export function ComposerMenu(props: {
             <div class="model-menu-list composer-flyout-list" role="menu" aria-label="More actions" onKeyDown={onListKeyDown}>
               <Index each={pick((r) => r.id === "attach" || r.id === "commands" || r.id === "playbooks")}>{(x) => <Item r={x().r} index={x().index} />}</Index>
               {/* The rows are picked by id, so a row that matches no section is built and never
-                  rendered: "Fan Out…" belongs to this one, after Session info (§14b). */}
+                  rendered: "Fan Out…" belongs to this one, after Session info. */}
               <Show when={pick((r) => r.id.startsWith("hide-") || r.id === "sandbox" || r.id === "info" || r.id === "fanout").length > 0}>
                 <div class="composer-flyout-sep" role="separator" />
                 <Index each={pick((r) => r.id.startsWith("hide-") || r.id === "sandbox" || r.id === "info" || r.id === "fanout")}>

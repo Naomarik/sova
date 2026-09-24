@@ -6,7 +6,7 @@ import type { ThemeInfo, ThemeList, ThemeTokens } from "../shared/protocol";
 import { DEFAULT_THEME_ID, parseTheme, type ParsedTheme, type ThemeBase, themeInfo } from "../shared/theme";
 
 /**
- * Every theme the app can find (spec/12-settings-dialog.md §12): the 18 shipped under themes/ and
+ * Every theme the app can find: the 18 shipped under themes/ and
  * whatever the user dropped in `~/.pi/agent/sova/themes/` (the state root moved with the rename).
  * The grammar and the read pipeline are
  * shared/theme.ts's — this module is only the two folders and the order they come back in.
@@ -14,13 +14,13 @@ import { DEFAULT_THEME_ID, parseTheme, type ParsedTheme, type ThemeBase, themeIn
  * There is no watch and no cache: the picker re-fetches every 2s while its tab is visible, and a
  * scan of two small folders is cheaper than the bookkeeping a watch would need to stay honest
  * about a file saved in another window. There is also no selection here — the choice lives in the
- * browser's localStorage (§0), so this server has no idea which theme anyone is wearing.
+ * browser's localStorage, so this server has no idea which theme anyone is wearing.
  */
 const BUILTIN_DIR = fileURLToPath(new URL("../themes/", import.meta.url));
 /** Read per call, like every other agent-dir path: PI_CODING_AGENT_DIR is what the tests move. */
 export const userThemesDir = () => join(stateRoot(), "themes");
 
-/** `dark` and `light` lead the list: they are the two bases, and dark is the default (§0). */
+/** `dark` and `light` lead the list: they are the two bases, and dark is the default. */
 const BASE_IDS: readonly string[] = [DEFAULT_THEME_ID, "light"];
 
 interface Candidate {
@@ -42,7 +42,7 @@ const readOne = (dir: string, file: string): Candidate => {
 };
 
 /** `*.json` in one folder, sorted by id. A missing folder is empty; anything else is the caller's
-    to report — §12 keeps the built-ins listed and offers Retry. */
+    to report — the settings dialog spec keeps the built-ins listed and offers Retry. */
 function scan(dir: string): { entries: Candidate[]; error?: string } {
   let files: string[];
   try {

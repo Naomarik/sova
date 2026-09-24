@@ -15,7 +15,7 @@ import { validateNewSessionCwd } from "./targets";
 import { normalizeEntry, readActiveBranch } from "./transcript";
 
 /**
- * POST /api/session-groups/fanout (spec/14b-fanout.md): N sessions from one starting point, as
+ * POST /api/session-groups/fanout: N sessions from one starting point, as
  * one group. Fork mode branches every member from the same entry of one source; fresh mode makes
  * N independent sessions in a folder. Nothing here is a fan-out of one runtime — see forkMember.
  */
@@ -82,8 +82,8 @@ export interface FanoutDeps {
   /** Remove a member's own half-written file after its creation failed. */
   discard(path: string): void;
   summary(path: string): Promise<SessionSummary | null>;
-  /** Create the group for this fanout. `autoDissolve` is set here and ONLY here: pi-web chose
-      the name, so pi-web may remove it once emptied. The groupId path never passes it. */
+  /** Create the group for this fanout. `autoDissolve` is set here and ONLY here: Sova chose
+      the name, so Sova may remove it once emptied. The groupId path never passes it. */
   createGroup(name: string, seed?: GroupSeed, autoDissolve?: boolean): SessionGroup | null;
   /** One existing group by id, or null — for landing members in it rather than making one. */
   group(id: string): SessionGroup | null;
@@ -127,13 +127,12 @@ async function readHeadAndLeaf(path: string): Promise<{ version: number; leafId:
 }
 
 /**
- * The id of the last entry pi-web would RENDER ON THE ACTIVE BRANCH — which is what the dialog
+ * The id of the last entry Sova would RENDER ON THE ACTIVE BRANCH — which is what the dialog
  * showed, and therefore the only thing `source.leafId` can honestly be compared against.
  *
  * TWO ways the file's last line is the wrong answer, and both are ordinary:
  * 1. HIDDEN ENTRIES. The transcript draws nothing for a top-level `usage` row (cache warming is
- *    on by default), a `role:"system"` loadout message, or a rewind marker (`pi-web-rewind`; the
- *    write spelling stays legacy until the rename bridge closes, reads accept `sova-rewind`).
+ *    on by default), a `role:"system"` loadout message, or a rewind marker (`sova-rewind`).
  * 2. THE ABANDONED BRANCH. After a rewind, the file's TAIL is the branch that was left behind —
  *    ordinary, visible messages — while the active branch hangs off the rewind marker. Walking
  *    back from end-of-file returns the abandoned leaf, so every rewound source would be refused
@@ -142,7 +141,7 @@ async function readHeadAndLeaf(path: string): Promise<{ version: number; leafId:
  *
  * So: the ACTIVE branch (transcript.ts's own parentId walk, the same one the pane renders), then
  * its last entry that normalizeEntry yields a row for. Both rules are the transcript's, reused —
- * a second copy of "what pi-web shows" is precisely what drifted here the first time.
+ * a second copy of "what Sova shows" is precisely what drifted here the first time.
  *
  * This reads the whole file. Fanout is a rare, deliberate user action and the transcript path
  * does the same read to draw the pane; correctness first.
@@ -181,7 +180,7 @@ export const realFanoutDeps: FanoutDeps = {
   misconfigured: (path) => activeConfigFailure(path) !== undefined,
 
   /**
-   * ONE FRESH MANAGER, and never the one pi-web holds for the source. createBranchedSession
+   * ONE FRESH MANAGER, and never the one Sova holds for the source. createBranchedSession
    * REBINDS the manager it is called on to the new file (session-manager.js: it sets fileEntries,
    * sessionId and sessionFile), so calling it twice on one manager chains member 2 off member 1
    * instead of fanning, and calling it on the held runtime's manager would repoint a LIVE runtime
@@ -442,18 +441,18 @@ export async function runFanout(body: FanoutRequest, deps: FanoutDeps = realFano
   if (created.length === 0) return { ok: false, status: 500, error: failed[0]?.message ?? "No member could be created" };
 
   // An existing target takes the members; a seedless one adopts this fanout's lineage first,
-  // which is also how it becomes auto-dissolving (spec §14) — the cost of the honesty.
-  // A group pi-web NAMED may dissolve when emptied; one the user named never does, even after it
+  // which is also how it becomes auto-dissolving — the cost of the honesty.
+  // A group Sova NAMED may dissolve when emptied; one the user named never does, even after it
   // adopts this fanout's lineage. Adoption gives the marker its datum, not a licence to delete.
   const group = target
     ? seed && !target.seed
       ? (deps.adoptSeed(target.id, seed) ?? target)
       : target
-    // pi-web may remove only what it both made AND named. The client reports which; we record the
+    // Sova may remove only what it both made AND named. The client reports which; we record the
     // answer either way, never leaving it absent — an absent flag on a seeded group is the
     // on-disk signature of a pre-flag fanout group, and the legacy rule would dissolve it.
     // Spelled `=== "generated"` deliberately: `!== "user"` reads as equally correct and would
-    // treat an ABSENT field as pi-web's, deleting a name an older client never claimed.
+    // treat an ABSENT field as Sova's, deleting a name an older client never claimed.
     : deps.createGroup(plan.name, seed, body.named === "generated");
   if (!group) return { ok: false, status: 500, error: "The group could not be created" };
   made.forEach(({ summary, member }) => deps.assign(summary.id, group.id, member.label));

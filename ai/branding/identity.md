@@ -59,11 +59,9 @@ tenant, plan. See [voice.md](voice.md) for the words it does use.
 ## Where the visual identity lives
 
 - The system: `.claude/skills/fold-ai-dev-design/SKILL.md`, sections Voice, Color, Type, Logo.
-- What Sova changes: [`spec/07-deviations.md`](../../spec/07-deviations.md). Dark by default,
+- What Sova changes: [`.sova/spec/claims/design/deviations.md`](../../.sova/spec/claims/design/deviations.md). Dark by default,
   a JSON theme system, the Fold symbol in place of the skill's placeholder.
 - The name and the mark: [naming.md](naming.md). The mark is Astra's **Fold**, shipped as
   `public/icons/sova-mark.svg`; the wordmark is lowercase `sova` in Inter 640.
-- The mark that shipped before, `public/icons/pi-web-mark.svg` (a stroked π), is left on disk as
-  history and is no longer used.
 - Exploration sets for the marks are under `logos/`; the chosen lockup is
   [`logos/selected/sova-fold.html`](logos/selected/sova-fold.html).

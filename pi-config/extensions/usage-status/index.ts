@@ -7,7 +7,7 @@
 // one) so the usage segment can sit on the stats line next to the token stats.
 //
 // The fetchers, the shared cache file and the machine-wide lock live in
-// ./fetch (pi-runtime-free, also imported by pi-web's server): only one
+// ./fetch (pi-runtime-free, also imported by Sova's server): only one
 // process fetches per ~3 minutes no matter how many pis are open.
 
 import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";

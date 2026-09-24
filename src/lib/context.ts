@@ -1,6 +1,7 @@
-// Context-window fill for the session head (spec/04f-context-window.md context meter). Mirrors the server's
+// Context-window fill for the session head. Mirrors the server's
 // rule (server/transcript.ts contextForBranch): input + cacheRead + cacheWrite of the LAST
-// assistant message with usage on the branch; a compaction after it makes that stale → null.
+// assistant message on the branch that reports a context (not an error or aborted reply, not a
+// zero usage); a compaction after it makes that stale → null.
 
 import type { ContextInfo, TranscriptItem } from "../../shared/protocol";
 import { isObj } from "./message";
@@ -10,6 +11,19 @@ export function usageTokens(usage: unknown): number | null {
   if (!isObj(usage)) return null;
   const n = (k: string) => (typeof usage[k] === "number" ? (usage[k] as number) : 0);
   return n("input") + n("cacheRead") + n("cacheWrite");
+}
+
+/**
+ * Tokens in context as one assistant message reports them, or null when it says nothing about the
+ * context: not an assistant message, no usage, an error or aborted reply, or a usage of zero (a
+ * request that failed before the model read anything). Mirrors server/transcript.ts
+ * messageContextTokens.
+ */
+export function messageContextTokens(message: unknown): number | null {
+  if (!isObj(message) || message.role !== "assistant") return null;
+  if (message.stopReason === "error" || message.stopReason === "aborted") return null;
+  const tokens = usageTokens(message.usage);
+  return tokens !== null && tokens > 0 ? tokens : null;
 }
 
 const isCompaction = (raw: Record<string, unknown>) =>
@@ -27,8 +41,7 @@ export function contextFromItems(items: TranscriptItem[], window: number | null)
     prev = raw;
     if (isCompaction(raw)) return "compacted";
     const msg = raw.type === "message" && isObj(raw.message) ? raw.message : null;
-    if (msg?.role !== "assistant") continue;
-    const tokens = usageTokens(msg.usage);
+    const tokens = messageContextTokens(msg);
     if (tokens !== null) return { tokens, window };
   }
   return null;
@@ -40,7 +53,7 @@ export type ContextState = ContextInfo | "compacted" | null;
 /** The window of a state, when it has one. */
 export const windowOf = (s: ContextState | undefined): number | null => (s && s !== "compacted" ? s.window : null);
 
-/** Token counts per §4f: 812 · 8.4k · 237k · 1M · 1.5M. */
+/** Token counts per the context window spec: 812 · 8.4k · 237k · 1M · 1.5M. */
 export function formatTokens(n: number): string {
   const trim = (x: number) => x.toFixed(1).replace(/\.0$/, "");
   if (n < 1000) return String(n);

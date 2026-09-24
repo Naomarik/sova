@@ -1,7 +1,7 @@
 /**
  * remote — run a session's tools on a target from ~/.pi/agent/targets.json.
  *
- * Activation: the string flag `target` (`pi --target acme-prod`, or pi-web's per-runtime
+ * Activation: the string flag `target` (`pi --target acme-prod`, or Sova's per-runtime
  * `extensionFlagValues`). Without it this extension registers no tools and changes nothing (the
  * `/remote` command only says so).
  *
@@ -10,8 +10,8 @@
  * re-implemented whole (GrepOperations can't run a search); the others use pi's operations hooks.
  * An unknown or invalid target fails closed: every tool errors instead of running locally.
  *
- * Paths: pi-web opens target sessions in a local placeholder,
- * <agentDir>/pi-web/targets/<name>/<remote/abs/path>, which maps back to /remote/abs/path. From any
+ * Paths: Sova opens target sessions in a local placeholder,
+ * <agentDir>/sova/targets/<name>/<remote/abs/path>, which maps back to /remote/abs/path. From any
  * other directory (the CLI case) the local cwd maps to the target's cwd (or the far login dir).
  *
  * Every file operation goes through `Remote.run()`: the pinned channel (channel.ts) when it is up
@@ -19,7 +19,7 @@
  * `Connection` (connection.ts), which `Remote` extends and the workers' MCP server (mcp-server.ts)
  * shares; this file is the local half: path mapping and pi's tool operations. The connection
  * status goes out as a pair of setStatus keys: `remote` (prose, the TUI status bar) and
- * `remote-status` (RemoteStatus JSON, pi-web's chip).
+ * `remote-status` (RemoteStatus JSON, Sova's chip).
  *
  * The session announces itself on `pi.events` (REMOTE_SESSION_EVENT, workers.ts) so the subagents
  * extension can put this session's workers on the target too: our flag is invisible to it.
@@ -69,7 +69,7 @@ const FLAG = "target";
 const NO_CHANNEL_FLAG = "no-channel";
 /**
  * The status goes out as a pair, from `publish()` only: "remote" = the human line for the TUI status
- * bar (never JSON), "remote-status" = RemoteStatus JSON, the only key pi-web's chip reads.
+ * bar (never JSON), "remote-status" = RemoteStatus JSON, the only key Sova's chip reads.
  */
 const STATUS_KEY = "remote-status";
 /** Far exit codes of the folded readability check in front of `cat` (readFile). */
@@ -433,7 +433,7 @@ export default function (pi: ExtensionAPI) {
 		handler: async (args, ctx) => {
 			const r = remote;
 			const sub = args.trim() || "check";
-			// Sent silently by pi-web on every socket hello: never a round trip, never a toast.
+			// Sent silently by Sova on every socket hello: never a round trip, never a toast.
 			if (sub === "status") return r?.republish();
 			if (!r) {
 				if (ctx.hasUI) ctx.ui.notify(loadError ? `remote: ${loadError}` : "remote: this session has no --target", loadError ? "error" : "info");

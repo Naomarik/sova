@@ -66,7 +66,7 @@ export function defaultAgentDir(): string {
 /**
  * The connection status, published as a pair by the extension (see index.ts `publish`):
  * `setStatus("remote", <prose>)` for the TUI status bar, and
- * `setStatus("remote-status", JSON.stringify(<this>))`, which pi-web's chip renders.
+ * `setStatus("remote-status", JSON.stringify(<this>))`, which Sova's chip renders.
  */
 export interface RemoteStatus {
 	state: "online" | "unreachable" | "unknown";

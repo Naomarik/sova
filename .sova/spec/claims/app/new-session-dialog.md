@@ -1,4 +1,4 @@
-# §app/new-session-dialog — 05 · New Session dialog
+# §app/new-session-dialog — New Session dialog
 > Part of the Sova design spec · [overview](../design/overview.md)
 
 Triggered by `New Session` (sidebar head, and the empty states).
@@ -12,7 +12,7 @@ opens a folder picker in place, under the field, inside the same dialog.
 <div class="modal" role="dialog" aria-modal="true" aria-labelledby="ns-title">
   <div class="modal-head"><h2 class="modal-title" id="ns-title">New Session</h2></div>  <!-- the title reads "Fan out" while that type is chosen -->
   <form class="modal-body" id="ns-form">
-    <!-- The first field: what this dialog starts (see "Type" below). .fanout-source is §14b's
+    <!-- The first field: what this dialog starts (see "Type" below). .fanout-source is §workspace/fanout's
          radio presentation, reused so both dialogs that offer fanout render the choice the same. -->
     <div class="field">
       <span class="field-label" id="ns-type">What to start</span>
@@ -23,9 +23,9 @@ opens a folder picker in place, under the field, inside the same dialog.
     </div>
     <div class="field">
       <label class="field-label" for="ns-cwd">Folder</label>
-      <button type="button" class="input input-mono folder-field" id="ns-cwd" title="/home/user/webapps/pi-web"
+      <button type="button" class="input input-mono folder-field" id="ns-cwd" title="/home/user/webapps/sova"
               aria-expanded="true" aria-controls="ns-picker" aria-describedby="ns-cwd-hint ns-cwd-error">
-        <span class="folder-field-value truncate">~/webapps/pi-web</span>  <!-- none yet: .folder-field-empty "Choose a folder" -->
+        <span class="folder-field-value truncate">~/webapps/sova</span>  <!-- none yet: .folder-field-empty "Choose a folder" -->
         …chevron-down, class="icon icon-sm icon-twist" (turns 180° while open)…
       </button>
       <span class="field-hint" id="ns-cwd-hint">pi runs in this folder and can read and change files in it.</span>
@@ -40,7 +40,7 @@ opens a folder picker in place, under the field, inside the same dialog.
           <ol>
             <li><button type="button" class="folder-crumb" title="/home/user">~</button></li>
             <li><button type="button" class="folder-crumb" title="/home/user/webapps">webapps</button></li>
-            <li><span class="folder-crumb-current" aria-current="location">pi-web</span></li>
+            <li><span class="folder-crumb-current" aria-current="location">sova</span></li>
           </ol>
         </nav>  <!-- outside $HOME the first crumb is "/" (li.folder-crumbs-root); Recent view: one current crumb "Recent folders" -->
         <button type="button" class="button button-ghost">Home</button>
@@ -48,12 +48,12 @@ opens a folder picker in place, under the field, inside the same dialog.
       </div>
       <div class="search">
         …search icon…
-        <input class="input" type="text" role="combobox" aria-label="Filter folders in pi-web"
+        <input class="input" type="text" role="combobox" aria-label="Filter folders in sova"
                aria-expanded="true" aria-controls="ns-picker-list" aria-autocomplete="list"
                aria-activedescendant="ns-pf-0" aria-describedby="ns-picker-note" placeholder="Filter">
       </div>
-      <ul class="list folder-list folder-picker-list" id="ns-picker-list" role="listbox" aria-label="Subfolders of pi-web">
-        <li id="ns-pf-0" class="list-row list-row-interactive" role="option" aria-selected="true" title="/home/user/webapps/pi-web/docs">
+      <ul class="list folder-list folder-picker-list" id="ns-picker-list" role="listbox" aria-label="Subfolders of sova">
+        <li id="ns-pf-0" class="list-row list-row-interactive" role="option" aria-selected="true" title="/home/user/webapps/sova/docs">
           …folder… <span class="list-title truncate">docs</span> …chevron-right…
         </li>
         <li id="ns-pf-1" class="list-row list-row-interactive" role="option" aria-selected="false" title="…">
@@ -73,7 +73,7 @@ opens a folder picker in place, under the field, inside the same dialog.
       <span class="field-label" id="ns-recent">Recent folders</span>
       <ul class="list folder-list" role="listbox" aria-labelledby="ns-recent">
         <li class="list-row list-row-interactive" role="option" aria-selected="true" tabindex="0">
-          …folder… <span class="list-title truncate">~/webapps/pi-web</span>
+          …folder… <span class="list-title truncate">~/webapps/sova</span>
         </li>
       </ul>
     </div>
@@ -89,8 +89,8 @@ opens a folder picker in place, under the field, inside the same dialog.
 **Surface: an in-place panel, not a nested dialog.** The picker opens under the field, inside
 the dialog that's already open. The chosen path, the breadcrumb, and Create Session stay in one
 view, so there's no second scrim, no second focus root, and no sheet on a sheet at folded width.
-We rejected a nested `.modal` (the §5 dialog opening another dialog): it hides the dialog it
-belongs to, and on a phone it becomes a bottom sheet over a bottom sheet. A §4c-style popover
+We rejected a nested `.modal` (the §app/new-session-dialog dialog opening another dialog): it hides the dialog it
+belongs to, and on a phone it becomes a bottom sheet over a bottom sheet. A §chat/model-menu-style popover
 doesn't fit either, because the picker needs a filter, a scrolling 44px list, and a breadcrumb,
 and a popover inside a sheet would clip them.
 
@@ -99,14 +99,14 @@ affordance. Every folder is reached by clicking or by the keyboard, and the filt
 the current list. A folder with no readable route to it (say, an unreadable parent) can't be
 chosen here. Start that session from a TUI.
 
-**Type.** The first field (§14b "Entry points" says why it exists): radios **One session** — the
+**Type.** The first field (§workspace.fanout/entry-points says why it exists): radios **One session** — the
 default, and everything else on this page — and **Fan out…**. One session is the default because
 one session is what `New Session` has always made and what most presses of it want; fanout is
 offered, not advertised. Choosing **Fan out…** re-aims the dialog: the title reads "Fan out", the
 primary reads `Fan Out…` (`aria-disabled` until a folder is chosen, exactly as Create Session
-is), and the Where-pi-runs tabs leave — §14b's fresh mode is N sessions in one **local** folder,
+is), and the Where-pi-runs tabs leave — §workspace/fanout's fresh mode is N sessions in one **local** folder,
 so there is no remote choice to make, and none that could carry over. Pressing `Fan Out…`
-creates nothing here: this dialog closes and §14b's opens on **A fresh prompt**, carrying the
+creates nothing here: this dialog closes and §workspace/fanout's opens on **A fresh prompt**, carrying the
 folder the field shows (picker open or closed) as its cwd — one folder choice, not two. Nothing
 else carries, because nothing else was asked: this dialog has no first message, so there is no
 prompt to retype. Enter never submits from the radios — Space and the arrows choose — so the
@@ -139,7 +139,7 @@ implicit submit a form would otherwise give Enter on a radio is suppressed.
   is hidden while the picker is open, since Recent is there.
 - **Submitting.** Create Session posts `{cwd}`. While pending, the button shows "Creating…" and
   is `aria-disabled`. Enter inside the picker never submits. With **Fan out…** chosen, the
-  primary reads `Fan Out…` and posts nothing: the dialog closes and §14b's opens on a fresh
+  primary reads `Fan Out…` and posts nothing: the dialog closes and §workspace/fanout's opens on a fresh
   prompt carrying the field's folder (see **Type** above).
 - **On success.** Close the dialog, navigate to the new session, and focus the composer, except
   on a touch-only device (`(hover: none) and (pointer: coarse)`), where that would raise the

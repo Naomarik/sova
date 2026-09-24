@@ -30,7 +30,7 @@ import type {
 import { discoverClaudeModels, type ClaudeModel } from "./claude-models";
 import { CLAUDE_CODE_PROVIDER } from "./models";
 
-// Settings → Modes → Delegate (spec/12-settings-dialog.md "Modes"): which worker each kind of
+// Settings → Modes → Delegate: which worker each kind of
 // Delegate work goes to. The file (~/.pi/agent/mode-delegate.json) and its rules are the mode
 // extension's (pi-config/extensions/mode/delegate.ts, imported as one of the server's pure mode
 // modules); this module adds what only the server can: the models each backend actually

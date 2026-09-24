@@ -32,7 +32,7 @@ import { Banner, Icon, trapFocus } from "./ui";
 /** What the dialog was opened on: a session to fork, or nothing (a fresh prompt). */
 export interface FanoutSource {
   session: SessionSummary;
-  /** The entry the transcript is SHOWING as its last — never the file's tail (spec/14b). */
+  /** The entry the transcript is SHOWING as its last — never the file's tail. */
   leafId: string;
   /** How many MESSAGES the branch has (user and assistant entries, src/lib/message-count.ts),
    *  for "up to message {n}" — never the rendered-row count, which counts one row per content
@@ -41,17 +41,17 @@ export interface FanoutSource {
    *  transcript), and the fork note hides rather than name a number nobody counted. */
   messages?: number;
   /** The branch's context fill at that leaf: what every forked member starts holding. "compacted"
-   *  is §4f's unknown-until-next-reply state, kept distinct from null — which here means the fill
+   *  is the context window spec's unknown-until-next-reply state, kept distinct from null — which here means the fill
    *  was never reported (again the Add-Members entry). Both render as words, never as 0. */
   context: ContextInfo | "compacted" | null;
   /** Why Create is off, read LIVE: a getter over the source's summary, so a turn finishing or a
-   *  terminal closing re-enables Create in place (§14b "It enables itself, in place, with no
+   *  terminal closing re-enables Create in place (the fanout spec "It enables itself, in place, with no
    *  re-open"). A string could only snapshot the state at open time and repeat it forever. */
   blocked(): string | null;
 }
 
 /**
- * Fan out (spec/14b-fanout.md): N sessions from one starting point, as one group. Fork mode
+ * Fan out: N sessions from one starting point, as one group. Fork mode
  * branches the source at the leaf the transcript showed; fresh mode makes N new sessions in one
  * folder from one prompt. Either way the result is an ordinary group of ordinary sessions.
  *
@@ -63,14 +63,14 @@ export function FanoutDialog(props: {
   /** Present when opened from a session; absent opens in fresh mode with no source. */
   source?: FanoutSource;
   /**
-   * A folder chosen before this dialog opened — the New Session dialog's Fan out… handoff
-   * (§05 "Type", §14b "Entry points"). The fresh-mode folder starts here rather than the list's
+   * A folder chosen before this dialog opened — the New Session dialog's Fan out… handoff.
+   * The fresh-mode folder starts here rather than the list's
    * guess, so the folder the user picked is the one the members get. Nothing else carries: that
    * dialog asks no first message, so there is no text to hand over.
    */
   presetCwd?: string;
   /**
-   * Land the new members in THIS group instead of creating one (§14b "Entry points": the
+   * Land the new members in THIS group instead of creating one (the
    * workspace's Add Members pre-chooses its own group, so they arrive beside the ones already
    * there). The group keeps its name, which is why the name field goes away with it.
    */
@@ -83,7 +83,7 @@ export function FanoutDialog(props: {
 }) {
   const [mode, setMode] = createSignal<"fork" | "fresh">(props.source ? "fork" : "fresh");
   /**
-   * Pre-seeded, not empty (§14b "The dialog"): the source's own model when forking, else the top
+   * Pre-seeded, not empty: the source's own model when forking, else the top
    * favorite. The fast path is open → Create, and "No members yet" was only ever the state
    * before the first click. The seed is written ONCE per open: a user who removes it has made a
    * plan (an empty one), and the model list refreshing underneath must not un-remove it.
@@ -111,7 +111,7 @@ export function FanoutDialog(props: {
    * words to keep its own guess current.
    *
    * It is also the one fact only this client holds: the server receives a string and cannot tell
-   * "accepted our default" from "typed their own", because the default is generated HERE (§14b).
+   * "accepted our default" from "typed their own", because the default is generated HERE.
    * That distinction decides whether the group is Sova's to delete when it empties.
    *
    * ONE SIGNAL, TWO RULES, NEITHER REDUNDANT: it gates regeneration (the input handler below) and
@@ -133,7 +133,7 @@ export function FanoutDialog(props: {
   const fork = () => mode() === "fork" && !!props.source;
   /** What each forked member starts holding: the branch's fill at the leaf in fork mode (a number,
    *  or "compacted"/"unknown" when it can't be named), null in fresh mode — never 0, which is a
-   *  claim §4f refuses for exactly these states (see StartFill). */
+   *  claim the context window spec refuses for exactly these states (see StartFill). */
   const startFill = (): StartFill => {
     if (!fork()) return null;
     const c = props.source?.context;
@@ -152,7 +152,7 @@ export function FanoutDialog(props: {
     if (members() === 0) return { why: "Add at least 1 member.", tone: "hint" };
     if (overflowing().length > 0) {
       // The FULL ref: this names which row to act on, and two rows differing only by provider
-      // would both answer to the short form (§9 "Doesn't fit"). Lowering the count is NOT a way
+      // would both answer to the short form. Lowering the count is NOT a way
       // out — the fill is per model, not per repeat — so the reason doesn't offer it.
       const which = overflowing().map((f) => f.row.ref).join(", ");
       return { why: `Remove ${which} to create this fanout.`, tone: "error" };
@@ -219,7 +219,7 @@ export function FanoutDialog(props: {
     setPicking(false);
     // Picking a listed model adds no row, so the count IS the feedback: say it.
     // The full ref, and this is the surface that needs it most: the count change is ANNOUNCED
-    // ONLY, so nothing visible tells the user which of two same-named rows moved (§9 "Add a model").
+    // ONLY, so nothing visible tells the user which of two same-named rows moved.
     if (before > 0) announce(`${ref} ×${Math.min(COUNT_MAX, before + 1)}.`);
   };
 
@@ -325,7 +325,7 @@ export function FanoutDialog(props: {
                   // session still regenerates once the user switches to a fresh prompt. THIS SAME
                   // SIGNAL DECIDES PROVENANCE (`nameTouched` is read by `fanoutBody` as `named`),
                   // so changing when regeneration stops also changes who owns the name — and no
-                  // test in this file would fail. Anyone altering either rule owns both (§14b).
+                  // test in this file would fail. Anyone altering either rule owns both.
                   if (!fork() && !nameTouched()) setName(defaultGroupName(e.currentTarget.value));
                 }}
               />
@@ -367,7 +367,7 @@ export function FanoutDialog(props: {
                           onClick={() => {
                             // At the cap the press is not silent: the count can't move, so the
                             // answer is the whole feedback — a toast for the eye, the live region
-                            // for AT, the app's wordless-control precedent (§2's rail). No
+                            // for AT, the app's wordless-control precedent (the session list's rail). No
                             // aria-disabled here: a control that answers is not a dead one.
                             if (creating()) return;
                             if (row.count >= COUNT_MAX) {
@@ -470,8 +470,8 @@ export function FanoutDialog(props: {
         {/* Why the primary is off, under the press it explains. Always shown when there is one —
             "Add at least 1 member." is the first thing an empty dialog has to say. A reason the
             user has done nothing wrong (empty plan, unfinished form, a busy source) is a HINT;
-            the one error-toned reason is the overflow, which §14b refuses to make a warning to
-            click through. Same words either way — only the treatment changes (§9). */}
+            the one error-toned reason is the overflow, which the fanout spec refuses to make a warning to
+            click through. Same words either way — only the treatment changes. */}
         <Show when={blocked()}>
           {(why) => <p class={`${why().tone === "error" ? "field-error" : "field-hint"} fanout-blocked`}>{why().why}</p>}
         </Show>

@@ -100,7 +100,7 @@ class FakeSdk {
    *    actually came from (agent-session.js:389-401). So a FOLLOW-UP whose text equals a queued
    *    STEER's splices the STEERING mirror, and the per-kind mirror then understates that lane.
    *    `kind` is deliberately NOT used to pick the array: using it would model a tidier SDK than
-   *    the one pi-web runs, which is exactly how the unsound per-kind rule got written.
+   *    the one Sova runs, which is exactly how the unsound per-kind rule got written.
    */
   announce(_kind: "steer" | "followUp", text: string | undefined): void {
     if (!text) return;
@@ -481,7 +481,7 @@ describe("the outgoing queue", () => {
     assert.equal((await r.queue.remove("f1")).ok, true, "and so can the follow-up");
   });
 
-  test("Stop drains everything pi-web holds AND everything the SDK holds, in order", async () => {
+  test("Stop drains everything Sova holds AND everything the SDK holds, in order", async () => {
     const r = rig();
     r.sdk.extensionFollowUp("extension work");
     for (const id of ["a", "b"]) r.queue.enqueue({ kind: "steer", text: id, origin: "client", id });
@@ -765,7 +765,7 @@ describe("the outgoing queue", () => {
 
   test("a dep that throws SYNCHRONOUSLY does not kill the process", async () => {
     // Every caller does `void this.pump()`, so a throw escaping the pump is an UNHANDLED REJECTION,
-    // and Node's default since v15 terminates the process — for pi-web that is the server, every
+    // and Node's default since v15 terminates the process — for Sova that is the server, every
     // session in it, and every hosted worker. Measured before the fix: "caught by the caller of
     // enqueue(): NO / unhandled rejections observed: 1". A disk error in `flushDeferredAppends`
     // (it writes the session file) is the reachable path, but the guard is at the pump because

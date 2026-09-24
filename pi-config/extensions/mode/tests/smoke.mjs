@@ -222,8 +222,6 @@ assert.deepEqual(
 );
 const markerText = renderers.get("mode")({ data: { minor: "align", on: true } }, {}, ctx.ui.theme).render(80).join("");
 assert.match(markerText, /── align on ──/, "minor marker renders");
-const oldMarkerText = renderers.get("mode")({ data: { mode: "claude-heavy" } }, {}, ctx.ui.theme).render(80).join("");
-assert.match(oldMarkerText, /── mode → claude-heavy ──/, "old major markers render as recorded: history is not relabelled");
 assert.match(renderers.get("mode")({ data: { mode: "delegate" } }, {}, ctx.ui.theme).render(80).join(""), /── mode → delegate ──/);
 
 // Switching to heavy keeps align; the heavy block precedes the align block
@@ -396,9 +394,9 @@ await hook("session_start", { reason: "startup" });
 assert.equal(store.status.get("mode"), "<accent>delegate \u00b7 align</accent>", "--major starts that launch in the mode");
 flagValues.major = "normal";
 await hook("session_start", { reason: "startup" });
-flagValues.major = "claude-heavy";
+flagValues.major = "delegate";
 await hook("session_start", { reason: "startup" });
-assert.equal(store.status.get("mode"), "<accent>delegate \u00b7 align</accent>", "--major claude-heavy still starts in delegate");
+assert.equal(store.status.get("mode"), "<accent>delegate \u00b7 align</accent>", "--major delegate after normal starts in delegate again");
 delete flagValues.major;
 
 // /tree: no snapshot on the new branch falls back to the default; one with strict heavy retools
@@ -612,7 +610,7 @@ await commands.get("mode").handler("delegate", ctx);
 assert.match((await beforeAgentStart(legacyHost(), ctx)).systemPrompt, /^base\n\n# Mode: delegate/, "0.85 hosts still get the appended prompt");
 await commands.get("mode").handler("normal", ctx);
 
-// ── Delegate routing: legacy command alias, settings re-read per turn, policy, discovery failure ──
+// ── Delegate routing: /mode delegate, settings re-read per turn, policy, discovery failure ──
 const delegateFile = path.join(process.env.PI_CODING_AGENT_DIR, "mode-delegate.json");
 const policyFile = path.join(process.env.PI_CODING_AGENT_DIR, "model-policy.json");
 const writeRouting = (mutate) => {
@@ -632,8 +630,8 @@ offered = [
 	{ id: "opus[1m]", name: "Opus", efforts: ["low", "medium", "high", "xhigh", "max"] },
 ];
 const delegateEntriesBefore = modeEntries().length;
-await commands.get("mode").handler("claude-heavy", ctx);
-assert.equal(store.status.get("mode"), "<accent>delegate</accent>", "/mode claude-heavy selects delegate");
+await commands.get("mode").handler("delegate", ctx);
+assert.equal(store.status.get("mode"), "<accent>delegate</accent>", "/mode delegate selects delegate");
 assert.deepEqual(modeEntries().at(-1).data, { mode: "delegate", active: { version: 1, mode: "delegate", strict: false, minorModes: [] } }, "and writes the canonical name");
 assert.equal(modeEntries().length, delegateEntriesBefore + 1);
 assert.ok(!existsSync(delegateFile), "no switch writes the routing file");

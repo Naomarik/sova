@@ -190,8 +190,6 @@ function normalizeMessage(entry: Entry, id: string, state?: { model?: string }):
 function modeMarker(entry: Entry, id: string): TranscriptItem[] {
   const d = entry.data;
   if (d && typeof d.minor === "string" && typeof d.on === "boolean") return [item(id, "info", entry, `Minor mode: ${d.minor} ${d.on ? "on" : "off"}`)];
-  // Shown as recorded: a marker from before the rename keeps saying "claude-heavy". History is not
-  // relabelled; only restoring and switching read that name as delegate (state.ts parseMode).
   if (d && typeof d.mode === "string") return [item(id, "info", entry, `Mode → ${d.mode}`)];
   if (d && typeof d.strict === "boolean") return [item(id, "info", entry, `Strict mode ${d.strict ? "on" : "off"}`)];
   return [];
@@ -391,8 +389,25 @@ export interface BranchContext {
 }
 
 /**
- * Context fill = input + cacheRead + cacheWrite of the LAST assistant message with usage on the
- * branch. A compaction after it makes that number stale, so we return null until the next reply.
+ * Tokens in context as one assistant message reports them (input + cacheRead + cacheWrite), or
+ * null when it says nothing about the context: no usage, an error or aborted reply, or a usage of
+ * zero (a request that failed before the model read anything). Mirrored by src/lib/context.ts
+ * messageContextTokens.
+ */
+export function messageContextTokens(m: unknown): number | null {
+  if (!m || typeof m !== "object") return null;
+  const msg = m as Record<string, any>;
+  if (msg.role !== "assistant" || msg.stopReason === "error" || msg.stopReason === "aborted") return null;
+  const u = msg.usage;
+  if (!u || typeof u !== "object") return null;
+  const tokens = (Number(u.input) || 0) + (Number(u.cacheRead) || 0) + (Number(u.cacheWrite) || 0);
+  return tokens > 0 ? tokens : null;
+}
+
+/**
+ * Context fill = messageContextTokens of the LAST assistant message on the branch that reports
+ * one; an error reply or a zero usage is passed over, so it never shows as an empty context. A
+ * compaction after it makes that number stale, so we return null until the next reply.
  * The model is the assistant message's own provider/model, else the last model_change before it,
  * else the session's first model_change.
  */
@@ -401,9 +416,8 @@ export function contextForBranch(branch: Entry[]): BranchContext | null {
     const e = branch[i]!;
     if (e.type === "compaction" || (e.type === "message" && e.message?.role === "compactionSummary")) return null;
     const m = e.type === "message" ? e.message : undefined;
-    const u = m?.role === "assistant" ? m.usage : undefined;
-    if (!u) continue;
-    const tokens = (Number(u.input) || 0) + (Number(u.cacheRead) || 0) + (Number(u.cacheWrite) || 0);
+    const tokens = messageContextTokens(m);
+    if (tokens === null) continue;
     let model = m.provider && m.model ? `${m.provider}/${m.model}` : null;
     if (!model) {
       const change = branch.slice(0, i).reverse().find((x) => x.type === "model_change")

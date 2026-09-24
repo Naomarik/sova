@@ -22,8 +22,8 @@ import { Icon } from "./ui";
 const sessionsWord = (n: number) => `${n} ${n === 1 ? "session" : "sessions"}`;
 
 /**
- * One inline title field: the sidebar's Rename, for the single selected session
- * (spec/02-session-list.md §2 "Selecting several sessions"). Enter saves, Escape cancels, and an
+ * One inline title field: the sidebar's Rename, for the single selected session.
+ * Enter saves, Escape cancels, and an
  * EMPTY field clears the user's title so the session goes back to the one derived from its first
  * message — which is why this can't be `GroupNameField`, where empty means cancel.
  */
@@ -76,7 +76,7 @@ function TitleField(props: { initial: string; label: string; onDone(title: strin
 }
 
 /**
- * The selection toolbar (spec/02-session-list.md §2 "Selecting several sessions"): what the
+ * The selection toolbar: what the
  * sidebar offers the sessions that are selected right now. It lives INSIDE the sidebar, above the
  * list, so the rows it acts on stay on screen under a thumb as well as a mouse.
  *

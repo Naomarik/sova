@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Verify a target entry end to end through the SAME argv builder the remote extension and pi-web use.
+ * Verify a target entry end to end through the SAME argv builder the remote extension and Sova use.
  *
  *   node check.ts <entry.json | -> [--registry targets.json] [--cmd 'shell code'] [--list PATH] [--timeout S]
  *

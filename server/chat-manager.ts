@@ -15,7 +15,7 @@ import {
   SessionManager,
   type Theme,
 } from "@earendil-works/pi-coding-agent";
-import type { ChatClientMessage, ChatModeResult, ChatServerMessage, ModeApplies, ModeInfo, QueueItem, RegenerateRefusal, RewindRefusal, SandboxApplyResult, SlashCommand } from "../shared/protocol";
+import type { ChatClientMessage, ChatModeResult, ChatServerMessage, ModeApplies, ModeInfo, QueueItem, RegenerateRefusal, RewindRefusal, SandboxApplyResult, SlashCommand, WorkerInfo } from "../shared/protocol";
 import { stripImageNotes } from "../shared/image-note";
 import { parseWakeNudge } from "../shared/wake";
 import { type QueueImage, type QueueKind, WebQueue, type WebQueueItem } from "./queue";
@@ -25,11 +25,12 @@ import { appliesAfter, defaultPatchOf, mergeMode, MINOR_MODES, modeApplyPlan, mo
 import { loadDefaults, saveDefaults } from "./web-defaults";
 import { modelAllowed, modelDenial, readModelPolicy } from "./model-policy";
 import { toContextInfo } from "./models";
+import { resumeCommandOf, resumeWorker, type ResumeOutcome } from "./worker-resume";
 import { applySandbox, onSandboxAppend, sandboxCommandOf, sandboxMessage, type SandboxHost } from "./sandbox-state";
 import { contextForBranch, normalizeEntries, normalizeEntry } from "./transcript";
-import { mappedNewCwd, parseLegacyMountCwd, targetOfCwd } from "./targets";
+import { targetOfCwd } from "./targets";
 import { claudeCodeProviderEnabled } from "./web-settings";
-import { ForeignWriteGuard, markOwned, recentForeignWriteAgeSec } from "./write-guard";
+import { ForeignWriteGuard, markOwned, markOwnedStat, recentForeignWriteAgeSec } from "./write-guard";
 
 const GUARD_POLL_MS = 3000;
 
@@ -75,7 +76,7 @@ async function servicesForCwd(cwd: string, modelRuntime: ModelRuntime, outline =
  * Register the Claude Code provider without waiting for the user to open a session.
  *
  * The provider registers from the claude-code extension's session_start, straight into the
- * ModelRuntime it is handed — and pi-web shares one runtime across every session, so building a
+ * ModelRuntime it is handed — and Sova shares one runtime across every session, so building a
  * throwaway services instance with the flag set is enough to make claude-code-cli/* appear in
  * GET /api/models for the picker. The instance is discarded; only the registration outlives it.
  *
@@ -165,38 +166,12 @@ export class ConfigError extends Error {
 const configFailures = new Map<string, ConfigError>();
 
 /**
- * A session stored inside a legacy sshfs mount cwd (`~/.pi/agent/mounts/<target>/…`, a feature
- * Sova no longer has) is refused, permanently: its files are on the target, not here, and opening
- * it would silently run every tool in an empty local directory — the exact confusion the mounts'
- * removal exists to end. Lexical check only (server/targets.ts); no fs, no schema, no targets.json.
- */
-function legacyMountFailure(path: string, cwd: string): ConfigError | undefined {
-  const legacy = parseLegacyMountCwd(cwd);
-  if (!legacy) return undefined;
-  const failure = new ConfigError(
-    `This session was created inside an sshfs mount of target ${legacy.target}, a feature Sova no longer has; its files are on the target, not here. ` +
-      `Archive this session, or start a new remote session on ${legacy.target}.\nSession file: ${path}`,
-    cwd,
-  );
-  configFailures.set(path, failure); // permanent: no force flag makes a removed mount exist
-  return failure;
-}
-
-/**
- * Where an open must happen: the stored cwd rebased across the rename (state root via
- * unlegacyStatePath, the repo rename via path-map.json — mappedNewCwd composes both). The stored
- * cwd is the session's history and is never rewritten; `openCwd` is what exists after those moves,
- * and what the runtime is built with — tools then run in the MOVED folder, which is the same
- * folder. A remote placeholder under the old root is still just an identity (its classification is
- * targets.parseTargetCwd's, upstream of here). Throws the ConfigError with the STORED cwd: that is
- * the name the user knows, and the banner's restore advice is about it.
+ * Where an open must happen: the stored cwd, which must exist. Throws the ConfigError with the
+ * stored cwd, the name the user knows; the banner's restore advice is about it.
  */
 export function resolveOpenCwd(path: string, sessionCwd: string): string {
-  const legacy = legacyMountFailure(path, sessionCwd);
-  if (legacy) throw legacy;
-  const openCwd = mappedNewCwd(sessionCwd);
-  if (!existsSync(openCwd)) throw new ConfigError(`Stored session working directory does not exist: ${sessionCwd}\nSession file: ${path}`, sessionCwd);
-  return openCwd;
+  if (!existsSync(sessionCwd)) throw new ConfigError(`Stored session working directory does not exist: ${sessionCwd}\nSession file: ${path}`, sessionCwd);
+  return sessionCwd;
 }
 
 /** The cached permanent failure for `path`, if it still applies. Exported because it is the whole
@@ -206,11 +181,7 @@ export function resolveOpenCwd(path: string, sessionCwd: string): string {
 export function activeConfigFailure(path: string): ConfigError | undefined {
   const failure = configFailures.get(path);
   if (!failure) return undefined;
-  // A legacy sshfs-mount cwd is refused for good: the empty local directory existing is the problem, not the cure.
-  if (parseLegacyMountCwd(failure.cwd)) return failure;
-  // Renames clear the memo too: the stored path may be gone for good while the state-root rebase or
-  // the path map points at the directory it became.
-  if (existsSync(mappedNewCwd(failure.cwd))) {
+  if (existsSync(failure.cwd)) {
     configFailures.delete(path); // the directory came back: let the next open try for real
     return undefined;
   }
@@ -325,7 +296,7 @@ function parseImages(raw: unknown): SdkImage[] | undefined {
 export async function drainQueueThenAbort(
   session: Pick<AgentSession, "clearQueue" | "abort">,
   broadcast: (msg: ChatServerMessage) => void,
-  /** pi-web's own queue, when the chat has one: it drains BOTH its held items and the SDK's (it
+  /** Sova's own queue, when the chat has one: it drains BOTH its held items and the SDK's (it
       calls `clearQueue()` itself), so Stop keeps meaning "nothing queued survives this". Absent
       leaves the original SDK-only behaviour, which is what a bare session still gets. */
   queue?: { drain(): Promise<{ steering: string[]; followUp: string[] }> },
@@ -346,32 +317,25 @@ export async function drainQueueThenAbort(
  * (buildSessionContext skips `custom`), our transcript renders nothing for it (normalizeEntry's
  * default for custom types), and it carries no usage, so neither totals nor context fill move.
  */
-/** RENAME BRIDGE: rewinds keep being WRITTEN under the legacy name until the bridge closes — a
-    rollback must never meet a marker old code can't read. Reads accept either spelling
-    (REWIND_ENTRIES), and the flip to writing "sova-rewind" is a one-line change made after the
-    compatibility window closes (MIGRATION.md §bridge-closure). */
-export const REWIND_ENTRY = "pi-web-rewind";
-export const REWIND_ENTRIES: ReadonlySet<string> = new Set([REWIND_ENTRY, "sova-rewind"]);
+export const REWIND_ENTRY = "sova-rewind";
 
 /**
  * customType of the invisible entry fanout writes into every member at creation (server/fanout.ts,
  * beside the member's model change). It is how a LATER runtime — this server after a restart, or
  * the workspace opened cold — knows to open the session WITHOUT `topic-outline-headless`: the
  * outline summarizer is a second model call per turn, and N of them on a fanout is cost with no
- * reader (spec 14b "Members run with the topic outline off"). The marker travels with the file,
+ * reader. The marker travels with the file,
  * so the exception holds for the member's life across restarts, rather than being an in-memory
  * flag threaded through acquireChat that a restart would forget. Same shape as REWIND_ENTRY:
  * never LLM context, no usage, rendered nowhere (normalizeEntry's default for custom types).
  */
-export const FANOUT_MEMBER_ENTRY = "pi-web-fanout-member"; // write name kept legacy during the bridge, like REWIND_ENTRY
-/** Accepted spellings on read: the legacy write above, plus the post-bridge "sova-fanout-member". */
-export const FANOUT_MEMBER_ENTRIES: ReadonlySet<string> = new Set([FANOUT_MEMBER_ENTRY, "sova-fanout-member"]);
+export const FANOUT_MEMBER_ENTRY = "sova-fanout-member";
 
 /** Whether a session file is a fanout member, by the marker its creation wrote. The predicate
  *  openSession keys the outline exception on; exported for the test that pins the marker's
  *  round trip through the file. */
 export function isFanoutMember(sm: Pick<SessionManager, "getEntries">): boolean {
-  return sm.getEntries().some((e) => e.type === "custom" && FANOUT_MEMBER_ENTRIES.has(e.customType ?? ""));
+  return sm.getEntries().some((e) => e.type === "custom" && e.customType === FANOUT_MEMBER_ENTRY);
 }
 
 export type RewindOutcome = { ok: true; editorText: string } | { ok: false; reason: RewindRefusal; message: string };
@@ -411,7 +375,7 @@ export async function rewindSession(
     // `steer()` awaits the extension `input` handlers before it queues anything, so a message can
     // still be on its way out after the turn it was meant to interrupt has ended. Moving the leaf
     // now would deliver it into the NEW branch on the next run — the abandoned message reappearing
-    // on the branch the user rewound TO. `hooks.queued` answers for pi-web's own queue AND the
+    // on the branch the user rewound TO. `hooks.queued` answers for Sova's own queue AND the
     // SDK's, ours or an extension's: all three land the same way.
     if (hooks.queued())
       return { ok: false, reason: "queued", message: "A message is still on its way out. Wait for it to send, or press Stop, then rewind." };
@@ -487,7 +451,7 @@ export function resolveRegenerate(branch: readonly BranchEntry[], entryId: strin
     const text = typeof content === "string" ? content : textBlocks(content);
     const images = imageBlocks(content);
     if (!text.trim() && !images) return notOnBranch("The message that started that turn has nothing left to send.");
-    // A WAKE NUDGE is a role:"user" message pi-web's own scheduler wrote, rendered as its own card
+    // A WAKE NUDGE is a role:"user" message Sova's own scheduler wrote, rendered as its own card
     // (kind "wake"). Replaying it would put the "[wake_nudge …] Scheduled wakeup fired (set 4m17s
     // ago)" preamble back on the branch as if the user had typed it, with an elapsed time that is
     // now a lie. Nothing here is the user's message, so there is nothing to send again.
@@ -549,7 +513,7 @@ interface PendingUi {
   resolve: (value: unknown) => void;
 }
 
-/** SDK events after which pi-web's queue re-reads the SDK's own queue lengths. `agent_settled` and
+/** SDK events after which Sova's queue re-reads the SDK's own queue lengths. `agent_settled` and
     `agent_end` are here because a turn that ends with our queue non-empty must start the next one;
     without them the queue would wait for an event that never comes. */
 const QUEUE_WAKE_EVENTS = new Set(["queue_update", "message_start", "turn_end", "agent_settled", "agent_end"]);
@@ -579,7 +543,7 @@ class ChatSession {
   modeState: ModeState = readMode();
 
   /**
-   * pi-web's own outgoing queue (server/queue.ts). Every message that would have gone straight
+   * Sova's own outgoing queue (server/queue.ts). Every message that would have gone straight
    * into the SDK's queue goes here first, and exactly one of ours is inside the SDK at a time —
    * which is what makes a single queued message removable at all (the SDK can only clear the lot).
    * A message sent to an IDLE session never enters it: there is nothing to queue behind.
@@ -656,9 +620,29 @@ class ChatSession {
       if (reason) {
         this.foreignWrite = reason;
         this.broadcast({ type: "error", code: "recent", message: this.busyMessage() });
-      }
+      } else this.persistVerified();
     }
     if (this.foreignWrite) throw new BusyError(this.busyMessage(), "recent");
+  }
+
+  /** The file as the guard last verified it is ours: record it, so a restarted server knows. */
+  private persistVerified(): void {
+    const v = this.guard?.verified();
+    if (v) markOwnedStat(this.path, v);
+  }
+
+  /** A silent guard check: records our writes when every appended line is ours; a foreign line
+      marks the chat foreign (reported to the next client, as before) and records nothing. */
+  private recordOwnWrites(): void {
+    if (this.foreignWrite || !this.guard) return;
+    let reason: string | null;
+    try {
+      reason = this.guard.check();
+    } catch (err) {
+      reason = `session file unreadable: ${err instanceof Error ? err.message : err}`;
+    }
+    if (reason) this.foreignWrite = reason;
+    else this.persistVerified();
   }
 
   /**
@@ -700,7 +684,7 @@ class ChatSession {
   }
 
   /**
-   * Whether ANY message is still on its way out: held in pi-web's queue, mid-hand-off, or sitting
+   * Whether ANY message is still on its way out: held in Sova's queue, mid-hand-off, or sitting
    * in the SDK's own queues (including an extension's follow-up, which resurrects on a rewound
    * branch exactly as ours would).
    *
@@ -775,7 +759,7 @@ class ChatSession {
   }
 
   /**
-   * The user's model policy, checked as the message goes out (spec/12 §12): a session sitting on a
+   * The user's model policy, checked as the message goes out: a session sitting on a
    * model that was turned off in Settings → Models refuses its next message and says which switch
    * to move. Nothing is chosen for it — a session that silently fell back to another model would
    * spend a turn on a model the user didn't pick, and the transcript would not say so.
@@ -809,7 +793,10 @@ class ChatSession {
         if (this.session.isStreaming) this.session.abort().catch(() => {});
         return;
       }
-      if (this.clients.size === 0) return;
+      if (this.clients.size === 0) {
+        this.recordOwnWrites(); // nobody to tell, but the stat still has to be current for a restart
+        return;
+      }
       try {
         this.assertNoForeignWrites();
       } catch {
@@ -1004,6 +991,32 @@ class ChatSession {
     };
   }
 
+  /** POST /api/workers/resume: start one restored worker again, idle (server/worker-resume.ts).
+      The fresh worker snapshot is pushed at once, so clients don't wait for the next poll. */
+  async resumeWorker(id: string): Promise<ResumeOutcome> {
+    if (this.disposed) return { ok: false, status: 404, error: "That session isn't open on this server; open the chat first." };
+    const outcome = await resumeWorker(
+      {
+        command: () => resumeCommandOf(this.session.extensionRunner),
+        foreign: () => this.sandboxHost.foreign(),
+        commandContext: () => this.session.extensionRunner.createCommandContext(),
+        beforeCommand: () => this.flushDeferredAppends(),
+        afterCommand: () => {
+          if (!this.foreignWrite) markOwned(this.path); // the extension's registry entry is our write
+        },
+      },
+      id,
+    );
+    this.pushWorkers();
+    return outcome;
+  }
+
+  /** This runtime's current record of one worker, from its own live record. */
+  workerInfo(id: string): WorkerInfo | null {
+    const rec = readOwnLiveRecords().get(this.path);
+    return decodeWorkers(rec?.rec?.presence, true).find((w) => w.id === id) ?? null;
+  }
+
   /** POST /api/sandbox?path=: flip this chat's sandbox from its next tool call (applySandbox). */
   applySandbox(on: boolean): Promise<SandboxApplyResult> {
     return applySandbox(this.sandboxHost, on);
@@ -1081,7 +1094,7 @@ class ChatSession {
     assertNotLive(this.path);
     this.assertNoForeignWrites();
     if (!text.trim() && !images) return { queued: false, turn: Promise.resolve() };
-    // While streaming, a plain prompt is a follow-up — held in pi-web's own queue now, so it can
+    // While streaming, a plain prompt is a follow-up — held in Sova's own queue now, so it can
     // still be taken back one item at a time. Server-originated prompts (a group batch, a remote
     // status probe) queue on the same terms as a client's: they are messages to this session, and
     // a queue that some messages could skip would not be a queue.
@@ -1143,7 +1156,7 @@ class ChatSession {
           const text = String(msg.text ?? "");
           const images = parseImages(msg.images);
           if (!text.trim() && !images) return;
-          // Mid-turn, this is a steer and goes through pi-web's queue so it stays removable; idle,
+          // Mid-turn, this is a steer and goes through Sova's queue so it stays removable; idle,
           // there is nothing to queue behind, so it starts its turn straight away (and the
           // extension-command split lives in handOffQueued, which both paths reach).
           if (this.session.isStreaming) {
@@ -1157,7 +1170,7 @@ class ChatSession {
           return;
         }
         case "abort":
-          // The queue drains pi-web's held items AND the SDK's, so Stop still means "nothing
+          // The queue drains Sova's held items AND the SDK's, so Stop still means "nothing
           // queued survives this", and the drained text still comes back as `queue_cleared`.
           drainQueueThenAbort(this.session, (m) => this.broadcast(m), this.queue).catch(fail);
           return;
@@ -1292,7 +1305,7 @@ class ChatSession {
    *
    * Order is load-bearing in two places. The model policy is checked BEFORE the rewind, so a
    * session sitting on a switched-off model refuses without having thrown its branch away. And the
-   * rewind goes through `rewindSession`, so the invisible `pi-web-rewind` marker is written before
+   * rewind goes through `rewindSession`, so the invisible `sova-rewind` marker is written before
    * the prompt: if the prompt then fails, a reload still lands on the new branch instead of
    * silently restoring the reply the user asked to replace.
    */
@@ -1359,7 +1372,7 @@ class ChatSession {
     if (!rec || !counts) return null;
     const usageTotal = decodeUsageTotal(rec.rec?.presence);
     return { type: "workers", working: counts.working, total: counts.total,
-      workers: decodeWorkers(rec.rec?.presence), ...(usageTotal ? { usageTotal } : {}) };
+      workers: decodeWorkers(rec.rec?.presence, true), ...(usageTotal ? { usageTotal } : {}) };
   }
 
   /** Broadcast the worker snapshot when it changed since the last send; a record that
@@ -1394,8 +1407,10 @@ class ChatSession {
     } catch (err) {
       console.error("[chat] runtime dispose failed", err);
     }
-    // Remember the state we left the file in, so reopening soon isn't mistaken for a foreign write.
-    if (!this.foreignWrite) markOwned(this.path);
+    // Remember the state we left the file in, so reopening soon — by this process or the next one,
+    // after a restart — isn't mistaken for a foreign write. Only what the guard verifies: the
+    // shutdown appends are our SessionManager's own entries, and anything else records nothing.
+    this.recordOwnWrites();
   }
 
   /**
@@ -1472,7 +1487,7 @@ class ChatSession {
       },
       getAllThemes: () => [],
       getTheme: () => undefined,
-      setTheme: () => ({ success: false, error: "Theme switching not supported in pi-web" }),
+      setTheme: () => ({ success: false, error: "Theme switching not supported in Sova" }),
       getToolsExpanded: () => false,
       setToolsExpanded: () => {},
     };
@@ -1668,9 +1683,6 @@ export async function acquireChat(path: string, force = false): Promise<ChatSess
   assertNotLive(path);
   // The cheap pre-checks before the expensive open (model runtime, extensions, SDK session).
   const cwd = storedCwd(path);
-  // A session stored inside a legacy sshfs mount cwd is refused for good (legacyMountFailure).
-  const legacy = cwd ? legacyMountFailure(path, cwd) : undefined;
-  if (legacy) throw legacy;
   // Permanent and already known: answer from the memo. Retrying would repeat the same SDK open and
   // hand the client another copy of an error it cannot act on. `force` does not apply — no flag
   // makes a deleted directory exist.

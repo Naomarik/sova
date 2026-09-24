@@ -5,12 +5,12 @@ import { composerPlaceholder, partialAfterRetry, partialBody, partialRetries, re
 import { announce, toast } from "../lib/ui-state";
 import { Banner, Icon } from "./ui";
 
-/** Below this the placeholder drops its key hint: the keys aren't there to press (§9). */
+/** Below this the placeholder drops its key hint: the keys aren't there to press. */
 const FOLDED = "(max-width: 767px)";
 
 /**
- * The workspace's one composer, writing to every member at once
- * (spec/14-workspaces.md "The group composer"). One request, never N sockets racing: the server
+ * The workspace's one composer, writing to every member at once.
+ * One request, never N sockets racing: the server
  * checks every member before it prompts any, so a refusal is complete and names each blocked one.
  *
  * What it deliberately does NOT carry: images and slash commands. An image belongs to a
@@ -22,7 +22,7 @@ export function GroupComposer(props: {
   groupId: string;
   /** The group's members in pane order; the foot counts from these. */
   members: SessionSummary[];
-  /** The group's file-gone members, as session ids (§14 "Member states"): no session row
+  /** The group's file-gone members, as session ids: no session row
       exists for them, so they reach neither the panes nor `targetsOf` — but the server's pre-check
       refuses a send on the ASSIGNMENT, and the foot has to be the count that comes back. They
       ride under `missing`, and they count in the total, which is the group's size. */
@@ -34,8 +34,8 @@ export function GroupComposer(props: {
   onRefresh(): void;
   /** Focused or holding text — what collapses the pane composers under it. */
   onActive(active: boolean): void;
-  /** The ids a send REACHED (accepted, not answered), for the workspace head's completion roll-up
-   *  (§14): the roll-up is anchored to a send rather than to idle-vs-busy, so it starts at the
+  /** The ids a send REACHED (accepted, not answered), for the workspace head's completion roll-up:
+   * the roll-up is anchored to a send rather than to idle-vs-busy, so it starts at the
    *  moment the server accepted. `kind` is how the workspace merges it: a box send (or "Send to
    *  the Rest", which follows a refusal — nothing was sent, so there is no anchor to keep)
    *  REPLACES the watched set; a partial banner's retry UNIONS it, so the straggler is watched
@@ -60,7 +60,7 @@ export function GroupComposer(props: {
   window.matchMedia(FOLDED).addEventListener("change", (e) => setFolded(e.matches));
 
   /**
-   * "In use" is focused OR holding text (spec §14), derived in ONE place. It used to be pushed
+   * "In use" is focused OR holding text, derived in ONE place. It used to be pushed
    * from three — focus, blur, and the send — and they disagreed: a send cleared the box while the
    * caret was still in it, so the panes expanded under a composer the user was still typing in and
    * collapsed again on the next keystroke. A rule with three call sites is three chances to state

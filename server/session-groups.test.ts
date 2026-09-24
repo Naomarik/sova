@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 
-const agentDir = mkdtempSync(join(tmpdir(), "pi-web-groups-test-"));
+const agentDir = mkdtempSync(join(tmpdir(), "sova-groups-test-"));
 process.env.PI_CODING_AGENT_DIR = agentDir; // before the module below computes its paths
 
 const {
@@ -331,8 +331,8 @@ test("deleting a group takes its members with it", () => {
   assert.deepEqual(onDisk().groups[0]!.members, [{ id: "s2" }]);
 });
 
-test("an unknown field written by another pi-web version survives our writes", () => {
-  // The case this protects: a fanout group's `seed` (spec/14b), written by a build that has it,
+test("an unknown field written by another Sova version survives our writes", () => {
+  // The case this protects: a fanout group's `seed`, written by a build that has it,
   // must not be deleted by a build that doesn't when the user renames the group here.
   reset({
     futureTopLevel: { note: "from another build" },
@@ -362,7 +362,7 @@ test("a store we create ourselves is version 1 with nothing extra", () => {
   assert.equal(raw.version, 1);
 });
 
-// --- auto-dissolve of a fanout group (spec/14 "Emptying a group") ---------------------------
+// --- auto-dissolve of a fanout group ---------------------------
 // `seed` is written by the fanout stage and isn't a typed field yet; the store carries unknown
 // keys through, so these tests write one the way a newer build would.
 
@@ -447,7 +447,7 @@ test("archive cleanup empties a fanout group WITHOUT dissolving it (deliberate, 
 });
 
 test("re-assigning a session to the group it is already in does not reorder it", () => {
-  // §2's drag-and-drop can drop a grouped row back onto its own section, and a double-fire sends
+  // The session list's drag-and-drop can drop a grouped row back onto its own section, and a double-fire sends
   // the same assign twice: neither may rewrite an order the user arranged by hand.
   reset({
     version: 1,
@@ -539,7 +539,7 @@ test("a member's unknown fields travel with it between groups", () => {
 // from it is what would have made a group the USER named start deleting itself once it adopted
 // a fanout's lineage.
 
-test("a group pi-web created AND named dissolves when emptied", () => {
+test("a group Sova created AND named dissolves when emptied", () => {
   reset({
     version: 1,
     groups: [{ id: "g1", name: "opus ×3", createdAt: "2026-01-01T00:00:00.000Z", seed: SEED, autoDissolve: true, members: [{ id: "a" }] }],
@@ -575,7 +575,7 @@ test("an explicit false beats a seed, and survives a round trip", () => {
 
 test("legacy: a seeded group written before the flag existed still dissolves", () => {
   // Absence means "predates the flag", and only then does seed imply dissolution — those records
-  // are pi-web's own fanout groups.
+  // are Sova's own fanout groups.
   reset({
     version: 1,
     groups: [{ id: "g1", name: "Old fanout", createdAt: "2026-01-01T00:00:00.000Z", seed: SEED, members: [{ id: "a" }] }],
@@ -606,7 +606,7 @@ test("a malformed autoDissolve is dropped, falling back to the legacy rule", () 
 });
 
 test("renaming a fanout group hands it to the user: it then survives being emptied", () => {
-  // "pi-web made it AND named it, so pi-web may remove it" — a rename falsifies the second half.
+  // "Sova made it AND named it, so Sova may remove it" — a rename falsifies the second half.
   reset({
     version: 1,
     groups: [{ id: "g1", name: "Fanout · retry backoff", createdAt: "2026-01-01T00:00:00.000Z", seed: SEED, autoDissolve: true, members: [{ id: "a" }] }],
@@ -614,7 +614,7 @@ test("renaming a fanout group hands it to the user: it then survives being empti
   });
   const r = renameGroup("g1", "Backoff experiments");
   assert.ok(r.ok);
-  assert.equal(readGroups()[0]!.autoDissolve, false, "the rename revoked pi-web's claim on it");
+  assert.equal(readGroups()[0]!.autoDissolve, false, "the rename revoked Sova's claim on it");
   assert.deepEqual(assignSession("a", null), { ok: true }, "so emptying it does not delete it");
   assert.deepEqual(readGroups().map((g) => g.name), ["Backoff experiments"]);
 });

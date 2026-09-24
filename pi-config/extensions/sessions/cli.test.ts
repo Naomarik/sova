@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
+import { cpSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
@@ -67,6 +67,17 @@ test("snapshot: fresh-only, sorted, --include-stale, malformed is skipped", with
     const flagWins = spawnSync(process.execPath, [BIN, "snapshot", "--dir", empty], { encoding: "utf8", env: { ...env, PI_SESSIONS_DIR: dir } });
     assert.deepEqual(json(flagWins.stdout).sessions, []);
   } finally { rmSync(empty, { recursive: true, force: true }); }
+
+  // Without PI_SESSIONS_DIR the live dir is <PI_CODING_AGENT_DIR>/sessions/live, as pi resolves it;
+  // PI_SESSIONS_DIR still wins over it.
+  const agent = mkdtempSync(join(tmpdir(), "pi-sessions-agent-"));
+  try {
+    cpSync(dir, join(agent, "sessions", "live"), { recursive: true });
+    const viaAgentDir = spawnSync(process.execPath, [BIN, "snapshot"], { encoding: "utf8", env: { ...env, PI_CODING_AGENT_DIR: agent } });
+    assert.equal(json(viaAgentDir.stdout).sessions.length, 2);
+    const sessionsDirWins = spawnSync(process.execPath, [BIN, "snapshot"], { encoding: "utf8", env: { ...env, PI_CODING_AGENT_DIR: join(agent, "nowhere"), PI_SESSIONS_DIR: dir } });
+    assert.equal(json(sessionsDirWins.stdout).sessions.length, 2);
+  } finally { rmSync(agent, { recursive: true, force: true }); }
 }));
 
 test("snapshot sort: attention, then working by recency, then idle by name", withDir(dir => {

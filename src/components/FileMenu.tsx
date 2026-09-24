@@ -20,7 +20,7 @@ export function mentionOptionIds(entries: MentionEntry[]): string[] {
 export type FileMenuStatus = MentionIndexStatus;
 
 /**
- * The composer's @-mention listbox (spec/04h-file-mentions.md), the slash menu's twin: focus
+ * The composer's @-mention listbox, the slash menu's twin: focus
  * stays in the textarea, the active row is aria-activedescendant, rows insert on mousedown.
  * Shows ONE level — the token's current directory — with directories first; a directory pick
  * appends "/" and the menu keeps drilling in, a file pick inserts the path and closes.

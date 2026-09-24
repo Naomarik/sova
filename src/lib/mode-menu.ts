@@ -1,4 +1,4 @@
-// The mode menu's footer (spec/04g-mode-menu.md §4g): the sentence saying what a switch here does,
+// The mode menu's footer: the sentence saying what a switch here does,
 // and whether this chat's mode is already the one new sessions start from. Pure, so each string can
 // be tested against the state it must NOT be said in — a button that offers to save what is already
 // saved is the case this exists to rule out.

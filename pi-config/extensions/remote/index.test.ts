@@ -485,7 +485,7 @@ test("the session announces its target on the bus: the static far cwd, then the 
 		JSON.stringify({ version: 1, targets: [{ name: "box", label: "the box", kind: "ssh", ssh: { host: "example.invalid" }, cwd: far }] }),
 	);
 	try {
-		// A placeholder cwd, as pi-web opens one: the far cwd is known before any round trip.
+		// A placeholder cwd, as Sova opens one: the far cwd is known before any round trip.
 		const local = placeholderDir(agentDir, "box", far);
 		mkdirSync(local, { recursive: true });
 		const { pi, events, start } = fakePi({ target: "box", "no-channel": true });

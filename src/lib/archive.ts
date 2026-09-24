@@ -1,6 +1,5 @@
 /**
- * The Archive's date sections and cleanup results (spec/02-session-list.md §2 "Archive by date" and
- * "Archive cleanup"). Pure, so it runs under tsx --test.
+ * The Archive's date sections and cleanup results. Pure, so it runs under tsx --test.
  */
 
 export type ArchiveGroupId = "today" | "yesterday" | "week" | "month" | "older";

@@ -25,7 +25,7 @@ import { MessageActions, type MessageActionItem } from "./MessageActions";
 import { type MessageStrip, stripLabel, stripsByRow } from "../lib/message-actions";
 
 /**
- * What a view hangs under each delivered message (spec/03 "Message actions"). The thread decides
+ * What a view hangs under each delivered message. The thread decides
  * WHERE a strip goes — once per entry, never once per rendered block — and the view decides what
  * it holds: a chat offers Copy · Fork · Rewind/Regenerate, a watch offers Copy with the others'
  * reasons, and a transcript rendered with no provider (a subagent's) shows no strip at all.
@@ -265,7 +265,7 @@ export function HistoryItems(props: {
   hideThinking?: boolean;
   /** Index from which a call without a result may still be running; after the last user row by default. */
   openFrom?: number;
-  /** The fork point of a fanout member (spec/14b): one drawn row, right after the entry the
+  /** The fork point of a fanout member: one drawn row, right after the entry the
       branch was taken from. Nothing is written to the file for it — the client draws it from the
       group's `seed`, and a member whose branch no longer holds that entry simply has no row. */
   fork?: ForkMarker;
@@ -320,7 +320,7 @@ export function HistoryItems(props: {
   /**
    * The forked entry's OWN timestamp, in `HH:MM` — the marker's "· 14:06". It is the time of the
    * last shared moment (the row the marker follows), NOT the wall-clock of the fanout gesture:
-   * the gesture time lives nowhere in `seed` (§14 "seed says where"), and adding a field for it
+   * the gesture time lives nowhere in `seed`, and adding a field for it
    * would put a write-time fact in marker data whose only reader is this decoration. Derived
    * from the row itself, so nothing is added and nothing can drift; omitted outright when the
    * row carries no timestamp (never guessed — the same rule as the marker's position).
@@ -675,7 +675,7 @@ export function ThreadScroller(props: {
   );
 }
 
-/** Placeholder shaped like what lands (spec/03-transcript.md §3); nothing shows for the first 300ms. */
+/** Placeholder shaped like what lands; nothing shows for the first 300ms. */
 export function TranscriptSkeleton() {
   const [show, setShow] = createSignal(false);
   const t = setTimeout(() => setShow(true), 300);
@@ -694,7 +694,7 @@ export function TranscriptSkeleton() {
   );
 }
 
-/** Where a fanout member was branched from (spec/14b "The fork point in a transcript"). */
+/** Where a fanout member was branched from. */
 export interface ForkMarker {
   /** `seed.leafId`: the entry the fork was taken at. It exists with this id in the source AND in
       every member, because branching copies entries without re-minting their ids. */

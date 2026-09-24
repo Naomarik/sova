@@ -3,7 +3,7 @@ import { createStore, reconcile } from "solid-js/store";
 import type { SessionInsight, SessionSummary, TeamInfo, WorkerInfo } from "../../shared/protocol";
 import { fetchSessionInsight } from "../lib/api";
 import { agentsHref } from "../lib/insights";
-import { shortModel } from "../lib/format";
+import { relativeTime, shortModel } from "../lib/format";
 import { sourceBlocked } from "../lib/fanout";
 import { PaneScopeProvider, type PaneScope } from "../lib/pane-scope";
 import { cwdLabel } from "../lib/remote-session";
@@ -26,7 +26,7 @@ export type WatchWhy = "tui" | "recent";
 /** How the open session is shown. Decided once when it's opened, then changed only by events. */
 export type Decision =
   | { path: string; mode: "chat"; force: boolean; autofocus?: boolean }
-  | { path: string; mode: "watch"; why: WatchWhy; ageSec?: number; listVersion: number };
+  | { path: string; mode: "watch"; why: WatchWhy; listVersion: number };
 
 /** Session insight (outline, teams) reloads this long after the session's file last changed. */
 const SESSION_INSIGHT_DEBOUNCE_MS = 1500;
@@ -63,7 +63,7 @@ export function SessionView(props: {
   /** The user's word for this member inside its group (`GroupMember.label`), when it has one:
       the pane head shows it in place of the title, and it is what the pane is called to AT. */
   label?: () => string | null;
-  /** The pane's whole name, pre-assembled by the workspace (§14 "A pane"): label, title or a
+  /** The pane's whole name, pre-assembled by the workspace: label, title or a
       repeat suffix (`claude-opus-5 #2`) — whatever tells this member apart — already joined with
       the model. Given, it overrides the label/title assembly, because the workspace is the only
       place that can see which members repeat: three `opus ×3` forks share a title, and this
@@ -84,7 +84,7 @@ export function SessionView(props: {
   onInsight(path: string, insight: PaneInsight | null): void;
   /** This chat's live subagents and its Σ; null list as the chat goes away. */
   onWorkers(path: string, workers: WorkerInfo[] | null, usage: UsageTotalView | null): void;
-  /** This chat's turn-error state (§14 "Member states"), keyed by path like onWorkers: the latest
+  /** This chat's turn-error state, keyed by path like onWorkers: the latest
    *  turn-error message, or null when there is none. State, not events — the workspace's roll-up
    *  pairs a word with colour without panning every pane, and without it a failed member reads
    *  exactly like a quiet one. */
@@ -126,17 +126,12 @@ export function SessionView(props: {
   // session gets a new view and a new decision.
   const [decision, setDecision] = createSignal<Decision>(initial());
 
+  /** "just now" / "2m ago": when the file last changed, live (the list refreshes, the clock ticks). */
+  const changedWhen = () => relativeTime(s().lastActiveAt, props.now);
   const openChat = (force: boolean) => setDecision({ path, mode: "chat", force, autofocus: true });
   const onRefused = (kind: ChatRefusal) => {
     props.onRefresh();
-    const age = Math.round((Date.now() - Date.parse(s().lastActiveAt)) / 1000);
-    setDecision({
-      path,
-      mode: "watch",
-      why: kind === "busy" ? "tui" : "recent",
-      ageSec: Number.isFinite(age) && age >= 0 ? age : undefined,
-      listVersion: props.listVersion,
-    });
+    setDecision({ path, mode: "watch", why: kind === "busy" ? "tui" : "recent", listVersion: props.listVersion });
   };
 
   // Remount the view (and its socket) when the mode or force flag changes.
@@ -226,7 +221,7 @@ export function SessionView(props: {
   };
 
   /**
-   * The pane name's `title` (§9): the full string, then the cwd, then the member's session-lifetime
+   * The pane name's `title`: the full string, then the cwd, then the member's session-lifetime
    * spend when the server reports one. "Which answer won" includes cost, and the spend already
    * lives in the member's Session-info dialog — this puts it one hover away from the comparison
    * itself instead of a dialog deep in each pane. The cwd is the raw path (no tilde folding): a
@@ -317,7 +312,7 @@ export function SessionView(props: {
   return (
     <PaneScopeProvider value={scope}>
       <Show when={props.paneId} fallback={<FullHead />}>
-        {/* One pane of a workspace (spec/14-workspaces.md "A pane"): a 40px head under the
+        {/* One pane of a workspace: a 40px head under the
             workspace's own, carrying only what tells this member apart — its name, its context
             fill, its state chip, and its tools. The pane's accessible name IS this name. */}
         <header class="workspace-pane-head">
@@ -325,7 +320,7 @@ export function SessionView(props: {
             {paneName()}
           </span>
           <ContextGauge path={path} />
-          {/* Mid-turn, said at workspace level (§14 "Member states"): split mode has N panes and
+          {/* Mid-turn, said at workspace level: split mode has N panes and
               no single place that says who is still working — the tab strip's dot covers tabs
               mode only. The pulse is the sanctioned one: work in flight. */}
           <Show when={s().busy || working() > 0}>
@@ -391,7 +386,9 @@ export function SessionView(props: {
                           <Banner
                             tone="warn"
                             title="Another pi process may be writing this session."
-                            body={`${w().ageSec !== undefined ? `It changed ${w().ageSec}s ago` : "It changed"} from a process we can't identify, and no TUI claims it, so we only read it. Chatting here would put 2 writers on one file.`}
+                            // The age is read live from the list row against App's clock: a number captured at
+                            // connect time froze while the 120s it counts toward ran out.
+                            body={`${changedWhen() ? `It changed ${changedWhen()}` : "It changed"} from a process we can't identify, and no TUI claims it, so we only read it. Chatting here would put 2 writers on one file.`}
                             action={
                               <button type="button" class="button button-sm" onClick={() => openChat(true)}>
                                 Chat Anyway
@@ -469,7 +466,7 @@ export function SessionView(props: {
                                 ...src,
                                 // Read LIVE from the summary, not snapshotted here: a mid-turn
                                 // block must clear itself when the turn ends — "It enables itself,
-                                // in place, with no re-open" (§14b) — and a string captured at
+                                // in place, with no re-open" — and a string captured at
                                 // open time can only repeat the turn's start forever. The states a
                                 // string COULD hold are the ones the list can see; the ones it
                                 // can't (an unidentified writer, a moved leaf) stay server

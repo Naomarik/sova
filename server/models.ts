@@ -87,7 +87,7 @@ export async function listModels(): Promise<ModelInfo[]> {
   const models = await runtime.getAvailable();
   const offerClaudeCode = claudeCodeProviderEnabled();
   return models
-    // The experimental switch decides what pi-web OFFERS. The claude-code extension registers its
+    // The experimental switch decides what Sova OFFERS. The claude-code extension registers its
     // provider into the ModelRuntime, which this server shares across every session, and an
     // extension instance only unregisters what it registered itself — so a session opened while
     // the switch was on leaves the provider in the shared runtime until the server restarts.

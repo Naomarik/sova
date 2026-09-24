@@ -185,14 +185,6 @@ test("a target session is remote, and nothing local is read for it", async () =>
   assert.equal(loaderCalls, 0);
 });
 
-test("a removed sshfs mount is refused in the shared sentence", async () => {
-  const setup = await S.getSessionSetup(sessionFile(join(T.legacyMountsRoot(), "box", "srv", "app")), {});
-  assert.equal(setup.state, "unavailable");
-  if (setup.state !== "unavailable") return;
-  assert.match(setup.reason, /sshfs mount of box/);
-  assert.match(setup.reason, /no longer creates/);
-});
-
 test("a relative stored cwd is never resolved against the server's own folder", async () => {
   const setup = await S.getSessionSetup(sessionFile("webapps/sova"), {});
   assert.equal(setup.state, "unavailable");
@@ -209,23 +201,11 @@ test("a session file with no readable header says so", async () => {
   assert.equal(setup.reason, "This session file has no header to read its folder from.");
 });
 
-test("a folder that is gone says which one, and is read at its moved location when one is mapped", async () => {
-  const dir = fresh({ "A.md": "a\n" });
+test("a folder that is gone says which one", async () => {
   const gone = await S.getSessionSetup(sessionFile(join(scratch, "never-existed")), {});
   assert.equal(gone.state, "unavailable");
   if (gone.state !== "unavailable") return;
   assert.match(gone.reason, /no longer exists/);
-
-  const moved = await S.getSessionSetup(sessionFile(join(scratch, "old-name")), {}, {
-    mapCwd: () => dir,
-    runtime: () => null,
-    loader: () => Promise.resolve(loadout({ context: [{ path: join(dir, "A.md") }] })),
-  });
-  assert.equal(moved.state, "ok");
-  if (moved.state !== "ok") return;
-  assert.equal(moved.cwd, dir);
-  assert.equal(moved.moved, true);
-  assert.deepEqual(moved.context, [{ path: join(dir, "A.md"), bytes: 2, lines: 1, tokens: 1 }]);
 });
 
 // ---------------------------------------------------------------------------

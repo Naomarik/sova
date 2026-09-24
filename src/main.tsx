@@ -11,7 +11,7 @@ import "./sw-register";
  * The escape hatch, and the only thing that reads a theme off the URL.
  *
  * A theme can be entirely legal and still leave nothing on screen to click: every color set to
- * `#000000` passes the grammar (§0 checks shape, not whether you can read the result), and it
+ * `#000000` passes the grammar (the ground rules check shape, not whether you can read the result), and it
  * paints the Themes picker in the same ink as its own background — so the one control that would
  * switch you back is the control the theme just erased. `?theme=default` always lands on the
  * built-in dark, whatever is cached, which makes an unreadable theme recoverable with a URL
@@ -32,10 +32,10 @@ function themeResetRequested(): boolean {
 }
 
 // Before first paint, synchronously: the cached theme goes on the document now, or a reload of a
-// themed window flashes the default first (spec/00-ground-rules.md §0). App.tsx reconciles the
+// themed window flashes the default first. App.tsx reconciles the
 // cache against /api/themes once it's up.
 // The escape hatch takes the font pick and the text size off too: one URL that lands on the
-// built-in dark in the built-in faces at the built-in size, whatever was cached (§12 "Typography").
+// built-in dark in the built-in faces at the built-in size, whatever was cached.
 if (themeResetRequested()) {
   clearTheme();
   clearTypography();

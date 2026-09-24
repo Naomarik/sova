@@ -1,10 +1,7 @@
 // sova service worker: offline app shell + runtime cache for static files.
 // Hand-rolled, no build step. Bump CACHE to drop every cached response on the next activate.
+// Only this app's own `sova-` caches are deleted; anything else on the origin is left alone.
 const CACHE = "sova-v1";
-
-// Cache names this app owned before the rename. Only these are deleted on activate;
-// caches belonging to anything else on the origin are left alone.
-const LEGACY_CACHE_PREFIXES = ["pi-web-"];
 
 // Live data is never cached: REST under /api, WebSockets under /ws*.
 const isPassthrough = (url) => url.pathname.startsWith("/api/") || url.pathname.startsWith("/ws");
@@ -35,7 +32,7 @@ self.addEventListener("activate", (event) => {
       const keys = await caches.keys();
       await Promise.all(
         keys
-          .filter((k) => k !== CACHE && (k.startsWith("sova-") || LEGACY_CACHE_PREFIXES.some((p) => k.startsWith(p))))
+          .filter((k) => k !== CACHE && k.startsWith("sova-"))
           .map((k) => caches.delete(k)),
       );
       await self.clients.claim();

@@ -104,7 +104,7 @@ test("registration happens once per process, and is never undone", () => {
 	state.registered.delete(CLAUDE_PROVIDER_ID);
 	startSession();
 	assert.equal(state.registered.size, 0, "a second session_start must not register again");
-	// pi-web shares one ModelRuntime: a later flag-off session must not
+	// Sova shares one ModelRuntime: a later flag-off session must not
 	// unregister a provider another session may be streaming through.
 	const second = fakePi(false);
 	registerProviderIfEnabled(second.pi, bridge);

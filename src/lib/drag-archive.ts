@@ -1,5 +1,5 @@
-// Dragging a sidebar row out of the sidebar archives it (spec/02-session-list.md §2 "Groups",
-// "Dragging"). What the drag may do is decided once, when it starts; where the pointer is decides
+// Dragging a sidebar row out of the sidebar archives it. What the drag may do is decided once, when
+// it starts; where the pointer is decides
 // whether that is showing. Pure, so it runs under `tsx --test`; Sidebar.tsx owns the listeners.
 
 import { isTopSession } from "./regions";

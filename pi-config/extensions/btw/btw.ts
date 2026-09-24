@@ -1401,8 +1401,8 @@ export function registerBtw(pi: ExtensionAPI, deps: BtwDeps = {}) {
   let lastUiContext: ExtensionContext | ExtensionCommandContext | null = null;
   let activeBtwSession: BtwSessionRuntime | null = null;
   /**
-   * Set once ui.custom() settles without ever building the overlay (pi-web, pi rpc mode).
-   * Never inferred from ctx.mode: pi-web binds with mode "rpc" yet has a real uiContext.
+   * Set once ui.custom() settles without ever building the overlay (Sova, pi rpc mode).
+   * Never inferred from ctx.mode: Sova binds with mode "rpc" yet has a real uiContext.
    * The TUI builds the overlay synchronously, so this can never flip there.
    */
   let headless = false;

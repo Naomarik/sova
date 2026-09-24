@@ -30,18 +30,14 @@
 // answering "directory" does not mean readdir will answer at all.
 //
 // Remote sessions have no local files to list. A cwd under the placeholder root (a session that
-// runs on a target) and a cwd under the removed sshfs mounts root are both refused with 501,
-// lexically, before any filesystem call — a dead mount must not be stat'ed at all. Only a cwd that
-// survived both refusals is run through path-map.json (server/path-map.ts): a renamed local root
-// is the same folder under a new name, while a placeholder is an identity that must never be
-// re-read as one.
+// runs on a target) is refused with 501, lexically, before any filesystem call: a placeholder is
+// an identity, never a local folder.
 
 import { spawn } from "node:child_process";
 import { readdir, stat } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
 import type { FileIndex } from "../shared/protocol";
-import { movedPath } from "./path-map";
-import { parseLegacyMountCwd, parseTargetCwd } from "./targets";
+import { parseTargetCwd } from "./targets";
 
 /** Most files one index holds; the rest sets `truncated`. */
 export const MAX_INDEX_FILES = 20_000;
@@ -90,7 +86,7 @@ export interface ExecResult {
 }
 
 /** Why a cwd has no local files to index. */
-export type RemoteCwd = { kind: "target"; target: string } | { kind: "legacy-mount"; target: string };
+export type RemoteCwd = { kind: "target"; target: string };
 
 /** Injectable seams; every one has the real default. Tests swap them, callers never pass them. */
 export interface FilesDeps {
@@ -383,18 +379,14 @@ async function compute(path: string, deps: FilesDeps, d: Deadline): Promise<Comp
     way to get the menu working: a NEW remote session is refused here exactly like this one, so
     "start a remote session instead" would be a promise this endpoint doesn't keep. */
 function remoteRefusal(remote: RemoteCwd): FilesResult {
-  return remote.kind === "target"
-    ? { ok: false, status: 501, error: `This session's files live on ${remote.target}. The @ menu lists local folders only` }
-    : { ok: false, status: 501, error: `This folder was an sshfs mount of ${remote.target} that Sova no longer creates. The @ menu lists local folders only` };
+  return { ok: false, status: 501, error: `This session's files live on ${remote.target}. The @ menu lists local folders only` };
 }
 
-/** The lexical remote reading of a resolved cwd: a target placeholder, a legacy mount, or null.
-    Exported for server/playbooks.ts, whose project scan refuses the same cwds on the same terms. */
+/** The lexical remote reading of a resolved cwd: a target placeholder, or null. Exported for
+    server/playbooks.ts, whose project scan refuses the same cwds on the same terms. */
 export const defaultRemoteOf = (p: string): RemoteCwd | null => {
   const target = parseTargetCwd(p);
-  if (target) return { kind: "target", target: target.target };
-  const legacy = parseLegacyMountCwd(p);
-  return legacy ? { kind: "legacy-mount", target: legacy.target } : null;
+  return target ? { kind: "target", target: target.target } : null;
 };
 
 /**
@@ -408,13 +400,8 @@ export async function listProjectFiles(rawCwd: string | undefined, deps: FilesDe
   if (rawCwd === undefined || rawCwd === "" || !isAbsolute(rawCwd)) return { ok: false, status: 400, error: "cwd must be an absolute path" };
   const resolved = resolve(rawCwd);
   const remote = (deps.remoteOf ?? defaultRemoteOf)(resolved);
-  if (remote) return remoteRefusal(remote); // lexical, before any fs call: a dead mount isn't stat'ed
-  // A session's stored cwd is its identity and is never rewritten, so a session recorded against a
-  // renamed repo root asks for the OLD path forever. Map it here, AFTER the remote refusal above —
-  // a placeholder cwd must be refused as remote, never re-read as a moved local folder — and the
-  // @ menu of a pre-rename session lists the moved folder instead of 404ing. The cache is keyed by
-  // the mapped path, so both spellings share one index: it is one folder under two names.
-  const path = movedPath(resolved);
+  if (remote) return remoteRefusal(remote); // lexical, before any fs call
+  const path = resolved;
   const hit = cache.get(path);
   if (hit && now() - hit.at < INDEX_TTL_MS) return { ok: true, index: hit.index };
   const existing = inflight.get(path);

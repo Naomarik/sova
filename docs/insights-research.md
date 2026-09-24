@@ -377,8 +377,8 @@ error (keep last data + error `Banner` with Retry). Exact copy comes from the de
 
 ## UX
 
-_Author: designer. Proposal for review; written against `spec/overview.md` §0–§9 and the
-fold-ai-dev skill v1.8.0. Nothing in `spec/overview.md` / `src/design/` changes until the gate._
+_Author: designer. Proposal for review; written against the design notes (`.sova/spec/claims/design/overview.md`) and the
+fold-ai-dev skill v1.8.0. Nothing in the design notes / `src/design/` changes until the gate._
 
 ### What the data lets us say honestly (drives the copy)
 
@@ -398,14 +398,14 @@ workers as reported too ("as of" = heartbeat time), never as working.
 ### Placement — decisions
 
 1. **Global Insights = a main-pane view at `#/insights`, entered from a pinned sidebar foot row.**
-   One line: the head is full at 320px (brand + Refresh + New Session = ~278 of 296px, §2), a
+   One line: the head is full at 320px (brand + Refresh + New Session = ~278 of 296px), a
    third sidebar region would scroll away under 48 rows and mix non-session data into the
    session list, and a toggled overlay over main hides the transcript it summarizes — a
    pinned `.sidebar-foot` is always visible, sits in the folded thumb arc, and needs no rail
-   (Sova has one destination, §7).
+   (Sova has one destination).
 2. **Per-session outline = a collapsible `details.outline` strip directly under
    `.session-head`**, above the live banner and transcript. Not a side panel (the ≥1120 band
-   stays unused, §7, and one markup must work at 475px) and not a popover (a popover is never
+   stays unused, and one markup must work at 475px) and not a popover (a popover is never
    the only path, and topics need scrolling room).
 3. **Compaction stays in the transcript where it happened**; its info row becomes a
    disclosure (summary on demand).
@@ -463,7 +463,7 @@ workers as reported too ("as of" = heartbeat time), never as working.
   - Context (third term): Claude only — "Resets in 2h 17m" under 24h, else "Resets Sep 25";
     absolute `11:50` / ISO in `title`. OpenAI/Ollama: no context line. Never estimate a reset.
   - Fill: **`--color-ink-muted`**, not accent (deviation: Sova's accent is reserved for
-    primary/live/focus, §0). ≥80% fill `--status-warn`; at 100% `--status-error`. Fill color
+    primary/live/focus). ≥80% fill `--status-warn`; at 100% `--status-error`. Fill color
     always pairs with the head chip word, never alone. Fill never animates.
 - **Card chip** (worst window decides; vocabulary per skill "Model availability"):
   | Condition | Chip |
@@ -636,8 +636,8 @@ label "Compacted", preview "· {tokensBefore} tokens summarized" (comma thousand
 
 ### Resolutions (designer, after green light)
 
-**Canonical spec is now `spec/10-insights.md` §10 (+ §9 "Insights" copy, class index, §7, §8).**
-Where this draft differs, §10 wins. Summary of what changed from the draft above:
+**Canonical spec is now `.sova/spec/claims/app/insights.md` (plus the copy deck's "Insights" section, the class index, the deviations and the token index).**
+Where this draft differs, the spec wins. Summary of what changed from the draft above:
 
 1. **Live worker status** — backend ships a live source (the sessions live records,
    `AgentsInsight`). Member chips pulse only when `member.worker` is present and its session is

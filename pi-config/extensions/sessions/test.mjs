@@ -17,7 +17,7 @@ const jiti = createJiti(import.meta.url, { interopDefault: false, alias: {
   '@earendil-works/pi-tui': require.resolve('@earendil-works/pi-tui'),
 } });
 const { default: extension } = await jiti.import(fileURLToPath(new URL('./index.ts', import.meta.url)));
-for (const file of ['state.test.ts', 'focus.test.ts', 'workers.test.ts', 'presence.test.ts', 'schema.test.ts', 'feed.test.ts', 'render.test.ts', 'ui.test.ts', 'cli.test.ts']) {
+for (const file of ['state.test.ts', 'focus.test.ts', 'workers.test.ts', 'presence.test.ts', 'schema.test.ts', 'feed.test.ts', 'render.test.ts', 'ui.test.ts', 'cli.test.ts', 'agent-dir.test.ts']) {
   await jiti.import(fileURLToPath(new URL(file, import.meta.url)));
 }
 const tick = () => new Promise(resolve => setTimeout(resolve, 180));

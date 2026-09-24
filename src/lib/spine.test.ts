@@ -34,7 +34,6 @@ Object.assign(globalThis, {
 const {
   applyStoredSpine,
   FALLBACK_SPINE_WIDTH,
-  LEGACY_SPINE_KEY,
   monogram,
   parseSpineWidth,
   readSpine,
@@ -68,24 +67,14 @@ test("only a stored \"1\" collapses: \"0\", absent and garbage all read as expan
   assert.equal(readSpine(storage), false);
 });
 
-test("the legacy key answers only when the new one is absent", () => {
-  reset();
-  store.set(LEGACY_SPINE_KEY, "1");
-  assert.equal(readSpine(storage), true);
-  store.set(SPINE_KEY, "0"); // a stored "0" is a real choice and wins
-  assert.equal(readSpine(storage), false);
-});
-
-test("setting the choice writes BOTH keys, and toggle flips it", () => {
+test("setting the choice writes the key, and toggle flips it", () => {
   reset();
   setSpine(true);
   assert.equal(spine(), true);
   assert.equal(store.get(SPINE_KEY), "1");
-  assert.equal(store.get(LEGACY_SPINE_KEY), "1");
   toggleSpine();
   assert.equal(spine(), false);
   assert.equal(store.get(SPINE_KEY), "0");
-  assert.equal(store.get(LEGACY_SPINE_KEY), "0");
 });
 
 test("the collapsed width is the token, or 64 when the token can't be read", () => {

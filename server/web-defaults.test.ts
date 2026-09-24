@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 
-const agentDir = mkdtempSync(join(tmpdir(), "pi-web-defaults-"));
+const agentDir = mkdtempSync(join(tmpdir(), "sova-defaults-"));
 process.env.PI_CODING_AGENT_DIR = agentDir; // before the module below computes its path
 const { loadDefaults, saveDefaults } = await import("./web-defaults");
 const file = join(agentDir, "sova", "defaults.json");

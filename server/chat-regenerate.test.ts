@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, test } from "node:test";
 
-const agentDir = mkdtempSync(join(tmpdir(), "pi-web-regen-test-"));
+const agentDir = mkdtempSync(join(tmpdir(), "sova-regen-test-"));
 process.env.PI_CODING_AGENT_DIR = agentDir; // before chat-manager computes its paths
 after(() => rmSync(agentDir, { recursive: true, force: true }));
 
@@ -159,7 +159,7 @@ describe("resolving what a regenerate replays", () => {
     // this claims. Replaying a nudge would put "[wake_nudge …] Scheduled wakeup fired (set 4m17s
     // ago)" back on the branch as the user's own message, with an elapsed time that is now false.
     const nudge = ["[wake_nudge n1] Scheduled wakeup fired (set 4m17s ago).", "Reason: check the build", "Look at CI and report."].join("\n");
-    assert.ok(parseWakeNudge(nudge), "the fixture really is a nudge by pi-web's own predicate");
+    assert.ok(parseWakeNudge(nudge), "the fixture really is a nudge by Sova's own predicate");
     const b = [user("u1", null, text("hello")), assistant("a1", "u1", "hi"), user("w1", "a1", text(nudge)), assistant("a2", "w1", "build is green")];
     const r = resolveRegenerate(b, "a2");
     assert.equal(r.ok, false);
@@ -171,13 +171,13 @@ describe("resolving what a regenerate replays", () => {
   });
 
   test("non-message entries between the reply and its input are stepped over", () => {
-    // model_change, thinking_level_change, usage rows and pi-web's own rewind marker all sit on
+    // model_change, thinking_level_change, usage rows and Sova's own rewind marker all sit on
     // the branch and none of them is the message that started the turn.
     const b = [
       user("u1", null, text("go")),
       { type: "model_change", id: "m1", parentId: "u1" },
       { type: "usage", id: "g1", parentId: "m1" },
-      { type: "custom", id: "c1", parentId: "g1", customType: "pi-web-rewind", data: {} },
+      { type: "custom", id: "c1", parentId: "g1", customType: "sova-rewind", data: {} },
       assistant("a1", "c1", "done"),
     ];
     const r = resolveRegenerate(b, "a1");

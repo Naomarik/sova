@@ -1,9 +1,9 @@
-# §design/token-index — 08 · Token index
+# §design/token-index — Token index
 > Part of the Sova design spec · [overview](overview.md)
 
 Every token `src/design/tokens.css` declares, except the `--brand-*` primitives. It used to list
 only the ones these notes cite; it is now complete, because a theme author reads it to find out
-what there is to set (§0), and an index that stops at what the prose happens to mention is one a
+what there is to set (§design/ground-rules), and an index that stops at what the prose happens to mention is one a
 reader can't tell from a stale one.
 
 - **Color:** `--color-bg`, `--color-surface`, `--color-sunken`, `--color-ink`, `--color-ink-2`,
@@ -14,9 +14,9 @@ reader can't tell from a stale one.
   `--status-success-bg`, `--status-warn-bg`, `--status-error-bg`, `--status-info-bg`
 - **Diff:** `--diff-add-bg`, `--diff-add-ink`, `--diff-del-bg`, `--diff-del-ink`, and
   `--diff-gutter`, which is **reserved**: it is declared, themable, and read by nothing. The diff
-  surfaces carry their edge with a `border-left` in `--diff-add-ink` / `--diff-del-ink` (§3), and
+  surfaces carry their edge with a `border-left` in `--diff-add-ink` / `--diff-del-ink` (§chat/transcript), and
   there is no gutter element for it to paint. A theme may set it and see no change
-- **Type:** the whole family, because a theme may set any of it (§0). Faces: `--font-body`,
+- **Type:** the whole family, because a theme may set any of it (§design/ground-rules). Faces: `--font-body`,
   `--font-display`, `--font-mono`. Weights: `--fw-regular`, `--fw-medium`, `--fw-semibold`,
   `--fw-display`. Size and line-height come in pairs, one per step — `--fs-display-xl` /
   `--lh-display-xl`, `--fs-display-l` / `--lh-display-l`, `--fs-heading-m` / `--lh-heading-m`,
@@ -34,17 +34,17 @@ reader can't tell from a stale one.
 - **Stroke and size:** `--stroke-thin`, `--stroke-icon`, `--tap-min`, `--row-height`,
   `--control-sm`, `--control-md`, `--control-lg`, `--sidebar-width`, `--spine-width` (64px, the
   sessions pane collapsed — written into `--sidebar-width` by the app, never read by a CSS rule
-  directly, §1 "The spine column"), `--composer-max`, `--tool-output-max`,
+  directly, §app.shell/spine-column), `--composer-max`, `--tool-output-max`,
   `--outline-max`, `--main-min`, `--subagents-width`, `--subagents-list-width`
 - **Elevation:** `--shadow-1`, `--shadow-2`, `--shadow-3`
 - **Focus and motion:** `--focus-ring`, `--focus-width`, `--focus-offset`, `--focus-color`,
   `--dur-fast`, `--dur-base`, `--dur-slow`, `--ease-standard`
 - **Layout:** `--measure` (72ch at folded width; from unfolded up
-  `clamp(72ch, 100vw − --sidebar-width − --space-9 − 2 × --space-8, 110ch)`, §3 "Column width"),
-  `--bp-desktop`, `--page-max` (1280px — the cap on the landing page's card grid, §3, where the measure is the
+  `clamp(72ch, 100vw − --sidebar-width − --space-9 − 2 × --space-8, 110ch)`, §chat/transcript "Column width"),
+  `--bp-desktop`, `--page-max` (1280px — the cap on the landing page's card grid, §chat/transcript, where the measure is the
   wrong cap), `--bp-unfolded`
 
-Workspace-local tokens declared in `src/app.css` (§14), rather than `tokens.css`:
+Workspace-local tokens declared in `src/app.css` (§workspace/groups), rather than `tokens.css`:
 - `--workspace-pane-min`: 440px, the transcript floor (the same reason as `--main-min`).
 - `--workspace-pane-width`: `clamp(440px, 34vw, 720px)`, the least a pane nobody has stepped stands
   at; it takes the row's share above that, up to 1040px (§workspace.groups "Layout: split").
@@ -56,7 +56,7 @@ layer.
 A theme's `colors` map may set the 30 keys in the Color, Status, Diff and Elevation entries above
 — 14 + 8 + 5 + 3, with `--scrim` and `--skeleton-sweep` among the Color ones — and its
 `typography` map may name any `--font-*`, `--fs-*`, `--lh-*`, `--fw-*` or `--ls-*` key listed
-here, whether these notes cite it elsewhere or not. §0 has the grammar each one accepts, and the
+here, whether these notes cite it elsewhere or not. §design/ground-rules has the grammar each one accepts, and the
 names in a theme file drop the `--color-`, `--status-` and `--diff-` prefixes.
 
 ---

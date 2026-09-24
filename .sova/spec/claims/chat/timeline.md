@@ -1,7 +1,7 @@
-# §chat/timeline — 13 · Timeline tab
+# §chat/timeline — Timeline tab
 > Part of the Sova design spec · [overview](../design/overview.md)
 
-The session pane (§11) has a **Timeline** tab: the whole session on one time axis. The outline's
+The session pane (§app/subagents-pane) has a **Timeline** tab: the whole session on one time axis. The outline's
 topics are chapter markers, each message you sent is a row, and what the agent did between two of
 your messages is a single line of counts under the row it belongs to — "3 replies · 14 tools ·
 6m". Notable moments (a compaction, a rewind, a subagent spawning or retiring, a model, thinking
@@ -20,7 +20,7 @@ people use it for: "take that back and let me say it better." One toggle, **Inpu
 narrows the axis to your own messages and the gaps between them, which is the view `/tree` and
 the composer's inputs row open.
 
-This tab absorbed the old Inputs tab (formerly §12): the same rows, the same rewind rules, the
+This tab absorbed the old Inputs tab: the same rows, the same rewind rules, the
 same notes, on the axis instead of in a second list of the same messages. Rewind is the pane's
 only verb, and it lives on exactly one kind of row: a message you sent, on the active branch.
 
@@ -28,13 +28,13 @@ only verb, and it lives on exactly one kind of row: a message you sent, on the a
 
 - **The tab strip**, like any tab. The pane keeps the tab per session path. Opens with the
   filter off.
-- **The outline strip's `Open Timeline`** (§10), a ghost button in `.outline-body` beside
+- **The outline strip's `Open Timeline`** (§app/insights), a ghost button in `.outline-body` beside
   `Open {n} Explanations`. The strip is where someone is already reading the session's chapters;
   the timeline is those chapters with everything else drawn in between them. Opens with the
   filter **off**.
 - **A bare `/timeline` in the composer.** It opens the pane on Timeline with the filter **off**,
   **opens and never toggles shut**, clears the draft, and announces "Timeline open." The runtime
-  doesn't register it, so it isn't in the command menu (§4d "Local commands").
+  doesn't register it, so it isn't in the command menu (§chat/slash-commands "Local commands").
 - **A bare `/tree` in the composer.** It opens the pane on Timeline with the filter **on** — your
   messages, each with its Rewind — opens and never toggles shut, clears the draft, and announces
   "Timeline open, your messages only." pi's own `/tree` is a TUI built-in; this is the web's
@@ -42,7 +42,7 @@ only verb, and it lives on exactly one kind of row: a message you sent, on the a
 - **The composer's inputs row**, below. It is the discoverable door: the tab strip only helps
   someone who already opened the pane, and `/tree` only helps someone who knows pi. It opens the
   Timeline with the filter **on**.
-- **The composer flyout's `Undo last turn`** (§9 Composer flyout), the last item after a
+- **The composer flyout's `Undo last turn`** (§design.copy-deck/composer-flyout), the last item after a
   separator, rewinds to just before the newest message **without opening the pane**. It is a
   different gesture — one step back, from where you are typing — and it stays.
 
@@ -52,12 +52,12 @@ messages and showed everything, or the reverse, would be lying about where it go
 
 ### The inputs row
 
-The composer's `.run-status` line (§3) carries a right-aligned `button.run-status-link` pushed
-over with `margin-left:auto`, beside the subagents trigger (§11):
+The composer's `.run-status` line (§chat/transcript) carries a right-aligned `button.run-status-link` pushed
+over with `margin-left:auto`, beside the subagents trigger (§app/subagents-pane):
 
 ```html
 <p class="run-status">
-  <!-- the subagents trigger (§11), when there is one -->
+  <!-- the subagents trigger (§app/subagents-pane), when there is one -->
   <button type="button" class="run-status-link" aria-expanded="false" aria-controls="session-pane"
           aria-label="7 inputs in this chat — show them on the Timeline">
     7 inputs
@@ -75,7 +75,7 @@ over with `margin-left:auto`, beside the subagents trigger (§11):
 - **The row renders whenever any of its three parts has something to say** — a running turn,
   workers, or inputs — so an idle session with messages still has one.
 
-Both triggers point `aria-controls` at the pane's one tab-neutral id, `session-pane` (§11). The
+Both triggers point `aria-controls` at the pane's one tab-neutral id, `session-pane` (§app/subagents-pane). The
 pane is in the DOM only while it's open, so that reference dangles while it's closed: intended,
 and the same thing the subagents trigger has always done.
 
@@ -192,7 +192,7 @@ under the input that caused them: `{n} replies · {n} tools · {duration}`, each
 zero, the whole row dropped when all three are.
 
 A row per assistant block would be a second transcript — and the transcript
-([03-transcript.md](transcript.md) §3) already renders every row, unwindowed, one scroll
+([§chat/transcript](transcript.md)) already renders every row, unwindowed, one scroll
 away. Two renderings of the same thing is how they drift. Counts are also what the question
 actually wants: "that one took fourteen tool calls" is a shape; the fourteen cards are detail,
 and the jump is right there when you want them.
@@ -202,7 +202,7 @@ and the jump is right there when you want them.
 A chapter's time is **the anchored message's**, not the summarizer's. The summary was written
 whenever the summarizer happened to run — often minutes or hours after the conversation it
 describes, sometimes in a batch with five others — so placing a topic at the summary's time puts
-it in the wrong part of its own session. The outline strip can afford that (§10: its
+it in the wrong part of its own session. The outline strip can afford that (§app/insights: its
 `.outline-topic-time` *is* the summary's own time, and it sits in a list that never claims to be
 an axis); an axis can't.
 
@@ -232,7 +232,7 @@ One row each:
 **The rewind marker names no turns.** It says a rewind happened and when, and stops. Naming what
 was abandoned would need the whole session file — the branch the timeline reads is, by
 definition, the one the abandoned turns are not on — and the marker is built from the invisible
-`pi-web-rewind` entry the server leaves on the new tip ("What the server does", below), which
+`sova-rewind` entry the server leaves on the new tip ("What the server does", below), which
 carries ids, not text. The axis already shows the abandoned turns for the one turn after a
 rewind, with the text ("After a rewind", below); the marker's job is to record that the branch
 moved.
@@ -245,7 +245,7 @@ order, they are what the session was about at each point, which neither the chap
 not goals) nor the strip (the latest only) can say.
 
 - **The newest snapshot gets no row.** It is the current goal, and the outline strip above the
-  chat (§10) already shows it; a row repeating it at the top of the axis would be the same
+  chat (§app/insights) already shows it; a row repeating it at the top of the axis would be the same
   sentence twice, one scroll apart.
 - The list is read off disk, so a live session's strip can be one broadcast newer than the
   newest snapshot here. Then the newest *on disk* is still left off, and the strip shows a newer
@@ -283,14 +283,14 @@ is inputs, density, markers and gaps — still a timeline, just without headings
 ### Empty
 
 "0 messages in this session yet." with "The timeline draws itself as you and the agent work."
-An empty state leads with a live fact and states the absence second (§0).
+An empty state leads with a live fact and states the absence second (§design/ground-rules).
 
 ## §chat.timeline/inputs-only — Inputs Only
 
 One toggle button in the tab's own head, right-aligned on the state line's row:
 `button.button.button-sm.button-ghost[aria-pressed]`, "Inputs Only". It is the filter's **only**
 control: one press on, one press off, `aria-pressed` saying which. Pressed, a `check` icon sits
-before the words, so the state has a shape and never rests on colour (§0).
+before the words, so the state has a shape and never rests on colour (§design/ground-rules).
 
 **On, the axis is your messages and the time between them.** Every `input` row renders, each
 with its own density line under it (replies · tools · duration) and its Rewind; the `gap` rows are
@@ -299,7 +299,7 @@ messages. Every other row goes: chapters, compactions, rewind markers, subagents
 finished, model/thinking/mode changes and past summaries. The rows a fresh rewind left behind
 (below) stay — they are your messages too, and the filter is what `/tree` opens.
 
-**A fired wake nudge is an `input` row too** (§3 "wake" — it's a real user message under the
+**A fired wake nudge is an `input` row too** (§chat/transcript "wake" — it's a real user message under the
 hood, just rendered as a card in the thread). Its title is its reason, or "Wake nudge n1" when
 the nudge carried none — never the tagged message's first line. It gets the same density line
 and Rewind as any other input; nothing else distinguishes it on this axis.
@@ -325,7 +325,7 @@ sits apart at the row's end in `.input-row-actions`, so the destructive half sta
 deliberate. Chapters, markers, density and gap rows never carry it: two places to destroy the same
 branch is one too many, and the thing you take back is always a message you sent.
 
-**The message's own strip asks for the same thing** (§03 "Message actions"): the Rewind under a
+**The message's own strip asks for the same thing** (§chat.transcript/message-actions): the Rewind under a
 message in the transcript sends the identical `rewind` request over the same socket, with the same
 two-step confirm and the same refusals — two places to ASK, one meaning, one request in flight at a
 time. That strip is also where a reply's **Regenerate** lives, which is the "after the previous
@@ -404,7 +404,7 @@ downstream can drift out of sync with what the composer shows, because nothing d
 a second copy of it.
 
 A refusal is **announced as well as shown**. The inline note is easy to miss for a screen-reader
-user who just heard "Rewound.", so the polite region (§3) gets the refusal's own words. **The
+user who just heard "Rewound.", so the polite region (§chat/transcript) gets the refusal's own words. **The
 chat owns the announcement** — every refusal, whether a row asked for it, the flyout did, or the
 chat turned it down without asking the server — and the row owns the note. One owner, because two
 code paths saying the same sentence is how the live region ends up reading it twice.
@@ -417,7 +417,7 @@ that isn't a user message on the active branch. Then it calls the SDK's
 `navigateTree(entryId, {summarize:false})`, which moves the tip to that message's parent. On its
 own that only moves an in-memory pointer, and pi reopens a file at its last line, so a reload or
 restart would quietly put the abandoned turns back. So the server appends one invisible `custom`
-entry, `customType: "pi-web-rewind"` (`data: {targetId, fromLeafId}`), on the new tip. It's
+entry, `customType: "sova-rewind"` (`data: {targetId, fromLeafId}`), on the new tip. It's
 extension state: never model context, no row in either transcript, no usage. Then every client
 of the chat gets a fresh `hello`, the workers snapshot and the chat's `mode`, and the requester
 gets `rewound` with the text. Refusals come back as `rewind_refused`, never as a thread error.
@@ -456,7 +456,7 @@ it." for a TUI-live session, "Only a chat open in Sova can rewind." otherwise. A
 vanished in watch mode would leave a reader who used it yesterday wondering where it went.
 
 While watching, the state line is the only thing that moves: it is re-read with the insight, on
-the same debounce as the outline strip (after a watch `append` or `agent_settled`, §10). New
+the same debounce as the outline strip (after a watch `append` or `agent_settled`, §app/insights). New
 rows arrive on the same refetch, at the top, where the reading already starts.
 
 ## §chat.timeline/no-virtualization — No virtualization
@@ -491,20 +491,20 @@ refetch or an armed Rewind never remounts the row under focus.
 - **A row that can't be jumped to isn't a button.** The rewind and past-summary markers are
   `span`s, so a screen reader reads them as the lines of text they are and they never appear in
   the tab order — a control that could only fail is worse announced than absent.
-- **Times are paired.** The visible clock is the 24-hour mono form (§3 timestamps); the `title`
+- **Times are paired.** The visible clock is the 24-hour mono form (§chat/transcript timestamps); the `title`
   on `.timeline-time` carries the absolute time *and* the relative one ("2026-09-19T14:06:11Z ·
-  2d ago"), so neither reading is lost. See §7 for why the clock leads here and the relative form
+  2d ago"), so neither reading is lost. See §design/deviations for why the clock leads here and the relative form
   follows, which inverts the ground rule for lists.
 - **A session that spans days** doesn't widen the clock column — a mixed-width column stops the
   digits lining up, which is the only reason the column is mono. The date lives in the `title`,
   and a day boundary is already visible as the gap row that crosses it ("idle 9h 12m").
 - **The flagged chapter says it in text**, not only in dimmed ink: "summary time" is in the row's
-  words, so the fallback survives being read aloud (§0: no color-only state).
+  words, so the fallback survives being read aloud (§design/ground-rules: no color-only state).
 - **The dots are `aria-hidden`.** They are the rail, and the rail is `data-kind`'s job in text.
 - **Focus** stays on the row's button through a jump in the column band. Below it, where the jump
   closes the pane, focus goes back to the control that opened the pane, the way closing it any
   other way does.
-- **No live region of its own.** The polite region belongs to the chat (§3), and a timeline
+- **No live region of its own.** The polite region belongs to the chat (§chat/transcript), and a timeline
   narrating its own refetches would talk over it. "Timeline open." and "Timeline open, your
   messages only." belong to the commands that ran in the composer, and are made there; the rewind
   outcomes are the chat's (above).
@@ -554,7 +554,7 @@ refetch or an armed Rewind never remounts the row under focus.
 | Row body | `button.timeline-body` (the whole hit area and the jump) · `span.timeline-body.timeline-body-static` (a marker with nothing to land on) `.timeline-title` (2-line clamp) `.timeline-chapter` (+ `.outline-hash`) `.timeline-meta` |
 | Input row | a third-column wrapper · `.input-row-line` · `button.timeline-body.input-row-body` · `.timeline-title.input-row-title` · `.input-row-actions` (Rewind; armed: `.button-destructive` Rewind Here + ghost Cancel) · `.input-row-note` (confirm, boundary, `.text-error` refusal) |
 | Between rows | `.timeline-gap` |
-| Borrowed | `.visually-hidden` (the jump prefix, the disabled reason, "Left behind by the rewind.") · `.usage-note.text-muted` (the foot) · `.empty.subagents-empty` (the empty states) · `.entry-jumped` (the landing tint, in the transcript) · `.outline-explained-open` (the strip's `Open Timeline` button, §10) · `.run-status-link` (the composer's inputs trigger) |
+| Borrowed | `.visually-hidden` (the jump prefix, the disabled reason, "Left behind by the rewind.") · `.usage-note.text-muted` (the foot) · `.empty.subagents-empty` (the empty states) · `.entry-jumped` (the landing tint, in the transcript) · `.outline-explained-open` (the strip's `Open Timeline` button, §app/insights) · `.run-status-link` (the composer's inputs trigger) |
 
 The input row borrows the old Inputs tab's `.input-row-*` classes rather than growing its own,
 so the boundary tint, the muted abandoned title and the note rhythm are the ones already

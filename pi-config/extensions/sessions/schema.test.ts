@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { clean, countWorkers, deriveState, fit, parseLiveRecord, parsePresence } from "./schema.ts";
+import { clean, countWorkers, deriveState, fit, isFinishedWorker, isRestoredWorker, parseLiveRecord, parsePresence, workerState } from "./schema.ts";
 import type { LiveRecord, SessionMeta, WorkerEntry } from "./schema.ts";
 
 const NOW = 1789804800000;
@@ -281,4 +281,38 @@ test("countWorkers tallies states, unknown status counts as working", () => {
     "Busy", "teleporting", "completed", "failed"].map(w)),
   { total: 11, working: 5, waiting: 1, done: 2, error: 2, killed: 1 });
   assert.deepEqual(countWorkers([]), { total: 0, working: 0, waiting: 0, done: 0, error: 0, killed: 0 });
+});
+
+test("restored workers count in total only, are neither working nor finished, and drop before live rows", () => {
+  const w = (id: string, status: string): WorkerEntry => ({ id, name: id, status });
+  assert.equal(workerState("restored"), "restored");
+  assert.equal(workerState(" Restored "), "restored");
+  assert.deepEqual(countWorkers([w("a", "restored"), w("b", "running"), w("c", "done")]),
+    { total: 3, working: 1, waiting: 0, done: 1, error: 0, killed: 0 });
+  assert.equal(isFinishedWorker(w("a", "restored")), false);
+  assert.equal(isRestoredWorker(w("a", "restored")), true);
+  assert.equal(isRestoredWorker(w("a", "waiting")), false);
+});
+
+test("restored-worker fields and usage Σ extras pass through validated; invalid ones are dropped", () => {
+  const good = parsePresence({ type: "presence", version: 1, status: "Idle", since: 1, completed: 0, preview: "",
+    workers: [{ id: "ag_01", name: "w", status: "restored", restored: true, usageSource: "snapshot", usageAsOf: 5, interruptedAt: 6, resumable: true }],
+    workerUsage: { input: 1, output: 2, cacheRead: 0, cacheWrite: 0, workers: 1, asOf: 5, restored: 1 } })!;
+  assert.deepEqual(good.workers[0], { id: "ag_01", name: "w", status: "restored", restored: true, usageSource: "snapshot", usageAsOf: 5, interruptedAt: 6, resumable: true });
+  assert.deepEqual(good.workerUsage, { input: 1, output: 2, cacheRead: 0, cacheWrite: 0, workers: 1, asOf: 5, restored: 1 });
+  const bad = parsePresence({ type: "presence", version: 1, status: "Idle", since: 1, completed: 0, preview: "",
+    workers: [{ id: "ag_01", name: "w", status: "restored", restored: "yes", usageSource: "guess", usageAsOf: "x", interruptedAt: NaN, resumable: 1 }],
+    workerUsage: { input: 1, output: 0, cacheRead: 0, cacheWrite: 0, workers: 1, asOf: "x", restored: -1 } })!;
+  assert.deepEqual(bad.workers[0], { id: "ag_01", name: "w", status: "restored" });
+  assert.deepEqual(bad.workerUsage, { input: 1, output: 0, cacheRead: 0, cacheWrite: 0, workers: 1 });
+});
+
+test("fit() drops restored rows before live ones", () => {
+  const w = (id: string, status: string): WorkerEntry => ({ id, name: id, status, preview: "x".repeat(150) });
+  const record = { v: 1, heartbeat: 1, session: { id: "p1-a", cwd: "/", model: "m", pid: 1, startedAt: 1, lastActivity: 1 },
+    presence: { type: "presence", version: 1, status: "Idle", since: 1, completed: 0, preview: "",
+      workers: [w("live", "running"), w("ghost", "restored"), w("idle", "waiting")] } } as unknown as LiveRecord;
+  const size = Buffer.byteLength(JSON.stringify(record));
+  const out = fit(record, size - 100);
+  assert.deepEqual(out.presence!.workers.map(x => x.id), ["live", "idle"]);
 });

@@ -28,7 +28,7 @@ import { assignSession, cleanGroupLabel, createGroup, deleteGroup, GROUP_LABEL_M
 import { promptGroup } from "./group-prompt";
 import { runFanout } from "./fanout";
 import { runFork } from "./fork";
-import type { FanoutRequest, ForkRequest } from "../shared/protocol";
+import type { FanoutRequest, ForkRequest, WorkerResumeResult } from "../shared/protocol";
 import { findTarget, isTargetName, listRemoteFolders, listTargets, normalizeRemotePath, targetDir, targetsFile, validateNewSessionCwd } from "./targets";
 import { isExplanationId, listExplanations, readExplanationPage } from "./explanations";
 import { switchMode } from "./mode";
@@ -42,6 +42,7 @@ import { readSummarizerSettings, writeSummarizerSettings } from "./topic-outline
 import { claudeCliStatus } from "./claude-status";
 import { modeInfo, parseModeRequest, readMode } from "./mode-state";
 import { parseSandboxBody } from "./sandbox-state";
+import { WORKER_ID_RE } from "./worker-resume";
 import { attachWebSockets } from "./ws";
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4800; // PORT=0: an ephemeral port (tests)
@@ -119,7 +120,7 @@ app.post("/api/sessions/connect", async (c) => {
   } catch {
     return c.json({ error: `connect-agent template missing: ${CONNECT_TEMPLATE}` }, 500);
   }
-  const dir = join(stateRoot(), "connect"); // renamed state root; pre-rebrand connect-session cwds open via chat-manager's rebase
+  const dir = join(stateRoot(), "connect");
   mkdirSync(dir, { recursive: true });
   const agents = template.replaceAll("{{TARGETS_FILE}}", targetsFile()).replaceAll("{{AGENT_DIR}}", getAgentDir());
   const tmp = join(dir, `AGENTS.md.${process.pid}.tmp`);
@@ -128,8 +129,8 @@ app.post("/api/sessions/connect", async (c) => {
   return createWebSession(c, dir);
 });
 
-// The sidebar's user-made groups (spec/02-session-list.md §2 "Groups"): Sova's own grouping of
-// sessions, stored in ~/.pi/agent/sova/session-groups.json (moved from the legacy pi-web/ root). Keyed by
+// The sidebar's user-made groups: Sova's own grouping of
+// sessions, stored in ~/.pi/agent/sova/session-groups.json. Keyed by
 // session id, like the archive,
 // and purely additive: a grouped session still shows in its region. Never writes a session file.
 app.get("/api/session-groups", (c) => c.json(readGroups()));
@@ -197,7 +198,7 @@ app.post("/api/session-groups/assign", async (c) => {
   return r.ok ? c.json({ ok: true, ...(r.dissolved ? { dissolved: true } : {}) }) : c.json({ error: r.error }, r.status);
 });
 
-// The group workspace's shared follow-up: one request, N sessions, all-or-nothing (spec §14).
+// The group workspace's shared follow-up: one request, N sessions, all-or-nothing.
 // The pre-check refuses the whole batch before a single member is prompted.
 app.post("/api/session-groups/:id/prompt", async (c) => {
   let body: { text?: unknown; members?: unknown };
@@ -214,7 +215,7 @@ app.post("/api/session-groups/:id/prompt", async (c) => {
   return r.status === 409 ? c.json({ refused: r.refused }, 409) : c.json({ error: r.error }, r.status);
 });
 
-// N sessions from one starting point, as one group (spec/14b-fanout.md). Fork mode branches every
+// N sessions from one starting point, as one group. Fork mode branches every
 // member from one entry of one source; fresh mode makes N independent sessions in a folder.
 app.post("/api/session-groups/fanout", async (c) => {
   let body: FanoutRequest;
@@ -292,8 +293,7 @@ app.post("/api/sessions/title", async (c) => {
 });
 
 // Permanently deletes transcript files from disk: sessions older than 7 or 30 days, empty
-// zero-input husks, or the named sessions of paths mode (spec/02-session-list.md §2 "Deleting one
-// session" — one archived row at a time). dryRun reports what would go (deletedIds) without
+// zero-input husks, or the named sessions of paths mode (one archived row at a time). dryRun reports what would go (deletedIds) without
 // deleting. Live, mid-turn and just-written sessions are always skipped and counted in the response;
 // paths mode also refuses anything without the archive mark, with the reason per path.
 app.post("/api/sessions/cleanup", async (c) => {
@@ -416,7 +416,7 @@ app.put("/api/models/favorite", async (c) => {
   return c.json(result.body, result.status);
 });
 
-// The model policy (spec/12-settings-dialog.md §12): GET reads it (empty = nothing disabled), PUT
+// The model policy: GET reads it (empty = nothing disabled), PUT
 // replaces the whole policy. It is a rule, not a filter — this server refuses a disabled model on
 // set_model and on the next message of a session already sitting on one, and the pi extensions
 // pick the same file up per model change, per turn and per spawn, TUI sessions included.
@@ -432,9 +432,9 @@ app.put("/api/settings/models", async (c) => {
   return "error" in result ? c.json({ error: result.error }, 400) : c.json(result);
 });
 
-// Every theme we can find (spec/12-settings-dialog.md §12): the 18 shipped ones plus whatever is in
+// Every theme we can find: the 18 shipped ones plus whatever is in
 // ~/.pi/agent/sova/themes/, rescanned per request. Read-only — the choice is the browser's, kept
-// in localStorage (§0), so there is nothing here to write. Never fails: a file we can't use comes
+// in localStorage, so there is nothing here to write. Never fails: a file we can't use comes
 // back as a row carrying its reason, and an unreadable folder as `error` beside the built-ins.
 app.get("/api/themes", (c) => c.json(listThemes()));
 
@@ -469,7 +469,7 @@ app.put("/api/settings", async (c) => {
   return c.json(result);
 });
 
-// Settings → Modes → Delegate (spec/12-settings-dialog.md "Modes"): which worker each kind of
+// Settings → Modes → Delegate: which worker each kind of
 // Delegate work goes to. The file is the mode extension's; every Delegate session re-reads it at
 // its next turn boundary, so a save here reaches open Delegate chats and TUI sessions alike.
 const delegateSources: DelegateSources = {
@@ -531,7 +531,7 @@ app.get("/api/settings/claude-status", async (c) => {
   return c.json(status.error === undefined ? { ...status, models: await claudeCodeModelCount() } : status);
 });
 
-// The mode is per session (spec/04g-mode-menu.md §4g). ~/.pi/agent/mode.json is the default new sessions
+// The mode is per session. ~/.pi/agent/mode.json is the default new sessions
 // start from; GET reads it, POST without ?path= writes it and changes no open chat. A switch never writes
 // it (chat-manager switchMode): the default moves when a caller asks for exactly that.
 app.get("/api/mode", (c) => c.json(modeInfo(readMode())));
@@ -582,6 +582,20 @@ app.post("/api/sandbox", async (c) => {
   const chat = heldChat(path);
   if (!chat) return c.json({ error: "That session isn't open on this server; open the chat first" }, 404);
   return c.json(await chat.applySandbox(parsed.on));
+});
+
+// Resume one restored subagent worker of a held chat, idle (server/worker-resume.ts): the subagents
+// extension's own `agent-resume` handler runs; its refusal comes back as the 409's reason.
+app.post("/api/workers/resume", async (c) => {
+  const path = resolveSessionPath(c.req.query("path"));
+  if (!path) return c.json({ error: "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)" }, 400);
+  const id = c.req.query("id") ?? "";
+  if (!WORKER_ID_RE.test(id)) return c.json({ error: "Invalid or missing ?id= (a worker id like ag_03)" }, 400);
+  const chat = heldChat(path);
+  if (!chat) return c.json({ error: "That session isn't open on this server; open the chat first" }, 404);
+  const outcome = await chat.resumeWorker(id);
+  if (!outcome.ok) return c.json({ error: outcome.error }, outcome.status);
+  return c.json({ worker: chat.workerInfo(id) } satisfies WorkerResumeResult);
 });
 
 app.get("/api/transcript", async (c) => {
@@ -728,9 +742,6 @@ async function shutdown() {
   // Hosted subagent workers (PI_WORKER_TRANSPORT=host) outlive this process: the
   // subagents extension's session_shutdown detaches them instead of killing them.
   // No-op for the default inline transport. See pi-config/extensions/subagents/hosting.ts.
-  // Both spellings, through the rename bridge: pi-config's subagents extension reads
-  // "sova:detach-workers" first and falls back to the legacy one — either side may move first.
-  (globalThis as Record<symbol, unknown>)[Symbol.for("pi-web:detach-workers")] = true;
   (globalThis as Record<symbol, unknown>)[Symbol.for("sova:detach-workers")] = true;
   await Promise.race([disposeAllChats(), new Promise((r) => setTimeout(r, 3000))]);
   process.exit(0);

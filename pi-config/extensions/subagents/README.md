@@ -27,6 +27,7 @@ the parent session so old references cannot target unrelated new workers.
 | `agent_steer`      | Send new instructions; wait for RPC acceptance, not task completion.           |
 | `agent_kill`       | Stop one worker, a run, or all workers; await process termination.             |
 | `agent_wait`       | Wait for selected tasks to settle; report failures and timeouts explicitly.    |
+| `agent_resume`     | Bring a restored worker back idle in its own backend session (see below).      |
 | `team_create`      | Create an explicit coordinated team with unique roles and advisory ownership.   |
 | `team_add`         | Add members to a live session team; history teams remain read-only.             |
 | `team_list`        | Inspect teams, actual member state, declared scope, and bounded actions.         |
@@ -256,8 +257,7 @@ no backend ever gets local tools against the placeholder:
   failed to load.
 
 The session is recognised from the remote extension's `remote:session` event on `pi.events`, else
-from the placeholder cwd (`<agentDir>/sova/targets/<name>/<far path>`; the pre-rebrand
-`pi-web/targets/...` spelling is still read, never written). See the remote
+from the placeholder cwd (`<agentDir>/sova/targets/<name>/<far path>`). See the remote
 extension's README ("Workers").
 
 ## Model policy
@@ -481,6 +481,41 @@ Every pi worker (plain, team member or remote, inline or hosted) also loads
 identity. The entry's name and shape are a contract with Sova, which reads it to
 keep worker sessions out of its session list (`server/worker-sessions.ts`,
 `SessionSummary.workerSession`). Claude Code workers do not load it.
+
+### Restored workers and `agent_resume`
+
+A worker's process never outlives its manager: a server restart, `/reload` or
+a session switch ends it. What survives is its **durable record**: small
+`subagents-worker-manifest` custom entries in the owner's session file
+(`registry.ts`, written for every worker of every backend and transport). They
+record publication (spec, team, the launch spec a resume needs), the backend
+session identity (`ref`), each task start (`running`), each settle (`waiting`,
+outcome and a usage snapshot), the ending, and each resume. The record type and
+its one fold, `readWorkerManifests`, are the backend-neutral worker transcript
+protocol in `worker-transcript.ts`, which Sova's server reads too; each backend's
+own transcript is read through an adapter (`adapters/`, pi and claude-code).
+
+At `session_start` every recorded worker that is not live comes back as a
+**restored** entry (`restored.ts`): no process, never counted as working or
+toward the live cap, and it is never continued or re-reported on its own. A
+worker that had ended keeps `done`/`error`/`killed`; one alive at the restart is
+`restored`, marked interrupted when it died mid-turn. Its usage is read from its
+own transcript, else the last snapshot (shown "as of" that time), else it is
+unavailable, never 0. Records of every branch count toward the lifetime usage
+total, once each; only the active branch's are listed (`agent_list`, `/agents`,
+the live record Sova reads).
+
+`agent_resume { id }` (and `/agent-resume ag_NN`, which Sova's Resume Worker
+button calls) starts it again **idle** in its own backend session: pi with
+`--session <its session file>`, Claude Code with `--resume <session id>` (never
+`--session-id`) and the same system prompt, MCP servers and permission mode.
+Nothing is sent to it and no completion is reported; `agent_steer` gives it its
+next task. The session's current sandbox and remote state apply, exactly as at
+spawn. A team member rejoins its team, which becomes live again, with a fresh
+mailbox (earlier inbox contents are gone). Its earlier usage stays in its total.
+Resume is refused for a live worker, an unknown ID, a backend that is not loaded,
+and a backend whose transcript adapter declares `resume: "none"`; a failed
+reopen leaves the restored entry as it was.
 
 RPC commands are correlated with acknowledgments and have deadlines. Output uses
 UTF-8-safe JSONL decoding. Failed tasks, broken pipes, rejected commands, and

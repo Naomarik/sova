@@ -1,4 +1,4 @@
-# §app/extension-dialogs — 06 · Extension dialogs (`ui_request`, optional in MVP)
+# §app/extension-dialogs — Extension dialogs (`ui_request`, optional in MVP)
 > Part of the Sova design spec · [overview](../design/overview.md)
 
 Use the same `.modal` shell, titled with the request's title.

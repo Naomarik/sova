@@ -1,4 +1,4 @@
-// The group composer's logic (spec/14-workspaces.md "The group composer", copy in §9): who a
+// The group composer's logic (copy in the copy deck): who a
 // shared follow-up can reach, what the foot says about the ones it can't, and how a refusal reads.
 //
 // All of it is pure, because all of it is claims about members: the count in the foot has to be
@@ -15,7 +15,7 @@ export type MemberBlock = Extract<BatchRefusalCode, "mid-turn" | "tui-live" | "a
 /** What the foot counts, in the order the foot lists them. */
 const BLOCK_ORDER: MemberBlock[] = ["mid-turn", "tui-live", "archived", "busy", "missing"];
 
-/** One count's words, singular and plural sharing a phrase (§9 "Group composer targets line"). */
+/** One count's words, singular and plural sharing a phrase. */
 const BLOCK_WORD: Record<MemberBlock, string> = {
   "mid-turn": "mid-turn",
   "tui-live": "open in a terminal",
@@ -62,7 +62,7 @@ export function targetsOf(members: readonly SessionSummary[]): Targets {
 }
 
 /**
- * The same picture with the group's file-gone members folded in (§14 "Member states"). A gone
+ * The same picture with the group's file-gone members folded in. A gone
  * member has no session row, so `targetsOf` cannot see it — but the server's pre-check counts the
  * ASSIGNMENT, and a send is refused on it. The foot's whole job is to be the count that comes
  * back, so the gone ride under `missing` (the wire's own code for them) and in the total, which
@@ -89,7 +89,7 @@ export function targetsLine(t: Targets): string {
   return `${t.available.length} of ${t.total} ${word}${reasons}`;
 }
 
-/** The sentence for one refused member (§9 "Refusal reason per member"), composed from `code`. */
+/** The sentence for one refused member, composed from `code`. */
 const REFUSAL_CLAUSE: Partial<Record<BatchRefusalCode, (name: string) => string>> = {
   "mid-turn": (n) => `${n} is mid-turn`,
   "tui-live": (n) => `${n} is open in a terminal`,
@@ -115,7 +115,7 @@ export function refusalSentence(refusal: BatchRefusal, name: string): string {
 }
 
 /**
- * The refusal banner's body (§9 "Refusal banner"). `rest` is how many members the batch could
+ * The refusal banner's body. `rest` is how many members the batch could
  * still go to — the explicit subset "Send to the Rest" would carry, never inferred server-side.
  */
 export function refusalBody(sentences: string[], total: number, rest: number): string {
@@ -125,8 +125,8 @@ export function refusalBody(sentences: string[], total: number, rest: number): s
 }
 
 /**
- * The partial-send banner's body (§9 "Partial send banner"): who missed the message and what the
- * members that got it are doing. One member keeps §9's sentence exactly; several must agree with
+ * The partial-send banner's body: who missed the message and what the
+ * members that got it are doing. One member keeps the copy deck's sentence exactly; several must agree with
  * their own subject ("were", "they"), because a plural that doesn't reads as a bug in the
  * counting rather than a grammar slip.
  */
@@ -142,12 +142,12 @@ export interface PartialRetry {
   /** The ONLY member this press re-sends to — the whole `members` array on the wire, never one of
    *      several picked by a shared button. */
   id: string;
-  /** `Send to {member}` (§9), naming exactly `id`'s member and nobody else. */
+  /** `Send to {member}`, naming exactly `id`'s member and nobody else. */
   label: string;
 }
 
 /**
- * The partial-send banner's retries (§9): one button per member that didn't get the message. A
+ * The partial-send banner's retries: one button per member that didn't get the message. A
  * single button labelled `Send to {first}` while the request carries every failed id promises one
  * member and prompts them all — the label and the subset have to agree per press, and per-member
  * buttons make them agree by construction, in the many-failed case as in the common one.

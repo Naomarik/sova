@@ -352,7 +352,7 @@ test("a spawned child records a running entry; once settled and validated, the f
 		assert.equal(JSON.parse(readFileSync(join(started.dir, "meta.json"), "utf8")).model, "zai/glm-5.4", "the model the child actually ran on is recorded");
 		assert.equal(rec.wakes.length, 1);
 		assert.ok(rec.wakes[0].includes(`${started.dir}/index.html`));
-		assert.ok(rec.wakes[0].includes("viewable in pi-web"));
+		assert.ok(rec.wakes[0].includes("viewable in Sova"));
 		assert.equal(rec.started[0].killed, true, "the child is stopped once its work is recorded");
 		assert.equal(runs.live, 0);
 	} finally {
@@ -403,7 +403,7 @@ test("a complete page whose run died afterwards gets note, not error: it still o
 		assert.match(data.note!, /worker aborted; killed mid follow-up/);
 		assert.equal(data.summary, "Retry with jitter.");
 		assert.ok(existsSync(join(started.dir, "index.html")));
-		assert.ok(rec.wakes[0].includes("viewable in pi-web") && rec.wakes[0].includes("did not finish cleanly"));
+		assert.ok(rec.wakes[0].includes("viewable in Sova") && rec.wakes[0].includes("did not finish cleanly"));
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}

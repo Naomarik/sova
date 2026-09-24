@@ -1,5 +1,5 @@
 {
-  "$schema": "pi-web-theme/v1",
+  "$schema": "sova-theme/v1",
   "name": "Catppuccin Macchiato",
   "extends": "dark",
   "vars": {

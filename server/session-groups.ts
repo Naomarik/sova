@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { stateRoot } from "./state-root";
 import { GROUP_LABEL_MAX, GROUP_NAME_MAX, type GroupMember, type GroupSeed, type SessionGroup } from "../shared/protocol";
 
-/** The user's sidebar groups, and which session belongs to which (spec/02-session-list.md §2 "Groups").
+/** The user's sidebar groups, and which session belongs to which.
     Sova's own data, beside the archive and web-session id lists: the session files are never touched. */
 const FILE = join(stateRoot(), "session-groups.json");
 
@@ -69,7 +69,7 @@ function readMember(raw: unknown): GroupMember | null {
 
 /**
  * Whatever this version doesn't know about, kept verbatim. The store is written by whichever
- * pi-web is running, and they need not be the same build: a rebuild-on-load that keeps only the
+ * Sova is running, and they need not be the same build: a rebuild-on-load that keeps only the
  * fields it recognises DELETES a newer (or older) server's data on the next unrelated write.
  * So every object we rebuild carries its strangers with it, and the fields we do know are
  * written last, over the top.
@@ -77,7 +77,7 @@ function readMember(raw: unknown): GroupMember | null {
  * The consequence, which is why this is worth keeping when someone is tempted to simplify it
  * away: a fanout group's `seed` written by a newer build would be erased by an older build
  * RENAMING the group, and with it that group's fork markers and Align to Fork — silently, with
- * nothing erroring, and nobody would trace the loss back to a rename (spec §14 "Data").
+ * nothing erroring, and nobody would trace the loss back to a rename.
  */
 function passThrough(raw: Record<string, unknown>, known: readonly string[]): Record<string, unknown> {
   const rest: Record<string, unknown> = {};
@@ -189,7 +189,7 @@ export type GroupResult = { ok: true; group: SessionGroup } | { ok: false; statu
 
 /**
  * POST /api/session-groups: a new, empty group at the end of the list. `seed` is written only by
- * pi-web's own fanout (fork mode) and carries lineage; `autoDissolve` is what decides whether the
+ * Sova's own fanout (fork mode) and carries lineage; `autoDissolve` is what decides whether the
  * group is removed once emptied, and the fanout sets it only when it also chose the NAME. A group
  * the user named survives being emptied whether or not it has lineage.
  */
@@ -260,9 +260,9 @@ export function updateGroup(id: string, patch: GroupPatch): GroupResult {
     if (!group) return { ok: false, status: 404, error: "Group not found" };
     if (name && name !== group.name) {
       group.name = name;
-      // A rename revokes the second half of "pi-web made it AND named it": pi-web made this one,
+      // A rename revokes the second half of "Sova made it AND named it": Sova made this one,
       // the USER named it, and renaming something is the clearest signal there is that they mean
-      // to keep it. Set by the event rather than remembered as a rule (spec §14 spares a group
+      // to keep it. Set by the event rather than remembered as a rule (the workspace spec spares a group
       // whose name is the user's work, however it came by that name).
       group.autoDissolve = false;
     }
@@ -331,16 +331,16 @@ export type AssignResult = { ok: true; dissolved?: true } | { ok: false; status:
 
 /**
  * Whether this group deletes itself when its last member leaves. `autoDissolve` is the ONE truth
- * of that, and it is set only when pi-web both created AND named the group (fanout without a
+ * of that, and it is set only when Sova both created AND named the group (fanout without a
  * groupId). It used to be inferred from `seed` — but seed is lineage, and a hand-made group can
  * now adopt one, so the inference would have deleted a group the USER named. Absent means the
- * record predates the flag, and only then does `seed` imply it: those are pi-web's own fanouts.
+ * record predates the flag, and only then does `seed` imply it: those are Sova's own fanouts.
  * That fallback cannot misfire on an ADOPTED group, which looks identical from disk — seed
  * present, flag absent — because `seed` was only ever written by a fanout that also CREATED the
  * group, and the adoption path arrived in the same commit as this flag. There is no window in
  * which an adopted group exists without an explicit flag.
  *
- * A RENAME clears it (updateGroup): pi-web may remove a group it both made and named, and the
+ * A RENAME clears it (updateGroup): Sova may remove a group it both made and named, and the
  * user renaming it falsifies the second half.
  */
 function dissolvesWhenEmpty(group: StoredGroup): boolean {
@@ -348,10 +348,10 @@ function dissolvesWhenEmpty(group: StoredGroup): boolean {
 }
 
 /**
- * Spec §14 "Emptying a group": a group pi-web fanned out exists to hold that fanout, so the write
+ * The workspace spec, "Emptying a group": a group Sova fanned out exists to hold that fanout, so the write
  * that removes its last member removes the group too — in the SAME atomic write, so the store is
  * never briefly a fanout group with nothing in it. A hand-made group is left standing: its name is
- * the user's work, and §2 already specs an empty one as a real state.
+ * the user's work, and the session list already specs an empty one as a real state.
  *
  * Deliberately only here, on the assign GESTURE — never on "the group happens to be empty now".
  * Nothing else empties a group behind the user's back: a member whose file is gone KEEPS its
@@ -360,7 +360,7 @@ function dissolvesWhenEmpty(group: StoredGroup): boolean {
  * emptiness rather than the gesture could still only ever fire under the user's own hands, and
  * would let a background event silently delete a group the user made — with nobody listening
  * to that call to even report it. An empty
- * fanout group is a real state instead, and the workspace offers Dissolve by hand (spec §14).
+ * fanout group is a real state instead, and the workspace offers Dissolve by hand.
  *
  * Returns whether it dissolved, so the caller can tell the client the group it was viewing is gone.
  */
@@ -383,7 +383,7 @@ function dissolveIfEmptied(store: Store, groupId: string | null): boolean {
  * taken out of every group drops the entry, label and all — there is nowhere to keep it.
  *
  * `index` lands the member at a position instead of the end, so Add Back (the undo for Promote)
- * restores label AND place in one write and cannot half-succeed (spec §14 "One write, not two").
+ * restores label AND place in one write and cannot half-succeed.
  * Past the end, or omitted, means the end.
  */
 export function assignSession(sessionId: string, groupId: string | null, label?: string | null, index?: number): AssignResult {

@@ -1,6 +1,6 @@
 # Astra · SOVA / TAVI
 
-Four independently drawn, provisional explorations for pi-web. No trademark, availability, or uniqueness claim; naming clearance is still required.
+Four independently drawn, provisional explorations for Sova. No trademark, availability, or uniqueness claim; naming clearance is still required.
 
 - `sova-vigil.svg` — cut-out eyes in a compact watchful silhouette.
 - `sova-duet.svg` — paired open chambers; a softer, relational alternative (also reads as a split heart).

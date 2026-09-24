@@ -1,6 +1,6 @@
 # Bundled fonts
 
-Every face pi-web can wear is shipped here, served same-origin from `/fonts/`, and declared in
+Every face Sova can wear is shipped here, served same-origin from `/fonts/`, and declared in
 `src/design/tokens.css`. Nothing is fetched from a CDN at runtime: a `@font-face` is only
 downloaded by the browser when a rule actually uses that family, so the faces a user never
 picks cost nothing on the wire. All files are the **latin subset**, like the two originals, and

@@ -7,7 +7,7 @@ import type { UploadResult } from "../../shared/protocol";
 import type { ContextState } from "./context";
 import { draftCounts } from "./draft-mark";
 import { createDraftSaver, type DraftPayload } from "./draft-save";
-import { dualGet, dualSet } from "./storage-keys";
+import { readKey, writeKey } from "./storage-keys";
 import { makeToast, placeToast, type Toast, type ToastOptions } from "./toast";
 
 export type { Toast, ToastOptions };
@@ -42,8 +42,7 @@ export const [home, setHome] = createSignal<string | null>(null);
 
 /**
  * True while a workspace's group composer is focused or holds text. A pane composer that is
- * neither focused nor holding its own draft collapses under it (spec/14-workspaces.md "Pane
- * composers while the group composer is in use"): the caret is somewhere else, and N full
+ * neither focused nor holding its own draft collapses under it: the caret is somewhere else, and N full
  * composers below one that is about to write to all of them is noise.
  *
  * App-wide rather than passed down, because the two ends are four components apart — the group
@@ -213,7 +212,7 @@ export interface LightboxState {
   opener: HTMLElement | null;
 }
 
-/** The one image viewer (spec/04b-images.md "Lightbox"); null when closed. */
+/** The one image viewer; null when closed. */
 export const [lightbox, setLightbox] = createSignal<LightboxState | null>(null);
 
 export const openLightbox = (images: LightboxState["images"], index: number, opener: HTMLElement | null) =>
@@ -223,17 +222,15 @@ export const openLightbox = (images: LightboxState["images"], index: number, ope
 // Per-session view preferences
 //
 // Persisted so a reload keeps them: the key convention follows the sessionStorage users
-// (Sidebar's ARCHIVE_KEY, the group-layout keys) — `sova:<name>-<path>`, with the pre-rebrand
-// `pi-web:` spelling read and mirrored through the rename bridge (storage-keys.ts). Storage access
+// (Sidebar's ARCHIVE_KEY, the group-layout keys) — `sova:<name>-<path>`. Storage access
 // is wrapped: a blocked or full localStorage must never break a render, and the in-memory map
 // below is the authority within a session either way.
 
 const PREF_PREFIX = "sova:";
-const LEGACY_PREF_PREFIX = "pi-web:";
 
 function readPref(name: string, path: string): string | null {
   try {
-    return dualGet(localStorage, `${PREF_PREFIX}${name}-${path}`, `${LEGACY_PREF_PREFIX}${name}-${path}`);
+    return readKey(localStorage, `${PREF_PREFIX}${name}-${path}`);
   } catch {
     return null;
   }
@@ -241,7 +238,7 @@ function readPref(name: string, path: string): string | null {
 
 function writePref(name: string, path: string, value: string): void {
   try {
-    dualSet(localStorage, `${PREF_PREFIX}${name}-${path}`, `${LEGACY_PREF_PREFIX}${name}-${path}`, value);
+    writeKey(localStorage, `${PREF_PREFIX}${name}-${path}`, value);
   } catch {
     // Persistence is a convenience; the choice still holds for this session.
   }
@@ -299,11 +296,10 @@ export function setActiveTab(path: string, id: string): void {
  */
 const SENDS_CAP = 50;
 const sendsKey = (path: string) => `${PREF_PREFIX}sends-${path}`;
-const legacySendsKey = (path: string) => `${LEGACY_PREF_PREFIX}sends-${path}`;
 
 const readSends = (path: string): string[] => {
   try {
-    const raw = dualGet(sessionStorage, sendsKey(path), legacySendsKey(path));
+    const raw = readKey(sessionStorage, sendsKey(path));
     const list: unknown = raw ? JSON.parse(raw) : [];
     return Array.isArray(list) ? list.filter((v): v is string => typeof v === "string") : [];
   } catch {
@@ -318,7 +314,7 @@ export function rememberSend(path: string, id: string): void {
   const list = readSends(path).filter((v) => v !== id);
   list.push(id);
   try {
-    dualSet(sessionStorage, sendsKey(path), legacySendsKey(path), JSON.stringify(list.slice(-SENDS_CAP)));
+    writeKey(sessionStorage, sendsKey(path), JSON.stringify(list.slice(-SENDS_CAP)));
   } catch {
     // Storage full or blocked: the in-flight restore is the only thing that degrades.
   }

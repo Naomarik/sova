@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { QueueGoneReason, QueueItem, QueueRemoveRefusal } from "../shared/protocol";
 
 /**
- * pi-web's OWN outgoing queue for one chat.
+ * Sova's OWN outgoing queue for one chat.
  *
  * WHY THERE IS ONE AT ALL. The SDK can queue messages (`steer`, `prompt` with a
  * `streamingBehavior`) but it cannot un-queue ONE of them: `AgentSession` exposes `clearQueue()`,
@@ -14,7 +14,7 @@ import type { QueueGoneReason, QueueItem, QueueRemoveRefusal } from "../shared/p
  *
  * THE ONE RULE THAT MAKES IT WORK: an item is handed to the SDK only when the SDK IS HOLDING
  * NOTHING AT ALL (`Agent.hasQueuedMessages()` false — ours or anyone's, either kind). So at most
- * one pi-web item is ever inside the SDK, every other item is a plain array element, and removing
+ * one Sova item is ever inside the SDK, every other item is a plain array element, and removing
  * a middle one, one of three identical texts, or an image-only one is a splice that cannot fail
  * and cannot reorder anything. Steering stays steering: the next item goes in the moment the
  * previous drains, which happens MID-TURN.
@@ -33,14 +33,14 @@ import type { QueueGoneReason, QueueItem, QueueRemoveRefusal } from "../shared/p
  *
  *   1. AN IMAGE-ONLY SEND NEVER LEAVES THE MIRROR. `messageText` is "" so the splice is skipped;
  *      the mirror keeps it for the session's life. A queue that waits for the mirror to empty
- *      waits for ever, and every later message is stranded. pi-web can queue exactly that today —
+ *      waits for ever, and every later message is stranded. Sova can queue exactly that today —
  *      the protocol allows images with no text.
  *   2. THE MIRROR SPLICES LATER THAN THE DRAIN. Between the loop taking a message and emitting
  *      `message_start` (prepareNextTurn, which can COMPACT) the mirror still lists it — so a
  *      removal in that window reports success for a message already on its way to the model.
  *
  * So presence is read from the REAL queue, through the ONLY public reader of it that exists in the
- * copy pi-web resolves: `Agent.hasQueuedMessages()` (`AgentSession.agent` is public,
+ * copy Sova resolves: `Agent.hasQueuedMessages()` (`AgentSession.agent` is public,
  * agent-session.d.ts:196). `Agent.peekQueuedMessages()` (a preview of the messages selected for the
  * next turn) would answer far more precisely. It was absent from the 0.86.1 this was designed
  * against and arrived with the 0.87.1 pin (pi-agent-core `agent.d.ts:100`); the bump adopted
@@ -97,7 +97,7 @@ export interface SdkQueueView {
    *
    * FALSE IS THE ONLY PROOF OF DELIVERY THERE IS, and it is the whole reason this interface
    * exists. It was also ALL the SDK gave us when this was built: `peekQueuedMessages()` was not in
-   * the 0.86.1 pi-web resolved then (it is in the 0.87.1 pinned now, unused; see the header), so
+   * the 0.86.1 Sova resolved then (it is in the 0.87.1 pinned now, unused; see the header), so
    * the real queue is asked whether it is empty and nothing more. Every rule below is built from
    * that one bit plus the mirror.
    */
@@ -381,7 +381,7 @@ export class WebQueue {
   }
 
   /**
-   * Stop: everything pi-web holds AND everything the SDK holds, in delivery order (the SDK's
+   * Stop: everything Sova holds AND everything the SDK holds, in delivery order (the SDK's
    * first — they were ahead), so the caller can hand the texts back to the composer exactly as
    * `queue_cleared` has always promised. The SDK's texts are the EXPANDED ones, ours are raw; that
    * difference is pre-existing (a drained steer has always come back expanded) and is why our own
@@ -437,7 +437,7 @@ export class WebQueue {
       //
       // Every caller does `void this.pump()`, so an escaping rejection is an UNHANDLED REJECTION,
       // and Node's default since v15 (`--unhandled-rejections=throw`) TERMINATES THE PROCESS. For
-      // pi-web that is the server: every chat session in it, and every hosted worker spawned by
+      // Sova that is the server: every chat session in it, and every hosted worker spawned by
       // one — the worker-suicide hazard CLAUDE.md documents for the dev-server restart, reached
       // here by a disk error instead. Measured, not reasoned: a synchronously throwing dep gave
       // "caught by the caller of enqueue(): NO / unhandled rejections observed: 1".

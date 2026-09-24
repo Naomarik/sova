@@ -1,4 +1,4 @@
-# §app/session-list — 02 · Session list (sidebar)
+# §app/session-list — Session list (sidebar)
 > Part of the Sova design spec · [overview](../design/overview.md)
 
 ## §app.session-list/anatomy — Anatomy
@@ -9,7 +9,7 @@
     <a class="brand" href="#/"><svg class="icon" aria-hidden="true">…sova-mark…</svg>sova</a>
     <span class="sidebar-spacer"></span>
     <button class="button" type="button"><svg class="icon" aria-hidden="true">…plus…</svg>New Session</button>
-    <!-- unfolded (≥768) only: collapses the pane into the spine (§2 "The spine") -->
+    <!-- unfolded (≥768) only: collapses the pane into the spine (§app.session-list/spine) -->
     <button class="button button-icon sidebar-spine-toggle" type="button" aria-expanded="true"
             aria-label="Collapse sessions pane" title="Collapse sessions pane · Ctrl/⌘+B">
       <svg class="icon" aria-hidden="true">…panel-collapse…</svg></button>
@@ -32,14 +32,14 @@
   </div>
 
   <nav class="sidebar-list pane" aria-label="Session list">
-    <!-- First region: Recent (§2 "Recent"). Second: the user's own groups (§2 "Groups").
+    <!-- First region: Recent (§app.session-list/recent). Second: the user's own groups (§app.session-list/groups).
          Both omitted here for length. -->
     <details class="session-group" aria-labelledby="g-1" open>
       <summary class="session-group-head">
-        <h3 class="list-group-label" id="g-1" title="/home/user/webapps/pi-web">
+        <h3 class="list-group-label" id="g-1" title="/home/user/webapps/sova">
           <svg class="icon icon-sm icon-twist" aria-hidden="true">…chevron-right…</svg>
           <svg class="icon icon-sm" aria-hidden="true">…folder…</svg>
-          <span class="session-group-path"><bdi>~/webapps/pi-web</bdi></span>
+          <span class="session-group-path"><bdi>~/webapps/sova</bdi></span>
           <!-- only while an agent works in the folder: Busy's dot, pulsing (Content rules) -->
           <span class="session-group-active" title="An agent is working in this folder">
             <span class="session-rail-dot"></span><span class="visually-hidden">, an agent is working here</span></span>
@@ -51,7 +51,7 @@
              worker count. Every row has one, even an empty one, so every title starts on the
              same edge:
 
-               [=] ~/webapps/pi-web                              4
+               [=] ~/webapps/sova                              4
               TUI   Add a watch endpoint for TUI sessions
               3 ⚙   Wiring /ws/watch to the session tailer       (7)
                     2h ago · claude-opus-5                        ◔
@@ -89,7 +89,7 @@
                   <span class="text-num">7</span></span>
               </div>
               <!-- line 3: time and model, then the context ring. A remote row opens the line with its
-                   own mark (§2 "Remote sessions"): one 6px muted dot before the time. Local rows
+                   own mark (§app/session-list "Remote sessions"): one 6px muted dot before the time. Local rows
                    open with the time, as here. -->
               <div class="list-line list-meta-row">
                 <p class="list-meta">2h ago · <span class="text-mono" title="anthropic/claude-opus-5">claude-opus-5</span></p>
@@ -112,7 +112,7 @@
 ```
 
 This is the **expanded** pane. From 768px up the pane has a second, collapsed form — the spine,
-§2 "The spine" — which replaces the head, the search, the list and the foot inside the same
+§app.session-list/spine — which replaces the head, the search, the list and the foot inside the same
 `aside`. The head's last item is the button that collapses it: an icon button to the **right** of
 New Session, a rounded square with a divider and a chevron pointing left (`panel-collapse.svg`).
 Below 768px the button is not rendered, because the pane there is the whole screen and has
@@ -123,7 +123,7 @@ nothing to collapse into.
 The sessions pane, collapsed. From 768px up the pane is either **expanded** (everything above) or
 the **spine**: a 64px (`--spine-width`) column of 44px targets, in the same
 `aside[aria-label="Sessions"]`. It is the same pane in a narrower form, not a navigation rail —
-Sova still has one destination (§1 "No rail and no bottom bar") — so it carries the pane's own
+Sova still has one destination (§app/shell "No rail and no bottom bar") — so it carries the pane's own
 things: New Session, search, the sessions that moved last, the region counts, the live tallies and
 the foot's doorways. The code, the CSS and this spec call it the spine; the UI never does. Every
 label a person reads says "sessions pane".
@@ -183,10 +183,8 @@ label a person reads says "sessions pane".
   the wide side pointing where the divider will go — left to collapse (`panel-collapse.svg`),
   right to expand (`panel-expand.svg`).
 - **Remembered, per browser.** The state persists in `localStorage["sova:sidebar-collapsed"]`,
-  mirrored to the legacy `pi-web:sidebar-collapsed`, `"1"` collapsed and `"0"` expanded, written
-  through `dualSet` like every other `sova:` key. Anything else reads as expanded. This is the
-  one thing about the pane's size that persists — the dragged width still doesn't (§1 "Resizing
-  the sessions pane") — because collapsing is a standing choice about the screen, not a posture
+  `"1"` collapsed and `"0"` expanded, written through `writeKey` like every other `sova:` key. Anything else reads as expanded. This is the
+  one thing about the pane's size that persists — the dragged width still doesn't (§app.shell/resizing-the-sessions-pane) — because collapsing is a standing choice about the screen, not a posture
   for one task, and a pane that springs back open on every reload undoes it.
 - **What a toggle says and where focus goes.** Every toggle, by button or by key, announces
   "Sessions pane collapsed." or "Sessions pane expanded." through the one polite live region
@@ -202,15 +200,14 @@ label a person reads says "sessions pane".
 - **One knob.** While collapsed the app writes `--spine-width` into the inline `--sidebar-width`
   on `<html>`, and `.app` carries `data-spine="on"` (absent when expanded). The grid, the Subagents
   pane's width and `--measure` all read `--sidebar-width`, so they follow with no rule of their
-  own, and `.pane-resizer` is not rendered while the stored choice is collapsed (§1 "The spine
-  column").
+  own, and `.pane-resizer` is not rendered while the stored choice is collapsed (§app.shell/spine-column).
 - **The head** — Expand, New Session, and Search sessions. New Session opens the New Session
   dialog, exactly as the head's button does. Search sessions expands the pane and moves focus to
   the search field: a search needs the list to show its hits in. Its `title` is "Search sessions ·
   /", the app's hint style (like "Collapse sessions pane · Ctrl/⌘+B"); its accessible name stays
   "Search sessions". The `/` key does the same thing: while collapsed it expands the pane and
   focuses the field, and expanded it just focuses the field (never from inside a text field).
-- **The tiles are Recent** (§2 "Recent"): the same sessions, in the same order, as many as the
+- **The tiles are Recent** (§app.session-list/recent): the same sessions, in the same order, as many as the
   Settings count says — flat, no folders. A tile is a link to its session, 44 × 44, with a
   two-letter **monogram** in `--font-mono`, computed by `monogram()` in `src/lib/spine.ts`: the
   first letters of the title's first two words, or the first two letters of a one-word title,
@@ -219,8 +216,7 @@ label a person reads says "sessions pane".
   place-marker, not a name — two sessions can share one — so the tile's `title` and `aria-label`
   are **one string**: "{title} · {folder} · {model}", the folder and model given the row's own
   treatment (`~`-shortened path, or the remote placement; a session with no model drops that
-  part), followed verbatim by the clauses the row link's accessible name carries (§2
-  "Accessibility") — ", open in a TUI", ", pi is replying in this session", ", {n} subagents
+  part), followed verbatim by the clauses the row link's accessible name carries (§app.session-list/accessibility) — ", open in a TUI", ", pi is replying in this session", ", {n} subagents
   working now", and the remote mark's suffix. The open session's tile carries
   `aria-current="page"` and the row's current tint.
   With no Recent sessions the `nav` is still rendered, empty, so the groups below it don't move.
@@ -250,7 +246,7 @@ label a person reads says "sessions pane".
   "{n} sessions open in a TUI" (the same count as the `N TUI` chip under the search), each only at
   n ≥ 1, with `.spine-stats` omitted when both are 0. They are **facts, not doorways**: nothing
   opens. Pointer users get the sentence as the `title`; a tap raises the same sentence as a toast,
-  the rail's precedent (§2 "Accessibility" — there is no hover on touch).
+  the rail's precedent (§app.session-list/accessibility — there is no hover on touch).
 - **The foot** — Usage (`#/usage`), Agents (`#/agents`) and Settings, the expanded foot's three
   doorways. The glance sentences are not dropped at 64px, only unprinted: Usage's `title` and
   `aria-label` are the usage glance in full words (`glanceText()`), and Agents' are the agents
@@ -288,9 +284,9 @@ label a person reads says "sessions pane".
     list's `busy`), a TUI session whose status is `Running…`, or a row with subagents working —
     shows one pulsing Busy dot on its head, before the count (`folderActive`), so a collapsed
     folder still says something is running inside it. Its name gains ", an agent is working here".
-  - The user's choice per folder lives in `sessionStorage["sova:folder-open-{idPrefix}-{cwd}"]`,
-    mirrored to the legacy `pi-web:folder-open-{idPrefix}-{cwd}` (`"1"`/`"0"`, `folderOpenKey` in
-    `src/lib/folder-open.ts`, written through `dualSet`) for the browser session. The region
+  - The user's choice per folder lives in `sessionStorage["sova:folder-open-{idPrefix}-{cwd}"]`
+    (`"1"`/`"0"`, `folderOpenKey` in `src/lib/folder-open.ts`, written through `writeKey`) for the
+    browser session. The region
     prefix is part of the key, so the same folder under Live & web and inside a group are two
     separate choices — they are two sections, and one holds rows the other doesn't.
   - It opens **without** changing the stored choice while a search query is non-empty (every hit
@@ -328,12 +324,12 @@ label a person reads says "sessions pane".
   **Connection dot.** While a chat on that target is open in this tab, a 6px `.chip-dot` sits
   right after the target's label, before the `·`: success tone for `connected`, error tone for
   `unreachable`, the label's own muted ink for `last ok`, `checking…` and `no status` — the same
-  reading as the head chip (spec/01 "Remote session chips"), from the freshest report among
+  reading as the head chip (§app.shell/remote-session-chips), from the freshest report among
   this tab's open chats on that target. It is `role="img"` with `aria-label="connection: <word>"`
   and a `title` starting `Connection: <word>` then the chip's hover text. It can't be taken for
   the live-session dot: it lives in the group label, not a row's rail, it is smaller, and it never
   pulses. With no chat open on the target there's no dot, since nothing is reporting. The
-  always-on remote chip (spec/01 "Remote session chips") lives in the session head and Session
+  always-on remote chip (§app.shell/remote-session-chips) lives in the session head and Session
   detail, not here: a uniform group's label and every remote row's own mark already say what and
   where, so the connection dot stays the sidebar's one mark that needs a live report.
 
@@ -349,7 +345,7 @@ label a person reads says "sessions pane".
 - **Row line 1.** `SessionSummary.title`, truncated to one line; the full title goes in `title=`.
   `Untitled` renders in `--color-ink-muted`.
 - **Draft rows.** An empty husk — a session whose file holds no user message anywhere — is never
-  listed, with one exception: **a husk with a stored draft is** (§4 Drafts). The server sends it
+  listed, with one exception: **a husk with a stored draft is** (§chat.composer/behavior, Drafts). The server sends it
   with `SessionSummary.draftPreview`, the draft's first non-empty line cut to about 80 characters.
   A draft holding only images counts too, and its preview is the count: `1 image`, `2 images`.
   The row keeps its `Untitled` title in `--color-ink-muted`. Line 2 leads with the `pencil` icon,
@@ -405,11 +401,11 @@ label a person reads says "sessions pane".
   opens the line with its remote mark ("Remote sessions" above); the time follows the line's own
   gap.
 
-  The line ends with the **context ring** (§4f): a 12px ring whose arc is the share of the window
+  The line ends with the **context ring** (§chat/context-window): a 12px ring whose arc is the share of the window
   the last reply left filled, `.context-warn` at ≥80% and `.context-error` at ≥95% — the same
   `contextStep` the head's gauge uses, so a row and the session it opens step together. Its
   `title` is the head's exact sentence. It is the one place in the product where the context fill
-  is a shape instead of a number, and §4f writes that exception down.
+  is a shape instead of a number, and §chat/context-window writes that exception down.
 - **Lines 2 and 3 are `.list-line`.** Each is a flex wrapper: the text block flexes and truncates,
   the indicator is `flex: none`. That puts the chip and the ring on **one right edge** down the
   whole list, which is the entire point — a ring that slid left and right with the text beside it
@@ -452,8 +448,8 @@ label a person reads says "sessions pane".
   than clipping the word. `aria-label` "Open in a TUI. Pid {pid}, status {status}.", `title`
   "Open in a TUI · pid {pid} · {status}".
 
-  - **Static. No `.chip-live`**, here and in the session head's `TUI` chip alike (§0 Motion,
-    §3). This inverts the precedent this file used to state — *"the pulse
+  - **Static. No `.chip-live`**, here and in the session head's `TUI` chip alike (§design.ground-rules/motion,
+    §chat/transcript). This inverts the precedent this file used to state — *"the pulse
     belongs to Live alone"*. A TUI holding the file open is **ownership**, not work in flight,
     and a row that pulses all day while nothing moves teaches people that the pulse means
     nothing. The pulse now means exactly "work in flight", which is Busy.
@@ -543,7 +539,7 @@ label a person reads says "sessions pane".
   bounded by a number smaller than the row it sits in, and the alternative — squeezing the state
   or dropping the count — spends a readable state to save height we are not spending.
 - **Other placements.** None for v1. The open session already shows its own run state (the
-  `.run-status` line and the author's `.live-dot`, §3), so the session head doesn't repeat Busy.
+  `.run-status` line and the author's `.live-dot`, §chat/transcript), so the session head doesn't repeat Busy.
   It doesn't count toward the "N TUI" chip either.
 - **Live count.** `N TUI` as `.chip.chip-accent.chip-count`, shown only when N ≥ 1. It sits at
   the right end of the count row under search (`.spread`), not in the head: at 320px the head
@@ -566,7 +562,7 @@ five minutes ago is three collapsed sections down — and it is the single most 
 for.
 
 Recent is a **shortcut, not a place a session lives.** Every row in it is still in Live & web or
-the Archive underneath, exactly as a grouped session keeps its row in its region (§2 "Groups"):
+the Archive underneath, exactly as a grouped session keeps its row in its region (§app.session-list/groups):
 nothing is moved, nothing is hidden, and closing the gap between two copies of one row is not
 something the user has to think about. It follows from that that Recent has **no actions of its
 own** — no drag target, no remove, no count control. Every gesture a row has, it has where it
@@ -604,8 +600,8 @@ of the sidebar has one order and does not shuffle between polls.
 regions below, so it can never show a row the query has ruled out, and the region disappears when
 nothing matches. The rule lives in `src/lib/recent.ts`; the sidebar passes its hits in.
 - **How many rows** is a preference — 5 by default, 3 at the fewest, 20 at the most — set in
-**Settings › General and nowhere else** (spec/12-settings-dialog.md "General"). It persists in
-`localStorage["pi-web:recent-count"]`, so it is this browser's, like the theme. A stored value that
+**Settings › General and nowhere else** (§app.settings-dialog/general). It persists in
+`localStorage["sova:recent-count"]`, so it is this browser's, like the theme. A stored value that
 is not a whole number in range is the default; a number out of range is clamped.
 - **Empty.** The region is omitted entirely — with 0 sessions the sidebar's own empty state is
 already saying it, and "0 recent" above "0 sessions" says it twice.
@@ -635,7 +631,7 @@ appear in a group and below it at once. A session belongs to **at most one** gro
       <!-- The region's one action, at the head's right end: there with the region shut, and
            hidden while searching. Click and keydown stop here, as a group's `⋯` does, or they
            would toggle the region. Fanout is NOT here — it creates sessions rather than curating
-           them, and its front door is the welcome screen beside New Session (§14b "Entry points"). -->
+           them, and its front door is the welcome screen beside New Session (§workspace.fanout/entry-points). -->
       <button type="button" class="button button-icon button-ghost group-new-toggle"
               aria-label="New group" title="New group">
         <svg class="icon icon-sm" aria-hidden="true">…plus…</svg>
@@ -721,7 +717,7 @@ exist, and Live & web — the sessions they came for — stays in view. The twis
 row, keyboard-reachable like the Archive's.
 - **The choice is never persisted.** Not `sessionStorage`, not `localStorage`, not the server:
 opening the region lasts as long as the page does and no longer, so a reload always starts closed.
-This is the deliberate exception to the Archive's rule (§2 "Regions"), and there is no storage key
+This is the deliberate exception to the Archive's rule (§app/session-list "Regions"), and there is no storage key
 to read — `src/lib/group-open.ts` is the whole rule, inputs only.
 - **Forced open** — without changing the choice, exactly as the Archive is — while a search is on
 (a matching group must not hide its hits), while a grouped row is being dragged (the group
@@ -734,7 +730,7 @@ default on the same terms: memory only, no storage key, reopened by hand each pa
 - **Empty.** An empty group stays visible with `0` and "No sessions yet. Drag one here.": it is
 what a group is when the user makes it, and a drop target is what fills it. While a search is on,
 a group with no matching session is left out entirely. A **fanout** group never reaches this
-state: it dissolves itself on the write that empties it (§14 "Emptying a group").
+state: it dissolves itself on the write that empties it (§workspace/groups "Emptying a group").
 - **Creating.** The region's one action is a `+` at the right end of its head
 (`.button-icon.button-ghost`, `aria-label` and `title` "New group"), not a row: a row read as one
 of the things it makes and sat inside the list it adds to. On the head it is there with the region
@@ -756,7 +752,7 @@ every group three buttons' worth of height whether or not anyone wanted them. Th
 `.button-icon.button-ghost`, ALWAYS drawn — a hover-revealed one is invisible to a touch user and
 a guess to everyone else — in the count's muted ink, coming up to full ink on hover, on
 focus-within and while its menu is open. Its 44px target is the standard one; only the glyph is a
-step smaller (16px), and the box hangs into the sidebar's right gutter so the dots sit on the edge. It opens the same `popover="auto"` menu §4g and §14 use: `Open workspace`, `Rename…`,
+step smaller (16px), and the box hangs into the sidebar's right gutter so the dots sit on the edge. It opens the same `popover="auto"` menu §chat/mode-menu and §workspace/groups use: `Open workspace`, `Rename…`,
 `Delete group…`. **A control inside a `<summary>` costs two things.** The trigger stops its own
 click and keydown, so a press on it is not also a press on the summary. And the menu's panel is
 rendered OUT of the summary's subtree (a portal to `<body>`): a popover paints in the top layer
@@ -767,7 +763,7 @@ Dropping a dragged row on the summary still files it into the group, and still d
 section.
 - **Opening it as a workspace.** `Open workspace` is the menu's first row, a link to `#/g/{id}` —
 the group's members side by side, each a whole chat, with one composer that writes to all of them
-(§14). An empty group can't be opened as one: the row is `aria-disabled` with its reason under the
+(§workspace/groups). An empty group can't be opened as one: the row is `aria-disabled` with its reason under the
 label ("Nothing is in it yet. Drag a session here first."), said before the press rather than
 discovered as a blank workspace. The
 section is still the place you file sessions into; the workspace is the place you read them in.
@@ -775,9 +771,9 @@ While that workspace is open, the group's `<summary>` takes `aria-current="true"
 takes the selected row's tint, so the sidebar says which group you are inside.
 - **Fanning out is not entered from here.** The Groups region's one action is making an empty
 group to curate; a fanout — which makes the group AND its members in one gesture — is a
-creation action and lives beside `New Session` on the welcome screen (§14b "Entry points").
+creation action and lives beside `New Session` on the welcome screen (§workspace.fanout/entry-points).
 A group made that way is an ordinary group here all the same: it holds ordinary sessions, and
-the only difference is that it dissolves itself when its last member leaves (§14 "Emptying a
+the only difference is that it dissolves itself when its last member leaves (§workspace/groups "Emptying a
 group"), because its name and its fork point mean nothing without them.
 - **Renaming.** `Rename…` swaps the menu's rows for the same field, pre-filled, without closing
 the menu — one question at a time, and nothing in the list below moves while it is answered. The
@@ -796,7 +792,7 @@ dropping it on another group moves it; a drop on the group it is already in does
 to drop it out. The source row dims for the length of the drag. A drop says what happened through
 `.toast` and the polite region: "Added to “Work”." · "Moved to “Home”." · "Removed from “Home”."
 - **Without a pointer**, and on touch, drag is not available: the session pane's `Move into group`
-control (§3, the Session tab and the info modal) is the same change, as a popover radio list
+control (§chat/transcript, the Session tab and the info modal) is the same change, as a popover radio list
 (`role="menuitemradio"`, one row per group plus `No group`) with `New group…` at the end, which
 creates the group and moves the session in one step. The Identity list shows the current group.
 - **Search.** Groups are filtered by the same query as everything else, over the whole list rather
@@ -863,7 +859,7 @@ the count, `Cancel`, and the actions.
   clears** the user's title so the derived one (the session's first message) comes back. Changing
   the selection closes the field rather than leaving a stale one over another row's title.
 - **Move to group** files every selected session at once, with `No group` first and `New group…`
-  last — the one-session menu's own rows (§2 "Groups"), in a menu that says how many it will move.
+  last — the one-session menu's own rows (§app.session-list/groups), in a menu that says how many it will move.
 - **Archive** points one way for the whole selection. All archived → `Unarchive`. None archived →
   `Archive`. **A mix is a disabled control** that says what it found ("2 of these 3 are archived
   and the rest aren't. Select one kind, or the other."): guessing which half was meant is how a
@@ -929,7 +925,7 @@ Ties break on `id`, and folder ties on `cwd` — uuidv7 ids and folder names are
 sessions sharing a millisecond still have one order, and it is the same order on the next poll.
 - **The Archive and its date sections** order by **`lastActiveAt`, newest first** — unchanged. The
 Archive is a place you look back from, and the last thing that happened is the handle you reach
-for. **Recent** reads the same field for the same reason (§2 "Recent").
+for. **Recent** reads the same field for the same reason (§app.session-list/recent).
 - **A user's group** orders by `lastActiveAt` too, inside the folder sections it draws.
 
 Both rules live in `src/lib/session-order.ts` (`groupByCreation`, `groupByActivity`); the sidebar
@@ -946,7 +942,7 @@ picks one per region and the folder markup is shared.
     </h2>
     <details class="session-group" aria-labelledby="g-1" open>
       <summary class="session-group-head">
-        <h3 class="list-group-label" id="g-1" title="/home/user/webapps/pi-web">…same as above…</h3>
+        <h3 class="list-group-label" id="g-1" title="/home/user/webapps/sova">…same as above…</h3>
       </summary>
       <ul class="list">…session rows…</ul>
     </details>
@@ -987,7 +983,7 @@ forced open (case 1 below).
 
 - It's a native `<details>`, **collapsed by default**. The whole 44px summary row toggles it,
   and the chevron rotates 90° when open.
-- Remember the user's choice in `sessionStorage["pi-web:archive-open"]` (`"1"`/`"0"`), read on
+- Remember the user's choice in `sessionStorage["sova:archive-open"]` (`"1"`/`"0"`), read on
   load and written on `toggle`. It lasts for the browser session, not across restarts.
 - It opens automatically, **without** changing the stored choice, when:
   1. the top region is empty (otherwise the sidebar would show nothing but a closed strip);
@@ -1006,10 +1002,10 @@ example when its TUI closes and `live` becomes null. If it's the selected row, i
 **Archiving.** Sessions started from Sova (`origin === "web"`) can be archived by hand, so
 the top region doesn't keep every one of them forever.
 
-- **Where.** An Archive Session icon button (`archive.svg`) last in the session head (§3), only
+- **Where.** An Archive Session icon button (`archive.svg`) last in the session head (§chat/transcript), only
   on web sessions. Rows are links, so it can't live in them: a button inside `<a>` is invalid and
   splits the row's single target. It's the only archive control in the app, so it stays at every
-  head width (§3, §4f "Width budget").
+  head width (§chat/transcript, §chat/context-window "Width budget").
 - **What it does.** `POST /api/sessions/archive { path, archived }`, then a list refresh. The id
   goes into `~/.pi/agent/sova/archived-sessions.json`; the session file is never written.
   Toast: "Archived. Find it under Archive." The row moves to the Archive, and case 2 keeps it
@@ -1081,7 +1077,7 @@ usual folder groups inside each section. Sections, newest first, keyed on `lastA
   collapse on the same rule as everywhere else, and are collapsed by default too (see Folder
   open/closed state), so opening a date section shows its folders, each one line.
 - **Open/closed state** follows the Archive's rule: the user's choice per section lives in
-  `sessionStorage["pi-web:archive-date-open-{id}"]` (`id` is `today`, `yesterday`, `week`,
+  `sessionStorage["sova:archive-date-open-{id}"]` (`id` is `today`, `yesterday`, `week`,
   `month`, `older`; `"1"`/`"0"`), read on load and written on `toggle`. A section opens
   **without** changing its stored choice while a search query is non-empty (so every hit is
   visible) or while it holds the selected session.
@@ -1180,7 +1176,7 @@ after).
   the archive route's `path` (`resolveSessionPath`), so a path outside the sessions dir is a 400
   before anything runs. The UI always sends exactly one.
 - **Guard.** Only sessions carrying the archive mark are deletable this way; that's the order of
-  operations (§2 "Archiving"), and it's what stops a mis-click from destroying live work. An
+  operations (§app/session-list "Archiving"), and it's what stops a mis-click from destroying live work. An
   unarchived session is refused with the reason "Not archived — archive it first, then delete it."
   The bulk rules apply unchanged: live, mid-turn and just-written sessions are skipped and counted
   in `skipped`, and a file whose header doesn't parse, one that's already gone, or a path outside
@@ -1369,14 +1365,14 @@ word never does.
   and bury the title the user is actually listening for. **The cost, plainly: a screen-reader user
   gets no context fill and no topic count from the list at all.** They have to open the session,
   where the head's gauge states both the sentence and, through `#context-desc`, the number
-  (§4f) — and the outline strip (§10) names the topics. A sighted pointer user gets the same
+  (§chat/context-window) — and the outline strip (§app/insights) names the topics. A sighted pointer user gets the same
   sentence on hover; a touch user gets it on long-press, the platform's own `title` gesture. The
   rail's own precedent applies here too: this is the sidebar, and nowhere else. The row's remote
   mark follows the same precedent with one exception, stated under "Remote sessions": its fact
   rides the row link's accessible name as a short clause, so a screen-reader user hears which
   rows are remote — the one fact the list is scanned for once a group mixes them.
 - **The cost, stated.** On a Busy row a sighted touch user still sees a coloured dot and no word
-  until they tap it or open the session (§3's `.run-status` and the head say which it is); a TUI
+  until they tap it or open the session (§chat/transcript's `.run-status` and the head say which it is); a TUI
   row says `TUI`. The toast is a second
   gesture and it isn't discoverable — nothing on the row says the dot can be tapped. We accept
   that for the sessions pane — its rows and, collapsed, its tiles — and nowhere else. The

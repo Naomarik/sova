@@ -1,4 +1,4 @@
-# §chat/model-menu — 04c · Model menu
+# §chat/model-menu — Model menu
 > Part of the Sova design spec · [overview](../design/overview.md)
 
 A searchable model picker, like pi's Ctrl+P palette. It exists only for **chat** sessions. A
@@ -7,9 +7,8 @@ can't be changed from here.
 
 ## §chat.model-menu/trigger — Trigger
 
-**It has no trigger of its own.** The picker is the composer flyout's third panel (§4 "Composer
-flyout"), opened from the Model row on the flyout's model panel — which the composer's model
-indicator (§4) opens — or straight from `Ctrl+P` / `⌘P`. `Back` returns to that model panel. The
+**It has no trigger of its own.** The picker is the composer flyout's third panel (§chat.composer/composer-flyout), opened from the Model row on the flyout's model panel — which the composer's model
+indicator (§chat/composer) opens — or straight from `Ctrl+P` / `⌘P`. `Back` returns to that model panel. The
 Model row carries the label ({id} in mono, the provider beside it, the full `provider/id` in `title`,
 "Choose model" with no model yet) and the pending state. Everything below describes the panel.
 
@@ -66,8 +65,7 @@ Model row carries the label ({id} in mono, the provider beside it, the full `pro
   taps it or starts typing. The listbox and the input both carry `aria-activedescendant`, which is
   the keyboard position. The option it points to gets `data-active` and draws the focus ring
   (inset 2px accent), because focus can't be seen anywhere else.
-- **Mechanism.** The flyout owns the popover; this panel is what's inside it (§4 "Composer
-  flyout" has the anchoring, the resize rule, and the `Back` affordance). Mounting the
+- **Mechanism.** The flyout owns the popover; this panel is what's inside it (§chat.composer/composer-flyout has the anchoring, the resize rule, and the `Back` affordance). Mounting the
   panel re-fetches the list and shows the cached one meanwhile; the cache is shared with the
   Thinking group, which reads the same models to know their ladders (`src/lib/models.ts`).
 - **Positioning.**
@@ -127,12 +125,12 @@ the textarea, where the next thing you do is type.
 | **Loading models** (first open; fetched on every open and cached, so later opens show the cache while it refreshes) | normal | After 300ms, 4 × `<div class="skeleton skeleton-row">` in the list, with `aria-busy="true"` on the listbox |
 | **Load failed** | normal | `.banner.banner-error`: **Couldn't load models.** Your current model is unchanged. Action: `<button class="button button-sm">Retry</button>` |
 | **0 models** | normal | `<p class="model-menu-empty">` "0 models have credentials. Log in with `pi` in a terminal to add one." |
-| **0 models, because they're all off** (the list has models; Settings → Models turned every one of them off — §12) | normal | `<p class="model-menu-empty">` "Every model is turned off in Settings → Models. Turn one back on to switch to it." |
+| **0 models, because they're all off** (the list has models; Settings → Models turned every one of them off — §app/settings-dialog) | normal | `<p class="model-menu-empty">` "Every model is turned off in Settings → Models. Turn one back on to switch to it." |
 | **No matches** | normal | `<p class="model-menu-empty">` "0 models match “{query}”." |
 | **Blocked: agent running** (`isStreaming`) | enabled, so pressing it shows the reason | `.banner.banner-info`: **Model changes wait until this turn finishes.** Stop or wait, then pick one. Every option gets `aria-disabled="true"`, and the list stays browsable. If a turn starts while the menu is open, the banner appears right away |
 | **Blocked: composer disabled** (connecting, reconnecting, a foreign writer, the TUI took over) | enabled | Same banner, with the current `.composer-reason` text as the title, and options disabled |
 | **Pending** (after choosing, until `{type:"model"}`) | `aria-busy="true"` and `aria-disabled="true"`. The row shows the *target* id, with `<span class="live-dot"></span>` before it. It isn't faded: `aria-busy` restores full opacity, because pending is work in progress, not an unavailable control | Closed with the flyout; focus is in the textarea |
-| **Switched** (`{type:"model"}` arrives) | The row shows the echoed model, and the dot is removed | The Thinking group re-renders for the new model's ladder (§4 "Composer flyout") |
+| **Switched** (`{type:"model"}` arrives) | The row shows the echoed model, and the dot is removed | The Thinking group re-renders for the new model's ladder (§chat.composer/composer-flyout) |
 
 - **While pending.**
   - The composer's Send takes `aria-disabled` with the reason "Switching model…" (`clock`
@@ -169,7 +167,7 @@ The body depends on the server message (the server sends free text, so match on 
 | Server message starts with | Body |
 |---|---|
 | `No credentials configured for` | {provider} has no credentials set up. Log in with `pi` in a terminal, then try again. |
-| `is turned off in Settings → Models` | Quoted as the server sends it: it names the model and the switch that has to move (§12). The menu doesn't list disabled models, so this one arrives only when the policy changed under an open menu. |
+| `is turned off in Settings → Models` | Quoted as the server sends it: it names the model and the switch that has to move (§app/settings-dialog). The menu doesn't list disabled models, so this one arrives only when the policy changed under an open menu. |
 | `Unknown model` | pi doesn't know this model. It may have been removed from your config. |
 | `Cannot switch models while the agent is running` | Model changes wait until this turn finishes. |
 | `code: "busy"` / `"recent"` / `"reloaded"` | the same copy the composer uses for that code |

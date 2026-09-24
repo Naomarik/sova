@@ -1,4 +1,4 @@
-# §app/shell — 01 · App shell
+# §app/shell — App shell
 > Part of the Sova design spec · [overview](../design/overview.md)
 
 ```
@@ -16,8 +16,8 @@ unfolded (≥768)                                  folded (<768)
 ```html
 <a class="button skip-link" href="#transcript">Skip to Transcript</a>
 <div class="app" data-view="list|session" data-spine="on"?>   <!-- data-spine: ≥768, pane collapsed -->
-  <aside class="app-sidebar" aria-label="Sessions">…§2…</aside>
-  <main class="app-main">…§3 head, transcript, composer…</main>
+  <aside class="app-sidebar" aria-label="Sessions">…§app/session-list…</aside>
+  <main class="app-main">…§chat/transcript head, transcript, composer…</main>
   <!-- ≥768 only; CSS hides it folded; not rendered while the pane is collapsed -->
   <div class="pane-resizer" role="separator" aria-orientation="vertical"
        aria-label="Resize the sessions pane" title="Drag to resize · Double-click to reset"></div>
@@ -25,12 +25,12 @@ unfolded (≥768)                                  folded (<768)
 <!-- Portals (render at the body, never inside a .pane): scrim + modal, .toast-stack, live region -->
 ```
 
-- **A third view.** `data-view` has a third value, `workspace` (§14): the main column is
+- **A third view.** `data-view` has a third value, `workspace` (§workspace/groups): the main column is
   `.app-workspace` instead of `.app-main`, holding N panes and one group composer. The sidebar,
   the resizer and the portals are unchanged, the second column keeps the same width and floor,
   and below 768px the workspace is the one column, tabs-only.
 - **Columns.** `.app` is `height: 100dvh`. At 768px and up the grid is `--sidebar-width` (320px
-  by default, 64px while the sessions pane is collapsed into the spine — §1 "The spine column")
+  by default, 64px while the sessions pane is collapsed into the spine — §app.shell/spine-column)
   plus `1fr`, with a border between the columns. Below 768px it's one column, and `data-view`
   decides which one shows: `list` when no session is selected, `session` when one is. The shell
   is window chrome, so it uses `@media` rather than a container query, the same reasoning the
@@ -41,14 +41,13 @@ unfolded (≥768)                                  folded (<768)
   text included) can extend the document past the window.
 - **Routing.** Keep the selected session in the URL, e.g. `#/s/<encodeURIComponent(path)>`. That
   way reload and back work, and the folded back button is `history.back()` or a link to `#/`.
-  The other routes follow the same rule: `#/usage` and `#/agents` (§10), and a group opened as a
+  The other routes follow the same rule: `#/usage` and `#/agents` (§app/insights), and a group opened as a
   workspace at `#/g/<id>` (split) or `#/g/<id>/<encodeURIComponent(path)>` (one member focused,
-  §14). `#/s/` never changes meaning: it is one session, alone, grouped or not. An unknown group
+  §workspace/groups). `#/s/` never changes meaning: it is one session, alone, grouped or not. An unknown group
   id routes to `#/` with a toast rather than rendering an empty frame.
 - **No rail and no bottom bar.** Sova has one destination, so there's no nav to place. This is
   a deliberate departure from the skill's three-pane desktop shell: the ≥1120 `desktop` band adds
-  nothing here. **The spine is not a rail.** It is the sessions pane collapsed to 64px (§2 "The
-  spine"): it holds the pane's own contents, it replaces the pane rather than sitting beside it,
+  nothing here. **The spine is not a rail.** It is the sessions pane collapsed to 64px (§app.session-list/spine): it holds the pane's own contents, it replaces the pane rather than sitting beside it,
   and it links to no destination the expanded pane doesn't already link to. So the skill's
   `.rail` / `.navitem` component stays unported, and the spine is built from `.button-icon` and
   its own `.spine*` classes.
@@ -61,7 +60,7 @@ unfolded (≥768)                                  folded (<768)
 
 ## §app.shell/remote-session-chips — Remote session chips
 
-A session on a remote target (spec/02 "Remote sessions") carries two facts, each shown in the
+A session on a remote target (§app/session-list "Remote sessions") carries two facts, each shown in the
 session head and in Session detail: **what it is** (the always-on remote chip) and **whether the
 host still answers** (the connection chip). Each has its own word and its own section below;
 neither borrows the other's.
@@ -139,9 +138,8 @@ It says liveness only, never identity:
 ## §app.shell/the-open-failure-banner — The open-failure banner
 
 A webapp-owned chat the server refuses to open answers the chat socket with `error` code `config`
-and closes it (4422): the stored working directory is gone, or the session was created inside an
-sshfs mount Sova no longer has, and no reconnect can fix that by itself. The banner is one
-`.banner.banner-error` in the transcript's `.transcript-banner` slot (spec/03 "Anatomy"), and
+and closes it (4422): the stored working directory is gone, and no reconnect can fix that by itself. The banner is one
+`.banner.banner-error` in the transcript's `.transcript-banner` slot (§chat.transcript/anatomy), and
 every word comes from `src/lib/open-failure.ts` — a pure function of the session summary, the
 server's error text, and, when a targets list is at hand, its labels. It names the concrete thing
 that's wrong, never a bare "can't be opened":
@@ -150,12 +148,6 @@ that's wrong, never a bare "can't be opened":
   placeholder (named as a placeholder, with the target and its remote folder beside it). The
   same reassurance every time: nothing in the session file changed; restore the folder, then
   reconnect.
-- **A legacy sshfs-mount session** — the cwd is under `~/.pi/agent/mounts/<target>`, where Sova
-  once mounted targets. The server refuses it permanently ("This session was created inside an
-  sshfs mount of target {name}, a feature Sova no longer has; its files are on the target, not
-  here. Archive this session, or start a new remote session on {name}."), and the banner shows
-  that text verbatim: opening it as a local session in an empty folder is exactly the confusion
-  the refusal exists to prevent. Archive is the way out.
 - **Anything else**: the server's text verbatim under the same title.
 
 The actions row is a `.cluster` in the banner's action slot, the first action solid and the rest
@@ -188,7 +180,7 @@ sidebar list escapes `.app`'s clip and makes the document scroll) — and it wri
 - **Unfolded only.** `display: none` below 768px. Folded is a single full-width column with no
   divider and nothing to divide, so there is no handle to find.
 - **Absent while the stored choice is collapsed.** `App.tsx` renders the handle only while the
-  collapse choice (§2 "The spine") is expanded, whatever the window's width: a 64px column of
+  collapse choice (§app.session-list/spine) is expanded, whatever the window's width: a 64px column of
   fixed items has no width to choose, and a drag that "expanded" it would be a second, hidden way
   to do what the toggle does. It gates on the stored choice rather than on the spine being on
   screen because the handle's `resize` listener re-clamps the token it reads: left mounted, it
@@ -213,13 +205,13 @@ sidebar list escapes `.app`'s clip and makes the document scroll) — and it wri
   omission: a width is a posture for the task in front of you, not a preference, and a
   remembered one is a setting you have to notice and undo. Double-clicking the handle resets to
   320 for the same reason — the way back is always one gesture. **Collapsed or expanded is
-  persisted** (§2 "The spine"): that is a standing choice about the screen, not a posture, and it
+  persisted** (§app.session-list/spine): that is a standing choice about the screen, not a posture, and it
   is undone by the same one gesture that made it. Expanding restores the width the pane had
   when it collapsed, within the load; a reload expands to 320.
 - **One knob, three consumers.** `--sidebar-width` (while collapsed, holding `--spine-width`,
-  §1 "The spine column") feeds the `.app` grid's first column, the
+  §app.shell/spine-column) feeds the `.app` grid's first column, the
   Subagents pane's `width: min(--subagents-width, 100% − --sidebar-width − --space-8)`, and
-  `--measure`'s `clamp(72ch, 100vw − --sidebar-width − …, 110ch)` (§3 "Column width"). So
+  `--measure`'s `clamp(72ch, 100vw − --sidebar-width − …, 110ch)` (§chat/transcript "Column width"). So
   dragging the pane reflows the transcript's line length **live**, under the pointer, and the
   reading column is never quietly wrong about how much room it has.
 - **No keyboard path, and that is an accepted gap.** The handle has no `tabindex`, so it is not
@@ -233,7 +225,7 @@ sidebar list escapes `.app`'s clip and makes the document scroll) — and it wri
 
 ## §app.shell/spine-column — The spine column
 
-From 768px up, collapsing the sessions pane (§2 "The spine") narrows the grid's first column to
+From 768px up, collapsing the sessions pane (§app.session-list/spine) narrows the grid's first column to
 `--spine-width` — 64px, in `tokens.css`'s layout sizes beside `--sidebar-width` — and nothing
 else about the shell changes.
 
@@ -247,7 +239,7 @@ else about the shell changes.
   hook for the state, not a layout switch — the column width comes from the knob above.
 - **No resizer.** `.pane-resizer` is not rendered while the stored collapse choice is on — not
   merely while the spine is on screen — because its `resize` listener would re-clamp the 64px
-  token back up to the 300 floor (§1 "Resizing the sessions pane"). Folded, CSS hides the strip
+  token back up to the 300 floor (§app.shell/resizing-the-sessions-pane). Folded, CSS hides the strip
   anyway, so nothing changes there. `.app-sidebar`'s 1px `border-right` stays the divider.
 - **Folded is unaffected.** Below 768px the pane renders expanded whatever is stored, the grid is
   one column, and `data-spine` is not set.

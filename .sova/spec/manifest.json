@@ -1,6 +1,6 @@
 {
   "formatVersion": 1,
-  "_": "Sova's product documentation, migrated from the legacy spec/*.md at c4d7993604f4. Migration moved requirement authority, not proof of implementation: a migrated record is authority 'migrated', evidence 'unreviewed'. A behavior without `requires` has uninvestigated dependencies; cross-document links and legacy §N citations in the prose are ordinary references, not dependencies. Legacy paths, headings and §N resolve through migration/legacy-map.json.",
+  "_": "Sova's product documentation. A record labelled authority 'migrated', evidence 'unreviewed' carries prose that is the requirement with its implementation unreviewed. A behavior without `requires` has uninvestigated dependencies; cross-document links and § citations in the prose are ordinary references, not dependencies.",
   "grammar": {
     "claimsRoot": "claims/",
     "directoryKinds": [
@@ -20,7 +20,7 @@
     },
     "§app.insights/compaction-row": {
       "kind": "behavior",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§app.insights/insight-strip": {
@@ -30,7 +30,7 @@
     },
     "§app.insights/placement": {
       "kind": "behavior",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§app.insights/sidebar-foot": {
@@ -55,12 +55,12 @@
     },
     "§app.insights/usage-cards": {
       "kind": "behavior",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§app.insights/usage-page-and-agents-page": {
       "kind": "behavior",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§app.session-list/accessibility": {
@@ -78,17 +78,23 @@
       "evidence": "verified",
       "code": [
         "src/components/Sidebar.tsx",
-        "src/design/base.css"
+        "src/design/base.css",
+        "src/lib/folder-open.ts",
+        "src/lib/storage-keys.ts"
       ]
     },
     "§app.session-list/archive-by-date": {
       "kind": "behavior",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/Sidebar.tsx",
+        "src/lib/storage-keys.ts"
+      ]
     },
     "§app.session-list/archive-cleanup": {
       "kind": "behavior",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§app.session-list/content-rules": {
@@ -113,13 +119,20 @@
     },
     "§app.session-list/recent": {
       "kind": "behavior",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/lib/recent.ts"
+      ]
     },
     "§app.session-list/regions-top-and-archive": {
       "kind": "behavior",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/Sidebar.tsx",
+        "src/lib/storage-keys.ts"
+      ]
     },
     "§app.session-list/search": {
       "kind": "behavior",
@@ -128,7 +141,7 @@
     },
     "§app.session-list/selecting-several-sessions": {
       "kind": "behavior",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§app.session-list/states": {
@@ -143,8 +156,12 @@
     },
     "§app.settings-dialog/general": {
       "kind": "behavior",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/lib/recent.ts",
+        "src/lib/summary-line.ts"
+      ]
     },
     "§app.settings-dialog/models": {
       "kind": "behavior",
@@ -166,12 +183,17 @@
     },
     "§app.settings-dialog/themes": {
       "kind": "behavior",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/lib/theme.ts",
+        "src/lib/typography.ts",
+        "shared/theme.ts"
+      ]
     },
     "§app.shell/remote-session-chips": {
       "kind": "behavior",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§app.shell/resizing-the-sessions-pane": {
@@ -181,12 +203,16 @@
     },
     "§app.shell/the-open-failure-banner": {
       "kind": "behavior",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/lib/open-failure.ts",
+        "server/chat-manager.ts"
+      ]
     },
     "§app.subagents-pane/accessibility": {
       "kind": "behavior",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§app.subagents-pane/body-list-transcript": {
@@ -201,7 +227,7 @@
     },
     "§app.subagents-pane/head": {
       "kind": "behavior",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§app.subagents-pane/motion": {
@@ -221,52 +247,52 @@
     },
     "§app.subagents-pane/shell-a-third-column": {
       "kind": "behavior",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§app.subagents-pane/tokens": {
       "kind": "note",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§app.subagents-pane/transcript-view": {
       "kind": "behavior",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§app.subagents-pane/trigger": {
       "kind": "behavior",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§app.subagents-pane/worker-rows": {
       "kind": "behavior",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§app/extension-dialogs": {
       "kind": "surface",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§app/insights": {
       "kind": "surface",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§app/new-session-dialog": {
       "kind": "surface",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§app/session-list": {
       "kind": "surface",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§app/settings-dialog": {
       "kind": "surface",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§app/shell": {
@@ -276,7 +302,7 @@
     },
     "§app/subagents-pane": {
       "kind": "surface",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§chat.composer/accessibility": {
@@ -286,7 +312,7 @@
     },
     "§chat.composer/anatomy": {
       "kind": "behavior",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§chat.composer/behavior": {
@@ -294,7 +320,7 @@
       "requires": [
         "§chat.images/composer-attachments"
       ],
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§chat.composer/composer-flyout": {
@@ -314,12 +340,12 @@
     },
     "§chat.composer/disabled-states": {
       "kind": "behavior",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§chat.composer/tokens": {
       "kind": "note",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§chat.context-window/exact-numbers": {
@@ -339,7 +365,7 @@
     },
     "§chat.context-window/markup": {
       "kind": "behavior",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§chat.context-window/plain-text-not-a-meter": {
@@ -349,12 +375,12 @@
     },
     "§chat.context-window/sidebar-ring": {
       "kind": "behavior",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§chat.context-window/states": {
       "kind": "behavior",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§chat.context-window/steps-toward-the-limit": {
@@ -364,12 +390,12 @@
     },
     "§chat.context-window/tokens": {
       "kind": "note",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§chat.context-window/width-budget": {
       "kind": "behavior",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§chat.images/composer-attachments": {
@@ -380,7 +406,7 @@
         "§chat.images/lightbox",
         "§design.copy-deck/images"
       ],
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§chat.images/lightbox": {
@@ -390,8 +416,12 @@
     },
     "§chat.images/path-attachments": {
       "kind": "behavior",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "shared/tmp-paths.ts",
+        "server/attachments.ts"
+      ]
     },
     "§chat.images/thread-thumbnails": {
       "kind": "behavior",
@@ -410,7 +440,7 @@
     },
     "§chat.markdown/element-styling": {
       "kind": "behavior",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§chat.markdown/highlight-theme": {
@@ -420,12 +450,12 @@
     },
     "§chat.markdown/images-in-markdown": {
       "kind": "behavior",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§chat.markdown/streaming": {
       "kind": "behavior",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§chat.mode-menu/how-a-switch-reaches-the-chat": {
@@ -455,7 +485,7 @@
     },
     "§chat.mode-menu/trigger": {
       "kind": "behavior",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§chat.model-menu/content-and-order": {
@@ -470,7 +500,7 @@
     },
     "§chat.model-menu/errors": {
       "kind": "behavior",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§chat.model-menu/keyboard": {
@@ -483,12 +513,12 @@
       "requires": [
         "§chat.composer/composer-flyout"
       ],
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§chat.model-menu/states": {
       "kind": "behavior",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§chat.model-menu/tokens": {
@@ -498,7 +528,7 @@
     },
     "§chat.model-menu/trigger": {
       "kind": "behavior",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§chat.slash-commands/announcements": {
@@ -508,12 +538,12 @@
     },
     "§chat.slash-commands/commands-row": {
       "kind": "behavior",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§chat.slash-commands/commands-that-need-the-terminal-ui": {
       "kind": "behavior",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§chat.slash-commands/contrast": {
@@ -553,17 +583,17 @@
     },
     "§chat.timeline/accessibility": {
       "kind": "behavior",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§chat.timeline/class-table": {
       "kind": "note",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§chat.timeline/inputs-only": {
       "kind": "behavior",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§chat.timeline/jumping": {
@@ -578,7 +608,7 @@
     },
     "§chat.timeline/opening-it": {
       "kind": "behavior",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§chat.timeline/rejected": {
@@ -591,22 +621,28 @@
       "requires": [
         "§chat.transcript/message-actions"
       ],
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/chat-manager.ts"
+      ]
     },
     "§chat.timeline/rows": {
       "kind": "behavior",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/insights.ts"
+      ]
     },
     "§chat.timeline/watch-mode": {
       "kind": "behavior",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§chat.transcript/a-queued-message": {
       "kind": "behavior",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§chat.transcript/accessibility": {
@@ -616,17 +652,17 @@
     },
     "§chat.transcript/anatomy": {
       "kind": "behavior",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§chat.transcript/landing-page": {
       "kind": "behavior",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§chat.transcript/live-watch": {
       "kind": "behavior",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§chat.transcript/message-actions": {
@@ -659,7 +695,7 @@
     },
     "§chat.transcript/streaming": {
       "kind": "behavior",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§chat.transcript/tokens": {
@@ -674,47 +710,54 @@
     },
     "§chat/composer": {
       "kind": "surface",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§chat/context-window": {
       "kind": "surface",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§chat/images": {
       "kind": "surface",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/attachments.ts"
+      ]
     },
     "§chat/markdown": {
       "kind": "surface",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§chat/mode-menu": {
       "kind": "surface",
       "authority": "accepted",
-      "evidence": "verified"
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/mode/state.ts",
+        "server/mode-state.ts"
+      ]
     },
     "§chat/model-menu": {
       "kind": "surface",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§chat/slash-commands": {
       "kind": "surface",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§chat/timeline": {
       "kind": "surface",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§chat/transcript": {
       "kind": "surface",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§design.copy-deck/composer": {
@@ -742,7 +785,7 @@
     },
     "§design.copy-deck/fanout": {
       "kind": "note",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§design.copy-deck/images": {
@@ -752,7 +795,7 @@
     },
     "§design.copy-deck/insights": {
       "kind": "note",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§design.copy-deck/live-watch": {
@@ -772,7 +815,7 @@
     },
     "§design.copy-deck/message-actions": {
       "kind": "note",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§design.copy-deck/mode-menu": {
@@ -787,17 +830,17 @@
     },
     "§design.copy-deck/new-session-dialog": {
       "kind": "note",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§design.copy-deck/settings-modes-delegate": {
       "kind": "note",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§design.copy-deck/settings-themes": {
       "kind": "note",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§design.copy-deck/sidebar": {
@@ -812,17 +855,17 @@
     },
     "§design.copy-deck/subagents-pane": {
       "kind": "note",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§design.copy-deck/timeline-tab": {
       "kind": "note",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§design.copy-deck/workspace": {
       "kind": "note",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§design.ground-rules/color-budget": {
@@ -842,8 +885,8 @@
     },
     "§design.ground-rules/theme": {
       "kind": "note",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "reviewed"
     },
     "§design.ground-rules/voice": {
       "kind": "note",
@@ -862,7 +905,7 @@
     },
     "§design/copy-deck": {
       "kind": "note",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§design/deviations": {
@@ -872,13 +915,13 @@
     },
     "§design/ground-rules": {
       "kind": "note",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§design/overview": {
       "kind": "note",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "reviewed"
     },
     "§design/token-index": {
       "kind": "note",
@@ -887,17 +930,17 @@
     },
     "§workspace.fanout/classes": {
       "kind": "note",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§workspace.fanout/cost-preview": {
       "kind": "behavior",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§workspace.fanout/entry-points": {
       "kind": "behavior",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§workspace.fanout/states": {
@@ -907,22 +950,26 @@
     },
     "§workspace.fanout/the-dialog": {
       "kind": "behavior",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§workspace.fanout/the-fork-point-in-a-transcript": {
       "kind": "behavior",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§workspace.fanout/the-route": {
       "kind": "behavior",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/targets.ts",
+        "server/fanout.ts"
+      ]
     },
     "§workspace.fanout/tokens": {
       "kind": "note",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§workspace.fanout/two-sources": {
@@ -932,8 +979,13 @@
     },
     "§workspace.fanout/what-creation-does": {
       "kind": "behavior",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/fanout.ts",
+        "server/chat-manager.ts",
+        "server/fork.ts"
+      ]
     },
     "§workspace.groups/a-pane": {
       "kind": "behavior",
@@ -943,7 +995,7 @@
         "§chat/model-menu",
         "§chat/transcript"
       ],
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§workspace.groups/accessibility": {
@@ -963,22 +1015,22 @@
     },
     "§workspace.groups/data": {
       "kind": "behavior",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§workspace.groups/decisions": {
       "kind": "note",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§workspace.groups/group-lifecycle": {
       "kind": "behavior",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§workspace.groups/keyboard": {
       "kind": "behavior",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§workspace.groups/layout-split": {
@@ -988,27 +1040,30 @@
     },
     "§workspace.groups/layout-tabs": {
       "kind": "behavior",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/lib/group-layout.ts"
+      ]
     },
     "§workspace.groups/member-states": {
       "kind": "behavior",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§workspace.groups/rejected": {
       "kind": "note",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§workspace.groups/routes": {
       "kind": "behavior",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§workspace.groups/shell": {
       "kind": "behavior",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§workspace.groups/the-group-composer": {
@@ -1021,7 +1076,7 @@
         "§design.ground-rules/voice",
         "§workspace.groups/member-states"
       ],
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§workspace.groups/tokens": {
@@ -1031,12 +1086,12 @@
     },
     "§workspace/fanout": {
       "kind": "surface",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§workspace/groups": {
       "kind": "surface",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§chat.transcript/setup-card-figures": {
@@ -1052,12 +1107,19 @@
     "§chat.transcript/setup-card-context": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified"
+      "evidence": "verified",
+      "code": [
+        "server/session-setup.ts"
+      ]
     },
     "§chat.transcript/setup-card-repository": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified"
+      "evidence": "verified",
+      "code": [
+        "server/git-summary.ts",
+        "src/components/SessionDetails.tsx"
+      ]
     },
     "§chat.transcript/setup-card-skills": {
       "kind": "behavior",
@@ -1072,6 +1134,10 @@
         "§app.session-list/recent",
         "§app.session-list/accessibility",
         "§app.shell/spine-column"
+      ],
+      "code": [
+        "src/lib/spine.ts",
+        "src/lib/storage-keys.ts"
       ]
     },
     "§app.shell/spine-column": {
@@ -1131,7 +1197,8 @@
       "code": [
         "server/playbooks.ts",
         "src/lib/playbooks.ts",
-        "src/components/PlaybooksDialog.tsx"
+        "src/components/PlaybooksDialog.tsx",
+        "server/files.ts"
       ]
     },
     "§chat.playbooks/tokens": {

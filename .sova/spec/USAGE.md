@@ -30,7 +30,7 @@ node pi-config/extensions/spec/core/sova-spec.mjs check
 node pi-config/extensions/spec/core/sova-spec.mjs scope '§workspace/groups' --budget 4000
 node pi-config/extensions/spec/core/sova-spec.mjs scope '§workspace.groups/decisions'
 node pi-config/extensions/spec/core/sova-spec.mjs impact '§chat.composer/behavior'
-node pi-config/extensions/spec/core/sova-spec.mjs check --spec .sova/spec/drafts/legacy-working/spec   # local only
+node pi-config/extensions/spec/core/sova-spec.mjs check --spec .sova/spec/drafts/NAME/spec   # a draft; local only
 ```
 
 - **`scope §id`** prints the actual text you need before you change that area. A surface gives its
@@ -49,11 +49,8 @@ Exit `0` means the declared closure was delivered, never that it is complete. Ex
 something relevant is unknown, stale or unread. Exit `2` means the input can't be trusted.
 
 **Current state, 2026-09-24:** `check` exits 1 with 125 `requires-uninvestigated` warnings. Only
-10 records declare `requires`, 25 edges in all, each quoted from the migrated prose. `impact` can't
-rule out the other behaviors, and it lists them as unknown.
-
-Old paths and `§N` citations, such as "spec §14 Decisions", resolve through
-`migration/legacy-map.json`. That one is `§workspace.groups/decisions`.
+10 records declare `requires`, 25 edges in all. `impact` can't rule out the other behaviors, and
+it lists them as unknown.
 
 ## Changing the docs
 
@@ -107,11 +104,6 @@ A draft is a proposal. Agreeing on it approves the intent, and makes nothing cur
 Documenting what the code already does, where the docs miss or misstate it, is its own draft.
 Don't mix it into a feature's draft.
 
-`drafts/legacy-working/` holds the edits that were uncommitted in `spec/` at migration time, plus
-`spec/04i-playbooks.md`. It is a proposal like any other, and local only, like every draft. Its
-records are labelled `candidate`, so nothing in it can be promoted until it has been
-implemented, verified and relabelled.
-
 [DRAFTS.md](../../pi-config/extensions/spec/DRAFTS.md) has the layout, the lock and the limits.
 
 ## Review packets
@@ -130,7 +122,7 @@ Map that closure's dependencies in a draft and promote it first; the rest of the
 Notes carry no such blocker. A cited incumbent file that is missing also blocks.
 
 Until a packet is written (`prepare --write`), `status` exits 2 with `packet-missing`. The name
-`baseline` is taken by the pilot. A stale packet is prepared again under a new name. Never edit
+`baseline` is taken. A stale packet is prepared again under a new name. Never edit
 anything under `reviews/` by hand. See
 [the tools README](../../pi-config/extensions/spec/README.md).
 

@@ -1,4 +1,4 @@
-# §chat/images — 04b · Images
+# §chat/images — Images
 > Part of the Sova design spec · [overview](../design/overview.md)
 
 Images show up in three places. A **user row** and a **tool-result row** can each carry images
@@ -7,7 +7,7 @@ steer (`OutboundImage[]`).
 
 Web uploads don't ride the prompt as base64. The composer uploads each image **when you
 attach it**, not at send: `POST /api/upload?draft=<session path>` stores the bytes as a fresh
-`pi-web-<uuid>.<ext>` in that session's attachments folder,
+`sova-<uuid>.<ext>` in that session's attachments folder,
 `~/.pi/agent/sova/attachments/<sessionId>/`. At send, the prompt text names that durable path.
 The user row then shows the same path-attachment unit as TUI pastes; the model sees the image by
 reading the path. Unlike a TUI paste in `/tmp` (10 days on this host, gone on reboot), the file
@@ -135,9 +135,9 @@ else it becomes an inline chip or a tool-card section (see **Other rows** below)
 
 - **Which paths.** An image file (`.png`, `.jpg`, `.jpeg`, `.webp`, `.gif`), standing alone as a
   word, in one of two roots: directly in `/tmp`, or directly in a session's folder under the
-  attachments root (`<agent dir>/pi-web/attachments/<sessionId>/<name>`). Subfolders of `/tmp`,
+  attachments root (`<agent dir>/sova/attachments/<sessionId>/<name>`). Subfolders of `/tmp`,
   deeper paths under the attachments root, and every other folder stay plain text. The client
-  recognises an attachments path by its `/pi-web/attachments/<id>/` tail; the server then checks
+  recognises an attachments path by its `/sova/attachments/<id>/` tail; the server then checks
   it really sits under this machine's root.
 - **Only concrete names, never code.** A path counts only when its full file name is written
   out. `/tmp/pi-clipboard-*.png`, `/tmp/pi-clipboard-<uuid>.png` and `…`-shortened names are
@@ -148,7 +148,7 @@ else it becomes an inline chip or a tool-card section (see **Other rows** below)
 - **Cap.** At most 8 different paths per row get a unit or chip. Later ones stay text. The
   server checks each one once, and never looks at anything but the paths it found.
 - **The text.** pi's own clipboard paths come out of the bubble, since the unit stands in for
-  them (a Sova upload's name, `pi-web-<uuid>`, counts as pi's own in either root). An image
+  them (a Sova upload's name, `sova-<uuid>`, counts as pi's own in either root). An image
   path you typed yourself stays in the text (it's part of your sentence)
   and still gets a unit. If nothing is left, there's no bubble (same rule as thumbnails). The
   session file, and the text the model saw, never change.
@@ -288,7 +288,7 @@ There are three ways in, and all three feed the same pending list.
    - On the **window**, `preventDefault()` for `dragover`/`drop` anywhere else. Otherwise a stray
      drop makes the browser navigate away to the image.
    - While the composer is disabled, never set `data-drop`, and ignore the drop.
-3. **File picker.** The flyout's **Attach images** row (§4 "Composer flyout") closes the flyout and
+3. **File picker.** The flyout's **Attach images** row (§chat.composer/composer-flyout) closes the flyout and
    opens the hidden `<input type="file" multiple accept="image/png,image/jpeg,image/gif,image/webp">`,
    which stays the composer's — the flyout only asks for it. Reset the input's value after reading
    it, so the same file can be picked twice.
@@ -374,7 +374,7 @@ and wraps, so it never squeezes the textarea.
   - The optimistic user bubble shows the images right away.
   - Drafts keep their attachments per session, durably: the draft store holds the text **and**
     up to 8 attachments (`{ path, name, mimeType, size }`), so both survive a reload and follow
-    you to another browser (§4). A draft of images alone still lists its session (§2).
+    you to another browser (§chat/composer). A draft of images alone still lists its session (§app/session-list).
 - **Disabled composer** (TUI-live, connecting, reconnecting). The Attach images row takes the same
   `aria-disabled` and shares `aria-describedby="composer-reason"`. Paste and drop don't attach
   anything.

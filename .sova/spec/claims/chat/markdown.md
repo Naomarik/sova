@@ -1,4 +1,4 @@
-# §chat/markdown — 04e · Markdown and code
+# §chat/markdown — Markdown and code
 > Part of the Sova design spec · [overview](../design/overview.md)
 
 **Scope.** **assistant-text** rows render markdown. Everything else stays as it is:
@@ -6,7 +6,7 @@
 - **user** text is plain, keeping `.message-text` and `white-space: pre-wrap`;
 - **thinking** is plain inside its disclosure;
 - **tool args and results** stay `<pre>` in mono, except file content (`write` content, `edit`
-  before/after, `read` output), which is highlighted by its path with the theme below (§4d
+  before/after, `read` output), which is highlighted by its path with the theme below (§chat/slash-commands
   tool card).
 
 The rendered content lives in one scope class on the bubble, and `.message-text` is dropped
@@ -50,7 +50,7 @@ dependency needs approval under CLAUDE.md):
 | `em` | Renderer default, which is synthetic oblique. Only regular faces ship, so it's allowed but not styled further |
 | Inline `code` | The base rule: `--color-sunken` chip, `--r-xs`, mono. It wraps anywhere |
 | Table | Always wrapped: `<div class="md-table-wrap"><table>…</table></div>`. The wrapper scrolls sideways, so the pane never widens. Header row on `--color-sunken` at 600, `--fs-caption` text, 1px row rules. Words never break mid-word, so the table grows and scrolls. `align` from GFM is honored, and right-aligned cells get tabular numerals |
-| Links | `--color-accent`, underlined, with an external glyph (one of the accent's three uses, §0). Long URLs wrap anywhere |
+| Links | `--color-accent`, underlined, with an external glyph (one of the accent's three uses, §design/ground-rules). Long URLs wrap anywhere |
 
 ## §chat.markdown/code-blocks — Code blocks
 
@@ -119,7 +119,7 @@ Don't import a highlight.js stylesheet. These rules are the whole theme, and the
 
 ## §chat.markdown/images-in-markdown — Images in markdown
 
-- **`data:image/*` sources** (rare, and already local) render as a single §4b thumbnail. Use
+- **`data:image/*` sources** (rare, and already local) render as a single §chat/images thumbnail. Use
   `<ul class="message-images message-images-single">`, alt "Image in this reply" or the
   markdown alt text if there is one, and the same lightbox.
 - **Remote `http(s)` images are never fetched automatically**, because loading them would leak
@@ -145,9 +145,9 @@ Don't import a highlight.js stylesheet. These rules are the whole theme, and the
   line breaks, so it causes no layout jump.
 - **Layout jumps.** Partial constructs (a table's header row before its separator, a half-typed
   `**bold`) render as text until they complete. That jump is accepted, and there's no height
-  reservation. Auto-follow (§3) keeps the bottom pinned. When you're not following, the browser's
+  reservation. Auto-follow (§chat/transcript) keeps the bottom pinned. When you're not following, the browser's
   scroll anchoring (`overflow-anchor`, on by default) holds your place.
-- **Author.** The `.live-dot` stays in the author row as in §3, and there's no cursor glyph.
+- **Author.** The `.live-dot` stays in the author row as in §chat/transcript, and there's no cursor glyph.
 
 ## §chat.markdown/accessibility — Accessibility
 

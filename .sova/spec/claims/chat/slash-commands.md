@@ -1,4 +1,4 @@
-# §chat/slash-commands — 04d · Slash commands
+# §chat/slash-commands — Slash commands
 > Part of the Sova design spec · [overview](../design/overview.md)
 
 pi's slash commands, offered while you type. The server sends the list once per connection as
@@ -118,7 +118,7 @@ The textarea gains these attributes, and keeps them only while the menu is open:
 
 A tap target for the same menu, for phones (where nobody types `/` from habit) and for
 discoverability. It's the flyout's **Commands** row, second in the flyout's menu panel, right under Attach
-images (§4 "Composer flyout"):
+images (§chat.composer/composer-flyout):
 
 ```html
 <div class="mode-option composer-flyout-item" role="menuitem" id="composer-flyout-commands"
@@ -149,7 +149,7 @@ images (§4 "Composer flyout"):
   A tap on it does nothing.
 - **Unchanged.** Typing `/`, and all the keyboard and touch behavior above, stay as they are.
 - **Width budget.** The flyout trigger is 44, and Send collapses to 44 under 480px of composer
-  width (§4b), with 8px gaps:
+  width (§chat/images), with 8px gaps:
 
   | Composer width | Idle textarea | Streaming (adds Stop 44) |
   |---|---|---|
@@ -184,12 +184,12 @@ and again when the count changes, at most once a second. When there are none, an
   - **Prompt templates and skills** expand into a **user** message (the expanded text), then an
     assistant turn.
   - **Extension commands** may add `custom` entries, which render as **info rows** (or
-    **unknown** rows with the Raw entry disclosure). They may also send `ui_request`s (§6), or
+    **unknown** rows with the Raw entry disclosure). They may also send `ui_request`s (§app/extension-dialogs), or
     produce nothing visible.
   - **A persisted running row.** An extension command may also append a `custom` entry at the
     start of its run that the thread renders as a live, self-updating row for the run's
     duration, then append the result under the same id when the run settles; the result row
-    replaces the running row in place, live and on reload. `/explain` does this (§3 report,
+    replaces the running row in place, live and on reload. `/explain` does this (§chat/transcript report,
     "Explain rows"). Unlike the "Ran" row, it is persisted: a reload mid-run shows it still
     running.
 - **Reload.** The persisted entries render the same way. The local "Ran" row is local only and
@@ -197,13 +197,13 @@ and again when the count changes, at most once a second. When there are none, an
 - **Unknown commands.** A `/word` that isn't in the list is sent and rendered as an ordinary
   message, with the optimistic bubble.
 - **Local commands.** A few commands Sova answers itself and never sends: a bare `/new`
-  (below), and a bare `/agents` / `/subagents`, which opens the subagents pane (§11 Trigger).
+  (below), and a bare `/agents` / `/subagents`, which opens the subagents pane (§app.subagents-pane/trigger).
   Those two are still listed and inserted like any other command — the runtime registers them —
   but Enter runs them here, clears the draft, and adds no row to the thread: the pane opening is
   the result. Once the whole text is a bare local command the menu closes, and Enter runs it
   rather than inserting a match (`/new` would otherwise pick `btw:new`); a partial token like
   `/ne` still opens it. Anything with arguments belongs to the runtime and goes through
-  untouched. **Bare `/tree` and bare `/timeline` (§13)** both open the session pane on Timeline
+  untouched. **Bare `/tree` and bare `/timeline` (§chat/timeline)** both open the session pane on Timeline
   the same way — draft cleared, no row in the thread — `/tree` with **Inputs Only** on (your own
   messages, each able to rewind) and `/timeline` with it off. The runtime registers neither, so
   neither appears in the menu, and either one with arguments is an ordinary message.
@@ -216,7 +216,7 @@ and again when the count changes, at most once a second. When there are none, an
 ## §chat.slash-commands/commands-that-need-the-terminal-ui — Commands that need the terminal UI
 
 Some extension commands open TUI-only interfaces, such as custom overlays and pickers. Sova
-can't show those. When a command's `ui_request` has a kind §6 doesn't support, or the server
+can't show those. When a command's `ui_request` has a kind §app/extension-dialogs doesn't support, or the server
 reports the command needs the TUI (answer the request with `ui_response` `value: null` so the
 command isn't left waiting), replace the "Ran" row with:
 

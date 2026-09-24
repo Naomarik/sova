@@ -1,20 +1,20 @@
-# §chat/composer — 04 · Composer
+# §chat/composer — Composer
 > Part of the Sova design spec · [overview](../design/overview.md)
 
 ## §chat.composer/anatomy — Anatomy
 
 ```html
 <footer class="composer" data-drop="active|reject (only while dragging over it)">
-  <!-- drag-over overlay; see §4b -->
+  <!-- drag-over overlay; see §chat/images -->
   <div class="composer-drop" aria-hidden="true">
     <span class="icon" style="--icon: url(/icons/image.svg)"></span><span>Drop images to attach</span>
   </div>
   <form class="composer-inner" aria-label="Message the agent">
     <!-- while streaming only -->
     <p class="run-status"><span class="live-dot"></span>Working<span class="run-status-detail">· running bash</span></p>
-    <!-- or, idle with ≥ 1 worker working: the subagents trigger, button.run-status-link (§11) -->
+    <!-- or, idle with ≥ 1 worker working: the subagents trigger, button.run-status-link (§app/subagents-pane) -->
 
-    <!-- pending attachments; omit the <ul> when there are none; see §4b -->
+    <!-- pending attachments; omit the <ul> when there are none; see §chat/images -->
     <ul class="attachments" aria-label="Attachments">…</ul>
 
     <div class="composer-row">
@@ -54,7 +54,7 @@
         <span class="icon icon-sm composer-model-caret" style="--icon: url(/icons/chevron-down.svg)" aria-hidden="true"></span>
       </button>
       <span class="composer-reason" id="composer-reason"><!-- reason when disabled; else empty --></span>
-      <!-- chat sessions only: the mode switch, pushed to the right edge; see §4g -->
+      <!-- chat sessions only: the mode switch, pushed to the right edge; see §chat/mode-menu -->
       <button class="button button-ghost mode-trigger" type="button" aria-haspopup="menu" …>…</button>
     </div>
   </form>
@@ -101,15 +101,15 @@
 
   The stored draft is `{ text, attachments }`: pending images persist with the words, as
   `attachments: [{ path, name, mimeType, size }]`, at most 8 per session. Each is a file already
-  uploaded into the session's attachments folder (§4b), so a reload restores the words and the
+  uploaded into the session's attachments folder (§chat/images), so a reload restores the words and the
   images. A draft is deleted only when it has neither text nor attachments. A send clears the
-  draft in both places. A draft on a session nothing was ever sent in — images alone included — also keeps that session in the list (§2).
+  draft in both places. A draft on a session nothing was ever sent in — images alone included — also keeps that session in the list (§app/session-list).
 - **The foot** reads left to right: the model indicator, the disabled reason, then the mode switch
-  (§4g) pushed to the right edge. Both triggers stay at every width and shrink instead of
+  (§chat/mode-menu) pushed to the right edge. Both triggers stay at every width and shrink instead of
   widening the row: the model id and the minor modes are the parts that ellipsize.
 - **Model indicator.** Chat sessions only. It says what this turn will run — the id in mono, the
   provider beside it, then `· {level}` for the thinking level — and clicking it opens the flyout
-  on its **model panel**, anchored above itself, which holds exactly those two controls (§4b).
+  on its **model panel**, anchored above itself, which holds exactly those two controls (§chat/images).
   The thinking
   segment is omitted when the model's ladder has one level or none, exactly as the flyout's group
   is. While a switch is pending it shows the **target** with a `.live-dot`, the model's and the
@@ -132,7 +132,7 @@ the skill's copy ladder.
 | Session is live in a TUI | `disabled` | Send hidden | `attention` — "Read only while this session is open in the TUI." |
 | Chat socket connecting (first connect) | enabled (typing is fine) | Send `aria-disabled` | `clock` — "Connecting…" |
 | Chat socket dropped | enabled | Send `aria-disabled` | `clock` — "Reconnecting. Your draft is kept." |
-| Model switch pending (§4c) | enabled | Send `aria-disabled` until `{type:"model"}` or an error | `clock` — "Switching model…" |
+| Model switch pending (§chat/model-menu) | enabled | Send `aria-disabled` until `{type:"model"}` or an error | `clock` — "Switching model…" |
 | Server `error` with `code:"busy"` | enabled | Send `aria-disabled` until the next `agent_settled` | `attention` — "pi is busy with another turn. Send when it finishes." |
 
 Use `aria-disabled="true"` rather than `disabled` on buttons whose reason matters. That keeps them
@@ -144,14 +144,14 @@ read-only live case.
 
 Everything you do to a session that isn't typing lives behind one ghost `plus` button, first in
 `.composer-row`. It replaced the two icon buttons that used to sit there (Attach Images and
-Commands) and took the model trigger and the session's own facts out of the head (§3): the
+Commands) and took the model trigger and the session's own facts out of the head (§chat/transcript): the
 composer is where the session is acted on, and the head is for reading.
 
 **One popover, two triggers, three panels.** The `plus` button opens the **menu** panel — Attach
 images, Commands, Playbooks, Hide tool calls, Hide thinking, Sandbox, Session info, Fan Out… and Undo
-last turn, each present only where it applies (below). The model indicator in `.composer-foot` (§4) opens the **model**
+last turn, each present only where it applies (below). The model indicator in `.composer-foot` (§chat/composer) opens the **model**
 panel — the Model row and this model's Thinking ladder, the two things the indicator is the label
-for. The Model row opens the §4c **picker** as the third panel, which comes back to the model
+for. The Model row opens the §chat/model-menu **picker** as the third panel, which comes back to the model
 panel it was opened from. Each trigger anchors the popover above **itself**: the math is the same,
 measured on whichever element opened it, and closing returns focus there. The composer holds the
 flyout's handle (`show(panel, anchor)` · `close()` · `open` · `anchor`, handed over once on
@@ -172,13 +172,13 @@ it.
       <span class="composer-flyout-label">Attach images</span>
     </div>
     <div class="mode-option composer-flyout-item" role="menuitem" id="composer-flyout-commands" tabindex="-1">…Commands…</div>
-    <!-- chat sessions only; aria-disabled while the composer is; see §4i -->
+    <!-- chat sessions only; aria-disabled while the composer is; see §chat/playbooks -->
     <div class="mode-option composer-flyout-item" role="menuitem" id="composer-flyout-playbooks" tabindex="-1">…Playbooks…</div>
 
     <div class="composer-flyout-sep" role="separator"></div>
     …Hide tool calls, Hide thinking, Sandbox (menuitemcheckbox)…
     <div class="mode-option composer-flyout-item" role="menuitem" id="composer-flyout-info" tabindex="-1">…Session info…</div>
-    …Fan Out… (§14b), then Undo last turn after its own separator (§13)…
+    …Fan Out… (§workspace/fanout), then Undo last turn after its own separator (§chat/timeline)…
   </div>
 </div>
 
@@ -213,7 +213,7 @@ it.
   {rect.left}px`. A resize re-anchors it; it closes only when the anchor isn't laid out anymore.
   Under 768px it's the same bottom sheet the model menu is.
 - **Panels.** Three, one popover: **menu** (the `plus` button's), **model** (the indicator's), and
-  the §4c **picker**, which the Model row opens and a `Back` button above its search field returns
+  the §chat/model-menu **picker**, which the Model row opens and a `Back` button above its search field returns
   from — to the model panel, which is the only way in. Only the panel in front is rendered, so it
   is also the whole keyboard order. One popover means no nested light-dismiss to reason about, and
   `Esc` always means "close the flyout".
@@ -225,14 +225,14 @@ it.
   closes it if the picker is already in front), with `preventDefault()` so print never fires. It's
   bound in chat sessions only; watch sessions print as usual.
 - **Rows.** The menu panel's, in order: Attach images, Commands, Playbooks, Hide tool calls, Hide
-  thinking, Sandbox, Session info, Fan Out… (§14b) and, after its own separator, Undo last turn (§13).
-  §9 "Composer flyout" is the inventory. Model and Thinking are the model panel's.
-  - **Attach images** opens the composer's hidden file picker (§4b). `aria-disabled` and
+  thinking, Sandbox, Session info, Fan Out… (§workspace/fanout) and, after its own separator, Undo last turn (§chat/timeline).
+  §design.copy-deck/composer-flyout is the inventory. Model and Thinking are the model panel's.
+  - **Attach images** opens the composer's hidden file picker (§chat/images). `aria-disabled` and
     `aria-describedby="composer-reason"` while the composer is disabled.
-  - **Commands** closes the flyout and opens the slash menu exactly as the old button did (§4d).
+  - **Commands** closes the flyout and opens the slash menu exactly as the old button did (§chat/slash-commands).
     `aria-disabled` when the composer is disabled or there's no command list; then its `title` is
     "No commands available".
-  - **Playbooks** closes the flyout and opens the Playbooks dialog (§4i) on its catalog step, or
+  - **Playbooks** closes the flyout and opens the Playbooks dialog (§chat/playbooks) on its catalog step, or
     on the playbook whose unsent text it kept.
     You pick a recipe, optionally add a line, and `Send Playbook` sends it into this chat as your
     turn. Mid-turn it goes as a **follow-up** that runs after the current turn, never a steer.
@@ -243,7 +243,7 @@ it.
     to the `plus` trigger.
   - **Model** is the model panel's first row: the current id in mono with its provider, and a
     chevron. It's the picker's trigger: `aria-haspopup="true"`, and while a switch is pending it's `aria-busy` with a
-    `.live-dot` before the target id, and `aria-disabled` (§4c "Pending"). Choosing applies
+    `.live-dot` before the target id, and `aria-disabled` (§chat/model-menu "Pending"). Choosing applies
     immediately, closes the flyout, and focus returns to the textarea.
   - **Thinking** follows the Model row on the same panel: one `menuitemradio` per level of the **current model's** `thinkingLevels`,
     in ladder order, checked on the active one. **The whole group is hidden when the model has
@@ -261,10 +261,10 @@ it.
     state follows the session's reported sandbox state, never the click. It stays enabled while
     the agent runs, since a flip only reaches the next tool call, and is `aria-disabled` only
     while the composer is (then its reason is the composer's reason line and it has no `title`).
-    Otherwise its `title` says what a click does (§9 "Sandbox"). The extension's
+    Otherwise its `title` says what a click does (§design.copy-deck/sandbox). The extension's
     own status line comes back as a toast and is announced. A refusal leaves the state as it was
     and toasts why.
-  - **Session info** closes the flyout and opens §4h. Chat sessions only: a watch view doesn't pass
+  - **Session info** closes the flyout and opens the session info modal. Chat sessions only: a watch view doesn't pass
     `onShowInfo`, so the row is absent there.
 - **Changing the model re-reads the ladder.** The server re-clamps on a model switch and sends
   `{type:"thinking"}` again, so the group re-renders for the new model: switching from a model at
@@ -272,7 +272,7 @@ it.
   put it.
 - **Refusals.** A `{type:"error"}` while a thinking change is pending ends the pending state and
   shows a `.banner-error` in the transcript's banner slot, exactly like a refused model switch
-  (§4c "Errors"). The level on screen never changes on a refusal.
+  (§chat.model-menu/errors). The level on screen never changes on a refusal.
 
 ## §chat.composer/sandbox-shield — Sandbox shield
 
@@ -319,7 +319,7 @@ min, `--r-md`, `--color-border-strong` border, and an accent focus border. Send 
 `--fs-caption` in `--color-ink-muted` — with a `--color-sunken` fill on hover and while open, and
 a `--tap-min` target stretched over a `--control-sm` row by a `::after`.
 `.composer-inner` is centred at `--measure` plus `--space-9`, the transcript column's width, so it
-widens with the column on desktop (§3 "Column width"). The slash menu spans it, and the model
+widens with the column on desktop (§chat/transcript "Column width"). The slash menu spans it, and the model
 menu keeps its own 360px cap.
 
 ## §chat.composer/accessibility — Accessibility

@@ -1,11 +1,11 @@
-# §app/subagents-pane — 11 · Subagents pane
+# §app/subagents-pane — Subagents pane
 > Part of the Sova design spec · [overview](../design/overview.md)
 
 The composer's "2 subagents working…" row opens a pane beside the session: this session's
 workers on the left, the selected worker's live transcript on the right, read-only. It answers
 "what are my workers doing right now?" without leaving the conversation that started them.
 
-It is **this session only**. `#/agents` (§10) stays the cross-session surface: every running pi,
+It is **this session only**. `#/agents` (§app/insights) stays the cross-session surface: every running pi,
 its teams and solo workers, as cards with no transcripts. The session head's "{n} working" chip
 keeps linking there. The pane is for watching; the page is for finding.
 
@@ -14,7 +14,7 @@ keeps linking there. The pane is for watching; the page is for finding.
 There are two ways in, and both reach the pane whether or not anything is working: the composer's
 subagents row, and `/agents`.
 
-**`/agents` (and `/subagents`), bare, opens the pane.** It is a local command (§4d): Sova runs
+**`/agents` (and `/subagents`), bare, opens the pane.** It is a local command (§chat/slash-commands): Sova runs
 it itself and sends nothing to the runtime, whose own `/agents` monitor is a TUI overlay and
 answers a web session with "requires Pi's interactive TUI". It is listed in the "/" menu like any
 other command, because the runtime registers it; picking it there inserts `/agents`, and Enter
@@ -24,9 +24,9 @@ opens the pane instead of sending. The draft clears, the pane takes focus, and a
 command and goes through untouched, and so does `/agents` with images attached.
 
 The subagents row was plain text: `.run-status`, shown whenever at least 1 worker runs — the
-parent's own turn included (§3 "Run status") — and, once the parent is idle, also when the
+parent's own turn included (§chat/transcript "Run status") — and, once the parent is idle, also when the
 session has settled workers. It becomes a control. The `<p>` stays, and a
-button takes its contents. The row is no longer only this: §13's inputs trigger sits at its
+button takes its contents. The row is no longer only this: §chat/timeline's inputs trigger sits at its
 right end, and the row renders whenever any of streaming, workers or inputs has something:
 
 ```html
@@ -52,7 +52,7 @@ right end, and the row renders whenever any of streaming, workers or inputs has 
 
 | State | Renders |
 |---|---|
-| Parent turn running, ≥ 1 working | The Working row (§3) **and** this trigger beside it: live dot, the counts alone — "2 subagents" · "1 subagent · 2 team members" — labelled "2 subagents working — show subagents". Working already says what's happening, so the trigger only says how many. This is how the pane is one click away mid-turn |
+| Parent turn running, ≥ 1 working | The Working row (§chat/transcript) **and** this trigger beside it: live dot, the counts alone — "2 subagents" · "1 subagent · 2 team members" — labelled "2 subagents working — show subagents". Working already says what's happening, so the trigger only says how many. This is how the pane is one click away mid-turn |
 | Idle, 0 workers ever | No row, no trigger. `/agents` still opens the pane, which says so |
 | Idle, ≥ 1 working | The trigger, with the live dot: "2 subagents working…" |
 | Idle, none working, ≥ 1 settled | The trigger, **no live dot**: "2 subagents", labelled "2 subagents — show subagents". The per-worker counts and the Σ are what it's for, and they outlive the work |
@@ -68,8 +68,8 @@ is one click rather than a wait for the turn to settle.
 
 ```html
 <div class="app" data-view="session">
-  <aside class="app-sidebar" aria-label="Sessions">…§2…</aside>
-  <main class="app-main">…§3 head, thread, composer…</main>
+  <aside class="app-sidebar" aria-label="Sessions">…§app/session-list…</aside>
+  <main class="app-main">…§chat/transcript head, thread, composer…</main>
   <aside class="app-subagents" id="session-pane" aria-label="Session detail">
     <header class="subagents-head">
       <h2 class="subagents-title">Subagents</h2>
@@ -89,7 +89,7 @@ is one click rather than a wait for the turn to settle.
 
 The aside is a direct child of `.app`, after `.app-main`, and it's **mounted only while open**.
 The grid keys off its presence (`.app:has(> .app-subagents)`), so nothing else has to change
-state. Changing route closes it. The shell is the window, so, like §1, the bands are `@media`:
+state. Changing route closes it. The shell is the window, so, like §app/shell, the bands are `@media`:
 
 | Window | The pane | Session pane (`.app-main`) |
 |---|---|---|
@@ -110,7 +110,7 @@ state. Changing route closes it. The shell is the window, so, like §1, the band
 ## §app.subagents-pane/head — Head
 
 `.subagents-head` matches `.session-head`: 56px, surface, a bottom border, so the two heads read
-as one band across the window. The title is `heading-s`. The count chip is the neutral §10
+as one band across the window. The title is `heading-s`. The count chip is the neutral §app/insights
 aggregate, `{n} working`, with no dot and no pulse, left out at 0. Close is a ghost icon button
 pushed right, `aria-label="Close subagents"`. Its chevron points right: it sends the pane back
 the way it came.
@@ -119,7 +119,7 @@ the way it came.
 (`.subagents-usage`), left out when nothing has been spent. It is a **session-lifetime** total:
 every worker this session ever started, including the ones the manager's retention cap and the
 live record's 40-row cap dropped, so it is normally larger than the rows add up to and it never
-goes down. The headline is input + output, the §4f token format. Everything the headline hides
+goes down. The headline is input + output, the §chat/context-window token format. Everything the headline hides
 is in the `title`: `{in} in · {out} out · {cacheRead} cache read · {cacheWrite} cache write`,
 the cost (`$0.72`, `<$0.01`) when a backend reports one, and the head count it covers
 ("57 subagents so far"). Under 520px of pane the chip goes and the working count stays: one
@@ -192,7 +192,7 @@ list/detail. From 1280 the column is 40vw and asks its own box, so it's side by 
   `claude-opus-5[1m]` → `opus-5 1M`. An id that matches none of that is left as it is
   (`gpt-5-mini`). The **full id is the `title`**, here and in the transcript view's head, so
   nothing shortened is lost.
-- **Status** is §10's member table, word for word. The chip always carries the word:
+- **Status** is §app/insights's member table, word for word. The chip always carries the word:
 
   | Worker | Chip | Meta |
   |---|---|---|
@@ -204,7 +204,7 @@ list/detail. From 1280 the column is 40vw and asks its own box, so it's side by 
   | `error` | `.chip.chip-error` Failed | `{provider}` · `{model}` · `{tokens}` · as of `{HH:MM}` |
   | `killed` | `.chip` + dot, Stopped | `{provider}` · `{model}` · `{tokens}` · as of `{HH:MM}` |
 
-  **Tokens** are that worker's own running total (input + output, mono, the same §4f format and
+  **Tokens** are that worker's own running total (input + output, mono, the same §chat/context-window format and
   the same split-and-cost `title` as the head's Σ). A worker that has spent nothing yet shows
   none, and so does a worker from a pi-config that doesn't publish counts: the meta line then
   reads exactly as it did before. It is one worker's spend, never the Σ.
@@ -235,7 +235,7 @@ webapp never writes to it (CLAUDE.md: no file locking).
   </header>
   <section class="subagents-transcript pane" tabindex="0" aria-label="designer transcript">
     <div class="subagents-banner stack-2">…banners, or nothing…</div>
-    <div class="thread">…the same rows as §3…</div>
+    <div class="thread">…the same rows as §chat/transcript…</div>
   </section>
   <button class="button jump-latest subagents-jump">Jump to Latest · 3 new</button>   <!-- scrolled up only -->
 </div>
@@ -254,8 +254,8 @@ webapp never writes to it (CLAUDE.md: no file locking).
   there's nothing to type into. The head repeats the row on purpose: in list/detail, the list
   isn't on screen. There, the back button leads the head, and title, chips and meta sit beside
   it in `.subagents-view-id`.
-- **Thread.** The same §3 rows, capped at the transcript column (`--measure` + `--space-9`) and
-  centred, 16px side padding. Auto-follow and Jump to Latest behave exactly as §3 "Live-watch".
+- **Thread.** The same §chat/transcript rows, capped at the transcript column (`--measure` + `--space-9`) and
+  centred, 16px side padding. Auto-follow and Jump to Latest behave exactly as §chat.transcript/live-watch.
   `.subagents-jump` is `.jump-latest` held inside the view's width.
 - **Banners** go in `.subagents-banner`, sticky at the top of the scroll region, taking no space
   when empty, like `.transcript-banner`.
@@ -266,11 +266,11 @@ webapp never writes to it (CLAUDE.md: no file locking).
 | Workers, none selected | `.empty.subagents-empty`: **{n} subagents, {w} working.** Pick one to read its transcript. |
 | Workers list couldn't be fetched | `.banner-warn`: **Couldn't load this session's subagents.** {message} Your workers keep running. We'll retry on our own. Whatever is shown stays |
 | Selected, file empty (just started) | View head, then `.empty.subagents-empty`: **0 entries in {name}'s session so far.** Entries show up here as it writes them. |
-| Loading (after 300ms) | View head, then §3's loading skeletons in the thread. `aria-busy="true"` on the section |
+| Loading (after 300ms) | View head, then §chat/transcript's loading skeletons in the thread. `aria-busy="true"` on the section |
 | Selected, no session yet (Claude Code worker) | View head, then `.empty.subagents-empty`: **Its transcript isn't available in Sova.** `{name}` is starting — no Claude session yet. Latest: {preview, mono}. (Pi worker from an older pi-config: …runs on a pi that doesn't publish its session file yet.) |
 | File gone, first load | View head, then `.empty.subagents-empty`: **Couldn't find this worker's transcript.** `{path}` is gone (a claude-code worker reads `Claude session {id}`). Nothing else changed. |
 | File gone after loading | Keep what's shown. `.banner-warn` in the banner slot: **This transcript's file is gone.** What's shown is up to `{HH:MM}`. |
-| Connection lost, retrying | Keep what's shown. `.banner-warn`: **Stopped watching. The connection dropped.** What's shown is up to `{HH:MM}`. Reconnecting… (§9 Live-watch). Pulses stop |
+| Connection lost, retrying | Keep what's shown. `.banner-warn`: **Stopped watching. The connection dropped.** What's shown is up to `{HH:MM}`. Reconnecting… (§design.copy-deck/live-watch). Pulses stop |
 | Gave up | `.banner-error`: **Lost the connection to the Sova server.** Nothing in the session changed. Check `npm run dev:server` is running, then retry. · `Reconnect` |
 | Other load error | `.banner-error`: **Couldn't load this transcript.** The file at `{path}` wasn't changed. {server message} · `Retry` |
 
@@ -307,7 +307,7 @@ never the door. The browser back button doesn't close it, because the pane isn't
 
 - **Landmark.** `<aside id="session-pane" aria-label="Session detail">`, a complementary landmark.
   The id is tab-neutral, because every trigger opens the same pane on its own tab: the composer's
-  subagents row, the composer's inputs row (§13) and the head's Session details button all point
+  subagents row, the composer's inputs row (§chat/timeline) and the head's Session details button all point
   their `aria-controls` at this one id. The pane is in the DOM only while open, so that reference
   dangles while it's closed — intended, and the same pattern the subagents trigger has always had.
 - **Opening** moves focus to the selected row, or the first row. With no rows, it goes to the
@@ -322,10 +322,10 @@ never the door. The browser back button doesn't close it, because the pane isn't
   `aria-current="true"`. Its name reads the name, status word, and meta in order.
 - **No aggressive live regions.** The pane announces nothing on updates: no `role="log"`, no
   `aria-live` on the list, the chip, or the thread. Status words are text, and a user who wants
-  them reads the row. The session's single polite region (§3) stays the only one.
+  them reads the row. The session's single polite region (§chat/transcript) stays the only one.
 - **Contrast.** Everything here is an existing pair: muted on accent-tint (the selected row's
   meta) is 5.05 (dark) and 4.68 (light), ink on accent-tint is 12.57 and 14.57, and muted on
-  surface and sunken are already measured (§3).
+  surface and sunken are already measured (§chat/transcript).
 
 ## §app.subagents-pane/motion — Motion
 
@@ -340,7 +340,7 @@ the existing one.
 
 Three new layout tokens in `tokens.css`: `--main-min` (440px), `--subagents-width`
 (`clamp(520px, 40vw, 880px)`), `--subagents-list-width` (256px). **No new colors.** The pane uses
-surface, paper, sunken, border, accent-tint for the selected row, and the §10 chips.
+surface, paper, sunken, border, accent-tint for the selected row, and the §app/insights chips.
 
 ## §app.subagents-pane/rejected — Rejected
 

@@ -1,4 +1,4 @@
-# §chat/transcript — 03 · Transcript (main pane)
+# §chat/transcript — Transcript (main pane)
 > Part of the Sova design spec · [overview](../design/overview.md)
 
 ## §chat.transcript/anatomy — Anatomy
@@ -10,12 +10,12 @@
     <div class="session-head-main">
       <h1 class="session-head-title" tabindex="-1">Add a watch endpoint for TUI sessions</h1>
       <p class="session-head-meta">
-        <span class="text-mono" title="/home/user/webapps/pi-web">~/webapps/pi-web</span>
+        <span class="text-mono" title="/home/user/webapps/sova">~/webapps/sova</span>
         <span aria-hidden="true">·</span>
         <span class="text-mono">claude-opus-5</span>
       </p>
     </div>
-    <!-- worker count, linked: {n} + the worker icon, the rail's pair (§10) -->
+    <!-- worker count, linked: {n} + the worker icon, the rail's pair (§app/insights) -->
     <a class="chip chip-count session-head-working" href="#/agents"
        title="3 subagents working now" aria-label="3 subagents working now">
       <span class="text-num">3</span><span class="icon icon-sm" style="--icon:url(/icons/worker.svg)"></span></a>
@@ -31,7 +31,7 @@
     <button class="button jump-latest">…chevron-down… Jump to Latest · 3 new</button>  <!-- conditional -->
   </section>
 
-  <footer class="composer">…§4…</footer>
+  <footer class="composer">…§chat/composer…</footer>
 </main>
 <div class="visually-hidden" role="status" aria-live="polite"><!-- turn announcements --></div>
 ```
@@ -39,16 +39,16 @@
 - **Head title.** Uses `.session-head-title`, a single line with the full text in `title`. The
   `h1` is sized as a heading-s on purpose: the page is dense and the title is chrome, not a
   display headline.
-- **What the head holds.** Back, the title block, the context gauge (§4f), the mode switch
-  (§4g), the working count and the `TUI` chip, and Archive. Nothing else: the model and the session's
-  own facts moved into the composer (§4, §4b), which is where the session is acted on.
-- **Model.** Chat sessions read it off the composer's model indicator (§4) and change it in the
-  flyout's Model row (§4b); neither is in the head. Watch sessions keep it in
+- **What the head holds.** Back, the title block, the context gauge (§chat/context-window), the mode switch
+  (§chat/mode-menu), the working count and the `TUI` chip, and Archive. Nothing else: the model and the session's
+  own facts moved into the composer (§chat/composer, §chat/images), which is where the session is acted on.
+- **Model.** Chat sessions read it off the composer's model indicator (§chat/composer) and change it in the
+  flyout's Model row (§chat/images); neither is in the head. Watch sessions keep it in
   `.session-head-meta`, as plain mono text they can't change.
 - **Copy Session Path.** Gone from the head. The path is a session fact, and it's copied from
-  Session info (§4h) instead, which is where the rest of them live.
+  Session info instead, which is where the rest of them live.
 - **Archive Session / Unarchive Session.** Web sessions only, last in the head. Moves the
-  session between the sidebar regions (§2 "Archiving"). `aria-disabled` while live and not
+  session between the sidebar regions (§app/session-list "Archiving"). `aria-disabled` while live and not
   archived. It stays at every width: at a 320px head (292px inside its 16px/12px padding) the
   head holds Back 44, the mode trigger's icon-only 44 and this 44, with 3 gaps of 12px, leaving
   the title 124px — above its 72px floor. This is the app's only archive control, so hiding it
@@ -65,7 +65,7 @@ width, and it grows with the pane from unfolded up:
 `clamp(72ch, 100vw − --sidebar-width − --space-9 − 2 × --space-8, 110ch)`. That keeps 64px of
 margin on each side of the column until the 110ch cap (990px). The formula is under 72ch until
 the viewport reaches 1192px, so it grows without a jump. The banner, the composer
-(`.composer-inner`), the Current goal strip (§10), and Jump to Latest follow the same token, so they stay
+(`.composer-inner`), the Current goal strip (§app/insights), and Jump to Latest follow the same token, so they stay
 aligned with the column.
 
 | Viewport | Pane | `.transcript-inner` | Message cap | Composer |
@@ -200,7 +200,7 @@ a machine event fired the turn, not the person. Same `.toolcard` shell as tool-c
   overdue line, the reason line, the standing instruction) — in mono, never rewritten or hidden.
 - **Counts as an input.** A wake row is on every list that counts "your messages": the composer's
   "N inputs" trigger, the Timeline's Inputs Only view (where it shows the reason, or "Wake nudge
-  n1" with none — §13), rewind targets, and the "calls after the last user message" scan that
+  n1" with none — §chat/timeline), rewind targets, and the "calls after the last user message" scan that
   decides whether an open tool call may still be running. Only its rendering differs from an
   ordinary user row.
 - **Never hidden, never titles the session.** "Hide tool calls" leaves wake rows alone, and a wake
@@ -271,9 +271,9 @@ closed, and the markdown on the left when open.
 
   "Waiting" with task `success` reads "Success". Waiting is the worker idling after a finished
   task, and the task result is what you're scanning for.
-- **Open.** The body goes through the markdown renderer (§4e), capped at `--measure` and
+- **Open.** The body goes through the markdown renderer (§chat/markdown), capped at `--measure` and
   left-aligned under the disclosure's `--color-border` rule. It's never centered, and never
-  caption size. Path chips work in it (§4b). Error is `--status-error` caption text. Session and
+  caption size. Path chips work in it (§chat/images). Error is `--status-error` caption text. Session and
   the truncation note are `--color-ink-muted` captions. The body is parsed only when the row is
   first opened, so a transcript with dozens of reports stays cheap.
 - **Explain rows: running.** An `/explain` run appends its `explain-doc` entry twice under one
@@ -347,7 +347,7 @@ icons. Under a message of yours it is end-aligned like the message head (`.messa
   output. Available in watch mode too: the text is on screen, and nothing owns the clipboard. The
   icon flips to a check for 1.5s and the toast says "Copied message."
 - **Rewind** (your messages) moves the branch to just before that message and hands its text back
-  to the composer — the same request the Timeline's input rows make (§13), with the same refusals.
+  to the composer — the same request the Timeline's input rows make (§chat/timeline), with the same refusals.
   **Regenerate** (replies) walks back to the user message that started the turn, rewinds there and
   re-sends that message's own stored text and images with the session's CURRENT model, so
   switch-model-then-regenerate compares. The whole turn re-runs, tools included, and the composer
@@ -401,7 +401,7 @@ icons. Under a message of yours it is end-aligned like the message head (`.messa
   them with canonical rows and the strip appears then. A disabled action that could never enable
   itself is not drawn at all.
 
-## §chat.transcript/a-queued-message — A queued message (spec §4 sending)
+## §chat.transcript/a-queued-message — A queued message (§chat/composer, sending)
 
 A message of yours that hasn't been delivered says which state it is in, with a dot and the word:
 `Sending…` while nothing is known to hold it, `Queued` once the server says it does. Only a queued
@@ -445,19 +445,19 @@ Driven by `ChatServerMessage.event`.
 - **Run status.** Above the textarea, inside `.composer-inner`:
   `<p class="run-status"><span class="live-dot"></span>Working<span class="run-status-detail">· running bash</span></p>`.
   The detail names the current tool, or says "· thinking" or "· writing". This is the loading
-  pattern: say what's happening. The row is shared: it also carries the subagents trigger (§11)
-  and the inputs trigger ("7 inputs", which opens the Timeline with Inputs Only on, §13), and it
+  pattern: say what's happening. The row is shared: it also carries the subagents trigger (§app/subagents-pane)
+  and the inputs trigger ("7 inputs", which opens the Timeline with Inputs Only on, §chat/timeline), and it
   renders whenever any of the three has something to show,
   so an idle session with messages still has one. While the parent's own turn runs, the subagents
   trigger rides along with the counts alone (`Working · 2 subagents…`), because the row already
-  says it is working; once the parent settles it goes back to naming them in full (`§11`).
+  says it is working; once the parent settles it goes back to naming them in full (`§app/subagents-pane`).
 - **End of turn** (`agent_settled`, or `agent_end` if that's all you get). Remove the live dots
   and the run status. Replace the optimistic items with the server's canonical ones if it sends
   them. Announce "Reply finished." in the polite live region; announce nothing per delta.
 - **A turn that errors** (`type:"error"`, not a refusal) announces "The turn stopped with an
   error." — the banner's own title, so the failure is heard wherever the banner isn't being read:
   in a workspace a failed member looks exactly like a quiet one until you pan its pane, and the
-  announcement is the one signal that crosses panes (§14's pane-prefixed member form, "{pane
+  announcement is the one signal that crosses panes (§workspace/groups's pane-prefixed member form, "{pane
   name} — stopped with an error."). Once per error: the same failure re-reported on a reconnect
   loop says nothing, because each announcement would read as another error. It replaces that
   turn's "Reply finished." (Accessibility, below): the error is the ending.
@@ -469,7 +469,7 @@ Driven by `ChatServerMessage.event`.
 - **No persistent banner.** Watch mode has no "Live from TUI — read only" card; it was removed
   by boss directive. Read-only is already obvious from three things that stay:
   1. **The TUI chip in the session head** (`.chip.chip-accent`, the word "TUI", a **static**
-     dot — never `.chip-live`; see §0 Motion, "TUI never pulses", and §2). It carries the process
+     dot — never `.chip-live`; see §design.ground-rules/motion, "TUI never pulses", and §app/session-list). It carries the process
      facts in its `title`, updated from `live` whenever the session list refreshes:
 
      ```html
@@ -479,7 +479,7 @@ Driven by `ChatServerMessage.event`.
      The pid and status are shown only here now. They're a detail you look up, not something
      read on every visit.
   2. **The disabled composer**, with its reason: "Read only while this session is open in the
-     TUI." (§4 Disabled states). AT gets it through `aria-describedby="composer-reason"`.
+     TUI." (§chat.composer/disabled-states). AT gets it through `aria-describedby="composer-reason"`.
   3. **The error banners** below, which still appear in `.transcript-banner` when something
      goes wrong.
 
@@ -513,7 +513,7 @@ page with two parts, in this order:
 1. **The opening**, unchanged except for its actions: `.welcome-head` wrapping the `.empty` block
    that has always been here — the `chat` mark, "{n} sessions across {m} folders.", "Pick one to
    read it, or start a new one.", and two buttons in one `.empty-action` cluster: `New Session`
-   and `Fan Out…` (§14b "Entry points" — the empty screen is fanout's front door, which is a
+   and `Fan Out…` (§workspace.fanout/entry-points — the empty screen is fanout's front door, which is a
    creation gesture offered beside the other creation gesture, not in the sidebar). It is the
    first thing read at every width.
 2. **The Explained grid**, shown **only when at least one explanation exists** (0 renders
@@ -541,14 +541,14 @@ page with two parts, in this order:
   takes the leftover height and centres its `.empty` in the pane. With the grid under it, it
   keeps its own height at the top and the grid follows.
 - **The head is the section eyebrow**, the same rule as the Usage and Agents pages'
-  `.insights-section-head` (§10) — mono, `--fs-micro`, uppercase, `--ls-eyebrow`, `--color-ink-2`
+  `.insights-section-head` (§app/insights) — mono, `--fs-micro`, uppercase, `--ls-eyebrow`, `--color-ink-2`
   — with the count as the `.text-num` span inside it, in `--color-ink-muted` and no casing. A
   `display-l` page opener was rejected: this is the second thing on the page, not its title.
 - **Where the CSS lives.** `.welcome`, `.welcome-head`, `.explain-section` and
   `.explain-section-head` are in `src/design/base.css`; `.explain-grid` and every `.explain-tile`
   rule are in `src/explain.css`, which owns the tile in both places it appears.
 - **The session-scoped gallery is unchanged.** The same `ExplainGrid` still renders inside the
-  gallery modal that the insight strip's `Open {n} Explanations` button opens (§10), scoped to
+  gallery modal that the insight strip's `Open {n} Explanations` button opens (§app/insights), scoped to
   one session and keeping the 0-explanations empty state. The landing page is the *all*-scope
   view of the same rows, and it is a page, not a dialog: the sidebar foot no longer has an
   Explained row.
@@ -565,7 +565,7 @@ page with two parts, in this order:
 | No session selected (unfolded) | The landing page below, not a bare `.empty`: `.welcome` fills `.app-main`, its `.welcome-head` holds the `.empty` opening (`chat` icon in `.empty-mark`, title "48 sessions across 7 folders.", body "Pick one to read it, or start a new one.", an `.empty-action` cluster with `New Session` and `Fan Out…`), and the Explained grid follows when there is one. No composer |
 | Loading transcript (after 300ms) | Three placeholder messages in `.thread`: a right-aligned `.skeleton` 40% × 44px, then a left `.skeleton-title` plus 3 `.skeleton-line` at 92/78/60%, then a `.skeleton-row` at 60% width. Put `aria-busy="true"` on the `section`. The head renders straight away from the `SessionSummary` |
 | Error (a watched TUI session) | `.banner.banner-error` in `.transcript-inner`. Title: "Couldn't load this transcript." Body: "The file at `{path}` wasn't changed. {server message}." Action: `Retry`. A chat the server refuses to open shows §app.shell's open-failure banner instead |
-| Empty (new session) | `.empty` with no icon: the title "New session in `~/webapps/pi-web`.", then the setup card (§chat.transcript/setup-card), then the footnote `.empty-body` "Your first message becomes its title." No action; the composer has focus. Show it only while the thread has **zero rows**, counting local rows such as "Ran `/cmd`" (§4d) and model-change info rows. Once any row exists, the thread renders normally with no empty state |
+| Empty (new session) | `.empty` with no icon: the title "New session in `~/webapps/sova`.", then the setup card (§chat.transcript/setup-card), then the footnote `.empty-body` "Your first message becomes its title." No action; the composer has focus. Show it only while the thread has **zero rows**, counting local rows such as "Ran `/cmd`" (§chat/slash-commands) and model-change info rows. Once any row exists, the thread renders normally with no empty state |
 | Agent/server error (`type:"error"`, not busy) | `.banner.banner-error` placed as the last item of the thread (in flow, so it stays in the record). Title: "The turn stopped with an error." Body: "{message}. Your messages are kept. Send again to retry." |
 
 ## §chat.transcript/setup-card — Setup card
@@ -578,7 +578,7 @@ main-pane rows.
 
 ```html
 <div class="empty">
-  <p class="empty-title">New session in <code>~/webapps/pi-web</code>.</p>
+  <p class="empty-title">New session in <code>~/webapps/sova</code>.</p>
   <section class="setup-card" aria-label="Session setup">
     <!-- the loadout: these three groups, or one line in their place -->
     <div class="setup-group">                          <!-- omitted when it adds up to 0 B · 0 lines -->
@@ -631,9 +631,9 @@ main-pane rows.
     Repository group still reads the target.
   - A folder that couldn't be read: the server's own sentence, such as "This session's folder no
     longer exists: {cwd}." or "Sova couldn't read this folder's setup: {message}." The same holds
-    for a session file with no header, a folder that isn't an absolute path, and a removed sshfs
-    mount. The Repository group places the folder the same way, so for a missing folder and for
-    those three it says the same sentence again under its own heading.
+    for a session file with no header and a folder that isn't an absolute path. The Repository
+    group places the folder the same way, so for a missing folder and for those two it says the
+    same sentence again under its own heading.
 - **Couldn't read.** When a request fails outright (the server is unreachable, or it refused the
   request), the loadout's place says "Couldn't read what pi loads here. {message}" and the
   Repository group says "Couldn't read this session's repository. {message}". The message is the
@@ -664,10 +664,10 @@ The files pi puts into the prompt, in the order it loads them.
       <span class="setup-name"><span class="setup-path">~/.pi/agent/AGENTS.md</span></span>
       <span class="setup-facts">2.1 KB · 48 lines · ≈530 tokens</span>
     </li>
-    <li class="setup-row" title="/home/user/webapps/pi-web/CLAUDE.md">…</li>
-    <li class="setup-row" title="/home/user/webapps/pi-web/.pi/APPEND_SYSTEM.md">
+    <li class="setup-row" title="/home/user/webapps/sova/CLAUDE.md">…</li>
+    <li class="setup-row" title="/home/user/webapps/sova/.pi/APPEND_SYSTEM.md">
       <span class="setup-name">
-        <span class="setup-path">~/webapps/pi-web/.pi/APPEND_SYSTEM.md</span>
+        <span class="setup-path">~/webapps/sova/.pi/APPEND_SYSTEM.md</span>
         <span class="setup-role">appended to the system prompt</span>
       </span>
       <span class="setup-facts">1.9 KB · 17 lines · ≈480 tokens</span>
@@ -749,8 +749,8 @@ The skills pi offers this session: what it is **offered**, not what is loaded.
 
 ## §chat.transcript/setup-card-repository — Setup card: Repository
 
-The whole repository that contains the session's folder: the folder it was renamed to, when it
-moved, or the folder on the session's target. It is read-only git, and nothing fetches. The
+The whole repository that contains the session's folder, or the folder on the session's
+target. It is read-only git, and nothing fetches. The
 heading is `Repository`, with no count and no total.
 
 ```html
@@ -833,7 +833,7 @@ repository around the folder. Two of its figures:
   read says so in words ("The last commits couldn't be read.") instead of showing an empty list. The
   read is capped at three because this is a glance at where the folder stands, not a log viewer.
 - **Every loadout figure carries an estimated token count**: `31 KB · 475 lines · ≈8.1k tokens`, in
-  the app's one token formatter (§4f: `812 · 8.4k · 237k · 1M`), the same figure in the same place
+  the app's one token formatter (§chat/context-window: `812 · 8.4k · 237k · 1M`), the same figure in the same place
   on a row and on the section total that adds the rows up. The estimate is pi's own —
   `ceil(characters ÷ CHARS_PER_TOKEN)`, `pi-ai`'s `estimateTextTokens`, never a tokenizer (characters
   are the decoded text's JS string length, UTF-16 code units, the same count pi makes) — so the

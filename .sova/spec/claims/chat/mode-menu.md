@@ -1,12 +1,9 @@
-# §chat/mode-menu — 04g · Mode menu
+# §chat/mode-menu — Mode menu
 > Part of the Sova design spec · [overview](../design/overview.md)
 
 pi's mode extension (`pi-config/extensions/mode`) has one **major mode**, `normal` or
-`delegate`, and any set of **minor modes** (today `align`). Delegate was called `claude-heavy`
-until 2026-09; that name is still read everywhere a mode is parsed (the API, `mode.json`, session
-snapshots) as `delegate`, and it is never written. Recorded history keeps it: an old transcript
-marker still reads "Mode → claude-heavy". What Delegate
-routes where is Settings → Modes (§12), not this menu.
+`delegate`, and any set of **minor modes** (today `align`). What Delegate routes where is
+Settings → Modes (§app/settings-dialog), not this menu.
 
 Both are **per session**: each chat keeps its own, persisted in that session's own `mode`
 entries. The menu switches them from the chat's composer, and the switch reaches **that chat
@@ -27,12 +24,12 @@ switching.
 
 ## §chat.mode-menu/trigger — Trigger
 
-In chat sessions it sits in the composer foot (§4), at the right end: the foot reads the model
+In chat sessions it sits in the composer foot (§chat/composer), at the right end: the foot reads the model
 indicator, the disabled reason, then this. It's in reach of the message it affects, next to the
 model and thinking level that also shape the next turn. A watched (TUI) session has no composer
 foot to show it in, and nothing to show anyway: the TUI keeps its mode in memory, so we can't say
 what it's using. The session head's right side keeps the context gauge, the subagents or team
-chip and the info button (§4f); it carries no mode.
+chip and the info button (§chat/context-window); it carries no mode.
 
 ```html
 <button class="button button-ghost mode-trigger" type="button" aria-haspopup="menu"
@@ -131,7 +128,7 @@ toggles, which is exactly what `menuitemradio` and `menuitemcheckbox` are for.
 - **Configure Delegate** is an icon-only gear at the right end of Delegate's row: a real
   `button` with `role="menuitem"`, a sibling of the `menuitemradio` (never nested in it) inside a
   `role="none"` wrapper, with a `--tap-min` target. It comes right after Delegate in the same
-  roving focus. It closes the menu and opens Settings at **Modes** (§12), where Delegate's routing
+  roving focus. It closes the menu and opens Settings at **Modes** (§app/settings-dialog), where Delegate's routing
   lives. It switches nothing: this chat's mode stays what it was, and it's there in either mode,
   so you can set Delegate up before turning it on. Clicking the rest of the row still picks
   Delegate.
@@ -148,7 +145,7 @@ toggles, which is exactly what `menuitemradio` and `menuitemcheckbox` are for.
     the menu (still reachable when `aria-disabled`); `Tab` from there leaves the menu, which closes
     it and moves on. Keys pressed on the button are the button's own: `Enter` or `Space` presses
     it, never whichever row was last focused, and the arrows do not move the rows from there.
-- **Motion.** The same single fade as §4c.
+- **Motion.** The same single fade as §chat/model-menu.
 
 ## §chat.mode-menu/how-a-switch-reaches-the-chat — How a switch reaches the chat
 

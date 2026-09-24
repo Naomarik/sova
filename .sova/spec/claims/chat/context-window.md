@@ -1,4 +1,4 @@
-# §chat/context-window — 04f · Context window
+# §chat/context-window — Context window
 > Part of the Sova design spec · [overview](../design/overview.md)
 
 How full the model's context is, as of the last reply. The data is `ContextInfo
@@ -15,7 +15,7 @@ too, so it never rests on hue alone.
 ## §chat.context-window/sidebar-ring — The sidebar ring: a deliberate exception
 
 **A ring is a bar**, and the rule above says the context readout is never one. The session row
-(§2, line 3) gets one anyway. This is the exception, stated once, with what buys it:
+(§app/session-list, line 3) gets one anyway. This is the exception, stated once, with what buys it:
 
 - **It is list-scale, where text is not affordable.** The head has 56px and a full line to spend;
   a row's meta line has 250px already holding a timestamp and a model id, and 279 of them scroll
@@ -79,7 +79,7 @@ in watch. A second copy leads the meta line for narrow heads, and CSS shows one 
     <p class="session-head-meta">
       <span class="context-meta {context-warn|context-error}" aria-hidden="true">24%</span>
       <span class="context-meta" aria-hidden="true">·</span>
-      <span class="text-mono" title="{cwd}">~/webapps/pi-web</span>
+      <span class="text-mono" title="{cwd}">~/webapps/sova</span>
       …
     </p>
   </div>
@@ -140,7 +140,7 @@ thousands.
 
 | State | Shows |
 |---|---|
-| No assistant turn yet (`null` and no compaction row) | **Nothing.** No gauge and no meta copy. The empty state (§3) already says "Nothing sent yet", and a "No replies yet" readout would repeat an absence |
+| No assistant turn yet (`null` and no compaction row) | **Nothing.** No gauge and no meta copy. The empty state (§chat/transcript) already says "Nothing sent yet", and a "No replies yet" readout would repeat an absence |
 | Just compacted (`null` after a compaction row) | `.context-gauge.context-compacted`: "Context" plus "compacted" (in body type, muted). Narrow shows `compacted` in the meta line |
 | Streaming | It keeps the last reply's value until the turn ends, then updates. It never animates and never pulses |
 | Watch view | Same rules, from the same data |
@@ -153,25 +153,25 @@ floor, because these rules contract):
 1. **Head ≥ 720px:** full, "Context 237k / 1M · 24%" (about 165px).
 2. **520 to 719px:** the percent only, "24%" (or "237k", or "compacted"), still in the head.
 3. **Under 520px** (320 included):
-   - The gauge leaves the head, and the percent leads the meta line: `24% · ~/webapps/pi-web`.
+   - The gauge leaves the head, and the percent leads the meta line: `24% · ~/webapps/sova`.
    - The cwd truncates first.
    - The head holds back, the mode trigger (icon-only) and Archive, so the title keeps about
      124px at 320.
 
 Order of sacrifice: the context label and fraction, then the context's place in the head, then
 the cwd. The title is the last thing to shrink. The model isn't in this budget at all anymore:
-it lives in the composer flyout (§4b), which is full-width at every size.
+it lives in the composer flyout (§chat/images), which is full-width at every size.
 
 Three more head rules cover every head, not just chat:
 
 - **Aggregate chip.** Under 520px of head width, the head's aggregate `Team · {n} working` /
-  `{n}` + worker-icon link chip (§10) is hidden. It repeats the sidebar row's rail count and the
+  `{n}` + worker-icon link chip (§app/insights) is hidden. It repeats the sidebar row's rail count and the
   Agents foot row. Before this rule, a watched live session with a team at 320 had back, Team
   chip, Live, and copy, and that left the title block about 0px wide.
 - **Floor.** `.session-head-main` has `min-width: 72px`. Whatever else lands in the head later,
   the title and meta line can't collapse to nothing. Extra chips overflow before the title
   disappears, and each new head chip needs its own narrow rule.
-- **Mode trigger** (chat, §4g). Under 520px of head width it's icon-only: 44px, with its name in
+- **Mode trigger** (chat, §chat/mode-menu). Under 520px of head width it's icon-only: 44px, with its name in
   `aria-label`. Under 360px it's hidden, since the title can't spare 44px more (at 360 the title
   keeps about 76px). There, `/mode {name}` in the composer still switches.
 
@@ -180,7 +180,7 @@ Three more head rules cover every head, not just chat:
 `--font-mono`, `--fs-mono`, `--fs-caption`, `--color-ink-2`, `--color-ink-muted`,
 `--status-warn`, `--status-error`, `--space-1`. The sidebar ring adds `--color-border` (the
 track) and reuses `--color-ink-muted` (the fill at rest) and the two status tokens (the fill at
-its steps); its geometry — 12px box, 1.5 track, 2 fill — is written in §2's Tokens.
+its steps); its geometry — 12px box, 1.5 track, 2 fill — is written in §app/session-list's Tokens.
 
 ---
 

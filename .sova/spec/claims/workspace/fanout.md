@@ -1,7 +1,7 @@
-# §workspace/fanout — 14b · Fanout
+# §workspace/fanout — Fanout
 > Part of the Sova design spec · [overview](../design/overview.md)
 
-Fanout makes a whole workspace (§14) in one gesture: the same starting point, N ways. Either
+Fanout makes a whole workspace (§workspace/groups) in one gesture: the same starting point, N ways. Either
 **fork this session** — N copies of the conversation you are in, branched at the message you are
 looking at, each one free to run a different model — or **start fresh** — N new sessions in one
 folder from one prompt, sharing nothing but the prompt.
@@ -22,29 +22,29 @@ the fork-point marker (below) is the only thing that tells them apart afterwards
 
 ## §workspace.fanout/entry-points — Entry points
 
-- **The composer flyout** (§4, the `plus` menu panel), a row after Session info: `Fan Out…`. It
+- **The composer flyout** (§chat/composer, the `plus` menu panel), a row after Session info: `Fan Out…`. It
   opens the dialog with **Fork at the current leaf** selected and this session as the source.
   Absent when the session has no assistant reply yet — there is nothing to fork — and absent for
   a watch view, where Sova holds no runtime.
-- **The welcome screen's opening** (§3 "Landing page"), beside `New Session`: `Fan Out…`. It
+- **The welcome screen's opening** (§chat.transcript/landing-page), beside `New Session`: `Fan Out…`. It
   opens the same dialog with **A fresh prompt** selected and no source. This is the fresh-mode
   front door, and it is deliberately NOT the sidebar: fanout is a creation gesture — it makes
   sessions the way `New Session` makes one, N of them from one prompt — so it is offered where
   creating is offered. (A Groups-region row named `New fanout` was removed with this move: the
   region's one action stays making an empty group to curate, and one entry point per mode is
-  enough. §2 says the same.)
-- **The New Session dialog's type field** (§05 "Type"): radios `One session` — the default, that
+  enough. §app/session-list says the same.)
+- **The New Session dialog's type field** (§app/new-session-dialog "Type"): radios `One session` — the default, that
   dialog's own behaviour — and `Fan out…`, chosen before the folder. This is the entry reachable
   at **every window width and on every route**, and it exists because the welcome CTA alone was
-  not: the folded shell hides `.app-main` outright (`display:none` below 768px, §1), and the
+  not: the folded shell hides `.app-main` outright (`display:none` below 768px, §app/shell), and the
   welcome screen lives inside it, so a folded user — or anyone sitting in a session, watch or
   chat, where there is no welcome screen at all — had no fresh-fanout entry. The sidebar's
   `New Session` is the one control every width and every route keeps, so fanout is a choice
   inside it. Pressing `Fan Out…` opens this dialog on **A fresh prompt** with the folder that
-  dialog had chosen as its cwd; nothing else carries (§05 asks no first message). The
+  dialog had chosen as its cwd; nothing else carries (§app/new-session-dialog asks no first message). The
   Where-pi-runs tabs leave while fanout is chosen: fresh mode is N sessions in one local folder,
   and there is no remote shape to offer.
-- **A workspace's `Add Members`** (§14), the last row of its popover: `Fan Out…`, with the
+- **A workspace's `Add Members`** (§workspace/groups), the last row of its popover: `Fan Out…`, with the
   workspace's group pre-chosen as the destination, so the new members land beside the ones
   already there. When the group carries a `seed` the dialog opens on that seed — `groupId` and
   `source` together — which is the **append** case of "The route" below: the new members branch
@@ -61,7 +61,7 @@ the fork-point marker (below) is the only thing that tells them apart afterwards
 
 ## §workspace.fanout/the-dialog — The dialog
 
-The skill's modal, `.modal-wide` (§7's settings precedent: two columns of numbers have to fit
+The skill's modal, `.modal-wide` (§design/deviations's settings precedent: two columns of numbers have to fit
 beside each other), a bottom sheet under 768px.
 
 ```html
@@ -80,7 +80,7 @@ beside each other), a bottom sheet under 768px.
     </div>
 
     <!-- fresh prompt only -->
-    <div class="field">…folder picker (§5), then a .textarea for the first message…</div>
+    <div class="field">…folder picker (§app/new-session-dialog), then a .textarea for the first message…</div>
 
     <div class="field">
       <span class="field-label" id="fanout-models">Members</span>
@@ -121,12 +121,12 @@ beside each other), a bottom sheet under 768px.
   showed the bare id would let a user add what looks like one model twice, and the cost preview —
   whose whole purpose is comparing windows — would show two identical-looking rows with different
   denominators. The `aria-label`s carry the ref for the same reason, and so does the
-  partial-creation banner (§9), which lists failures the user has to tell apart. **The rule,
+  partial-creation banner (§design/copy-deck), which lists failures the user has to tell apart. **The rule,
   stated once so it need not be re-derived per surface: wherever two members could be
   distinguished only by their provider, name the full ref.** Where something else already
   separates them — a pane's own label, title and repeat suffix — the short form stays, because
   there the provider is noise rather than the distinguishing fact.
-- **`Add a Model`** opens the §4c model picker, unchanged, **as its own modal** — a sibling of
+- **`Add a Model`** opens the §chat/model-menu model picker, unchanged, **as its own modal** — a sibling of
   this dialog, not a panel of it, so it behaves like one: it takes focus on open, Tab wraps
   within it, close returns focus to `Add a Model`, and **Escape closes it first** — the nested
   surface goes before the one under it, which is what the picker footer's "Esc to close" has
@@ -143,16 +143,16 @@ beside each other), a bottom sheet under 768px.
   most per model.", in the toast for the eye and the live region for AT — because the count
   cannot move, the answer is the whole feedback; a silent press reads as a broken one. (No
   `aria-disabled` on it: a control that answers is not a dead one.)
-- **Member labels** are not set here. They are the group's per-member `label` (§14) and are
+- **Member labels** are not set here. They are the group's per-member `label` (§workspace/groups) and are
   edited in the pane head afterwards, because the useful name ("the one that read the tests")
   isn't known until you've read some output. Until then members of one model are distinguished by
   a suffix in the pane name: `claude-opus-5 #1`, `#2`, `#3`, numbered in member order.
-- **A folder can arrive chosen.** Opened from §05's type field, the fresh-mode folder starts at
+- **A folder can arrive chosen.** Opened from §app/new-session-dialog's type field, the fresh-mode folder starts at
   the folder that dialog had chosen, not the list's guess — the choice the user made is the one
-  the members get. Nothing else carries over: §05 asks no first message, so there is no prompt
+  the members get. Nothing else carries over: §app/new-session-dialog asks no first message, so there is no prompt
   to prefill either.
 - **The group name** defaults to `Fanout · {first 6 words of the source's title, or of the fresh
-  prompt}`, trimmed to 60. It is a plain text field, duplicates allowed, exactly as §2's rename.
+  prompt}`, trimmed to 60. It is a plain text field, duplicates allowed, exactly as §app/session-list's rename.
 - **The default stops being offered the moment the user edits it.** In fresh mode the default is
   derived from the first message *as it is typed*, so it is re-derived on every keystroke of the
   prompt — but **only while the field is still ours to guess at**. Once the user has typed in it,
@@ -188,7 +188,7 @@ Turns start together, so one provider may answer some members with 429. Sova doe
 ```
 
 - **Per member, against that model's own window.** The starting fill is the source's context at
-  the fork point — `ContextInfo.tokens` for the branch (§4f) — and the denominator is the
+  the fork point — `ContextInfo.tokens` for the branch (§chat/context-window) — and the denominator is the
   member's model window, not the source's. That denominator is **`ModelInfo.contextWindow` from
   `GET /api/models`**, **absent** when no catalog knows the model — the field is optional, the
   same convention `ContextInfo.window` states, and an older server that never sends it looks the
@@ -198,22 +198,22 @@ Turns start together, so one provider may answer some members with 429. Sova doe
   a per-model window the preview loses the one comparison it exists to make — that the same 48k is
   4% of one window and 24% of another — and degrades to a column of identical token counts. The same 48k is 4% of one window and 24% of another,
   and that difference is most of what the preview is for. The number formats and the 80% / 95%
-  steps are §4f's, class for class (`.context-warn`, `.context-error`).
+  steps are §chat/context-window's, class for class (`.context-warn`, `.context-error`).
 - **A member that cannot fit** takes `.context-error` and a line of its own: "This model's
   window is smaller than the fork." The row stays, the count stays, and **Create is disabled**
   with the reason in `.field-error` — over-window is not a warning to click through, it is a
   session that fails on its first turn.
 - **Window unknown** shows tokens alone ("48k, window unknown") and no percent, no step, exactly
-  as §4f's readout does. It never blocks Create: we don't know that it doesn't fit.
+  as §chat/context-window's readout does. It never blocks Create: we don't know that it doesn't fit.
 - **A fill that cannot be named is said in words, never as a number.** A **compacted** fork point
-  (§4f: a compaction row follows the last usage, so the fill is unknown until the source's next
+  (§chat/context-window: a compaction row follows the last usage, so the fill is unknown until the source's next
   reply) shows `compacted`; a source that is **not on screen** — the Add-Members entry, whose
   seed is a record, not a transcript — shows `unknown`. Both because `0 of {window} · 0%` and
   `~0 tokens re-sent` are claims the dialog cannot make: an empty-looking gauge reads as a
   measurement, and this is the absence of one. Neither blocks Create, for the same reason an
   unknown window doesn't.
 - **The shared-turn line** is `{n} members × ~{tokens} tokens re-sent every shared turn.` It is
-  the running cost of the group composer (§14): one message you type, N contexts re-sent. `~`
+  the running cost of the group composer (§workspace/groups): one message you type, N contexts re-sent. `~`
   because the number is the fork-point fill, and it grows with every turn. An unnamed fill keeps
   the sentence and drops the number — `{n} members × unknown tokens re-sent every shared turn —
   the fork point was compacted.` for a compacted source, plain `… × unknown tokens re-sent every
@@ -261,10 +261,10 @@ POST /api/session-groups/fanout
   looking like it worked. Ignoring a field the client sent is the failure this feature has spent
   its whole length refusing. Three cases, decided by the seed:
   - **The group has no `seed`** (hand-made, or a fresh-mode fanout): it **adopts** this fork's
-    seed, and its existing members simply have no marker — which §14b already renders as no row
+    seed, and its existing members simply have no marker — which §workspace/fanout already renders as no row
     rather than a guess. Adoption is **pure lineage**: the group gains fork markers and changes
     in no other way. In particular it does not become auto-dissolving — that turns on whether
-    Sova named the group, not on whether it has a seed (§14 "Emptying a group") — so a
+    Sova named the group, not on whether it has a seed (§workspace/groups "Emptying a group") — so a
     hand-made group fanned into is still the user's, and the dialog says nothing about it
     because nothing happened worth saying.
   - **The group's `seed` matches this fork** (same `parentSessionPath` and `leafId`): the new
@@ -311,16 +311,16 @@ POST /api/session-groups/fanout
     field in, `named` out, server and client in one window. Added beside `named` instead, the
     client keeps sending `named`, the server reads absence, absence means `"user"`, and every
     fanout group becomes user-named with `autoDissolve` never set by anyone — a half-done
-    migration wearing the face of a working feature (§14).
+    migration wearing the face of a working feature (§workspace/groups).
   - **Provenance, never policy.** The client reports *this is the name Sova generated*; the
     server decides `autoDissolve` from it. A client permitted to send `autoDissolve` itself would
     assert an ownership Sova may not have, and an older or buggy one could assert it wrongly.
   - **The check form is pinned, not just the absence default**: `autoDissolve` is set **only when
     `named === "generated"`** — the enum's equivalent of `=== true` for a boolean, and the same
-    rule §14 states generally (*read it exactly, never by truthiness*). Testing `named !== "user"` is the same sentence and the wrong one —
+    rule §workspace/groups states generally (*read it exactly, never by truthiness*). Testing `named !== "user"` is the same sentence and the wrong one —
     an absent field is not a claim of user authorship, it is a client that cannot make the claim
     at all, and the negative form silently turns that into a claim. This is the enum's one
-    exposure and the reason the check is written down rather than left to the absence rule (§14
+    exposure and the reason the check is written down rather than left to the absence rule (§workspace/groups
     "The dangerous state must be the one a check has to assert").
   - **Absent, or any unrecognised value, behaves as `"user"`** and sets nothing — and with an
     enum this is **automatic rather than careful**: `named === "generated"` is exact, so
@@ -340,7 +340,7 @@ POST /api/session-groups/fanout
     must survive is the one that gets written down.
   - **Two absences point opposite ways and must not be reconciled.** Absent `named`
     describes a **client** predating the field, where a user-named group is what is at risk, so
-    absence means *survives*. Absent `SessionGroup.autoDissolve` (§14) describes a **record**
+    absence means *survives*. Absent `SessionGroup.autoDissolve` (§workspace/groups) describes a **record**
     predating that field, a population containing no user-named group, so absence falls back to
     `seed`. Different populations, one rule underneath: litter beats loss. **There is no third
     population** — a user-named group written from here on always carries an explicit `false`,
@@ -421,7 +421,7 @@ POST /api/session-groups/fanout
   the last *rendered* entry are routinely different, and comparing against the raw last line
   turns this check into a false refusal. The transcript hides several entry kinds — top-level `usage` rows (cache warming
   writes them and is **on by default**, so a source can easily end with one), `message` entries
-  with `role:"system"`, and Sova's own invisible `pi-web-rewind` marker, which by construction
+  with `role:"system"`, and Sova's own invisible `sova-rewind` marker, which by construction
   is the last line of every rewound session. In each case the file's last line carries an id the
   dialog never displayed and the user never saw, so a raw comparison refuses a fork that is
   perfectly current. The failure is worse than a spurious error: `stale-leaf`'s copy tells the
@@ -439,7 +439,7 @@ POST /api/session-groups/fanout
   handle on it. The partial-creation banner composes from it — `{shortModel(ref)} couldn't
   start: {message}` — so the words stay Sova's and the client never parses prose to find a
   model name. Consequently `message` here is the **reason alone**, never prefixed with the ref;
-  prefixing would render the model twice. It is still never empty, and it is §9's verbatim case:
+  prefixing would render the model twice. It is still never empty, and it is §design/copy-deck's verbatim case:
   the server's own reason, which Sova has no word for.
 - **Two different empty ids on this route, and they are not the same case.** A **refusal**
   (`409`) names the *source*, which is a member of nothing — `ref` is absent there. A **failure**
@@ -453,7 +453,7 @@ POST /api/session-groups/fanout
   the next person who meets it.
 - **Refusals reuse the batch vocabulary**: `409 {refused: [BatchRefusal]}` with exactly one
   entry, the source, so the client renders it with the same code-to-sentence table the group
-  composer uses (§14). The codes are the source states above — `tui-live`, `mid-turn`, `busy`
+  composer uses (§workspace/groups). The codes are the source states above — `tui-live`, `mid-turn`, `busy`
   (an unidentified recent writer), plus two this route adds: **`old-format`** for a source whose
   header version isn't current, and **`stale-leaf`** for the check above. A source path that
   doesn't resolve to a session at all is a `404`, not a refusal: the subject of the request
@@ -461,8 +461,7 @@ POST /api/session-groups/fanout
 - **`400`** for both or neither of `name` and `groupId`, a bad name, an empty `members`, a
   `count` outside 1–9, a `ref` no provider knows,
   blank `text` in fresh mode, or `text`/`cwd` sent in fork mode — and for a `cwd` the New Session
-  path itself would refuse (not absolute, gone, not a directory, or a removed legacy
-  mount cwd). Fresh mode **is** that path N times, so it is checked with that path's own rule and
+  path itself would refuse (not absolute, gone, or not a directory). Fresh mode **is** that path N times, so it is checked with that path's own rule and
   answers with that path's own sentences, before anything is made — not as an N-times-repeated
   "internal" member failure after the group was already being written.
 - **`201`, and `created` is never empty.** If not one member could be made, nothing is created,
@@ -530,12 +529,12 @@ POST /api/session-groups/fanout
   none should be invented: the outline extension only summarizes in the TUI unless its host opts
   in, and a web chat gets one because `chat-manager` sets `topic-outline-headless: true` when it
   opens the runtime (`createRuntime` in `server/chat-manager.ts`). A fanout member is opened **without** that
-  flag, so it lands in the extension's own default. The outline summarizer is a second model call per turn per session (§10), and N of them
+  flag, so it lands in the extension's own default. The outline summarizer is a second model call per turn per session (§app/insights), and N of them
   on a fanout is cost with no reader — the workspace is for reading the members against each
   other, and the strip is a single-session surface. It is off for the member's life, not just in
   the workspace, and the pane says so nowhere: an absent strip is not a state.
   The runtime knows which sessions are members by a marker fanout writes into the member's own
-  file at creation, beside the model change: an invisible `custom` entry (`pi-web-fanout-member`,
+  file at creation, beside the model change: an invisible `custom` entry (`sova-fanout-member`,
   the same shape as Sova's rewind marker — not LLM context, no usage, rendered nowhere). The
   marker travels with the file, so the exception survives restarts and holds for the member's
   life — no in-memory flag threaded through `acquireChat`, which a restart would forget.
@@ -559,13 +558,13 @@ POST /api/session-groups/fanout
   **Two shapes of line, told apart by `id`, and they must not be reconciled into one phrasing.** An
   empty `id` is a member that never came into being, and its line is `{model} couldn't start:
   {server message}`. A set `id` is a member that **exists** — created, grouped, sitting in its own
-  pane — which fresh mode then refused its first message (§14b's fold of the prompt outcome); its
+  pane — which fresh mode then refused its first message (§workspace/fanout's fold of the prompt outcome); its
   line is `{model} couldn't take the first message: {server message}`, because "couldn't start" is
   false of a session the user can see, and a banner that says it would send them looking for a pane
   that is right there. The two never collapse together even when ref and message match (the collapse
   keys on the shape), a pre-existing `groupId` member with no ref reads "A member" rather than a
   guessed ref, and — as anywhere else on this route — `{model}` is the full `ref` and the message is
-  the reason alone. §9's deck states the same rule for the same reason.
+  the reason alone. §design/copy-deck's deck states the same rule for the same reason.
 - **Total failure** keeps the dialog open with a `.field-error` and no group is created.
 
 ## §workspace.fanout/the-fork-point-in-a-transcript — The fork point in a transcript
@@ -598,13 +597,13 @@ from, immediately after it:
   client draws it at `seed.leafId` on every member. A marker that needed a write would need the
   write guards, and the fact it states is already in the group registry.
 - **Above it is shared, below it is this member's own.** That is the sentence the row exists to
-  make legible; it is the reading aid the rejected prefix-collapse (§14) was trying to be, at the
+  make legible; it is the reading aid the rejected prefix-collapse (§workspace/groups) was trying to be, at the
   cost of one row instead of a fold.
 - **The parent link** goes to the source session, which may be archived, renamed or gone. A
   source whose file is missing renders the title as plain text with `title` "This session is no
   longer on disk."
 - **A member with no marker** — the leaf id isn't on its branch anymore, because the member was
-  rewound past it (§13) — simply has no row. We never guess at a position. The same holds for a forked
+  rewound past it (§chat/timeline) — simply has no row. We never guess at a position. The same holds for a forked
   session in a hand-made group: `SessionSummary.parentId` proves the lineage, but nothing records
   the leaf, and a marker in the wrong place is a false claim about what is shared.
 
@@ -643,19 +642,19 @@ afterwards, and the next incoming token scrolls a followed pane as usual.
 
 | Need | Classes |
 |---|---|
-| Dialog | `.modal.modal-wide.fanout` (+ the §5 modal, field, and folder-picker families) |
+| Dialog | `.modal.modal-wide.fanout` (+ the §app/new-session-dialog modal, field, and folder-picker families) |
 | Source | `.fanout-source` `.fanout-source-note` |
 | Member rows | `ul.fanout-rows` `li.fanout-row` `.fanout-row-model` `.fanout-row-fill` `.fanout-count` `.fanout-add` |
-| Preview | `.fanout-preview` `.fanout-preview-row` `.fanout-note` (+ `.context-warn` `.context-error` from §4f) |
-| Create's reason, under the primary | `.fanout-blocked` — on a `.field-hint` for every reason the user hasn't earned, on `.field-error` for the overflow (§9 "Create") |
+| Preview | `.fanout-preview` `.fanout-preview-row` `.fanout-note` (+ `.context-warn` `.context-error` from §chat/context-window) |
+| Create's reason, under the primary | `.fanout-blocked` — on a `.field-hint` for every reason the user hasn't earned, on `.field-error` for the overflow (§design/copy-deck "Create") |
 | Fork marker | `.info-row.fork-marker` (+ `.info-row-text`) |
-| Align | `.workspace-align` (§14) |
+| Align | `.workspace-align` (§workspace/groups) |
 
 ## §workspace.fanout/tokens — Tokens
 
 No new ones. `--fs-caption`, `--fs-mono`, `--color-ink-2`, `--color-ink-muted`, `--status-warn`,
-`--status-error`, `--space-2`, `--space-3`, `--space-4` — the §4f readout's set, plus the modal's.
+`--status-error`, `--space-2`, `--space-3`, `--space-4` — the §chat/context-window readout's set, plus the modal's.
 
-**All user-facing strings are in §9 · Copy deck.**
+**All user-facing strings are in §design/copy-deck.**
 
 ---

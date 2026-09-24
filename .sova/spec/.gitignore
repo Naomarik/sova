@@ -1,5 +1,5 @@
 # Local-only material. It stays on disk and is never deleted; it just isn't published.
-# Trackable: README.md, USAGE.md, manifest.json, claims/, tools/, and migration/ except the below.
+# Trackable: README.md, USAGE.md, manifest.json, claims/ and tools/.
 
 # Pilot evidence: session metrics, provenance and planning runs with local paths.
 /pilot/
@@ -7,8 +7,6 @@
 /reviews/
 # Drafts are working proposals; base/ and evidence/ snapshot source bytes.
 /drafts/
-# Edits that were uncommitted in spec/ at migration time.
-/migration/legacy/worktree/
 
 # Claims are Markdown only. The root *secret*/*credential* rules would hide claims about
 # secrets, so claims/ is default-deny: descend every directory, admit only *.md, then

@@ -1,4 +1,4 @@
-# §design/copy-deck — 09 · Copy deck
+# §design/copy-deck — Copy deck
 > Part of the Sova design spec · [overview](overview.md)
 
 These are the exact strings to use. `{…}` is a value. Machine facts (paths, pids, model ids,
@@ -8,7 +8,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 
 | Where | Copy |
 |---|---|
-| Pane resizer (§1) | `aria-label` "Resize the sessions pane" · `title` "Drag to resize · Double-click to reset" — the title is the only place the two gestures are named, and it is pointer-only copy for a pointer-only control |
+| Pane resizer (§app/shell) | `aria-label` "Resize the sessions pane" · `title` "Drag to resize · Double-click to reset" — the title is the only place the two gestures are named, and it is pointer-only copy for a pointer-only control |
 | Search label (visually hidden) | Search sessions |
 | Search placeholder | Title, folder, or model |
 | Count | `{n} sessions` · filtered: `{visible} of {total} sessions` |
@@ -23,17 +23,17 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Top region head | Live & web · {n} · searching: Live & web · {hits} of {total} |
 | Archive head | Archive · {n} · searching: Archive · {hits} of {total} |
 | Archive date sections | Today · Yesterday · Last 7 days · Last 30 days · Older (each with its count) |
-| Groups region head (§2 "Groups") | Groups · {n} where n = **groups** · searching: Groups · {matching groups} of {all groups} |
+| Groups region head (§app.session-list/groups) | Groups · {n} where n = **groups** · searching: Groups · {matching groups} of {all groups} |
 | New group button (the `+` on the Groups region head) | wordless `+` · `aria-label` and `title`: New group |
 | Group name field (New group, Rename) | placeholder Group name · `aria-label` "New group name" / "Rename “{name}”" · button `Save` · Enter saves, blur saves, Escape cancels |
 | Group section label | {name} (own case, no eyebrow), then its count · `title`: {name} |
 | Empty group | No sessions yet. Drag one here. |
 | Groups region, no groups | No groups yet. Make one, then drag a session into it. |
-| Open workspace (group tool row, §14) | `Open workspace` · `title`: Open “{name}” as a workspace — every member side by side |
+| Open workspace (group tool row, §workspace/groups) | `Open workspace` · `title`: Open “{name}” as a workspace — every member side by side |
 | Group tool row | `Rename` · `Delete group` · asking: with sessions "Delete “{name}”? Its {n} sessions stay in the list." (1 session: "… Its 1 session stays …"), empty "Delete “{name}”? Nothing is in it." — with `Delete group` · `Cancel` |
 | Group toasts | "Added to “{name}”." · "Moved to “{name}”." · "Removed from “{name}”." · "Deleted “{name}”. Its {n} sessions are ungrouped." (1: "… Its 1 session is ungrouped.") · "Deleted “{name}”. It had no sessions." · failures: "Couldn't create the group. {server message}" · "Couldn't rename the group. …" · "Couldn't delete the group. …" · "Couldn't move this session. {server message}" |
 | Remove-from-group drop row (only while dragging a grouped row) | Remove from “{name}” |
-| Move into group (session pane, §3) | trigger `Move into group` · `title`: Move into group / In the group “{name}” · rows: No group, then every group, `New group…` · Identity fact: Group: {name} / None · popover failure: "Couldn't move this session." then "This session's group is unchanged." |
+| Move into group (session pane, §chat/transcript) | trigger `Move into group` · `title`: Move into group / In the group “{name}” · rows: No group, then every group, `New group…` · Identity fact: Group: {name} / None · popover failure: "Couldn't move this session." then "This session's group is unchanged." |
 | Archive cleanup toolbar | eyebrow "Delete" · buttons `Older Than 7 Days` · `Older Than 30 Days` · `Empty Sessions` (`aria-label` "Delete Sessions Older Than 7 Days", …) · pending "Checking…" |
 | Archive cleanup dialog | **Delete {n} sessions?** {scope} This permanently deletes their transcript files — this can't be undone. · skipped "{n} skipped: {a} open in a TUI, {b} mid-turn, {c} just written. They stay as they are." · buttons `Delete {n} Sessions` ("Deleting…") · `Cancel` · none: **0 sessions to delete.** · `Close` |
 | Archive cleanup toasts | "Deleted {n} sessions." (+ " {skipped}.") · "Couldn't check what to delete. Nothing was deleted. {server message}" · "Couldn't delete sessions. Some may be gone; the list is refreshed. {server message}" |
@@ -47,8 +47,8 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 
 | Where | Copy |
 |---|---|
-| No session selected | **{n} sessions across {m} folders.** Pick one to read it, or start a new one. · buttons: `New Session` · `Fan Out…` (§14b's fresh-prompt entry, beside it) |
-| No session selected, Explained grid | section head: Explained `{n}` (shown only when {n} ≥ 1; the tiles' own copy is §10) |
+| No session selected | **{n} sessions across {m} folders.** Pick one to read it, or start a new one. · buttons: `New Session` · `Fan Out…` (§workspace/fanout's fresh-prompt entry, beside it) |
+| No session selected, Explained grid | section head: Explained `{n}` (shown only when {n} ≥ 1; the tiles' own copy is §app/insights) |
 | Transcript load error (a watched TUI session) | **Couldn't load this transcript.** The file at `{path}` wasn't changed. {server message} · button: `Retry` · a chat that can't open says §app.shell's open-failure words instead |
 | New empty session | **New session in `{cwd}`.** · the setup card (the rows below) · then the footnote: Your first message becomes its title. |
 | New empty session, setup card figures | a file row or a section total: `{size} · {n} lines · ≈{tokens} tokens` (the token figure only when the server sent one) · under Context: "Loaded into the prompt." then, with token figures, "Token counts are estimates: 4 characters per token." · under Skills, with token figures: the same sentence after its note · commits: `{short oid} {subject} {age}` per row, or "The last commits couldn't be read." |
@@ -70,7 +70,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Wake nudge card, open | the fired message, verbatim, all four lines |
 | Wake nudge in Inputs Only / the Timeline | {reason}, or `Wake nudge {id}` when it carries none |
 
-## §design.copy-deck/message-actions — Message actions (§03)
+## §design.copy-deck/message-actions — Message actions (§chat.transcript/message-actions)
 
 | Where | Copy |
 |---|---|
@@ -79,14 +79,14 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Copy landed | icon flips to the check for 1.5s · toast "Copied message." · clipboard failure keeps the existing "Couldn't reach the clipboard. Nothing was copied." |
 | Rewind armed | note "This message and every reply after it leave the branch. The session file keeps them." · buttons `Rewind Here` · `Cancel` |
 | Regenerate armed | note "The message that started this reply, and everything after it, leave the branch. The session file keeps them." — "this REPLY", never "this turn": the server rewinds to the nearest user message, and a MID-TURN STEER is one, and the leaf moves to that message's PARENT: in `u1 → a1 → tool → s1 → a2`, regenerating a2 drops s1 and a2 while u1/a1/the tool call stay, and regenerating a1 drops a1, the tool call, s1 and a2 · buttons `Regenerate Here` · `Cancel` |
-| Regenerate landed | SR "Regenerating from your message." (the rewound message's own copy stays §13's) |
+| Regenerate landed | SR "Regenerating from your message." (the rewound message's own copy stays §chat/timeline's) |
 | Blocked, mutating actions (`title`) | Stop the current turn first. · Wait for the compaction to finish. · This session is open in a terminal, so Sova won't write to it. · Only a chat open in Sova can rewind. / …can regenerate. · A rewind is already in progress. / A regenerate is already in progress. · a message still on its way out (server refusal `queued`, which happens with isStreaming FALSE — the client cannot pre-check it): the server's own sentence, "A message is still on its way out. Wait for it to send, or press Stop, then rewind." / "…then regenerate." · a reply to a wake nudge: "That reply answered a scheduled wake-up, not a message you sent, so there's nothing to send again." (permanent — it outranks every state that clears on its own, and the server refuses it too with `regenerate_refused` reason "wake") · the composer's own reason while the chat can't write (Switching model…, Reconnecting. Your draft is kept., This session is archived. Unarchive it to send.) |
 | Blocked Fork (`title`) | This session is open in a terminal, so Sova won't read it out from under that process. · This session is mid-turn. Forking reads the file, and we don't read it while it's being written. This enables itself when the turn finishes. · Wait for the compaction to finish, then fork. · A fork is already being made. |
 | Fork landed | toast + SR, counting what actually reached the new composer: "Forked. Your message is in the new session's composer." · "…, with its image." / "…, with its {n} images." · "…, but its image couldn't come along." (plural: "…, but its {n} images couldn't come along.") · "…, with {k} of {n} images. The other {m} couldn't come along." — never a CAUSE: `available:false` covers a deleted file, a path this server won't read and an upload over the 20MB cap alike, so the copy says only that it didn't come · without a staged message "Forked into a new session." + " Nothing was sent." (a message in a composer says that itself; a fork with nothing staged has to say it in words), with the same image clauses |
 | Fork refused | Another program wrote to this session a moment ago. Forking waits until it stops. · This session is in an older session format. Open it for chat once to update it, then fork. · That message isn't on the current branch anymore. Reload the transcript and fork from a message you can see. · This session's working directory is gone, so it cannot be opened. · unknown code: "Couldn't fork this session. {server message}" |
 | Queued message head | `Sending…` (nothing holds it yet) · `Queued` (the server says it does), each a dot AND the word · the author is `You`, or `Sent by Sova` for a message the session queued for itself (a group send, a remote status probe) |
 | Remove blocked (`title`) | Not queued yet. This can be removed once the server has it. · Already sent. It can't be removed now. · Removing… · Only a chat open in Sova can remove a queued message. |
-| Remove landed | SR "Removed from the queue." in every tab, including the one that asked. Delete is a DISCARD: the message does NOT come back to the composer (that is Stop's job, §4 "Stop"), so no sentence claims it did |
+| Remove landed | SR "Removed from the queue." in every tab, including the one that asked. Delete is a DISCARD: the message does NOT come back to the composer (that is Stop's job, §chat/composer "Stop"), so no sentence claims it did |
 | A queued message that will never be sent (`queue_item_gone`) | dropped (an extension handled it instead): SR "That message was handled without being sent. It's back in the composer." · failed (the hand-off was refused): SR "That message couldn't be sent. It's back in the composer." — both only in the tab that sent it, which is the only one with a composer to put it in |
 | Remove refused | Already sent. It can't be removed now. · That message isn't in the queue anymore. · "pi queued work of its own alongside this message, so it can't be taken back on its own. Press Stop to clear the queue." (NOT transient: that row's Remove stays off from then on, so the copy never invites a retry that cannot succeed) · The session is busy right now. Try again in a moment. · unknown code: "Couldn't remove it from the queue. {server message}" |
 
@@ -130,7 +130,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 |---|---|
 | Trigger | `aria-label` / `title`: More Actions |
 | Menu panel `aria-label` | More actions |
-| Menu panel rows | Attach images · Commands · Playbooks · Hide tool calls · Hide thinking · Sandbox · Session info · Fan Out… · Undo last turn (in this order, each only where it applies: Playbooks in chat sessions, §4i; Sandbox where the runtime has a `sandbox` command, §chat/sandbox; Session info in chat sessions; Fan Out… per §14b; Undo last turn per §13) |
+| Menu panel rows | Attach images · Commands · Playbooks · Hide tool calls · Hide thinking · Sandbox · Session info · Fan Out… · Undo last turn (in this order, each only where it applies: Playbooks in chat sessions, §chat/playbooks; Sandbox where the runtime has a `sandbox` command, §chat/sandbox; Session info in chat sessions; Fan Out… per §workspace/fanout; Undo last turn per §chat/timeline) |
 | Model panel `aria-label` | Model and thinking |
 | Model panel rows | Model · the Thinking group |
 | Model row | {id} · {provider} (`title`: {provider/id}) · no model: Choose model |
@@ -169,11 +169,11 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | TUI `/sandbox` (describeActive) | Sandbox off · Sandbox on · {level} · full enforcement · Sandbox on · {level} · partial enforcement ({reasons}) · Sandbox on · {level} · unavailable: {reasons} (tools refuse) · not enforced (a remote session): Sandbox on · {reasons}, e.g. Sandbox on · not enforced on remote; with no reasons, Sandbox on · not enforced |
 | TUI transcript marker (terminal only; Sova's transcript shows none) | Sandbox → on · {level} · {enforcement} enforcement (not full adds: · {reasons}) · not enforced: Sandbox → on · {reasons} (no reasons: not enforced) · Sandbox → off |
 
-## §design.copy-deck/playbooks — Playbooks (§4i)
+## §design.copy-deck/playbooks — Playbooks (§chat/playbooks)
 
 | Where | Copy |
 |---|---|
-| Flyout row (§4) | Playbooks · chat sessions only, absent in a watch view · while the composer is blocked: `aria-disabled`, described by the composer's reason |
+| Flyout row (§chat/composer) | Playbooks · chat sessions only, absent in a watch view · while the composer is blocked: `aria-disabled`, described by the composer's reason |
 | Modal title | step 1: Playbooks · step 2: {title}, the playbook's own |
 | Group headings | Sova · Yours · This project (a group with no rows has no heading) |
 | Row | {title} · under it {description}, one line, truncated, the full text in the row's `title` · no description: the title alone · frontmatter title missing, empty or whitespace-only: the id |
@@ -182,12 +182,12 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Load failed | `.banner-error` **Couldn't load the playbooks.** {error} · action `Retry` |
 | Empty (no rows in any group) | No playbooks yet. |
 | User folder unreadable | We couldn't read your playbooks folder, so yours aren't listed. {error} |
-| This project, remote | the server's message: This session's files live on {target}. Project playbooks are read from local folders only · retired sshfs mount: This folder was an sshfs mount of {target} that Sova no longer creates. Project playbooks are read from local folders only · client fallback, no message sent: This session's files live on its target, so project playbooks aren't listed. |
+| This project, remote | the server's message: This session's files live on {target}. Project playbooks are read from local folders only · client fallback, no message sent: This session's files live on its target, so project playbooks aren't listed. |
 | This project, missing | the server's message: cwd must be an absolute path · {path} doesn't exist · {path} is not a folder · Sova can't read {path} ({code}) · Sova couldn't read {path}/.sova/marketing/playbooks: {error} · client fallback, no message sent: We couldn't read this session's folder, so project playbooks aren't listed. |
 | Step 2 body | {description} (the title is in the modal head, not repeated) · textarea label: Anything to add · hint: {promptHint} verbatim, or no hint |
 | Buttons, step 2 | `Back` · `Send Playbook` (the label never changes; there is no in-flight label) |
-| Send blocked | the composer's reason for that state, with its icon, beside `Back` (§9 Composer, Connection) · model turned off: {ref} is turned off in Settings → Models. Pick another model, then send this again. |
-| The sent turn (verbatim, §4i) | Playbook: {title} — {absolute dir} / Read the files in that directory as the playbook directs. / blank line / {body} · with your text: then a line `---`, a blank line, {your text, trimmed} |
+| Send blocked | the composer's reason for that state, with its icon, beside `Back` (§design.copy-deck/composer, §design.copy-deck/connection) · model turned off: {ref} is turned off in Settings → Models. Pick another model, then send this again. |
+| The sent turn (verbatim, §chat/playbooks) | Playbook: {title} — {absolute dir} / Read the files in that directory as the playbook directs. / blank line / {body} · with your text: then a line `---`, a blank line, {your text, trimmed} |
 
 ## §design.copy-deck/images — Images
 
@@ -261,7 +261,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Can't switch | **This chat can't switch.** This chat can't switch: the mode extension isn't loaded here, or another program wrote this session. |
 | Switch failed | **Couldn't switch the mode.** {reason}. Your mode is unchanged. |
 | Load failed | **Couldn't load the modes.** Your mode is unchanged. Close this and try again. |
-| Transcript marker | Mode → {mode} · Minor mode: {minor} on\|off (shown as recorded: a pre-rename marker keeps "Mode → claude-heavy") |
+| Transcript marker | Mode → {mode} · Minor mode: {minor} on\|off (shown as recorded) |
 | Toast (from the extension) | Mode: {mode} · Minor mode: {minor} on\|off |
 
 ## §design.copy-deck/context-window — Context window
@@ -311,9 +311,9 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Where | Copy |
 |---|---|
 | Title | New Session |
-| Type field | label `What to start` · radios `One session` (the default) / `Fan out…` (§14b's fresh-mode entry at every width and route) · radios disable while Creating… · Enter never submits from them |
-| Title, fanout chosen | Fan out — the same title §14b's dialog carries, so the handoff reads as one flow |
-| Primary, fanout chosen | `Fan Out…` · `aria-disabled` until a folder is chosen, like Create Session · pressing it creates nothing: §14b's dialog opens on a fresh prompt with the folder carried (§05 "Type") |
+| Type field | label `What to start` · radios `One session` (the default) / `Fan out…` (§workspace/fanout's fresh-mode entry at every width and route) · radios disable while Creating… · Enter never submits from them |
+| Title, fanout chosen | Fan out — the same title §workspace/fanout's dialog carries, so the handoff reads as one flow |
+| Primary, fanout chosen | `Fan Out…` · `aria-disabled` until a folder is chosen, like Create Session · pressing it creates nothing: §workspace/fanout's dialog opens on a fresh prompt with the folder carried (§app/new-session-dialog "Type") |
 | Field label / hint | Folder · pi runs in this folder and can read and change files in it. |
 | Field, nothing chosen | Choose a folder |
 | Recent label | Recent folders |
@@ -323,7 +323,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | 4xx error | {server message}, or: That folder doesn't exist. Pick one that does. |
 | Other error | **Couldn't create the session.** Nothing was written. Try again. |
 
-## §design.copy-deck/insights — Insights (§10)
+## §design.copy-deck/insights — Insights (§app/insights)
 
 | Where | Copy |
 |---|---|
@@ -369,7 +369,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Current goal jump | Jump to Message |
 | Compaction | Compacted · `{tokens}` tokens summarized (no count: Compacted · earlier messages summarized) · Files read · Files changed |
 
-## §design.copy-deck/subagents-pane — Subagents pane (§11)
+## §design.copy-deck/subagents-pane — Subagents pane (§app/subagents-pane)
 
 | Where | Copy |
 |---|---|
@@ -387,9 +387,9 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | File gone after loading (banner-warn) | **This transcript's file is gone.** What's shown is up to `{HH:MM}`. |
 | Transcript file empty (just started) | **0 entries in {name}'s session so far.** Entries show up here as it writes them. |
 | Pane's session-insight fetch failed (banner-warn) | **Couldn't load this session's subagents.** {message} Your workers keep running. We'll retry on our own. |
-| Transcript socket and load errors | the §11 state table: Live-watch and Connection copy above, and Main pane's transcript load error |
+| Transcript socket and load errors | the §app/subagents-pane state table: Live-watch and Connection copy above, and Main pane's transcript load error |
 
-## §design.copy-deck/settings-modes-delegate — Settings · Modes → Delegate (§12)
+## §design.copy-deck/settings-modes-delegate — Settings · Modes → Delegate (§app/settings-dialog)
 
 | Where | Copy |
 |---|---|
@@ -413,7 +413,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Announcement | Delegate routing saved. Chats in Delegate use it from their next message. |
 | Footnote | Stored in `~/.pi/agent/mode-delegate.json`, shared with pi in the terminal. |
 
-## §design.copy-deck/settings-themes — Settings · Themes (§12)
+## §design.copy-deck/settings-themes — Settings · Themes (§app/settings-dialog)
 
 | Where | Copy |
 |---|---|
@@ -427,7 +427,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Font sample | `Aa 0x1F` — `Aa` in the theme's body face, `0x1F` in its mono face |
 | Broken row, name slot | `{filename}` in mono — e.g. `sunset.json` |
 | Broken row, meta slot | `We couldn't read this theme. {reason}` — `{reason}` is the parser's own message, quoted as it comes: "We couldn't read this theme. Expected double-quoted property name in JSON at position 15 (line 3 column 1)." V8 names a line for most syntax errors and not for all, so the copy never promises one |
-| Broken row, meta slot — a value we won't emit | `{key} is {value}. A color is a hex value, or one call to rgb, rgba, hsl, hsla, oklch, oklab, lab, lch, color-mix, or color.` — e.g. "accent is image-set(…). A color is a hex value, or one call to rgb, rgba, hsl, hsla, oklch, oklab, lab, lch, color-mix, or color." The accepted list is the one in §0, and stays in step with it |
+| Broken row, meta slot — a value we won't emit | `{key} is {value}. A color is a hex value, or one call to rgb, rgba, hsl, hsla, oklch, oklab, lab, lch, color-mix, or color.` — e.g. "accent is image-set(…). A color is a hex value, or one call to rgb, rgba, hsl, hsla, oklch, oklab, lab, lch, color-mix, or color." The accepted list is the one in §design/ground-rules, and stays in step with it |
 | …the same, other key families | shadows: `{key} is {value}. A shadow takes lengths, an optional inset, and a color.` (`scrim` and `skeleton-sweep` use the color message) · font stacks: `{key} is {value}. A font stack takes names, quotes, and commas — no parentheses.` · sizes: `{key} is {value}. That takes a px or em length, or 0.` · `lh-*`: `…takes a plain number.` · `fw-*`: `…takes a number from 100 to 900.` |
 | Broken row, hidden suffix | `, can't be used` |
 | Typography heading | Typography |
@@ -446,7 +446,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Loading | skeleton rows — no copy |
 
 
-## §design.copy-deck/timeline-tab — Timeline tab (§13)
+## §design.copy-deck/timeline-tab — Timeline tab (§chat/timeline)
 
 | Where | Copy |
 |---|---|
@@ -477,7 +477,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Marker: subagent | `{name} started` · `{name} finished` · `{name} stopped` (errored or killed) |
 | Marker: settings | `Model → {model}` · `Thinking → {level}` · `Mode → {mode}` |
 | Marker: past summary | `Goal · {now}` (no `now`: the first line of `overall`) · `title`: the snapshot's `overall` · the newest snapshot gets no row |
-| State line | Updated {relative} ago · behind the latest messages · (current: `Updated {relative} ago · current`; a summarizer running: `Updating`) — §10's words, unchanged |
+| State line | Updated {relative} ago · behind the latest messages · (current: `Updated {relative} ago · current`; a summarizer running: `Updating`) — §app/insights's words, unchanged |
 | Time `title` | `{absolute} · {relative}` — e.g. `2026-09-19T14:06:11Z · 2d ago` |
 | Row foot | Newest first, active branch only. A row jumps to its message; Rewind takes the chat back to just before it. (filter on: starts `Your messages only, newest first,`) |
 | Row foot, below 1280 | Newest first, active branch only. A row jumps to its message and closes this pane; Rewind takes the chat back to just before it. |
@@ -487,7 +487,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | `/timeline` | Timeline open. |
 | `/tree` | Timeline open, your messages only. |
 
-## §design.copy-deck/workspace — Workspace (§14)
+## §design.copy-deck/workspace — Workspace (§workspace/groups)
 
 | Where | Copy |
 |---|---|
@@ -521,7 +521,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Promote toast | Took **{title}** out of “{name}”. · failure: "Couldn't take this session out of the group. {server message}" |
 | Add Back toast | Put **{title}** back in “{name}”. · failure: "Couldn't put this session back. {server message}" · label restored but the order didn't take: "Put **{title}** back in “{name}”. It's at the end." |
 | Eliminate toast | Removed **{title}** and archived it. · remove-only: "Removed **{title}** from “{name}”. It wasn't started in Sova, so nothing was archived." · with the group's last member: "Removed **{title}** and archived it. Dissolved “{name}” — nothing was left in it." · failure: "Couldn't remove this session. {server message}" · archived half failed: "Removed **{title}** from “{name}”, but couldn't archive it. {server message}" |
-| Dissolve vs Delete group | The same route (`DELETE /api/session-groups/:id`) under two words: `Delete group` in the sidebar's tool row, `Dissolve` in the workspace head, where it sits above open transcripts and "Delete" would read as deleting them (§14) |
+| Dissolve vs Delete group | The same route (`DELETE /api/session-groups/:id`) under two words: `Delete group` in the sidebar's tool row, `Dissolve` in the workspace head, where it sits above open transcripts and "Delete" would read as deleting them (§workspace/groups) |
 | Dissolve, asking in place | Dissolve “{name}”? Its {n} sessions stay in the list. (1: "… Its 1 session stays …"; 0: "Dissolve “{name}”? Nothing is in it.") · buttons `Dissolve` · `Cancel` |
 | Dissolve toast | Dissolved “{name}”. Its {n} sessions are ungrouped. (1: "… Its 1 session is ungrouped.") · "Dissolved “{name}”. It had no sessions." |
 | Add Members popover | trigger `Add Members` · `aria-label` "Add a session to “{name}”" · rows: every ungrouped session, then the grouped ones with a muted note `in “{name}”`, then `Fan Out…` · empty: "Every session is already in a group." |
@@ -536,33 +536,33 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Member gone, removal | the `.empty` pane's button `Remove From Group` removes by session id (`{ id, groupId: null }` — there is no file to resolve a path through) · toast "Removed {pane name} from “{name}”." · with the group's last member: "… Dissolved “{name}” — nothing was left in it." |
 | Completion roll-up | the meta line's "{r} of {t} replied" is anchored to the last ACCEPTED shared send (a box send replaces the set; a partial banner's retry unions it, so the straggler is counted with the ones already answering) · errored members are counted "errored", never "replied" · memory-only: a reload genuinely does not know about the last send, and shows nothing rather than a guess |
 
-## §design.copy-deck/fanout — Fanout (§14b)
+## §design.copy-deck/fanout — Fanout (§workspace/fanout)
 
 | Where | Copy |
 |---|---|
-| Flyout row (§4) | `Fan Out…` · `title`: Fork this session N ways and compare the answers |
-| Welcome screen button (§3) | `Fan Out…` beside `New Session` — the fresh-prompt entry, opening the dialog with "A fresh prompt" and no source |
+| Flyout row (§chat/composer) | `Fan Out…` · `title`: Fork this session N ways and compare the answers |
+| Welcome screen button (§chat/transcript) | `Fan Out…` beside `New Session` — the fresh-prompt entry, opening the dialog with "A fresh prompt" and no source |
 | Dialog title | Fan out |
 | Start from | field label `Start from` · radios: "Fork “{title}” at its latest message" · "A fresh prompt" |
 | Fork note | Each member gets the whole conversation up to message {n}, then goes its own way. |
 | Create off, source mid-turn | “{title}” is mid-turn. We read the file to fork it, and we don't read it while it's being written. This enables itself when the turn finishes. |
 | Create off, unidentified writer | Another program wrote to “{title}” a moment ago. Forking waits until it stops. |
 | Create off, older session format | “{title}” is in an older session format. Forking reads the file, and reading it rewrites the whole thing — not something to do to a session that's open. Open it for chat here once to update it, then fan out. |
-| Fresh fields | the §5 folder picker, unchanged · field label `First message` · placeholder "Ask all of them to…" |
+| Fresh fields | the §app/new-session-dialog folder picker, unchanged · field label `First message` · placeholder "Ask all of them to…" |
 | Members field | label `Members` · empty: "No members yet. Add a model, then set how many of it you want." |
 | Member row | the **full ref** in mono (`ModelInfo.ref`, e.g. `zai/glm-5.3`) — **never the bare model id**: two providers ship the same name (`zai/glm-5.3` and `ollama-cloud/glm-5.3` differ only by provider and bill to different subscriptions), so a row showing `glm-5.3` is two rows the user cannot tell apart · the fill (below) · count buttons `aria-label` "One more {ref}" / "One fewer {ref}" (at 1: "Remove the only {ref}" — never the remove button's own "Remove {ref}", which would put two controls of one row under one accessible name) · at 9 the `+` answers "{ref} is already at 9, the most per model." in the toast and the live region — the count cannot move, so the answer is the whole feedback · remove `aria-label` "Remove {ref}" |
-| Add a model | `Add a Model` · picking a model already listed: no new row, the count goes up, and the live region says "{ref} ×3." — the **full ref**, and this is the surface that needs it most: the announcement is the *only* channel here, so nothing visible disambiguates two rows that differ by provider (§14b) |
-| Member fill | `{tokens} of {window} · {pct}%` (§4f's formats and its 80% / 95% steps) · window unknown: "{tokens}, window unknown" · fresh prompt: "new session" · compacted fork point: "compacted" · source not on screen (the Add-Members entry): "unknown" — a fill that can't be named is words, never 0, which is a measurement we cannot make |
-| Doesn't fit | This model's window is smaller than the fork. · `.field-error`: "Remove {ref} to create this fanout." — the **full ref**: it names which row to act on, and with two colliding rows the short form names both (§14b). Never "or lower its count": the fill is per model, not per repeat, so that instruction cannot work |
+| Add a model | `Add a Model` · picking a model already listed: no new row, the count goes up, and the live region says "{ref} ×3." — the **full ref**, and this is the surface that needs it most: the announcement is the *only* channel here, so nothing visible disambiguates two rows that differ by provider (§workspace/fanout) |
+| Member fill | `{tokens} of {window} · {pct}%` (§chat/context-window's formats and its 80% / 95% steps) · window unknown: "{tokens}, window unknown" · fresh prompt: "new session" · compacted fork point: "compacted" · source not on screen (the Add-Members entry): "unknown" — a fill that can't be named is words, never 0, which is a measurement we cannot make |
+| Doesn't fit | This model's window is smaller than the fork. · `.field-error`: "Remove {ref} to create this fanout." — the **full ref**: it names which row to act on, and with two colliding rows the short form names both (§workspace/fanout). Never "or lower its count": the fill is per model, not per repeat, so that instruction cannot work |
 | Group name | label `Group name` · default `Fanout · {first 6 words of the title or prompt}` · placeholder Group name |
 | Cost preview | `{n} members × ~{tokens} tokens re-sent every shared turn.` · fresh: `{n} members, each starting empty. Every shared turn is re-sent {n} times as they grow.` · compacted: `{n} members × unknown tokens re-sent every shared turn — the fork point was compacted.` · source not on screen: `{n} members × unknown tokens re-sent every shared turn.` |
 | Rate-limit note | Turns start together, so one provider may answer some members with 429. Sova doesn't stagger them. |
-| Create | `Create {n} Members` (1: `Create 1 Member`) · in flight `Creating…` (fields disable; see §14b) · off at 0: reason "Add at least 1 member." · fresh-mode reasons: "Pick a folder for the new sessions." / "Write the first message every member gets." · **treatment:** every reason renders as a hint (`.field-hint`) except the overflow's "Doesn't fit", which stays an error — a reason the user has done nothing wrong to earn (an unfinished form, someone else's turn) is guidance, not a mistake, and an error-styled opening state reads as an accusation |
+| Create | `Create {n} Members` (1: `Create 1 Member`) · in flight `Creating…` (fields disable; see §workspace/fanout) · off at 0: reason "Add at least 1 member." · fresh-mode reasons: "Pick a folder for the new sessions." / "Write the first message every member gets." · **treatment:** every reason renders as a hint (`.field-hint`) except the overflow's "Doesn't fit", which stays an error — a reason the user has done nothing wrong to earn (an unfinished form, someone else's turn) is guidance, not a mistake, and an error-styled opening state reads as an accusation |
 | Cancel | `Cancel` |
-| Partial creation banner | Title **{k} of {n} members were created.** (k=1: **1 of {n} members was created.**) · then **one line per failure**, the refusal banner's shape (§14) · closing line The {k} that exist are running; add another from Add Members. (k=1: It is running; add another from Add Members.) · buttons `Add Members` · `Dismiss` |
-| …its failure lines | Two shapes, told apart by `id`: **never created** (empty `id`) `{model} couldn't start: {server message}` · **created but refused its first message** (`id` set, fresh mode's fold) `{model} couldn't take the first message: {server message}` — a session the user can see in its pane must not be told "couldn't start" — the two never collapse together, even at the same ref and reason · a pre-existing `groupId` member (id only, no ref) is "A member", never a guessed ref · `{model}` is the **full ref** (`BatchRefusal.ref`), for the same reason the picker rows are (§14b): two providers ship one name, and two failure lines both reading `glm-5.3 couldn't start` name different models while looking like a duplicate. Never parsed out of the message; the message is the reason alone, unprefixed (162ee20). Entries sharing ref **and** message **and** shape collapse to `{count} × {model} couldn't …`; sharing a ref but not a message gets one line each, because the reasons are the information. **Never a member number** — `failed` carries no index into the plan, so `{model} #2` would be a guess |
+| Partial creation banner | Title **{k} of {n} members were created.** (k=1: **1 of {n} members was created.**) · then **one line per failure**, the refusal banner's shape (§workspace/groups) · closing line The {k} that exist are running; add another from Add Members. (k=1: It is running; add another from Add Members.) · buttons `Add Members` · `Dismiss` |
+| …its failure lines | Two shapes, told apart by `id`: **never created** (empty `id`) `{model} couldn't start: {server message}` · **created but refused its first message** (`id` set, fresh mode's fold) `{model} couldn't take the first message: {server message}` — a session the user can see in its pane must not be told "couldn't start" — the two never collapse together, even at the same ref and reason · a pre-existing `groupId` member (id only, no ref) is "A member", never a guessed ref · `{model}` is the **full ref** (`BatchRefusal.ref`), for the same reason the picker rows are (§workspace/fanout): two providers ship one name, and two failure lines both reading `glm-5.3 couldn't start` name different models while looking like a duplicate. Never parsed out of the message; the message is the reason alone, unprefixed (162ee20). Entries sharing ref **and** message **and** shape collapse to `{count} × {model} couldn't …`; sharing a ref but not a message gets one line each, because the reasons are the information. **Never a member number** — `failed` carries no index into the plan, so `{model} #2` would be a guess |
 | …the three shapes, worked | **one failure:** `4 of 5 members were created.` / `anthropic/claude-opus-5 couldn't start: the provider returned 429.` · **two distinct refs:** `3 of 5 members were created.` / `anthropic/claude-opus-5 couldn't start: the provider returned 429.` / `zai/glm-5.3 couldn't start: no credentials for zai.` · **two sharing a ref, same reason:** `3 of 5 members were created.` / `2 × anthropic/claude-opus-5 couldn't start: the provider returned 429.` · **two sharing a ref, different reasons:** two lines, the model repeated verbatim — the repetition is honest, since what differs is the reason |
-| Fanning out into an existing group (success) | No special copy: the members appear in the workspace, and a hand-made target gains fork markers on them and the `Align to Fork` button. Nothing warns, because nothing was taken away — the group keeps its name and survives being emptied exactly as before (§14 `autoDissolve`) |
+| Fanning out into an existing group (success) | No special copy: the members appear in the workspace, and a hand-made target gains fork markers on them and the `Align to Fork` button. Nothing warns, because nothing was taken away — the group keeps its name and survives being emptied exactly as before (§workspace/groups `autoDissolve`) |
 | Fanout into a group with a different fork point (`400 seed-conflict`) | `.field-error`: “{name}” was forked from a different point, and a group can only mark one. Nothing was created. Fan out into a new group, or add these members to the one they came from. |
 | Total failure | `.field-error` in the dialog: "Couldn't create this fanout. No sessions were made. {server message}" |
 | Create off, the fork point moved | “{title}” answered while this dialog was open, so the fork point you picked isn't its latest message anymore. Reopen Fan out to fork from where it is now. |

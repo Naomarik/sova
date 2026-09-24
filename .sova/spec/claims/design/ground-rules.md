@@ -1,4 +1,4 @@
-# §design/ground-rules — 00 · Ground rules
+# §design/ground-rules — Ground rules
 > Part of the Sova design spec · [overview](overview.md)
 
 ## §design.ground-rules/theme — Theme
@@ -9,7 +9,7 @@ on.
 
 A theme is one JSON file: `themes/<id>.json` for the ones shipped with the app,
 `~/.pi/agent/sova/themes/<id>.json` for the ones you drop in. It carries
-`"$schema": "pi-web-theme/v1"`, a `name`, an `extends` of `dark` or `light`, an optional `vars`
+`"$schema": "sova-theme/v1"`, a `name`, an `extends` of `dark` or `light`, an optional `vars`
 map of named values its own later keys can reference as `"$name"`, a `colors` map keyed by the
 semantic tokens without their `--color-` / `--status-` / `--diff-` prefix, and an optional
 `typography` map (`font-body`, `font-display`, `font-mono`, `fs-*`, `lh-*`, `fw-*`, `ls-*` — a
@@ -50,7 +50,7 @@ charset, and is a substitution. **The charset and the length** catch the rest. A
 only the last of the three is the plausible mistake, and it is the one that reopens `url()`.
 
 Font stacks admit no parentheses because a stack has no use for them. A value that fails becomes a
-broken row carrying its reason (§12), and the theme it came from is not applied.
+broken row carrying its reason (§app/settings-dialog), and the theme it came from is not applied.
 
 **The grammar checks shape, not arguments**, so a value can pass and still not be a color:
 `rgb(0,0,0,0,0)` has an allowed name, one pair of parentheses, a legal charset and 15 characters.
@@ -62,7 +62,7 @@ parsing arguments the contract deliberately passes through verbatim.
 
 The server does four things, in this order, when the file is read:
 
-1. **Read the file.** A file that isn't JSON stops here and becomes a broken row (§12).
+1. **Read the file.** A file that isn't JSON stops here and becomes a broken row (§app/settings-dialog).
 2. **Resolve `$name`.** Every reference becomes the value it names. Nothing downstream sees a `$`.
 3. **Validate**, every key family against the table above — allowed shapes, never rejected
    spellings.
@@ -74,7 +74,7 @@ once, with an error naming the color grammar while pointing at a value that was 
 16 of the 18 shipped themes use `vars` — all but `dark` and `light`, which name no palette.
 
 Applying a theme is not the only thing that puts its strings on screen: the picker previews
-every theme it found, painting swatches and a font sample from files nobody has selected (§12).
+every theme it found, painting swatches and a font sample from files nobody has selected (§app/settings-dialog).
 Parse time is the one point upstream of all of them, so a file that fails becomes a broken row
 and its values never reach a DOM node, selected or not.
 
@@ -87,13 +87,13 @@ themes (Dracula, three Tokyo Nights, four Catppuccins, four Monokais, four Nords
 color only and keep Inter and JetBrains Mono. A user file whose id matches a built-in replaces
 it.
 
-The choice is made in Settings → Themes (§12), persists in `localStorage` under `sova:theme` (the legacy `pi-web:theme` is read and mirrored),
+The choice is made in Settings → Themes (§app/settings-dialog), persists in `localStorage` under `sova:theme`,
 and is applied — custom properties written, `data-theme` set to the theme's base — before first
 paint. An id that no longer resolves falls back to `dark`.
 
-**A font pick sits over the theme.** Settings → Themes → Typography (§12) lets this browser put
+**A font pick sits over the theme.** Settings → Themes → Typography (§app/settings-dialog) lets this browser put
 one of a closed list of bundled faces on `--font-body` + `--font-display` (Text) and `--font-mono`
-(Code), persisted under `pi-web:typography` as catalogue ids — never a stack the user typed, so
+(Code), persisted under `sova:typography` as catalogue ids — never a stack the user typed, so
 nothing there is subject to the grammar above; the ids resolve in `src/lib/typography.ts`. The
 precedence is pick, then the theme's own `typography`, then `tokens.css`: the pick is written
 after the theme's tokens on every apply, so it survives a theme switch, and a kind left on Theme
@@ -121,9 +121,9 @@ and `fill="none" stroke="currentColor"`.
 
 | File (`/icons/…`) | Used for |
 |---|---|
-| `sova-mark.svg` | Brand mark in the sidebar head (accent colored). Astra's Fold, drawn on the system grid; the earlier `pi-web-mark.svg` is kept on disk but unused |
+| `sova-mark.svg` | Brand mark in the sidebar head (accent colored). Astra's Fold, drawn on the system grid |
 | `plus.svg` | New Session |
-| `panel-collapse.svg` / `panel-expand.svg` | Collapse sessions pane (the head's last button) / Expand sessions pane (the spine's first item), §2 "The spine": a rounded square, a divider a third in, and a chevron in the wide side pointing left / right. One drawing, mirrored. New, drawn on the system grid |
+| `panel-collapse.svg` / `panel-expand.svg` | Collapse sessions pane (the head's last button) / Expand sessions pane (the spine's first item), §app.session-list/spine: a rounded square, a divider a third in, and a chevron in the wide side pointing left / right. One drawing, mirrored. New, drawn on the system grid |
 | `search.svg` | Search field glyph; tool card for `grep` / `find` / `ls` |
 | `close.svg` | Clear search, close dialog |
 | `chevron-left.svg` | Back to list (folded width only) |
@@ -133,28 +133,28 @@ and `fill="none" stroke="currentColor"`.
 | `file.svg` | Tool card for `read` / `write` / `edit` |
 | `more.svg` | Tool card for any other tool |
 | `copy.svg` | Copy Session Path, Copy Output |
-| `archive.svg` | Archive Session / Unarchive Session (session head, web sessions only, §2 "Archiving"): a lidded box. New, drawn on the system grid |
+| `archive.svg` | Archive Session / Unarchive Session (session head, web sessions only, §app/session-list "Archiving"): a lidded box. New, drawn on the system grid |
 | `chevron-left.svg` / `chevron-right.svg` | Also: lightbox Previous Image / Next Image |
 | `check.svg` | The copy button's icon for 1.5s after a copy; the current-model mark |
 | `folder.svg` | Folder picker rows, cwd group label |
 | `info.svg` | Info rows, info banners |
 | `alert-circle.svg` | Error banners, warn banners |
 | `attention.svg` | Composer reason when the session is read only |
-| `clock.svg` | "Reconnecting" reason; the outline strip's Open Timeline button (§13) |
-| `bell.svg` | The wake-nudge card in the transcript (§3) |
-| `refresh.svg` | Refresh Usage / Refresh Agents: the icon button in the insights head (§10). While a refresh it started is in flight it's `aria-disabled` and `aria-busy`. The session list has no refresh button: it updates live |
+| `clock.svg` | "Reconnecting" reason; the outline strip's Open Timeline button (§chat/timeline) |
+| `bell.svg` | The wake-nudge card in the transcript (§chat/transcript) |
+| `refresh.svg` | Refresh Usage / Refresh Agents: the icon button in the insights head (§app/insights). While a refresh it started is in flight it's `aria-disabled` and `aria-busy`. The session list has no refresh button: it updates live |
 | `arrow-right.svg` | Send |
 | `stop.svg` | Stop (composer): a rounded square |
 | `chat.svg` | Empty-state mark (no session selected) |
 | `attach.svg` | Attach Images (composer). New, drawn on the system grid |
-| `command.svg` | Commands button (composer, §4d): a `/` in a rounded square. New, drawn on the system grid |
+| `command.svg` | Commands button (composer, §chat/slash-commands): a `/` in a rounded square. New, drawn on the system grid |
 | `image.svg` | Tool-card image count, drop overlay. New, drawn on the system grid |
-| `pencil.svg` | Draft rows (§2): the lead of line 2, before the draft's preview. A pen at 45° with a nib, legible at `.icon-sm`. New, drawn on the system grid |
+| `pencil.svg` | Draft rows (§app/session-list): the lead of line 2, before the draft's preview. A pen at 45° with a nib, legible at `.icon-sm`. New, drawn on the system grid |
 | `gauge.svg` | Usage: the sidebar foot's Usage row. Sova's own, drawn on the system grid |
-| `sliders.svg` | Mode: the mode trigger at the right end of the composer foot (§4g). Three tracks with an offset handle each. New, drawn on the system grid |
+| `sliders.svg` | Mode: the mode trigger at the right end of the composer foot (§chat/mode-menu). Three tracks with an offset handle each. New, drawn on the system grid |
 | `worker.svg` | Agents: the sidebar foot's Agents row, plus the Teams and Subagents section heads (from the skill's set) |
 | `settings.svg` | Settings: the gear at the right end of the sidebar foot's Agents row, and the Settings dialog's tab rail. A cog on the system grid (the skill ships a sun-burst under this name)
-| `branch.svg` | The fork-point row in a forked member's transcript, the `Align to Fork` button, and the welcome screen's `Fan Out…` button (§14, §14b) |
+| `branch.svg` | The fork-point row in a forked member's transcript, the `Align to Fork` button, and the welcome screen's `Fan Out…` button (§workspace/groups, §workspace/fanout) |
 | `check-circle.svg`, `x-circle.svg`, `external.svg`, `menu.svg` | Reserved. Shipped but unused in the MVP |
 
 `/favicon.svg` is the mark on dark paper. Link it from `index.html`:
@@ -198,13 +198,13 @@ fade in over `--dur-base`. Only two things loop:
   In the sidebar's row rail that is `.session-rail-state.chip-live .session-rail-dot` (Busy) and
   `.session-rail-count-live .icon`, at most one of them per row; a folder head holding an agent
   at work pulses the same dot (`.session-group-active .session-rail-dot`). In the collapsed pane
-  (the spine, §2) it is `.spine-dot-busy` and `.spine-dot-working`, one dot per tile, and nothing
+  (the spine, §app/session-list) it is `.spine-dot-busy` and `.spine-dot-working`, one dot per tile, and nothing
   else in the spine moves.
 - The skeleton sweep.
 
 **TUI never pulses — Busy and running tools own the pulse.** This holds on every surface: the
-sidebar row's rail `TUI` chip (§2), the spine's `.spine-dot-live`, the session head's `TUI` chip
-(§3), and the `{n} TUI` count under search. The three chips take `.chip-accent` **without**
+sidebar row's rail `TUI` chip (§app/session-list), the spine's `.spine-dot-live`, the session head's `TUI` chip
+(§chat/transcript), and the `{n} TUI` count under search. The three chips take `.chip-accent` **without**
 `.chip-live`. A TUI holding a file open is
 *ownership*, and a count of them is a tally; neither is work in flight. What moves is our own
 run: Busy in a row, the composer's `.run-status` live dot, a Running tool card, and a

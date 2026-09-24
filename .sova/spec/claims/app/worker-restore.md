@@ -107,12 +107,17 @@ or why it can't be resumed).
 - **Usage that can't be read is unavailable, never 0.** A worker whose transcript can't be read
   and that has no snapshot shows "usage unavailable" where its tokens would be. The session tab's
   usage names the workers its totals leave out ("Usage unavailable for ag_04: we couldn't read its
-  transcript, so the totals above leave it out."). A cost with any snapshot part (a model's row,
-  the Subagent lifetime line) carries the time of its **oldest** snapshot, the total's stalest
-  part: "$0.41 as of {HH:MM}".
+  transcript, so the totals above leave it out."). A cost with any snapshot part carries the time of
+  its **oldest** snapshot, the stalest part. In the usage table, such a cost reads `$0.41*`: a
+  muted `*` whose `title` is "As of {HH:MM}", and one note under the table, "* Cost as of {HH:MM},
+  the last report before the restart." (several times: "21:08 and 22:25"). The row stays one line,
+  and the Model, Where and Cost cells never wrap. The Subagent lifetime line keeps the time
+  inline: "$0.41 as of {HH:MM}".
 - **One row, one label, hosted or not.** A restored team member's spend is a Team row in the
-  session tab's usage, and its model reads as it was spawned (`haiku`), whether the session is
-  hosted by this server or only read from its file. On `#/agents`, a team whose members are all
+  session tab's usage. A restored or resumed worker is named by the model it **ran under**: its
+  transcript's model, else its last snapshot's, else the model it was spawned with. So a Claude
+  worker reads `haiku-4.5` running, restored and resumed alike, whether the session is hosted by
+  this server or only read from its file. On `#/agents`, a team whose members are all
   restored is counted "· {n} restored" beside the Teams head, not as active.
 - **Transcripts stay readable.** The pane opens a restored worker's transcript from the record's
   reference exactly as it does a live one (`?path=` for a pi file, `?claude=` for a Claude

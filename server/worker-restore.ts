@@ -12,6 +12,7 @@ import type { TokenUsage, TokenUsageTotal, WorkerInfo, WorkerStatus } from "../s
 import {
   type FoldedWorkerManifest,
   readWorkerManifests,
+  resolvedModel,
   resolveWorkerUsage,
   type WorkerTranscriptAdapters,
   type WorkerTranscriptSummary,
@@ -117,9 +118,9 @@ function totalOf(usages: WorkerUsage[], asOf: number | undefined): TokenUsageTot
 
 function workerInfo(m: FoldedWorkerManifest, summary: WorkerTranscriptSummary | null, usage: WorkerUsage, snapshotAt: number | undefined): WorkerInfo {
   const status = statusOf(m);
-  // The model it was spawned with, as the live record names it ("haiku", not the transcript's
-  // "claude/claude-haiku-4-5-…"), so a row reads the same before and after the session is hosted.
-  const model = m.spec?.model ?? summary?.model;
+  // The model it ran under, as its running record names it (haiku-4.5 in every state): the
+  // protocol's one rule, shared with the subagents extension.
+  const model = resolvedModel(m, summary ? { summary } : undefined);
   const w: WorkerInfo = { id: m.workerId, name: m.name ?? m.workerId, status, working: false, backend: m.backend };
   if (model) w.model = model;
   const provider = m.backend === "claude-code" ? "claude code" : modelProvider(model);

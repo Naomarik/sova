@@ -23,6 +23,7 @@ mkdirSync(claudeProject, { recursive: true });
 const { decodeWorkers, getSessionInsight } = await import("./insights");
 const { canonicalPath } = await import("./paths");
 const { resumeWorker, resumeCommandOf } = await import("./worker-resume");
+const { resolvedModel } = await import("../pi-config/extensions/subagents/worker-transcript.ts");
 
 after(() => rmSync(root, { recursive: true, force: true }));
 
@@ -207,7 +208,7 @@ test("resumeWorker runs only the subagents extension's own agent-resume, and pas
   assert.equal(after, 2, "afterCommand runs whether the handler took it or threw");
 });
 
-test("a team member's spend is a team row, hosted or not, under the model it was spawned with", async () => {
+test("a team member's spend is a team row, hosted or not, under the model it actually ran", async () => {
   const path = canonicalPath(join(sessionsDir, "2026-09-24T11-00-00-000Z_team.jsonl"));
   const team = {
     type: "custom", id: "t1", parentId: "e1", timestamp: iso(1), customType: "subagents-team-v1",
@@ -229,20 +230,34 @@ test("a team member's spend is a team row, hosted or not, under the model it was
     insight.usage!.models.filter((m) => m.origin !== "main").map((m) => `${m.origin}:${m.model}`);
 
   const unhosted = await getSessionInsight(path);
-  assert.deepEqual(rowsOf(unhosted), ["team:haiku"], "spawn model, not the transcript's claude-haiku-4-5 id");
-  assert.equal(unhosted.workers![0]!.model, "haiku");
+  // The transcript's resolved id, as the running record names it (no "claude/" prefix), not the
+  // spawn alias "haiku": one label running, restored and resumed.
+  assert.deepEqual(rowsOf(unhosted), ["team:claude-opus-5-5"]);
+  assert.equal(unhosted.workers![0]!.model, "claude-opus-5-5");
 
   const file = join(liveDir, `p${process.pid}-team.json`);
   writeFileSync(file, JSON.stringify({
     heartbeat: Date.now(),
     session: { sessionFile: path, pid: process.pid, mode: "rpc", status: "idle" },
     presence: { status: "idle", workers: [
-      { id: "ag_02", name: "checker", status: "restored", backend: "claude-code", model: "haiku", usageSource: "transcript", usage: { input: 7, output: 70, cacheRead: 700, cacheWrite: 0 } },
+      { id: "ag_02", name: "checker", status: "restored", backend: "claude-code", model: "claude-opus-5-5", usageSource: "transcript", usage: { input: 7, output: 70, cacheRead: 700, cacheWrite: 0 } },
     ] },
   }));
   try {
-    assert.deepEqual(rowsOf(await getSessionInsight(path)), ["team:haiku"], "hosted: the same row, not subagents");
+    assert.deepEqual(rowsOf(await getSessionInsight(path)), ["team:claude-opus-5-5"], "hosted: the same row, not subagents");
   } finally {
     rmSync(file, { force: true });
   }
+});
+
+test("resolvedModel (the protocol's one copy): transcript model, else the snapshot's biggest row, else the spawn model", () => {
+  const row = (model: string, input: number) => ({ model, input, output: 0, cacheRead: 0, cacheWrite: 0 });
+  const m = (byModel: ReturnType<typeof row>[] = [], backend = "claude-code") => ({
+    v: 1, workerId: "ag_09", backend, at: 0, spec: { cwd: "/tmp", model: "haiku", taskPreview: "", wake: false },
+    usageSnapshot: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, byModel, source: "snapshot" },
+  }) as any;
+  assert.equal(resolvedModel(m(), { summary: { model: "claude/claude-haiku-4-5-20251001" } as any }), "claude-haiku-4-5-20251001", "the running record's form: no claude/ prefix");
+  assert.equal(resolvedModel(m([row("claude/claude-sonnet-5", 1), row("claude/claude-haiku-4-5-20251001", 9)]), undefined), "claude-haiku-4-5-20251001");
+  assert.equal(resolvedModel(m(), undefined), "haiku", "nothing resolved yet: the spawn model");
+  assert.equal(resolvedModel(m([], "pi"), { summary: { model: "zai/glm-5.3" } as any }), "zai/glm-5.3", "pi refs keep their provider");
 });

@@ -13,7 +13,7 @@
  * No process, UI or manager dependency.
  */
 import type { AgentStatus, AgentUsage, SteerResult, TaskOutcome, TranscriptItem, Worker } from "./contracts.ts";
-import { hasEnded, isInterrupted, type FoldedWorkerManifest, type UsageSource, type WorkerTranscriptView } from "./worker-transcript.ts";
+import { hasEnded, isInterrupted, resolvedModel, type FoldedWorkerManifest, type UsageSource, type WorkerTranscriptView } from "./worker-transcript.ts";
 
 /** Why this worker cannot be resumed, or undefined when it can. */
 export type ResumeRefusal = string | undefined;
@@ -69,7 +69,7 @@ export class RestoredWorker implements Worker {
 		this.task = m.spec?.taskPreview ?? "";
 		this.cwd = m.spec?.cwd ?? "";
 		this.wake = m.spec?.wake ?? true;
-		this.model = m.spec?.model ?? summary?.model;
+		this.model = resolvedModel(m, view);
 		this.effort = m.spec?.effort ?? summary?.effort;
 		if (m.ref?.kind === "pi-session-file") {
 			this.sessionFile = m.ref.locator;

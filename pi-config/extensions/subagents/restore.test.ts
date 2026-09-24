@@ -11,6 +11,7 @@ import * as path from "node:path";
 import { registerSubagents } from "./index.ts";
 import { BACKEND_REGISTER_EVENT } from "./contracts.ts";
 import { WORKER_MANIFEST_ENTRY_TYPE } from "./registry.ts";
+import { resolvedModel } from "./worker-transcript.ts";
 
 const SNAPSHOT = "subagents:workers-snapshot";
 const NO_POLICY_FILE = path.join(os.tmpdir(), "subagents-tests-absent-policy.json");
@@ -324,5 +325,56 @@ test("a backend reporting session-cumulative usage is not counted twice after a 
 	// And the durable snapshot is the true total, so no inflated cost outlives the next restart.
 	const snap = file.entries.filter((e) => e.customType === WORKER_MANIFEST_ENTRY_TYPE && e.data.workerId === "ag_04").at(-1).data.usageSnapshot;
 	assert.deepEqual([snap.input, snap.output, snap.cacheRead, snap.cacheWrite, snap.cost, snap.turns], [20, 168, 13846, 14016, 0.0303, 2]);
+	await m.shutdown();
+});
+
+test("resolvedModel: the transcript's model, else the snapshot's biggest row, else the spawn model; claude/ dropped for claude-code only", () => {
+	const rows = [
+		{ model: "claude/claude-sonnet-4-6", input: 1, output: 1, cacheRead: 0, cacheWrite: 0 },
+		{ model: "claude/claude-haiku-4-5-20251001", input: 10, output: 100, cacheRead: 5000, cacheWrite: 9000 },
+	];
+	const claude: any = { v: 1, workerId: "ag_01", backend: "claude-code", at: 1, spec: { cwd: "/", model: "haiku", taskPreview: "", wake: true }, usageSnapshot: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, byModel: rows, source: "snapshot" } };
+	assert.equal(resolvedModel(claude, { summary: { model: "claude/claude-haiku-4-5-20251001" } as any }), "claude-haiku-4-5-20251001");
+	assert.equal(resolvedModel(claude, { summary: undefined }), "claude-haiku-4-5-20251001", "the biggest snapshot row, not the first");
+	assert.equal(resolvedModel({ ...claude, usageSnapshot: undefined }, undefined), "haiku", "the spawn model last");
+	// pi models are provider/id in every state: nothing is stripped.
+	const pi: any = { v: 1, workerId: "ag_02", backend: "pi", at: 1, spec: { cwd: "/", model: "zai/glm-5.3", taskPreview: "", wake: true } };
+	assert.equal(resolvedModel(pi, { summary: { model: "claude/odd-provider-model" } as any }), "claude/odd-provider-model");
+	assert.equal(resolvedModel(pi, undefined), "zai/glm-5.3");
+});
+
+test("a restored and then resumed Claude worker shows the model it ran under, until its runner reports one", async () => {
+	const file = sessionFile();
+	const id = "00000000-0000-4000-8000-00000000b002";
+	file.append(WORKER_MANIFEST_ENTRY_TYPE, {
+		v: 1, kind: "worker-manifest", workerId: "ag_05", backend: "claude-code", at: 1, name: "c", groupId: "run_05", status: "waiting",
+		spec: { cwd: os.tmpdir(), model: "haiku", taskPreview: "t", wake: true }, ref: { v: 1, backend: "claude-code", kind: "claude-session-id", locator: id, cwd: os.tmpdir() },
+		usageSnapshot: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, byModel: [{ model: "claude/claude-haiku-4-5-20251001", input: 1, output: 1, cacheRead: 0, cacheWrite: 0 }], source: "snapshot", asOf: 1 },
+		launch: { backend: "claude-code", model: "haiku" },
+	});
+	const m = manager(file);
+	let worker: any;
+	let launchedWith: string | undefined;
+	m.bus.emit(BACKEND_REGISTER_EVENT, {
+		version: 1, id: "claude-code", validate() {}, prepare: (spec: any) => ({ model: spec.model }),
+		create: (options: any, handlers: any) => {
+			launchedWith = options.model;
+			worker = {
+				...options, backend: "claude-code", usageScope: "session", extensions: [], forked: false, status: "starting", transcript: [], transcriptOmitted: { items: 0, approxBytes: 0 },
+				usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, turns: 0, contextTokens: 0 }, steerCount: 0, startedAt: Date.now(), lastActivity: Date.now(),
+				whenClosed: Promise.resolve(), processAlive: true, sessionId: id,
+				isFinished() { return false; }, isSettled() { return this.status === "waiting"; }, finalOutput: () => "",
+				async steer() { return { ok: true }; }, async kill() {}, async dispose() {},
+			};
+			setTimeout(() => { worker.status = "waiting"; handlers.onChange(); }, 5);
+			return worker;
+		},
+	});
+	m.start();
+	await until(() => (m.snapshot()?.workers ?? []).length === 1, "restored");
+	assert.equal(m.snapshot().workers[0].model, "claude-haiku-4-5-20251001", "restored: not the spawn alias");
+	await m.call("agent_resume", { id: "ag_05" });
+	assert.equal(worker.model, "claude-haiku-4-5-20251001", "resumed: the same label before its first turn");
+	assert.equal(launchedWith, "haiku", "the CLI is still launched with the spawn model");
 	await m.shutdown();
 });

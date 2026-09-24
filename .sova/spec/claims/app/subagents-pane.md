@@ -271,7 +271,7 @@ webapp never writes to it (CLAUDE.md: no file locking).
 | File gone, first load | View head, then `.empty.subagents-empty`: **Couldn't find this worker's transcript.** `{path}` is gone (a claude-code worker reads `Claude session {id}`). Nothing else changed. |
 | File gone after loading | Keep what's shown. `.banner-warn` in the banner slot: **This transcript's file is gone.** What's shown is up to `{HH:MM}`. |
 | Connection lost, retrying | Keep what's shown. `.banner-warn`: **Stopped watching. The connection dropped.** What's shown is up to `{HH:MM}`. Reconnecting… (§9 Live-watch). Pulses stop |
-| Gave up | `.banner-error`: **Lost the connection to the Sova server.** Nothing in the session changed. Check `npm run dev:server` is running, then retry. · `Reconnect` |
+| Gave up | `.banner-error`: **Lost the connection to the Sova server.** Nothing in the session changed. Check `pnpm run dev:server` is running, then retry. · `Reconnect` |
 | Other load error | `.banner-error`: **Couldn't load this transcript.** The file at `{path}` wasn't changed. {server message} · `Retry` |
 
 A settled worker's transcript stays readable: Done, Failed and Stopped workers keep their rows

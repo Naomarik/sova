@@ -231,8 +231,12 @@
     },
     "§app.subagents-pane/transcript-view": {
       "kind": "behavior",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "src/components/ConnectionBanner.tsx",
+        "src/components/SubagentPane.tsx"
+      ]
     },
     "§app.subagents-pane/trigger": {
       "kind": "behavior",
@@ -670,7 +674,10 @@
     "§chat.transcript/transcript-items": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified"
+      "evidence": "verified",
+      "code": [
+        "server/transcript.ts"
+      ]
     },
     "§chat/composer": {
       "kind": "surface",
@@ -732,8 +739,12 @@
     },
     "§design.copy-deck/connection": {
       "kind": "note",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "src/components/ConnectionBanner.tsx",
+        "src/components/ChatView.tsx"
+      ]
     },
     "§design.copy-deck/context-window": {
       "kind": "note",
@@ -1344,6 +1355,23 @@
         "pi-config/extensions/sandbox/tools.ts",
         "src/components/ChatView.tsx",
         "src/lib/sandbox.ts"
+      ]
+    },
+    "§chat.images/resize-notes": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.transcript/transcript-items",
+        "§chat.timeline/rewind"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "shared/image-note.ts",
+        "server/transcript.ts",
+        "server/sessions-index.ts",
+        "server/fork.ts",
+        "server/chat-manager.ts",
+        "src/lib/live.ts"
       ]
     }
   }

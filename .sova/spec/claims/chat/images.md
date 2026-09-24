@@ -211,6 +211,28 @@ compact chip, never as the raw long path.
   row arrives from the server: the refetch when the turn settles, a hello, or a watch append.
   Nothing jumps mid-stream.
 
+## §chat.images/resize-notes — pi's image resize notes
+
+**The note pi writes for the model is not shown.** When pi (0.87+) resizes an image a user message
+carries as image content, it appends a note for the model to that message's stored text, after a
+blank line, one per resized image:
+`[Image: original 2560x1600, displayed at 2000x1250. Multiply coordinates by 1.28 to map to original image.]`.
+Wherever Sova shows that message's text, it shows the text as typed, without those notes: the
+user row, live or reloaded and in watch mode; the session's title; the text rewind puts back in the
+composer; and the text a fork puts in the new session's composer. A message that was only images
+shows as an image-only row, and rewind and fork put back no text. The note is display-only to hide:
+the session file, and what the model is sent (a regenerate replays the stored text, note and all),
+are unchanged.
+
+Only pi's exact shape is removed, so typed text that merely looks like one stays as written. The
+notes must be the message's whole last block, after its last blank line. Every line of that block
+must be a hint pi writes: the dimension note, "[Image converted from … to image/….]" or pi's two
+"[Image omitted: …]" lines. Each note's scale must equal its original width divided by its
+displayed width, to two places. The message must be in the shape pi's prompt builds (one text
+block, then only images), with at least as many images as notes. Only the dimension notes are
+removed; pi's other hints stay. An assistant reply, or a user message without images, is never
+touched.
+
 ## §chat.images/lightbox — Lightbox
 
 **There is a lightbox.** Clicking or pressing Enter/Space on a `.thumb` opens that image full

@@ -224,6 +224,12 @@ Server `text` is used as-is. Put machine facts (ids, model names, counts) in `<c
 followed by a `.disclosure` labelled "Raw entry" that holds `<pre>` JSON. Never drop a row
 silently.
 
+**Model-context edits render nothing.** A `context_edit` entry (pi 0.87+; pi writes one itself
+when it drops an abandoned attempt after a retried error or an overflow recovery) changes only
+what the model is sent next: raw history, usage and the chat are unchanged, and pi's own chat
+shows nothing for it either. So it yields no row, not an unknown one, and the message it edits
+keeps its row exactly as recorded.
+
 **report.** Subagent reports, and every other long extension message. A subagent's final
 report (`custom_message`, customType `subagent-complete`) can run to 4000 characters of
 markdown. As a centered caption-size info row it filled the whole viewport with literal `###`

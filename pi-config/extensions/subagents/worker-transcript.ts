@@ -488,6 +488,21 @@ export function addRow(rows: Map<string, WorkerUsageRow>, model: string, counts:
 	if (counts.turns !== undefined) row.turns = (row.turns ?? 0) + counts.turns;
 }
 
+/** JSONL text → objects; blank and malformed lines (a torn last line) are skipped. */
+export function parseJsonLines(text: string): unknown[] {
+	const out: unknown[] = [];
+	for (const line of text.split("\n")) {
+		if (!line.trim()) continue;
+		try {
+			const value: unknown = JSON.parse(line);
+			if (value && typeof value === "object") out.push(value);
+		} catch {
+			/* malformed line: skip */
+		}
+	}
+	return out;
+}
+
 // ---------------------------------------------------------------------------
 // Convenience
 // ---------------------------------------------------------------------------

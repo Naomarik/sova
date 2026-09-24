@@ -85,6 +85,16 @@ for (const permissionMode of [undefined, "bypassPermissions", "acceptEdits", "ma
 	});
 }
 
+test("a sandboxed launch (settings, dontAsk, no host prompt) reaches the CLI as given; none by default", async (t) => {
+	const json = '{"sandbox":{"enabled":true}}';
+	const f = fixture({ settingsJson: json, permissionMode: "dontAsk" }); cleanup(t, f); await ready(f);
+	assert.equal(f.argv[f.argv.indexOf("--settings") + 1], json);
+	assert.equal(f.argv[f.argv.indexOf("--permission-mode") + 1], "dontAsk");
+	assert.equal(f.argv[f.argv.indexOf("--permission-prompts") + 1], "none");
+	const plain = fixture(); cleanup(t, plain); await ready(plain);
+	assert.ok(!plain.argv.includes("--settings"));
+});
+
 test("correlation ignores stale replay/results and duplicate results, supports UUID array", async (t) => {
 	const f = fixture(); cleanup(t, f); await ready(f);
 	f.child.result({ uuid: "wrong" }); assert.equal(f.settled.length, 0);

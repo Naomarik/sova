@@ -9,12 +9,12 @@
 
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
-import { lookup } from "node:dns/promises";
+import { connect as netConnect } from "node:net";
 import path from "node:path";
 import { makeSuite, ok, eq, includes, notIncludes } from "./kit.mjs";
 import {
 	ARTIFACT_ROOT, EXT_DIR, PLATFORM_DIR, TESTS_DIR, abstractListener, baseEnv, cleanupAll, envKeys,
-	hostHttpStatus, hostListener, jiti, makeFixture, rand, run, sha, stubProxy, FORBIDDEN_ENV,
+	hostHttpStatus, hostListener, jiti, makeFixture, rand, run, sha, FORBIDDEN_ENV,
 } from "./harness.mjs";
 
 const t = makeSuite("contract");
@@ -30,6 +30,21 @@ try {
 const linuxReady = !!BE && existsSync(LINUX_IMPL);
 
 const shq = (s) => `'${String(s).replaceAll("'", "'\\''")}'`;
+
+/** Raw HTTP/1.1 CONNECT over a unix socket; resolves the response head (through the empty line). */
+function rawConnect(socketPath, authority) {
+	return new Promise((resolve, reject) => {
+		const s = netConnect(socketPath);
+		let buf = "";
+		s.on("connect", () => s.write(`CONNECT ${authority} HTTP/1.1\r\nHost: ${authority}\r\n\r\n`));
+		s.on("data", (d) => {
+			buf += d.toString("utf8");
+			if (buf.includes("\r\n\r\n")) { s.destroy(); resolve(buf); }
+		});
+		s.on("error", reject);
+		s.setTimeout(8000, () => { s.destroy(); reject(new Error(`rawConnect timeout: ${buf}`)); });
+	});
+}
 
 /** The per-backend hidden list the spec promises; missing paths are skipped by the backend. */
 const FXreal = (p) => BE.canonicalizePath(p);
@@ -134,10 +149,27 @@ if (!linuxReady) {
 	mkdirSync(path.dirname(fx.policyFile), { recursive: true });
 	if (!existsSync(fx.policyFile)) writeFileSync(fx.policyFile, '{"level":"workspace-write","defaultOn":false}\n');
 
-	// Network fixture: the test-side allowlisting proxy on a unix socket, allowlisting GitHub.
+	// Network fixture: the REAL proxy (proxy.ts) on a unix socket, with a resolver seam so no live
+	// internet host decides anything: *.invalid names reject with ENOTFOUND after the allowlist
+	// check; real names resolve normally (used only by the optional, skippable extra C11-online).
+	const proxyMod = await jiti.import(path.join(EXT_DIR, "proxy.ts"));
+	ok(typeof proxyMod.startProxy === "function", "proxy.ts exports startProxy (backend's API note)");
+	const ALLOWED_GONE = "sbx-allowed.invalid"; // allowlisted, never resolvable: expect 502 at the dial
+	const BLOCKED = "sbx-blocked.invalid"; // not allowlisted: expect the 403 allowlist text
+	const proxyAllow = [ALLOWED_GONE, "github.com", "api.github.com"];
 	const proxySock = path.join(ARTIFACT_ROOT, `px-${rand()}.sock`);
-	const proxy = await stubProxy({ allow: ["api.github.com", "github.com"], socketPath: proxySock });
-	const proxyNet = { mode: "proxy", proxy: { socket: proxySock, allow: ["api.github.com", "github.com"] } };
+	const decisions = [];
+	const proxy = await proxyMod.startProxy({
+		socket: proxySock,
+		allow: proxyAllow,
+		onDecision: (d) => decisions.push(d),
+		resolve: async (host) => {
+			if (host.endsWith(".invalid")) throw new Error(`ENOTFOUND ${host} (test resolver)`);
+			const { lookup: sysLookup } = await import("node:dns/promises");
+			return (await sysLookup(host)).address;
+		},
+	});
+	const proxyNet = { mode: "proxy", proxy: { socket: proxySock, allow: proxyAllow } };
 	const policyWW = makePolicy(fx, { network: proxyNet });
 	const backend = BE.backendFor("linux");
 
@@ -409,42 +441,74 @@ if (!linuxReady) {
 		notIncludes(r.out.stdout, host.slice(0, 24), "confined cat must never echo the real credentials");
 	});
 
-	// C11 — proxy allowlist (plan §11 #11; network cases skip offline)
-	const online = (await hostHttpStatus("https://api.github.com")) !== null;
-	if (!online) t.skip("C11 proxy allowlist", "host is offline");
-	else if (needProbe("C11")) await t.test("C11 egress only via the allowlisting proxy; raw sockets dead", async () => {
-		const r1 = await confinedRun(backend, "curl -sS -m 15 -o /dev/null -w '%{http_code}' https://example.com", policyWW, { timeoutMs: 45_000 });
+	// C11 — proxy allowlist decisions, hermetic (plan §11 #11; orchestrator: no live host decides).
+	// The contrast is the proxy's OWN verdict: allowed name → 502 at the upstream dial; blocked name →
+	// 403 allowlist refusal. Both are curl'd from INSIDE the sandbox through the relay.
+	if (needProbe("C11")) await t.test("C11 proxy: blocked name 403'd, allowed-but-gone name 502'd, verdicts differ", async () => {
+		const r1 = await confinedRun(backend, `curl -sS -m 15 -o /dev/null -w '%{http_code}' https://${BLOCKED}/`, policyWW, { timeoutMs: 45_000 });
 		ok(!r1.refused, `confine must succeed: ${r1.reason}`);
-		const exampleServed = r1.out.stdout.trim() === "200" && !proxy.refused.includes("example.com");
-		ok(!exampleServed, `non-allowlisted example.com must never come from the origin (exit ${r1.out.code}, code ${r1.out.stdout.trim()}, proxy refused: ${JSON.stringify(proxy.refused)})`);
-		const r2 = await confinedRun(backend, "curl -sS -m 15 -o /dev/null -w '%{http_code}' https://api.github.com", policyWW, { timeoutMs: 45_000 });
+		ok(r1.out.code !== 0 && r1.out.stdout.trim() === "000", `blocked CONNECT: curl fails with no origin status (got exit ${r1.out.code}, code ${JSON.stringify(r1.out.stdout.trim())})`);
+		includes(r1.out.stderr, "response 403", "blocked CONNECT sees the proxy's 403");
+		const blockedDecision = decisions.find((d) => d.host === BLOCKED);
+		ok(blockedDecision && blockedDecision.allowed === false, `proxy decision log records the refusal: ${JSON.stringify(blockedDecision)}`);
+		includes(blockedDecision.reason, "allowlist", "refusal reason is the allowlist");
+		eq(r1.cls.kind, "denied", `a refused connection classifies as denied so the model sees the note (got ${r1.cls.kind}; stderr ${JSON.stringify(r1.out.stderr.trim())})`);
+
+		decisions.length = 0;
+		const r2 = await confinedRun(backend, `curl -sS -m 15 -o /dev/null -w '%{http_code}' https://${ALLOWED_GONE}/`, policyWW, { timeoutMs: 45_000 });
 		ok(!r2.refused, `confine must succeed: ${r2.reason}`);
-		ok(r2.out.stdout.trim() === "200", `allowlisted host must be reachable through the proxy (exit ${r2.out.code}, body ${JSON.stringify(r2.out.stdout)}, err ${r2.out.stderr.trim()})`);
-		const { address } = await lookup("api.github.com");
-		const r3 = await confinedRun(backend, `timeout 6 bash -c 'exec 3<>/dev/tcp/${address}/443'`, policyWW, { timeoutMs: 20_000 });
-		ok(!r3.refused, `confine must succeed: ${r3.reason}`);
-		ok(r3.out.code !== 0, "raw TCP to an allowlisted host's IP must fail (no route)");
+		ok(r2.out.code !== 0 && r2.out.stdout.trim() === "000", `allowed-but-gone CONNECT: curl fails with no origin status (got exit ${r2.out.code}, code ${JSON.stringify(r2.out.stdout.trim())})`);
+		includes(r2.out.stderr, "response 502", "allowed CONNECT got PAST the allowlist and failed at the upstream dial (502), not 403");
+		const allowedDecision = decisions.find((d) => d.host === ALLOWED_GONE);
+		ok(allowedDecision && /cannot resolve/.test(allowedDecision.reason ?? ""), `proxy decision log records the pass-through-allowlist, dial-stage failure: ${JSON.stringify(allowedDecision)}`);
+		ok(!/allowlist/.test(allowedDecision.reason ?? ""), "an allowed name never sees the allowlist refusal");
+
+		// Plain-HTTP form of the same two decisions (absolute-URI path through the proxy).
+		const r3 = await confinedRun(backend, `curl -sS -m 15 http://${BLOCKED}/`, policyWW, { timeoutMs: 45_000 });
+		includes(r3.out.stdout + r3.out.stderr, "allowlist", "blocked plain-HTTP carries the allowlist deny text (visible to the model)");
+		const r4 = await confinedRun(backend, `curl -sS -m 15 http://${ALLOWED_GONE}/`, policyWW, { timeoutMs: 45_000 });
+		includes(r4.out.stdout + r4.out.stderr, "cannot resolve", "allowed plain-HTTP dies at resolution, not at the allowlist");
 	});
 
-	// C11b — backend's gap case (e): an allowlisted name resolving to 127.0.0.1 through the real proxy
-	await t.test("C11b an allowlisted name that resolves to 127.0.0.1 is refused by the real proxy", async () => {
-		const proxyFile = path.join(EXT_DIR, "proxy.ts");
-		if (!existsSync(proxyFile)) { t.skip("C11b", "proxy.ts does not exist yet"); return; }
+	// C11-raw — raw sockets have no route at all (no DNS needed; TEST-NET-3 is unroutable-real).
+	if (needProbe("C11-raw")) await t.test("C11-raw raw TCP bypasses nothing", async () => {
+		const r = await confinedRun(backend, "timeout 6 bash -c 'exec 3<>/dev/tcp/203.0.113.1/443'", policyWW, { timeoutMs: 20_000 });
+		ok(!r.refused, `confine must succeed: ${r.reason}`);
+		ok(r.out.code !== 0, "raw TCP must fail (no route)");
+	});
+
+	// C11-online — the only case that touches the live internet; optional and never failing.
+	if ((await hostHttpStatus("https://api.github.com")) === null) t.skip("C11-online real egress", "host is offline");
+	else await t.test("C11-online real egress through the proxy (optional, labelled, never fatal)", async () => {
+		try {
+			const r = await confinedRun(backend, "curl -sS -m 15 -o /dev/null -w '%{http_code}' https://api.github.com", policyWW, { timeoutMs: 45_000 });
+			eq(r.out.code, 0, `curl exit (stderr ${r.out.stderr.trim()})`);
+			ok(r.out.stdout.trim() !== "000", `origin answered (HTTP ${r.out.stdout.trim()}; 403 = GitHub rate-limit, still an answer)`);
+		} catch (err) {
+			t.skip("C11-online result", `live egress misbehaved (informational): ${err?.message}`);
+		}
+	});
+
+	// C11b — backend's gap case (e): an allowlisted name resolving to loopback is refused by the real
+	// proxy. Raw HTTP/1.1 CONNECT over the unix socket (this curl cannot proxy over unix sockets).
+	await t.test("C11b an allowlisted name that resolves to loopback is refused (allowlist cannot reach the host)", async () => {
 		const listener = await hostListener();
 		let px;
 		try {
-			const mod = await jiti.import(proxyFile);
-			ok(typeof mod.startProxy === "function", "proxy.ts must export startProxy (backend's API note)");
-			const sock = path.join(ARTIFACT_ROOT, `pxreal-${rand()}.sock`);
-			px = await mod.startProxy({ socket: sock, allow: ["localhost", "127.0.0.1"] });
-			const proxyEnv = { HTTP_PROXY: `http+unix://${encodeURIComponent(sock)}`, http_proxy: `http+unix://${encodeURIComponent(sock)}` };
-			const ctl = await run(["curl", "-s", "-m", "5", "-o", "/dev/null", "-w", "%{http_code}", "--proxy", `http+unix://${encodeURIComponent(sock)}`, `http://127.0.0.1:${listener.port}/`], {});
-			ok(ctl.stdout.trim() !== "200", `loopback CONNECT through the proxy must not produce origin 200, got ${ctl.stdout.trim()} (exit ${ctl.code})`);
-			eq(listener.hits.length, 0, "host-side: loopback listener must see zero connections through the proxy");
+			const loopDecisions = [];
+			const sock = path.join(ARTIFACT_ROOT, `pxloop-${rand()}.sock`);
+			px = await proxyMod.startProxy({ socket: sock, allow: ["localhost", "127.0.0.1"], ports: [80, 443, listener.port], onDecision: (d) => loopDecisions.push(d) });
+			for (const name of ["localhost", "127.0.0.1"]) {
+				const head = await rawConnect(sock, `${name}:${listener.port}`);
+				includes(head, " 403 ", `CONNECT ${name} refused with 403`);
+				includes(head, "x-sova-sandbox: denied", "refusal is the sandbox proxy's own");
+				const d = loopDecisions.find((x) => x.host === name);
+				ok(d && d.allowed === false && /local address/.test(d.reason ?? ""), `decision for ${name} is a local-address refusal: ${JSON.stringify(d)}`);
+			}
+			eq(listener.hits.length, 0, "host-side: loopback listener sees zero connections through the proxy");
 		} finally {
 			await listener.close();
 			try { await px?.close?.(); } catch {}
-			try { await px?.stop?.(); } catch {}
 		}
 	});
 

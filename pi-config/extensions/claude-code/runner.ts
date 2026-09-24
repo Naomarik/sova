@@ -72,6 +72,8 @@ export interface ClaudeSpawnOptions extends SpawnOptions {
 	/** Host must bound displayed dialogs itself; queue time does not consume the runner deadline. */
 	permissionTimeoutManagedByHost?: boolean;
 	maxBudgetUsd?: number;
+	/** Opaque `--settings` JSON, passed through to the CLI (buildClaudeArgv). */
+	settingsJson?: string;
 	spawnImpl?: SpawnOptions["spawnImpl"];
 	/** @internal Signal the owned detached process group (test seam). */
 	signalGroupImpl?: (pid: number, signal: NodeJS.Signals) => void;
@@ -248,7 +250,7 @@ export class ClaudeRunner implements Worker {
 		const built = buildClaudeArgv({
 			permissionMode, permissionModes: CLAUDE_PERMISSION_MODES, hostPermissions,
 			model: o.model, effort: o.effort, tools: o.tools, allowedTools: o.allowedTools,
-			mcpServers: o.mcpServers, env: o.env, maxBudgetUsd: o.maxBudgetUsd,
+			mcpServers: o.mcpServers, env: o.env, maxBudgetUsd: o.maxBudgetUsd, settingsJson: o.settingsJson,
 		});
 		if (built.error !== undefined) { this.fail(built.error); return; }
 		const args = built.args;

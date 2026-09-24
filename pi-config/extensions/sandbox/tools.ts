@@ -73,7 +73,8 @@ export function stockDefinitions(cwd: string, opts: StockOptions): AnyToolDefini
 /** Everything one tool call runs under. Taken once at the start of each execute. */
 export type Snapshot =
 	| { ok: true; policy: ResolvedPolicy; backendPolicy: Policy; backend: Backend; enforcement: "full" | "partial"; reasons?: string[] }
-	| { ok: false; reason: string };
+	/** `message`, when set, is the whole tool error; otherwise the unavailable copy wraps `reason`. */
+	| { ok: false; reason: string; message?: string };
 
 export interface ConfineDeps {
 	snapshot(): Promise<Snapshot>;
@@ -99,7 +100,7 @@ async function take(deps: ConfineDeps): Promise<Extract<Snapshot, { ok: true }>>
 	} catch (e) {
 		s = { ok: false, reason: (e as Error).message };
 	}
-	if (!s.ok) throw new Error(unavailableMessage(s.reason));
+	if (!s.ok) throw new Error(s.message ?? unavailableMessage(s.reason));
 	return s;
 }
 

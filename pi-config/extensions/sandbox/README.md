@@ -12,6 +12,7 @@ confined. Spec: `§chat/sandbox` (draft `sandbox-feature`).
 | Command | `/sandbox on`, `/sandbox off`, bare `/sandbox` (shows the state). Sova calls the same handler through `extensionRunner.getCommand("sandbox")`. |
 | Flag | `--sandbox on\|off`: the initial state of a new runtime. Workers get it from their parent. A session started with `--sandbox on` cannot turn it off (a parent's agent could otherwise send `/sandbox off` to its worker). |
 | Entry | `custom` entry `sandbox`: `{version: 1, on, level, backend, enforcement, reasons?}` (`state.ts` `SandboxActive`), appended on every change; `restoreActive(branch)` reads the newest. Opening a session writes nothing, except when it comes up **on** without an entry saying so (the flag or `defaultOn`): then the state is pinned so a later default change cannot loosen it. |
+| Workers | While on, the event carries `workerFlags` (`{sandbox: "on", "sandbox-parent": <ParentScope JSON>}`: the parent's level and writable roots, without its session tmp) and `checkWorker({cwd, backend})`, a refusal when the cwd is outside those roots (any backend) or the parent's sandbox is unavailable. A worker started with `--sandbox-parent` is on, writes exactly where its parent may (its own cwd is never added), and refuses every tool with `Sandbox: worker cwd <x> is outside the parent's sandbox` when its cwd is outside them. A malformed flag fails closed. Grandchildren inherit the same roots. |
 | Presence | `extensionRunner.getCommand("sandbox") !== undefined`. |
 | Event bus | `sandbox:state` (`SandboxStateEvent`: `on`, `extensionPath`, `enforcement`, `claudeSettingsJson?`, `claudePermissionMode?`, `claudeRefusal?`) on `session_start`, every change, and in answer to `sandbox:discover`. `on` is false under a remote target. Claude Code workers under on get `claudeSettingsJson` (the CLI's sandbox for Bash plus `Read`/`Edit` permission rules for the file tools, `tools.ts` `claudeSettingsFor`) and must run with `--permission-mode dontAsk`, never `bypassPermissions`, which skips the rules (`plan/PROBE.md`). `claudeRefusal` is set only when the sandbox is unavailable, or partial without `acceptPartial`. |
 
@@ -92,13 +93,13 @@ first confined call. Both go at `session_shutdown`.
 | `policy.ts` | extension | load/validate, tighten-only project file, canonical paths, read/write verdicts |
 | `tools.ts` | extension | `stockDefinitions`, `confinedDefinitions`, `claudeSettingsFor` |
 | `backend.ts`, `backends/*`, `env.ts`, `proxy.ts` | backend | the seam, bwrap, env allowlist, proxy |
-| `tests/*.unit.test.ts` | extension | unit tests of the four files above |
+| `tests/*.unit.test.ts` | extension | unit tests of the four files above (`index.unit.test.ts` drives the factory on a fake `pi`) |
 | `tests/*` (other) | red-team | contract and escape suite |
 
 ## Tests
 
 ```sh
-cd pi-config/extensions/sandbox && node --test tests/state.unit.test.ts tests/policy.unit.test.ts tests/tools.unit.test.ts
+cd pi-config/extensions/sandbox && node --test tests/*.unit.test.ts
 ```
 
 No model requests. `tools.unit.test.ts` includes one run through the real bwrap backend when

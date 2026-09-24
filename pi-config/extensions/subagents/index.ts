@@ -55,6 +55,7 @@ import {
 	remoteWorkerInstructions,
 	type RemoteSessionEvent,
 } from "../remote/workers.ts";
+import { SANDBOX_DISCOVER_EVENT, SANDBOX_STATE_EVENT, type SandboxStateEvent } from "../sandbox/state.ts";
 
 const MAX_LIVE = 12;
 const MAX_BATCH = 8;
@@ -241,6 +242,11 @@ export { CLAUDE_CODE_EXTENSION } from "./runner.ts";
  */
 export const REMOTE_MCP_TOOL_TIMEOUT_MS = 630_000;
 
+/** Whether an `-e` source is the extension directory `dir` (the directory or its index.ts). */
+function sameExtension(source: string, dir: string): boolean {
+	const real = realpathOr(source);
+	return real === dir || real === path.join(dir, "index.ts");
+}
 function realpathOr(p: string): string {
 	try {
 		return fs.realpathSync(p);
@@ -492,6 +498,18 @@ export function registerSubagents(
 		remoteSession = e;
 	});
 	pi.events?.emit(REMOTE_DISCOVER_EVENT, { version: 1 });
+	// The parent's sandbox (pi-config's sandbox extension): announced on the bus like the remote
+	// session. While it is on, every worker is checked by it and starts under it; nothing here
+	// interprets the policy (workerFlags, the Claude settings and checkWorker are the extension's).
+	let sandboxState: SandboxStateEvent | undefined;
+	const unregisterSandboxListener = pi.events?.on(SANDBOX_STATE_EVENT, (data: unknown) => {
+		const e = data as SandboxStateEvent | undefined;
+		if (!e || e.version !== 1 || typeof e.on !== "boolean") return;
+		if (e.on && (typeof e.extensionPath !== "string" || !e.extensionPath.startsWith("/"))) return;
+		if (e.workerFlags !== undefined && (typeof e.workerFlags !== "object" || Object.values(e.workerFlags).some((v) => typeof v !== "string"))) return;
+		sandboxState = e;
+	});
+	pi.events?.emit(SANDBOX_DISCOVER_EVENT, { version: 1 });
 	const remoteSessionFor = (ctx: ExtensionContext): RemoteSessionEvent | undefined => remoteSession ?? remoteOfPlaceholder(ctx.cwd);
 	/** One line in agent_spawn/agent_list output: the proof that this session's workers run on the target (absent in a local session). */
 	const remoteNotice = (ctx: ExtensionContext): string => {
@@ -887,6 +905,8 @@ export function registerSubagents(
 		const remote = remoteSessionFor(ctx);
 		if (remote?.error) throw new Error(`This session's remote target "${remote.target}" could not be loaded (${remote.error}); a worker would have no tools. Fix the target first.`);
 		if (remote && !remote.farCwd) throw new Error(`This session runs on remote target "${remote.target}" but its far working directory is not known yet (the target's preflight has not answered); retry in a few seconds, or /remote check.`);
+		// Local sessions only: a remote session's tools run on the target (the extension reports it off there).
+		const sandbox = !remote && sandboxState?.on ? sandboxState : undefined;
 		const prepared = specs.map((spec) => {
 			if (!spec.prompt.trim()) throw new Error("Task must not be blank.");
 			const backendId = spec.backend ?? "pi";
@@ -900,6 +920,11 @@ export function registerSubagents(
 			try { cwdStat = fs.statSync(cwd); }
 			catch (error) { throw new Error(`Cannot access working directory ${cwd}: ${(error as Error).message}`); }
 			if (!cwdStat.isDirectory()) throw new Error(`Not a directory: ${cwd}`);
+			if (sandbox) {
+				// Fail closed: an on state that cannot vouch for this worker refuses it.
+				const refusal = sandbox.checkWorker ? sandbox.checkWorker({ cwd, backend: backendId }) : "This session's sandbox is on but gave no worker check; a worker cannot start sandboxed.";
+				if (refusal) throw new Error(refusal);
+			}
 			// What a remote session's worker carries: pi loads the remote extension with the flag;
 			// claude launches the `remote` MCP server, loses every built-in tool (`--tools ""`) and is
 			// told so in its system prompt.
@@ -923,6 +948,15 @@ export function registerSubagents(
 				if (denied) throw new Error(denied);
 				backend.validate(spec, ctx);
 				let prepared = backend.prepare?.({ ...spec, cwd }, ctx) ?? {};
+				if (sandbox) {
+					// The CLI's own sandbox, as the extension computed it; never bypassPermissions, and no
+					// host prompt that could approve past the rules.
+					if (backendId !== "claude-code") throw new Error(`Backend ${backendId} cannot run workers while this session's sandbox is on.`);
+					if (sandbox.claudeRefusal) throw new Error(sandbox.claudeRefusal);
+					if (!sandbox.claudeSettingsJson || !sandbox.claudePermissionMode) throw new Error("This session's sandbox is on but gave no Claude Code settings; a Claude Code worker cannot start sandboxed.");
+					const confined = { settingsJson: sandbox.claudeSettingsJson, permissionMode: sandbox.claudePermissionMode, onPermission: undefined };
+					prepared = { ...prepared, ...confined };
+				}
 				if (remote) {
 					if (backendId !== "claude-code") throw new Error(`Backend ${backendId} cannot run workers of a remote session (only pi and claude-code have remote tooling).`);
 					prepared = {
@@ -959,7 +993,14 @@ export function registerSubagents(
 				: spec.extensions?.map((source) => resolveExtensionSource(source, ctx.cwd));
 			// A claude-code-cli model: the provider's extension and switch, after the session's own
 			// (remote sessions get both; the flags merge into the same argv).
-			const { extensions, flags: piFlags } = claudeCodeProviderLoad(model, [MARKER_EXTENSION, ...(remote ? [REMOTE_EXTENSION] : []), ...(own ?? [])], flags);
+			// A parent whose sandbox is on starts the worker under it, with the extension's own flags
+			// (`--sandbox on`, which a worker cannot turn off, and the parent's scope); a spec that
+			// names the extension itself does not load it twice.
+			const sources = [MARKER_EXTENSION, ...(remote ? [REMOTE_EXTENSION] : []), ...(own ?? [])];
+			if (sandbox && !sandbox.workerFlags) throw new Error("This session's sandbox is on but gave no worker flags; a worker cannot start sandboxed.");
+			const { extensions, flags: piFlags } = sandbox
+				? claudeCodeProviderLoad(model, [...sources.filter((source) => !sameExtension(source, sandbox.extensionPath)), sandbox.extensionPath], { ...flags, ...sandbox.workerFlags })
+				: claudeCodeProviderLoad(model, sources, flags);
 			let forkSession: string | undefined;
 			if (spec.fork) {
 				forkSession = ctx.sessionManager.getSessionFile();
@@ -2108,6 +2149,7 @@ export function registerSubagents(
 		publishWorkers();
 		unregisterBackendListener?.();
 		unregisterRemoteListener?.();
+		unregisterSandboxListener?.();
 		unregisterDialogListener?.();
 		backends.clear();
 		activeCtx = undefined;

@@ -302,26 +302,41 @@ test("mountPlan: deeper paths land later; pins only between the nearest writable
 	}
 });
 
-test("network proxy: allowlisted host reachable, others refused, direct egress impossible", { skip: skip || (!HAVE_SOCAT && "no socat") }, async (t) => {
+test("network proxy: the allowlist decides, direct egress is impossible (no live host can fail this)", { skip: skip || (!HAVE_SOCAT && "no socat") }, async (t) => {
 	const ws = scratch(t, "sbx-ws-");
 	const sockDir = scratch(t, "sbx-sock-");
 	const socket = join(sockDir, "p.sock");
-	const px = await startProxy({ socket, allow: ["api.github.com"] });
+	// ".invalid" never resolves (RFC 6761): an allowlisted name passes the allowlist and then
+	// fails at the dial with 502, whatever the network is doing.
+	const allow = ["sbx-allowed.invalid", "api.github.com"];
+	const decisions: { host: string; allowed: boolean; reason?: string }[] = [];
+	const px = await startProxy({ socket, allow, onDecision: (d) => decisions.push(d) });
 	t.after(() => px.close());
-	const policy = makePolicy(ws, scratch(t, "sbx-tmp-"), { network: { mode: "proxy", proxy: { socket, allow: ["api.github.com"] } } });
+	const policy = makePolicy(ws, scratch(t, "sbx-tmp-"), { network: { mode: "proxy", proxy: { socket, allow } } });
 	const b = new LinuxBwrapBackend();
-	const probe = await b.probe(policy);
-	assert.deepEqual(probe, { ok: true, enforcement: "full", network: "proxy" });
+	assert.deepEqual(await b.probe(policy), { ok: true, enforcement: "full", network: "proxy" });
 	const r = await run(b, policy, [
-		`curl -sS -m 10 -o /dev/null -w "denied=%{http_code}\\n" https://example.com`,
+		`curl -sS -m 10 -o /dev/null https://example.com`,
+		`curl -sS -m 10 http://example.com/`,
+		`curl -sS -m 10 -o /dev/null https://sbx-allowed.invalid/`,
+		`curl -sS -m 10 http://sbx-allowed.invalid/`,
 		`curl -sS -m 10 --noproxy '*' -o /dev/null -w "direct=%{http_code}\\n" https://api.github.com`,
-		`curl -sS -m 15 -o /dev/null -w "allowed=%{http_code}\\n" https://api.github.com/zen`,
 		`true`,
 	].join("; "));
+	// Refused by the allowlist: CONNECT → 403, plain HTTP → the 403 body.
 	assert.match(r.output, /CONNECT tunnel failed, response 403/);
+	assert.match(r.output, /sova sandbox: example\.com is not in the sandbox proxy allowlist/);
+	// Allowed: past the allowlist, then the dial fails (502), never a 403.
+	assert.match(r.output, /CONNECT tunnel failed, response 502/);
+	assert.match(r.output, /sova sandbox proxy: cannot resolve sbx-allowed\.invalid/);
+	assert.ok(decisions.some((d) => d.host === "example.com" && !d.allowed));
+	assert.ok(decisions.filter((d) => d.host === "sbx-allowed.invalid").every((d) => d.allowed === false && /cannot resolve/.test(d.reason ?? "")));
+	assert.ok(!decisions.some((d) => d.host === "sbx-allowed.invalid" && /allowlist/.test(d.reason ?? "")));
+	// No route out except the proxy.
 	assert.match(r.output, /direct=000/);
-	if (/allowed=000/.test(r.output)) t.diagnostic("allowlisted request failed (offline?): " + r.output);
-	else assert.match(r.output, /allowed=200/);
+	// Optional live check, never failing: a real allowlisted host through the tunnel.
+	const live = await run(b, policy, `curl -sS -m 15 -o /dev/null -w "tunnel=%{http_connect} status=%{http_code}" https://api.github.com/zen; true`);
+	t.diagnostic(`live api.github.com through the proxy: ${live.output.trim()}`);
 });
 
 test("network proxy degrades to none, never host, when socat or the socket is missing", { skip }, async (t) => {

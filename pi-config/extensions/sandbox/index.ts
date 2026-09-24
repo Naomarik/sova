@@ -23,7 +23,7 @@ import { type ExtensionAPI, type ExtensionContext, getAgentDir, SettingsManager 
 import { Text } from "@earendil-works/pi-tui";
 import { backendFor, gitProtectedPaths, type Policy, shadowSource } from "./backend.ts";
 import { scrubEnv } from "./env.ts";
-import { loadPolicyFile, policyFilePath, resolvePolicy, type ResolvedPolicy } from "./policy.ts";
+import { loadPolicyFile, type ParentScope, parentScopeOf, parseParentScope, policyFilePath, resolvePolicy, type ResolvedPolicy, workerCwdRefusal } from "./policy.ts";
 import { type ProxyHandle, proxySocketPath, startProxy } from "./proxy.ts";
 import {
 	describeActive,
@@ -41,6 +41,8 @@ import {
 import { claudeSettingsFor, confinedDefinitions, type Snapshot, type StockOptions, stockDefinitions } from "./tools.ts";
 
 const FLAG = "sandbox";
+/** Set by a sandboxed parent on its workers: its level and writable roots (`ParentScope` JSON). */
+const PARENT_FLAG = "sandbox-parent";
 const STATUS_KEY = "sandbox";
 /** remote/workers.ts: a session on a target runs its tools there, and remote owns the seven names. */
 const REMOTE_SESSION_EVENT = "remote:session";
@@ -77,7 +79,14 @@ export default function sandbox(pi: ExtensionAPI) {
 		type: "string",
 	});
 
+	pi.registerFlag(PARENT_FLAG, {
+		description: "Set by a sandboxed parent on its workers: the parent's writable roots (JSON). The worker writes there only and implies --sandbox on",
+		type: "string",
+	});
+
 	const backend = backendFor();
+	/** This worker's parent scope, from --sandbox-parent; an error string when the flag is malformed. */
+	let parentScope: ParentScope | string | undefined;
 	let active: SandboxActive = offState();
 	let registered: "none" | "confined" | "stock" = "none";
 	let remote = false;
@@ -143,9 +152,14 @@ export default function sandbox(pi: ExtensionAPI) {
 		const dir = agentDir();
 		// The platform lists apply; which caches are shadowed is the policy file's `shadowed`.
 		const defaults = backend.platformDefaults({ home: homedir(), agentDir: dir });
-		const resolved = resolvePolicy({ agentDir: dir, cwd, tmpDir, defaults, shadowSource, git: gitProtectedPaths });
+		if (typeof parentScope === "string") return { ok: false, reason: parentScope };
+		const resolved = resolvePolicy({ agentDir: dir, cwd, tmpDir, defaults, shadowSource, git: gitProtectedPaths, parent: parentScope });
 		if (!resolved.ok) return { ok: false, reason: resolved.error };
 		const policy = resolved.value;
+		if (policy.outsideParent) {
+			const message = parentScope ? workerCwdRefusal(parentScope, cwd) : undefined;
+			return { ok: false, reason: message ?? "worker cwd is outside the parent's sandbox", message };
+		}
 		lastPolicy = policy;
 		const notices = policy.notices.join("\n");
 		if (notices && notices !== lastNotices) notify(notices, "warning");
@@ -190,6 +204,10 @@ export default function sandbox(pi: ExtensionAPI) {
 		const on = active.on && !remote;
 		const event: SandboxStateEvent = { version: 1, on, extensionPath: SELF_DIR, enforcement: on ? active.enforcement : "none" };
 		if (on) {
+			const scope = lastPolicy && active.enforcement !== "unavailable" ? parentScopeOf(lastPolicy) : undefined;
+			if (scope) event.workerFlags = { [FLAG]: "on", [PARENT_FLAG]: JSON.stringify(scope) };
+			const unavailable = `Sandbox unavailable in the parent: ${active.reasons?.join("; ") ?? "no policy loaded"}. A worker cannot start sandboxed.`;
+			event.checkWorker = ({ cwd: workerCwd }) => (scope ? workerCwdRefusal(scope, workerCwd) : unavailable);
 			// Claude workers get the CLI's own sandbox plus permission rules (PROBE.md): full, under dontAsk.
 			if (lastPolicy) event.claudeSettingsJson = claudeSettingsFor(lastPolicy);
 			event.claudePermissionMode = "dontAsk";
@@ -274,7 +292,15 @@ export default function sandbox(pi: ExtensionAPI) {
 		} catch {
 			restored = undefined;
 		}
-		const flag = first ? parseOnOff(pi.getFlag(FLAG)) : launchedOn || undefined;
+		if (first) {
+			const raw = pi.getFlag(PARENT_FLAG);
+			if (typeof raw === "string" && raw.trim()) {
+				const p = parseParentScope(raw);
+				parentScope = p.ok ? p.value : p.error;
+			}
+		}
+		// A worker of a sandboxed parent is on, whatever else it was given.
+		const flag = first ? (parentScope !== undefined ? true : parseOnOff(pi.getFlag(FLAG))) : launchedOn || undefined;
 		if (first) launchedOn = flag === true;
 		const on = launchedOn || (restored ? restored.on : flag ?? defaultOn());
 		// Opening a session writes nothing unless it comes up on without an entry saying so: then the

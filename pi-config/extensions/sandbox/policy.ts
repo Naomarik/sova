@@ -60,6 +60,8 @@ export interface ResolvedPolicy {
 	shadowed: { path: string; source: string }[];
 	/** Visible notices (ignored project keys and the like), for the UI; never model context. */
 	notices: string[];
+	/** A worker whose cwd is outside its parent's writable roots: every tool refuses. */
+	outsideParent?: boolean;
 }
 
 export type Result<T> = { ok: true; value: T } | { ok: false; error: string };
@@ -307,6 +309,57 @@ export function isWithin(child: string, parent: string): boolean {
 	return child.startsWith(p);
 }
 
+/**
+ * What a sandboxed parent hands its workers (`--sandbox-parent <json>`): its level and the writable
+ * roots of its resolved policy, without its own session tmp. A worker writes there and nowhere
+ * else, whatever its cwd.
+ */
+export interface ParentScope {
+	version: 1;
+	level: SandboxLevel;
+	workspaceRoot: string;
+	writable: string[];
+}
+
+export function parentScopeOf(policy: Pick<ResolvedPolicy, "level" | "workspaceRoot" | "writable" | "tmpDir">): ParentScope {
+	return {
+		version: 1,
+		level: policy.level,
+		workspaceRoot: policy.workspaceRoot,
+		writable: policy.level === "read-only" ? [] : policy.writable.filter((w) => w !== policy.tmpDir),
+	};
+}
+
+/** Parse the `--sandbox-parent` flag. Anything malformed is an error: the worker then refuses every tool. */
+export function parseParentScope(value: unknown): Result<ParentScope> {
+	let raw: unknown = value;
+	if (typeof value === "string") {
+		try {
+			raw = JSON.parse(value);
+		} catch {
+			return { ok: false, error: "--sandbox-parent is not valid JSON" };
+		}
+	}
+	if (!isRecord(raw) || raw.version !== 1 || !isLevel(raw.level) || typeof raw.workspaceRoot !== "string" || !isAbsolute(raw.workspaceRoot)) {
+		return { ok: false, error: "--sandbox-parent is malformed" };
+	}
+	const writable = stringList(raw.writable, "--sandbox-parent writable", (p) => isAbsolute(p));
+	if (!writable.ok) return writable;
+	return { ok: true, value: { version: 1, level: raw.level, workspaceRoot: raw.workspaceRoot, writable: writable.value } };
+}
+
+/**
+ * Why a worker must not start (or run tools) in `cwd` under this parent scope: a cwd outside the
+ * parent's writable roots would make the worker's own sandbox writable where the parent's is not.
+ * Under read-only nothing is writable, so any cwd is fine. `cwd` may be relative to the parent's.
+ */
+export function workerCwdRefusal(scope: ParentScope, cwd: string): string | undefined {
+	if (scope.level === "read-only") return undefined;
+	const c = canonicalize(isAbsolute(cwd) ? cwd : resolve(scope.workspaceRoot, cwd));
+	if (scope.writable.some((r) => isWithin(c, canonicalize(r)))) return undefined;
+	return `Sandbox: worker cwd ${c} is outside the parent's sandbox`;
+}
+
 export interface ResolveInput {
 	agentDir: string;
 	cwd: string;
@@ -321,6 +374,8 @@ export interface ResolveInput {
 	 * so the file tools agree with what the OS backend mounts.
 	 */
 	git?: (root: string) => { writable: string[]; readOnly: string[] };
+	/** Set in a worker of a sandboxed parent (`--sandbox-parent`): its writable roots replace this session's own. */
+	parent?: ParentScope;
 	/** Where a shadowed path's private copy lives (backend `shadowSource`). Without it nothing is shadowed. */
 	shadowSource?: (agentDir: string, path: string) => string;
 }
@@ -340,19 +395,29 @@ export function resolvePolicy(input: ResolveInput): Result<ResolvedPolicy> {
 	const pDir = canonicalize(join(input.agentDir, POLICY_DIR_NAME));
 	const tmpDir = canonicalize(input.tmpDir);
 	const d = input.defaults ?? { hidden: [], writable: [], readOnlyWithinWritable: [] };
+	// A worker never gets a wider level than its parent (the policy file may still lower it).
+	const level: SandboxLevel = input.parent?.level === "read-only" ? "read-only" : policy.level;
 	// No real writable root at or inside a shadowed path: the file's own entries fail closed (they
 	// passed validation only in their written spelling), a platform default is just dropped. The
 	// session cwd may sit inside a shadow; there the real cwd wins, as in the mounts.
 	const shadowCanon = canon(policy.shadowed);
 	const inShadow = (w: string) => shadowCanon.some((sh) => isWithin(w, sh));
-	if (policy.level !== "read-only") {
+	if (level !== "read-only") {
 		const bad = canon(policy.writable).find(inShadow);
 		if (bad) return { ok: false, error: `invalid policy: writable ${bad} is at or inside a shadowed path` };
 	}
+	// A worker of a sandboxed parent writes exactly where the parent may (never its own cwd by
+	// right: a worker started in /b by a parent in /a must not widen the sandbox to /b).
+	const parentRoots = input.parent ? [...new Set(input.parent.writable.map(canonicalize))].filter((w) => !inShadow(w)) : undefined;
 	const writable =
-		policy.level === "read-only" ? [tmpDir] : [workspaceRoot, tmpDir, ...canon([...d.writable, ...policy.writable]).filter((w) => !inShadow(w))];
+		level === "read-only"
+			? [tmpDir]
+			: parentRoots
+				? [tmpDir, ...parentRoots]
+				: [workspaceRoot, tmpDir, ...canon([...d.writable, ...policy.writable]).filter((w) => !inShadow(w))];
+	const outsideParent = level !== "read-only" && parentRoots !== undefined && !parentRoots.some((r) => isWithin(workspaceRoot, r));
 	const gitReadOnly: string[] = [];
-	if (policy.level !== "read-only" && input.git) {
+	if (level !== "read-only" && input.git) {
 		for (const root of writable.filter((w) => w !== tmpDir)) {
 			const g = input.git(root);
 			for (const w of g.writable.map(canonicalize)) if (!writable.includes(w)) writable.push(w);
@@ -365,7 +430,7 @@ export function resolvePolicy(input: ResolveInput): Result<ResolvedPolicy> {
 	return {
 		ok: true,
 		value: {
-			level: policy.level,
+			level: level,
 			defaultOn: policy.defaultOn,
 			workspaceRoot,
 			writable: [...new Set(writable)],
@@ -379,7 +444,7 @@ export function resolvePolicy(input: ResolveInput): Result<ResolvedPolicy> {
 			agentDir,
 			tmpDir,
 			shadowed:
-				policy.level === "read-only"
+				level === "read-only"
 					? []
 					: input.shadowSource
 						? canon(policy.shadowed)
@@ -387,6 +452,7 @@ export function resolvePolicy(input: ResolveInput): Result<ResolvedPolicy> {
 								.map((p) => ({ path: p, source: canonicalize(input.shadowSource!(input.agentDir, p)) }))
 						: [],
 			notices,
+			...(outsideParent ? { outsideParent: true } : {}),
 		},
 	};
 }

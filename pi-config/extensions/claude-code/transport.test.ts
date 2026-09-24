@@ -186,6 +186,17 @@ test("an operator allow rule keeps its place, and MCP tools are allowed only out
 	assert.ok(!argvFor().args!.includes("--allowedTools"));
 });
 
+test("settings JSON is passed through opaque as --settings, and absent by default", () => {
+	const json = '{"sandbox":{"enabled":true},"permissions":{"allow":["Read"]}}';
+	const args = argvFor({ permissionMode: "dontAsk", settingsJson: json }).args!;
+	assert.deepEqual(args.slice(args.indexOf("--settings"), args.indexOf("--settings") + 2), ["--settings", json]);
+	assert.equal(args[args.indexOf("--setting-sources") + 1], "", "the user's own settings stay excluded");
+	assert.equal(args[args.indexOf("--permission-mode") + 1], "dontAsk");
+	// Absent by default, so an argv without a sandbox is byte-identical to before.
+	assert.deepEqual(argvFor({ settingsJson: undefined }).args, argvFor().args);
+	assert.ok(!argvFor().args!.includes("--settings"));
+});
+
 test("a stable session id is passed only when asked for, and must be a UUID", () => {
 	const id = "886313e1-3b8a-5372-9b90-0c9aee199e5d";
 	const args = argvFor({ sessionId: id }).args!;

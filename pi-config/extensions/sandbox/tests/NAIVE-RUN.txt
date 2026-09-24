@@ -1,28 +1,30 @@
 # NAIVE-RUN.txt — escape cases against the naive bwrap profile
-# date: 2026-09-24T14:52:01.028Z
+# date: 2026-09-24T15:06:21.739Z
 # host: linux x64, bwrap bubblewrap 0.11.2, node v25.2.1
 # profile: bwrap --ro-bind / / --dev /dev --proc /proc --bind <cwd> <cwd> -- bash -c <cmd> (host env passed through)
 # A PASS here means the escape SUCCEEDS, i.e. the corresponding contract case would FAIL against
 # this profile and is therefore a real test. Seam-only properties (fail-closed, read-only,
 # classification, unsupported platform, proxy allowlist) have no naive counterpart by design.
 host facts: mnt-ns=mnt:[4026531832] bwrap=bubblewrap 0.11.2
-fixture: cwd=/home/naomarik/.sova-redteam/fx-aD0WE5/work escape=/home/naomarik/.sova-redteam/fx-aD0WE5/escape
-[PASS] N0 control: the naive profile itself runs commands (11ms)
-[PASS] N1 control: plain touch outside cwd is EROFS even under the naive profile (8ms)
-[PASS] N2 control: a symlink out of cwd hits EROFS under the naive profile (10ms)
-[PASS] N3 escape: systemd-run --user executes on the HOST; busctl --user works (54ms)
-[PASS] N4 escape: 127.0.0.1 listener is reachable (12ms)
+fixture: cwd=/home/naomarik/.sova-redteam/fx-YHyXid/work escape=/home/naomarik/.sova-redteam/fx-YHyXid/escape
+[PASS] N0 control: the naive profile itself runs commands (9ms)
+[PASS] N1 control: plain touch outside cwd is EROFS even under the naive profile (9ms)
+[PASS] N2 control: a symlink out of cwd hits EROFS under the naive profile (9ms)
+[PASS] N3 escape: systemd-run --user executes on the HOST; busctl --user works (53ms)
+[PASS] N4 escape: 127.0.0.1 listener is reachable (13ms)
        escape evidence: :4810 answered HTTP 200 (host pre-check was 200)
-[PASS] N4b escape: the test server :4810 is reachable (15ms)
-[PASS] N5 escape: docker socket answers inside the naive profile (16ms)
+[PASS] N4b escape: the test server :4810 is reachable (14ms)
+[PASS] N5 escape: docker socket answers inside the naive profile (15ms)
 [PASS] N6 escape: ssh-agent is reachable (ssh-add -l != exit 2) (10ms)
 [PASS] N7 escape: abstract unix socket is reachable (socat) (10ms)
-[PASS] N8 escape: git config + planted hook write succeed (16ms)
-[PASS] N9 escape: the policy file (agent dir inside cwd) is writable (7ms)
-       escape evidence: /home/naomarik/.sova-redteam/fx-aD0WE5/work/.agent/sandbox-policy/linux/policy.json now reads "{\"level\":\"full\"}"
-[PASS] N9b escape: ancestor rename of the protected dir defeats path masks (10ms)
-[PASS] N10 escape: arbitrary egress is open (example.com AND api.github.com) (404ms)
-[PASS] N11 escape: host environment is not scrubbed (10ms)
-[PASS] N13 escape: in a linked worktree, hooks and git config are plantable (52ms)
-[PASS] N12 anchor: the naive profile shares the host NETWORK namespace (F3 contrast) (18ms)
-### naive: 16 passed, 0 failed, 0 skipped, 0 pending (811ms)
+[PASS] N8 escape: git config + planted hook write succeed (17ms)
+[PASS] N9 escape: the policy file (agent dir inside cwd) is writable (8ms)
+       escape evidence: /home/naomarik/.sova-redteam/fx-YHyXid/work/.agent/sandbox-policy/linux/policy.json now reads "{\"level\":\"full\"}"
+[PASS] N9b escape: ancestor rename of the protected dir defeats path masks (9ms)
+       escape evidence: identical untreated egress for both names; there is no proxy to decide anything
+[PASS] N10 escape: the naive profile has direct egress with no allowlist step (26ms)
+[PASS] N10-opt escape: live internet egress (optional, labelled, never fatal) (366ms)
+[PASS] N11 escape: host environment is not scrubbed (7ms)
+[PASS] N13 escape: in a linked worktree, hooks and git config are plantable (43ms)
+[PASS] N12 anchor: the naive profile shares the host NETWORK namespace (F3 contrast) (13ms)
+### naive: 17 passed, 0 failed, 0 skipped, 0 pending (1061ms)

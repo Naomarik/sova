@@ -52,6 +52,17 @@ export interface SandboxStateEvent {
 	claudeRefusal?: string;
 	/** The Claude CLI permission mode a worker must run with while on: the rules in `claudeSettingsJson` bind only under it. */
 	claudePermissionMode?: "dontAsk";
+	/**
+	 * Extension flags a pi worker must be started with while on (`--sandbox on` and
+	 * `--sandbox-parent <json>`, the parent's writable roots). The spawner merges them as is.
+	 */
+	workerFlags?: Record<string, string>;
+	/**
+	 * A refusal for a worker about to start in `cwd` (absolute, or relative to the parent's cwd),
+	 * any backend: its cwd is outside the parent's writable roots, or the parent's sandbox is
+	 * unavailable. Undefined means it may start. Present while on.
+	 */
+	checkWorker?: (req: { cwd: string; backend: string }) => string | undefined;
 }
 
 export function isLevel(value: unknown): value is SandboxLevel {

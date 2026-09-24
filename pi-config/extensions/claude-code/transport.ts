@@ -278,6 +278,8 @@ export interface ClaudeArgvOptions {
 	 * subagent workers, which let the CLI pick their session.
 	 */
 	sessionId?: string;
+	/** Opaque `--settings` JSON (the sandbox extension's, while a session's sandbox is on); never interpreted here. */
+	settingsJson?: string;
 }
 export type ClaudeArgvResult =
 	| { args: string[]; mcpServers: [string, ClaudeMcpServerEntry][]; error?: undefined }
@@ -300,6 +302,7 @@ export function buildClaudeArgv(o: ClaudeArgvOptions): ClaudeArgvResult {
 		if (!UUID.test(o.sessionId)) return { error: "Invalid sessionId: the CLI requires a canonical UUID" };
 		args.push("--session-id", o.sessionId);
 	}
+	if (o.settingsJson !== undefined) args.push("--settings", o.settingsJson);
 	if (o.model) args.push("--model", o.model);
 	if (o.effort) args.push("--effort", o.effort);
 	args.push("--tools", (o.tools ?? DEFAULT_CLAUDE_TOOLS).join(","));

@@ -98,15 +98,23 @@ test("startProxy refuses non-allowlisted hosts, other ports, local addresses and
 	assert.equal(existsSync(socket), false);
 });
 
-test("startProxy tunnels an allowlisted host (real network; skipped offline)", async (t) => {
+test("startProxy lets an allowlisted name past the allowlist: it fails only at the dial (no live host involved)", async (t) => {
 	const dir = mkdtempSync(join(tmpdir(), "sbx-proxy-"));
 	const socket = join(dir, "p.sock");
-	const px = await startProxy({ socket, allow: ["api.github.com"] });
+	const px = await startProxy({ socket, allow: ["sbx-allowed.invalid", "api.github.com"] });
 	t.after(async () => {
 		await px.close();
 		rmSync(dir, { recursive: true, force: true });
 	});
-	const reply = await exchange(socket, "CONNECT api.github.com:443 HTTP/1.1\r\n\r\n", /\r\n\r\n/);
-	if (/^HTTP\/1\.1 502/.test(reply)) return t.skip("no network");
-	assert.match(reply, /^HTTP\/1\.1 200/);
+	// ".invalid" never resolves (RFC 6761), online or offline.
+	const allowed = await exchange(socket, "CONNECT sbx-allowed.invalid:443 HTTP/1.1\r\n\r\n");
+	assert.match(allowed, /^HTTP\/1\.1 502/);
+	assert.match(allowed, /cannot resolve sbx-allowed\.invalid/);
+	assert.ok(!allowed.includes(PROXY_DENY_TEXT));
+	const denied = await exchange(socket, "CONNECT sbx-denied.invalid:443 HTTP/1.1\r\n\r\n");
+	assert.match(denied, /^HTTP\/1\.1 403/);
+	assert.ok(denied.includes(PROXY_DENY_TEXT));
+	// Optional live check, never failing.
+	const live = await exchange(socket, "CONNECT api.github.com:443 HTTP/1.1\r\n\r\n", /\r\n\r\n/);
+	t.diagnostic(`live CONNECT api.github.com: ${live.split("\r\n")[0] || "(no reply)"}`);
 });

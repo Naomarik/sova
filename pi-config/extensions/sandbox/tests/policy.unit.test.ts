@@ -8,11 +8,14 @@ import {
 	applyProjectTightening,
 	canonicalize,
 	loadPolicyFile,
+	parentScopeOf,
+	parseParentScope,
 	type PolicyFile,
 	policyFilePath,
 	readDenial,
 	resolvePolicy,
 	validatePolicyFile,
+	workerCwdRefusal,
 	writeDenial,
 } from "../policy.ts";
 
@@ -243,4 +246,39 @@ test("resolve: a writable root inside a shadow fails closed even when only the c
 	assert.ok(ok.ok);
 	assert.ok(ok.value.writable.includes(cwd));
 	[ws, home].forEach((p) => rmSync(p, { recursive: true, force: true }));
+});
+
+test("worker scope: parse, hand down without the session tmp, refuse a cwd outside, never widen", () => {
+	assert.equal(parseParentScope("{x").ok, false);
+	assert.equal(parseParentScope(JSON.stringify({ version: 1, level: "full", workspaceRoot: "/a", writable: [] })).ok, false);
+	assert.equal(parseParentScope(JSON.stringify({ version: 1, level: "workspace-write", workspaceRoot: "/a", writable: ["rel"] })).ok, false);
+	const scope = parentScopeOf({ level: "workspace-write", workspaceRoot: "/a", writable: ["/a", "/t", "/c"], tmpDir: "/t" });
+	assert.deepEqual(scope, { version: 1, level: "workspace-write", workspaceRoot: "/a", writable: ["/a", "/c"] });
+	assert.deepEqual(parseParentScope(JSON.stringify(scope)), { ok: true, value: scope });
+	assert.equal(workerCwdRefusal(scope, "/a/x"), undefined);
+	assert.equal(workerCwdRefusal(scope, "x"), undefined);
+	assert.equal(workerCwdRefusal(scope, "/ab"), "Sandbox: worker cwd /ab is outside the parent's sandbox");
+	assert.equal(workerCwdRefusal({ ...scope, level: "read-only", writable: [] }, "/anywhere"), undefined);
+
+	const ws = tmp();
+	const agentDir = join(ws, "agent");
+	mkdirSync(join(agentDir, "sandbox-policy", "linux"), { recursive: true });
+	writeFileSync(join(agentDir, "sandbox-policy", "linux", "policy.json"), JSON.stringify(template()));
+	mkdirSync(join(ws, "a", "sub"), { recursive: true });
+	mkdirSync(join(ws, "b"));
+	const parent = { version: 1 as const, level: "workspace-write" as const, workspaceRoot: join(ws, "a"), writable: [join(ws, "a")] };
+	const inside = resolvePolicy({ agentDir, cwd: join(ws, "a", "sub"), tmpDir: join(ws, "t"), platform: "linux", parent });
+	assert.ok(inside.ok);
+	assert.deepEqual(inside.value.writable.sort(), [join(ws, "a"), join(ws, "t")].sort(), "exactly the parent's roots plus its own tmp");
+	assert.equal(inside.value.outsideParent, undefined);
+	const outside = resolvePolicy({ agentDir, cwd: join(ws, "b"), tmpDir: join(ws, "t"), platform: "linux", parent });
+	assert.ok(outside.ok);
+	assert.equal(outside.value.outsideParent, true);
+	assert.ok(!outside.value.writable.includes(join(ws, "b")), "the worker's cwd is never added");
+	assert.ok(writeDenial(outside.value, join(ws, "b", "x")));
+	const ro = resolvePolicy({ agentDir, cwd: join(ws, "b"), tmpDir: join(ws, "t"), platform: "linux", parent: { ...parent, level: "read-only", writable: [] } });
+	assert.ok(ro.ok);
+	assert.equal(ro.value.level, "read-only", "a read-only parent lowers the worker");
+	assert.equal(ro.value.outsideParent, undefined);
+	rmSync(ws, { recursive: true, force: true });
 });

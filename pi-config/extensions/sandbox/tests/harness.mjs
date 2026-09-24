@@ -42,6 +42,21 @@ export async function pi() {
 }
 
 export const rand = (n = 6) => randomBytes(n).toString("hex");
+
+/** Minimal event bus matching pi's EventBus on/emit/off surface (mirrors subagents' test helper). */
+export function makeBus() {
+	const listeners = new Map();
+	return {
+		on(name, handler) {
+			if (!listeners.has(name)) listeners.set(name, new Set());
+			listeners.get(name).add(handler);
+			return () => listeners.get(name)?.delete(handler);
+		},
+		off(name, handler) { listeners.get(name)?.delete(handler); },
+		emit(name, data) { for (const handler of listeners.get(name) ?? []) handler(data); },
+		_listenerCount(name) { return listeners.get(name)?.size ?? 0; },
+	};
+}
 export const sha = (file) => (existsSync(file) ? createHash("sha256").update(readFileSync(file)).digest("hex") : "<absent>");
 export const hostMntNs = () => readlinkSync("/proc/self/ns/mnt");
 export const hostNetNs = () => readlinkSync("/proc/self/ns/net");
@@ -166,7 +181,7 @@ export function stubUi(log = []) {
  * Open a pi runtime like Sova does. `withExtension` loads ONLY the sandbox extension (noExtensions
  * otherwise, so the comparison is sandbox vs nothing). `flags` become extensionFlagValues.
  */
-export async function openSession({ cwd, agentDir, withExtension, flags = {}, ui = true, mode = "rpc", entries } = {}) {
+export async function openSession({ cwd, agentDir, withExtension, flags = {}, ui = true, mode = "rpc", entries, eventBus } = {}) {
 	const P = await pi();
 	process.env.PI_CODING_AGENT_DIR = agentDir; // getAgentDir() is read at call time by extensions
 	const uiLog = [];
@@ -176,7 +191,7 @@ export async function openSession({ cwd, agentDir, withExtension, flags = {}, ui
 			cwd: c,
 			agentDir,
 			extensionFlagValues: new Map(Object.entries(flags)),
-			resourceLoaderOptions: { noExtensions: true, additionalExtensionPaths: withExtension ? [EXT_ENTRY] : [] },
+			resourceLoaderOptions: { noExtensions: true, additionalExtensionPaths: withExtension ? [EXT_ENTRY] : [], ...(eventBus ? { eventBus } : {}) },
 		});
 		return { ...(await P.createAgentSessionFromServices({ services, sessionManager, sessionStartEvent })), services, diagnostics: services.diagnostics };
 	};

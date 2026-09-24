@@ -9,6 +9,7 @@ import { CLAUDE_CODE_EXTENSION, MARKER_EXTENSION, MEMBER_EXTENSION, MEMBER_MCP, 
 import { CLAUDE_PROVIDER_FLAG } from "../claude-code/provider/index.ts";
 import { placeholderDir } from "../remote/argv.ts";
 import { REMOTE_MCP_ENV, REMOTE_MCP_SERVER_NAME, REMOTE_SESSION_EVENT, decodeRemoteMcpIdentity } from "../remote/workers.ts";
+import { SANDBOX_DISCOVER_EVENT, SANDBOX_STATE_EVENT, type SandboxStateEvent } from "../sandbox/state.ts";
 import { CLAUDE_CODE_PROVIDER_FLAG, SubagentRunner } from "./runner.ts";
 import { MEMBER_ENV, awaitResponse, decodeMemberContext, memberPaths, readInbox, requestId, writeRequest, type MailboxRequest } from "./mailbox.ts";
 
@@ -2445,4 +2446,146 @@ test("a pi worker on a claude-code-cli model gets the claude-code extension and 
 		assert.deepEqual(plain.extensions, [MARKER_EXTENSION]);
 		assert.equal(plain.flags, undefined);
 	} finally { await h.close(); }
+});
+
+// The sandbox extension's directory, as its state event names it (a real path).
+const SANDBOX_DIR = fs.realpathSync(path.resolve(fileURLToPath(new URL("../sandbox", import.meta.url))));
+const SANDBOX_OFF: SandboxStateEvent = { version: 1, on: false, extensionPath: SANDBOX_DIR, enforcement: "none" };
+const WORKER_FLAGS = { sandbox: "on", "sandbox-parent": '{"version":1}' };
+const SANDBOX_ON: SandboxStateEvent = {
+	version: 1, on: true, extensionPath: SANDBOX_DIR, enforcement: "full", workerFlags: WORKER_FLAGS, checkWorker: () => undefined,
+	claudeSettingsJson: '{"sandbox":{"enabled":true}}', claudePermissionMode: "dontAsk",
+};
+/** A worker's launch options without the per-worker identity or the fake worker's own closures. */
+const launchShape = ({ id, groupId, name, ...rest }: any) => Object.fromEntries(Object.entries(rest).filter(([, v]) => typeof v !== "function"));
+
+test("sandbox off: workers launch exactly as without the sandbox extension; on: pi workers load it with --sandbox on", async () => {
+	const h = harness();
+	const created: any[] = [];
+	h.bus.emit(BACKEND_REGISTER_EVENT, fakeBackend(created));
+	try {
+		await h.call("agent_spawn", { prompt: "pi task" });
+		await h.call("agent_spawn", { prompt: "claude task", backend: "claude-code", backendOptions: { permissionMode: "bypassPermissions" } });
+		h.bus.emit(SANDBOX_STATE_EVENT, SANDBOX_OFF);
+		await h.call("agent_spawn", { prompt: "pi task" });
+		await h.call("agent_spawn", { prompt: "claude task", backend: "claude-code", backendOptions: { permissionMode: "bypassPermissions" } });
+		assert.deepEqual(launchShape(h.workers[1]), launchShape(h.workers[0]), "an off parent's pi worker is today's");
+		assert.deepEqual(h.workers[1].extensions, [MARKER_EXTENSION]);
+		assert.equal(h.workers[1].flags, undefined);
+		assert.deepEqual(launchShape(created[1]), launchShape(created[0]), "an off parent's claude worker is today's");
+		assert.ok(!("settingsJson" in created[1]) && !("permissionMode" in created[1]));
+
+		h.bus.emit(SANDBOX_STATE_EVENT, SANDBOX_ON);
+		await h.call("agent_spawn", { prompt: "pi task" });
+		assert.deepEqual(h.workers[2].extensions, [MARKER_EXTENSION, SANDBOX_DIR]);
+		assert.deepEqual(h.workers[2].flags, WORKER_FLAGS, "the extension's flags, as is");
+		// Naming the extension itself neither loads it twice nor drops the flag.
+		await h.call("agent_spawn", { prompt: "pi task", extensions: [path.join(SANDBOX_DIR, "index.ts")] });
+		assert.deepEqual(h.workers[3].extensions, [MARKER_EXTENSION, SANDBOX_DIR]);
+		assert.deepEqual(h.workers[3].flags, WORKER_FLAGS);
+		await h.call("agent_spawn", { prompt: "pi task", model: "test/model" });
+		assert.deepEqual(h.workers[4].flags, WORKER_FLAGS);
+
+		// Back off: today's launch again.
+		h.bus.emit(SANDBOX_STATE_EVENT, SANDBOX_OFF);
+		await h.call("agent_spawn", { prompt: "pi task" });
+		assert.deepEqual(launchShape(h.workers[5]), launchShape(h.workers[0]));
+	} finally { await h.close(); }
+});
+
+test("sandbox on: claude workers get the extension's settings and permission mode, never bypassPermissions or a host prompt; a refusal or another backend fails the spawn", async () => {
+	const h = harness();
+	const created: any[] = [];
+	h.bus.emit(BACKEND_REGISTER_EVENT, fakeBackend(created));
+	h.bus.emit(BACKEND_REGISTER_EVENT, { ...fakeBackend(created), id: "other" });
+	try {
+		h.bus.emit(SANDBOX_STATE_EVENT, SANDBOX_ON);
+		await h.call("agent_spawn", { prompt: "claude task", backend: "claude-code", backendOptions: { permissionMode: "bypassPermissions" } });
+		const claude = created[0];
+		assert.equal(claude.settingsJson, SANDBOX_ON.claudeSettingsJson, "passed through as is");
+		assert.equal(claude.permissionMode, "dontAsk", "forced over the spec's bypassPermissions");
+		assert.ok("onPermission" in claude && claude.onPermission === undefined, "no host prompt can approve past the rules");
+		assert.deepEqual(claude.extensions, []);
+
+		h.bus.emit(SANDBOX_STATE_EVENT, { ...SANDBOX_ON, enforcement: "partial", claudeRefusal: "Sandbox enforcement is partial (x); set acceptPartial." });
+		await assert.rejects(h.call("agent_spawn", { prompt: "c", backend: "claude-code" }), { message: "Sandbox enforcement is partial (x); set acceptPartial." });
+		h.bus.emit(SANDBOX_STATE_EVENT, { ...SANDBOX_ON, claudeSettingsJson: undefined });
+		await assert.rejects(h.call("agent_spawn", { prompt: "c", backend: "claude-code" }), /gave no Claude Code settings/);
+		h.bus.emit(SANDBOX_STATE_EVENT, SANDBOX_ON);
+		await assert.rejects(h.call("agent_spawn", { prompt: "c", backend: "other" }), /cannot run workers while this session's sandbox is on/);
+		// A mixed batch fails as a whole: the pi worker never starts either.
+		await assert.rejects(h.call("agent_spawn", { agents: [{ prompt: "p" }, { prompt: "c", backend: "other" }] }), /sandbox is on/);
+		assert.equal(created.length, 1);
+		assert.equal(h.workers.length, 0);
+	} finally { await h.close(); }
+});
+
+test("sandbox: the state is asked for at load, malformed announcements are ignored, and a remote session's workers never load the extension", async () => {
+	const bus = eventBus();
+	let asked = 0;
+	bus.on(SANDBOX_DISCOVER_EVENT, (data: any) => { if (data?.version === 1) { asked++; bus.emit(SANDBOX_STATE_EVENT, SANDBOX_ON); } });
+	const h = harness(bus);
+	try {
+		assert.equal(asked, 1);
+		await h.call("agent_spawn", { prompt: "pi task" });
+		assert.deepEqual(h.workers[0].flags, WORKER_FLAGS, "a sandbox loaded first is learned by discovery");
+		bus.emit(SANDBOX_STATE_EVENT, { ...SANDBOX_OFF, version: 2 });
+		bus.emit(SANDBOX_STATE_EVENT, { ...SANDBOX_ON, extensionPath: "relative/sandbox" });
+		bus.emit(SANDBOX_STATE_EVENT, { ...SANDBOX_ON, workerFlags: { sandbox: true } });
+		await h.call("agent_spawn", { prompt: "pi task" });
+		assert.deepEqual(h.workers[1].flags, WORKER_FLAGS, "the last valid state stands");
+	} finally { await h.close(); }
+
+	const agentDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagents-remote-agent-"));
+	const prev = process.env.PI_CODING_AGENT_DIR;
+	process.env.PI_CODING_AGENT_DIR = agentDir;
+	const r = remoteHarness(agentDir, true);
+	try {
+		r.bus.emit(SANDBOX_STATE_EVENT, SANDBOX_ON);
+		await r.call("agent_spawn", { prompt: "pi task" });
+		assert.deepEqual(r.workers[0].extensions, [MARKER_EXTENSION, REMOTE_EXTENSION]);
+		assert.deepEqual(r.workers[0].flags, { target: "box" });
+	} finally {
+		await r.close();
+		if (prev === undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR = prev;
+		fs.rmSync(agentDir, { recursive: true, force: true });
+	}
+});
+
+test("sandbox on: every worker is checked by the extension first, and its refusal fails the whole batch before any start; an on state without a check or flags fails closed", async () => {
+	const h = harness();
+	const created: any[] = [];
+	h.bus.emit(BACKEND_REGISTER_EVENT, fakeBackend(created));
+	const outside = fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagents-sandbox-outside-"));
+	const asked: { cwd: string; backend: string }[] = [];
+	const checkWorker = (req: { cwd: string; backend: string }) => {
+		asked.push(req);
+		return req.cwd === outside ? `Sandbox: worker cwd ${outside} is outside the parent's sandbox` : undefined;
+	};
+	try {
+		h.bus.emit(SANDBOX_STATE_EVENT, { ...SANDBOX_ON, checkWorker });
+		await h.call("agent_spawn", { prompt: "p", cwd: "extensions" });
+		await h.call("agent_spawn", { prompt: "c", backend: "claude-code" });
+		assert.deepEqual(asked, [{ cwd: path.join(h.ctx.cwd, "extensions"), backend: "pi" }, { cwd: h.ctx.cwd, backend: "claude-code" }], "the resolved cwd and the backend");
+		for (const backend of [undefined, "claude-code"]) {
+			await assert.rejects(h.call("agent_spawn", { agents: [{ prompt: "fine" }, { prompt: "p", cwd: outside, backend }] }), { message: `Sandbox: worker cwd ${outside} is outside the parent's sandbox` });
+		}
+		assert.equal(h.workers.length + created.length, 2, "nothing of a refused batch started");
+
+		h.bus.emit(SANDBOX_STATE_EVENT, { ...SANDBOX_ON, checkWorker: undefined });
+		await assert.rejects(h.call("agent_spawn", { prompt: "p" }), /gave no worker check/);
+		await assert.rejects(h.call("agent_spawn", { prompt: "c", backend: "claude-code" }), /gave no worker check/);
+		h.bus.emit(SANDBOX_STATE_EVENT, { ...SANDBOX_ON, workerFlags: undefined });
+		await assert.rejects(h.call("agent_spawn", { prompt: "p" }), /gave no worker flags/);
+		assert.equal(h.workers.length + created.length, 2);
+
+		// Off: no check at all.
+		asked.length = 0;
+		h.bus.emit(SANDBOX_STATE_EVENT, { ...SANDBOX_OFF, checkWorker });
+		await h.call("agent_spawn", { prompt: "p", cwd: outside });
+		assert.equal(asked.length, 0);
+	} finally {
+		await h.close();
+		fs.rmSync(outside, { recursive: true, force: true });
+	}
 });

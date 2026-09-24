@@ -57,10 +57,11 @@ function tally(acc: { add(entries: readonly unknown[]): void; usage(): TokenUsag
  * work outside the conversation, e.g. kind "cache_warm"), and the usage a tool result, compaction
  * or branch summary carries — deduplicated by entry id. This is what the session has spent,
  * including branches a rewind later abandoned, unlike the context-fill number in transcript.ts,
- * which is the last message only. A forked session's copied history is not its spend and is
- * left out (the accumulator's fork boundary).
+ * which is the last message only. No fork cut-off: /ws/watch tails main sessions too, and a
+ * /fork'd main session keeps counting the usage it copied from its parent, as it always has.
+ * Worker reads apply the cut-off through the protocol's adapter instead.
  */
-export const piUsageTally = (): UsageTally => tally(piUsageAccumulator());
+export const piUsageTally = (): UsageTally => tally(piUsageAccumulator({ forkBoundary: false }));
 
 /**
  * Claude Code sessions: assistant lines deduplicated by `message.id`, which CC repeats across

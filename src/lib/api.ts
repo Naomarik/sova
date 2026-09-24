@@ -3,6 +3,7 @@ import type {
   ChatModeResult,
   ClaudeCliStatus,
   ContextInfo,
+  ExtensionInfo,
   ExplanationInfo,
   FileIndex,
   FolderListing,
@@ -564,6 +565,9 @@ export const fetchUsage =() => request<UsageInsight>("/api/insights/usage");
 export const refreshUsage = () => request<UsageInsight>("/api/insights/usage/refresh", { method: "POST" });
 
 export const fetchAgents = () => request<AgentsInsight>("/api/insights/agents");
+
+/** Installed extensions (the manifest), each with its backend's cached health. */
+export const fetchExtensions = () => request<ExtensionInfo[]>("/api/extensions");
 
 /** Every /explain artifact in the store, newest first (they're kept forever). */
 export const fetchExplanations = () => request<ExplanationInfo[]>("/api/explanations");

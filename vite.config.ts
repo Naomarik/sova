@@ -20,6 +20,9 @@ export default defineConfig({
       // Standalone /explain pages: served by the API server, linked and iframed from the app.
       "/explain": `http://${apiHost}:${apiPort}`,
       "/ws": { target: `ws://${apiHost}:${apiPort}`, ws: true },
+      // Extensions (UI, API and sockets alike) and the design CSS they link: all the API server's.
+      "/ext/": { target: `http://${apiHost}:${apiPort}`, ws: true },
+      "/design/": `http://${apiHost}:${apiPort}`,
     },
   },
 });

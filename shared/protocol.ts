@@ -1890,3 +1890,15 @@ export interface SessionInsight {
       id, newest first). Absent from older servers. */
   explanations?: ExplanationInfo[];
 }
+
+/** GET /api/extensions: one entry per valid manifest record (`<state root>/extensions.json`, or
+    SOVA_EXTENSIONS_FILE), in manifest order. `status` is a 1.5 s GET `<api>/api/health` (2xx =
+    "ok"), cached 10 s per extension; `error` says why a "down" one is down. ext-contract-v1.1. */
+export interface ExtensionInfo {
+  id: string; // [A-Za-z0-9._-]+; the UI is at /ext/<id>/, the app route is #/ext/<id>
+  title: string;
+  description?: string;
+  icon?: string; // a Sova icon name (public/icons/<name>.svg)
+  status: "ok" | "down";
+  error?: string;
+}

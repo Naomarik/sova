@@ -2,10 +2,11 @@ import { batch, createEffect, createMemo, createResource, createSignal, Match, o
 import { createStore, reconcile } from "solid-js/store";
 import { Portal } from "solid-js/web";
 import type { SessionSummary, WorkerInfo } from "../shared/protocol";
-import { createSession, fetchAgents, fetchExplanations, fetchUsage, getThemes, listSessions, setSessionArchived } from "./lib/api";
+import { createSession, fetchAgents, fetchExplanations, fetchExtensions, fetchUsage, getThemes, listSessions, setSessionArchived } from "./lib/api";
 import { agentsHref, insightsRouteFromHash, legacyInsightsTarget } from "./lib/insights";
 import { transcriptRoot } from "./lib/jump";
 import { groupRouteFromHash } from "./lib/group-route";
+import { extRouteFromHash } from "./lib/ext-route";
 import { loadSessionGroups, sessionGroups, sessionGroupsLoaded } from "./lib/session-groups";
 import { createThenArchive, dropArchived, newSessionCwd } from "./lib/new-session";
 import { cwdLabel } from "./lib/remote-session";
@@ -23,6 +24,7 @@ import { AgentsView } from "./components/AgentsView";
 import { NewSessionDialog } from "./components/NewSessionDialog";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { ExplainGrid } from "./components/ExplainGallery";
+import { ExtensionCards, ExtensionView } from "./components/ExtensionView";
 import { FanoutDialog, type FanoutSource } from "./components/FanoutDialog";
 import { GroupView, paneIdFor, workspaceFocus, type PaneWiring } from "./components/GroupView";
 import { SessionPane, type PaneInsight, type TabId } from "./components/SessionPane";
@@ -88,6 +90,8 @@ const USAGE_POLL_MS = 60_000;
 const AGENTS_POLL_MS = 5_000;
 /** The explanations store only changes when a /explain subagent finishes; the sidebar row can wait. */
 const EXPLAIN_POLL_MS = 60_000;
+/** Installed extensions and their health; the server caches each health probe for 10 s. */
+const EXTENSIONS_POLL_MS = 15_000;
 const folded = () => window.matchMedia("(max-width: 767px)").matches;
 
 /** Live `matchMedia` (the ExplainGallery pattern): the spine is a desktop affordance, so it only
@@ -166,6 +170,7 @@ export function App() {
   );
   const [groupRoute, setGroupRoute] = createSignal(groupRouteFromHash(location.hash));
   const [insightsRoute, setInsightsRoute] = createSignal(insightsRouteFromHash(location.hash));
+  const [extRoute, setExtRoute] = createSignal(extRouteFromHash(location.hash));
   /** Team card to scroll to on `#/agents/<teamId>`. */
   const focusTeam = () => {
     const r = insightsRoute();
@@ -181,6 +186,12 @@ export function App() {
   const usage = createPoll(fetchUsage, USAGE_POLL_MS);
   const agents = createPoll(fetchAgents, AGENTS_POLL_MS);
   const explanations = createPoll(fetchExplanations, EXPLAIN_POLL_MS);
+  const extensions = createPoll(fetchExtensions, EXTENSIONS_POLL_MS);
+  /** The landing page shows the Extensions section only when something is installed. */
+  const installed = createMemo(() => {
+    const items = extensions.data();
+    return items && items.length > 0 ? items : null;
+  });
   /** The landing page renders the grid only when it has rows; the empty state stays in the modal. */
   const explained = createMemo(() => {
     const items = explanations.data();
@@ -233,6 +244,7 @@ export function App() {
     setRoute(pathFromHash());
     setGroupRoute(groupRouteFromHash(location.hash));
     setInsightsRoute(insightsRouteFromHash(location.hash));
+    setExtRoute(extRouteFromHash(location.hash));
   };
   window.addEventListener("focus", onFocus);
   window.addEventListener("hashchange", onHash);
@@ -332,6 +344,8 @@ export function App() {
   let titleEl: HTMLHeadingElement | undefined;
   createEffect(on(route, (p) => p && folded() && queueMicrotask(() => titleEl?.focus()), { defer: true }));
   let insightsTitleEl: HTMLHeadingElement | undefined;
+  let extTitleEl: HTMLHeadingElement | undefined;
+  createEffect(on(extRoute, (id) => id && folded() && queueMicrotask(() => extTitleEl?.focus()), { defer: true }));
   // A team deep link focuses its card instead (AgentsView), at every width.
   createEffect(
     on(() => insightsRoute()?.page, (page) => page && !focusTeam() && folded() && queueMicrotask(() => insightsTitleEl?.focus()), { defer: true }),
@@ -571,7 +585,7 @@ export function App() {
       <div
         class="app"
         data-spine={collapsed() ? "on" : undefined}
-        data-view={groupRoute() ? "workspace" : route() || insightsRoute() ? "session" : "list"}
+        data-view={groupRoute() ? "workspace" : route() || insightsRoute() || extRoute() ? "session" : "list"}
       >
         <Sidebar
           unfolded={unfolded()}
@@ -669,6 +683,17 @@ export function App() {
                   </div>
                 </div>
               </Match>
+              {/* An installed extension's own UI (#/ext/<id>). */}
+              <Match when={extRoute()} keyed>
+                {(id) => (
+                  <ExtensionView
+                    id={id}
+                    info={extensions.data()?.find((e) => e.id === id)}
+                    loaded={!extensions.pending()}
+                    titleRef={(el) => (extTitleEl = el)}
+                  />
+                )}
+              </Match>
               <Match when={!route() && !groupRoute()}>
                 <div class="welcome">
                   <div class="welcome-head">
@@ -695,6 +720,7 @@ export function App() {
                       </div>
                     </div>
                   </div>
+                  <Show when={installed()}>{(list) => <ExtensionCards extensions={list()} />}</Show>
                   <Show when={explained()}>
                     {(list) => (
                       <section class="explain-section" aria-labelledby="explain-section-title">

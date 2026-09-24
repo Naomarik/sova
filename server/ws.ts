@@ -6,6 +6,7 @@ import type { ChatClientMessage, ChatServerMessage, WatchServerMessage } from ".
 import { acquireChat, BusyError, ConfigError, type ChatClient } from "./chat-manager";
 import { normalizeClaudeText, resolveClaudeSession } from "./claude-transcript";
 import { resolveSessionPath } from "./paths";
+import { extensionSocketRoute, upgradeExtensionSocket } from "./extensions";
 import { claudeUsageTally, type UsageTally } from "./transcript-usage";
 import { type Normalize, SessionTail } from "./watch";
 
@@ -77,6 +78,12 @@ export function attachWebSockets(server: Server): void {
   server.on("upgrade", (req: IncomingMessage, socket: Duplex, head: Buffer) => {
     const url = new URL(req.url ?? "/", "http://localhost");
     const route = url.pathname;
+    // An extension's own socket, forwarded to its backend (server/extensions.ts).
+    const ext = extensionSocketRoute(route);
+    if (ext) {
+      upgradeExtensionSocket(req, socket, head, ext[0], ext[1], url.search);
+      return;
+    }
     if (route !== "/ws/chat" && route !== "/ws/watch") {
       socket.destroy();
       return;

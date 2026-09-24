@@ -56,7 +56,7 @@ function busyReasons(pid) {
       if (typeof wc?.working === "number") {
         working += wc.working;
         for (const w of rec?.presence?.workers ?? [])
-          if (typeof w?.name === "string" && !["waiting", "done", "error", "killed"].includes(w.status)) names.push(w.name);
+          if (typeof w?.name === "string" && !["waiting", "done", "error", "killed", "restored"].includes(w.status)) names.push(w.name);
       }
       if (rec?.presence?.activity?.state === "working") activity = true;
     }

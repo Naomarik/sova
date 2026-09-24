@@ -143,6 +143,6 @@ function workerInfo(m: FoldedWorkerManifest, summary: WorkerTranscriptSummary | 
   // The extension's rule, so a hosted and an unhosted view agree: a worker that was idle when its
   // host went away is merely restored; one that was running (or lost, or never reported a status)
   // was cut off mid-turn.
-  if (status === "restored" && m.status !== "waiting") w.interruptedAt = summary?.lastActivityAt ?? m.at;
+  if (status === "restored" && m.status !== "waiting") w.interruptedAt = Math.max(summary?.lastActivityAt ?? 0, m.at);
   return w;
 }

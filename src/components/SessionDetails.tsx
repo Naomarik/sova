@@ -29,6 +29,16 @@ import { Banner, CopyButton, Icon } from "./ui";
 import { sessionHref } from "./Sidebar";
 import { GroupWithParent, MoveToGroupMenu } from "./Groups";
 
+/** The distinct "as of" times of the snapshot-cost rows, oldest first, as `21:08` or `21:08 and
+    22:25`; null when no row carries one. */
+function snapshotTimes(rows: readonly ModelSpend[]): string | null {
+  const times = [...new Set(rows.flatMap((r) => (r.asOf !== undefined && (r.cost ?? 0) > 0 ? [r.asOf] : [])))].sort((a, b) => a - b);
+  return times.length ? idList([...new Set(times.map(asOfClock))]) : null;
+}
+
+/** A table cell that never wraps. */
+const oneLine = { "white-space": "nowrap" } as const;
+
 /** Long machine facts wrap instead of widening the sheet. */
 const wrapMono = { margin: 0, "overflow-wrap": "anywhere" } as const;
 
@@ -181,6 +191,13 @@ export function SessionDetails(props: {
               </div>
             </Show>
             <p class="usage-note">Main thread counts the active branch only.</p>
+            <Show when={snapshotTimes(rows())}>
+              {(times) => (
+                <p class="usage-note">
+                  * Cost as of <span class="text-mono">{times()}</span>, the last report before the restart.
+                </p>
+              )}
+            </Show>
             {/* A worker the restart left with no readable transcript and no report: its spend is
                 unknown, so it is named here rather than counted as 0 anywhere. */}
             <Show when={u().unavailable?.length ? u().unavailable : null}>
@@ -711,7 +728,9 @@ function Cells(props: { usage: TokenUsage & { asOf?: number }; cost: boolean }) 
       {cell(props.usage.cacheRead)}
       {cell(props.usage.cacheWrite)}
       <Show when={props.cost}>
-        <td align="right" class="text-mono text-num">
+        {/* A snapshot cost carries a muted mark; its time is in the note under the table, so the
+            row stays one line and the column keeps its width. */}
+        <td align="right" class="text-mono text-num" style={oneLine}>
           <Show
             when={formatCost(props.usage.cost)}
             fallback={
@@ -729,8 +748,8 @@ function Cells(props: { usage: TokenUsage & { asOf?: number }; cost: boolean }) 
                 {/* Part of it is a restored worker's last report (Claude transcripts carry no cost). */}
                 <Show when={props.usage.asOf}>
                   {(at) => (
-                    <span class="text-muted" title={new Date(at()).toISOString()}>
-                      {" "}as of {asOfClock(at())}
+                    <span class="text-muted" title={`As of ${asOfClock(at())}`}>
+                      *
                     </span>
                   )}
                 </Show>
@@ -747,11 +766,12 @@ function Cells(props: { usage: TokenUsage & { asOf?: number }; cost: boolean }) 
 function SpendRow(props: { row: ModelSpend; cost: boolean }) {
   return (
     <tr>
-      {/* One line: "glm-5.3" broke at its hyphen. The table scrolls sideways instead. */}
-      <td class="text-mono" style={{ "white-space": "nowrap" }} title={props.row.model}>
+      {/* One line per row ("glm-5.3" broke at its hyphen, "Main thread" at its space): the table
+          scrolls sideways instead of rows growing taller. */}
+      <td class="text-mono" style={oneLine} title={props.row.model}>
         {compactModel(props.row.model) ?? props.row.model}
       </td>
-      <td>{originLabel(props.row.origin)}</td>
+      <td style={oneLine}>{originLabel(props.row.origin)}</td>
       <Cells usage={props.row} cost={props.cost} />
     </tr>
   );

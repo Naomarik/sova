@@ -115,11 +115,27 @@ function totalOf(usages: WorkerUsage[], asOf: number | undefined): TokenUsageTot
   return t;
 }
 
+/**
+ * The model a worker ran under, named as its running record names it ("claude-haiku-4-5-…", so
+ * "haiku-4.5" running, restored and resumed alike, never the spawn alias "haiku" in some states):
+ * the transcript's last reply, else the record's usage snapshot's biggest row, else the spawn
+ * model. "claude/" (the adapter's prefix) goes for claude-code only; pi refs keep their provider.
+ * The same rule as the subagents extension's resolvedModel (subagents/restored.ts), which the
+ * server can't import: that file's types reach the extension's whole graph.
+ */
+export function resolvedModel(m: FoldedWorkerManifest, summary: WorkerTranscriptSummary | null): string | undefined {
+  const bare = (id: string | undefined) => (id && m.backend === "claude-code" && id.startsWith("claude/") ? id.slice("claude/".length) : id);
+  const fromTranscript = bare(summary?.model);
+  if (fromTranscript) return fromTranscript;
+  const rows = m.usageSnapshot?.byModel ?? [];
+  const size = (r: (typeof rows)[number]) => r.input + r.output + r.cacheRead + r.cacheWrite;
+  const biggest = rows.length ? rows.reduce((a, b) => (size(b) > size(a) ? b : a)) : undefined;
+  return bare(biggest?.model) || m.spec?.model;
+}
+
 function workerInfo(m: FoldedWorkerManifest, summary: WorkerTranscriptSummary | null, usage: WorkerUsage, snapshotAt: number | undefined): WorkerInfo {
   const status = statusOf(m);
-  // The model it was spawned with, as the live record names it ("haiku", not the transcript's
-  // "claude/claude-haiku-4-5-…"), so a row reads the same before and after the session is hosted.
-  const model = m.spec?.model ?? summary?.model;
+  const model = resolvedModel(m, summary);
   const w: WorkerInfo = { id: m.workerId, name: m.name ?? m.workerId, status, working: false, backend: m.backend };
   if (model) w.model = model;
   const provider = m.backend === "claude-code" ? "claude code" : modelProvider(model);

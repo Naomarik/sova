@@ -654,19 +654,21 @@ export function registerSubagents(
 		const total: UsageSum = { ...evictedUsage };
 		let workers = agents.length + evictedWorkers;
 		let restored = 0;
-		let asOf = 0;
+		// A Σ mixing snapshots is only true as of its stalest part: the OLDEST snapshot time.
+		let asOf = Infinity;
+		const stale = (at: number | undefined) => { if (at) asOf = Math.min(asOf, at); };
 		for (const a of agents) {
 			addWorkerUsage(total, a);
-			if (isRestored(a)) { restored++; asOf = Math.max(asOf, a.usageAsOf ?? 0); }
+			if (isRestored(a)) { restored++; stale(a.usageAsOf); }
 		}
 		for (const { manifest, view } of restoredViews.values()) {
 			if (agents.some((a) => a.id === manifest.workerId)) continue;
 			const u = view.usage;
 			total.input += u.input; total.output += u.output; total.cacheRead += u.cacheRead; total.cacheWrite += u.cacheWrite; total.cost += u.cost ?? 0;
 			workers++; restored++;
-			asOf = Math.max(asOf, (u.source === "snapshot" ? u.asOf : u.costSource === "snapshot" ? u.costAsOf : undefined) ?? 0);
+			stale(u.source === "snapshot" ? u.asOf : u.costSource === "snapshot" ? u.costAsOf : undefined);
 		}
-		return { ...publicUsage(total), workers, ...(asOf ? { asOf } : {}), ...(restored ? { restored } : {}) };
+		return { ...publicUsage(total), workers, ...(asOf !== Infinity ? { asOf } : {}), ...(restored ? { restored } : {}) };
 	};
 	const usageField = (a: Worker) => {
 		const usage = addWorkerUsage(emptySum(), a);

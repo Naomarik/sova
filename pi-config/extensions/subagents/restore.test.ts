@@ -148,7 +148,8 @@ test("restart: every recorded worker comes back restored, with snapshot usage, s
 	assert.deepEqual([byId.ag_01.usage.input, byId.ag_02.usage.input, byId.ag_03.usage.input], [100, 40, 7]);
 	// Σ: each worker once; ag_02's unsettled in-flight turn was never snapshotted.
 	assert.deepEqual([m.snapshot().workerUsage.input, m.snapshot().workerUsage.workers, m.snapshot().workerUsage.restored], [147, 3, 3]);
-	assert.equal(typeof m.snapshot().workerUsage.asOf, "number");
+	// The Σ is true as of its stalest snapshot.
+	assert.equal(m.snapshot().workerUsage.asOf, Math.min(...Object.values(byId).map((w: any) => w.usageAsOf)));
 	// Not live: no live-cap slot, nothing to wait for, a steer names the way back.
 	const listed = await m.list();
 	assert.deepEqual(listed.map((a) => a.status), ["restored", "restored", "done"]);

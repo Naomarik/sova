@@ -109,7 +109,7 @@ export interface WorkerUsage { input: number; output: number; cacheRead: number;
  *  `workers` is that lifetime count, so it can exceed `workers.length` and workerCounts.total. */
 export interface WorkerUsageTotal extends WorkerUsage {
   workers: number;
-  /** Newest snapshot time among the parts of the Σ that came from a snapshot, ms epoch. */
+  /** Oldest snapshot time among the parts of the Σ that came from a snapshot (its stalest part), ms epoch. */
   asOf?: number;
   /** How many workers in the Σ are restored ones (rebuilt after a restart). */
   restored?: number;

@@ -143,8 +143,8 @@ backend reports one). Counts only — a record never carries worker text beyond 
 bounded `preview`. Individual bad values read as 0 rather than dropping the worker.
 
 **WorkerUsageTotal** (v2, `presence.workerUsage`): the same fields plus `workers`,
-optional `asOf` (ms epoch: the newest snapshot time among the parts of the Σ that
-came from a snapshot) and optional `restored` (how many workers in the Σ are restored),
+optional `asOf` (ms epoch: the oldest snapshot time among the parts of the Σ that
+came from a snapshot, since the Σ is only true as of its stalest part) and optional `restored` (how many workers in the Σ are restored),
 and it is a **session-lifetime Σ**: it covers every worker the session ever spawned,
 including ones dropped by the writer's 40-row cap, by the manager's retention cap, or
 by `fit()`. So `workerUsage.workers` may exceed both `workers.length` and

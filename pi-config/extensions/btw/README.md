@@ -7,4 +7,5 @@ Forked from `npm:pi-btw` 0.4.1 (github.com/dbachelder/pi-btw, MIT). Diverges fro
   answers persist as displayable `btw-note` messages, bare `/btw` asks its
   question through `ui.input`, and inject/summarize confirm through `ui.confirm`.
 
-Tests: `npx tsx --test btw.test.ts` (in this directory).
+Tests: `npx tsx --test btw.test.ts` (in this directory). Strict typecheck, through
+claude-code's generator: `node ../claude-code/provider/typecheck.mjs ../../btw/btw.ts`.

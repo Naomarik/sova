@@ -22,7 +22,7 @@ import {
 	type WorkerTranscriptRef,
 } from "./worker-transcript.ts";
 import { createPiTranscriptAdapter, piUsage, piUsageAccumulator } from "./adapters/pi.ts";
-import { defaultWorkerTranscriptAdapters } from "./adapters/index.ts";
+import { defaultWorkerTranscriptAdapters, workerUsageTally } from "./adapters/index.ts";
 
 // ---------------------------------------------------------------------------
 // Fixtures: pi session lines
@@ -321,4 +321,17 @@ test("readWorkerManifests: a resume record clears the ending; launch is replaced
 	assert.equal(isInterrupted(readWorkerManifests(entries.slice(0, 1)).manifests.get("ag_04")!), true);
 	assert.equal(isInterrupted({ status: "lost" }), true);
 	assert.equal(isInterrupted({ status: "waiting" }), false);
+});
+
+test("workerUsageTally: snapshot restarts, append adds, lines straddling appends count once", () => {
+	const text = piSession({}, [user(T0, "t"), assistant(T0 + 1, usage(5, 1, 0.1)), assistant(T0 + 2, usage(7, 1, 0.2))]);
+	const lines = text.split("\n");
+	const tally = workerUsageTally("pi");
+	assert.equal(tally(lines.slice(0, 3).join("\n") + "\n", "snapshot").input, 5);
+	assert.equal(tally(lines.slice(2).join("\n"), "append").input, 12); // line 3 again: deduped
+	assert.equal(tally(text, "snapshot").input, 12);
+	const claude = workerUsageTally("claude-code");
+	const line = JSON.stringify({ type: "assistant", message: { id: "m1", model: "claude-sonnet-5", usage: { input_tokens: 3, output_tokens: 1 } } });
+	claude(line + "\n", "snapshot");
+	assert.equal(claude(line + "\n", "append").input, 3);
 });

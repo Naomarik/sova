@@ -307,7 +307,10 @@ describe("regenerate, seen by two tabs on one chat", () => {
     assert.deepEqual(rows.slice(0, 2), ["u1", "a1:0"], `rows were ${rows.join(", ")}`);
     // Stated as a collision, not as a list: the open-time model/thinking appends the rewind
     // flushes add rows of their own, and pinning the exact list would fail for the wrong reason.
-    assert.ok(!rows.some((id) => id.startsWith("u2") || id.startsWith("a2")), "the redone turn is off the branch");
+    // Matched as ids, not prefixes: pi mints 8-hex ids, so a fresh row starts with "a2" one time
+    // in 256 and a prefix test failed the suite at random.
+    const redone = (id: string) => ["u2", "a2"].some((old) => id === old || id.startsWith(`${old}:`));
+    assert.ok(!rows.some(redone), `the redone turn is off the branch (rows: ${rows.join(", ")})`);
   });
 
   test("a refusal goes to the requester alone and moves nothing", async () => {

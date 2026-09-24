@@ -179,7 +179,7 @@ Both pages share one shell: a `.session-head` and a `.insights.pane` containing
   <div class="insights-inner">
     <!-- 0 live sessions: ONE .empty here and nothing else (no section heads) -->
     <section class="insights-section" aria-labelledby="ins-teams">
-      <h2 class="insights-section-head" id="ins-teams">…worker icon-sm… Teams <span class="insights-section-count">· 2 active</span></h2>
+      <h2 class="insights-section-head" id="ins-teams">…worker icon-sm… Teams <span class="insights-section-count">· 2 active</span><span class="insights-section-count">· 1 restored</span></h2>
       <div class="insights-grid">…team cards, or .empty…</div>
     </section>
     <section class="insights-section" aria-labelledby="ins-agents"><!-- only with non-team workers -->

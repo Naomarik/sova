@@ -376,7 +376,9 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Trigger | `{n} subagents working…` (1: `1 subagent working…`) · while the parent's turn runs: the counts only, `{n} subagents` · accessible name: `{n} subagents working — show subagents` |
 | Pane | label and title: Subagents · chip: `{w} working` (omitted at 0) · Close `aria-label`: Close subagents |
 | Row meta | `{provider}` · `{model}` · settled: `{model} · as of {HH:MM}` · idle after a failure adds: · last task failed (the provider leads: `claude code`, `zai`, …) |
-| Row status chips | Working · Starting · Idle · Stopping · Done · Failed · Stopped |
+| Row status chips | Working · Starting · Idle · Stopping · Done · Failed · Stopped · Restored · Interrupted |
+| Restored workers (§app.worker-restore/restore) | note: Not running since a server restart. · interrupted: Not running since a server restart; it was mid-task at `{HH:MM}`, and that turn never finished. · resumable adds: Resuming starts it idle; nothing is sent to it. · button: Resume Worker (Resuming…) · failure (alert): Couldn't resume {name}. {reason} Nothing else changed. · meta without usage: usage unavailable · snapshot cost: `$0.41 as of {HH:MM}` |
+| Session tab usage, after a restart | Cost cell: `$x as of {HH:MM}` · Usage unavailable for `{ids}`: we couldn't read its transcript (their transcripts), so the totals above leave it (them) out. · Subagent lifetime: {n} tokens · `$x as of {HH:MM}` across {N} workers, then only as far as it applies: (includes evicted) · (includes restored) · (includes evicted and restored). |
 | View head meta | `{id}` · `{provider}` · `{model}` · Read only (a claude-code worker's provider reads `claude code`) |
 | Transcript section `aria-label` | {name} transcript |
 | No workers | **0 subagents in this session.** Workers it starts show up here while they run. |

@@ -60,8 +60,11 @@
     },
     "§app.insights/usage-page-and-agents-page": {
       "kind": "behavior",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "src/components/AgentsView.tsx"
+      ]
     },
     "§app.session-list/accessibility": {
       "kind": "behavior",
@@ -201,8 +204,15 @@
     },
     "§app.subagents-pane/head": {
       "kind": "behavior",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "requires": [
+        "§app.worker-restore/usage-from-transcripts"
+      ],
+      "code": [
+        "src/components/SubagentPane.tsx",
+        "server/insights.ts"
+      ]
     },
     "§app.subagents-pane/motion": {
       "kind": "behavior",
@@ -231,8 +241,17 @@
     },
     "§app.subagents-pane/transcript-view": {
       "kind": "behavior",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "requires": [
+        "§app.worker-restore/resume"
+      ],
+      "code": [
+        "src/components/SubagentPane.tsx",
+        "src/lib/api.ts",
+        "src/design/base.css",
+        "src/components/SessionPane.tsx"
+      ]
     },
     "§app.subagents-pane/trigger": {
       "kind": "behavior",
@@ -241,8 +260,18 @@
     },
     "§app.subagents-pane/worker-rows": {
       "kind": "behavior",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "requires": [
+        "§app.worker-restore/restore"
+      ],
+      "code": [
+        "src/components/SubagentPane.tsx",
+        "server/insights.ts",
+        "shared/protocol.ts",
+        "src/lib/insights.ts",
+        "src/design/base.css"
+      ]
     },
     "§app/extension-dialogs": {
       "kind": "surface",
@@ -812,8 +841,8 @@
     },
     "§design.copy-deck/subagents-pane": {
       "kind": "note",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "reviewed"
     },
     "§design.copy-deck/timeline-tab": {
       "kind": "note",
@@ -1344,6 +1373,176 @@
         "pi-config/extensions/sandbox/tools.ts",
         "src/components/ChatView.tsx",
         "src/lib/sandbox.ts"
+      ]
+    },
+    "§app.sessions-extension/agent-dir": {
+      "kind": "behavior",
+      "requires": [],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/sessions/agent-dir.ts",
+        "pi-config/extensions/sessions/feed.ts",
+        "pi-config/extensions/sessions/presence.ts",
+        "pi-config/extensions/sessions/index.ts",
+        "pi-config/extensions/sessions/bin/pi-sessions.ts",
+        "pi-config/extensions/sessions/README.md",
+        "pi-config/extensions/sessions/public/SCHEMA.md"
+      ]
+    },
+    "§app.worker-restore/claude-bridge-restart": {
+      "kind": "behavior",
+      "requires": [],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/claude-code/provider/session-bridge.ts",
+        "pi-config/extensions/claude-code/provider/session-records.ts"
+      ]
+    },
+    "§app.worker-restore/restore": {
+      "kind": "behavior",
+      "requires": [
+        "§app.worker-restore/worker-record",
+        "§app.worker-restore/transcript-protocol",
+        "§app.worker-restore/usage-from-transcripts"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/subagents/index.ts",
+        "pi-config/extensions/subagents/registry.ts",
+        "server/insights.ts",
+        "shared/protocol.ts",
+        "src/lib/insights.ts",
+        "src/lib/workers.ts",
+        "src/components/SubagentPane.tsx",
+        "server/worker-restore.ts",
+        "server/worker-adapters.ts",
+        "server/chat-manager.ts",
+        "src/components/SessionDetails.tsx",
+        "src/design/base.css",
+        "pi-config/extensions/sessions/index.ts",
+        "pi-config/extensions/sessions/schema.ts",
+        "pi-config/extensions/sessions/workers.ts",
+        "pi-config/extensions/sessions/render.ts",
+        "pi-config/extensions/sessions/public/SCHEMA.md",
+        "scripts/dev-server.mjs",
+        "pi-config/extensions/subagents/restored.ts",
+        "pi-config/extensions/subagents/teams.ts",
+        "src/components/AgentsView.tsx"
+      ]
+    },
+    "§app.worker-restore/resume": {
+      "kind": "behavior",
+      "requires": [
+        "§app.worker-restore/restore",
+        "§chat.sandbox/workers"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/subagents/index.ts",
+        "pi-config/extensions/subagents/registry.ts",
+        "pi-config/extensions/subagents/runner.ts",
+        "pi-config/extensions/claude-code/runner.ts",
+        "pi-config/extensions/claude-code/transport.ts",
+        "server/chat-manager.ts",
+        "server/worker-resume.ts",
+        "server/index.ts",
+        "src/lib/api.ts",
+        "src/components/SubagentPane.tsx",
+        "pi-config/extensions/subagents/README.md",
+        "pi-config/extensions/subagents/restored.ts",
+        "pi-config/extensions/subagents/teams.ts"
+      ]
+    },
+    "§app.worker-restore/transcript-protocol": {
+      "kind": "behavior",
+      "requires": [],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/subagents/worker-transcript.ts",
+        "pi-config/extensions/subagents/adapters/index.ts",
+        "pi-config/extensions/subagents/adapters/pi.ts",
+        "pi-config/extensions/claude-code/transcript-adapter.ts"
+      ]
+    },
+    "§app.worker-restore/usage-from-transcripts": {
+      "kind": "behavior",
+      "requires": [
+        "§app.worker-restore/transcript-protocol",
+        "§app.worker-restore/worker-record"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/subagents/worker-transcript.ts",
+        "pi-config/extensions/subagents/index.ts",
+        "server/transcript-usage.ts",
+        "server/insights.ts",
+        "shared/protocol.ts",
+        "server/worker-restore.ts",
+        "server/claude-transcript.ts",
+        "pi-config/extensions/subagents/adapters/pi.ts",
+        "pi-config/extensions/claude-code/transcript-adapter.ts",
+        "src/components/SessionDetails.tsx"
+      ]
+    },
+    "§app.worker-restore/worker-record": {
+      "kind": "behavior",
+      "requires": [],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/subagents/index.ts",
+        "pi-config/extensions/subagents/registry.ts",
+        "pi-config/extensions/subagents/worker-transcript.ts",
+        "pi-config/extensions/subagents/README.md"
+      ]
+    },
+    "§app/sessions-extension": {
+      "kind": "surface",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/sessions/index.ts",
+        "pi-config/extensions/sessions/presence.ts",
+        "pi-config/extensions/sessions/public/SCHEMA.md"
+      ]
+    },
+    "§app/worker-restore": {
+      "kind": "surface",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/subagents/index.ts",
+        "pi-config/extensions/subagents/registry.ts",
+        "pi-config/extensions/subagents/worker-transcript.ts"
+      ]
+    },
+    "§chat.context-window/last-reply": {
+      "kind": "behavior",
+      "requires": [],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/transcript.ts",
+        "src/lib/context.ts",
+        "server/sessions-index.ts",
+        "src/components/ChatView.tsx"
+      ]
+    },
+    "§chat.transcript/own-writes-across-restart": {
+      "kind": "behavior",
+      "requires": [],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/write-guard.ts",
+        "server/chat-manager.ts",
+        "src/components/SessionView.tsx"
       ]
     }
   }

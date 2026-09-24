@@ -691,6 +691,7 @@ export function App() {
                     info={extensions.data()?.find((e) => e.id === id)}
                     loaded={!extensions.pending()}
                     titleRef={(el) => (extTitleEl = el)}
+                    onOpenSession={adoptCreated}
                   />
                 )}
               </Match>

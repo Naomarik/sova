@@ -1,6 +1,6 @@
-import { For, Show } from "solid-js";
-import type { ExtensionInfo } from "../../shared/protocol";
-import { extFrameSrc, extHref } from "../lib/ext-route";
+import { For, onCleanup, Show } from "solid-js";
+import type { ExtensionInfo, SessionSummary } from "../../shared/protocol";
+import { extFrameSrc, extHref, parseOpenSession } from "../lib/ext-route";
 import { Chip, Icon } from "./ui";
 import "../extensions.css";
 
@@ -67,8 +67,18 @@ export function ExtensionView(props: {
   /** The list has loaded at least once, so a missing `info` means not installed. */
   loaded: boolean;
   titleRef(el: HTMLHeadingElement): void;
+  /** Open a session the extension created, the way New Session opens its own (ext-contract §3.6). */
+  onOpenSession(session: SessionSummary): void;
 }) {
   let frame: HTMLIFrameElement | undefined;
+  // The extension hands over a session it created by postMessage: a fresh session has no
+  // messages, so it isn't in the list yet, and a plain `#/s/<path>` would find nothing.
+  const onMessage = (event: MessageEvent) => {
+    const session = parseOpenSession(event, { origin: location.origin, frame: frame?.contentWindow });
+    if (session) props.onOpenSession(session);
+  };
+  window.addEventListener("message", onMessage);
+  onCleanup(() => window.removeEventListener("message", onMessage));
   const reload = () => {
     try {
       frame?.contentWindow?.location.reload();

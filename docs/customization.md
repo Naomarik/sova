@@ -118,6 +118,21 @@ The UI is served from Sova's own origin, so it can call every Sova API (for exam
 `POST /api/sessions`) and read Sova's local storage. Install only extensions you trust. Proxied
 requests carry `X-Sova-Origin`, the address the backend can use to call Sova back.
 
+To open a session the extension just created, hand it to Sova rather than setting the page's
+hash. A new session has no messages yet, so it isn't in Sova's list, and `#/s/<path>` would find
+nothing:
+
+```js
+const res = await fetch("/api/sessions", { method: "POST", body: JSON.stringify({ cwd }) });
+const session = await res.json(); // 201: a SessionSummary
+window.parent.postMessage({ type: "sova:open-session", session }, location.origin);
+```
+
+Sova accepts the message only from its own origin and from the extension's own frame, and only
+with a session whose `path` is an absolute `.jsonl` file and which has a `cwd`. It then opens the
+session the way New Session does, with the composer focused. A session that is already in the list
+can still be opened with `window.parent.location.hash = "#/s/" + encodeURIComponent(path)`.
+
 To match Sova's look, link `/design/tokens.css` and `/design/base.css`. To follow the theme the
 user picks, copy the parent page's theme when the page loads, and again whenever it changes:
 

@@ -562,3 +562,19 @@ export async function viewWorker(manifest: WorkerManifest, adapters: WorkerTrans
 		return { ...base, unavailable: error instanceof Error ? error.message : String(error), usage: resolveWorkerUsage(undefined, manifest.usageSnapshot) };
 	}
 }
+
+/**
+ * The model a worker ran on, in the form its running runner reports: the transcript's last reply,
+ * else the largest row (input+output+cacheRead+cacheWrite) of its last usage snapshot, else the
+ * spawn spec's model. The claude-code adapter names models "claude/<id>"; a running Claude worker
+ * reports the bare <id>, so the prefix is dropped for backend claude-code only.
+ */
+export function resolvedModel(manifest: WorkerManifest, view: Pick<WorkerTranscriptView, "summary"> | undefined): string | undefined {
+	const bare = (model: string | undefined) => model && manifest.backend === "claude-code" && model.startsWith("claude/") ? model.slice("claude/".length) : model;
+	const fromTranscript = bare(view?.summary?.model);
+	if (fromTranscript) return fromTranscript;
+	const rows = manifest.usageSnapshot?.byModel ?? [];
+	const size = (r: WorkerUsageRow) => r.input + r.output + r.cacheRead + r.cacheWrite;
+	const biggest = rows.length ? rows.reduce((a, b) => (size(b) > size(a) ? b : a)) : undefined;
+	return bare(biggest?.model) || manifest.spec?.model;
+}

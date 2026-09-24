@@ -14,6 +14,7 @@ import {
 	isInterrupted,
 	hasEnded,
 	readWorkerManifests,
+	resolvedModel,
 	resolveWorkerUsage,
 	sumWorkerUsage,
 	usageSnapshot,
@@ -334,4 +335,16 @@ test("workerUsageTally: snapshot restarts, append adds, lines straddling appends
 	const line = JSON.stringify({ type: "assistant", message: { id: "m1", model: "claude-sonnet-5", usage: { input_tokens: 3, output_tokens: 1 } } });
 	claude(line + "\n", "snapshot");
 	assert.equal(claude(line + "\n", "append").input, 3);
+});
+
+test("resolvedModel: transcript reply, else the biggest snapshot row, else the spec; claude/ prefix dropped for claude-code only", () => {
+	const row = (model: string, input: number) => ({ model, input, output: 0, cacheRead: 0, cacheWrite: 0 });
+	const claude = { v: 1 as const, workerId: "ag_01", backend: "claude-code", at: 1, spec: { cwd: "/w", model: "sonnet", taskPreview: "t", wake: true } };
+	const summary = (model?: string) => ({ summary: { ...(model ? { model } : {}) } as any });
+	assert.equal(resolvedModel(claude, summary("claude/claude-sonnet-5")), "claude-sonnet-5");
+	const snap = { ...usageSnapshot({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, 1), byModel: [row("claude/small", 1), row("claude/big", 9)] };
+	assert.equal(resolvedModel({ ...claude, usageSnapshot: snap }, summary()), "big");
+	assert.equal(resolvedModel(claude, undefined), "sonnet");
+	assert.equal(resolvedModel({ ...claude, backend: "pi" }, summary("claude/x")), "claude/x");
+	assert.equal(resolvedModel({ v: 1, workerId: "ag_02", backend: "pi", at: 1 }, undefined), undefined);
 });

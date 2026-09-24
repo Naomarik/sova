@@ -1,6 +1,7 @@
 import { createSignal, For, onCleanup, Show, type JSX } from "solid-js";
 import { Portal } from "solid-js/web";
-import { announcement, toasts } from "../lib/ui-state";
+import { pauseCountdown, remaining, resumeCountdown, startCountdown, type Toast } from "../lib/toast";
+import { announcement, dismissToast, toasts } from "../lib/ui-state";
 import { Lightbox } from "./Lightbox";
 
 export type IconName =
@@ -124,13 +125,81 @@ export function CopyButton(props: {
   );
 }
 
+/**
+ * One toast, and its own clock. It goes by itself after `timeout` (lib/toast), except that the
+ * countdown — and the bar along its foot that shows it — pauses while the pointer is over it or
+ * focus is inside it, and resumes with the time that was left.
+ */
+function ToastItem(props: { toast: Toast }) {
+  const t = props.toast;
+  let clock = startCountdown(t.timeout, performance.now());
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const [hovered, setHovered] = createSignal(false);
+  const [focused, setFocused] = createSignal(false);
+  const paused = () => hovered() || focused();
+  const arm = () => {
+    clearTimeout(timer);
+    if (paused()) clock = pauseCountdown(clock, performance.now());
+    else {
+      clock = resumeCountdown(clock, performance.now());
+      timer = setTimeout(() => dismissToast(t.id), remaining(clock, performance.now()));
+    }
+  };
+  arm();
+  onCleanup(() => clearTimeout(timer));
+  const hover = (on: boolean) => {
+    setHovered(on);
+    arm();
+  };
+  return (
+    <div
+      class="toast"
+      onPointerEnter={() => hover(true)}
+      onPointerLeave={() => hover(false)}
+      onFocusIn={() => {
+        setFocused(true);
+        arm();
+      }}
+      onFocusOut={(e) => {
+        // Moving between Undo and Dismiss is still inside.
+        if (e.relatedTarget instanceof Node && e.currentTarget.contains(e.relatedTarget)) return;
+        setFocused(false);
+        arm();
+      }}
+    >
+      <span class="toast-body">{t.text}</span>
+      {/* The toast goes first, so a second press can't run the action twice. */}
+      <Show when={t.action}>
+        {(action) => (
+          <>
+            <button
+              type="button"
+              class="button button-sm button-ghost toast-action"
+              onClick={() => {
+                dismissToast(t.id);
+                void action().run();
+              }}
+            >
+              {action().label}
+            </button>
+            <button type="button" class="button button-icon button-ghost" aria-label="Dismiss" title="Dismiss" onClick={() => dismissToast(t.id)}>
+              <Icon name="close" small />
+            </button>
+          </>
+        )}
+      </Show>
+      <span class="toast-timer" aria-hidden="true" data-paused={paused() ? "" : undefined} style={{ "--toast-ms": `${t.timeout}ms` }} />
+    </div>
+  );
+}
+
 /** The single toast stack and the single polite status region, portalled to <body>. */
 export function GlobalRegions() {
   return (
     <>
     <Portal>
       <div class="toast-stack">
-        <For each={toasts()}>{(t) => <div class="toast"><span class="toast-body">{t.text}</span></div>}</For>
+        <For each={toasts()}>{(t) => <ToastItem toast={t} />}</For>
       </div>
       <div class="visually-hidden" role="status" aria-live="polite">
         {announcement()}

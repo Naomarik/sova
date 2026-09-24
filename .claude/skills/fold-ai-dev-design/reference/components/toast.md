@@ -38,6 +38,8 @@ Rendered: `site/components/toast.html#anatomy`
 - **DO** Offer Undo for anything destructive — reversibility is a brand value, not a nicety.
 - **DO** Keep it to one line — a toast is read in passing or not at all.
 - **DO** Anchor toasts above the approval bar at folded width — never cover the decision the user is making.
+- **DO** Give a toast with an action longer, and pause it under the pointer or focus — 6s against 3s, resuming with the time left, so reaching Undo never races the clock.
+- **DO** Replace the previous toast of the same kind — the next archive's Undo takes the last one's place, so only the latest shows.
 - **DON'T** Put the only record of an error in a toast — use a banner, which stays.
 - **DON'T** Stack more than three — the fourth is invisible by the time it arrives.
-- **DON'T** Auto-dismiss a toast that has an action — the user needs time to reach Undo.
+- **DON'T** Leave a toast with an action on screen until it is used — three archives became three stuck Undos (Sova overrode the earlier never-auto-dismiss rule for this).

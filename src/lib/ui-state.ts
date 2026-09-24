@@ -7,22 +7,24 @@ import type { UploadResult } from "../../shared/protocol";
 import type { ContextState } from "./context";
 import { createDraftSaver, type DraftPayload } from "./draft-save";
 import { dualGet, dualSet } from "./storage-keys";
+import { makeToast, placeToast, type Toast, type ToastOptions } from "./toast";
 
-export interface Toast {
-  id: number;
-  text: string;
-}
+export type { Toast, ToastOptions };
 
 const [toasts, setToasts] = createSignal<Toast[]>([]);
 let toastId = 0;
 
 export { toasts };
 
-/** Transient confirmation ("Copied path."). Never the only record of a fact. */
-export function toast(text: string) {
-  const id = ++toastId;
-  setToasts((t) => [...t, { id, text }]);
-  setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 3000);
+/** Transient confirmation ("Copied path."). Never the only record of a fact. Its clock is the
+    renderer's (ui.tsx), which pauses it under the pointer or focus; `key` replaces the toast with
+    the same key (lib/toast). */
+export function toast(text: string, options?: ToastOptions) {
+  setToasts((list) => placeToast(list, makeToast(++toastId, text, options)));
+}
+
+export function dismissToast(id: number) {
+  setToasts((list) => list.filter((x) => x.id !== id));
 }
 
 const [announcement, setAnnouncement] = createSignal("");

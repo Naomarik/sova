@@ -400,7 +400,7 @@ comments): `yes`, `no`, or `partial` with what is missing.
 | Tabs | — | 44px | Tabs switch views; they never submit. State goes in the URL. | yes |
 | Breadcrumb | — | — | Last item is current and not a link. | no |
 | Banner | success, warn, error, info | — | In-flow and persistent. Carries the fact itself. | yes |
-| Toast | with action | — | Transient. **Never the only copy of a fact.** | partial — no `.toast-action` |
+| Toast | with action | — | Transient. **Never the only copy of a fact.** Every toast times out; one with an action waits 6s and pauses under the pointer or focus. | partial — no `.toast-action` |
 | Empty state | — | — | Live fact first, absence second. | yes |
 | Skeleton | line, title, row | — | Matches the shape of what's loading, or it's a lie. | yes |
 | List & row | interactive, selected, group label | 44px row | Whole row is the target. | yes |

@@ -407,6 +407,29 @@ i.icon {
   animation: enter-fade var(--dur-base) var(--ease-standard);
 }
 .toast-body { flex: 1; }
+/* A toast's Undo and its dismiss keep their size; the words take what's left. */
+.toast > .button { flex: none; }
+/* The time left, as a faint line along the foot that shrinks to nothing. Out of flow, so the
+   toast is the same height with it; inset by the corner radius, so it never needs a clip that
+   would cut the buttons' focus ring. Paused with the countdown (ui.tsx) while hovered or focused. */
+.toast { position: relative; }
+.toast-timer {
+  position: absolute;
+  left: var(--r-lg);
+  right: var(--r-lg);
+  bottom: 0;
+  height: var(--stroke-icon);
+  background: var(--color-border-strong);
+  opacity: .45;
+  transform-origin: left center;
+  animation: toast-timer var(--toast-ms, 3000ms) linear forwards;
+}
+.toast-timer[data-paused] { animation-play-state: paused; }
+@keyframes toast-timer { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+/* No moving bar under reduced motion; the countdown itself still runs. */
+@media (prefers-reduced-motion: reduce) {
+  .toast-timer { display: none; }
+}
 .toast-stack {
   position: fixed;
   left: var(--space-4);

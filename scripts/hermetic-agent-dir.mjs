@@ -194,4 +194,4 @@ if (check) {
 }
 
 console.log(`${AGENT} ready (extensions -> ${extRoot})`);
-console.log(`use it with:  PORT=4810 PI_CODING_AGENT_DIR=${AGENT} npm run dev:server`);
+console.log(`use it with:  PORT=4810 PI_CODING_AGENT_DIR=${AGENT} pnpm run dev:server`);

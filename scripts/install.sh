@@ -4,13 +4,16 @@
 #
 #   curl -fsSL https://raw.githubusercontent.com/Naomarik/sova/v0.1.0/scripts/install.sh | bash
 #
-# What it needs on the machine already: git, node (>= 22.19) and npm. It installs no toolchain,
-# no version manager and no system package, and it never uses sudo.
+# What it needs on the machine already: git, node (>= 22.19) and pnpm. Without pnpm it runs the
+# version the repository pins through npx (npm ships with Node). It installs no toolchain, no
+# version manager and no system package, and it never uses sudo.
 #
 # What it touches, and nothing else:
 #   <install dir>          default ~/.local/share/sova — a clone, its node_modules and its dist/
 #   <bin dir>/sova         default ~/.local/bin/sova — a launcher this script wrote
 #   a staging directory beside the install dir, removed on the way out
+#   pnpm's own package store and cache (and npx's cache when pnpm runs through it), as any
+#   install does
 #
 # ~/.pi is never read or written. Sova reads the agent directory at runtime, as you, and this
 # script does not link pi config or extensions into it: pi-config/install.sh would replace the
@@ -50,9 +53,17 @@ done
 
 # ---- prerequisites. Nothing below this block writes anything. ----
 
-for cmd in git node npm; do
-	command -v "$cmd" >/dev/null 2>&1 || die "$cmd is not installed. Install git, Node.js >= $node_min_major.$node_min_minor and npm, then run this again."
+for cmd in git node; do
+	command -v "$cmd" >/dev/null 2>&1 || die "$cmd is not installed. Install git, Node.js >= $node_min_major.$node_min_minor and pnpm, then run this again."
 done
+# pnpm on PATH is used as it is; otherwise npx runs pnpm (the version is read from the clone below).
+if command -v pnpm >/dev/null 2>&1; then
+	use_npx=false
+elif command -v npx >/dev/null 2>&1; then
+	use_npx=true
+else
+	die "pnpm is not installed, and there is no npx to run it with. Install pnpm (https://pnpm.io/installation), then run this again."
+fi
 
 node_version=$(node -v 2>/dev/null || true)         # v25.2.1
 node_version=${node_version#v}
@@ -120,11 +131,21 @@ git clone --quiet --depth 1 --branch "$ref" "$repo" "$staging/sova" 2>/dev/null 
 git -C "$staging/sova" checkout --quiet "$ref" 2>/dev/null || true
 commit=$(git -C "$staging/sova" rev-parse --short HEAD)
 
+if $use_npx; then
+	# The pnpm the repository pins in package.json's packageManager, or the latest without one.
+	pnpm_version=$(sed -n 's/^[[:space:]]*"packageManager":[[:space:]]*"pnpm@\([^"+]*\).*/\1/p' "$staging/sova/package.json")
+	pnpm=(npx --yes "pnpm@${pnpm_version:-latest}")
+	say "pnpm is not installed; running ${pnpm[2]} through npx"
+else
+	pnpm=(pnpm)
+fi
+
 say "installing dependencies (including dev dependencies: the server runs through tsx)"
-( cd "$staging/sova" && npm ci --include=dev ) || die "npm ci failed; nothing was changed"
+( cd "$staging/sova" && "${pnpm[@]}" install --frozen-lockfile --prod=false ) ||
+	die "pnpm install failed; nothing was changed"
 
 say "building"
-( cd "$staging/sova" && npm run build ) || die "the build failed; nothing was changed"
+( cd "$staging/sova" && "${pnpm[@]}" run build ) || die "the build failed; nothing was changed"
 
 # ---- promote ----
 

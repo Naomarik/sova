@@ -2,7 +2,7 @@
 // the worker scope (--sandbox-parent, workerFlags, checkWorker). Real policy, real backend.
 import assert from "node:assert/strict";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, utimesSync, writeFileSync } from "node:fs";
-import { registerHooks } from "node:module";
+import { createRequire, registerHooks } from "node:module";
 import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -10,8 +10,14 @@ import { SANDBOX_STATE_EVENT, type SandboxStateEvent } from "../state.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const WT = join(HERE, "..", "..", "..", "..");
-// pi resolves @earendil-works/pi-tui for extensions; plain node needs the package's nested copy.
-const TUI = pathToFileURL(join(WT, "node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/index.js")).href;
+// pi resolves @earendil-works/pi-tui for extensions; plain node needs the copy pi itself would load:
+// nested under the package (npm) or beside its real path (pnpm). PI_PACKAGE_DIR as in harness.mjs.
+const PI = realpathSync(process.env.PI_PACKAGE_DIR ?? join(WT, "node_modules/@earendil-works/pi-coding-agent"));
+const TUI_DIR = createRequire(join(PI, "package.json")).resolve.paths("@earendil-works/pi-tui")!
+	.map((dir) => join(dir, "@earendil-works/pi-tui"))
+	.find((dir) => existsSync(join(dir, "package.json")));
+if (!TUI_DIR) throw new Error(`@earendil-works/pi-tui is not resolvable from ${PI}`);
+const TUI = pathToFileURL(join(TUI_DIR, "dist/index.js")).href;
 registerHooks({ resolve: (spec, ctx, next) => next(spec === "@earendil-works/pi-tui" ? TUI : spec, ctx) });
 
 const root = realpathSync(mkdtempSync(join("/var/tmp", "sbx-index-")));

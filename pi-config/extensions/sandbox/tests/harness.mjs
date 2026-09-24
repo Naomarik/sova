@@ -3,7 +3,7 @@
 // context), and direct calls into the session's own wrapped tools (`_toolRegistry`), which is the
 // exact object the agent loop executes. Nothing here imports sandbox implementation code.
 import { execFileSync, spawn } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { createHash, randomBytes } from "node:crypto";
 import { createRequire } from "node:module";
 import { homedir } from "node:os";
@@ -22,9 +22,11 @@ export const PLATFORM_DIR = process.platform === "darwin" ? "darwin" : "linux";
 // Sova embeds the repo-pinned pi (node_modules, 0.86.1); PI_PACKAGE_DIR overrides (e.g. the global
 // 0.87 the TUI runs) so the same suite can be pointed at either.
 export const packageDir = process.env.PI_PACKAGE_DIR ?? path.join(REPO, "node_modules/@earendil-works/pi-coding-agent");
-const require = createRequire(path.join(packageDir, "package.json"));
+// Resolve from the real path: under pnpm the package's dependencies sit beside it, not under the link.
+const packageReal = realpathSync(packageDir);
+const require = createRequire(path.join(packageReal, "package.json"));
 const { createJiti } = require("jiti");
-const resolver = createJiti(path.join(packageDir, "package.json"));
+const resolver = createJiti(path.join(packageReal, "package.json"));
 const alias = Object.fromEntries(
 	["@earendil-works/pi-coding-agent", "@earendil-works/pi-ai", "@earendil-works/pi-tui", "typebox"].map((n) => {
 		try {

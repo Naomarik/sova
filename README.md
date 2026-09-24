@@ -18,7 +18,7 @@ work without digging through terminal scrollback. Your existing setup stays your
 
 ## Get started
 
-Requires Git, Node.js ≥22.19, and npm.
+Requires Git, Node.js ≥22.19, and pnpm (without pnpm, the installer runs it through npx).
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/Naomarik/sova/v0.1.0/scripts/install.sh | bash

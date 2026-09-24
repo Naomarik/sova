@@ -7,7 +7,7 @@
 // the in-memory subagent registry (see CLAUDE.md "Dev-server restart pitfall"); this gate
 // makes that opt-in again: press `r` (or SIGUSR2) to force.
 //
-//   node scripts/dev-server.mjs            # npm run dev:server
+//   node scripts/dev-server.mjs            # pnpm run dev:server
 //   r                                      # force a pending restart now
 //   kill -USR2 <watcher pid>               # same, for agents
 //

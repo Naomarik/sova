@@ -1,10 +1,10 @@
 import { defineConfig } from "vite";
 import solid from "vite-plugin-solid";
 
-// The API server this dev server proxies to. `npm run dev:server` defaults to 4800; a second
+// The API server this dev server proxies to. `pnpm run dev:server` defaults to 4800; a second
 // checkout (git worktree) or a hermetic/experimental server runs elsewhere (PORT=4810 with
 // PI_CODING_AGENT_DIR=<worktree>/.agent), so point the dev proxy at the same port with
-// SOVA_PORT: SOVA_PORT=4810 npm run dev:web -- --port 5176. The API server takes its port
+// SOVA_PORT: SOVA_PORT=4810 pnpm run dev:web --port 5176. The API server takes its port
 // from PORT the same way (server/index.ts). PI_WEB_PORT/PI_WEB_HOST are the pre-rebrand aliases,
 // still read as fallbacks.
 const apiPort = process.env.SOVA_PORT ?? process.env.PI_WEB_PORT ?? "4800";

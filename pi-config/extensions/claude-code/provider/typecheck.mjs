@@ -9,13 +9,16 @@
  * of the extension. Test files that import ../../subagents/ drag that
  * extension's own pre-existing errors in; keep them out of a gate invocation.
  *
- * pi-config is not covered by any tsconfig: @earendil-works/* lives inside the
- * installed pi package's node_modules, so the config below is generated with
- * paths pointing there (same resolution the test runner uses at runtime).
+ * pi-config is not covered by any tsconfig: @earendil-works/* are the installed
+ * pi package's own dependencies, so the config below is generated with paths
+ * pointing where node resolves them from that package — nested in its
+ * node_modules (npm) or beside its real path (pnpm), the same resolution the
+ * test runner uses at runtime.
  * TypeScript comes from npx; nothing is installed into pi-config.
  */
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdtempSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, realpathSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -24,7 +27,12 @@ const here = fileURLToPath(new URL("./", import.meta.url));
 const packageDir =
 	process.env.PI_PACKAGE_DIR ??
 	path.join(execFileSync("npm", ["root", "-g"], { encoding: "utf8" }).trim(), "@earendil-works/pi-coding-agent");
-const nested = path.join(packageDir, "node_modules");
+const lookup = createRequire(path.join(realpathSync(packageDir), "package.json")).resolve.paths("typebox");
+const dep = (name) => {
+	const dir = lookup.map((root) => path.join(root, name)).find((dir) => existsSync(path.join(dir, "package.json")));
+	if (!dir) throw new Error(`${name} is not resolvable from ${packageDir}`);
+	return dir;
+};
 
 const requested = process.argv.slice(2);
 const files = (requested.length > 0 ? requested : readdirSync(here).filter((file) => file.endsWith(".ts"))).map((file) =>
@@ -33,10 +41,10 @@ const files = (requested.length > 0 ? requested : readdirSync(here).filter((file
 
 const paths = {
 	"@earendil-works/pi-coding-agent": [path.join(packageDir, "dist/index.d.ts")],
-	typebox: [path.join(nested, "typebox")],
+	typebox: [dep("typebox")],
 };
 for (const name of ["pi-ai", "pi-tui", "pi-agent-core", "pi-telemetry"]) {
-	paths[`@earendil-works/${name}`] = [path.join(nested, "@earendil-works", name, "dist/index.d.ts")];
+	paths[`@earendil-works/${name}`] = [path.join(dep(`@earendil-works/${name}`), "dist/index.d.ts")];
 }
 
 const config = {
@@ -48,7 +56,7 @@ const config = {
 		target: "es2023",
 		lib: ["es2023"],
 		types: ["node"],
-		typeRoots: [path.join(nested, "@types")],
+		typeRoots: [path.dirname(dep("@types/node"))],
 		skipLibCheck: true,
 		allowImportingTsExtensions: true,
 		baseUrl: "/",

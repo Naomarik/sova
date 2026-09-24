@@ -4,7 +4,8 @@
 
 ## Install and launch
 
-Have Git, Node.js ≥22.19, and npm installed, plus `curl` and Bash for this command:
+Have Git, Node.js ≥22.19, and pnpm installed, plus `curl` and Bash for this command (without
+pnpm, the installer runs the version Sova pins through npx):
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/Naomarik/sova/v0.1.0/scripts/install.sh | bash

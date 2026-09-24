@@ -4,20 +4,21 @@
 
 ## Run a checkout
 
-Requires Git, Node.js ≥22.19, and npm.
+Requires Git, Node.js ≥22.19, and pnpm (the version `packageManager` in `package.json` pins;
+`mise install` provides both Node and pnpm from `mise.toml`).
 
 ```sh
 git clone https://github.com/Naomarik/sova.git
 cd sova
-npm ci
-npm run build
-npm start
+pnpm install --frozen-lockfile
+pnpm run build
+pnpm start
 ```
 
 Open <http://127.0.0.1:4800>. This runs your checkout; the release installer instead installs its
 pinned tag. Provider login and network access are covered in [Getting started](docs/getting-started.md).
 
-For frontend development, run `npm run dev:server` and `npm run dev:web` in separate terminals,
+For frontend development, run `pnpm run dev:server` and `pnpm run dev:web` in separate terminals,
 then open <http://localhost:5173>. Vite proxies API and WebSocket requests to port 4800.
 
 **Development uses your real pi data by default.** Set `PI_CODING_AGENT_DIR` to a scratch
@@ -27,9 +28,9 @@ and extensions. Never commit that directory or copy credentials into test fixtur
 ## Checks
 
 ```sh
-npm run typecheck
-npm test
-npm run build
+pnpm run typecheck
+pnpm test
+pnpm run build
 ```
 
 Unit tests use `tsx --test`; plain `node --test` does not resolve their extensionless TypeScript
@@ -62,7 +63,7 @@ sessions as read-only: pi's SDK does not provide file locking.
 
 Server-graph edits can restart the development server and kill workers spawned by hosted sessions.
 Check for active work before editing. The default watcher gates restarts while sessions are busy;
-do not force a restart during someone else's work. For backend work, running `npm start` without
+do not force a restart during someone else's work. For backend work, running `pnpm start` without
 watch avoids edit-triggered restarts. Frontend HMR does not restart the backend.
 
 ## Compatibility and extensions

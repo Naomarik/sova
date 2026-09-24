@@ -1,0 +1,7 @@
+# pnpm settings for this project (.npmrc is gitignored as credential material).
+# Only esbuild's install script runs. The other two are no-ops: @google/genai's
+# preinstall is an echo, protobufjs's postinstall only warns about a version scheme.
+allowBuilds:
+  esbuild: true
+  '@google/genai': false
+  protobufjs: false

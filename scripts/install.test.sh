@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Tests for scripts/install.sh. Every case runs in its own temporary HOME with a sandboxed PATH:
-# git is the real one (the installer clones a local seed repository), node and npm are stubs, so
-# nothing is downloaded and nothing outside the temporary directory is touched.
+# git is the real one (the installer clones a local seed repository), node, pnpm and npx are stubs,
+# so nothing is downloaded and nothing outside the temporary directory is touched.
 #
 # Run: scripts/install.test.sh
 set -euo pipefail
@@ -18,16 +18,18 @@ ok() { pass=$((pass + 1)); printf '  ok   %s\n' "$1"; }
 no() { fail=$((fail + 1)); printf '  FAIL %s\n' "$1"; }
 check() { if [ "$1" = true ]; then ok "$2"; else no "$2"; fi; }
 
-# ---- the sandbox PATH: real coreutils and git, stubbed node and npm ----
+# ---- the sandbox PATH: real coreutils and git, stubbed node, pnpm and npx ----
 
 sandbox=$tmp/sandbox
 nogit=$tmp/sandbox-nogit
-mkdir -p "$sandbox" "$nogit"
+nopnpm=$tmp/sandbox-nopnpm       # npx but no pnpm: the installer runs pnpm through npx
+nopm=$tmp/sandbox-nopm           # neither pnpm nor npx
+stubs=$tmp/stubs                 # not on any PATH; the pnpm stub lives here so npx can reach it
+mkdir -p "$sandbox" "$nogit" "$nopnpm" "$nopm" "$stubs"
 for c in bash env cat chmod cp dirname grep head mkdir mktemp mv printf rm sed sort touch uname wc; do
-	ln -sf "$(command -v "$c")" "$sandbox/$c"
-	ln -sf "$(command -v "$c")" "$nogit/$c"
+	for d in "$sandbox" "$nogit" "$nopnpm" "$nopm"; do ln -sf "$(command -v "$c")" "$d/$c"; done
 done
-ln -sf "$(command -v git)" "$sandbox/git"       # $nogit deliberately has no git
+for d in "$sandbox" "$nopnpm" "$nopm"; do ln -sf "$(command -v git)" "$d/git"; done  # $nogit has no git
 
 cat > "$sandbox/node" <<'STUB'
 #!/usr/bin/env bash
@@ -35,28 +37,44 @@ cat > "$sandbox/node" <<'STUB'
 printf 'node stub: %s\n' "$*"
 STUB
 
-# `npm ci` makes a node_modules with a tsx the launcher can exec; `npm run build` makes a dist.
-cat > "$sandbox/npm" <<'STUB'
+# `pnpm install` makes a node_modules with a tsx the launcher can exec; `pnpm run build` makes a
+# dist. Both refuse the flags the installer must not drop.
+cat > "$stubs/pnpm" <<'STUB'
 #!/usr/bin/env bash
 set -euo pipefail
 case "${1:-}" in
-	ci)
+	install)
+		case " $* " in *" --frozen-lockfile "*) ;; *) printf 'pnpm stub: no --frozen-lockfile\n' >&2; exit 1 ;; esac
+		case " $* " in *" --prod=false "*) ;; *) printf 'pnpm stub: no --prod=false\n' >&2; exit 1 ;; esac
 		mkdir -p node_modules/.bin
 		printf '#!/usr/bin/env bash\nprintf "tsx stub ran: %%s\\n" "$*"\n' > node_modules/.bin/tsx
 		chmod 755 node_modules/.bin/tsx
-		printf 'npm stub: installed (%s)\n' "$*"
+		printf 'pnpm stub: installed (%s)\n' "$*"
 		;;
 	run)
-		[ "${NPM_FAIL_BUILD:-}" = 1 ] && { printf 'npm stub: build failed on purpose\n' >&2; exit 1; }
+		[ "${PNPM_FAIL_BUILD:-}" = 1 ] && { printf 'pnpm stub: build failed on purpose\n' >&2; exit 1; }
 		mkdir -p dist && printf '<!doctype html>\n' > dist/index.html
-		printf 'npm stub: built\n'
+		printf 'pnpm stub: built\n'
 		;;
-	*) printf 'npm stub: %s\n' "$*" ;;
+	*) printf 'pnpm stub: %s\n' "$*" ;;
 esac
 STUB
-chmod 755 "$sandbox/node" "$sandbox/npm"
-cp "$sandbox/node" "$nogit/node"
-cp "$sandbox/npm" "$nogit/npm"
+# `npx --yes pnpm@<version> …` records the version it was asked for, then runs the pnpm stub.
+cat > "$stubs/npx" <<STUB
+#!/usr/bin/env bash
+set -euo pipefail
+[ "\${1:-}" = --yes ] || { printf 'npx stub: no --yes\n' >&2; exit 1; }
+shift
+case "\${1:-}" in
+	pnpm@*) printf '%s\n' "\$1" >> "$tmp/npx.log"; shift; exec "$stubs/pnpm" "\$@" ;;
+	*) printf 'npx stub: %s\n' "\$*" >&2; exit 1 ;;
+esac
+STUB
+chmod 755 "$sandbox/node" "$stubs/pnpm" "$stubs/npx"
+for d in "$nogit" "$nopnpm" "$nopm"; do cp "$sandbox/node" "$d/node"; done
+ln -sf "$stubs/pnpm" "$sandbox/pnpm"
+ln -sf "$stubs/pnpm" "$nogit/pnpm"
+ln -sf "$stubs/npx" "$nopnpm/npx"
 
 # ---- the seed repository, cloned by every case (its name has to read as Sova) ----
 
@@ -64,8 +82,13 @@ seed=$tmp/sova-src
 mkdir -p "$seed/server" "$seed/scripts"
 cp "$installer" "$seed/scripts/install.sh"
 cat > "$seed/package.json" <<'JSON'
-{ "name": "sova", "version": "0.1.0", "engines": { "node": ">=22.19" },
-  "scripts": { "build": "true", "start": "tsx server/index.ts" } }
+{
+  "name": "sova",
+  "version": "0.1.0",
+  "packageManager": "pnpm@12.6.0",
+  "engines": { "node": ">=22.19" },
+  "scripts": { "build": "true", "start": "tsx server/index.ts" }
+}
 JSON
 printf 'export const server = null;\n' > "$seed/server/index.ts"
 printf 'node_modules/\ndist/\n' > "$seed/.gitignore"
@@ -143,7 +166,7 @@ good_home=$home
 printf 'a file the user left here\n' > "$good_home/.local/share/sova/NOTES.txt"
 before_launcher=$(cat "$good_home/.local/bin/sova")
 set +e
-out=$(HOME="$good_home" PATH="$sandbox" SOVA_REPO="file://$seed" SOVA_REF=v0.1.0 NPM_FAIL_BUILD=1 \
+out=$(HOME="$good_home" PATH="$sandbox" SOVA_REPO="file://$seed" SOVA_REF=v0.1.0 PNPM_FAIL_BUILD=1 \
 	bash "$installer" 2>&1)
 status=$?
 set -e
@@ -215,6 +238,29 @@ check "$([ "$status" -eq 0 ] && echo true || echo false)" "--dir/--bin: exits 0"
 check "$([ -f "$tmp/custom-dirs/my apps/sova/package.json" ] && echo true || echo false)" "--dir: installs there"
 check "$([ -x "$tmp/custom-dirs/my bin/sova" ] && echo true || echo false)" "--bin: launcher there"
 check "$([ ! -e "$home/.local/share/sova" ] && echo true || echo false)" "--dir: nothing in the default location"
+
+# 10. Without pnpm, npx runs the pnpm version the clone pins.
+rm -f "$tmp/npx.log"
+CASE_PATH=$nopnpm run_install npx-fallback
+unset CASE_PATH
+check "$([ "$status" -eq 0 ] && echo true || echo false)" "npx fallback: exits 0"
+check "$([ "$(cat "$tmp/npx.log" 2>/dev/null | sort -u)" = 'pnpm@12.6.0' ] && echo true || echo false)" \
+	"npx fallback: every pnpm call ran the pinned pnpm@12.6.0 through npx"
+check "$([ "$(wc -l < "$tmp/npx.log" 2>/dev/null)" -eq 2 ] && echo true || echo false)" \
+	"npx fallback: both install and build went through npx"
+check "$(printf '%s' "$out" | grep -q 'running pnpm@12.6.0 through npx' && echo true || echo false)" \
+	"npx fallback: says so"
+check "$([ -f "$home/.local/share/sova/dist/index.html" ] && [ -x "$home/.local/bin/sova" ] && echo true || echo false)" \
+	"npx fallback: the build and the launcher are in place"
+
+# 11. Neither pnpm nor npx exits nonzero and changes nothing.
+CASE_PATH=$nopm run_install missing-pnpm
+unset CASE_PATH
+check "$([ "$status" -ne 0 ] && echo true || echo false)" "missing pnpm: exits nonzero"
+check "$(printf '%s' "$out" | grep -q 'pnpm is not installed' && echo true || echo false)" "missing pnpm: says which command"
+check "$([ ! -e "$home/.local/share/sova" ] && [ ! -e "$home/.local/bin/sova" ] && echo true || echo false)" \
+	"missing pnpm: no install dir, no launcher"
+check "$(pi_untouched && echo true || echo false)" "missing pnpm: ~/.pi untouched"
 
 printf '\n%s passed, %s failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

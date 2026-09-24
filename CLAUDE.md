@@ -91,9 +91,12 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
 
 ## Commands
 
-- `npm run dev:server` (port **4800**) and `npm run dev:web` (Vite, proxies /api + /ws to 4800)
-- `npm run typecheck` — must pass. `npm run build` — must pass.
-- `npm test` — unit tests (`server/*.test.ts`, `src/lib/*.test.ts`). They're ESM TypeScript with
+- pnpm, pinned by `packageManager` (package.json) and `mise.toml`: `pnpm install --frozen-lockfile`.
+  Settings live in `pnpm-workspace.yaml` (`.npmrc` is gitignored); only esbuild may run its
+  install script (`allowBuilds`).
+- `pnpm run dev:server` (port **4800**) and `pnpm run dev:web` (Vite, proxies /api + /ws to 4800)
+- `pnpm run typecheck` — must pass. `pnpm run build` — must pass.
+- `pnpm test` — unit tests (`server/*.test.ts`, `src/lib/*.test.ts`). They're ESM TypeScript with
   extensionless imports, so they run under `tsx --test`; plain `node --test <file>` fails with
   ERR_MODULE_NOT_FOUND.
 - `pi-config/install.sh` links `pi-config/` into `~/.pi/agent`, except `settings.json`: that is a seed
@@ -103,7 +106,7 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
 
 ## Dev-server restart pitfall (worker suicide)
 
-`npm run dev:server` is `tsx watch`: editing ANY file in the server's live import graph —
+`pnpm run dev:server` is `tsx watch`: editing ANY file in the server's live import graph —
 non-test `server/**` files, `shared/**`, and ANY non-test file under `pi-config/extensions/mode/`
 (`scripts/dev-server.mjs` watches that whole directory, not just the two files Sova imports) —
 restarts the server process within ~100ms. Workers spawned by a session hosted in that server
@@ -120,12 +123,12 @@ Rules:
 - While the watch server runs, delegate only `src/**`, test files (`server/*.test.ts`), and docs.
 - Apply server-graph edits from the orchestrator session itself, batched into as few write bursts
   as possible and as the LAST step of a turn — the restart may cut the turn, but the edits persist.
-- `npm run dev:server` runs `scripts/dev-server.mjs`: a gated watcher that holds restarts while
+- `pnpm run dev:server` runs `scripts/dev-server.mjs`: a gated watcher that holds restarts while
   any live record shows working subagents or in-flight turns (`r` key or SIGUSR2 forces).
   `dev:server:tsx` is the old plain watch. Hosted runtimes are never idle-disposed: they live
   until archived (the close gesture — running subagents die with it), a foreign-writer reload,
   or server shutdown.
-- Or run the server without watch (`npx tsx server/index.ts`) for the duration of server-side work.
+- Or run the server without watch (`pnpm exec tsx server/index.ts`) for the duration of server-side work.
 
 ## Product documentation
 

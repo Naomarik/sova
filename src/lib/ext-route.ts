@@ -1,24 +1,46 @@
 import type { SessionSummary } from "../../shared/protocol";
 
 // The extension route: `#/ext/<id>` shows the installed extension `<id>` in the main pane, its UI
-// iframed from `/ext/<id>/` (served and proxied by server/extensions.ts). The id is the manifest's,
-// [A-Za-z0-9._-]+, so it never needs encoding; anything else in the hash is not this route.
+// iframed from `/ext/<id>/` (served and proxied by server/extensions.ts), and `#/ext/<id>/<sub>`
+// the same with the extension's own route `#/<sub>` (its iframe's hash). The id is the
+// manifest's, [A-Za-z0-9._-]+, so it never needs encoding; anything else in the hash is not this
+// route.
 
 const ID_RE = /^[A-Za-z0-9._-]+$/;
+/** An extension's own route, after its `#/`: the characters ext-contract §3.7 allows in a hash. */
+const SUB_RE = /^[A-Za-z0-9._~:%/-]*$/;
+/** A whole extension hash as `sova:route` carries it. */
+const EXT_HASH_RE = /^#\/[A-Za-z0-9._~:%/-]*$/;
 
-/** `#/ext/<id>` (a trailing slash tolerated) → the id, else null. */
-export function extRouteFromHash(hash: string): string | null {
-  const m = /^#\/ext\/([^/]+)\/?$/.exec(hash);
-  if (!m) return null;
-  const id = m[1]!;
-  return ID_RE.test(id) && id !== "." && id !== ".." ? id : null;
+export interface ExtRoute {
+  id: string;
+  /** The extension's own route without its `#/` (`row/dataico:dataico-wt1`), or null for its home. */
+  sub: string | null;
 }
 
-/** The app link to an extension. */
-export const extHref = (id: string): string => `#/ext/${id}`;
+/**
+ * `#/ext/<id>` or `#/ext/<id>/<sub>` → the route, else null. A trailing slash is the home. A
+ * sub-route with characters an extension hash can't carry is dropped: the extension still opens,
+ * at its home.
+ */
+export function extRouteFromHash(hash: string): ExtRoute | null {
+  const m = /^#\/ext\/([^/]+)(?:\/(.*))?$/.exec(hash);
+  if (!m) return null;
+  const id = m[1]!;
+  if (!ID_RE.test(id) || id === "." || id === "..") return null;
+  const sub = m[2] ?? "";
+  return { id, sub: sub && SUB_RE.test(sub) ? sub : null };
+}
 
-/** Where the extension's UI is served; the trailing slash keeps its relative asset URLs inside it. */
-export const extFrameSrc = (id: string): string => `/ext/${id}/`;
+/** The app link to an extension, optionally at one of its own routes. */
+export const extHref = (id: string, sub?: string | null): string => `#/ext/${id}${sub ? `/${sub}` : ""}`;
+
+/** Where the extension's UI is served; the trailing slash keeps its relative asset URLs inside it.
+    A sub-route goes in the fragment, so the extension starts there. */
+export const extFrameSrc = (id: string, sub?: string | null): string => `/ext/${id}/${sub ? `#/${sub}` : ""}`;
+
+/** An extension hash (`#/row/x`) → the sub-route it names (`row/x`), null for its home (`#/`). */
+export const subFromExtHash = (hash: string): string | null => hash.slice(2) || null;
 
 /** What an extension posts to hand Sova a session to open (ext-contract §3.6). */
 export const OPEN_SESSION = "sova:open-session";
@@ -49,20 +71,46 @@ export function sessionSummaryProblem(s: unknown): string | null {
   return null;
 }
 
+/** Maximize and restore requests, and the extension's own navigation (ext-contract §3.7). */
+export const MAXIMIZE = "sova:maximize";
+export const RESTORE = "sova:restore";
+export const ROUTE = "sova:route";
+/** Sova's answer to MAXIMIZE and RESTORE, posted into the iframe once applied. */
+export const MAXIMIZED = "sova:maximized";
+
+export type ExtMessage =
+  | { kind: "open-session"; session: SessionSummary }
+  | { kind: "maximize" }
+  | { kind: "restore" }
+  | { kind: "route"; hash: string };
+
 /**
- * A `message` event → what to do with it. null: not an open-session request from the extension's
- * own iframe (another window, another origin, another message), ignored without a word. Otherwise
- * `{session}` to open, or `{error}` when the extension asked with an incomplete session (worth a
- * warning: that is a bug in the extension). A session must be a whole SessionSummary, as
- * `POST /api/sessions` returns it.
+ * A `message` event → what the extension asks for. null: not a Sova message from the extension's
+ * own iframe (another window, another origin, a type we don't know), ignored without a word.
+ * `{error}`: a Sova message the extension got wrong (an incomplete session, a bad hash), worth a
+ * warning because it is a bug in the extension. Never throws.
  */
-export function parseOpenSession(
+export function parseExtMessage(
   event: { origin: string; source: unknown; data: unknown },
   expected: { origin: string; frame: unknown },
-): { session: SessionSummary } | { error: string } | null {
+): ExtMessage | { error: string } | null {
   if (event.origin !== expected.origin || !expected.frame || event.source !== expected.frame) return null;
-  const data = event.data as { type?: unknown; session?: unknown } | null;
-  if (!data || typeof data !== "object" || data.type !== OPEN_SESSION) return null;
-  const problem = sessionSummaryProblem(data.session);
-  return problem ? { error: problem } : { session: data.session as SessionSummary };
+  const data = event.data as { type?: unknown; session?: unknown; hash?: unknown } | null;
+  if (!data || typeof data !== "object") return null;
+  switch (data.type) {
+    case OPEN_SESSION: {
+      const problem = sessionSummaryProblem(data.session);
+      return problem ? { error: `${OPEN_SESSION}: ${problem}` } : { kind: "open-session", session: data.session as SessionSummary };
+    }
+    case MAXIMIZE:
+      return { kind: "maximize" };
+    case RESTORE:
+      return { kind: "restore" };
+    case ROUTE:
+      return typeof data.hash === "string" && EXT_HASH_RE.test(data.hash)
+        ? { kind: "route", hash: data.hash }
+        : { error: `${ROUTE}: hash must match #/[A-Za-z0-9._~:%/-]*` };
+    default:
+      return null;
+  }
 }

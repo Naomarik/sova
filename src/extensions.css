@@ -57,3 +57,17 @@
   display: block;
   background: var(--color-bg);
 }
+
+/* Maximized (ext-contract §3.7): the extension asked for the whole window. The iframe covers the
+   viewport above the app's own chrome (resizer 5, subagents pane 10) and below Sova's dialogs and
+   toasts (50+), so those still show. The sidebar and this page's head leave the layout and the tab
+   order; .app is the root that carries the attribute, and outranks base.css's column rules. */
+.app[data-ext-maximized="1"] .app-sidebar,
+.app[data-ext-maximized="1"] .ext-head { display: none; }
+.ext-frame.ext-frame-max {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 40;
+}

@@ -149,6 +149,14 @@ new MutationObserver(copy).observe(parent.document.documentElement,
   { attributes: true, attributeFilter: ["style", "data-theme", "class"] });
 ```
 
+The extension's own route (its page's hash) can be part of Sova's URL. Post
+`{ type: "sova:route", hash: location.hash || "#/" }` to the parent whenever it changes, and Sova
+shows `#/ext/<id>/<route>`. A link like that opens the extension at `/ext/<id>/#/<route>`. To use
+the whole browser window, post `{ type: "sova:maximize" }`, and `{ type: "sova:restore" }` to leave.
+Sova hides its sidebar and the page head, then answers `{ type: "sova:maximized", on }`. It binds no
+key, so the extension provides its own way out. Sova also restores the page when the user
+navigates. The iframe may use `requestFullscreen`.
+
 The classes an extension can rely on from `base.css` are `.button`, `.card`, `.cluster`,
 `.text-num`, `.icon`, and `.chip` with `.chip-dot` and `.chip-success`, `-warn`, `-error` or
 `-info`. Style anything else, tables included, yourself.

@@ -1,6 +1,6 @@
-import { For, onCleanup, Show } from "solid-js";
+import { createSignal, For, onCleanup, Show, untrack } from "solid-js";
 import type { ExtensionInfo, SessionSummary } from "../../shared/protocol";
-import { extFrameSrc, extHref, parseOpenSession } from "../lib/ext-route";
+import { extFrameSrc, extHref, extRouteFromHash, MAXIMIZED, parseExtMessage, subFromExtHash } from "../lib/ext-route";
 import { Chip, Icon } from "./ui";
 import "../extensions.css";
 
@@ -64,12 +64,19 @@ export function ExtensionCards(props: { extensions: ExtensionInfo[] }) {
 }
 
 /**
- * `#/ext/<id>`: the extension's own UI, iframed same-origin from /ext/<id>/ under a page head.
- * Not sandboxed: the extension mirrors Sova's theme from this document and calls Sova's API, both
- * of which need the same origin (the manifest is the user's explicit install).
+ * `#/ext/<id>[/<sub>]`: the extension's own UI, iframed same-origin from /ext/<id>/ under a page
+ * head. Not sandboxed: the extension mirrors Sova's theme from this document and calls Sova's API,
+ * both of which need the same origin (the manifest is the user's explicit install).
+ *
+ * The iframe talks to the page by postMessage (ext-contract §3.6, §3.7): it hands over sessions to
+ * open, asks to be maximized (the head and the sidebar go, the iframe fills the viewport) and
+ * restored, and reports its own navigation, which the page mirrors into its URL. The iframe is
+ * loaded once per mount and never reloaded by any of that.
  */
 export function ExtensionView(props: {
   id: string;
+  /** The sub-route the page was opened at; read once, for the iframe's first URL. */
+  sub: string | null;
   /** Its manifest entry; undefined while the list loads, or when nothing by this id is installed. */
   info: ExtensionInfo | undefined;
   /** The list has loaded at least once, so a missing `info` means not installed. */
@@ -77,23 +84,80 @@ export function ExtensionView(props: {
   titleRef(el: HTMLHeadingElement): void;
   /** Open a session the extension created, the way New Session opens its own (ext-contract §3.6). */
   onOpenSession(session: SessionSummary): void;
+  /** The extension moved to its own route `sub` (null: its home): mirror it into the page URL. */
+  onRoute(sub: string | null): void;
+  /** Maximized or not, for the app root's `data-ext-maximized`. */
+  onMaximized(on: boolean): void;
 }) {
   let frame: HTMLIFrameElement | undefined;
-  // The extension hands over a session it created by postMessage: a fresh session has no
-  // messages, so it isn't in the list yet, and a plain `#/s/<path>` would find nothing.
+  const firstSrc = untrack(() => extFrameSrc(props.id, props.sub));
+  /** Where the extension is now, as far as it has told us: for Open in New Tab and a reload. */
+  const [sub, setSub] = createSignal(untrack(() => props.sub));
+  const [maximized, setMaximized] = createSignal(false);
+
+  /** Apply maximize/restore and always answer, so an extension waiting on the reply never times out. */
+  const setMax = (on: boolean) => {
+    if (maximized() !== on) {
+      setMaximized(on);
+      props.onMaximized(on);
+    }
+    frame?.contentWindow?.postMessage({ type: MAXIMIZED, on }, location.origin);
+  };
+  const restore = () => setMax(false);
+
   const onMessage = (event: MessageEvent) => {
-    const r = parseOpenSession(event, { origin: location.origin, frame: frame?.contentWindow });
+    const r = parseExtMessage(event, { origin: location.origin, frame: frame?.contentWindow });
     if (!r) return;
-    if ("session" in r) props.onOpenSession(r.session);
-    else warnOnce(`[ext ${props.id}] ignored sova:open-session: ${r.error} (send the SessionSummary POST /api/sessions returned)`);
+    if ("error" in r) {
+      warnOnce(`[ext ${props.id}] ignored ${r.error}`);
+      return;
+    }
+    switch (r.kind) {
+      // A fresh session has no messages, so it isn't in the list yet, and a plain `#/s/<path>`
+      // would find nothing: the extension hands the session over instead.
+      case "open-session":
+        return props.onOpenSession(r.session);
+      case "maximize":
+        return setMax(true);
+      case "restore":
+        return restore();
+      case "route": {
+        const next = subFromExtHash(r.hash);
+        setSub(next);
+        return props.onRoute(next);
+      }
+    }
+  };
+  // Any navigation of the page restores (the host binds no key, so Esc stays the extension's).
+  // Mirroring the extension's own route uses replaceState, which fires no hashchange. A new
+  // sub-route of this extension (a pasted link, Back) is passed into the iframe by its hash, which
+  // navigates the extension without reloading it.
+  const onHashChange = () => {
+    restore();
+    const r = extRouteFromHash(location.hash);
+    if (r?.id !== props.id) return;
+    setSub(r.sub);
+    const want = r.sub ? `#/${r.sub}` : "#/";
+    try {
+      const w = frame?.contentWindow;
+      if (w && (w.location.hash || "#/") !== want) w.location.hash = want;
+    } catch {
+      // not ours to read (it navigated away from Sova's origin): leave it alone
+    }
   };
   window.addEventListener("message", onMessage);
-  onCleanup(() => window.removeEventListener("message", onMessage));
+  window.addEventListener("hashchange", onHashChange);
+  onCleanup(() => {
+    window.removeEventListener("message", onMessage);
+    window.removeEventListener("hashchange", onHashChange);
+    if (maximized()) props.onMaximized(false);
+  });
   const reload = () => {
+    restore();
     try {
       frame?.contentWindow?.location.reload();
     } catch {
-      if (frame) frame.src = extFrameSrc(props.id);
+      if (frame) frame.src = extFrameSrc(props.id, sub());
     }
   };
   return (
@@ -111,7 +175,7 @@ export function ExtensionView(props: {
         </div>
       }
     >
-      <header class="session-head">
+      <header class="session-head ext-head">
         <a class="button button-icon button-ghost app-back" href="#/" aria-label="Back to Sessions">
           <Icon name="chevron-left" />
         </a>
@@ -135,7 +199,7 @@ export function ExtensionView(props: {
         </button>
         <a
           class="button button-icon button-ghost"
-          href={extFrameSrc(props.id)}
+          href={extFrameSrc(props.id, sub())}
           target="_blank"
           rel="noopener"
           aria-label="Open in New Tab"
@@ -144,7 +208,15 @@ export function ExtensionView(props: {
           <Icon name="external" />
         </a>
       </header>
-      <iframe class="ext-frame" ref={frame} src={extFrameSrc(props.id)} title={props.info?.title ?? props.id} />
+      <iframe
+        class="ext-frame"
+        classList={{ "ext-frame-max": maximized() }}
+        ref={frame}
+        src={firstSrc}
+        title={props.info?.title ?? props.id}
+        allow="fullscreen"
+        allowfullscreen
+      />
     </Show>
   );
 }

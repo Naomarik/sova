@@ -1,25 +1,45 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import type { SessionSummary } from "../../shared/protocol";
-import { extFrameSrc, extHref, extRouteFromHash, OPEN_SESSION, parseOpenSession } from "./ext-route";
+import { extFrameSrc, extHref, extRouteFromHash, MAXIMIZE, OPEN_SESSION, parseExtMessage, RESTORE, ROUTE, subFromExtHash } from "./ext-route";
 
-test("extRouteFromHash reads #/ext/<id>, with or without a trailing slash", () => {
-  assert.equal(extRouteFromHash("#/ext/dataico"), "dataico");
-  assert.equal(extRouteFromHash("#/ext/my.ext_2-b/"), "my.ext_2-b");
+test("extRouteFromHash reads #/ext/<id>, with or without a trailing slash, as the extension's home", () => {
+  assert.deepEqual(extRouteFromHash("#/ext/dataico"), { id: "dataico", sub: null });
+  assert.deepEqual(extRouteFromHash("#/ext/my.ext_2-b/"), { id: "my.ext_2-b", sub: null });
 });
 
-test("extRouteFromHash refuses other routes, deeper paths and ids the manifest can't hold", () => {
-  for (const hash of ["", "#/", "#/ext", "#/ext/", "#/ext/a/b", "#/s/%2Ftmp%2Fx.jsonl", "#/g/ext", "#/extra/a",
-    "#/ext/..", "#/ext/.", "#/ext/a%2Fb", "#/ext/a b", "#ext/a"]) {
+test("extRouteFromHash reads a sub-route after the id", () => {
+  assert.deepEqual(extRouteFromHash("#/ext/dataico/row/dataico:dataico-wt1"), { id: "dataico", sub: "row/dataico:dataico-wt1" });
+  assert.deepEqual(extRouteFromHash("#/ext/a/row/dataico%3Awt1/"), { id: "a", sub: "row/dataico%3Awt1/" });
+});
+
+test("a sub-route an extension hash can't carry is dropped, and the extension opens at home", () => {
+  for (const hash of ["#/ext/a/b c", "#/ext/a/x?y=1", "#/ext/a/x#y", "#/ext/a/<script>"]) {
+    assert.deepEqual(extRouteFromHash(hash), { id: "a", sub: null }, hash);
+  }
+});
+
+test("extRouteFromHash refuses other routes and ids the manifest can't hold", () => {
+  for (const hash of ["", "#/", "#/ext", "#/ext/", "#/s/%2Ftmp%2Fx.jsonl", "#/g/ext", "#/extra/a",
+    "#/ext/..", "#/ext/.", "#/ext/../x", "#/ext/a%2Fb", "#/ext/a b", "#ext/a"]) {
     assert.equal(extRouteFromHash(hash), null, hash);
   }
 });
 
-test("extHref and extFrameSrc round-trip through the route", () => {
+test("extHref and extFrameSrc carry the sub-route, and round-trip through the route", () => {
   for (const id of ["dataico", "a.b", "x_y-z"]) {
-    assert.equal(extRouteFromHash(extHref(id)), id);
+    assert.deepEqual(extRouteFromHash(extHref(id)), { id, sub: null });
     assert.equal(extFrameSrc(id), `/ext/${id}/`);
+    assert.equal(extFrameSrc(id, null), `/ext/${id}/`);
   }
+  assert.equal(extHref("dataico", "row/dataico:wt1"), "#/ext/dataico/row/dataico:wt1");
+  assert.deepEqual(extRouteFromHash(extHref("dataico", "row/dataico:wt1")), { id: "dataico", sub: "row/dataico:wt1" });
+  assert.equal(extFrameSrc("dataico", "row/dataico:wt1"), "/ext/dataico/#/row/dataico:wt1");
+});
+
+test("subFromExtHash: an extension hash to its sub-route, #/ to the home", () => {
+  assert.equal(subFromExtHash("#/row/dataico:wt1"), "row/dataico:wt1");
+  assert.equal(subFromExtHash("#/"), null);
 });
 
 // A summary exactly as POST /api/sessions returned it (captured from the test server, 201), so
@@ -38,19 +58,19 @@ const real: SessionSummary = {
   busy: false,
 };
 
-describe("parseOpenSession", () => {
+describe("parseExtMessage", () => {
   const frame = { name: "the extension's window" };
   const other = { name: "some other window" };
   const origin = "http://127.0.0.1:4830";
   const ok: { origin: string; source: unknown; data: unknown } = { origin, source: frame, data: { type: OPEN_SESSION, session: real } };
   const parse = (patch: Partial<typeof ok>, expected: { origin: string; frame: unknown } = { origin, frame }) =>
-    parseOpenSession({ ...ok, ...patch }, expected);
+    parseExtMessage({ ...ok, ...patch }, expected);
   const withSession = (session: unknown) => parse({ data: { type: OPEN_SESSION, session } });
 
   test("a real POST /api/sessions summary from the extension's own frame and this origin opens", () => {
-    assert.deepEqual(parse({}), { session: real });
+    assert.deepEqual(parse({}), { kind: "open-session", session: real });
     const remote = { ...real, target: "box-1", remoteCwd: "/srv/app", live: { pid: 7, status: "idle" }, model: "zai/glm-5.3" };
-    assert.deepEqual(withSession(remote), { session: remote });
+    assert.deepEqual(withSession(remote), { kind: "open-session", session: remote });
   });
 
   test("another origin or another window is ignored silently", () => {
@@ -61,7 +81,7 @@ describe("parseOpenSession", () => {
   });
 
   test("another message type, or no data, is ignored silently", () => {
-    for (const data of [null, "sova:open-session", { type: "sova:open", session: real }, { session: real }, [OPEN_SESSION]]) {
+    for (const data of [null, "sova:open-session", { type: "sova:open", session: real }, { session: real }, [OPEN_SESSION], { type: "sova:maximized", on: true }]) {
       assert.equal(parse({ data }), null, JSON.stringify(data));
     }
   });
@@ -90,6 +110,28 @@ describe("parseOpenSession", () => {
       const r = withSession(s);
       assert.ok(r && "error" in r, JSON.stringify(s));
     }
-    assert.deepEqual(withSession(stub), { error: "title must be a string" });
+    assert.deepEqual(withSession(stub), { error: "sova:open-session: title must be a string" });
+  });
+
+  test("maximize, restore and route are accepted from the extension's own frame and this origin", () => {
+    assert.deepEqual(parse({ data: { type: MAXIMIZE } }), { kind: "maximize" });
+    assert.deepEqual(parse({ data: { type: RESTORE } }), { kind: "restore" });
+    assert.deepEqual(parse({ data: { type: ROUTE, hash: "#/row/dataico:dataico-wt1" } }), { kind: "route", hash: "#/row/dataico:dataico-wt1" });
+    assert.deepEqual(parse({ data: { type: ROUTE, hash: "#/" } }), { kind: "route", hash: "#/" });
+  });
+
+  test("maximize, restore and route from another origin or window are ignored", () => {
+    for (const data of [{ type: MAXIMIZE }, { type: RESTORE }, { type: ROUTE, hash: "#/row/x" }]) {
+      assert.equal(parse({ data, origin: "http://evil.test" }), null, JSON.stringify(data));
+      assert.equal(parse({ data, source: other }), null, JSON.stringify(data));
+      assert.equal(parse({ data }, { origin, frame: null }), null, JSON.stringify(data));
+    }
+  });
+
+  test("a route with a hash outside #/[A-Za-z0-9._~:%/-]* is refused with the reason", () => {
+    for (const hash of [undefined, 3, "", "#", "row/x", "/row/x", "#row", "#/a b", "#/x?y", "#/x#y", "#/<b>", "javascript:alert(1)"]) {
+      const r = parse({ data: { type: ROUTE, hash } });
+      assert.ok(r && "error" in r, JSON.stringify(hash));
+    }
   });
 });

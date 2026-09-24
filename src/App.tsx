@@ -6,7 +6,7 @@ import { createSession, fetchAgents, fetchExplanations, fetchExtensions, fetchUs
 import { agentsHref, insightsRouteFromHash, legacyInsightsTarget } from "./lib/insights";
 import { transcriptRoot } from "./lib/jump";
 import { groupRouteFromHash } from "./lib/group-route";
-import { extRouteFromHash } from "./lib/ext-route";
+import { extHref, extRouteFromHash } from "./lib/ext-route";
 import { loadSessionGroups, sessionGroups, sessionGroupsLoaded } from "./lib/session-groups";
 import { createThenArchive, dropArchived, newSessionCwd } from "./lib/new-session";
 import { cwdLabel } from "./lib/remote-session";
@@ -171,6 +171,11 @@ export function App() {
   const [groupRoute, setGroupRoute] = createSignal(groupRouteFromHash(location.hash));
   const [insightsRoute, setInsightsRoute] = createSignal(insightsRouteFromHash(location.hash));
   const [extRoute, setExtRoute] = createSignal(extRouteFromHash(location.hash));
+  /** The extension on screen: the view is keyed by this, so a sub-route change never remounts it
+      (which would reload the extension's iframe). */
+  const extId = createMemo(() => extRoute()?.id ?? null);
+  /** The extension asked to fill the window (ext-contract §3.7); ExtensionView owns it. */
+  const [extMaximized, setExtMaximized] = createSignal(false);
   /** Team card to scroll to on `#/agents/<teamId>`. */
   const focusTeam = () => {
     const r = insightsRoute();
@@ -345,7 +350,7 @@ export function App() {
   createEffect(on(route, (p) => p && folded() && queueMicrotask(() => titleEl?.focus()), { defer: true }));
   let insightsTitleEl: HTMLHeadingElement | undefined;
   let extTitleEl: HTMLHeadingElement | undefined;
-  createEffect(on(extRoute, (id) => id && folded() && queueMicrotask(() => extTitleEl?.focus()), { defer: true }));
+  createEffect(on(extId, (id) => id && folded() && queueMicrotask(() => extTitleEl?.focus()), { defer: true }));
   // A team deep link focuses its card instead (AgentsView), at every width.
   createEffect(
     on(() => insightsRoute()?.page, (page) => page && !focusTeam() && folded() && queueMicrotask(() => insightsTitleEl?.focus()), { defer: true }),
@@ -586,6 +591,7 @@ export function App() {
         class="app"
         data-spine={collapsed() ? "on" : undefined}
         data-view={groupRoute() ? "workspace" : route() || insightsRoute() || extRoute() ? "session" : "list"}
+        data-ext-maximized={extMaximized() ? "1" : undefined}
       >
         <Sidebar
           unfolded={unfolded()}
@@ -684,14 +690,23 @@ export function App() {
                 </div>
               </Match>
               {/* An installed extension's own UI (#/ext/<id>). */}
-              <Match when={extRoute()} keyed>
+              <Match when={extId()} keyed>
                 {(id) => (
                   <ExtensionView
                     id={id}
+                    sub={extRoute()?.sub ?? null}
                     info={extensions.data()?.find((e) => e.id === id)}
                     loaded={!extensions.pending()}
                     titleRef={(el) => (extTitleEl = el)}
                     onOpenSession={adoptCreated}
+                    onRoute={(sub) => {
+                      // The extension navigated inside itself: the page URL follows, so a reload or
+                      // a copied link comes back to the same place. replaceState: no history entry,
+                      // no hashchange, no reload.
+                      history.replaceState(history.state, "", extHref(id, sub));
+                      setExtRoute({ id, sub });
+                    }}
+                    onMaximized={setExtMaximized}
                   />
                 )}
               </Match>

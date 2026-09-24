@@ -130,7 +130,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 |---|---|
 | Trigger | `aria-label` / `title`: More Actions |
 | Menu panel `aria-label` | More actions |
-| Menu panel rows | Attach images · Commands · Playbooks · Hide tool calls · Hide thinking · Session info · Fan Out… · Undo last turn (in this order, each only where it applies: Playbooks in chat sessions, §4i; Session info in chat sessions; Fan Out… per §14b; Undo last turn per §13) |
+| Menu panel rows | Attach images · Commands · Playbooks · Hide tool calls · Hide thinking · Sandbox · Session info · Fan Out… · Undo last turn (in this order, each only where it applies: Playbooks in chat sessions, §4i; Sandbox where the runtime has a `sandbox` command, §chat/sandbox; Session info in chat sessions; Fan Out… per §14b; Undo last turn per §13) |
 | Model panel `aria-label` | Model and thinking |
 | Model panel rows | Model · the Thinking group |
 | Model row | {id} · {provider} (`title`: {provider/id}) · no model: Choose model |
@@ -144,6 +144,30 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Thinking error: timeout | The server didn't confirm the change. You're still on `{level}`. |
 | Thinking error: other | {server message}. You're still on `{level}`. |
 | Thinking error action | Dismiss |
+
+## §design.copy-deck/sandbox — Sandbox (§chat/sandbox)
+
+| Where | Copy |
+|---|---|
+| Flyout row | Sandbox (checked while on) |
+| Flyout row `title`, off | Confine this session's tools, from the next tool call. |
+| Flyout row `title`, on | {status}. Turning it off applies from the next tool call. |
+| Composer shield word | (full: none) · Partial · Unavailable · Not enforced |
+| Composer shield `title` / accessible name | {status}: the extension's status line (below, TUI `/sandbox`) |
+| Toast and announcement on a flip | {status} (the extension's own line) |
+| Flip refused: another writer | Sandbox unchanged: another writer has this session. Nothing was written. |
+| Flip refused: other | Sandbox unchanged: {server error} |
+| Flip refused: server errors ({server error}) | Invalid or missing ?path= (must be a .jsonl under the pi sessions dir) · Expected JSON body { on: boolean } · That session isn't open on this server; open the chat first |
+| Unavailable refusal (tool error) | Sandbox unavailable: {reason}. Nothing ran. Turn the sandbox off to run tools unconfined. |
+| Denial note (end of a tool result) | [sandbox: a write or connection outside the policy was refused] |
+| Hidden results omitted (end of find/grep output) | [sandbox: {n} result line(s) under hidden paths were omitted] |
+| Worker `/sandbox off` refused | Sandbox: this session was started with --sandbox on (a worker inherits it from its parent); it cannot be turned off here |
+| Proxy refusal (403 body) | sova sandbox: {host} is not in the sandbox proxy allowlist |
+| Proxy refusal, port (403 body) | sova sandbox: port {port} is not in the sandbox proxy allowlist |
+| Proxy refusal, local address (403 body) | sova sandbox: {host} resolves to {address}, a local address, which is not in the sandbox proxy allowlist |
+| Per-project loosening ignored | Sandbox: `.sova/sandbox.json` can only tighten; ignored `{key}`. |
+| TUI `/sandbox` (describeActive) | Sandbox off · Sandbox on · {level} · full enforcement · Sandbox on · {level} · partial enforcement ({reasons}) · Sandbox on · {level} · unavailable: {reasons} (tools refuse) · not enforced (a remote session): Sandbox on · {reasons}, e.g. Sandbox on · not enforced on remote; with no reasons, Sandbox on · not enforced |
+| TUI transcript marker (terminal only; Sova's transcript shows none) | Sandbox → on · {level} · {enforcement} enforcement (not full adds: · {reasons}) · not enforced: Sandbox → on · {reasons} (no reasons: not enforced) · Sandbox → off |
 
 ## §design.copy-deck/playbooks — Playbooks (§4i)
 

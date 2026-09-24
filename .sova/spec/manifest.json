@@ -302,8 +302,14 @@
       "authority": "accepted",
       "evidence": "verified",
       "code": [
+        "server/chat-manager.ts",
+        "server/index.ts",
+        "server/sandbox-state.ts",
+        "shared/protocol.ts",
+        "src/components/ChatView.tsx",
         "src/components/ComposerMenu.tsx",
-        "src/components/ChatView.tsx"
+        "src/lib/api.ts",
+        "src/lib/sandbox.ts"
       ]
     },
     "§chat.composer/disabled-states": {
@@ -719,7 +725,10 @@
     "§design.copy-deck/composer-flyout": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "verified"
+      "evidence": "verified",
+      "code": [
+        "src/components/ComposerMenu.tsx"
+      ]
     },
     "§design.copy-deck/connection": {
       "kind": "note",
@@ -1298,6 +1307,43 @@
         "pi-config/extensions/sandbox/policy.ts",
         "pi-config/extensions/sandbox/backend.ts",
         "pi-config/extensions/sandbox/README.md"
+      ]
+    },
+    "§chat.composer/sandbox-shield": {
+      "kind": "behavior",
+      "requires": [
+        "§chat/sandbox"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "public/icons/shield.svg",
+        "server/chat-manager.ts",
+        "server/sandbox-state.ts",
+        "shared/protocol.ts",
+        "src/components/ChatView.tsx",
+        "src/components/Composer.tsx",
+        "src/components/ui.tsx",
+        "src/design/base.css",
+        "src/lib/sandbox.ts"
+      ]
+    },
+    "§design.copy-deck/sandbox": {
+      "kind": "behavior",
+      "requires": [
+        "§chat/sandbox"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/sandbox/backend.ts",
+        "pi-config/extensions/sandbox/index.ts",
+        "pi-config/extensions/sandbox/policy.ts",
+        "pi-config/extensions/sandbox/proxy.ts",
+        "pi-config/extensions/sandbox/state.ts",
+        "pi-config/extensions/sandbox/tools.ts",
+        "src/components/ChatView.tsx",
+        "src/lib/sandbox.ts"
       ]
     }
   }

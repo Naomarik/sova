@@ -4,6 +4,14 @@ import { extFrameSrc, extHref, parseOpenSession } from "../lib/ext-route";
 import { Chip, Icon } from "./ui";
 import "../extensions.css";
 
+const warned = new Set<string>();
+/** An extension that keeps posting the same bad request warns once, not per message. */
+function warnOnce(message: string): void {
+  if (warned.has(message)) return;
+  warned.add(message);
+  console.warn(message);
+}
+
 /** The manifest's icon name, as a mask like <Icon>; a card with none gets the generic one. */
 function ExtIcon(props: { name?: string }) {
   return <span class="icon ext-card-icon" style={{ "--icon": `url(/icons/${props.name ?? "sliders"}.svg)` }} aria-hidden="true" />;
@@ -74,8 +82,10 @@ export function ExtensionView(props: {
   // The extension hands over a session it created by postMessage: a fresh session has no
   // messages, so it isn't in the list yet, and a plain `#/s/<path>` would find nothing.
   const onMessage = (event: MessageEvent) => {
-    const session = parseOpenSession(event, { origin: location.origin, frame: frame?.contentWindow });
-    if (session) props.onOpenSession(session);
+    const r = parseOpenSession(event, { origin: location.origin, frame: frame?.contentWindow });
+    if (!r) return;
+    if ("session" in r) props.onOpenSession(r.session);
+    else warnOnce(`[ext ${props.id}] ignored sova:open-session: ${r.error} (send the SessionSummary POST /api/sessions returned)`);
   };
   window.addEventListener("message", onMessage);
   onCleanup(() => window.removeEventListener("message", onMessage));

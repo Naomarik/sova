@@ -128,9 +128,10 @@ const session = await res.json(); // 201: a SessionSummary
 window.parent.postMessage({ type: "sova:open-session", session }, location.origin);
 ```
 
-Sova accepts the message only from its own origin and from the extension's own frame, and only
-with a session whose `path` is an absolute `.jsonl` file and which has a `cwd`. It then opens the
-session the way New Session does, with the composer focused. A session that is already in the list
+Sova accepts the message only from its own origin and from the extension's own frame. `session`
+must be the whole `SessionSummary` that `POST /api/sessions` returned, not just its path. An
+incomplete one is ignored, and the browser console logs why. Sova opens an accepted session the
+way New Session does, with the composer focused. A session that is already in the list
 can still be opened with `window.parent.location.hash = "#/s/" + encodeURIComponent(path)`.
 
 To match Sova's look, link `/design/tokens.css` and `/design/base.css`. To follow the theme the

@@ -234,7 +234,7 @@ function parseWorker(value: unknown): WorkerEntry | undefined {
     endedAt: num(value.endedAt) ? value.endedAt : undefined,
     outcome: oneOf(value.outcome, WORKER_OUTCOMES),
     usage: parseUsage(value.usage),
-    restored: value.restored === true ? true : undefined,
+    restored: value.restored === true ? (true as const) : undefined,
     usageSource: oneOf(value.usageSource, WORKER_USAGE_SOURCES),
     usageAsOf: num(value.usageAsOf) ? value.usageAsOf : undefined,
     interruptedAt: num(value.interruptedAt) ? value.interruptedAt : undefined,

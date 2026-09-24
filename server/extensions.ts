@@ -10,7 +10,7 @@ import { WebSocket, WebSocketServer } from "ws";
 import type { ExtensionInfo } from "../shared/protocol";
 import { stateRoot } from "./state-root";
 
-// The generic extension host (ext-contract-v1.1). An extension is a static UI (`dist`) plus a
+// The generic extension host (ext-contract-v1.2). An extension is a static UI (`dist`) plus a
 // loopback HTTP backend (`api`), both named in a manifest the user installs; Sova never writes it.
 // Sova serves the UI at /ext/<id>/, proxies /ext/<id>/api/* and /ext/<id>/ws/* to the backend,
 // and lists the extensions (with a cached health probe) at GET /api/extensions. Sova knows

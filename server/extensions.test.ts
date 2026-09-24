@@ -334,7 +334,14 @@ describe("/design", () => {
       assert.equal(res.headers.get("cache-control"), "no-cache");
       assert.ok((await res.text()).length > 100);
     }
-    assert.equal((await app.request("/design/align-viewer.css")).status, 404);
-    assert.equal((await app.request("/design/../package.json")).status, 404);
+    // Paths that stay under /design after URL normalization (a literal "/design/../x" would be
+    // resolved to "/x" before routing and never reach these handlers). None may fall through to
+    // the SPA shell, which answers 200 whenever dist/ exists.
+    for (const p of ["/design/align-viewer.css", "/design/package.json", "/design/..%2fpackage.json", "/design/"]) {
+      assert.equal(new URL(p, "http://x").pathname.startsWith("/design/"), true, `${p} must reach /design`);
+      const res = await app.request(p);
+      assert.equal(res.status, 404, p);
+      assert.doesNotMatch(await res.text(), /"name"|<!doctype/i, p);
+    }
   });
 });

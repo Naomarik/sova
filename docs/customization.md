@@ -106,7 +106,8 @@ another file). Sova reads the file on every request and never writes it:
 - `api`: the backend, `http://` or `https://` on `127.0.0.1` or `localhost` with an explicit port and an optional
   path prefix, without a trailing slash. `/ext/<id>/api/*` is proxied to `<api>/api/*` and
   `/ext/<id>/ws/*` (WebSockets) to `<api>/ws/*`. A backend that can't be reached answers
-  `502 {"error":"extension down","id":"<id>"}`.
+  `502 {"error":"extension down","id":"<id>"}`. A streamed response must send something at
+  least every 60 seconds, or the connection may be cut.
 
 An entry with a bad `id`, a relative `dist` or an `api` that isn't loopback is skipped, and the
 server logs why. The card shows `Running` when `GET <api>/api/health` answers 2xx within 1.5 s

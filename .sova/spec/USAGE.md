@@ -45,8 +45,8 @@ node pi-config/extensions/spec/core/sova-spec.mjs check --spec .sova/spec/drafts
 Exit `0` means the declared closure was delivered, never that it is complete. Exit `1` means
 something relevant is unknown, stale or unread. Exit `2` means the input can't be trusted.
 
-**Current state, 2026-09-23:** `check` exits 1 with 112 `requires-uninvestigated` warnings. Only
-8 records declare `requires`, 21 edges in all, each quoted from the migrated prose. `impact` can't
+**Current state, 2026-09-24:** `check` exits 1 with 117 `requires-uninvestigated` warnings. Only
+10 records declare `requires`, 25 edges in all, each quoted from the migrated prose. `impact` can't
 rule out the other behaviors, and it lists them as unknown.
 
 Old paths and `§N` citations, such as "spec §14 Decisions", resolve through

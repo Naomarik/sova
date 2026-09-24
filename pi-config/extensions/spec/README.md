@@ -22,6 +22,7 @@ runs the tools itself.
 | `core/README.md` | The core's reference: commands, exit codes, the manifest format it reads, evidence states |
 | `core/sova-spec-draft.mjs` | Drafts: full-copy proposals of `.sova/spec`, their evidence, and guarded promotion into the current docs |
 | `DRAFTS.md` | The draft workflow's reference |
+| `PROMOTE.md` | What promotion needs that the draft tool can't check; the spec mode points at it before a commit |
 | `core/sova-spec-review.mjs` | The review companion: `prepare`, `record`, `status`. It keeps the exact bytes a review compared |
 | `tests/*.test.mjs` | Black-box fixture tests that spawn the CLIs against temporary projects |
 

@@ -157,6 +157,19 @@ Sova hides its sidebar and the page head, then answers `{ type: "sova:maximized"
 key, so the extension provides its own way out. Sova also restores the page when the user
 navigates. The iframe may use `requestFullscreen`.
 
-The classes an extension can rely on from `base.css` are `.button`, `.card`, `.cluster`,
-`.text-num`, `.icon`, and `.chip` with `.chip-dot` and `.chip-success`, `-warn`, `-error` or
-`-info`. Style anything else, tables included, yourself.
+The classes an extension can rely on from `base.css`:
+
+- buttons: `.button`, with `.button-sm`, `.button-icon`, `.button-ghost`, `.button-primary` or
+  `.button-destructive`;
+- `.card`, `.cluster`, `.text-num`;
+- icons: `.icon` and `.icon-sm`;
+- status chips: `.chip` with `.chip-dot` and `.chip-success`, `-warn`, `-error` or `-info`;
+- banners: `.banner` with `.banner-icon`, `-main`, `-title`, `-body` and `-action`, and
+  `.banner-info`, `-success`, `-warn` or `-error`;
+- toasts: `.toast-stack`, `.toast`, `.toast-body`, `.toast-timer`;
+- tabs: `.tabs`, `.tab`, `.tab-active`;
+- skeletons: `.skeleton` with `.skeleton-line`, `-row` or `-title`;
+- empty states: `.empty` with `.empty-mark`, `-title`, `-body` and `-action`;
+- `.visually-hidden`.
+
+Style anything else, tables included, yourself.

@@ -1,7 +1,7 @@
 // The extension factory driven by a fake ExtensionAPI: registration (F3), the state event, and
 // the worker scope (--sandbox-parent, workerFlags, checkWorker). Real policy, real backend.
 import assert from "node:assert/strict";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { registerHooks } from "node:module";
 import { dirname, join } from "node:path";
 import test from "node:test";
@@ -154,4 +154,35 @@ test("a malformed --sandbox-parent fails closed", async () => {
 	assert.match(s.last().checkWorker!({ cwd: a, backend: "pi" })!, /Sandbox unavailable in the parent/);
 	assert.ok(s.last().claudeRefusal);
 	await s.stop();
+});
+
+test("partial enforcement: checkWorker refuses every backend unless acceptPartial, with the claudeRefusal text", { skip: !linux }, async () => {
+	const { LinuxBwrapBackend } = await import("../backends/linux-bwrap.ts");
+	const real = LinuxBwrapBackend.prototype.probe;
+	LinuxBwrapBackend.prototype.probe = async () => ({ ok: true, enforcement: "partial", reasons: ["test: stubbed partial"], network: "none" });
+	const policyFile = join(agentDir, "sandbox-policy", "linux", "policy.json");
+	const original = readFileSync(policyFile, "utf8");
+	try {
+		const { a } = dirs();
+		const s = await start(a, { sandbox: "on" });
+		const e = s.last();
+		assert.equal(e.enforcement, "partial");
+		const text = "Sandbox enforcement is partial (test: stubbed partial); set acceptPartial in the sandbox policy to start unattended workers.";
+		assert.equal(e.claudeRefusal, text);
+		for (const backend of ["pi", "claude-code"]) assert.equal(e.checkWorker!({ cwd: a, backend }), text, backend);
+		await s.stop();
+
+		// acceptPartial lets them start.
+		writeFileSync(policyFile, JSON.stringify({ ...JSON.parse(original), acceptPartial: true }));
+		utimesSync(policyFile, new Date(), new Date(Date.now() + 60_000));
+		const ok = await start(a, { sandbox: "on" });
+		assert.equal(ok.last().enforcement, "partial");
+		assert.equal(ok.last().claudeRefusal, undefined);
+		for (const backend of ["pi", "claude-code"]) assert.equal(ok.last().checkWorker!({ cwd: a, backend }), undefined, backend);
+		await ok.stop();
+	} finally {
+		LinuxBwrapBackend.prototype.probe = real;
+		writeFileSync(policyFile, original);
+		utimesSync(policyFile, new Date(), new Date(Date.now() + 120_000));
+	}
 });

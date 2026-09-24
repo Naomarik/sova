@@ -207,14 +207,19 @@ export default function sandbox(pi: ExtensionAPI) {
 			const scope = lastPolicy && active.enforcement !== "unavailable" ? parentScopeOf(lastPolicy) : undefined;
 			if (scope) event.workerFlags = { [FLAG]: "on", [PARENT_FLAG]: JSON.stringify(scope) };
 			const unavailable = `Sandbox unavailable in the parent: ${active.reasons?.join("; ") ?? "no policy loaded"}. A worker cannot start sandboxed.`;
-			event.checkWorker = ({ cwd: workerCwd }) => (scope ? workerCwdRefusal(scope, workerCwd) : unavailable);
+			// §chat.sandbox/fail-closed: an unattended worker (any backend) refuses to start under partial enforcement unless acceptPartial.
+			const partial =
+				lastPolicy && active.enforcement === "partial" && !lastPolicy.acceptPartial
+					? `Sandbox enforcement is partial (${active.reasons?.join("; ") ?? "unknown reason"}); set acceptPartial in the sandbox policy to start unattended workers.`
+					: undefined;
+			event.checkWorker = ({ cwd: workerCwd }) => (scope ? (partial ?? workerCwdRefusal(scope, workerCwd)) : unavailable);
 			// Claude workers get the CLI's own sandbox plus permission rules (PROBE.md): full, under dontAsk.
 			if (lastPolicy) event.claudeSettingsJson = claudeSettingsFor(lastPolicy);
 			event.claudePermissionMode = "dontAsk";
 			if (active.enforcement === "unavailable" || !lastPolicy) {
 				event.claudeRefusal = `Sandbox unavailable: ${active.reasons?.join("; ") ?? "no policy loaded"}. A Claude Code worker cannot start sandboxed.`;
-			} else if (active.enforcement === "partial" && !lastPolicy.acceptPartial) {
-				event.claudeRefusal = `Sandbox enforcement is partial (${active.reasons?.join("; ") ?? "unknown reason"}); set acceptPartial in the sandbox policy to start unattended workers.`;
+			} else if (partial) {
+				event.claudeRefusal = partial;
 			}
 		}
 		pi.events?.emit(SANDBOX_STATE_EVENT, event);

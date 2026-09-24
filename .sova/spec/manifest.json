@@ -1430,7 +1430,8 @@
         "scripts/dev-server.mjs",
         "pi-config/extensions/subagents/restored.ts",
         "pi-config/extensions/subagents/teams.ts",
-        "src/components/AgentsView.tsx"
+        "src/components/AgentsView.tsx",
+        "pi-config/extensions/subagents/worker-transcript.ts"
       ]
     },
     "§app.worker-restore/resume": {

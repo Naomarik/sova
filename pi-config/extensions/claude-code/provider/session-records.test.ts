@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import {
-	claudeProjectSlug, claudeProjectsRoot, claudeSessionId, listBridgeSessionRecords, nextFreeLaunch,
+	claudeProjectDirsFor, claudeProjectSlug, claudeProjectsRoot, claudeSessionId, listBridgeSessionRecords, nextFreeLaunch,
 } from "./session-records.ts";
 
 function projects(): string {
@@ -64,4 +64,6 @@ test("a cwd whose slug exceeds the CLI's limit matches the hash-suffixed dir", (
 	mkdirSync(dir);
 	for (const n of range(0, 2)) writeFileSync(join(dir, `${claudeSessionId("pi-1", n)}.jsonl`), "{}\n");
 	assert.equal(nextFreeLaunch("pi-1", { cwd, projectsRoot: root }), 3);
+	assert.deepEqual(claudeProjectDirsFor(cwd, root), [dir]);
+	assert.deepEqual(claudeProjectDirsFor("/w/a", root), [join(root, "-w-a")]);
 });

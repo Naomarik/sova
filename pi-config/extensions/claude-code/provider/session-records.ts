@@ -75,9 +75,10 @@ export function claudeProjectSlug(cwd: string): string {
 /**
  * The project directories a cwd's records may be in. A slug over the CLI's
  * limit carries a hash suffix whose function is the CLI's own, so every
- * directory sharing the cut prefix is a candidate.
+ * directory sharing the cut prefix is a candidate. A short slug's directory is
+ * returned whether or not it exists.
  */
-function projectDirsFor(cwd: string, root: string): string[] {
+export function claudeProjectDirsFor(cwd: string, root: string = claudeProjectsRoot()): string[] {
 	const slug = claudeProjectSlug(cwd);
 	if (slug.length <= SLUG_MAX) return [join(root, slug)];
 	const prefix = `${slug.slice(0, SLUG_MAX)}-`;
@@ -129,7 +130,7 @@ const DEFAULT_MAX_GAP = 32;
  */
 export function listBridgeSessionRecords(piSessionId: string, options: SessionRecordOptions = {}): ClaudeSessionRecord[] {
 	const root = options.projectsRoot ?? claudeProjectsRoot();
-	const dirs = options.cwd !== undefined ? projectDirsFor(options.cwd, root) : allProjectDirs(root);
+	const dirs = options.cwd !== undefined ? claudeProjectDirsFor(options.cwd, root) : allProjectDirs(root);
 	const maxGap = Math.max(1, options.maxGap ?? DEFAULT_MAX_GAP);
 	const records: ClaudeSessionRecord[] = [];
 	if (!dirs.length) return records;

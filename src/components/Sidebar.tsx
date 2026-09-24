@@ -51,6 +51,7 @@ import { groupHref } from "../lib/group-route";
 import { GroupNameField } from "./Groups";
 import { RemoteGroupDot } from "./RemoteStatus";
 import { Banner, Chip, Icon } from "./ui";
+import { showSummaries } from "../lib/summary-line";
 
 const ARCHIVE_KEY = "sova:archive-open";
 /** Pre-rebrand spellings: read and mirrored while the rename bridge is open (lib/storage-keys.ts). */
@@ -350,7 +351,8 @@ function SessionRow(props: { session: SessionSummary; selected: string | null; n
               just did: the row truncates after a few words, and "Committed dc63576…" tells a reader
               nothing about which session this is. Older snapshots carry no gist — those still show
               the "now" line rather than nothing, and the tooltip always has both. */}
-          <Show when={!s().draftPreview && summaryText()}>
+          {/* Settings → General can hide it; the chip goes with it, the draft preview above stays. */}
+          <Show when={showSummaries() && !s().draftPreview && summaryText()}>
             <div class="list-line list-summary-row">
               <p class="list-summary" title={summaryTitle()}>{summaryText()}</p>
               <Show when={s().outlineTopics}>

@@ -451,6 +451,43 @@ export interface ContextInfo { tokens: number; window: number | null }
 //                                          web — pick it up at their next turn; normal mode never reads it)
 // ---------------------------------------------------------------------------
 
+// GET /api/settings/summarizer  -> SummarizerSettingsInfo (~/.pi/agent/topic-outline.json's `summarizers`; missing
+//                                   or none usable → the extension's defaults, as it reads them)
+// PUT /api/settings/summarizer SummarizerSettings -> SummarizerSettingsInfo (replaces the chain with primary +
+//                                   optional fallback; every other key of the file, and a kept entry's own
+//                                   timeout/budget, is written back unchanged. 400 bad body, 409 the file
+//                                   exists but isn't a JSON object. Read by the TUI and every runtime at
+//                                   session start, so it applies to sessions started afterwards)
+// ---------------------------------------------------------------------------
+/** The topic-outline extension's summarizer backends: the Claude Code CLI (a bare alias or id,
+    e.g. "haiku") or a pi model ("provider/model"). */
+export type SummarizerBackend = "claude-code" | "pi";
+export interface SummarizerChoice {
+  backend: SummarizerBackend;
+  model: string;
+}
+/** The chain the summary line is written by: the primary, then the fallback when the primary
+    fails or the model policy turns it off. */
+export interface SummarizerSettings {
+  primary: SummarizerChoice;
+  fallback: SummarizerChoice | null;
+}
+export interface SummarizerSettingsInfo {
+  settings: SummarizerSettings;
+  /** The extension's built-in chain (pi-config/extensions/topic-outline/config.ts). */
+  defaults: SummarizerSettings;
+  /** The file is missing or names no usable summarizer, so `settings` are the defaults. */
+  usingDefaults: boolean;
+  /** Usable summarizers the file lists after the second. They run, this screen can't show them,
+      and a save here drops them. */
+  beyond: number;
+  /** Set when the file exists but can't be read as a JSON object: the extension runs the
+      defaults, and a save is refused rather than overwrite it. */
+  unreadable?: string;
+  /** Absolute path of the file, for the screen's footnote. */
+  file: string;
+}
+
 // GET /api/settings/models      -> ModelPolicy (empty lists when nothing is disabled)
 // PUT /api/settings/models      -> ModelPolicy (replaces the whole policy; 400 bad body)
 // ---------------------------------------------------------------------------

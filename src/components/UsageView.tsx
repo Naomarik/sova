@@ -4,7 +4,7 @@ import { refreshUsage } from "../lib/api";
 import { clockTime, duration, relativeTime, shortDate, thousands } from "../lib/format";
 import { meterTone, money, pct, PROVIDER_NAME, providerChip, providerProblem, windowLabel } from "../lib/insights";
 import type { Poll } from "../lib/poll";
-import { InsightsPage, iso, Skeletons } from "./InsightsPage";
+import { InsightsPage, iso, ListSkeleton } from "./InsightsPage";
 import { Banner, Chip, CountChip, Icon } from "./ui";
 
 function Meter(props: { w: UsageWindow; now: number }) {
@@ -88,37 +88,56 @@ function Balance(props: { b: UsageBalance }) {
   );
 }
 
-function UsageCard(props: { p: UsageProvider; now: number }) {
+/**
+ * One provider: a group head (name, chip) over one `.list-row` per window, or one row carrying
+ * the balance, or one row carrying the note when the provider isn't ok.
+ */
+function UsageGroup(props: { p: UsageProvider; now: number }) {
   const problem = () => providerProblem(props.p);
   return (
-    <article class="card usage-card" aria-labelledby={`u-${props.p.id}`}>
-      <header class="card-head">
-        <h3 class="card-title" id={`u-${props.p.id}`}>
-          {PROVIDER_NAME[props.p.id]}
-        </h3>
+    <section class="insights-group" aria-labelledby={`u-${props.p.id}`}>
+      <h2 class="list-group-label insights-group-head" id={`u-${props.p.id}`}>
+        <span class="insights-group-name">{PROVIDER_NAME[props.p.id]}</span>
         <Show when={providerChip(props.p)}>{(c) => <Chip tone={c().tone}>{c().text}</Chip>}</Show>
-      </header>
-      <div class="card-body">
+      </h2>
+      <ul class="list">
         <Show
           when={problem()}
           fallback={
-            <Show when={props.p.balance} fallback={<For each={props.p.windows}>{(w) => <Meter w={w} now={props.now} />}</For>}>
-              {(b) => <Balance b={b()} />}
+            <Show
+              when={props.p.balance}
+              fallback={
+                <For each={props.p.windows}>
+                  {(w) => (
+                    <li class="list-row usage-row">
+                      <Meter w={w} now={props.now} />
+                    </li>
+                  )}
+                </For>
+              }
+            >
+              {(b) => (
+                <li class="list-row usage-row">
+                  <Balance b={b()} />
+                </li>
+              )}
             </Show>
           }
         >
           {(pr) => (
-            <p class="usage-note">
-              {pr().lead}
-              <Show when={pr().code}>
-                <code>{pr().code}</code>
-              </Show>
-              {pr().rest}
-            </p>
+            <li class="list-row usage-row">
+              <p class="usage-note">
+                {pr().lead}
+                <Show when={pr().code}>
+                  <code>{pr().code}</code>
+                </Show>
+                {pr().rest}
+              </p>
+            </li>
           )}
         </Show>
-      </div>
-    </article>
+      </ul>
+    </section>
   );
 }
 
@@ -141,10 +160,8 @@ function UsageBody(props: {
   return (
     <Switch>
       <Match when={!u() && props.usage.pending()}>
-        <div class="insights-grid">
-          {/* One block per provider the page can show (claude, openai, ollama, zai, deepseek). */}
-          <Skeletons count={5} />
-        </div>
+        {/* A head and a row per provider the page can show (claude, openai, ollama, zai, deepseek). */}
+        <ListSkeleton groups={5} rows={1} />
       </Match>
       <Match when={u()?.available === false && u()?.reason === "corrupt"}>
         <Banner
@@ -180,8 +197,8 @@ function UsageBody(props: {
                 <Banner tone="warn" icon="clock" title={`Usage is ${duration(age())} old.`} body={`Couldn't refresh: ${failure()}`} action={retry()} />
               )}
             </Show>
-            <div class="insights-grid">
-              <For each={data().providers}>{(p) => <UsageCard p={p} now={props.now} />}</For>
+            <div class="card insights-list">
+              <For each={data().providers}>{(p) => <UsageGroup p={p} now={props.now} />}</For>
             </div>
           </>
         )}

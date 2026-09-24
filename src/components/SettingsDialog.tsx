@@ -31,22 +31,25 @@ import {
   recentCountValid,
   setRecentCount,
 } from "../lib/recent";
+import { setShowSummaries, showSummaries } from "../lib/summary-line";
 import { activeThemeId, applyTheme, droppedThemeId, reconcileTheme, typography } from "../lib/theme";
 import type { SettingsTab } from "../lib/settings-nav";
 import { delegateDirty, resetDelegateDraft } from "../lib/delegate-draft";
 import { effectiveStack } from "../lib/typography";
 import { announce, home } from "../lib/ui-state";
 import { DelegateSettingsSection } from "./DelegateSettings";
+import { SummarizerSettingsSection } from "./SummarizerSettings";
 import { TypographySection } from "./TypographySection";
 import { Banner, Icon, trapFocus } from "./ui";
 
-/** The tab rail. Five screens; the rail is the structure further settings slot into. General is
+/** The tab rail. Six screens; the rail is the structure further settings slot into. General is
     first because it is the one screen about this browser's own behaviour rather than a subsystem.
     Same ids, same order as `SETTINGS_TABS` (lib/settings-nav.ts), which is what opens it. */
 const TABS = [
   { id: "general", label: "General", icon: "settings" as const },
   { id: "models", label: "Models", icon: "sliders" as const },
   { id: "modes", label: "Modes", icon: "worker" as const },
+  { id: "summaries", label: "Summaries", icon: "chat" as const },
   { id: "themes", label: "Themes", icon: "image" as const },
   { id: "experimental", label: "Experimental", icon: "terminal" as const },
 ] as const satisfies readonly { id: SettingsTab; label: string; icon: string }[];
@@ -197,6 +200,12 @@ export function SettingsDialog(props: { onClose(): void; initialTab?: SettingsTa
           <Show when={tab() === "modes"}>
             <div class="settings-panel" role="tabpanel" id="settings-panel-modes" aria-labelledby="settings-tab-modes">
               <DelegateSettingsSection />
+            </div>
+          </Show>
+          {/* Mounted only while its tab is, like Modes: it asks the same backend discovery. */}
+          <Show when={tab() === "summaries"}>
+            <div class="settings-panel" role="tabpanel" id="settings-panel-summaries" aria-labelledby="settings-tab-summaries">
+              <SummarizerSettingsSection />
             </div>
           </Show>
           {/* The panel is mounted only while its tab is: the themes poll starts when this tab
@@ -362,6 +371,22 @@ function GeneralPanel() {
             {problem()}
           </span>
         </Show>
+      </div>
+      <div class="field settings-field">
+        <label class="toggle toggle-switch">
+          <span class="field-label">Summary line</span>
+          <input
+            type="checkbox"
+            checked={showSummaries()}
+            aria-describedby="summary-line-hint"
+            onChange={(e) => setShowSummaries(e.currentTarget.checked)}
+          />
+          <span class="toggle-box" />
+        </label>
+        <span class="field-hint" id="summary-line-hint">
+          Under each title in the sidebar, what the session is for. Off, a row is its title and when it was last
+          active. A draft's first line still shows.
+        </span>
       </div>
     </>
   );

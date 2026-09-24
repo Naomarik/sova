@@ -15,7 +15,7 @@ test("Settings opens at the tab asked for, and closes", () => {
 });
 
 test("Modes sits after Models in the rail, and the dialog's rail is this list", () => {
-  assert.deepEqual([...SETTINGS_TABS], ["general", "models", "modes", "themes", "experimental"]);
+  assert.deepEqual([...SETTINGS_TABS], ["general", "models", "modes", "summaries", "themes", "experimental"]);
   // The dialog's own TABS must be the same ids in the same order (it is `satisfies`-typed against
   // SettingsTab, which catches an unknown id but not a missing or reordered one).
   const dialog = readFileSync(new URL("../components/SettingsDialog.tsx", import.meta.url), "utf8");

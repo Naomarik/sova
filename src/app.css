@@ -23,9 +23,6 @@ html, body, #root { height: 100%; }
 /* Transcript entry wrapper (data-entry anchor for outline jumps); adds no box to the thread. */
 .entry { display: contents; }
 
-/* Card-shaped skeleton for the insights grid. */
-.skeleton-card { height: 120px; border-radius: var(--r-lg); }
-
 /* Archive date sections (spec/02-session-list.md §2 "Archive by date"): each a <details> whose summary is
    the eyebrow label (twist, name, count), collapsed by default; a rule between sections. */
 .archive-date + .archive-date { border-top: var(--stroke-thin) solid var(--color-border); }

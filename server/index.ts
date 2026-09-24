@@ -36,6 +36,7 @@ import { readModelPolicy, writeModelPolicy } from "./model-policy";
 import { listThemes } from "./themes";
 import { listPlaybooks } from "./playbooks";
 import { readWebSettings, writeWebSettings } from "./web-settings";
+import { readSummarizerSettings, writeSummarizerSettings } from "./topic-outline-settings";
 import { claudeCliStatus } from "./claude-status";
 import { modeInfo, parseModeRequest, readMode } from "./mode-state";
 import { attachWebSockets } from "./ws";
@@ -472,6 +473,22 @@ app.put("/api/settings/delegate", async (c) => {
   }
   const result = await saveDelegateSettings(body, delegateSources);
   return "error" in result ? c.json({ error: result.error }, 400) : c.json(result);
+});
+
+// Settings → Summaries: which model writes the sidebar's summary line. The file is the
+// topic-outline extension's; the TUI and every runtime read it once per session, at session start,
+// so a save applies to sessions started afterwards. Only the chain changes — every other key, and a
+// kept summarizer's own timeout and budget, is written back as it was.
+app.get("/api/settings/summarizer", (c) => c.json(readSummarizerSettings()));
+app.put("/api/settings/summarizer", async (c) => {
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "Expected JSON body { primary: { backend, model }, fallback }" }, 400);
+  }
+  const result = writeSummarizerSettings(body);
+  return "error" in result ? c.json({ error: result.error }, result.status) : c.json(result);
 });
 
 // Is the Claude Code CLI actually usable? `claude --version` plus how many of its models the

@@ -1193,6 +1193,8 @@ button.list-row { width: 100%; border: 0; background: none; text-align: left; }
 .settings-close-held-actions { display: flex; gap: var(--space-2); flex-wrap: wrap; }
 .settings-delegate-file { margin: 0; font-size: var(--fs-caption); color: var(--color-ink-muted); overflow-wrap: anywhere; }
 .settings-delegate-file code { font-family: var(--font-mono); font-size: var(--fs-mono); color: var(--color-ink-2); }
+/* Summaries reuses the Delegate row with no Effort column: the model takes the width it left. */
+.settings-summaries-fields { grid-template-columns: minmax(9.5rem, 1fr) minmax(0, 3fr); }
 @media (max-width: 640px) {
   .settings-delegate-fields { grid-template-columns: 1fr; }
 }
@@ -1624,6 +1626,12 @@ html.is-resizing * {
 
 .sidebar-list { flex: 1; }            /* compose with .pane */
 .session-group + .session-group { border-top: var(--stroke-thin) solid var(--color-border); margin-top: var(--space-4); }
+/* The gap separates an open folder's last row from the divider; under a collapsed head it only
+   makes the head's bottom padding uneven with its top. */
+.session-group:not([open]) + .session-group { margin-top: 0; }
+/* The head's short bottom padding hugs the rows below it; collapsed, there are none, so it
+   matches the top. */
+.session-group:not([open]) > summary > .list-group-label { padding-bottom: var(--space-3); }
 /* Sticky and ellipsized by §List groups; the whole head is a path here, so the casing
    comes off the head itself rather than off one name inside it. */
 .session-group .list-group-label {
@@ -1964,28 +1972,30 @@ a.group-option { color: inherit; text-decoration: none; }
   border-radius: var(--r-full);
 }
 
-/* The state pill: one per row. Busy is a 26px round chip carrying a dot and
-   nothing else; TUI narrows it to the word chip below. Tone comes from
+/* The state item: one per row. Busy is a bare 7px dot — no ring, no plate — in
+   a button as tall as the title's first line (a --lh-body box at --fs-body), so
+   the dot centres on that line with no nudge and costs the rail no more height
+   than the line beside it. 26px wide keeps a comfortable hit area; the box is
+   invisible. TUI overrides this into the word chip below. Tone comes from
    .chip-accent (TUI) or .chip-info (Busy). */
 .session-rail-state {
   width: 26px;
-  height: 26px;
+  height: calc(var(--fs-body) * var(--lh-body));
   padding: 0;
   gap: 0;
-  border: var(--stroke-thin) solid var(--color-border);
-  background: var(--color-surface);
+  border: var(--stroke-thin) solid transparent;
+  background: none;
 }
-.session-rail-state:hover { border-color: var(--color-border-strong); }
 /* TUI says its word: a small accent chip reading TUI, static, no dot. Word
    versus dot is what tells it from Busy with the pulse off and the tone unseen.
    Declared after .session-rail-state, whose width/height/padding it overrides. */
 .session-rail-tui {
   /* On the same line as the words beside it: the rail's content starts at the row link's own
      padding, while the title's first line is a --lh-body 1.55 box (22.475px at --fs-body) whose
-     centre sits 2.5px lower — so a 16px box needs +2.5px to centre on it (measured: the chip's
-     centre was 229 against the line's 231.5). The rail's own top padding is shared with Busy, so
-     the nudge is this chip's, not the rail's. */
-  margin-top: 2.5px;
+     centre sits half the difference lower — so the 16px box takes (line − 16px) / 2 ≈ 3.24px, the
+     same nudge as a lone count (measured to 0.0px; the old literal 2.5px left it 0.74px high).
+     Busy needs none: its box IS the line. */
+  margin-top: calc((var(--fs-body) * var(--lh-body) - 16px) / 2);
   width: auto;
   height: auto;
   min-height: 16px;
@@ -1996,6 +2006,7 @@ a.group-option { color: inherit; text-decoration: none; }
      surface fill stays: on a hovered or current row the row itself is --color-accent-tint, where
      accent ink needs a plate under it to hold its contrast. */
   border-color: transparent;
+  background: var(--color-surface);
   /* .session-rail-item's `font: inherit` out-cascades .chip's own type, so this sets its own.
      --fw-semibold, not the chip default --fw-medium: at 16px tall and three letters, the word is
      the whole chip, and the weight is what keeps it reading as a label rather than a smudge. */
@@ -2008,6 +2019,7 @@ a.group-option { color: inherit; text-decoration: none; }
   letter-spacing: 0;
   text-transform: uppercase;
 }
+.session-rail-tui:hover { border-color: var(--color-border-strong); }
 .session-rail-dot {
   width: 7px;
   height: 7px;
@@ -2033,6 +2045,11 @@ a.group-option { color: inherit; text-decoration: none; }
   font-size: var(--fs-micro);
   line-height: 1;
 }
+/* Alone in the rail, the count centres its 16px box on the title's first line,
+   as the TUI chip does. Under Busy it tucks up against the dot's line box: the
+   rail's 4px gap would stack the pair taller than a summary-less row. */
+.session-rail-count:first-child { margin-top: calc((var(--fs-body) * var(--lh-body) - 16px) / 2); }
+.session-rail-state + .session-rail-count { margin-top: calc(-1 * var(--space-1)); }
 .session-rail-count:hover { color: var(--color-ink); }
 .session-rail-count .icon { width: 11px; height: 11px; }
 
@@ -2149,6 +2166,12 @@ a.group-option { color: inherit; text-decoration: none; }
 .list-line > .list-meta { margin: 0; flex: 1; min-width: 0; }
 .list-line > .session-topics,
 .list-line > .context-ring { flex: none; }
+/* A session row's line 3 (time · model) is micro, a deliberate exception to micro's "labels and
+   chips only" (design/deviations): it is two facts, never a sentence, and the title and summary
+   carry the row. Scoped to the row — `.list-meta` elsewhere holds descriptions, which stay caption.
+   The model's `.text-mono` sets its own size, so it inherits here or it would stay at 12.5px. */
+.session-row .list-meta { font-size: var(--fs-micro); line-height: var(--lh-micro); }
+.session-row .list-meta .text-mono { font-size: inherit; }
 
 /* The topic count on line 2. A `.chip.chip-count` box, quieted for a micro
    line: no fill of its own (so it reads as part of the row's ground on hover
@@ -3833,23 +3856,60 @@ a.group-option { color: inherit; text-decoration: none; }
   font-weight: var(--fw-regular);
   color: var(--color-ink-muted);
 }
-.insights-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-3); align-items: start; }
-@container insights (min-width: 640px)  { .insights-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@container insights (min-width: 1000px) { .insights-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 /* An empty state inside a section is one idea among several: compact. */
-.insights-grid > .empty { grid-column: 1 / -1; }
 .insights-section .empty { padding: var(--space-5) var(--space-4); }
 
-.usage-card .card-body { display: flex; flex-direction: column; gap: var(--space-4); }
+/* Both pages are lists, not card grids: one card per page or section, a group head per
+   provider, team, or session (the sidebar's group-label style, the item's chips or id at its
+   right end), a row per window or worker. Capped and left-aligned: a row stretched across a
+   wide pane is hard to read, and uneven cards side by side leave holes. The section's empty
+   card takes the same cap, so a Teams empty above a Subagents list lines up with it. */
+.insights-list,
+.insights-section > .card { max-width: 720px; }
+.insights-group + .insights-group { border-top: var(--stroke-thin) solid var(--color-border); }
+.insights-group-head { min-height: var(--row-height); padding-bottom: var(--space-3); line-height: var(--lh-micro); }
+.insights-group-head > .text-mono { flex: none; font-size: var(--fs-mono); text-transform: none; letter-spacing: 0; }
+.insights-group-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.insights-group-head + .list { border-top: var(--stroke-thin) solid var(--color-border); }
+.insights-skeleton-head { display: block; width: 88px; height: 11px; margin: 0; }
+.insights-skeleton-row { display: block; width: 100%; height: 20px; margin: 0; }
+
+/* Usage: a row per window. Wide enough, two cells: the words on the left, the number over its
+   bar in a fixed right cell, so every bar in the list starts and ends at the same x.
+   Narrower, the meter stacks as it always has. */
+.usage-row { flex-direction: column; align-items: stretch; gap: var(--space-2); }
+.usage-row > .meter { width: 100%; }
+@container insights (min-width: 520px) {
+  .usage-row > .meter {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 200px;
+    column-gap: var(--space-5);
+    row-gap: var(--space-1);
+    align-items: baseline;
+  }
+  .usage-row > .meter > .meter-head { display: contents; }
+  .usage-row > .meter .meter-label { grid-column: 1; grid-row: 1; }
+  .usage-row > .meter .meter-value { grid-column: 2; grid-row: 1; justify-self: end; }
+  .usage-row > .meter > .meter-track { grid-column: 2; grid-row: 2; align-self: center; }
+  .usage-row > .meter > .meter-context { grid-column: 1; }
+}
 .usage-note { margin: 0; font-size: var(--fs-caption); color: var(--color-ink-2); }
 .usage-note code { font-family: var(--font-mono); font-size: var(--fs-mono); }
 
-/* Deep link #/agents/<teamId> focuses the card (tabindex -1); ring on :focus,
-   since programmatic focus after a click doesn't match :focus-visible. */
-.team-card:target,
-.team-card:focus { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
-.team-card .card-head .text-mono,
-.agent-card .card-head .text-mono { flex: none; color: var(--color-ink-muted); }
+/* Deep link #/agents/<teamId> focuses the team's group (tabindex -1); ring on :focus,
+   since programmatic focus after a click doesn't match :focus-visible. Inset: the group
+   fills the card, so an outer ring would sit on the card's edge and its neighbours. */
+.team-group:target,
+.team-group:focus { outline: var(--focus-ring); outline-offset: calc(var(--focus-offset) * -1); }
+/* A team's or session's name keeps its case beside the head's eyebrow casing, like the
+   subagents pane's team heads; a session title is prose, so it's set in the body face. */
+.team-group-name { font-size: var(--fs-mono); text-transform: none; letter-spacing: 0; }
+.agent-group-name { font-family: var(--font-body); font-size: var(--fs-caption); text-transform: none; letter-spacing: 0; }
+.agent-group-name > .text-mono { font-size: var(--fs-mono); }
+/* The title is a link (underlined, so never by hue alone), but a quiet one: the head names
+   the group, the rows under it carry the page. */
+.agent-group-name a { color: var(--color-ink-2); }
+.agent-group-name a:hover { color: var(--color-ink); }
 .team-objective {
   margin: 0;
   font-size: var(--fs-caption);
@@ -3859,9 +3919,19 @@ a.group-option { color: inherit; text-decoration: none; }
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
-.team-card .card-body { padding: var(--space-3) var(--space-4); border-bottom: var(--stroke-thin) solid var(--color-border); }
+.team-group > .team-objective { margin: calc(var(--space-1) * -1) var(--space-4) var(--space-3); }
+.team-group > .team-objective + .list { border-top: var(--stroke-thin) solid var(--color-border); }
 /* "Started 42m ago in {parent title}": one line; the full title goes in the link's title. */
-.team-card .card-foot > p { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.team-started {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border-top: var(--stroke-thin) solid var(--color-border);
+  font-size: var(--fs-caption);
+  color: var(--color-ink-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 /* Members and workers: plain rows (not targets), status chip on the right. */
 .member-list { background: var(--color-surface); }

@@ -29,7 +29,14 @@ import type {
 } from "../../shared/protocol";
 import { type CleanupRequest, type CleanupResult, parseCleanupResult } from "./archive";
 import type { ModelPolicy } from "./model-policy";
-import type { DelegateOptions, DelegateSaveResult, DelegateSettings, DelegateSettingsInfo } from "../../shared/protocol";
+import type {
+  DelegateOptions,
+  DelegateSaveResult,
+  DelegateSettings,
+  DelegateSettingsInfo,
+  SummarizerSettings,
+  SummarizerSettingsInfo,
+} from "../../shared/protocol";
 import type { TargetInfo } from "./remote-session";
 
 /**
@@ -120,6 +127,13 @@ export const getDelegateOptions = () => request<DelegateOptions>("/api/settings/
 /** Replace the whole routing. Delegate sessions everywhere pick it up at their next turn. */
 export const putDelegateSettings = (settings: DelegateSettings) =>
   request<DelegateSaveResult>("/api/settings/delegate", { method: "PUT", body: JSON.stringify(settings) });
+
+/** Which model writes the summary line (the topic-outline extension's file; missing → its defaults). */
+export const getSummarizerSettings = () => request<SummarizerSettingsInfo>("/api/settings/summarizer");
+
+/** Replace the chain; the file's other keys stay. Sessions started afterwards, here and in the TUI, use it. */
+export const putSummarizerSettings = (settings: SummarizerSettings) =>
+  request<SummarizerSettingsInfo>("/api/settings/summarizer", { method: "PUT", body: JSON.stringify(settings) });
 
 /** Every theme the app can find — the ones it ships and the ones in the user's folder — rescanned
     per request. Never fails on an unreadable folder: that comes back as `error` with the built-ins

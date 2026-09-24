@@ -1,11 +1,11 @@
-import { createEffect, For, Index, Match, Show, Switch } from "solid-js";
+import { createEffect, createUniqueId, For, Index, Match, Show, Switch } from "solid-js";
 import type { AgentsInsight, LiveAgentSession, SessionSummary, TeamInfo, WorkerInfo } from "../../shared/protocol";
 import { clockTime, relativeTime, shortModel, tildePath } from "../lib/format";
 import { activeTeams, memberStatus, type MemberStatus, teamAnchor, teamFresh } from "../lib/insights";
 import type { Poll } from "../lib/poll";
 import { home } from "../lib/ui-state";
 import { capTitle, isHostSession } from "../lib/workers";
-import { InsightsPage, iso, Skeletons } from "./InsightsPage";
+import { InsightsPage, iso, ListSkeleton } from "./InsightsPage";
 import { sessionHref } from "./Sidebar";
 import { Chip, CountChip, Icon } from "./ui";
 
@@ -64,24 +64,21 @@ function MemberRow(props: {
   );
 }
 
-function TeamCard(props: { team: TeamInfo; fresh: boolean; now: number; parentTitle: string | null }) {
+/** One team: a group head (name, id) over its objective, its members, and where it started. */
+function TeamGroup(props: { team: TeamInfo; fresh: boolean; now: number; parentTitle: string | null }) {
   const liveSource = () => props.team.live && props.fresh;
   // Orchestrator first, then roster order.
   const members = () => [...props.team.members].sort((a, b) => Number(b.orchestrator) - Number(a.orchestrator));
   return (
-    <article class="card team-card" id={teamAnchor(props.team.id)} aria-labelledby={`tt-${props.team.id}`} tabindex="-1">
-      <header class="card-head">
-        <h3 class="card-title" id={`tt-${props.team.id}`}>
-          {props.team.name}
-        </h3>
-        <span class="text-mono text-caption">{props.team.id}</span>
-      </header>
+    <section class="insights-group team-group" id={teamAnchor(props.team.id)} aria-labelledby={`tt-${props.team.id}`} tabindex="-1">
+      <h3 class="list-group-label insights-group-head" id={`tt-${props.team.id}`}>
+        <span class="insights-group-name team-group-name">{props.team.name}</span>
+        <span class="text-mono">{props.team.id}</span>
+      </h3>
       <Show when={props.team.objective}>
-        <div class="card-body">
-          <p class="team-objective" title={capTitle(props.team.objective)}>
-            {props.team.objective}
-          </p>
-        </div>
+        <p class="team-objective" title={capTitle(props.team.objective)}>
+          {props.team.objective}
+        </p>
       </Show>
       <ul class="list member-list">
         <For each={members()}>
@@ -98,36 +95,36 @@ function TeamCard(props: { team: TeamInfo; fresh: boolean; now: number; parentTi
           )}
         </For>
       </ul>
-      <footer class="card-foot">
-        <p class="text-caption">
-          Started {relativeTime(iso(props.team.createdAt), props.now)} in{" "}
-          <a href={sessionHref(props.team.parentPath)} title={props.parentTitle ?? undefined}>
-            {props.parentTitle ?? "its parent session"}
-          </a>
-        </p>
-      </footer>
-    </article>
+      <p class="team-started">
+        Started {relativeTime(iso(props.team.createdAt), props.now)} in{" "}
+        <a href={sessionHref(props.team.parentPath)} title={props.parentTitle ?? undefined}>
+          {props.parentTitle ?? "its parent session"}
+        </a>
+      </p>
+    </section>
   );
 }
 
 /** Workers of one live pi that aren't in a team. */
-function AgentCard(props: { s: LiveAgentSession; workers: WorkerInfo[]; title: string | null }) {
+function AgentGroup(props: { s: LiveAgentSession; workers: WorkerInfo[]; title: string | null }) {
   const working = () => props.workers.filter((w) => w.working).length;
+  // Embedded sessions share the server's pid, so the head's id can't come from the record.
+  const headId = `sa-${createUniqueId()}`;
   return (
-    <article class="card agent-card">
-      <header class="card-head">
-        <h3 class="card-title">
+    <section class="insights-group agent-group" aria-labelledby={headId}>
+      <h3 class="list-group-label insights-group-head" id={headId}>
+        <span class="insights-group-name agent-group-name">
           <Show when={props.s.path} fallback={<span class="text-mono">{tildePath(props.s.cwd, home())}</span>}>
             {(p) => <a href={sessionHref(p())}>{props.title ?? props.s.name ?? tildePath(props.s.cwd, home())}</a>}
           </Show>
-        </h3>
+        </span>
         <Show when={props.s.embedded}>
           <CountChip title="A chat running in Sova">Web</CountChip>
         </Show>
         <Show when={working() > 0}>
           <CountChip>{working()} working</CountChip>
         </Show>
-      </header>
+      </h3>
       <ul class="list member-list">
         <For each={props.workers}>
           {(w) => (
@@ -144,7 +141,7 @@ function AgentCard(props: { s: LiveAgentSession; workers: WorkerInfo[]; title: s
           )}
         </For>
       </ul>
-    </article>
+    </section>
   );
 }
 
@@ -161,9 +158,7 @@ function AgentsSections(props: { agents: Poll<AgentsInsight>; now: number; title
   return (
     <Switch>
       <Match when={!a() && props.agents.pending()}>
-        <div class="insights-grid">
-          <Skeletons count={1} />
-        </div>
+        <ListSkeleton groups={1} rows={2} />
       </Match>
       <Match when={a() && liveSessions().length === 0}>
         <div class="card">
@@ -197,12 +192,12 @@ function AgentsSections(props: { agents: Poll<AgentsInsight>; now: number; title
               </div>
             </Match>
             <Match when={teams().length > 0}>
-              <div class="insights-grid">
+              <div class="card insights-list">
                 {/* By position, not identity: sessions carry no id, so a poll that reorders them rebuilds
-                    the team objects, and <For> would remount the cards (losing the deep-link focus).
+                    the team objects, and <For> would remount the groups (losing the deep-link focus).
                     Teams are sorted by createdAt, so positions are stable. */}
                 <Index each={teams()}>
-                  {(t) => <TeamCard team={t()} fresh={teamFresh(a(), t())} now={props.now} parentTitle={props.titleOf(t().parentPath)} />}
+                  {(t) => <TeamGroup team={t()} fresh={teamFresh(a(), t())} now={props.now} parentTitle={props.titleOf(t().parentPath)} />}
                 </Index>
               </div>
             </Match>
@@ -218,8 +213,8 @@ function AgentsSections(props: { agents: Poll<AgentsInsight>; now: number; title
                 <span class="insights-section-count">· {soloWorking()} working</span>
               </Show>
             </h2>
-            <div class="insights-grid">
-              <For each={solo()}>{(x) => <AgentCard s={x.s} workers={x.workers} title={props.titleOf(x.s.path)} />}</For>
+            <div class="card insights-list">
+              <For each={solo()}>{(x) => <AgentGroup s={x.s} workers={x.workers} title={props.titleOf(x.s.path)} />}</For>
             </div>
           </section>
         </Show>
@@ -248,11 +243,11 @@ export function AgentsView(props: {
     return a.totals.working > 0 ? `${a.totals.working} working · ${running}` : running;
   };
 
-  // Scroll to the linked team once its card exists; once per link, so polls don't steal focus.
+  // Scroll to the linked team once its group exists; once per link, so polls don't steal focus.
   let focused: string | null = null;
   createEffect(() => {
     const id = props.focusTeam;
-    props.agents.data(); // the card appears with the first agents payload
+    props.agents.data(); // the group appears with the first agents payload
     if (!id || id === focused) return;
     const el = document.getElementById(teamAnchor(id));
     if (!el) return;

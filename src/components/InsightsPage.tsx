@@ -4,14 +4,36 @@ import { Banner, Icon } from "./ui";
 /** ms epoch → ISO, for `relativeTime`/`clockTime` and `title` attributes. */
 export const iso = (t: number) => new Date(t).toISOString();
 
-/** Placeholder blocks, shown only once a region has been loading for 300ms. */
-export function Skeletons(props: { count: number }) {
+/**
+ * First-load placeholder, shown only once a region has been loading for 300ms: the
+ * `.insights-list` it stands in for, a group head over `rows` rows per group.
+ */
+export function ListSkeleton(props: { groups: number; rows: number }) {
   const [show, setShow] = createSignal(false);
   const t = setTimeout(() => setShow(true), 300);
   onCleanup(() => clearTimeout(t));
   return (
     <Show when={show()}>
-      <For each={Array.from({ length: props.count })}>{() => <div class="skeleton skeleton-card" />}</For>
+      <div class="card insights-list" aria-hidden="true">
+        <For each={Array.from({ length: props.groups })}>
+          {() => (
+            <div class="insights-group">
+              <div class="list-group-label insights-group-head">
+                <span class="skeleton skeleton-line insights-skeleton-head" />
+              </div>
+              <div class="list">
+                <For each={Array.from({ length: props.rows })}>
+                  {() => (
+                    <div class="list-row">
+                      <span class="skeleton skeleton-line insights-skeleton-row" />
+                    </div>
+                  )}
+                </For>
+              </div>
+            </div>
+          )}
+        </For>
+      </div>
     </Show>
   );
 }

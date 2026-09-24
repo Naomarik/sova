@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 
-const agentDir = mkdtempSync(join(tmpdir(), "pi-web-forkbranch-test-"));
+const agentDir = mkdtempSync(join(tmpdir(), "sova-forkbranch-test-"));
 process.env.PI_CODING_AGENT_DIR = agentDir;
 const sessionsDir = join(agentDir, "sessions", "--tmp-fork--");
 mkdirSync(sessionsDir, { recursive: true });
@@ -30,7 +30,7 @@ const entries = (p: string) => read(p).filter((e) => e.type !== "session");
 const header = (p: string) => read(p).find((e) => e.type === "session")!;
 
 /**
- * u1 → a1 → u2 → a2, then a REWIND back to before u2: pi-web's marker hangs off a1, so the file's
+ * u1 → a1 → u2 → a2, then a REWIND back to before u2: Sova's marker hangs off a1, so the file's
  * TAIL is the abandoned branch (u2, a2) and the ACTIVE branch is u1 → a1 → marker. This is the
  * shape a fork is most likely to meet — the user has just navigated to the point they want.
  */

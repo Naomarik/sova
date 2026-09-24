@@ -4,7 +4,7 @@
  *
  * Two deliberate differences from the Claude version: the page goes to a fixed
  * store path instead of a temp file or `--out`, and the child NEVER opens a
- * browser — the page is read in pi-web (or by opening the file), and a detached
+ * browser — the page is read in Sova (or by opening the file), and a detached
  * browser from a background worker is exactly the surprise this feature avoids.
  */
 import type { KnownMeta } from "./store.ts";
@@ -109,7 +109,7 @@ Everything inline. It must also:
 
 - ship \`<meta name="viewport" content="width=device-width, initial-scale=1">\`
   and \`<meta name="color-scheme" content="dark light">\`, so an embedder that
-  declares a colour scheme (pi-web's gallery renders the page in an iframe) gets
+  declares a colour scheme (Sova's gallery renders the page in an iframe) gets
   matching scrollbars and form controls without any script;
 - default to \`prefers-color-scheme\` but honor a \`?theme=dark\` / \`?theme=light\`
   query parameter, applied by a small inline script in \`<head>\` **before first
@@ -201,7 +201,7 @@ codebase. You have no web access, so for anything external write only what you a
 		"",
 		"## Rules for this run",
 		"",
-		"- **Never open a browser** and never run an opener script (`open`, `xdg-open`, `open-html.sh`). The page is read in pi-web; opening a window from a background worker is wrong here.",
+		"- **Never open a browser** and never run an opener script (`open`, `xdg-open`, `open-html.sh`). The page is read in Sova; opening a window from a background worker is wrong here.",
 		"- Write only inside the store directory above. Do not edit the repository, do not commit, do not touch anything else on disk.",
 		"- The page is the deliverable. Your final message is one or two sentences: the file path and the shortest honest version of the answer. Do not re-explain in chat.",
 	].join("\n");

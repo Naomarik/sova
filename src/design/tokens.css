@@ -14,7 +14,7 @@
      <html data-theme="dark">    dark
      <html data-theme="light">   light (full, equal token set)
    Deviation from the skill, which follows prefers-color-scheme when no
-   data-theme is set. Requested for this product; see spec/00-ground-rules.md §0.
+   data-theme is set. Requested for this product; see the ground rules.
    ============================================================================= */
 
 
@@ -39,7 +39,7 @@
   font-display: swap;
 }
 
-/* The Typography catalogue (spec/12-settings-dialog.md §12 "Typography"): seven more OFL faces,
+/* The Typography catalogue: seven more OFL faces,
    latin subset, bundled under public/fonts/ with their licenses and sources in
    public/fonts/README.md. A @font-face costs nothing until a rule uses the family, so a face
    nobody picks is never fetched. Inter and JetBrains Mono above stay the defaults. */
@@ -303,7 +303,7 @@
   --ls-display:   -.035em;
   --ls-heading:   -.018em;
   --ls-heading-s: -.01em;   /* heading-s and the markdown headings that borrow it */
-  --ls-wordmark:  -.03em;   /* the "sova" lockup only (§0 brand) */
+  --ls-wordmark:  -.03em;   /* the "sova" lockup only */
   --ls-body:      0;
   --ls-mono-caps: .05em;    /* mono micro set in caps: chips, provider labels */
   --ls-eyebrow:   .13em;
@@ -345,15 +345,15 @@
   --control-md: 44px;
   --control-lg: 52px;
 
-  /* Sova layout sizes (extension — see spec/01-app-shell.md §1). */
+  /* Sova layout sizes (extension; see the app shell). */
   --sidebar-width: 320px;
-  --spine-width:    64px;   /* the collapsed sessions pane (§2 "The spine"); JS writes it into --sidebar-width */
+  --spine-width:    64px;   /* the collapsed sessions pane; JS writes it into --sidebar-width */
   --composer-max:  40vh;  /* textarea auto-grow ceiling */
   --tool-output-max: 320px;
   --outline-max: 40vh;    /* open outline strip ceiling (50vh folded, in base.css) */
-  --main-min: 440px;      /* session pane floor while the subagents pane is a column (§11) */
-  --subagents-width: clamp(520px, 40vw, 880px);   /* subagents pane, list + transcript (§11) */
-  --subagents-list-width: 256px;                   /* its worker list column (§11) */
+  --main-min: 440px;      /* session pane floor while the subagents pane is a column */
+  --subagents-width: clamp(520px, 40vw, 880px);   /* subagents pane, list + transcript */
+  --subagents-list-width: 256px;                   /* its worker list column */
 }
 
 
@@ -383,7 +383,7 @@
   --measure:       72ch;
 }
 
-/* Reading column from unfolded up (spec/03-transcript.md §3 "Column width"): it grows
+/* Reading column from unfolded up: it grows
    with the transcript pane, keeping 2 × space-8 of margin around the column
    (measure + space-9), from 72ch to a 110ch cap. It stays 72ch until the
    pane is wide enough, so nothing jumps, and folded never sees this rule.

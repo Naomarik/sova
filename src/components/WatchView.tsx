@@ -51,7 +51,7 @@ export function WatchView(props: {
   /** Makes that row a button that toggles the subagents pane. */
   onShowWorkers?(): void;
   workersOpen?: boolean;
-  /** Where this member was forked from, when it is one (spec/14b). */
+  /** Where this member was forked from, when it is one. */
   fork?: ForkMarker;
   /** A session this view just created (a Fork): the app adopts and opens it (see ChatView). */
   onCreated?(session: SessionSummary): void;

@@ -1,4 +1,4 @@
-// The fanout dialog's logic (spec/14b-fanout.md, copy in §9): the member plan, what each row's
+// The fanout dialog's logic (copy in the copy deck): the member plan, what each row's
 // cost preview says, and how a partial creation reads.
 //
 // Pure, because every one of these is a claim the user acts on — how full a member starts, whether
@@ -16,7 +16,7 @@ export interface MemberRow {
   count: number;
 }
 
-/** The count a row can hold (§14b "The dialog"). */
+/** The count a row can hold. */
 export const COUNT_MIN = 1;
 export const COUNT_MAX = 9;
 /** Longest group name, mirroring GROUP_NAME_MAX; the dialog's field enforces it too. */
@@ -48,7 +48,7 @@ export const removeModel = (rows: readonly MemberRow[], ref: string): MemberRow[
 
 /**
  * `Fanout · {first 6 words}` of the source's title or the fresh prompt, trimmed to the name limit.
- * A default, not a constraint: the field is plain text and duplicates are allowed, like §2's rename.
+ * A default, not a constraint: the field is plain text and duplicates are allowed, like the session list's rename.
  */
 export function defaultGroupName(from: string): string {
   const words = from.trim().split(/\s+/).filter(Boolean).slice(0, 6).join(" ");
@@ -56,24 +56,24 @@ export function defaultGroupName(from: string): string {
   return name.length > NAME_MAX ? name.slice(0, NAME_MAX).trimEnd() : name;
 }
 
-/** What one row's fill reads, and whether it blocks Create (§14b "Cost preview"). */
+/** What one row's fill reads, and whether it blocks Create. */
 export interface RowFill {
   text: string;
-  /** §4f's step classes, so the preview and the head's gauge agree on what 80% looks like. */
+  /** The context window spec's step classes, so the preview and the head's gauge agree on what 80% looks like. */
   step: "" | "context-warn" | "context-error";
   /** The fork doesn't fit this model's window: a session that would fail on its first turn. */
   overflows: boolean;
 }
 
 /**
- * What a member starts holding (§14b "Cost preview"), as one type so the three ways we cannot
+ * What a member starts holding, as one type so the three ways we cannot
  * name a number stay distinct from each other and from the two ways we can:
  *
  * - a **number** is the source branch's context at the fork point, against the member's own
  *   window;
- * - `"compacted"` is §4f's word for a fill that exists but can't be named until the source's
+ * - `"compacted"` is the context window spec's word for a fill that exists but can't be named until the source's
  *   next reply (a compaction row follows the last usage). It is NOT 0 — "0 of 1M · 0%" is a
- *   claim §4f refuses in the head for exactly this state, and the preview must not make it here;
+ *   claim the context window spec refuses in the head for exactly this state, and the preview must not make it here;
  * - `"unknown"` is a source whose fill was never reported — the Add-Members entry, where the
  *   source isn't on screen and its tail is not the fork point's fill anyway;
  * - `null` is fresh mode: no history to carry, and the rows say "new session".
@@ -107,7 +107,7 @@ export function rowFill(fill: StartFill, window: number | undefined): RowFill {
 /**
  * The running cost of the group composer: one message typed, N contexts re-sent.
  *
- * §9 gives only the plural form. A fanout of one is legal (a row at count 1), and "1 members …
+ * The copy deck gives only the plural form. A fanout of one is legal (a row at count 1), and "1 members …
  * re-sent 1 times" is not a sentence, so the singular agrees in number and changes nothing else —
  * every other count in the deck has a singular variant, which is the pattern being followed here.
  */
@@ -131,7 +131,7 @@ export function sharedTurnLine(members: number, fill: StartFill): string {
 export const createLabel = (members: number): string => (members === 1 ? "Create 1 Member" : `Create ${members} Members`);
 
 /**
- * The partial-creation banner's lines (§9 "…its failure lines"). Entries sharing a ref AND a
+ * The partial-creation banner's lines. Entries sharing a ref AND a
  * message collapse to a count, because three identical refusals are one fact; sharing a ref but
  * not a message gets a line each, because the reasons are the information.
  *
@@ -143,7 +143,7 @@ export const createLabel = (members: number): string => (members === 1 ? "Create
  * can see; it says the first message couldn't be sent. The collapse keys on the shape too, so
  * the same model failing both ways never merges two different facts into one count.
  *
- * Named by the FULL ref, under §14b's rule stated once: wherever two members could be
+ * Named by the FULL ref, under the fanout spec's rule stated once: wherever two members could be
  * distinguished only by their provider, name the full ref. The collapse keys on the ref, so a
  * `zai/glm-5.3` failure and an `ollama-cloud/glm-5.3` failure correctly do NOT merge — which
  * means the short form would render them as two identical-looking lines that are not duplicates.
@@ -194,7 +194,7 @@ export function fanoutBody(plan: {
   name: string;
   /**
    * Whether the user typed in the name field. Provenance is THIS EVENT, never a comparison
-   * against the string we generated (spec/14b-fanout.md).
+   * against the string we generated.
    *
    * Not because a comparison can't separate "typed over then restored our text" from "typed our
    * exact string by hand": those end with Sova's own string on the group either way, so they
@@ -226,7 +226,7 @@ export function fanoutBody(plan: {
 }
 
 /**
- * The accessible names of a member row's own controls (§9, the "Member row" row). These carry
+ * The accessible names of a member row's own controls (the "Member row" row). These carry
  * the FULL ref, never
  * the bare model id, because two providers ship the same name — `zai/glm-5.3` and
  * `ollama-cloud/glm-5.3` differ only by provider and bill to different subscriptions.
@@ -252,7 +252,7 @@ export const modelOf = (models: readonly ModelInfo[] | undefined, ref: string): 
   models?.find((m) => m.ref === ref);
 
 /**
- * The row a dialog opens pre-seeded with (§14b "The dialog"): the source's own model when
+ * The row a dialog opens pre-seeded with: the source's own model when
  * forking — the comparison usually starts from where you are — else the first favorite, in the
  * picker's own order. Null when neither is known yet, which is the fresh dialog's case until
  * the model list lands.
@@ -268,7 +268,7 @@ export function seedRef(models: readonly ModelInfo[] | undefined, fork: boolean,
 }
 
 /**
- * §14b "States"/§09: the dialog's own sentences for a source that can't be forked, written WITH
+ * The fanout spec's "States" and the copy deck: the dialog's own sentences for a source that can't be forked, written WITH
  * the recovery advice. The group composer's clause table (group-prompt.ts) deliberately drops
  * it — there it is advice about somebody else's gesture — but here the user asked to fork THIS
  * session, and the advice is the answer. Same words in `sourceBlocked` (before the press) and
@@ -296,7 +296,7 @@ type SourceFacts = Pick<SessionSummary, "title" | "busy" | "live" | "legacyForma
 
 /**
  * Why the SOURCE can't be forked right now, from the session list alone — the states the client
- * can see without reading the file (§14b "States"). Callers pass a summary ACCESSOR, so the
+ * can see without reading the file. Callers pass a summary ACCESSOR, so the
  * answer is reactive by construction: a turn finishing, a terminal closing or the list refetching
  * re-enables Create in place, which is the promise "It enables itself, in place, with no re-open".
  * A string snapshotted at open time cannot keep that promise — it would repeat the turn's end as
@@ -308,7 +308,7 @@ type SourceFacts = Pick<SessionSummary, "title" | "busy" | "live" | "legacyForma
  */
 export function sourceBlocked(s: SourceFacts): string | null {
   // Permanent-until-migrated first: waiting doesn't clear it, and reading the file would rewrite
-  // it (§14b "What creation does"). Then the terminal's claim on the file, then the turn's.
+  // it. Then the terminal's claim on the file, then the turn's.
   if (s.legacyFormat) return oldFormatReason(s.title);
   if (s.live) return tuiLiveReason(s.title);
   if (s.busy) return midTurnReason(s.title);
@@ -316,7 +316,7 @@ export function sourceBlocked(s: SourceFacts): string | null {
 }
 
 /**
- * A source refusal, in full: the §14b sentence for every code this build knows — recovery advice
+ * A source refusal, in full: the fanout spec sentence for every code this build knows — recovery advice
  * included, unlike the group composer's clause — and the server's own reason for a code it knows
  * better than we do (`internal`, or a newer server's code), so an older client stays honest
  * instead of dropping the reason. Never parses the server's prose; the words stay Sova's.

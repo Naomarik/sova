@@ -12,7 +12,7 @@ const TICK_MS = 30_000;
 const SKELETON_MS = 300;
 
 /**
- * Per-session info modal (spec/04-composer.md §4h): opened from the composer flyout's "Session info"
+ * Per-session info modal: opened from the composer flyout's "Session info"
  * item. Read-only — it reports what this session has spent and what it's made of, and changes
  * nothing.
  *

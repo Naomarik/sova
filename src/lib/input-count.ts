@@ -1,4 +1,4 @@
-// The composer's Inputs trigger (§4 ".run-status"): how many user messages this chat's active
+// The composer's Inputs trigger: how many user messages this chat's active
 // branch holds, and what the row calls them. The Timeline's "Inputs Only" view lists exactly
 // these rows (src/lib/inputs.ts `inputRows`), so the count drops after a rewind — which is the point.
 

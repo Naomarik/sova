@@ -256,8 +256,7 @@ no backend ever gets local tools against the placeholder:
   failed to load.
 
 The session is recognised from the remote extension's `remote:session` event on `pi.events`, else
-from the placeholder cwd (`<agentDir>/sova/targets/<name>/<far path>`; the pre-rebrand
-`pi-web/targets/...` spelling is still read, never written). See the remote
+from the placeholder cwd (`<agentDir>/sova/targets/<name>/<far path>`). See the remote
 extension's README ("Workers").
 
 ## Model policy

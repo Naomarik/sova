@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 
-const agentDir = mkdtempSync(join(tmpdir(), "pi-web-workers-test-"));
+const agentDir = mkdtempSync(join(tmpdir(), "sova-workers-test-"));
 process.env.PI_CODING_AGENT_DIR = agentDir; // before the modules below compute their paths
 const sessionsDir = join(agentDir, "sessions", "--tmp-workers-test--");
 const liveDir = join(agentDir, "sessions", "live");

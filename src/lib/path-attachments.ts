@@ -1,4 +1,4 @@
-// Image paths named in transcript text (in /tmp, or a session's attachments folder) (TranscriptItem.attachments, spec/04b-images.md §4b "Path
+// Image paths named in transcript text (in /tmp, or a session's attachments folder) (TranscriptItem.attachments, the images spec "Path
 // attachments"). Inline chips come in two builds that must match: an HTML string for markdown
 // (lib/markdown.ts) and a Solid component for plain text (components/PathAttachment.tsx).
 

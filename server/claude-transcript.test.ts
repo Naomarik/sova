@@ -41,9 +41,9 @@ after(() => {
 
 /** A throwaway ~/.claude with one project dir, wired up as CLAUDE_CONFIG_DIR. */
 function projectsRoot(): string {
-  const root = mkdtempSync(join(tmpdir(), "pi-web-claude-"));
+  const root = mkdtempSync(join(tmpdir(), "sova-claude-"));
   roots.push(root);
-  mkdirSync(join(root, "projects", "-home-user-webapps-pi-web"), { recursive: true });
+  mkdirSync(join(root, "projects", "-home-user-webapps-sova"), { recursive: true });
   process.env.CLAUDE_CONFIG_DIR = root;
   clearClaudeSessionCache();
   return root;
@@ -53,7 +53,7 @@ describe("resolveClaudeSession", () => {
   test("finds <id>.jsonl in a project dir", () => {
     const root = projectsRoot();
     const id = randomUUID();
-    const file = join(root, "projects", "-home-user-webapps-pi-web", `${id}.jsonl`);
+    const file = join(root, "projects", "-home-user-webapps-sova", `${id}.jsonl`);
     writeFileSync(file, `${USER_LINE}\n`);
     assert.equal(resolveClaudeSession(id), file);
     assert.equal(resolveClaudeSession(id), file); // again, from the cache
@@ -76,12 +76,12 @@ describe("resolveClaudeSession", () => {
     const outside = join(root, "secret.jsonl");
     writeFileSync(outside, "{}\n");
     const id = randomUUID();
-    symlinkSync(outside, join(root, "projects", "-home-user-webapps-pi-web", `${id}.jsonl`));
+    symlinkSync(outside, join(root, "projects", "-home-user-webapps-sova", `${id}.jsonl`));
     assert.equal(resolveClaudeSession(id), null);
   });
 
   test("a missing projects dir is null, not a throw", () => {
-    process.env.CLAUDE_CONFIG_DIR = join(tmpdir(), `pi-web-claude-gone-${randomUUID()}`);
+    process.env.CLAUDE_CONFIG_DIR = join(tmpdir(), `sova-claude-gone-${randomUUID()}`);
     clearClaudeSessionCache();
     assert.equal(resolveClaudeSession(randomUUID()), null);
   });

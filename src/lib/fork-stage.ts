@@ -155,7 +155,7 @@ export async function stageFork(target: string, editor: ForkEditor | undefined, 
   const moved = new Map<string, string>();
   /**
    * Source paths with no copy in the child. A GENERATED name (pi's clipboard paste, a Sova
-   * upload — or a legacy `pi-web-…` one) comes out of the text: it is a reference the composer would otherwise re-send for a
+   * upload) comes out of the text: it is a reference the composer would otherwise re-send for a
    * file the child doesn't have. A path the USER TYPED stays, whatever happened to the file —
    * that is their sentence, not a generated reference, and editing someone's message to tidy up
    * our own bookkeeping is not ours to do. Same predicate the server strips by.

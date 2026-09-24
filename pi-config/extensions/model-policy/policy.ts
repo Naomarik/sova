@@ -1,7 +1,7 @@
 /** The unified model policy: which providers and models may be used at all, and which of the
  * still-allowed ones may additionally be picked for subagents.
  *
- * One JSON file, `~/.pi/agent/model-policy.json`, written by pi-web's Settings → Models tab and
+ * One JSON file, `~/.pi/agent/model-policy.json`, written by Sova's Settings → Models tab and
  * read by everything that picks a model:
  *
  *     {
@@ -21,7 +21,7 @@
  *
  * Absent keys mean "nothing disabled", and so does a file that is missing, unreadable, of another
  * version, or of a foreign shape: a policy file that cannot be understood must never take model
- * selection down with it. Lists are compared case-insensitively; pi-web writes them lowercase,
+ * selection down with it. Lists are compared case-insensitively; Sova writes them lowercase,
  * deduped and sorted.
  *
  * Providers are bare names ("anthropic", "zai") — for non-pi worker backends the backend id IS the
@@ -30,7 +30,7 @@
  * model also matches its bare id, so both spellings disable it.
  *
  * Readers: this module (the TUI enforcement extension, the command palette, topic-outline,
- * vision-delegate), `pi-config/extensions/subagents/policy.ts` (discovery and spawn), and pi-web's
+ * vision-delegate), `pi-config/extensions/subagents/policy.ts` (discovery and spawn), and Sova's
  * `server/model-policy.ts`, which is the only writer. Keep the four in step — the file shape is the
  * contract, not this file.
  */
@@ -39,7 +39,7 @@ import path from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 
 export const POLICY_FILE = path.join(getAgentDir(), "model-policy.json");
-/** Where the subagent dimension lived before the Models tab (pi-web ≤ the Subagent models tab).
+/** Where the subagent dimension lived before the Models tab (Sova ≤ the Subagent models tab).
  * Read only when POLICY_FILE is absent, so an install that never opened the new tab keeps the
  * worker restrictions it already had. */
 export const LEGACY_SUBAGENT_FILE = path.join(getAgentDir(), "subagents", "settings.json");
@@ -102,7 +102,7 @@ function readFile(file: string): ModelPolicy | undefined {
 }
 
 /**
- * The policy as it stands, re-read only when the file's mtime moves — pi-web writes it live and
+ * The policy as it stands, re-read only when the file's mtime moves — Sova writes it live and
  * every check here must see the change without a reload. A missing file is not negatively cached:
  * the next call stats again, so the moment it appears it is picked up.
  *

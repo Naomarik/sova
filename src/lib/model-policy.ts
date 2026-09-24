@@ -3,7 +3,7 @@ import type { ModelInfo } from "../../shared/protocol";
 import { getModelPolicy } from "./api";
 
 /**
- * The model policy as the app sees it (Settings → Models, spec/12-settings-dialog.md §12).
+ * The model policy as the app sees it (Settings → Models).
  *
  * Two dimensions over the same names. GLOBAL says a provider or model may not be used at all —
  * not in a chat here, not in the TUI, not by a worker. SUBAGENT narrows what is still globally
@@ -49,7 +49,7 @@ export const providerSubagentEnabled = (policy: ModelPolicy, provider: string) =
   providerEnabled(policy, provider) && !has(policy.subagentDisabledProviders, provider);
 
 /** The subagent switch as the user set it, ignoring whether the provider is globally on. Kept
-    while the provider is off so turning it back on restores the preference (§12). */
+    while the provider is off so turning it back on restores the preference. */
 export const providerSubagentPreference = (policy: ModelPolicy, provider: string) =>
   !has(policy.subagentDisabledProviders, provider);
 
@@ -127,7 +127,7 @@ export const enabledCount = (policy: ModelPolicy, models: ModelInfo[]) =>
 
 /**
  * The policy the app is working with, shared by the Settings dialog and the model picker: the
- * picker must not offer a model the server would refuse (spec/04c). Null before the first load.
+ * picker must not offer a model the server would refuse. Null before the first load.
  */
 const [policy, setPolicy] = createSignal<ModelPolicy | null>(null);
 

@@ -48,7 +48,7 @@ export function rankCommands(commands: SlashCommand[], query: string): SlashComm
 export type LocalCommand = "subagents" | "new" | "tree" | "timeline";
 
 /**
- * The local command a message is, if any (spec/04d-slash-commands.md §4d, §11 Trigger). A bare "/agents" or
+ * The local command a message is, if any. A bare "/agents" or
  * "/subagents" opens the subagents pane here: the runtime's monitor is TUI-only, so forwarding it
  * only earns a "requires Pi's interactive TUI" notice. With arguments ("/subagents models …") it
  * is the runtime's command and goes through untouched. A bare "/new" starts a fresh session in the

@@ -31,7 +31,7 @@ test("parsePolicy tolerates missing, corrupt, foreign and partial files", () => 
 });
 
 test("the legacy two-key file parses as subagent-only: nothing becomes globally disabled", () => {
-	// What pi-web wrote before the Models tab. Its lists meant "not for workers", and a migration
+	// What Sova wrote before the Models tab. Its lists meant "not for workers", and a migration
 	// that read them as global prohibitions would turn off models the user still uses by hand.
 	assert.deepEqual(
 		parsePolicy({ version: 1, disabledProviders: ["anthropic"], disabledModels: ["openai/gpt-5.2"] }),
@@ -101,7 +101,7 @@ test("readPolicy: explicit file, either shape; missing and corrupt read as nothi
 		assert.deepEqual(readPolicy(file), EMPTY_POLICY);
 		fs.writeFileSync(file, JSON.stringify({ version: 1, disabledProviders: ["zai"], subagentDisabledProviders: ["openai"] }));
 		assert.deepEqual(readPolicy(file), policy({ disabledProviders: ["zai"], subagentDisabledProviders: ["openai"] }));
-		// mtime moves, the next read follows it: pi-web writes this file while sessions run.
+		// mtime moves, the next read follows it: Sova writes this file while sessions run.
 		fs.writeFileSync(file, JSON.stringify({ version: 1, disabledProviders: [], subagentDisabledProviders: ["zai"] }));
 		fs.utimesSync(file, new Date(Date.now() + 2000), new Date(Date.now() + 2000));
 		assert.deepEqual(readPolicy(file), policy({ subagentDisabledProviders: ["zai"] }));

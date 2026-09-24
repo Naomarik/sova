@@ -1,5 +1,5 @@
 // Pane scope: what tells a session view whether it is THE view on the page or one pane of a
-// workspace (spec/02-session-list.md §2 "Groups" → workspaces). Two things depend on it:
+// workspace. Two things depend on it:
 //
 //   - DOM ids. `transcript`, `composer-input`, `model-listbox` and friends are singletons in the
 //     single-session view and must stay exactly that (the skip link, aria-controls and every

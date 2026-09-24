@@ -1,5 +1,5 @@
 // Run: npx tsx --test server/fanout-leaf.test.ts
-// The leaf a fanout compares against is the last entry pi-web would RENDER ON THE ACTIVE BRANCH,
+// The leaf a fanout compares against is the last entry Sova would RENDER ON THE ACTIVE BRANCH,
 // not the last line of the file.
 //
 // RULE FOR THIS FILE, learned the hard way twice: when a test's subject is a FILE SHAPE, derive
@@ -19,7 +19,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 
-const agentDir = mkdtempSync(join(tmpdir(), "pi-web-fanout-leaf-"));
+const agentDir = mkdtempSync(join(tmpdir(), "sova-fanout-leaf-"));
 process.env.PI_CODING_AGENT_DIR = agentDir;
 const sessionsDir = join(agentDir, "sessions", "--tmp-fanout--");
 mkdirSync(sessionsDir, { recursive: true });
@@ -50,14 +50,14 @@ test("a usage entry appended after the last reply does not make the fork stale",
 });
 
 // A rewind, exactly as server/chat-manager.ts writes it: a `custom` entry, customType
-// "pi-web-rewind", data {targetId, fromLeafId}, PARENTED ON THE NEW LEAF. That parentage is the
+// "sova-rewind", data {targetId, fromLeafId}, PARENTED ON THE NEW LEAF. That parentage is the
 // whole mechanism — SessionManager.open takes the file's last entry as the leaf, so the marker is
 // what makes the rewind survive a reload, and it is what the active-branch walk follows.
 const rewind = (id: string, newLeafId: string, fromLeafId: string) => ({
   type: "custom",
   id,
   parentId: newLeafId,
-  customType: "pi-web-rewind",
+  customType: "sova-rewind",
   data: { targetId: newLeafId, fromLeafId },
 });
 

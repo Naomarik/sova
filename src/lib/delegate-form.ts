@@ -9,7 +9,7 @@ import type {
 } from "../../shared/protocol";
 
 /**
- * Settings → Modes → Delegate's form rules (spec/12-settings-dialog.md "Modes"). Pure, so the
+ * Settings → Modes → Delegate's form rules. Pure, so the
  * component only draws: what each select offers, what a change does to the rest of its row, and
  * what the row says about the pick.
  *

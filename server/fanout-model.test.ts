@@ -12,9 +12,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 
-const agentDir = mkdtempSync(join(tmpdir(), "pi-web-fanout-model-"));
+const agentDir = mkdtempSync(join(tmpdir(), "sova-fanout-model-"));
 process.env.PI_CODING_AGENT_DIR = agentDir;
-const memberCwd = mkdtempSync(join(tmpdir(), "pi-web-fanout-model-cwd-"));
+const memberCwd = mkdtempSync(join(tmpdir(), "sova-fanout-model-cwd-"));
 after(() => {
   rmSync(agentDir, { recursive: true, force: true });
   rmSync(memberCwd, { recursive: true, force: true });

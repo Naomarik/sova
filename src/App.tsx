@@ -173,7 +173,7 @@ export function App() {
   };
   // The theme has been on the document since before first paint, out of the localStorage cache
   // (main.tsx). This is the one check that it still exists: an id whose file was deleted, renamed
-  // or broken falls back to dark (§0). A fetch that fails changes nothing — an unreachable server
+  // or broken falls back to dark. A fetch that fails changes nothing — an unreachable server
   // is not a reason to lose the theme you picked.
   void getThemes()
     .then(reconcileTheme)
@@ -293,7 +293,7 @@ export function App() {
     // Read the LIST, not the memo over it: `openGroup()` is null both before and after a reload
     // that doesn't find the group, and a memo whose value doesn't change notifies nobody — so
     // depending on it here meant the verdict never ran and the route sat on an empty frame,
-    // which is the one thing §14 says routing must never do.
+    // which is the one thing the workspace spec says routing must never do.
     const known = sessionGroups().some((g) => g.id === id);
     if (!id || !sessionGroupsLoaded() || known) return;
     if (!rechecked.has(id)) {
@@ -310,14 +310,14 @@ export function App() {
   /**
    * The fanout dialog, when it is open: `{}` with no source is a fresh-prompt fanout, and a
    * `source` opens it on that session with Fork selected. `presetCwd` is the New Session
-   * dialog's handoff (§05 "Type"): fresh mode starts in the folder that dialog had chosen. It
+   * dialog's handoff: fresh mode starts in the folder that dialog had chosen. It
    * lives here rather than in the workspace because it can be opened from a session too, and it
    * outlives the surface that opened it — the dialog stays up while the request is in flight.
    */
   const [fanout, setFanout] = createSignal<{ source?: FanoutSource; into?: { id: string; name: string }; presetCwd?: string } | null>(null);
 
   /**
-   * The skip link's target and name move together (§14 "Accessibility"): a workspace with members
+   * The skip link's target and name move together: a workspace with members
    * has one action — the group composer — so the link says "Skip to Group Composer" and lands on
    * its input; before the composer exists (a workspace with no members) it is the focused pane's
    * transcript and says so, because a link that says "Group Composer" and lands on a transcript
@@ -371,7 +371,7 @@ export function App() {
   };
 
   /**
-   * A bare "/new" typed in `source` (§4d): a new session in the same folder, then `source` goes to
+   * A bare "/new" typed in `source`: a new session in the same folder, then `source` goes to
    * the Archive. Resolves to the folder label once the new session exists, null if none was made.
    * Only web-spawned sessions can be archived; one with subagents working stays open, since
    * archiving closes its runtime and they'd die with it.
@@ -506,7 +506,7 @@ export function App() {
     inputsOnly,
     subagentsPath,
     onNewSession: startNewFrom,
-    // From a workspace: the members land in THIS group, beside the ones already there (§14b).
+    // From a workspace: the members land in THIS group, beside the ones already there.
     // With the group's own seed it is the APPEND case — "I want two more of these": the new
     // members branch from the same fork point the existing ones share, which is the one `groupId`
     // + `source` combination the route defines and the one the UI could never reach before. A
@@ -545,7 +545,7 @@ export function App() {
     <>
       {/*
         In a workspace the transcripts are the panes': the link points at the focused one, and its
-        name and target move together (spec/14-workspaces.md "Accessibility").
+        name and target move together.
 
         The press is handled rather than followed, because in this app the hash IS the route: letting
         the browser navigate to "#transcript" would replace `#/s/<path>` and drop the reader onto the
@@ -590,7 +590,7 @@ export function App() {
         />
 
         {/* The workspace takes the whole second column, so it IS the main: no session head, and
-            its own head instead (spec/14-workspaces.md "Shell"). */}
+            its own head instead. */}
         <main class={groupRoute() ? "workspace" : "app-main"} aria-label={openGroup() ? `Workspace: ${openGroup()!.name}` : undefined}>
           <Show
             when={!insightsRoute()}
@@ -681,7 +681,7 @@ export function App() {
                       </p>
                       <p class="empty-body">Pick one to read it, or start a new one.</p>
                       {/* Two ways to start something: one session, or the same prompt to N models
-                          at once (§14b "Entry points" — the empty screen is fanout's front door,
+                          at once (the empty screen is fanout's front door,
                           which is why it is offered here and not in the sidebar). */}
                       <div class="cluster empty-action">
                         <button type="button" class="button" onClick={() => setCreating(true)}>
@@ -751,7 +751,7 @@ export function App() {
             onCancel={() => setCreating(false)}
             onCreated={adoptCreated}
             onFanOut={(cwd) => {
-              // The type field's handoff (§05 "Type"): close this dialog, open §14b's on a fresh
+              // The type field's handoff: close this dialog, open the fanout dialog on a fresh
               // prompt, with the folder it had chosen carried over.
               setCreating(false);
               setFanout({ presetCwd: cwd });

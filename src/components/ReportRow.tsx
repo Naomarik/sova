@@ -12,7 +12,7 @@ function modelMeta(r: ReportInfo): string {
 }
 
 /**
- * A subagent report, or another long extension message (spec/03-transcript.md §3 "report"). Collapsed
+ * A subagent report, or another long extension message. Collapsed
  * to one line: who, a status chip, the first line. Opened, the body renders as markdown on the
  * left, capped at --measure; it's parsed only once opened.
  */

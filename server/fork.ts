@@ -4,7 +4,7 @@ import { open } from "node:fs/promises";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { CURRENT_SESSION_FORMAT, type ForkEditor, type ForkRefusal, type ForkRefusalCode, type ForkRequest, type ForkResult, type SessionSummary, type TmpAttachment } from "../shared/protocol";
 import { inlineTmpImages, MAX_ATTACHMENT_BYTES } from "./attachments";
-import { activeConfigFailure, FANOUT_MEMBER_ENTRIES, heldChat } from "./chat-manager";
+import { activeConfigFailure, FANOUT_MEMBER_ENTRY, heldChat } from "./chat-manager";
 import { readLive } from "./live";
 import { canonicalPath, resolveSessionPath, sessionPathShape } from "./paths";
 import { getSessionSummary } from "./sessions-index";
@@ -47,7 +47,7 @@ export interface ForkDeps {
   resolveSource(raw: string): string | null;
   /** The header's format version, or null when the file is unreadable or headerless. */
   sourceVersion(path: string): Promise<number | null>;
-  /** The source's ACTIVE branch, root-first — the entries pi-web RENDERS. After a rewind the
+  /** The source's ACTIVE branch, root-first — the entries Sova RENDERS. After a rewind the
       file's tail is the abandoned branch, so "the last lines of the file" is a different and
       wrong list (see server/transcript.ts activeBranch). */
   branch(path: string): Promise<Entry[]>;
@@ -106,7 +106,7 @@ export const realForkDeps: ForkDeps = {
   misconfigured: (path) => activeConfigFailure(path) !== undefined,
 
   /**
-   * ONE FRESH MANAGER, never the one pi-web holds for the source: `createBranchedSession` REBINDS
+   * ONE FRESH MANAGER, never the one Sova holds for the source: `createBranchedSession` REBINDS
    * the manager it is called on to the new file, so calling it on a live runtime's manager would
    * repoint that runtime at the child and land the user's next turn in the fork's transcript.
    * A bare manager is also what keeps the SDK's construction-time model/thinking appends out of
@@ -158,11 +158,11 @@ export const realForkDeps: ForkDeps = {
  * when it strips label entries in `createBranchedSession`.
  */
 export function stripFanoutMarker(entries: readonly Entry[]): Entry[] {
-  if (!entries.some((e) => e.type === "custom" && FANOUT_MEMBER_ENTRIES.has(e.customType ?? ""))) return [...entries];
+  if (!entries.some((e) => e.type === "custom" && e.customType === FANOUT_MEMBER_ENTRY)) return [...entries];
   const out: Entry[] = [];
   let parentId: string | null = null;
   for (const entry of entries) {
-    if (entry.type === "custom" && FANOUT_MEMBER_ENTRIES.has(entry.customType ?? "")) continue; // its children re-parent onto its own parent
+    if (entry.type === "custom" && entry.customType === FANOUT_MEMBER_ENTRY) continue; // its children re-parent onto its own parent
     out.push({ ...entry, parentId });
     parentId = entry.id;
   }

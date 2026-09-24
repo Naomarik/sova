@@ -50,7 +50,7 @@ import { Banner, Icon } from "./ui";
 /**
  * A pane's id, issued once per session path and kept for as long as the tab lives: it suffixes
  * every DOM id inside the pane, so Move Left must not renumber the view, and a member that leaves
- * and comes back finds its own ids again (spec/14-workspaces.md "A pane"). The path itself can't
+ * and comes back finds its own ids again. The path itself can't
  * be the id — it is long and full of characters an id shouldn't carry.
  */
 const paneIds = new Map<string, string>();
@@ -71,7 +71,7 @@ const composerOf = (path: string) => document.getElementById(`composer-input-${p
  * The last Promote, per group: what the head's `Promoted: {title}` chip offers to undo. Module
  * state, so walking to the promoted session and back still finds the offer — that walk is when
  * a promote made by mistake is noticed. Never persisted: it is an undo for the gesture, not a
- * record of it, so a reload drops it (spec/14-workspaces.md "Group lifecycle").
+ * record of it, so a reload drops it.
  */
 const [promoted, setPromoted] = createSignal<Record<string, { path: string; id: string; title: string; label: string | null; index: number }>>({});
 const forgetPromoted = (groupId: string) =>
@@ -91,7 +91,7 @@ const forgetPromoted = (groupId: string) =>
 const [workspaceFocus, setWorkspaceFocus] = createSignal<string | null>(null);
 export { workspaceFocus };
 
-/** Never animate a scroll for someone who asked us not to (§0); read per call, not cached. */
+/** Never animate a scroll for someone who asked us not to; read per call, not cached. */
 const reduceMotion = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 /** Whether a member is mid-turn: what the tab's live dot and Eliminate's refusal both read. */
@@ -118,7 +118,7 @@ export interface PaneWiring {
   onNewSession(path: string): Promise<string | null>;
   /** Open the fanout dialog for this workspace: new members, landing here. Carries the group's
    *  `seed` when it has one, so the dialog can offer forking from the SAME point the existing
-   *  members came from — "two more of these" (§14b "Entry points") — and undefined for a
+   *  members came from — "two more of these" — and undefined for a
    *  hand-made group, which stays destination-only. */
   onFanOut(seed?: GroupSeed): void;
   /** Open it on one member, to fork THAT session (the pane flyout's "Fan Out…"). */
@@ -126,7 +126,7 @@ export interface PaneWiring {
 }
 
 /**
- * A group as a workspace (spec/14-workspaces.md): every member side by side, each pane a whole
+ * A group as a workspace: every member side by side, each pane a whole
  * session view with its own transcript, composer and socket. `split` is one horizontally scrolled
  * row; `tabs` shows one member at a time and keeps the rest mounted, so a turn that lands while
  * you read another member is not lost. Under 768px there is no room for a split row, so the
@@ -163,15 +163,15 @@ export function GroupView(props: {
   // ---- Layout --------------------------------------------------------------
   const [stored, setStored] = createSignal<GroupLayoutMode>(readMode(props.group.id) ?? "split");
   const [narrow, setNarrow] = createSignal(window.innerWidth < TABS_ONLY_WIDTH);
-  /** Under this the head's tools don't fit beside the name, so they become one menu (§14). */
+  /** Under this the head's tools don't fit beside the name, so they become one menu. */
   const [narrowHead, setNarrowHead] = createSignal(window.innerWidth < HEAD_MENU_WIDTH);
   const [viewport, setViewport] = createSignal(window.innerWidth);
   /**
    * A pane's width, in memory only: a number the user stepped it to, or `"fit"` — the one posture
-   * that follows the row (`Fit All`, §14 "Layout: split"). A number is a posture for the task at
+   * that follows the row (`Fit All`). A number is a posture for the task at
    * hand and is kept through a resize; "fit" is a standing instruction to stand in the row with no
    * scrollbar, and is re-derived every time the row changes — a pane with no entry joins it while
-   * any pane in the row is "fit" (paneWidths). Nothing here is persisted, like §1's sessions pane.
+   * any pane in the row is "fit" (paneWidths). Nothing here is persisted, like the app shell's sessions pane.
    */
   const [widths, setWidths] = createSignal<Record<string, number | "fit">>({});
   // Another group, another posture: its own remembered layout, and nobody's widths.
@@ -231,7 +231,7 @@ export function GroupView(props: {
   createEffect(on(() => props.wiring.listVersion, () => setListSettled(true), { defer: true }));
 
   /**
-   * The group's members whose file is gone (§14 "Member states" — gone from disk): the pane
+   * The group's members whose file is gone (gone from disk): the pane
    * STAYS, as an `.empty` with `Remove From Group`, because the assignment outlives the file on
    * purpose (the server never prunes it on the listing pass) — a member that silently drops out
    * of the row between polls is exactly the loss this state exists to prevent. Detected only
@@ -282,7 +282,7 @@ export function GroupView(props: {
   });
 
   /**
-   * The pane names (§14 "A pane"): ONE rule, shared with the tabs, implemented once in
+   * The pane names: ONE rule, shared with the tabs, implemented once in
    * `paneNames` — `{label} · {model}`, `{title} · {model}`, or for members that share a title
    * with no label (the canonical `opus ×3` fanout) the model with its `#n` ALONE. The head, the
    * pane's aria-label and the live region's prefix all read this map, so a repeat can never be
@@ -319,7 +319,7 @@ export function GroupView(props: {
    * The group's fork point, and the ONLY source of a marker's position: `seed` is written when
    * Sova itself fanned the group out. Lineage (`parent`/`parentId`) proves two members came from
    * one session but not WHICH entry they diverged at, so a hand-made group of forks gets no marker
-   * — a marker in the wrong place is a false claim about what is shared (gate #10, §14 "Data").
+   * — a marker in the wrong place is a false claim about what is shared (gate #10).
    */
   const fork = createMemo<ForkMarker | undefined>(() => {
     const seed = props.group.seed;
@@ -511,7 +511,7 @@ export function GroupView(props: {
     announce(`${nameOf(key)} — ${direction === 1 ? "wider" : "narrower"}, ${next} pixels.`);
   };
   /**
-   * `Fit all` (§14 "Layout: split"): every pane to the ONE width at which they all stand in the
+   * `Fit all`: every pane to the ONE width at which they all stand in the
    * row with no scrollbar — the row's measured width (its content box, `rowWidth()`) divided by
    * the pane count, floored, and capped at `PANE_MAX_WIDTH`. The press stores the posture, not the
    * number, so that width is re-derived every time the row changes. That width is allowed below the
@@ -552,7 +552,7 @@ export function GroupView(props: {
   };
 
   /**
-   * Rename a member — the comparison's naming act (§14b "Member labels"). The useful name ("the
+   * Rename a member — the comparison's naming act. The useful name ("the
    * one that read the tests") is only known AFTER reading output, which is why the dialog sets no
    * label and this gesture lives in the pane that output is read in. One write, the whole-group
    * PATCH {labels}: the pane names, tabs and announcements all move in the same tick because the
@@ -609,7 +609,7 @@ export function GroupView(props: {
     let done: string;
     if (!archive) {
       // Remove-only on a session Sova didn't start is the whole story, and says so: there was
-      // never an archive half to leave out (§9 "Eliminate toast").
+      // never an archive half to leave out.
       done =
         s?.origin === "web"
           ? `Removed ${title} from ${quoted(props.group.name)}.`
@@ -682,7 +682,7 @@ export function GroupView(props: {
     focusPane(undo.path, true);
   };
 
-  // ---- Completion roll-up (§14 "The workspace meta line") ------------------
+  // ---- Completion roll-up ------------------
   /**
    * The ids the last accepted shared send reached — the roll-up's anchor. "3 of 5 replied" is a
    * claim about a SEND, not about idle-vs-busy: without the anchor it would count members that
@@ -692,7 +692,7 @@ export function GroupView(props: {
    */
   const [sentTo, setSentTo] = createSignal<string[] | null>(null);
   /**
-   * Per-path turn errors, each pane's own ChatView reporting its latest state (§03): a member
+   * Per-path turn errors, each pane's own ChatView reporting its latest state: a member
    * whose turn FAILED must never read as "replied" — the roll-up counts it separately, so the
    * workspace's one line cannot hide a broken member behind a progress count. Cleared by the
    * pane itself the moment a newer turn starts.
@@ -770,7 +770,7 @@ export function GroupView(props: {
   createEffect(on(gid, () => clearPartial(), { defer: true }));
 
   /**
-   * Dissolve is Delete group under another word (§9): same route, but here it sits above open
+   * Dissolve is Delete group under another word: same route, but here it sits above open
    * transcripts, where "Delete" would read as deleting them. Both confirmations say the sessions
    * stay, because that is the thing a reader needs to believe before pressing it.
    */
@@ -816,7 +816,7 @@ export function GroupView(props: {
               {panes().length} {panes().length === 1 ? "member" : "members"}
             </span>
             {/* The cwd when every member shares one, else how many folders this comparison
-                spans — the one fact that says "these are not the same task" (§9 "Title and meta"). */}
+                spans — the one fact that says "these are not the same task". */}
             <Show when={cwdMeta()}>
               {(m) => (
                 <>
@@ -828,7 +828,7 @@ export function GroupView(props: {
               )}
             </Show>
             {/* The last shared send, rolled up: who has replied. Failures are always named —
-                "3 of 5 replied" must never be able to hide a broken member (§14 "Member states"). */}
+                "3 of 5 replied" must never be able to hide a broken member. */}
             <Show when={rollLine()}>
               {(line) => (
                 <>
@@ -885,7 +885,7 @@ export function GroupView(props: {
                 Tabs
               </button>
               {/* A fit needs at least two panes to have anything to divide, and only means
-                  anything in the split row the Tabs toggle leaves standing (§14 "Layout: split"). */}
+                  anything in the split row the Tabs toggle leaves standing. */}
               <Show when={mode() === "split" && panes().length > 1}>
                 <button
                   type="button"
@@ -900,7 +900,7 @@ export function GroupView(props: {
           </Show>
           {/* Absent for a group Sova didn't fan out: there is nothing to align to, and gate #10
               forbids inferring a fork point from lineage. A hand-made group that ADOPTS a seed
-              gains this button, which §9 notes is adoption's one visible trace. */}
+              gains this button, which the copy deck notes is adoption's one visible trace. */}
           <Show when={props.group.seed}>
             <button type="button" class="button button-sm button-ghost workspace-align" onClick={alignToFork}>
               <span class="icon icon-sm" style={{ "--icon": "url(/icons/branch.svg)" }} aria-hidden="true" />
@@ -956,7 +956,7 @@ export function GroupView(props: {
                 title={nameOf(path)}
                 /* The pane's own accessible name, byte for byte: the strip and the pane must
                    agree on what a member is called, and a repeat's #n is the difference between
-                   three names and one (§14 "Announcements"). */
+                   three names and one. */
                 aria-label={nameOf(path)}
                 onClick={() => focusPane(path, true)}
                 onKeyDown={(e) => {
@@ -1062,7 +1062,7 @@ export function GroupView(props: {
             {(key) => {
               const paneId = paneIdFor(key);
               const ghost = ghostOf(key);
-              // A member whose file is gone keeps its pane as the specced `.empty` (§14 "Member
+              // A member whose file is gone keeps its pane as the specced `.empty` (the workspace spec "Member
               // states" — gone from disk): the pane disappearing between polls is silent loss, the
               // one thing this surface's whole refusal grammar exists to prevent. Still a pane in
               // every other sense — same order, same tab, same name from what this tab last saw.
@@ -1113,7 +1113,7 @@ export function GroupView(props: {
                   tabindex="-1"
                   hidden={mode() === "tabs" && active() !== path}
                   /* A fitted width may sit below the 440 floor the stylesheet re-asserts as
-                     min-width; the inline override is what lets an explicit Fit win (§14). */
+                     min-width; the inline override is what lets an explicit Fit win. */
                   style={
                     mode() === "split"
                       ? { "--workspace-pane-w": `${widthOf(path)}px`, ...(widthOf(path) < PANE_MIN_WIDTH ? { "min-width": "0" } : {}) }
@@ -1126,7 +1126,7 @@ export function GroupView(props: {
                     summary={summary}
                     paneId={paneId}
                     /* The pre-assembled name (repeat-suffix aware): one rule for the head, the
-                       aria-label and the announcements (§14 "A pane"). */
+                       aria-label and the announcements. */
                     name={() => nameOf(path)}
                     fork={fork()}
                     onFanOut={props.wiring.onFanOutFrom}
@@ -1183,12 +1183,12 @@ export function GroupView(props: {
           </For>
         </div>
         {/* One composer for the whole workspace, under the row it writes to. Not rendered with no
-            members: there is nobody to send to, and §14 says so rather than showing a dead box. */}
+            members: there is nobody to send to, and the workspace spec says so rather than showing a dead box. */}
         <GroupComposer
           groupId={id()}
           members={rows()}
           /* File-gone members are still members: the foot counts them so a send that the server
-             refuses on one is a confirmation, not a discovery (§14 "The group composer"). */
+             refuses on one is a confirmation, not a discovery. */
           gone={ghosts().map((g) => g.id)}
           nameOf={(sessionId) => {
             const m = rows().find((r) => r.id === sessionId);
@@ -1206,7 +1206,7 @@ export function GroupView(props: {
 }
 
 /**
- * One pane's tools (spec/14-workspaces.md "A pane"), as a menu: at 440px a row of seven buttons
+ * One pane's tools, as a menu: at 440px a row of seven buttons
  * is not a thing a pane head can hold. What can be done to the pane (width, place, focus, open on
  * its own) and to its membership — three separate words on purpose: Promote takes it out and
  * opens it, Eliminate takes it out and archives it, Remove From Group only takes it out.
@@ -1226,7 +1226,7 @@ function PaneMenu(props: {
    * can't — said before the press rather than discovered as a half-finished gesture.
    */
   eliminate: string | null;
-  /** The member's label today, or null: what `Rename` starts the field from (§14b "Member labels"). */
+  /** The member's label today, or null: what `Rename` starts the field from. */
   label: string | null;
   standaloneHref: string;
   onWider(): void;
@@ -1309,7 +1309,7 @@ function PaneMenu(props: {
                     onRun={props.onRight}
                   />
                 </Show>
-                {/* Not in §9's row list: a workspace needs a way to put the keyboard in a pane that
+                {/* Not in the copy deck's row list: a workspace needs a way to put the keyboard in a pane that
                     doesn't depend on reaching its composer, which a read-only member doesn't have. */}
                 <menu.Item label="Focus" aria={`Focus ${props.name}`} icon={<Icon name="chat" small />} keepFocus onRun={props.onFocus} />
               </div>
@@ -1426,12 +1426,12 @@ function MenuRow(props: { aria: string; title?: string; icon?: JSX.Element; onRu
 }
 
 /**
- * The addable sessions, filtered by the same search at every width (§14 "Group lifecycle"):
+ * The addable sessions, filtered by the same search at every width:
  * ungrouped first — adding those costs nothing — then ones a press would move out of another
  * group, each naming the group it leaves. One implementation for both heads, because the narrow
  * head used to lose the search and silently cap at 40 rows, which is a different picker wearing
  * the same label. `Fan Out…` rides last, carrying the group's seed so the dialog can offer
- * forking from the members' own starting point ("two more of these", §14b "Entry points").
+ * forking from the members' own starting point ("two more of these").
  */
 function MemberPicker(props: {
   groupName: string;
@@ -1507,7 +1507,7 @@ function MemberPicker(props: {
 }
 
 /**
- * The §2 group popover in reverse (spec/14-workspaces.md "Group lifecycle"): instead of choosing a
+ * The the session list group popover in reverse: instead of choosing a
  * group for one session, it chooses a session for this group. The body is `MemberPicker`, shared
  * with the narrow head's menu so both widths offer the same search, the same list and the same
  * last row.
@@ -1519,7 +1519,7 @@ function AddMembers(props: {
   open: boolean;
   onOpen(open: boolean): void;
   onAdd(session: SessionSummary): void;
-  /** The last row: make new members instead of moving existing ones (§14b "Entry points"). */
+  /** The last row: make new members instead of moving existing ones. */
   onFanOut(seed?: GroupSeed): void;
 }) {
   let trigger!: HTMLButtonElement;
@@ -1573,7 +1573,7 @@ function AddMembers(props: {
 }
 
 /**
- * The head's tools as one menu, under 640px (spec/14-workspaces.md "Shell"). Same actions, same
+ * The head's tools as one menu, under 640px. Same actions, same
  * order, same words — and now the same Add Members PICKER the wide head has, not a truncated
  * list: the spec's "filtered by the same search" holds at every width, and `addOpen` is the same
  * signal the empty state's and the partial banner's buttons flip, so Add Members works from
@@ -1637,8 +1637,8 @@ function HeadActions(props: {
         class="button button-icon button-ghost"
         aria-haspopup="menu"
         aria-expanded={open() ? "true" : "false"}
-        /* The word is §9's, but the name says WHICH thing it acts on: three pane composers on this
-           page already carry a "More Actions" trigger (§4b), and four identically named controls
+        /* The word is the copy deck's, but the name says WHICH thing it acts on: three pane composers on this
+           page already carry a "More Actions" trigger, and four identically named controls
            are four indistinguishable ones to AT. Same shape spec blessed for the pane menu. */
         aria-label={`More Actions · ${props.groupName}`}
         title="More Actions"

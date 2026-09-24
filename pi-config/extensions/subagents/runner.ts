@@ -264,7 +264,7 @@ function owningPackageName(script: string): string | null {
  * current script under the current runtime, fall back to a `pi` on PATH.
  *
  * DIVERGENCE from the example (pi-config, deliberate): `argv[1]` is only pi when this process IS
- * pi. pi-web loads this extension inside its own server, where argv[1] is `server/index.ts` — it
+ * pi. Sova loads this extension inside its own server, where argv[1] is `server/index.ts` — it
  * exists, so the example's check accepts it, and the worker dies on that file's extensionless
  * TypeScript imports before it ever starts (observed: `node server/index.ts --mode rpc …` →
  * ERR_MODULE_NOT_FOUND for `./chat-manager`). So the script is re-invoked only when the package it

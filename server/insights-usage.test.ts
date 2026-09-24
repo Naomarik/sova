@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 import type { UsageProvider } from "../shared/protocol";
 
-const agentDir = mkdtempSync(join(tmpdir(), "pi-web-usage-test-"));
+const agentDir = mkdtempSync(join(tmpdir(), "sova-usage-test-"));
 process.env.PI_CODING_AGENT_DIR = agentDir; // before the module below computes USAGE_FILE
 const usageFile = join(agentDir, "cache", "usage-status.json");
 mkdirSync(join(agentDir, "cache"), { recursive: true });

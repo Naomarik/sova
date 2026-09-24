@@ -15,7 +15,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 
-const agentDir = mkdtempSync(join(tmpdir(), "pi-web-batch-wiring-"));
+const agentDir = mkdtempSync(join(tmpdir(), "sova-batch-wiring-"));
 process.env.PI_CODING_AGENT_DIR = agentDir;
 const sessionsDir = join(agentDir, "sessions", "--tmp-wiring--");
 const liveDir = join(agentDir, "sessions", "live");
@@ -202,7 +202,7 @@ test("a name the user typed survives being emptied; the accepted default does no
   const theirs = await fanoutInto("generated", "Fanout · retry backoff", "d1");
   assert.ok(theirs.ok);
   assert.equal(readGroup(theirs.result.group.id)?.autoDissolve, true);
-  assert.deepEqual(assignSession(theirs.result.created[0]!.id, null), { ok: true, dissolved: true }, "pi-web named it, pi-web removes it");
+  assert.deepEqual(assignSession(theirs.result.created[0]!.id, null), { ok: true, dissolved: true }, "Sova named it, Sova removes it");
   assert.equal(readGroup(theirs.result.group.id), null);
 });
 

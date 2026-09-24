@@ -32,7 +32,7 @@ const MetaSep = () => (
   </span>
 );
 
-/** Which half a narrow pane shows (§11 "Narrow panes"): the worker list, or one worker. A wide
+/** Which half a narrow pane shows: the worker list, or one worker. A wide
     pane shows both side by side and ignores it. */
 export type AgentsView = "list" | "detail";
 
@@ -43,7 +43,7 @@ const SETTLED = new Set<WorkerInfo["status"]>(["waiting", "done", "error", "kill
 const asOf = (w: WorkerInfo): number | undefined => (SETTLED.has(w.status) ? w.endedAt ?? w.lastActivity : undefined);
 
 /**
- * The session pane's Agents tab (spec/11-subagents-pane.md §11): the open session's workers on the left, the
+ * The session pane's Agents tab: the open session's workers on the left, the
  * selected worker's read-only transcript (its own session file over `/ws/watch`) on the right.
  * Nothing is ever sent to a worker. `chatWorkers` is the chat runtime's live list; without it
  * (watching, or before the first "workers" message) the list comes from the polled insight.
@@ -265,7 +265,7 @@ export function SubagentPane(props: {
                   </Show>
                   <p class="subagents-view-meta meta-line">
                     <span class="text-mono">{w().id}</span>
-                    {/* The provider leads (§11 "The meta line ranks its facts"): the route that
+                    {/* The provider leads: the route that
                         serves the model — never the part that clips. `claude code` for that
                         backend, a pi ref's prefix or a catalog lookup otherwise. */}
                     <Show when={w().provider}>

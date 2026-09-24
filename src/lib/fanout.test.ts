@@ -61,14 +61,14 @@ test("the default group name is six words of the source, capped at the name limi
 });
 
 test("a row's fill compares against THAT model's window, which is the point of the preview", () => {
-  // The same 48k against two windows: 4% of one, 24% of the other — §14b's own worked example,
-  // and the percent is §4f's formatter, which floors rather than rounds.
+  // The same 48k against two windows: 4% of one, 24% of the other — the fanout spec's own worked example,
+  // and the percent is the context window spec's formatter, which floors rather than rounds.
   assert.equal(rowFill(48_000, 1_000_000).text, "48k of 1M · 4%");
   assert.equal(rowFill(48_000, 200_000).text, "48k of 200k · 24%");
 });
 
 test("a fill that can't be named is said in words, never as 0 — which would be a false claim", () => {
-  // §4f refuses "0%" for a just-compacted session in the head, for the same reason: an
+  // The context window spec refuses "0%" for a just-compacted session in the head, for the same reason: an
   // empty-looking gauge is a claim we can't make. The preview must not make it either.
   const compacted = rowFill("compacted", 1_000_000);
   assert.equal(compacted.text, "compacted");
@@ -92,14 +92,14 @@ test("an unknown window shows tokens alone and never blocks; fresh mode has no f
   assert.equal(fresh.overflows, false);
 });
 
-test("a fork bigger than the window overflows, and carries §4f's error step", () => {
+test("a fork bigger than the window overflows, and carries the context window spec's error step", () => {
   const over = rowFill(250_000, 200_000);
   assert.equal(over.overflows, true);
   assert.equal(over.step, "context-error");
   assert.equal(over.text, "250k of 200k");
   // Right at the window is still over: a session that starts full fails on its first turn.
   assert.equal(rowFill(200_000, 200_000).overflows, true);
-  // Under it is not, and the warn step is §4f's, not a second opinion.
+  // Under it is not, and the warn step is the context window spec's, not a second opinion.
   assert.equal(rowFill(170_000, 200_000).overflows, false);
   assert.equal(rowFill(170_000, 200_000).step, "context-warn");
 });
@@ -110,7 +110,7 @@ test("the shared-turn line says what every future turn costs, in every mode and 
     sharedTurnLine(3, null),
     "3 members, each starting empty. Every shared turn is re-sent 3 times as they grow.",
   );
-  // A number we can't name is not ~0 — "~0 tokens re-sent" was the false claim (§4f).
+  // A number we can't name is not ~0 — "~0 tokens re-sent" was the false claim.
   assert.equal(
     sharedTurnLine(5, "compacted"),
     "5 members × unknown tokens re-sent every shared turn — the fork point was compacted.",
@@ -123,7 +123,7 @@ test("the shared-turn line says what every future turn costs, in every mode and 
 });
 
 test("a fanout of one agrees in number, in both modes", () => {
-  // A row at count 1 is a legal plan, and §9's plural-only copy reads "1 members … 1 times" there.
+  // A row at count 1 is a legal plan, and the copy deck's plural-only copy reads "1 members … 1 times" there.
   assert.equal(sharedTurnLine(1, 48_000), "1 member × ~48k tokens re-sent every shared turn.");
   assert.equal(sharedTurnLine(1, null), "1 member, starting empty. Every shared turn is re-sent 1 time as it grows.");
 });
@@ -259,7 +259,7 @@ test("a member row's controls are named by the FULL ref, because two providers s
   // The hazard this pins: `zai/glm-5.3` and `ollama-cloud/glm-5.3` are two rows, two subscriptions,
   // and one bare model id. The row's visible text is the full ref, so a sighted user can tell them
   // apart; the accessible name is the only signal a screen-reader user has, and shortModel would
-  // announce both as "One more glm-5.3". §9's "Member row" requires the ref for that reason.
+  // announce both as "One more glm-5.3". The copy deck's "Member row" requires the ref for that reason.
   assert.equal(moreLabel("zai/glm-5.3"), "One more zai/glm-5.3");
   assert.notEqual(moreLabel("zai/glm-5.3"), moreLabel("ollama-cloud/glm-5.3"));
   assert.equal(removeLabel("ollama-cloud/glm-5.3"), "Remove ollama-cloud/glm-5.3");
@@ -307,7 +307,7 @@ test("the source's blocked reason reads the LIST, so it is reactive and never a 
   assert.equal(sourceBlocked(facts({ live: tui })), sourceBlocked(facts({ live: tui })), "a stable string, re-derived per read");
   assert.ok(sourceBlocked(facts({ live: tui }))!.includes("open in a terminal now"));
   assert.equal(sourceBlocked(facts({ busy: true })), midTurnReason("Retry with jitter"));
-  // The MID-TURN sentence is the one §14b promises enables itself; the function's whole job is
+  // The MID-TURN sentence is the one the fanout spec promises enables itself; the function's whole job is
   // that re-reading it after the turn ends yields null, which a snapshot could never do.
   assert.equal(sourceBlocked(facts({})), null, "a quiet source blocks nothing");
   // Absence is "can't tell", never "current": legacyFormat absent = no block, even though an

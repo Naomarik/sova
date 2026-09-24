@@ -1,4 +1,4 @@
-// Pure derivations behind the Session info modal (spec/04-composer.md §4h): the spend table's rows and
+// Pure derivations behind the Session info modal: the spend table's rows and
 // labels, the model/thinking/mode timeline read off the transcript, and the two text helpers the
 // modal needs. Nothing here touches the DOM, so it is unit-tested in spend.test.ts.
 

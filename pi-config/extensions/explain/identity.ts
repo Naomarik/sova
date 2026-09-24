@@ -4,7 +4,7 @@
  *
  * `PI_SESSION_ID` / `PI_SESSION_FILE` are the documented names for this, but pi
  * only injects them into *tool* subprocesses, not into its own process, and a
- * host that embeds pi (pi-web) can have one process behind several runtimes. So
+ * host that embeds pi (Sova) can have one process behind several runtimes. So
  * the session manager — which is per session, always — is authoritative, and
  * the environment is the fallback for the case where it reports nothing.
  */

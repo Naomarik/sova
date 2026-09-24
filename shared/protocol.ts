@@ -93,8 +93,7 @@ export interface SessionSummary {
       LINEAGE ONLY, and the distinction matters: this pair says a session was forked from THAT
       file, never at WHICH entry. A fork marker needs the leaf it diverged at, which only a group
       Sova fanned out carries (`seed`), so a marker position must never be inferred from here —
-      a marker in the wrong place is a false claim about which part of the transcript is shared
-      (spec/14-workspaces.md "Data", spec/14b-fanout.md "The fork point in a transcript"). */
+      a marker in the wrong place is a false claim about which part of the transcript is shared. */
   parentId?: string;
   /** Remote session: the target name from ~/.pi/agent/targets.json. Derived from `cwd`, which for a
       remote session is the local placeholder ~/.pi/agent/sova/targets/<target>/<remote/abs/path>.
@@ -116,7 +115,7 @@ export interface SessionSummary {
       (⇔ header `version` ≠ CURRENT_SESSION_FORMAT, server-computed — the client never compares
       numbers itself). The fanout source rules refuse such a file (`old-format`: forking reads
       the file, and reading an old format rewrites it wholesale under a runtime we hold), so the
-      dialog pre-disables Create with §14b's sentence. SAFE BY ABSENCE: absent = current, OR the
+      dialog pre-disables Create with the fanout spec's sentence. SAFE BY ABSENCE: absent = current, OR the
       head could not be read, OR an older server that never sends the field — none of which ever
       blocks anything; only `true` disables a fork. Never affects opening, watching or chatting:
       an older-format session is only special to a route that would rewrite it. */
@@ -293,7 +292,6 @@ export interface OutboundImage {
     shape of a composer draft's `attachments` entry (GET/PUT /api/sessions/draft). */
 export interface UploadResult {
   path: string; // /tmp/sova-<uuid>.<ext>, or <agent dir>/sova/attachments/<session id>/sova-<uuid>.<ext> with ?draft=
-  // (legacy uploads kept the pi-web-<uuid> name; old paths keep serving from the moved root)
   name: string; // basename
   mimeType: string;
   size: number;
@@ -366,7 +364,7 @@ export interface UploadResult {
 //                                  at all is a 409, not a "sent to 0 of n". `members` is the user's explicit subset
 //                                  ("Send to the rest"), never inferred server-side: given, every id must be
 //                                  in the group, and only those are checked and prompted. No attachments and
-//                                  no slash commands — images belong to a pane composer (spec §14).
+//                                  no slash commands — images belong to a pane composer.
 //                                  400 bad body, blank text, members not an array of strings, an id that is
 //                                  not a member, or the group is empty; 404 unknown group; 409 refused)
 // POST /api/session-groups/fanout FanoutRequest -> 201 FanoutResult
@@ -386,7 +384,7 @@ export interface UploadResult {
 //                                  400 bad name, empty members, a count outside 1–9, an unknown ref, both or
 //                                  neither of name/groupId, both or neither of source/cwd, text or cwd in fork
 //                                  mode, blank text in fresh mode, or a cwd the New Session path itself would
-//                                  refuse (not absolute, gone, not a directory, or a removed legacy mount cwd
+//                                  refuse (not absolute, gone, or not a directory
 //                                  — fresh mode IS that path N times, and answers with its sentences);
 //                                  404 a source path that resolves to no session (the subject doesn't exist —
 //                                  different from "exists but not right now"); 409 { refused: [BatchRefusal] }
@@ -430,16 +428,14 @@ export interface UploadResult {
 //                                  against the available models. 400 bad body or ref; 409 "Favorites are locked; retry…"
 //                                  (another writer mid-save); 500 anything else the store refused — a malformed file is
 //                                  reported, never overwritten)
-// GET  /api/attachment?path=…   -> image bytes (TmpAttachment.path; only /tmp/<name> or <agent dir>/{sova,pi-web}/attachments/
+// GET  /api/attachment?path=…   -> image bytes (TmpAttachment.path; only /tmp/<name> or <agent dir>/sova/attachments/
 //                                  <session id>/<name>, .png|jpg|jpeg|webp|gif, ≤ 20MB; 400 bad shape, 403 resolves
 //                                  outside /tmp / the attachments root or too large, 404 missing)
 // DELETE /api/attachment?path=… -> { ok: true }   (removes one file under the attachments root, e.g. a composer
 //                                  chip's remove; 403 anything else, /tmp included; 400 no path; 404 missing)
 // GET  /api/mode                -> ModeInfo   (the DEFAULT for new sessions: ~/.pi/agent/mode.json; missing file → defaults)
 // POST /api/mode { mode?, minorModes? } -> ModeInfo   (writes that default only, merged into the fresh file with the
-//                                  other fields kept. No open chat changes. 400 bad body or unknown name.
-//                                  mode "claude-heavy" — Delegate's old name — is accepted and read as "delegate",
-//                                  here and with ?path=; only "delegate" is ever written or returned)
+//                                  other fields kept. No open chat changes. 400 bad body or unknown name.)
 // POST /api/mode?path=… { mode?, minorModes? } -> ChatModeResult   (switches THAT chat only, from its next message;
 //                                  mode.json is not written — a switch changes nothing but this chat, new or not.
 //                                  400 bad body/unknown name/bad path,
@@ -513,7 +509,7 @@ export interface SummarizerSettingsInfo {
 // PUT /api/settings/models      -> ModelPolicy (replaces the whole policy; 400 bad body)
 // ---------------------------------------------------------------------------
 /** Which providers and models may be used, and which of them subagents may be given (Settings →
-    Models, spec/12-settings-dialog.md §12).
+    Models).
 
     Two dimensions over the same names. The bare lists are GLOBAL: those providers and models may
     not be used anywhere — not in a chat here (the socket refuses set_model, and a session already
@@ -548,21 +544,20 @@ export interface ModelPolicy {
 /** A theme's resolved custom properties: theme key (`bg`, `ink-2`, `status-success`, `shadow-1`,
     `font-body`, `fs-body`, …) → the authored string, VERBATIM. shared/theme.ts CSS_PROPERTY maps
     each key to the custom property it lands on; `--focus-color` and `--focus-ring` are never in
-    here (they track the accent through var(), spec/00-ground-rules.md §0). */
+    here (they track the accent through var()). */
 export type ThemeTokens = Record<string, string>;
 
-/** One row of Settings → Themes (spec/12-settings-dialog.md §12). The server has already read,
+/** One row of Settings → Themes. The server has already read,
     deref'd (`$name`) and validated the file, so every string here is safe to paint — which is
     what lets a row preview swatches and a font sample from a file nobody selected. */
 export interface ThemeInfo {
-  /** The file's basename without `.json`; the browser stores the choice under `sova:theme` (legacy
-      `pi-web:theme` mirrored while the rename bridge is open). */
+  /** The file's basename without `.json`; the browser stores the choice under `sova:theme`. */
   id: string;
-  /** The file's `name`. Empty on a broken row, where §12 shows the filename instead. */
+  /** The file's `name`. Empty on a broken row, where the settings dialog spec shows the filename instead. */
   name: string;
   /** Where the file came from. A user file whose id matches a built-in replaces it. */
   source: "builtin" | "user";
-  /** Absolute path of the file. §12 puts a user row's path in its `title`. */
+  /** Absolute path of the file. The settings dialog spec puts a user row's path in its `title`. */
   path: string;
   /** The base it extends: `data-theme` is set to this before its tokens are written. */
   base: "dark" | "light";
@@ -570,23 +565,23 @@ export interface ThemeInfo {
       A broken row (`error` set) is never worn and gets no base fill: it carries only what it
       authored and we accepted, which is empty when the file never parsed. */
   tokens: ThemeTokens;
-  /** Everything we declined to take from the file, in file order, each one a §12 reason line:
+  /** Everything we declined to take from the file, in file order, each one a settings-dialog reason line:
       a value we won't emit, an unknown key, a `$name` that didn't resolve. */
   warnings: string[];
   /** Set when the theme can't be worn: the file isn't JSON (the parser's own message), it has
-      no name, or it holds a value we won't emit. §12 draws these as disabled rows. */
+      no name, or it holds a value we won't emit. The settings dialog spec draws these as disabled rows. */
   error?: string;
-  /** True on a user file that took a built-in's id — §12 says so in the row's meta line. */
+  /** True on a user file that took a built-in's id — the settings dialog spec says so in the row's meta line. */
   replacesBuiltin?: boolean;
 }
 
 /** GET /api/themes. Built-ins first (`dark`, `light`, then the rest by id), user themes after. */
 export interface ThemeList {
-  /** The folder a dropped-in theme goes in, absolute — §12 names it in the footer. */
+  /** The folder a dropped-in theme goes in, absolute — the settings dialog spec names it in the footer. */
   dir: string;
   themes: ThemeInfo[];
   /** Why the user folder couldn't be read, when it couldn't. The built-ins are listed anyway:
-      the app's own themes don't depend on it (§12). A missing folder is not an error. */
+      the app's own themes don't depend on it. A missing folder is not an error. */
   error?: string;
 }
 
@@ -753,11 +748,8 @@ export type GitWhere = { kind: "local" } | { kind: "remote"; target: string };
 export interface GitRepoSummary {
   state: "repo";
   where: GitWhere;
-  /** The folder git ran in: the stored cwd, the moved folder when path-map.json rebased it
-      (`moved`), or the remote cwd on a target. */
+  /** The folder git ran in: the stored cwd, or the remote cwd on a target. */
   cwd: string;
-  /** The stored cwd no longer exists under that name and was read at its moved location. */
-  moved?: true;
   /** The repository's top-level folder (absolute; a REMOTE path for a remote session). */
   root: string;
   head: { kind: "branch"; name: string } | { kind: "detached"; oid: string };
@@ -801,9 +793,9 @@ export interface GitRepoSummary {
 export type GitSummary =
   | GitRepoSummary
   /** The folder is readable and no repository contains it. */
-  | { state: "none"; where: GitWhere; cwd: string; moved?: true; checkedAt: number }
+  | { state: "none"; where: GitWhere; cwd: string; checkedAt: number }
   /** Nothing could be read: `reason` is a sentence for the user (folder gone, target offline,
-      git missing, took too long, a removed sshfs mount, git's own refusal). Never cached. */
+      git missing, took too long, git's own refusal). Never cached. */
   | { state: "unavailable"; where: GitWhere; cwd: string; reason: string; checkedAt: number };
 
 // GET /api/sessions/context?path=<session file>&fresh=1 -> SessionSetup   (server/session-setup.ts:
@@ -853,9 +845,8 @@ export type SessionSetup =
   | {
       state: "ok";
       where: { kind: "local" };
-      /** The folder that was read: the stored cwd, or its moved location (then `moved`). */
+      /** The folder that was read: the stored cwd. */
       cwd: string;
-      moved?: true;
       /** Context files, in the order pi layers them: global first, then ancestors, then the cwd. */
       context: SessionSetupFile[];
       /** Skills, in the order pi lists them to the model. A skill is OFFERED, not loaded: it loads
@@ -962,7 +953,7 @@ export interface SessionGroup {
 export interface AssignGroupResult {
   ok: true;
   /** The assign emptied a group whose `autoDissolve` is set, and the server deleted it in the SAME
-      write (spec/14-workspaces.md §14 "Emptying a group"). `autoDissolve` is the whole rule and
+      write. `autoDissolve` is the whole rule and
       `seed` decides nothing: a hand-made group that ADOPTS a fanout's seed keeps standing when
       emptied, because a group whose name is the user's work stands empty — whether they typed it
       at creation or later over a generated one. Absent otherwise. The client toasts
@@ -1041,8 +1032,7 @@ export interface FanoutRequest {
       dialog SHOWED the user, not a request for the server to find the current one. */
   source?: { path: string; leafId: string };
   /** Fresh mode: the folder every member is created in — checked by the New Session route's own
-      rule (targets.ts validateNewSessionCwd: absolute, an existing directory, not a legacy
-      mount cwd), so a folder that path refuses is a 400 with that path's own sentence
+      rule (targets.ts validateNewSessionCwd: absolute, an existing directory), so a folder that path refuses is a 400 with that path's own sentence
       BEFORE anything is made. */
   cwd?: string;
   /** Fresh mode only: the first message every member gets, sent through the batch path. Its
@@ -1249,7 +1239,7 @@ export interface ForkRefusal {
     new sessions** (~/.pi/agent/mode.json), never one chat's state. `strict` is shown, never
     changed here. `modes`/`minors` list what exists. */
 export interface ModeInfo {
-  mode: string; // "normal" | "delegate" (never the legacy "claude-heavy": the server reads that as "delegate")
+  mode: string; // "normal" | "delegate"
   minorModes: string[]; // canonical order
   strict: boolean;
   modes: { id: string; description: string }[];
@@ -1391,8 +1381,7 @@ export type ChatClientMessage =
   | { type: "rewind"; id: string; entryId: string }
   /** Redo the turn an ASSISTANT entry belongs to: the server walks the active branch back from
       `entryId` to the nearest `role:"user"` message, rewinds to just before it (so the invisible
-      rewind marker is written — legacy-spelled `pi-web-rewind` while the rename bridge is open —
-      and the move survives a reload), and re-prompts that
+      rewind marker is written and the move survives a reload), and re-prompts that
       entry's STORED text and STORED images, unchanged, with the session's CURRENT model and
       thinking level — which is what makes switch-model-then-regenerate a comparison.
       `id` is the client's request id, echoed in `regenerated`/`regenerate_refused`; `entryId` is
@@ -1763,8 +1752,7 @@ export interface CompactionInfo {
   id: string; timestamp: string; tokensBefore: number | null; summary: string;
   readFiles: string[]; modifiedFiles: string[];
 }
-/** One rewind on the active branch: the invisible `pi-web-rewind` entry (bridge spelling; the
-  * reader accepts `sova-rewind` too) Sova appends after
+/** One rewind on the active branch: the invisible `sova-rewind` entry Sova appends after
     navigating the tree (server/chat-manager.ts). Ids only — the turns it abandoned are, by
     definition, not on the branch a reader can walk — so a timeline marker can say a rewind
     happened and when, never what it took back. */

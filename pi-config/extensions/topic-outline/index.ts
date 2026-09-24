@@ -311,7 +311,7 @@ export default function topicOutline(pi: ExtensionAPI): void {
 
   function scheduleRun(force = false): void {
     // Summaries exist for the terminal UI; other modes run them only when the host opts in
-    // with --topic-outline-headless (pi-web's embedded chat runtimes do; subagent workers don't).
+    // with --topic-outline-headless (Sova's embedded chat runtimes do; subagent workers don't).
     if (!runtime || !shouldRunOutline({ mode: runtime.ctx.mode, headless: pi.getFlag(HEADLESS_FLAG) })) return;
     if (force) pendingRefresh = true;
     if (debounceTimer) clearTimeout(debounceTimer);
@@ -393,7 +393,7 @@ export default function topicOutline(pi: ExtensionAPI): void {
     return openPanel(ctx);
   }
 
-  pi.registerFlag(HEADLESS_FLAG, { type: "boolean", description: "Also run outline summaries outside the TUI (set by pi-web)" });
+  pi.registerFlag(HEADLESS_FLAG, { type: "boolean", description: "Also run outline summaries outside the TUI (set by Sova)" });
   pi.registerCommand("outline", { description: "Conversation topic outline (jump to topics in the transcript)", handler: handleCommand });
   pi.registerShortcut("alt+o", { description: "Open topic outline panel", handler: ctx => openPanel(ctx) });
 

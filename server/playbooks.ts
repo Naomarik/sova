@@ -3,7 +3,6 @@ import { isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { PlaybookCatalog, PlaybookInfo } from "../shared/protocol";
 import { defaultRemoteOf, type RemoteCwd } from "./files";
-import { movedPath } from "./path-map";
 import { stateRoot } from "./state-root";
 
 /**
@@ -20,9 +19,8 @@ import { stateRoot } from "./state-root";
  * small folders are cheaper to rescan than a watch is to keep honest.
  *
  * The project cwd is handled exactly as server/files.ts handles it: a relative or remote cwd is
- * refused lexically, before any fs call (a placeholder must never be re-read as a moved local
- * folder, and a dead mount must not be stat'ed); only a cwd that survived the refusal goes through
- * path-map.json. Nothing here ever fails the request — what couldn't be listed says so in
+ * refused lexically, before any fs call (a placeholder is never a local folder). Nothing here ever
+ * fails the request — what couldn't be listed says so in
  * `project` or `error`, beside everything that could.
  */
 const SHIPPED_DIR = fileURLToPath(new URL("../playbooks/", import.meta.url));
@@ -118,11 +116,9 @@ async function scan(root: string, source: Source): Promise<{ entries: PlaybookIn
 const byTitle = (a: PlaybookInfo, b: PlaybookInfo) =>
   a.title.localeCompare(b.title, undefined, { sensitivity: "base" }) || a.id.localeCompare(b.id);
 
-/** Why a remote cwd has no project playbooks: the same two refusals /api/files gives. */
+/** Why a remote cwd has no project playbooks: the same refusal /api/files gives. */
 function remoteMessage(remote: RemoteCwd): string {
-  return remote.kind === "target"
-    ? `This session's files live on ${remote.target}. Project playbooks are read from local folders only`
-    : `This folder was an sshfs mount of ${remote.target} that Sova no longer creates. Project playbooks are read from local folders only`;
+  return `This session's files live on ${remote.target}. Project playbooks are read from local folders only`;
 }
 
 async function projectPlaybooks(
@@ -134,8 +130,7 @@ async function projectPlaybooks(
   const resolved = resolve(rawCwd);
   const remote = (deps.remoteOf ?? defaultRemoteOf)(resolved);
   if (remote) return { state: { state: "remote", message: remoteMessage(remote) }, entries: [] }; // lexical, before any fs call
-  // After the refusal, never before: a renamed local root is the same folder under a new name.
-  const path = movedPath(resolved);
+  const path = resolved;
   try {
     if (!(await stat(path)).isDirectory()) return { state: { state: "missing", message: `${path} is not a folder` }, entries: [] };
   } catch (err) {

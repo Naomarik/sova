@@ -3,17 +3,16 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { cwdLabel, localOnly, splitRemoteCwd, remoteCrumbs, remoteParent, remotePlaceOf, remoteRecents } from "./remote-session";
 
-const T = "/home/u/.pi/agent/pi-web/targets"; // legacy pre-rebrand placeholder root
-const TS = "/home/u/.pi/agent/sova/targets"; // current root
+const T = "/home/u/.pi/agent/sova/targets"; // the placeholder root
 
-test("splitRemoteCwd reads the target and the mirrored remote folder, under EITHER root", () => {
-  for (const root of [TS, T]) {
+test("splitRemoteCwd reads the target and the mirrored remote folder", () => {
+  for (const root of [T]) {
     assert.deepEqual(splitRemoteCwd(`${root}/acme-prod/home/deploy/site`), { target: "acme-prod", remoteCwd: "/home/deploy/site" });
     assert.deepEqual(splitRemoteCwd(`${root}/box`), { target: "box", remoteCwd: "/" });
     assert.deepEqual(splitRemoteCwd(`${root}/box/`), { target: "box", remoteCwd: "/" });
     assert.equal(splitRemoteCwd(`${root}/`), null);
   }
-  assert.equal(splitRemoteCwd("/home/u/webapps/pi-web"), null);
+  assert.equal(splitRemoteCwd("/home/u/webapps/sova"), null);
 });
 
 test("remotePlaceOf prefers the summary's own fields", () => {

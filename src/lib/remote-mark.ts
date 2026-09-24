@@ -1,5 +1,4 @@
-// The sidebar's per-row remote marks and the group label's remote form (spec/02-session-list.md
-// §2 "Remote sessions"). Pure decisions, so a row and its group's label cannot disagree: both
+// The sidebar's per-row remote marks and the group label's remote form. Pure decisions, so a row and its group's label cannot disagree: both
 // read `remotePlaceOf` (the summary's own target/remoteCwd, else its placeholder cwd) through
 // here.
 

@@ -1,5 +1,5 @@
 // Run: npx tsx --test server/session-titles.test.ts
-// Renaming a session in pi-web only (spec/02-session-list.md §2 "Selecting several sessions"):
+// Renaming a session in Sova only:
 // the store, the route, and the one thing the feature promises — the .jsonl is never written.
 // Uses a throwaway PI_CODING_AGENT_DIR in the OS temp dir; ~/.pi is never read or written.
 import assert from "node:assert/strict";
@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 
-const agentDir = mkdtempSync(join(tmpdir(), "pi-web-session-titles-"));
+const agentDir = mkdtempSync(join(tmpdir(), "sova-session-titles-"));
 process.env.PI_CODING_AGENT_DIR = agentDir; // before the modules below compute their paths
 process.env.PORT = "0"; // an ephemeral listener: the route tests use app.request, not the socket
 const sessionsDir = join(agentDir, "sessions", "--tmp-titles--");
@@ -86,12 +86,12 @@ test("the list and one summary show the override, and carry the derived title as
   const before = await getSessionSummary(pathA);
   assert.equal(before?.title, "derived title A");
   assert.equal(before?.originalTitle, undefined);
-  setSessionTitle(ID_A, "Renamed in pi-web");
+  setSessionTitle(ID_A, "Renamed in Sova");
   const after = await getSessionSummary(pathA);
-  assert.equal(after?.title, "Renamed in pi-web");
+  assert.equal(after?.title, "Renamed in Sova");
   assert.equal(after?.originalTitle, "derived title A");
   const listed = (await listSessions()).find((s) => s.path === pathA);
-  assert.equal(listed?.title, "Renamed in pi-web");
+  assert.equal(listed?.title, "Renamed in Sova");
   assert.equal(listed?.originalTitle, "derived title A");
   // Only the renamed one: a shared store must not leak a title onto its neighbour.
   const other = (await listSessions()).find((s) => s.path === pathB);

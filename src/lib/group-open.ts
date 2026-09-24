@@ -1,5 +1,4 @@
-// Open/closed state for the sidebar's GROUPS region and the group sections inside it
-// (spec/02-session-list.md §2 "Groups").
+// Open/closed state for the sidebar's GROUPS region and the group sections inside it.
 //
 // Both are COLLAPSED on every page load, and neither is persisted: the choice lives only in the
 // tab's memory for as long as the page does, so a reload always shows the region closed, whatever

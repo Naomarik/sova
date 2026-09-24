@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, test } from "node:test";
 
-const agentDir = mkdtempSync(join(tmpdir(), "pi-web-chatcfg-test-"));
+const agentDir = mkdtempSync(join(tmpdir(), "sova-chatcfg-test-"));
 process.env.PI_CODING_AGENT_DIR = agentDir; // before the modules below compute their paths
 const sessionsDir = join(agentDir, "sessions", "--tmp-chatcfg--");
 mkdirSync(sessionsDir, { recursive: true });

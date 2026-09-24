@@ -594,7 +594,7 @@ export async function listSessions(): Promise<SessionSummary[]> {
   for (const s of results) {
     if (!s) continue;
     // Empty husks — no user message anywhere in the file — are never listed, so abandoned
-    // new-session stubs don't clutter the archive (spec/02-session-list.md §2 "Archive cleanup"). Hidden
+    // new-session stubs don't clutter the archive. Hidden
     // only when the whole file was read: a first user message beyond the head cap never hides
     // a session. cleanupSessions("husks") still finds and deletes them by path.
     // Exception: a husk with a stored composer draft (text or images) is a new session the user
@@ -730,8 +730,7 @@ export async function archiveSession(path: string, archived: boolean): Promise<A
  * Session id → path, from the listing cache this server already keeps — no disk access at all.
  * Warm after any listing (the sidebar refreshes constantly); empty on a cold start, which is why
  * the one caller falls back to a real walk only for ids it cannot find here, rather than paying
- * for a directory scan on every press of Send (spec/14-workspaces.md §14 "The pre-check reads
- * the group, not the disk").
+ * for a directory scan on every press of Send.
  */
 export function indexedSessionPaths(): Map<string, string> {
   const out = new Map<string, string>();

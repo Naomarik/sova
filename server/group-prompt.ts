@@ -7,7 +7,7 @@ import { idOf, indexedSessionPaths, listSessionFiles } from "./sessions-index";
 import { recentForeignWriteAgeSec } from "./write-guard";
 
 /**
- * The shared follow-up of a group workspace (spec/14-workspaces.md §14 "The group composer"):
+ * The shared follow-up of a group workspace:
  * one request, N sessions, and ALL-OR-NOTHING — every member is checked before any of them is
  * prompted, so a refusal leaves zero prompts sent and can name every blocked member at once.
  *
@@ -20,7 +20,7 @@ import { recentForeignWriteAgeSec } from "./write-guard";
  * awaiting them would run five turns end to end — serializing the one thing a workspace exists to
  * run in parallel, and holding the composer for minutes. A member that is accepted and then fails
  * reports in ITS OWN PANE, over its own socket, where every other turn failure already reports;
- * this response never speaks for a turn it didn't wait for (spec §14, 5f2419d).
+ * this response never speaks for a turn it didn't wait for (5f2419d).
  */
 
 /**
@@ -94,7 +94,7 @@ export const realBatchDeps: BatchDeps = {
   },
 };
 
-/** The sentence behind each code. The client renders its own copy per code (spec §14/§9); this is
+/** The sentence behind each code. The client renders its own copy per code (the workspace spec); this is
     the server's fallback, and what a non-browser caller reads. */
 const SENTENCE: Record<BatchRefusalCode, string> = {
   "mid-turn": "It is mid-turn. A shared prompt is not a steer: wait for it, or stop it in its own pane.",
@@ -186,14 +186,14 @@ export async function promptGroup(groupId: string, text: string, subset: string[
       return;
     }
     // `message` is never blank: an older client that doesn't know a newer `code` shows it
-    // verbatim (spec §14), so an Error with no text must still leave a sentence behind.
+    // verbatim, so an Error with no text must still leave a sentence behind.
     const err = outcome.reason;
     const said = (err instanceof Error ? err.message : String(err)).trim();
     const code = codeOf(err);
     failed.push(refusal(id, paths.get(id)!, code, said || SENTENCE[code]));
   });
   // `sent` is never empty: nothing accepted is not a partial send, it is a refusal. "Sent to 0 of
-  // 5 members" is a sentence with no meaning, and §9 deliberately has no copy for it.
+  // 5 members" is a sentence with no meaning, and the copy deck deliberately has no copy for it.
   if (sent.length === 0) return { ok: false, status: 409, refused: failed };
   return { ok: true, result: { sent, failed } };
 }

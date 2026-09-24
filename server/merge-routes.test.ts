@@ -5,12 +5,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 
-const dir = mkdtempSync(join(tmpdir(), "pi-web-merge-routes-"));
+const dir = mkdtempSync(join(tmpdir(), "sova-merge-routes-"));
 process.env.PI_CODING_AGENT_DIR = dir;
 process.env.PORT = "0";
 const { app, server } = await import("./index");
 const { assignSession, readGroup } = await import("./session-groups");
-const { legacyMountsRoot, targetDir, writeTargets } = await import("./targets");
+const { targetDir, writeTargets } = await import("./targets");
 const { realFanoutDeps } = await import("./fanout");
 after(async () => {
   await new Promise<void>((resolve, reject) => server.close((err) => err ? reject(err) : resolve()));
@@ -62,14 +62,14 @@ test("merged handlers keep group name/order/labels and fileless assign removal",
 });
 
 test("merged sessions use shared cwd refusal and placeholders, never mounted creation", async () => {
-  const legacy = join(legacyMountsRoot(), "box", "work");
-  assert.equal(existsSync(legacy), false);
-  const expected = await realFanoutDeps.validateCwd(legacy);
-  assert.match(expected!, /removed sshfs mount/);
-  const refused = await request("POST", "/api/sessions", { cwd: legacy });
+  const missing = join(dir, "no-such-folder");
+  assert.equal(existsSync(missing), false);
+  const expected = await realFanoutDeps.validateCwd(missing);
+  assert.match(expected!, /does not exist/);
+  const refused = await request("POST", "/api/sessions", { cwd: missing });
   assert.equal(refused.status, 400);
   assert.equal((await refused.json() as { error: string }).error, expected);
-  assert.equal(existsSync(legacy), false, "refusal never makes a cwd");
+  assert.equal(existsSync(missing), false, "refusal never makes a cwd");
   writeTargets([{ name: "box", kind: "docker", docker: { container: "not-executed" } }]);
   const remote = await request("POST", "/api/sessions", { target: "box", remoteCwd: "/work", mounted: true });
   assert.equal(remote.status, 201);
@@ -81,7 +81,7 @@ test("merged sessions use shared cwd refusal and placeholders, never mounted cre
   assert.equal((await app.request("/api/themes")).status, 200);
 });
 
-// Save as default (§4g) reaches mode.json only through a chat this server holds. This pins the
+// Save as default reaches mode.json only through a chat this server holds. This pins the
 // route's refusals and that none of them writes the file; it does NOT pin that a switch never
 // writes it — that path needs a held chat runtime, which this harness doesn't build.
 test("POST /api/mode { saveDefault: true } needs a held chat, and every refusal leaves mode.json unwritten", async () => {

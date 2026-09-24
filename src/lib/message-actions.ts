@@ -1,4 +1,4 @@
-// Per-message actions (spec/03-transcript.md "Message actions"): which delivered message gets a
+// Per-message actions: which delivered message gets a
 // strip, what that strip offers, what Copy puts on the clipboard, and why an action is off right
 // now. Pure decisions only — no DOM, no socket — so the seams that actually bit us (one strip per
 // ENTRY when a reply renders as several rows, a reason that is never silently absent) are testable
@@ -164,7 +164,7 @@ export const FORK_PENDING_REASON = "A fork is already being made.";
 
 /**
  * Why an action is off, in user-facing words — or null when it can act. Never hidden: a button
- * that disappears takes its reason with it (spec/13 "the reason the disabled button carries").
+ * that disappears takes its reason with it.
  *
  * Order is deliberate: the structural facts first (this is not a chat; a terminal owns the file),
  * because they hold whatever else is true; then a request of the same kind already out; then the

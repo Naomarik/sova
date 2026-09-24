@@ -5,7 +5,6 @@ import {
   folderActive,
   folderOpen,
   folderOpenKey,
-  legacyFolderOpenKey,
   storedFolderOpen,
 } from "./folder-open";
 
@@ -45,16 +44,15 @@ test("only \"1\" and \"0\" are a choice; anything else is nobody having chosen",
 });
 
 test("the key separates the same folder in different regions", () => {
-  const cwd = "/home/user/webapps/pi-web";
+  const cwd = "/home/user/webapps/sova";
   const keys = ["t", "a-today", "g-abc123"].map((prefix) => folderOpenKey(prefix, cwd));
   assert.equal(new Set(keys).size, keys.length);
   // ...and two folders inside one region, whose paths share a prefix.
-  assert.notEqual(folderOpenKey("t", "/home/user/webapps"), folderOpenKey("t", "/home/user/webapps/pi-web"));
+  assert.notEqual(folderOpenKey("t", "/home/user/webapps"), folderOpenKey("t", "/home/user/webapps/sova"));
   for (const k of keys) assert.match(k, /^sova:folder-open-/);
 });
 
-test("the legacy pre-rebrand key is the same shape under the old prefix", () => {
-  assert.equal(legacyFolderOpenKey("t", "/x"), "pi-web:folder-open-t-/x");
+test("the key is the region prefix and the folder under the sova: prefix", () => {
   assert.equal(folderOpenKey("t", "/x"), "sova:folder-open-t-/x");
 });
 

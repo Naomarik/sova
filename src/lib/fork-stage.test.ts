@@ -5,7 +5,7 @@ import type { TmpAttachment, UploadResult } from "../../shared/protocol";
 
 const att = (path: string, available = true): TmpAttachment => ({ path, name: path.split("/").pop()!, mimeType: "image/png", available });
 const dataUrl = (payload: string) => `data:image/png;base64,${btoa(payload)}`;
-const SOURCE_DIR = "/home/x/.pi/agent/pi-web/attachments/SOURCE-SESSION";
+const SOURCE_DIR = "/home/x/.pi/agent/sova/attachments/SOURCE-SESSION";
 const CHILD = "/home/x/.pi/agent/sessions/--x--/child.jsonl";
 
 /** A fake world: paths resolve to their own bytes, uploads land in the child's folder. */
@@ -23,7 +23,7 @@ function world(over: Partial<StageDeps> & { contents?: Record<string, string> } 
       (async (file, into) => {
         const bytes = await file.text();
         uploaded.push({ name: file.name, into, bytes });
-        return { path: `/home/x/.pi/agent/pi-web/attachments/CHILD-SESSION/pi-web-${uploaded.length}.png`, name: file.name, mimeType: "image/png", size: bytes.length } as UploadResult;
+        return { path: `/home/x/.pi/agent/sova/attachments/CHILD-SESSION/sova-${uploaded.length}.png`, name: file.name, mimeType: "image/png", size: bytes.length } as UploadResult;
       }),
   };
   return { deps, uploaded, draft };
@@ -66,7 +66,7 @@ test("a forked image is COPIED into the child: the draft never names the source'
   // The danger this pins: a chip's Remove deletes by path, and the server allows deleting anything
   // under the attachments root. A draft holding the SOURCE's path would let the fork's composer
   // delete the picture out of the message it was forked from.
-  const source = `${SOURCE_DIR}/pi-web-original.png`;
+  const source = `${SOURCE_DIR}/sova-original.png`;
   const staged: UploadResult[] = [];
   const { deps, uploaded, draft } = world({ contents: { [source]: "PNGBYTES" } });
   const stage = await stageFork(CHILD, { text: `look at this\n${source}`, attachments: [att(source)] }, {
@@ -91,7 +91,7 @@ test("a forked image is COPIED into the child: the draft never names the source'
 });
 
 test("the draft's text is rewritten to the copy, so what it names is what the child owns", async () => {
-  const source = `${SOURCE_DIR}/pi-web-original.png`;
+  const source = `${SOURCE_DIR}/sova-original.png`;
   let drafted = "";
   const { deps, draft } = world({ contents: { [source]: "PNGBYTES" } });
   const stage = await stageFork(CHILD, { text: `see ${source} please`, attachments: [att(source)] }, deps);
@@ -103,7 +103,7 @@ test("the draft's text is rewritten to the copy, so what it names is what the ch
 });
 
 test("an image that cannot be copied is counted, and its dead name leaves the text", async () => {
-  const gone = `${SOURCE_DIR}/pi-web-gone.png`;
+  const gone = `${SOURCE_DIR}/sova-gone.png`;
   const { deps, uploaded } = world({ contents: {} }); // every read returns null
   const stage = await stageFork(CHILD, { text: `here it is\n${gone}`, attachments: [att(gone)] }, deps);
   assert.equal(stage.carried, 0);
@@ -112,7 +112,7 @@ test("an image that cannot be copied is counted, and its dead name leaves the te
 });
 
 test("a failed upload leaves the source untouched and counts the image as not carried", async () => {
-  const source = `${SOURCE_DIR}/pi-web-big.png`;
+  const source = `${SOURCE_DIR}/sova-big.png`;
   const { deps } = world({ contents: { [source]: "HUGE" } });
   const stage = await stageFork(CHILD, { text: "x", attachments: [att(source)] }, {
     ...deps,
@@ -127,7 +127,7 @@ test("a failed upload leaves the source untouched and counts the image as not ca
 // ---- Duplicates are proved, never assumed -------------------------------------------------------
 
 test("bytes identical to a copied file are dropped as the duplicate they are", async () => {
-  const source = `${SOURCE_DIR}/pi-web-same.png`;
+  const source = `${SOURCE_DIR}/sova-same.png`;
   const { deps, uploaded } = world({ contents: { [source]: "SAME" } });
   const stage = await stageFork(CHILD, { text: "x", attachments: [att(source)], images: [dataUrl("SAME")] }, deps);
   assert.equal(uploaded.length, 1, "one picture, one copy");
@@ -138,7 +138,7 @@ test("bytes identical to a copied file are dropped as the duplicate they are", a
 test("bytes that are a DIFFERENT picture come along instead of vanishing", async () => {
   // The old rule suppressed these silently and counted nothing, so the sentence claimed a clean
   // fork while a picture was missing.
-  const source = `${SOURCE_DIR}/pi-web-one.png`;
+  const source = `${SOURCE_DIR}/sova-one.png`;
   const { deps, uploaded } = world({ contents: { [source]: "ONE" } });
   const stage = await stageFork(CHILD, { text: "x", attachments: [att(source)], images: [dataUrl("TWO")] }, deps);
   assert.equal(uploaded.length, 2);
@@ -151,8 +151,8 @@ test("THE INVARIANT: no staged path is any path the SOURCE transcript names", as
   // is a path the source's own rows still reference, removing that chip destroys the source's
   // picture. Asserted against the whole set the source names, not just the one being forked.
   const sourceTranscriptPaths = [
-    `${SOURCE_DIR}/pi-web-forked.png`,
-    `${SOURCE_DIR}/pi-web-elsewhere.png`,
+    `${SOURCE_DIR}/sova-forked.png`,
+    `${SOURCE_DIR}/sova-elsewhere.png`,
     "/tmp/pi-clipboard-older.png",
   ];
   const forked = sourceTranscriptPaths[0]!;
@@ -170,7 +170,7 @@ test("the same picture through BOTH channels is staged once — a future pi that
   // Today the two channels are disjoint (the TUI's paste inserts a path and stores no
   // ImageContent). This does not RELY on that: identity is proved from the copied content, so a
   // pi that starts sending both for one picture still yields one copy rather than two chips.
-  const source = `${SOURCE_DIR}/pi-web-pasted.png`;
+  const source = `${SOURCE_DIR}/sova-pasted.png`;
   const { deps, uploaded } = world({ contents: { [source]: "PASTED" } });
   const stage = await stageFork(CHILD, { text: "x", attachments: [att(source)], images: [dataUrl("PASTED")] }, deps);
   assert.equal(uploaded.length, 1);
@@ -178,11 +178,11 @@ test("the same picture through BOTH channels is staged once — a future pi that
 });
 
 test("a path the USER typed stays in the forked text, even when its file is gone", async () => {
-  // The server strips only GENERATED names (pi-clipboard-…, pi-web-…) because `attachments` stands
+  // The server strips only GENERATED names (pi-clipboard-…, sova-…) because `attachments` stands
   // in for them. A path someone typed themselves is part of their sentence, and a fork must not
   // quietly edit it out while tidying up its own references.
   const typed = "/tmp/holiday-photo.png";
-  const generated = `${SOURCE_DIR}/pi-web-aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.png`;
+  const generated = `${SOURCE_DIR}/sova-aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.png`;
   const { deps, draft } = world({ contents: {} }); // neither file can be read
   const stage = await stageFork(
     CHILD,
@@ -228,7 +228,7 @@ test("a fork with NO attachments hands back the message byte-for-byte", async ()
 });
 
 test("a fork that REPLACES a source path changes only that substring", async () => {
-  const source = `${SOURCE_DIR}/pi-web-shot.png`;
+  const source = `${SOURCE_DIR}/sova-shot.png`;
   const text = `${CODE_MESSAGE}\n\nscreenshot: ${source}`;
   const { deps, draft } = world({ contents: { [source]: "PNGBYTES" } });
   const stage = await stageFork(CHILD, { text, attachments: [att(source)] }, deps);

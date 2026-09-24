@@ -103,7 +103,7 @@ test("a partial send retries per member: each button names exactly who its own p
     for (const other of retries.filter((x) => x.id !== r.id)) assert.ok(!r.label.includes(nameOf(other.id)));
 });
 
-test("a partial send with one straggler keeps §9's sentence exactly", () => {
+test("a partial send with one straggler keeps the copy deck's sentence exactly", () => {
   const retries = partialRetries([{ ...refusal("internal", "grabbed"), id: "a", path: "/tmp/a.jsonl" }], () => "control");
   assert.deepEqual(retries, [{ id: "a", label: "Send to control" }]);
 });

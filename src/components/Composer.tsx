@@ -65,7 +65,7 @@ const size = (bytes: number) =>
   bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 
 /**
- * Prompt input (spec/04-composer.md §4, §4b). Enter sends, Shift+Enter adds a newline. While `running`,
+ * Prompt input. Enter sends, Shift+Enter adds a newline. While `running`,
  * Send becomes Steer and a small Stop appears after it. `readOnly` disables the textarea and hides Send;
  * `blocked` keeps typing allowed but makes Send and Attach aria-disabled, with the reason read
  * out. Images attach by picker, paste, or drop. Text and images are a per-session draft that
@@ -97,9 +97,9 @@ export function Composer(props: {
       "skills" | "explain"), else null. The authority for the subagents trigger's aria-expanded;
       `workersOpen` answers only until App passes it. */
   paneTab?: string | null;
-  /** Runs a bare "/new" (§4d): resolves to the new session's folder label, or null if none was made. */
+  /** Runs a bare "/new": resolves to the new session's folder label, or null if none was made. */
   onNewSession?: () => Promise<string | null>;
-  /** Opens the session pane's Timeline tab: a bare "/timeline" (§4d) unfiltered; a bare "/tree" and
+  /** Opens the session pane's Timeline tab: a bare "/timeline" unfiltered; a bare "/tree" and
       the run-status row's "N inputs" trigger with `inputsOnly`, on your own messages. */
   onShowTimeline?: (inputsOnly?: boolean) => void;
   /** User messages on this chat's active branch; the status row's inputs trigger, hidden at 0. */
@@ -110,17 +110,17 @@ export function Composer(props: {
   /** This chat's working directory — the @ file menu's root. Null (watch-only composers, a
       session whose summary hasn't landed) keeps the @ menu off. */
   cwd?: string | null;
-  /** Chat sessions only: the flyout's model picker (§4c). */
+  /** Chat sessions only: the flyout's model picker. */
   model?: ModelControl | null;
-  /** Chat sessions only: the flyout's Thinking ladder (§4b). */
+  /** Chat sessions only: the flyout's Thinking ladder. */
   thinking?: ThinkingControl | null;
-  /** Chat sessions only: this chat's mode switch, at the right end of the foot (§4g). */
+  /** Chat sessions only: this chat's mode switch, at the right end of the foot. */
   mode?: ModeControl | null;
-  /** Opens this session's info modal from the flyout (§4h). */
+  /** Opens this session's info modal from the flyout. */
   onShowInfo?: () => void;
   /** Chat sessions only: opens the Playbooks dialog (the flyout's Playbooks row). */
   onPlaybooks?: () => void;
-  /** "Fan Out…" in the flyout, for a chat session that can be forked (§14b). */
+  /** "Fan Out…" in the flyout, for a chat session that can be forked. */
   onFanOut?: () => void;
   /** Chat sessions only: the flyout's "Undo last turn" row. */
   undo?: UndoControl | null;
@@ -153,7 +153,7 @@ export function Composer(props: {
   const [slashDismissed, setSlashDismissed] = createSignal<string | null>(null);
   /** Identity of a token's text: Esc keeps it closed until this changes. */
   const tokenKey = (t: SlashToken) => `${t.start}:${t.query}`;
-  // @-mention autocomplete: the slash menu's twin (§04h), one level of the session cwd at a time.
+  // @-mention autocomplete: the slash menu's twin, one level of the session cwd at a time.
   const [mentionToken, setMentionToken] = createSignal<MentionToken | null>(null);
   const [mentionActive, setMentionActive] = createSignal(0);
   const [mentionDismissed, setMentionDismissed] = createSignal<string | null>(null);
@@ -166,7 +166,7 @@ export function Composer(props: {
   let picker: HTMLInputElement | undefined;
   let list: HTMLUListElement | undefined;
   let indicator: HTMLButtonElement | undefined;
-  /** The flyout's handle (§4b), so the model indicator opens the same one popover. */
+  /** The flyout's handle, so the model indicator opens the same one popover. */
   const [menu, setMenu] = createSignal<ComposerMenuApi | null>(null);
 
   // The pane this composer belongs to: its id scopes every DOM id below (a workspace has N
@@ -175,7 +175,7 @@ export function Composer(props: {
   /** Whether the caret is in THIS composer: half of what decides it may collapse. */
   const [focused, setFocused] = createSignal(false);
   /**
-   * Collapsed (spec §14): only in a pane, only while the group composer is in use, and never when
+   * Collapsed: only in a pane, only while the group composer is in use, and never when
    * this composer is focused or holds a draft — a pane with text must keep it visible, and the one
    * you are typing in must not shrink under you.
    */
@@ -220,11 +220,11 @@ export function Composer(props: {
       .filter(Boolean).join(" ");
   const canSend = () => !disabled() && uploading() === 0 && (text().trim().length > 0 || images().length > 0);
 
-  // ---- Model indicator (§4 ".composer-foot"): this session's model and thinking level, and
+  // ---- Model indicator: this session's model and thinking level, and
   // the second trigger for the flyout that changes them. -----------------------------------
   /** What the session runs, or the target it's switching to — the flyout's Model row, shortened. */
   const modelRef = () => props.model?.pending() ?? props.model?.model() ?? null;
-  /** The level to show, or null when this model's ladder isn't a choice (§4b "Thinking"). */
+  /** The level to show, or null when this model's ladder isn't a choice. */
   const levelShown = () => {
     const thinking = props.thinking;
     if (!thinking || thinkingLevelsFor(props.model?.model()).length <= 1) return null;
@@ -246,7 +246,7 @@ export function Composer(props: {
     else menu()?.show("model", indicator); // the panel this indicator is the label for
   };
 
-  /** The subagents status row (§11 Trigger): what's working, or — once idle — what the session
+  /** The subagents status row: what's working, or — once idle — what the session
       has, so the pane stays one click away after every worker settles. While the parent's own
       turn runs it stays too, showing the counts without repeating "working" beside the Working
       label; a settled-workers row is only worth offering once the parent is idle. */
@@ -272,7 +272,7 @@ export function Composer(props: {
   const tabExpanded = (open: boolean | undefined, tab: string) =>
     props.paneTab == null ? !!open : props.paneTab === tab;
 
-  /** The status row's inputs trigger (§4 ".run-status"): the branch's user messages, one click
+  /** The status row's inputs trigger: the branch's user messages, one click
       from the pane's Timeline with Inputs Only on. It survives an idle session with no workers —
       the row shows for it alone — and disappears at 0, where the empty state already speaks. */
   const inputsRow = () => {
@@ -286,7 +286,7 @@ export function Composer(props: {
     return token ? rankCommands(props.commands ?? [], token.query) : [];
   });
   const slashIds = createMemo(() => commandOptionIds(slashMatches(), scope.id));
-  /** Never while disabled, nor on a bare local command (§4d). Streaming is fine: pi runs a
+  /** Never while disabled, nor on a bare local command. Streaming is fine: pi runs a
       "/command" steer as a command. */
   const slashOpen = () => {
     const token = slashToken();
@@ -567,7 +567,7 @@ export function Composer(props: {
   };
 
   // Stray drops anywhere else must not navigate the tab to the image — and a dragged session row
-  // (§2 "Groups") must not type its path into the composer: that drag carries a text/plain fallback
+  // must not type its path into the composer: that drag carries a text/plain fallback
   // so a drop outside the app is still readable. Both events, or the text lands anyway.
   const guard = (e: DragEvent) => {
     if (e.dataTransfer?.types.includes("Files") || dragHasRow(e)) e.preventDefault();
@@ -595,7 +595,7 @@ export function Composer(props: {
   );
   onMount(() => {
     // After the frame, so a closing dialog's focus handling has already run. Not on a touch-only
-    // device: focusing the textarea there raises the keyboard over the new session (§5, §4c).
+    // device: focusing the textarea there raises the keyboard over the new session.
     const touchOnly = matchMedia("(hover: none) and (pointer: coarse)").matches;
     if (props.autofocus && !props.readOnly && !touchOnly) requestAnimationFrame(() => input.focus());
   });
@@ -605,7 +605,7 @@ export function Composer(props: {
     e?.preventDefault();
     if (!canSend()) return;
     // "/agents" is ours: it opens the subagents pane instead of reaching a runtime whose own
-    // monitor is TUI-only (§11 Trigger). With images attached it's a message like any other.
+    // monitor is TUI-only. With images attached it's a message like any other.
     if (localCommand(text()) === "subagents" && props.onShowWorkers && images().length === 0) {
       if (!props.workersOpen) props.onShowWorkers();
       setDraft("");
@@ -616,7 +616,7 @@ export function Composer(props: {
     }
     // "/tree" is ours as well: pi's is a TUI built-in, so it would reach the model as literal
     // text. Here it opens the Timeline on your own messages, where each row rewinds to before
-    // that message (§4d).
+    // that message.
     if (localCommand(text()) === "tree" && props.onShowTimeline && images().length === 0) {
       props.onShowTimeline(true);
       setDraft("");
@@ -626,7 +626,7 @@ export function Composer(props: {
       return;
     }
     // "/timeline" is ours in the same way: pi has no such built-in, so it would reach the model as
-    // literal text. Here it opens the Timeline tab, the session's one time axis (§4d).
+    // literal text. Here it opens the Timeline tab, the session's one time axis.
     if (localCommand(text()) === "timeline" && props.onShowTimeline && images().length === 0) {
       props.onShowTimeline();
       setDraft("");
@@ -635,7 +635,7 @@ export function Composer(props: {
       announce("Timeline open.");
       return;
     }
-    // "/new" is ours too: a fresh session in this folder, and this one archived (§4d). Nothing
+    // "/new" is ours too: a fresh session in this folder, and this one archived. Nothing
     // reaches the runtime, so no "Ran" row. The draft stays if no session was made.
     if (localCommand(text()) === "new" && props.onNewSession && images().length === 0) {
       if (startingNew) return;
@@ -834,7 +834,7 @@ export function Composer(props: {
         </Show>
 
         <div class="composer-row">
-          {/* One flyout in place of the old Attach and Commands buttons (§4b). */}
+          {/* One flyout in place of the old Attach and Commands buttons. */}
           <ComposerMenu
             disabled={disabled()}
             commandsAvailable={(props.commands?.length ?? 0) > 0}
@@ -945,7 +945,7 @@ export function Composer(props: {
                   setMentionActive((i) => (i + (e.key === "ArrowDown" ? 1 : -1) + n) % n);
                   return;
                 }
-                // Enter and Tab both complete (§04h): the next Enter, menu closed, sends. With no
+                // Enter and Tab both complete: the next Enter, menu closed, sends. With no
                 // match, Enter falls through and sends the typed text as-is.
                 if ((e.key === "Enter" && !e.shiftKey) || e.key === "Tab") {
                   if (hasMatches) {

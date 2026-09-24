@@ -1,6 +1,6 @@
 // fetch: the provider fetchers, the shared cache file and the cross-process
 // lock behind the usage-status extension, with nothing from the pi runtime in it.
-// The extension (footer, /usage, /usage-refresh) imports this, and so does pi-web's
+// The extension (footer, /usage, /usage-refresh) imports this, and so does Sova's
 // server for its Refresh Usage button: both refresh the same cache the same way.
 //
 // Refreshes are rate-limited machine-wide through the cache file plus an O_EXCL

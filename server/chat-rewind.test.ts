@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { after, describe, test } from "node:test";
 import type { ChatServerMessage } from "../shared/protocol";
 
-const agentDir = mkdtempSync(join(tmpdir(), "pi-web-rewind-test-"));
+const agentDir = mkdtempSync(join(tmpdir(), "sova-rewind-test-"));
 process.env.PI_CODING_AGENT_DIR = agentDir; // before chat-manager computes its paths
 const sessionsDir = join(agentDir, "sessions", "--tmp-rewind--");
 mkdirSync(sessionsDir, { recursive: true });

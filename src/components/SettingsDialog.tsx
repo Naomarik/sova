@@ -58,7 +58,7 @@ const TABS = [
 type TabId = (typeof TABS)[number]["id"];
 
 /**
- * The Settings dialog (spec/12-settings-dialog.md): a modal with a left tab rail. Models edits the
+ * The Settings dialog: a modal with a left tab rail. Models edits the
  * policy file every session reads — this browser, the TUI, and every subagent — so a switch here
  * is a rule, not a filter. Themes picks what this browser wears; that one is localStorage only.
  */
@@ -219,7 +219,7 @@ export function SettingsDialog(props: { onClose(): void; initialTab?: SettingsTa
             </div>
           </Show>
           {/* The panel is mounted only while its tab is: the themes poll starts when this tab
-              opens and stops with it, which is the lifecycle §12 asks for. */}
+              opens and stops with it, which is the lifecycle the settings dialog spec asks for. */}
           <Show when={tab() === "themes"}>
             <div class="settings-panel" role="tabpanel" id="settings-panel-themes" aria-labelledby="settings-tab-themes">
               <ThemesPanel />
@@ -297,7 +297,7 @@ export function SettingsDialog(props: { onClose(): void; initialTab?: SettingsTa
 }
 
 /**
- * General (spec/12-settings-dialog.md "General"): preferences about how THIS browser draws the
+ * General: preferences about how THIS browser draws the
  * product. Nothing here is written to the machine — no policy file, no server endpoint — which is
  * the line between this screen and Models, and the reason the sidebar's Recent region has no
  * control of its own: a count that could be set in two places would disagree in one of them.
@@ -326,7 +326,7 @@ function GeneralPanel() {
     return `${MAX_RECENT_COUNT} is the most. Past that the shortcut is the list again.`;
   };
 
-  /** Writes a valid draft the moment it is typed — §12's rule: a setting that needed a Save
+  /** Writes a valid draft the moment it is typed — the settings dialog spec's rule: a setting that needed a Save
       button would be lying about when it takes effect. */
   const onInput = (value: string) => {
     setDraft(value);
@@ -403,7 +403,7 @@ function GeneralPanel() {
 }
 
 /**
- * Settings → Models (spec/12-settings-dialog.md §12). One row per provider, its models behind a
+ * Settings → Models. One row per provider, its models behind a
  * twisty, and two switches on every row: Enabled, which decides whether the model may be used at
  * all, and Subagents, which decides whether a worker may be given it. Providers are group heads:
  * their switches cover every model under them.
@@ -667,11 +667,11 @@ function ModelsPanel() {
   );
 }
 
-/** §12: re-fetched every 2s while this tab is visible, so a file saved in another window shows
+/** The settings dialog spec: re-fetched every 2s while this tab is visible, so a file saved in another window shows
     up without a click. The panel unmounts with the tab, and the poll stops with it. */
 const THEMES_POLL_MS = 2000;
 
-/** The 5 swatches, in order: the theme's page, surface, accent, error, and text colors (§12). */
+/** The 5 swatches, in order: the theme's page, surface, accent, error, and text colors. */
 const SWATCH_KEYS = ["bg", "surface", "accent", "status-error", "ink"] as const;
 
 const fileName = (path: string) => path.slice(path.lastIndexOf("/") + 1);
@@ -690,7 +690,7 @@ const columnsOf = (cards: (HTMLElement | null)[]): number => {
 };
 
 /** `Dark base · Built-in`, plus the third clause a user file that took a built-in's id earns —
-    a Dracula that isn't ours is the one surprise this folder can spring (§12). */
+    a Dracula that isn't ours is the one surprise this folder can spring. */
 const metaLine = (t: ThemeInfo) => {
   const base = t.base === "light" ? "Light base" : "Dark base";
   const source = t.source === "user" ? "User" : "Built-in";
@@ -698,10 +698,10 @@ const metaLine = (t: ThemeInfo) => {
 };
 
 /**
- * Settings → Themes (§12). Every theme the app can find, as a radiogroup where the row IS the
+ * Settings → Themes. Every theme the app can find, as a radiogroup where the row IS the
  * preview: swatches and a font sample painted out of the theme's own values. Those values came
  * off disk, which is why the server checks them at read time rather than at apply time — by the
- * time a row draws there is nothing left to sanitize (§0).
+ * time a row draws there is nothing left to sanitize.
  *
  * Choosing applies immediately and writes localStorage. There is no Save, no preview mode, and
  * no server round-trip: the theme is this browser's.
@@ -858,7 +858,7 @@ function ThemesPanel() {
                     ? undefined
                     : {
                         // The faces this theme would actually render in: the font pick on top of
-                        // the theme's own tokens (§12 "Typography"). An undefined value leaves the
+                        // the theme's own tokens. An undefined value leaves the
                         // property unset, and the sample falls through to the root's face.
                         "--theme-font-body": effectiveStack("text", t.tokens, typography()),
                         "--theme-font-mono": effectiveStack("mono", t.tokens, typography()),

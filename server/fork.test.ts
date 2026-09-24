@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { after, describe, test } from "node:test";
 import type { ForkRequest, SessionSummary } from "../shared/protocol";
 
-const agentDir = mkdtempSync(join(tmpdir(), "pi-web-fork-test-"));
+const agentDir = mkdtempSync(join(tmpdir(), "sova-fork-test-"));
 process.env.PI_CODING_AGENT_DIR = agentDir;
 /** Real files in /tmp with pi's own clipboard name shape, so `available` is decided by
     checkTmpImage against the real disk rather than by a fake that could disagree with it. */
@@ -105,7 +105,7 @@ describe("what a fork refuses, and what it leaves behind", () => {
   }
 
   test("the old-format refusal is a PRECONDITION, not a recovery", async () => {
-    // SessionManager.open() MIGRATES an older file by rewriting it whole, and a runtime pi-web
+    // SessionManager.open() MIGRATES an older file by rewriting it whole, and a runtime Sova
     // holds for that session would see the rewrite as a foreign write and lock the user out of
     // their own chat. So the version is checked before the source is opened, never after.
     const opened: string[] = [];

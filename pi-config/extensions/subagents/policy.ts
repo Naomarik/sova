@@ -1,6 +1,6 @@
 /** Subagent model policy: which models and providers may not be picked for workers.
  *
- * One JSON file, `~/.pi/agent/model-policy.json`, edited by pi-web's Settings → Models tab and
+ * One JSON file, `~/.pi/agent/model-policy.json`, edited by Sova's Settings → Models tab and
  * read here by every session (TUI and webapp alike). It carries two dimensions:
  *
  *     {"version":1, "disabledProviders":["anthropic"], "disabledModels":["openai/gpt-5.2"],
@@ -83,7 +83,7 @@ function readFile(file: string): SubagentModelPolicy | undefined {
 	}
 }
 
-/** The policy as it stands, re-read only when the file's mtime moves — pi-web writes
+/** The policy as it stands, re-read only when the file's mtime moves — Sova writes
  * it live, and spawns/discovery must see the change without a reload. A missing or
  * unreadable file is "nothing disabled", and is not negatively cached: the next call
  * stats again, so the moment the file appears it is picked up. With no argument the
@@ -101,7 +101,7 @@ const providerOf = (backend: string, ref: string): string =>
 const listed = (entries: string[] | undefined, value: string): boolean =>
 	!!entries?.some((e) => e.toLowerCase() === value);
 
-/** Provider-wide block, case-insensitive (pi-web normalizes to lowercase on write). */
+/** Provider-wide block, case-insensitive (Sova normalizes to lowercase on write). */
 export function providerDisabled(policy: SubagentModelPolicy, backend: string, ref: string): boolean {
 	const provider = providerOf(backend, ref);
 	return provider !== "" && listed(policy.disabledProviders, provider);

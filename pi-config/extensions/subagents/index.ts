@@ -45,7 +45,7 @@ import {
 import { MCP_SERVER_NAME } from "./member-mcp.ts";
 import { WorkerRegistryRecorder } from "./registry.ts";
 import { WorkerHosting, detachRequested, type HostingOptions } from "./hosting.ts";
-import { legacyPlaceholderRoot, placeholderDir, placeholderRoot, toRemotePath } from "../remote/argv.ts";
+import { placeholderDir, placeholderRoot, toRemotePath } from "../remote/argv.ts";
 import {
 	REMOTE_DISCOVER_EVENT,
 	REMOTE_MCP_ENV,
@@ -337,19 +337,14 @@ function resolvePath(value: string, cwd: string): string {
 
 /**
  * The remote session a placeholder cwd stands for: <agentDir>/sova/targets/<name>/<far/abs/path>
- * (server/targets.ts opens remote sessions there), or the legacy pi-web/targets spelling from
- * before the rename — an old header or an old spawn.json cwd must keep reading as REMOTE, never as
- * a local directory. Undefined for any other directory.
+ * (server/targets.ts opens remote sessions there). Undefined for any other directory.
  */
 function remoteOfPlaceholder(cwd: string): RemoteSessionEvent | undefined {
-	for (const rootOf of [placeholderRoot, legacyPlaceholderRoot]) {
-		const root = path.dirname(rootOf(getAgentDir(), "x"));
-		if (!cwd.startsWith(root + path.sep)) continue;
-		const name = cwd.slice(root.length + 1).split(path.sep)[0];
-		if (!name || !/^(?!\.+$)[A-Za-z0-9._-]+$/.test(name)) return undefined;
-		return { version: 1, target: name, farCwd: toRemotePath(cwd, rootOf(getAgentDir(), name)) };
-	}
-	return undefined;
+	const root = path.dirname(placeholderRoot(getAgentDir(), "x"));
+	if (!cwd.startsWith(root + path.sep)) return undefined;
+	const name = cwd.slice(root.length + 1).split(path.sep)[0];
+	if (!name || !/^(?!\.+$)[A-Za-z0-9._-]+$/.test(name)) return undefined;
+	return { version: 1, target: name, farCwd: toRemotePath(cwd, placeholderRoot(getAgentDir(), name)) };
 }
 
 /** A worker's far working directory in a remote session: the spec's cwd (absolute, or relative to the session's far cwd), else the session's. */

@@ -23,7 +23,7 @@
  * brand-new session has no file on disk yet; the child then starts unforked and
  * works from the topic alone.
  *
- * Nothing here opens a browser. The page is read in pi-web (thread row, session
+ * Nothing here opens a browser. The page is read in Sova (thread row, session
  * strip, gallery), or by opening the file by hand.
  *
  * Source ownership: `store.ts` owns the on-disk contract and the session-entry
@@ -85,7 +85,7 @@ export default function explainExtension(pi: ExtensionAPI): void {
 
 	pi.registerCommand("explain", {
 		// pi's extension commands have no argumentHint field, so the hint lives at the front of the description.
-		description: "<topic> — research it in a forked subagent and write a self-contained page, viewable in pi-web",
+		description: "<topic> — research it in a forked subagent and write a self-contained page, viewable in Sova",
 		handler: async (args: string, ctx: ExtensionContext) => {
 			activeCtx = ctx;
 			const topic = args.trim();

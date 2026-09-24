@@ -1,4 +1,4 @@
-// How the sidebar's folder sections are built and ordered (spec/02-session-list.md §2 "Anatomy").
+// How the sidebar's folder sections are built and ordered.
 //
 // Two orders, because two regions are answering different questions:
 //
@@ -61,7 +61,7 @@ function bucketByCwd(sessions: readonly SessionSummary[], compare: (a: SessionSu
 export const groupByActivity = (sessions: readonly SessionSummary[]): CwdGroup[] => bucketByCwd(sessions, byActivityDesc);
 
 /**
- * Folder sections by session creation, newest first: Live & web's order (§2 "Live & web").
+ * Folder sections by session creation, newest first: Live & web's order.
  *
  * The sections are re-sorted rather than left in leader order, so that two folders whose newest
  * session shares a `createdAt` settle on `cwd` and cannot swap places between two polls — the same

@@ -490,9 +490,8 @@ function decodeCompaction(e: Rec): CompactionInfo {
 /** The invisible custom entry a rewind appends — REWIND_ENTRY in chat-manager.ts, which owns the
     write. The literals are spelled again rather than imported: chat-manager imports THIS module,
     and the cycle would pull the pi SDK into every path that reads a session's facts, tests
-    included. Both spellings are the bridge: rewinds are WRITTEN legacy-named until it closes, while
-    a post-bridge "sova-rewind" is already accepted on read. */
-const REWIND_ENTRIES: ReadonlySet<string> = new Set(["pi-web-rewind", "sova-rewind"]);
+    included. */
+const REWIND_ENTRY = "sova-rewind";
 
 /** One rewind marker, as chat-manager wrote it: ids and a stamp, no text (the abandoned turns are
     not on this branch). An entry missing either half can't be placed on an axis, so it is dropped. */
@@ -525,7 +524,7 @@ function extractFacts(text: string): SessionFacts {
     }
     else if (e.type === "custom_message" && e.customType === "subagent-complete") addReport(reports, e);
     else if (e.type === "compaction") compactions.push(decodeCompaction(e));
-    else if (e.type === "custom" && REWIND_ENTRIES.has(e.customType ?? "")) {
+    else if (e.type === "custom" && e.customType === REWIND_ENTRY) {
       const r = decodeRewind(e);
       if (r) rewinds.push(r);
     }

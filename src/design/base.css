@@ -464,7 +464,7 @@ i.icon {
 .empty-body  { color: var(--color-ink-muted); margin: 0; max-width: 44ch; }
 .empty-action{ margin-top: var(--space-3); }
 
-/* The setup card under a new session's title (spec/03 §3): what pi loads, what it offers, the
+/* The setup card under a new session's title: what pi loads, what it offers, the
    repository. A contained surface in the centred column, read left-aligned; names lead, figures
    trail in mono tabular muted, so the eye scans names first. */
 .setup-card {
@@ -720,7 +720,7 @@ button.list-row { width: 100%; border: 0; background: none; text-align: left; }
 .modal-spacer { flex: 1; }
 
 /* The Settings dialog needs its tab rail beside the panel, so it takes a wider
-   variant (spec/07: recorded deviation — the skill's modal caps at 520px).
+   variant (recorded deviation — the skill's modal caps at 520px).
    Declared before the folded block so the sheet can win the width back. */
 .modal-wide { width: min(760px, calc(100vw - var(--space-8))); }
 
@@ -739,7 +739,7 @@ button.list-row { width: 100%; border: 0; background: none; text-align: left; }
   .modal-wide { width: auto; }
 }
 
-/* The sheet's grip: folded only. An affordance, never a control (spec/12). */
+/* The sheet's grip: folded only. An affordance, never a control. */
 .sheet-grip { display: none; }
 @media (max-width: 767px) {
   .sheet-grip {
@@ -809,7 +809,7 @@ button.list-row { width: 100%; border: 0; background: none; text-align: left; }
 
 
 /* ---- SETTINGS DIALOG. A left tab rail and one panel; the rail is the
-   structure further settings screens slot into (spec/12). ---------------- */
+   structure further settings screens slot into. ---------------- */
 
 .settings-body {
   display: grid;
@@ -864,7 +864,7 @@ button.list-row { width: 100%; border: 0; background: none; text-align: left; }
 /* ---- SETTINGS · MODELS. One table, two switch columns: what may be used at
    all, and what subagents may be given. Providers are collapsed group heads,
    so the screen opens as a list of providers rather than a wall of switches;
-   their models sit behind one guide rule, one line each (spec/12). --------- */
+   their models sit behind one guide rule, one line each. --------- */
 
 /* The three columns every row shares. The switch columns are fixed so the
    header's words sit over the switches they name, at any panel width. */
@@ -1005,7 +1005,7 @@ button.list-row { width: 100%; border: 0; background: none; text-align: left; }
    auto-fill asks the list's own box, so no container is needed). Each card
    carries the evidence for the choice — a 5-swatch strip in the theme's own
    colors and a sample in the faces it would actually render in, pick included
-   (spec/12). The swatches are inline-styled by the frontend (they are the only
+  . The swatches are inline-styled by the frontend (they are the only
    place in the product that paints a color the current theme doesn't own);
    everything around them is token-built. --------------------------------- */
 
@@ -1118,7 +1118,7 @@ button.list-row { width: 100%; border: 0; background: none; text-align: left; }
 
 /* ---- SETTINGS · TYPOGRAPHY. Under the theme grid: two closed lists (Text,
    Code) over a preview that inherits the live root faces, so it is the page's
-   own rendering rather than a picture of an option (spec/12). ------------ */
+   own rendering rather than a picture of an option. ------------ */
 
 .settings-type {
   display: flex;
@@ -1181,7 +1181,7 @@ button.list-row { width: 100%; border: 0; background: none; text-align: left; }
 /* ---- SETTINGS · MODES → DELEGATE. One fieldset per kind of work, each a
    primary worker row and an optional fallback row: backend, model, effort as
    native selects that sit side by side when there's room and stack when there
-   isn't (spec/12 "Modes"). ------------------------------------------------ */
+   isn't. ------------------------------------------------ */
 
 .settings-delegate { display: flex; flex-direction: column; gap: var(--space-4); }
 .settings-delegate-profile {
@@ -1302,7 +1302,7 @@ button.list-row { width: 100%; border: 0; background: none; text-align: left; }
 
 
 /* =============================================================================
-   PART C · PI-WEB COMPONENTS
+   PART C · SOVA COMPONENTS
    ============================================================================= */
 
 /* ---- APP SHELL. Folded: one column, the list OR the transcript. Unfolded:
@@ -1358,7 +1358,7 @@ button.list-row { width: 100%; border: 0; background: none; text-align: left; }
    Folded is one full-width column with no divider to drag, so the handle is
    not rendered there at all.
    Pointer only — the element takes no tab stop and carries no aria value, so
-   there is no keyboard path (§1, a stated gap). ------------------------- */
+   there is no keyboard path (a stated gap). ------------------------- */
 
 .pane-resizer {
   display: none;
@@ -1480,7 +1480,7 @@ html.is-resizing * {
 .sidebar-head .button { flex: none; }
 .sidebar-head .button:not(.button-icon) { padding: 0 var(--space-3); }
 
-/* ---- THE SPINE. The sessions pane collapsed (§2 "The spine"), unfolded only:
+/* ---- THE SPINE. The sessions pane collapsed, unfolded only:
    one --spine-width column of 44px targets that replaces the head, search,
    list and foot. It is the SAME pane, not a nav rail — none of the skill's
    .rail/.navitem rules apply, and the column's width is not set here: the
@@ -1677,7 +1677,7 @@ html.is-resizing * {
   text-align: left;
 }
 .session-group-path > bdi { direction: ltr; unicode-bidi: isolate; }
-/* A folder holding an agent at work (§2 "Anatomy"): folders start collapsed, so the head carries
+/* A folder holding an agent at work: folders start collapsed, so the head carries
    the row's Busy dot, pulsing the same way. One dot, never a count: the rows inside say how many. */
 .session-group-active {
   display: inline-flex;
@@ -1687,7 +1687,7 @@ html.is-resizing * {
 }
 .session-group-active .session-rail-dot { animation: live-pulse 1.6s var(--ease-standard) infinite; }
 
-/* Every folder head is a <summary> (§2 "Anatomy"), so the folder collapses like the Archive's
+/* Every folder head is a <summary>, so the folder collapses like the Archive's
    date sections do. The sticky and the surface move UP to the summary: a sticky heading inside a
    summary can only stick inside that one-row box, which is no sticking at all. The heading keeps
    its own padding, its level, and the id `aria-labelledby` points at. */
@@ -1750,7 +1750,7 @@ summary.sidebar-region-head .icon-twist { transition: transform var(--dur-fast) 
   color: var(--color-ink-muted);
 }
 
-/* ---- GROUPS (§2 "Groups"). The user's own sections, the pane's first region: a
+/* ---- GROUPS. The user's own sections, the pane's first region: a
    head with a `+` that makes a group, then one <details> per group with the same
    summary/body grammar as an Archive date section, each a drop target while a row is
    being dragged. A group is additive, so its rows keep every other region's shape. -- */
@@ -1886,7 +1886,7 @@ summary.sidebar-region-head .icon-twist { transition: transform var(--dur-fast) 
 .group-remove-over .icon { color: var(--color-ink); }
 /* The row in flight: the source dims, so the group that lights up is the only live thing. */
 .session-row-dragging { opacity: .5; }
-/* A row dragged out of the pane (§2 "Dragging"): the drop archives it. Outlined in the error
+/* A row dragged out of the pane: the drop archives it. Outlined in the error
    colour with a light error tint, as a destructive button is — never filled, never a pulse.
    Pinned to the bottom of the list, so it shows however far the list is scrolled. */
 .archive-drop {
@@ -1919,7 +1919,7 @@ summary.sidebar-region-head .icon-twist { transition: transform var(--dur-fast) 
 /* The pane's own edge says the pointer has left it with a drop that archives. */
 .app-sidebar[data-drop="archive"] { box-shadow: inset calc(-1 * var(--stroke-icon)) 0 0 var(--status-error); }
 
-/* The Move into group menu (§2 "Groups"): the mode menu's shell and rows (§4g), with one
+/* The Move into group menu: the mode menu's shell and rows, with one
    group per line, a check on the current one, and a plus on "New group…". */
 .group-option { align-items: center; }
 .group-option-icon { flex: none; color: var(--color-ink-muted); }
@@ -1938,7 +1938,7 @@ a.group-option { color: inherit; text-decoration: none; }
   .model-menu.group-menu-up { top: auto; bottom: var(--menu-bottom, 72px); }
 }
 
-/* ---- ACTION MENU (the "⋯" popover: §2's group rows, §14's pane heads). The model menu's
+/* ---- ACTION MENU (the "⋯" popover: the session list's group rows, the workspace spec's pane heads). The model menu's
    shell at a MENU's size: its rows are short verbs, not model ids, so the picker's 360px was
    wider than the 350px sidebar it hangs off and the panel's left edge — icons, labels and all —
    fell outside the window. Width is the design system's popover (min 200px, content-sized), and
@@ -1957,7 +1957,7 @@ a.group-option { color: inherit; text-decoration: none; }
     left: var(--menu-left, var(--space-4));
     right: auto;
     bottom: auto;
-    /* Not the picker's 440px: a menu that fits its window should not scroll, and §14's pane
+    /* Not the picker's 440px: a menu that fits its window should not scroll, and the workspace spec's pane
        menu is ten rows. --menu-max is the room the placement found; 70dvh keeps a tall window
        from being taken over by one. */
     max-height: min(70dvh, var(--menu-max, 70dvh));
@@ -2019,7 +2019,7 @@ a.group-option { color: inherit; text-decoration: none; }
   padding: var(--space-2) 0 0 0;     /* top only, matching the row link */
 }
 
-/* Rail buttons are tabindex="-1" (§2): pointer + AT affordances, never a tab
+/* Rail buttons are tabindex="-1": pointer + AT affordances, never a tab
    stop. The button box is undone so only the pill or the count is visible. */
 .session-rail-item {
   display: flex;
@@ -2130,7 +2130,7 @@ a.group-option { color: inherit; text-decoration: none; }
    rail's own flex children, so their gap, margins and axis are unchanged. */
 .session-rail-states { display: contents; }
 
-/* ---- SELECTING SEVERAL SESSIONS (spec/02 §2). A press held on a row turns the
+/* ---- SELECTING SEVERAL SESSIONS. A press held on a row turns the
    list into a picker: the rail — the column that already carries a row's state —
    carries its checkbox, and the toolbar that acts on the picked rows sits INSIDE
    the sidebar, above the list, where a thumb can reach it with the rows still on
@@ -2296,7 +2296,7 @@ a.group-option { color: inherit; text-decoration: none; }
   color: var(--color-ink-muted);
 }
 
-/* The context ring on line 3 (§4f's one exception to "plain text, not a
+/* The context ring on line 3 (the context window spec's one exception to "plain text, not a
    meter"). 12 × 12: the same box as the line's own text, so it costs the row
    no height, and at a 320px sidebar it costs the meta line 20px (12 + an 8px
    gap) out of about 250 — the model id truncates long before it is squeezed.
@@ -2384,7 +2384,7 @@ a.group-option { color: inherit; text-decoration: none; }
   background: var(--color-bg);
 }
 .transcript-banner .banner { max-width: calc(var(--measure) + var(--space-9) - var(--space-6)); margin: 0 auto; }
-/* Only notice/error banners live here now (§3): an empty slot takes no space. */
+/* Only notice/error banners live here now: an empty slot takes no space. */
 .transcript-banner:not(:has(.banner)) { display: none; }
 
 /* Assistant author row carries the live dot while its turn streams. */
@@ -2432,7 +2432,7 @@ a.group-option { color: inherit; text-decoration: none; }
   overflow-wrap: anywhere;
 }
 
-/* Report rows (§3 "report"): a subagent report or another long extension
+/* Report rows: a subagent report or another long extension
    message. Same disclosure grammar as thinking; collapsed to ONE line (who,
    status chip, first line, ellipsis). Opened, the markdown sits on the left
    under the disclosure rule, capped at --measure like a message. */
@@ -2639,7 +2639,7 @@ a.group-option { color: inherit; text-decoration: none; }
   padding: var(--space-2) var(--space-3);
   resize: none;
   overflow-y: auto;
-  field-sizing: content;          /* native auto-grow where supported; JS fallback per spec/04-composer.md */
+  field-sizing: content;          /* native auto-grow where supported; JS fallback per the composer spec */
 }
 .composer-actions { display: flex; align-items: flex-end; gap: var(--space-2); flex: none; }
 .composer-foot {
@@ -2652,10 +2652,10 @@ a.group-option { color: inherit; text-decoration: none; }
 }
 .composer-reason { display: inline-flex; align-items: center; gap: var(--space-2); min-width: 0; color: var(--color-ink-2); }
 
-/* The model indicator (§4): this session's model and thinking level, and the
+/* The model indicator: this session's model and thinking level, and the
    flyout's second trigger. First in the foot, and it stays at every width.
    The id is the one part that shrinks, so a long ref ellipsizes instead of
-   pushing the mode switch (§4g) out. */
+   pushing the mode switch out. */
 
 .composer-model {
   position: relative;
@@ -2898,7 +2898,7 @@ a.group-option { color: inherit; text-decoration: none; }
   font-variant-numeric: tabular-nums;
 }
 
-/* Path attachments (§4b): an image a user message names by /tmp path. A
+/* Path attachments: an image a user message names by /tmp path. A
    collapsed disclosure on the user side; opening it shows the thumbnail. A
    file that's gone is the same row, static, saying so. */
 .message-attachment { align-self: flex-end; max-width: 100%; min-width: 0; }
@@ -2929,7 +2929,7 @@ a.group-option { color: inherit; text-decoration: none; }
 .toolcard-section .message-attachment { align-self: auto; }
 .toolcard-section .message-attachment > .disclosure-summary { margin-right: 0; margin-left: calc(var(--space-2) * -1); }
 
-/* Path chips (§4b): the same path quoted in a reply, a subagent report or an
+/* Path chips: the same path quoted in a reply, a subagent report or an
    info row. Inline in the prose, one line, short name; the full path is in
    title. Available opens the lightbox; gone copies the path. */
 .path-chip {
@@ -3045,7 +3045,7 @@ a.group-option { color: inherit; text-decoration: none; }
 
 
 /* ---- MODEL MENU. A searchable model picker (Ctrl/⌘+P). It has no trigger of
-   its own anymore: it's the second panel of the composer flyout (§4b), which
+   its own anymore: it's the second panel of the composer flyout, which
    owns the [popover="auto"] shell these rules position — the top layer, so a
    .pane can't clip it, with light-dismiss and Esc for free. A sheet under
    768px. ---------------------------------------------------------------- */
@@ -3195,7 +3195,7 @@ a.group-option { color: inherit; text-decoration: none; }
 }
 
 
-/* ---- MODE MENU (§4g). This chat's major/minor mode switch, at the right
+/* ---- MODE MENU. This chat's major/minor mode switch, at the right
    end of the composer foot. Same popover shell as the model menu (.model-menu
    sizes it, and makes it a bottom sheet under 768px), anchored ABOVE the
    trigger like the composer flyout; the list is a role=menu with real focus,
@@ -3285,11 +3285,11 @@ a.group-option { color: inherit; text-decoration: none; }
 }
 
 
-/* ---- COMPOSER FLYOUT (§4b). One ghost "+" in the composer row opens this
+/* ---- COMPOSER FLYOUT. One ghost "+" in the composer row opens this
    popover ABOVE itself: the composer is pinned to the bottom of the pane, so
    the menu grows upward from the trigger (--menu-bottom / --menu-left, set on
    open). Same shell as the model menu — surface, border, --shadow-2, and a
-   bottom sheet under 768px — with a root role=menu panel and the §4c picker
+   bottom sheet under 768px — with a root role=menu panel and the model menu's picker
    as its second panel. ------------------------------------------------- */
 
 .composer-menu-trigger[aria-expanded="true"] { background: var(--color-sunken); color: var(--color-ink); }
@@ -3335,7 +3335,7 @@ a.group-option { color: inherit; text-decoration: none; }
   white-space: nowrap;
 }
 .composer-flyout-item[aria-disabled="true"] { cursor: not-allowed; }
-/* Pending is work in progress, not an unavailable control (§4c "Pending"). */
+/* Pending is work in progress, not an unavailable control. */
 .composer-flyout-item[aria-busy="true"] { opacity: 1; cursor: progress; }
 .composer-flyout-item .live-dot { flex: none; }
 .composer-flyout-sep {
@@ -3347,7 +3347,7 @@ a.group-option { color: inherit; text-decoration: none; }
 .composer-flyout-back { gap: var(--space-1); }
 
 
-/* ---- COMMAND MENU. Slash-command autocomplete (§4d). Anchored ABOVE the
+/* ---- COMMAND MENU. Slash-command autocomplete. Anchored ABOVE the
    composer's content, full composer width; focus stays in the textarea
    (aria-activedescendant). Absolute inside .composer-inner: .composer is a
    layout-contained stacking context painted after the transcript, so it
@@ -3436,7 +3436,7 @@ a.group-option { color: inherit; text-decoration: none; }
   .command-menu-foot { display: none; }
 }
 
-/* ---- FILE MENU. The @-mention autocomplete (§04h): the command menu's
+/* ---- FILE MENU. The @-mention autocomplete: the command menu's
    twin — same anchor, same rows. A directory's name carries its "/" and a
    chevron in the badge column; the location column carries the path so
    far, so a two-deep pick still reads as one path. ----------------------- */
@@ -3444,7 +3444,7 @@ a.group-option { color: inherit; text-decoration: none; }
 .file-option-slash,
 .file-option-chevron { color: var(--color-ink-muted); }
 .file-option-chevron { justify-self: end; }
-/* The flyout replaced Attach + Commands with one 44px button (§4b), so the
+/* The flyout replaced Attach + Commands with one 44px button, so the
    row no longer has to drop a control at 320px: at a 288px composer while
    streaming the textarea still keeps 132px. */
 /* Narrow composer: the description is the useful part; location gives way.
@@ -3457,7 +3457,7 @@ a.group-option { color: inherit; text-decoration: none; }
 }
 
 
-/* ---- MARKDOWN (§4e). `.md` scopes rendered assistant content inside
+/* ---- MARKDOWN. `.md` scopes rendered assistant content inside
    .message-body. Everything in a bubble is smaller than page chrome:
    headings stop at heading-s. Raw HTML is never rendered (escaped text). -- */
 
@@ -3591,7 +3591,7 @@ a.group-option { color: inherit; text-decoration: none; }
 /* Syntax theme (highlight.js classes). Roles, not decoration: never the
    accent (skill: a keyword is not an action). Hues come from the status
    tokens but only ever appear inside code, so they never read as status.
-   All ≥4.5:1 on --color-sunken in both themes (spec/04e-markdown.md §4e). */
+   All ≥4.5:1 on --color-sunken in both themes. */
 .hljs-keyword, .hljs-literal, .hljs-selector-tag, .hljs-doctag,
 .hljs-meta .hljs-keyword                  { color: var(--color-ink); font-weight: var(--fw-semibold); }
 .hljs-built_in, .hljs-type, .hljs-class   { color: var(--color-ink); font-weight: var(--fw-medium); }
@@ -3611,7 +3611,7 @@ a.group-option { color: inherit; text-decoration: none; }
 .hljs-emphasis { font-style: normal; text-decoration: underline; text-decoration-color: var(--color-border-strong); }
 
 
-/* ---- CONTEXT WINDOW (§4f). Plain text, not a meter: number first and
+/* ---- CONTEXT WINDOW. Plain text, not a meter: number first and
    only — a 6px bar in a 56px head says less than "24%". It sits in the
    head before the mode trigger (chat) / Live chip (watch) and collapses
    with the HEAD's width, not the window's:
@@ -3658,7 +3658,7 @@ a.group-option { color: inherit; text-decoration: none; }
 @container session-head (max-width: 519px) {
   .context-gauge { display: none; }
   .context-meta { display: inline; }
-  /* The head's aggregate "Team · n working" link chip (§10) repeats the
+  /* The head's aggregate "Team · n working" link chip repeats the
      sidebar row chip and the Agents foot row; on a narrow head it goes. */
   .session-head > .chip-count { display: none; }
 }
@@ -3695,7 +3695,7 @@ a.group-option { color: inherit; text-decoration: none; }
 .folder-list .list-row .list-title { font-family: var(--font-mono); font-size: var(--fs-mono); font-weight: var(--fw-regular); }
 .folder-list .list-row[aria-selected="true"] { background: var(--color-accent-tint); }
 
-/* The Folder field is a button that reads like an input (§5): the chosen path
+/* The Folder field is a button that reads like an input: the chosen path
    in mono, never typed. It opens the picker in place. */
 .folder-field {
   display: flex;
@@ -3829,7 +3829,7 @@ a.group-option { color: inherit; text-decoration: none; }
 
 /* =============================================================================
    INSIGHTS — usage limits (#/usage), teams + subagents (#/agents), the per-session
-   outline strip and the compaction row. spec/10-insights.md §10.
+   outline strip and the compaction row.
    ============================================================================= */
 
 /* ---- CARD parts (the skill's; Sova had only the base card). ------------ */
@@ -3870,7 +3870,7 @@ a.group-option { color: inherit; text-decoration: none; }
 
 /* ---- METER. Number first, bar second, never a bar alone. The fill is a
    neutral, not the accent: Sova spends accent on primary / live / focus
-   only (§0). Warn and error fills always sit under a chip that says the word. */
+   only. Warn and error fills always sit under a chip that says the word. */
 
 .meter { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
 .meter-head {
@@ -4207,7 +4207,7 @@ a.chip:hover { color: var(--color-ink); border-color: var(--color-border-strong)
 /* =============================================================================
    SUBAGENTS PANE — this session's workers, beside the session pane: a worker
    list on the left, the selected worker's read-only transcript on the right.
-   Opened from the composer's "2 subagents working…" row. spec/11-subagents-pane.md §11.
+   Opened from the composer's "2 subagents working…" row.
    ============================================================================= */
 
 /* ---- TRIGGER. The composer's subagents row, made a control. It keeps the
@@ -4325,7 +4325,7 @@ a.chip:hover { color: var(--color-ink); border-color: var(--color-border-strong)
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* The token Σ (§11 "Head"): the same neutral count chip, mono so the number
+/* The token Σ: the same neutral count chip, mono so the number
    reads as a measurement, and the first thing to go when the head is tight —
    the working count answers "is anything happening?", this only "how much". */
 .subagents-usage {
@@ -4514,7 +4514,7 @@ a.chip:hover { color: var(--color-ink); border-color: var(--color-border-strong)
 /* ---- WORKER ROW. The whole row is the button. Name + status chip on the
    first line, meta under it — no excerpt of the worker's reply; the
    transcript says it whole. In list/detail a chevron closes the row.
-   Status follows the member-row table (§10): the chip carries the word, and
+   Status follows the member-row table: the chip carries the word, and
    only a live Working/Starting chip pulses — one pulsing thing per row.
    Selected: accent tint (the house selected row) plus a semibold name, so
    the state isn't hue alone. ------------------------------------------- */
@@ -4555,7 +4555,7 @@ a.chip:hover { color: var(--color-ink); border-color: var(--color-border-strong)
 .subagent-row-status { grid-column: 2; grid-row: 1; display: inline-flex; }
 /* A meta line where the facts have different claims on the width: everything keeps its room on
    one line, and the model id is the only part that shrinks and ellipsizes, so a dated id can
-   never push a token count out of the row (§11 Worker rows). */
+   never push a token count out of the row. */
 .meta-line {
   display: flex;
   align-items: baseline;
@@ -4664,7 +4664,7 @@ a.chip:hover { color: var(--color-ink); border-color: var(--color-border-strong)
 /* Empty, no-file and no-selection states: one idea in the view, centred. */
 .subagents-empty { flex: 1; justify-content: center; padding: var(--space-6) var(--space-4); }
 
-/* --- Input rows (spec/13-timeline.md §13, the Timeline's "Inputs Only" view) -------------
+/* --- Input rows (the Timeline's "Inputs Only" view) -------------
    This session's messages on one card, like the skill rows, but denser: caption
    title over a micro meta, so a long chat shows more of itself. The body is the
    jump; Rewind/Cancel sit apart at the row's end. The rewound-to row wears the
@@ -4706,14 +4706,14 @@ a.chip:hover { color: var(--color-ink); border-color: var(--color-border-strong)
 .input-row-boundary { background: var(--color-accent-tint); }
 .input-row-abandoned .input-row-title { color: var(--color-ink-muted); font-weight: var(--fw-regular); }
 
-/* --- Timeline tab (spec/13-timeline.md §13) ----------------------------------------
+/* --- Timeline tab ----------------------------------------
    The whole session on one axis, beside Inputs: a mono clock in the left column,
    a rail with a dot down the middle, and the row's words on the right. The rhythm
    is fixed — a quiet hour and a busy one are the same height — so the rail is a
    reading order, not a chart; idle time is a row that says how long it was.
    Three colors do the work the spacing doesn't: an input is a solid muted dot, a
    chapter is a larger hollow one, a marker a small hollow one on the border ink.
-   No accent on the dots: the budget (§0) keeps it for the primary, live and focus,
+   No accent on the dots: the budget keeps it for the primary, live and focus,
    and shape already separates the three. Row padding matches .input-row, so the
    two tabs scroll at the same pace. */
 .timeline {
@@ -4863,7 +4863,7 @@ a.chip:hover { color: var(--color-ink); border-color: var(--color-border-strong)
 /* Where a jump landed, for ~1.5s (src/lib/jump.ts owns the timing). */
 .entry-jumped { background: var(--color-accent-tint); border-radius: var(--r-sm); transition: background-color var(--dur-base) var(--ease-standard); }
 
-/* ---- MESSAGE ACTIONS (spec/03 "Message actions"). One quiet strip under each
+/* ---- MESSAGE ACTIONS. One quiet strip under each
    delivered message — Copy · Fork · Rewind/Regenerate — and one Remove under a
    message still waiting in the queue.
 

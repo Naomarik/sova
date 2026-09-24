@@ -1,4 +1,4 @@
-// Press-and-hold on a session row (spec/02-session-list.md §2 "Selecting several sessions"): the
+// Press-and-hold on a session row: the
 // gesture that turns one row into a selection, on a mouse and under a thumb alike. Framework-free
 // and clock-injected, so the rules below are testable without a browser — the row wires real
 // pointer events to `start`/`move`/`finish`/`cancel` and asks `suppressed()` what to do with the

@@ -1,5 +1,4 @@
-// The connection indicator of a remote session (spec/01-app-shell.md "Remote connection chip",
-// spec/02-session-list.md "Remote sessions"). The remote extension reports with
+// The connection indicator of a remote session. The remote extension reports with
 // setStatus("remote-status", <JSON>); this module parses that text and turns it into what the chips say.
 // It only repeats what the extension knows: "connected" needs a real round trip, a failure says
 // "unreachable" with the error's first line, nothing yet says "checking…", never green.

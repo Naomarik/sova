@@ -181,7 +181,7 @@ const SESSION_ID_TAKEN_RE = /session id\b.*\bis already in use/i;
 const SESSION_ID_TAKEN = "was handed a session id already in use";
 /**
  * How far past `launchAttempt` to probe for a free id. The counter lives in
- * memory, so a new pi-web process starts back at 0 and has to walk past the
+ * memory, so a new Sova process starts back at 0 and has to walk past the
  * records the previous one left on disk; each collision costs one fast-failing
  * spawn (~150 ms).
  */
@@ -1179,12 +1179,12 @@ export class SessionBridge implements ClaudeSessionBridge {
 }
 
 /**
- * pi-web shares one `ModelRuntime` across sessions and `/reload` re-registers
+ * Sova shares one `ModelRuntime` across sessions and `/reload` re-registers
  * every extension, so a module-level registry would be rebuilt while its CLI
  * children stayed running. The registry therefore lives on `globalThis`, and
  * the exit hooks are installed exactly once beside it.
  */
-const REGISTRY = Symbol.for("pi-web.claude-code.session-bridge");
+const REGISTRY = Symbol.for("sova.claude-code.session-bridge");
 
 interface Registry { bridge: SessionBridge; hooked: boolean }
 

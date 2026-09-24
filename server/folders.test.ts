@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 import { listFolders } from "./folders";
 
-const root = mkdtempSync(join(tmpdir(), "pi-web-folders-test-"));
+const root = mkdtempSync(join(tmpdir(), "sova-folders-test-"));
 for (const d of ["beta", "Alpha", "gamma", ".hidden", "locked"]) mkdirSync(join(root, d));
 writeFileSync(join(root, "file.txt"), "x");
 writeFileSync(join(root, "aaa-file"), "x");

@@ -27,7 +27,7 @@ import { Icon } from "./ui";
 type Answer<T> = { ok: T } | { error: string };
 
 /**
- * The setup card of a new, empty session (spec/03 §3 "Empty (new session)"): what pi loads into
+ * The setup card of a new, empty session: what pi loads into
  * the prompt, the skills it offers, and the repository around the folder. One aggregate line opens
  * it — the whole loadout, which the Context and Skills sections below add up to — then a section
  * per thing summed, each carrying its own total beside its label. Read once when the empty state

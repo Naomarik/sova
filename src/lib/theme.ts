@@ -1,5 +1,5 @@
 /**
- * The client half of theming (spec/00-ground-rules.md §0, spec/12-settings-dialog.md §12): the
+ * The client half of theming: the
  * theme the window is wearing, and the two calls that put one on and take it off.
  *
  * The server did the reading, the `$name` resolution and the validation (`shared/theme.ts`), so
@@ -9,7 +9,7 @@
  *
  * The choice is the id and it lives in `localStorage` alone. There is no server write endpoint
  * for it and there must never be one: a theme is this browser's, not the machine's. The cache
- * carries the resolved tokens alongside the id for one reason — §0 requires the theme to be
+ * carries the resolved tokens alongside the id for one reason — the ground rules require the theme to be
  * applied BEFORE first paint, and a fetch can't be.
  */
 
@@ -18,8 +18,6 @@ import type { ThemeList, ThemeTokens } from "../../shared/protocol";
 import { CSS_PROPERTY, DEFAULT_THEME_ID, type ThemeBase } from "../../shared/theme";
 import {
   DEFAULT_TEXT_SIZE,
-  LEGACY_TEXT_SIZE_KEY,
-  LEGACY_TYPOGRAPHY_KEY,
   NO_TYPOGRAPHY,
   parseTextSize,
   parseTypography,
@@ -32,12 +30,10 @@ import {
   type Typography,
   typographyProperties,
 } from "./typography";
-import { dualGet, dualRemove, dualSet } from "./storage-keys";
+import { readKey, removeKey, writeKey } from "./storage-keys";
 
-/** §0: the choice persists here. `LEGACY_THEME_KEY` is the pre-rebrand spelling: while the
-    rename bridge is open, reads fall back to it and writes mirror to it (storage-keys.ts). */
+/** The ground rules: the choice persists here. */
 export const THEME_KEY = "sova:theme";
-export const LEGACY_THEME_KEY = "pi-web:theme";
 
 /** What we keep so the next load can paint the theme with no network. The id is the choice —
     the tokens are a cache of what the server said it resolved to, re-checked against the list
@@ -53,7 +49,7 @@ const [activeThemeId, setActiveThemeId] = createSignal<string>(DEFAULT_THEME_ID)
 export { activeThemeId };
 
 /** The id of a theme we were wearing and had to take off — the file was deleted, renamed, or
-    broke since the cache was written. §09's banner names it in the Themes panel, and putting any
+    broke since the cache was written. The copy deck's banner names it in the Themes panel, and putting any
     theme on clears it: the notice is about the theme you lost, not the one you have. */
 const [droppedThemeId, setDroppedThemeId] = createSignal<string | null>(null);
 export { droppedThemeId };
@@ -63,7 +59,7 @@ export { droppedThemeId };
 const ALL_PROPERTIES = Object.values(CSS_PROPERTY);
 
 /**
- * The Typography choice (§12 "Typography", `typography.ts` for the catalogue): the faces this
+ * The Typography choice (`typography.ts` for the catalogue): the faces this
  * browser puts OVER whatever theme it wears. It is painted here, after the theme's tokens, on
  * every apply and clear — that ordering is the precedence rule (pick > theme > default), and it
  * has to live in the one function that writes the properties, or a theme switch would take a
@@ -72,7 +68,7 @@ const ALL_PROPERTIES = Object.values(CSS_PROPERTY);
 const [typography, setTypographySignal] = createSignal<Typography>(NO_TYPOGRAPHY);
 export { typography };
 
-/** The Text size choice (§12 "Typography"): the same painter, the same precedence — written
+/** The Text size choice: the same painter, the same precedence — written
     after the theme, so a Small or Large scales whatever sizes the theme set. */
 const [textSize, setTextSizeSignal] = createSignal<TextSize>(DEFAULT_TEXT_SIZE);
 export { textSize };
@@ -84,7 +80,7 @@ let worn: StoredTheme | null = null;
 /** The stored choice, validated against the catalogue (an id that names nothing is no choice). */
 export function readStoredTypography(): Typography {
   try {
-    return parseTypography(dualGet(localStorage, TYPOGRAPHY_KEY, LEGACY_TYPOGRAPHY_KEY));
+    return parseTypography(readKey(localStorage, TYPOGRAPHY_KEY));
   } catch {
     return NO_TYPOGRAPHY;
   }
@@ -93,8 +89,8 @@ export function readStoredTypography(): Typography {
 function writeStoredTypography(t: Typography): void {
   try {
     const raw = serializeTypography(t);
-    if (raw === null) dualRemove(localStorage, TYPOGRAPHY_KEY, LEGACY_TYPOGRAPHY_KEY);
-    else dualSet(localStorage, TYPOGRAPHY_KEY, LEGACY_TYPOGRAPHY_KEY, raw);
+    if (raw === null) removeKey(localStorage, TYPOGRAPHY_KEY);
+    else writeKey(localStorage, TYPOGRAPHY_KEY, raw);
   } catch {
     // Persistence is a convenience; the faces still hold for this page.
   }
@@ -102,7 +98,7 @@ function writeStoredTypography(t: Typography): void {
 
 export function readStoredTextSize(): TextSize {
   try {
-    return parseTextSize(dualGet(localStorage, TEXT_SIZE_KEY, LEGACY_TEXT_SIZE_KEY));
+    return parseTextSize(readKey(localStorage, TEXT_SIZE_KEY));
   } catch {
     return DEFAULT_TEXT_SIZE;
   }
@@ -111,8 +107,8 @@ export function readStoredTextSize(): TextSize {
 function writeStoredTextSize(size: TextSize): void {
   try {
     const raw = serializeTextSize(size);
-    if (raw === null) dualRemove(localStorage, TEXT_SIZE_KEY, LEGACY_TEXT_SIZE_KEY);
-    else dualSet(localStorage, TEXT_SIZE_KEY, LEGACY_TEXT_SIZE_KEY, raw);
+    if (raw === null) removeKey(localStorage, TEXT_SIZE_KEY);
+    else writeKey(localStorage, TEXT_SIZE_KEY, raw);
   } catch {
     // Persistence is a convenience; the size still holds for this page.
   }
@@ -180,7 +176,7 @@ function setMetaThemeColor(value: string): void {
 /** The stored choice, or null when there is none (or storage is blocked, or it's not ours). */
 export function readStoredTheme(): StoredTheme | null {
   try {
-    const raw = dualGet(localStorage, THEME_KEY, LEGACY_THEME_KEY);
+    const raw = readKey(localStorage, THEME_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<StoredTheme>;
     if (typeof parsed?.id !== "string" || !parsed.id) return null;
@@ -195,7 +191,7 @@ export function readStoredTheme(): StoredTheme | null {
 
 function writeStoredTheme(theme: StoredTheme): void {
   try {
-    dualSet(localStorage, THEME_KEY, LEGACY_THEME_KEY, JSON.stringify(theme));
+    writeKey(localStorage, THEME_KEY, JSON.stringify(theme));
   } catch {
     // Persistence is a convenience; the theme still holds for this page.
   }
@@ -219,14 +215,14 @@ export function clearTheme(): void {
   paint(null);
   setActiveThemeId(DEFAULT_THEME_ID);
   try {
-    dualRemove(localStorage, THEME_KEY, LEGACY_THEME_KEY);
+    removeKey(localStorage, THEME_KEY);
   } catch {
     // Nothing to undo: the properties are already off.
   }
 }
 
 /** The pre-paint call (`main.tsx`): apply the cached theme synchronously, or leave the document
-    on its default dark. Nothing is fetched here — a flash of the default is exactly what §0
+    on its default dark. Nothing is fetched here — a flash of the default is exactly what the ground rules
     forbids, and a reconcile against the server happens after boot (App.tsx). */
 export function applyStoredTheme(): void {
   setTypographySignal(readStoredTypography());
@@ -246,13 +242,13 @@ function sameTokens(a: ThemeTokens, b: ThemeTokens): boolean {
 /**
  * The cache against the server's list: once at boot (App.tsx), and on every poll while the
  * Themes tab is open. An id that no longer resolves — or that resolves to a theme we can't wear
- * — falls back to `dark` (§0), and the banner says which id went. A theme still there whose file
+ * — falls back to `dark`, and the banner says which id went. A theme still there whose file
  * changed is re-applied, so an edit saved in another window shows up where the list does.
  *
  * Two lists say nothing about the theme you're wearing and must not take it off. A fetch that
  * FAILS never gets here at all — the cache keeps being worn, which is the point of it. And a
  * list carrying `error` is INCOMPLETE: the user folder couldn't be read, so it holds the
- * built-ins alone (§12), and a user theme missing from it is missing for that reason.
+ * built-ins alone, and a user theme missing from it is missing for that reason.
  */
 export function reconcileTheme(list: ThemeList): void {
   const stored = readStoredTheme();

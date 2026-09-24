@@ -14,7 +14,7 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 
-const agentDir = mkdtempSync(join(tmpdir(), "pi-web-branch-test-"));
+const agentDir = mkdtempSync(join(tmpdir(), "sova-branch-test-"));
 process.env.PI_CODING_AGENT_DIR = agentDir;
 const sessionsDir = join(agentDir, "sessions", "--tmp-branch--");
 mkdirSync(sessionsDir, { recursive: true });
@@ -93,7 +93,7 @@ const member = (provider: string, modelId: string) => ({ ref: `${provider}/${mod
 const parse = (path: string) => readFileSync(path, "utf8").trim().split("\n").map((l) => JSON.parse(l));
 
 test("realFanoutDeps.fresh writes the PLANNED model into the file, and a reopened manager sees it", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "pi-web-branch-fresh-"));
+  const workdir = mkdtempSync(join(tmpdir(), "sova-branch-fresh-"));
   const path = await realFanoutDeps.fresh(workdir, member("zai", "glm-5.3"));
   const entries = parse(path);
   const changes = entries.filter((e) => e.type === "model_change");
@@ -117,19 +117,19 @@ test("realFanoutDeps.fork writes the planned model OVER the source's, and the ma
   // The invisible entry chat-manager keys the outline exception on (FANOUT_MEMBER_ENTRY):
   // present in BOTH creation paths' bytes, and readable from a reopened manager.
   assert.ok(
-    entries.some((e) => e.type === "custom" && e.customType === "pi-web-fanout-member"),
+    entries.some((e) => e.type === "custom" && e.customType === "sova-fanout-member"),
     "the fanout-member marker is in the fork member's file",
   );
   assert.ok(isFanoutMember(SessionManager.open(path)), "and the predicate chat-manager runs sees it");
 });
 
 test("a fresh member's file carries the fanout-member marker from birth", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "pi-web-branch-marker-"));
+  const workdir = mkdtempSync(join(tmpdir(), "sova-branch-marker-"));
   const path = await realFanoutDeps.fresh(workdir, member("zai", "glm-5.3"));
   const reopened = SessionManager.open(path);
   assert.ok(isFanoutMember(reopened), "the marker survives the reopen a later runtime does");
   assert.ok(
-    parse(path).some((e) => e.type === "custom" && e.customType === "pi-web-fanout-member"),
+    parse(path).some((e) => e.type === "custom" && e.customType === "sova-fanout-member"),
     "as bytes on disk, so it holds across restarts — not an in-memory flag",
   );
 });

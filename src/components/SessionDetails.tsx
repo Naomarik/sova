@@ -33,7 +33,7 @@ import { GroupWithParent, MoveToGroupMenu } from "./Groups";
 const wrapMono = { margin: 0, "overflow-wrap": "anywhere" } as const;
 
 /**
- * What a session is and what it has spent (spec/04-composer.md §4h), read-only: the body of the Session
+ * What a session is and what it has spent, read-only: the body of the Session
  * info modal and the session pane's Session tab, one implementation for both. Its parent owns
  * the data and the scroll box; this renders sections as siblings for a flex column with gaps.
  *
@@ -234,7 +234,7 @@ export function SessionDetails(props: {
               <Fact label="Archived">{archived() ? "Yes" : "No"}</Fact>
               <Fact label="Group">{groupNameOf(sessionGroups(), s().groupId) ?? "None"}</Fact>
               {/* Lineage from the session header, read-only: Sova never writes it. It says this
-                  session was branched from that file — never at which entry (spec/14 "Data"). */}
+                  session was branched from that file — never at which entry. */}
               <Show when={s().parent}>
                 {(parent) => (
                   <Fact label="Forked from">
@@ -519,11 +519,6 @@ function RepositoryFacts(props: { summary: GitRepoSummary; now: number }) {
       <p class="text-mono" style={wrapMono} title={s().root}>
         {rootLabel(s(), home())}
       </p>
-      <Show when={s().moved}>
-        <p class="usage-note text-muted">
-          This folder moved since the session started. Read at <span class="text-mono">{s().cwd}</span>.
-        </p>
-      </Show>
       <dl class="stack-2" style={{ margin: 0 }}>
         <Fact label="Branch">
           <span class="text-mono" style={wrapMono}>
@@ -615,7 +610,7 @@ function GitFileRow(props: { file: GitFileChange }) {
 }
 
 /**
- * Archive/Unarchive for a web-spawned session (spec/02-session-list.md §2 "Archiving"). Archiving closes the
+ * Archive/Unarchive for a web-spawned session. Archiving closes the
  * session's runtime, so it's refused while the session is live in a TUI (it would stay on top
  * anyway) and while its subagents work (they'd stop with it); unarchiving always works.
  */

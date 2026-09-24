@@ -1,5 +1,5 @@
 // Run: npx tsx --test server/themes.test.ts
-// The acceptance gate for the theme grammar (spec/00-ground-rules.md §0) and the two folders
+// The acceptance gate for the theme grammar and the two folders
 // server/themes.ts reads. Uses a throwaway PI_CODING_AGENT_DIR in the OS temp dir; ~/.pi is never
 // read or written. The shipped themes/ folder is read, never modified.
 import assert from "node:assert/strict";
@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { after, test } from "node:test";
 
-const agentDir = mkdtempSync(join(tmpdir(), "pi-web-themes-"));
+const agentDir = mkdtempSync(join(tmpdir(), "sova-themes-"));
 process.env.PI_CODING_AGENT_DIR = agentDir; // before the module below computes its paths
 const { listThemes, userThemesDir } = await import("./themes");
 const { checkValue, COLOR_KEYS, CSS_PROPERTY, parseTheme, SHADOW_KEYS, TYPOGRAPHY_KEYS } = await import("../shared/theme");
@@ -50,11 +50,11 @@ test("(a) every mandated vector is rejected, and its key never lands in tokens",
   for (const [key, value, why] of MUST_REJECT) {
     const reason = checkValue(key, value);
     assert.ok(reason, `${key}: ${value} was accepted — ${why}`);
-    assert.match(reason!, new RegExp(`^${key} is `), `the reason names the key (§12): ${reason}`);
+    assert.match(reason!, new RegExp(`^${key} is `), `the reason names the key: ${reason}`);
     const parsed = theme({ name: "T", extends: "dark", colors: { [key]: value }, typography: { [key]: value } });
     assert.equal(parsed.tokens[key], undefined, `${key} survived the parse`);
     assert.ok(parsed.warnings.some((w) => w.includes(key)), "the row carries its reason");
-    assert.ok(parsed.error, "a value we won't emit makes the theme a broken row (§0)");
+    assert.ok(parsed.error, "a value we won't emit makes the theme a broken row");
   }
   assert.equal(MUST_REJECT.length, 10);
 });
@@ -73,7 +73,7 @@ test("(a) the supplementary fetch and substitution vectors are rejected too", ()
     assert.ok(checkValue("font-body", value), `font-body: ${value} was accepted`);
 });
 
-test("(a) the shapes §0 allows are accepted, verbatim", () => {
+test("(a) the shapes the ground rules allow are accepted, verbatim", () => {
   for (const value of [
     "#fff", "#ffff", "#1E1E26", "#1e1e26ff",
     "rgba(0, 0, 0, .5)", "oklch(62% 0.2 250)", "rgb(30 30 38 / 80%)",
@@ -94,7 +94,7 @@ test("(a) the shapes §0 allows are accepted, verbatim", () => {
   for (const bad of ["99", "1000", "400.5", "bold"]) assert.ok(checkValue("fw-medium", bad), `fw-medium: ${bad}`);
 });
 
-test("(a) the key lists and the property table are §0's, and hold no focus keys", () => {
+test("(a) the key lists and the property table are the ground rules', and hold no focus keys", () => {
   assert.equal(COLOR_KEYS.length, 27);
   assert.equal(SHADOW_KEYS.length, 3);
   assert.equal(TYPOGRAPHY_KEYS.length, 3 + 8 + 8 + 4 + 7);
@@ -108,7 +108,7 @@ test("(a) the key lists and the property table are §0's, and hold no focus keys
   assert.equal(CSS_PROPERTY["font-body"], "--font-body");
   assert.equal(CSS_PROPERTY["fs-body"], "--fs-body");
   // --focus-color and --focus-ring track the accent through var(); emitting them would freeze
-  // the ring at the base theme's accent (§0).
+  // the ring at the base theme's accent.
   for (const emitted of Object.values(CSS_PROPERTY)) assert.ok(!emitted.startsWith("--focus"), emitted);
 });
 
@@ -202,7 +202,7 @@ test("(d) $name resolves, and only to a var defined above it", () => {
 
 test("(d) validation runs after resolution, never before", () => {
   // Backwards, "$base" is checked as a color and every theme using vars dies at once with a
-  // message naming the color grammar (§0). The reason below must name the var, not the grammar.
+  // message naming the color grammar. The reason below must name the var, not the grammar.
   const t = theme({ name: "Order", vars: { base: "not-a-color" }, colors: { bg: "$base" } });
   assert.ok(t.error);
   assert.ok(t.error!.includes("bg is not-a-color"), `the reason quotes the resolved value: ${t.error}`);
@@ -213,10 +213,8 @@ test("(d) validation runs after resolution, never before", () => {
 
 test("(e) a user file taking a built-in id replaces it, in place, and says so", () => {
   clearUserThemes();
-  // Both spellings are accepted and neither warns: a theme written before the rename and one
-  // written after it are equally valid, forever (the file on disk is the user's, never rewritten).
   dropUserTheme("dracula", { $schema: "sova-theme/v1", name: "Dracula (mine)", extends: "light", colors: { accent: "#ff0000" } });
-  dropUserTheme("sunset", { $schema: "pi-web-theme/v1", name: "Sunset", extends: "dark", colors: { bg: "#2b1a12" } });
+  dropUserTheme("sunset", { $schema: "sova-theme/v1", name: "Sunset", extends: "dark", colors: { bg: "#2b1a12" } });
   const { themes, dir } = listThemes();
   assert.equal(dir, userDir);
   assert.equal(themes.length, 19, "18 built-ins, one replaced, plus one new");
@@ -232,9 +230,8 @@ test("(e) a user file taking a built-in id replaces it, in place, and says so", 
 
   const sunset = themes.find((t) => t.id === "sunset")!;
   assert.equal(sunset.source, "user");
-  // The $schema each was written with is inert: no warning for either spelling.
-  assert.deepEqual(dracula.warnings ?? [], [], "sova-theme/v1 is the current spelling");
-  assert.deepEqual(sunset.warnings ?? [], [], "pi-web-theme/v1 still loads silently");
+  assert.deepEqual(dracula.warnings ?? [], [], "sova-theme/v1 loads silently");
+  assert.deepEqual(sunset.warnings ?? [], []);
   assert.equal(sunset.replacesBuiltin, undefined);
   assert.equal(themes.at(-1)!.id, "sunset", "a user theme that replaces nothing comes last");
   assert.ok(themes.findIndex((t) => t.id === "dracula") < themes.findIndex((t) => t.id === "sunset"));
@@ -259,7 +256,7 @@ test("(f) a file that isn't JSON becomes a row carrying the parser's own message
   clearUserThemes();
   dropUserTheme("broken", '{\n  "name": "Broken",\n');
   const t = listThemes().themes.find((x) => x.id === "broken")!;
-  assert.equal(t.name, "", "§12 shows the filename where the name would be");
+  assert.equal(t.name, "", "the settings dialog spec shows the filename where the name would be");
   assert.ok(t.error, "a broken file is listed, never silently dropped");
   assert.ok(/JSON/i.test(t.error!), `the parser's own words: ${t.error}`);
   assert.deepEqual(t.tokens, {});
@@ -276,7 +273,7 @@ test("(f) a file with no name is a broken row too", () => {
 test("(f) a value we won't emit drops its key and names the key, the value and the shapes", () => {
   clearUserThemes();
   dropUserTheme("bad-value", {
-    $schema: "pi-web-theme/v1",
+    $schema: "sova-theme/v1",
     name: "Bad Value",
     extends: "dark",
     colors: { bg: "#101014", accent: "image-set(//a/x.png 1x)" },
@@ -284,7 +281,7 @@ test("(f) a value we won't emit drops its key and names the key, the value and t
   const t = listThemes().themes.find((x) => x.id === "bad-value")!;
   assert.equal(t.warnings.length, 1);
   assert.match(t.warnings[0]!, /^accent is image-set\(\/\/a\/x\.png 1x\)\. A color is a hex value, or one call to rgb, rgba, hsl, hsla, oklch, oklab, lab, lch, color-mix, or color\.$/);
-  assert.equal(t.error, t.warnings[0], "§0: the theme it came from is not applied");
+  assert.equal(t.error, t.warnings[0], "The ground rules: the theme it came from is not applied");
   assert.notEqual(t.tokens.accent, "image-set(//a/x.png 1x)", "the value never reaches a DOM node");
   assert.equal(t.tokens.bg, "#101014", "the keys that were fine are still there");
   clearUserThemes();
@@ -305,8 +302,8 @@ test("(f) an unreadable user folder keeps the built-ins listed and reports why",
   const prev = process.env.PI_CODING_AGENT_DIR;
   try {
     // A path whose "themes" is a file, not a directory: readdir fails with something other than
-    // ENOENT, which is the case §12's banner exists for.
-    const scratch = mkdtempSync(join(tmpdir(), "pi-web-themes-file-"));
+    // ENOENT, which is the case the settings dialog spec's banner exists for.
+    const scratch = mkdtempSync(join(tmpdir(), "sova-themes-file-"));
     mkdirSync(join(scratch, "sova"), { recursive: true });
     writeFileSync(join(scratch, "sova", "themes"), "not a folder");
     process.env.PI_CODING_AGENT_DIR = scratch;

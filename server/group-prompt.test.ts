@@ -173,7 +173,7 @@ test("blank text is refused before the group is even looked up", async () => {
 });
 
 test("a failure with no message still carries a sentence", async () => {
-  // spec §14: a client that doesn't recognise a newer `code` shows `message` verbatim, so a blank
+  // The workspace spec: a client that doesn't recognise a newer `code` shows `message` verbatim, so a blank
   // one would drop the reason on the floor.
   const d = deps({
     members: () => ["a", "b"],

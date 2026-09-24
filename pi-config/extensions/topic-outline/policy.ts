@@ -3,7 +3,7 @@
  *
  * The TUI always runs them. Any other mode (print/json/rpc, including subagent
  * workers) runs them only when its host opts in with the headless flag, as
- * pi-web does for the chat runtimes it embeds.
+ * Sova does for the chat runtimes it embeds.
  */
 
 export const HEADLESS_FLAG = "topic-outline-headless";

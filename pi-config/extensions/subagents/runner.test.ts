@@ -251,10 +251,10 @@ test("spawn args: model, effort, tools, no-extensions, system prompt", async () 
 test("getPiInvocation re-invokes argv[1] only when that script belongs to pi itself", async () => {
 	const root = await mkdtemp(path.join(tmpdir(), "pi-invocation-"));
 	try {
-		// A host that loads this extension inside its own process (pi-web's server): argv[1] exists
+		// A host that loads this extension inside its own process (Sova's server): argv[1] exists
 		// but it is not pi, so the worker must be the real `pi` — re-running that file is what killed
-		// every pi-backend worker spawned from a pi-web-hosted session.
-		await writeFile(path.join(root, "package.json"), JSON.stringify({ name: "pi-web" }));
+		// every pi-backend worker spawned from a Sova-hosted session.
+		await writeFile(path.join(root, "package.json"), JSON.stringify({ name: "sova" }));
 		const host = path.join(root, "server.ts");
 		await writeFile(host, "");
 		assert.deepEqual(getPiInvocation(["--mode", "rpc"], host), { command: "pi", args: ["--mode", "rpc"] });

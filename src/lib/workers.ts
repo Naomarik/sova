@@ -210,7 +210,7 @@ export function usageTotal(source: unknown): UsageTotalView | null {
   return { ...usage, workers: Number.isSafeInteger(workers) && (workers as number) > 0 ? (workers as number) : 0 };
 }
 
-/** The headline number: what was actually spoken, input + output. §11 shows cache in the title. */
+/** The headline number: what was actually spoken, input + output. The subagents pane spec shows cache in the title. */
 export const usageHeadline = (u: UsageView): number => u.input + u.output;
 
 /**

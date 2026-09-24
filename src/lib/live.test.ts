@@ -125,7 +125,7 @@ test("takeBackQueued with nothing drained changes nothing", () => {
   assert.equal(s.entries.length, 1);
 });
 
-// ---- The outgoing queue (spec/03 "A queued message") --------------------------------------------
+// ---- The outgoing queue --------------------------------------------
 
 const queued = (id: string, text: string, over: Partial<QueuedItem> = {}): QueuedItem => ({ id, kind: "steer", text, ...over });
 const userRows = (s: LiveState) => s.entries.flatMap((e) => (e.kind === "user" ? [{ id: e.id, text: e.text, state: e.state, handed: e.handed }] : []));

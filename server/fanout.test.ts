@@ -400,7 +400,7 @@ test("every fanout failure carries a ref; a prompt-route refusal carries none", 
 
 test("a creation failure with no message still carries a sentence", async () => {
   // The ref prefix was stripped from this message so the banner doesn't render the model twice,
-  // which makes a bare reason the case most likely to arrive empty — and §14 has the client show
+  // which makes a bare reason the case most likely to arrive empty — and the workspace spec has the client show
   // `message` verbatim for a code it doesn't recognise, so an empty one would drop the reason.
   const d = deps({
     fork: async (_s, _l, member) => {
@@ -521,11 +521,11 @@ test("exactly one of name and groupId: both is a 400, neither is a 400", async (
 });
 
 // --- who named the group (`named` → autoDissolve) ------------------------------------
-// pi-web may remove only what it both MADE and NAMED. The client reports which, because the
+// Sova may remove only what it both MADE and NAMED. The client reports which, because the
 // server never generated the default and so cannot tell an accepted one from an identical string
 // typed by hand.
 
-test("the default accepted: pi-web named it, so the group dissolves when emptied", async () => {
+test("the default accepted: Sova named it, so the group dissolves when emptied", async () => {
   const d = deps();
   const r = await runFanout(forkBody({ named: "generated" }), d);
   assert.ok(r.ok);
@@ -540,7 +540,7 @@ test("a name the user typed: recorded as NOT dissolving, explicitly", async () =
 });
 
 test("flag ABSENT is the safe answer: an older client never costs a user their name", async () => {
-  // Absence means "client predates the field". It must not mean "pi-web named it", and it must
+  // Absence means "client predates the field". It must not mean "Sova named it", and it must
   // not be left unwritten either: absent-on-disk plus a seed is the signature the legacy rule
   // reads as a pre-flag fanout group, which would delete it.
   const d = deps();

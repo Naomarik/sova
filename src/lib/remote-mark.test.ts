@@ -3,13 +3,12 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { groupRemotePlaceOf, remoteMarkOf, remoteMarkSuffix, remoteMarkTitle } from "./remote-mark";
 
-const T = "/home/u/.pi/agent/pi-web/targets"; // legacy pre-rebrand placeholder root
-const TS = "/home/u/.pi/agent/sova/targets"; // current root
+const T = "/home/u/.pi/agent/sova/targets"; // the placeholder root
 
-const local = { cwd: "/home/u/webapps/pi-web" };
-const remote = { cwd: "/home/u/webapps/pi-web", target: "box", remoteCwd: "/srv/site" };
+const local = { cwd: "/home/u/webapps/sova" };
+const remote = { cwd: "/home/u/webapps/sova", target: "box", remoteCwd: "/srv/site" };
 const remote2 = { cwd: `${T}/box/srv/site` };
-const remoteNewRoot = { cwd: `${TS}/box/srv/site` };
+const remoteNewRoot = { cwd: `${T}/box/srv/site` };
 
 test("a remote row among local rows carries the mark; the local rows carry none", () => {
   const rows = [local, remote, local];

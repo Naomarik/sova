@@ -115,7 +115,7 @@ test("a rate-limited channel is its own line, never the chip's word or a red dot
 
 // The always-on remote chip: fed by the summary, present before any status.
 const summary = {
-  cwd: "/home/u/.pi/agent/pi-web/targets/box/home/deploy/site",
+  cwd: "/home/u/.pi/agent/sova/targets/box/home/deploy/site",
   target: "box",
   remoteCwd: "/home/deploy/site",
 };

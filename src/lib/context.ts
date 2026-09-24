@@ -1,4 +1,4 @@
-// Context-window fill for the session head (spec/04f-context-window.md context meter). Mirrors the server's
+// Context-window fill for the session head. Mirrors the server's
 // rule (server/transcript.ts contextForBranch): input + cacheRead + cacheWrite of the LAST
 // assistant message with usage on the branch; a compaction after it makes that stale → null.
 
@@ -40,7 +40,7 @@ export type ContextState = ContextInfo | "compacted" | null;
 /** The window of a state, when it has one. */
 export const windowOf = (s: ContextState | undefined): number | null => (s && s !== "compacted" ? s.window : null);
 
-/** Token counts per §4f: 812 · 8.4k · 237k · 1M · 1.5M. */
+/** Token counts per the context window spec: 812 · 8.4k · 237k · 1M · 1.5M. */
 export function formatTokens(n: number): string {
   const trim = (x: number) => x.toFixed(1).replace(/\.0$/, "");
   if (n < 1000) return String(n);

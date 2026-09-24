@@ -7,8 +7,7 @@ import { SESSION_TITLE_MAX } from "../shared/protocol";
  * The user's own titles for sessions (POST /api/sessions/title), keyed by session id like the
  * archive mark and the group assignment. Sova's own store and NOTHING ELSE: renaming a session
  * never writes a byte into its .jsonl, so a title the user set here is invisible to the TUI, to
- * the model, and to any other writer of that file (spec/02-session-list.md §2 "Selecting several
- * sessions"). Clearing an override puts the derived title — the session's first user message —
+ * the model, and to any other writer of that file. Clearing an override puts the derived title — the session's first user message —
  * back, which is why the derived one is never copied in here.
  */
 const FILE = join(stateRoot(), "session-titles.json");

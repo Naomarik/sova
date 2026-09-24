@@ -1,7 +1,7 @@
 // Run: npx tsx --test server/sessions-index.test.ts
 // Uses a throwaway PI_CODING_AGENT_DIR in the OS temp dir; ~/.pi is never read or written.
 //
-// The paths mode of Archive cleanup (spec/02-session-list.md §2 "Deleting one session"): one
+// The paths mode of Archive cleanup: one
 // archived session deleted for good, and everything that must be refused instead. The bulk modes'
 // own rules are covered elsewhere — group pruning in session-groups-index.test.ts, husk detection
 // in cleanup.test.ts. The route's input validation is covered by the pieces it calls
@@ -13,7 +13,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 
-const agentDir = mkdtempSync(join(tmpdir(), "pi-web-sessions-index-"));
+const agentDir = mkdtempSync(join(tmpdir(), "sova-sessions-index-"));
 process.env.PI_CODING_AGENT_DIR = agentDir; // before the modules below compute their paths
 const sessionsDir = join(agentDir, "sessions", "--tmp-sessions-index--");
 const liveDir = join(agentDir, "sessions", "live");
@@ -105,7 +105,7 @@ test("paths: a live session is skipped as live, not deleted (archived before a T
 });
 
 test("paths: a path outside the sessions dir is refused, not deleted", async () => {
-  const outside = join(tmpdir(), `pi-web-sessions-index-outside-${process.pid}.jsonl`);
+  const outside = join(tmpdir(), `sova-sessions-index-outside-${process.pid}.jsonl`);
   writeFileSync(outside, `${header(ID_A)}\n`);
   try {
     const r = await cleanupSessions({ mode: "paths", paths: [outside], dryRun: false });

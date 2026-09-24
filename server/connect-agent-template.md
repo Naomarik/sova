@@ -109,7 +109,7 @@ sftp-server is there, the candidate cwds, and the latency. Let the user pick the
 Name exact paths. Never tell the model to read whatever find/ls returned; list freely, then read only a named file you have judged non-secret.
 
 Put the exact entry you intend to store in a scratch file, and run it through the **same argv
-builder** pi and pi-web use:
+builder** pi and Sova use:
 
 ```sh
 cat > /tmp/target-entry.json <<'EOF'
@@ -124,7 +124,7 @@ node {{AGENT_DIR}}/extensions/remote/check.ts /tmp/target-entry.json --list '~' 
 `check.ts` changes nothing. It prints validation errors, the full argv, the wall time, the exit
 code and the output. For a `via` entry it resolves the hop from `{{TARGETS_FILE}}`, so the hop's
 entry must already be written. If `check.ts` is missing, pi-config isn't installed, so run
-`pi-config/install.sh` from the pi-web checkout, or verify by hand with the command line the entry
+`pi-config/install.sh` from the Sova checkout, or verify by hand with the command line the entry
 maps to:
 
 ```sh

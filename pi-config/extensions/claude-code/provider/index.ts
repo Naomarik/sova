@@ -9,7 +9,7 @@
  * extension runner is built. At factory time `pi.getFlag` therefore only ever
  * reports the registered default. Registration consequently happens from
  * `session_start`, which runs after both paths have written the real value.
- * Flag off registers nothing at all. Registration is never undone: pi-web
+ * Flag off registers nothing at all. Registration is never undone: Sova
  * shares one ModelRuntime across sessions, so unregistering for a later
  * flag-off session would break a session already streaming through it.
  */
@@ -100,13 +100,13 @@ export async function refreshClaudeModels(context: { allowNetwork: boolean; sign
 }
 
 /**
- * Registration is process-wide, not per session: pi-web shares one
+ * Registration is process-wide, not per session: Sova shares one
  * ModelRuntime across every hosted session, so a later session whose flag is
  * off must never rip the provider out from under a session that is mid-turn
  * on it. Once registered it stays registered until the process exits (a
  * `/reload` rebuilds the extension runtime anyway). Exported for tests.
  */
-export const REGISTERED_MARKER = Symbol.for("pi-web.claude-code.provider-registered");
+export const REGISTERED_MARKER = Symbol.for("sova.claude-code.provider-registered");
 
 function alreadyRegistered(): boolean {
 	const host = globalThis as unknown as Record<symbol, boolean | undefined>;

@@ -49,7 +49,7 @@ export interface ActionMenuApi {
 }
 
 /**
- * A "⋯" trigger and the popover menu it opens: the shape §14's pane head and §2's group sections
+ * A "⋯" trigger and the popover menu it opens: the shape the workspace spec's pane head and the session list's group sections
  * both need, in one place. The panel is a `popover="auto"`, so it lives in the top layer (no
  * ancestor can clip it), light-dismisses, and answers Escape for free; `place()` below anchors
  * it under the trigger's right edge when that fits in the window, and moves it when it doesn't.

@@ -41,7 +41,7 @@ const USAGE = {
 
 const plainTheme = { fg: (_c: string, s: string) => s, bg: (_c: string, s: string) => s, bold: (s: string) => s };
 
-/** Headless custom(): what pi-web's bridge and pi's rpc mode do. */
+/** Headless custom(): what Sova's bridge and pi's rpc mode do. */
 const headlessCustom = async () => undefined;
 
 /** TUI custom(), shaped like interactive-mode: factory runs synchronously, onHandle after, resolves on close. */
@@ -97,7 +97,7 @@ function harness(options: HarnessOptions = {}) {
 	};
 
 	const ctx: any = {
-		// Deliberately "rpc" for every harness: pi-web binds with mode "rpc" but has a UI, so the
+		// Deliberately "rpc" for every harness: Sova binds with mode "rpc" but has a UI, so the
 		// headless decision must come from the custom() probe, never from the mode.
 		mode: "rpc",
 		hasUI: true,

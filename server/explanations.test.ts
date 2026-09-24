@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { after, describe, test } from "node:test";
 import type { ExplanationInfo } from "../shared/protocol";
 
-const agentDir = mkdtempSync(join(tmpdir(), "pi-web-explain-test-"));
+const agentDir = mkdtempSync(join(tmpdir(), "sova-explain-test-"));
 process.env.PI_CODING_AGENT_DIR = agentDir; // before the modules below compute their paths
 process.env.PORT = "0";
 const storeDir = join(agentDir, "explanations");

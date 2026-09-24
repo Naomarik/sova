@@ -4,15 +4,14 @@ import { fontById, type FontKind, fontsOf, isThemeDefault, TEXT_SIZES } from "..
 import { announce } from "../lib/ui-state";
 
 /**
- * Settings → Themes → Typography (spec/12-settings-dialog.md §12 "Typography"): the faces this
+ * Settings → Themes → Typography: the faces this
  * browser puts over the theme it wears. Two closed lists — Text (UI chrome, prose, headings) and
  * Code (paths, ids, diffs) — each a native select, because a short closed list on a phone should
  * get the platform picker. "Theme default" is the first option and the initial state: the theme's
  * own faces, which for every shipped theme are Inter and JetBrains Mono. Picking one of those
  * two explicitly is a real choice — a theme that names another face loses to it.
  *
- * Applies as you pick and persists in this browser (`sova:typography`, mirrored at the legacy
- * `pi-web:typography` while the rename bridge is open), like the theme. The
+ * Applies as you pick and persists in this browser (`sova:typography`), like the theme. The
  * preview under the selects inherits the live root faces, so it is the page's own answer rather
  * than a render of the option — there is nothing it could show that the dialog around it isn't
  * already showing.

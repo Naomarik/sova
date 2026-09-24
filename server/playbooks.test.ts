@@ -138,35 +138,6 @@ test("a remote placeholder cwd is `remote`, even when the placeholder holds play
   assert.ok(!cat.playbooks.some((p) => p.source === "project"));
 });
 
-test("a legacy-pi-web placeholder and a legacy sshfs mount are `remote` too", async () => {
-  for (const cwd of [join(agentDir, "pi-web", "targets", "box", "srv"), join(agentDir, "mounts", "box", "srv")]) {
-    const cat = await listPlaybooks(cwd, base());
-    assert.equal(cat.project.state, "remote", cwd);
-  }
-});
-
-test("path-map applies AFTER the remote refusal: a moved local root lists, a mapped placeholder stays remote", async () => {
-  const oldRoot = join(scratch, "old-root");
-  const newRoot = fresh("new-root");
-  drop(join(newRoot, PROJECT_PLAYBOOKS), "moved", fm({ title: "Moved" }, "m"));
-  const placeholder = join(agentDir, "sova", "targets", "box", "mapped");
-  writeFileSync(
-    join(agentDir, "sova", "path-map.json"),
-    JSON.stringify({ version: 1, moved: [{ from: oldRoot, to: newRoot }, { from: placeholder, to: newRoot }] }),
-  );
-  try {
-    const moved = await listPlaybooks(oldRoot, base());
-    assert.deepEqual(moved.project, { state: "ok" });
-    assert.deepEqual(moved.playbooks.map((p) => p.id), ["moved"]);
-    assert.equal(moved.playbooks[0]!.dir, join(newRoot, PROJECT_PLAYBOOKS, "moved"));
-    const remote = await listPlaybooks(placeholder, base());
-    assert.equal(remote.project.state, "remote", "a placeholder is never re-read as a moved local folder");
-    assert.equal(remote.playbooks.length, 0);
-  } finally {
-    rmSync(join(agentDir, "sova", "path-map.json"), { force: true });
-  }
-});
-
 test("malformed or absent frontmatter still yields an entry with fallbacks", async () => {
   const deps = base();
   drop(deps.shippedDir, "bare", "# Just a body\n");

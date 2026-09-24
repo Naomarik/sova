@@ -7,8 +7,8 @@ import { announce, toast } from "../lib/ui-state";
 import { Banner, Icon } from "./ui";
 
 /**
- * One inline name field, used for "New group" in the pane and for renaming a group in place
- * (spec/02-session-list.md §2 "Groups"). Enter saves, Escape cancels, and leaving the field saves what's
+ * One inline name field, used for "New group" in the pane and for renaming a group in place.
+ * Enter saves, Escape cancels, and leaving the field saves what's
  * there — clicking away after typing a name must not lose it. An empty field cancels.
  */
 export function GroupNameField(props: {
@@ -142,10 +142,10 @@ interface Row {
 let seq = 0;
 
 /**
- * The session pane's way to group a session without dragging (spec/02-session-list.md §2 "Groups"): a
+ * The session pane's way to group a session without dragging: a
  * "Move into group" trigger and a popover menu. One group per session, so the list is a set of
  * radio rows plus "No group", and "New group…" creates a group and moves this session into it in
- * one step. Same popover shell, rows and keyboard handling as the mode menu (§4g), anchored below
+ * one step. Same popover shell, rows and keyboard handling as the mode menu, anchored below
  * the trigger instead of above it.
  */
 export function MoveToGroupMenu(props: {
@@ -344,7 +344,7 @@ export function MoveToGroupMenu(props: {
         <Show when={beside() && sessionGroups().length === 0 && !creating()}>
           <p class="sidebar-region-note">No groups yet. Make one to open this session beside another.</p>
         </Show>
-        {/* The mode menu's shape (§4g): one role=menu list, role=group sections inside it. While the
+        {/* The mode menu's shape: one role=menu list, role=group sections inside it. While the
             name field is showing there is no menu at all — a form is not menu content. */}
         <div
           class="model-menu-list"

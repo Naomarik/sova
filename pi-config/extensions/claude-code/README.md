@@ -313,7 +313,7 @@ Offline: `node ~/pi-config/extensions/claude-code/tests/run.mjs` (includes
 their scripts are in `docs/protocol-probes.md` and `tests/spike/`; they cost
 quota and are never run by the test loader. Sova's hermetic end-to-end check:
 `npm run dev:hermetic` (PORT 4810, `PI_CODING_AGENT_DIR=<repo>/.agent`) and
-`PI_WEB_PORT=4810 npm run dev:web`, then switch the toggle on in Settings →
+`SOVA_PORT=4810 npm run dev:web`, then switch the toggle on in Settings →
 Experimental and open a new session on `claude-code-cli/sonnet`. Verified
 2026-09-22 on CLI 2.1.278: a turn through pi's `read` tool, abort during a
 running `bash` tool, an image returned by `read` (PNG) described by the model,

@@ -118,7 +118,7 @@ export const putModelFavorite = (ref: string, favorite: boolean) =>
   request<ModelFavoriteResult>("/api/models/favorite", { method: "PUT", body: JSON.stringify({ ref, favorite }) });
 
 /** The unified model policy: what may be used at all, and what subagents may additionally use
-    (Settings → Models, §12). Both halves apply everywhere — this browser, the TUI, and workers. */
+    (Settings → Models). Both halves apply everywhere — this browser, the TUI, and workers. */
 export const getModelPolicy = () => request<ModelPolicy>("/api/settings/models");
 
 /** Replace the whole policy. It takes effect on the next model change, turn and spawn, everywhere;
@@ -156,7 +156,7 @@ export const putSummarizerSettings = (settings: SummarizerSettings) =>
 
 /** Every theme the app can find — the ones it ships and the ones in the user's folder — rescanned
     per request. Never fails on an unreadable folder: that comes back as `error` with the built-ins
-    still listed (spec/12-settings-dialog.md §12). */
+    still listed. */
 export const getThemes = () => request<ThemeList>("/api/themes");
 
 /** Sova's own settings (GET /api/settings). Today: the experimental Claude Code switch. */
@@ -273,7 +273,7 @@ export const setSessionArchived = (path: string, archived: boolean) =>
 /**
  * Renames a session, or clears the user's title with `null` so the derived one (its first user
  * message) comes back. Sova's own store — the session's .jsonl is never written, so a session
- * open in a TUI can be renamed too (spec/02-session-list.md §2 "Selecting several sessions").
+ * open in a TUI can be renamed too.
  */
 export const setSessionTitle = (path: string, title: string | null) =>
   request<SessionSummary>("/api/sessions/title", {
@@ -282,7 +282,7 @@ export const setSessionTitle = (path: string, title: string | null) =>
     body: JSON.stringify({ path, title }),
   });
 
-/** The sidebar's user-made groups, in creation order (spec/02-session-list.md §2 "Groups"). */
+/** The sidebar's user-made groups, in creation order. */
 export const listSessionGroups = () => request<SessionGroup[]>("/api/session-groups");
 
 export const createSessionGroup = (name: string) =>
@@ -342,7 +342,7 @@ export const assignSessionGroup = (path: string, groupId: string | null, opts?: 
   });
 
 /**
- * Removal by session id, for a member whose FILE is gone (§14 "Member states" — gone from disk):
+ * Removal by session id, for a member whose FILE is gone (gone from disk):
  * the path form 404s when there is no file to resolve, but the pane's `Remove From Group` still
  * has to work, so the route takes `id` for unassignment only. Same response shape as the path
  * form, `dissolved` included — taking the last member out of a fanout group dissolves it whether
@@ -382,7 +382,7 @@ export async function promptSessionGroup(id: string, text: string, members?: str
 }
 
 /**
- * N sessions from one starting point, as one group (spec/14b-fanout.md "The route"). One write:
+ * N sessions from one starting point, as one group. One write:
  * the group, its members and their assignments land together, because a fanout that half-exists
  * is a sidebar section the user has to clean up.
  *
@@ -500,7 +500,7 @@ const refusedEntries = (raw: unknown): CleanupResponse["refused"] => {
 };
 
 /**
- * Deletes archive sessions by age or empty "husks" (spec/02-session-list.md §2 "Archive cleanup"), or
+ * Deletes archive sessions by age or empty "husks", or
  * the named, ARCHIVED sessions of `paths` mode. With `dryRun` nothing is deleted and the result says
  * what would be. Read leniently: the server may send fewer fields.
  */

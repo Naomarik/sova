@@ -37,8 +37,6 @@ test("authorship survives a reload, which is the whole point of the store", () =
   // A reload rebuilds every module and every in-memory Set; sessionStorage is what persists.
   const raw = sessionStorage.getItem("sova:sends-" + A);
   assert.ok(raw && raw.includes("c9"), "the id is in the tab's own storage, not just in memory");
-  // The pre-rebrand spelling is mirrored too, so a rollback build sees the same authorship.
-  assert.equal(sessionStorage.getItem("pi-web:sends-" + A), raw);
 });
 
 test("the list is capped, and keeps the RECENT ids — the only ones still in flight", () => {
@@ -55,16 +53,6 @@ test("re-recording an id doesn't duplicate it or push the others out", () => {
   rememberSend(A, "c2");
   rememberSend(A, "c1");
   assert.deepEqual(JSON.parse(sessionStorage.getItem("sova:sends-" + A)!), ["c2", "c1"]);
-});
-
-test("a pre-rebrand list under the legacy key still reads (the rename bridge)", () => {
-  sessionStorage.clear();
-  sessionStorage.setItem("pi-web:sends-" + B, JSON.stringify(["old-1"]));
-  assert.equal(sentHere(B, "old-1"), true);
-  // A new write keeps both spellings, and the new one then wins.
-  rememberSend(B, "new-1");
-  assert.deepEqual(JSON.parse(sessionStorage.getItem("sova:sends-" + B)!), ["old-1", "new-1"]);
-  assert.deepEqual(JSON.parse(sessionStorage.getItem("pi-web:sends-" + B)!), ["old-1", "new-1"]);
 });
 
 test("a browser with no sessionStorage degrades to 'not ours', never to a crash", () => {

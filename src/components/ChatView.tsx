@@ -94,7 +94,7 @@ import { UiDialog } from "./UiDialog";
 
 export type ChatRefusal = "busy" | "recent";
 
-/** ui_request kinds UiDialog can show (spec/06-extension-dialogs.md §6); anything else needs the terminal UI. */
+/** ui_request kinds UiDialog can show; anything else needs the terminal UI. */
 const UI_DIALOG_METHODS = ["select", "confirm", "input", "editor"];
 
 /**
@@ -136,9 +136,9 @@ export function ChatView(props: {
   /** The same, after a group change in the info modal (Move into group): the sidebar's Groups
       region and the row's own groupId come from the session list. */
   onGroupsChanged?(): void;
-  /** A bare "/new" in the composer (§4d); resolves to the new session's folder label, or null. */
+  /** A bare "/new" in the composer; resolves to the new session's folder label, or null. */
   onNewSession?(): Promise<string | null>;
-  /** Opens the session pane's Timeline tab (§4d): a bare "/timeline" unfiltered; a bare "/tree" and
+  /** Opens the session pane's Timeline tab: a bare "/timeline" unfiltered; a bare "/tree" and
       the status row's inputs trigger with `inputsOnly`, on your own messages. */
   onShowTimeline?(inputsOnly?: boolean): void;
   /** Hands the Timeline this chat's rewind (sent over this socket); null when this view goes away. */
@@ -155,12 +155,12 @@ export function ChatView(props: {
   onRewound?(info: { path: string; entryId: string }): void;
   /** This session's teams (polled insight), so the status row can name team members as such. */
   teams?: TeamInfo[];
-  /** Where this member was forked from, when it is one (spec/14b): one drawn row in the thread. */
+  /** Where this member was forked from, when it is one: one drawn row in the thread. */
   fork?: ForkMarker;
   /** Open the fanout dialog on this session. Absent (with the flyout row) when there is nothing
       to fork or nobody who may read the file. */
   onFanOut?(source: { leafId: string; messages: number; context: ContextInfo | "compacted" | null }): void;
-  /** This pane's turn-error state, for the workspace's roll-up (§14 "Member states"): the latest
+  /** This pane's turn-error state, for the workspace's roll-up: the latest
       turn-error message while it is current, or null. Current means the last turn ended in an
       error and no newer turn has started — a fresh turn (or a rewind) clears it, so the workspace
       never says "errored" about a pane that is visibly working. Without it a failed member looks
@@ -173,7 +173,7 @@ export function ChatView(props: {
   const scope = usePaneScope();
   const paneId = usePaneId();
   /**
-   * A turn's start and end, said the way spec/09-copy-deck.md says them. In a pane the sentence
+   * A turn's start and end, said the way the copy deck says them. In a pane the sentence
    * follows the member's name ("control · glm-5.3 — working."), so it reads as a clause about that
    * member; alone on the page it is the whole sentence and stands on its own.
    */
@@ -193,7 +193,7 @@ export function ChatView(props: {
   const [turnError, setTurnError] = createSignal<string | null>(null);
   /** A permanent open failure (code "config"): shown once, never retried, never appended to. */
   const [configError, setConfigError] = createSignal<string | null>(null);
-  /** The open-failure banner's action state (spec/01-app-shell.md "The open-failure banner"): an Archive in flight. */
+  /** The open-failure banner's action state: an Archive in flight. */
   const [archiving, setArchiving] = createSignal(false);
   const [dialogs, setDialogs] = createSignal<{ id: string; request: unknown }[]>([]);
   const [resume, setResume] = createSignal(0);
@@ -211,12 +211,12 @@ export function ChatView(props: {
   /** Level asked for, until the echo. A refusal ends it and leaves the level as it was. */
   const [pendingThinking, setPendingThinking] = createSignal<string | null>(null);
   const [thinkingError, setThinkingError] = createSignal<{ target: string; from: string | null; body: string } | null>(null);
-  /** The per-session info modal (§4h), opened from the composer flyout. */
+  /** The per-session info modal, opened from the composer flyout. */
   const [showInfo, setShowInfo] = createSignal(false);
   const [showPlaybooks, setShowPlaybooks] = createSignal(false);
 
   /**
-   * "Fan Out…" in the flyout, and the source it hands over (spec/14b "Entry points").
+   * "Fan Out…" in the flyout, and the source it hands over.
    *
    * The leaf is the last entry THIS TRANSCRIPT RENDERS, which is the entry the user is looking at
    * — and it is an ENTRY id, not a row id: an assistant message renders one row per content block
@@ -225,7 +225,7 @@ export function ChatView(props: {
    * server/fanout.ts) and refuses a leaf that isn't current, so the two have to mean the same thing.
    *
    * The row is ABSENT rather than disabled with nothing to fork: no reply yet, or no items at all.
-   * §9 is explicit that an absence needs no explanation.
+   * the copy deck is explicit that an absence needs no explanation.
    *
    * `messages` is a MESSAGE count (src/lib/message-count.ts), because the dialog's fork note says
    * "up to message {n}" — the rendered-row count it used to send counts one row per content block
@@ -243,7 +243,7 @@ export function ChatView(props: {
         leafId,
         messages: messageCount(list),
         // The gauge's own state, verbatim: "compacted" stays "compacted" — the dialog turns it
-        // into words, never into 0, which is a claim §4f refuses for exactly this state. Null is
+        // into words, never into 0, which is a claim the context window spec refuses for exactly this state. Null is
         // the fill never having been reported, which the dialog also says as words.
         context: state ?? null,
       });
@@ -604,8 +604,8 @@ export function ChatView(props: {
               const seen = errors();
               // The same failure re-reported (a reconnect loop) says nothing new: keep one row —
               // and say nothing, because an announcement per retry would read as N new errors.
-              // The first landing is announced like every other turn boundary (§3 "Streaming",
-              // §9 "SR announcements"): a member whose turn died reads the same as one that
+              // The first landing is announced like every other turn boundary: a member whose turn
+              // died reads the same as one that
               // replied, in its own pane's voice, without panning to find the banner.
               if (seen[seen.length - 1] !== msg.message) {
                 setErrors([...seen, msg.message]);
@@ -737,7 +737,7 @@ export function ChatView(props: {
     },
   };
 
-  // ---- Per-message actions (spec/03-transcript.md "Message actions") ------------------------
+  // ---- Per-message actions ------------------------
   /**
    * The last refusal, kept on the message it was about. The announcement already said it once
    * (settleRequest); this is the record on the row, so a user who looked away still finds out why
@@ -884,7 +884,7 @@ export function ChatView(props: {
    * from the server side moments after Eliminate. Inside a workspace that close is EXPECTED, and
    * the pane says the one true thing about it — the session is archived — instead of the
    * disconnected banner and "Not connected." the single-session view would show for the same
-   * event (spec/14-workspaces.md "Member states"). An eliminated member stays readable, which is
+   * event. An eliminated member stays readable, which is
    * what makes elimination reversible.
    */
   const archivedPane = () => !!scope.id && !!props.summary?.()?.archived;
@@ -906,7 +906,7 @@ export function ChatView(props: {
     return null;
   };
 
-  // ---- Model switching (spec/04c-model-menu.md §4c) ------------------------------------------------
+  // ---- Model switching ------------------------------------------------
   const idOf = (ref: string) => ref.slice(ref.indexOf("/") + 1);
   /** Server messages are free text; map the known ones to the spec's copy. */
   const switchErrorBody = (message: string, code?: string) => {
@@ -950,7 +950,7 @@ export function ChatView(props: {
     clearTimeout(modelTimer);
     modelTimer = setTimeout(() => modelFailed("The server didn't confirm the switch."), 15_000);
   };
-  // ---- Thinking level (spec/04b-images.md §4b "Thinking") --------------------------------------
+  // ---- Thinking level --------------------------------------
   /** The server sends free text here too; map the two refusals it can answer with. */
   const thinkingErrorBody = (message: string) => {
     if (message.startsWith("Cannot change thinking while the agent is running"))
@@ -985,7 +985,7 @@ export function ChatView(props: {
     },
   };
 
-  /** The composer flyout's model panel (§4b); the header no longer carries a model trigger. */
+  /** The composer flyout's model panel; the header no longer carries a model trigger. */
   const modelControl: ModelControl = {
     model,
     pending: pendingModel,
@@ -996,7 +996,7 @@ export function ChatView(props: {
     },
     choose: chooseModel,
   };
-  /** The composer foot's mode switch (§4g): this chat's WS "mode" state and its session file. */
+  /** The composer foot's mode switch: this chat's WS "mode" state and its session file. */
   const modeControl: ModeControl = { state: modeState, path: props.path };
   /** The flyout's Sandbox row: the extension answers with a toast and a "sandbox" message. */
   const sandboxControl: SandboxControl = {
@@ -1047,14 +1047,14 @@ export function ChatView(props: {
   };
 
   // The same pane's turn-error state as data (the prop's doc, above): the workspace meta line
-  // pairs a word with colour from this (§14 "every state pairs a word with colour"), and a pane
+  // pairs a word with colour from this, and a pane
   // outside a workspace has nobody to tell — the prop is simply absent there.
   createEffect(() => props.onTurnError?.(turnError()));
 
   const send = (text: string, steer: boolean, attachments: UploadResult[]) => {
     // A model turned off in Settings → Models is refused by the server on its way to the provider
     // (server/model-policy.ts). Saying so here keeps the message in the composer instead of
-    // spending it on a refusal, and never picks another model for you (§12).
+    // spending it on a refusal, and never picks another model for you.
     const offModel = offNow();
     if (offModel) {
       setErrors((e) => (e[e.length - 1] === offModel ? e : [...e, offModel]));
@@ -1147,8 +1147,7 @@ export function ChatView(props: {
               <ConnectionBanner socket={socket} />
             </Show>
             {/* Permanent until the world it names changes: the diagnosis and the gestures that
-                fix it, derived in src/lib/open-failure.ts (spec/01-app-shell.md "The open-failure
-                banner"). The first action is the primary one. */}
+                fix it, derived in src/lib/open-failure.ts. The first action is the primary one. */}
             <Show when={openFailure()} keyed>
               {(info) => (
                 <Banner
@@ -1217,7 +1216,7 @@ export function ChatView(props: {
                 />
               )}
             </Show>
-            {/* A refused thinking change reads like a refused model switch (§4b "Thinking"). */}
+            {/* A refused thinking change reads like a refused model switch. */}
             <Show when={thinkingError()}>
               {(err) => (
                 <Banner
@@ -1291,7 +1290,7 @@ export function ChatView(props: {
                   </div>
                 )}
               </For>
-              {/* Only while the thread has zero rows, local rows included (§3 States). */}
+              {/* Only while the thread has zero rows, local rows included. */}
               <Show when={list().length === 0 && live.entries.length === 0 && commandRows().length === 0 && modelRows().length === 0}>
                 <div class="empty">
                   <p class="empty-title">
@@ -1368,7 +1367,7 @@ export function ChatView(props: {
           onSend={(text) => send(text, false, [])}
           onClose={(sent) => {
             setShowPlaybooks(false);
-            // After a send the next thing is the conversation (spec §4 "Focus"); otherwise back
+            // After a send the next thing is the conversation; otherwise back
             // to the trigger the dialog was opened from.
             if (sent) focusComposer();
             else queueMicrotask(() => document.getElementById(paneId("composer-menu-trigger"))?.focus());

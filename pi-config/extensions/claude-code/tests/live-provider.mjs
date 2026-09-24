@@ -63,7 +63,7 @@ const resourceLoaderOptions = {
 	additionalExtensionPaths: [EXTENSION_ENTRY],
 };
 
-// The real host path, and the one pi-web uses: AgentSessionRuntime is what
+// The real host path, and the one Sova uses: AgentSessionRuntime is what
 // emits session_shutdown. Plain session.dispose() does NOT emit it (verified
 // against 0.86.1; chat-manager.ts says the same), so a test built on dispose()
 // alone would "prove" a cleanup that never ran.
@@ -177,7 +177,7 @@ assert.deepEqual(bridge.activeSessionIds(), [sessionId], "the bridge registry do
 assert.ok(assistantText.includes(EXPECTED), `assistant text did not contain the fixture's first line (${JSON.stringify(EXPECTED)})`);
 
 // 4. session_shutdown takes the child away. runtime.dispose() emits the hook
-// and then disposes the session, exactly as pi-web's chat manager does.
+// and then disposes the session, exactly as Sova's chat manager does.
 await runtime.dispose();
 const deadline = Date.now() + 15000;
 while (claudeProcesses(cliSessionId).length && Date.now() < deadline) await new Promise((r) => setTimeout(r, 100));

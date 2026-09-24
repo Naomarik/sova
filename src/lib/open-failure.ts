@@ -1,12 +1,11 @@
-// What the "This session can't be opened" banner says (spec/01-app-shell.md "The open-failure
-// banner"): a pure derivation from the session summary, the server's config-failure text and the
+// What the "This session can't be opened" banner says: a pure derivation from the session summary, the server's config-failure text and the
 // targets list (labels only). Pure, so every sentence and every offered action is testable without
 // a browser.
 //
 // The server's classified failure shape (server/chat-manager.ts acquireChat/openSession):
 //   Stored session working directory does not exist: <cwd>
 //   Session file: <path>
-// Anything else it refuses with (a legacy sshfs-mount cwd, an older server's wording) is shown
+// Anything else it refuses with (an older server's wording) is shown
 // verbatim with the same way back.
 
 import { remotePlaceOf, type TargetInfo } from "./remote-session";
@@ -100,7 +99,7 @@ export function openFailureView(summary: OpenFailureSession | undefined, error: 
     };
   }
 
-  // Anything else (a legacy sshfs-mount cwd, an older server's wording, a failure this version
+  // Anything else (an older server's wording, a failure this version
   // doesn't classify): the server's text verbatim, with the same reassurance and the same way back.
   const raw = error.trim();
   return {

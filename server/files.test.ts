@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { compactProcessed, execBounded, INDEX_TTL_MS, listProjectFiles, MAX_INDEX_FILES, REQUEST_BUDGET_MS, type FilesDeps } from "./files";
-import { legacyMountsRoot, targetsRoot } from "./targets";
+import { targetsRoot } from "./targets";
 
 /** A small tree: files at the root, one nested dir, ignored dirs at two depths. */
 async function tree(spec: Record<string, string>): Promise<string> {
@@ -271,7 +271,7 @@ test("the root's failure says which failure it was, and never an empty success",
 // ---------------------------------------------------------------------------
 // cwds whose files aren't on this machine
 
-test("a remote session's cwd and a legacy mount cwd are both refused, before any filesystem call", async () => {
+test("a remote session's cwd is refused, before any filesystem call", async () => {
   let touched = 0;
   const watched: FilesDeps = {
     ...noGit,
@@ -292,16 +292,6 @@ test("a remote session's cwd and a legacy mount cwd are both refused, before any
     assert.match(remote.error, /box-1/);
     assert.doesNotMatch(remote.error, /mount/i, "the mount seam is gone: nothing tells the user to turn one on");
     assert.doesNotMatch(remote.error, /start|instead|browse/i, "a new remote session is refused the same way: promise nothing");
-  }
-  const legacy = await listProjectFiles(path.join(legacyMountsRoot(), "box-2", "home", "work"), watched);
-  assert.equal(legacy.ok, false);
-  if (!legacy.ok) {
-    assert.equal(legacy.status, 501);
-    assert.match(legacy.error, /box-2/);
-    // The old line sent the user off to "start a new remote session to browse its files" — which
-    // lands on the refusal above. Both lines now say the same true thing and offer no way out.
-    assert.doesNotMatch(legacy.error, /start a new remote session|browse/i);
-    assert.match(legacy.error, /local folders only/);
   }
   assert.equal(touched, 0, "a dead sshfs mount is never stat'ed");
 });

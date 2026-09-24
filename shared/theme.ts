@@ -1,10 +1,10 @@
 /**
  * The executable definition of a Sova theme file: the token names, the grammar each value
- * family accepts, and the read pipeline. spec/00-ground-rules.md §0 "Theme" is the contract;
+ * family accepts, and the read pipeline. The ground rules' "Theme" section is the contract;
  * this file is its only canonical copy, and BOTH sides import it — the server to read files,
  * the client to write the custom properties.
  *
- * Two rules from §0 are load-bearing and easy to lose in a refactor:
+ * Two rules from the ground rules are load-bearing and easy to lose in a refactor:
  *
  *  1. **Every value is validated against what is allowed, never against a list of what isn't.**
  *     Nothing here enumerates a rejected spelling. The color grammar is a hex shape or ONE call
@@ -23,7 +23,7 @@
 
 import type { ThemeInfo, ThemeTokens } from "./protocol";
 
-/** The 27 color keys (§0). `scrim` and `skeleton-sweep` are colors, not open-charset keys:
+/** The 27 color keys. `scrim` and `skeleton-sweep` are colors, not open-charset keys:
     `scrim` paints `background` at three sites, so an open charset would let it fetch. */
 export const COLOR_KEYS = [
   "bg", "surface", "sunken", "ink", "ink-2", "ink-muted", "border", "border-strong",
@@ -34,10 +34,10 @@ export const COLOR_KEYS = [
   "scrim", "skeleton-sweep",
 ] as const;
 
-/** Elevation. The one family on the open charset — `box-shadow` takes no image (§0). */
+/** Elevation. The one family on the open charset — `box-shadow` takes no image. */
 export const SHADOW_KEYS = ["shadow-1", "shadow-2", "shadow-3"] as const;
 
-/** Faces, weights, size/line-height pairs and tracking (spec/08-token-index.md §8). */
+/** Faces, weights, size/line-height pairs and tracking. */
 export const FONT_KEYS = ["font-body", "font-display", "font-mono"] as const;
 const STEPS = ["display-xl", "display-l", "heading-m", "heading-s", "body", "caption", "mono", "micro"] as const;
 export const FS_KEYS = STEPS.map((s) => `fs-${s}`) as readonly string[];
@@ -75,7 +75,7 @@ export const CSS_PROPERTY: Readonly<Record<string, string>> = Object.freeze(
 );
 
 /* ---------------------------------------------------------------------------
-   The grammar (§0's table, one function per row)
+   The grammar (the ground rules' table, one function per row)
    ------------------------------------------------------------------------ */
 
 /** The ten call names a color may use. Anything else — `url`, `image-set`, `src`, `hwb`,
@@ -111,7 +111,7 @@ const ACCEPTS: Record<KeyFamily, (v: string) => boolean> = {
   weight: isWeight,
 };
 
-/** spec/09-copy-deck.md §9 "Settings · Themes": name the key, the value, and the shapes that
+/** The copy deck's "Settings · Themes": name the key, the value, and the shapes that
     would have worked. A rejection that only says *invalid* sends you looking for a typo. */
 const REASON: Record<KeyFamily, string> = {
   color: `A color is a hex value, or one call to ${COLOR_FUNCTIONS.slice(0, -1).join(", ")}, or ${COLOR_FUNCTIONS.at(-1)}.`,
@@ -122,10 +122,10 @@ const REASON: Record<KeyFamily, string> = {
   weight: "That takes a number from 100 to 900.",
 };
 
-/** Long values are elided in the copy the way §09 elides them ("accent is image-set(…)."). */
+/** Long values are elided in the copy the way the copy deck elides them ("accent is image-set(…)."). */
 const shown = (value: string) => (value.length > 60 ? `${value.slice(0, 60)}…` : value);
 
-/** null when the value may be emitted, else the reason, ready for a broken row (§12). */
+/** null when the value may be emitted, else the reason, ready for a broken row. */
 export function checkValue(key: string, value: unknown): string | null {
   const family = familyOf(key);
   if (!family) return `${key} isn't a theme key.`;
@@ -150,14 +150,14 @@ interface RawTheme {
 
 export type ThemeBase = "dark" | "light";
 export const THEME_BASES: readonly ThemeBase[] = ["dark", "light"];
-/** The id the picker falls back to when the stored one no longer resolves (§0). */
+/** The id the picker falls back to when the stored one no longer resolves. */
 export const DEFAULT_THEME_ID = "dark";
 
 const asRecord = (v: unknown): Record<string, unknown> | null =>
   typeof v === "object" && v !== null && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
 
 /**
- * Step 2 of §0: every `"$name"` becomes the value it names, and nothing downstream sees a `$`.
+ * Step 2 of the ground rules' pipeline: every `"$name"` becomes the value it names, and nothing downstream sees a `$`.
  * A var may only name a var DEFINED ABOVE IT, which is what makes a cycle unspellable; a
  * forward reference and a self reference are the same mistake and read as one.
  */
@@ -207,10 +207,10 @@ export interface ParsedTheme {
 }
 
 /**
- * §0's four steps over one file's text. Returns a ParsedTheme whose `error` is set when the
+ * The ground rules' four steps over one file's text. Returns a ParsedTheme whose `error` is set when the
  * theme can't be worn at all — the file isn't JSON, it has no name, or it holds a value we
  * won't emit ("A value that fails becomes a broken row … and the theme it came from is not
- * applied", §0). Every rejected value is also listed in `warnings`, in file order, and its key
+ * applied"). Every rejected value is also listed in `warnings`, in file order, and its key
  * is dropped, so no unchecked string is in the payload a picker row previews.
  */
 export function parseTheme(text: string): ParsedTheme {
@@ -223,16 +223,14 @@ export function parseTheme(text: string): ParsedTheme {
     raw = asRecord(JSON.parse(text)) as RawTheme | null;
   } catch (err) {
     // The parser's own message: V8 names the line for most syntax errors, and our own copy
-    // would be promising a position it sometimes can't give (§12).
+    // would be promising a position it sometimes can't give.
     return { name: "", base: "dark", tokens, warnings, error: (err as Error).message };
   }
   if (!raw) return { name: "", base: "dark", tokens, warnings, error: "A theme is a JSON object." };
 
   const name = typeof raw.name === "string" ? raw.name.trim() : "";
-  // Both spellings: the grammar didn't change with the product name, and a theme file written
-  // before the rename must keep loading.
-  if (typeof raw.$schema === "string" && raw.$schema !== "sova-theme/v1" && raw.$schema !== "pi-web-theme/v1")
-    warn(`$schema is ${shown(raw.$schema)}. This app reads sova-theme/v1 (and the legacy pi-web-theme/v1).`);
+  if (typeof raw.$schema === "string" && raw.$schema !== "sova-theme/v1")
+    warn(`$schema is ${shown(raw.$schema)}. This app reads sova-theme/v1.`);
 
   let base: ThemeBase = "dark";
   if (THEME_BASES.includes(raw.extends as ThemeBase)) base = raw.extends as ThemeBase;
@@ -274,14 +272,14 @@ export function parseTheme(text: string): ParsedTheme {
   return { name, base, tokens, warnings, ...(fatal ? { error: fatal } : {}) };
 }
 
-/** A theme stands on the base it extends: what it omits comes from that base (§0), so a
+/** A theme stands on the base it extends: what it omits comes from that base, so a
     three-key file is a whole theme. The base is always the BUILT-IN dark or light, because
     that is what `tokens.css` actually paints under `data-theme`. */
 export function mergeTokens(base: ThemeTokens, over: ThemeTokens): ThemeTokens {
   return { ...base, ...over };
 }
 
-/** The picker's row (§12), assembled from one file and the base it stands on. A broken theme is
+/** The picker's row, assembled from one file and the base it stands on. A broken theme is
     listed but never worn, so it gets no base fill: it carries only the keys it authored and we
     accepted, and the value that failed was dropped before this. Nothing unchecked is in `tokens`
     either way — a row previews a file nobody selected. */

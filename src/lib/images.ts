@@ -1,4 +1,4 @@
-// Image attachments (spec/04b-images.md §4b): validating picked/pasted/dropped files and uploading
+// Image attachments: validating picked/pasted/dropped files and uploading
 // each one the moment it's attached, into the session's attachments folder, so it's part of the
 // draft and survives a reload. Like pi's TUI, the prompt then names each file's path and the
 // model reads it with the read tool; no base64 goes over the socket.

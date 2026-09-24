@@ -76,6 +76,6 @@ export const modelByRef = (ref: string | null | undefined): ModelInfo | null =>
 
 /**
  * A model's thinking ladder (off…max), or [] when the model isn't in the list yet. A model with
- * one level (or none) has nothing to choose, which is what hides the Thinking group (§4b).
+ * one level (or none) has nothing to choose, which is what hides the Thinking group.
  */
 export const thinkingLevelsFor = (ref: string | null | undefined): string[] => modelByRef(ref)?.thinkingLevels ?? [];

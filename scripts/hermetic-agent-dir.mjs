@@ -4,7 +4,7 @@
 // It is `pi-config/install.sh` pointed at the worktree instead of ~/.pi/agent: every extension in
 // THIS worktree's pi-config/extensions is symlinked into .agent/extensions, so a server started with
 // PI_CODING_AGENT_DIR=<worktree>/.agent loads the branch's extensions (claude-code included) and
-// nothing of the user's real setup. Sessions, pi-web state and settings all land inside .agent, so
+// nothing of the user's real setup. Sessions, Sova state and settings all land inside .agent, so
 // testing never touches ~/.pi.
 //
 //   node scripts/hermetic-agent-dir.mjs           # create or repair (idempotent)

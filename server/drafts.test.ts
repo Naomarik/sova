@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 
-const agentDir = mkdtempSync(join(tmpdir(), "pi-web-drafts-test-"));
+const agentDir = mkdtempSync(join(tmpdir(), "sova-drafts-test-"));
 process.env.PI_CODING_AGENT_DIR = agentDir; // before the modules below compute their paths
 const sessionsDir = join(agentDir, "sessions", "--tmp-drafts-test--");
 mkdirSync(sessionsDir, { recursive: true });
@@ -156,11 +156,7 @@ test("attachments: an upload lands in the session's folder with the sova-<uuid> 
   assert.equal(a.path, join(agentDir, "sova", "attachments", "up-1", a.name));
   assert.equal(attachmentsRoot(), join(agentDir, "sova", "attachments"));
   assert.match(a.name, /^sova-[0-9a-f-]{36}\.png$/);
-  // RENAME BRIDGE: new uploads are sova-named, but a chip saved before the rename is still a
-  // generated reference — it must keep being labelled and stripped as one, not shown as a name
-  // the user typed. Both spellings answer to isPiClipboardName, forever.
   assert.equal(isPiClipboardName(a.name), true);
-  assert.equal(isPiClipboardName(`pi-web-${a.name.slice("sova-".length)}`), true, "pre-rename upload names stay generated names");
   assert.deepEqual({ mimeType: a.mimeType, size: a.size }, { mimeType: "image/png", size: PNG.length });
   assert.equal(sessionAttachmentsDir("../escape"), null);
   assert.equal(sessionAttachmentsDir("a/b"), null);
@@ -272,7 +268,7 @@ test("DELETE /api/attachment: one file under the attachments root only", () => {
   assert.equal(existsSync(b.path), true);
   const again = deleteAttachment(a.path);
   assert.equal(again.ok ? 0 : again.status, 404);
-  const tmp = `/tmp/pi-web-${crypto.randomUUID()}.png`;
+  const tmp = `/tmp/sova-${crypto.randomUUID()}.png`;
   writeFileSync(tmp, PNG);
   try {
     for (const p of [tmp, "/etc/passwd", `${attachmentsRoot()}/del/../../../drafts.json`, `${attachmentsRoot()}/del`, draftsFile]) {

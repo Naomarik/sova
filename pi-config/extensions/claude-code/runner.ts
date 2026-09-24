@@ -161,6 +161,8 @@ export class ClaudeRunner implements Worker {
 	/** Adopt mode: replayed permission requests no earlier manager answered; prompted again once live. */
 	private readonly replayedPermissions = new Map<string, Record<string, any>>();
 	private answeredIds?: Set<string>;
+	/** A resume that dies before initialize reports the CLI's own reason (e.g. no such conversation). */
+	private lastStderr?: string;
 
 	private readonly options: ClaudeSpawnOptions;
 	private readonly handlers: ClaudeRunnerHandlers;
@@ -181,7 +183,7 @@ export class ClaudeRunner implements Worker {
 			signalGroupImpl: options.signalGroupImpl,
 			hooks: {
 				onEvent: (event) => this.event(event as Record<string, any>),
-				onStderr: (text) => { this.push("error", text); },
+				onStderr: (text) => { this.lastStderr = text; this.push("error", text); },
 				onProtocolError: (message) => this.fail(message),
 				onStdinError: (message) => { if (!this.stopping) this.fail(message); },
 				onProcessError: (message) => this.fail(message),
@@ -196,6 +198,7 @@ export class ClaudeRunner implements Worker {
 		});
 		this.whenClosed = this.transport.whenClosed;
 		if (options.adopt) this.sessionId = options.adopt.sessionId;
+		else if (options.resume) this.sessionId = options.resume.sessionId;
 		// Defer callbacks until the owner has stored the constructed runner.
 		queueMicrotask(() => (options.adopt ? this.adopt() : this.start()));
 	}
@@ -240,8 +243,12 @@ export class ClaudeRunner implements Worker {
 
 	private start(): void {
 		if (this.stopping || this.closed) return;
-		if (!this.validInput(this.task)) { this.fail("Initial task is empty or exceeds input limit"); return; }
 		const o = this.options;
+		if (o.resume) {
+			// Nothing was asked of a resumed worker: it owes no completion, even if it never starts.
+			this.initialOwed = false; this.notificationPending = false;
+			if (!o.resume.sessionId) { this.fail("Cannot resume: no Claude session id was recorded for this worker"); return; }
+		} else if (!this.validInput(this.task)) { this.fail("Initial task is empty or exceeds input limit"); return; }
 		if (o.forkSession || o.extensions?.length || o.allowNestedExtensions) {
 			this.fail("Claude runner does not support Pi forks or nested extensions"); return;
 		}
@@ -251,6 +258,7 @@ export class ClaudeRunner implements Worker {
 			permissionMode, permissionModes: CLAUDE_PERMISSION_MODES, hostPermissions,
 			model: o.model, effort: o.effort, tools: o.tools, allowedTools: o.allowedTools,
 			mcpServers: o.mcpServers, env: o.env, maxBudgetUsd: o.maxBudgetUsd, settingsJson: o.settingsJson,
+			...(o.resume ? { resume: o.resume.sessionId } : {}),
 		});
 		if (built.error !== undefined) { this.fail(built.error); return; }
 		const args = built.args;
@@ -273,6 +281,13 @@ export class ClaudeRunner implements Worker {
 		if (!ok) { this.fail("Claude initialize failed or timed out"); return; }
 		this.privateFiles.releaseSystemPrompt();
 		this.initialized = true;
+		if (this.options.resume) {
+			// Probed (CLI 2.1.281): `--resume` replays nothing at startup and keeps the session id;
+			// the next user message continues the old conversation. Idle until steered.
+			this.status = "waiting";
+			this.push("system", `Resumed Claude session ${this.sessionId}; idle until steered`);
+			return;
+		}
 		this.dispatch(this.task, "task");
 	}
 	private validInput(message: string): boolean { return !!message.trim() && message.length <= this.limits.maxInputChars; }
@@ -642,6 +657,10 @@ export class ClaudeRunner implements Worker {
 		const undelivered = this.stopping ? 0 : this.dropQueue("because Claude exited before delivering them", "error");
 		const redirectPending = this.redirecting && !this.stopping;
 		const unexpectedActive = !!this.active || this.initialOwed || redirectPending || undelivered > 0;
+		if (this.options.resume && !this.initialized && this.status !== "error" && !this.stopping) {
+			this.status = "error";
+			this.error = this.clip(`Could not resume Claude session ${this.options.resume.sessionId}: ${this.lastStderr?.trim() || `exited (${signal ?? code ?? "unknown"})`}`);
+		}
 		if (this.status !== "error") {
 			this.status = this.stopping ? "killed" : code === 0 && !unexpectedActive ? "done" : "error";
 			if (this.status === "error") {

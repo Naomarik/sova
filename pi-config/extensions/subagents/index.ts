@@ -535,13 +535,24 @@ export function registerSubagents(
 	// A resumed worker's runner counts only what it spends from now on; what its earlier
 	// processes spent is its base, so the lifetime Σ never drops on a resume.
 	const usageBase = new WeakMap<Worker, UsageSum & { turns: number }>();
+	// A backend whose figures cover its whole session (Worker.usageScope "session") already counts
+	// that spend: its base only stands in until its first report, and its cumulative figures never
+	// fall below it, so each field is the larger of the two, never their sum.
 	const addWorkerUsage = (total: UsageSum, a: Worker): UsageSum => {
-		addUsage(total, a);
 		const base = usageBase.get(a);
-		if (base) { total.input += base.input; total.output += base.output; total.cacheRead += base.cacheRead; total.cacheWrite += base.cacheWrite; total.cost += base.cost; }
+		if (!base) return addUsage(total, a);
+		const cumulative = a.usageScope === "session";
+		for (const key of ["input", "output", "cacheRead", "cacheWrite", "cost"] as const) {
+			const own = amount(a.usage?.[key]);
+			total[key] += cumulative ? Math.max(base[key], own) : base[key] + own;
+		}
 		return total;
 	};
-	const lifetimeUsage = (a: Worker) => ({ ...addWorkerUsage(emptySum(), a), turns: amount(a.usage?.turns) + (usageBase.get(a)?.turns ?? 0) });
+	const lifetimeUsage = (a: Worker) => {
+		const base = usageBase.get(a)?.turns ?? 0;
+		const own = amount(a.usage?.turns);
+		return { ...addWorkerUsage(emptySum(), a), turns: a.usageScope === "session" ? Math.max(base, own) : base + own };
+	};
 	// The durable per-worker record in this (owner) session file, for every worker of every
 	// backend and transport (registry.ts, worker-transcript.ts).
 	const registry = new WorkerRegistryRecorder((customType, data) => pi.appendEntry(customType, data), lifetimeUsage);

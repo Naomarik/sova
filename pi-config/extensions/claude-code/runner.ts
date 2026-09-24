@@ -109,6 +109,8 @@ export class ClaudeRunner implements Worker {
 	readonly wake: boolean;
 	readonly extensions: readonly string[] = [];
 	readonly forked = false;
+	/** modelUsage/total_cost_usd are cumulative over the Claude session, --resume history included. */
+	readonly usageScope = "session" as const;
 	readonly startedAt = Date.now();
 	readonly whenClosed: Promise<void>;
 	status: AgentStatus = "starting";

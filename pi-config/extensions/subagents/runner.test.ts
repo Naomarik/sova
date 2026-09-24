@@ -311,6 +311,7 @@ test("resume reopens the worker's own session file idle: --session, never --fork
 		assert.equal(h.runner.isSettled(), true);
 		assert.equal(h.runner.taskOutcome, undefined);
 		assert.equal(h.counts.settled, 0, "no completion is re-emitted");
+		assert.equal((h.runner as { usageScope?: string }).usageScope, undefined, "pi counts only this process's spend: the manager adds the earlier spend as a base");
 		assert.ok(!h.runner.transcript.some((t) => t.kind === "task"), "the old task is not presented as sent");
 		// Steering an idle resumed worker is a fresh prompt, and its settle is announced normally.
 		const p = h.runner.steer("continue");

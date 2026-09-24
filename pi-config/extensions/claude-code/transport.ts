@@ -189,7 +189,8 @@ export function resultMatches(e: Record<string, any>, uuid: string): boolean {
 	return e.user_message_uuid === uuid || ids.includes(uuid);
 }
 export function applyResultUsage(usage: ClaudeUsage, e: Record<string, any>): void {
-	// modelUsage and total_cost_usd are process-cumulative; never sum results.
+	// modelUsage and total_cost_usd are cumulative over the whole Claude session (under --resume
+	// they include the resumed history, verified in the worker-resume e2e); never sum results.
 	if (record(e.modelUsage)) {
 		const values = Object.values(e.modelUsage).filter(record);
 		usage.input = values.reduce((n, u) => n + number(u.inputTokens), 0);

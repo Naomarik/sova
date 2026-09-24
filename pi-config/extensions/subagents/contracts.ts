@@ -14,6 +14,13 @@ export interface Worker {
 	readonly wake: boolean;
 	readonly extensions: readonly string[];
 	readonly forked: boolean;
+	/**
+	 * What `usage` covers. "process" (the default): only what this process spent, so a resumed
+	 * worker's earlier spend is added on top by the manager. "session": the backend reports its
+	 * whole backend session cumulatively, resumed history included (Claude Code's modelUsage and
+	 * total_cost_usd under --resume), so nothing may be added on top of it.
+	 */
+	readonly usageScope?: "process" | "session";
 	readonly startedAt: number;
 	readonly whenClosed: Promise<void>;
 	pid?: number;

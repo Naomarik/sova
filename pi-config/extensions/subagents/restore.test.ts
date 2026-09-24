@@ -276,3 +276,53 @@ test("a claude-code worker resumes by session id through its backend; not loaded
 	assert.deepEqual([created[0].model, created[0].systemPrompt, created[0].permissionMode], ["sonnet", "be terse", "acceptEdits"]);
 	await m.shutdown();
 });
+
+test("a backend reporting session-cumulative usage is not counted twice after a resume (e2e B1)", async () => {
+	// The e2e's checker: before the restart 10/116/0/13,846 $0.028282; after resume + one turn the
+	// Claude CLI reports its whole session, 20/168/13,846/14,016 $0.0303 — the transcript's truth.
+	const file = sessionFile();
+	// An id with no record on disk: the rebuilt usage is the snapshot (a real record would be read instead).
+	const id = "00000000-0000-4000-8000-00000000b001";
+	const base = { input: 10, output: 116, cacheRead: 0, cacheWrite: 13846, cost: 0.028282, turns: 1 };
+	file.append(WORKER_MANIFEST_ENTRY_TYPE, {
+		v: 1, kind: "worker-manifest", workerId: "ag_04", backend: "claude-code", at: 1, name: "checker", groupId: "run_04", status: "waiting",
+		spec: { cwd: os.tmpdir(), taskPreview: "check", wake: true }, ref: { v: 1, backend: "claude-code", kind: "claude-session-id", locator: id, cwd: os.tmpdir() },
+		usageSnapshot: { ...base, byModel: [], source: "snapshot", asOf: 1 }, launch: { backend: "claude-code", model: "haiku" },
+	});
+	const m = manager(file);
+	let worker: any;
+	let settled: ((w: any) => void) | undefined;
+	m.bus.emit(BACKEND_REGISTER_EVENT, {
+		version: 1, id: "claude-code", validate() {}, prepare: () => ({}),
+		create: (options: any, handlers: any) => {
+			settled = handlers.onSettled;
+			worker = {
+				...options, backend: "claude-code", usageScope: "session", extensions: [], forked: false, status: "starting", transcript: [], transcriptOmitted: { items: 0, approxBytes: 0 },
+				usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, turns: 0, contextTokens: 0 }, steerCount: 0, startedAt: Date.now(), lastActivity: Date.now(),
+				whenClosed: Promise.resolve(), processAlive: true, sessionId: id,
+				isFinished() { return false; }, isSettled() { return this.status === "waiting"; }, finalOutput: () => "CHECKER-9",
+				async steer() { return { ok: true }; }, async kill() {}, async dispose() {},
+			};
+			setTimeout(() => { worker.status = "waiting"; handlers.onChange(); }, 5);
+			return worker;
+		},
+	});
+	m.start();
+	await until(() => (m.snapshot()?.workers ?? []).length === 1, "restored checker");
+	assert.deepEqual([m.snapshot().workerUsage.input, m.snapshot().workerUsage.cacheWrite], [10, 13846]);
+	await m.call("agent_resume", { id: "ag_04" });
+	// Before its first report the rebuilt total stands; nothing drops, nothing doubles.
+	await until(() => m.snapshot().workers[0]?.status === "waiting", "resumed idle");
+	assert.deepEqual([m.snapshot().workerUsage.input, m.snapshot().workerUsage.cacheWrite, m.snapshot().workerUsage.cost], [10, 13846, 0.028282]);
+	// One turn: the CLI's cumulative figures, whole session included.
+	Object.assign(worker.usage, { input: 20, output: 168, cacheRead: 13846, cacheWrite: 14016, cost: 0.0303, turns: 2 });
+	worker.taskOutcome = "success";
+	settled!(worker);
+	await until(() => m.snapshot().workerUsage.input === 20, "the settle's refresh");
+	const u = m.snapshot().workerUsage;
+	assert.deepEqual([u.input, u.output, u.cacheRead, u.cacheWrite, u.cost], [20, 168, 13846, 14016, 0.0303], "equals the transcript, not base + cumulative");
+	// And the durable snapshot is the true total, so no inflated cost outlives the next restart.
+	const snap = file.entries.filter((e) => e.customType === WORKER_MANIFEST_ENTRY_TYPE && e.data.workerId === "ag_04").at(-1).data.usageSnapshot;
+	assert.deepEqual([snap.input, snap.output, snap.cacheRead, snap.cacheWrite, snap.cost, snap.turns], [20, 168, 13846, 14016, 0.0303, 2]);
+	await m.shutdown();
+});

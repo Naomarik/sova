@@ -16,7 +16,7 @@ import { registerSubagents } from "./index.ts";
 import { DETACH_WORKERS, LEGACY_DETACH_WORKERS, TRANSPORT_ENV, WorkerHosting, detachRequested, hostingRequested, sentLines, workerTransport } from "./hosting.ts";
 import { LEGACY_WORKERS_ROOT, NEW_WORKERS_ROOT, defaultWorkersRoot } from "./workers-dir.ts";
 import { HostTransport, attachTransport, hostedSpawnImpl, pingHost } from "./host-transport.ts";
-import { WORKER_REGISTRY_ENTRY_TYPE } from "./registry.ts";
+import { WORKER_MANIFEST_ENTRY_TYPE } from "./registry.ts";
 import { deadDir, files, listOwner, pidAlive, procStartTime, reap, readJson, socketPath, workerDir, writeMeta, type WorkerMeta } from "./workers-dir.ts";
 
 const skip = process.platform === "win32";
@@ -462,7 +462,7 @@ test("detach flag: true leaves hosted workers running (registry 'detached'); uns
 	await until(() => readJson<WorkerMeta>(files(dir).meta)?.state === "running", 8000, "running");
 	const running = readJson<WorkerMeta>(files(dir).meta)!;
 	hostPids.push(running.hostPid!);
-	assert.deepEqual(m1.appended.filter((e) => e.customType === WORKER_REGISTRY_ENTRY_TYPE).map((e) => e.data.workerId), ["ag_01"]);
+	assert.deepEqual(m1.appended.filter((e) => e.customType === WORKER_MANIFEST_ENTRY_TYPE).map((e) => e.data.workerId), ["ag_01"]);
 	g[DETACH_WORKERS] = true;
 	await m1.shutdown();
 	const detached = readJson<WorkerMeta>(files(dir).meta)!;
@@ -563,7 +563,7 @@ test("dead host mid-turn: log replayed, worker finalized as lost, registry recor
 	assert.equal(meta.backendSessionId, "pi-sess", "kept for a manual resume");
 	const list = await m.call("agent_list", {});
 	assert.equal(list.details.agents[0].status, "error");
-	const final = m.appended.filter((e) => e.customType === WORKER_REGISTRY_ENTRY_TYPE).map((e) => e.data);
+	const final = m.appended.filter((e) => e.customType === WORKER_MANIFEST_ENTRY_TYPE).map((e) => e.data);
 	assert.deepEqual(final.map((r) => [r.workerId, r.status]), [["ag_04", "lost"]]);
 	// The ending itself is new to every manager: one failure report, never a success.
 	assert.equal(m.messages.length, 1);
@@ -587,7 +587,7 @@ test("dead host after a clean exit: status.json decides, a completion after cons
 	assert.equal(readJson<WorkerMeta>(path.join(deadDir(root), archived, "meta.json"))!.state, "exited");
 	assert.equal(m.messages.length, 1);
 	assert.match(m.messages[0].content, /late answer/);
-	const final = m.appended.filter((e) => e.customType === WORKER_REGISTRY_ENTRY_TYPE).map((e) => e.data);
+	const final = m.appended.filter((e) => e.customType === WORKER_MANIFEST_ENTRY_TYPE).map((e) => e.data);
 	assert.notEqual(final.at(-1)?.status, "lost");
 	await m.shutdown();
 });

@@ -5,89 +5,106 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { registerSubagents } from "./index.ts";
-import {
-	REGISTRY_TASK_CHARS,
-	WORKER_REGISTRY_ENTRY_TYPE,
-	WorkerRegistryRecorder,
-	readWorkerRegistry,
-	type WorkerRegistryRecord,
-} from "./registry.ts";
+import { WORKER_MANIFEST_ENTRY_TYPE, WorkerRegistryRecorder } from "./registry.ts";
+import { MANIFEST_TASK_CHARS, readWorkerManifests, type WorkerManifestRecord } from "./worker-transcript.ts";
 
 const worker = (over: Record<string, unknown> = {}): any => ({
 	id: "ag_01", groupId: "run_01", name: "w", backend: "claude-code", task: "do it", cwd: "/tmp", wake: true,
-	model: "sonnet", status: "running", ...over,
+	model: "sonnet", status: "running", usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, turns: 0 },
+	isFinished() { return ["done", "error", "killed"].includes(this.status); },
+	isSettled() { return this.isFinished() || this.status === "waiting"; },
+	...over,
 });
 const asEntries = (appended: { customType: string; data: unknown }[]) =>
 	appended.map(({ customType, data }) => ({ type: "custom", customType, data }));
 
-test("recorder: publish record, identity on arrival only, one final record", () => {
-	const appended: { customType: string; data: WorkerRegistryRecord }[] = [];
+test("recorder: publication, identity on arrival only, task starts and settles, one final record", () => {
+	const appended: { customType: string; data: WorkerManifestRecord }[] = [];
 	const recorder = new WorkerRegistryRecorder((customType, data) => appended.push({ customType, data }));
-	const w = worker({ task: "x".repeat(REGISTRY_TASK_CHARS + 10) });
-	recorder.track(w, { teamId: "team_01", role: "reviewer" });
+	const w = worker({ task: "x".repeat(MANIFEST_TASK_CHARS + 10) });
+	recorder.track(w, { teamId: "team_01", role: "reviewer" }, { backend: "claude-code", systemPrompt: "be terse", tools: ["Read"] });
 	recorder.track(w); // idempotent
 	assert.equal(appended.length, 1);
-	assert.equal(appended[0].customType, WORKER_REGISTRY_ENTRY_TYPE);
+	assert.equal(appended[0].customType, WORKER_MANIFEST_ENTRY_TYPE);
 	const first = appended[0].data;
-	assert.equal(first.v, 1); assert.equal(first.kind, "worker-registry");
-	assert.equal(first.backendSessionId, undefined);
-	assert.deepEqual(first.spec, { name: "w", model: "sonnet", cwd: "/tmp", task: "x".repeat(REGISTRY_TASK_CHARS), taskChars: REGISTRY_TASK_CHARS + 10, teamId: "team_01", role: "reviewer", wake: true });
-	// Nothing changed: no record. An empty identity never writes.
+	assert.equal(first.v, 1); assert.equal(first.kind, "worker-manifest");
+	assert.equal(first.ref, undefined);
+	assert.equal(first.status, "running");
+	assert.deepEqual(first.spec, { cwd: "/tmp", model: "sonnet", tools: ["Read"], taskPreview: "x".repeat(MANIFEST_TASK_CHARS), taskChars: MANIFEST_TASK_CHARS + 10, wake: true });
+	assert.deepEqual(first.team, { teamId: "team_01", role: "reviewer" });
+	assert.deepEqual(first.launch, { backend: "claude-code", systemPrompt: "be terse", tools: ["Read"] });
+	// Nothing changed: no record.
 	recorder.observe(w);
 	assert.equal(appended.length, 1);
-	// The id arrives later: exactly one fresh record, no spec repeated.
-	w.sessionId = "sess-1";
+	// The id arrives later: exactly one fresh record carrying only the ref.
+	w.sessionId = "3f2504e0-4f89-41d3-9a0c-0305e82c3301";
 	recorder.observe(w); recorder.observe(w);
 	assert.equal(appended.length, 2);
-	assert.deepEqual({ ...appended[1].data, at: 0 }, { v: 1, kind: "worker-registry", at: 0, workerId: "ag_01", backend: "claude-code", backendSessionId: "sess-1" });
-	// A session file arriving after the id is a changed identity.
-	w.sessionFile = "/s/w.jsonl";
-	recorder.observe(w);
-	assert.equal(appended.length, 3);
-	assert.equal(appended[2].data.backendSessionFile, "/s/w.jsonl");
-	// Settle: final status record exactly once, and nothing after it.
-	Object.assign(w, { status: "done", taskOutcome: "success", endedAt: 42 });
-	recorder.finish(w); recorder.finish(w);
-	w.sessionId = "sess-2";
-	recorder.observe(w);
+	assert.deepEqual(Object.keys(appended[1].data).sort(), ["at", "backend", "kind", "ref", "v", "workerId"]);
+	assert.deepEqual(appended[1].data.ref, { v: 1, backend: "claude-code", kind: "claude-session-id", locator: w.sessionId, cwd: "/tmp" });
+	// A settle: status waiting, outcome, time and a usage snapshot (the lifetime numbers).
+	Object.assign(w, { status: "waiting", taskOutcome: "success", usage: { input: 10, output: 5, cacheRead: 2, cacheWrite: 1, cost: 0.5, turns: 1 } });
+	recorder.settled(w);
+	const settle = appended[2].data;
+	assert.equal(settle.status, "waiting"); assert.equal(settle.taskOutcome, "success"); assert.equal(typeof settle.settledAt, "number");
+	assert.deepEqual({ ...settle.usageSnapshot, asOf: 0 }, { input: 10, output: 5, cacheRead: 2, cacheWrite: 1, cost: 0.5, turns: 1, byModel: [], source: "snapshot", asOf: 0 });
+	// A steer starts a new task: one "running" record, then nothing while it runs.
+	w.status = "running";
+	recorder.observe(w); recorder.observe(w);
 	assert.equal(appended.length, 4);
-	assert.equal(appended[3].data.status, "done"); assert.equal(appended[3].data.endedAt, 42); assert.equal(appended[3].data.taskOutcome, "success");
-	// Read back: newest value per field wins; the spec from the first record survives.
-	const read = readWorkerRegistry(asEntries(appended)).get("ag_01")!;
-	assert.equal(read.backendSessionId, "sess-1"); assert.equal(read.backendSessionFile, "/s/w.jsonl");
-	assert.equal(read.status, "done"); assert.equal(read.spec?.role, "reviewer");
+	assert.equal(appended[3].data.status, "running");
+	// End: final status record exactly once, and nothing after it.
+	Object.assign(w, { status: "done", endedAt: 42 });
+	recorder.finish(w); recorder.finish(w);
+	w.sessionId = "other";
+	recorder.observe(w); recorder.settled(w);
+	assert.equal(appended.length, 5);
+	assert.equal(appended[4].data.status, "done"); assert.equal(appended[4].data.endedAt, 42); assert.equal(appended[4].data.taskOutcome, "success");
+	// Read back through the one canonical fold: newest value per field; the spec survives.
+	const read = readWorkerManifests(asEntries(appended)).manifests.get("ag_01")!;
+	assert.equal(read.ref?.locator, "3f2504e0-4f89-41d3-9a0c-0305e82c3301");
+	assert.equal(read.status, "done"); assert.equal(read.team?.role, "reviewer"); assert.equal(read.spec?.model, "sonnet");
+	assert.equal(read.usageSnapshot?.input, 10);
 });
 
-test("recorder: identity already known at publication is in the first record; lost/killed statuses", () => {
+test("recorder: a resume record clears the ending in the fold; usage comes from the injected lifetime view", () => {
+	const appended: any[] = [];
+	const base = { input: 100, output: 50, cacheRead: 0, cacheWrite: 0, cost: 1, turns: 3 };
+	const recorder = new WorkerRegistryRecorder((customType, data) => appended.push({ customType, data }), (w) => ({
+		input: base.input + w.usage.input, output: base.output + w.usage.output, cacheRead: 0, cacheWrite: 0, cost: base.cost + w.usage.cost, turns: base.turns + w.usage.turns,
+	}));
+	const w = worker({ backend: "pi", sessionFile: "/s/w.jsonl" });
+	recorder.track(w);
+	Object.assign(w, { status: "killed", taskOutcome: "aborted", error: "stopped", endedAt: 5 });
+	recorder.finish(w);
+	const resumed = worker({ backend: "pi", sessionFile: "/s/w.jsonl", status: "waiting" });
+	recorder.resumed(resumed);
+	Object.assign(resumed, { taskOutcome: "success", usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, cost: 0.25, turns: 1 } });
+	recorder.settled(resumed);
+	const read = readWorkerManifests(asEntries(appended)).manifests.get("ag_01")!;
+	assert.equal(read.status, "waiting");
+	assert.equal(read.endedAt, undefined); assert.equal(read.error, undefined);
+	assert.equal(read.taskOutcome, "success");
+	assert.equal(typeof read.resumedAt, "number");
+	assert.deepEqual([read.usageSnapshot?.input, read.usageSnapshot?.cost, read.usageSnapshot?.turns], [101, 1.25, 4]);
+	assert.equal(read.ref?.kind, "pi-session-file");
+});
+
+test("recorder: lost/killed statuses; untracked workers write nothing; a throwing append never escapes", () => {
 	const appended: any[] = [];
 	const recorder = new WorkerRegistryRecorder((customType, data) => appended.push({ customType, data }));
 	const a = worker({ id: "ag_02", sessionId: "early", backend: undefined });
 	recorder.track(a);
-	assert.equal(appended[0].data.backendSessionId, "early"); assert.equal(appended[0].data.backend, "pi");
+	assert.equal(appended[0].data.backend, "pi");
 	recorder.finish(a, "lost");
 	assert.equal(appended.at(-1).data.status, "lost");
 	const b = worker({ id: "ag_03", status: "killed" });
-	recorder.finish(b); // untracked: nothing
+	recorder.finish(b); recorder.settled(b); // untracked: nothing
+	assert.equal(appended.length, 2);
 	recorder.track(b); recorder.finish(b);
 	assert.equal(appended.at(-1).data.status, "killed");
-	// A throwing append (replaced session) never escapes.
 	const broken = new WorkerRegistryRecorder(() => { throw new Error("stale ctx"); });
 	assert.doesNotThrow(() => broken.track(worker()));
-});
-
-test("readWorkerRegistry ignores foreign and malformed entries and keeps order per worker", () => {
-	const entries = [
-		{ type: "custom", customType: "other", data: { v: 1, kind: "worker-registry", workerId: "ag_01", backend: "pi" } },
-		{ type: "custom", customType: WORKER_REGISTRY_ENTRY_TYPE, data: { v: 2, kind: "worker-registry", workerId: "ag_01", backend: "pi" } },
-		{ type: "custom", customType: WORKER_REGISTRY_ENTRY_TYPE, data: { v: 1, kind: "worker-registry", workerId: "", backend: "pi" } },
-		{ type: "message", customType: WORKER_REGISTRY_ENTRY_TYPE, data: { v: 1, kind: "worker-registry", workerId: "ag_01", backend: "pi" } },
-		{ type: "custom", customType: WORKER_REGISTRY_ENTRY_TYPE, data: { v: 1, kind: "worker-registry", workerId: "ag_05", backend: "pi", at: 1, backendSessionId: "a" } },
-		{ type: "custom", customType: WORKER_REGISTRY_ENTRY_TYPE, data: { v: 1, kind: "worker-registry", workerId: "ag_05", backend: "pi", at: 2, backendSessionId: "b" } },
-		null,
-	];
-	const read = readWorkerRegistry(entries);
-	assert.deepEqual([...read.keys()], ["ag_05"]);
-	assert.equal(read.get("ag_05")!.backendSessionId, "b");
 });
 
 // ── manager wiring ──────────────────────────────────────────────────────────
@@ -139,16 +156,16 @@ test("manager appends a registry record per published worker, identity updates, 
 	const h = harness();
 	h.start();
 	await h.call("agent_spawn", { prompt: "task one", name: "one", count: 2 });
-	const records = () => h.appended.filter((e) => e.customType === WORKER_REGISTRY_ENTRY_TYPE).map((e) => e.data);
+	const records = () => h.appended.filter((e) => e.customType === WORKER_MANIFEST_ENTRY_TYPE).map((e) => e.data);
 	// Publication follows the ID reservation entry, one record per worker.
 	assert.equal(h.appended[0].customType, "subagents-counters-v2");
-	assert.deepEqual(records().map((r) => [r.workerId, r.spec?.name, r.groupId]), [["ag_01", "one-1", "run_01"], ["ag_02", "one-2", "run_01"]]);
+	assert.deepEqual(records().map((r) => [r.workerId, r.name, r.groupId]), [["ag_01", "one-1", "run_01"], ["ag_02", "one-2", "run_01"]]);
 	// The identity arrives: refresh (throttled) writes one record for that worker only.
 	h.workers[0].sessionId = "pi-sess"; h.workers[0].sessionFile = "/s/pi.jsonl";
 	h.workers[0].change();
 	await new Promise((r) => setTimeout(r, 150));
 	assert.equal(records().length, 3);
-	assert.deepEqual([records()[2].workerId, records()[2].backendSessionId, records()[2].backendSessionFile], ["ag_01", "pi-sess", "/s/pi.jsonl"]);
+	assert.deepEqual([records()[2].workerId, records()[2].ref?.locator, records()[2].ref?.sessionId], ["ag_01", "/s/pi.jsonl", "pi-sess"]);
 	h.workers[0].exit();
 	assert.equal(records().length, 4);
 	assert.deepEqual([records()[3].workerId, records()[3].status, records()[3].endedAt], ["ag_01", "done", 7]);
@@ -159,8 +176,8 @@ test("manager: team members carry teamId and role in their registry spec", async
 	const h = harness();
 	h.start();
 	await h.call("team_create", { name: "alpha", objective: "ship", members: [{ role: "lead", prompt: "lead it" }, { role: "dev", prompt: "build it" }] });
-	const specs = h.appended.filter((e) => e.customType === WORKER_REGISTRY_ENTRY_TYPE).map((e) => e.data.spec);
-	assert.deepEqual(specs.map((s: any) => [s.teamId, s.role]), [["team_01", "lead"], ["team_01", "dev"]]);
+	const teams = h.appended.filter((e) => e.customType === WORKER_MANIFEST_ENTRY_TYPE).map((e) => e.data.team);
+	assert.deepEqual(teams.map((t: any) => [t.teamId, t.role]), [["team_01", "lead"], ["team_01", "dev"]]);
 	await h.close();
 });
 
@@ -172,7 +189,7 @@ test("inline transport: no registry records and no registry directory", async ()
 	h.workers[0].change();
 	await new Promise((r) => setTimeout(r, 150));
 	h.workers[0].exit();
-	assert.deepEqual(h.appended.filter((e) => e.customType === WORKER_REGISTRY_ENTRY_TYPE), []);
+	assert.deepEqual(h.appended.filter((e) => e.customType === WORKER_MANIFEST_ENTRY_TYPE), []);
 	assert.equal(h.workers[0].spawnImpl, undefined);
 	assert.equal(h.workers[0].adopt, undefined);
 	assert.deepEqual(fs.readdirSync(h.root), []);

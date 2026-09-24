@@ -14,7 +14,7 @@
 // pi-config/settings.json minus the machine-specific bits (external `packages`, changelog marker),
 // so no npm/git package is fetched into the throwaway dir.
 
-import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -134,6 +134,39 @@ for (const name of readdirSync(join(AGENT, "extensions"))) {
 for (const name of ["models.json", "vision-delegate.json", "keybindings.json"]) {
   const src = join(PI_CONFIG, name);
   if (existsSync(src)) link(src, join(AGENT, name));
+}
+
+// The sandbox policy, as install.sh does it: a real directory, each file COPIED from the template
+// when absent and never overwritten (the user's edits are theirs; --check only reports drift).
+// Here it sits inside the worktree, i.e. inside a sandboxed session's writable workspace: the
+// hard case the sandbox must still protect.
+const policySrc = join(PI_CONFIG, "sandbox-policy");
+const policyDst = join(AGENT, "sandbox-policy");
+if (existsSync(policySrc)) {
+  if (isLink(policyDst)) {
+    if (check) problem(`is a symlink, want a real directory: ${policyDst}`);
+    else rmSync(policyDst);
+  }
+  for (const platform of readdirSync(policySrc).sort()) {
+    const srcDir = join(policySrc, platform);
+    if (!lstatSync(srcDir).isDirectory()) continue;
+    for (const name of readdirSync(srcDir).sort()) {
+      const src = join(srcDir, name);
+      const dst = join(policyDst, platform, name);
+      assertOutsideHomePi(dst);
+      if (check) {
+        if (isLink(dst)) problem(`is a symlink, want a copy: ${dst}`);
+        else if (!existsSync(dst)) problem(`missing: ${dst}`);
+        else if (readFileSync(dst, "utf8") !== readFileSync(src, "utf8")) console.log(`differs from the template (kept): ${dst}`);
+        continue;
+      }
+      if (isLink(dst)) rmSync(dst);
+      if (existsSync(dst)) continue;
+      mkdirSync(join(policyDst, platform), { recursive: true });
+      copyFileSync(src, dst);
+      console.log(`${dst} <- copied from ${src}`);
+    }
+  }
 }
 
 const settingsPath = join(AGENT, "settings.json");

@@ -1,0 +1,128 @@
+# FIRST-RUN.txt — first full red-team run against the real implementation (2026-09-24)
+# Written from backend.ts + plans + spec only; no implementation file was read before this run.
+#
+# Genuine first-run findings and their adjudication:
+#  - C17 hard-failed: <common>/worktrees/<n>/gitdir and HEAD writable inside the auto-added
+#    common dir. Beyond the spec'd protection list (hooks+config); demoted to XFAIL C17r and
+#    reported to backend. commondir/gitfile/configs/hooks all hold (hard assertions pass).
+#  - C12 hard-failed on my over-strict env whitelist: PWD/SHLVL/_ are set by the wrapped bash
+#    itself and NODE_USE_ENV_PROXY is a proxy-runtime addition, not leaks. Forbidden-env core
+#    held from the start.
+#  - RE7/OS4/W1/N13 had test-side bugs (ENOENT-class masking accepted, sourceInfo residue 'cli',
+#    command-present-but-refused worker shape, config.worktree lives in the admin dir).
+# The log below is the run AFTER those test-side corrections; no implementation file was edited.
+# XFAIL entries are tracked known gaps, not failures. W4 pending = integration plumbing absent.
+
+
+═══ naive.mjs ═══
+
+### suite naive
+host facts: mnt-ns=mnt:[4026531832] bwrap=bubblewrap 0.11.2
+fixture: cwd=/home/naomarik/.sova-redteam/fx-2gnoTh/work escape=/home/naomarik/.sova-redteam/fx-2gnoTh/escape
+[PASS] N0 control: the naive profile itself runs commands (11ms)
+[PASS] N1 control: plain touch outside cwd is EROFS even under the naive profile (8ms)
+[PASS] N2 control: a symlink out of cwd hits EROFS under the naive profile (8ms)
+[PASS] N3 escape: systemd-run --user executes on the HOST; busctl --user works (52ms)
+[PASS] N4 escape: 127.0.0.1 listener is reachable (13ms)
+       escape evidence: :4810 answered HTTP 200 (host pre-check was 200)
+[PASS] N4b escape: the test server :4810 is reachable (17ms)
+[PASS] N5 escape: docker socket answers inside the naive profile (17ms)
+[PASS] N6 escape: ssh-agent is reachable (ssh-add -l != exit 2) (11ms)
+[PASS] N7 escape: abstract unix socket is reachable (socat) (10ms)
+[PASS] N8 escape: git config + planted hook write succeed (16ms)
+[PASS] N9 escape: the policy file (agent dir inside cwd) is writable (7ms)
+       escape evidence: /home/naomarik/.sova-redteam/fx-2gnoTh/work/.agent/sandbox-policy/linux/policy.json now reads "{\"level\":\"full\"}"
+[PASS] N9b escape: ancestor rename of the protected dir defeats path masks (9ms)
+[PASS] N10 escape: arbitrary egress is open (example.com AND api.github.com) (383ms)
+[PASS] N11 escape: host environment is not scrubbed (9ms)
+[PASS] N13 escape: in a linked worktree, hooks and git config are plantable (43ms)
+[PASS] N12 anchor: the naive profile shares the host NETWORK namespace (F3 contrast) (14ms)
+### naive: 16 passed, 0 failed, 0 skipped, 0 pending (981ms)
+wrote /home/naomarik/webapps/.worktrees/sova-sandbox/pi-config/extensions/sandbox/tests/NAIVE-RUN.txt
+
+═══ contract.mjs ═══
+
+### suite contract
+[PASS] C16 unsupported platform refuses at probe and confine (no spawn possible) (33ms)
+[PASS] C15b classifyRun: runner failure wins over denial; denial vs failed (0ms)
+[PASS] C-helper canonicalizePath resolves through symlinks; isWithin bounds (12ms)
+       probe: enforcement=full network=proxy notes=[] reasons=[]
+[PASS] C0 probe: real profile against a no-op runs and reports enforcement (18ms)
+[PASS] C1 write outside cwd is refused; host file absent; denial classified (22ms)
+       fail-closed report: {"probeOk":false,"confineOk":null,"spawnRan":false,"probeReason":"sandbox probe failed: exit 1","victimExists":false}
+[PASS] C2 a bwrap that exits 1 → refusal; no file; never a real run (43ms)
+[PASS] C3 bash write through a symlink out of cwd is EROFS; target absent (20ms)
+[PASS] C4 systemd-run --user and busctl --user cannot reach the host bus (62ms)
+[PASS] C5 127.0.0.1 listeners and :4810 are unreachable; host sees nothing (67ms)
+[PASS] C6 docker sockets are gone inside (39ms)
+[PASS] C7 ssh-agent is unreachable inside (22ms)
+[PASS] C8 abstract unix sockets are unreachable (23ms)
+[PASS] C9 git config and hook planting fail; .git/config hash unchanged (45ms)
+[PASS] C10 policy file under <cwd>/.agent is immutable and reads masked (73ms)
+[PASS] C10b ancestor rename cannot defeat the policy-file mask (22ms)
+       admin-hooks plant (git never reads this path): LANDED (recorded)
+[PASS] C17 linked worktree: hooks unreachable, configs immutable, commit still works (64ms)
+[XFAIL] C17r worktree admin gitdir/HEAD + common HEAD stay byte-identical (beyond-spec residual): known gap still open — writable: admin gitdir, admin HEAD
+[PASS] C16b real ~/.pi/agent/auth.json is hidden even though agentDir is the hermetic one (26ms)
+[PASS] C11 egress only via the allowlisting proxy; raw sockets dead (168ms)
+[PASS] C11b an allowlisted name that resolves to 127.0.0.1 is refused by the real proxy (13ms)
+       env inside: ALL_PROXY HOME HTTPS_PROXY HTTP_PROXY LANG LOGNAME NODE_USE_ENV_PROXY NO_PROXY PATH PWD SHELL SHLVL TMPDIR USER _ all_proxy http_proxy https_proxy no_proxy
+[PASS] C12 env inside is the scrubbed allowlist plus backend additions only (21ms)
+[PASS] C14 read-only: cwd and caches writes fail; /tmp stays private (32ms)
+[PASS] C15 real denial classifies as denied; runner failure as runner-failure (21ms)
+[XFAIL] X1 git init into a fresh repo lets .git/hooks be planted (known gap): known gap still open — known gap: the fresh repo's hook file must not be plantable
+### contract: 22 passed, 0 failed, 0 skipped, 0 pending (971ms)
+
+═══ off-equals-stock.mjs ═══
+
+### suite off-equals-stock
+[PASS] OS0 both runtimes open; the extension one exposes /sandbox, the stock one does not (449ms)
+[PASS] OS1 never-ON registry identity: deep-equal tools, all seven builtin (0ms)
+[PASS] OS2 execution identity: same mount namespace as the host, identical env keys (21ms)
+[PASS] OS3 ON: namespace changes; prompt and tool faces stay byte-identical (F1) (79ms)
+[PASS] OS4 OFF after ON: namespace and env back to stock; only sourceInfo differs (accepted residue) (12ms)
+[PASS] OS5 a fresh OPEN of a toggled session is stock-shaped again when restored OFF (11ms)
+### off-equals-stock: 6 passed, 0 failed, 0 skipped, 0 pending (591ms)
+
+═══ runtime-escapes.mjs ═══
+
+### suite runtime-escapes
+[PASS] RE0 runtime opens; /sandbox on succeeds (381ms)
+[PASS] RE1 write tool: outside cwd refused, absent; /tmp maps to the session tmp (9ms)
+[PASS] RE2 write tool: symlink escape refused at the canonical path (6ms)
+[PASS] RE3 write tool: hidden paths refused (3ms)
+[PASS] RE4 read tool: hidden auth.json never echoes its content (30ms)
+[PASS] RE5 bash tool: outside write denied with the sandbox note (34ms)
+[PASS] RE6 bash+write tools: git delayed-execution files immutable (34ms)
+[PASS] RE7 policy file (agent dir inside cwd) is untouchable by both layers (63ms)
+[PASS] RE8 ancestor rename of .agent does not loosen the NEXT tool call (61ms)
+[PASS] RE9 the agent cannot reach Sova or flip the toggle (47ms)
+[PASS] RE10 linked worktree through the tools (contract C17's in-process half) (136ms)
+       last entry: {"version":1,"on":true,"level":"workspace-write","backend":"linux-bwrap","enforcement":"unavailable","reasons":["sandbox probe failed: exit 1"]}
+[PASS] RE11 fake bwrap on PATH → refusing tools, no file, error names the sandbox (50ms)
+### runtime-escapes: 12 passed, 0 failed, 0 skipped, 0 pending (875ms)
+
+═══ midflight.mjs ═══
+
+### suite midflight
+[PASS] MF1 a bash started under ON stays confined to completion across an OFF flip (3421ms)
+[PASS] MF2 the call AFTER the flip is unconfined (5ms)
+### midflight: 2 passed, 0 failed, 0 skipped, 0 pending (3443ms)
+
+═══ worker-inheritance.mjs ═══
+
+### suite worker-inheritance
+[PASS] W1 flag session starts ON with no UI: tools confined, no /sandbox command to flip (388ms)
+[PASS] W2 a worker write outside cwd is denied both layers (72ms)
+[PASS] W3 flag OFF stays stock even with the extension loaded (10ms)
+[PENDING] W4 parent→worker inheritance end-to-end — subagents/index.ts has no sandbox plumbing yet (integration, phase 2)
+### worker-inheritance: 3 passed, 0 failed, 0 skipped, 1 pending (489ms)
+
+═══ summary ═══
+PASS  naive.mjs (1.0s, exit 0)
+PASS  contract.mjs (1.0s, exit 0)
+PASS  off-equals-stock.mjs (0.6s, exit 0)
+PASS  runtime-escapes.mjs (0.9s, exit 0)
+PASS  midflight.mjs (3.5s, exit 0)
+PASS  worker-inheritance.mjs (0.5s, exit 0)
+RUN-EXIT:0

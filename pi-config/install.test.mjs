@@ -182,3 +182,42 @@ test("the tracked seed pins no model, provider or runtime state", () => {
 		assert.ok(!(k in seed), `${k} must not be tracked`);
 	}
 });
+
+test("the sandbox policy is copied, never linked, never overwritten; --check reports drift", () => {
+	const s = sandbox();
+	const copy = path.join(s.root, "pi-config");
+	fs.cpSync(path.join(here, "sandbox-policy"), path.join(copy, "sandbox-policy"), { recursive: true });
+	const dst = path.join(s.agent, "sandbox-policy", "linux", "policy.json");
+	assert.equal(s.run().code, 0);
+	assert.equal(fs.lstatSync(path.join(s.agent, "sandbox-policy")).isSymbolicLink(), false);
+	assert.equal(fs.lstatSync(dst).isSymbolicLink(), false);
+	assert.equal(fs.readFileSync(dst, "utf8"), fs.readFileSync(path.join(here, "sandbox-policy/linux/policy.json"), "utf8"));
+	assert.ok(fs.existsSync(path.join(s.agent, "sandbox-policy", "darwin", "CLAUDE.md")));
+	let r = s.run("--check");
+	assert.equal(r.code, 0, r.out);
+	assert.doesNotMatch(r.out, /sandbox-policy/);
+
+	// A user edit is kept by a rerun and reported (not failed) by --check.
+	const edited = fs.readFileSync(dst, "utf8").replace('"defaultOn": false', '"defaultOn": true');
+	fs.writeFileSync(dst, edited);
+	assert.equal(s.run().code, 0);
+	assert.equal(fs.readFileSync(dst, "utf8"), edited);
+	r = s.run("--check");
+	assert.equal(r.code, 0, r.out);
+	assert.match(r.out, /differs from the template \(kept, never overwritten\): .*linux\/policy\.json/);
+	assert.match(r.out, /\+  "defaultOn": true/);
+
+	// A missing file or a symlink fails --check; install replaces a link with a copy.
+	fs.rmSync(dst);
+	fs.symlinkSync(path.join(copy, "sandbox-policy/linux/policy.json"), dst);
+	r = s.run("--check");
+	assert.notEqual(r.code, 0);
+	assert.match(r.out, /is a symlink, want a copy/);
+	assert.equal(s.run().code, 0);
+	assert.equal(fs.lstatSync(dst).isSymbolicLink(), false);
+	fs.rmSync(path.join(s.agent, "sandbox-policy", "darwin", "CLAUDE.md"));
+	r = s.run("--check");
+	assert.notEqual(r.code, 0);
+	assert.match(r.out, /missing: .*darwin\/CLAUDE\.md/);
+	fs.rmSync(s.root, { recursive: true, force: true });
+});

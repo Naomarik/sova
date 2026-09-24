@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "level": "workspace-write",
+  "defaultOn": false,
+  "writable": ["~/.local/state/mise"],
+  "shadowed": ["~/.cache", "~/.npm", "~/.m2"],
+  "hidden": [
+    "~/.ssh",
+    "~/.gnupg",
+    "~/.aws",
+    "~/.docker",
+    "~/.kube",
+    "~/.config/gh",
+    "~/.netrc",
+    "~/.git-credentials",
+    "~/.npmrc",
+    "~/.pypirc",
+    "~/.claude/.credentials.json",
+    "$AGENT_DIR/auth.json"
+  ],
+  "readOnlyWithinWritable": [".git/hooks", ".git/config", ".envrc"],
+  "proxy": {
+    "allow": [
+      "github.com",
+      "api.github.com",
+      "codeload.github.com",
+      "*.githubusercontent.com",
+      "registry.npmjs.org",
+      "registry.yarnpkg.com",
+      "pypi.org",
+      "files.pythonhosted.org",
+      "crates.io",
+      "static.crates.io",
+      "index.crates.io",
+      "repo1.maven.org",
+      "repo.maven.apache.org",
+      "repo.clojars.org",
+      "clojars.org",
+      "proxy.golang.org",
+      "sum.golang.org"
+    ]
+  },
+  "env": { "allow": [] },
+  "acceptPartial": false
+}

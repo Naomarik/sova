@@ -13,6 +13,10 @@
 # copied to settings.json.bak first. An existing symlink (from older versions
 # of this script) is replaced by the merged file; its target is never written.
 #
+# The sandbox policy (sandbox-policy/<platform>/{policy.json,CLAUDE.md}) is a
+# second exception: it is COPIED into $agent/sandbox-policy when absent and
+# never overwritten, and --check reports how it differs from the template.
+#
 # install.sh --check changes nothing: it exits nonzero if any expected link is
 # missing or points elsewhere, if any entry in the agent's extensions/
 # directory is not a symlink into this repository, or if $agent/settings.json
@@ -192,6 +196,51 @@ for f in "$here"/extensions/*.ts; do
 	[ -e "$f" ] || continue
 	link "$f" "$agent/extensions/$(basename "$f")"
 done
+# The sandbox policy is COPIED, never linked: a policy inside this checkout would
+# be writable whenever the checkout is a sandboxed session's workspace. A file
+# already there is the user's and is never overwritten; --check reports how it
+# differs from the template (informational) and fails only on a missing file or
+# a symlink.
+policy_src="$here/sandbox-policy"
+policy_dst="$agent/sandbox-policy"
+if [ -d "$policy_src" ]; then
+	if $check; then
+		if [ -L "$policy_dst" ]; then
+			echo "is a symlink, want a real directory: $policy_dst"
+			bad=1
+		fi
+	elif [ -L "$policy_dst" ] || { [ -e "$policy_dst" ] && [ ! -d "$policy_dst" ]; }; then
+		mv "$policy_dst" "$policy_dst.bak"
+		echo "moved existing $policy_dst to $policy_dst.bak"
+	fi
+	for src in "$policy_src"/*/*; do
+		[ -f "$src" ] || continue
+		rel=${src#"$policy_src"/}
+		dst="$policy_dst/$rel"
+		if $check; then
+			if [ -L "$dst" ]; then
+				echo "is a symlink, want a copy: $dst"
+				bad=1
+			elif [ ! -e "$dst" ]; then
+				echo "missing: $dst (run install.sh to copy it from $src)"
+				bad=1
+			elif ! cmp -s "$src" "$dst"; then
+				echo "differs from the template (kept, never overwritten): $dst vs $src"
+				diff -u "$src" "$dst" | sed -n '3,$p' | sed 's/^/    /' || true
+			fi
+			continue
+		fi
+		[ -L "$dst" ] && rm "$dst"
+		if [ -e "$dst" ]; then
+			cmp -s "$src" "$dst" || echo "kept your $dst (differs from the template; see install.sh --check)"
+			continue
+		fi
+		mkdir -p "$(dirname "$dst")"
+		cp "$src" "$dst"
+		echo "$dst <- copied from $src"
+	done
+fi
+
 $check || mkdir -p "$HOME/.local/bin"
 link "$here/extensions/sessions/bin/pi-sessions.ts" "$HOME/.local/bin/pi-sessions"
 

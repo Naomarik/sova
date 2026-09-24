@@ -16,8 +16,13 @@ for hostile code and has not been security-audited (§chat.sandbox/limits).
   `/sandbox status`) reports the current state; anything else answers with the usage line. A
   runtime started with `--sandbox on|off` starts in that state. How another host (such as Sova's
   web composer) offers the toggle is that host's own surface; it drives the same command.
-- **Status.** While on, the TUI footer shows `sandbox on`, with `(partial)`, `(unavailable)` or
-  "not enforced on remote" appended when one applies. Off shows nothing.
+- **Status.** While on, the TUI footer shows `sandbox on`, or `sandbox on (partial)`,
+  `sandbox on (unavailable)`, or in a remote session `sandbox on (not enforced on remote)`. Off
+  shows nothing. Bare `/sandbox` prints the extension's status line: "Sandbox off", "Sandbox on ·
+  workspace-write · full enforcement", "Sandbox on · workspace-write · partial enforcement
+  ({reasons})", "Sandbox on · workspace-write · unavailable: {reasons} (tools refuse)", or, for a
+  session that is on but enforced nowhere (a remote session), "Sandbox on · not enforced on
+  remote" ("Sandbox on · not enforced" when no reason is recorded).
 - **Effect.** A flip reaches **this session only**, from its **next tool call**. A tool call
   already running finishes under the rules it started with; nothing is killed, and no turn is
   interrupted. A batch of parallel calls already started runs under the old state and the next
@@ -33,9 +38,11 @@ for hostile code and has not been security-audited (§chat.sandbox/limits).
   file's `defaultOn`, which ships as `false`. Opening a session writes nothing, except when it
   comes up on with no entry saying so: then one entry pins it on, so a later change to
   `defaultOn` cannot loosen that session.
-- **Marker.** Each change is rendered in the transcript from its `sandbox` entry: "Sandbox → on ·
+- **Marker.** Each change is rendered in the TUI transcript from its `sandbox` entry: "Sandbox → on ·
   workspace-write · full enforcement", or "Sandbox → off". On, it names the level and the
-  enforcement, and `partial` or `unavailable` add their reasons. `/sandbox on` while already on
+  enforcement, and `partial` or `unavailable` add " · {reasons}". An entry that is on but
+  enforced nowhere (a remote session) reads "Sandbox → on · not enforced on remote" ("Sandbox → on ·
+  not enforced" when no reason is recorded), never "none enforcement". `/sandbox on` while already on
   probes again and records an entry only if the state changed.
 - **Only the user flips it.** The agent has no tool that changes the state; `/sandbox` is a
   command, not a tool. A sandboxed `bash` cannot reach Sova's API (its network is unshared), so it
@@ -181,8 +188,9 @@ Any worker whose enforcement is `partial` refuses to start unattended unless the
 The sandbox is built on a platform-neutral backend interface (probe, confine) with one shared
 contract test suite that asserts real host-side effects. Only the Linux backend (bubblewrap) is
 implemented. On any other platform the probe refuses, so the tools refuse as above; there is
-never a passthrough. Remote sessions run their tools on the target; there the state is recorded
-and shown as "not enforced on remote".
+never a passthrough. Remote sessions run their tools on the target, so the extension registers
+no confined tools there: an on state is recorded with enforcement `none` and the reason "not
+enforced on remote", and reads "Sandbox on · not enforced on remote" (§chat.sandbox/toggle).
 
 ## §chat.sandbox/limits — What it does not cover
 

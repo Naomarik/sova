@@ -37,8 +37,9 @@
 | A user theme file's values land verbatim on custom properties, so every value is validated on the server when the file is read, against what is allowed rather than a list of what isn't. §design/ground-rules states the rule; `shared/theme.ts` is the executable copy | A theme is CSS a person drops into a folder. Closing a declaration is the obvious attack and the least interesting one: a value only has to reach a property that fetches, which `bg` does at 107 `background` sites in `base.css`. An allow-list over the colour keys is total; a list of forbidden spellings is one CSS function behind the next thing that learns to fetch |
 
 Everything the skill forbids stays forbidden: no gradients (except the skeleton sweep the skill
-documents), no blur, no tinted shadows, no color-only state, no decorative accent, no exclamation
-marks, no weights outside 400/530/600/640, no icon library, and no looping animation except the
+documents, and the app icon: the favicon and the PWA icons, §design/ground-rules; the in-app UI
+stays gradient-free), no blur, no tinted shadows, no color-only state, no decorative accent, no
+exclamation marks, no weights outside 400/530/600/640, no icon library, and no looping animation except the
 live pulse and the skeleton.
 
 ---

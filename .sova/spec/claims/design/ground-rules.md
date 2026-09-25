@@ -157,8 +157,14 @@ and `fill="none" stroke="currentColor"`.
 | `branch.svg` | The fork-point row in a forked member's transcript, the `Align to Fork` button, and the welcome screen's `Fan Out…` button (§workspace/groups, §workspace/fanout) |
 | `check-circle.svg`, `x-circle.svg`, `external.svg`, `menu.svg` | Reserved. Shipped but unused in the MVP |
 
-`/favicon.svg` is the mark on dark paper. Link it from `index.html`:
-`<link rel="icon" href="/favicon.svg" type="image/svg+xml">`.
+`/favicon.svg` is the mark in white (`#FFFFFF`) on the Indigo dusk gradient, a rounded square: a
+linear gradient from `#4A43D8` at the top-left to `#1E1A5C` at the bottom-right. Link it from
+`index.html`: `<link rel="icon" href="/favicon.svg" type="image/svg+xml">`. The PWA icons, which
+`scripts/pwa-icons.sh` generates into `public/icons/`, use the same design. The `any` icons are
+the favicon scaled up. The maskable and apple-touch icons are full-bleed, with the gradient over
+the whole square and the mark centred inside the 80% safe zone. The manifest's `background_color`
+is `#1E1A5C`, so the install splash matches the icon. Its `theme_color`, and the `index.html`
+`<meta name="theme-color">`, stay `#1E1E26` to match the app's dark UI.
 
 ## §design.ground-rules/voice — Voice (fold-ai-dev, en-US)
 

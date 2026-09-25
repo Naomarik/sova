@@ -977,7 +977,17 @@
     "§design.ground-rules/icons": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "verified"
+      "evidence": "verified",
+      "code": [
+        "public/favicon.svg",
+        "public/manifest.webmanifest",
+        "scripts/pwa-icons.sh",
+        "public/icons/pwa-192.png",
+        "public/icons/pwa-512.png",
+        "public/icons/pwa-192-maskable.png",
+        "public/icons/pwa-512-maskable.png",
+        "public/icons/apple-touch-icon.png"
+      ]
     },
     "§design.ground-rules/motion": {
       "kind": "note",

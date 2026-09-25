@@ -98,7 +98,8 @@ log "tailnet IP: $TAILNET_IP (peer listener), main listener 127.0.0.1:$PORT"
 # ---- packages --------------------------------------------------------------------------------------
 installed() { dpkg-query -W -f='${db:Status-Abbrev} ${Package}\n' 2>/dev/null | awk '$1=="ii"{print $2}' | sort; }
 versions() { dpkg-query -W -f='${db:Status-Abbrev} ${Package} ${Version}\n' 2>/dev/null | awk '$1=="ii"{print $2" "$3}' | sort; }
-[ -f "$M/packages-before" ] || installed > "$M/packages-before"   # the state before the FIRST install, kept forever
+# the packages before the FIRST install (for the record: what counts as added is decided per apt run, below)
+[ -f "$M/packages-before" ] || installed > "$M/packages-before"
 # Beyond Termux's bootstrap (termux-packages scripts/generate-bootstraps.sh), Sova needs these: node, rg and fd (pi's
 # grep/find tools and Sova's own file tools), git (worktrees, diffs, the source's commit id), tmux, runit + service-daemon.
 WANT="nodejs-lts ripgrep fd git tmux termux-services"
@@ -129,11 +130,13 @@ if [ -n "$missing" ]; then
   # shellcheck disable=SC2086
   apt-get $APT install -y -qq --no-install-recommends $missing >&2 || die "apt-get install$missing failed"
   versions > "$M/.versions-post"
-  installed | comm -13 "$M/packages-before" - > "$M/.new"
+  # added = what THIS apt run newly installed (never a package the user installed since an earlier run)
+  cut -d' ' -f1 "$M/.versions-pre" > "$M/.pre"
+  cut -d' ' -f1 "$M/.versions-post" | comm -13 "$M/.pre" - > "$M/.new"
   cat "$M/.new" "$M/packages-added" 2>/dev/null | sort -u > "$M/.added" && mv "$M/.added" "$M/packages-added"
   # packages that existed and were upgraded as a dependency: reported, never rolled back
   join "$M/.versions-pre" "$M/.versions-post" | awk '$2!=$3' >> "$M/packages-upgraded" || true
-  rm -f "$M/.new" "$M/.versions-pre" "$M/.versions-post"
+  rm -f "$M/.new" "$M/.pre" "$M/.versions-pre" "$M/.versions-post"
   rm -rf "$BASE/dl/apt"
 fi
 touch "$M/packages-added"

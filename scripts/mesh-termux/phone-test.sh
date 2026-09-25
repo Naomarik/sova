@@ -13,6 +13,8 @@
 #   scripts/mesh-termux/phone-test.sh uninstall [--keep-ssh]
 #   scripts/mesh-termux/phone-test.sh snapshot <name>      packages, files, services, processes → $OUT/<name>/
 #   scripts/mesh-termux/phone-test.sh diff <a> <b>         what changed between two snapshots
+#   scripts/mesh-termux/phone-test.sh dry-packages         no phone: install.sh's package block against a fake dpkg/apt;
+#                                                          a rerun must never record a package the user installed
 #   scripts/mesh-termux/phone-test.sh loop [args…]         snapshot pre, install, check, uninstall --keep-ssh, snapshot post,
 #                                                          diff pre post (must be empty), install again, check
 # Env: PHONE (ssh target, required), PHONE_PORT (8022), OUT (~/.cache/sova-mesh/termux-engineer/phone),
@@ -180,6 +182,57 @@ diffsnap() {
     fi
   done
   [ $bad = 0 ] && echo "DIFF CLEAN: $1 == $2" || { echo "DIFF: $1 != $2"; return 1; }
+}
+
+# ---- dry: which packages an install run records as its own (no phone) ------------------------------------------------
+# install.sh's package block (its "# ---- packages" section; from $REV when set) against a fake dpkg/apt: a first install,
+# then the user installs a package of their own and removes tmux, then a rerun (it needs apt for tmux), then a rerun with
+# nothing missing. packages-added (what uninstall purges) must hold what the apt runs installed and never the user's package.
+dry_packages() {
+  local d; d=$(mktemp -d "$OUT/dry.XXXXXX")
+  mkdir -p "$d/prefix/bin" "$d/base/.install"
+  script "$HERE/install.sh" | sed -n '/^# ---- packages/,/^# ---- layout/p' > "$d/block.sh"
+  grep -q 'packages-added' "$d/block.sh" || { rm -rf "$d"; die "no package block in install.sh"; }
+  cat > "$d/run.sh" <<'EOS'
+set -eu
+export LC_ALL=C
+D=$1; PREFIX=$D/prefix; BASE=$D/base; M=$D/base/.install; SSH_KEY=''; STATUS=$D/status
+log() { printf '[dry] %s\n' "$*" >&2; }
+die() { log "error: $*"; exit 1; }
+node() { return 0; }
+# the fake dpkg database: "<package> <version>" lines; a package's commands are TOOLS' names for it
+add() { grep -q "^$1 " "$STATUS" || echo "$1 1.0" >> "$STATUS"; sort -o "$STATUS" "$STATUS"
+        for c in $(printf '%s\n' $TOOLS | awk -F: -v p="$1" '$2==p{print $1}'); do : > "$PREFIX/bin/$c"; chmod +x "$PREFIX/bin/$c"; done; }
+dpkg-query() {
+  if [ -n "${3:-}" ]; then grep -q "^$3 " "$STATUS" || return 1; printf 'ii '; return 0; fi
+  case "$2" in *Version*) awk '{print "ii  "$1" "$2}' "$STATUS" ;; *) awk '{print "ii  "$1}' "$STATUS" ;; esac
+}
+apt-get() {
+  case " $* " in *" update "*) return 0 ;; esac
+  local p; for p in "$@"; do case "$p" in -*|*::*|install) ;; *) add "$p"; [ "$p" != nodejs-lts ] || add c-ares ;; esac; done
+}
+. "$D/block.sh"
+EOS
+  local run="bash $d/run.sh $d" boot p rc=0
+  boot="apt dpkg bash curl gzip tar findutils procps diffutils coreutils termux-tools net-tools"
+  : > "$d/status"; for p in $boot; do echo "$p 1.0" >> "$d/status"; done; sort -o "$d/status" "$d/status"
+  # the bootstrap's commands
+  ( TOOLS=$(sed -n '/^TOOLS="/,/"$/p' "$d/block.sh" | tr -d '"' | sed 's/^TOOLS=//')
+    for t in $TOOLS; do case " $boot " in *" ${t#*:} "*) : > "$d/prefix/bin/${t%%:*}"; chmod +x "$d/prefix/bin/${t%%:*}" ;; esac; done )
+  $run 2>"$d/run1.log" || { cat "$d/run1.log" >&2; rm -rf "$d"; die "first install run failed"; }
+  echo "python 3.12" >> "$d/status"; sort -o "$d/status" "$d/status"                 # the user's own package
+  sed -i '/^tmux /d' "$d/status"; rm -f "$d/prefix/bin/tmux"                           # and tmux removed by the user
+  $run 2>"$d/run2.log" || { cat "$d/run2.log" >&2; rm -rf "$d"; die "rerun failed"; }
+  cp "$d/base/.install/packages-added" "$d/added2"
+  $run 2>"$d/run3.log" || { cat "$d/run3.log" >&2; rm -rf "$d"; die "second rerun failed"; }
+  log "packages-added: $(echo $(cat "$d/base/.install/packages-added"))"
+  grep -q 'packages:' "$d/run2.log" || { log "the rerun did not call apt"; rc=1; }
+  grep -q 'packages:' "$d/run3.log" && { log "the rerun with nothing missing called apt"; rc=1; }
+  for p in nodejs-lts c-ares ripgrep fd git tmux termux-services; do grep -qx "$p" "$d/base/.install/packages-added" || { log "missing from packages-added: $p"; rc=1; }; done
+  grep -qx python "$d/base/.install/packages-added" && { log "python (the user's) is in packages-added: a full uninstall would purge it"; rc=1; }
+  cmp -s "$d/added2" "$d/base/.install/packages-added" || { log "a rerun with nothing to install changed packages-added"; rc=1; }
+  rm -rf "$d"
+  [ $rc = 0 ] && echo "DRY PACKAGES PASS" || { echo "DRY PACKAGES FAIL"; return 1; }
 }
 
 # ---- full port scans (L2) --------------------------------------------------------------------------------------------
@@ -424,7 +477,7 @@ unpair() {
 }
 
 cmd=${1:-}; shift || true
-case "$cmd" in tarball|diff|"") ;; *) need PHONE ;; esac
+case "$cmd" in tarball|diff|dry-packages|"") ;; *) need PHONE ;; esac
 case "$cmd" in install-http) need LAPTOP_IP ;; pair|unpair) pairing_vars ;; esac
 case "$cmd" in
   tarball) tarball ;;
@@ -448,6 +501,7 @@ case "$cmd" in
   scan) scan "$@" ;;
   scandiff) d="$OUT/scan"; diff <(grep -v '^SELF' "$d/${1:?}.txt") <(grep -v '^SELF' "$d/${2:?}.txt") && echo "SCAN SAME: $1 == $2 (open + hung, self-connects in the ephemeral range excluded; they stay listed in the scan files)" || { echo "SCAN DIFFERS: $1 != $2"; exit 1; } ;;
   diff) diffsnap "$@" ;;
+  dry-packages) dry_packages ;;
   loop)
     # INSTALL=ssh (tarball of HEAD/REV over ssh, default) | github (the real one-liner); UNINSTALL=keep-ssh (default) | full.
     # A full uninstall releases the Termux wake lock, which this ssh loop needs: it is taken again right after, in the same

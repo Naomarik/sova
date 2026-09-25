@@ -66,3 +66,5 @@ back to mesh off), uninstall, snapshot, diff (must be clean), install, check. `I
 one-liner (`GH_REF`, default master), otherwise a tarball of HEAD (or `REV=<sha>`) goes over ssh. `UNINSTALL=full`
 runs the default uninstall and takes the wake lock again for the ssh loop; the default keeps ssh. `install-http` runs
 `curl | sh` with both files served from the laptop's tailnet IP for the run only. `pair`/`unpair` need `PAIR_GO=1`.
+`dry-packages` (no phone) runs install.sh's package section against a fake dpkg/apt: a rerun that needs apt must never
+record a package the user installed since an earlier run (a full uninstall would purge it).

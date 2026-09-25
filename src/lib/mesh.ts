@@ -185,6 +185,24 @@ export function joinHostLists(local: readonly SessionSummary[], peers: ReadonlyM
 }
 
 /**
+ * The row a `#/sid/<id>` link names among the sidebar's rows, this host's and every peer's; null
+ * sends the lookup to this host's server. "wait" while a miss could still be a peer's session: the
+ * local list or the mesh's first answer (the peers' lists, when there are peers) hasn't landed. With
+ * the mesh off `settled` is true once GET /api/mesh has answered, and only this host's list counts.
+ */
+export function linkedSessionRow(
+  id: string,
+  local: readonly SessionSummary[] | undefined,
+  peers: ReadonlyMap<string, SessionSummary[]>,
+  settled: boolean,
+): SessionSummary | "wait" | null {
+  if (!local) return "wait";
+  const hit = (peers.size ? joinHostLists(local, peers) : local).find((s) => s.id === id);
+  if (hit) return hit;
+  return settled ? null : "wait";
+}
+
+/**
  * Each peer's rows. A peer that is down keeps its last rows (the server sends them as `stale`, and
  * a list this page already had stands in when it sends none), marked down by the sidebar rather
  * than vanishing. A peer no longer in peers.json is dropped.

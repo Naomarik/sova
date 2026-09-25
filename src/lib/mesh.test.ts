@@ -6,6 +6,7 @@ import {
   hostUrl,
   mergePeerLists,
   joinHostLists,
+  linkedSessionRow,
   noteHost,
   notePeerSessions,
   pathsNamed,
@@ -288,4 +289,20 @@ test("a path both this host and a peer list shows once, as the peer's (live fail
   assert.deepEqual(joined.map((s) => s.title), ["mine", "peer copy"]);
   // No overlap: this host's rows, then the peers', exactly as before.
   assert.deepEqual(joinHostLists([mine], new Map([["vps", [peer]]])).map((s) => s.title), ["mine", "peer copy"]);
+});
+
+test("a sova://s/ link to a peer's session finds the peer's row, and waits for the lists before asking this host", () => {
+  const row = (id: string, path: string) => ({ id, path }) as unknown as SessionSummary;
+  const mine = row("m1", "/laptop/m1.jsonl");
+  const theirs = row("v1", "/vps/v1.jsonl");
+  const peers = new Map([["vps", [theirs]]]);
+  assert.equal(linkedSessionRow("v1", [mine], peers, true), theirs, "a peer's row, not 'That session is gone.'");
+  assert.equal(linkedSessionRow("m1", [mine], peers, true), mine);
+  // A miss goes to this host's server only once the lists that could hold it are in.
+  assert.equal(linkedSessionRow("x", [mine], peers, true), null);
+  assert.equal(linkedSessionRow("v1", [mine], new Map(), false), "wait", "the peers' lists haven't landed");
+  assert.equal(linkedSessionRow("v1", undefined, peers, true), "wait", "this host's list hasn't landed");
+  // Mesh off: this host's list alone, exactly as before.
+  assert.equal(linkedSessionRow("m1", [mine], new Map(), true), mine);
+  assert.equal(linkedSessionRow("v1", [mine], new Map(), true), null);
 });

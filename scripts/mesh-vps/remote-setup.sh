@@ -91,5 +91,5 @@ mv "$BASE/sova-mesh.env.tmp" "$BASE/sova-mesh.env"
 # --- warm the extension cache ---------------------------------------------------------------------
 # a fresh cache for this build (old entries are keyed on old sources); a running Sova keeps its loaded extensions
 rm -rf "$BASE/tmp/jiti"
-"$BASE/app/scripts/mesh-vps/run-warm.sh" | tail -1 >&2 || log "warm-up failed (not fatal: the first session compiles instead)"
+SOVA_MESH_BASE="$BASE" "$BASE/app/scripts/mesh-vps/run-warm.sh" | tail -1 >&2 || log "warm-up failed (not fatal: the first session compiles instead)"
 log "ready: $(cat "$BASE/app/BUILD_COMMIT" 2>/dev/null || echo 'no BUILD_COMMIT')"

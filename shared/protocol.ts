@@ -1922,6 +1922,13 @@ export interface ExtensionInfo {
 // PUT  /api/mesh/settings Partial<MeshSettings> -> MeshSettings   (stored in peers.json; with no peers
 //                                  the mesh stays OFF. 400 bad body, 409 malformed peers.json)
 // GET  /api/mesh/front-door     -> FrontDoorConfig   (generated from peers.json + settings; OFF too)
+// GET  /api/mesh/logins        -> MeshLogins   (this host's view of each synced login; no secret,
+//                                  no fingerprint. 404 while OFF)
+// POST /api/mesh/logins/claim MeshLoginClaim -> {ok:true}   (keep THIS host's login for that key on
+//                                  every host: it becomes a login made now. Settles a pre-sync
+//                                  conflict; to keep a peer's login, claim on that peer's page. 400 bad
+//                                  body or unknown key, 409 nothing live here to claim or the logins
+//                                  switch is off, 404 while OFF)
 // GET  /api/mesh/hello          -> MeshHello   (this host's own, for the SPA's stale-tab check: id,
 //                                  version, protocol, build. Cheap (a stat), and answered with the
 //                                  mesh off too, no Tailscale call; nodeId only while on)
@@ -2076,6 +2083,35 @@ export interface MeshSettings {
   /** This host's browser-facing address (its front-door upstream), when not
       https://<its MagicDNS name>:8443. null clears it. */
   serveUrl?: string | null;
+}
+
+/** One row of GET /api/mesh/logins: how a login stands on this host. Never a secret. */
+export interface MeshLoginEntry {
+  /** "<store>:<provider>", e.g. "pi:zai", "claude:claudeAiOauth". */
+  key: string;
+  /** pi = pi's auth.json, claude = Claude Code's credentials. */
+  store: "pi" | "claude";
+  provider: string;
+  kind?: "oauth" | "api_key";
+  state: "live" | "expired" | "dead" | "logged-out";
+  /** OAuth expiry, ms epoch. */
+  expires?: number;
+  /** When logged in (ms epoch); 0 = found on disk before sync started. A refresh keeps it. */
+  loginAt?: number;
+  /** When this exact token was issued (a refresh changes it). */
+  issuedAt?: number;
+  /** The host id that logged in or last refreshed it. */
+  origin?: string;
+  /** Peers holding a different login from before sync: this key is not synced until one is claimed. */
+  conflictWith?: string[];
+}
+
+export interface MeshLogins {
+  entries: MeshLoginEntry[];
+}
+
+export interface MeshLoginClaim {
+  key: string;
 }
 
 /** GET /api/mesh/front-door: a Caddy front door for these hosts, generated only; Sova never runs

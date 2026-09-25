@@ -3,12 +3,12 @@ import { join } from "node:path";
 import type { Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
-import type { SyncCategory, SyncStatus } from "../../shared/protocol";
+import type { MeshLoginEntry, MeshLogins, SyncCategory, SyncStatus } from "../../shared/protocol";
 import type { MeshApi } from "../mesh";
 import { stateRoot } from "../state-root";
-import type { EntryKey } from "./logins-merge";
+import { parseEntryKey, type EntryKey } from "./logins-merge";
 import { ClaudeCredentialStore, PiAuthStore, piRefresher, type CredentialStore } from "./logins-stores";
-import { CredentialSync, type CredentialEntryReply, type CredentialManifest, type CredentialPushReply, type SyncPeer } from "./logins";
+import { CredentialSync, type CredentialStatusEntry, type CredentialEntryReply, type CredentialManifest, type CredentialPushReply, type SyncPeer } from "./logins";
 import { DocSync, type DocManifest, type DocPeer, type DocPushReply, type DocReply } from "./docs";
 import { ExtensionSync, type ExtensionList, type ExtensionPeer } from "./extensions";
 import { extensionsFile, readExtensions, setPeerExtensions, validateExtension } from "../extensions";
@@ -27,6 +27,10 @@ import { extensionsFile, readExtensions, setPeerExtensions, validateExtension } 
  *   POST /api/peer/sync/push
  *   GET  /api/peer/sync/extensions          this host's own extensions.json entries
  *   POST /api/peer/sync/extensions          a peer's list, pushed when its manifest changes
+ *
+ * Browser routes (main listener only; 404 while OFF and to any peer-listener caller):
+ *   GET  /api/mesh/logins                   each login's standing here, never a secret
+ *   POST /api/mesh/logins/claim {key}       keep this host's login for that key everywhere
  */
 
 const PEER_CALL_TIMEOUT_MS = 5_000;
@@ -44,6 +48,9 @@ export function claudeSyncDir(env: NodeJS.ProcessEnv = process.env): string | nu
   if (env.PI_CODING_AGENT_DIR) return null;
   return env.CLAUDE_CONFIG_DIR || join(homedir(), ".claude");
 }
+
+/** Any request on the peer listener, verified or proxied through it: never a browser route. */
+const onPeerListener = (c: Context): boolean => !!(c.env as { meshPeer?: unknown } | undefined)?.meshPeer;
 
 /** A request that came through a browser proxy hop (ours sets X-Forwarded-Host) is never a peer call. */
 const peerCaller = (mesh: MeshApi, c: Context): string | null =>
@@ -220,6 +227,26 @@ export function mountSync(app: Hono, mesh: MeshApi, paths: SyncPaths = defaultPa
     }
     return c.json(await rt.credentials.receivePush(from, body));
   });
+  app.get("/api/mesh/logins", (c) => {
+    if (onPeerListener(c) || !rt.credentials) return notFound(c);
+    return c.json({ entries: rt.credentials.status().entries.map(browserLogin) } satisfies MeshLogins);
+  });
+  app.post("/api/mesh/logins/claim", bodyLimit({ maxSize: 4 * 1024, onError: (c) => c.json({ error: "Too large" }, 413) }), async (c) => {
+    const sync = rt.credentials;
+    if (onPeerListener(c) || !sync) return notFound(c);
+    let key: unknown;
+    try {
+      key = ((await c.req.json()) as { key?: unknown } | null)?.key;
+    } catch {
+      return c.json({ error: "Expected JSON" }, 400);
+    }
+    if (typeof key !== "string" || !parseEntryKey(key) || !sync.status().entries.some((e) => e.key === key)) {
+      return c.json({ error: "Unknown login" }, 400);
+    }
+    if (!loginsOn()) return c.json({ error: "Logins sync is off" }, 409);
+    if (!(await sync.claim(key))) return c.json({ error: "No live login here to claim" }, 409);
+    return c.json({ ok: true as const });
+  });
   app.get("/api/peer/sync/manifest", (c) => {
     if (!peerCaller(mesh, c) || !rt.docs) return notFound(c);
     return c.json(rt.docs.manifest());
@@ -281,6 +308,22 @@ function peerStatusLine(category: SyncCategory, enabled: boolean, peerStates: Re
   if (skewed.length) return { category, enabled, state: "error", lastAt, error: `clock differs by over 60s from ${skewed.join(", ")}` };
   if (!ok.length && failed.length) return { category, enabled, state: "error", lastAt, error: `no peer reachable (${failed.join(", ")})` };
   return { category, enabled, state: ok.length ? "ok" : "pending", lastAt };
+}
+
+/** A status row as the browser sees it: no fingerprint, no tombstone, no secret. */
+export function browserLogin(e: CredentialStatusEntry): MeshLoginEntry {
+  return {
+    key: e.key,
+    store: e.store,
+    provider: e.provider,
+    ...(e.kind ? { kind: e.kind } : {}),
+    state: e.state,
+    ...(e.expires !== undefined ? { expires: e.expires } : {}),
+    ...(e.loginAt !== undefined ? { loginAt: e.loginAt } : {}),
+    ...(e.issuedAt !== undefined ? { issuedAt: e.issuedAt } : {}),
+    ...(e.origin ? { origin: e.origin } : {}),
+    ...(e.conflictWith?.length ? { conflictWith: e.conflictWith } : {}),
+  };
 }
 
 /** The Mesh page's one line for logins: never a secret, only how the exchange is going. */

@@ -6,7 +6,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Hono, type Context } from "hono";
-import type { MeshSettings, SyncStatus } from "../../shared/protocol";
+import type { MeshLogins, MeshSettings, SyncStatus } from "../../shared/protocol";
 import type { MeshApi } from "../mesh";
 import { claudeSyncDir, mountSync, type SyncRuntime } from "./index";
 
@@ -113,8 +113,11 @@ test("mesh off: routes are 404 and nothing is read or written", async () => {
     ["/api/peer/sync/doc?key=settings:mode.json", undefined],
     ["/api/peer/sync/push", { method: "POST", body: "{}" }],
     ["/api/peer/sync/extensions", undefined],
+    ["/api/mesh/logins", undefined],
+    ["/api/mesh/logins/claim", { method: "POST", body: JSON.stringify({ key: "pi:zai" }), headers: { "content-type": "application/json" } }],
   ] as const) {
-    // As a verified peer, but the mesh never started: still 404.
+    // As a browser, and as a verified peer, but the mesh never started: still 404.
+    assert.equal((await a.app.request(path, init)).status, 404, path);
     assert.equal((await a.app.request(path, init, { meshPeer: { id: "b" } })).status, 404, path);
   }
   assert.equal(a.rt.credentials, null);
@@ -228,4 +231,67 @@ test("a pushed extension list is stored under the verified caller, whatever the 
   } finally {
     a.fire.stop();
   }
+});
+
+test("login conflicts over the browser routes: listed without secrets, settled by a claim, shut to peers", async () => {
+  const hosts = new Map<string, FakeHost>();
+  const a = host("a", hosts);
+  const b = host("b", hosts);
+  // Different keys on both hosts before either synced: a conflict, both kept.
+  writeAuth(a, { zai: { type: "api_key", key: "sk-current" } });
+  writeAuth(b, { zai: { type: "api_key", key: "sk-old" } });
+  const json = { "content-type": "application/json" };
+  const claim = (h: FakeHost, body: string, env?: object) => h.app.request("/api/mesh/logins/claim", { method: "POST", body, headers: json }, env);
+  const logins = async (h: FakeHost) => (await (await h.app.request("/api/mesh/logins")).json()) as MeshLogins;
+  a.fire.start();
+  b.fire.start();
+  try {
+    const zai = async (h: FakeHost) => (await logins(h)).entries.find((e) => e.key === "pi:zai");
+    let row = await zai(a);
+    for (const end = Date.now() + 3000; !row?.conflictWith && Date.now() < end; row = await zai(a)) await new Promise((r) => setTimeout(r, 20));
+    assert.deepEqual(row?.conflictWith, ["b"], "A lists the conflict with B");
+    assert.equal(row?.store, "pi");
+    assert.equal(row?.state, "live");
+    assert.equal(row?.loginAt, 0, "found before sync");
+    const res = await a.app.request("/api/mesh/logins");
+    assert.equal(res.status, 200);
+    const text = await res.text();
+    assert.ok(!text.includes("sk-"), "no secret in the body");
+    assert.ok(!/fingerprint|tombstone/.test(text), "no fingerprint or tombstone internals");
+    assert.deepEqual(auth(a).zai.key, "sk-current");
+    assert.deepEqual(auth(b).zai.key, "sk-old", "nothing moved while in conflict");
+
+    // Shut to peer-listener callers, verified or proxied through it.
+    assert.equal((await a.app.request("/api/mesh/logins", undefined, { meshPeer: { id: "b" } })).status, 404);
+    assert.equal((await claim(a, JSON.stringify({ key: "pi:zai" }), { meshPeer: { id: "b" } })).status, 404);
+    assert.equal(auth(b).zai.key, "sk-old", "a peer's claim did nothing");
+
+    // Bad bodies and keys this host doesn't know.
+    assert.equal((await claim(a, "not json")).status, 400);
+    assert.equal((await claim(a, JSON.stringify({}))).status, 400);
+    assert.equal((await claim(a, JSON.stringify({ key: "pi:nope" }))).status, 400);
+    assert.equal((await claim(a, JSON.stringify({ key: "nostore:zai" }))).status, 400);
+    // The switch off: refused, nothing stamped.
+    a.settings.sync.logins = false;
+    assert.equal((await claim(a, JSON.stringify({ key: "pi:zai" }))).status, 409);
+    a.settings.sync.logins = true;
+    assert.deepEqual((await zai(a))?.conflictWith, ["b"]);
+
+    // The user keeps A's: it wins on both hosts and the conflict is gone.
+    const ok = await claim(a, JSON.stringify({ key: "pi:zai" }));
+    assert.equal(ok.status, 200);
+    assert.deepEqual(await ok.json(), { ok: true });
+    assert.equal(await until(() => auth(b).zai?.key === "sk-current"), true, "B took A's login");
+    const after = await zai(a);
+    assert.equal(after?.conflictWith, undefined);
+    assert.equal(after?.origin, "a");
+    assert.ok((after?.loginAt ?? 0) > 0, "a claim is a login made now");
+    assert.equal(a.status().find((r) => r.category === "logins")?.state, "ok");
+    assert.ok(!JSON.stringify(await logins(b)).includes("sk-"));
+  } finally {
+    a.fire.stop();
+    b.fire.stop();
+  }
+  // Stopped (the mesh went OFF): 404 again.
+  assert.equal((await a.app.request("/api/mesh/logins")).status, 404);
 });

@@ -530,7 +530,7 @@ and the 120-second rule applies.
 ## §chat.transcript/landing-page — Landing page (`#/`)
 
 With no session selected the main pane is not an empty state with a grid bolted on — it is one
-page with two parts, in this order:
+page with up to three parts, in this order:
 
 1. **The opening**, unchanged except for its actions: `.welcome-head` wrapping the `.empty` block
    that has always been here — the `chat` mark, "{n} sessions across {m} folders.", "Pick one to
@@ -538,12 +538,16 @@ page with two parts, in this order:
    and `Fan Out…` (§workspace.fanout/entry-points — the empty screen is fanout's front door, which is a
    creation gesture offered beside the other creation gesture, not in the sidebar). It is the
    first thing read at every width.
-2. **The Explained grid**, shown **only when at least one explanation exists** (0 renders
+2. **The Extensions section**, shown **only when at least one extension is installed**: one card
+   per extension, under the same section eyebrow (§app.extensions/cards).
+3. **The Explained grid**, shown **only when at least one explanation exists** (0 renders
    nothing — no empty state, no head, no reserved space):
 
 ```html
 <div class="welcome">
   <div class="welcome-head">…the .empty opening…</div>
+  <!-- only when at least one extension is installed (§app.extensions/cards) -->
+  <section class="explain-section" aria-labelledby="ext-section-title">…Extensions {n}, one .card.ext-card each…</section>
   <!-- only when there is at least one explanation -->
   <section class="explain-section" aria-labelledby="explain-section-title">
     <h2 class="explain-section-head" id="explain-section-title">Explained <span class="text-num">6</span></h2>
@@ -559,9 +563,9 @@ page with two parts, in this order:
   under the last row so the grid never runs into the viewport edge, and no top padding —
   `.empty` brings its own `--space-8` crown. The section caps at `--page-max` (1280px) and
   centres: these are cards, not prose, so the reading measure is the wrong cap for them.
-- **The opening centres when it is alone.** With no explanations, `.welcome-head:only-child`
-  takes the leftover height and centres its `.empty` in the pane. With the grid under it, it
-  keeps its own height at the top and the grid follows.
+- **The opening centres when it is alone.** With no extensions and no explanations,
+  `.welcome-head:only-child` takes the leftover height and centres its `.empty` in the pane. With
+  a section under it, it keeps its own height at the top and the sections follow.
 - **The head is the section eyebrow**, the same rule as the Usage and Agents pages'
   `.insights-section-head` (§app/insights) — mono, `--fs-micro`, uppercase, `--ls-eyebrow`, `--color-ink-2`
   — with the count as the `.text-num` span inside it, in `--color-ink-muted` and no casing. A
@@ -584,7 +588,7 @@ page with two parts, in this order:
 
 | State | What renders |
 |---|---|
-| No session selected (unfolded) | The landing page below, not a bare `.empty`: `.welcome` fills `.app-main`, its `.welcome-head` holds the `.empty` opening (`chat` icon in `.empty-mark`, title "48 sessions across 7 folders.", body "Pick one to read it, or start a new one.", an `.empty-action` cluster with `New Session` and `Fan Out…`), and the Explained grid follows when there is one. No composer |
+| No session selected (unfolded) | The landing page below, not a bare `.empty`: `.welcome` fills `.app-main`, its `.welcome-head` holds the `.empty` opening (`chat` icon in `.empty-mark`, title "48 sessions across 7 folders.", body "Pick one to read it, or start a new one.", an `.empty-action` cluster with `New Session` and `Fan Out…`), and the Extensions section and the Explained grid follow when there are any. No composer |
 | Loading transcript (after 300ms) | Three placeholder messages in `.thread`: a right-aligned `.skeleton` 40% × 44px, then a left `.skeleton-title` plus 3 `.skeleton-line` at 92/78/60%, then a `.skeleton-row` at 60% width. Put `aria-busy="true"` on the `section`. The head renders straight away from the `SessionSummary` |
 | Error (a watched TUI session) | `.banner.banner-error` in `.transcript-inner`. Title: "Couldn't load this transcript." Body: "The file at `{path}` wasn't changed. {server message}." Action: `Retry`. A chat the server refuses to open shows §app.shell's open-failure banner instead |
 | Empty (new session) | `.empty` with no icon: the title "New session in `~/webapps/sova`.", then the setup card (§chat.transcript/setup-card), then the footnote `.empty-body` "Your first message becomes its title." No action; the composer has focus. Show it only while the thread has **zero rows**, counting local rows such as "Ran `/cmd`" (§chat/slash-commands) and model-change info rows. Once any row exists, the thread renders normally with no empty state |

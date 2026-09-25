@@ -1701,6 +1701,133 @@
         "server/mesh/index.ts",
         "server/mesh/peers.ts"
       ]
+    },
+    "§mesh.remote-sessions/host-filter": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/HostFilter.tsx",
+        "src/components/Sidebar.tsx",
+        "src/lib/mesh.ts"
+      ]
+    },
+    "§mesh.remote-sessions/host-picker": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/NewSessionDialog.tsx",
+        "src/lib/host-scope.ts"
+      ]
+    },
+    "§mesh.remote-sessions/list": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/mesh/index.ts",
+        "src/lib/mesh.ts",
+        "src/components/Sidebar.tsx"
+      ]
+    },
+    "§mesh.remote-sessions/proxy": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/mesh/proxy.ts",
+        "server/mesh/paths.ts",
+        "server/extensions.ts",
+        "src/lib/api.ts",
+        "vite.config.ts"
+      ]
+    },
+    "§mesh.remote-sessions/routing": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/lib/mesh.ts",
+        "src/lib/api.ts",
+        "src/App.tsx"
+      ]
+    },
+    "§mesh.sync/categories": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/sync/docs.ts",
+        "server/sync/extensions.ts",
+        "server/sync/index.ts"
+      ]
+    },
+    "§mesh.sync/logins": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/sync/logins.ts",
+        "server/sync/logins-merge.ts",
+        "server/sync/logins-stores.ts",
+        "server/sync/index.ts",
+        "src/components/MeshView.tsx"
+      ]
+    },
+    "§mesh.ui/card": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/App.tsx",
+        "src/components/MeshView.tsx"
+      ]
+    },
+    "§mesh.ui/page": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/MeshView.tsx",
+        "src/lib/mesh.ts"
+      ]
+    },
+    "§mesh.ui/settings": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/MeshSettings.tsx",
+        "src/components/SettingsDialog.tsx",
+        "server/mesh/index.ts"
+      ]
+    },
+    "§mesh/remote-sessions": {
+      "kind": "surface",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/mesh/proxy.ts",
+        "server/mesh/index.ts",
+        "src/lib/mesh.ts"
+      ]
+    },
+    "§mesh/sync": {
+      "kind": "surface",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/sync/index.ts"
+      ]
+    },
+    "§mesh/ui": {
+      "kind": "surface",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/MeshView.tsx"
+      ]
     }
   }
 }

@@ -500,10 +500,9 @@ export class SubagentRunner implements Worker {
 		const args = this.adopted ? [] : this.buildArgs(options);
 		if (!args) return; // fail() already ran
 		// Restricted by exclusion (buildArgs): the marker extension activates the requested
-		// built-ins that pi's default set lacks (grep, find, ls), see worker-mark.ts. Always set,
-		// empty when nothing is requested, so a value this process inherited never reaches a worker.
-		const requested = options.tools?.length && options.extensions?.length ? options.tools.join(",") : "";
-		const env = { ...options.env, [WORKER_TOOLS_ENV]: requested };
+		// built-ins that pi's default set lacks (grep, find, ls), see worker-mark.ts.
+		const toolsEnv = options.tools?.length && options.extensions?.length ? { [WORKER_TOOLS_ENV]: options.tools.join(",") } : undefined;
+		const env = toolsEnv || options.env ? { ...options.env, ...toolsEnv } : undefined;
 
 		let proc: ChildProcess;
 		try {
@@ -513,7 +512,7 @@ export class SubagentRunner implements Worker {
 				cwd: options.cwd,
 				shell: false,
 				stdio: ["pipe", "pipe", "pipe"],
-				env: { ...process.env, ...env },
+				...(env ? { env: { ...process.env, ...env } } : {}),
 			});
 		} catch (e) {
 			this.taskOutcome = "error";

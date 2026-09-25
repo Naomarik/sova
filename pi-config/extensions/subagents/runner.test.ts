@@ -274,7 +274,7 @@ test("getPiInvocation re-invokes argv[1] only when that script belongs to pi its
 	}
 });
 
-test("env is merged over the parent's environment", async () => {
+test("env is merged over the parent's environment only when given", async () => {
 	const withEnv = makeRunner({ env: { PI_SUBAGENTS_TEAM_MEMBER: "{\"version\":1}" } });
 	await boot(withEnv.child);
 	assert.equal(withEnv.spawnCalls[0].opts.env.PI_SUBAGENTS_TEAM_MEMBER, "{\"version\":1}");
@@ -282,9 +282,7 @@ test("env is merged over the parent's environment", async () => {
 	await fin(withEnv);
 	const plain = makeRunner({});
 	await boot(plain.child);
-	// Always passed: the parent's environment, with PI_SUBAGENT_BUILTIN_TOOLS cleared (never inherited).
-	assert.equal(plain.spawnCalls[0].opts.env.PATH, process.env.PATH, "the child keeps the parent's environment");
-	assert.equal(plain.spawnCalls[0].opts.env.PI_SUBAGENT_BUILTIN_TOOLS, "");
+	assert.equal("env" in plain.spawnCalls[0].opts, false, "no env option means Node's default inheritance");
 	await fin(plain);
 });
 
@@ -384,20 +382,14 @@ test("restricted by exclusion, the requested built-ins ride PI_SUBAGENT_BUILTIN_
 	const some = makeRunner({ extensions: ["npm:x"], tools: ["read", "grep", "find", "ls"], env: { KEEP: "1" } });
 	const none = makeRunner({ extensions: ["npm:x"], tools: [] });
 	const plain = makeRunner({ tools: ["read", "grep"] });
-	// A value this process inherited (a worker's own bash starting pi) never reaches a worker.
-	const prev = process.env.PI_SUBAGENT_BUILTIN_TOOLS;
-	process.env.PI_SUBAGENT_BUILTIN_TOOLS = "read,grep,find,ls,edit";
-	const inherited = makeRunner({});
-	if (prev === undefined) delete process.env.PI_SUBAGENT_BUILTIN_TOOLS; else process.env.PI_SUBAGENT_BUILTIN_TOOLS = prev;
 	try {
-		assert.equal(inherited.spawnCalls[0].opts.env?.PI_SUBAGENT_BUILTIN_TOOLS, "", "the inherited value is cleared");
 		const env = some.spawnCalls[0].opts.env;
 		assert.equal(env?.PI_SUBAGENT_BUILTIN_TOOLS, "read,grep,find,ls");
 		assert.equal(env?.KEEP, "1", "the caller's env is kept");
-		assert.equal(none.spawnCalls[0].opts.env?.PI_SUBAGENT_BUILTIN_TOOLS, "", "no tools: nothing to activate");
-		assert.equal(plain.spawnCalls[0].opts.env?.PI_SUBAGENT_BUILTIN_TOOLS, "", "an allowlist (--tools) needs no help");
+		assert.equal(none.spawnCalls[0].opts.env?.PI_SUBAGENT_BUILTIN_TOOLS, undefined, "no tools: nothing to activate");
+		assert.equal(plain.spawnCalls[0].opts.env?.PI_SUBAGENT_BUILTIN_TOOLS, undefined, "an allowlist (--tools) needs no help");
 	} finally {
-		for (const h of [some, none, plain, inherited]) {
+		for (const h of [some, none, plain]) {
 			h.child.close(0);
 			await h.runner.whenClosed;
 		}

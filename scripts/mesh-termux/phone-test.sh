@@ -10,13 +10,16 @@
 #   scripts/mesh-termux/phone-test.sh diff <a> <b>         what changed between two snapshots
 #   scripts/mesh-termux/phone-test.sh loop [args…]         snapshot pre, install, check, uninstall --keep-ssh, snapshot post,
 #                                                          diff pre post (must be empty), install again, check
-# Env: PHONE (ssh target, default 100.64.0.3), PHONE_PORT (8022), OUT (~/.cache/sova-mesh/termux-engineer/phone),
-#      LAPTOP_IP (tailnet IP for install-http, default 100.64.0.4), HTTP_PORT (4879).
+# Env: PHONE (ssh target, required), PHONE_PORT (8022), OUT (~/.cache/sova-mesh/termux-engineer/phone),
+#      LAPTOP_IP (tailnet IP for install-http, required there), HTTP_PORT (4879).
+# Site-specific values (PHONE, LAPTOP_IP, the pairing ids below) live in the untracked scripts/mesh-termux/local.env:
+#   cp scripts/mesh-termux/local.env.example scripts/mesh-termux/local.env   (then fill it in)
 set -euo pipefail
-PHONE=${PHONE:-100.64.0.3}
+[ -f "$(dirname "$0")/local.env" ] && . "$(dirname "$0")/local.env"
+PHONE=${PHONE:-}
 PHONE_PORT=${PHONE_PORT:-8022}
 OUT=${OUT:-$HOME/.cache/sova-mesh/termux-engineer/phone}
-LAPTOP_IP=${LAPTOP_IP:-100.64.0.4}
+LAPTOP_IP=${LAPTOP_IP:-}
 HTTP_PORT=${HTTP_PORT:-4879}
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 HERE="$ROOT/scripts/mesh-termux"
@@ -25,6 +28,7 @@ PHONE_TGZ='$PREFIX/tmp/sova-src.tar.gz'
 mkdir -p "$OUT/src"
 log() { printf '[phone-test] %s\n' "$*" >&2; }
 die() { log "FAIL: $*"; exit 1; }
+need() { local v; for v in "$@"; do [ -n "${!v:-}" ] || die "$v is not set: put it in scripts/mesh-termux/local.env (see local.env.example)"; done; }
 ph() { ssh -o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=15 -p "$PHONE_PORT" "$PHONE" "$@"; }
 
 tarball() {
@@ -36,7 +40,7 @@ tarball() {
   if [ -z "${REV:-}" ]; then
     # HEAD: overlay the working copy of this directory (uncommitted while it is being written)
     mkdir -p "$stage/sova-test/scripts/mesh-termux"
-    cp "$HERE"/* "$stage/sova-test/scripts/mesh-termux/"
+    find "$HERE" -maxdepth 1 -type f ! -name local.env -exec cp {} "$stage/sova-test/scripts/mesh-termux/" \;   # never local.env
     tar -C "$stage" -rf "$stage/src.tar" sova-test/scripts/mesh-termux
   fi
   gzip -9 -c "$stage/src.tar" > "$TARBALL"
@@ -142,16 +146,12 @@ diffsnap() {
 # The phone knows callers by tailnet IP (SOVA_MESH_IDENTITY=addresses): its entry for the laptop carries the laptop's
 # StableID AND its tailnet IP as the url host. The laptop's team server (4870, LocalAPI whois) lists the phone by StableID.
 LAPTOP_API=${LAPTOP_API:-http://127.0.0.1:4870}
-LAPTOP_ID=${LAPTOP_ID:-laptop}
-LAPTOP_NODE_ID=${LAPTOP_NODE_ID:-nLAPTOP0000CNTRL}
-LAPTOP_PEER_URL=${LAPTOP_PEER_URL:-http://100.64.0.4:4801}
-PHONE_ID=${PHONE_ID:-phone}
-PHONE_LABEL=${PHONE_LABEL:-Phone}
-PHONE_NODE_ID=${PHONE_NODE_ID:-nPHONE00000CNTRL}
-PHONE_DNS=${PHONE_DNS:-phone.<tailnet>.ts.net}
+# Required for gate/pair/unpair (local.env): LAPTOP_ID, LAPTOP_NODE_ID, LAPTOP_PEER_URL, PHONE_ID, PHONE_NODE_ID, PHONE_DNS
+PHONE_LABEL=${PHONE_LABEL:-${PHONE_ID:-}}
 PHONE_PEER_URL=${PHONE_PEER_URL:-http://$PHONE:4801}
 LAPTOP_PEERS_FILE=${LAPTOP_PEERS_FILE:-$ROOT/.agent/sova/peers.json}
 go() { [ "${PAIR_GO:-}" = 1 ] || die "pairing needs coordinator-2's go: rerun with PAIR_GO=1"; }
+pairing_vars() { need LAPTOP_ID LAPTOP_NODE_ID LAPTOP_PEER_URL PHONE_ID PHONE_NODE_ID PHONE_DNS; }
 phone_put() { # path json -> http code
   printf '%s' "$2" | ph "curl -sS -m 10 -o \$PREFIX/tmp/sova-put.json -w '%{http_code}' -X PUT -H 'content-type: application/json' --data-binary @- http://127.0.0.1:4800$1; cat \$PREFIX/tmp/sova-put.json >&2; rm -f \$PREFIX/tmp/sova-put.json"
 }
@@ -234,6 +234,8 @@ unpair() {
 }
 
 cmd=${1:-}; shift || true
+case "$cmd" in tarball|diff|"") ;; *) need PHONE ;; esac
+case "$cmd" in install-http) need LAPTOP_IP ;; gate|pair|unpair) pairing_vars ;; esac
 case "$cmd" in
   tarball) tarball ;;
   install) install_ssh "$@" ;;

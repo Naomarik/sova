@@ -7,12 +7,12 @@ the VPS (ssh $VPS_SSH over the tailnet, then sudo), after `scripts/mesh-vps/depl
 # 1. let deploy's user units run without a login session (sova-mesh.service, sova-frontdoor.service)
 sudo loginctl enable-linger deploy
 
-# 2. the peer listener (100.64.0.2:4801) reachable over the tailnet only; eth0 stays default-deny
+# 2. the peer listener (<vps-tailnet-ip>:4801) reachable over the tailnet only; the public interface stays default-deny
 sudo ufw allow in on tailscale0 to any port 4801 proto tcp
 
 # 3. tailnet HTTPS (tailscale serve, NEVER funnel):
-#    front door  https://vps.<tailnet>.ts.net:8443/  -> Caddy 127.0.0.1:4890
-#    this host   https://vps.<tailnet>.ts.net:10443/ -> Sova  127.0.0.1:4800
+#    front door  https://<vps>.<tailnet>.ts.net:8443/  -> Caddy 127.0.0.1:4890
+#    this host   https://<vps>.<tailnet>.ts.net:10443/ -> Sova  127.0.0.1:4800
 sudo tailscale serve --bg --https=8443 http://127.0.0.1:4890
 sudo tailscale serve --bg --https=10443 http://127.0.0.1:4800
 ```

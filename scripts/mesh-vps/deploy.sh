@@ -6,6 +6,7 @@
 # writes ~/sova-mesh/sova-mesh.env. If the sova-mesh user unit is running, it is restarted onto the new build.
 set -euo pipefail
 . "$(dirname "$0")/config.sh"
+need VPS_SSH VPS_TAILNET_IP
 
 REV=HEAD
 while [ $# -gt 0 ]; do

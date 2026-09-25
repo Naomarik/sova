@@ -36,7 +36,7 @@ every copy of it, anywhere) and `models.json`; Claude Code's `.credentials.json`
 (and their copies and backups, `~/.claude/backups` too); any file whose name holds `credentials`;
 `~/.ssh`, `~/.gnupg`, `~/.aws`; `.netrc` and `.pgpass`; the GitHub CLI's `hosts.yml`; `.env`/`.env.*`
 files (templates such as `.env.example` are fine); private keys (`id_*` but not `.pub`, `.pem`,
-`.key`, `.p12`, `.pfx`); `/proc` and `/sys`; and a hard link to any of these. A direct read of one
+`.key`, `.p12`, `.pfx`); `/proc`, `/sys` and `/dev/fd`; and a hard link to any of these. A direct read of one
 is refused, and searches and listings leave them out. Don't try to reach them another way.
 Wherever else a secret value turns up (a copied key in an ordinary file, a token a session
 printed), every tool gives it back as `[redacted]`, and your notes, cards and the action log store

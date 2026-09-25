@@ -266,6 +266,15 @@ export function helloChange(was: HelloBaseline, now: HelloBaseline): HelloChange
   return protocol || build || host ? { protocol, build, host } : null;
 }
 
+/**
+ * The tab's baseline from its first hello and the host GET /api/mesh first named. That host served
+ * the page, so it is the baseline's host even when the hello already comes from another (a failover
+ * between load and the first hello); the first hello only supplies protocol and build.
+ */
+export function firstBaseline(servedBy: { id: string; label: string } | null, hello: HelloBaseline): HelloBaseline {
+  return servedBy ? { ...hello, id: servedBy.id, label: servedBy.label } : hello;
+}
+
 /** `items` with the one at `from` moved to `to`; a copy unchanged when either is out of range. */
 export function moveItem<T>(items: readonly T[], from: number, to: number): T[] {
   if (from === to || from < 0 || to < 0 || from >= items.length || to >= items.length) return [...items];

@@ -17,6 +17,7 @@ import {
   SELF_FILTER,
   meshRetryDelay,
   helloChange,
+  firstBaseline,
   moveItem,
   frontDoorProblems,
   serveUrlProblem,
@@ -223,4 +224,14 @@ test("a refused claim reads as what to do next", () => {
 test("live and expired logins can be kept; dead and logged-out ones can't", () => {
   const e = (state: "live" | "expired" | "dead" | "logged-out") => ({ key: "pi:x", store: "pi" as const, provider: "x", state });
   assert.deepEqual((["live", "expired", "dead", "logged-out"] as const).map((s) => claimable(e(s))), [true, true, false, false]);
+});
+
+test("a failover before the first hello still reads as a failover (qa F4)", () => {
+  const b = { id: "b", label: "Host B", protocol: "p1", build: "b1" };
+  const base = firstBaseline({ id: "a", label: "Host A" }, b);
+  assert.deepEqual(base, { id: "a", label: "Host A", protocol: "p1", build: "b1" });
+  assert.deepEqual(helloChange(base, b), { protocol: false, build: false, host: { from: "Host A", to: "Host B" } });
+  // Same host, or no /api/mesh answer to go by: the hello is the baseline and nothing changed.
+  assert.equal(helloChange(firstBaseline({ id: "b", label: "Host B" }, b), b), null);
+  assert.equal(firstBaseline(null, b), b);
 });

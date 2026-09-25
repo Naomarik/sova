@@ -17,7 +17,7 @@ import {
   setSessionArchived,
 } from "./lib/api";
 import { socketReconnects } from "./lib/socket";
-import { helloChange, type HelloBaseline, type HelloChange, sessionHrefOn } from "./lib/mesh";
+import { firstBaseline, helloChange, type HelloBaseline, type HelloChange, sessionHrefOn } from "./lib/mesh";
 import { hostLabel, hostOf, isMeshHash, meshRetryDelay, meshState, meshOn, meshPeers, mergePeerLists, noteHost, notePeerSessions, peerInfo, peerUnavailable, sessionRouteFromHash, setMeshState } from "./lib/mesh";
 import { agentsHref, insightsRouteFromHash, legacyInsightsTarget } from "./lib/insights";
 import { transcriptRoot } from "./lib/jump";
@@ -170,10 +170,13 @@ export function App() {
   /** Failures in a row, and the retry they scheduled (only for a failure that may pass). */
   let meshFailures = 0;
   let meshRetry: ReturnType<typeof setTimeout> | undefined;
+  /** The host the first answer came from: the one that served this page, whatever answers later. */
+  let servedBy: { id: string; label: string } | null = null;
   const loadMesh = () =>
     fetchMesh()
       .then((s) => {
         meshFailures = 0;
+        servedBy ??= { id: s.self.id, label: s.self.label || s.self.hostname };
         setMeshState(s);
         setMeshError(null);
       })
@@ -353,8 +356,13 @@ export function App() {
       return; // no answer is the reconnect's business, not a verdict on the host
     }
     const now: HelloBaseline = { id: hello.id, label: hello.label, protocol: hello.protocol, build: hello.build };
-    const base = helloBase();
-    if (!base) return setHelloBase(now);
+    let base = helloBase();
+    if (!base) {
+      // The first hello may already come from another host (a failover right after load): the
+      // host is the one that served the page; only protocol and build are learnt from the hello.
+      base = firstBaseline(servedBy, now);
+      setHelloBase(base);
+    }
     const change = helloChange(base, now);
     if (!change) return;
     // The tab's own code hasn't changed: its protocol and build stay the baseline's. Only the host

@@ -7,7 +7,9 @@ running service. Root steps are listed in SUDO.md for the parent.
 Layout on the VPS (`~/sova-mesh`): `node/` (Node 22 LTS, sha256-pinned), `bin/caddy` (sha512-pinned), `app/`
 (git archive of a commit; `app.prev` = the previous one), `agent/` (PI_CODING_AGENT_DIR; `auth.json` starts EMPTY,
 keys arrive by sync; `sova/peers.json` is seeded once with self id `vps`, no peers, `loginKinds: api-keys`; the
-self id is never rewritten, since host filters and the front-door order reference it), `home/` (isolated HOME), `sova-mesh.env` (also pins SOVA_SYNC_LOGIN_KINDS=api-keys: no subscription logins on this host), `Caddyfile`.
+self id is never rewritten, since host filters and the front-door order reference it), `home/` (isolated HOME), `tmp/` (TMPDIR for every build/run step, 0700: nothing of ours in /tmp; holds jiti's
+extension cache, re-warmed by `run-warm.sh` / `warm-extensions.mjs` after each build and at each unit start, so the first
+session never stalls Sova compiling 16 extensions), `sova-mesh.env` (also pins SOVA_SYNC_LOGIN_KINDS=api-keys: no subscription logins on this host), `Caddyfile`.
 Ports: Sova main 127.0.0.1:4800; peer listener 100.64.0.2:4801 (only while peers.json lists a peer);
 front door Caddy 127.0.0.1:4890 (admin 127.0.0.1:2089). Nothing binds the public interface.
 

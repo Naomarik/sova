@@ -6,6 +6,8 @@
 #                 then pnpm install --frozen-lockfile + vite build (pnpm via this node's corepack)
 #   ~/$R/agent    the agent dir (PI_CODING_AGENT_DIR); auth.json created EMPTY ({}, 0600) if absent, never overwritten
 #   ~/$R/home     the isolated HOME for every build and run step (deploy's own dotfiles are never read)
+#   ~/$R/tmp      TMPDIR for every build and run step (0700): nothing of ours lands in /tmp; holds jiti's extension cache,
+#                 cleared and re-warmed after every build (warm-extensions.mjs) so the first session never compiles cold
 #   ~/$R/sova-mesh.env   the environment the unit and run-sova.sh use
 #   ~/$R/agent/sova/peers.json   seeded ONCE (only if absent) with this host's self id/label/serveUrl and no peers
 #                 (mesh stays off); the self id must never change on a running host, so it is never rewritten here
@@ -15,8 +17,8 @@ set -euo pipefail
 : "${VPS_ID:?}" "${VPS_LABEL:?}"
 BASE="$HOME/$R"
 log() { printf '[vps] %s\n' "$*" >&2; }
-mkdir -p "$BASE"/{node,bin,home,agent,dl}
-chmod 700 "$BASE/agent" "$BASE/home"
+mkdir -p "$BASE"/{node,bin,home,agent,dl,tmp}
+chmod 700 "$BASE/agent" "$BASE/home" "$BASE/tmp"
 
 # --- Node -----------------------------------------------------------------------------------------
 if [ "$("$BASE/node/bin/node" -v 2>/dev/null || true)" != "$NODE_VERSION" ]; then
@@ -47,7 +49,7 @@ log "caddy: $("$BASE/bin/caddy" version | cut -d' ' -f1) (sha512 verified at ins
 rm -rf "$BASE/app.prev"
 [ -d "$BASE/app" ] && mv "$BASE/app" "$BASE/app.prev"
 mv "$BASE/app.new" "$BASE/app"
-export HOME="$BASE/home" PATH="$BASE/node/bin:/usr/bin:/bin" COREPACK_HOME="$BASE/home/.cache/corepack" COREPACK_ENABLE_DOWNLOAD_PROMPT=0 CI=1
+export HOME="$BASE/home" TMPDIR="$BASE/tmp" PATH="$BASE/node/bin:/usr/bin:/bin" COREPACK_HOME="$BASE/home/.cache/corepack" COREPACK_ENABLE_DOWNLOAD_PROMPT=0 CI=1
 cd "$BASE/app"
 log "pnpm: $(corepack pnpm --version) install --frozen-lockfile"
 nice -n 10 corepack pnpm install --frozen-lockfile --reporter=append-only 2>&1 | tail -5 >&2
@@ -81,7 +83,13 @@ SOVA_PEER_PORT=$SOVA_PEER_PORT
 SOVA_SYNC_LOGIN_KINDS=api-keys
 PI_CODING_AGENT_DIR=$BASE/agent
 HOME=$BASE/home
+TMPDIR=$BASE/tmp
 PATH=$BASE/node/bin:/usr/bin:/bin
 EOF
 mv "$BASE/sova-mesh.env.tmp" "$BASE/sova-mesh.env"
+
+# --- warm the extension cache ---------------------------------------------------------------------
+# a fresh cache for this build (old entries are keyed on old sources); a running Sova keeps its loaded extensions
+rm -rf "$BASE/tmp/jiti"
+"$BASE/app/scripts/mesh-vps/run-warm.sh" | tail -1 >&2 || log "warm-up failed (not fatal: the first session compiles instead)"
 log "ready: $(cat "$BASE/app/BUILD_COMMIT" 2>/dev/null || echo 'no BUILD_COMMIT')"

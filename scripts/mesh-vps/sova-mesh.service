@@ -12,6 +12,8 @@ Wants=network-online.target
 [Service]
 Type=simple
 ExecStart=%h/sova-mesh/app/scripts/mesh-vps/run-sova.sh
+# Warm jiti's extension cache (~/sova-mesh/tmp/jiti) beside Sova's boot; "-": a failed warm-up never fails the unit
+ExecStartPost=-%h/sova-mesh/app/scripts/mesh-vps/run-warm.sh
 Restart=on-failure
 RestartSec=3
 # Stop quickly: the front door fails over on its health checks

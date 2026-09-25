@@ -24,6 +24,10 @@ printf '{"commit":"%s","source":"git archive","deployedAt":"%s"}\n' "$SHA" "$(da
 vps "R=$R NODE_VERSION=$NODE_VERSION NODE_SHA256=$NODE_SHA256 CADDY_VERSION=$CADDY_VERSION CADDY_SHA512=$CADDY_SHA512 \
   SOVA_PORT=$SOVA_PORT SOVA_PEER_PORT=$SOVA_PEER_PORT VPS_TAILNET_IP=$VPS_TAILNET_IP VPS_ID=$VPS_ID VPS_LABEL='$VPS_LABEL' bash -s" < "$MESH_VPS_DIR/remote-setup.sh"
 
+# installed user units follow the deployed copies (daemon-reload only when one changed)
+vps 'd=~/.config/systemd/user; n=0; for u in sova-mesh.service sova-frontdoor.service; do
+  [ -f $d/$u ] && ! cmp -s ~/'"$R"'/app/scripts/mesh-vps/$u $d/$u && cp ~/'"$R"'/app/scripts/mesh-vps/$u $d/$u && n=1 && echo "[mesh-vps] unit updated: $u" >&2
+done; [ $n = 0 ] || systemctl --user daemon-reload'
 if vps "systemctl --user is-active --quiet sova-mesh.service" 2>/dev/null; then
   log "sova-mesh.service is running: restarting it onto ${SHA:0:12}"
   vps "systemctl --user restart sova-mesh.service"

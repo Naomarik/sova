@@ -98,6 +98,15 @@ export async function captureScreens(browser, base, f, dir) {
           return nodes.length;
         });
         await page.waitForTimeout(300);
+        // A transcript's scroll-to-bottom can still be moving (measured once: base 45 px short on
+        // session-mobile, text identical): wait until no scroll position changes for 600 ms.
+        const scrolls = () => page.evaluate(() => [...document.querySelectorAll("*")].filter((e) => e.scrollHeight > e.clientHeight).map((e) => e.scrollTop).join());
+        for (let last = await scrolls(), still = 0, t0 = Date.now(); still < 3 && Date.now() - t0 < 5000; ) {
+          await page.waitForTimeout(200);
+          const now = await scrolls();
+          still = now === last ? still + 1 : 0;
+          last = now;
+        }
         const png = join(dir, `${name}.png`);
         await page.screenshot({ path: png, fullPage: false });
         const text = await page.evaluate(() => document.body.innerText);

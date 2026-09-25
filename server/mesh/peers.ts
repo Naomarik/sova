@@ -32,12 +32,17 @@ export interface PeerEntry {
   priority?: number;
   /** Its browser-facing address (the front door's upstream), when not https://<dnsName>:8443. */
   serveUrl?: string;
+  /** When this host paired it (ms epoch); absent for peers paired before dates were recorded. */
+  pairedAt?: number;
+  /** When the peer named itself `label` (its clock, ms epoch); absent: a name given here. */
+  labelAt?: number;
 }
 
 export const SYNC_CATEGORIES: readonly SyncCategory[] = ["settings", "themes", "extensions", "logins"];
 
 export interface PeersConfig {
-  self: { id: string; label: string; serveUrl?: string };
+  /** `labelAt`: when this host last renamed itself (ms epoch); absent: never, since recorded. */
+  self: { id: string; label: string; serveUrl?: string; labelAt?: number };
   peers: PeerEntry[];
   /** Per-category sync switches the user has set; an absent category is on. */
   sync: Partial<Record<SyncCategory, boolean>>;
@@ -103,6 +108,7 @@ export function validatePeers(raw: unknown): { config: PeersConfig } | { error: 
   const selfId = selfRaw.id === undefined ? defaultSelfId() : selfRaw.id;
   if (typeof selfId !== "string" || !PEER_ID_RE.test(selfId)) return { error: `self.id must match ${PEER_ID_RE}` };
   if (selfRaw.label !== undefined && !text(selfRaw.label)) return { error: "self.label must be a non-empty string (≤ 80)" };
+  if (selfRaw.labelAt !== undefined && !isTime(selfRaw.labelAt)) return { error: "self.labelAt must be a time (ms epoch)" };
   const selfServe = selfRaw.serveUrl === undefined || selfRaw.serveUrl === null ? null : checkUrl(selfRaw.serveUrl);
   if (selfServe && "error" in selfServe) return { error: `self.serveUrl ${selfServe.error}` };
   if (r.peers !== undefined && !Array.isArray(r.peers)) return { error: "peers must be an array" };
@@ -125,6 +131,9 @@ export function validatePeers(raw: unknown): { config: PeersConfig } | { error: 
     if (e.priority !== undefined && !Number.isFinite(e.priority)) return { error: `peers[${i}].priority must be a number` };
     const serve = e.serveUrl === undefined || e.serveUrl === null ? null : checkUrl(e.serveUrl);
     if (serve && "error" in serve) return { error: `peers[${i}].serveUrl ${serve.error}` };
+    for (const k of ["pairedAt", "labelAt"] as const) {
+      if (e[k] !== undefined && !isTime(e[k])) return { error: `peers[${i}].${k} must be a time (ms epoch)` };
+    }
     ids.add(e.id);
     nodes.add(nodeId);
     peers.push({
@@ -135,6 +144,8 @@ export function validatePeers(raw: unknown): { config: PeersConfig } | { error: 
       ...(url ? { url: url.url } : {}),
       ...(e.priority !== undefined ? { priority: e.priority as number } : {}),
       ...(serve ? { serveUrl: serve.url } : {}),
+      ...(e.pairedAt !== undefined ? { pairedAt: e.pairedAt as number } : {}),
+      ...(e.labelAt !== undefined ? { labelAt: e.labelAt as number } : {}),
     });
   }
   const syncRaw = r.sync ?? {};
@@ -160,7 +171,12 @@ export function validatePeers(raw: unknown): { config: PeersConfig } | { error: 
     return { error: 'loginKinds must be "all" or "api-keys"' };
   }
   const apiKeysOnly = r.loginKinds === "api-keys";
-  const self = { id: selfId, label: text(selfRaw.label) ?? selfId, ...(selfServe ? { serveUrl: selfServe.url } : {}) };
+  const self = {
+    id: selfId,
+    label: text(selfRaw.label) ?? selfId,
+    ...(selfServe ? { serveUrl: selfServe.url } : {}),
+    ...(selfRaw.labelAt !== undefined ? { labelAt: selfRaw.labelAt as number } : {}),
+  };
   return {
     config: {
       self,
@@ -173,6 +189,8 @@ export function validatePeers(raw: unknown): { config: PeersConfig } | { error: 
     },
   };
 }
+
+const isTime = (v: unknown): boolean => typeof v === "number" && Number.isFinite(v) && v > 0;
 
 /** A list of host ids (absent/null → undefined), or why it isn't one. */
 function hostIds(v: unknown, name: string): string[] | { error: string } | undefined {

@@ -75,10 +75,13 @@ export interface ProbeResult {
   state: PeerState;
   hello?: MeshHello;
   error?: string;
+  /** Round trip of an answered hello, ms (this host's measure; never on the wire). */
+  ms?: number;
 }
 
 /** GET <base>/api/peer/hello, classified. Never throws. */
 export async function probeHello(base: string): Promise<ProbeResult> {
+  const t0 = performance.now();
   try {
     const res = await fetch(`${base}/api/peer/hello`, { signal: AbortSignal.timeout(PROBE_TIMEOUT_MS) });
     if (res.status === 403 && res.headers.get(REFUSED_HEADER) === "refused") {
@@ -90,9 +93,10 @@ export async function probeHello(base: string): Promise<ProbeResult> {
       return { state: "down", error: `hello answered ${res.status}` };
     }
     const hello = (await res.json()) as MeshHello;
+    const ms = Math.round(performance.now() - t0);
     if (hello?.mesh !== 1 || typeof hello.protocol !== "string") return { state: "down", error: "not a Sova hello" };
-    if (hello.protocol !== ownProtocol()) return { state: "skewed", hello, error: `protocol ${hello.protocol}, this host ${ownProtocol()}` };
-    return { state: "up", hello };
+    if (hello.protocol !== ownProtocol()) return { state: "skewed", hello, error: `protocol ${hello.protocol}, this host ${ownProtocol()}`, ms };
+    return { state: "up", hello, ms };
   } catch (err) {
     const e = err as Error & { cause?: { code?: string; message?: string } };
     const why = e.name === "TimeoutError" ? "no answer in time" : (e.cause?.code ?? e.cause?.message ?? e.message);

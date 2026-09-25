@@ -60,6 +60,8 @@ const peerUpHooks: Array<(peerId: string) => void> = [];
 const settingsHooks: Array<(settings: MeshSettings) => void> = [];
 /** Whether each peer was last seen up (by a probe, or by its own call through the gate). */
 const upNow = new Map<string, boolean>();
+/** When each peer's last-seen state (up or not) began, as this server saw it. */
+const upSince = new Map<string, number>();
 
 function runHooks<A extends unknown[]>(hooks: Array<(...a: A) => void>, ...args: A): void {
   for (const h of hooks) {
@@ -74,6 +76,7 @@ function runHooks<A extends unknown[]>(hooks: Array<(...a: A) => void>, ...args:
 /** Record what was just learnt about a peer; a peer that was not up and now is fires onPeerUp. */
 function sawPeer(id: string, up: boolean): void {
   const was = upNow.get(id) ?? false;
+  if (upNow.get(id) !== up) upSince.set(id, Date.now());
   upNow.set(id, up);
   if (up && !was) runHooks(peerUpHooks, id);
 }
@@ -145,6 +148,7 @@ function apply(): void {
     rt.listener.close();
     rt.listener = null;
     upNow.clear();
+    upSince.clear();
     runHooks(stopHooks);
   }
 }
@@ -163,6 +167,7 @@ export function stopMesh(): void {
   rt.listener.close();
   rt.listener = null;
   upNow.clear();
+  upSince.clear();
   runHooks(stopHooks);
 }
 
@@ -237,6 +242,23 @@ export function peerFetch(peerId: string, path: string, init?: RequestInit): Pro
   return fetch(`${peerUrl(peer)}${path}`, { ...init, headers });
 }
 
+/**
+ * Change peers.json: `change` gets the file as it is now and returns the next config (or why not);
+ * the result is validated, written atomically and reloaded. A malformed file is never overwritten.
+ */
+export function updatePeers(change: (config: PeersConfig) => PeersConfig | { error: string }): { config: PeersConfig } | { error: string; status: 400 | 409 } {
+  const base = baseForWrite();
+  if ("error" in base) return { error: base.error, status: 409 };
+  const next = change(base.config);
+  if ("error" in next) return { error: next.error, status: 400 };
+  if (next === base.config) return { config: base.config }; // nothing changed: no write
+  const v = validatePeers(next);
+  if ("error" in v) return { error: v.error, status: 400 };
+  writePeers(v.config);
+  reload();
+  return v;
+}
+
 /** The surface server/sync builds on (mountSync(app, meshApi)). */
 export const meshApi = {
   enabled: meshEnabled,
@@ -264,6 +286,24 @@ export const meshApi = {
     settingsHooks.push(fn);
   },
   onSyncStatus,
+  /** Each sync category's status now; empty while off or before server/sync registered. */
+  syncStatus: (): SyncStatus[] => (meshEnabled() && syncProvider ? syncProvider() : []),
+  /** This node as the listener learnt it (while on), and the addresses it listens on. */
+  selfNode: (): { nodeId?: string; dnsName?: string; addresses: string[] } => ({
+    ...(rt.self?.nodeId ? { nodeId: rt.self.nodeId } : {}),
+    ...(rt.self?.dnsName ? { dnsName: rt.self.dnsName } : {}),
+    addresses: rt.listener?.info().addresses ?? [],
+  }),
+  /** When a peer's current up/down state began (this server's view), or null. */
+  peerSince: (id: string): number | null => upSince.get(id) ?? null,
+  /** Record a peer's up/down state learnt elsewhere (the details route's own calls). */
+  sawPeer,
+  updatePeers,
+  /** The config as peers.json has it now (a hand edit is picked up with one stat). */
+  config: (): PeersConfig | null => {
+    reloadIfChanged();
+    return rt.config;
+  },
 };
 export type MeshApi = typeof meshApi;
 
@@ -416,6 +456,9 @@ async function putPeers(c: Context): Promise<Response> {
       dnsName = n.name || name;
     }
     const prior = base.config.peers.find((p) => p.id === e.id);
+    // Stamped when a node is first paired; kept across edits (matched by node, the id may change).
+    const known = base.config.peers.find((p) => p.nodeId === nodeId);
+    const pairedAt = known ? known.pairedAt : Date.now();
     peers.push({
       id: e.id,
       ...(e.label !== undefined ? { label: e.label } : prior ? { label: prior.label } : {}),
@@ -424,6 +467,9 @@ async function putPeers(c: Context): Promise<Response> {
       ...(e.url !== undefined ? { url: e.url } : prior?.url ? { url: prior.url } : {}),
       ...(e.priority !== undefined ? { priority: e.priority } : prior?.priority !== undefined ? { priority: prior.priority } : {}),
       ...(e.serveUrl !== undefined ? { serveUrl: e.serveUrl } : prior?.serveUrl ? { serveUrl: prior.serveUrl } : {}),
+      ...(pairedAt !== undefined ? { pairedAt } : {}),
+      // The stamp of a name the peer gave itself, while that is still the name.
+      ...(known?.labelAt !== undefined && known.label === (e.label ?? prior?.label ?? known.label) ? { labelAt: known.labelAt } : {}),
     });
   }
   const v = validatePeers({ ...base.config, peers });
@@ -459,6 +505,8 @@ async function putSettings(c: Context): Promise<Response> {
     return c.json({ error: "loginKinds is pinned by SOVA_SYNC_LOGIN_KINDS on this host" }, 409);
   }
   const self = { ...base.config.self };
+  // While on, a new name is stamped, so peers take it (server/mesh/details.ts) and never an older one.
+  if (body.hostLabel !== undefined && body.hostLabel !== self.label && meshEnabled()) self.labelAt = Date.now();
   if (body.hostLabel !== undefined) self.label = body.hostLabel;
   if (body.serveUrl === null) delete self.serveUrl;
   else if (body.serveUrl !== undefined) self.serveUrl = body.serveUrl;

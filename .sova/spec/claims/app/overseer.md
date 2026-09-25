@@ -177,6 +177,10 @@ sentences come back as the tool's error. Sessions are addressed by id. No tool p
   may act, within the caps. The Overseer's prompt states the rule. Sessions the Overseer creates
   keep their full tools.
 - **Itself:** tools refuse to act on the Overseer's own session.
+- **A model or thinking level the Overseer sets applies to that session only.** Whether it sets
+  them on a session it creates (`sova_create_session`) or on one it acts on (`sova_set_session`),
+  even one with no messages yet, the saved default new sessions start from is never changed:
+  only the user's own pick saves one (§chat.model-menu/saved-default).
 - **Archived sessions** take no prompt from the Overseer: `sova_send` refuses one and says that
   unarchiving it (`sova_archive`, itself an act, on the caps) comes first, as the UI's "Unarchive it
   to send" does for the user. The route itself is unchanged.

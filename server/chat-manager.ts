@@ -1436,7 +1436,8 @@ class ChatSession {
   /**
    * Switch model, the one path for the composer's `set_model`, the Overseer's `sova_set_session`
    * and Settings → Overseer. Resolves against models with configured auth (= GET /api/models)
-   * BEFORE writing anything, so a rejected switch leaves the file untouched.
+   * BEFORE writing anything, so a rejected switch leaves the file untouched. Only `save: true`
+   * (the user's own pick in the composer) is remembered; every other caller changes this chat only.
    */
   async setModelRef(ref: string, opts: { save?: boolean } = {}): Promise<void> {
     assertNotLive(this.path);
@@ -1462,15 +1463,17 @@ class ChatSession {
     this.broadcast({ type: "model", model: modelLabel(this.session) ?? ref });
     // setModel re-clamps the level to the new model's ladder; the pane needs that too.
     this.broadcast({ type: "thinking", level: this.session.thinkingLevel });
-    // The Overseer's choice belongs to overseer.json and never becomes every new session's default;
-    // otherwise a session with no messages yet saves its model as the next new session's default.
-    if (opts.save === false) return;
+    // Only the user's pick saves: the Overseer's own chat records it in overseer.json, and a session
+    // with no messages yet makes it the next new session's default. A programmatic switch (the
+    // Overseer acting on a session, Settings → Overseer) never becomes anyone's default.
+    if (opts.save !== true) return;
     // The level too: setModel re-clamped it, and the next conversation is seeded from the file.
     if (this.overseer) overseerRuntime?.saveChoice({ model: ref, thinking: this.session.thinkingLevel });
     else if (this.isPristine()) saveDefaults({ model: ref });
   }
 
-  /** Change thinking level: the `set_thinking` path, shared like setModelRef. Returns the effective level. */
+  /** Change thinking level: the `set_thinking` path, shared like setModelRef (and saved, like it,
+      only with `save: true`). Returns the effective level. */
   setThinking(level: string, opts: { save?: boolean } = {}): string {
     // setThinkingLevel appends a thinking_level_change entry: same write guards as set_model.
     assertNotLive(this.path);
@@ -1491,7 +1494,7 @@ class ChatSession {
         type: "append",
         items: [{ id: `thinking-${Date.now()}`, kind: "info", raw: { type: "thinking_level_change", thinkingLevel: after }, text: `Thinking: ${after}` }],
       });
-    if (opts.save === false) return after;
+    if (opts.save !== true) return after;
     if (this.overseer) overseerRuntime?.saveChoice({ thinking: after });
     // A session with no messages yet: this level is also the next new session's default.
     else if (this.isPristine()) saveDefaults({ thinking: after });
@@ -1574,10 +1577,10 @@ class ChatSession {
           this.regenerate(client, String(msg.id ?? ""), String(msg.entryId ?? "")).catch(fail);
           return;
         case "set_thinking":
-          this.setThinking(String(msg.level ?? ""));
+          this.setThinking(String(msg.level ?? ""), { save: true });
           return;
         case "set_model":
-          this.setModelRef(String(msg.ref ?? "")).catch(fail);
+          this.setModelRef(String(msg.ref ?? ""), { save: true }).catch(fail);
           return;
         case "rewind":
           this.rewind(client, String(msg.id ?? ""), String(msg.entryId ?? "")).catch(fail);

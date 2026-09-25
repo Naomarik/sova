@@ -2394,10 +2394,13 @@
         "server/overseer-redact.ts",
         "server/overseer.ts",
         "server/overseer-store.ts",
-        "server/overseer-redact.test.ts"
+        "server/overseer-redact.test.ts",
+        "server/chat-manager.ts",
+        "server/overseer-runtime.test.ts"
       ],
       "requires": [
-        "§app.overseer/caps"
+        "§app.overseer/caps",
+        "§chat.model-menu/saved-default"
       ]
     },
     "§app.settings-dialog/overseer": {
@@ -2678,6 +2681,21 @@
       "kind": "note",
       "authority": "accepted",
       "evidence": "reviewed"
+    },
+    "§chat.model-menu/saved-default": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.composer/composer-flyout",
+        "§app.overseer/hosting"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/chat-manager.ts",
+        "server/overseer.ts",
+        "server/chat-config.test.ts",
+        "server/overseer-runtime.test.ts"
+      ]
     }
   },
   "boundary": {

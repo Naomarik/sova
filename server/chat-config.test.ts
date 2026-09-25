@@ -5,8 +5,12 @@
 // re-opened on every websocket reconnect, each attempt appending another copy of a permanent
 // error to the client's thread. The fix classifies it (ConfigError, not "internal") and
 // remembers it, so repeat connects fail fast with the same answer instead of re-running the open.
+//
+// Also here: which model and thinking switches become the saved default for new sessions. Only
+// the composer's own pick on a session with no messages does (`save: true`); a switch without it
+// (the Overseer acting on a session, Settings → Overseer) changes that chat only.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, test } from "node:test";
@@ -19,6 +23,7 @@ mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
 
 const { acquireChat, activeConfigFailure, BusyError, ConfigError } = await import("./chat-manager");
 const { canonicalPath } = await import("./paths");
+const { markOwned } = await import("./write-guard");
 
 after(() => rmSync(agentDir, { recursive: true, force: true }));
 
@@ -108,5 +113,60 @@ describe("sessions that are fine", () => {
       writeFileSync(path, `${JSON.stringify(header)}\n`);
       assert.equal(activeConfigFailure(canonicalPath(path)), undefined);
     }
+  });
+});
+
+describe("the saved default for new sessions", () => {
+  const defaultsFile = join(agentDir, "sova", "defaults.json");
+  const saved = () => (existsSync(defaultsFile) ? JSON.parse(readFileSync(defaultsFile, "utf8")) : null);
+  const cwd = join(agentDir, "defaults-cwd");
+  mkdirSync(cwd, { recursive: true });
+  const client = {
+    send: (m: { type: string; message?: string }) => {
+      if (m.type === "error") throw new Error(`chat error: ${m.message}`);
+    },
+  };
+  /** An open chat whose model switch needs no credentials: the model resolves, the SDK's switch is a no-op. */
+  async function chatOn(entries: unknown[] = []) {
+    const path = session(cwd, entries);
+    markOwned(path); // written by us, as POST /api/sessions does, not by an unknown writer
+    const chat = await acquireChat(path);
+    const inner = chat as unknown as { runtime: { services: { modelRuntime: { getAvailable(): Promise<unknown[]> } } } };
+    inner.runtime.services.modelRuntime.getAvailable = async () => [{ provider: "ollama-cloud", id: "glm-5.3" }];
+    (chat.session as unknown as { setModel(m: unknown): Promise<void> }).setModel = async () => {};
+    return chat;
+  }
+  async function until(cond: () => boolean): Promise<void> {
+    const end = Date.now() + 3000;
+    while (!cond()) {
+      if (Date.now() > end) throw new Error("timed out");
+      await new Promise((r) => setTimeout(r, 5));
+    }
+  }
+
+  test("the composer's model and thinking on a brand-new session become the default", async () => {
+    rmSync(defaultsFile, { force: true });
+    const chat = await chatOn();
+    chat.handle(client, { type: "set_model", ref: "ollama-cloud/glm-5.3" });
+    await until(() => saved()?.model === "ollama-cloud/glm-5.3");
+    chat.handle(client, { type: "set_thinking", level: "low" });
+    assert.equal(saved()?.thinking, chat.session.thinkingLevel);
+  });
+
+  test("the same switch without save: true changes that chat and never the default", async () => {
+    rmSync(defaultsFile, { force: true });
+    const chat = await chatOn();
+    await chat.setModelRef("ollama-cloud/glm-5.3");
+    chat.setThinking("low");
+    assert.equal(saved(), null);
+  });
+
+  test("a composer pick in a session that already has a message stays that session's", async () => {
+    rmSync(defaultsFile, { force: true });
+    const said = { type: "message", id: "u1", parentId: null, timestamp: "2026-09-20T00:00:01.000Z", message: { role: "user", content: "hi", timestamp: 0 } };
+    const chat = await chatOn([said]);
+    await chat.setModelRef("ollama-cloud/glm-5.3", { save: true });
+    chat.setThinking("low", { save: true });
+    assert.equal(saved(), null);
   });
 });

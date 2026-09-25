@@ -122,6 +122,12 @@ describe("drive a peer's session from A", () => {
     const text = await waitFor(() => assistantTextOnDisk(B, created.path), { timeoutMs: 15000, what: "reply on B's disk" });
     assert.match(text, /mesh-ok/i);
     assert.equal(onDisk(A, created.id), false, "never on A");
+    const own = await (await laptopFetch(A, "/api/sessions")).json();
+    assert.ok(!own.some((x) => x.id === created.id), "not in A's own list");
+    const viaB = await (await laptopFetch(A, `/peer/${B}/api/sessions`)).json();
+    const row = viaB.find((x) => x.id === created.id);
+    assert.ok(row, "B lists it (through A)");
+    assert.equal(row.model, MODEL);
   });
 });
 
@@ -138,9 +144,20 @@ describe("close codes through the proxy", () => {
       assert.equal(direct.closeCode, 4409, `direct: ${JSON.stringify(direct)}`);
       assert.equal(viaA.closeCode, direct.closeCode, "same code through the proxy");
       assert.equal(viaA.closeReason, direct.closeReason, "same reason through the proxy");
+      assert.equal(direct.closeReason, "busy");
     } finally {
       sh(B, `rm -f "$PI_CODING_AGENT_DIR/${rel}"`);
     }
+  });
+});
+
+describe("the proxy's own boundaries", () => {
+  test("/peer/b/api/peer/* is not forwarded: the answer is byte-equal to an unknown /api route", async () => {
+    const via = await laptopFetch(A, `/peer/${B}/api/peer/credentials/manifest`);
+    const nope = await laptopFetch(A, "/api/nope");
+    assert.equal(via.status, 404);
+    assert.equal(via.status, nope.status);
+    assert.equal(await via.text(), await nope.text());
   });
 });
 
@@ -150,12 +167,26 @@ describe("B down", () => {
     try {
       await waitFor(async () => (await peerState(A, B)) === "down", { timeoutMs: 30000, what: `${A} sees ${B} down` });
       const fed = await (await laptopFetch(A, "/api/mesh/sessions", { timeoutMs: 20000 })).json();
-      assert.equal(fed.peers.find((p) => p.id === B)?.state, "down");
+      const row = fed.peers.find((p) => p.id === B);
+      assert.equal(row?.state, "down");
+      assert.equal(row?.stale, true, "B's last good list is served, marked stale");
+      assert.ok((row?.sessions ?? []).length > 0, "rows of a down peer are still listed");
       const own = await laptopFetch(A, "/api/sessions");
       assert.equal(own.status, 200);
       const t0 = Date.now();
-      assert.equal((await laptopFetch(A, `/peer/${B}/api/health`, { timeoutMs: 20000 })).status, 502);
-      console.log(`# /peer/${B} on a killed B answered 502 after ${Date.now() - t0} ms`);
+      const down = await laptopFetch(A, `/peer/${B}/api/health`, { timeoutMs: 20000 });
+      const ms = Date.now() - t0;
+      console.log(`# /peer/${B} on a killed B answered ${down.status} after ${ms} ms`);
+      assert.equal(down.status, 502);
+      assert.deepEqual(await down.json(), { error: "peer down", id: B });
+      // A peer seen within 15 s skips the proxy's preflight; a killed container's address
+      // blackholes, so the dial then waits out its own timeout (10.5 s measured 2026-09-25,
+      // reported to mesh-core). M2_LAX=1 skips this bound only.
+      if (!process.env.M2_LAX) assert.ok(ms < 5000, `502 within the ~3 s preflight (took ${ms} ms)`);
+      const ws = await chat(`${wsBase(A)}/peer/${B}/ws/chat?path=${encodeURIComponent("/sova/.agent/sessions/x.jsonl")}`, null, { timeoutMs: 15000 });
+      assert.equal(ws.opened, false, "no upgrade to a down peer");
+      assert.notEqual(ws.closeCode, 4422);
+      assert.equal((await laptopFetch(A, "/api/health")).status, 200);
       // A's own chat, while B is gone
       const res = await laptopFetch(A, "/api/sessions", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ cwd: "/root/work" }) });
       const mine = await res.json();

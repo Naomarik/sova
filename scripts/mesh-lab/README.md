@@ -141,6 +141,16 @@ The harnesses:
   and WS); sova-stop gives down/502, never 4422; a killed container is down; unpair turns the mesh
   off.
 
+- **m2** (spends two short glm-5.3 turns): A's `/api/mesh/sessions` carries exactly B's sessions,
+  and A's plain list carries none of them and no `peer` field; `POST /peer/b/api/sessions`
+  creates the session on B's disk only; a glm-5.3 turn through `/peer/b/ws/chat` streams to A and
+  its JSONL lands on B only; a 4409 busy refusal has the same code and reason direct and via A;
+  killing B shows it down on A (502) while A's own list and chat keep working, and B comes back.
+- **m3**: a theme, a model favorite (settings) and an API key (written through pi's
+  AuthStorage) added on A reach B and C, and their deletion goes everywhere; with B's themes
+  switch off, B neither receives nor offers themes while C does; login sync H1–H10 run through
+  sync-engineer's `mock-token-server/m3-drive.mjs`, one test each. H3/H4/H7/H8/H10 partition or
+  stop hosts, so skip them with `--test-name-pattern "^(?!H(3|4|7|8|10)\b)"`.
 - **m4** (restores order and hosts): the first host in the order serves the SPA; Sova stopped on the
   first host fails over to the second in ~1 s and fails back in <1 s; a killed first container fails
   over in ~1.3 s; with the first two down, the third serves; an order change applies at once; a WS

@@ -1,6 +1,6 @@
 import { createEffect, createMemo, createResource, createSignal, For, on, Show } from "solid-js";
 import type { OverseerInfo, OverseerProactivity, SessionSummary } from "../../shared/protocol";
-import { clearOverseer, getAttention, getOverseer, getOverseerIdeas, getOverseerSettings, putOverseerSettings } from "../lib/api";
+import { clearOverseer, getAttention, getOverseer, getOverseerIdeas, getOverseerSettings, getOverseerTodos, putOverseerSettings } from "../lib/api";
 import { relativeTime, shortModel } from "../lib/format";
 import { type HeadList, headLists, nextProactivity, OVERSEER_HASH, OVERSEER_POLL_MS, overseerHistoryHref, PROACTIVITY_HINT, PROACTIVITY_LABEL } from "../lib/overseer";
 import { createPoll } from "../lib/poll";
@@ -12,6 +12,7 @@ import { ActionMenu } from "./ActionMenu";
 import type { OverseerChat, OverseerSender } from "./ChatView";
 import { ContextGauge } from "./ContextGauge";
 import { OverseerIdeas } from "./OverseerIdeas";
+import { OverseerTodos } from "./OverseerTodos";
 import type { PaneWiring } from "./GroupView";
 import { SessionView } from "./SessionView";
 import { Icon } from "./ui";
@@ -92,6 +93,22 @@ export function OverseerView(props: {
   const closeIdeas = () => {
     setIdeasOpen(false);
     queueMicrotask(() => ideasButton?.focus());
+  };
+
+  // ---- Todos: the user's checklist, in the same place as Ideas (one of the two open at a time) --
+  const [todosOpen, setTodosOpen] = createSignal(false);
+  /** The head's count. The open panel polls and reports it; closed, it is read on mount and after each turn. */
+  const [openTodos, setOpenTodos] = createSignal<number | null>(null);
+  const readTodosCount = () => void getOverseerTodos().then((t) => setOpenTodos(t.open), () => undefined);
+  readTodosCount();
+  const [todosVersion, setTodosVersion] = createSignal(0);
+  createEffect(on(() => !!props.info?.busy, (busy, was) => was && !busy && (todosOpen() ? setTodosVersion((v) => v + 1) : readTodosCount()), { defer: true }));
+  createEffect(on(ideasOpen, (open) => open && setTodosOpen(false), { defer: true }));
+  createEffect(on(todosOpen, (open) => open && setIdeasOpen(false), { defer: true }));
+  let todosButton: HTMLButtonElement | undefined;
+  const closeTodos = () => {
+    setTodosOpen(false);
+    queueMicrotask(() => todosButton?.focus());
   };
 
   const [clearing, setClearing] = createSignal(false);
@@ -232,6 +249,22 @@ export function OverseerView(props: {
           <Icon name="star" small />
           <span class="overseer-ideas-word">Ideas</span>
           <Show when={ideasInfo()}>{(i) => <span class="chip chip-count">{i().toc.total}</span>}</Show>
+        </button>
+        <button
+          type="button"
+          class="button button-sm button-ghost overseer-todos-toggle"
+          ref={todosButton}
+          aria-expanded={todosOpen()}
+          aria-controls="overseer-todos"
+          aria-label={openTodos() === null ? "Todos" : `Todos, ${openTodos()} open`}
+          title="Your todos: small tasks you or the Overseer noted."
+          onClick={() => (todosOpen() ? closeTodos() : setTodosOpen(true))}
+        >
+          <Icon name="check" small />
+          <span class="overseer-todos-word">Todos</span>
+          <Show when={openTodos() !== null}>
+            <span class="chip chip-count">{openTodos()}</span>
+          </Show>
         </button>
       </Show>
       <Show when={history().length > 0}>
@@ -393,6 +426,9 @@ export function OverseerView(props: {
                   if (!window.matchMedia("(min-width: 768px)").matches) closeIdeas();
                 }}
               />
+            </Show>
+            <Show when={todosOpen()}>
+              <OverseerTodos version={todosVersion()} onCount={setOpenTodos} onClose={closeTodos} />
             </Show>
             </>
           );

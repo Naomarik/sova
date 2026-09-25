@@ -2266,7 +2266,8 @@
         "server/overseer.ts",
         "server/chat-manager.ts",
         "server/overseer-prompt.md",
-        "server/overseer-redact.ts"
+        "server/overseer-redact.ts",
+        "server/overseer-todos.ts"
       ],
       "requires": [
         "§app.overseer/tools"
@@ -2411,7 +2412,8 @@
         "server/overseer-runtime.test.ts",
         "server/index.ts",
         "shared/protocol.ts",
-        "server/overseer-markers.test.ts"
+        "server/overseer-markers.test.ts",
+        "server/overseer-todo-tools.ts"
       ],
       "requires": [
         "§app.overseer/caps",
@@ -2710,6 +2712,46 @@
         "server/overseer.ts",
         "server/chat-config.test.ts",
         "server/overseer-runtime.test.ts"
+      ]
+    },
+    "§app.overseer/todos": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/overseer-todos.ts",
+        "server/overseer-todo-tools.ts",
+        "server/overseer-tools.ts",
+        "server/overseer.ts",
+        "server/overseer-prompt.md",
+        "server/overseer-store.ts",
+        "shared/protocol.ts",
+        "server/index.ts",
+        "server/overseer-todos.test.ts",
+        "server/overseer-todos-route.test.ts",
+        "server/overseer-todo-tools.test.ts",
+        "server/overseer-runtime.test.ts"
+      ],
+      "requires": [
+        "§app.overseer/tools",
+        "§app.overseer/ideas"
+      ]
+    },
+    "§app.overseer/todos-panel": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/OverseerTodos.tsx",
+        "src/components/OverseerView.tsx",
+        "src/lib/todos.ts",
+        "src/overseer-todos.css",
+        "src/lib/api.ts",
+        "server/index.ts",
+        "src/lib/todos.test.ts"
+      ],
+      "requires": [
+        "§app.overseer/todos"
       ]
     }
   },

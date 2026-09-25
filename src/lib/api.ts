@@ -19,6 +19,8 @@ import type {
   OverseerSaveResult,
   OverseerSettings,
   OverseerSettingsInfo,
+  OverseerTodosInfo,
+  TodoPatch,
   PlaybookCatalog,
   SandboxApplyResult,
   AssignGroupResult,
@@ -205,6 +207,18 @@ export const getOverseerIdea = (id: string) => request<OverseerIdeaDetail>(`/api
     IdeaConflict carrying the current detail in `ApiError.body`) when the idea changed since. */
 export const patchOverseerIdea = (id: string, patch: IdeaPatch) =>
   request<OverseerIdeaDetail>(`/api/overseer/idea?id=${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(patch) });
+
+/** The user's todos, in list order, with the open and done counts. Every write returns the whole list. */
+export const getOverseerTodos = () => request<OverseerTodosInfo>("/api/overseer/todos");
+export const addOverseerTodo = (text: string) => request<OverseerTodosInfo>("/api/overseer/todos", { method: "POST", body: JSON.stringify({ text }) });
+/** `patch.base` (sent for text edits) = the updatedAt the edit started from: the server refuses (409,
+    a TodoConflict carrying the current list in `ApiError.body`) when the todo changed since. */
+export const patchOverseerTodo = (id: string, patch: TodoPatch) =>
+  request<OverseerTodosInfo>(`/api/overseer/todo?id=${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(patch) });
+export const deleteOverseerTodo = (id: string) => request<OverseerTodosInfo>(`/api/overseer/todo?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+/** `ids` must be every todo exactly once (400 otherwise: the list changed meanwhile). */
+export const reorderOverseerTodos = (ids: string[]) => request<OverseerTodosInfo>("/api/overseer/todos/order", { method: "PUT", body: JSON.stringify({ ids }) });
+export const clearDoneOverseerTodos = () => request<OverseerTodosInfo>("/api/overseer/todos/done", { method: "DELETE" });
 
 /** The attention digest: what needs the user, what finished, what is running (≤30 items, tier first). */
 export const getAttention = () => request<AttentionDigest>("/api/overseer/attention");

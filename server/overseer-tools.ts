@@ -21,6 +21,7 @@ import { whereOf } from "./attention";
 import { type Redactor, redactingTool, serverRedactor } from "./overseer-redact";
 import { logAction, readNotes, writeNotes, NOTES_MAX } from "./overseer-store";
 import { ideaTools, type IdeaToolHost, type ToolCall } from "./overseer-idea-tools";
+import { todoTools } from "./overseer-todo-tools";
 
 /**
  * The Overseer's tools. Every act goes through Sova's own REST routes, dispatched in-process
@@ -1136,6 +1137,7 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
       str,
       int,
     }),
+    ...todoTools({ act, read, resolve, refusal: (m) => new Refusal(m), obj, str }),
   ];
   // Every tool, this list's and any added to it: no secret value in or out (overseer-redact.ts).
   return tools.map((t) => redactingTool(t, redactor));

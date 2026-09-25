@@ -63,6 +63,7 @@ import {
 } from "./overseer";
 import { readNotes, writeNotes, NOTES_MAX } from "./overseer-store";
 import { IdeaConflictError, IdeaError, ideaDetail, ideasInfo, parseIdeaId, updateIdea, type IdeaUpdate } from "./overseer-ideas";
+import { addTodo, clearDone, removeTodo, reorderTodos, TodoConflictError, TodoError, TodoNotFoundError, todosInfo, updateTodo } from "./overseer-todos";
 import { findExtension, listExtensions, proxyExtension, serveExtensionFile, setSovaPort } from "./extensions";
 import { decisionRuntime, decisions, decisionSettings, decisionsReady } from "./decide-runtime";
 import { decisionsInfo, decisionsOptions, deleteKey, probeDecisions, putJevKey, saveDecisions } from "./decide-routes";
@@ -814,6 +815,83 @@ app.patch("/api/overseer/idea", async (c) => {
     if (err instanceof IdeaError) return c.json({ error: err.message }, 400);
     throw err;
   }
+});
+// The user's todos (server/overseer-todos.ts). The Overseer's sova_todo and these routes are its
+// writers; every write answers with the whole list, so the panel adopts it as it is. `base` is
+// honoured only when sent (the panel sends it for text edits), making a stale edit a 409.
+const todoFailure = (c: Context, err: unknown) => {
+  if (err instanceof TodoConflictError) return c.json({ error: err.message, current: err.current }, 409);
+  if (err instanceof TodoNotFoundError) return c.json({ error: err.message }, 404);
+  if (err instanceof TodoError) return c.json({ error: err.message }, 400);
+  throw err;
+};
+const todoBody = async (c: Context): Promise<Record<string, unknown> | null> => {
+  try {
+    const body: unknown = await c.req.json();
+    return body && typeof body === "object" && !Array.isArray(body) ? (body as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
+};
+app.get("/api/overseer/todos", (c) => c.json(todosInfo(), 200, { "Cache-Control": "no-store" }));
+app.post("/api/overseer/todos", async (c) => {
+  const body = await todoBody(c);
+  if (!body) return c.json({ error: "Expected JSON body { text, ideaId?, sessionId? }" }, 400);
+  for (const key of ["text", "ideaId", "sessionId"] as const)
+    if (body[key] !== undefined && typeof body[key] !== "string") return c.json({ error: `${key} must be a string` }, 400);
+  try {
+    addTodo({ text: body.text, ideaId: body.ideaId, sessionId: body.sessionId });
+    return c.json(todosInfo(), 201, { "Cache-Control": "no-store" });
+  } catch (err) {
+    return todoFailure(c, err);
+  }
+});
+app.patch("/api/overseer/todo", async (c) => {
+  const body = await todoBody(c);
+  if (!body) return c.json({ error: "Expected JSON body { base?, text?, done?, ideaId?, sessionId? }" }, 400);
+  const patch: Parameters<typeof updateTodo>[1] = {};
+  for (const key of ["base", "text"] as const) {
+    if (body[key] === undefined) continue;
+    if (typeof body[key] !== "string") return c.json({ error: `${key} must be a string` }, 400);
+    patch[key] = body[key];
+  }
+  if (body.done !== undefined) {
+    if (typeof body.done !== "boolean") return c.json({ error: "done must be true or false" }, 400);
+    patch.done = body.done;
+  }
+  for (const key of ["ideaId", "sessionId"] as const) {
+    if (body[key] === undefined) continue;
+    if (body[key] !== null && typeof body[key] !== "string") return c.json({ error: `${key} must be a string or null` }, 400);
+    patch[key] = body[key];
+  }
+  try {
+    updateTodo(c.req.query("id") ?? "", patch);
+    return c.json(todosInfo(), 200, { "Cache-Control": "no-store" });
+  } catch (err) {
+    return todoFailure(c, err);
+  }
+});
+app.delete("/api/overseer/todo", (c) => {
+  try {
+    removeTodo(c.req.query("id") ?? "");
+    return c.json(todosInfo(), 200, { "Cache-Control": "no-store" });
+  } catch (err) {
+    return todoFailure(c, err);
+  }
+});
+app.put("/api/overseer/todos/order", async (c) => {
+  const body = await todoBody(c);
+  if (!body || !Array.isArray(body.ids)) return c.json({ error: "Expected JSON body { ids: string[] }" }, 400);
+  try {
+    reorderTodos(body.ids);
+    return c.json(todosInfo(), 200, { "Cache-Control": "no-store" });
+  } catch (err) {
+    return todoFailure(c, err);
+  }
+});
+app.delete("/api/overseer/todos/done", (c) => {
+  clearDone();
+  return c.json(todosInfo(), 200, { "Cache-Control": "no-store" });
 });
 app.get("/api/settings/overseer", (c) => c.json(overseerSettingsInfo()));
 app.put("/api/settings/overseer", async (c) => {

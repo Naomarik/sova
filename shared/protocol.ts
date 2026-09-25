@@ -1979,6 +1979,7 @@ export interface SessionInsight {
 //   · seen.json ({[sessionId]: ms})
 //   · ideas/manifest.json (IdeasManifest) + ideas/<ns>/<name>.md and ideas/<ns>/<parent>/<name>.md
 //     (each idea's prose; see IDEA_ID_RE). The Overseer (sova_idea) and PATCH are the only writers.
+//   · todos.json (TodosFile; the Overseer's sova_todo and the todo routes write it)
 // Routes:
 // GET  /api/overseer                -> OverseerInfo   (ensures the current file exists)
 // POST /api/overseer/clear          -> OverseerInfo   (stops a running turn, disposes, rotates; never refuses)
@@ -1992,6 +1993,13 @@ export interface SessionInsight {
 // PATCH /api/overseer/idea?id=<§id> body IdeaPatch -> OverseerIdeaDetail; 409 IdeaConflict when
 //                                   `base` is not the record's current updatedAt; 400 invalid (bad
 //                                   status/link/tag, a link to itself or to an unknown idea)
+// GET  /api/overseer/todos          -> OverseerTodosInfo (todos.json: the user's checklist, list order)
+// POST /api/overseer/todos          body { text, ideaId?, sessionId? } -> 201 OverseerTodosInfo; 400 invalid
+// PATCH /api/overseer/todo?id=<td_> body TodoPatch -> OverseerTodosInfo; 404 unknown; 409 TodoConflict
+//                                   when `base` is sent and stale; 400 invalid
+// DELETE /api/overseer/todo?id=<td_> -> OverseerTodosInfo; 404 unknown
+// PUT  /api/overseer/todos/order    body { ids } -> OverseerTodosInfo; 400 unless a permutation of the ids
+// DELETE /api/overseer/todos/done   -> OverseerTodosInfo (every done todo deleted)
 // PUT  /api/overseer/notes          body { text: string } -> { text: string }
 // GET  /api/sessions/summary?id=<session id> -> SessionSummary (any session file with that id,
 //                                   listed or not, e.g. an empty web session), 404 {error} when none
@@ -2277,6 +2285,67 @@ export interface SovaIdeaDetails {
   op: "add" | "update" | "append" | "link" | "explore" | "tell";
   status: IdeaStatus;
   explorerId?: string;
+}
+
+// ---- Overseer todos: the user's short checklist (server/overseer-todos.ts), <stateRoot>/todos.json.
+// A flat list in the user's order; a todo may point at an idea or a session. The Overseer
+// (sova_todo, attended turns only) and the panel's routes are its writers.
+
+export const TODO_ID_RE = /^td_[a-z0-9]{8}$/;
+export const TODO_TEXT_MAX = 200;
+export const TODOS_MAX = 200;
+
+export interface TodoRecord {
+  /** "td_" + 8 lowercase letters or digits; opaque, so an edit never changes identity. */
+  id: string;
+  /** One line, whitespace collapsed, 1..TODO_TEXT_MAX characters. */
+  text: string;
+  done: boolean;
+  createdAt: string;
+  /** Strictly increasing per record: the PATCH `base`. */
+  updatedAt: string;
+  /** Set on check, cleared on uncheck. */
+  doneAt?: string;
+  /** A canonical idea § id that existed when it was linked. */
+  ideaId?: string;
+  /** The id of the session the task is about (a pointer, never an act on it). */
+  sessionId?: string;
+}
+
+/** todos.json. Array order is list order. */
+export interface TodosFile {
+  formatVersion: 1;
+  todos: TodoRecord[];
+}
+
+/** GET /api/overseer/todos, and every todo write's result. `file` = the absolute path, for the footnote. */
+export interface OverseerTodosInfo {
+  todos: TodoRecord[];
+  open: number;
+  done: number;
+  file: string;
+}
+
+/** PATCH body. Absent fields are unchanged; `null` unlinks. `base` = the updatedAt the edit started
+    from: when sent and no longer current → 409 TodoConflict. */
+export interface TodoPatch {
+  base?: string;
+  text?: string;
+  done?: boolean;
+  ideaId?: string | null;
+  sessionId?: string | null;
+}
+export interface TodoConflict {
+  error: string;
+  current: OverseerTodosInfo;
+}
+
+/** `sova_todo` details (every op). `removed` = how many clear_done deleted. */
+export interface SovaTodoDetails {
+  id: string;
+  op: "add" | "check" | "uncheck" | "edit" | "remove" | "clear_done";
+  done?: boolean;
+  removed?: number;
 }
 
 /** Marks an Overseer turn was started by proactivity (server-sent "Brief me"). The prompt text of

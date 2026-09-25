@@ -68,7 +68,7 @@ export function defaultSettings(): OverseerSettings {
   };
 }
 
-function writeAtomic(file: string, text: string): void {
+export function writeAtomic(file: string, text: string): void {
   mkdirSync(dirname(file), { recursive: true });
   const tmp = `${file}.${process.pid}.tmp`;
   writeFileSync(tmp, text);

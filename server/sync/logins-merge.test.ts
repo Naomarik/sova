@@ -493,7 +493,8 @@ test("api-keys mode: which records sync, and the env pin", () => {
   assert.equal(syncsRecord("api-keys", "pi:x", { tombstone: { at: 1, by: "a" } }), true, "a logout that names no kind is harmless");
   assert.equal(loginKindsPin({ SOVA_SYNC_LOGIN_KINDS: "api-keys" }), "api-keys");
   assert.equal(loginKindsPin({ SOVA_SYNC_LOGIN_KINDS: " all " }), "all");
-  assert.equal(loginKindsPin({ SOVA_SYNC_LOGIN_KINDS: "oauth" }), null);
+  assert.equal(loginKindsPin({ SOVA_SYNC_LOGIN_KINDS: "api-key" }), "api-keys", "a typo keeps subscriptions off");
+  assert.equal(loginKindsPin({ SOVA_SYNC_LOGIN_KINDS: " " }), null);
   assert.equal(loginKindsPin({}), null);
   assert.equal(isKeyRecord({ tombstone: { at: 1, by: "a", of: { fingerprint: "f", kind: "oauth" } } }), true);
   assert.equal(isKeyRecord({ tombstone: { at: 1, by: "a", of: { fingerprint: "f", kind: "password" } } }), false);

@@ -105,10 +105,15 @@ export type RejectReason =
  */
 export type LoginKinds = "all" | "api-keys";
 
-/** The mode pinned by the host's environment (a VPS unit sets SOVA_SYNC_LOGIN_KINDS=api-keys), or null. */
+/**
+ * The mode pinned by the host's environment (a VPS unit sets SOVA_SYNC_LOGIN_KINDS=api-keys), or
+ * null when unset. Any value other than "all" pins "api-keys": the variable exists to keep
+ * subscription logins off a host, so a typo must not let them in.
+ */
 export function loginKindsPin(env: NodeJS.ProcessEnv = process.env): LoginKinds | null {
   const v = env.SOVA_SYNC_LOGIN_KINDS?.trim();
-  return v === "api-keys" || v === "all" ? v : null;
+  if (!v) return null;
+  return v === "all" ? "all" : "api-keys";
 }
 
 /**

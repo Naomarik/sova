@@ -216,6 +216,7 @@ export class DocSync {
   private records: Record<string, DocMeta> = {};
   private readonly peerState = new Map<string, { state: "ok" | "clock-skew" | "error"; at: number; error?: string }>();
   private watchers: FSWatcher[] = [];
+  private themesWatcher: FSWatcher | null = null;
   private debounce: NodeJS.Timeout | undefined;
   private started = false;
   private firstRun = false;
@@ -268,26 +269,40 @@ export class DocSync {
     // Only our documents' names wake a scan (the agent dir also holds auth.json, sessions/, …).
     const names = new Set(settingsDocs(this.opts.agentDir, this.opts.stateDir).map((s) => basename(s.path)));
     names.add("themes");
-    const wanted: Array<[string, (f: string) => boolean]> = [
-      [this.opts.agentDir, (f) => names.has(f)],
-      [this.opts.stateDir, (f) => names.has(f)],
-      [this.themesDir, (f) => f.endsWith(".json")],
-    ];
-    for (const [dir, match] of wanted) {
-      try {
-        const w = watch(dir, { persistent: false }, (_e, f) => {
-          if (f === null || match(f)) this.scheduleObserve();
-        });
-        w.on("error", () => {});
-        this.watchers.push(w);
-      } catch {
-        // A folder that doesn't exist yet (themes) is picked up by the next scan of its parent.
-      }
+    for (const dir of [this.opts.agentDir, this.opts.stateDir]) {
+      const w = this.watchDir(dir, (f) => names.has(f));
+      if (w) this.watchers.push(w);
     }
+    this.watchThemes();
+  }
+
+  private watchDir(dir: string, match: (f: string) => boolean): FSWatcher | null {
+    try {
+      const w = watch(dir, { persistent: false }, (_e, f) => {
+        if (f === null || match(f)) this.scheduleObserve();
+      });
+      w.on("error", () => {});
+      return w;
+    } catch {
+      return null; // not there (yet)
+    }
+  }
+
+  /**
+   * The themes folder may not exist at start. A watch on its parent sees it appear (that event
+   * scans, and the scan calls this), but not files later removed inside it, so the folder gets
+   * its own watch the moment it exists; a deleted theme must not wait for the next reconcile.
+   */
+  private watchThemes(): void {
+    if (!this.started || this.themesWatcher) return;
+    this.themesWatcher = this.watchDir(this.themesDir, (f) => f.endsWith(".json"));
+    this.themesWatcher?.on("close", () => (this.themesWatcher = null));
   }
 
   stop(): void {
     this.started = false;
+    this.themesWatcher?.close();
+    this.themesWatcher = null;
     for (const w of this.watchers.splice(0)) w.close();
     clearTimeout(this.debounce);
     this.debounce = undefined;
@@ -331,6 +346,7 @@ export class DocSync {
    * and a missing one with 0, so a fresh host never outvotes a real edit elsewhere.
    */
   observe(initial = false): string[] {
+    this.watchThemes();
     const changed: string[] = [];
     for (const spec of this.specs()) {
       if (this.observeOne(spec, initial && this.firstRun)) changed.push(spec.key);

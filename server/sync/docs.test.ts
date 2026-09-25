@@ -24,10 +24,11 @@ class Host {
     readonly id: string,
     private readonly mesh: Host[],
     base: string,
+    themesDir = true,
   ) {
     this.agentDir = join(base, id, "agent");
     this.stateDir = join(this.agentDir, "sova");
-    mkdirSync(join(this.stateDir, "themes"), { recursive: true });
+    mkdirSync(themesDir ? join(this.stateDir, "themes") : this.stateDir, { recursive: true });
     this.boot();
   }
   boot() {
@@ -40,6 +41,7 @@ class Host {
       categoryEnabled: (c) => this.enabled[c],
       now: () => Date.now() + this.offset,
       log: () => {},
+      debounceMs: 30,
     });
   }
   peerTo(t: Host): DocPeer {
@@ -304,5 +306,26 @@ test("a forged document (content not matching its hash, or rejected by its reade
     assert.equal(a!.read("mode.json"), undefined);
   } finally {
     a!.sync.stop();
+  }
+});
+
+test("a theme deleted inside a themes folder that did not exist at start is still noticed by its watcher", async () => {
+  const hosts: Host[] = [];
+  const base = join(root, `m${++seq}`);
+  const a = new Host("a", hosts, base, false);
+  hosts.push(a);
+  await a.sync.start();
+  try {
+    const until = async (cond: () => boolean) => {
+      const end = Date.now() + 3000;
+      while (!cond() && Date.now() < end) await new Promise((r) => setTimeout(r, 20));
+      return cond();
+    };
+    a.write("sova/themes/late.json", theme("Late"));
+    assert.equal(await until(() => a.sync.recordsSnapshot()["themes:late.json"]?.hash !== undefined), true, "creation seen");
+    rmSync(join(a.stateDir, "themes", "late.json"));
+    assert.equal(await until(() => a.sync.recordsSnapshot()["themes:late.json"]?.hash === null), true, "deletion seen without a manual observe");
+  } finally {
+    a.sync.stop();
   }
 });

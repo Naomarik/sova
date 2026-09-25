@@ -74,13 +74,43 @@ describe("the Caddyfile", () => {
       "flush_interval -1",
       "header_up Host {upstream_hostport}",
       "dial_timeout 2s",
-      "keepalive off",
+      "keepalive 30s",
+      "response_header_timeout 35s",
+      "resolvers 100.100.100.100",
       "default_bind {$SOVA_FRONT_DOOR_BIND}",
       ":{$SOVA_FRONT_DOOR_PORT:80} {",
     ]) {
       assert.equal(caddyfile.split("\n").filter((l) => l.trim() === d).length, 1, d);
     }
-    assert.match(caddyfile, /\ttransport http \{\n\t\t\tdial_timeout 2s\n\t\t\tkeepalive off\n\t\t\}/);
+    assert.match(caddyfile, /\ttransport http \{\n\t\t\tdial_timeout 2s\n\t\t\tkeepalive 30s\n\t\t\tresponse_header_timeout 35s\n(\t\t\t#[^\n]*\n)?\t\t\tresolvers 100\.100\.100\.100\n\t\t\}/);
+    assert.doesNotMatch(caddyfile, /keepalive off/);
+  });
+
+  test("names are resolved through MagicDNS by Caddy, whatever the tailnet domain; IP and localhost upstreams need no resolver", () => {
+    const lab = frontDoorConfig(config({ peers: [{ id: "b", label: "B", nodeId: "5", dnsName: "b.mesh.lab" }] }), "a.mesh.lab").caddyfile;
+    assert.match(lab, /^\t\t\tresolvers 100\.100\.100\.100$/m);
+    const ips = frontDoorConfig(
+      config({
+        self: { id: "a", label: "A", serveUrl: "https://127.0.0.1:10443" },
+        peers: [
+          { id: "b", label: "B", nodeId: "5", dnsName: "b", serveUrl: "https://100.64.0.2:8443" },
+          { id: "c", label: "C", nodeId: "3", dnsName: "c", serveUrl: "https://[fd7a:115c:a1e0::3]:8443" },
+          { id: "d", label: "D", nodeId: "4", dnsName: "d", serveUrl: "https://localhost:8443" },
+        ],
+      }),
+      null,
+    ).caddyfile;
+    assert.doesNotMatch(ips, /resolvers/);
+    // One name among IPs is enough.
+    const mixed = frontDoorConfig(config({ self: { id: "a", label: "A", serveUrl: "https://127.0.0.1:10443" } }), null).caddyfile;
+    assert.match(mixed, /^\t\t\tresolvers 100\.100\.100\.100$/m);
+  });
+
+  test("an upstream that is the front door's own address is called out (it would proxy to itself)", () => {
+    const loop = frontDoorConfig(config({ frontDoor: "https://a.x.ts.net:8443" }), "a.x.ts.net").caddyfile;
+    assert.match(loop, /# WARNING: a's upstream is this front door's own address \(https:\/\/a\.x\.ts\.net:8443\)/);
+    const fine = frontDoorConfig(config({ frontDoor: "https://a.x.ts.net:8443", self: { id: "a", label: "A", serveUrl: "https://a.x.ts.net:10443" } }), "a.x.ts.net").caddyfile;
+    assert.doesNotMatch(fine, /WARNING/);
   });
 
   test("braces balance and every non-comment line is inside a block or a block edge", () => {

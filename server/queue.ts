@@ -85,6 +85,9 @@ export interface WebQueueItem {
   text: string;
   images?: QueueImage[];
   origin: QueueItem["origin"];
+  /** The Overseer sent it (`POST /api/sessions/prompt` with its sender secret): the chat marks
+      the user entry it becomes as the Overseer's once it is handed over (§app.overseer/sent-marker). */
+  overseer?: { overseerId?: string };
 }
 
 /**
@@ -269,6 +272,7 @@ export class WebQueue {
       text: it.text,
       ...(it.images?.length ? { images: it.images.length } : {}),
       origin: it.origin,
+      ...(it.overseer ? { overseer: true as const } : {}),
     });
     const out: QueueItem[] = [];
     if (this.inFlight) out.push(wire(this.inFlight, "sending"));
@@ -282,13 +286,14 @@ export class WebQueue {
 
   /** Queue one message and start (or wake) the pump. Returns the item's id, which is `clientId`
       when the caller supplied one — the client keys its pending row by it. */
-  enqueue(input: { kind: QueueKind; text: string; images?: QueueImage[]; origin: QueueItem["origin"]; id?: string }): string {
+  enqueue(input: { kind: QueueKind; text: string; images?: QueueImage[]; origin: QueueItem["origin"]; id?: string; overseer?: WebQueueItem["overseer"] }): string {
     const item: WebQueueItem = {
       id: input.id || randomUUID(),
       kind: input.kind,
       text: input.text,
       ...(input.images?.length ? { images: input.images } : {}),
       origin: input.origin,
+      ...(input.overseer ? { overseer: input.overseer } : {}),
     };
     this.held.push(item);
     this.deps.onChange(this.snapshot());

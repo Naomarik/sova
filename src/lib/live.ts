@@ -43,6 +43,8 @@ export type LiveEntry =
       /** Who put it in the queue: "server" is a prompt this session made for itself (a group
           message, a remote status check), which we render but never claim you typed. */
       origin?: "client" | "server";
+      /** The Overseer queued it (`QueueItem.overseer`): the row reads "Overseer", not "Sent by Sova". */
+      overseer?: boolean;
       /** As sent, uploaded image paths included (restored verbatim into the draft if refused). */
       text: string;
       state: LiveUserState;
@@ -190,6 +192,7 @@ export interface QueuedItem {
   text: string;
   images?: number;
   origin?: "client" | "server";
+  overseer?: boolean;
 }
 
 /**
@@ -225,6 +228,7 @@ export function applyQueue(set: SetStoreFunction<LiveState>, items: readonly Que
           entry.queueKind = item.kind;
           entry.handed = item.state === "sending";
           if (item.origin) entry.origin = item.origin;
+          if (item.overseer) entry.overseer = true;
         } else if (entry.state === "queued") {
           entry.handed = true;
         }
@@ -240,6 +244,7 @@ export function applyQueue(set: SetStoreFunction<LiveState>, items: readonly Que
           images: [],
           handed: item.state === "sending",
           ...(item.origin ? { origin: item.origin } : {}),
+          ...(item.overseer ? { overseer: true } : {}),
         });
       }
     }),

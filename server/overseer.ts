@@ -465,12 +465,12 @@ const host: OverseerToolHost = {
     await chat.setModelRef(ref);
   },
   setThinking: async (path, level) => (await acquireChat(path)).setThinking(level),
-  running,
   started: (path, prompted) => {
     started.add(path);
     if (prompted) promptedAt.set(path, Date.now());
   },
   runningStarted: () => countRunning(started, running, promptedAt),
+  counted: (path) => countRunning(started.has(path) ? [path] : [], running, promptedAt) > 0,
   attended: () => turns.attended(),
   explorer: () => readOverseerSettings().explorer,
   explorerCwd: () => overseerDir(),
@@ -642,39 +642,49 @@ setOverseerRuntime({
   },
 });
 
-// ---- the idle-only prompt route (sova_send) -----------------------------------------------------------
+// ---- the one-session prompt route (sova_send) -----------------------------------------------------------
 
-export type PromptResult = { ok: true } | { ok: false; status: 400 | 404 | 409; error: string };
+export type PromptDelivery = "followUp" | "steer";
+/** `kind`: "prompt" = it started a turn now; otherwise it was queued behind the running turn (or a
+    compaction) as that kind. */
+export type PromptResult =
+  | { ok: true; queued: boolean; kind: "prompt" | PromptDelivery; compacting?: true }
+  | { ok: false; status: 400 | 404 | 409; error: string };
 
 /**
- * POST /api/sessions/prompt: one message to one IDLE session — the one-session twin of the group
- * prompt. With `sentBy` (the current Overseer's id, vouched for by `overseerSender`) the message
- * is marked as the Overseer's in the target's file.
+ * POST /api/sessions/prompt: one message to one session, as its composer would send it. Idle (even
+ * with subagents working) it starts a turn; mid-turn, or while a compaction runs, it joins the
+ * session's queue as `delivery` (default a follow-up behind the turn; "steer" goes into the turn at
+ * its next step), visible and removable there. With `sentBy` (the current Overseer's id, vouched
+ * for by `overseerSender`) the message is marked as the Overseer's in the target's file once it
+ * enters the context.
  */
-export async function promptIdleSession(path: string, text: string, sentBy?: string): Promise<PromptResult> {
+export async function promptSession(path: string, text: string, sentBy?: string, delivery: PromptDelivery = "followUp"): Promise<PromptResult> {
   if (!text.trim()) return { ok: false, status: 400, error: "text must not be blank" };
   const s = await getSessionSummary(path);
   if (!s) return { ok: false, status: 404, error: "Session file not found" };
   const overseerId = sentBy && sentBy === readOverseerState()?.current ? sentBy : undefined;
   if (s.overseer) return { ok: false, status: 409, error: "That is the Overseer's own conversation." };
   if (s.live) return { ok: false, status: 409, error: `It is open in a terminal (pid ${s.live.pid}), so this server must not write to it.` };
-  if (running(path)) return { ok: false, status: 409, error: "It is mid-turn or has subagents working. A prompt here is never a steer: wait for it." };
   let chat;
   try {
     chat = await acquireChat(path);
   } catch (err) {
     return { ok: false, status: 409, error: err instanceof Error ? err.message : String(err) };
   }
-  if (chat.session.isStreaming) return { ok: false, status: 409, error: "It started a turn just now. Wait for it." };
+  // Queue or start is decided by acceptPrompt from the runtime's own state, in one synchronous step.
+  let queued: boolean;
+  const compacting = !chat.session.isStreaming && chat.isCompacting();
   try {
     chat.assertModelAllowed();
-    const { turn } = chat.acceptPrompt(text, undefined, "server", undefined, overseerId ? { sentByOverseer: { overseerId } } : undefined);
-    void turn.catch((err) => chat.reportTurnFailure(err));
+    const r = chat.acceptPrompt(text, undefined, "server", undefined, { delivery, ...(overseerId ? { sentByOverseer: { overseerId } } : {}) });
+    queued = r.queued;
+    void r.turn.catch((err) => chat.reportTurnFailure(err));
   } catch (err) {
     return { ok: false, status: 409, error: err instanceof Error ? err.message : String(err) };
   }
   digestMemo = null;
-  return { ok: true };
+  return queued ? { ok: true, queued, kind: delivery, ...(compacting ? { compacting: true as const } : {}) } : { ok: true, queued, kind: "prompt" };
 }
 
 // ---- proactivity: "Brief me" -----------------------------------------------------------------------

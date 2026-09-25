@@ -57,14 +57,14 @@ export interface OverseerToolHost extends IdeaToolHost {
   open(path: string): Promise<void>;
   setModel(path: string, ref: string): Promise<void>;
   setThinking(path: string, level: string): Promise<string>;
-  /** Mid-turn or with subagents working. */
-  running(path: string): boolean;
   /** Record that the Overseer started work in this session (the concurrency cap). `prompted`: a
       prompt was just accepted there, so it counts as running from now on, even in the moment
       before its run reports streaming. */
   started(path: string, prompted?: boolean): void;
   /** How many sessions the Overseer started are running now. */
   runningStarted(): number;
+  /** Whether this session is one of those already (it counts once, however many sends go in). */
+  counted(path: string): boolean;
   /** Whether the message the Overseer is answering now is one the user sent (UserTurns). */
   attended(): boolean;
 }
@@ -550,12 +550,14 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
     return async (toolCallId: string, params: any, signal?: AbortSignal, _onUpdate?: unknown, ctx?: unknown) => run(params ?? {}, { toolCallId, signal, ctx });
   }
 
-  /** Send one prompt to an idle session, marked as the Overseer's. Caps are the caller's. */
-  async function sendPrompt(s: SessionSummary, message: string): Promise<void> {
+  /** Send one message to a session, marked as the Overseer's: idle it starts a turn, mid-turn it
+      is queued as `delivery`. Caps are the caller's. */
+  async function sendPrompt(s: SessionSummary, message: string, delivery?: "followUp" | "steer"): Promise<{ queued: boolean; kind: string; compacting?: boolean }> {
     // host.request marks every in-process call as the Overseer's; the route tags the prompt from that.
-    const r = await call("POST", "/api/sessions/prompt", { path: s.path, text: message });
+    const r = await call("POST", "/api/sessions/prompt", { path: s.path, text: message, ...(delivery ? { delivery } : {}) });
     if (r.status !== 200) throw failed(r, "Sending the prompt");
     host.started(s.path, true);
+    return { queued: r.json?.queued === true, kind: String(r.json?.kind ?? "prompt"), ...(r.json?.compacting ? { compacting: true } : {}) };
   }
 
   /** sova_create_session after its caps: create, title, group, model, thinking, mode, first prompt. */
@@ -817,26 +819,48 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
       name: "sova_send",
       label: "Send prompt",
       description:
-        "Send a message to an IDLE session (never mid-turn, never a terminal-owned or archived one). It arrives as an ordinary user message; the session's transcript tags it as sent by the Overseer. Counts against the per-turn prompt cap and the running-sessions cap.",
-      promptSnippet: "send a message to an idle session",
-      parameters: obj({ session: str("Session id."), text: str("The message.") }, ["session", "text"]),
+        "Send a message to a session, as typing in that session's composer would. Idle (even with subagents working), it starts a turn. Mid-turn, it is queued as a follow-up behind the running turn by default, visible in that session's queue, where the user can remove it; delivery=steer puts it into the running turn at its next step instead. A leading / runs that session's command, as in the composer. Never a terminal-owned or archived session. It arrives as an ordinary user message; the session's transcript tags it as sent by the Overseer. Counts against the per-turn prompt cap and the running-sessions cap.",
+      promptSnippet: "send a message to a session (queued behind a running turn, or a steer when asked)",
+      parameters: obj(
+        {
+          session: str("Session id."),
+          text: str("The message."),
+          delivery: str("Only matters mid-turn. followUp (default): waits behind the running turn. steer: goes into the running turn; only when the user asked to interrupt or redirect it.", {
+            enum: ["followUp", "steer"],
+          }),
+        },
+        ["session", "text"],
+      ),
       execute: act("sova_send", async (p) => {
         const s = await resolveWritable(p.session);
         if (typeof p.text !== "string" || !p.text.trim()) throw new Refusal("text must not be blank.");
         if (s.archived)
           throw new Refusal(`"${s.title}" is archived, and an archived session takes no messages (the UI says "Unarchive it to send"). Unarchiving it is an act of its own: do it with sova_archive only if the user asked for this session to be used, then send.`);
-        if (s.busy || host.running(s.path)) throw new Refusal(`"${s.title}" is mid-turn or has subagents working. You only prompt idle sessions: wait, or tell the user.`);
+        if (p.delivery !== undefined && p.delivery !== "followUp" && p.delivery !== "steer") throw new Refusal('delivery is "followUp" or "steer".');
         const caps = host.caps();
-        const busy = limits.reserveRun(host.runningStarted(), caps);
-        if (busy) throw new Refusal(busy);
+        // A session counts once: a send into one that already counts (started by you and running)
+        // takes no new slot; any other send makes it count from now on, so it needs one.
+        const reserved = !host.counted(s.path);
+        if (reserved) {
+          const busy = limits.reserveRun(host.runningStarted(), caps);
+          if (busy) throw new Refusal(busy);
+        }
+        let sent: Awaited<ReturnType<typeof sendPrompt>>;
         try {
           const over = limits.take("prompt", caps);
           if (over) throw new Refusal(over);
-          await sendPrompt(s, p.text);
+          sent = await sendPrompt(s, p.text, p.delivery);
         } finally {
-          limits.releaseRun();
+          if (reserved) limits.releaseRun();
         }
-        return { content: text(`Sent to ${link(s)}.`), details: { id: s.id, path: s.path } };
+        const result = !sent.queued
+          ? `Sent to ${link(s)}.`
+          : sent.compacting
+            ? `Queued in ${link(s)} while it compacts its context; it goes in when the compaction ends. The user can remove it from that session's queue until then.`
+            : sent.kind === "steer"
+              ? `Queued as a steer in ${link(s)}: it goes into the running turn at its next step. The user can remove it from that session's queue until then.`
+              : `Queued in ${link(s)} behind its running turn, as a follow-up: it goes in when the turn ends. The user can remove it from that session's queue until then.`;
+        return { content: text(result), details: { id: s.id, path: s.path, queued: sent.queued, kind: sent.kind } };
       }),
     },
     {

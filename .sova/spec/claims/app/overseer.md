@@ -76,8 +76,9 @@ per idea, §app.overseer/ideas). All writes are atomic tmp+rename.
 ## §app.overseer/tools — The `sova_*` tools
 
 The tools call the existing REST routes in-process, so every guard those routes have already
-(TUI-live refusal, mid-turn refusal, working-subagent refusal) applies unchanged, and their refusal
-sentences come back as the tool's error. Sessions are addressed by id. No tool passes `force`.
+(TUI-live refusal, archived refusal, the model policy; for archive and set-session, the mid-turn and
+working-subagent refusals) applies unchanged, and their refusal sentences come back as the tool's
+error. Sessions are addressed by id. No tool passes `force`.
 
 - **Read** (no side effects): the attention digest; list sessions (compact rows); one session's
   detail; a bounded transcript read (≤40 items, ≤12,000 characters, each item ≤1,000, wrapped as
@@ -85,11 +86,24 @@ sentences come back as the tool's error. Sessions are addressed by id. No tool p
   opened for writing); list groups, targets, models and folders; the ideas backlog (`sova_ideas`: its table of contents,
   a search, one idea, an idea's scope and impact, an idea's explorer; §app.overseer/ideas).
 - **Act:** create a session in any folder or remote target, with an optional first prompt, model
-  and mode; send a prompt to an **idle** session (never a mid-turn steer); archive and unarchive
+  and mode; send a message to a session (below); archive and unarchive
   (never permanent delete); rename; groups (create, move a session in, remove it); set a session's
   model or mode; answer a hosted session's pending extension dialog; standing notes; navigate;
   confirm; the ideas backlog (`sova_idea`: file, grow, update and link ideas, launch and message
   an idea's explorer).
+- **Sending (`sova_send`) is typing in that session's composer.** Idle, with subagents working or
+  not, the message starts a turn. Mid-turn it is **queued as a follow-up** behind the running turn
+  by default: a queued row in that session, "Queued", which the user can remove
+  (§chat.transcript/a-queued-message), and which goes in when the turn ends. With
+  `delivery: "steer"` it is queued as a **steer** instead and goes into the running turn at its
+  next step, as the composer's Steer does; the Overseer's prompt reserves that for a user who asked
+  to interrupt or redirect the turn. A compaction running holds the message the same way until it
+  ends. Queued messages go in the order they were sent, one at a time, whatever their kind. A
+  leading `/` runs that session's command, as in the composer. The tool's result says which
+  happened: sent, queued behind the turn, queued as a steer, or held for the compaction. Never a
+  terminal-owned, archived or worker session, and never the Overseer's own. The route is
+  `POST /api/sessions/prompt` (`delivery` optional, `"followUp"` or `"steer"`; anything else is a
+  400).
 - **TUI-live sessions are read-only**: every act on one is refused.
 - **Files: anywhere but credentials.** The Overseer's `read`, `grep`, `find` and `ls` reach any
   file on the machine except secret files, which none of them reads, lists or matches:
@@ -223,8 +237,11 @@ dangerous enough to ask.
   the wake-ups it scheduled does not renew them.
 - **Running at once** counts Overseer-started sessions that are mid-turn or have subagents working,
   plus any the Overseer prompted in the last 15 s that have not yet been seen running, plus slots
-  reserved by create/send calls still in flight. A call reserves its slot before it does any work, so
-  parallel calls in one message cannot all pass the check.
+  reserved by create/send calls still in flight. A session counts once: a send into a session that
+  already counts (one the Overseer started and that is running now, or prompted within those 15 s)
+  takes no new slot, and a send into any other session, running or idle, makes it count from then
+  on, so it needs a free slot. A call reserves its slot before it does any work, so parallel calls
+  in one message cannot all pass the check.
 - Over a cap, the tool refuses with a message telling the model to stop and ask with `sova_confirm`
   or explain, and not to schedule a wake-up to carry on. Nothing partial happens past the cap.
 - Every act tool call appends one line to `overseer-actions.jsonl`: time, Overseer id, tool call id,
@@ -233,10 +250,15 @@ dangerous enough to ask.
 
 ## §app.overseer/sent-marker — Prompts the Overseer sent
 
-- To the target session's model, a prompt the Overseer sent is an ordinary user message in plain
-  text.
-- Beside it the server writes an invisible `custom` entry `customType: "sova-overseer-sent"` that
-  names the user message's entry id. It is never LLM context, and the TUI ignores it.
+- To the target session's model, a message the Overseer sent is an ordinary user message in plain
+  text, whether it started a turn, was queued as a follow-up, or was a steer.
+- Beside it, once it has entered the context, the server writes an invisible `custom` entry
+  `customType: "sova-overseer-sent"` that names the user message's entry id. It is never LLM
+  context, and the TUI ignores it. A queued message is marked only when it is handed to the agent,
+  so a message the user types meanwhile with the same text is never taken for it; one that is
+  removed, cleared by Stop, refused at hand-off or handled by an extension instead leaves no marker.
+- While it waits in the queue, its row reads **Overseer** rather than "Sent by Sova" (the queue
+  snapshot's `overseer` flag, set only for a message carrying the sender secret).
 - The transcript renders an **Overseer** tag on that user row, on reload and live.
 - **Only the Overseer can tag.** `POST /api/sessions/prompt` marks a prompt as the Overseer's only
   when the request carries the server's sender secret: random, made at server start, held in memory

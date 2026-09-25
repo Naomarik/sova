@@ -728,7 +728,13 @@
     "§chat.transcript/a-queued-message": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "unreviewed",
+      "code": [
+        "server/queue.ts",
+        "src/lib/live.ts",
+        "src/components/Thread.tsx",
+        "src/lib/live.test.ts"
+      ]
     },
     "§chat.transcript/accessibility": {
       "kind": "behavior",
@@ -2201,7 +2207,9 @@
       "code": [
         "server/overseer-tools.ts",
         "server/overseer-store.ts",
-        "server/overseer-redact.ts"
+        "server/overseer-redact.ts",
+        "server/overseer.ts",
+        "server/overseer-tools.test.ts"
       ],
       "requires": []
     },
@@ -2361,7 +2369,11 @@
         "server/chat-manager.ts",
         "server/transcript.ts",
         "server/overseer.ts",
-        "src/components/Thread.tsx"
+        "src/components/Thread.tsx",
+        "server/queue.ts",
+        "shared/protocol.ts",
+        "src/lib/live.ts",
+        "server/overseer-markers.test.ts"
       ],
       "requires": [
         "§chat.transcript/message-actions"
@@ -2396,7 +2408,10 @@
         "server/overseer-store.ts",
         "server/overseer-redact.test.ts",
         "server/chat-manager.ts",
-        "server/overseer-runtime.test.ts"
+        "server/overseer-runtime.test.ts",
+        "server/index.ts",
+        "shared/protocol.ts",
+        "server/overseer-markers.test.ts"
       ],
       "requires": [
         "§app.overseer/caps",

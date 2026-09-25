@@ -226,7 +226,53 @@ describe("the Overseer file", () => {
   });
 });
 
-describe("POST /api/sessions/prompt's rule (promptIdleSession)", () => {
+/** Let a plain session run without credentials: auth passes and the model is a stub replying
+    "ok". `hold` makes each model call wait on it, so a turn stays mid-stream until released. */
+function stubModel(chat: Awaited<ReturnType<typeof acquireChat>>, hold?: () => Promise<void>): void {
+  const session = chat.session as unknown as {
+    _modelRuntime: { hasConfiguredAuth(p: string): boolean };
+    agent: { state: { model: unknown }; getApiKey: unknown; streamFunction: unknown };
+  };
+  // This session only: the model runtime is shared, and the test below relies on another
+  // session's turn failing for want of credentials.
+  const rt = session._modelRuntime as unknown as Record<PropertyKey, unknown>;
+  session._modelRuntime = new Proxy(rt, {
+    get: (t, k) => (k === "hasConfiguredAuth" ? () => true : typeof t[k] === "function" ? (t[k] as (...a: unknown[]) => unknown).bind(t) : t[k]),
+  }) as unknown as typeof session._modelRuntime;
+  session.agent.state.model = {
+    id: "stub", name: "stub", api: "stub", provider: "stub", baseUrl: "http://127.0.0.1:9", reasoning: false, input: ["text"],
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 100_000, maxTokens: 1000,
+  };
+  session.agent.getApiKey = async () => "stub";
+  session.agent.streamFunction = async () => {
+    await hold?.();
+    const message = {
+      role: "assistant", api: "stub", provider: "stub", model: "stub", timestamp: Date.now(), stopReason: "stop",
+      content: [{ type: "text", text: "ok" }],
+      usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+    };
+    return { async *[Symbol.asyncIterator]() { yield { type: "done", reason: "stop", message }; }, result: async () => message };
+  };
+}
+
+async function until(cond: () => boolean, ms = 3000): Promise<void> {
+  const end = Date.now() + ms;
+  while (!cond()) {
+    if (Date.now() > end) throw new Error("timed out");
+    await new Promise((r) => setTimeout(r, 5));
+  }
+}
+
+/** The file's user messages by text, each with whether a sova-overseer-sent marker names it. */
+function userRows(path: string): [string, boolean][] {
+  const lines = readFileSync(path, "utf8").trim().split("\n").map((l) => JSON.parse(l));
+  const marked = new Set(lines.filter((e) => e.customType === OVERSEER_SENT_ENTRY).map((e) => e.data.targetId));
+  return lines
+    .filter((e) => e.type === "message" && e.message.role === "user")
+    .map((e) => [typeof e.message.content === "string" ? e.message.content : e.message.content.map((c: { text?: string }) => c.text ?? "").join(""), marked.has(e.id)]);
+}
+
+describe("POST /api/sessions/prompt's rule (promptSession)", () => {
   const make = (id: string) => {
     const path = canonicalPath(join(sessionsDir, `2026-09-20T00-00-00-000Z_${id}.jsonl`));
     const header = { type: "session", version: 3, id, timestamp: "2026-09-20T00:00:00.000Z", cwd };
@@ -242,29 +288,111 @@ describe("POST /api/sessions/prompt's rule (promptIdleSession)", () => {
         presence: { status: "idle", workerCounts: { total: working, working, waiting: 0, done: 0, error: 0, killed: 0 } },
       }),
     );
+  /** A hosted chat on the stub model, mid-turn on a message of its own until `release()`. */
+  async function midTurn(id: string) {
+    const path = make(id);
+    const chat = await acquireChat(path, true);
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    let calls = 0;
+    stubModel(chat, () => (calls++ === 0 ? gate : Promise.resolve()));
+    const snaps: Extract<ChatServerMessage, { type: "queue" }>["items"][] = [];
+    const gone: Extract<ChatServerMessage, { type: "queue_item_gone" }>[] = [];
+    chat.attach({ send: (m) => void (m.type === "queue" ? snaps.push(m.items) : m.type === "queue_item_gone" ? gone.push(m) : null) });
+    // Which SDK entry each hand-off took: a steer goes into the running turn, a follow-up waits.
+    const steered: string[] = [];
+    const steer = chat.session.steer.bind(chat.session);
+    chat.session.steer = (text, images) => (steered.push(text), steer(text, images));
+    void chat.acceptPrompt("a long task").turn;
+    await until(() => chat.session.isStreaming);
+    return { path, chat, release, snaps, gone, steered, pending: () => (chat as unknown as { overseerSends: unknown[] }).overseerSends };
+  }
+  const ov = async () => (await overseer.ensureOverseer()).id;
 
   test("refuses a session open in a terminal (another live pid), and writes nothing", async () => {
     const path = make("pl1");
     const before = readFileSync(path, "utf8");
     liveRecord("p-other-pl1.json", process.ppid, path);
-    const r = await overseer.promptIdleSession(path, "do it", "x");
+    const r = await overseer.promptSession(path, "do it", "x");
     assert.equal(r.ok, false);
     assert.match(!r.ok ? r.error : "", /open in a terminal/);
     assert.equal(readFileSync(path, "utf8"), before);
   });
 
-  test("refuses mid-turn work: a session whose subagents are working", async () => {
+  test("a session whose subagents are working, not mid-turn, takes a plain prompt that starts a turn, marked as the Overseer's", async () => {
     const path = make("pl2");
     liveRecord(`p${process.pid}-pl2.json`, process.pid, path, 1);
-    const r = await overseer.promptIdleSession(path, "do it");
-    assert.deepEqual(r.ok ? null : [r.status, /mid-turn/.test(r.error)], [409, true]);
+    const chat = await acquireChat(path, true);
+    stubModel(chat);
+    const r = await overseer.promptSession(path, "check the build", await ov());
+    assert.deepEqual(r, { ok: true, queued: false, kind: "prompt" });
+    await until(() => userRows(path).some(([t, m]) => t === "check the build" && m));
+    await chat.session.waitForIdle();
+    assert.deepEqual(userRows(path), [["hi", false], ["check the build", true]]);
+  });
+
+  test("mid-turn, a follow-up by default: queued behind the turn as the Overseer's, then delivered and marked", async () => {
+    const t = await midTurn("pl4");
+    const r = await overseer.promptSession(t.path, "then run the tests", await ov());
+    assert.deepEqual(r, { ok: true, queued: true, kind: "followUp" });
+    const row = t.snaps.at(-1)?.find((i) => i.text === "then run the tests");
+    assert.deepEqual(row && [row.kind, row.origin, row.overseer], ["followUp", "server", true]);
+    t.release();
+    await until(() => t.gone.some((g) => g.itemId === row!.id));
+    assert.equal(t.gone.find((g) => g.itemId === row!.id)?.reason, "delivered");
+    await until(() => userRows(t.path).some(([x, m]) => x === "then run the tests" && m));
+    await t.chat.session.waitForIdle();
+    // The turn's own message is not the Overseer's: only the one it sent is marked.
+    assert.deepEqual(userRows(t.path), [["hi", false], ["a long task", false], ["then run the tests", true]]);
+    assert.deepEqual(t.pending(), []);
+    assert.deepEqual(t.steered, [], "a follow-up is never steered into the turn");
+  });
+
+  test("mid-turn with delivery steer: queued as a steer, and it enters the running turn marked", async () => {
+    const t = await midTurn("pl5");
+    const r = await overseer.promptSession(t.path, "stop and use pnpm", await ov(), "steer");
+    assert.deepEqual(r, { ok: true, queued: true, kind: "steer" });
+    assert.deepEqual(t.snaps.at(-1)?.map((i) => [i.kind, i.origin, i.overseer]), [["steer", "server", true]]);
+    t.release();
+    await until(() => userRows(t.path).some(([x, m]) => x === "stop and use pnpm" && m));
+    await t.chat.session.waitForIdle();
+    assert.deepEqual(userRows(t.path), [["hi", false], ["a long task", false], ["stop and use pnpm", true]]);
+    assert.deepEqual(t.steered, ["stop and use pnpm"], "handed to the SDK as a steer");
+  });
+
+  test("a queued Overseer message the user removes leaves no marker and no pending mark", async () => {
+    const t = await midTurn("pl6");
+    await overseer.promptSession(t.path, "maybe later", await ov());
+    const id = t.snaps.at(-1)![0]!.id;
+    // Handed to the SDK already (it holds nothing else), so its mark is pending: the collision
+    // check that the removal below is what drops it.
+    await until(() => t.chat.queue.snapshot()[0]?.state === "sending");
+    assert.equal(t.pending().length, 1);
+    const out = await t.chat.queue.remove(id);
+    assert.equal(out.ok, true);
+    assert.deepEqual(t.pending(), []);
+    t.release();
+    await t.chat.session.waitForIdle();
+    assert.deepEqual(userRows(t.path), [["hi", false], ["a long task", false]]);
+    assert.ok(!readFileSync(t.path, "utf8").includes(OVERSEER_SENT_ENTRY));
+  });
+
+  test("an untagged send (no sender secret) queues the same way, without the Overseer flag", async () => {
+    const t = await midTurn("pl7");
+    const r = await overseer.promptSession(t.path, "from a script");
+    assert.deepEqual(r, { ok: true, queued: true, kind: "followUp" });
+    assert.deepEqual(t.snaps.at(-1)?.map((i) => [i.kind, i.origin, i.overseer]), [["followUp", "server", undefined]]);
+    t.release();
+    await until(() => userRows(t.path).some(([x]) => x === "from a script"));
+    await t.chat.session.waitForIdle();
+    assert.deepEqual(userRows(t.path).at(-1), ["from a script", false]);
   });
 
   test("refuses the Overseer itself, and blank text", async () => {
     const { path } = await overseer.ensureOverseer();
-    const r = await overseer.promptIdleSession(path, "hello me");
+    const r = await overseer.promptSession(path, "hello me");
     assert.deepEqual(r.ok ? null : r.status, 409);
-    assert.deepEqual(await overseer.promptIdleSession(make("pl3"), "   "), { ok: false, status: 400, error: "text must not be blank" });
+    assert.deepEqual(await overseer.promptSession(make("pl3"), "   "), { ok: false, status: 400, error: "text must not be blank" });
   });
 });
 

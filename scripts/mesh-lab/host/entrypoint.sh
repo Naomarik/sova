@@ -4,7 +4,8 @@
 #   - `tailscale serve` of the main listener on the tailnet (http, port LAB_SERVE_PORT)
 #   - its own hermetic agent dir (/sova/.agent, a volume) built by scripts/hermetic-agent-dir.mjs,
 #     with only the api_key entries of the mounted auth.json copied in, once
-#   - Sova on 127.0.0.1:$PORT, supervised (restarted if it dies unless /run/lab/sova-off exists)
+#   - Sova on 127.0.0.1:$PORT, supervised (restarted if it dies unless /run/lab/sova-off exists), with the
+#     extra environment in /run/lab/sova.env if present
 #   - a socat forwarder 0.0.0.0:4900 -> 127.0.0.1:$PORT, published on the laptop's loopback only
 #
 # Env: LAB_HOST (id), LAB_TAILSCALE (0/1), LAB_SOVA (0/1), LAB_LOGIN_SERVER, LAB_TS_HOSTNAME,
@@ -109,8 +110,11 @@ fi
 # removes the marker. Output goes to the container log (docker logs) and /var/log/lab/sova.log.
 while :; do
   if [ -e /run/lab/sova-off ]; then sleep 0.5 & wait $!; continue; fi
-  log "sova starting on $HOST:$PORT"
-  ( cd /sova && exec "${SOVA_EXEC[@]}" node --import tsx server/index.ts ) 2>&1 | tee -a /var/log/lab/sova.log &
+  # `lab sova-env <node> K=V…` writes /run/lab/sova.env (SOVA_* only); it applies from the next Sova start
+  extra=$( [ -r /run/lab/sova.env ] && cut -d= -f1 /run/lab/sova.env | tr '\n' ' ' )
+  log "sova starting on $HOST:$PORT${extra:+ (sova.env: $extra)}"
+  ( cd /sova && if [ -r /run/lab/sova.env ]; then set -a; . /run/lab/sova.env; set +a; fi
+    exec "${SOVA_EXEC[@]}" node --import tsx server/index.ts ) 2>&1 | tee -a /var/log/lab/sova.log &
   wait $! 
   log "sova exited"
   sleep 1 & wait $!

@@ -786,6 +786,8 @@ chaos
   restore <node>                  undo partition
   sova-stop <node> / sova-start <node>   stop/start only the Sova process (tailnet stays up)
   sova-restart <node>             restart the Sova process (picks up agent-dir file changes)
+  sova-env <node> [K=V…|--clear]  extra SOVA_* environment for the node's Sova (/run/lab/sova.env), used
+                                  from its next start (then: sova-restart <node>); no args: show it
 
 access
   exec <node> [cmd …]             run a command (default: bash) in a node
@@ -843,6 +845,27 @@ export async function main(argv) {
       const cfg = requireConfig();
       const n = needNode(cfg, args[0], ["tailnet"]);
       return cmd === "partition" ? partition(n, { full: args.includes("--full"), reject: args.includes("--reject") }) : restore(n);
+    }
+    case "sova-env": {
+      const cfg = requireConfig();
+      const n = needNode(cfg, args[0], ["sova"]);
+      const c = container(n);
+      const pairs = args.slice(1);
+      if (pairs.length === 0) {
+        const r = spawnSync("docker", ["exec", c, "cat", "/run/lab/sova.env"], { encoding: "utf8" });
+        process.stdout.write(r.status === 0 ? r.stdout : `${n}: no sova.env\n`);
+        return;
+      }
+      if (pairs[0] === "--clear") {
+        docker(["exec", c, "rm", "-f", "/run/lab/sova.env"]);
+        console.log(`${n}: sova.env cleared (applies from the next start: lab sova-restart ${n})`);
+        return;
+      }
+      for (const p of pairs) if (!/^SOVA_[A-Z0-9_]+=[A-Za-z0-9._:/,@+-]*$/.test(p)) die(`sova-env: ${p}: want SOVA_NAME=value (plain characters only)`);
+      const r = spawnSync("docker", ["exec", "-i", c, "sh", "-c", "umask 077 && cat > /run/lab/sova.env"], { input: pairs.join("\n") + "\n", encoding: "utf8" });
+      if (r.status !== 0) die(`sova-env: writing /run/lab/sova.env on ${n} failed: ${r.stderr}`);
+      console.log(`${n}: sova.env = ${pairs.map((p) => p.split("=")[0]).join(" ")} (applies from the next start: lab sova-restart ${n})`);
+      return;
     }
     case "sova-stop":
     case "sova-start":

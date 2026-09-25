@@ -52,6 +52,9 @@ decimal string on Headscale.
   and never baked into an image. Later changes, such as login sync, belong to the host; `lab reset`
   re-seeds. `--auth none` or `--auth a` gives the other hosts an empty auth. No subscription login
   ever enters the lab.
+- **Extra environment**: `lab sova-env <node> SOVA_X=v…` writes `/run/lab/sova.env` in the container
+  (`SOVA_*` names only, plain values). Sova reads it from its next start (`lab sova-restart <node>`);
+  `--clear` removes it. Example: `SOVA_SYNC_LOGIN_KINDS=api-keys` on one host, as on the VPS.
 - **Home** `/root` (volume): the Claude store simulator uses `/root/.claude-lab`
   (`SOVA_SYNC_CLAUDE_DIR`), never `/root/.claude`.
 - **Listeners**: Sova's main listener stays on `127.0.0.1:4800`. The laptop reaches it through a

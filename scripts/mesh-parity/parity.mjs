@@ -18,9 +18,9 @@
 
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join, relative, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { seedFixtures } from "./fixtures.mjs";
 import { canonical, genericPath, jsonDiff, makeNormalizer, maskModelOutput, stripThinking } from "./normalize.mjs";
@@ -69,7 +69,14 @@ const meshTree = opt.aa && !opt.patch ? baseTree : prepareTree({ repo: REPO, sha
 
 const stamp = new Date().toISOString().replace(/[:.]/g, "-");
 const RUN = join(opt.work, "runs", `${stamp}${opt.label ? "-" + opt.label : ""}`);
-const LIVE = join(opt.work, "live");
+// OUTSIDE the home directory: pi walks the cwd's ancestors for AGENTS.md/CLAUDE.md and puts them in
+// the system prompt, so a fixture cwd under /home/<user> would send the user's own AGENTS.md to the
+// model in the chat phase. Each side's live dir is copied into the run dir afterwards.
+const LIVE = join("/var/tmp", `sova-mesh-parity-${process.getuid()}`, "live");
+for (let d = dirname(LIVE); d !== "/"; d = dirname(d))
+  for (const f of ["AGENTS.md", "CLAUDE.md"])
+    if (existsSync(join(d, f))) throw new Error(`${join(d, f)} would enter the chat's system prompt; pick another live dir`);
+mkdirSync(dirname(LIVE), { recursive: true, mode: 0o700 });
 mkdirSync(RUN, { recursive: true });
 const PORT = await freePort(4871, 4889);
 const EXT_PORT = await freePort(4871, 4889, new Set([PORT]));
@@ -162,7 +169,9 @@ async function runSide(side, tree, browser) {
   out.authUnchanged = sha256(readFileSync(join(agent, "auth.json"))) === authHash;
   out.cwdStatus = execFileSync("git", ["status", "--porcelain", "--ignored"], { cwd, env: genv }).toString();
   // Keep the whole live dir as this side's evidence (the next side reuses the path).
-  renameSync(LIVE, join(dir, "live"));
+  // Copied, not renamed: /var/tmp is another btrfs subvolume (EXDEV). Links stay verbatim.
+  cpSync(LIVE, join(dir, "live"), { recursive: true, verbatimSymlinks: true, preserveTimestamps: true });
+  rmSync(LIVE, { recursive: true, force: true });
   return out;
 }
 

@@ -817,6 +817,25 @@ test("api-keys mode: a host's logout of its own OAuth login stays local, also af
   assert.equal(sha(b!.claude()?.refreshToken), latest(second).refreshSha256, "back to all, B took A's login");
 });
 
+test("Claude: a re-login over a live entry with time left is a login, so a logout it missed doesn't remove it", async () => {
+  const [a, b] = makeMesh(2);
+  await claudeSim.login(a!.claudeDir, mockUrl, { accessTtlS: 3600 });
+  await a!.sync.observe("claude");
+  await converge([a!, b!]);
+  assert.ok(b!.claude());
+  a!.online = false;
+  await claudeSim.logout(b!.claudeDir, mockUrl); // revokes the lineage, deletes B's file
+  await b!.sync.observe("claude");
+  await new Promise((r) => setTimeout(r, 5));
+  // A missed the logout; the user logs in again there (their session had stopped working).
+  const { lineage } = await claudeSim.login(a!.claudeDir, mockUrl, { accessTtlS: 3600 });
+  await a!.sync.observe("claude");
+  a!.online = true;
+  await converge([a!, b!]);
+  assert.equal(sha(a!.claude()?.refreshToken), latest(lineage).refreshSha256, "A kept its new login");
+  assert.equal(sha(b!.claude()?.refreshToken), latest(lineage).refreshSha256, "and it reached B");
+});
+
 test("api-keys mode: c-lite never refreshes an OAuth login on that host", async () => {
   const [a] = makeMesh(1);
   const timers = () => (a!.sync as unknown as { refreshTimers: Map<string, unknown> }).refreshTimers;

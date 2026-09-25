@@ -363,8 +363,14 @@ export const CLAUDE_OAUTH_KEY = "claudeAiOauth";
  */
 export class ClaudeCredentialStore extends FileStore {
   readonly id = "claude" as const;
-  /** Claude Code's own window isn't observable from outside; any change to a live lineage counts as a refresh. */
-  readonly refreshWindowMs = Number.POSITIVE_INFINITY;
+  /**
+   * Claude Code refreshes only inside the last 5 minutes of the access token (unless a request is
+   * refused), so a new entry replacing one with more time left than this is a login (a re-login, or
+   * another account). Kept wider than Claude's 5 minutes: a refresh taken for a login would get a
+   * login time it shouldn't have, while a Claude logout revokes its lineage, so no refresh can
+   * outlive a logout anyway.
+   */
+  readonly refreshWindowMs = 10 * 60_000;
   readonly fileDeleteIsLogout = true;
   protected readonly refuseSymlink = true;
   protected readonly deleteWhenEmpty = true;

@@ -164,12 +164,12 @@ export async function refresh(dir, mockUrl, { force = false, lockAttempts, lockB
   }
 }
 
-export async function login(dir, mockUrl, { account } = {}) {
+export async function login(dir, mockUrl, { account, accessTtlS } = {}) {
   dir = guardDir(dir);
   const res = await fetch(new URL("/mock/login", mockUrl), {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ shape: "claude", ...(account ? { account } : {}) }),
+    body: JSON.stringify({ shape: "claude", ...(account ? { account } : {}), ...(accessTtlS ? { accessTtlS } : {}) }),
   });
   const { lineage, credential } = await res.json();
   const cur = readStore(dir);

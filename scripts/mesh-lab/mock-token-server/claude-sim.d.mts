@@ -15,6 +15,6 @@ export function refresh(
   mockUrl: string,
   opts?: { force?: boolean; lockAttempts?: number; lockBackoffMs?: () => number; now?: () => number },
 ): Promise<RefreshOutcome>;
-export function login(dir: string, mockUrl: string, opts?: { account?: string }): Promise<{ lineage: string; state: string }>;
+export function login(dir: string, mockUrl: string, opts?: { account?: string; accessTtlS?: number }): Promise<{ lineage: string; state: string }>;
 export function logout(dir: string, mockUrl?: string): Promise<void>;
 export function status(dir: string): { state: string; expiresAt?: number; refreshSha256?: string | null };

@@ -1902,3 +1902,162 @@ export interface ExtensionInfo {
   status: "ok" | "down";
   error?: string;
 }
+
+// ---------------------------------------------------------------------------
+// Mesh: other Sova hosts on the tailnet (server/mesh/). The allowlist is `<state root>/peers.json`;
+// the mesh is ON exactly when it lists at least one peer. OFF, none of these routes calls Tailscale
+// or any peer, and no other route or type changes: a SessionSummary never names a host.
+//
+// Main listener (the browser's):
+// GET  /api/mesh                -> MeshInfo   (OFF: from local files only)
+// PUT  /api/mesh/peers MeshPeersUpdate -> MeshInfo   (replaces the peer list; an entry without
+//                                  nodeId is resolved by `name` through LocalAPI status. 400 bad body or
+//                                  a name not on the tailnet, 409 peers.json exists but is malformed)
+// GET  /api/mesh/candidates     -> MeshCandidate[]   (LocalAPI status + a hello probe of each online
+//                                  node; only on an explicit user request, also while OFF. 502 tailscaled
+//                                  unreachable)
+// GET  /api/mesh/sessions       -> MeshSessions   (each peer's GET /api/sessions, grouped by peer; local
+//                                  sessions are not included: they stay at GET /api/sessions)
+// GET  /api/mesh/settings       -> MeshSettings
+// PUT  /api/mesh/settings Partial<MeshSettings> -> MeshSettings   (stored in peers.json; with no peers
+//                                  the mesh stays OFF. 400 bad body, 409 malformed peers.json)
+// GET  /api/mesh/hello          -> MeshHello   (this host's own, for the SPA's version check)
+// ANY  /peer/<id>/api/...       -> the peer's /api/... verbatim (query included, bytes untouched).
+//                                  404 {error:"Unknown peer"}, 502 {error:"peer down", id},
+//                                  403 {error:"peer refused", id} (its allowlist does not list this host)
+// WS   /peer/<id>/ws/chat|watch -> the peer's socket; frames and close codes pass through exactly. A
+//                                  peer that is down or refuses is an HTTP 502/403 before any upgrade
+//                                  (the browser sees 1006 and retries), never a 4422.
+//
+// Peer listener (tailnet IPs, SOVA_PEER_PORT, default 4801; only while ON): every request and upgrade
+// is from a node whose Tailscale StableID is in peers.json (LocalAPI whois), else 403
+// {error:"not a peer"}. It serves /api/* except /api/mesh/*, /ws/chat and /ws/watch, and
+// GET /api/peer/hello -> MeshHello. /api/peer/* exists only here (404 on the main listener).
+// ---------------------------------------------------------------------------
+
+/** GET /api/mesh/hello, and /api/peer/hello between peers. */
+export interface MeshHello {
+  /** The hello format version. */
+  mesh: 1;
+  id: string;
+  label: string;
+  hostname: string;
+  /** Sova's package version. */
+  version: string;
+  /** First 16 hex of sha256(shared/protocol.ts): equal ⇔ the same wire contract. */
+  protocol: string;
+  /** The pinned pi package version. */
+  pi: string;
+  /** This node's Tailscale StableID, when the mesh is on and tailscaled answered. */
+  nodeId?: string;
+  /** ms epoch, for a clock-skew check. */
+  now: number;
+}
+
+/** up: hello answered with the same protocol; skewed: another protocol; refused: its allowlist
+    doesn't list this host (403 "not a peer"); down: anything else (no answer, timeout, error). */
+export type PeerState = "up" | "down" | "skewed" | "refused";
+
+export interface PeerStatus {
+  id: string; // [a-z0-9][a-z0-9-]{0,31}; the <id> in /peer/<id>/
+  label: string;
+  /** Tailscale StableID: what this host's peer listener authenticates the peer by. */
+  nodeId: string;
+  /** MagicDNS name (or tailnet IP). */
+  name: string;
+  /** Where this host dials it (its peer listener). */
+  url: string;
+  /** Front-door order hint, when the user set one. */
+  priority?: number;
+  state: PeerState;
+  error?: string;
+  hello?: MeshHello;
+  /** Last successful hello (ms epoch) since this server started; null when never. */
+  lastSeen: number | null;
+}
+
+export type SyncCategory = "settings" | "themes" | "extensions" | "logins";
+
+export interface SyncStatus {
+  category: SyncCategory;
+  enabled: boolean;
+  state: "ok" | "pending" | "error" | "off";
+  lastAt: number | null;
+  error?: string;
+}
+
+export interface MeshInfo {
+  enabled: boolean;
+  self: {
+    id: string;
+    label: string;
+    hostname: string;
+    /** From LocalAPI, ON only. */
+    nodeId?: string;
+    dnsName?: string;
+    /** The peer listener, ON only; `error` while it can't bind (e.g. tailscaled not up yet). */
+    listen?: { addresses: string[]; port: number; error?: string };
+  };
+  peers: PeerStatus[];
+  /** Empty while OFF. */
+  sync: SyncStatus[];
+  frontDoor: string | null;
+  /** peers.json exists but can't be used (the mesh is OFF because of it). */
+  error?: string;
+}
+
+export interface MeshPeerEntry {
+  id: string;
+  label?: string;
+  /** Tailscale StableID; omitted → resolved from `name` through LocalAPI status. */
+  nodeId?: string;
+  /** MagicDNS name, short host name or tailnet IP. */
+  name: string;
+  /** http(s)://host:port when not http://<name>:4801. */
+  url?: string;
+  priority?: number;
+}
+
+export interface MeshPeersUpdate {
+  peers: MeshPeerEntry[];
+}
+
+export interface MeshCandidate {
+  nodeId: string;
+  /** MagicDNS name. */
+  name: string;
+  hostName: string;
+  os: string;
+  online: boolean;
+  tags: string[];
+  /** The owner's login; "tagged-devices" for a tagged node. */
+  login: string;
+  addresses: string[];
+  /** Already in peers.json under this id. */
+  peerId?: string;
+  /** From the probe of http://<name>:4801/api/peer/hello: "yes" answered, "refused" runs Sova but
+      doesn't list this host, "no" nothing answered (or offline, not probed). */
+  sova: "yes" | "refused" | "no";
+  hello?: MeshHello;
+}
+
+export interface MeshSessions {
+  peers: Array<{
+    id: string;
+    label: string;
+    state: PeerState;
+    error?: string;
+    /** That peer's GET /api/sessions as it sent it. */
+    sessions?: SessionSummary[];
+    /** `sessions` is the last good list of a peer that is not answering now. */
+    stale?: boolean;
+  }>;
+}
+
+export interface MeshSettings {
+  hostLabel: string;
+  /** Per category; true unless the user turned it off. */
+  sync: Record<SyncCategory, boolean>;
+  /** The front door's URL, when the user set one. */
+  frontDoor: string | null;
+}

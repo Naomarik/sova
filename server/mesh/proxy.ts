@@ -5,6 +5,7 @@ import type { Context } from "hono";
 import { proxy } from "hono/proxy";
 import { proxySocket, refuse } from "../extensions";
 import { REFUSED_HEADER } from "./hello";
+import { isMeshOrPeerApi, judgedPath } from "./paths";
 import { type PeerEntry, peerUrl } from "./peers";
 
 // /peer/<id>/api/* and /peer/<id>/ws/* on the main listener: the browser's way to a session that
@@ -104,17 +105,15 @@ export function peerSocketRoute(pathname: string): [string, string] | null {
  * can't be decoded. peerFetch (server-side) is the only way to a peer's /api/peer/*.
  */
 export function proxyTail(tail: string): string | null {
-  if (!tail.startsWith("/") || tail.startsWith("//") || /%(?:2e|2f|5c)/i.test(tail)) return null;
+  if (!tail.startsWith("/") || tail.startsWith("//")) return null;
   let resolved: string;
-  let path: string;
   try {
     resolved = new URL(tail, "http://x").pathname;
-    path = decodeURIComponent(resolved);
   } catch {
     return null;
   }
-  path = path.replace(/[\\/]+/g, "/").toLowerCase();
-  return path.startsWith("/api/") && !/^\/api\/(?:peer|mesh)(?:\/|$)/.test(path) ? resolved : null;
+  const path = judgedPath(resolved);
+  return path && path.startsWith("/api/") && !isMeshOrPeerApi(path) ? resolved : null;
 }
 
 /** Every proxied request and socket carries this, so the peer can tell it from a peerFetch. */

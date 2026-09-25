@@ -4,6 +4,7 @@ import type { Duplex } from "node:stream";
 import { getRequestListener } from "@hono/node-server";
 import { refuse } from "../extensions";
 import { REFUSED_HEADER } from "./hello";
+import { judgedPath } from "./paths";
 import { getIdentity, whoisAddr } from "./localapi";
 import type { PeerEntry } from "./peers";
 
@@ -37,8 +38,10 @@ export interface ListenerState {
 /** Whether a peer may reach this path on the peer listener. */
 export function peerMayReach(pathname: string): boolean {
   if (pathname === "/ws/chat" || pathname === "/ws/watch") return true;
-  if (!pathname.startsWith("/api/")) return false;
-  return pathname !== "/api/mesh" && !pathname.startsWith("/api/mesh/");
+  // Judged as the router will route it (decoded), never on the raw spelling: "/api/%6Desh" IS
+  // /api/mesh to Hono. /api/peer/* stays reachable: those routes are for peers.
+  const path = judgedPath(pathname);
+  return !!path && path.startsWith("/api/") && !/^\/api\/mesh(?:\/|$)/.test(path);
 }
 
 // The caller's StableID per TCP connection (null: not a tailnet node). Membership is re-checked

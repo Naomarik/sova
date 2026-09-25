@@ -141,6 +141,20 @@ const putJson = async <T>(path: string, body: unknown): Promise<[number, T]> => 
   return [res.status, (await res.json()) as T];
 };
 
+/** Any method on a NEW connection to the peer listener, the path sent byte for byte. */
+function peerRequest(method: string, path: string, body?: string): Promise<{ status: number; body: string }> {
+  const info = listenerInfo()!;
+  return new Promise((resolve, reject) => {
+    const req = request({ host: "127.0.0.1", port: info.port, path, method, agent: false }, (res) => {
+      let text = "";
+      res.on("data", (c) => (text += c));
+      res.on("end", () => resolve({ status: res.statusCode!, body: text }));
+    });
+    req.on("error", reject);
+    req.end(body);
+  });
+}
+
 /** A plain request on a NEW connection (so whois runs again), to the peer listener. */
 function peerGet(path: string): Promise<{ status: number; headers: IncomingMessage["headers"]; body: string }> {
   const info = listenerInfo()!;
@@ -318,6 +332,34 @@ describe("mesh ON", () => {
     for (const path of ["/api/mesh", "/api/mesh/peers", "/peer/b/api/health", "/ext/x/", "/", "/index.html"]) {
       assert.equal((await peerGet(path)).status, 404, path);
     }
+  });
+
+  test("a peer never reaches /api/mesh/* by spelling it differently (the router decodes %XX)", async () => {
+    whoisNode = "nB";
+    const spellings = [
+      "/api/%6Desh",
+      "/api/%6Desh/peers",
+      "/api/%6D%65%73%68",
+      "/api/%6d%65%73%68/settings",
+      "/%61pi/mesh",
+      "/api/MESH",
+      "/api//mesh",
+      "/api/x/../mesh",
+      "/api/%2e%2e/mesh",
+      "/api/x%2f..%2fmesh",
+      "/api/%ZZ",
+      "/%65xt/x/",
+    ];
+    for (const path of spellings) {
+      for (const method of ["GET", "PUT"]) {
+        const r = await peerRequest(method, path, method === "PUT" ? JSON.stringify({ peers: [] }) : undefined);
+        assert.equal(r.status, 404, `${method} ${path}`);
+      }
+    }
+    // The main listener still answers /api/mesh, so the 404s above are the gate, not a missing route.
+    assert.equal((await getJson<MeshInfo>("/api/mesh"))[1].enabled, true);
+    // Peer-only routes stay reachable for a peer, however spelled.
+    assert.equal((await peerRequest("GET", "/api/%70eer/hello")).status, 200);
   });
 
   test("peer listener WS: refused without whois, dispatched to Sova's own sockets with it", async () => {

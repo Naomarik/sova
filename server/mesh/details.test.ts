@@ -44,7 +44,7 @@ globalThis.fetch = ((...args: Parameters<typeof fetch>) => {
 }) as typeof fetch;
 
 const { server } = await import("../index");
-const { listenerInfo, stopMesh } = await import("./index");
+const { listenerInfo, onSyncStatus, stopMesh } = await import("./index");
 const { clearProbes, ownProtocol } = await import("./hello");
 const { clearPeerReach } = await import("./proxy");
 const { peersFile, readPeers } = await import("./peers");
@@ -294,6 +294,41 @@ describe("mesh on", () => {
     assert.equal(b.label, "My phone", "its peer-up announce of the same name leaves the user's name");
     assert.equal((await peerCall("POST", "/api/peer/label", { label: "Bee 2", labelAt: 1_001 })).status, 200);
     assert.equal(peersDoc().peers.find((p: { id: string }) => p.id === "b").label, "Bee 2", "a real rename wins");
+  });
+
+  test("a stamp from a clock far ahead is kept as a day ahead: it can't lock the name, and the same name again writes nothing", async () => {
+    const before = readFileSync(peersFile(), "utf8");
+    whoisNode = "nB";
+    const far = Date.now() + 10 * 365 * 86_400_000;
+    assert.equal((await peerCall("POST", "/api/peer/label", { label: "From the future", labelAt: far })).status, 200);
+    let b = peersDoc().peers.find((p: { id: string }) => p.id === "b");
+    assert.equal(b.label, "From the future");
+    assert.ok(b.labelAt <= Date.now() + 86_400_000, "kept at most a day ahead");
+    const mtime = statSync(peersFile()).mtimeMs;
+    await new Promise((r) => setTimeout(r, 20));
+    assert.equal((await peerCall("POST", "/api/peer/label", { label: "From the future", labelAt: far })).status, 200);
+    assert.equal(statSync(peersFile()).mtimeMs, mtime, "its peer-up announce of the same name writes nothing");
+    // Its clock is right again and its stamps restarted (a fresh peers.json there): two days ahead is past the kept stamp.
+    assert.equal((await peerCall("POST", "/api/peer/label", { label: "Fixed clock", labelAt: Date.now() + 2 * 86_400_000 })).status, 200);
+    b = peersDoc().peers.find((p: { id: string }) => p.id === "b");
+    assert.equal(b.label, "Fixed clock");
+    whoisNode = null;
+    writeFileSync(peersFile(), before); // the later tests start from b's real stamp
+  });
+
+  test("a host's details carry each sync category's state, never its error text", async () => {
+    onSyncStatus(() => [{ category: "themes", enabled: true, state: "error", lastAt: null, error: "EACCES: /somewhere/private/themes" }]);
+    try {
+      whoisNode = "nB";
+      const r = await peerCall("GET", "/api/peer/details");
+      assert.equal(r.status, 200);
+      const cats = (JSON.parse(r.body) as HostDetails).sync.categories;
+      assert.deepEqual(cats, [{ category: "themes", enabled: true, state: "error", lastAt: null }]);
+      assert.doesNotMatch(r.body, /somewhere/);
+    } finally {
+      onSyncStatus(() => []);
+      whoisNode = null;
+    }
   });
 
   test("renaming this host stamps it and tells every peer", async () => {

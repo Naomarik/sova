@@ -25,6 +25,8 @@ export interface DetailsSources {
 
 /** A details answer is local reads only; the probe before it has already reached the host. */
 const DETAILS_TIMEOUT_MS = 1500;
+/** A peer's name stamp is taken at most this far ahead of this host's clock, so a host whose clock ran ahead can't lock its name. */
+const LABEL_AHEAD_MS = 86_400_000;
 const ROOT = fileURLToPath(new URL("../..", import.meta.url));
 const notFound = (c: Context) => c.json({ error: "Not found" }, 404);
 const small = bodyLimit({ maxSize: 4 * 1024, onError: (c) => c.json({ error: "Too large" }, 413) });
@@ -117,7 +119,8 @@ export function mountDetails(app: Hono, mesh: MeshApi, sources: DetailsSources, 
         ...b,
       },
       activity: { sessions, ...activityNow(readLiveRecords({ includeOwn: true })) },
-      sync: { categories: mesh.syncStatus(), ...(logins ? { logins } : {}) },
+      // State only: a sync error's text can name a local path.
+      sync: { categories: mesh.syncStatus().map(({ error: _, ...s }) => s), ...(logins ? { logins } : {}) },
       ...(serveUrl ? { serveUrl } : {}),
     };
   }
@@ -227,12 +230,17 @@ export function mountDetails(app: Hono, mesh: MeshApi, sources: DetailsSources, 
     return "error" in r ? r : { labelAt };
   }
 
-  /** A peer's own new name, taken only over an older one (never the same one twice: no write). */
+  /**
+   * A peer's own new name, taken only over an older one (never the same one twice: no write). A
+   * stamp more than a day ahead of this host's clock is kept as now + a day, so a later rename still
+   * wins; the same name again with such a stamp changes nothing.
+   */
   function takeLabel(nodeId: string, label: string, labelAt: number): { error: string; status: 400 | 409 } | null {
+    const at = Math.min(labelAt, Date.now() + LABEL_AHEAD_MS);
     const r = mesh.updatePeers((c) => {
       const hit = c.peers.find((p) => p.nodeId === nodeId);
-      if (!hit || (hit.labelAt ?? 0) >= labelAt) return c;
-      return { ...c, peers: c.peers.map((p) => (p === hit ? { ...p, label, labelAt } : p)) };
+      if (!hit || (hit.labelAt ?? 0) >= at || (at < labelAt && hit.label === label)) return c;
+      return { ...c, peers: c.peers.map((p) => (p === hit ? { ...p, label, labelAt: at } : p)) };
     });
     return "error" in r ? r : null;
   }

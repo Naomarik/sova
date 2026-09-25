@@ -58,7 +58,10 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   `claude-code/transcript-adapter.ts` and `claude-code/provider/session-records.ts` (the per-backend
   readers: locating a worker's transcript and counting its usage, for restored workers and for
   every `/ws/watch` usage total; the dev watcher does not watch these, so an edit there reaches a
-  running server only at its next restart). So an edit to any of these can break Sova's
+  running server only at its next restart). The frontend imports one file, the only pi-config
+  import in `src/`: `src/lib/format.ts` re-exports `pi-config/extensions/stamp/format.ts` (the
+  12-hour clock, stamp and relative time, shared with the TUI's `stamp` extension). Vite bundles
+  it for the browser, so it must import nothing at all. So an edit to any of these can break Sova's
   typecheck. Keep them pi-runtime-free (node builtins and, for the mode trio and the protocol set,
   each other only), and import nothing else from pi-config at runtime. `minor.ts` also reads its sibling `spec-mode.md` once at load, and
   refuses to load if that file's shell block is malformed. One test-only exception: `server/claude-models.test.ts` imports
@@ -80,6 +83,8 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   Settings live in `pnpm-workspace.yaml` (`.npmrc` is gitignored); only esbuild may run its
   install script (`allowBuilds`).
 - `pnpm run dev:server` (port **4800**) and `pnpm run dev:web` (Vite, proxies /api + /ws to 4800)
+- Isolated testing: `pnpm run dev:hermetic` builds `<worktree>/.agent` (`scripts/hermetic-agent-dir.mjs`: this tree's
+  pi-config, own sessions/state, nothing in `~/.pi`) and serves it on 4810; it copies no auth — copy `auth.json` in by hand.
 - `pnpm run typecheck` — must pass. `pnpm run build` — must pass.
 - `pnpm test` — unit tests (`server/*.test.ts`, `src/lib/*.test.ts`). They're ESM TypeScript with
   extensionless imports, so they run under `tsx --test`; plain `node --test <file>` fails with

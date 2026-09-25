@@ -4,6 +4,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from "node:
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { backendFor, canonicalizePath, classifyRun, isWithin, policyKey, type Confined, type Policy } from "../../backend.ts";
+import { DarwinSeatbeltBackend } from "../../backends/darwin-seatbelt.ts";
 import { UnsupportedBackend } from "../../backends/unsupported.ts";
 
 const policy = (over: Partial<Policy> = {}): Policy => ({
@@ -19,9 +20,10 @@ const policy = (over: Partial<Policy> = {}): Policy => ({
 	...over,
 });
 
-test("backendFor picks linux-bwrap on linux and refuses elsewhere", async () => {
+test("backendFor picks linux-bwrap on linux, darwin-seatbelt on darwin, and refuses elsewhere", async () => {
 	assert.equal(backendFor("linux").id, "linux-bwrap");
-	for (const p of ["darwin", "win32", "freebsd"] as const) {
+	assert.ok(backendFor("darwin") instanceof DarwinSeatbeltBackend);
+	for (const p of ["win32", "freebsd"] as const) {
 		const b = backendFor(p);
 		assert.ok(b instanceof UnsupportedBackend);
 		const probe = await b.probe(policy());

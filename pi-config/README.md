@@ -30,6 +30,7 @@ installs with `install.sh` alone, without the web app.
 | `extensions/sessions/` | Live pi sessions on this machine find each other through a filesystem presence registry; ships the `pi-sessions` CLI (`bin/pi-sessions.ts`) and the record schema (`public/SCHEMA.md`) |
 | `extensions/remote/` | `--target <name>`: runs the session's tools on an ssh / AWS-SSM / docker / incus target from `targets.json`; inert without the flag. Its `argv.ts` is imported by Sova |
 | `extensions/sandbox/` | `/sandbox on\|off`: per-session OS sandbox for the agent's tools (bubblewrap on Linux; fail closed elsewhere), with the policy in `sandbox-policy/` |
+| `extensions/stamp/` | A dim, right-aligned `1:43 PM · 5m ago` under each user and assistant message in the TUI transcript. Its `format.ts` (12-hour clock, date-prefixed stamp, relative age; no imports) is imported by Sova, so both show the same times |
 | `extensions/codefold/` | Folds long fenced code blocks in assistant messages into one band |
 | `extensions/topic-outline/` | Display-only live topic outline of the conversation, with jump-to-topic |
 | `extensions/vision-delegate/` | Lets a text-only model work with images: a `look_at_image` tool plus automatic descriptions of read results and TUI attachments, routed to a fallback vision model |
@@ -62,7 +63,6 @@ so `pi update --extensions` leaves them alone. To move one, run
 | `npm:pi-powerline-footer` | 0.17.1 | Extension entry disabled |
 | `git:github.com/tmustier/pi-extensions` | commit `09706a7` | Only the usage extension is selected, and it is currently toggled off |
 | `npm:pi-btw` → local fork | 0.4.1 | Forked into `extensions/btw/`; degrades on headless hosts instead of going silent |
-| `npm:@narumitw/pi-stamp` | 0.51.0 | |
 
 ## Install
 
@@ -163,12 +163,13 @@ node --test install.test.mjs
 cd extensions/subagents && node tests/run.mjs && node tests/smoke.mjs && node tests/team-smoke.mjs
 cd extensions/claude-code && node tests/run.mjs && node tests/smoke.mjs && node tests/ui-permissions.mjs
 cd extensions/extension-toggle && node --test index.test.ts
-cd extensions/mode && node --test index.test.ts delegate.test.ts routing.test.ts align.test.ts spec.test.ts && node tests/smoke.mjs
+cd extensions/mode && node --test index.test.ts delegate.test.ts routing.test.ts align.test.ts spec.test.ts && node tests/smoke.mjs && node tests/wake-turn.mjs
 cd extensions/model-policy && node --test policy.test.ts index.test.ts
 cd extensions/command-palette && node --test test.mjs
 cd extensions/sessions && node --test test.mjs
 cd extensions/spec && node --test tests/*.test.mjs
 cd extensions/codefold && node tests/run.mjs
+cd extensions/stamp && node --test format.test.ts index.test.ts
 cd extensions/remote && node --test argv.test.ts
 cd extensions/sandbox && node --test tests/*.unit.test.ts tests/unit/*.unit.test.ts && node tests/run.mjs
 cd extensions/explain && node tests/run.mjs && node tests/smoke.mjs

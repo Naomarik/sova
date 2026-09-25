@@ -185,6 +185,24 @@ const INTERRUPTED_RE = /^\[Request interrupted by user/;
 const mainChain = (entries: readonly unknown[]): Entry[] =>
 	(entries as Entry[]).filter((e) => e && typeof e === "object" && e.isSidechain !== true && (e.type === "user" || e.type === "assistant" || e.type === "system") && !(e.type === "user" && e.isMeta === true));
 
+/**
+ * What one line says about the size of the worker's context: the tokens of an assistant reply that
+ * reports one (input + cache_read + cache_creation of that reply; a failed or synthetic reply, or a
+ * zero usage, says nothing), "compacted" for a compact boundary (the size before it no longer
+ * holds), else null. Nested agents' lines are their own context, so they say nothing here. The
+ * CLI repeats a reply on a line per content block with the same usage, so any of them answers.
+ */
+export function claudeContextOf(entry: unknown): number | "compacted" | null {
+	const e = entry as Entry;
+	if (!e || typeof e !== "object" || e.isSidechain === true) return null;
+	if (e.type === "system") return e.subtype === "compact_boundary" ? "compacted" : null;
+	if (e.type !== "assistant" || e.isApiErrorMessage === true || e.message?.model === SYNTHETIC_MODEL) return null;
+	const u = e.message?.usage;
+	if (!u || typeof u !== "object") return null;
+	const tokens = amount(u.input_tokens) + amount(u.cache_read_input_tokens) + amount(u.cache_creation_input_tokens);
+	return tokens > 0 ? tokens : null;
+}
+
 export function claudeItems(entries: readonly unknown[]): WorkerTranscriptItem[] {
 	const out: WorkerTranscriptItem[] = [];
 	for (const e of mainChain(entries)) {
@@ -243,6 +261,8 @@ export function summarizeClaudeEntries(main: readonly unknown[], nested: readonl
 	if (last !== undefined) summary.lastActivityAt = last;
 	let lastTurn: Entry | undefined;
 	for (const e of mainChain(main)) {
+		const context = claudeContextOf(e);
+		if (context !== null) summary.lastContextTokens = context === "compacted" ? null : context;
 		if (e.type === "system") { if (e.subtype === "compact_boundary") summary.compactions++; continue; }
 		lastTurn = e;
 		if (e.type !== "assistant") continue;

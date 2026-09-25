@@ -70,6 +70,28 @@ export function contextWindow(ref: string, modelRuntime: ModelRuntime): number |
   return window;
 }
 
+/**
+ * A worker's model → its context window, for a ref ("provider/id") or the bare id a worker's live
+ * record usually carries (its provider found as modelProvider finds it). Unknown → null.
+ */
+export function workerWindowResolver(modelRuntime: ModelRuntime): (ref: string) => number | null {
+  return (ref) => {
+    if (ref.indexOf("/") > 0) return contextWindow(ref, modelRuntime);
+    const provider = modelProvider(ref);
+    return provider ? contextWindow(`${provider}/${ref}`, modelRuntime) : null;
+  };
+}
+
+/** workerWindowResolver over the shared runtime, best-effort: without one (no auth, a test's
+    agent dir) every window is unknown rather than the caller failing. */
+export async function sharedWorkerWindowResolver(): Promise<(ref: string) => number | null> {
+  try {
+    return workerWindowResolver(await getModelRuntime());
+  } catch {
+    return () => null;
+  }
+}
+
 export function toContextInfo(ctx: BranchContext | null, modelRuntime: ModelRuntime): ContextInfo | null {
   if (!ctx) return null;
   return { tokens: ctx.tokens, window: ctx.model ? contextWindow(ctx.model, modelRuntime) : null };

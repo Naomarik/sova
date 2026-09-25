@@ -4,6 +4,7 @@ import {
   type AgentSession,
   type AgentSessionRuntime,
   type CreateAgentSessionRuntimeFactory,
+  type CreateAgentSessionServicesOptions,
   createAgentSessionFromServices,
   createAgentSessionRuntime,
   createAgentSessionServices,
@@ -14,8 +15,11 @@ import {
   initTheme,
   SessionManager,
   type Theme,
+  type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
-import type { ChatClientMessage, ChatModeResult, ChatServerMessage, ModeApplies, ModeInfo, QueueItem, RegenerateRefusal, RewindRefusal, SandboxApplyResult, SlashCommand, WorkerInfo } from "../shared/protocol";
+import { OVERSEER_DIALOG_ANSWER_ENTRY, OVERSEER_ENTRY, OVERSEER_SENT_ENTRY } from "../shared/protocol";
+import type { ChatClientMessage, ChatModeResult, ChatServerMessage, CompactRefusal, ModeApplies, ModeInfo, OverseerDialogAnswerData, OverseerSentMarkerData, QueueItem, RegenerateRefusal, RewindRefusal, SandboxApplyResult, SlashCommand, WorkerInfo } from "../shared/protocol";
+import { COMPACT_COMMAND, COMPACT_IMAGES_REFUSAL, compactCommand } from "../shared/compact";
 import { stripImageNotes } from "../shared/image-note";
 import { parseWakeNudge } from "../shared/wake";
 import { type QueueImage, type QueueKind, WebQueue, type WebQueueItem } from "./queue";
@@ -24,15 +28,19 @@ import { readLive, readOwnLiveRecords, workerCountsOf } from "./live";
 import { appliesAfter, defaultPatchOf, mergeMode, MINOR_MODES, modeApplyPlan, modeInfo, readMode, resolveChatMode, writeMode, type ModePatch, type ModeState } from "./mode-state";
 import { loadDefaults, saveDefaults } from "./web-defaults";
 import { modelAllowed, modelDenial, readModelPolicy } from "./model-policy";
-import { toContextInfo } from "./models";
+import { toContextInfo, workerWindowResolver } from "./models";
+import { claudeSpawnModels, WorkerContextReader, withWorkerContext } from "./worker-context";
 import { resumeCommandOf, resumeWorker, type ResumeOutcome } from "./worker-resume";
 import { applySandbox, onSandboxAppend, sandboxCommandOf, sandboxMessage, type SandboxHost } from "./sandbox-state";
 import { contextForBranch, normalizeEntries, normalizeEntry } from "./transcript";
+import { isOverseerId } from "./overseer-store";
 import { targetOfCwd } from "./targets";
 import { claudeCodeProviderEnabled } from "./web-settings";
 import { ForeignWriteGuard, markOwned, markOwnedStat, recentForeignWriteAgeSec } from "./write-guard";
 
 const GUARD_POLL_MS = 3000;
+/** Hosted workers' context fill, read off their transcripts' tails; shared, mtime-gated. */
+const workerContextReader = new WorkerContextReader();
 
 /** The experimental Settings switch, as the claude-code extension registers it
     (pi-config/extensions/claude-code/provider/index.ts CLAUDE_PROVIDER_FLAG). */
@@ -68,8 +76,18 @@ function sessionFlags(cwd: string, outline = true): Map<string, boolean | string
  * model still worked). That is what makes the experimental switch safe to leave on with an older
  * pi-config: the provider is simply absent, and the diagnostic below says why.
  */
-async function servicesForCwd(cwd: string, modelRuntime: ModelRuntime, outline = true) {
-  return await createAgentSessionServices({ cwd, modelRuntime, extensionFlagValues: sessionFlags(cwd, outline) });
+async function servicesForCwd(
+  cwd: string,
+  modelRuntime: ModelRuntime,
+  outline = true,
+  resourceLoaderOptions?: CreateAgentSessionServicesOptions["resourceLoaderOptions"],
+) {
+  return await createAgentSessionServices({
+    cwd,
+    modelRuntime,
+    extensionFlagValues: sessionFlags(cwd, outline),
+    ...(resourceLoaderOptions ? { resourceLoaderOptions } : {}),
+  });
 }
 
 /**
@@ -338,6 +356,49 @@ export function isFanoutMember(sm: Pick<SessionManager, "getEntries">): boolean 
   return sm.getEntries().some((e) => e.type === "custom" && e.customType === FANOUT_MEMBER_ENTRY);
 }
 
+/** Whether a session file is an Overseer file: it carries the marker its creation wrote
+ *  (server/overseer.ts) AND overseer-state.json knows it (the current conversation or one in its
+ *  history). A fork of an Overseer file inherits the marker but is known to neither, so it opens
+ *  as an ordinary session, as SessionSummary.overseer lists it. */
+export function isOverseerFile(sm: Pick<SessionManager, "getEntries" | "getSessionId">): boolean {
+  return isOverseerId(sm.getSessionId()) && sm.getEntries().some((e) => e.type === "custom" && e.customType === OVERSEER_ENTRY);
+}
+
+/**
+ * What an Overseer runtime gets instead of the ordinary loadout (server/overseer.ts registers it,
+ * so this module never imports the Overseer and the dependency points one way). `loadout` throws a
+ * BusyError for an Overseer file that is not the current one: previous conversations are read-only.
+ */
+export interface OverseerRuntime {
+  loadout(path: string): Promise<{
+    resourceLoaderOptions: NonNullable<CreateAgentSessionServicesOptions["resourceLoaderOptions"]>;
+    /** The tool allowlist: built-in, extension and inline tools alike. */
+    tools: string[];
+    /** SDK custom tools: they replace a built-in or an extension's tool of the same name (the
+        Overseer's secret-guarded read/grep/find/ls). */
+    customTools?: ToolDefinition[];
+    /** From overseer.json, never defaults.json. */
+    model: string | null;
+    thinking: string | null;
+  }>;
+  /** The composer changed the Overseer's model or thinking: write it back to overseer.json. */
+  saveChoice(patch: { model?: string; thinking?: string }): void;
+  /** Called with every AgentSession the Overseer's runtime builds, so `userSend` can recognise the
+      message it produced when that message reaches the Agent, and every run is decided from the
+      session's own event stream. */
+  watchSession(session: AgentSession): void;
+  /** Runs the SDK call that hands the Overseer a message the user sent from the UI (a prompt, a
+      steer, a regenerate; `origin` "client"). The turn the resulting message opens is the user's,
+      whatever an extension's `input` handler or a template made of its text: full tools, and the
+      per-turn caps start over. Server-started runs (a brief, a wake-up) never go through it. */
+  userSend<T>(send: () => T): T;
+}
+
+let overseerRuntime: OverseerRuntime | null = null;
+export function setOverseerRuntime(r: OverseerRuntime): void {
+  overseerRuntime = r;
+}
+
 export type RewindOutcome = { ok: true; editorText: string } | { ok: false; reason: RewindRefusal; message: string };
 
 /** The members of AgentSession a rewind uses (narrow so tests can drive it with a fake). */
@@ -402,6 +463,79 @@ export async function rewindSession(
     return { ok: true, editorText: stripImageNotes(result.editorText ?? "", target.message.content) };
   } catch (err) {
     return { ok: false, reason: "internal", message: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+export type CompactOutcome = { ok: true; entryId: string; tokensBefore: number } | { ok: false; reason: CompactRefusal; message: string };
+
+/** The members of AgentSession a compaction uses (narrow so tests can drive it with a fake). */
+export interface CompactTarget {
+  readonly isStreaming: boolean;
+  readonly isCompacting: boolean;
+  readonly sessionManager: Pick<SessionManager, "getBranch" | "appendCompaction">;
+  compact(customInstructions?: string): Promise<{ tokensBefore: number }>;
+}
+
+/**
+ * Compact the chat now: pi's own `AgentSession.compact(instructions)`, behind the same refusals a
+ * rewind has, because pi's compact() would otherwise do two things silently. It calls `abort()`
+ * first (agent-session.js compact()), so a compaction started while a turn streams KILLS the turn;
+ * and a message still on its way out would land after a summary that never saw it.
+ *
+ * `guard` runs the write guards (throws BusyError) and `allowed` the model policy (the summary is
+ * a model call on the session's own model). The ONE write is pi's `appendCompaction`, and it is
+ * wrapped for the call's duration: the write guards run again there — a summary can take minutes,
+ * and a TUI that grabbed the file meanwhile must get no write — then `beforeWrite` flushes the
+ * open-time appends, so they precede the compaction entry exactly as they precede a prompt. Any
+ * refusal or failure therefore writes nothing at all, deferred appends included.
+ */
+export async function compactSession(
+  session: CompactTarget,
+  instructions: string | undefined,
+  hooks: { guard(): void; allowed(): void; queued(): boolean; beforeWrite(): void },
+): Promise<CompactOutcome> {
+  const refused = (reason: CompactRefusal, message: string): CompactOutcome => ({ ok: false, reason, message });
+  const fromError = (err: unknown): CompactOutcome => {
+    if (err instanceof BusyError) return refused(err.code === "busy" ? "busy" : "recent", err.message);
+    const message = err instanceof Error ? err.message : String(err);
+    // pi's own refusals and its cancel, by the exact text agent-session.js compact() throws.
+    if (message === "Already compacted") return refused("already", "Already compacted.");
+    if (message.startsWith("Nothing to compact")) return refused("nothing", "Nothing to compact yet.");
+    if (message === "Compaction cancelled") return refused("cancelled", "Compaction cancelled.");
+    return refused("internal", `Compaction failed: ${message}`);
+  };
+  try {
+    hooks.guard();
+    hooks.allowed();
+  } catch (err) {
+    return fromError(err);
+  }
+  if (session.isStreaming) return refused("streaming", "Stop the turn first, then compact.");
+  if (session.isCompacting) return refused("compacting", "A compaction is already running.");
+  // The same window rewindSession's "queued" names: a steer can still be inside the extension
+  // `input` handlers after its turn ended.
+  if (hooks.queued())
+    return refused("queued", "Wait for the queued messages to send, then compact.");
+  // pi refuses this too, but only after announcing a compaction_start; saying it here keeps every
+  // client's pane from flickering "Compacting" for a no-op.
+  if (session.sessionManager.getBranch().at(-1)?.type === "compaction") return fromError(new Error("Already compacted"));
+  const sm = session.sessionManager;
+  const append = sm.appendCompaction;
+  let entryId: string | null = null;
+  sm.appendCompaction = (...args: Parameters<typeof append>) => {
+    hooks.guard();
+    hooks.beforeWrite();
+    entryId = append.apply(sm, args);
+    return entryId;
+  };
+  try {
+    const result = await session.compact(instructions);
+    if (!entryId) return refused("internal", "Compaction failed: pi reported success but wrote no compaction entry.");
+    return { ok: true, entryId, tokensBefore: result.tokensBefore };
+  } catch (err) {
+    return fromError(err);
+  } finally {
+    sm.appendCompaction = append;
   }
 }
 
@@ -491,8 +625,11 @@ function sourceLocation(info: { scope: string } | undefined): string | undefined
 
 /** Same enumeration as pi's rpc get_commands (rpc-mode.js "get_commands"), per runtime/cwd. */
 function listCommands(session: AgentSession): SlashCommand[] {
-  const out: SlashCommand[] = [];
+  // Sova's own `compact` leads; an extension command of that name could never run from here,
+  // because the text is intercepted before pi sees it (ChatSession.handle), so it is not offered.
+  const out: SlashCommand[] = [COMPACT_COMMAND];
   for (const c of session.extensionRunner.getRegisteredCommands()) {
+    if (c.invocationName === COMPACT_COMMAND.name) continue;
     out.push({ name: c.invocationName, description: c.description, source: "extension", path: c.sourceInfo?.path });
   }
   for (const t of session.promptTemplates) {
@@ -511,12 +648,31 @@ function modelLabel(session: AgentSession): string | null {
 
 interface PendingUi {
   resolve: (value: unknown) => void;
+  /** The ui_request as broadcast (method, title, options…), for the Overseer's view of it. */
+  request: Record<string, unknown>;
+  since: number;
+}
+
+/** One live-pending extension dialog of a hosted chat, as the Overseer sees it. */
+export interface PendingDialog {
+  id: string;
+  method: "select" | "confirm" | "input" | "editor";
+  title: string;
+  message?: string;
+  options?: string[];
+  since: number;
+}
+
+/** pi's prompt() refusal while a manual compaction runs (agent-session.js prompt(), 0.87.1). */
+export function isCompactionInProgress(err: unknown): boolean {
+  return err instanceof Error && err.message.startsWith("Cannot submit a prompt while compaction is in progress");
 }
 
 /** SDK events after which Sova's queue re-reads the SDK's own queue lengths. `agent_settled` and
     `agent_end` are here because a turn that ends with our queue non-empty must start the next one;
-    without them the queue would wait for an event that never comes. */
-const QUEUE_WAKE_EVENTS = new Set(["queue_update", "message_start", "turn_end", "agent_settled", "agent_end"]);
+    without them the queue would wait for an event that never comes. `compaction_end` likewise
+    releases what the queue held while a compaction ran (its `paused`). */
+const QUEUE_WAKE_EVENTS = new Set(["queue_update", "message_start", "turn_end", "agent_settled", "agent_end", "compaction_end"]);
 
 /** One embedded pi runtime for one session file, shared by all connected chat clients. */
 class ChatSession {
@@ -530,9 +686,22 @@ class ChatSession {
   private lastWorkersJson: string | null = null;
   /** Set once another process is seen writing this file; all writes are refused after that. */
   foreignWrite: string | null = null;
-  /** Open-time SDK bookkeeping appends, written right before the first prompt/steer. */
+  /** Open-time SDK bookkeeping appends, written right before the first prompt/steer/compaction. */
   deferredAppends: Array<() => void> = [];
+  /**
+   * Set synchronously for the whole of a /compact this chat runs. pi's own `isCompacting` turns
+   * true only after compact() has awaited `abort()`, so without this a second /compact, or a
+   * prompt, arriving in that gap would pass every check.
+   */
+  private compactRunning = false;
+  /** A compaction that was not our /compact landed while a turn ran; its refresh waits for the
+      turn's agent_settled (onCompactionEvent). */
+  private refreshAtSettle = false;
   disposed = false;
+  /** This runtime is the Overseer's (set by openSession from the file's marker). */
+  overseer = false;
+  /** Texts the Overseer sent here whose user entry still needs its `sova-overseer-sent` marker. */
+  private overseerSends: Array<{ text: string; overseerId?: string }> = [];
   /** How the last switch of THIS chat applies (ModeApplies); set at bind and by applyMode. */
   modeApplies: ModeApplies = "now";
   /**
@@ -570,6 +739,7 @@ class ChatSession {
       mirrorHas: (kind, text) => (kind === "steer" ? this.session.getSteeringMessages() : this.session.getFollowUpMessages()).includes(text),
     },
     streaming: () => this.session.isStreaming,
+    paused: () => this.isCompacting(),
     clearSdkQueue: () => this.session.clearQueue(),
     guard: () => {
       assertNotLive(this.path);
@@ -662,11 +832,13 @@ class ChatSession {
     this.assertModelAllowed();
     this.flushDeferredAppends();
     const images = item.images as Parameters<AgentSession["steer"]>[1];
+    const toSdk = <T>(send: () => T) => this.toSdk(item.origin, send);
     if (!streaming) {
       // Idle: this starts a turn. Its own failure belongs in this session's pane, like every other
       // turn nobody is awaiting, and must not be reported as a hand-off failure (which would hand
       // the text back to the composer for a message that HAS been sent).
-      this.session.prompt(item.text, { images }).catch((err) => {
+      toSdk(() => this.session.prompt(item.text, { images })).catch((err) => {
+        if (this.heldForCompaction(err, { ...item, id: undefined })) return;
         this.reportTurnFailure(err);
         // A turn that never started emits no event, so nothing would wake the queue and every
         // item behind this one would sit there for ever. Wake it explicitly.
@@ -677,10 +849,33 @@ class ChatSession {
     // steer() throws on extension commands; prompt() runs them immediately (even mid-stream) and
     // otherwise queues with the same skill/template expansion. Same split as the direct path.
     if (item.kind === "steer" && !item.text.startsWith("/")) {
-      await this.session.steer(item.text, images);
+      await toSdk(() => this.session.steer(item.text, images));
       return;
     }
-    await this.session.prompt(item.text, { images, streamingBehavior: item.kind });
+    await toSdk(() => this.session.prompt(item.text, { images, streamingBehavior: item.kind })).catch((err) => {
+      if (!this.heldForCompaction(err, { ...item, id: undefined })) throw err;
+    });
+  }
+
+  /** Hand a message to the SDK. In the Overseer, one the user sent from the UI (`origin` "client")
+      goes through its `userSend`, so the turn it opens is known as theirs by identity, not text. */
+  private toSdk<T>(origin: QueueItem["origin"], send: () => T): T {
+    return this.overseer && origin === "client" && overseerRuntime ? overseerRuntime.userSend(send) : send();
+  }
+
+  /**
+   * pi refused a prompt because a compaction had started: put the message back in Sova's queue,
+   * which holds it until compaction_end, instead of failing it. `isCompacting()` holds every send
+   * that arrives once a compaction is under way; this is the gap before that — pi's compact()
+   * awaits `abort()` before it sets the flag, and a `/`-prefixed prompt awaits the extension
+   * command lookup before pi checks it. A queue item comes back as a NEW item (no `id`): the old
+   * one has departed and the client has settled that id; it rejoins at the back. A direct send
+   * keeps its sender's id, which no queue item ever had. Returns false for any other error.
+   */
+  private heldForCompaction(err: unknown, item: { kind: WebQueueItem["kind"]; text: string; images?: QueueImage[]; origin: QueueItem["origin"]; id?: string }): boolean {
+    if (!isCompactionInProgress(err) || this.disposed) return false;
+    this.queue.enqueue({ kind: item.kind, text: item.text, images: item.images, origin: item.origin, ...(item.id ? { id: item.id } : {}) });
+    return true;
   }
 
   /**
@@ -716,7 +911,7 @@ class ChatSession {
   private waking = false;
 
   private wakeQueuedRun(): void {
-    if (this.disposed || this.session.isStreaming) return;
+    if (this.disposed || this.session.isStreaming || this.isCompacting()) return;
     if (!this.session.agent.hasQueuedMessages()) return;
     try {
       assertNotLive(this.path);
@@ -747,6 +942,12 @@ class ChatSession {
 
   private flushDeferredAppends(): void {
     for (const append of this.deferredAppends.splice(0)) append();
+  }
+
+  /** A compaction is running on this runtime: a /compact of ours, pi's automatic one, or an
+      extension's `ctx.compact()`. Every send is held in the queue meanwhile. */
+  isCompacting(): boolean {
+    return this.compactRunning || this.session.isCompacting;
   }
 
   hasForeignWrites(): boolean {
@@ -790,7 +991,8 @@ class ChatSession {
           code: "busy",
           message: `Session was opened in another pi process (pid ${live.pid}) while held here; stopped writing. Use watch instead.`,
         });
-        if (this.session.isStreaming) this.session.abort().catch(() => {});
+        // abort() also stops a compaction, whose entry would otherwise be written into a TUI's file.
+        if (this.session.isStreaming || this.session.isCompacting) this.session.abort().catch(() => {});
         return;
       }
       if (this.clients.size === 0) {
@@ -819,6 +1021,10 @@ class ChatSession {
       } catch (err) {
         console.error("[chat] failed to forward event", err);
       }
+      // Before the queue wake below, so a held message's turn starts only after clients have the
+      // branch with the compaction on it (refreshAfterCompaction). When the refresh is deferred,
+      // so is this event's wake: the refresh wakes the queue itself once the hello is out.
+      const refreshWakes = this.onCompactionEvent(event);
       // BEFORE anything else that can throw. Every event that can mean "the SDK's queue moved":
       // one was queued, one was delivered, the run ended. A generous list is cheaper than a
       // precise one, because the cost of a spurious wake is a re-read of two lengths while the
@@ -829,7 +1035,11 @@ class ChatSession {
         // sequence of these — the only way to tell "an extension queued something" from "our item
         // was delivered", which a single total cannot distinguish (one in, one out, total unmoved).
         this.queue.observeQueueUpdate(event.steering.length, event.followUp.length);
-      } else if (QUEUE_WAKE_EVENTS.has(event.type)) this.queue.onSdkEvent();
+      } else if (QUEUE_WAKE_EVENTS.has(event.type) && !refreshWakes) this.queue.onSdkEvent();
+      // pi's AUTOMATIC compaction emits compaction_end before its finally clears the controller
+      // `isCompacting` reads, so the wake above can still find the queue paused: look again once
+      // that has unwound. (The manual path clears first, so this one is a no-op there.)
+      if (event.type === "compaction_end") setImmediate(() => !this.disposed && this.queue.onSdkEvent());
       if (event.type === "entry_appended" && (event as { entry?: unknown }).entry) {
         // Display entries an extension appended outside a turn (mode markers, align docs, …)
         // reach the pane now instead of at the next hello/resync. normalizeEntry returns []
@@ -837,6 +1047,18 @@ class ChatSession {
         const items = normalizeEntry((event as { entry: Record<string, any> }).entry);
         if (items.length) this.broadcast({ type: "append", items });
         onSandboxAppend(this.sandboxHost, (event as { entry: unknown }).entry);
+      }
+      if (event.type === "message_end" && this.overseerSends.length && (event as { message?: { role?: unknown } }).message?.role === "user") {
+        this.markOverseerSend((event as { message: { content?: unknown } }).message);
+      }
+      if (event.type === "agent_settled" && this.overseerSends.length) {
+        // A mark that never found its message this run (the prompt was swallowed or failed early)
+        // is stale. Deferred, so a mark for a prompt made while this event is being emitted (it
+        // runs in this same settle window) is not dropped before its message ends.
+        const stale = [...this.overseerSends];
+        setTimeout(() => {
+          if (!this.session.isStreaming) this.overseerSends = this.overseerSends.filter((s) => !stale.includes(s));
+        }, 0);
       }
       if (event.type === "agent_settled" && this.modeApplies === "after-turn") {
         // A mid-turn switch reaches the next prompt from here on.
@@ -1038,6 +1260,7 @@ class ChatSession {
       type: "hello",
       items: normalizeEntries(branch),
       isStreaming: session.isStreaming,
+      isCompacting: this.isCompacting(),
       model: modelLabel(session),
       thinking: session.thinkingLevel,
       context: toContextInfo(contextForBranch(branch), this.runtime.services.modelRuntime),
@@ -1088,7 +1311,7 @@ class ChatSession {
         be sent verbatim. Without it the SDK would expand skills and templates a SECOND time, and a
         stored message that merely begins with "/" would be DISPATCHED as an extension command
         instead of replayed — a regenerate that runs a command rather than redoing the turn. */
-    opts?: { replay?: boolean },
+    opts?: { replay?: boolean; sentByOverseer?: { overseerId?: string } },
   ): { queued: boolean; turn: Promise<void> } {
     // Never write if a TUI grabbed this file, or anyone else wrote it, after we opened it.
     assertNotLive(this.path);
@@ -1098,12 +1321,31 @@ class ChatSession {
     // still be taken back one item at a time. Server-originated prompts (a group batch, a remote
     // status probe) queue on the same terms as a client's: they are messages to this session, and
     // a queue that some messages could skip would not be a queue.
-    if (this.session.isStreaming) {
+    // A compaction running is the same: pi refuses every prompt until it ends, so the message is
+    // held, and the queue hands it over (as a fresh turn) at compaction_end.
+    if (this.session.isStreaming || this.isCompacting()) {
       this.queue.enqueue({ kind: "followUp", text, images: images as QueueImage[] | undefined, origin, id: clientId });
       return { queued: true, turn: Promise.resolve() };
     }
     this.flushDeferredAppends();
-    return { queued: false, turn: this.session.prompt(text, { images, ...(opts?.replay ? { expandPromptTemplates: false } : {}) }) };
+    // Marked only when it starts a turn now (the Overseer prompts idle sessions only). A pending
+    // mark is dropped if the turn fails, and any left when the run settles are dropped too
+    // (bind's agent_settled), so a later identical message the user types is never tagged.
+    const send = opts?.sentByOverseer ? { text, overseerId: opts.sentByOverseer.overseerId } : null;
+    if (send) this.overseerSends.push(send);
+    const turn = this.toSdk(origin, () => this.session.prompt(text, { images, ...(opts?.replay ? { expandPromptTemplates: false } : {}) }));
+    if (send)
+      turn.catch(() => {
+        const i = this.overseerSends.indexOf(send);
+        if (i >= 0) this.overseerSends.splice(i, 1);
+      });
+    // A replay is not re-queued: the queue would expand it a second time (see `replay` above).
+    if (opts?.replay) return { queued: false, turn };
+    // Held under the sender's own id: this send was never a queue item, so the id is still free.
+    const held = (err: unknown) => {
+      if (!this.heldForCompaction(err, { kind: "followUp", text, images: images as QueueImage[] | undefined, origin, id: clientId })) throw err;
+    };
+    return { queued: false, turn: turn.catch(held) };
   }
 
   /** Accept a prompt AND wait for the turn. The /ws/chat path, where the socket reports the
@@ -1113,6 +1355,146 @@ class ChatSession {
     const { queued, turn } = this.acceptPrompt(text, images, origin, clientId);
     await turn;
     return queued;
+  }
+
+  /**
+   * The user message the Overseer sent has just ended: write its invisible `sova-overseer-sent`
+   * marker pointing at that entry (the `sova-rewind` pattern — never LLM context, the TUI ignores
+   * it). Listeners run BEFORE the SDK persists the message (agent-session.js `_handleAgentEvent`:
+   * `_emit`, then `appendMessage`, in the same synchronous stretch), so the write waits one
+   * microtask, by which time the entry exists and is the leaf. The marker is parented on it, and
+   * the reply is then parented on the marker: rewind (to the user entry's parent) and regenerate
+   * (walking back past custom entries to the user entry) behave exactly as on any user turn.
+   */
+  private markOverseerSend(message: { content?: unknown }): void {
+    const text = typeof message.content === "string" ? message.content : textBlocks(message.content);
+    const i = this.overseerSends.findIndex((s) => s.text === text);
+    if (i < 0) return;
+    const [send] = this.overseerSends.splice(i, 1);
+    queueMicrotask(() => {
+      if (this.disposed || this.foreignWrite) return;
+      const sm = this.session.sessionManager;
+      const leaf = sm.getLeafId();
+      const entry = leaf ? sm.getEntry(leaf) : undefined;
+      if (entry?.type !== "message" || entry.message.role !== "user") return;
+      const data: OverseerSentMarkerData = { v: 1, targetId: entry.id, ...(send?.overseerId ? { overseerId: send.overseerId } : {}) };
+      const markerId = sm.appendCustomEntry(OVERSEER_SENT_ENTRY, data);
+      markOwned(this.path);
+      const marker = sm.getEntry(markerId);
+      if (marker) {
+        const items = normalizeEntry(marker as unknown as Record<string, any>);
+        if (items.length) this.broadcast({ type: "append", items });
+      }
+    });
+  }
+
+  /** The extension dialogs waiting on an answer right now (live-pending: a browser is attached). */
+  pendingDialogs(): PendingDialog[] {
+    const out: PendingDialog[] = [];
+    for (const [id, p] of this.pendingUi) {
+      const r = p.request;
+      const method = r.method;
+      if (method !== "select" && method !== "confirm" && method !== "input" && method !== "editor") continue;
+      out.push({
+        id,
+        method,
+        title: typeof r.title === "string" ? r.title : "",
+        ...(typeof r.message === "string" ? { message: r.message } : {}),
+        ...(Array.isArray(r.options) ? { options: r.options.filter((o): o is string => typeof o === "string") } : {}),
+        since: p.since,
+      });
+    }
+    return out;
+  }
+
+  /**
+   * The Overseer answers one pending dialog. Same write guards as a prompt (the answer marker is a
+   * write); the answer is resolved exactly as a browser's `ui_response` would be, every tab drops
+   * its copy of the dialog, and an invisible `sova-overseer-dialog-answer` entry records it as the
+   * machine row "Overseer chose: X".
+   */
+  answerDialog(id: string, value: unknown, answer: string, overseerId?: string): void {
+    assertNotLive(this.path);
+    this.assertNoForeignWrites();
+    const pending = this.pendingUi.get(id);
+    if (!pending) throw new Error("That dialog is no longer waiting for an answer.");
+    const title = typeof pending.request.title === "string" ? pending.request.title : "";
+    this.pendingUi.delete(id);
+    pending.resolve(value); // every tab drops the dialog (ui_resolved, from the dialog's own settle)
+    this.flushDeferredAppends();
+    const data: OverseerDialogAnswerData = { v: 1, title, answer, ...(overseerId ? { overseerId } : {}) };
+    const markerId = this.session.sessionManager.appendCustomEntry(OVERSEER_DIALOG_ANSWER_ENTRY, data);
+    markOwned(this.path);
+    const marker = this.session.sessionManager.getEntry(markerId);
+    if (marker) {
+      const items = normalizeEntry(marker as unknown as Record<string, any>);
+      if (items.length) this.broadcast({ type: "append", items });
+    }
+  }
+
+  /**
+   * Switch model, the one path for the composer's `set_model`, the Overseer's `sova_set_session`
+   * and Settings → Overseer. Resolves against models with configured auth (= GET /api/models)
+   * BEFORE writing anything, so a rejected switch leaves the file untouched.
+   */
+  async setModelRef(ref: string, opts: { save?: boolean } = {}): Promise<void> {
+    assertNotLive(this.path);
+    this.assertNoForeignWrites();
+    if (this.session.isStreaming) throw new Error("Cannot switch models while the agent is running; wait or abort first");
+    const available = await this.runtime.services.modelRuntime.getAvailable();
+    // The user's own policy first: a model turned off in Settings → Models is refused
+    // whether or not it has credentials, and nothing is written (server/model-policy.ts).
+    const denial = modelDenial(readModelPolicy(), ref);
+    if (denial) throw new Error(denial);
+    const model = available.find((m) => `${m.provider}/${m.id}` === ref);
+    if (!model) {
+      const known = this.runtime.services.modelRuntime.getModel(ref.split("/")[0] ?? "", ref.slice(ref.indexOf("/") + 1));
+      throw new Error(known ? `No credentials configured for ${ref}` : `Unknown model: ${ref || "(empty ref)"}`);
+    }
+    // Re-check after the async lookup: a TUI/foreign writer may have appeared meanwhile.
+    // BusyError propagates to `fail`, which maps it to its busy/recent code.
+    assertNotLive(this.path);
+    this.assertNoForeignWrites();
+    if (this.session.isStreaming) throw new Error("Cannot switch models while the agent is running; wait or abort first");
+    this.flushDeferredAppends(); // keep open-time entries before this model_change
+    await this.session.setModel(model);
+    this.broadcast({ type: "model", model: modelLabel(this.session) ?? ref });
+    // setModel re-clamps the level to the new model's ladder; the pane needs that too.
+    this.broadcast({ type: "thinking", level: this.session.thinkingLevel });
+    // The Overseer's choice belongs to overseer.json and never becomes every new session's default;
+    // otherwise a session with no messages yet saves its model as the next new session's default.
+    if (opts.save === false) return;
+    // The level too: setModel re-clamped it, and the next conversation is seeded from the file.
+    if (this.overseer) overseerRuntime?.saveChoice({ model: ref, thinking: this.session.thinkingLevel });
+    else if (this.isPristine()) saveDefaults({ model: ref });
+  }
+
+  /** Change thinking level: the `set_thinking` path, shared like setModelRef. Returns the effective level. */
+  setThinking(level: string, opts: { save?: boolean } = {}): string {
+    // setThinkingLevel appends a thinking_level_change entry: same write guards as set_model.
+    assertNotLive(this.path);
+    this.assertNoForeignWrites();
+    if (this.session.isStreaming) throw new Error("Cannot change thinking while the agent is running; wait or abort first");
+    if (!(THINKING_LEVELS as readonly string[]).includes(level)) throw new Error(`Unknown thinking level: ${level || "(empty)"}`);
+    this.flushDeferredAppends(); // keep open-time entries before this thinking_level_change
+    // The SDK clamps to what the model supports, so the echo is the effective level.
+    const before = this.session.thinkingLevel;
+    this.session.setThinkingLevel(level as Parameters<AgentSession["setThinkingLevel"]>[0]);
+    const after = this.session.thinkingLevel;
+    this.broadcast({ type: "thinking", level: after });
+    // The SDK's appendThinkingLevelChange emits no entry_appended (only the extension
+    // appendEntry API does), so the "Thinking: X" row is synthesized here; the next
+    // hello/resync replaces it with the real entry.
+    if (after !== before)
+      this.broadcast({
+        type: "append",
+        items: [{ id: `thinking-${Date.now()}`, kind: "info", raw: { type: "thinking_level_change", thinkingLevel: after }, text: `Thinking: ${after}` }],
+      });
+    if (opts.save === false) return after;
+    if (this.overseer) overseerRuntime?.saveChoice({ thinking: after });
+    // A session with no messages yet: this level is also the next new session's default.
+    else if (this.isPristine()) saveDefaults({ thinking: after });
+    return after;
   }
 
   /** Report a failure into this session's own pane(s) — where every other turn failure already
@@ -1136,37 +1518,35 @@ class ChatSession {
     }
     try {
       switch (msg.type) {
-        case "prompt": {
+        case "prompt":
+        case "steer": {
+          // `/compact [instructions]` as a whole message: Sova's builtin, never text for the
+          // model. It runs here, before pi's prompt() could send the literal "/compact" to the
+          // model, and before a streaming steer could queue it. The send's own id names the
+          // reply; it never becomes a queue row. With images it is refused, not sent without them.
+          const compact = compactCommand(String(msg.text ?? ""));
+          if (compact) {
+            if (clientId) client.send({ type: "send_ack", clientId, queued: false });
+            if (msg.images?.length) client.send({ type: "compact_refused", id: clientId ?? "", reason: "internal", message: COMPACT_IMAGES_REFUSAL });
+            else this.compact(client, clientId ?? "", compact.instructions).catch(fail);
+            return;
+          }
+          if (msg.type === "steer") {
+            this.steer(client, msg, clientId, fail);
+            return;
+          }
           // The model-policy gate, at the same site the `steer` case below applies it: a model
           // turned off in Settings → Models is refused before anything is written. Everything else
           // this case needs (TUI ownership, foreign writers, blank text, deferred appends, the
           // streaming follow-up choice) lives in `acceptPrompt`, which `prompt()` awaits.
           this.assertModelAllowed();
-          const { queued, turn } = this.acceptPrompt(String(msg.text ?? ""), parseImages(msg.images), "client", clientId);
+          const images = parseImages(msg.images);
+          const text = String(msg.text ?? "");
+          const { queued, turn } = this.acceptPrompt(text, images, "client", clientId);
           // The ack goes out NOW, not after the turn: it says whether a queue row exists, and a
           // client that learned that only at turn end would offer Remove for a sent message.
           if (clientId) client.send({ type: "send_ack", clientId, queued });
           turn.catch(fail);
-          return;
-        }
-        case "steer": {
-          assertNotLive(this.path);
-          this.assertNoForeignWrites();
-          this.assertModelAllowed();
-          const text = String(msg.text ?? "");
-          const images = parseImages(msg.images);
-          if (!text.trim() && !images) return;
-          // Mid-turn, this is a steer and goes through Sova's queue so it stays removable; idle,
-          // there is nothing to queue behind, so it starts its turn straight away (and the
-          // extension-command split lives in handOffQueued, which both paths reach).
-          if (this.session.isStreaming) {
-            this.queue.enqueue({ kind: "steer", text, images: images as QueueImage[] | undefined, origin: "client", id: clientId });
-            if (clientId) client.send({ type: "send_ack", clientId, queued: true });
-            return;
-          }
-          this.flushDeferredAppends();
-          if (clientId) client.send({ type: "send_ack", clientId, queued: false });
-          this.session.prompt(text, { images }).catch(fail);
           return;
         }
         case "abort":
@@ -1192,76 +1572,25 @@ class ChatSession {
         case "regenerate":
           this.regenerate(client, String(msg.id ?? ""), String(msg.entryId ?? "")).catch(fail);
           return;
-        case "set_thinking": {
-          // setThinkingLevel appends a thinking_level_change entry: same write guards as set_model.
-          assertNotLive(this.path);
-          this.assertNoForeignWrites();
-          if (this.session.isStreaming) throw new Error("Cannot change thinking while the agent is running; wait or abort first");
-          const level = String(msg.level ?? "");
-          if (!(THINKING_LEVELS as readonly string[]).includes(level))
-            throw new Error(`Unknown thinking level: ${level || "(empty)"}`);
-          this.flushDeferredAppends(); // keep open-time entries before this thinking_level_change
-          // The SDK clamps to what the model supports, so the echo is the effective level.
-          const before = this.session.thinkingLevel;
-          this.session.setThinkingLevel(level as Parameters<AgentSession["setThinkingLevel"]>[0]);
-          const after = this.session.thinkingLevel;
-          this.broadcast({ type: "thinking", level: after });
-          // The SDK's appendThinkingLevelChange emits no entry_appended (only the extension
-          // appendEntry API does), so the "Thinking: X" row is synthesized here; the next
-          // hello/resync replaces it with the real entry.
-          if (after !== before)
-            this.broadcast({
-              type: "append",
-              items: [{ id: `thinking-${Date.now()}`, kind: "info", raw: { type: "thinking_level_change", thinkingLevel: after }, text: `Thinking: ${after}` }],
-            });
-          // A session with no messages yet: this level is also the next new session's default.
-          if (this.isPristine()) saveDefaults({ thinking: after });
+        case "set_thinking":
+          this.setThinking(String(msg.level ?? ""));
           return;
-        }
-        case "set_model": {
-          // setModel appends a model_change entry: same write guards as prompt.
-          assertNotLive(this.path);
-          this.assertNoForeignWrites();
-          if (this.session.isStreaming) throw new Error("Cannot switch models while the agent is running; wait or abort first");
-          const ref = String(msg.ref ?? "");
-          // Resolve against models with configured auth (= GET /api/models) BEFORE writing anything,
-          // so a rejected switch leaves the file untouched.
-          this.runtime.services.modelRuntime
-            .getAvailable()
-            .then(async (available) => {
-              // The user's own policy first: a model turned off in Settings → Models is refused
-              // whether or not it has credentials, and nothing is written (server/model-policy.ts).
-              const denial = modelDenial(readModelPolicy(), ref);
-              if (denial) throw new Error(denial);
-              const model = available.find((m) => `${m.provider}/${m.id}` === ref);
-              if (!model) {
-                const known = this.runtime.services.modelRuntime.getModel(ref.split("/")[0] ?? "", ref.slice(ref.indexOf("/") + 1));
-                throw new Error(known ? `No credentials configured for ${ref}` : `Unknown model: ${ref || "(empty ref)"}`);
-              }
-              // Re-check after the async lookup: a TUI/foreign writer may have appeared meanwhile.
-              // BusyError propagates to `fail`, which maps it to its busy/recent code.
-              assertNotLive(this.path);
-              this.assertNoForeignWrites();
-              if (this.session.isStreaming) throw new Error("Cannot switch models while the agent is running; wait or abort first");
-              this.flushDeferredAppends(); // keep open-time entries before this model_change
-              await this.session.setModel(model);
-              this.broadcast({ type: "model", model: modelLabel(this.session) ?? ref });
-              // setModel re-clamps the level to the new model's ladder; the pane needs that too.
-              this.broadcast({ type: "thinking", level: this.session.thinkingLevel });
-              // A session with no messages yet: this model is also the next new session's default.
-              if (this.isPristine()) saveDefaults({ model: ref });
-            })
-            .catch(fail);
+        case "set_model":
+          this.setModelRef(String(msg.ref ?? "")).catch(fail);
           return;
-        }
         case "rewind":
           this.rewind(client, String(msg.id ?? ""), String(msg.entryId ?? "")).catch(fail);
           return;
+        case "compact": {
+          const instructions = typeof msg.instructions === "string" ? msg.instructions.trim() : "";
+          this.compact(client, String(msg.id ?? ""), instructions || undefined).catch(fail);
+          return;
+        }
         case "ui_response": {
           const pending = this.pendingUi.get(msg.id);
           if (pending) {
             this.pendingUi.delete(msg.id);
-            pending.resolve(msg.value);
+            pending.resolve(msg.value); // every other tab drops it (ui_resolved, from the dialog's own settle)
           }
           return;
         }
@@ -1271,6 +1600,129 @@ class ChatSession {
     } catch (err) {
       fail(err);
     }
+  }
+
+  /**
+   * The refresh for a compaction Sova did not start itself: the provider's `ctx.compact()` from an
+   * agent_settled hook, pi's threshold or overflow compaction. pi emits no `entry_appended` for a
+   * compaction entry on any path, so without this the row only appears at the next reload. Only a
+   * `compaction_end` with a `result` wrote one. Our own /compact refreshes in compact().
+   *
+   * Idle: on the next macrotask, not inside the event. pi's AUTOMATIC path emits compaction_end
+   * before its finally clears the controller `isCompacting` reads, so a hello sent from inside the
+   * event would say `isCompacting: true` after the compaction ended, and every client would stay
+   * on "Compacting…". The event's own queue wake is skipped (returns true) and the refresh wakes
+   * the queue after its hello, so a message held during the compaction still starts its turn after
+   * the clients have the new branch. That holds for ctx.compact() too, where pi clears the flag
+   * first and the queue would otherwise hand off at once.
+   *
+   * Mid-turn (the overflow path ends with willRetry and carries on streaming; a threshold one can
+   * land inside the run): at that turn's `agent_settled`, because a hello resets every client's
+   * live rows and would wipe the turn being streamed. That refresh runs before the settle's own
+   * queue wake.
+   */
+  private onCompactionEvent(event: { type: string }): boolean {
+    try {
+      const result = (event as { result?: unknown }).result;
+      if (event.type === "compaction_end" && !this.compactRunning && typeof result === "object" && result !== null) {
+        if (this.session.isStreaming) {
+          this.refreshAtSettle = true;
+          return false;
+        }
+        setImmediate(() => {
+          if (this.disposed) return;
+          try {
+            this.refreshAfterCompaction();
+          } catch (err) {
+            console.error("[chat] refresh after compaction failed", err);
+          }
+          if (!this.disposed) this.queue.onSdkEvent();
+        });
+        return true;
+      }
+      if (event.type === "agent_settled" && this.refreshAtSettle) {
+        this.refreshAtSettle = false;
+        this.refreshAfterCompaction();
+      }
+    } catch (err) {
+      console.error("[chat] refresh after compaction failed", err);
+    }
+    return false;
+  }
+
+  /** afterBranchMove, then the queue snapshot: that hello reset every client's pending rows, and the
+      snapshot is what rebuilds them (as on attach). */
+  private refreshAfterCompaction(): void {
+    this.afterBranchMove();
+    if (this.disposed) return;
+    this.broadcast({ type: "queue", items: this.queue.snapshot() });
+  }
+
+  /** The `steer` case of handle(), whose failures `fail` reports to the sender. */
+  private steer(client: ChatClient, msg: Extract<ChatClientMessage, { type: "steer" }>, clientId: string | undefined, fail: (err: unknown) => void): void {
+    assertNotLive(this.path);
+    this.assertNoForeignWrites();
+    this.assertModelAllowed();
+    const text = String(msg.text ?? "");
+    const images = parseImages(msg.images);
+    if (!text.trim() && !images) return;
+    // Mid-turn, this is a steer and goes through Sova's queue so it stays removable; idle,
+    // there is nothing to queue behind, so it starts its turn straight away (and the
+    // extension-command split lives in handOffQueued, which both paths reach). While a
+    // compaction runs it is held the same way, and goes in when the compaction ends.
+    if (this.session.isStreaming || this.isCompacting()) {
+      this.queue.enqueue({ kind: "steer", text, images: images as QueueImage[] | undefined, origin: "client", id: clientId });
+      if (clientId) client.send({ type: "send_ack", clientId, queued: true });
+      return;
+    }
+    this.flushDeferredAppends();
+    if (clientId) client.send({ type: "send_ack", clientId, queued: false });
+    this.toSdk("client", () => this.session.prompt(text, { images }))
+      .catch((err) => {
+        if (!this.heldForCompaction(err, { kind: "steer", text, images: images as QueueImage[] | undefined, origin: "client", id: clientId })) throw err;
+      })
+      .catch(fail);
+  }
+
+  /**
+   * The client's /compact (compactSession), then the same refresh a rewind does: pi emits no
+   * `entry_appended` for a manual compaction's entry, so every client gets a fresh hello (items
+   * ending in the compaction row, context null until the next reply), workers and mode. Only the
+   * requester gets the outcome. `compactRunning` spans the whole call, from before pi's own
+   * `isCompacting` turns true until after it is false again. Whatever the queue held meanwhile goes
+   * AFTER the hello: that hello resets every client's live rows, so the queue snapshot follows it
+   * (as on attach) and only then is the queue woken — a turn started first would be wiped from the
+   * pane by the hello that describes the branch before it.
+   */
+  private async compact(client: ChatClient, id: string, instructions: string | undefined): Promise<void> {
+    if (this.compactRunning) {
+      client.send({ type: "compact_refused", id, reason: "compacting", message: "A compaction is already running." });
+      return;
+    }
+    this.compactRunning = true;
+    let outcome: CompactOutcome;
+    try {
+      outcome = await compactSession(this.session, instructions, {
+        guard: () => {
+          assertNotLive(this.path);
+          this.assertNoForeignWrites();
+        },
+        allowed: () => this.assertModelAllowed(),
+        queued: () => this.hasPendingSends(),
+        beforeWrite: () => this.flushDeferredAppends(),
+      });
+    } finally {
+      this.compactRunning = false;
+    }
+    if (this.disposed) return;
+    if (!outcome.ok) {
+      client.send({ type: "compact_refused", id, reason: outcome.reason, message: outcome.message });
+    } else {
+      this.refreshAfterCompaction();
+      if (this.disposed) return;
+      client.send({ type: "compacted", id, entryId: outcome.entryId, tokensBefore: outcome.tokensBefore });
+    }
+    this.queue.onSdkEvent();
   }
 
   /**
@@ -1340,10 +1792,10 @@ class ChatSession {
 
   /** The refresh no SDK event does after the leaf moved: a fresh hello (branch-based, so transcript
       and context fill follow the new leaf), the workers snapshot, and this chat's mode re-resolved
-      from the new branch as bind() does. Shared by rewind and regenerate so the two can never
+      from the new branch as bind() does. Shared by rewind, regenerate and compact so they can never
       drift into telling clients different things about the same move. */
   private afterBranchMove(): void {
-    if (!this.foreignWrite) markOwned(this.path); // the marker entry is our write
+    if (!this.foreignWrite) markOwned(this.path); // the marker (or compaction) entry is our write
     if (this.disposed) return;
     this.broadcast(this.hello());
     // Every client's hello handler clears its worker list, and pushWorkers only sends on change,
@@ -1371,8 +1823,20 @@ class ChatSession {
     const counts = rec ? workerCountsOf(rec.rec) : undefined;
     if (!rec || !counts) return null;
     const usageTotal = decodeUsageTotal(rec.rec?.presence);
+    // Each worker's context fill, off its own transcript's tail (the record carries spend only);
+    // claude-code windows follow the spawn model this session's manifests recorded.
+    const workers = withWorkerContext(decodeWorkers(rec.rec?.presence, true), workerContextReader,
+      workerWindowResolver(this.runtime.services.modelRuntime), (id) => this.claudeSpawnModel(id));
     return { type: "workers", working: counts.working, total: counts.total,
-      workers: decodeWorkers(rec.rec?.presence, true), ...(usageTotal ? { usageTotal } : {}) };
+      workers, ...(usageTotal ? { usageTotal } : {}) };
+  }
+
+  /** A claude-code worker's spawn model from this session's manifests, folded once per entry count. */
+  private spawnModels: { count: number; of: (id: string) => string | undefined } | null = null;
+  private claudeSpawnModel(id: string): string | undefined {
+    const entries = this.session.sessionManager.getEntries();
+    if (this.spawnModels?.count !== entries.length) this.spawnModels = { count: entries.length, of: claudeSpawnModels(entries) };
+    return this.spawnModels.of(id);
   }
 
   /** Broadcast the worker snapshot when it changed since the last send; a record that
@@ -1433,12 +1897,17 @@ class ChatSession {
           if (timer) clearTimeout(timer);
           opts?.signal?.removeEventListener("abort", onAbort);
           this.pendingUi.delete(id);
+          // However it settled — answered here or in another tab, by the Overseer, timed out,
+          // aborted — every client drops its copy of the dialog.
+          this.broadcast({ type: "ui_resolved", id });
           resolve(value);
         };
         const onAbort = () => done(fallback);
         opts?.signal?.addEventListener("abort", onAbort, { once: true });
         if (opts?.timeout) timer = setTimeout(() => done(fallback), opts.timeout);
         this.pendingUi.set(id, {
+          request,
+          since: Date.now(),
           resolve: (v) => {
             // Accept bare values or pi rpc-style {value}|{confirmed}|{cancelled:true}.
             if (v && typeof v === "object") {
@@ -1508,6 +1977,12 @@ export async function disposeHeldChat(path: string, message: string): Promise<bo
   return true;
 }
 
+/** SessionSummary.pendingDialogs: live-pending extension dialogs of a chat this server holds. */
+export function pendingDialogCount(path: string): number {
+  const chat = held.get(path);
+  return chat && !chat.disposed ? chat.pendingDialogs().length : 0;
+}
+
 /** SessionSummary.busy: this server holds the runtime and an agent run is in progress. */
 export function isSessionBusy(path: string): boolean {
   const chat = held.get(path);
@@ -1566,6 +2041,24 @@ export function restatesRecordedModel(context: BranchContext, provider: string, 
   return context.model.provider === provider && context.model.modelId === modelId;
 }
 
+async function overseerLoadout(path: string) {
+  if (!overseerRuntime) throw new Error("The Overseer is not available on this server.");
+  return overseerRuntime.loadout(path);
+}
+
+/** Bring an opened Overseer runtime to overseer.json's model and thinking, without the composer's
+    write-back (the setting is already what it says). Stale or unauthenticated choices are skipped. */
+async function syncOverseerModel(chat: ChatSession, modelRuntime: ModelRuntime, path: string): Promise<void> {
+  const want = await overseerLoadout(path);
+  const session = chat.session;
+  if (want.model && want.model !== modelLabel(session) && modelAllowed(readModelPolicy(), want.model)) {
+    const model = (await modelRuntime.getAvailable().catch(() => [])).find((m) => `${m.provider}/${m.id}` === want.model);
+    if (model) await session.setModel(model);
+  }
+  if (want.thinking && want.thinking !== session.thinkingLevel && (THINKING_LEVELS as readonly string[]).includes(want.thinking))
+    session.setThinkingLevel(want.thinking as Parameters<AgentSession["setThinkingLevel"]>[0]);
+}
+
 async function openSession(path: string, onDisposed: () => void): Promise<ChatSession> {
   if (!existsSync(path)) throw new Error(`Session file not found: ${path}`);
   const modelRuntime = await getModelRuntime();
@@ -1599,7 +2092,13 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
     // model change, so the member opens WITHOUT the opt-in and lands in the extension's own
     // default, and the marker survives restarts. Everything else about the loadout — `target`,
     // the experimental claude-code switch — is the same sessionFlags() every runtime gets.
-    const services = await servicesForCwd(cwd, modelRuntime, !isFanoutMember(sessionManager));
+    // The Overseer (server/overseer.ts) is recognised the same way, by its marker, and gets its own
+    // loadout: its prompt appended after the user's APPEND_SYSTEM.md, its sova_* tools, a tool
+    // allowlist, no topic outline (nobody lists it), and its model from overseer.json.
+    const special = isOverseerFile(sessionManager) ? await overseerLoadout(path) : null;
+    const services = special
+      ? await servicesForCwd(cwd, modelRuntime, false, special.resourceLoaderOptions)
+      : await servicesForCwd(cwd, modelRuntime, !isFanoutMember(sessionManager));
     for (const d of services.diagnostics) console.warn(`[chat] runtime ${d.type}: ${d.message}`);
     // A session with no messages yet starts from the saved new-session defaults (web-defaults.ts):
     // resolve the stored model ref against models with configured auth and let the SDK clamp the
@@ -1608,7 +2107,7 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
     let defaultModel: Awaited<ReturnType<typeof modelRuntime.getAvailable>>[number] | undefined;
     let defaultThinking: ThinkingLevel | undefined;
     if (!sessionManager.getBranch().some((e) => e.type === "message" && e.message.role === "user")) {
-      const defaults = loadDefaults();
+      const defaults = special ? { model: special.model ?? undefined, thinking: special.thinking ?? undefined } : loadDefaults();
       // A stored default the user has since turned off is stale like any other: skipped here, so
       // the session opens on pi's own default rather than on a model it would refuse to send with.
       if (defaults.model && modelAllowed(readModelPolicy(), defaults.model))
@@ -1619,14 +2118,18 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
         defaultThinking = defaults.thinking as ThinkingLevel;
     }
     const model = modelForSessionOpen(sessionManager, modelRuntime, defaultModel);
+    const created = await createAgentSessionFromServices({
+      services,
+      sessionManager,
+      sessionStartEvent,
+      model,
+      ...(defaultThinking ? { thinkingLevel: defaultThinking as Parameters<AgentSession["setThinkingLevel"]>[0] } : {}), // same cast as setThinkingLevel above: our ladder has "off", the SDK's union doesn't
+      ...(special ? { tools: special.tools, ...(special.customTools ? { customTools: special.customTools } : {}) } : {}),
+    });
+    // The Overseer tells a message the user sent from every other by the object it reaches the Agent as.
+    if (special) overseerRuntime?.watchSession(created.session);
     return {
-      ...(await createAgentSessionFromServices({
-        services,
-        sessionManager,
-        sessionStartEvent,
-        model,
-        ...(defaultThinking ? { thinkingLevel: defaultThinking as Parameters<AgentSession["setThinkingLevel"]>[0] } : {}), // same cast as setThinkingLevel above: our ladder has "off", the SDK's union doesn't
-      })),
+      ...created,
       services,
       diagnostics: services.diagnostics,
     };
@@ -1649,6 +2152,16 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
       throw err;
     }
     chat.deferredAppends = deferred;
+    if (isOverseerFile(sessionManager)) {
+      chat.overseer = true;
+      // A conversation that already has messages keeps the model its file records (the SDK restores
+      // it); overseer.json is the Overseer's setting, so bring the runtime to it now. The appends
+      // this makes are still deferred (the patch above is live until `restore`), so opening writes
+      // nothing, like any other open.
+      await syncOverseerModel(chat, modelRuntime, path).catch((err) =>
+        console.warn(`[overseer] model sync skipped: ${err instanceof Error ? err.message : String(err)}`),
+      );
+    }
     held.set(path, chat);
     return chat;
   } catch (err) {

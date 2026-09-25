@@ -151,6 +151,13 @@ export interface QueueDeps {
   handOff(item: WebQueueItem, streaming: boolean): Promise<void>;
   /** Whether a turn is running (AgentSession.isStreaming). */
   streaming(): boolean;
+  /**
+   * Whether nothing may be handed over at all right now: a compaction is running, and pi refuses
+   * every prompt meanwhile ("Cannot submit a prompt while compaction is in progress",
+   * agent-session.js prompt()). Held items stay held — still removable, still cleared by Stop —
+   * and go in at the next wake after it ends. Absent = never paused.
+   */
+  paused?(): boolean;
   /** AgentSession.clearQueue(): empties BOTH SDK queues and returns what was in them. */
   clearSdkQueue(): { steering: string[]; followUp: string[] };
   /** The write guards (TUI ownership, foreign writers). Throws on refusal. */
@@ -479,6 +486,8 @@ export class WebQueue {
       }
       const next = this.held[0];
       if (!next) return;
+      if (this.deps.paused?.()) return; // woken again when the compaction ends
+
       // IDLE WITH SOMETHING ALREADY QUEUED: wake the SDK instead of going in.
       //
       // This is the deadlock breaker, and it must be a wake rather than "hand ours over and let the

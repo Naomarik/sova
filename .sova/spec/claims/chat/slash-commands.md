@@ -184,7 +184,8 @@ and again when the count changes, at most once a second. When there are none, an
   - **Prompt templates and skills** expand into a **user** message (the expanded text), then an
     assistant turn.
   - **Extension commands** may add `custom` entries, which render as **info rows** (or
-    **unknown** rows with the Raw entry disclosure). They may also send `ui_request`s (§app/extension-dialogs), or
+    **unknown** rows with the Raw entry disclosure) — except the mode extension's markers, which
+    render nothing (§chat.transcript/transcript-items). They may also send `ui_request`s (§app/extension-dialogs), or
     produce nothing visible.
   - **A persisted running row.** An extension command may also append a `custom` entry at the
     start of its run that the thread renders as a live, self-updating row for the run's
@@ -207,6 +208,8 @@ and again when the count changes, at most once a second. When there are none, an
   the same way — draft cleared, no row in the thread — `/tree` with **Inputs Only** on (your own
   messages, each able to rewind) and `/timeline` with it off. The runtime registers neither, so
   neither appears in the menu, and either one with arguments is an ordinary message.
+- **`/clear`.** In the Overseer only (§app.overseer/identity-and-clear), bare `/clear` is a local
+  command: it starts a fresh Overseer conversation. Anywhere else it's an ordinary message.
 - **`/new`.** Bare `/new` is a local command too, as in the TUI: it creates an empty session in
   the chat's folder, opens it with the composer focused, and archives the session it left (only
   once the new one exists). A session that isn't web-spawned, or whose subagents are working,

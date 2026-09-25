@@ -45,6 +45,9 @@
 - **Model.** Chat sessions read it off the composer's model indicator (§chat/composer) and change it in the
   flyout's Model row (§chat/images); neither is in the head. Watch sessions keep it in
   `.session-head-meta`, as plain mono text they can't change.
+- **Overseer marks.** A user row the Overseer sent carries an **Overseer** tag
+  (§app.overseer/sent-marker); its actions are unchanged, Rewind included. An Overseer dialog
+  answer renders as the machine row "Overseer chose: {answer}" (§app.overseer/dialog-answers).
 - **Copy Session Path.** Gone from the head. The path is a session fact, and it's copied from
   Session info instead, which is where the rest of them live.
 - **Archive Session / Unarchive Session.** Web sessions only, last in the head. Moves the
@@ -209,12 +212,17 @@ a machine event fired the turn, not the person. Same `.toolcard` shell as tool-c
 - **AT.** No author line, and the accessible name never says "You": the native `<summary>`'s own
   text ("Wake nudge n1 …") is what's announced.
 
-**info.** Model changes, compaction, labels, and branch summaries.
+**info.** Compaction, labels, branch summaries and other short machine notes. Model changes,
+thinking-level changes and the mode extension's markers are the exception: they render
+**nothing** in the thread — they are settings history, not conversation. That history stays where
+it belongs, on the Session pane's Changes disclosure and the Timeline's change markers
+(§chat.timeline/rows); a switch's own feedback is the toast and the announcement
+(§chat.model-menu/states).
 
 ```html
 <div class="info-row" role="note">
   <span class="info-row-text"><svg class="icon icon-sm" aria-hidden="true">…info…</svg>
-    Model changed to <code>claude-opus-5</code></span>
+    Label "release" on <code>m41</code></span>
 </div>
 ```
 
@@ -291,7 +299,7 @@ closed, and the markdown on the left when open.
   `custom_message` longer than 200 characters or spanning lines gets the same row, with its
   customType in place of the agent and no chip. Markdown, not `<pre>`: these payloads are
   written as markdown (`**From …**`, `_id …_`), and the renderer never runs HTML. Short
-  one-liners stay `.info-row` (mode markers, compaction notes, and so on).
+  one-liners stay `.info-row` (compaction notes, and so on).
 - **AT.** The native `<summary>` is the control, and its text is the name: "Report from ag_01 ·
   orchestrator Success All requested checks…". For non-agent messages the hidden prefix is
   "Message: ". Keyboard is native.
@@ -530,7 +538,7 @@ and the 120-second rule applies.
 ## §chat.transcript/landing-page — Landing page (`#/`)
 
 With no session selected the main pane is not an empty state with a grid bolted on — it is one
-page with two parts, in this order:
+page with up to three parts, in this order:
 
 1. **The opening**, unchanged except for its actions: `.welcome-head` wrapping the `.empty` block
    that has always been here — the `chat` mark, "{n} sessions across {m} folders.", "Pick one to
@@ -538,12 +546,16 @@ page with two parts, in this order:
    and `Fan Out…` (§workspace.fanout/entry-points — the empty screen is fanout's front door, which is a
    creation gesture offered beside the other creation gesture, not in the sidebar). It is the
    first thing read at every width.
-2. **The Explained grid**, shown **only when at least one explanation exists** (0 renders
+2. **The Extensions section**, shown **only when at least one extension is installed**: one card
+   per extension, under the same section eyebrow (§app.extensions/cards).
+3. **The Explained grid**, shown **only when at least one explanation exists** (0 renders
    nothing — no empty state, no head, no reserved space):
 
 ```html
 <div class="welcome">
   <div class="welcome-head">…the .empty opening…</div>
+  <!-- only when at least one extension is installed (§app.extensions/cards) -->
+  <section class="explain-section" aria-labelledby="ext-section-title">…Extensions {n}, one .card.ext-card each…</section>
   <!-- only when there is at least one explanation -->
   <section class="explain-section" aria-labelledby="explain-section-title">
     <h2 class="explain-section-head" id="explain-section-title">Explained <span class="text-num">6</span></h2>
@@ -559,9 +571,9 @@ page with two parts, in this order:
   under the last row so the grid never runs into the viewport edge, and no top padding —
   `.empty` brings its own `--space-8` crown. The section caps at `--page-max` (1280px) and
   centres: these are cards, not prose, so the reading measure is the wrong cap for them.
-- **The opening centres when it is alone.** With no explanations, `.welcome-head:only-child`
-  takes the leftover height and centres its `.empty` in the pane. With the grid under it, it
-  keeps its own height at the top and the grid follows.
+- **The opening centres when it is alone.** With no extensions and no explanations,
+  `.welcome-head:only-child` takes the leftover height and centres its `.empty` in the pane. With
+  a section under it, it keeps its own height at the top and the sections follow.
 - **The head is the section eyebrow**, the same rule as the Usage and Agents pages'
   `.insights-section-head` (§app/insights) — mono, `--fs-micro`, uppercase, `--ls-eyebrow`, `--color-ink-2`
   — with the count as the `.text-num` span inside it, in `--color-ink-muted` and no casing. A
@@ -584,10 +596,10 @@ page with two parts, in this order:
 
 | State | What renders |
 |---|---|
-| No session selected (unfolded) | The landing page below, not a bare `.empty`: `.welcome` fills `.app-main`, its `.welcome-head` holds the `.empty` opening (`chat` icon in `.empty-mark`, title "48 sessions across 7 folders.", body "Pick one to read it, or start a new one.", an `.empty-action` cluster with `New Session` and `Fan Out…`), and the Explained grid follows when there is one. No composer |
+| No session selected (unfolded) | The landing page below, not a bare `.empty`: `.welcome` fills `.app-main`, its `.welcome-head` holds the `.empty` opening (`chat` icon in `.empty-mark`, title "48 sessions across 7 folders.", body "Pick one to read it, or start a new one.", an `.empty-action` cluster with `New Session` and `Fan Out…`), and the Extensions section and the Explained grid follow when there are any. No composer |
 | Loading transcript (after 300ms) | Three placeholder messages in `.thread`: a right-aligned `.skeleton` 40% × 44px, then a left `.skeleton-title` plus 3 `.skeleton-line` at 92/78/60%, then a `.skeleton-row` at 60% width. Put `aria-busy="true"` on the `section`. The head renders straight away from the `SessionSummary` |
 | Error (a watched TUI session) | `.banner.banner-error` in `.transcript-inner`. Title: "Couldn't load this transcript." Body: "The file at `{path}` wasn't changed. {server message}." Action: `Retry`. A chat the server refuses to open shows §app.shell's open-failure banner instead |
-| Empty (new session) | `.empty` with no icon: the title "New session in `~/webapps/sova`.", then the setup card (§chat.transcript/setup-card), then the footnote `.empty-body` "Your first message becomes its title." No action; the composer has focus. Show it only while the thread has **zero rows**, counting local rows such as "Ran `/cmd`" (§chat/slash-commands) and model-change info rows. Once any row exists, the thread renders normally with no empty state |
+| Empty (new session) | `.empty` with no icon: the title "New session in `~/webapps/sova`.", then the setup card (§chat.transcript/setup-card), then the footnote `.empty-body` "Your first message becomes its title." No action; the composer has focus. Show it only while the thread has no **rendered row**: model, thinking and mode change rows draw nothing and don't count, while local rows such as "Ran `/cmd`" (§chat/slash-commands) still do. Once any rendered row exists, the thread renders normally with no empty state |
 | Agent/server error (`type:"error"`, not busy) | `.banner.banner-error` placed as the last item of the thread (in flow, so it stays in the record). Title: "The turn stopped with an error." Body: "{message}. Your messages are kept. Send again to retry." |
 
 ## §chat.transcript/setup-card — Setup card

@@ -17,16 +17,18 @@ export function WorkerSlotRow(props: {
   other: DraftChoice | null;
   disabled: boolean;
   owner?: string;
+  /** A lone row (no fallback, no "Primary" label): its group's accessible name. */
+  alone?: string;
   onChange(next: DraftChoice): void;
 }) {
   const id = (part: string) => `${props.idPrefix}-${props.slot}-${part}`;
-  const issue = () => slotIssue(props.info, props.options, props.choice, props.other, props.slot, props.owner);
+  const issue = () => slotIssue(props.info, props.options, props.choice, props.other, props.slot, props.owner, !props.alone);
   const models = () => modelSelectOptions(props.options, props.choice);
   const efforts = () => effortSelectOptions(props.info, props.options, props.choice);
   const slotName = () => (props.slot === "primary" ? "Primary" : "Fallback");
   return (
-    <div class="settings-delegate-slot" role="group" aria-label={slotName()}>
-      <Show when={props.slot === "primary"}>
+    <div class="settings-delegate-slot" role="group" aria-label={props.alone ?? slotName()}>
+      <Show when={props.slot === "primary" && !props.alone}>
         <span class="settings-delegate-slot-label">Primary</span>
       </Show>
       <div class="settings-delegate-fields">

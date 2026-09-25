@@ -799,4 +799,43 @@ await commands.get("mode").handler("normal", ctx);
 	rmSync(specFile);
 }
 
+// ── The host's base prompt sections: kept in step, so a turn an extension's message starts reads the same prompt ──
+// pi builds a user turn's prompt in before_agent_start; a turn started by sendMessage({triggerTurn})
+// skips it and rebuilds later requests from the base options. Only a command context exposes them.
+{
+	let base = { sections: { preamble: "base" } };
+	const commandCtx = { ...ctx, getSystemPromptOptions: () => base };
+	await commands.get("mode").handler("align on", commandCtx);
+	assert.match(base.sections.mode, /# Minor mode: align/, "a switch through /mode writes the block into the host's base sections");
+	assert.deepEqual(Object.keys(base.sections), ["preamble", "mode"], "no other base section is touched");
+
+	// pi replaces the base object when tools change; the run start re-syncs whichever object is current.
+	base = { sections: { preamble: "rebuilt" } };
+	await hook("agent_start", {});
+	assert.match(base.sections.mode, /# Minor mode: align/, "agent_start writes the block into a rebuilt base");
+
+	// A user turn: the block goes into the turn's own sections and into the base alike.
+	base = { sections: { preamble: "rebuilt again" } };
+	const turnSections = { preamble: "turn" };
+	await beforeAgentStart({ systemPrompt: "base", systemPromptOptions: { cwd: ctx.cwd, sections: turnSections } }, ctx);
+	assert.equal(base.sections.mode, turnSections.mode, "before_agent_start syncs the base with the block the turn was built with");
+
+	// Off again, through a plain context (a shortcut): the adopted getter still reaches the base.
+	await shortcuts.get("alt+m").handler(ctx); // normal → delegate
+	assert.match(base.sections.mode, /# Mode: delegate/, "a shortcut switch reaches the base through the adopted getter");
+	await shortcuts.get("alt+m").handler(ctx); // back to normal
+	assert.match(base.sections.mode, /# Minor mode: align/);
+	await commands.get("mode").handler("align off", ctx);
+	assert.ok(!("mode" in base.sections), "no block: the base section is deleted");
+	assert.deepEqual(base.sections, { preamble: "rebuilt again" });
+
+	// A getter whose runner is gone throws; it is dropped and nothing else fails.
+	const stale = { ...ctx, getSystemPromptOptions: () => { throw new Error("extension runner is no longer active"); } };
+	await commands.get("mode").handler("align on", stale);
+	await hook("agent_start", {});
+	assert.ok(!("mode" in base.sections), "a dead getter is dropped, not retried");
+	await commands.get("mode").handler("align off", ctx);
+	assert.equal(await beforeAgentStart({ systemPrompt: "base" }, ctx), undefined, "back to normal with no host: inert");
+}
+
 console.log("mode smoke tests passed");

@@ -1,13 +1,15 @@
 import { children, createEffect, createMemo, createSignal, For, Match, on, onCleanup, Show, Switch, type JSX } from "solid-js";
 import type { TmpAttachment, TranscriptItem } from "../../shared/protocol";
 import type { LiveBlock, LiveEntry, LiveState, LiveUserState } from "../lib/live";
-import { clockTime, prettyJson, shortModel, stampTime, thousands, tildePath } from "../lib/format";
+import { agoTime, clockTime, prettyJson, shortModel, stampTime, thousands, tildePath } from "../lib/format";
+import { useMinuteNow } from "../lib/minute-clock";
 import { isObj, str, timestampOf, toolCallArgs, toolResultView } from "../lib/message";
 import { stripPastedPaths } from "../lib/path-attachments";
 import { home } from "../lib/ui-state";
 import { entryIdOf, registerTranscript } from "../lib/jump";
 import { usePaneId } from "../lib/pane-scope";
 import { isHiddenBlock, liveHiddenCounts, splitHidden, thinkingHiddenLabel, toolsHiddenLabel } from "../lib/hidden-rows";
+import { isChangeRow } from "../lib/change-rows";
 import { isTurnStart } from "../lib/turn";
 import { parseWakeNudge } from "../../shared/wake";
 import { ImageStrip } from "./ImageStrip";
@@ -21,6 +23,8 @@ import { Markdown } from "./Markdown";
 import { ToolCard, type ToolStatus } from "./ToolCard";
 import { WakeCard } from "./WakeCard";
 import { Banner, Chip, Icon } from "./ui";
+import { BriefRow, ConfirmCard, NavigateGo, OverseerChoiceRow } from "./OverseerCards";
+import { confirmAnswer, confirmDetails, detailsOf, isBriefText } from "../lib/overseer";
 import { MessageActions, type MessageActionItem } from "./MessageActions";
 import { type MessageStrip, stripLabel, stripsByRow } from "../lib/message-actions";
 
@@ -36,12 +40,18 @@ export interface MessageActionsProvider {
   note?(entryId: string): string | null;
 }
 
+/** "1:43 PM · 5m ago": the clock in mono, then its age, kept current by the one minute clock
+    every head shares. The age drops once it would only repeat the date (past 7 days). */
 function Stamp(props: { iso?: string }) {
+  const now = useMinuteNow();
   return (
     <Show when={props.iso}>
-      <span class="message-time" title={props.iso}>
-        {stampTime(props.iso!)}
-      </span>
+      {(iso) => (
+        <span class="message-stamp" title={iso()}>
+          <span class="message-time">{stampTime(iso(), now())}</span>
+          <Show when={agoTime(iso(), now())}>{(ago) => <span class="message-ago"> · {ago()}</span>}</Show>
+        </span>
+      )}
     </Show>
   );
 }
@@ -61,14 +71,21 @@ function UserTurn(props: {
   time?: string;
   state?: LiveUserState;
   origin?: "client" | "server";
+  /** The Overseer sent this message (its `sova-overseer-sent` marker names this row). */
+  overseer?: boolean;
   images?: string[];
   attachments?: TmpAttachment[];
 }) {
-  const author = () => AUTHOR[props.origin ?? "client"];
+  const author = () => (props.overseer ? "Overseer" : AUTHOR[props.origin ?? "client"]);
   return (
     <article class="message message-user" aria-label={props.time ? `${author()}, ${stampTime(props.time)}` : author()}>
       <div class="message-head">
-        <span class="message-author">{author()}</span>
+        <Show when={props.overseer} fallback={<span class="message-author">{author()}</span>}>
+          <span class="message-author overseer-author" title="Sent by the Overseer">
+            <Icon name="eye" small />
+            Overseer
+          </span>
+        </Show>
         <Stamp iso={props.time} />
         <Show when={props.state && PENDING_LABEL[props.state]}>
           {(label) => <span class="message-pending">{label()}</span>}
@@ -273,11 +290,17 @@ export function HistoryItems(props: {
       disclosure) — an action is about the chat you are in, not about every transcript on screen. */
   actions?: MessageActionsProvider;
 }) {
+  /**
+   * The items the thread may render: the settings-change rows are dropped before anything else,
+   * so they can't appear even inside the hidden-rows disclosure. Every scan that speaks the
+   * rendered rows' coordinates (the last-user/openFrom scan) runs on this same array.
+   */
+  const renderable = createMemo(() => props.items.filter((it) => !isChangeRow(it)));
   const split = createMemo(() =>
-    props.hideTools || props.hideThinking ? splitHidden(props.items, { tools: !!props.hideTools, thinking: !!props.hideThinking }) : null,
+    props.hideTools || props.hideThinking ? splitHidden(renderable(), { tools: !!props.hideTools, thinking: !!props.hideThinking }) : null,
   );
   /** The rows rendered: all of them, or everything but tool rows while they're hidden. */
-  const rows = () => split()?.shown ?? props.items;
+  const rows = () => split()?.shown ?? renderable();
   const results = createMemo(() => {
     const byCall = new Map<string, TranscriptItem>();
     for (const it of props.items) if (it.kind === "tool-result" && it.toolCallId) byCall.set(it.toolCallId, it);
@@ -289,6 +312,12 @@ export function HistoryItems(props: {
     return ids;
   });
   const latestAlign = createMemo(() => latestAlignId(props.items));
+  /** User rows the Overseer sent: its markers name them by id, in any order. */
+  const overseerSent = createMemo(() => {
+    const ids = new Set<string>();
+    for (const it of props.items) if (it.overseerMark?.kind === "sent") ids.add(it.overseerMark.targetId);
+    return ids;
+  });
   /**
    * Where the action strips go, by rendered-row index. One per ENTRY: a reply rendered as three
    * blocks is one message, and three strips under it would be three Regenerates for one turn.
@@ -298,7 +327,7 @@ export function HistoryItems(props: {
   const strips = createMemo(() => (props.actions ? stripsByRow(rows()) : new Map<number, MessageStrip>()));
   // Only calls after the last user message (or wake nudge — isTurnStart) can still be in flight.
   const lastUserIndex = createMemo(() => {
-    for (let i = props.items.length - 1; i >= 0; i--) if (isTurnStart(props.items[i]!)) return i;
+    for (let i = renderable().length - 1; i >= 0; i--) if (isTurnStart(renderable()[i]!)) return i;
     return -1;
   });
   const openFrom = () => props.openFrom ?? lastUserIndex() + 1;
@@ -318,7 +347,7 @@ export function HistoryItems(props: {
     return at;
   });
   /**
-   * The forked entry's OWN timestamp, in `HH:MM` — the marker's "· 14:06". It is the time of the
+   * The forked entry's OWN timestamp, as the clock — the marker's "· 2:06 PM". It is the time of the
    * last shared moment (the row the marker follows), NOT the wall-clock of the fanout gesture:
    * the gesture time lives nowhere in `seed`, and adding a field for it
    * would put a write-time fact in marker data whose only reader is this decoration. Derived
@@ -338,8 +367,22 @@ export function HistoryItems(props: {
           // A box-less wrapper so the outline strip can find an entry's row (Jump to Message).
           <div class="entry" data-entry={item.id}>
             <Switch fallback={<Unknown raw={item.raw} />}>
+              <Match when={item.kind === "user" && isBriefText(item.text)}>
+                <BriefRow text={item.text ?? ""} time={timestampOf(item.raw)} />
+              </Match>
               <Match when={item.kind === "user"}>
-                <UserTurn text={item.text ?? ""} time={timestampOf(item.raw)} images={item.images} attachments={item.attachments} />
+                <UserTurn
+                  text={item.text ?? ""}
+                  time={timestampOf(item.raw)}
+                  overseer={overseerSent().has(entryIdOf(item.id))}
+                  images={item.images}
+                  attachments={item.attachments}
+                />
+              </Match>
+              {/* The sent marker draws nothing itself: it tags the row it names (above). */}
+              <Match when={item.overseerMark?.kind === "sent"}>{null}</Match>
+              <Match when={item.overseerMark?.kind === "dialog-answer" && item.overseerMark}>
+                {(mark) => <OverseerChoiceRow title={mark().title} answer={mark().answer} />}
               </Match>
               <Match when={item.kind === "wake" && item.wake}>
                 {(wake) => <WakeCard nudge={wake()} text={item.text ?? ""} time={timestampOf(item.raw)} />}
@@ -391,7 +434,18 @@ export function HistoryItems(props: {
                     if (v) return v.isError ? "error" : "done";
                     return props.streaming && index() >= openFrom() ? "running" : "none";
                   };
+                  const resultDetails = () => {
+                    const r = item.toolCallId ? results().get(item.toolCallId) : undefined;
+                    return r ? detailsOf(r.raw) : undefined;
+                  };
+                  const confirm = () =>
+                    item.text === "sova_confirm" && status() !== "error"
+                      ? (confirmDetails(resultDetails()) ?? confirmDetails(toolCallArgs(item.raw, item.toolCallId)))
+                      : null;
                   return (
+                    <Show
+                      when={confirm()}
+                      fallback={
                     <ToolCard
                       name={item.text ?? "tool"}
                       args={toolCallArgs(item.raw, item.toolCallId)}
@@ -399,7 +453,15 @@ export function HistoryItems(props: {
                       output={view()?.output}
                       images={item.toolCallId ? results().get(item.toolCallId)?.images : undefined}
                       attachments={item.toolCallId ? results().get(item.toolCallId)?.attachments : undefined}
+                      action={item.text === "sova_navigate" && status() === "done" ? <NavigateGo details={resultDetails()} /> : undefined}
                     />
+                      }
+                    >
+                      {(details) => {
+                        const answer = () => confirmAnswer(props.items, props.items.indexOf(item), details());
+                        return <ConfirmCard details={details()} answered={answer().answered} choice={answer().choice} />;
+                      }}
+                    </Show>
                   );
                 })()}
               </Match>
@@ -471,15 +533,24 @@ function LiveBlockView(props: { block: LiveBlock; live: LiveState; author: strin
             if (t) return t.status;
             return props.live.running ? "running" : "none";
           };
+          const confirm = () => (b().name === "sova_confirm" && status() !== "error" ? confirmDetails(tool()?.details) ?? confirmDetails(b().args) : null);
           return (
-            <ToolCard
-              name={b().name}
-              args={b().args ?? tool()?.args}
-              argsText={b().argsText}
-              status={status()}
-              output={tool()?.output}
-              images={tool()?.images}
-            />
+            <Show
+              when={confirm()}
+              fallback={
+                <ToolCard
+                  name={b().name}
+                  args={b().args ?? tool()?.args}
+                  argsText={b().argsText}
+                  status={status()}
+                  output={tool()?.output}
+                  images={tool()?.images}
+                  action={b().name === "sova_navigate" && status() === "done" ? <NavigateGo details={tool()?.details} /> : undefined}
+                />
+              }
+            >
+              {(details) => <ConfirmCard details={details()} answered={false} choice={null} pending={props.live.running} />}
+            </Show>
           );
         }}
       </Match>
@@ -520,6 +591,8 @@ export function LiveEntries(props: {
                 <Show
                   when={parseWakeNudge(e().text)}
                   fallback={
+                    <Show when={!isBriefText(e().text)} fallback={<BriefRow text={e().text} />}>
+                    {
                     /* A queued row has no `.entry` around it, so it brings the hover/tap region
                        its Remove needs to be revealed by (base.css; `display: contents`, so the
                        wrapper changes nothing about how the row lays out). */
@@ -535,6 +608,8 @@ export function LiveEntries(props: {
                         {(items) => <Show when={items().length > 0}><MessageActions label="Actions for your queued message" align="end" items={items()} /></Show>}
                       </Show>
                     </div>
+                    }
+                    </Show>
                   }
                 >
                   {(wake) => <WakeCard nudge={wake()} text={e().text} />}
@@ -708,7 +783,7 @@ export interface ForkMarker {
  * The marker row: above it is shared with the source, below it is this member's own. A rendered
  * row, never an entry — nothing is written into the session file for it, because the fact it
  * states already lives in the group registry, and a written marker would need the write guards.
- * `time` is the forked entry's own `HH:MM` (see `forkTime`), or null to omit the clock half —
+ * `time` is the forked entry's own clock (`2:06 PM`) (see `forkTime`), or null to omit the clock half —
  * an entry with no timestamp is not a thing to guess at.
  */
 function ForkRow(props: { fork: ForkMarker; time: string | null }) {

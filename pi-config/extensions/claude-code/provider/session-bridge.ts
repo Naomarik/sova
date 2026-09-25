@@ -88,7 +88,10 @@ export interface SessionBridgeLimits {
 	 * its result is a worker's report, and the report IS the deliverable.
 	 */
 	maxFoldedReportChars: number;
-	/** Characters of the whole folded history message. */
+	/**
+	 * Characters of the whole folded history message, for a request that does
+	 * not say how large its model's context window is (see foldBudgetChars).
+	 */
 	maxFoldedChars: number;
 }
 
@@ -100,6 +103,76 @@ export const LIMITS: SessionBridgeLimits = {
 	maxLineBytes: 4 * 1024 * 1024, maxIdleSessions: 4,
 	maxFoldedResultChars: 8_000, maxFoldedReportChars: 48_000, maxFoldedChars: 512 * 1024,
 };
+
+/**
+ * pi's default `compaction.reserveTokens`. The provider cannot read pi's
+ * settings, so it mirrors the default rather than guess at an override.
+ */
+export const PI_RESERVE_TOKENS = 16_384;
+/** Tokens the CLI adds around pi's system prompt and tools (its own preamble, request framing). */
+const FOLD_OVERHEAD_TOKENS = 4_000;
+/**
+ * Characters per token of a fold, for every chars-to-tokens conversion here.
+ * Measured, not the usual 4: a live restart of a real opus[1m] session sent a
+ * 524,682-character fold and its first call reported 231,491 input tokens
+ * (cache_creation_input_tokens), system prompt and tools included, so about
+ * 2.3 characters per token. Tool output, JSON and code tokenize densely.
+ * 2.2 rounds that toward safety.
+ */
+export const FOLD_CHARS_PER_TOKEN = 2.2;
+/** Headroom under the window for what 2.2 still under-counts in a denser fold. */
+const FOLD_SAFETY = 0.85;
+/** The smallest fold budget, whatever the window arithmetic says. */
+export const MIN_FOLD_CHARS = 64 * 1024;
+/**
+ * The largest fold budget. The folded history is ONE stream-json stdin line,
+ * and the transport refuses a line over `maxLineBytes` (4 MiB); JSON escaping
+ * and multi-byte text make bytes outrun characters, and images ride the same
+ * line. Raise it only once a live probe shows the CLI takes a bigger line.
+ */
+export const MAX_FOLD_CHARS = 2 * 1024 * 1024;
+
+/** What sizes a fold: the model's window and output cap, and what else shares the window. */
+export interface FoldBudgetInput {
+	contextWindow?: number;
+	maxTokens?: number;
+	systemPrompt?: string;
+	tools?: readonly Pick<Tool, "name" | "description" | "parameters">[];
+}
+
+/**
+ * Characters of folded history a restarted child can take for this model:
+ * the window, less pi's compaction reserve, the system prompt, the tool
+ * declarations, the CLI's overhead and the output cap, scaled down by
+ * FOLD_SAFETY, converted at FOLD_CHARS_PER_TOKEN and clamped to [MIN_FOLD_CHARS, MAX_FOLD_CHARS]. Without a
+ * window it is `fallback`. The same number decides when the provider asks pi
+ * to compact (see auto-compact.ts), so a restart never has to clip history
+ * pi still holds in full.
+ */
+export function foldBudgetChars(input: FoldBudgetInput, fallback = LIMITS.maxFoldedChars): number {
+	const window = input.contextWindow;
+	if (typeof window !== "number" || !Number.isFinite(window) || window <= 0) return fallback;
+	const tools = !input.tools?.length ? "" : JSON.stringify(input.tools.map((tool) => ({ name: tool.name, description: tool.description, parameters: tool.parameters ?? {} })));
+	const overhead = ((input.systemPrompt?.length ?? 0) + tools.length) / FOLD_CHARS_PER_TOKEN + FOLD_OVERHEAD_TOKENS;
+	const tokens = (window - PI_RESERVE_TOKENS - overhead - (input.maxTokens ?? 0)) * FOLD_SAFETY;
+	return Math.floor(Math.min(MAX_FOLD_CHARS, Math.max(MIN_FOLD_CHARS, tokens * FOLD_CHARS_PER_TOKEN)));
+}
+
+/**
+ * Why a fresh child could never take `chars` of message, or undefined if it
+ * might: the message and the system prompt at FOLD_CHARS_PER_TOKEN, plus the
+ * reply's `maxTokens`, over the window less pi's compaction reserve. No safety
+ * factor: this only refuses what certainly cannot fit, since the other side
+ * is an API overflow after a full upload.
+ */
+export function windowOverflow(chars: number, request: Pick<ClaudeTurnRequest, "model" | "contextWindow" | "maxTokens" | "systemPrompt">): string | undefined {
+	const window = request.contextWindow;
+	if (typeof window !== "number" || !Number.isFinite(window) || window <= 0) return undefined;
+	const tokens = Math.ceil((chars + (request.systemPrompt?.length ?? 0)) / FOLD_CHARS_PER_TOKEN);
+	const reply = request.maxTokens ?? 0;
+	if (tokens + reply <= window - PI_RESERVE_TOKENS) return undefined;
+	return `Claude Code cannot take this request: its input is about ${tokens} tokens, which with ${reply} for the reply exceeds ${request.model}'s ${window}-token context window`;
+}
 
 export interface SessionBridgeOptions {
 	/** CLI executable. Resolved on PATH without a shell, so a shell alias cannot leak in. */
@@ -269,6 +342,72 @@ function clipResult(text: string, cap: number): string {
 export interface FoldedHistory {
 	text: string;
 	images: ImageContent[];
+	/** Messages left out to fit the budget; 0 when the history fits. */
+	omitted: number;
+}
+
+/** A tool as the CLI names it: the model only knows `mcp__sova__<name>`. */
+function cliToolName(name: string): string {
+	return name.startsWith(MCP_TOOL_PREFIX) ? name : `${MCP_TOOL_PREFIX}${name}`;
+}
+
+/** One folded pi message: its rendered text, and the images it carried. */
+interface FoldSegment {
+	text: string;
+	images: ImageContent[];
+	user: boolean;
+}
+
+/** Added to the header of a fold that had to leave messages out. */
+const FOLD_CLIPPED = "The conversation is longer than fits: its oldest messages are left out, as marked below, so do not assume the replay starts at the beginning.";
+
+/** Separator between folded messages. */
+const FOLD_SEP = "\n\n";
+/** Room kept for the omission markers when a history is clipped. */
+const FOLD_MARKER_RESERVE = 256;
+
+/**
+ * Keep what fits in `budget` characters, dropping the OLDEST messages first.
+ *
+ * The last user message is always kept whole: it is what the model has to
+ * answer. The first user message (usually the task) is kept next if it takes
+ * no more than a quarter of the budget. Then the newest messages, walking back
+ * from the end until the next one would not fit. The body opens with a marker
+ * saying how much is missing, and a gap in the middle gets its own marker.
+ */
+function fitFold(segments: readonly FoldSegment[], budget: number): { body: string; images: ImageContent[]; omitted: number } {
+	const total = segments.reduce((sum, segment) => sum + segment.text.length, 0) + FOLD_SEP.length * Math.max(0, segments.length - 1);
+	if (total <= budget) {
+		return { body: segments.map((segment) => segment.text).join(FOLD_SEP), images: segments.flatMap((segment) => segment.images), omitted: 0 };
+	}
+	const keep = new Set<number>();
+	let used = FOLD_MARKER_RESERVE;
+	const take = (i: number) => { keep.add(i); used += segments[i]!.text.length + FOLD_SEP.length; };
+	const fits = (i: number) => used + segments[i]!.text.length + FOLD_SEP.length <= budget;
+	const lastUser = segments.findLastIndex((segment) => segment.user);
+	if (lastUser >= 0) take(lastUser);
+	const firstUser = segments.findIndex((segment) => segment.user);
+	if (firstUser >= 0 && !keep.has(firstUser) && segments[firstUser]!.text.length <= budget / 4 && fits(firstUser)) take(firstUser);
+	for (let i = segments.length - 1; i >= 0; i--) {
+		if (keep.has(i)) continue;
+		if (!fits(i)) break;
+		take(i);
+	}
+
+	const omitted = segments.length - keep.size;
+	const parts = [`[${omitted} earlier message(s) omitted to fit the context window]`];
+	const images: ImageContent[] = [];
+	let gap = 0;
+	let seenKept = false;
+	for (let i = 0; i < segments.length; i++) {
+		if (!keep.has(i)) { gap++; continue; }
+		// A leading gap is what the opening marker already says.
+		if (gap && seenKept) parts.push(`[… ${gap} message(s) omitted here …]`);
+		gap = 0; seenKept = true;
+		parts.push(segments[i]!.text);
+		images.push(...segments[i]!.images);
+	}
+	return { body: parts.join(FOLD_SEP), images, omitted };
 }
 
 /**
@@ -302,7 +441,9 @@ const FOLD_HEADERS: Record<Exclude<FoldMode, "first">, string> = {
  * be folded into text, so they ride the same message as real image blocks;
  * their place in the narrative is marked inline.
  */
-export function foldHistory(messages: readonly Message[], limits: SessionBridgeLimits, mode: FoldMode = "restarted"): FoldedHistory {
+export function foldHistory(
+	messages: readonly Message[], limits: SessionBridgeLimits, mode: FoldMode = "restarted", budget = limits.maxFoldedChars,
+): FoldedHistory {
 	const foldable = messages.filter((m) => m.role !== "system");
 	if (mode === "first") {
 		const only = foldable.length === 1 ? foldable[0]! : undefined;
@@ -310,11 +451,10 @@ export function foldHistory(messages: readonly Message[], limits: SessionBridgeL
 		else {
 			const found = imagesOf(only.content);
 			const suffix = found.length ? `\n[${found.length} image(s) attached to this message, included below]` : "";
-			return { text: `${textOf(only.content)}${suffix}`, images: found };
+			return { text: `${textOf(only.content)}${suffix}`, images: found, omitted: 0 };
 		}
 	}
-	const images: ImageContent[] = [];
-	const parts: string[] = [];
+	const segments: FoldSegment[] = [];
 	const clip = (text: string, cap: number) =>
 		text.length <= cap ? text : `${text.slice(0, cap)}… [truncated]`;
 
@@ -322,38 +462,52 @@ export function foldHistory(messages: readonly Message[], limits: SessionBridgeL
 		if (message.role === "system") continue; // Re-sent as the system prompt, not as history.
 		if (message.role === "user") {
 			const found = imagesOf(message.content);
-			for (const image of found) images.push(image);
 			const suffix = found.length ? `\n[${found.length} image(s) attached to this message, included below]` : "";
-			parts.push(`## User\n${textOf(message.content)}${suffix}`);
+			segments.push({ text: `## User\n${textOf(message.content)}${suffix}`, images: found, user: true });
 		} else if (message.role === "assistant") {
+			const parts: string[] = [];
 			const text = textOf(message.content);
 			if (text) parts.push(`## Assistant\n${text}`);
 			for (const block of message.content) {
 				if (block.type === "toolCall") {
-					parts.push(`## Assistant tool call \`${block.name}\` (id ${block.id})\n\`\`\`json\n${clip(JSON.stringify(block.arguments), limits.maxFoldedResultChars)}\n\`\`\``);
+					// The CLI's name, not pi's: a model that copies a bare name
+					// from the replay gets "No such tool available".
+					parts.push(`## Assistant tool call \`${cliToolName(block.name)}\` (id ${block.id})\n\`\`\`json\n${clip(JSON.stringify(block.arguments), limits.maxFoldedResultChars)}\n\`\`\``);
 				}
 			}
+			if (parts.length) segments.push({ text: parts.join(FOLD_SEP), images: [], user: false });
 		} else if (message.role === "toolResult") {
 			const found = imagesOf(message.content);
-			for (const image of found) images.push(image);
 			const suffix = found.length ? `\n[${found.length} image(s) returned by this tool, included below]` : "";
 			const label = message.isError ? "failed" : "returned";
 			const cap = REPORT_TOOL_RE.test(message.toolName) ? limits.maxFoldedReportChars : limits.maxFoldedResultChars;
-			parts.push(`## Tool \`${message.toolName}\` (id ${message.toolCallId}) ${label}\n${clipResult(textOf(message.content), cap)}${suffix}`);
+			segments.push({
+				text: `## Tool \`${cliToolName(message.toolName)}\` (id ${message.toolCallId}) ${label}\n${clipResult(textOf(message.content), cap)}${suffix}`,
+				images: found, user: false,
+			});
 		}
 	}
 
-	const body = clip(parts.join("\n\n"), limits.maxFoldedChars);
+	const { body, images, omitted } = fitFold(segments, budget);
 	const text = [
 		"<conversation-history>",
-		FOLD_HEADERS[mode],
+		// The framing says so too, not only the marker in the body.
+		omitted ? `${FOLD_HEADERS[mode]} ${FOLD_CLIPPED}` : FOLD_HEADERS[mode],
 		"",
 		body,
 		"</conversation-history>",
 		"",
 		"Continue from here by answering the latest user message above.",
 	].join("\n");
-	return { text, images };
+	return { text, images, omitted };
+}
+
+/**
+ * Characters a restart would fold this transcript into, before any clipping.
+ * Images are not counted: they ride beside the text, not in it.
+ */
+export function foldSizeEstimate(messages: readonly Message[], limits: SessionBridgeLimits = LIMITS): number {
+	return foldHistory(messages, limits, "restarted", Number.POSITIVE_INFINITY).text.length;
 }
 
 // ---------------------------------------------------------------------------
@@ -563,44 +717,60 @@ class CliSession {
 	 */
 	private plan(request: ClaudeTurnRequest, next: string[]): TurnPlan {
 		if (!this.started || !this.transport || this.transport.isClosed() || this.transport.hasExited()) {
-			return { restart: true, reason: "no live CLI process", results: [], user: undefined, first: !this.everStarted };
+			return { restart: true, reason: "no live CLI process", results: [], users: [], first: !this.everStarted };
 		}
 		if (this.desynced) {
-			return { restart: true, reason: `the CLI fell out of step with pi: ${this.desynced}`, results: [], user: undefined };
+			return { restart: true, reason: `the CLI fell out of step with pi: ${this.desynced}`, results: [], users: [] };
 		}
 		if (this.abortPending) {
 			// Its late result would otherwise end this turn.
-			return { restart: true, reason: "an interrupted turn has not settled", results: [], user: undefined };
+			return { restart: true, reason: "an interrupted turn has not settled", results: [], users: [] };
 		}
 		if (this.meta !== undefined && this.meta !== turnMeta(request, this.cwd)) {
-			return { restart: true, reason: "model, effort, system prompt, tool set or cwd changed", results: [], user: undefined };
+			return { restart: true, reason: "model, effort, system prompt, tool set or cwd changed", results: [], users: [] };
 		}
 		if (!isPrefix(this.recorded, next)) {
-			return { restart: true, reason: "transcript diverged (rewind, branch, compaction or foreign append)", results: [], user: undefined };
+			return { restart: true, reason: "transcript diverged (rewind, branch, compaction or foreign append)", results: [], users: [] };
 		}
 		const tail = request.messages.slice(this.recorded.length);
 		const results = tail.filter((m): m is Extract<Message, { role: "toolResult" }> => m.role === "toolResult");
-		const user = [...tail].reverse().find((m) => m.role === "user");
+		// Every user message pi appended since the last turn, in order: steering
+		// and follow-ups queued in one tail must all reach the CLI.
+		const users = tail.filter((m) => m.role === "user");
 		if (this.calls.length && results.length !== this.calls.length) {
-			return { restart: true, reason: "pi answered only some of the CLI's tool calls", results: [], user: undefined };
+			return { restart: true, reason: "pi answered only some of the CLI's tool calls", results: [], users: [] };
 		}
 		if (results.some((result) => !this.calls.some((call) => call.id === result.toolCallId))) {
-			return { restart: true, reason: "a tool result did not match a held call", results: [], user: undefined };
+			return { restart: true, reason: "a tool result did not match a held call", results: [], users: [] };
 		}
-		if (!results.length && !user) {
-			return { restart: true, reason: "nothing new to send", results: [], user: undefined };
+		if (!results.length && !users.length) {
+			return { restart: true, reason: "nothing new to send", results: [], users: [] };
 		}
-		return { restart: false, reason: "", results, user };
+		return { restart: false, reason: "", results, users };
 	}
 
 	/**
 	 * Answer the CLI's tool calls first, then send any newly arrived user
-	 * message (steering). A call the CLI has not dispatched yet keeps its result
-	 * until it does.
+	 * messages (steering, follow-ups). A call the CLI has not dispatched yet
+	 * keeps its result until it does.
 	 */
 	private deliver(request: ClaudeTurnRequest, plan: TurnPlan): void {
 		if (plan.restart) {
-			const folded = foldHistory(request.messages, this.limits, plan.first ? "first" : "restarted");
+			const budget = foldBudgetChars(request, this.limits.maxFoldedChars);
+			const folded = foldHistory(request.messages, this.limits, plan.first ? "first" : "restarted", budget);
+			// Tuning data, not an anomaly, so never the onDebug sink: compare
+			// `chars` with the next message_start's input tokens to check the
+			// budget's chars/4 guess against the real fold size.
+			debugLog({ event: "fold", session: this.piSessionId, chars: folded.text.length, budget, omitted: folded.omitted, images: folded.images.length });
+			// A fresh child's whole context is this one message. Over the
+			// model's window it can only fail, after a full upload; say so now.
+			// A first-contact message (pi's summary request) is never shortened:
+			// a summary of part of the history would read as one of all of it.
+			const overflow = windowOverflow(folded.text.length, request);
+			if (overflow) {
+				this.failTurn(overflow);
+				return;
+			}
 			this.sendUserMessage(folded.text, folded.images);
 			return;
 		}
@@ -609,9 +779,19 @@ class CliSession {
 			if (slot) slot.result = toMcpResult(result);
 		}
 		this.settleCalls();
-		if (plan.user) this.sendUserMessage(textOf(plan.user.content), imagesOf(plan.user.content));
+		if (!plan.users.length) return;
+		// One stream-json message, not one per pi message: a second raw user
+		// message is folded into the CLI's active turn as a steer rather than
+		// read as part of the same prompt.
+		const text = plan.users.map((m) => textOf(m.content)).filter((t) => t.length > 0).join("\n\n");
+		this.sendUserMessage(text, plan.users.flatMap((m) => imagesOf(m.content)));
 	}
 
+	/**
+	 * Write one user message to the child. A message the transport refuses (over
+	 * its stdin line limit, or a pipe that is gone) fails the turn at once:
+	 * the child never heard it, so waiting for its answer would hang forever.
+	 */
 	private sendUserMessage(text: string, images: readonly ImageContent[]): void {
 		const content: Record<string, unknown>[] = [];
 		if (text) content.push({ type: "text", text });
@@ -621,7 +801,22 @@ class CliSession {
 			content.push({ type: "image", source: { type: "base64", media_type: image.mimeType, data: image.data } });
 		}
 		if (!content.length) content.push({ type: "text", text: "" });
-		this.transport?.send({ type: "user", message: { role: "user", content } });
+		const frame = { type: "user", message: { role: "user", content } };
+		if (this.transport?.send(frame)) return;
+		const bytes = Buffer.byteLength(JSON.stringify(frame)) + 1;
+		this.failTurn(bytes > this.limits.maxLineBytes
+			? `Claude Code cannot take this request: the message is ${bytes} bytes, over the ${this.limits.maxLineBytes}-byte limit for one stdin line`
+			: "Claude Code cannot take this request: the CLI's stdin refused the message");
+	}
+
+	/** End the open turn with an error, and never reuse this child's conversation. */
+	private failTurn(message: string): void {
+		this.markDesynced(message);
+		const turn = this.turn;
+		if (turn && !turn.queue.isEnded()) {
+			turn.queue.push({ type: "result", outcome: "error", message });
+			turn.queue.end();
+		}
 	}
 
 	// -- lifecycle ----------------------------------------------------------
@@ -736,6 +931,11 @@ class CliSession {
 			env: {
 				...this.options.env,
 				MCP_TOOL_TIMEOUT: String(this.options.mcpToolTimeoutMs ?? DEFAULT_MCP_TOOL_TIMEOUT_MS),
+				// pi owns compaction. A child compacting on its own would answer
+				// from a summary pi never saw, and the next restart would re-fold
+				// pi's history over it. (Not DISABLE_COMPACT: that also removes
+				// the manual /compact.) CLI 2.1.282 reads it as a boolean env.
+				DISABLE_AUTO_COMPACT: "1",
 			},
 		});
 		this.started = true;
@@ -825,6 +1025,13 @@ class CliSession {
 		// Control traffic is answered by onControlRequest (MCP) or correlated by
 		// the transport itself; only conversational frames reach a turn.
 		if (event.type === "control_request" || event.type === "control_response" || event.type === "control_cancel_request") return;
+		// The child replaced its history with its own summary (auto-compact is
+		// off, so a `/compact` text got through). pi still holds the full
+		// transcript; the next turn restarts onto pi's view.
+		if (event.type === "system" && event.subtype === "compact_boundary") {
+			this.markDesynced("Claude compacted its own context");
+			return;
+		}
 
 		let frame: ClaudeFrame | undefined;
 		try {
@@ -1057,7 +1264,8 @@ interface TurnPlan {
 	restart: boolean;
 	reason: string;
 	results: Extract<Message, { role: "toolResult" }>[];
-	user: Message | undefined;
+	/** New user messages since the last turn, oldest first. */
+	users: Message[];
 	/** No child has ever run for this pi session; the fold is first contact. */
 	first?: boolean;
 }
@@ -1118,12 +1326,28 @@ export class SessionBridge implements ClaudeSessionBridge {
 	runTurn(request: ClaudeTurnRequest, signal?: AbortSignal): AsyncIterable<ClaudeFrame> {
 		const key = request.sessionId ?? "default";
 		let session = this.sessions.get(key);
+		// A one-shot request: no tools, and a session id no pi session ever
+		// announced. pi's compaction and branch summaries arrive like this, each
+		// under a fresh uuid, so their child would otherwise idle until reaped.
+		const oneShot = !session && request.tools.length === 0 && !this.cwds.has(key);
 		if (!session) {
 			session = new CliSession(key, this.options, this.cwdFor(key));
 			this.sessions.set(key, session);
 		}
 		this.reapIdle(key);
-		return session.runTurn(request, signal);
+		return oneShot ? this.runOneShot(key, session, request, signal) : session.runTurn(request, signal);
+	}
+
+	/** Run a one-shot request, then dispose of its child whatever the outcome. */
+	private async *runOneShot(key: string, session: CliSession, request: ClaudeTurnRequest, signal?: AbortSignal): AsyncGenerator<ClaudeFrame> {
+		try {
+			yield* session.runTurn(request, signal);
+		} finally {
+			if (this.sessions.get(key) === session) this.sessions.delete(key);
+			// Not awaited: the answer is complete, and the child's exit ladder
+			// should not delay the caller.
+			void session.teardown("one-shot request finished");
+		}
 	}
 
 	/**

@@ -138,6 +138,9 @@ label a person reads says "sessions pane".
               aria-label="New Session" title="New Session">…plus…</button>
       <button class="button button-icon spine-item" type="button"
               aria-label="Search sessions" title="Search sessions · /">…search…</button>
+      <!-- the Overseer entry button (§app.overseer/entry-button), with its badges -->
+      <a class="button button-icon spine-item" href="#/overseer"
+         aria-label="Overseer" title="Overseer · Alt+O">…eye…</a>
     </div>
     <nav class="spine-tiles pane" aria-label="Recent sessions">
       <a class="spine-tile" href="#/s/…" aria-current="page"
@@ -404,8 +407,9 @@ label a person reads says "sessions pane".
   The line ends with the **context ring** (§chat/context-window): a 12px ring whose arc is the share of the window
   the last reply left filled, `.context-warn` at ≥80% and `.context-error` at ≥95% — the same
   `contextStep` the head's gauge uses, so a row and the session it opens step together. Its
-  `title` is the head's exact sentence. It is the one place in the product where the context fill
-  is a shape instead of a number, and §chat/context-window writes that exception down.
+  `title` is the head's exact sentence. It and the subagents pane's worker ring are the only
+  places in the product where the context fill is a shape instead of a number, and
+  §chat.context-window/sidebar-ring writes that exception down.
 - **Lines 2 and 3 are `.list-line`.** Each is a flex wrapper: the text block flexes and truncates,
   the indicator is `flex: none`. That puts the chip and the ring on **one right edge** down the
   whole list, which is the entire point — a ring that slid left and right with the text beside it
@@ -905,6 +909,9 @@ the reason it is disabled before it is pressed, never after. Every target in the
 - **Top region:** sessions where `live !== null || (origin === "web" && !archived)`, meaning
   the ones running in a TUI right now, or started from Sova and not archived by the user.
 - **Archive:** every other session. A server that sends no `archived` counts as not archived.
+- **Neither:** an Overseer file (`SessionSummary.overseer`, §app.overseer/identity-and-clear) is in
+  no region, like a worker's own session: not in either region, the Groups region, Recent, search,
+  the spine or the cleanup count.
 
 Both regions use exactly the same folder groups and rows described above. Each region groups by
 `cwd` independently, so one folder can appear in both. The Groups region above them is a third
@@ -1203,6 +1210,9 @@ after).
 - **Count.** `.search-count` always shows `{visible} of {total} sessions`, and just
   `{total} sessions` when the query is empty. It lives beside the filter it answers to,
   following the filter-bar rule.
+- **Overseer button.** The search row also holds the Overseer entry button (§app.overseer/entry-button).
+  While the filter is focused or has a query, the button is removed (not just hidden) and the
+  field takes the full row; blur with an empty query brings it back.
 - **Keys.** `/` anywhere, while focus isn't in a text field, focuses search. `Esc` inside search
   clears the query first, then blurs on a second press. Clear Search returns focus to the input.
 

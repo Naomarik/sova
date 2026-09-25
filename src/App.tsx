@@ -2,6 +2,7 @@ import { batch, createEffect, createMemo, createResource, createSignal, Match, o
 import { createStore, reconcile } from "solid-js/store";
 import { Portal } from "solid-js/web";
 import type { SessionSummary, WorkerInfo } from "../shared/protocol";
+import { reuseUnchanged } from "./lib/summary-diff";
 import {
   ApiError,
   createSession,
@@ -12,6 +13,8 @@ import {
   fetchMeshHello,
   fetchMeshSessions,
   fetchUsage,
+  getOverseer,
+  getSessionSummaryById,
   getThemes,
   listSessions,
   setSessionArchived,
@@ -19,6 +22,9 @@ import {
 import { socketReconnects } from "./lib/socket";
 import { firstBaseline, helloStep, HOST_CONFIRM_MS, type HelloBaseline, type PendingHost, type HelloChange, sessionHrefOn } from "./lib/mesh";
 import { hostLabel, hostOf, isMeshHash, joinHostLists, meshRetryDelay, meshState, meshOn, meshPeers, mergePeerLists, noteHost, notePeerSessions, peerInfo, peerUnavailable, sessionRouteFromHash, setMeshState } from "./lib/mesh";
+import { isOverseerHash, isOverseerShortcut, OVERSEER_HASH, overseerHistoryId } from "./lib/overseer";
+import { isMainThread } from "./lib/regions";
+import { sessionIdFromHash, setGroupLinkIndex, setSessionIndex } from "./lib/session-links";
 import { agentsHref, insightsRouteFromHash, legacyInsightsTarget } from "./lib/insights";
 import { transcriptRoot } from "./lib/jump";
 import { groupRouteFromHash } from "./lib/group-route";
@@ -44,6 +50,7 @@ import { ExtensionCards, ExtensionView } from "./components/ExtensionView";
 import { MeshCard, MeshView, StaleTabBanner } from "./components/MeshView";
 import { FanoutDialog, type FanoutSource } from "./components/FanoutDialog";
 import { GroupView, paneIdFor, workspaceFocus, type PaneWiring } from "./components/GroupView";
+import { OverseerView } from "./components/OverseerView";
 import { SessionPane, type PaneInsight, type TabId } from "./components/SessionPane";
 import { SessionView } from "./components/SessionView";
 import { sessionHref, Sidebar } from "./components/Sidebar";
@@ -70,32 +77,6 @@ function redirectLegacyInsights() {
   if (to) history.replaceState(history.state, "", to);
 }
 
-const sameSummary = (a: SessionSummary, b: SessionSummary) =>
-  a.title === b.title &&
-  a.lastActiveAt === b.lastActiveAt &&
-  a.model === b.model &&
-  a.outlineNow === b.outlineNow &&
-  a.outlineGist === b.outlineGist &&
-  a.outlineAt === b.outlineAt &&
-  a.live?.pid === b.live?.pid &&
-  a.live?.status === b.live?.status &&
-  a.live?.workers?.working === b.live?.workers?.working &&
-  a.live?.workers?.total === b.live?.workers?.total &&
-  a.archived === b.archived &&
-  // A group change touches neither the file nor the title: without this the row keeps its old
-  // object and a session just dragged into a group would never leave Live & web.
-  a.groupId === b.groupId;
-
-/** Keeps the previous object for unchanged rows so <For> updates the list in place (focus survives). */
-function reuseUnchanged(next: SessionSummary[], prev: SessionSummary[] | undefined): SessionSummary[] {
-  if (!prev) return next;
-  const old = new Map(prev.map((s) => [s.path, s]));
-  return next.map((s) => {
-    const o = old.get(s.path);
-    return o && sameSummary(o, s) ? o : s;
-  });
-}
-
 /** While a run is in flight, re-read the list often enough that the Busy chip clears itself when
     the run settles in a session nobody is looking at. Idle costs nothing: the interval only
     exists while something is busy. */
@@ -106,6 +87,11 @@ const USAGE_POLL_MS = 60_000;
 const AGENTS_POLL_MS = 5_000;
 /** The explanations store only changes when a /explain subagent finishes; the sidebar row can wait. */
 const EXPLAIN_POLL_MS = 60_000;
+/** The Overseer's entry button: its attention counts and unread messages. No LLM behind it. */
+const OVERSEER_POLL_MS = 10_000;
+
+/** `#/overseer` (null: another route), with the earlier file `#/overseer/h/<id>` names. */
+const overseerRouteFromHash = (hash: string) => (isOverseerHash(hash) ? { historyId: overseerHistoryId(hash) } : null);
 /** Installed extensions and their health; the server caches each health probe for 10 s. */
 const EXTENSIONS_POLL_MS = 15_000;
 /** While a peer is configured, its status and its sessions are re-read this often. Never with none. */
@@ -139,11 +125,15 @@ export function App() {
    * stays the list's truth, so the row does go away — and the next route change drops this.
    */
   const [openKept, setOpenKept] = createSignal<SessionSummary | null>(null);
+  /** Sessions a link opened that the list doesn't carry (`#/sid/<id>`, resolved by the server):
+      the view's summary only, never a sidebar row. */
+  const [linked, setLinked] = createSignal<Record<string, SessionSummary>>({});
   // The fetcher never rejects: on failure it keeps the previous list and reports the error,
   // so reading the resource never throws.
   const [sessions, { refetch }] = createResource<SessionSummary[] | undefined>(async (_, { value }) => {
     try {
       const next = reuseUnchanged(await listSessions(), value);
+      setSessionIndex(next);
       // An open never-sent session stays readable when a later list drops it: clearing its draft to
       // empty makes it a hidden husk again, and the view must not vanish with the row. Only then —
       // a titled session that leaves the list really is gone, and says so. Later loads don't undo
@@ -247,7 +237,10 @@ export function App() {
     }),
   );
   const [groupRoute, setGroupRoute] = createSignal(groupRouteFromHash(location.hash));
+  // `sova://g/` links in messages resolve against the groups this tab knows (lib/session-links).
+  createEffect(() => sessionGroupsLoaded() && setGroupLinkIndex(sessionGroups()));
   const [insightsRoute, setInsightsRoute] = createSignal(insightsRouteFromHash(location.hash));
+  const [overseerRoute, setOverseerRoute] = createSignal(overseerRouteFromHash(location.hash));
   const [extRoute, setExtRoute] = createSignal(extRouteFromHash(location.hash));
   const [meshRoute, setMeshRoute] = createSignal(isMeshHash(location.hash));
   /** The extension on screen: the view is keyed by this, so a sub-route change never remounts it
@@ -270,6 +263,7 @@ export function App() {
   const usage = createPoll(fetchUsage, USAGE_POLL_MS);
   const agents = createPoll(fetchAgents, AGENTS_POLL_MS);
   const explanations = createPoll(fetchExplanations, EXPLAIN_POLL_MS);
+  const overseer = createPoll(getOverseer, OVERSEER_POLL_MS);
   const extensions = createPoll(fetchExtensions, EXTENSIONS_POLL_MS);
   /** The landing page shows the Extensions section only when something is installed. */
   const installed = createMemo(() => {
@@ -323,21 +317,70 @@ export function App() {
     setNow(Date.now());
     refresh();
     void loadPeerSessions();
+    overseer.refetch();
+  };
+  /**
+   * A session link from a message (`sova://s/<id>`) the list couldn't resolve points at
+   * `#/sid/<id>`: swapped in place for the session's own route. The list first; a session it
+   * doesn't carry (it omits those with no user message) is asked of the server, and only the
+   * server's "not found" says the session is gone.
+   */
+  let resolvingId: string | null = null;
+  const resolveSessionIdRoute = () => {
+    const id = sessionIdFromHash(location.hash);
+    if (!id) return;
+    const l = list();
+    if (!l) return; // the list effect below comes back here once it lands
+    const s = l.find((x) => x.id === id);
+    if (s) {
+      history.replaceState(history.state, "", sessionHref(s.path));
+      return;
+    }
+    if (resolvingId === id) return;
+    resolvingId = id;
+    void getSessionSummaryById(id)
+      .then(
+        (found) => {
+          setLinked((m) => ({ ...m, [found.path]: found }));
+          if (sessionIdFromHash(location.hash) === id) history.replaceState(history.state, "", sessionHref(found.path));
+        },
+        (err) => {
+          if (sessionIdFromHash(location.hash) !== id) return;
+          toast(err instanceof ApiError && err.status === 404 ? "That session is gone." : `Couldn't open that session. ${(err as Error).message}`);
+          history.replaceState(history.state, "", "#/");
+        },
+      )
+      .finally(() => {
+        resolvingId = null;
+        onHash();
+      });
   };
   const onHash = () => {
     redirectLegacyInsights();
+    resolveSessionIdRoute();
     setRoute(pathFromHash());
     setGroupRoute(groupRouteFromHash(location.hash));
     setInsightsRoute(insightsRouteFromHash(location.hash));
+    setOverseerRoute(overseerRouteFromHash(location.hash));
     setExtRoute(extRouteFromHash(location.hash));
     setMeshRoute(isMeshHash(location.hash));
   };
+  // A `#/sid/` route opened before the first list load resolves when the list lands.
+  createEffect(on(list, () => sessionIdFromHash(location.hash) && onHash(), { defer: true }));
+  /** Alt+O: the Overseer, from anywhere (lib/overseer `isOverseerShortcut`). */
+  const onKeyDown = (e: KeyboardEvent) => {
+    if (!isOverseerShortcut(e)) return;
+    e.preventDefault();
+    if (location.hash !== OVERSEER_HASH) location.hash = OVERSEER_HASH;
+  };
   window.addEventListener("focus", onFocus);
   window.addEventListener("hashchange", onHash);
+  window.addEventListener("keydown", onKeyDown);
   const tick = setInterval(() => setNow(Date.now()), 30_000);
   onCleanup(() => {
     window.removeEventListener("focus", onFocus);
     window.removeEventListener("hashchange", onHash);
+    window.removeEventListener("keydown", onKeyDown);
     clearInterval(tick);
   });
 
@@ -415,7 +458,7 @@ export function App() {
   /** The session-list row for a path: the list's, else one this tab created, else the kept one. */
   const summaryOf = (p: string): SessionSummary | undefined => {
     const kept = openKept(); // only for the session on screen; see where it is set
-    return allSessions()?.find((s) => s.path === p) ?? created.get(p) ?? (kept?.path === p ? kept : undefined);
+    return allSessions()?.find((s) => s.path === p) ?? created.get(p) ?? (kept?.path === p ? kept : undefined) ?? linked()[p];
   };
 
   /** `path` is on a peer whose list hasn't arrived yet. */
@@ -455,6 +498,9 @@ export function App() {
   const openPaths = createMemo<string[]>(() => {
     const p = route();
     if (p) return [p];
+    // The Overseer's own chat is a session on screen too: its Timeline and Session info pane work.
+    const o = overseerRoute();
+    if (o) return !o.historyId && overseer.data() ? [overseer.data()!.path] : [];
     return groupRoute() ? groupMembers().map((s) => s.path) : [];
   });
   /** The id of the transcript the skip link jumps to: a pane's in a workspace, else the bare one. */
@@ -566,7 +612,7 @@ export function App() {
    */
   const startNewFrom = async (source: string): Promise<string | null> => {
     const s = summary();
-    const cwd = newSessionCwd(s?.cwd, list() ?? []);
+    const cwd = newSessionCwd(s, list() ?? []);
     if (!cwd) {
       toast("No folder to start in. Pick one.");
       setCreating(true);
@@ -598,7 +644,9 @@ export function App() {
     onCleanup(() => clearInterval(t));
   });
 
-  const folderCount = () => new Set((list() ?? []).map((s) => s.cwd)).size;
+  /** The sessions the landing page counts: main threads, as the sidebar lists them. */
+  const mainList = () => (list() ?? []).filter(isMainThread);
+  const folderCount = () => new Set(mainList().map((s) => s.cwd)).size;
 
   // ---- Subagents pane: open for one session path, closed whenever the route changes ----------
   const [subagents, setSubagents] = createSignal<{ path: string; selected: string | null } | null>(null);
@@ -759,7 +807,7 @@ export function App() {
       <div
         class="app"
         data-spine={collapsed() ? "on" : undefined}
-        data-view={groupRoute() ? "workspace" : route() || insightsRoute() || extRoute() || meshRoute() ? "session" : "list"}
+        data-view={groupRoute() ? "workspace" : route() || insightsRoute() || overseerRoute() || extRoute() || meshRoute() ? "session" : "list"}
         data-ext-maximized={extMaximized() ? "1" : undefined}
       >
         <Sidebar
@@ -776,15 +824,31 @@ export function App() {
           onArchiveChanged={onArchived}
           onNew={() => setCreating(true)}
           onOpenSettings={() => openSettings()}
+          overseer={overseer.data()}
+          overseerOpen={!!overseerRoute()}
         />
 
         {/* The workspace takes the whole second column, so it IS the main: no session head, and
             its own head instead. */}
         <main class={groupRoute() ? "workspace" : "app-main"} aria-label={openGroup() ? `Workspace: ${openGroup()!.name}` : undefined}>
           <Show
-            when={!insightsRoute()}
+            when={!insightsRoute() && !overseerRoute()}
             fallback={
               <Switch>
+                <Match when={overseerRoute()}>
+                  {(r) => (
+                    <OverseerView
+                      info={overseer.data()}
+                      error={overseer.error()}
+                      onInfo={overseer.set}
+                      refetch={overseer.refetch}
+                      historyId={r().historyId}
+                      sessions={list() ?? []}
+                      wiring={wiring}
+                      titleRef={(el) => (insightsTitleEl = el)}
+                    />
+                  )}
+                </Match>
                 <Match when={insightsRoute()?.page === "usage"}>
                   <UsageView usage={usage} now={now()} titleRef={(el) => (insightsTitleEl = el)} />
                 </Match>
@@ -908,7 +972,7 @@ export function App() {
                       <Icon name="chat" class="empty-mark" />
                       <p class="empty-title">
                         <Show when={list()} fallback="Loading sessions.">
-                          {list()!.length} sessions across {folderCount()} folders.
+                          {mainList().length} sessions across {folderCount()} folders.
                         </Show>
                       </p>
                       <p class="empty-body">Pick one to read it, or start a new one.</p>
@@ -980,8 +1044,8 @@ export function App() {
       <Show when={creating()}>
         <Portal>
           <NewSessionDialog
-            prefill={newSessionCwd(summary()?.cwd, list() ?? []) ?? ""}
-            knownCwds={[...new Set((list() ?? []).map((s) => s.cwd))]}
+            prefill={newSessionCwd(summary(), list() ?? []) ?? ""}
+            knownCwds={[...new Set((list() ?? []).filter((s) => !s.overseer).map((s) => s.cwd))]}
             onCancel={() => setCreating(false)}
             onCreated={adoptCreated}
             onFanOut={(cwd) => {

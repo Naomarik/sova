@@ -12,10 +12,12 @@ a 56px head a 6px bar says less than "24%" and costs a line. So it's the number 
 Closeness to the limit is carried by the number, then by hue, and at the top step by a glyph
 too, so it never rests on hue alone.
 
-## §chat.context-window/sidebar-ring — The sidebar ring: a deliberate exception
+## §chat.context-window/sidebar-ring — The list ring: a deliberate exception
 
-**A ring is a bar**, and the rule above says the context readout is never one. The session row
-(§app/session-list, line 3) gets one anyway. This is the exception, stated once, with what buys it:
+**A ring is a bar**, and the rule above says the context readout is never one. Two list rows get
+one anyway: the session row (§app/session-list, line 3) and the subagents pane's worker row
+(§app.subagents-pane/worker-rows, line 1). This is the exception, stated once, with what buys it,
+and it covers exactly those two:
 
 - **It is list-scale, where text is not affordable.** The head has 56px and a full line to spend;
   a row's meta line has 250px already holding a timestamp and a model id, and 279 of them scroll
@@ -33,8 +35,9 @@ too, so it never rests on hue alone.
   the head's gauge and `#context-desc` say. Hover or long-press gets the exact numbers; nothing
   is only in the ring.
 - **The head keeps its text, and that is why the exception is safe.** A bar cannot say
-  "compacted" and cannot name a token count. The head is where those sentences are said, so the
-  ring never has to carry a state it has no shape for — it just doesn't render.
+  "compacted" and cannot name a token count. The head is where those sentences are said — the
+  session head for a session row, the pane's view head for a worker row — so the ring never has
+  to carry a state it has no shape for; it just doesn't render.
 
 **What the ring cannot express**, and what happens instead:
 

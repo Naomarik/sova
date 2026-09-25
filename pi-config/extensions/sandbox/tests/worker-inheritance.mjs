@@ -9,7 +9,7 @@ import { existsSync, readFileSync, realpathSync } from "node:fs";
 import path from "node:path";
 import { makeSuite, ok, eq } from "./kit.mjs";
 import {
-	EXT_ENTRY, PI_CONFIG, cleanupAll, hostMntNs, jiti, makeBus, makeFixture, openSession, rand, sha,
+	EXT_ENTRY, PI_CONFIG, cleanupAll, confinedCheck, jiti, makeBus, makeFixture, openSession, rand, sha,
 } from "./harness.mjs";
 
 const SUBAGENTS_DIR = path.join(PI_CONFIG, "extensions/subagents");
@@ -91,8 +91,8 @@ if (!existsSync(EXT_ENTRY)) {
 		const s = await openSession({ cwd: fx.cwd, agentDir: fx.agentDir, withExtension: true, flags: { sandbox: "on" }, ui: false });
 		try {
 			eq(s.errors.length, 0, `worker session loaded clean: ${s.errors.join(" | ")}`);
-			const r = await s.bash("readlink /proc/self/ns/mnt");
-			ok(!r.isError && r.text.trim() !== hostMntNs(), `worker tools run confined (ns ${r.text.trim()})`);
+			const c = await confinedCheck(s.bash, fx.escape);
+			eq(c.state, "confined", `worker tools run confined (${c.detail})`);
 			// A worker never turns itself off (spec §chat.sandbox/workers): no command at all, or a
 			// command that REFUSES in a UI-less session. Both shapes satisfy the guarantee; the
 			// behavioral check is that an off attempt does not take.
@@ -100,8 +100,8 @@ if (!existsSync(EXT_ENTRY)) {
 			if (!cmd) console.log("       worker shape: command absent");
 			else {
 				try { await s.command("sandbox", "off"); } catch { /* refusal may throw */ }
-				const still = await s.bash("readlink /proc/self/ns/mnt");
-				ok(still.text.trim() !== hostMntNs(), "a /sandbox off attempt in a UI-less worker session must NOT take effect");
+				const still = await confinedCheck(s.bash, fx.escape);
+				eq(still.state, "confined", "a /sandbox off attempt in a UI-less worker session must NOT take effect");
 				const entries = s.entries().filter((e) => e.type === "custom" && e.customType === "sandbox");
 				const last = entries.at(-1);
 				ok(!last || String(last.data?.on ?? last.on) !== "false", "no sandbox entry records on:false after the refused flip");
@@ -128,8 +128,8 @@ if (!existsSync(EXT_ENTRY)) {
 	await t.test("W3 flag OFF stays stock even with the extension loaded", async () => {
 		const s = await openSession({ cwd: fx.cwd, agentDir: fx.agentDir, withExtension: true, flags: { sandbox: "off" }, ui: false });
 		try {
-			const r = await s.bash("readlink /proc/self/ns/mnt");
-			eq(r.text.trim(), hostMntNs(), "--sandbox off runs unconfined");
+			const c = await confinedCheck(s.bash, fx.escape);
+			eq(c.state, "unconfined", "--sandbox off runs unconfined");
 			for (const x of s.registry()) eq(x.source, "builtin", `${x.name} stays builtin under --sandbox off`);
 		} finally {
 			await s.dispose().catch(() => {});
@@ -182,8 +182,8 @@ if (plumbing) {
 			const worker = await openSession({ cwd: fx4.cwd, agentDir: fx4.agentDir, withExtension: true, flags: opts.flags, ui: false });
 			try {
 				eq(worker.errors.length, 0, `worker loaded clean: ${worker.errors.join(" | ")}`);
-				const ns = await worker.bash("readlink /proc/self/ns/mnt");
-				ok(ns.text.trim() !== hostMntNs(), "the spawned worker's tools run confined");
+				const c = await confinedCheck(worker.bash, fx4.escape);
+				eq(c.state, "confined", `the spawned worker's tools run confined (${c.detail})`);
 				const victim = path.join(fx4.escape, `w4-${rand()}`);
 				const w = await worker.call("write", { path: victim, content: "pwned" });
 				ok(w.isError, "worker write outside cwd refused");
@@ -213,8 +213,8 @@ if (plumbing) {
 			ok(!(opts.extensions ?? []).includes(realpathOf(EXT_ENTRY_DIR())), "no sandbox extension in the worker's -e list");
 			const worker = await openSession({ cwd: fx4.cwd, agentDir: fx4.agentDir, withExtension: false, flags: {}, ui: false });
 			try {
-				const ns = await worker.bash("readlink /proc/self/ns/mnt");
-				eq(ns.text.trim(), hostMntNs(), "today's worker runs in the host namespace");
+				const c = await confinedCheck(worker.bash, fx4.escape);
+				eq(c.state, "unconfined", `today's worker runs unconfined (${c.detail})`);
 				const victim = path.join(fx4.escape, `w4b-${rand()}`);
 				const w = await worker.call("write", { path: victim, content: "today" });
 				ok(!w.isError && existsSync(victim), "control: today's worker CAN write outside cwd (removed by cleanup)");

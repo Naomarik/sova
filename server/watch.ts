@@ -3,6 +3,7 @@ import { open, stat } from "node:fs/promises";
 import type { TranscriptItem, WatchServerMessage } from "../shared/protocol";
 import { activeBranch, normalizeEntries, parseLines } from "./transcript";
 import { piUsageTally, totalOf, type UsageTally } from "./transcript-usage";
+import type { ContextTally } from "./worker-context";
 
 const POLL_MS = 1500;
 
@@ -34,6 +35,8 @@ export class SessionTail {
     /** Running token total for this connection, in that same format. One per tail: it
         deduplicates across reads, so it must not be shared between clients. */
     private readonly tally: UsageTally = piUsageTally(),
+    /** The transcript's context fill, same feed; per connection for the same reason. */
+    private readonly context?: ContextTally,
   ) {}
 
   async start(): Promise<void> {
@@ -81,7 +84,8 @@ export class SessionTail {
     const { text, consumed } = await this.readComplete(0, size);
     this.offset = consumed;
     const usage = totalOf(this.tally(text, "snapshot"));
-    if (!this.closed) this.send({ type: "snapshot", items: this.normalize(text, "snapshot"), ...(usage ? { usage } : {}) });
+    const context = this.context?.(text, "snapshot");
+    if (!this.closed) this.send({ type: "snapshot", items: this.normalize(text, "snapshot"), ...(usage ? { usage } : {}), ...(context !== undefined ? { context } : {}) });
   }
 
   private kick(): void {
@@ -117,6 +121,8 @@ export class SessionTail {
     const items = this.normalize(text, "append");
     // Cumulative, so a row-less batch that still spent tokens keeps the header honest.
     const usage = totalOf(this.tally(text, "append"));
-    if (items.length && !this.closed) this.send({ type: "append", items, ...(usage ? { usage } : {}) });
+    // The state after this batch, sent explicitly — "compacted" included — on every append.
+    const context = this.context?.(text, "append");
+    if (items.length && !this.closed) this.send({ type: "append", items, ...(usage ? { usage } : {}), ...(context !== undefined ? { context } : {}) });
   }
 }

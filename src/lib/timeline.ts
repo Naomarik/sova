@@ -45,7 +45,8 @@ export interface TimelineRow {
   /** ISO event time. */
   at?: string;
   /** The transcript entry the row's body jumps to; absent when the row is about no single
-      message — a rewind marker — which the renderer draws as text rather than a jump. */
+      message — a rewind, a past-summary or a settings-change marker — which the renderer draws
+      as text rather than a jump. */
   entryId?: string;
   title: string;
   /** The line under the title: an input's density, a marker's detail. */
@@ -299,9 +300,11 @@ export function markerRows(items: readonly TranscriptItem[], rewinds: readonly R
   }
   // Model, thinking and mode changes, with their consecutive repeats already collapsed. The
   // transcript writes them as "Model: x"; on the axis every change reads the same way, "X → y".
+  // No `entryId`: their row renders nothing in the thread (lib/change-rows), so there is nothing
+  // to jump to, and the renderer draws the marker as static text instead.
   for (const entry of timelineEntries(items)) {
     if (!entry.at) continue;
-    out.push({ key: `marker:change:${entry.id}`, kind: "marker", marker: "change", at: entry.at, entryId: entry.id, title: changeTitle(entry.text) });
+    out.push({ key: `marker:change:${entry.id}`, kind: "marker", marker: "change", at: entry.at, title: changeTitle(entry.text) });
   }
   // The rewinds, in the order they arrive. A rewind marker carries no `entryId` on purpose: its
   // `targetId` is the message the chat rewound *away* from, which by construction is no longer on

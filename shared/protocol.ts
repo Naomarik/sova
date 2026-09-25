@@ -120,6 +120,25 @@ export interface SessionSummary {
       blocks anything; only `true` disables a fork. Never affects opening, watching or chatting:
       an older-format session is only special to a route that would rewrite it. */
   legacyFormat?: true;
+  /** This file is an Overseer file (current or historical): it carries the `sova-overseer` custom
+      marker entry AND overseer-state.json names it (current or history); a marked fork of one is
+      an ordinary session. Hidden from every sidebar region, search, Recent and cleanup count
+      (src/lib/regions.ts `isMainThread`), like `workerSession`. Safe by absence. */
+  overseer?: true;
+  /** Activity from this session's live record (a TUI's, or this server's own runtime): the
+      sessions extension's `presence.activity`. Absent when no live record reports one (closed
+      sessions, older writers). `error` is set only for state "error", ≤200 chars. */
+  activity?: { state: "working" | "idle" | "needs-input" | "error"; since?: number; error?: string };
+  /** Hosted by this server and waiting on an extension dialog a browser can answer right now
+      (live-pending, not a headless fallback): how many. Absent = none. */
+  pendingDialogs?: number;
+  /** When a Sova chat or watch socket last attached to or detached from this session (ms epoch),
+      from `<stateRoot>/seen.json`. Absent = never seen by Sova. */
+  seenAt?: number;
+  /** Something happened in this session since `seenAt` (its last assistant reply / file write is
+      newer, and it is not mid-turn): the sidebar's unread dot. Web sessions (origin "web") only. Server-computed from the same seen
+      store the Overseer digest uses. The tab showing the session hides its own dot. Safe by absence. */
+  unread?: true;
 }
 
 /** A configured remote target (~/.pi/agent/targets.json, GET /api/targets). Credential-free. */
@@ -180,6 +199,17 @@ export interface TranscriptItem {
       tool-call rows; absent on other kinds and entries with neither (renderers fall back to
       the session's current model). */
   model?: string;
+  /** Overseer markers, both invisible `custom` entries (never LLM context, ignored by the TUI):
+      - `sent`: `customType:"sova-overseer-sent"`, data `OverseerSentMarkerData`. The row itself
+        renders NOTHING; the client tags the user row whose id is `targetId` with an "Overseer" tag.
+        Arrives in `hello`/`snapshot` and, when written during a live chat, in an `append`, so it
+        may arrive before or after its target row: clients resolve by id, order-free.
+      - `dialog-answer`: `customType:"sova-overseer-dialog-answer"`, data
+        `OverseerDialogAnswerData`. Rendered as a machine row; `text` = "Overseer chose: <answer>".
+      Present only on such rows (kind "info"). */
+  overseerMark?:
+    | { kind: "sent"; targetId: string }
+    | { kind: "dialog-answer"; title: string; answer: string };
   raw: unknown;
 }
 
@@ -1390,6 +1420,13 @@ export type ChatClientMessage =
       while a turn streams or compacts, and NEVER auto-aborts. The confirmation step is the
       client's; the server does not ask. */
   | { type: "regenerate"; id: string; entryId: string }
+  /** Compact this chat's context now: pi's own `AgentSession.compact(instructions)`, the TUI's
+      /compact. `id` is the client's request id, echoed in `compacted`/`compact_refused`;
+      `instructions` (optional) steer what the summary keeps. Refused while a turn streams, while a
+      compaction runs and while a message is still on its way out — NEVER auto-aborts a turn
+      (pi's compact() would). A `prompt`/`steer` whose whole text is `/compact [instructions]`
+      and carries no image takes this same path, answered by the send's `clientId`. */
+  | { type: "compact"; id: string; instructions?: string }
   /** Remove ONE still-unsent message from this chat's outgoing queue, by its `QueueItem.id` —
       any position, including the middle, duplicates of the same text, and image-only sends.
       `id` is the client's request id, echoed in the reply. */
@@ -1417,6 +1454,17 @@ export type RewindRefusal = "streaming" | "compacting" | "busy" | "recent" | "no
     the branch as if the user had typed it, complete with its "[wake_nudge …] Scheduled wakeup
     fired" preamble and a stale elapsed time. There is no honest thing to re-send, so nothing is. */
 export type RegenerateRefusal = RewindRefusal | "wake";
+
+/** Why a compaction was refused or did not happen; nothing was written in any of these.
+    streaming / compacting / queued / busy / recent are RewindRefusal's conditions, for the same
+    reasons (a compaction while a message is still on its way out would summarize a branch that
+    message then lands after). "already" = the branch ends in a compaction; "nothing" = too little
+    to summarize (pi's own two refusals); "cancelled" = Stop, or an extension's
+    session_before_compact cancelled it; "internal" = anything else, the summarizer's failure and a
+    model turned off in Settings → Models included, with the reason in `message`.
+    A SEPARATE union, like RegenerateRefusal: widening RewindRefusal would widen every exhaustive
+    switch the rewind client has. */
+export type CompactRefusal = "streaming" | "compacting" | "queued" | "busy" | "recent" | "already" | "nothing" | "cancelled" | "internal";
 
 /** One message Sova is holding for this chat, not yet given to the model.
  *
@@ -1482,7 +1530,8 @@ export interface SlashCommand {
   name: string;
   /** Optional for extension commands (pi docs/rpc.md); the UI shows a badge-only row then. */
   description?: string;
-  source: "extension" | "prompt" | "skill";
+  /** "builtin" = Sova runs it itself on this runtime (today only `compact`), never an extension's. */
+  source: "extension" | "prompt" | "skill" | "builtin";
   /** Where it comes from: extension path, or template/skill location (project, user, …) + path. */
   location?: string;
   path?: string;
@@ -1491,7 +1540,9 @@ export interface SlashCommand {
 export type ChatServerMessage =
   /** First message after connect: current transcript + live state + context fill.
       thinking = the session's active thinking level (one of off…max), clamped to its model. */
-  | { type: "hello"; items: TranscriptItem[]; isStreaming: boolean; model: string | null; thinking: string; context: ContextInfo | null }
+  /** `isCompacting` = a compaction (manual or pi's automatic one) is running as this is sent, so a
+      client that connects mid-compaction shows it; absent from servers that predate it. */
+  | { type: "hello"; items: TranscriptItem[]; isStreaming: boolean; isCompacting?: boolean; model: string | null; thinking: string; context: ContextInfo | null }
   /** Raw pi SDK agent event passthrough. Shapes documented in pi docs/rpc.md "Events":
       message_update (assistantMessageEvent: text_delta | thinking_delta | toolcall_start/delta/end),
       tool_execution_start/update/end, turn_start/end, agent_start/end, agent_settled, ... */
@@ -1511,10 +1562,14 @@ export type ChatServerMessage =
       sandbox extension's /sandbox command. Absent = no extension: no row, no shield. */
   | ({ type: "sandbox" } & SandboxInfo)
   /** Slash commands available in this session (sent right after hello, and again after a runtime
-      reload). Same enumeration as pi rpc get_commands: extension commands, prompt templates, skills.
-      TUI built-ins (/tree, /model, …) are not included. Send one as a normal prompt "/name args". */
+      reload). Same enumeration as pi rpc get_commands: extension commands, prompt templates, skills,
+      after Sova's own builtin `compact` (first; an extension command of the same name is left out,
+      since Sova intercepts that text before pi sees it). Other TUI built-ins (/tree, /model, …) are
+      not included. Send one as a normal prompt "/name args". */
   | { type: "commands"; commands: SlashCommand[] }
   | { type: "ui_request"; id: string; request: unknown }
+  /** The dialog `id` was answered elsewhere (another tab, or the Overseer): drop it, no response. */
+  | { type: "ui_resolved"; id: string }
   /** This chat's subagent workers, from the runtime's own live record (presence.workers/workerCounts).
       Sent after hello when the record has workers, then whenever the snapshot changes (polled ~3s),
       so it keeps coming after the parent turn settles. working 0 = none running. */
@@ -1544,6 +1599,15 @@ export type ChatServerMessage =
   | { type: "regenerated"; id: string; entryId: string; userEntryId: string }
   /** The regenerate was refused and NOTHING changed — no rewind, no prompt; to the requester only. */
   | { type: "regenerate_refused"; id: string; entryId: string; reason: RegenerateRefusal; message: string }
+  /** A compaction landed. Every client of the chat first got a fresh `hello` (whose items end in
+      the compaction row, and whose context is null until the next reply), then `workers` and
+      `mode`, exactly as after a rewind; only the requester then gets this. `entryId` is the new
+      `compaction` entry, `tokensBefore` pi's count of the context it summarized. Progress in
+      between is pi's own `compaction_start`/`compaction_end` events, relayed as `event`. */
+  | { type: "compacted"; id: string; entryId: string; tokensBefore: number }
+  /** The compaction was refused or failed, and nothing was written; to the requester only.
+      `message` is user-facing copy. */
+  | { type: "compact_refused"; id: string; reason: CompactRefusal; message: string }
   /** Acceptance of one identified send, to its sender only, as soon as acceptance finishes.
       `queued: true` = a `QueueItem` with this id exists and a `queue` snapshot carries it;
       `queued: false` = the session was idle, so it went straight to the model and NO queue row
@@ -1603,9 +1667,14 @@ export type ChatServerMessage =
     Both `snapshot` and `append` may carry `usage`: the tokens the whole transcript has used so
     far (always cumulative, never a delta), so an open header can tick while the file grows. It is
     absent while the transcript reports no usage at all, and carries no cost for a Claude session. */
+/** The open transcript's context fill as of its last reply, on every snapshot/append: a fill,
+    "compacted" (a compaction came after that reply), or null (no reply reports one yet). `window`
+    is known for pi files (the reply's own model); a Claude Code file doesn't name its variant, so
+    it is null there and the client takes WorkerInfo.contextWindow. Absent from older servers. */
+export type WatchContext = ContextInfo | "compacted" | null;
 export type WatchServerMessage =
-  | { type: "snapshot"; items: TranscriptItem[]; usage?: TokenUsage }
-  | { type: "append"; items: TranscriptItem[]; usage?: TokenUsage } // new JSONL rows since snapshot, as they appear
+  | { type: "snapshot"; items: TranscriptItem[]; usage?: TokenUsage; context?: WatchContext }
+  | { type: "append"; items: TranscriptItem[]; usage?: TokenUsage; context?: WatchContext } // new JSONL rows since snapshot, as they appear
   | { type: "error"; message: string };
 
 // ---------------------------------------------------------------------------
@@ -1719,6 +1788,15 @@ export interface WorkerInfo {
   /** A restored worker can be resumed from here: the session is hosted by this server and the
       backend resumes natively. Absent otherwise (a TUI session, a backend without resume). */
   resumable?: boolean;
+  /** This worker's context fill as of its last reply — the session head's rule (input + cacheRead
+      + cacheWrite of that one reply) — or "compacted" when a compaction came after it. Live
+      workers: read off the tail of their own transcript, so it lags a turn in flight; restored
+      ones: from the transcript summary. Absent when unknown: no reply reports one yet, or the
+      transcript isn't a local file this server can read. Never 0 for unknown. */
+  context?: ContextInfo | "compacted";
+  /** The worker's context window, from the model it was spawned with (claude-code: 1M for a
+      `[1m]` variant, else 200k; pi: the model's catalog window). Absent when unknown. */
+  contextWindow?: number;
 }
 export interface TeamMember {
   workerId: string; role: string; orchestrator: boolean; backend: string; model?: string;
@@ -1891,6 +1969,308 @@ export interface SessionInsight {
   explanations?: ExplanationInfo[];
 }
 
+// ---------------------------------------------------------------------------
+// OVERSEER — the one special Sova session that watches and acts on every other
+// session (.overseer-design/DECISIONS.md). Sova-owned state under <stateRoot>:
+//   overseer/ (its cwd) · overseer.json (OverseerSettings) · overseer-state.json
+//   (OverseerState) · overseer-notes.md · overseer-actions.jsonl (OverseerAction lines)
+//   · seen.json ({[sessionId]: ms})
+//   · ideas/manifest.json (IdeasManifest) + ideas/<ns>/<name>.md and ideas/<ns>/<parent>/<name>.md
+//     (each idea's prose; see IDEA_ID_RE). The Overseer (sova_idea) and PATCH are the only writers.
+// Routes:
+// GET  /api/overseer                -> OverseerInfo   (ensures the current file exists)
+// POST /api/overseer/clear          -> OverseerInfo   (stops a running turn, disposes, rotates; never refuses)
+// GET  /api/overseer/attention      -> AttentionDigest (no LLM; memoised ~3 s)
+// GET  /api/settings/overseer       -> OverseerSettingsInfo
+// PUT  /api/settings/overseer       body OverseerSettings -> OverseerSaveResult (400 invalid;
+//                                   model/thinking apply at once when the Overseer is idle, else at turn end)
+// GET  /api/overseer/notes          -> { text: string }
+// GET  /api/overseer/ideas          -> OverseerIdeasInfo (ToC + every record + link edges; no prose)
+// GET  /api/overseer/idea?id=<§id>  -> OverseerIdeaDetail, 404 {error} unknown id, 400 bad id
+// PATCH /api/overseer/idea?id=<§id> body IdeaPatch -> OverseerIdeaDetail; 409 IdeaConflict when
+//                                   `base` is not the record's current updatedAt; 400 invalid (bad
+//                                   status/link/tag, a link to itself or to an unknown idea)
+// PUT  /api/overseer/notes          body { text: string } -> { text: string }
+// GET  /api/sessions/summary?id=<session id> -> SessionSummary (any session file with that id,
+//                                   listed or not, e.g. an empty web session), 404 {error} when none
+// POST /api/sessions/prompt         body { path, text } -> { ok: true } (idle hosted-or-openable
+//                                   sessions only: 409 busy/mid-turn/TUI-live; used by sova_send;
+//                                   tagged as the Overseer's only on its own in-process calls)
+// ---------------------------------------------------------------------------
+
+/** `customType` of the marker entry an Overseer file carries (with overseer-state.json naming it:
+    the marker alone is copied by a fork). data: `{ v: 1 }`. */
+export const OVERSEER_ENTRY = "sova-overseer";
+/** `customType` of the invisible marker beside a prompt the Overseer sent to another session. */
+export const OVERSEER_SENT_ENTRY = "sova-overseer-sent";
+/** `customType` of the invisible marker for an extension-dialog answer the Overseer gave. */
+export const OVERSEER_DIALOG_ANSWER_ENTRY = "sova-overseer-dialog-answer";
+
+export interface OverseerSentMarkerData {
+  v: 1;
+  /** Entry id of the user message the Overseer sent (the row that gets the "Overseer" tag). */
+  targetId: string;
+  /** The Overseer session id that sent it, for the audit trail. */
+  overseerId?: string;
+}
+export interface OverseerDialogAnswerData {
+  v: 1;
+  /** The dialog's title/question as shown to the user. */
+  title: string;
+  /** The answer, as display text (the chosen option, "Yes"/"No", or the typed input). */
+  answer: string;
+  overseerId?: string;
+}
+
+export type OverseerProactivity = "off" | "badge" | "brief";
+
+export interface OverseerQuickAction {
+  id: string;
+  /** Title Case, short: "What Needs Me". */
+  label: string;
+  /** One line shown under the label in the flyout. */
+  description: string;
+  /** Sent verbatim as the user's message when picked. */
+  prompt: string;
+}
+
+/** Per user turn, except `concurrentSessions` (at once, across turns). Over a cap the tool refuses
+    and tells the model to stop and use sova_confirm / explain. */
+export interface OverseerCaps {
+  createPerTurn: number;      // default 5
+  promptsPerTurn: number;     // default 10
+  archivesPerTurn: number;    // default 50
+  concurrentSessions: number; // default 5: Overseer-started sessions running at once
+  explorePerTurn: number;     // default 2: explorer subagents launched (sova_idea explore); absent on read → default
+}
+
+/** `<stateRoot>/overseer.json`. Tolerant on read, strict on PUT. */
+export interface OverseerSettings {
+  version: 1;
+  /** "provider/model"; null = pi's default. Never becomes the default for new sessions. */
+  model: string | null;
+  /** off…max, clamped to the model; null = the model's default. */
+  thinking: string | null;
+  /** Appended after the Overseer's own prompt (which is appended after the user's APPEND_SYSTEM.md). */
+  extraSystemPrompt: string;
+  proactivity: OverseerProactivity; // default "badge"
+  quickActions: OverseerQuickAction[];
+  caps: OverseerCaps;
+  /** The exploratory agent: the subagent sova_idea `explore` launches per idea. Default
+      `{backend:"claude-code", model:"opus[1m]", effort:"medium"}` (Claude Opus 5.5). Absent or
+      invalid on read → the default. */
+  explorer: WorkerChoice;
+}
+
+export interface OverseerSettingsInfo {
+  settings: OverseerSettings;
+  /** The shipped defaults, for "Reset to Defaults". */
+  defaults: { quickActions: OverseerQuickAction[]; caps: OverseerCaps; explorer: WorkerChoice };
+  /** Absolute path of overseer.json, for the screen's footnote. */
+  file: string;
+}
+export interface OverseerSaveResult extends OverseerSettingsInfo {
+  /** Anything saved that could not be verified or that the policy refuses, one sentence each. */
+  warnings: string[];
+}
+
+/** `<stateRoot>/overseer-state.json` (server-only). */
+export interface OverseerState {
+  version: 1;
+  current: string; // session id
+  history: string[]; // older Overseer session ids, newest first, ≤20
+}
+
+/** GET /api/overseer and POST /api/overseer/clear. */
+export interface OverseerInfo {
+  /** The current Overseer file: mount the normal chat on it (keyed on path). */
+  path: string;
+  id: string;
+  /** Up to 20 previous Overseer files, newest first; openable read-only (watch, no chat). */
+  history: { id: string; path: string; title: string; lastActiveAt: string }[];
+  /** Attention counts for the entry button (from the digest). act = needs you; decide = finished/look. */
+  badge: { act: number; decide: number };
+  /** Overseer assistant messages newer than the Overseer's own seenAt: the chat-unread badge on the
+      entry button, separate from `badge`. */
+  unread: number;
+  proactivity: OverseerProactivity;
+  /** The Overseer is mid-turn. */
+  busy: boolean;
+}
+
+export type AttentionTier = "act" | "decide" | "fyi";
+export type AttentionKind =
+  | "needs-input"     // extension dialog open (activity needs-input, or hosted pending dialog)
+  | "error"           // errored turn (activity error)
+  | "worker-error"    // a subagent worker errored / was killed
+  | "finished"        // replied since last seen, now idle
+  | "draft"           // idle with an unsent composer draft
+  | "queued"          // idle with queued input
+  | "context-full"    // context ≥85%
+  | "working"         // running now
+  | "stale";          // idle web session >3 days, not archived, no draft
+
+export interface AttentionItem {
+  /** Session id. */
+  id: string;
+  path: string;
+  title: string;
+  /** cwd (or target:remoteCwd), home-shortened. */
+  where: string;
+  tier: AttentionTier;
+  kind: AttentionKind;
+  /** ms epoch the condition began (or best proxy); 0 unknown. */
+  since: number;
+  /** ≤200 chars. */
+  detail?: string;
+  /** `#/s/<path>`. */
+  href: string;
+  /** The session is open in a TUI: read-only for the Overseer. */
+  tuiLive?: true;
+}
+
+/** GET /api/overseer/attention and the sova_attention tool. Sorted tier, then age; ≤30 items. */
+export interface AttentionDigest {
+  generatedAt: number;
+  counts: { act: number; decide: number; fyi: number };
+  items: AttentionItem[];
+}
+
+/** One line of `<stateRoot>/overseer-actions.jsonl`. */
+export interface OverseerAction {
+  at: string; // ISO
+  overseerId: string;
+  toolCallId: string;
+  tool: string;
+  args: unknown;
+  outcome: "ok" | "refused" | "error";
+  error?: string;
+}
+
+// --- Tool results the Overseer ChatView renders specially (tool_execution_end `result.details`
+// and the persisted tool-result row's raw `details`). ---
+
+/** `sova_navigate` details. `href` is `#/…` or `settings:<tab>[/<section>]`. Applied ONLY by the tab
+    that started the running turn (its own send_ack queued:false, or queue_item_gone delivered with
+    its own clientId); never by other tabs, reloads or proactive turns. The card always shows "Go". */
+export interface SovaNavigateDetails {
+  href: string;
+  label: string;
+}
+
+/** `sova_confirm` details. Non-blocking: the tool returns at once and the model ends its turn.
+    The card shows `options` as buttons; a click sends the option's `reply` (or its label) as the
+    next user message. Answered/disabled once any later user message exists in the transcript
+    (`answer` = that message's text when it matches an option). */
+export interface SovaConfirmDetails {
+  title: string;
+  detail?: string;
+  options: { label: string; reply?: string; tone?: "default" | "danger" }[];
+}
+
+// --- The Overseer's ideas backlog: spec-shaped (manifest + one .md per idea, § ids), its own
+// small reader and link graph. Nothing is deleted; `dropped` is terminal. ---
+
+/** `open` filed · `exploring` an explorer subagent is linked · `started` a session is linked ·
+    `done` / `dropped` only when the user says so (dropped is terminal: no further status change). */
+export type IdeaStatus = "open" | "exploring" | "started" | "done" | "dropped";
+export const IDEA_STATUSES: IdeaStatus[] = ["open", "exploring", "started", "done", "dropped"];
+
+/** An idea id. Main entry `§<ns>/<name>` (file `ideas/<ns>/<name>.md`); sub-entry
+    `§<ns>.<parent>/<name>` (file `ideas/<ns>/<parent>/<name>.md`), whose parent `§<ns>/<parent>`
+    must exist. ns = the project; each segment is lowercase `[a-z0-9][a-z0-9-]*`, ns ≤ 32 chars,
+    parent and name ≤ 64. The `§` is canonical; inputs may omit it. Groups: 1 ns, 2 parent?, 3 name. */
+export const IDEA_ID_RE = /^§?([a-z0-9][a-z0-9-]{0,31})(?:\.([a-z0-9][a-z0-9-]{0,63}))?\/([a-z0-9][a-z0-9-]{0,63})$/;
+
+/** One record of ideas/manifest.json (the id is its key there). */
+export interface IdeaMeta {
+  /** One line, ≤ 120 chars: what the ToC shows. */
+  title: string;
+  status: IdeaStatus;
+  /** Themes: lowercase `[a-z0-9-]`, ≤ 8, each ≤ 32. */
+  tags: string[];
+  /** Other ideas this one relates to (any namespace), canonical § ids; directed edges this → link. */
+  links: string[];
+  /** The session started from it (sova_create_session's id). Linking one sets `started`. */
+  sessionId?: string;
+  /** Its exploratory subagent's worker id (`ag_NN`). Linking one sets `exploring`. */
+  explorerId?: string;
+  /** The Overseer conversation (session id) that owns that explorer: workers die with it (/clear,
+      restart), so `tell` refuses when this is not the current conversation. */
+  explorerOverseerId?: string;
+  createdAt: string; // ISO
+  updatedAt: string; // ISO; also the PATCH `base`
+}
+
+/** `<stateRoot>/ideas/manifest.json`. Tolerant read: bad records are dropped, never thrown. */
+export interface IdeasManifest {
+  formatVersion: 1;
+  ideas: Record<string, IdeaMeta>;
+}
+
+export interface IdeaRecord extends IdeaMeta {
+  id: string; // canonical, with §
+  ns: string;
+  /** For a sub-entry, its main entry's id. */
+  parent?: string;
+}
+
+/** The ToC: namespaces sorted by name; within one, main entries by id, each followed by its
+    sub-entries. `counts` has every status (0 included). */
+export interface IdeasToc {
+  total: number;
+  namespaces: {
+    ns: string;
+    counts: Record<IdeaStatus, number>;
+    entries: { id: string; title: string; status: IdeaStatus; parent?: string }[];
+  }[];
+}
+
+/** GET /api/overseer/ideas. `edges` = every link (from → to), for the graph view. */
+export interface OverseerIdeasInfo {
+  toc: IdeasToc;
+  ideas: IdeaRecord[];
+  edges: { from: string; to: string }[];
+  /** Absolute path of the ideas dir, for the footnote. */
+  dir: string;
+}
+
+/** GET/PATCH /api/overseer/idea. `text` = the prose .md ("" when missing). `scope` = every idea it
+    reaches through links, transitively (itself excluded; sub-entries of it included); `linkedBy` =
+    the ideas that link to it directly (its impact). */
+export interface OverseerIdeaDetail {
+  idea: IdeaRecord;
+  text: string;
+  scope: string[];
+  linkedBy: string[];
+}
+
+/** PATCH body. Absent fields are unchanged. `base` = the updatedAt the editor started from; when it
+    no longer matches → 409. Setting a status on a dropped idea is 400. */
+export interface IdeaPatch {
+  base?: string;
+  title?: string;
+  status?: IdeaStatus;
+  tags?: string[];
+  links?: string[];
+  text?: string;
+}
+export interface IdeaConflict {
+  error: string;
+  current: OverseerIdeaDetail;
+}
+
+/** `sova_idea` details (every op): the idea it touched, so a card or the panel can link it. */
+export interface SovaIdeaDetails {
+  id: string;
+  op: "add" | "update" | "append" | "link" | "explore" | "tell";
+  status: IdeaStatus;
+  explorerId?: string;
+}
+
+/** Marks an Overseer turn was started by proactivity (server-sent "Brief me"). The prompt text of
+    such a turn starts with this prefix, so the transcript renders it as a machine row, not "You". */
+export const OVERSEER_BRIEF_PREFIX = "[overseer-brief]";
 /** GET /api/extensions: one entry per valid manifest record (`<state root>/extensions.json`, or
     SOVA_EXTENSIONS_FILE), in manifest order. `status` is a 1.5 s GET `<api>/api/health` (2xx =
     "ok"), cached 10 s per extension; `error` says why a "down" one is down. ext-contract-v1.2. */

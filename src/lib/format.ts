@@ -1,22 +1,8 @@
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+// The clock, the stamp and the relative time are pi-config's `stamp` formatter, so the TUI's
+// transcript stamps and every time in Sova read the same ("1:43 PM", "Mar 4 1:43 PM", "5m ago").
+export { agoTime, clockTime, relativeTime, stampAgo, stampTime } from "../../pi-config/extensions/stamp/format.ts";
 
-/** "just now" · "5m ago" · "2h ago" · "yesterday" · "3d ago", then "Mar 4" past 7 days. */
-export function relativeTime(iso: string, now = Date.now()): string {
-  const t = Date.parse(iso);
-  if (Number.isNaN(t)) return "";
-  const sec = Math.max(0, Math.round((now - t) / 1000));
-  if (sec < 45) return "just now";
-  const min = Math.round(sec / 60);
-  if (min < 60) return `${min}m ago`;
-  const hr = Math.round(min / 60);
-  if (hr < 24) return `${hr}h ago`;
-  const day = Math.round(hr / 24);
-  if (day === 1) return "yesterday";
-  if (day < 7) return `${day}d ago`;
-  const d = new Date(t);
-  const sameYear = d.getFullYear() === new Date(now).getFullYear();
-  return `${MONTHS[d.getMonth()]} ${d.getDate()}${sameYear ? "" : `, ${d.getFullYear()}`}`;
-}
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 /** How long until a future time, for "next refresh in {rel}": "in 3m", "in 2h", "in 1d"; under a
     minute "in under a minute". Null when the time is unreadable or already passed. */
@@ -32,14 +18,6 @@ export function relativeIn(iso: string, now = Date.now()): string | null {
   return `in ${Math.round(hr / 24)}d`;
 }
 
-/** 24-hour clock for absolute timestamps. */
-export function clockTime(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-}
-
-
 export function prettyJson(value: unknown): string {
   if (typeof value === "string") return value;
   try {
@@ -47,15 +25,6 @@ export function prettyJson(value: unknown): string {
   } catch {
     return String(value);
   }
-}
-
-/** 24-hour `HH:MM`, prefixed with `Mar 4 ` when not today. */
-export function stampTime(iso: string, now = Date.now()): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  const today = new Date(now);
-  const sameDay = d.toDateString() === today.toDateString();
-  return `${sameDay ? "" : `${MONTHS[d.getMonth()]} ${d.getDate()} `}${clockTime(iso)}`;
 }
 
 /** Shows $HOME as `~`. */

@@ -79,7 +79,7 @@ export const recentCountValid = (raw: unknown): boolean => {
  * A server that predates `archived` or `workerSession` sends none, which counts as not archived
  * and a main thread (protocol.ts).
  */
-export const recentEligible = (s: Pick<SessionSummary, "archived" | "workerSession">): boolean =>
+export const recentEligible = (s: Pick<SessionSummary, "archived" | "workerSession" | "overseer">): boolean =>
   s.archived !== true && isMainThread(s);
 
 /**

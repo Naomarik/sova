@@ -78,6 +78,13 @@ export interface ClaudeTurnRequest {
 	tools: Tool[];
 	/** The full normalized transcript for this turn. */
 	messages: Message[];
+	/**
+	 * The model's context window and output cap, in tokens (pi's `Model`).
+	 * They size the history folded into a restarted child; absent, the
+	 * bridge falls back to a fixed cap.
+	 */
+	contextWindow?: number;
+	maxTokens?: number;
 }
 
 /**

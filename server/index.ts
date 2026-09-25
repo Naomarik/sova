@@ -46,6 +46,22 @@ import { WORKER_ID_RE } from "./worker-resume";
 import { attachWebSockets, upgradeSovaSocket } from "./ws";
 import { meshApi, meshRoutes, startMesh, stopMesh } from "./mesh";
 import { mountSync } from "./sync";
+import { markSeen } from "./seen";
+import {
+  attentionForWire,
+  clearOverseer,
+  overseerInfo,
+  overseerSettingsInfo,
+  pathOfId,
+  promptIdleSession,
+  overseerSender,
+  OVERSEER_SENDER_HEADER,
+  saveOverseerSettings,
+  setOverseerDispatch,
+  startOverseerLoop,
+} from "./overseer";
+import { readNotes, writeNotes, NOTES_MAX } from "./overseer-store";
+import { IdeaConflictError, IdeaError, ideaDetail, ideasInfo, parseIdeaId, updateIdea, type IdeaUpdate } from "./overseer-ideas";
 import { findExtension, listExtensions, proxyExtension, serveExtensionFile, setSovaPort } from "./extensions";
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4800; // PORT=0: an ephemeral port (tests)
@@ -84,6 +100,8 @@ async function createWebSession(c: Context, cwd: string) {
   const path = canonicalPath(rawPath); // same key resolveSessionPath() will produce
   markOwned(path); // fresh mtime is ours, not a foreign writer's
   addWebSession(header.id);
+  // Seen at birth: whoever made it is looking at it, so its first reply can later read as unread.
+  markSeen(header.id);
   const summary = await getSessionSummary(path);
   if (!summary) return c.json({ error: "Failed to read back new session" }, 500);
   return c.json(summary, 201);
@@ -690,6 +708,109 @@ app.get("/api/insights/session", async (c) => {
 // a missing or corrupt entry is simply absent. ?session=<sessionId> filters by parentSessionId.
 app.get("/api/explanations", async (c) => c.json(await listExplanations(c.req.query("session"))));
 
+// The Overseer (server/overseer.ts): the one special session that watches and acts on the others.
+// GET ensures the current file exists; the list poll never creates it.
+app.get("/api/overseer", async (c) => c.json(await overseerInfo(), 200, { "Cache-Control": "no-store" }));
+app.post("/api/overseer/clear", async (c) => c.json(await clearOverseer()));
+app.get("/api/overseer/attention", async (c) => c.json(await attentionForWire(), 200, { "Cache-Control": "no-store" }));
+app.get("/api/overseer/notes", (c) => c.json({ text: readNotes() }, 200, { "Cache-Control": "no-store" }));
+// `base` (optional): the notes the editor started from. When the file no longer holds them (the
+// Overseer's sova_note wrote meanwhile) the save is refused with 409 and the current text, so a
+// Settings save never deletes a note it never saw.
+app.put("/api/overseer/notes", async (c) => {
+  let body: { text?: unknown; base?: unknown };
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "Expected JSON body { text }" }, 400);
+  }
+  if (typeof body?.text !== "string") return c.json({ error: "text must be a string" }, 400);
+  if (body.text.length > NOTES_MAX) return c.json({ error: `Notes must be at most ${NOTES_MAX} characters` }, 400);
+  if (body.base !== undefined && typeof body.base !== "string") return c.json({ error: "base must be a string" }, 400);
+  const current = readNotes();
+  if (typeof body.base === "string" && body.base !== current)
+    return c.json({ error: "The standing notes changed since you opened them (the Overseer added one). Nothing was saved.", text: current }, 409);
+  return c.json({ text: writeNotes(body.text) });
+});
+// The ideas backlog (server/overseer-ideas.ts). The Overseer's sova_idea and this PATCH are its
+// only writers; `base` (the updatedAt the editor started from) makes a stale edit a 409 carrying
+// the current idea, so the panel never overwrites what the Overseer appended meanwhile.
+app.get("/api/overseer/ideas", (c) => c.json(ideasInfo(), 200, { "Cache-Control": "no-store" }));
+app.get("/api/overseer/idea", (c) => {
+  const id = parseIdeaId(c.req.query("id") ?? "")?.id;
+  if (!id) return c.json({ error: "id must be an idea id: §<project>/<name> or §<project>.<main>/<name>" }, 400);
+  const detail = ideaDetail(id);
+  return detail ? c.json(detail, 200, { "Cache-Control": "no-store" }) : c.json({ error: `No idea ${id}` }, 404);
+});
+app.patch("/api/overseer/idea", async (c) => {
+  const id = parseIdeaId(c.req.query("id") ?? "")?.id;
+  if (!id) return c.json({ error: "id must be an idea id: §<project>/<name> or §<project>.<main>/<name>" }, 400);
+  let body: Record<string, unknown>;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "Expected JSON body { base?, title?, status?, tags?, links?, text? }" }, 400);
+  }
+  if (!body || typeof body !== "object" || Array.isArray(body)) return c.json({ error: "Expected a JSON object" }, 400);
+  const patch: IdeaUpdate = {};
+  for (const key of ["base", "title", "status", "text"] as const) {
+    if (body[key] === undefined) continue;
+    if (typeof body[key] !== "string") return c.json({ error: `${key} must be a string` }, 400);
+    (patch as Record<string, unknown>)[key] = body[key];
+  }
+  for (const key of ["tags", "links"] as const) {
+    if (body[key] === undefined) continue;
+    if (!Array.isArray(body[key])) return c.json({ error: `${key} must be a list` }, 400);
+    (patch as Record<string, unknown>)[key] = body[key];
+  }
+  if (!ideaDetail(id)) return c.json({ error: `No idea ${id}` }, 404);
+  try {
+    return c.json(updateIdea(id, patch));
+  } catch (err) {
+    if (err instanceof IdeaConflictError) return c.json({ error: err.message, current: err.current }, 409);
+    if (err instanceof IdeaError) return c.json({ error: err.message }, 400);
+    throw err;
+  }
+});
+app.get("/api/settings/overseer", (c) => c.json(overseerSettingsInfo()));
+app.put("/api/settings/overseer", async (c) => {
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "Expected JSON body { version: 1, model, thinking, extraSystemPrompt, proactivity, quickActions, caps, explorer }" }, 400);
+  }
+  const result = await saveOverseerSettings(body);
+  return "error" in result ? c.json({ error: result.error }, 400) : c.json(result);
+});
+
+// One session's summary by id, listed or not (an empty web session, an Overseer file): what a
+// sova://s/<id> link resolves through when the list doesn't have it.
+app.get("/api/sessions/summary", async (c) => {
+  const id = c.req.query("id") ?? "";
+  if (!/^[\w-]{1,100}$/.test(id)) return c.json({ error: "Invalid or missing ?id= (a session id)" }, 400);
+  const path = await pathOfId(id);
+  const summary = path ? await getSessionSummary(path) : null;
+  if (!summary) return c.json({ error: "No session with that id" }, 404);
+  return c.json(summary, 200, { "Cache-Control": "no-store" });
+});
+
+// One message to one IDLE session: the one-session twin of the group prompt (sova_send, and a
+// server-side first prompt). Refused mid-turn, TUI-live, or with subagents working; never a steer.
+app.post("/api/sessions/prompt", async (c) => {
+  let body: { path?: unknown; text?: unknown };
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "Expected JSON body { path, text }" }, 400);
+  }
+  if (typeof body?.text !== "string") return c.json({ error: "text must be a string" }, 400);
+  const path = resolveSessionPath(typeof body.path === "string" ? body.path : null);
+  if (!path) return c.json({ error: "Invalid or missing path (must be a .jsonl under the pi sessions dir)" }, 400);
+  if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
+  const r = await promptIdleSession(path, body.text, overseerSender(c.req.header(OVERSEER_SENDER_HEADER)));
+  return r.ok ? c.json({ ok: true }) : c.json({ error: r.error }, r.status);
+});
 // Installed extensions (server/extensions.ts), with each backend's cached health.
 app.get("/api/extensions", async (c) => c.json(await listExtensions()));
 
@@ -768,6 +889,10 @@ server.on("error", (err) => {
   process.exit(1);
 });
 attachWebSockets(server);
+
+// The Overseer's tools call these same routes in-process (no socket, every guard applies).
+setOverseerDispatch((path, init) => app.request(path, init));
+startOverseerLoop();
 
 // With the experimental switch on, register the Claude Code provider now rather than when the
 // user first opens a session, so its models are in GET /api/models for the picker straight away.

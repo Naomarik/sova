@@ -10,7 +10,7 @@ import { cwdLabel } from "../lib/remote-session";
 import type { RewindControl } from "../lib/inputs";
 import { activeTab, home } from "../lib/ui-state";
 import { sessionWorking, formatCost, type UsageTotalView, workingSplit } from "../lib/workers";
-import { ChatView, type ChatRefusal } from "./ChatView";
+import { ChatView, type ChatRefusal, type OverseerChat } from "./ChatView";
 import { ContextGauge, ContextMetaPrefix, contextDescribedBy } from "./ContextGauge";
 import { InsightStrip } from "./InsightStrip";
 import { RemoteChip, RemoteHeadChip } from "./RemoteStatus";
@@ -108,6 +108,10 @@ export function SessionView(props: {
   onNewSession(path: string): Promise<string | null>;
   /** Open the fanout dialog on this session (the flyout's "Fan Out…"). */
   onFanOut?(source: FanoutSource): void;
+  /** A head of the caller's own in place of the session head (the Overseer's page). */
+  head?: () => JSX.Element;
+  /** The Overseer's chat extras (ChatView `overseer`). */
+  overseer?: OverseerChat;
 }) {
   const path = props.path;
   const s = () => props.summary();
@@ -324,7 +328,7 @@ export function SessionView(props: {
     <PaneScopeProvider value={scope}>
       {/* A peer's session: its composer's models, policy and mode defaults are that host's. */}
       <HostScopeProvider value={() => hostOf(path)}>
-      <Show when={props.paneId} fallback={<FullHead />}>
+      <Show when={props.paneId} fallback={props.head ? props.head() : <FullHead />}>
         {/* One pane of a workspace: a 40px head under the
             workspace's own, carrying only what tells this member apart — its name, its context
             fill, its state chip, and its tools. The pane's accessible name IS this name. */}
@@ -466,6 +470,7 @@ export function SessionView(props: {
                       onShowWorkers={() => props.toggleSubagents(path)}
                       workersOpen={props.paneOn(path, "agents")}
                       onNewSession={() => props.onNewSession(path)}
+                      overseer={props.overseer}
                       teams={insight.data?.teams}
                       fork={props.fork}
                       onFanOut={

@@ -187,6 +187,7 @@ test("markerRows reads compactions, spawns, retires and setting changes", () => 
   assert.equal(rows[3]!.title, "Compacted · 67,401 tokens summarized");
   assert.equal(rows[3]!.full, "Read the pane, wrote the tab.", "the summary is the tooltip, not a second row");
   assert.equal(rows[4]!.title, "Model → anthropic/claude-opus-5");
+  assert.equal(rows[4]!.entryId, undefined, "its row renders nothing in the thread: no jump");
 });
 
 test("a subagent that errored stopped; one that finished, finished", () => {

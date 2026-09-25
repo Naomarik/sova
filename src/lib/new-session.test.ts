@@ -4,7 +4,7 @@ import { test } from "node:test";
 import { createThenArchive, dropArchived, newSessionCwd } from "./new-session";
 
 test("newSessionCwd prefers the chat's own folder", () => {
-  assert.equal(newSessionCwd("/a", [{ cwd: "/b", lastActiveAt: "2026-01-02T00:00:00Z" }]), "/a");
+  assert.equal(newSessionCwd({ cwd: "/a" }, [{ cwd: "/b", lastActiveAt: "2026-01-02T00:00:00Z" }]), "/a");
 });
 
 test("newSessionCwd falls back to the most recently active session, then to nothing", () => {
@@ -14,9 +14,19 @@ test("newSessionCwd falls back to the most recently active session, then to noth
     { cwd: "/mid", lastActiveAt: "2026-01-02T00:00:00Z" },
   ];
   assert.equal(newSessionCwd(undefined, sessions), "/new");
-  assert.equal(newSessionCwd("", sessions), "/new");
+  assert.equal(newSessionCwd({ cwd: "" }, sessions), "/new");
   assert.equal(newSessionCwd(null, []), null);
   assert.equal(newSessionCwd(null, [{ cwd: "", lastActiveAt: "2026-01-01T00:00:00Z" }]), null);
+});
+
+test("the Overseer's folder is never a new session's folder: not from its page, not as the latest (E2E F5)", () => {
+  const sessions = [
+    { cwd: "/state/overseer", lastActiveAt: "2026-01-09T00:00:00Z", overseer: true as const },
+    { cwd: "/work", lastActiveAt: "2026-01-02T00:00:00Z" },
+  ];
+  assert.equal(newSessionCwd({ cwd: "/state/overseer", overseer: true }, sessions), "/work");
+  assert.equal(newSessionCwd(null, sessions), "/work");
+  assert.equal(newSessionCwd(null, [sessions[0]!]), null);
 });
 
 test("createThenArchive creates first, then archives the source", async () => {

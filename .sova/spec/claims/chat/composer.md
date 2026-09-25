@@ -61,6 +61,9 @@
 </footer>
 ```
 
+In the Overseer only, one floating **Quick Actions** button sits just above the composer and opens
+the quick-action flyout (§app.overseer/quick-actions). No other chat has it.
+
 ## §chat.composer/behavior — Behavior
 
 - **Auto-grow.** The textarea grows from 1 line (44px) up to `--composer-max` (40vh), then

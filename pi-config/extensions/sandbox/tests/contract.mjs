@@ -27,7 +27,7 @@ try {
 } catch (err) {
 	loadError = err;
 }
-const linuxReady = !!BE && existsSync(LINUX_IMPL);
+const linuxReady = !!BE && existsSync(LINUX_IMPL) && process.platform === "linux";
 
 const shq = (s) => `'${String(s).replaceAll("'", "'\\''")}'`;
 
@@ -93,8 +93,10 @@ if (!BE) {
 	t.pending("all contract cases", `backend.ts failed to load: ${loadError?.message ?? loadError}`);
 } else {
 	// C16 unsupported platform: refusal at probe, no argv to spawn (plan §11 #16; BRIEF 9).
+	// darwin now has a real backend (darwin-seatbelt), so it is exercised as a supported platform
+	// below rather than here; only platforms with no backend at all stay "unsupported".
 	await t.test("C16 unsupported platform refuses at probe and confine (no spawn possible)", async () => {
-		for (const platform of ["darwin", "win32", "freebsd"]) {
+		for (const platform of ["win32", "freebsd"]) {
 			const b = BE.backendFor(platform);
 			eq(b.id, "unsupported", `${platform} backend id`);
 			const probe = await b.probe({});
@@ -105,6 +107,15 @@ if (!BE) {
 			ok(!("confined" in res), `${platform}: a refusal carries no argv, so nothing can be spawned`);
 		}
 	});
+
+	if (process.platform === "darwin") {
+		await t.test("C16-darwin backend is real, not unsupported", async () => {
+			const b = BE.backendFor("darwin");
+			eq(b.id, "darwin-seatbelt", "darwin backend id");
+		});
+	} else {
+		t.skip("C16-darwin backend is real, not unsupported", "not darwin");
+	}
 
 	// C15b classification is platform-neutral: build a Confined-shaped spec by hand from the
 	// documented contract fields (the Linux-specific spec comes from C14's real confinement).
@@ -143,7 +154,14 @@ if (!BE) {
 // ─── Linux backend cases ───────────────────────────────────────────────────────────────────────
 
 if (!linuxReady) {
-	t.pending("C0-C15 the Linux contract suite", existsSync(LINUX_IMPL) ? `backend.ts load failed: ${loadError?.message}` : "backends/linux-bwrap.ts does not exist yet");
+	t.pending(
+		"C0-C17/X1 the Linux contract suite",
+		process.platform !== "linux"
+			? `not linux (${process.platform}); see the darwin contract suite below`
+			: existsSync(LINUX_IMPL)
+				? `backend.ts load failed: ${loadError?.message}`
+				: "backends/linux-bwrap.ts does not exist yet",
+	);
 } else {
 	const fx = makeFixture(); // agent dir INSIDE cwd, the test-server shape (BRIEF 7)
 	mkdirSync(path.dirname(fx.policyFile), { recursive: true });
@@ -574,6 +592,41 @@ if (!linuxReady) {
 	});
 
 	await proxy.close();
+	cleanupAll();
+}
+
+// ─── darwin backend cases ──────────────────────────────────────────────────────────────────────
+// The deep Seatbelt cases (writable roots, hidden paths, network, shadowed caches, linked
+// worktrees...) live in tests/unit/darwin-seatbelt.unit.test.ts (backend's suite); this is the
+// contract-level smoke check that mirrors C0: the real profile, probed for real, must enforce.
+
+if (!BE) {
+	t.pending("C0-darwin probe", `backend.ts failed to load: ${loadError?.message ?? loadError}`);
+} else if (process.platform !== "darwin") {
+	t.skip("C0-darwin probe", `not darwin (${process.platform})`);
+} else {
+	const fxD = makeFixture();
+	mkdirSync(path.dirname(fxD.policyFile), { recursive: true });
+	if (!existsSync(fxD.policyFile)) writeFileSync(fxD.policyFile, '{"level":"workspace-write","defaultOn":false}\n');
+	const darwinBackend = BE.backendFor("darwin");
+	const policyD = makePolicy(fxD, { network: { mode: "none" } });
+
+	await t.test("C0-darwin probe: real Seatbelt profile against a no-op runs and reports enforcement", async () => {
+		const probeD = await darwinBackend.probe(policyD);
+		ok(probeD.ok === true, `probe must succeed on this host: ${JSON.stringify(probeD)}`);
+		console.log(`       darwin probe: enforcement=${probeD.enforcement} network=${probeD.network} notes=${JSON.stringify(probeD.notes ?? [])}`);
+		const again = await darwinBackend.probe(policyD);
+		eq(JSON.stringify(again), JSON.stringify(probeD), "probe is cached per policy and stable");
+	});
+
+	await t.test("C0-darwin a write outside the writable roots is refused; host file absent", async () => {
+		const victim = path.join(fxD.escape, `c0d-${rand()}`);
+		const r = await confinedRun(darwinBackend, `touch ${shq(victim)}`, policyD);
+		ok(!r.refused, `confine itself must succeed (only the write is denied): ${r.reason}`);
+		ok(!existsSync(victim), `host-side: ${victim} must not exist`);
+		ok(r.out.code !== 0, "exit must be nonzero");
+	});
+
 	cleanupAll();
 }
 

@@ -7,7 +7,7 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { makeSuite, ok, eq } from "./kit.mjs";
-import { EXT_ENTRY, cleanupAll, envKeys, hostMntNs, makeFixture, openSession, stable } from "./harness.mjs";
+import { EXT_ENTRY, cleanupAll, confinedCheck, envKeys, makeFixture, openSession, stable } from "./harness.mjs";
 
 const t = makeSuite("off-equals-stock");
 const SEVEN = ["read", "bash", "edit", "write", "grep", "find", "ls"];
@@ -43,12 +43,13 @@ if (!existsSync(EXT_ENTRY)) {
 		eq(a.length, b.length, "the extension adds no extra tools while OFF");
 	});
 
-	await t.test("OS2 execution identity: same mount namespace as the host, identical env keys", async () => {
-		const ra = await extS.bash("readlink /proc/self/ns/mnt");
-		const rb = await bareS.bash("readlink /proc/self/ns/mnt");
-		eq(ra.isError, false, "bash works (ext, OFF)");
-		eq(ra.text.trim(), hostMntNs(), "never-ON bash runs in the host mount namespace");
-		eq(rb.text.trim(), hostMntNs(), "stock bash runs in the host mount namespace");
+	await t.test("OS2 execution identity: same confinement state as the host, identical env keys", async () => {
+		const raw = await extS.bash("echo ok");
+		eq(raw.isError, false, "bash works (ext, OFF)");
+		const ca = await confinedCheck(extS.bash, fx.escape);
+		const cb = await confinedCheck(bareS.bash, fx.escape);
+		eq(ca.state, "unconfined", `never-ON bash runs unconfined (${ca.detail})`);
+		eq(cb.state, "unconfined", `stock bash runs unconfined (${cb.detail})`);
 		const ea = await extS.bash("env -0");
 		const eb = await bareS.bash("env -0");
 		eq(stable(envKeys(ea.text)), stable(envKeys(eb.text)), "env key sets identical OFF vs no-extension");
@@ -62,9 +63,8 @@ if (!existsSync(EXT_ENTRY)) {
 		if (handler === true) throw new Error("F1: a before_agent_start handler is registered (prompt section would change on toggle)");
 		// handler === {unknown:true}: introspection unsupported; the byte-compare below is the real guard.
 		await extS.command("sandbox", "on");
-		const r = await extS.bash("readlink /proc/self/ns/mnt");
-		eq(r.isError, false, "confined bash runs");
-		ok(r.text.trim() !== hostMntNs(), `ON must run in a different mount namespace (got ${r.text.trim()})`);
+		const c = await confinedCheck(extS.bash, fx.escape);
+		eq(c.state, "confined", `ON must be confirmed confined by the oracle (${c.detail})`);
 		eq(extS.systemPrompt(), promptBeforeOn, "system prompt must be byte-identical before/after ON");
 		for (const name of SEVEN) {
 			const now = extS.registry().find((x) => x.name === name);
@@ -77,9 +77,8 @@ if (!existsSync(EXT_ENTRY)) {
 
 	await t.test("OS4 OFF after ON: namespace and env back to stock; only sourceInfo differs (accepted residue)", async () => {
 		await extS.command("sandbox", "off");
-		const r = await extS.bash("readlink /proc/self/ns/mnt");
-		eq(r.isError, false, "bash runs after OFF");
-		eq(r.text.trim(), hostMntNs(), "OFF-after-ON runs in the host mount namespace again");
+		const c = await confinedCheck(extS.bash, fx.escape);
+		eq(c.state, "unconfined", `OFF-after-ON runs unconfined again (${c.detail})`);
 		const eb = await bareS.bash("env -0");
 		const ea = await extS.bash("env -0");
 		eq(stable(envKeys(ea.text)), stable(envKeys(eb.text)), "env key sets identical to stock after OFF");
@@ -101,8 +100,8 @@ if (!existsSync(EXT_ENTRY)) {
 		const entries = extS.entries();
 		const reopened = await openSessionGuarded(fx, true, entries);
 		eq(reopened.errors.length, 0, `reopened session loaded clean: ${reopened.errors.join(" | ")}`);
-		const r = await reopened.bash("readlink /proc/self/ns/mnt");
-		eq(r.text.trim(), hostMntNs(), "restored-OFF session runs in the host mount namespace");
+		const c = await confinedCheck(reopened.bash, fx.escape);
+		eq(c.state, "unconfined", `restored-OFF session runs unconfined (${c.detail})`);
 		for (const name of SEVEN) {
 			const now = reopened.registry().find((x) => x.name === name);
 			eq(now.source, "builtin", `restored-OFF ${name} is builtin again`);

@@ -376,6 +376,26 @@ test("extensions and forkSession become -e and --fork child args after --no-exte
 	}
 });
 
+test("restricted by exclusion, the requested built-ins ride PI_SUBAGENT_BUILTIN_TOOLS for the marker to activate", async () => {
+	// Exclusion only narrows pi's default active set (read, bash, edit, write), so grep, find and ls
+	// need turning on in the child; worker-mark.ts does it from this variable (its own test).
+	const some = makeRunner({ extensions: ["npm:x"], tools: ["read", "grep", "find", "ls"], env: { KEEP: "1" } });
+	const none = makeRunner({ extensions: ["npm:x"], tools: [] });
+	const plain = makeRunner({ tools: ["read", "grep"] });
+	try {
+		const env = some.spawnCalls[0].opts.env;
+		assert.equal(env?.PI_SUBAGENT_BUILTIN_TOOLS, "read,grep,find,ls");
+		assert.equal(env?.KEEP, "1", "the caller's env is kept");
+		assert.equal(none.spawnCalls[0].opts.env?.PI_SUBAGENT_BUILTIN_TOOLS, undefined, "no tools: nothing to activate");
+		assert.equal(plain.spawnCalls[0].opts.env?.PI_SUBAGENT_BUILTIN_TOOLS, undefined, "an allowlist (--tools) needs no help");
+	} finally {
+		for (const h of [some, none, plain]) {
+			h.child.close(0);
+			await h.runner.whenClosed;
+		}
+	}
+});
+
 test("with extensions, built-ins are restricted by exclusion so extension tools survive", async () => {
 	const some = makeRunner({ extensions: ["npm:x"], tools: ["read", "grep"] });
 	const none = makeRunner({ extensions: ["npm:x"], tools: [] });

@@ -2429,6 +2429,36 @@ test("worker session marker: one subagents-worker-session entry at session_start
 	}
 });
 
+test("worker marker: the requested built-ins the default set lacks are activated at session_start, nothing else", async () => {
+	const { default: workerMark, WORKER_TOOLS_ENV, requestedTools } = await import(MARKER_EXTENSION);
+	const run = (env: string | undefined, all: string[], active: string[]) => {
+		const prev = process.env[WORKER_TOOLS_ENV];
+		if (env === undefined) delete process.env[WORKER_TOOLS_ENV]; else process.env[WORKER_TOOLS_ENV] = env;
+		try {
+			let set: string[] | null = null;
+			const handlers = new Map<string, (e: unknown, ctx: unknown) => unknown>();
+			const pi: any = {
+				on: (name: string, fn: any) => handlers.set(name, fn),
+				appendEntry: () => {},
+				getActiveTools: () => active,
+				getAllTools: () => all.map((name) => ({ name })),
+				setActiveTools: (names: string[]) => { set = names; },
+			};
+			workerMark(pi);
+			handlers.get("session_start")?.({}, { sessionManager: { getSessionFile: () => undefined, getEntries: () => [] } });
+			return set;
+		} finally {
+			if (prev === undefined) delete process.env[WORKER_TOOLS_ENV]; else process.env[WORKER_TOOLS_ENV] = prev;
+		}
+	};
+	// --exclude-tools bash,powershell,edit,write left read active and grep/find/ls registered but off.
+	assert.deepEqual(run("read,grep,find,ls", ["read", "grep", "find", "ls", "x_ext"], ["read", "x_ext"]), ["read", "x_ext", "grep", "find", "ls"]);
+	// An excluded tool is not registered, so the variable cannot turn it on.
+	assert.deepEqual(run("read,bash", ["read"], ["read"]), null);
+	assert.equal(run(undefined, ["read", "grep"], ["read"]), null, "no request: pi's defaults stand");
+	assert.deepEqual(requestedTools({ [WORKER_TOOLS_ENV]: " read, ,grep " }), ["read", "grep"]);
+});
+
 test("a pi worker on a claude-code-cli model gets the claude-code extension and its provider switch; other models get neither", async () => {
 	const h = harness();
 	h.ctx.modelRegistry.find = (p: string, m: string) => (p === "claude-code-cli" && m === "opus[1m]") || (p === "ollama-cloud" && m === "kimi-k3") ? { provider: p, id: m } : undefined;

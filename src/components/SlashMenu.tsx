@@ -6,6 +6,7 @@ const SOURCE_LABEL: Record<SlashCommand["source"], string> = {
   extension: "ext",
   prompt: "prompt",
   skill: "skill",
+  builtin: "built-in",
 };
 
 /** `cmd-` + the name with anything outside [a-z0-9-] as "-", suffixed when two names collide, and

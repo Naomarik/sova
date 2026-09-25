@@ -36,11 +36,13 @@ import { activeThemeId, applyTheme, droppedThemeId, reconcileTheme, typography }
 import type { SettingsTab } from "../lib/settings-nav";
 import { delegateDirty, resetDelegateDraft } from "../lib/delegate-draft";
 import { resetSpecDraft, specDirty } from "../lib/spec-draft";
+import { overseerDirty, resetOverseerDraft } from "../lib/overseer-draft";
 import { effectiveStack } from "../lib/typography";
 import { announce, home } from "../lib/ui-state";
 import { DelegateSettingsSection } from "./DelegateSettings";
 import { MeshSettingsSection } from "./MeshSettings";
 import { SpecSettingsSection } from "./SpecSettings";
+import { OverseerSettingsSection } from "./OverseerSettings";
 import { SummarizerSettingsSection } from "./SummarizerSettings";
 import { TypographySection } from "./TypographySection";
 import { Banner, Icon, trapFocus } from "./ui";
@@ -52,6 +54,7 @@ const TABS = [
   { id: "general", label: "General", icon: "settings" as const },
   { id: "models", label: "Models", icon: "sliders" as const },
   { id: "modes", label: "Modes", icon: "worker" as const },
+  { id: "overseer", label: "Overseer", icon: "eye" as const },
   { id: "summaries", label: "Summaries", icon: "chat" as const },
   { id: "themes", label: "Themes", icon: "image" as const },
   { id: "mesh", label: "Mesh", icon: "branch" as const },
@@ -119,19 +122,25 @@ export function SettingsDialog(props: { onClose(): void; initialTab?: SettingsTa
     }
   };
 
-  /** Close was asked for over unsaved Modes edits (Delegate or Spec): the foot asks what to do with them. */
+  /** Close was asked for over unsaved edits (Delegate, Spec or Overseer): the foot asks what to do with them. */
   const [closeHeld, setCloseHeld] = createSignal(false);
-  const modesDirty = () => delegateDirty() || specDirty();
-  /** Which unsaved screens the hold names: "Delegate", "Spec", or both. */
-  const unsavedNames = () => [delegateDirty() && "Delegate", specDirty() && "Spec"].filter(Boolean).join(" and ");
+  const modesDirty = () => delegateDirty() || specDirty() || overseerDirty();
+  /** Which unsaved screens the hold names: "Delegate", "Spec", "Overseer", joined. */
+  const unsavedNames = () => {
+    const names = [delegateDirty() && "Delegate", specDirty() && "Spec", overseerDirty() && "Overseer"].filter(Boolean) as string[];
+    return names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}` : (names[0] ?? "");
+  };
   const resetModesDrafts = () => {
     resetDelegateDraft();
     resetSpecDraft();
+    resetOverseerDraft();
   };
   /** Every way out (Close, Esc, the scrim) comes through here, so none of them drops a draft silently. */
   const requestClose = () => {
     if (modesDirty()) {
-      setTab("modes");
+      // To the screen that holds the edit, unless the one showing already does.
+      const here = tab() === "overseer" ? overseerDirty() : tab() === "modes" ? delegateDirty() || specDirty() : false;
+      if (!here) setTab(delegateDirty() || specDirty() ? "modes" : "overseer");
       setCloseHeld(true);
       return;
     }
@@ -214,6 +223,11 @@ export function SettingsDialog(props: { onClose(): void; initialTab?: SettingsTa
             <div class="settings-panel" role="tabpanel" id="settings-panel-modes" aria-labelledby="settings-tab-modes">
               <DelegateSettingsSection />
               <SpecSettingsSection />
+            </div>
+          </Show>
+          <Show when={tab() === "overseer"}>
+            <div class="settings-panel" role="tabpanel" id="settings-panel-overseer" aria-labelledby="settings-tab-overseer">
+              <OverseerSettingsSection />
             </div>
           </Show>
           {/* Mounted only while its tab is, like Modes: it asks the same backend discovery. */}

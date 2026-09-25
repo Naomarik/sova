@@ -11,6 +11,13 @@ import type {
   ModeInfo,
   ModelFavoriteResult,
   ModelInfo,
+  IdeaPatch,
+  OverseerIdeaDetail,
+  OverseerIdeasInfo,
+  OverseerInfo,
+  OverseerSaveResult,
+  OverseerSettings,
+  OverseerSettingsInfo,
   PlaybookCatalog,
   SandboxApplyResult,
   AssignGroupResult,
@@ -168,6 +175,40 @@ export const getSummarizerSettings = () => request<SummarizerSettingsInfo>("/api
 /** Replace the chain; the file's other keys stay. Sessions started afterwards, here and in the TUI, use it. */
 export const putSummarizerSettings = (settings: SummarizerSettings) =>
   request<SummarizerSettingsInfo>("/api/settings/summarizer", { method: "PUT", body: JSON.stringify(settings) });
+
+/** One session by id, listed or not (the list omits sessions with no user message). 404: no file has that id. */
+export const getSessionSummaryById = (id: string) => request<SessionSummary>(`/api/sessions/summary?id=${encodeURIComponent(id)}`);
+
+/** The Overseer: its current file (created on first ask), old files, and the entry button's counts. */
+export const getOverseer = () => request<OverseerInfo>("/api/overseer");
+
+/** `/clear`: stops a running turn and starts a new Overseer file. Never refuses. */
+export const clearOverseer = () => request<OverseerInfo>("/api/overseer/clear", { method: "POST" });
+
+/** The Overseer's standing notes (`overseer-notes.md`): they survive /clear. */
+export const getOverseerNotes = () => request<{ text: string }>("/api/overseer/notes");
+/** `base`: the notes this edit started from; the server refuses (409, with the current `text`) when
+    the file holds something else by now, so an edit never deletes a note the Overseer added. */
+export const putOverseerNotes = (text: string, base?: string) =>
+  request<{ text: string }>("/api/overseer/notes", { method: "PUT", body: JSON.stringify(base === undefined ? { text } : { text, base }) });
+
+/** The Overseer's ideas backlog: the ToC, every record and the link edges (no prose). */
+export const getOverseerIdeas = () => request<OverseerIdeasInfo>("/api/overseer/ideas");
+
+/** One idea with its prose, the ideas it reaches (scope) and the ones that link to it. 404: no such idea. */
+export const getOverseerIdea = (id: string) => request<OverseerIdeaDetail>(`/api/overseer/idea?id=${encodeURIComponent(id)}`);
+
+/** Edit an idea. `patch.base` = the updatedAt the edit started from: the server refuses (409, an
+    IdeaConflict carrying the current detail in `ApiError.body`) when the idea changed since. */
+export const patchOverseerIdea = (id: string, patch: IdeaPatch) =>
+  request<OverseerIdeaDetail>(`/api/overseer/idea?id=${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(patch) });
+
+/** Settings → Overseer. */
+export const getOverseerSettings = () => request<OverseerSettingsInfo>("/api/settings/overseer");
+
+/** Replace the Overseer's settings; model and thinking apply at once while it is idle. */
+export const putOverseerSettings = (settings: OverseerSettings) =>
+  request<OverseerSaveResult>("/api/settings/overseer", { method: "PUT", body: JSON.stringify(settings) });
 
 /** Every theme the app can find — the ones it ships and the ones in the user's folder — rescanned
     per request. Never fails on an unreadable folder: that comes back as `error` with the built-ins

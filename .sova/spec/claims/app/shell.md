@@ -44,7 +44,9 @@ unfolded (≥768)                                  folded (<768)
   The other routes follow the same rule: `#/usage` and `#/agents` (§app/insights), and a group opened as a
   workspace at `#/g/<id>` (split) or `#/g/<id>/<encodeURIComponent(path)>` (one member focused,
   §workspace/groups). `#/s/` never changes meaning: it is one session, alone, grouped or not. An unknown group
-  id routes to `#/` with a toast rather than rendering an empty frame.
+  id routes to `#/` with a toast rather than rendering an empty frame. `#/overseer` is the
+  Overseer (§app.overseer/identity-and-clear): the normal session view on whichever Overseer file
+  is current, with `data-view="session"`; `#/overseer/h/<id>` is a previous Overseer conversation, read-only.
 - **No rail and no bottom bar.** Sova has one destination, so there's no nav to place. This is
   a deliberate departure from the skill's three-pane desktop shell: the ≥1120 `desktop` band adds
   nothing here. **The spine is not a rail.** It is the sessions pane collapsed to 64px (§app.session-list/spine): it holds the pane's own contents, it replaces the pane rather than sitting beside it,

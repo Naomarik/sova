@@ -2,6 +2,7 @@ import { createEffect, createMemo, createSignal, on, onCleanup } from "solid-js"
 import type { TmpAttachment } from "../../shared/protocol";
 import { renderMarkdown, type RenderedMarkdown } from "../lib/markdown";
 import { activatePathChip } from "../lib/path-attachments";
+import { sessionIndexVersion } from "../lib/session-links";
 import { announce, openLightbox } from "../lib/ui-state";
 
 /**
@@ -16,7 +17,9 @@ export function Markdown(props: { text: string; streaming?: boolean; attachments
   onCleanup(() => cancelAnimationFrame(frame));
   createEffect(
     on(
-      () => [props.text, !!props.streaming, props.attachments] as const,
+      // A session link resolves against the session list: re-render when that changes, but only
+      // for a message that has one — every other message ignores the list's polls.
+      () => [props.text, !!props.streaming, props.attachments, props.text.includes("sova://") && sessionIndexVersion()] as const,
       ([text, streaming, attachments]) => {
         if (!streaming) {
           cancelAnimationFrame(frame);

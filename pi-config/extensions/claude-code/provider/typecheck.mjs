@@ -17,7 +17,7 @@
  * TypeScript comes from npx; nothing is installed into pi-config.
  */
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readdirSync, realpathSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -69,4 +69,6 @@ const dir = mkdtempSync(path.join(tmpdir(), "claude-provider-tsc-"));
 const configPath = path.join(dir, "tsconfig.json");
 writeFileSync(configPath, JSON.stringify(config, null, "\t"));
 const result = spawnSync("npx", ["--yes", "--package", "typescript@5", "tsc", "-p", configPath], { stdio: "inherit" });
+// /tmp is inode-limited on the dev machine: never leave the config dir behind.
+rmSync(dir, { recursive: true, force: true });
 process.exit(result.status ?? 1);

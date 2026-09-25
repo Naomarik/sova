@@ -497,3 +497,22 @@ test("a noted message_start claims the row whose typed text it carries, not the 
     [["earlier words", false], ["Two images. Reply with just OK.", true]],
   );
 });
+
+test("a Stop pressed during a /compact (no turn) clears at compaction_end; inside a turn the turn's settle still owns it", () => {
+  const [s, set] = store();
+  applyEvent(set, { type: "compaction_start", reason: "manual" });
+  set("stopping", true);
+  assert.equal(s.activity, "Compacting context");
+  applyEvent(set, { type: "compaction_end", reason: "manual", aborted: true });
+  assert.equal(s.activity, null);
+  assert.equal(s.stopping, false);
+
+  // pi's automatic compaction runs inside a turn: Stop still waits for that turn's agent_settled.
+  applyEvent(set, { type: "agent_start" });
+  applyEvent(set, { type: "compaction_start", reason: "threshold" });
+  set("stopping", true);
+  applyEvent(set, { type: "compaction_end", reason: "threshold", aborted: true });
+  assert.equal(s.stopping, true);
+  applyEvent(set, { type: "agent_settled" });
+  assert.equal(s.stopping, false);
+});

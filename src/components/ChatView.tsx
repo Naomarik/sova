@@ -1,7 +1,19 @@
-import { batch, createEffect, createMemo, createSignal, For, Match, on, onCleanup, Show, Switch } from "solid-js";
+import { batch, createEffect, createMemo, createSignal, For, Match, on, onCleanup, Show, Switch, type JSX } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { Portal } from "solid-js/web";
-import type { ChatServerMessage, ContextInfo, SandboxInfo, SessionSummary, SlashCommand, TeamInfo, TranscriptItem, WorkerInfo } from "../../shared/protocol";
+import type {
+  ChatServerMessage,
+  ContextInfo,
+  OverseerQuickAction,
+  SandboxInfo,
+  SessionSummary,
+  SlashCommand,
+  TeamInfo,
+  TranscriptItem,
+  WorkerInfo,
+} from "../../shared/protocol";
+import { createTurnOwner, goTo, navigateDetails } from "../lib/overseer";
+import { OverseerThreadContext, QuickActions } from "./OverseerCards";
 import { createFork, fetchTranscriptWithContext, setSandbox, setSessionArchived, wsUrl } from "../lib/api";
 import { contextStateFor, messageContextTokens, windowOf } from "../lib/context";
 import {
@@ -59,10 +71,13 @@ import {
 import { stageFork } from "../lib/fork-stage";
 import { usePaneAnnounce, usePaneId, usePaneScope } from "../lib/pane-scope";
 import { visibleCount } from "../lib/hidden-rows";
+import { isChangeRow } from "../lib/change-rows";
 import { inputCount } from "../lib/input-count";
 import { messageCount } from "../lib/message-count";
 import type { RewindControl, RewindResult } from "../lib/inputs";
 import type { RewindRefusal } from "../../shared/protocol";
+import { COMPACT_IMAGES_REFUSAL, compactCommand } from "../../shared/compact";
+import { COMPACT_STREAMING_REASON, COMPACTING_REASON, compactedAnnouncement } from "../lib/compact";
 import {
   ACTION_LABEL,
   actionReason,
@@ -89,11 +104,35 @@ import { SessionSetupCard } from "./SessionSetup";
 import { PlaybooksDialog } from "./PlaybooksDialog";
 import type { ModeControl, ModeState } from "./ModeMenu";
 import type { ModelControl } from "./ModelMenu";
-import { type ForkMarker, HistoryItems, InfoRow, LiveEntries, type MessageActionsProvider, ThreadScroller, TranscriptSkeleton, TurnError } from "./Thread";
+import { type ForkMarker, HistoryItems, LiveEntries, type MessageActionsProvider, ThreadScroller, TranscriptSkeleton, TurnError } from "./Thread";
 import { Banner, Icon } from "./ui";
 import { UiDialog } from "./UiDialog";
 
 export type ChatRefusal = "busy" | "recent";
+
+/** What makes a chat the Overseer's: its extras, all absent from every other chat. */
+export interface OverseerChat {
+  /** The quick actions the floating button offers (Settings → Overseer). */
+  quickActions(): OverseerQuickAction[];
+  /** "/clear": a new conversation; resolves false when nothing was cleared. */
+  onClear(): Promise<boolean>;
+  /** The runtime under this socket was replaced (a clear from another tab): re-resolve the route. */
+  onReloaded(): void;
+  /** The empty thread's words: a live fact, then the absence. */
+  empty(): JSX.Element;
+  /** Hands the page this chat's own send while it is mounted, so a control outside the thread (the
+      Ideas panel) sends an ordinary user message, as a quick action does. Returns the unbind the
+      chat calls when it unmounts. */
+  bindSender?(sender: OverseerSender): () => void;
+}
+
+/** A user message into the Overseer's chat, through the composer's own send. */
+export interface OverseerSender {
+  /** False when nothing was sent (the model is off, the socket is down). */
+  send(text: string): boolean;
+  /** Why sending is not possible right now, in the composer's words; null when it is. */
+  blocked(): string | null;
+}
 
 /** ui_request kinds UiDialog can show; anything else needs the terminal UI. */
 const UI_DIALOG_METHODS = ["select", "confirm", "input", "editor"];
@@ -167,6 +206,8 @@ export function ChatView(props: {
       never says "errored" about a pane that is visibly working. Without it a failed member looks
       exactly like a quiet one. */
   onTurnError?(message: string | null): void;
+  /** Set only for the Overseer's own chat. */
+  overseer?: OverseerChat;
 }) {
   // One status region for the whole page: inside a workspace every sentence from this chat says
   // which pane it came from, and every DOM id below carries the pane's id.
@@ -181,6 +222,8 @@ export function ChatView(props: {
   const turnWord = (member: string, alone: string) => (scope.id ? member : alone);
 
   const [items, setItems] = createSignal<TranscriptItem[] | null>(null);
+  /** Whether the running turn is this tab's: only then does a navigate result move this tab. */
+  const owner = createTurnOwner((id) => sentHere(props.path, id));
   const [live, setLive] = createStore<LiveState>(emptyLive());
   const [syncing, setSyncing] = createSignal(false);
   const [errors, setErrors] = createSignal<string[]>([]);
@@ -204,8 +247,6 @@ export function ChatView(props: {
   const [model, setModel] = createSignal<string | null>(null);
   const [pendingModel, setPendingModel] = createSignal<string | null>(null);
   const [modelError, setModelError] = createSignal<{ target: string; from: string | null; body: string | { noCredentials: string } } | null>(null);
-  /** "Model changed to …" rows shown until a transcript reload brings the persisted entry. */
-  const [modelRows, setModelRows] = createSignal<string[]>([]);
   /** The session's thinking level (WS "thinking"; seeded by hello). The server is the authority:
       it clamps to the model's ladder, and re-sends after every model switch. */
   const [thinking, setThinking] = createSignal<string | null>(null);
@@ -257,8 +298,9 @@ export function ChatView(props: {
   /** This chat's sandbox (WS "sandbox"), null while its runtime has no sandbox extension. */
   const [sandbox, setSandboxState] = createSignal<SandboxInfo | null>(null);
   const [sandboxPending, setSandboxPending] = createSignal(false);
-  /** Local "Ran /name args" rows; `tui` marks one that asked for a UI Sova can't show. */
-  const [commandRows, setCommandRows] = createSignal<{ label: string; tui: boolean }[]>([]);
+  /** Local "Ran /name args" rows; `tui` marks one that asked for a UI Sova can't show, `note` one
+      that was refused (a /compact), whose row then says why instead of "Ran". */
+  const [commandRows, setCommandRows] = createSignal<{ label: string; tui: boolean; note?: string }[]>([]);
   /** Subagents working now (WS "workers"); 0 until the first one arrives. */
   const [workersWorking, setWorkersWorking] = createSignal(0);
   /** The same message's list, so the status row can split the count against this session's teams. */
@@ -301,7 +343,6 @@ export function ChatView(props: {
       batch(() => {
         setItems(next.items);
         setLive(reconcile(emptyLive()));
-        setModelRows([]);
         setCommandRows([]); // local only; the persisted entries now tell the story
       });
     } catch (err) {
@@ -320,6 +361,7 @@ export function ChatView(props: {
     const events = queue;
     queue = [];
     let settled = false;
+    let navigate: string | null = null;
     batch(() => {
       for (const ev of events) {
         if (isObj(ev) && ev.type === "agent_start") {
@@ -335,12 +377,27 @@ export function ChatView(props: {
         if (isObj(ev) && ev.type === "compaction_start") setCompacting(true);
         if (isObj(ev) && ev.type === "compaction_end") {
           setCompacting(false);
-          setSessionContext(props.path, "compacted");
+          // Only a compaction that WROTE one makes the fill stale; a failed or cancelled one
+          // (no `result`) left the context exactly as it was.
+          if (isObj(ev.result)) setSessionContext(props.path, "compacted");
+        }
+        // The Overseer's navigate: applied only in the tab whose message started this turn — never
+        // another tab's, never a proactive brief's (no tab sent it), never a replay.
+        if (props.overseer && isObj(ev) && ev.type === "tool_execution_end" && ev.toolName === "sova_navigate" && ev.isError !== true && owner.mine()) {
+          const nav = navigateDetails(isObj(ev.result) ? ev.result.details : undefined);
+          if (nav) navigate = nav.href;
         }
         applyEvent(setLive, ev);
-        if (isObj(ev) && ev.type === "agent_settled") settled = true;
+        if (isObj(ev) && ev.type === "agent_settled") {
+          settled = true;
+          owner.settled();
+        }
       }
     });
+    if (navigate) {
+      const href = navigate;
+      queueMicrotask(() => goTo(href));
+    }
     if (settled) {
       // "replied." only for a turn that didn't already say how it ended: the error announcement
       // is the ending (see `turnError` above — an errored turn still settles).
@@ -391,10 +448,12 @@ export function ChatView(props: {
           frame = 0;
           queue = [];
           statusAsker.hello();
+          owner.reset();
           batch(() => {
             setItems(msg.items);
-            setLive(reconcile({ ...emptyLive(), running: msg.isStreaming }));
-            setCompacting(false);
+            // A client that connects mid-compaction shows it, as the compaction_start it missed would.
+            setLive(reconcile({ ...emptyLive(), running: msg.isStreaming, activity: msg.isCompacting ? "Compacting context" : null }));
+            setCompacting(!!msg.isCompacting);
           });
           setModel(msg.model);
           setSandboxState(null); // a "sandbox" message follows when the runtime has the extension
@@ -404,7 +463,6 @@ export function ChatView(props: {
             setThinkingError(null);
           });
           setSessionContext(props.path, contextStateFor(msg.context ?? null, msg.items));
-          setModelRows([]);
           setWorkersWorking(0); // a runtime without workers sends no "workers" after hello
           setWorkerList([]);
           props.onWorkers?.([], null);
@@ -445,6 +503,7 @@ export function ChatView(props: {
         // The server has our message: it is queued, not merely sent. Until this lands, the row says
         // "Sending…" and offers no Remove — nothing is known to hold it.
         case "send_ack":
+          owner.ack(msg.clientId, msg.queued);
           if (msg.queued) markQueued(setLive, msg.clientId);
           break;
         case "queue":
@@ -471,6 +530,7 @@ export function ChatView(props: {
           const text = msg.text || queuedText(live, msg.itemId);
           // One departure, one restore: a duplicate of this message (a reconnect, a re-send) must
           // not paste the same text into the draft twice.
+          owner.gone(msg.itemId, msg.reason);
           const first = !claimed.has(msg.itemId);
           claimed.add(msg.itemId);
           if (effect.row === "delivered") markDelivered(setLive, msg.itemId);
@@ -532,6 +592,13 @@ export function ChatView(props: {
         case "rewind_refused":
           settleRequest(msg.id, { ok: false, reason: msg.reason, message: msg.message });
           break;
+        // The hello that carries the compaction row has already arrived; this only settles the ask.
+        case "compacted":
+          settleRequest(msg.id, { ok: true, tokensBefore: msg.tokensBefore });
+          break;
+        case "compact_refused":
+          settleRequest(msg.id, { ok: false, reason: msg.reason, message: msg.message });
+          break;
         case "commands":
           setCommands(msg.commands);
           // A runtime that outlived its last socket won't report again until something happens,
@@ -578,6 +645,10 @@ export function ChatView(props: {
           else if (req.method === "setStatus" && req.statusKey === REMOTE_STATUS_KEY) reportRemoteStatus(props.path, req.statusText);
           break;
         }
+        // Someone else answered that dialog (another tab, or the Overseer): it is no longer ours to ask.
+        case "ui_resolved":
+          setDialogs((d) => d.filter((x) => x.id !== msg.id));
+          break;
         case "error":
           if (pendingModel()) modelFailed(msg.message, msg.code);
           if (pendingThinking()) thinkingFailed(msg.message);
@@ -589,6 +660,13 @@ export function ChatView(props: {
               props.onRefused(msg.code, msg.message);
               return;
             case "reloaded":
+              // The Overseer's runtime can be replaced by a clear in another tab: its route may now
+              // name a new file, and reconnecting here would reopen the old one.
+              if (props.overseer) {
+                socket.close();
+                props.overseer.onReloaded();
+                return;
+              }
               socket.reconnect();
               return;
             // Permanent (the session's cwd is gone): one banner, no retry loop. The socket layer
@@ -630,16 +708,17 @@ export function ChatView(props: {
    * Timeline row and the message strip show the same sentence inline), so the live region says
    * each one exactly once.
    */
-  type RequestKind = "rewind" | "regenerate" | "queue_remove";
-  /** What a request settles as. `text` is a rewind's message, on its way to the composer. */
-  type ActionResult = { ok: true; text?: string } | { ok: false; reason: string; message: string };
+  type RequestKind = "rewind" | "regenerate" | "queue_remove" | "compact";
+  /** What a request settles as. `text` is a rewind's message, on its way to the composer;
+      `tokensBefore` a compaction's count of what it summarized. */
+  type ActionResult = { ok: true; text?: string; tokensBefore?: number } | { ok: false; reason: string; message: string };
   const requests = new Map<string, { kind: RequestKind; resolve: (result: ActionResult) => void }>();
   let requestSeq = 0;
   /** How many of each kind are waiting, reactively: a strip greys its own action while one is out,
       and the flyout's Undo row greys out while a rewind is. */
-  const [pending, setPending] = createSignal<Record<RequestKind, number>>({ rewind: 0, regenerate: 0, queue_remove: 0 });
+  const [pending, setPending] = createSignal<Record<RequestKind, number>>({ rewind: 0, regenerate: 0, queue_remove: 0, compact: 0 });
   const countPending = () => {
-    const n: Record<RequestKind, number> = { rewind: 0, regenerate: 0, queue_remove: 0 };
+    const n: Record<RequestKind, number> = { rewind: 0, regenerate: 0, queue_remove: 0, compact: 0 };
     for (const r of requests.values()) n[r.kind]++;
     setPending(n);
   };
@@ -904,8 +983,24 @@ export function ChatView(props: {
     if (!items()) return { icon: "clock", text: "Connecting…" };
     if (syncing()) return { icon: "clock", text: "Saving this turn…" };
     if (pendingModel()) return { icon: "clock", text: "Switching model…" };
+    // Any compaction: this chat's /compact (asked, or already running), pi's automatic one, or an
+    // extension's. The server would hold a send meanwhile; saying so is better than a queue row.
+    if (compacting() || pending().compact > 0) return { icon: "clock", text: COMPACTING_REASON };
     return null;
   };
+
+  if (props.overseer?.bindSender) {
+    const unbind = props.overseer.bindSender({
+      send: (text) => {
+        if (blocked()) return false;
+        const sent = send(text, false, []);
+        if (sent) focusComposer();
+        return sent;
+      },
+      blocked: () => blocked()?.text ?? null,
+    });
+    onCleanup(unbind);
+  }
 
   // ---- Model switching ------------------------------------------------
   const idOf = (ref: string) => ref.slice(ref.indexOf("/") + 1);
@@ -928,11 +1023,14 @@ export function ChatView(props: {
     batch(() => {
       setPendingModel(null);
       setModelError(null);
-      if (next !== model()) setModelRows((r) => [...r, next]);
       setModel(next);
     });
     props.onModel(next);
-    if (was || next) announce(`Model changed to ${idOf(next)}.`);
+    if (was || next) {
+      const sentence = `Model changed to ${idOf(next)}.`;
+      toast(sentence);
+      announce(sentence);
+    }
   };
   const modelFailed = (message: string, code?: string) => {
     const target = pendingModel();
@@ -1065,6 +1163,9 @@ export function ChatView(props: {
     // The id this message is known by from here on: the server echoes it in `send_ack`, lists it
     // in the queue snapshot, and takes it back by it. Minted per send, so two identical messages
     // are still two messages — which is what makes removing the middle one of three possible.
+    // "/compact [instructions]" is Sova's builtin: a request with its own answer, not a message.
+    const compact = compactCommand(text);
+    if (compact) return sendCompact(text, compact.instructions, steer, attachments.length > 0);
     const clientId = newClientId();
     if (!socket.send({ type: steer ? "steer" : "prompt", text, clientId })) return false;
     // A known slash command isn't a message to the model (templates and skills expand into other
@@ -1085,6 +1186,35 @@ export function ChatView(props: {
       addPendingPrompt(setLive, text, [], attachments, clientId);
       setLive("running", true);
       setResume((n) => n + 1);
+    });
+    return true;
+  };
+
+  /**
+   * The web /compact (§chat.slash-commands/compact): a "Ran" row now, "Compacting context" in the
+   * run status until pi's compaction_end, and Stop cancels it. A refusal turns the row into an
+   * attention row that says why. Mid-turn, or with images, it is refused here without a round
+   * trip — the server's reasons and copy — and the draft stays, since nothing was sent. A landed
+   * one leaves the compaction row the server's hello already drew, so the local row goes.
+   */
+  const sendCompact = (text: string, instructions: string | undefined, streaming: boolean, images: boolean): boolean => {
+    const label = text.length > 61 ? `${text.slice(0, 60)}…` : text;
+    const localRefusal = images ? COMPACT_IMAGES_REFUSAL : streaming || live.running ? COMPACT_STREAMING_REASON : null;
+    if (localRefusal) {
+      setCommandRows((rows) => [...rows, { label, tui: false, note: localRefusal }]);
+      announce(localRefusal);
+      return false;
+    }
+    const row = { label, tui: false };
+    batch(() => {
+      setCommandRows((rows) => [...rows, row]);
+      setResume((n) => n + 1);
+    });
+    void ask("compact", { type: "compact", ...(instructions ? { instructions } : {}) }).then((result) => {
+      if (result.ok) {
+        setCommandRows((rows) => rows.filter((r) => r !== row));
+        announce(compactedAnnouncement(result.tokensBefore ?? 0));
+      } else setCommandRows((rows) => rows.map((r) => (r === row ? { ...r, note: result.message } : r)));
     });
     return true;
   };
@@ -1246,7 +1376,7 @@ export function ChatView(props: {
       >
         <Show when={items()} fallback={<TranscriptSkeleton />}>
           {(list) => (
-            <>
+            <OverseerThreadContext.Provider value={props.overseer ? { answer: (text) => send(text, false, []) } : null}>
               <HistoryItems
                 items={list()}
                 author={props.author}
@@ -1263,45 +1393,62 @@ export function ChatView(props: {
                 hideThinking={hideThinking(props.path)}
                 queueActions={queueActions}
               />
-              <For each={modelRows()}>
-                {(ref) => (
-                  <InfoRow>
-                    Model changed to <code>{ref}</code>
-                  </InfoRow>
-                )}
-              </For>
               <For each={commandRows()}>
                 {(row) => (
                   <div class="info-row" role="note">
                     <span class="info-row-text">
-                      <Icon name={row.tui ? "attention" : "terminal"} small />
-                      <Show
-                        when={row.tui}
+                      <Icon name={row.tui || row.note ? "attention" : "terminal"} small />
+                      <Switch
                         fallback={
                           <span>
                             Ran <code>{row.label}</code>
                           </span>
                         }
                       >
-                        <span>
-                          <code>{row.label.split(/\s/)[0]}</code> needs the terminal UI. Run it in pi in a terminal.
-                        </span>
-                      </Show>
+                        <Match when={row.note}>
+                          {(note) => (
+                            <span>
+                              <code>{row.label}</code>: {note()}
+                            </span>
+                          )}
+                        </Match>
+                        <Match when={row.tui}>
+                          <span>
+                            <code>{row.label.split(/\s/)[0]}</code> needs the terminal UI. Run it in pi in a terminal.
+                          </span>
+                        </Match>
+                      </Switch>
                     </span>
                   </div>
                 )}
               </For>
-              {/* Only while the thread has zero rows, local rows included. */}
-              <Show when={list().length === 0 && live.entries.length === 0 && commandRows().length === 0 && modelRows().length === 0}>
-                <div class="empty">
-                  <p class="empty-title">
-                    New session in <code>{props.cwdLabel}</code>.
-                  </p>
-                  <SessionSetupCard path={props.path} />
-                  <p class="empty-body">Your first message becomes its title.</p>
-                </div>
+              {/* Only while the thread has no rendered row. Settings-change rows (model, thinking,
+                  mode) draw nothing, so they don't count; local rows such as "Ran /cmd" still do.
+                  The Overseer's also while it holds only machine notes (its model and thinking
+                  rows): nothing has been said yet. */}
+              <Show
+                when={
+                  (props.overseer ? list().every((it) => it.kind === "info") : list().every(isChangeRow)) &&
+                  live.entries.length === 0 &&
+                  commandRows().length === 0
+                }
+              >
+                <Show
+                  when={props.overseer}
+                  fallback={
+                    <div class="empty">
+                      <p class="empty-title">
+                        New session in <code>{props.cwdLabel}</code>.
+                      </p>
+                      <SessionSetupCard path={props.path} />
+                      <p class="empty-body">Your first message becomes its title.</p>
+                    </div>
+                  }
+                >
+                  {(o) => o().empty()}
+                </Show>
               </Show>
-            </>
+            </OverseerThreadContext.Provider>
           )}
         </Show>
         <For each={errors()}>{(m) => <TurnError message={m} />}</For>
@@ -1313,6 +1460,7 @@ export function ChatView(props: {
         blocked={blocked()}
         commands={commands()}
         running={live.running}
+        compacting={compacting()}
         stopping={live.stopping}
         detail={live.activity ?? runDetail(live)}
         workersWorking={workersWorking()}
@@ -1322,7 +1470,21 @@ export function ChatView(props: {
         workersOpen={props.workersOpen}
         inputsOpen={props.inputsOpen}
         paneTab={props.paneTab}
-        onNewSession={props.onNewSession}
+        onNewSession={props.overseer ? undefined : props.onNewSession}
+        onClear={props.overseer?.onClear}
+        accessory={
+          props.overseer
+            ? () => (
+                <QuickActions
+                  actions={props.overseer!.quickActions()}
+                  disabled={blocked()?.text ?? null}
+                  onPick={(prompt) => {
+                    if (send(prompt, false, [])) focusComposer();
+                  }}
+                />
+              )
+            : undefined
+        }
         onShowTimeline={props.onShowTimeline}
         inputCount={inputCount(items() ?? [])}
         autofocus={props.autofocus}

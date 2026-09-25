@@ -135,6 +135,8 @@ export function slotIssue(
   other: DraftChoice | null,
   slot: Slot,
   owner = "Delegate",
+  /** False for a row with no fallback to reroute to (the Overseer's explorer): the denial alone. */
+  hasFallback = true,
 ): SlotIssue | null {
   const label = info.backends.find((b) => b.id === choice.backend)?.label ?? choice.backend;
   if (!choice.model) return { tone: "muted", text: "Choose a model." };
@@ -152,7 +154,7 @@ export function slotIssue(
     return { tone: "muted", text: `Not verified: the Claude Code CLI's model list doesn't include ${choice.model} right now (the list varies). It will still be used.` };
   if (!model) return { tone: "error", text: `${label} doesn't offer ${choice.model}.` };
   if (!model.efforts.includes(choice.effort)) return { tone: "error", text: `${choice.model} doesn't take ${choice.effort} effort.` };
-  if (model.denied) return { tone: "warn", text: `${model.denied}. ${owner} uses the fallback, or asks.` };
+  if (model.denied) return { tone: "warn", text: hasFallback ? `${model.denied}. ${owner} uses the fallback, or asks.` : `${model.denied}.` };
   return null;
 }
 

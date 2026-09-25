@@ -8,6 +8,7 @@ import hljs from "highlight.js/lib/common";
 import type { TmpAttachment } from "../../shared/protocol";
 import { findTmpImagePaths } from "../../shared/tmp-paths";
 import { chipHtml } from "./path-attachments";
+import { groupLinkIndex, resolveAppLink, sessionIndex } from "./session-links";
 import clojure from "highlight.js/lib/languages/clojure";
 import cmake from "highlight.js/lib/languages/cmake";
 import dart from "highlight.js/lib/languages/dart";
@@ -125,13 +126,20 @@ interface RenderEnv {
   codes: string[];
   /** Index of a fence that is still open mid-stream: rendered plain, not highlighted. */
   openFence: number | null;
-  /** Per link_open: whether it rendered (so link_close knows whether to close). */
-  linkStack: boolean[];
+  /** Per link_open: what it rendered (so link_close knows how to close). */
+  linkStack: LinkKind[];
   /** The row's /tmp image paths (TranscriptItem.attachments), shown as chips in prose. */
   paths?: Map<string, TmpAttachment>;
 }
 
+/** An external link, an in-app one (same tab, no external note), or nothing. */
+type LinkKind = "external" | "internal" | false;
+
 const md = new MarkdownIt({ html: false, linkify: true, typographer: false });
+// A bare `sova://s/<id>` or `sova://g/<id>[/s/<id>]` in prose is an in-app link too (src/lib/session-links.ts).
+md.linkify.add("sova:", {
+  validate: (text, pos) => /^\/\/(?:s\/[A-Za-z0-9_.:-]+|g\/[A-Za-z0-9_.:-]+(?:\/s\/[A-Za-z0-9_.:-]+)?)/.exec(text.slice(pos))?.[0].length ?? 0,
+});
 
 // Parse every link and image so unsafe ones still render as their text ("renders as its
 // link text, unlinked"). Safety comes from the renderers below, which emit an href/src only for
@@ -164,11 +172,29 @@ md.renderer.rules.text = (tokens, idx, _opts, e) => {
 md.renderer.rules.link_open = (tokens, idx, _opts, e) => {
   const env = e as unknown as RenderEnv;
   const href = String(tokens[idx]!.attrGet("href") ?? "");
+  // In-app links first: a session link or a `#/` route opens in this tab.
+  const app = resolveAppLink(href, sessionIndex(), groupLinkIndex());
+  if (app?.kind === "text") {
+    env.linkStack.push(false);
+    return "";
+  }
+  if (app) {
+    env.linkStack.push("internal");
+    // A bare `sova://…` in prose reads as the session's (or group's) title, not its id.
+    const text = tokens[idx + 1];
+    if (tokens[idx]!.markup === "linkify" && app.title && text?.type === "text") text.content = app.title;
+    return `<a class="md-app-link" href="${esc(app.href)}"${app.title ? ` title="${esc(app.title)}"` : ""}>`;
+  }
   const ok = LINKABLE.test(href);
-  env.linkStack.push(ok);
+  env.linkStack.push(ok && "external");
   return ok ? `<a href="${esc(href)}" target="_blank" rel="noreferrer noopener">` : "";
 };
-md.renderer.rules.link_close = (_tokens, _idx, _opts, e) => ((e as unknown as RenderEnv).linkStack.pop() ? `${EXTERNAL_NOTE}</a>` : "");
+md.renderer.rules.link_close = (_tokens, _idx, _opts, e) => {
+  const kind = (e as unknown as RenderEnv).linkStack.pop();
+  if (kind === "external") return `${EXTERNAL_NOTE}</a>`;
+  if (kind === "internal") return "</a>";
+  return "";
+};
 
 // ---- Images: never fetched remotely --------------------------------------------------------
 md.renderer.rules.image = (tokens, idx) => {

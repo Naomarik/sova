@@ -1,4 +1,4 @@
-import type { AgentsInsight, LiveAgentSession, SessionSummary, TeamInfo, WorkerInfo } from "../../shared/protocol";
+import type { AgentsInsight, ContextInfo, LiveAgentSession, SessionSummary, TeamInfo, WorkerInfo } from "../../shared/protocol";
 import { formatTokens } from "./context";
 import { clockTime } from "./format";
 
@@ -201,6 +201,41 @@ export const workerUsage = (w: unknown): UsageView | null => asUsage((w as { usa
 
 /** The counts a watch `snapshot`/`append` carries for the open transcript, or null. */
 export const transcriptUsage = (msg: unknown): UsageView | null => asUsage((msg as { usage?: unknown } | null)?.usage);
+
+/**
+ * A context state off `unknown` (a server older than this build sends none): a fill with a
+ * positive token count, or "compacted". Anything else is "nothing to show" — never a 0 fill.
+ * A fill without a window takes `fallbackWindow` (a Claude Code transcript can't name its own).
+ */
+function asContext(value: unknown, fallbackWindow: unknown): ContextInfo | "compacted" | null {
+  if (value === "compacted") return "compacted";
+  if (!value || typeof value !== "object") return null;
+  const c = value as Record<string, unknown>;
+  const tokens = c.tokens;
+  if (typeof tokens !== "number" || !Number.isFinite(tokens) || tokens <= 0) return null;
+  const ok = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v) && v > 0;
+  return { tokens, window: ok(c.window) ? c.window : ok(fallbackWindow) ? fallbackWindow : null };
+}
+
+/** A worker's own context fill as its row reports it, or null when unknown. */
+export const workerContext = (w: unknown): ContextInfo | "compacted" | null => {
+  const r = w as { context?: unknown; contextWindow?: unknown } | null;
+  return asContext(r?.context, r?.contextWindow);
+};
+
+/**
+ * The fill a watch `snapshot`/`append` carries for the open transcript, completed with the
+ * worker's window. undefined: the message says nothing (an older server) — keep what we have;
+ * null: no reply reports one yet.
+ */
+export function transcriptContext(msg: unknown, worker: unknown): ContextInfo | "compacted" | null | undefined {
+  if (!msg || typeof msg !== "object" || !("context" in msg)) return undefined;
+  return asContext((msg as { context?: unknown }).context, (worker as { contextWindow?: unknown } | null)?.contextWindow);
+}
+
+/** What a worker row's ring shows: a fill with a window, never "compacted" (the view head says
+    that in words) and never a fill without a denominator — the sidebar ring's rule. */
+export const ringContext = (s: ContextInfo | "compacted" | null): ContextInfo | null => (s && s !== "compacted" && s.window ? s : null);
 
 /** The session-lifetime Σ on a `workers` message or a session insight, with its head count. */
 export function usageTotal(source: unknown): UsageTotalView | null {

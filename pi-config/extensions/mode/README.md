@@ -218,6 +218,22 @@ survives, and switching back to normal deletes the section so the instructions
 stop applying. On older hosts without sections (pi < 0.86) there are no
 sections, and the blocks stay a whole-prompt append as before.
 
+The prompt is the same whoever started the turn. pi runs `before_agent_start`
+only for a turn the user's prompt starts; a turn an extension's message starts
+(`sendMessage(…, {triggerTurn: true})` — a subagent settling, a team question)
+skips it, and pi's own refresh before that turn's second request rebuilds the
+prompt from the session's *base* options, which know nothing of extension
+sections. Left alone, that patched the mode section out mid-turn and back in at
+the next user prompt, and the claude-code provider restarted its CLI (and
+re-sent the whole history) at every switch. So the extension also keeps the
+block in the base options: they are reachable only through a command context
+(`ctx.getSystemPromptOptions`), which `/mode` and `/align` adopt — Sova runs
+`/mode` at every chat open — and from then on every switch, every
+`before_agent_start` and every run start (`agent_start`, after pi may have
+rebuilt the base on a tool change) writes the current block there. A session
+driven only by the shortcut or the palette, with no `/mode` yet, keeps the old
+behaviour until one runs. Covered by `tests/wake-turn.mjs`.
+
 ### Two scopes
 
 The **active** state — major mode, `strict`, minor modes — belongs to **one
@@ -409,4 +425,5 @@ node --test routing.test.ts   # primary → fallback → ask, discovery failure,
 node --test spec.test.ts      # the spec writer file: parsing, persistence, per-turn re-read
 node --test align.test.ts     # alignment-doc parser, status, restore, scroll math
 node tests/smoke.mjs          # real index.ts against a fake pi host, no model requests
+node tests/wake-turn.mjs      # real pi session + scripted provider: same prompt whoever starts the turn
 ```

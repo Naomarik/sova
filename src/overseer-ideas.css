@@ -1,0 +1,215 @@
+/* =============================================================================
+   OVERSEER IDEAS — the Ideas panel on the Overseer page (#/overseer): the
+   backlog's contents by project, its link graph, and one idea's detail.
+   Component-local (imported by OverseerIdeas.tsx), built on base.css's chip,
+   list, tabs, field and banner rules and the tokens only.
+   ============================================================================= */
+
+/* The head's toggle: star, word, count. The word goes first when the head is narrow. */
+.overseer-ideas-toggle { gap: var(--space-1); }
+.overseer-ideas-toggle[aria-expanded="true"] { background: var(--color-accent-tint); color: var(--color-ink); }
+@container session-head (max-width: 479px) {
+  /* Narrow: icon-only, the count riding its corner like the entry button's (neutral, not the
+     accent: an idea doesn't need you), so Clear stays on screen. */
+  .overseer-ideas-word { display: none; }
+  .overseer-ideas-toggle { position: relative; padding: 0 var(--space-2); }
+  .overseer-ideas-toggle .chip-count {
+    position: absolute;
+    top: -4px;
+    right: -4px;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    justify-content: center;
+    font-size: var(--fs-micro);
+    line-height: 16px;
+    background: var(--color-sunken);
+    border-color: var(--color-border-strong);
+    color: var(--color-ink);
+    pointer-events: none;
+  }
+}
+/* The smallest phones: the head's own gaps close a step so the extra button still fits.
+   A media query: the head is its own container, and a container query can't style it. At
+   these widths the head is the window's width anyway. */
+@media (max-width: 379px) {
+  .overseer-head { gap: var(--space-2); }
+}
+
+/* The panel covers the chat's right side (all of it when folded), below
+   nothing: .app-main anchors it while it is open. It is a surface arriving,
+   so it takes the sheet's elevation, and scrolls on its own. */
+.app-main:has(> .ideas-panel) { position: relative; }
+.ideas-panel {
+  position: absolute;
+  inset: 0 0 0 auto;
+  z-index: 5;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--color-surface);
+  box-shadow: var(--shadow-2);
+  container: ideas-panel / inline-size;
+}
+@media (min-width: 768px) {
+  .ideas-panel {
+    width: min(480px, 100%);
+    border-left: var(--stroke-thin) solid var(--color-border);
+  }
+}
+/* Desktop: the chat gives the panel its room instead of sliding under it, so
+   the Overseer's answer to Explore stays readable beside the idea. */
+@media (min-width: 1120px) {
+  .app-main:has(> .ideas-panel) { padding-right: 480px; }
+  .ideas-panel { box-shadow: none; }
+}
+
+.ideas-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 56px;
+  padding: var(--space-2) var(--space-3) var(--space-2) var(--space-4);
+  border-bottom: var(--stroke-thin) solid var(--color-border);
+  flex: none;
+}
+.ideas-head-main { flex: 1; min-width: 0; }
+.ideas-title {
+  margin: 0;
+  font-size: var(--fs-heading-s);
+  line-height: var(--lh-heading-s);
+  font-weight: var(--fw-semibold);
+  color: var(--color-ink);
+}
+.ideas-title:focus { outline: none; }
+.ideas-title:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); border-radius: var(--r-xs); }
+.ideas-meta { margin: 0; font-size: var(--fs-caption); color: var(--color-ink-muted); }
+
+.ideas-tabs { flex: none; padding: 0 var(--space-2); }
+.ideas-tools {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: var(--stroke-thin) solid var(--color-border);
+}
+.ideas-search { flex: 1 1 12rem; min-width: 0; }
+.ideas-settled { flex: none; justify-content: flex-start; font-size: var(--fs-caption); color: var(--color-ink-2); }
+
+.ideas-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.ideas-note { margin: 0; padding: var(--space-2) var(--space-4); font-size: var(--fs-caption); color: var(--color-ink-muted); }
+.ideas-empty { padding: var(--space-7) var(--space-4); }
+.ideas-file {
+  flex: none;
+  margin: 0;
+  padding: var(--space-2) var(--space-4);
+  border-top: var(--stroke-thin) solid var(--color-border);
+  font-size: var(--fs-caption);
+  color: var(--color-ink-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Contents: one section per project, its head sticky while its rows scroll. */
+.ideas-group-label { position: sticky; top: 0; z-index: 1; background: var(--color-surface); }
+.ideas-group-counts { margin-left: auto; text-transform: none; letter-spacing: 0; }
+.ideas-row { padding-block: var(--space-2); }
+.ideas-row .chip { flex: none; }
+/* A sub-entry: one 12px indent step and the tree's guide rule, never a smaller type. */
+.ideas-row-sub { padding-left: calc(var(--space-4) + var(--space-3)); }
+.ideas-row-sub .list-main { border-left: var(--stroke-thin) solid var(--color-border); padding-left: var(--space-3); }
+.ideas-row .list-title,
+.ideas-row .list-meta { display: block; }
+
+/* The graph: a plain SVG sized by its viewBox; colours only from tokens. */
+.ideas-graph { display: flex; flex-direction: column; gap: var(--space-2); padding-bottom: var(--space-3); }
+.ideas-graph-svg { display: block; width: 100%; height: auto; margin: 0 auto; max-width: 720px; }
+.ideas-edge { stroke: var(--color-border-strong); stroke-width: 1.25; }
+.ideas-edge-part { stroke-dasharray: 3 3; }
+.ideas-edge-lit { stroke: var(--color-ink); stroke-width: 1.75; }
+.ideas-arrow { fill: var(--color-border-strong); }
+.ideas-node { cursor: pointer; outline: none; }
+.ideas-node-hit { fill: transparent; }
+.ideas-node:focus-visible .ideas-node-hit { stroke: var(--focus-color); stroke-width: 2; }
+.ideas-node-dot { stroke: var(--color-surface); stroke-width: 2; }
+.ideas-node-open { fill: var(--color-ink-muted); }
+.ideas-node-exploring { fill: var(--color-accent); }
+.ideas-node-started { fill: var(--status-info); }
+.ideas-node-done { fill: var(--status-success); }
+.ideas-node-dropped { fill: var(--color-surface); stroke: var(--color-border-strong); stroke-width: 1.5; }
+.ideas-node-label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  fill: var(--color-ink-2);
+  paint-order: stroke;
+  stroke: var(--color-surface);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+}
+.ideas-node-hot .ideas-node-label { fill: var(--color-ink); font-weight: var(--fw-semibold); }
+.ideas-dim { opacity: 0.25; }
+.ideas-legend { display: flex; flex-wrap: wrap; gap: var(--space-2); margin: 0; padding: 0 var(--space-4); list-style: none; }
+
+/* One idea. */
+.ideas-detail { display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-3) var(--space-4) var(--space-5); }
+.ideas-back { align-self: flex-start; gap: var(--space-1); margin-left: calc(var(--space-2) * -1); }
+.ideas-detail-head { display: flex; align-items: flex-start; gap: var(--space-3); }
+.ideas-detail-head .chip { flex: none; margin-top: 3px; }
+.ideas-detail-title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: var(--fs-heading-m);
+  line-height: var(--lh-heading-m);
+  font-weight: var(--fw-semibold);
+  color: var(--color-ink);
+  overflow-wrap: anywhere;
+}
+.ideas-detail-title:focus { outline: none; }
+.ideas-detail-title:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); border-radius: var(--r-xs); }
+.ideas-detail-meta { margin: 0; font-size: var(--fs-caption); color: var(--color-ink-muted); overflow-wrap: anywhere; }
+.ideas-tags { display: flex; flex-wrap: wrap; gap: var(--space-1); margin: 0; padding: 0; list-style: none; }
+.ideas-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.ideas-status-field { max-width: 20rem; }
+.ideas-section { display: flex; flex-direction: column; gap: var(--space-1); }
+.ideas-section-title {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  letter-spacing: var(--ls-eyebrow);
+  text-transform: uppercase;
+  color: var(--color-ink-muted);
+}
+.ideas-section .ideas-note { padding: 0; }
+/* Markdown brings the message body's box; here it is the idea's text, so it keeps the box. */
+.ideas-prose { overflow-wrap: anywhere; min-width: 0; }
+.ideas-links { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; }
+.ideas-link {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-height: var(--tap-min);
+  padding: 0 var(--space-2);
+  margin-left: calc(var(--space-2) * -1);
+  border: 0;
+  border-radius: var(--r-md);
+  background: none;
+  color: var(--color-ink);
+  text-align: left;
+  text-decoration: none;
+  font: inherit;
+  cursor: pointer;
+}
+.ideas-link:hover { background: var(--color-sunken); }
+.ideas-link:focus-visible { outline: var(--focus-ring); outline-offset: calc(var(--focus-offset) * -1); }
+.ideas-link-static { cursor: default; color: var(--color-ink-2); }
+.ideas-link-static:hover { background: none; }
+.ideas-link .text-mono { flex: none; color: var(--color-ink-2); }
+.ideas-link-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-ink-muted); }
+.ideas-edit { display: flex; flex-direction: column; gap: var(--space-3); }
+.ideas-edit-text { font-family: var(--font-mono); font-size: var(--fs-mono); }

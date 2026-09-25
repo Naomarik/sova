@@ -21,6 +21,8 @@ export interface ActionMenuItemProps {
   icon?: JSX.Element;
   /** Why the row can't run, or absent/"" when it can. Shown as the row's note and its title. */
   disabled?: string;
+  /** One line under the label saying what the row does (a disabled row says why instead). */
+  description?: string;
   /** A row that goes somewhere is a link, so it can be middle-clicked and copied like any other.
       The browser does the navigating; `onRun` is not called. */
   href?: string;
@@ -167,8 +169,8 @@ export function ActionMenu(props: {
         {p.icon}
         <span class="mode-option-text">
           <span class="mode-option-id">{p.label}</span>
-          <Show when={p.disabled}>
-            <span class="mode-option-note">{p.disabled}</span>
+          <Show when={p.disabled || p.description}>
+            <span class="mode-option-note">{p.disabled || p.description}</span>
           </Show>
         </span>
       </>
@@ -255,10 +257,10 @@ export function ActionMenu(props: {
         <Icon name={props.icon ?? "more"} />
         <Show when={props.text}>
           {(text) => (
-            <>
+            <span class="action-menu-text">
               {text()}
               <Icon name="chevron-down" small />
-            </>
+            </span>
           )}
         </Show>
       </button>

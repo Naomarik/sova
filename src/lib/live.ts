@@ -67,6 +67,8 @@ export interface LiveTool {
   status: "running" | "done" | "error";
   output: string;
   images: string[];
+  /** The result's `details` (a tool's structured payload: the Overseer's navigate target, its confirm). */
+  details?: unknown;
 }
 
 export interface LiveState {
@@ -454,6 +456,7 @@ export function applyEvent(set: SetStoreFunction<LiveState>, event: unknown) {
             status: event.isError === true ? "error" : "done",
             output: toolOutput(event.result),
             images: toolImages(event.result),
+            ...(isObj(event.result) && event.result.details !== undefined ? { details: event.result.details } : {}),
           };
           break;
         }
@@ -464,8 +467,13 @@ export function applyEvent(set: SetStoreFunction<LiveState>, event: unknown) {
           s.activity = "Compacting context";
           break;
         case "auto_retry_end":
+          s.activity = null;
+          break;
         case "compaction_end":
           s.activity = null;
+          // A /compact runs with no turn, so no agent_settled follows to clear a Stop pressed
+          // during it; inside a turn (pi's automatic compaction) the turn's own settle still does.
+          if (!s.running) s.stopping = false;
           break;
       }
     }),

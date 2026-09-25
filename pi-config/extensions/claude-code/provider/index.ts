@@ -17,6 +17,7 @@ import type { ExtensionAPI, ProviderModelConfig } from "@earendil-works/pi-codin
 import type { ThinkingLevelMap } from "@earendil-works/pi-ai";
 import { discoverClaudeModels } from "../models.ts";
 import type { BackendModel } from "../../subagents/contracts.ts";
+import { registerAutoCompact } from "./auto-compact.ts";
 import { getSessionBridge } from "./session-bridge.ts";
 import { createClaudeStreamSimple } from "./stream.ts";
 import type { ClaudeSessionBridge } from "./types.ts";
@@ -150,6 +151,8 @@ export function registerProviderIfEnabled(pi: ExtensionAPI, bridge: ClaudeSessio
 		const sessionId = ctx?.sessionManager?.getSessionId?.();
 		if (sessionId) void bridge.disposeSession?.(sessionId);
 	});
+	// Compact before a restart would have to clip history (auto-compact.ts).
+	registerAutoCompact(pi, CLAUDE_PROVIDER_ID, () => pi.getFlag(CLAUDE_PROVIDER_FLAG) === true);
 }
 
 /**

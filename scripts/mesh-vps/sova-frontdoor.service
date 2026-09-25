@@ -10,6 +10,9 @@ Wants=network-online.target
 
 [Service]
 Type=simple
+# Sova's Caddyfile takes its listen address from these; ExecReload adapts the file too, so it needs them as well
+Environment=SOVA_FRONT_DOOR_BIND=127.0.0.1 SOVA_FRONT_DOOR_PORT=4890
+Environment=XDG_DATA_HOME=%h/sova-mesh/home/.local/share XDG_CONFIG_HOME=%h/sova-mesh/home/.config
 ExecStart=%h/sova-mesh/app/scripts/mesh-vps/run-frontdoor.sh
 ExecReload=%h/sova-mesh/bin/caddy reload --config %h/sova-mesh/Caddyfile --adapter caddyfile --address 127.0.0.1:2089
 Restart=on-failure

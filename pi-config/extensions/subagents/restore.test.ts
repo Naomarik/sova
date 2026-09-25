@@ -6,9 +6,11 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { registerSubagents } from "./index.ts";
+import { MEMBER_ENV, awaitResponse, decodeMemberContext, requestId, writeRequest, type MailboxRequest } from "./mailbox.ts";
 import { BACKEND_REGISTER_EVENT } from "./contracts.ts";
 import { WORKER_MANIFEST_ENTRY_TYPE } from "./registry.ts";
 import { resolvedModel } from "./worker-transcript.ts";
@@ -40,7 +42,7 @@ function sessionFile() {
 	};
 }
 
-interface Options { failResume?: boolean }
+interface Options { failResume?: boolean; agentDir?: string; mailboxRoot?: string }
 
 function manager(file: ReturnType<typeof sessionFile>, options: Options = {}) {
 	const bus = eventBus();
@@ -67,7 +69,7 @@ function manager(file: ReturnType<typeof sessionFile>, options: Options = {}) {
 			isFinished() { return ["killed", "done", "error"].includes(this.status); },
 			isSettled() { return this.isFinished() || this.status === "waiting"; },
 			finalOutput() { return this.output ?? ""; },
-			async steer() { this.status = "running"; return { ok: true }; },
+			async steer(message: string) { this.lastSteer = message; this.status = "running"; return { ok: true }; },
 			async kill() { this.status = "killed"; this.processAlive = false; },
 			async dispose() { this.status = "killed"; this.processAlive = false; },
 			identify(sessionFile: string) { this.sessionFile = sessionFile; this.sessionId = path.basename(sessionFile, ".jsonl"); handlers.onChange(); },
@@ -92,7 +94,10 @@ function manager(file: ReturnType<typeof sessionFile>, options: Options = {}) {
 		appendEntry: (customType: string, data: unknown) => file.append(customType, data),
 		getActiveTools: () => ["read"],
 		sendMessage: (...m: any[]) => messages.push(m),
-	} as any, factory as any, { policyFile: NO_POLICY_FILE, hosting: { enabled: false } });
+	} as any, factory as any, {
+		policyFile: NO_POLICY_FILE, hosting: { enabled: false },
+		...(options.agentDir ? { agentDir: options.agentDir } : {}), ...(options.mailboxRoot ? { mailboxRoot: options.mailboxRoot, mailboxPollMs: 10 } : {}),
+	});
 	const call = (name: string, params: any) => tools.get(name).execute("t", params, undefined, () => {}, ctx);
 	return {
 		bus, ctx, workers, messages, call, commands,
@@ -377,4 +382,57 @@ test("a restored and then resumed Claude worker shows the model it ran under, un
 	assert.equal(worker.model, "claude-haiku-4-5-20251001", "resumed: the same label before its first turn");
 	assert.equal(launchedWith, "haiku", "the CLI is still launched with the spawn model");
 	await m.shutdown();
+});
+
+/** A member's request through its mailbox, as member.ts would send it. */
+async function ask(worker: any, request: Omit<MailboxRequest, "version" | "id" | "at">) {
+	const me = decodeMemberContext(worker.env?.[MEMBER_ENV])!;
+	const full: MailboxRequest = { version: 1, id: requestId(), at: Date.now(), ...request };
+	writeRequest(me.dir, full);
+	const response = await awaitResponse(me.dir, full.id, 3000, undefined, 5);
+	assert.ok(response, `answered ${request.type}`);
+	return response!;
+}
+
+test("restart: a paused team stays paused (its resumed monitor is sent the resume check) and the coordinator's roster keeps tasks and steers", async () => {
+	const root = fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagents-restore-team-"));
+	const agentDir = path.join(root, "agent");
+	fs.mkdirSync(agentDir);
+	const tuple = { backend: "pi", model: "test/model", effort: "low" };
+	fs.writeFileSync(path.join(agentDir, "team-defaults.json"), JSON.stringify({
+		version: 1,
+		coordinator: { enabled: true, role: "coordinator", primary: tuple, fallback: null, instructions: "" },
+		monitor: { enabled: true, role: "monitor", primary: tuple, fallback: null, contextPct: 60, everyMinutes: 10, usage: { enabled: true, pausePct: 90, resumeMarginMinutes: 5 }, instructions: "" },
+		handover: { retireTimeoutMinutes: 10 },
+	}));
+	const file = sessionFile();
+	const first = manager(file, { agentDir, mailboxRoot: path.join(root, "mail1") });
+	const second = manager(file, { agentDir, mailboxRoot: path.join(root, "mail2") });
+	try {
+		first.start();
+		await first.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "Write f01-f10." }] });
+		for (const w of first.workers) w.identify(`/nowhere/${w.id}.jsonl`);
+		await new Promise((r) => setTimeout(r, 150)); // the throttled refresh writes the refs
+		const monitor = first.workers.find((w) => w.name === "monitor");
+		await first.call("agent_steer", { id: "ag_02", message: "After f10, also write summary.txt.", mode: "followUp" });
+		assert.equal((await ask(monitor, { type: "message", to: "coordinator", message: "zai 5h at 95%", notice: "pause" })).ok, true);
+		for (const w of first.workers) w.settle();
+		// The reload: this manager and its workers end; a new one reads the same session file.
+		await first.shutdown();
+		second.start();
+		await until(() => (second.snapshot()?.workers ?? []).length === 3, "restored members");
+		const resumedMonitor = await second.call("agent_resume", { id: "ag_03" });
+		assert.match(resumedMonitor.content[0].text, /^Resumed ag_03 \(monitor\) .*It is the monitor of team_01, which is paused: it was sent its resume check, since its wake_nudges ended with the earlier parent\.$/);
+		assert.match(second.workers.at(-1).lastSteer, /^\[Team team_01 restored while paused\]\n.*your pending wake_nudges ended with it\. Run your standing instruction now: call team_roster;/);
+		await second.call("agent_resume", { id: "ag_01" });
+		const roster = await ask(second.workers.at(-1), { type: "roster" });
+		assert.match(roster.text, /Assignments from the main thread \(the work you route; never replace or cancel it\):\n {4}ag_02 dev:\n {6}\| Write f01-f10\.\n {6}Later instructions from the main thread \(assignments too\), newest last:\n {6}> After f10, also write summary\.txt\./);
+		// A resumed non-monitor member is sent nothing, paused team or not.
+		const resumedDev = await second.call("agent_resume", { id: "ag_02" });
+		assert.match(resumedDev.content[0].text, /idle .*nothing was sent to it/);
+		assert.equal(second.workers.at(-1).lastSteer, undefined);
+	} finally {
+		await second.shutdown();
+		fs.rmSync(root, { recursive: true, force: true });
+	}
 });

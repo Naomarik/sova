@@ -1228,6 +1228,11 @@ button.list-row { width: 100%; border: 0; background: none; text-align: left; }
 .settings-delegate-file code { font-family: var(--font-mono); font-size: var(--fs-mono); color: var(--color-ink-2); }
 /* Summaries reuses the Delegate row with no Effort column: the model takes the width it left. */
 .settings-summaries-fields { grid-template-columns: minmax(9.5rem, 1fr) minmax(0, 3fr); }
+/* Teams reuses the Delegate fieldset; its on/off switch leads the role, and number fields share a row. */
+.settings-team-enable { justify-content: flex-start; gap: var(--space-3); font-weight: var(--fw-semibold); }
+.settings-team-role { max-width: 20rem; }
+.settings-team-numbers { display: grid; grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr)); gap: var(--space-3); }
+.settings-intro code { font-family: var(--font-mono); font-size: var(--fs-mono); color: var(--color-ink); }
 @media (max-width: 640px) {
   .settings-delegate-fields { grid-template-columns: 1fr; }
 }
@@ -2477,6 +2482,21 @@ a.group-option { color: inherit; text-decoration: none; }
 .report-meta,
 .report-error { margin: 0; font-size: var(--fs-caption); color: var(--color-ink-muted); overflow-wrap: anywhere; }
 .report-error { color: var(--status-error); }
+/* Team message: a report row plus the team's name (quiet, gives way first) and the time at the
+   right end, in mono like every stamp. */
+.team-message-team {
+  flex: 0 1 auto;
+  max-width: 24%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-ink-muted);
+}
+.team-message-time { flex: none; font-family: var(--font-mono); font-size: var(--fs-mono); color: var(--color-ink-muted); }
+@container (max-width: 640px) {
+  .team-message-team { display: none; }
+}
 
 
 /* ---- TOOL CARD. One card per tool call, its result paired inside.
@@ -4089,6 +4109,29 @@ a.group-option { color: inherit; text-decoration: none; }
   white-space: nowrap;
 }
 
+/* Team events, oldest first: the time in mono, then one sentence. A log, so quieter than the
+   member rows; older ones fold under "Earlier events". */
+.team-events { padding: var(--space-2) var(--space-4); border-top: var(--stroke-thin) solid var(--color-border); }
+.team-event-list { list-style: none; margin: 0; padding: 0; }
+.team-event { display: flex; gap: var(--space-2); padding: 2px 0; font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-2); }
+.team-event-time { flex: none; font-size: var(--fs-mono); color: var(--color-ink-muted); }
+.team-event-text { min-width: 0; overflow-wrap: anywhere; }
+.team-events-earlier > summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  list-style: none;
+  min-height: var(--control-sm);
+  font-size: var(--fs-caption);
+  color: var(--color-ink-muted);
+  cursor: pointer;
+}
+.team-events-earlier > summary:hover { color: var(--color-ink); }
+.team-events-earlier > summary::-webkit-details-marker { display: none; }
+.team-events-earlier > summary .icon { transition: transform var(--dur-fast) var(--ease-standard); }
+.team-events-earlier[open] > summary .icon-twist { transform: rotate(90deg); }
+.team-events-earlier[open] > summary { margin-bottom: var(--space-1); }
+
 /* Members and workers: plain rows (not targets), status chip on the right. */
 .member-list { background: var(--color-surface); }
 .member-row { align-items: flex-start; padding-top: var(--space-2); padding-bottom: var(--space-2); }
@@ -4569,6 +4612,19 @@ a.chip:hover { color: var(--color-ink); border-color: var(--color-border-strong)
   white-space: nowrap;
 }
 .subagent-row[aria-current="true"] .subagent-row-name { font-weight: var(--fw-semibold); }
+/* A team member's duty chip rides beside the name; the name is what ellipsizes. */
+.subagent-row-name:has(> .chip) { display: flex; align-items: center; gap: var(--space-2); }
+.subagent-row-label { flex: 0 1 auto; min-width: 6ch; overflow: hidden; text-overflow: ellipsis; }
+.subagent-row-name > .chip { flex: none; font-weight: var(--fw-regular); }
+/* The team's newest event, one line under its objective. */
+.subagents-group-event {
+  margin: 0;
+  padding: 0 var(--space-4) var(--space-2);
+  color: var(--color-ink-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 /* The status slot: the worker's context ring (the sidebar's — same 12px box, same warn/error
    steps, the words in its title only), then the chip. The ring sits here, not on the meta line:
    the name gives up the room, and the meta line, already the row's tightest, keeps every fact. */
@@ -4637,10 +4693,11 @@ a.chip:hover { color: var(--color-ink); border-color: var(--color-border-strong)
   column-gap: var(--space-2);
   row-gap: 2px;
 }
-/* The name is who this is, so a long one wraps to a second line before it clips. */
+/* The name is who this is, so a long one wraps to a second line before it clips. It keeps room
+   for a short name whole: the chips after it wrap to the next line first. */
 .subagents-view-title {
   flex: 1;
-  min-width: 0;
+  min-width: min(100%, 14ch);
   margin: 0;
   font-size: var(--fs-body);
   line-height: var(--lh-body);

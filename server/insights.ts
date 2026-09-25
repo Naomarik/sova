@@ -15,6 +15,8 @@ import type {
   SessionSkills,
   SessionUsage,
   SpendOrigin,
+  TeamDuty,
+  TeamEvent,
   TeamInfo,
   TeamMember,
   TokenUsage,
@@ -40,7 +42,8 @@ import { workerSkills } from "./worker-skills";
 import { defaultAdapters } from "./worker-adapters";
 import { WorkerRestorer } from "./worker-restore";
 import { claudeSpawnModels, WorkerContextReader, withWorkerContext } from "./worker-context";
-import { LEGACY_REGISTRY_ENTRY_TYPE, WORKER_MANIFEST_ENTRY_TYPE, type WorkerTranscriptAdapters } from "../pi-config/extensions/subagents/worker-transcript.ts";
+import { handoverSuccessor, retireReason, TEAM_EVENT_TYPE, teamEventOf } from "./reports";
+import { LEGACY_REGISTRY_ENTRY_TYPE, readWorkerManifests, WORKER_MANIFEST_ENTRY_TYPE, type WorkerTranscriptAdapters } from "../pi-config/extensions/subagents/worker-transcript.ts";
 
 // Read-only views over what the user's pi extensions leave on disk (sources and shapes:
 // docs/insights-research.md "Data sources"). The one writer is refreshUsageInsight, which
@@ -300,7 +303,7 @@ interface RosterTeam {
   name: string;
   objective: string;
   createdAt: number;
-  members: Omit<TeamMember, "worker" | "lastReport">[];
+  members: Omit<TeamMember, "worker" | "lastReport" | "retired">[];
 }
 interface SessionFacts {
   teams: RosterTeam[];
@@ -325,6 +328,11 @@ interface SessionFacts {
       the ones on the active branch: what worker-restore.ts rebuilds workers from when nothing
       publishes them live. Only these entries are kept, never the whole file. */
   workerRecords: { all: Rec[]; active: Rec[] };
+  /** subagents-team-event-v1 entries on the active branch, oldest first. */
+  teamEvents: TeamEvent[];
+  /** The settled state each worker's manifest records on the active branch say it reached: the
+      only trace of a member whose report went to its coordinator instead of this session. */
+  settled: Map<string, NonNullable<TeamMember["lastReport"]>>;
 }
 
 const FACTS_MAX = 64;
@@ -362,6 +370,10 @@ function decodeMember(m: unknown): RosterTeam["members"][number] | null {
   const addedAt = num(m.addedAt);
   if (!workerId || !role || !backend || addedAt === undefined) return null;
   const model = str(m.model);
+  // Both optional and additive: a value we don't know is ignored, never the member (the member
+  // still shows, as it did before the field existed).
+  const duty: TeamDuty | undefined = m.duty === "coordinator" || m.duty === "monitor" ? m.duty : undefined;
+  const successorOf = typeof m.successorOf === "string" && WORKER_ID.test(m.successorOf) ? m.successorOf : undefined;
   return {
     workerId,
     role,
@@ -370,8 +382,12 @@ function decodeMember(m: unknown): RosterTeam["members"][number] | null {
     ...(model ? { model } : {}),
     ownedPaths: strings(m.ownedPaths),
     addedAt,
+    ...(duty ? { duty } : {}),
+    ...(successorOf ? { successorOf } : {}),
   };
 }
+
+const WORKER_ID = /^ag_\d+$/;
 
 function addTeamEntry(teams: Map<string, RosterTeam>, data: unknown): void {
   if (!isRec(data) || data.version !== 1) return;
@@ -521,6 +537,30 @@ function decodeRewind(e: Rec): RewindInfo | null {
   return { id, timestamp, targetId: str(data.targetId) ?? "", fromLeafId: str(data.fromLeafId) ?? "" };
 }
 
+/** A manifest fold's end or last settle as a member's last report: what `subagent-complete` would
+    have said, for a member whose completion was routed to its coordinator. "running" says nothing
+    settled; "lost" (its host died mid-turn) reads as interrupted. */
+function settledStates(records: Rec[]): SessionFacts["settled"] {
+  const out: SessionFacts["settled"] = new Map();
+  let fold;
+  try {
+    fold = readWorkerManifests(records);
+  } catch {
+    return out;
+  }
+  for (const m of fold.manifests.values()) {
+    if (!m.status || m.status === "running") continue;
+    const at = m.endedAt ?? m.settledAt ?? m.at;
+    if (!Number.isFinite(at) || at <= 0) continue;
+    out.set(m.workerId, {
+      status: m.status === "lost" ? "interrupted" : m.status,
+      ...(m.taskOutcome ? { outcome: m.taskOutcome } : {}),
+      at: new Date(at).toISOString(),
+    });
+  }
+  return out;
+}
+
 function extractFacts(text: string): SessionFacts {
   const teams = new Map<string, RosterTeam>();
   const reports: SessionFacts["reports"] = new Map();
@@ -529,6 +569,7 @@ function extractFacts(text: string): SessionFacts {
   const compactions: CompactionInfo[] = [];
   const rewinds: RewindInfo[] = [];
   const explanations: ExplanationInfo[] = [];
+  const teamEvents: TeamEvent[] = [];
   const main = zeroSpend("");
   const byModel = new Map<string, ModelSpendTotal>();
   const entries = parseLines(text);
@@ -539,6 +580,10 @@ function extractFacts(text: string): SessionFacts {
   const allRecords = entries.filter(isWorkerRecord);
   for (const e of branch) {
     if (e.type === "custom" && e.customType === TEAM_ENTRY) addTeamEntry(teams, e.data);
+    else if (e.type === "custom" && e.customType === TEAM_EVENT_TYPE) {
+      const ev = teamEventOf(e);
+      if (ev) teamEvents.push(ev);
+    }
     else if (e.type === "custom" && e.customType === "topic-outline") {
       outlineData = e.data;
       addOutlineSnapshot(outlines, e);
@@ -565,6 +610,7 @@ function extractFacts(text: string): SessionFacts {
     }
   }
   const models = [...byModel.values()].filter(spentSpend).sort((a, b) => a.model.localeCompare(b.model));
+  const activeRecords = allRecords.filter((e) => branchIds.has(e.id));
   return {
     teams: [...teams.values()],
     reports,
@@ -577,11 +623,13 @@ function extractFacts(text: string): SessionFacts {
     sessionId: (header ? str(header.id) : undefined) ?? null,
     usage: { main, models },
     skills: collectSkills(branch),
-    workerRecords: { all: allRecords, active: allRecords.filter((e) => branchIds.has(e.id)) },
+    workerRecords: { all: allRecords, active: activeRecords },
+    teamEvents,
+    settled: settledStates(activeRecords),
   };
 }
 
-const EMPTY_FACTS: SessionFacts = { teams: [], reports: new Map(), outline: null, outlines: [], compactions: [], rewinds: [], explanations: [], sessionId: null, usage: { main: zeroSpend(""), models: [] }, skills: { offered: [], used: [] }, workerRecords: { all: [], active: [] } };
+const EMPTY_FACTS: SessionFacts = { teams: [], reports: new Map(), outline: null, outlines: [], compactions: [], rewinds: [], explanations: [], sessionId: null, usage: { main: zeroSpend(""), models: [] }, skills: { offered: [], used: [] }, workerRecords: { all: [], active: [] }, teamEvents: [], settled: new Map() };
 
 async function sessionFacts(path: string): Promise<SessionFacts> {
   try {
@@ -707,14 +755,39 @@ function sessionState(presence: Rec | undefined, session: Rec): LiveAgentSession
   return "idle";
 }
 
-function joinTeams(facts: SessionFacts, parentPath: string, workers: WorkerInfo[] | null): TeamInfo[] {
+function lastOf<T>(list: readonly T[], pick: (x: T) => boolean): T | undefined {
+  for (let i = list.length - 1; i >= 0; i--) if (pick(list[i]!)) return list[i];
+  return undefined;
+}
+
+/** The newer of two last reports; a tie keeps the first (the report that reached this session). */
+function newerReport(a: TeamMember["lastReport"], b: TeamMember["lastReport"]): TeamMember["lastReport"] {
+  if (!a || !b) return a ?? b;
+  return Date.parse(b.at) > Date.parse(a.at) ? b : a;
+}
+
+export function joinTeams(facts: Pick<SessionFacts, "teams" | "reports" | "teamEvents" | "settled">, parentPath: string, workers: WorkerInfo[] | null): TeamInfo[] {
   const byId = new Map((workers ?? []).map((w) => [w.id, w]));
   return facts.teams.map((t) => {
+    const events = facts.teamEvents.filter((e) => e.teamId === t.id);
     const members: TeamMember[] = t.members.map((m) => {
       const worker = byId.get(m.workerId) ?? null;
       if (worker) worker.teamId = t.id;
-      const report = facts.reports.get(m.workerId);
-      return { ...m, worker, ...(report ? { lastReport: report } : {}) };
+      // A subagent-complete that reached this session, or — for a member that reported to its
+      // coordinator — the settled state its own records carry, whichever is newer.
+      const report = newerReport(facts.reports.get(m.workerId), facts.settled.get(m.workerId));
+      // Older files have no successorOf: the handover event that named this member says it.
+      const handover = m.successorOf ? undefined : lastOf(events, (e) => handoverSuccessor(e)?.workerId === m.workerId);
+      const successorOf = m.successorOf ?? handover?.workerId;
+      const retire = lastOf(events, (e) => e.kind === "retire" && e.workerId === m.workerId);
+      const reason = retire ? retireReason(retire) : undefined;
+      return {
+        ...m,
+        worker,
+        ...(report ? { lastReport: report } : {}),
+        ...(successorOf ? { successorOf } : {}),
+        ...(retire ? { retired: { at: retire.at, ...(reason ? { reason } : {}) } } : {}),
+      };
     });
     return {
       id: t.id,
@@ -725,6 +798,8 @@ function joinTeams(facts: SessionFacts, parentPath: string, workers: WorkerInfo[
       live: workers !== null,
       members,
       working: members.filter((m) => m.worker?.working).length,
+      ...(members.some((m) => m.duty === "coordinator") ? { coordinated: true as const } : {}),
+      ...(events.length > 0 ? { events } : {}),
     };
   });
 }

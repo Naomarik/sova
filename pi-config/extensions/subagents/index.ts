@@ -24,13 +24,25 @@ import {
 	MAX_OBJECTIVE_CHARS,
 	MAX_OWNED_PATHS,
 	MAX_TEAM_MEMBERS,
+	ASSIGNMENT_ENTRY_TYPE,
+	STEER_PREVIEW_CHARS,
 	TEAM_ENTRY_TYPE,
+	TEAM_EVENT_ENTRY_TYPE,
 	TeamStore,
 	ejectedStamp,
+	assignmentText,
+	malformedWarning,
 	memberTooling,
+	monitorSuccessorTask,
+	pausedTeamsFrom,
+	planTeamDefaults,
+	synthesizedMember,
+	workerSuccessorTask,
+	type AssignmentEntryData,
 	type PersistedMember,
 	type TeamActionKind,
 	type TeamActionSource,
+	type TeamMemberInput,
 	type TeamView,
 	type WorkerObservation,
 } from "./teams.ts";
@@ -43,7 +55,26 @@ import {
 	writeResponse,
 	type MailboxRequest,
 	type MailboxResponse,
+	type MemberDuty,
 } from "./mailbox.ts";
+import { describeTeamDefaults, readTeamDefaults, type WorkerTuple } from "./team-defaults.ts";
+import {
+	NUDGE_MAX_ACTIVE,
+	NUDGE_MAX_IDLE_FIRES,
+	claudeContextWindow,
+	contextShare,
+	contextPct,
+	contextText,
+	fmtDur,
+	nudgeFireAt,
+	roleSlug,
+	sessionDirKey,
+	successorRole,
+	usageLines,
+	usageProviderOf,
+	type UsageCacheLike,
+	type UsageProvider,
+} from "./coordination.ts";
 import { MCP_SERVER_NAME } from "./member-mcp.ts";
 import { WorkerRegistryRecorder, type WorkerLaunchSpec } from "./registry.ts";
 import { readWorkerManifests, resolvedModel, viewWorker, type FoldedWorkerManifest, type WorkerTranscriptView } from "./worker-transcript.ts";
@@ -158,10 +189,12 @@ const TeamDefaultsSpec = Type.Object(
 		model: Type.Optional(Type.String()),
 		effort: Type.Optional(Effort),
 		backendOptions: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
+		coordinator: Type.Optional(Type.Boolean({ description: "false: no coordinator (and no monitor) from team-defaults.json for this team." })),
+		monitor: Type.Optional(Type.Boolean({ description: "false: no monitor from team-defaults.json for this team." })),
 	},
 	{
 		additionalProperties: false,
-		description: "Applied only to members whose backend equals defaults.backend (default pi); member fields win and backendOptions merge shallowly. team_add reuses them.",
+		description: "Applied only to members whose backend equals defaults.backend (default pi); member fields win and backendOptions merge shallowly. team_add reuses them. coordinator/monitor: false turn off the team-defaults roles for this team.",
 	},
 );
 const TeamMembers = Type.Array(TeamMemberSpec, { minItems: 1, maxItems: MAX_BATCH });
@@ -179,7 +212,11 @@ function checkTeamKeys(members: unknown, defaults?: unknown): void {
 	if (defaults === undefined) return;
 	if (typeof defaults !== "object" || defaults === null || Array.isArray(defaults)) throw new Error("Team defaults must be an object.");
 	const extra = Object.keys(defaults).find((key) => !TEAM_DEFAULT_KEYS.has(key));
-	if (extra) throw new Error(`Unsupported team default ${extra}; defaults accept backend, model, effort and backendOptions.`);
+	if (extra) throw new Error(`Unsupported team default ${extra}; defaults accept backend, model, effort, backendOptions, coordinator and monitor.`);
+	for (const key of ["coordinator", "monitor"] as const) {
+		const value = (defaults as Record<string, unknown>)[key];
+		if (value !== undefined && typeof value !== "boolean") throw new Error(`defaults.${key} must be true or false.`);
+	}
 }
 /** Public token totals: counts only, never text. Cost is omitted when the backend reports none. */
 interface WorkerUsage { input: number; output: number; cacheRead: number; cacheWrite: number; cost?: number }
@@ -313,7 +350,7 @@ interface BatchRequest {
 	specs: Spec[];
 	groupLabel?: string;
 	/** Team membership per spec (same order); every member gets an identity and mailbox, and the member tools where its backend can load them (memberTooling). */
-	team?: { teamId: string; teamName: string; members: { role: string; orchestrator: boolean }[] };
+	team?: { teamId: string; teamName: string; members: TeamIdentity[] };
 	/**
 	 * Runs after every factory returned and before the batch is published. Throwing
 	 * rolls the whole batch back exactly like a factory failure.
@@ -326,6 +363,8 @@ interface BatchRequest {
 	 */
 	resume?: { id: string; groupId: string; groupLabel: string; sessionId?: string; sessionFile?: string };
 }
+/** What a member's identity carries beyond its team (mailbox.ts MemberContext). */
+interface TeamIdentity { role: string; orchestrator: boolean; duty?: MemberDuty; coordinated?: boolean; successorOf?: string }
 /** @internal Test seams for the member mailbox. */
 export interface SubagentsOptions {
 	mailboxRoot?: string;
@@ -334,7 +373,13 @@ export interface SubagentsOptions {
 	hosting?: HostingOptions;
 	/** Model policy file override (policy.ts); the real one is shared with Sova. */
 	policyFile?: string;
+	/** Agent dir for team-defaults.json, handover notes and the usage-status cache; default getAgentDir(). */
+	agentDir?: string;
+	/** Timer for member wake_nudges and handover timeouts (tests fire them by hand); default setTimeout, unref'd. */
+	setTimer?: (fn: () => void, ms: number) => ReturnType<typeof setTimeout>;
 }
+/** A lifecycle fact of a coordinated team, appended to the owner session (the action history is memory only). */
+export { TEAM_EVENT_ENTRY_TYPE };
 /** Emit to re-scan the registry and adopt this session's detached workers now. */
 export const WORKERS_ADOPT_EVENT = "subagents:workers-adopt";
 
@@ -525,7 +570,11 @@ export function registerSubagents(
 		return r.farCwd ? `Remote session: workers run on target ${r.target} in ${r.farCwd}.` : `Remote session: target ${r.target}, far working directory not resolved yet; spawns refuse until it is.`;
 	};
 	const groups: AgentGroup[] = [];
-	const teams = new TeamStore();
+	const agentDir = () => options.agentDir ?? getAgentDir();
+	// Handover notes live under the parent session's id (team IDs restart in every session); a
+	// session without one gets a key unique to this process, never another session's directory.
+	const unsavedSessionKey = `unsaved-${process.pid}-${Date.now().toString(36)}`;
+	const teams = new TeamStore(path.join(agentDir(), "sova", "teams"), () => sessionDirKey(activeCtx?.sessionManager.getSessionId?.(), unsavedSessionKey));
 	// Worker transcripts of every backend, read through one protocol (worker-transcript.ts);
 	// a backend extension may register its own adapter with its registration.
 	const adapters = defaultWorkerTranscriptAdapters();
@@ -729,6 +778,7 @@ export function registerSubagents(
 	const refresh = () => {
 		if (shuttingDown) return;
 		pruneFinished();
+		releaseHeldNudges();
 		for (const a of agents) {
 			registry.observe(a);
 			hosting.observe(a);
@@ -816,6 +866,8 @@ export function registerSubagents(
 		// registered. The post-spawn refresh handles those; never retain them here.
 		if (shuttingDown || !agents.includes(a)) return;
 		registry.finish(a, hosting.lost(a.id) ? "lost" : undefined);
+		successionCheck(a);
+		if (a.isFinished()) forgetMemberTimers(a.id);
 		if (a.isFinished() && !a.processAlive && !isRestored(a)) finished.add(a);
 		pruneFinished();
 		scheduleRefresh();
@@ -889,6 +941,7 @@ export function registerSubagents(
 		if (shuttingDown || !agents.includes(a)) return;
 		// Idle again: status, outcome and a usage snapshot in the durable record.
 		registry.settled(a);
+		successionCheck(a);
 		pruneFinished();
 		scheduleRefresh();
 		if (shuttingDown || !activeCtx) return;
@@ -899,6 +952,13 @@ export function registerSubagents(
 			a.status === "error" ||
 			a.status === "killed";
 		const verb = a.status === "killed" ? "stopped" : failed ? "failed" : "finished";
+		// Coordinated teams: every member but the routing coordinator reports to it, never to the parent.
+		const route = completionRoute(a, failed);
+		if (route.kind === "drop") return;
+		if (route.kind === "coordinator") {
+			void deliverCompletion(route.to, a, verb);
+			return;
+		}
 		if (!["tui", "rpc"].includes(activeCtx.mode)) return;
 		// Independent: a broken UI must not suppress the completion message/wake.
 		try {
@@ -909,7 +969,7 @@ export function registerSubagents(
 		try {
 			const text = summary(a);
 			// A worker the parent stopped itself does not need to wake the parent.
-			const wake = a.wake && a.status !== "killed";
+			const wake = route.wake;
 			pi.sendMessage(
 				{
 					customType: "subagent-complete",
@@ -1239,6 +1299,15 @@ export function registerSubagents(
 		refresh();
 		return group;
 	};
+	/** Assignments and the main thread's steers outlive a reload in the session (restoreHistory folds them back). */
+	const persistAssignment = (data: AssignmentEntryData | undefined) => {
+		if (!data) return;
+		try {
+			pi.appendEntry(ASSIGNMENT_ENTRY_TYPE, data);
+		} catch {
+			/* Memory still has it; only a reload would lose it. */
+		}
+	};
 	/**
 	 * Shared control path for tools and workspaces. Team members get a bounded
 	 * action record; states never claim more than SteerResult says (accepted or
@@ -1249,7 +1318,11 @@ export function registerSubagents(
 		if (action) scheduleRefresh();
 		try {
 			const accepted = await a.steer(message, signal, mode);
-			if (accepted.ok) teams.settleAction(action, "accepted-or-queued");
+			if (accepted.ok) {
+				teams.settleAction(action, "accepted-or-queued");
+				// The main thread's steers are assignments too: the coordinator's roster lists them.
+				if (source === "parent" || source === "user") persistAssignment(teams.recordOperatorSteer(a.id, message));
+			}
 			else teams.settleAction(action, signal?.aborted ? "unknown" : "failed", accepted.reason);
 			return accepted;
 		} catch (error) {
@@ -1260,8 +1333,8 @@ export function registerSubagents(
 		}
 	};
 	/** Resolves when the worker's kill resolves; worker status stays authoritative. */
-	const killWorker = async (a: Worker, reason: string, source: TeamActionSource): Promise<void> => {
-		const action = teams.recordAction(a.id, "stop", source, reason);
+	const killWorker = async (a: Worker, reason: string, source: TeamActionSource, kind: TeamActionKind = "stop"): Promise<void> => {
+		const action = teams.recordAction(a.id, kind, source, reason);
 		try {
 			await a.kill(reason);
 			teams.settleAction(action, "accepted-or-queued");
@@ -1283,6 +1356,317 @@ export function registerSubagents(
 		scheduleRefresh();
 		return at;
 	};
+	// ── Coordinated teams (team-defaults.json) ──────────────────────────────
+	// A team created while the file is valid gets a coordinator (and a monitor). Every other
+	// member reports to the routing coordinator, never to the parent; the coordinator alone
+	// reaches the parent (its completions, team_report, team_ask). The monitor's wake_nudge
+	// timers and pending handovers live here, in the parent: members cannot start their own turns.
+	const isLiveWorker = (workerId: string): boolean => {
+		const w = agents.find((a) => a.id === workerId);
+		return Boolean(w && !w.isFinished() && !w.isStopping?.());
+	};
+	/** Whether any member of the team other than `except` (and the monitor) is working now. */
+	const teamWorking = (teamId: string, except: string): boolean =>
+		teamViews().find((t) => t.id === teamId)?.members.some((m) => m.workerId !== except && m.duty !== "monitor" && m.state === "working") ?? false;
+	type CompletionRoute = { kind: "parent"; wake: boolean } | { kind: "coordinator"; to: PersistedMember } | { kind: "drop" };
+	const completionRoute = (a: Worker, failed: boolean): CompletionRoute => {
+		const killed = a.status === "killed";
+		const info = teams.memberInfo(a.id);
+		if (!info?.team.coordination) return { kind: "parent", wake: a.wake && !killed };
+		const routing = teams.routingCoordinator(info.team.id, isLiveWorker);
+		if (routing?.workerId === a.id || (info.member.duty === "coordinator" && !routing)) {
+			// The coordinator wakes the parent only once no teammate is working.
+			return { kind: "parent", wake: a.wake && !killed && !teamWorking(info.team.id, a.id) };
+		}
+		if (killed) return { kind: "drop" };
+		// The monitor settles after every check; only a failure is worth telling anyone.
+		if (info.member.duty === "monitor" && !failed) return { kind: "drop" };
+		if (routing) return { kind: "coordinator", to: routing };
+		// No live coordinator: the parent hears it, and is woken, so the team is never orphaned.
+		return { kind: "parent", wake: true };
+	};
+	/** A routed completion: the parent's summary, cut like the completion message, as a follow-up to the coordinator. */
+	const deliverCompletion = async (to: PersistedMember, a: Worker, verb: string): Promise<void> => {
+		const info = teams.memberInfo(a.id);
+		if (!info) return;
+		let text = summary(a);
+		if (text.length > WAKE_PREVIEW_CHARS) {
+			let where = "";
+			try {
+				where = ` Whole answer: ${writeSnapshot("pi-subagents-report-", `${a.id}-final-answer.md`, a.finalOutput() || text)}.`;
+			} catch {
+				/* The preview still goes out. */
+			}
+			text = `${text.slice(0, WAKE_PREVIEW_CHARS)}\n[Cut at ${count(WAKE_PREVIEW_CHARS)} of ${count(text.length)} chars.${where} Ask ${info.member.role} with team_msg for more.]`;
+		}
+		const body = [
+			`[Team report from ${info.member.role} (${a.id}), ${info.team.id}: ${verb} — routed to you as coordinator]`,
+			text,
+			replyHint(to, info.member.role),
+		].join("\n");
+		try {
+			await deliverToMember(to, body, "followUp", "member", "report", { kind: "message", from: info.member.role, fromId: a.id, text: `(${verb}) ${a.finalOutput().slice(0, 2000) || "no final answer"}` });
+		} catch {
+			/* The coordinator ended meanwhile; team_list shows the failed delivery. */
+		}
+	};
+	const appendTeamEvent = (teamId: string, kind: "handover" | "retire" | "wrap-up" | "pause" | "resume", member: { workerId: string; role: string }, detail?: string) => {
+		try {
+			pi.appendEntry(TEAM_EVENT_ENTRY_TYPE, { version: 1, teamId, kind, workerId: member.workerId, role: member.role, at: Date.now(), ...(detail ? { detail: detail.slice(0, 500) } : {}) });
+		} catch {
+			/* The action row is still recorded; the durable copy is best effort. */
+		}
+	};
+	/**
+	 * A delivered wrap-up notice as a durable event, one per member told to wrap up. The monitor also
+	 * tells the coordinator about each such member; the coordinator is itself the member told only
+	 * when its own context is over the threshold (read now).
+	 */
+	const recordWrapUps = (teamId: string, targets: readonly PersistedMember[], outcomes: readonly { workerId: string; ok: boolean }[]) => {
+		const routing = teams.routingCoordinator(teamId, isLiveWorker)?.workerId;
+		const state = readTeamDefaults(agentDir());
+		const threshold = state.state === "ok" ? state.value.monitor.contextPct : undefined;
+		for (const target of targets) {
+			if (!outcomes.find((o) => o.workerId === target.workerId)?.ok) continue;
+			const worker = agents.find((a) => a.id === target.workerId);
+			const tokens = amount(worker?.usage?.contextTokens);
+			const window = contextWindowOf(worker, target);
+			const pct = contextPct(tokens, window);
+			if (target.workerId === routing && (pct === undefined || threshold === undefined || pct < threshold)) continue;
+			appendTeamEvent(teamId, "wrap-up", target, contextShare(tokens, window));
+		}
+	};
+	/** The window of the model a worker was spawned with (claude-code: the [1m] rule; pi: the registry). */
+	const contextWindowOf = (a: Worker | undefined, member: { backend: string; model?: string }): number | undefined => {
+		const model = (a && launches.get(a)?.model) ?? member.model ?? a?.model;
+		if (member.backend === "claude-code") return claudeContextWindow(model ?? "");
+		if (member.backend !== "pi" || !model) return undefined;
+		const slash = model.indexOf("/");
+		if (slash < 1) return undefined;
+		try {
+			const window = (activeCtx?.modelRegistry.find(model.slice(0, slash), model.slice(slash + 1)) as { contextWindow?: unknown } | undefined)?.contextWindow;
+			return typeof window === "number" && window > 0 ? window : undefined;
+		} catch {
+			return undefined;
+		}
+	};
+	const memberContext = (m: { workerId: string; backend: string; model?: string }): string => {
+		const a = agents.find((w) => w.id === m.workerId);
+		return contextText(amount(a?.usage?.contextTokens), contextWindowOf(a, m));
+	};
+	const readUsageCache = (): UsageCacheLike | undefined => {
+		try {
+			const value = JSON.parse(fs.readFileSync(path.join(agentDir(), "cache", "usage-status.json"), "utf8"));
+			return value && typeof value === "object" ? value as UsageCacheLike : undefined;
+		} catch {
+			return undefined;
+		}
+	};
+	/** Why a team-defaults tuple cannot start here, by the checks spawnBatch applies; undefined when it can. */
+	const tupleDenial = (ctx: ExtensionContext, t: WorkerTuple): string | undefined => {
+		const policy = readPolicy(options.policyFile);
+		if (t.backend !== "pi") {
+			const backend = backends.get(t.backend);
+			if (!backend) return `backend ${t.backend} is not loaded`;
+			const denied = policyDenial(policy, t.backend, t.model);
+			if (denied) return denied;
+			try {
+				backend.validate({ prompt: "(team defaults check)", backend: t.backend, model: t.model, ...(t.effort ? { effort: t.effort } : {}) } as Spec, ctx);
+			} catch (error) {
+				return error instanceof Error ? error.message : String(error);
+			}
+			return undefined;
+		}
+		const denied = policyDenial(policy, "pi", t.model);
+		if (denied) return denied;
+		const slash = t.model.indexOf("/");
+		if (slash < 1 || !ctx.modelRegistry.find(t.model.slice(0, slash), t.model.slice(slash + 1))) return `unknown model ${t.model} in this session's registry`;
+		return undefined;
+	};
+	const tupleText = (t: WorkerTuple) => `${t.backend}/${t.model}${t.effort ? `/${t.effort}` : ""}`;
+	/** Primary, else fallback; neither → the team is refused, naming both reasons. */
+	const pickTuple = (ctx: ExtensionContext, duty: MemberDuty, role: string, primary: WorkerTuple, fallback: WorkerTuple | null): { tuple: WorkerTuple; line: string } => {
+		const first = tupleDenial(ctx, primary);
+		if (!first) return { tuple: primary, line: `Team defaults: ${duty} ${role} added on ${tupleText(primary)} (primary).` };
+		const second = fallback ? tupleDenial(ctx, fallback) : "no fallback is configured";
+		if (fallback && !second) return { tuple: fallback, line: `Team defaults: ${duty} ${role} added on ${tupleText(fallback)} (fallback; primary ${tupleText(primary)} refused: ${first}).` };
+		throw new Error(`Team not created: team defaults require a ${duty} (${role}), but no configured model can run — primary ${tupleText(primary)}: ${first}; fallback${fallback ? ` ${tupleText(fallback)}` : ""}: ${second}. Fix the ${duty} in Sova's Settings, or pass defaults.${duty}: false.`);
+	};
+
+	const coordinationTimer = (fn: () => void, ms: number): ReturnType<typeof setTimeout> => {
+		if (options.setTimer) return options.setTimer(fn, ms);
+		const timer = setTimeout(fn, ms);
+		timer.unref?.();
+		return timer;
+	};
+	// wake_nudge for the monitor: the wake-nudge extension's bounds, held here.
+	// An idle team costs nothing: a nudge that comes due while no other member is working (and the
+	// team is not paused awaiting a resume) is held, not delivered, and goes out at the first
+	// refresh that sees a teammate working again (every worker state change and every accepted
+	// steer schedules one). A paused team's nudges always fire: the resume check must run.
+	interface PendingNudge { id: string; reason: string; fireAt: number; createdAt: number; timer: ReturnType<typeof setTimeout> }
+	interface NudgeState { seq: number; idleFires: number; active: Map<string, PendingNudge>; held?: PendingNudge }
+	const nudges = new Map<string, NudgeState>();
+	/** Teams whose monitor sent "pause" and not yet "resume". */
+	const pausedTeams = new Set<string>();
+	const nudgeState = (workerId: string) => {
+		let state = nudges.get(workerId);
+		if (!state) nudges.set(workerId, (state = { seq: 0, idleFires: 0, active: new Map() }));
+		return state;
+	};
+	const describeNudge = (n: PendingNudge) => `${n.id} at ${new Date(n.fireAt).toISOString()} (in ${fmtDur(n.fireAt - Date.now())})${n.reason ? `: ${n.reason}` : ""}`;
+	const fireNudge = (workerId: string, id: string) => {
+		const state = nudges.get(workerId);
+		const n = state?.active.get(id);
+		if (!state || !n) return;
+		state.active.delete(id);
+		const worker = agents.find((a) => a.id === workerId);
+		const teamId = teams.teamOf(workerId);
+		if (shuttingDown || !worker || worker.isFinished() || !teamId) return;
+		const working = teamWorking(teamId, workerId);
+		if (!working && !pausedTeams.has(teamId)) {
+			// Nobody to watch: hold one wake until a teammate works again (later ones collapse into it).
+			state.held ??= n;
+			return;
+		}
+		deliverNudge(state, worker, teamId, n, working);
+	};
+	const deliverNudge = (state: NudgeState, worker: Worker, teamId: string, n: PendingNudge, working: boolean, released = false) => {
+		const workerId = worker.id;
+		if (working) state.idleFires = 0;
+		else state.idleFires++;
+		const now = Date.now();
+		const text = [
+			`[wake_nudge ${n.id}] Scheduled wakeup fired (set ${fmtDur(now - n.createdAt)} ago)${released ? "; held while no teammate was working, delivered now that one is" : ""}.`,
+			`Reason: ${n.reason || "(none)"}`,
+			state.idleFires >= NUDGE_MAX_IDLE_FIRES
+				? `Wake limit (${NUDGE_MAX_IDLE_FIRES} fires with no teammate working) reached: do not schedule more nudges; tell the coordinator the team looks idle and end your turn.`
+				: "Continue your standing instruction; schedule the next check before ending your turn.",
+		].join("\n");
+		void worker.steer(text, undefined, "followUp").then((accepted) => {
+			if (!accepted.ok) return;
+			try {
+				appendInbox(memberDir(teamId, workerId), { at: Date.now(), kind: "instruction", from: "wake_nudge", fromId: n.id, text });
+			} catch {
+				/* The inbox is a convenience copy. */
+			}
+		}, () => { /* The monitor ended meanwhile. */ });
+	};
+	/** A held wake goes out once a teammate of its monitor is working again. */
+	const releaseHeldNudges = () => {
+		for (const [workerId, state] of nudges) {
+			const n = state.held;
+			if (!n) continue;
+			const worker = agents.find((a) => a.id === workerId);
+			const teamId = teams.teamOf(workerId);
+			if (!worker || worker.isFinished() || !teamId) { state.held = undefined; continue; }
+			const working = teamWorking(teamId, workerId);
+			if (!working && !pausedTeams.has(teamId)) continue;
+			state.held = undefined;
+			deliverNudge(state, worker, teamId, n, working, true);
+		}
+	};
+	const handleNudge = (workerId: string, request: NonNullable<MailboxRequest["nudge"]>): { text: string; details: Record<string, unknown> } => {
+		const state = nudgeState(workerId);
+		const list = () => [...state.active.values()].sort((x, y) => x.fireAt - y.fireAt);
+		const details = () => ({ action: request.action, active: list().map(({ timer: _t, ...n }) => n), ...(state.held ? { held: state.held.id } : {}) });
+		const heldLine = () => (state.held ? [`${state.held.id} held: came due while no teammate was working; delivered when one starts${state.held.reason ? `: ${state.held.reason}` : ""}`] : []);
+		if (request.action === "list") {
+			const lines = [...list().map(describeNudge), ...heldLine()];
+			return { text: lines.length ? lines.join("\n") : "No pending nudges.", details: details() };
+		}
+		if (request.action === "cancel") {
+			if (request.id && state.held?.id === request.id) {
+				state.held = undefined;
+				return { text: `Cancelled ${request.id}.`, details: details() };
+			}
+			const n = request.id ? state.active.get(request.id) : undefined;
+			if (!n) throw new Error(`No pending nudge "${request.id ?? ""}".`);
+			clearTimeout(n.timer);
+			state.active.delete(n.id);
+			return { text: `Cancelled ${n.id}.`, details: details() };
+		}
+		const teamId = teams.teamOf(workerId);
+		if (teamId && teamWorking(teamId, workerId)) state.idleFires = 0;
+		if (state.idleFires >= NUDGE_MAX_IDLE_FIRES) throw new Error(`Wake limit (${NUDGE_MAX_IDLE_FIRES} fires with no teammate working) reached; scheduling resumes once a teammate works again. Tell the coordinator and end your turn.`);
+		if (state.active.size >= NUDGE_MAX_ACTIVE) throw new Error(`Max ${NUDGE_MAX_ACTIVE} active nudges: ${list().map((n) => n.id).join(", ")}. Cancel one first.`);
+		const now = Date.now();
+		const fireAt = nudgeFireAt(request, now);
+		const id = `n${++state.seq}`;
+		const timer = coordinationTimer(() => fireNudge(workerId, id), fireAt - now);
+		const n: PendingNudge = { id, reason: request.reason?.trim() ?? "", fireAt, createdAt: now, timer };
+		state.active.set(id, n);
+		return { text: `Scheduled ${describeNudge(n)}\nWakes you as [wake_nudge ${id}]; end your turn now.`, details: details() };
+	};
+
+	// Handovers: a successor started by team_succeed; the old member is retired on team_ready or at the timeout.
+	interface Handover { teamId: string; oldId: string; oldRole: string; newId: string; newRole: string; timer?: ReturnType<typeof setTimeout> }
+	const handovers = new Map<string, Handover>();
+	/**
+	 * A worker's successor waits for its note (N3): team_succeed tells the old member to write it and
+	 * end its turn, and the successor starts at the first settle of the old member once the note file
+	 * exists, when the old member ends, or at the retire timeout, whichever comes first. By old worker ID.
+	 */
+	interface PendingSuccession { team: { id: string; name: string }; coordinatorId: string; target: PersistedMember; note: string; retireMinutes: number; timer?: ReturnType<typeof setTimeout> }
+	const pendingSuccessions = new Map<string, PendingSuccession>();
+	const retire = (h: Handover, why: "ready" | "timeout") => {
+		if (handovers.get(h.newId) !== h) return;
+		handovers.delete(h.newId);
+		if (h.timer) clearTimeout(h.timer);
+		const reason = why === "ready" ? `retired: successor ${h.newRole} (${h.newId}) confirmed the takeover` : `retired: handover to ${h.newRole} (${h.newId}) timed out`;
+		appendTeamEvent(h.teamId, "retire", { workerId: h.oldId, role: h.oldRole }, reason);
+		const old = agents.find((a) => a.id === h.oldId);
+		if (old && !old.isFinished()) void killWorker(old, reason, why === "ready" ? "member" : "system", "retire").catch(() => scheduleRefresh());
+		else {
+			teams.settleAction(teams.recordAction(h.oldId, "retire", why === "ready" ? "member" : "system", reason), "accepted-or-queued", "already ended");
+			scheduleRefresh();
+		}
+	};
+	/** The team a monitor watches, when that team is paused (its resume check must run). */
+	const pausedMonitorTeam = (workerId: string): string | undefined => {
+		const info = teams.memberInfo(workerId);
+		return info?.member.duty === "monitor" && pausedTeams.has(info.team.id) ? info.team.id : undefined;
+	};
+	/**
+	 * A paused team's monitor that rejoins after a reload (re-adopted or resumed) lost its pending
+	 * wake_nudges with the earlier parent, so nothing would ever run the resume check: wake it now.
+	 */
+	const wakeRejoinedMonitor = (worker: Worker) => {
+		const teamId = pausedMonitorTeam(worker.id);
+		if (!teamId || worker.isFinished()) return;
+		const text = [
+			`[Team ${teamId} restored while paused]`,
+			"The parent session restarted while this team was paused by a usage notice; your pending wake_nudges ended with it. Run your standing instruction now: call team_roster; if the paused window is back under the threshold or has reset, send the resume notice; otherwise schedule the resume check with wake_nudge and end your turn.",
+		].join("\n");
+		void worker.steer(text, undefined, "followUp").then((accepted) => {
+			if (!accepted.ok) return;
+			try {
+				appendInbox(memberDir(teamId, worker.id), { at: Date.now(), kind: "instruction", from: "parent", fromId: "parent", text });
+			} catch {
+				/* The inbox is a convenience copy. */
+			}
+		}, () => { /* It ended meanwhile. */ });
+	};
+	/** A worker that ended takes its nudges with it; a retired member's pending handover is done. */
+	const forgetMemberTimers = (workerId: string) => {
+		const state = nudges.get(workerId);
+		if (state) for (const n of state.active.values()) clearTimeout(n.timer);
+		nudges.delete(workerId);
+		for (const h of handovers.values()) if (h.oldId === workerId) {
+			if (h.timer) clearTimeout(h.timer);
+			handovers.delete(h.newId);
+		}
+	};
+	const clearCoordinationTimers = () => {
+		for (const state of nudges.values()) for (const n of state.active.values()) clearTimeout(n.timer);
+		nudges.clear();
+		pausedTeams.clear();
+		for (const h of handovers.values()) if (h.timer) clearTimeout(h.timer);
+		handovers.clear();
+		for (const p of pendingSuccessions.values()) if (p.timer) clearTimeout(p.timer);
+		pendingSuccessions.clear();
+	};
+
 	// ── Team member mailbox ─────────────────────────────────────────────────
 	// Members (member.ts in Pi children, member-mcp.ts beside Claude children)
 	// write requests into their own directory under a private root;
@@ -1308,10 +1692,16 @@ export function registerSubagents(
 		}
 		return mailboxRoot;
 	};
-	const memberEnv = (team: NonNullable<BatchRequest["team"]>, member: { role: string; orchestrator: boolean }, workerId: string): Record<string, string> => {
+	const memberEnv = (team: NonNullable<BatchRequest["team"]>, member: TeamIdentity, workerId: string): Record<string, string> => {
 		const dir = memberDir(team.teamId, workerId);
 		initMemberDir(dir);
-		return { [MEMBER_ENV]: encodeMemberContext({ version: 1, teamId: team.teamId, teamName: team.teamName, workerId, role: member.role, orchestrator: member.orchestrator, dir }) };
+		return {
+			[MEMBER_ENV]: encodeMemberContext({
+				version: 1, teamId: team.teamId, teamName: team.teamName, workerId, role: member.role, orchestrator: member.orchestrator, dir,
+				...(member.duty ? { duty: member.duty } : {}), ...(member.coordinated ? { coordinated: true } : {}),
+				...(member.successorOf ? { successorOf: member.successorOf } : {}),
+			}),
+		};
 	};
 	const pollMailbox = () => {
 		if (shuttingDown || !mailboxRoot) return;
@@ -1320,7 +1710,6 @@ export function registerSubagents(
 			void handleMemberRequest(item.teamId, item.workerId, item.dir, item.request);
 		}
 	};
-	const memberLine = (m: PersistedMember) => `${m.role}${m.orchestrator ? " (orchestrator)" : ""} (${m.workerId}, ${m.backend})`;
 	/** Seated members by state, then the ejected ones, which hold no seat. */
 	const countsText = (t: TeamView): string =>
 		[
@@ -1328,17 +1717,60 @@ export function registerSubagents(
 			...(t.ejected ? [`${t.ejected} ejected`] : []),
 		].join(" · ") || "no members";
 	const ejectedText = (m: TeamView["members"][number]) => (m.ejectedAt === undefined ? "" : ` · ejected ${ejectedStamp(m.ejectedAt)}`);
-	const rosterText = (teamId: string): string => {
+	const dutyMark = (m: { orchestrator?: boolean; duty?: MemberDuty }) => (m.duty ? ` (${m.duty})` : m.orchestrator ? " (orchestrator)" : "");
+	/**
+	 * The roster a member sees. Every live member carries its context column; a coordinator or
+	 * monitor also gets the monitor thresholds (team-defaults.json, read now) and the usage windows
+	 * of the providers this team's models spend from.
+	 */
+	/** The coordinator's roster: what the main thread assigned each teammate, and its later steers. */
+	const assignmentSection = (teamId: string): string[] => {
+		const list = teams.assignments(teamId);
+		if (!list.length) return [];
+		return [
+			"  Assignments from the main thread (the work you route; never replace or cancel it):",
+			...list.flatMap((m) => [
+				`    ${m.workerId} ${m.role}:`,
+				...(m.task ? assignmentText(m.task, m.role).split("\n").map((line) => `      | ${line}`) : ["      (not known in this session; ask the member with team_msg)"]),
+				...(m.steers.length
+					? [
+						"      Later instructions from the main thread (assignments too), newest last:",
+						...(m.steersOmitted ? [`      [${m.steersOmitted} earlier instruction(s) no longer kept]`] : []),
+						...m.steers.map((t) => {
+							const flat = t.replace(/\s*\n\s*/g, " ");
+							return `      > ${flat.length > STEER_PREVIEW_CHARS ? `${flat.slice(0, STEER_PREVIEW_CHARS)} […]` : flat}`;
+						}),
+					]
+					: []),
+			]),
+		];
+	};
+	const rosterText = (teamId: string, viewer?: PersistedMember): string => {
 		const t = teamViews().find((v) => v.id === teamId);
 		if (!t) return `Team ${teamId} is not available.`;
+		const standing: string[] = [];
+		if (viewer?.duty) {
+			const state = readTeamDefaults(agentDir());
+			const m = state.state === "ok" ? state.value.monitor : undefined;
+			standing.push(m
+				? `  Thresholds (team defaults, read now): wrap-up at ${m.contextPct}% context · check every ${m.everyMinutes} min · usage ${m.usage.enabled ? `pause at ${m.usage.pausePct}%, resume ${m.usage.resumeMarginMinutes} min after the reset` : "not watched"}`
+				: `  Thresholds: team defaults are ${state.state === "absent" ? "absent" : "malformed"} now; keep the thresholds in your assignment.`);
+			const providers = t.members.flatMap((x) => {
+				const provider = usageProviderOf(x.backend, (agents.find((a) => a.id === x.workerId) && launches.get(agents.find((a) => a.id === x.workerId)!)?.model) ?? x.model);
+				return provider ? [provider] : [];
+			}) as UsageProvider[];
+			standing.push(...usageLines(readUsageCache(), providers, m?.usage.enabled ? m.usage.pausePct : undefined));
+		}
+		if (viewer?.duty === "coordinator") standing.push(...assignmentSection(teamId));
 		return [
 			`${t.id} — ${t.name} · ${countsText(t)}`,
 			`Objective: ${t.objective}`,
 			...t.members.map((m) =>
-				`  ${m.workerId} ${m.role}${m.orchestrator ? " (orchestrator)" : ""} [${m.backend}${memberTooling(m.backend) === "none" ? ", receives messages only" : ", has team tools"}] ${m.state}${m.status ? ` (${m.status}${m.taskOutcome ? `/${m.taskOutcome}` : ""})` : ""} · owns: ${m.ownedPaths.join(", ") || "none declared"}${m.error ? ` · error: ${m.error}` : ""}${m.available ? "" : ` · unavailable: ${m.reason}`}${ejectedText(m)}`,
+				`  ${m.workerId} ${m.role}${dutyMark(m)} [${m.backend}${memberTooling(m.backend) === "none" ? ", receives messages only" : ", has team tools"}] ${m.state}${m.status ? ` (${m.status}${m.taskOutcome ? `/${m.taskOutcome}` : ""})` : ""}${m.available ? ` · ${memberContext(m)}` : ""} · owns: ${m.ownedPaths.join(", ") || "none declared"}${m.error ? ` · error: ${m.error}` : ""}${m.available ? "" : ` · unavailable: ${m.reason}`}${ejectedText(m)}`,
 			),
+			...standing,
 			...(t.actions.length ? ["  Recent actions:", ...t.actions.slice(-10).map((a) => `    #${a.seq} ${a.source} ${a.kind} → ${a.workerId} (${a.role}): ${a.state}${a.reason ? ` — ${a.reason}` : ""}`)] : []),
-			"States are observations; accepted-or-queued never means executed.",
+			"States are observations; accepted-or-queued never means executed. Context is the last reply's size over the spawned model's window.",
 		].join("\n");
 	};
 	/** How a recipient can answer, by what it really has; MCP tools carry the server prefix. */
@@ -1391,18 +1823,24 @@ export function registerSubagents(
 			switch (request.type) {
 				case "message": {
 					if (!request.to || !request.message?.trim()) throw new Error("A message needs a recipient and non-blank text.");
+					const notice = request.notice;
+					if (notice && me.duty !== "monitor") throw new Error("Only the team's monitor sends notices.");
 					const broadcast = /^(all|\*)$/i.test(request.to);
 					const targets = broadcast ? info.siblings : [teams.resolveSibling(workerId, request.to)];
 					if (!targets.length) throw new Error("You have no teammates to message.");
+					if (notice === "pause") pausedTeams.add(info.team.id);
+					if (notice === "resume") pausedTeams.delete(info.team.id);
+					if (notice === "pause" || notice === "resume") appendTeamEvent(info.team.id, notice, me, `${notice} → ${targets.map((t) => t.role).join(", ")}: ${request.message.slice(0, 300)}`);
 					const outcomes = await Promise.all(targets.map(async (target) => {
 						const text = [
-							`[Team message from ${tag}${broadcast ? " to all members" : ""}]`,
+							notice ? `[Monitor notice: ${notice.toUpperCase()} — from ${tag}${broadcast ? " to all members" : ""}]` : `[Team message from ${tag}${broadcast ? " to all members" : ""}]`,
 							request.message!,
 							replyHint(target, me.role),
 						].join("\n");
-						const accepted = await deliverToMember(target, text, target.backend === "pi" ? undefined : "followUp", "member", "message", { kind: "message", from: me.role, fromId: me.workerId, text: request.message! });
+						const accepted = await deliverToMember(target, text, target.backend === "pi" ? undefined : "followUp", notice ? "monitor" : "member", notice ?? "message", { kind: "message", from: me.role, fromId: me.workerId, text: request.message! });
 						return { to: target.role, workerId: target.workerId, ok: accepted.ok, ...(accepted.ok ? {} : { reason: accepted.reason }) };
 					}));
+					if (notice === "wrap-up") recordWrapUps(info.team.id, targets, outcomes);
 					const lines = outcomes.map((o) => `${o.to} (${o.workerId}): ${o.ok ? "accepted or queued" : `failed — ${o.reason}`}`);
 					const failed = outcomes.filter((o) => !o.ok);
 					reply({
@@ -1424,13 +1862,27 @@ export function registerSubagents(
 					return;
 				}
 				case "roster": {
-					if (!me.orchestrator) throw new Error("team_roster is available to orchestrator members only.");
-					reply({ ok: true, text: rosterText(info.team.id) });
+					if (!me.orchestrator && me.duty !== "monitor") throw new Error("team_roster is available to orchestrator members only (and to the team's monitor).");
+					reply({ ok: true, text: rosterText(info.team.id, me) });
 					return;
 				}
 				case "question": {
 					if (!request.message?.trim()) throw new Error("A question must not be blank.");
+					if (me.duty === "monitor") throw new Error("The monitor never reaches the operator; tell the coordinator with team_msg.");
 					const question = request.message.length > QUESTION_CHARS ? `${request.message.slice(0, QUESTION_CHARS)}\n[truncated]` : request.message;
+					// A coordinated team's questions go to its routing coordinator; the operator hears only the coordinator's.
+					const routing = info.team.coordination ? teams.routingCoordinator(info.team.id, isLiveWorker) : undefined;
+					if (routing && routing.workerId !== me.workerId) {
+						const text = [
+							`[Team question from ${tag} — routed to you as coordinator]`,
+							question,
+							`Answer with team_msg to "${me.role}". If only the operator can decide, ask them with team_ask and relay the answer.`,
+						].join("\n");
+						const accepted = await deliverToMember(routing, text, "followUp", "member", "question", { kind: "message", from: me.role, fromId: me.workerId, text: question });
+						if (!accepted.ok) throw new Error(`Could not reach the coordinator ${routing.role}: ${accepted.reason}`);
+						reply({ ok: true, text: `Question delivered to your coordinator ${routing.role} (${routing.workerId}); the answer arrives as a new message in your session — continue with independent work or end your turn.` });
+						return;
+					}
 					const action = teams.recordAction(workerId, "question", "member", request.message);
 					if (!activeCtx || !["tui", "rpc"].includes(activeCtx.mode)) {
 						teams.settleAction(action, "failed", "no interactive parent session");
@@ -1457,6 +1909,55 @@ export function registerSubagents(
 					teams.settleAction(action, "accepted-or-queued");
 					scheduleRefresh();
 					reply({ ok: true, text: "Question surfaced to the operator; it starts a parent turn if the parent is idle. The answer arrives as a new message in your session — continue with independent work or end your turn." });
+					return;
+				}
+				case "report": {
+					if (me.duty !== "coordinator") throw new Error("Only the team's coordinator reports to the operator; report to the coordinator with team_msg.");
+					if (!request.message?.trim()) throw new Error("A report must not be blank.");
+					const report = request.message.length > QUESTION_CHARS ? `${request.message.slice(0, QUESTION_CHARS)}\n[truncated]` : request.message;
+					const action = teams.recordAction(workerId, "report", "orchestrator", request.message);
+					if (!activeCtx || !["tui", "rpc"].includes(activeCtx.mode)) {
+						teams.settleAction(action, "failed", "no interactive parent session");
+						throw new Error("The operator cannot be reached from this parent session mode; put the report in your final answer.");
+					}
+					pi.sendMessage(
+						{
+							customType: "team-report",
+							display: true,
+							content: [
+								`[Team report from coordinator ${me.role} (${me.workerId}), ${info.team.id} — ${info.team.name}${request.reportKind ? ` · ${request.reportKind}` : ""}]`,
+								report,
+								"",
+								"(Informational: no action is requested. The coordinator asks questions as team-question messages.)",
+							].join("\n"),
+						},
+						{ deliverAs: "followUp", triggerTurn: false },
+					);
+					teams.settleAction(action, "accepted-or-queued");
+					scheduleRefresh();
+					reply({ ok: true, text: "Report shown to the operator (a team-report message; it starts no turn and asks for nothing)." });
+					return;
+				}
+				case "succeed": {
+					if (me.duty !== "coordinator") throw new Error("Only the team's coordinator can start a successor.");
+					const routing = teams.routingCoordinator(info.team.id, isLiveWorker);
+					if (routing?.workerId !== me.workerId) throw new Error(`${routing ? `${routing.role} (${routing.workerId})` : "Another member"} is this team's coordinator now; only it starts successors.`);
+					if (!request.to?.trim()) throw new Error("team_succeed needs the role of the member to succeed.");
+					const text = await startSuccessor(me, info.team, request.to);
+					reply({ ok: true, text });
+					return;
+				}
+				case "ready": {
+					const h = handovers.get(me.workerId);
+					if (!h) throw new Error("No handover is pending for you; team_ready is only for a successor taking over.");
+					retire(h, "ready");
+					reply({ ok: true, text: `${h.oldRole} (${h.oldId}) is being retired; you now carry its work.` });
+					return;
+				}
+				case "nudge": {
+					if (me.duty !== "monitor" || !request.nudge) throw new Error("wake_nudge is the team monitor's tool.");
+					const out = handleNudge(me.workerId, request.nudge);
+					reply({ ok: true, text: out.text, details: out.details });
 					return;
 				}
 			}
@@ -1590,7 +2091,16 @@ export function registerSubagents(
 		let team: BatchRequest["team"];
 		if (manifest.team && teams.adoptHistoryTeam(manifest.team.teamId)) {
 			const teamName = teamViews().find((t) => t.id === manifest.team!.teamId)?.name ?? manifest.team.teamId;
-			team = { teamId: manifest.team.teamId, teamName, members: [{ role: manifest.team.role, orchestrator: manifest.team.orchestrator === true || launch.orchestrator === true }] };
+			// Its duty and routing come from the team's recorded members (a coordinator duty makes the team coordinated).
+			const recorded = teams.memberInfo(id);
+			const duty = recorded?.member.duty;
+			team = {
+				teamId: manifest.team.teamId, teamName,
+				members: [{
+					role: manifest.team.role, orchestrator: manifest.team.orchestrator === true || launch.orchestrator === true,
+					...(duty ? { duty } : {}), ...(recorded?.team.coordination && duty !== "coordinator" ? { coordinated: true } : {}),
+				}],
+			};
 			ensureMailbox();
 		}
 		// What it spent before: its listed entry's lifetime, or its off-branch view. An evicted
@@ -1632,6 +2142,7 @@ export function registerSubagents(
 			}
 			registry.resumed(worker);
 			restoredViews.delete(id);
+			wakeRejoinedMonitor(worker);
 			return worker;
 		} catch (error) {
 			if (!worker && current && !agents.some((a) => a.id === id)) insertWorker(current, groupLabel);
@@ -1641,8 +2152,12 @@ export function registerSubagents(
 			refresh();
 		}
 	};
-	const resumedText = (a: Worker) =>
-		`Resumed ${a.id} (${a.name}) idle in its own ${a.backend ?? "pi"} session ${a.sessionFile ?? a.sessionId ?? ""}; nothing was sent to it. Give it work with agent_steer.`;
+	const resumedText = (a: Worker) => {
+		const paused = pausedMonitorTeam(a.id);
+		return paused
+			? `Resumed ${a.id} (${a.name}) in its own ${a.backend ?? "pi"} session ${a.sessionFile ?? a.sessionId ?? ""}. It is the monitor of ${paused}, which is paused: it was sent its resume check, since its wake_nudges ended with the earlier parent.`
+			: `Resumed ${a.id} (${a.name}) idle in its own ${a.backend ?? "pi"} session ${a.sessionFile ?? a.sessionId ?? ""}; nothing was sent to it. Give it work with agent_steer.`;
+	};
 	pi.registerTool({
 		name: "agent_resume",
 		label: "Resume Subagent",
@@ -1960,43 +2475,240 @@ export function registerSubagents(
 		},
 	});
 
+	const MEMBER_TOOLS_NOTE =
+		"Members have team_msg/team_inbox/team_ask (messages to teammates are delivered by this extension; questions arrive here as team-question messages — answer them with agent_steer on that worker ID). An orchestrator member also has team_roster/team_steer over its own team. Claude members get the same tools from an MCP server (mcp__team__<tool>).";
+	/** In a coordinated team the generic question paragraph is wrong: members ask the coordinator. */
+	const COORDINATED_TOOLS_NOTE =
+		"Members have team_msg/team_inbox/team_ask, but their team_ask questions go to the coordinator, not to you: only the coordinator's team_ask (a team-question message; answer with agent_steer on its worker ID) and team_report (informational) reach the main thread. The coordinator also has team_roster/team_steer/team_succeed over this team; the monitor has team_roster and wake_nudge. Claude members get the same tools from an MCP server (mcp__team__<tool>).";
+	/** Q6: the main thread cut a team short by stopping its coordinator and monitor while a member still worked. */
+	const KEEP_DUTIES_NOTE =
+		"Do not stop (agent_kill) the coordinator or the monitor while any member is still working: the coordinator routes the team's reports and successions and the monitor watches context and usage. Once no member is working, stopping them is fine.";
 	const TEAM_NOTES = [
 		"Declared ownership is advisory, not a lock; members share the filesystem.",
-		"Members have team_msg/team_inbox/team_ask (messages to teammates are delivered by this extension; questions arrive here as team-question messages — answer them with agent_steer on that worker ID). An orchestrator member also has team_roster/team_steer over its own team. Claude members get the same tools from an MCP server (mcp__team__<tool>).",
+		MEMBER_TOOLS_NOTE,
 		"Steer or stop members with agent_steer/agent_kill using exact worker IDs; team_list shows roles beside actual status. No member can spawn, add or stop workers.",
 		`A team seats ${MAX_TEAM_MEMBERS} members; team_eject releases an ended member's seat (its role stays taken).`,
 		"Members are session-scoped: reload, session switch or quit stops them; agent_resume brings one back idle, rejoining its team.",
 	];
 	/** Runs inside spawnBatch before publication, so a failure rolls the batch back. */
-	const memberRecords = (members: readonly { role: string; ownedPaths: string[]; orchestrator: boolean }[], group: AgentGroup, addedAt: number): PersistedMember[] =>
+	const memberRecords = (members: readonly { role: string; ownedPaths: string[]; orchestrator: boolean; duty?: MemberDuty; successorOfId?: string }[], group: AgentGroup, addedAt: number): PersistedMember[] =>
 		group.agents.map((a, i) => ({
 			workerId: a.id,
 			role: members[i].role,
 			ownedPaths: [...members[i].ownedPaths],
 			...(members[i].orchestrator ? { orchestrator: true } : {}),
+			...(members[i].duty ? { duty: members[i].duty } : {}),
+			...(members[i].successorOfId ? { successorOf: members[i].successorOfId } : {}),
 			backend: a.backend ?? "pi",
 			...(a.model === undefined ? {} : { model: a.model }),
 			groupId: group.id,
 			addedAt,
 		}));
 	/** Membership for spawnBatch; creating the mailbox root here keeps ad hoc workers free of it. */
-	const teamRequest = (teamId: string, teamName: string, members: readonly { role: string; orchestrator: boolean }[]): NonNullable<BatchRequest["team"]> => {
+	const teamRequest = (teamId: string, teamName: string, members: readonly TeamIdentity[]): NonNullable<BatchRequest["team"]> => {
 		ensureMailbox();
-		return { teamId, teamName, members: members.map((m) => ({ role: m.role, orchestrator: m.orchestrator })) };
+		return {
+			teamId, teamName,
+			members: members.map((m) => ({
+				role: m.role, orchestrator: m.orchestrator, ...(m.duty ? { duty: m.duty } : {}),
+				...(m.coordinated ? { coordinated: true } : {}), ...(m.successorOf ? { successorOf: m.successorOf } : {}),
+			})),
+		};
 	};
-	const teamSpawnResult = (headline: string, teamId: string, group: AgentGroup, members: readonly PersistedMember[]) => result(
-		[
-			headline,
-			...group.agents.map((a, i) =>
-				`${a.id}  ${members[i].role}${members[i].orchestrator ? " (orchestrator)" : ""}  ${a.status}  backend=${a.backend ?? "pi"}  model=${a.model ?? "child default"}  effort=${a.effort ?? "default"}  owns=${members[i].ownedPaths.join(",") || "none declared"}${a.wake ? "" : "  wake=false"}`,
-			),
-			...TEAM_NOTES,
-			group.agents.some((a) => a.wake)
-				? "Each member with wake (the default) starts a turn for you when it settles while you are idle, so you can simply end this turn."
-				: "wake=false: results arrive with your next turn; use agent_wait if you need them sooner.",
-		].join("\n"),
-		{ teamId, groupId: group.id, members: group.agents.map((a, i) => ({ workerId: a.id, role: members[i].role, backend: a.backend ?? "pi", model: a.model, ...(members[i].orchestrator ? { orchestrator: true } : {}) })) },
-	);
+	const teamSpawnResult = (headline: string, teamId: string, group: AgentGroup, members: readonly PersistedMember[], extra: readonly string[] = []) => {
+		const coordinated = members.some((m) => m.duty === "coordinator") || Boolean(teams.memberInfo(members[0]?.workerId ?? "")?.team.coordination);
+		return result(
+			[
+				headline,
+				...extra,
+				...group.agents.map((a, i) =>
+					`${a.id}  ${members[i].role}${dutyMark(members[i])}  ${a.status}  backend=${a.backend ?? "pi"}  model=${a.model ?? "child default"}  effort=${a.effort ?? "default"}  owns=${members[i].ownedPaths.join(",") || "none declared"}${a.wake ? "" : "  wake=false"}`,
+				),
+				...(coordinated ? TEAM_NOTES.map((note) => (note === MEMBER_TOOLS_NOTE ? COORDINATED_TOOLS_NOTE : note)) : TEAM_NOTES),
+				coordinated
+					? `Coordinated team: only the coordinator reaches you — its completion (once no teammate is working), team_report messages (informational) and team-question messages. Other members report to it; you can simply end this turn. ${KEEP_DUTIES_NOTE}`
+					: group.agents.some((a) => a.wake)
+						? "Each member with wake (the default) starts a turn for you when it settles while you are idle, so you can simply end this turn."
+						: "wake=false: results arrive with your next turn; use agent_wait if you need them sooner.",
+			].join("\n"),
+			{ teamId, groupId: group.id, members: group.agents.map((a, i) => ({ workerId: a.id, role: members[i].role, backend: a.backend ?? "pi", model: a.model, ...(members[i].orchestrator ? { orchestrator: true } : {}), ...(members[i].duty ? { duty: members[i].duty } : {}) })) },
+		);
+	};
+	/** team_add's spawn path, shared with team_succeed: validated, persisted and committed as one batch. */
+	const addPrepared = async (ctx: ExtensionContext, prepared: ReturnType<TeamStore["prepareAdd"]>, signal?: AbortSignal) => {
+		const addedAt = Date.now();
+		let members: PersistedMember[] = [];
+		const group = await spawnBatch(ctx, {
+			specs: prepared.members.map((m) => m.spec as Spec),
+			groupLabel: `${prepared.teamId} · ${prepared.name}`,
+			team: teamRequest(prepared.teamId, prepared.name, prepared.members),
+			beforeCommit: (group) => {
+				members = memberRecords(prepared.members, group, addedAt);
+				pi.appendEntry(TEAM_ENTRY_TYPE, teams.addEntry(prepared, members));
+				teams.commitAdd(prepared, members);
+				for (const entry of teams.assignmentEntries(prepared.teamId, members)) persistAssignment(entry);
+			},
+		}, signal);
+		return { group, members };
+	};
+	/** A coordinated team's coordinator learns of members the main thread adds, with their assignments. */
+	const tellCoordinatorOfAdditions = async (teamId: string, members: readonly PersistedMember[], tasks: readonly string[]): Promise<string | undefined> => {
+		const routing = teams.routingCoordinator(teamId, isLiveWorker);
+		const added = members.map((m, i) => ({ m, task: tasks[i] })).filter(({ m }) => !m.duty && m.workerId !== routing?.workerId);
+		if (!routing || !added.length) return undefined;
+		const text = [
+			`[Team change from the main thread, ${teamId}: ${added.length} member(s) added — their assignments are legitimate work for you to route, not to replace]`,
+			...added.flatMap(({ m, task }) => [`- ${m.role} (${m.workerId}), owns: ${m.ownedPaths.join(", ") || "none declared"}`, ...assignmentText(task ?? "", m.role).split("\n").map((line) => `  | ${line}`)]),
+			"team_roster lists every assignment.",
+		].join("\n");
+		const accepted = await deliverToMember(routing, text, "followUp", "parent", "message", { kind: "instruction", from: "main thread", fromId: "parent", text });
+		return accepted.ok
+			? `Coordinator ${routing.role} (${routing.workerId}) was told about the new member(s) and their assignments.`
+			: `Warning: could not tell coordinator ${routing.role} (${routing.workerId}) about the new member(s): ${accepted.reason}`;
+	};
+	/**
+	 * team_succeed: the successor of one member (the coordinator itself included) on the same
+	 * backend, model, effort, tools, system prompt, cwd, backend options, ownership and duty,
+	 * named <base>-<n+1>. A monitor (no note) or an ended member is succeeded at once. A live
+	 * worker is first told to write its handover note and end its turn; its successor starts only
+	 * once the note exists and that turn has ended, or at the retire timeout (successionCheck,
+	 * finishSuccession). The old member is retired on team_ready or at the timeout, both read from
+	 * team-defaults.json now.
+	 */
+	const startSuccessor = async (me: PersistedMember, team: { id: string; name: string }, ref: string): Promise<string> => {
+		const trimmed = ref.trim();
+		const target = trimmed === me.workerId || trimmed.toLowerCase() === me.role.toLowerCase() ? me : teams.resolveSibling(me.workerId, trimmed);
+		if (pendingSuccessions.has(target.workerId) || [...handovers.values()].some((h) => h.oldId === target.workerId))
+			throw new Error(`A successor for ${target.role} is already taking over; wait for its team_ready.`);
+		if ([...handovers.values()].some((h) => h.newId === target.workerId)) throw new Error(`${target.role} is itself still taking over; wait for its team_ready first.`);
+		if (!activeCtx) throw new Error("The parent session is not ready; retry shortly.");
+		const state = readTeamDefaults(agentDir());
+		const retireMinutes = (state.state === "ok" ? state.value.handover.retireTimeoutMinutes : undefined) ?? 10;
+		const note = path.join(teams.memberInfo(me.workerId)!.team.coordination!.handoffDir, `${roleSlug(target.role)}.md`);
+		if (target.duty === "monitor") return (await spawnSuccessor(team, target, me, note, retireMinutes)).text;
+		if (!isLiveWorker(target.workerId)) return (await spawnSuccessor(team, target, me, note, retireMinutes, fs.existsSync(note) ? undefined : `${target.role} had already ended without writing it`)).text;
+		const p: PendingSuccession = { team: { id: team.id, name: team.name }, coordinatorId: me.workerId, target, note, retireMinutes };
+		pendingSuccessions.set(target.workerId, p);
+		const self = target.workerId === me.workerId;
+		const instruction = `Finish the step you are in, then write or update your handover note at ${note} (state, decisions, what is done, open work, files touched), do no new work, and end your turn. Your successor starts once the note exists and your turn has ended (at the latest in ${retireMinutes} min); then answer its team_msg questions. You are retired when it confirms with team_ready, or ${retireMinutes} min after it starts.`;
+		if (!self) {
+			const text = [`[Handover from coordinator ${me.role} (${me.workerId}), ${team.id}]`, `Your context is running out and a successor will take over your work. ${instruction}`].join("\n");
+			const told = await deliverToMember(target, text, "followUp", "orchestrator", "handover", { kind: "instruction", from: me.role, fromId: me.workerId, text });
+			if (!told.ok) {
+				// Nobody to write a note: start the successor now, told the note may be missing.
+				pendingSuccessions.delete(target.workerId);
+				return (await spawnSuccessor(team, target, me, note, retireMinutes, `${target.role} could not be told to write it (${told.reason})`)).text;
+			}
+		} else {
+			teams.settleAction(teams.recordAction(target.workerId, "handover", "orchestrator", instruction), "accepted-or-queued");
+		}
+		p.timer = coordinationTimer(() => void finishSuccession(p, "timeout"), retireMinutes * 60_000);
+		scheduleRefresh();
+		return self
+			? `Handover started for you, ${target.role} (${target.workerId}): ${instruction}`
+			: `Handover started: ${target.role} (${target.workerId}) was told to write its handover note at ${note} and end its turn. Its successor starts once the note exists and that turn has ended, or after ${retireMinutes} min at the latest; a message here names it then.`;
+	};
+	/** The old member settled or ended: start its successor if the note is there (or it can write no more). */
+	const successionCheck = (a: Worker) => {
+		const p = pendingSuccessions.get(a.id);
+		if (!p) return;
+		if (a.isFinished()) void finishSuccession(p, "ended");
+		else if (a.isSettled() && fs.existsSync(p.note)) void finishSuccession(p, "note");
+	};
+	/** Start a pending successor and tell the routing coordinator what happened. */
+	const finishSuccession = async (p: PendingSuccession, why: "note" | "ended" | "timeout") => {
+		if (pendingSuccessions.get(p.target.workerId) !== p) return;
+		pendingSuccessions.delete(p.target.workerId);
+		if (p.timer) clearTimeout(p.timer);
+		if (shuttingDown) return;
+		const missing = fs.existsSync(p.note)
+			? undefined
+			: why === "timeout"
+				? `${p.target.role} had not written it ${p.retireMinutes} min after it was asked to`
+				: `${p.target.role} ended without writing it`;
+		let text: string;
+		let successorId: string | undefined;
+		try {
+			const coordinator = teams.memberInfo(p.coordinatorId)?.member ?? p.target;
+			const started = await spawnSuccessor(p.team, p.target, coordinator, p.note, p.retireMinutes, missing);
+			text = started.text;
+			successorId = started.successorId;
+		} catch (error) {
+			const reason = error instanceof Error ? error.message : String(error);
+			text = `Could not start a successor for ${p.target.role} (${p.target.workerId}): ${reason}. Call team_succeed again to retry.`;
+			teams.settleAction(teams.recordAction(p.target.workerId, "handover", "system", text), "failed", reason);
+			scheduleRefresh();
+		}
+		const routing = teams.routingCoordinator(p.team.id, isLiveWorker);
+		if (!routing || routing.workerId === successorId) return;
+		const body = [`[Handover in ${p.team.id}: ${why === "note" ? "the note is written" : why === "ended" ? `${p.target.role} ended` : "timed out waiting for the note"}]`, text].join("\n");
+		await deliverToMember(routing, body, "followUp", "system", "message", { kind: "instruction", from: "parent", fromId: "parent", text: body }).catch(() => undefined);
+	};
+	/** Spawn the successor itself; `missing` says why its predecessor's note may not be there. */
+	const spawnSuccessor = async (
+		team: { id: string; name: string }, target: PersistedMember, me: PersistedMember, note: string, retireMinutes: number, missing?: string,
+	): Promise<{ text: string; successorId: string }> => {
+		if (!activeCtx) throw new Error("The parent session is not ready; retry shortly.");
+		const old = agents.find((a) => a.id === target.workerId);
+		const launch = old ? launches.get(old) : undefined;
+		const state = readTeamDefaults(agentDir());
+		const defaults = state.state === "ok" ? state.value : undefined;
+		const role = successorRole(target.role, teams.roles(team.id), MAX_LABEL_CHARS);
+		const model = launch?.model ?? target.model;
+		const monitor = target.duty === "monitor";
+		const oldLive = isLiveWorker(target.workerId);
+		// The coordinator keeps seeing the work the main thread assigned, and its later steers, under the successor's role.
+		const assignment = teams.taskOf(target.workerId);
+		const { steers, omitted } = teams.steersOf(target.workerId);
+		const input: TeamMemberInput = {
+			role,
+			prompt: monitor
+				? monitorSuccessorTask(target.role, target.workerId)
+				: workerSuccessorTask({ oldRole: target.role, oldId: target.workerId, note, oldLive, ...(missing ? { missing } : {}), ...(assignment ? { assignment } : {}), steers, steersOmitted: omitted }),
+			...(assignment ? { assignment } : {}),
+			ownedPaths: [...target.ownedPaths],
+			...(target.orchestrator ? { orchestrator: true } : {}),
+			backend: target.backend,
+			...(model === undefined ? {} : { model }),
+			...((launch?.effort ?? old?.effort) ? { effort: launch?.effort ?? old?.effort } : {}),
+			...(launch?.tools === undefined ? {} : { tools: [...launch.tools] }),
+			...(launch?.systemPrompt === undefined ? {} : { systemPrompt: launch.systemPrompt }),
+			...(launch?.cwd === undefined ? {} : { cwd: launch.cwd }),
+			...(launch?.backendOptions === undefined ? {} : { backendOptions: launch.backendOptions }),
+			...(target.duty ? { duty: target.duty } : {}),
+			successorOf: target.role,
+			successorOfId: target.workerId,
+		};
+		const prepared = teams.prepareAdd(team.id, [input], observeWorker, defaults);
+		let added: Awaited<ReturnType<typeof addPrepared>>;
+		try {
+			added = await addPrepared(activeCtx, prepared);
+		} finally {
+			prepared.release();
+		}
+		const successor = added.group.agents[0];
+		const detail = `successor ${role} (${successor.id}) on ${target.backend}/${model ?? "default model"}; retire on team_ready or after ${retireMinutes} min`;
+		appendTeamEvent(team.id, "handover", target, detail);
+		if (isLiveWorker(target.workerId)) {
+			const h: Handover = { teamId: team.id, oldId: target.workerId, oldRole: target.role, newId: successor.id, newRole: role };
+			h.timer = coordinationTimer(() => retire(h, "timeout"), retireMinutes * 60_000);
+			handovers.set(successor.id, h);
+			const text = [
+				`[Handover from coordinator ${me.role} (${me.workerId}), ${team.id}]`,
+				monitor
+					? `Your successor ${role} (${successor.id}) is starting. You have no handover note: brief it with team_msg now (your pending wake_nudges and when they fire, notices you sent, whether a usage pause is in force and when its window resets), answer its questions, and run no further checks. You are retired when it confirms with team_ready, or after ${retireMinutes} min.`
+					: `Your successor ${role} (${successor.id}) has started and is reading your handover note at ${note}${missing ? " (it may be missing: write it now if you can)" : ""}. Answer its team_msg questions and do no new work. You are retired when it confirms with team_ready, or after ${retireMinutes} min.`,
+			].join("\n");
+			const told = await deliverToMember(target, text, "followUp", monitor ? "orchestrator" : "system", "handover", { kind: "instruction", from: me.role, fromId: me.workerId, text });
+			if (!told.ok) teams.settleAction(teams.recordAction(target.workerId, "handover", "orchestrator", detail), "failed", told.reason);
+		} else {
+			teams.settleAction(teams.recordAction(target.workerId, "handover", "orchestrator", detail), "accepted-or-queued", "old member already ended; nothing to retire");
+		}
+		scheduleRefresh();
+		const effort = launch?.effort ?? old?.effort;
+		const text = `Started ${role} (${successor.id}) to succeed ${target.role} (${target.workerId}) on ${target.backend}/${model ?? "default model"}${effort ? `/${effort}` : ""}. ${isLiveWorker(target.workerId) ? `${target.role} was told to brief it; it is retired when ${role} calls team_ready, or after ${retireMinutes} min.` : `${target.role} has already ended; the successor works from the handover note.`}${missing ? ` The note may be missing (${missing}); the successor was told so.` : ""}`;
+		return { text, successorId: successor.id };
+	};
 	pi.registerTool({
 		name: "team_create",
 		label: "Create Team",
@@ -2007,6 +2719,8 @@ export function registerSubagents(
 			"Use team_create when the user wants a coordinated team with distinct roles and ownership; use agent_spawn for ad hoc independent workers.",
 			"team_create ownership is advisory: members share the filesystem, and each settled member with wake=true starts a parent turn. Members (pi or Claude) can message teammates (team_msg) and ask you questions (team_ask); answer a team-question message with agent_steer on that worker ID.",
 			"Set orchestrator: true on one member (pi or claude-code) when the team should coordinate itself: it can see the roster and steer siblings by role, but never spawn or stop anyone; you keep the authority to add/stop members.",
+			"When ~/.pi/agent/team-defaults.json is valid, team_create itself adds a coordinator (your orchestrator member becomes it if you named one) and a monitor; only the coordinator then reaches you (completions, team-report messages that ask for nothing, team-question messages). Pass defaults.coordinator: false or defaults.monitor: false only when the user asks for a team without them. /team defaults shows the file's effect.",
+			"Never stop a coordinated team's coordinator or monitor while any of its members is still working (check team_list), even when the coordinator reports the objective complete; stopping them once no member is working is fine.",
 			"Use team_add to extend a team created in this session and team_list to see roles beside actual worker status; steer and stop members with agent_steer and agent_kill by exact worker ID; team_eject releases an ended member's seat when the team is full.",
 		],
 		parameters: Type.Object(
@@ -2022,23 +2736,56 @@ export function registerSubagents(
 			context(ctx);
 			signal?.throwIfAborted();
 			checkTeamKeys(params.members, params.defaults);
-			const prepared = teams.prepareCreate(params);
+			// Team defaults (team-defaults.json), read now: a coordinator and a monitor, enforced here.
+			const { coordinator: coordinatorSwitch, monitor: monitorSwitch, ...storeDefaults } = params.defaults ?? {};
+			const plan = planTeamDefaults(readTeamDefaults(agentDir()), params.members, { coordinator: coordinatorSwitch, monitor: monitorSwitch });
+			const lines = [...(plan.warning ? [plan.warning] : []), ...plan.notes];
+			const members: TeamMemberInput[] = params.members.map((m: TeamMemberInput) => ({ ...m }));
+			if (plan.existingCoordinator !== undefined) members[plan.existingCoordinator].duty = "coordinator";
+			if (plan.synthesizeCoordinator) {
+				const c = plan.synthesizeCoordinator;
+				const pick = pickTuple(ctx, "coordinator", c.role, c.primary, c.fallback);
+				members.unshift(synthesizedMember("coordinator", c.role, pick.tuple));
+				lines.push(pick.line);
+			}
+			if (plan.synthesizeMonitor) {
+				const m = plan.synthesizeMonitor;
+				const pick = pickTuple(ctx, "monitor", m.role, m.primary, m.fallback);
+				members.push(synthesizedMember("monitor", m.role, pick.tuple));
+				lines.push(pick.line);
+			}
+			if (members.length > MAX_BATCH)
+				throw new Error(`Team defaults add ${members.length - params.members.length} member(s) (coordinator/monitor), making ${members.length}; at most ${MAX_BATCH} members start per call. Create the team with fewer members and team_add the rest.`);
+			const prepared = teams.prepareCreate({
+				name: params.name, objective: params.objective, members,
+				...(Object.keys(storeDefaults).length ? { defaults: storeDefaults } : {}),
+				...(plan.coordination ? { coordination: plan.coordination } : {}),
+			});
 			try {
+				if (prepared.coordination) {
+					try {
+						fs.mkdirSync(prepared.coordination.handoffDir, { recursive: true });
+					} catch (error) {
+						lines.push(`Warning: could not create the handover directory ${prepared.coordination.handoffDir}: ${(error as Error).message}`);
+					}
+				}
 				const createdAt = Date.now();
-				let members: PersistedMember[] = [];
+				let persisted: PersistedMember[] = [];
 				const group = await spawnBatch(ctx, {
 					specs: prepared.members.map((m) => m.spec as Spec),
 					groupLabel: `${prepared.teamId} · ${prepared.name}`,
 					team: teamRequest(prepared.teamId, prepared.name, prepared.members),
 					beforeCommit: (group) => {
-						members = memberRecords(prepared.members, group, createdAt);
-						pi.appendEntry(TEAM_ENTRY_TYPE, teams.createEntry(prepared, createdAt, members));
-						teams.commitCreate(prepared, createdAt, members);
+						persisted = memberRecords(prepared.members, group, createdAt);
+						pi.appendEntry(TEAM_ENTRY_TYPE, teams.createEntry(prepared, createdAt, persisted));
+						teams.commitCreate(prepared, createdAt, persisted);
+						for (const entry of teams.assignmentEntries(prepared.teamId, persisted)) persistAssignment(entry);
 					},
 				}, signal);
 				return teamSpawnResult(
 					`Created ${prepared.teamId} (${prepared.name}) with ${group.agents.length} member(s) in ${group.id}. Task acceptance is asynchronous; inspect status for startup failures.`,
-					prepared.teamId, group, members,
+					prepared.teamId, group, persisted,
+					[...lines, ...(prepared.coordination ? [`Handover notes: ${prepared.coordination.handoffDir}`] : [])],
 				);
 			} finally {
 				prepared.release();
@@ -2058,23 +2805,16 @@ export function registerSubagents(
 			context(ctx);
 			signal?.throwIfAborted();
 			checkTeamKeys(params.members);
-			const prepared = teams.prepareAdd(params.team, params.members, observeWorker);
+			// Re-read now: a coordinated team's new members get the current standing text; a malformed file is reported.
+			const state = readTeamDefaults(agentDir());
+			const prepared = teams.prepareAdd(params.team, params.members, observeWorker, state.state === "ok" ? state.value : undefined);
 			try {
-				const addedAt = Date.now();
-				let members: PersistedMember[] = [];
-				const group = await spawnBatch(ctx, {
-					specs: prepared.members.map((m) => m.spec as Spec),
-					groupLabel: `${prepared.teamId} · ${prepared.name}`,
-					team: teamRequest(prepared.teamId, prepared.name, prepared.members),
-					beforeCommit: (group) => {
-						members = memberRecords(prepared.members, group, addedAt);
-						pi.appendEntry(TEAM_ENTRY_TYPE, teams.addEntry(prepared, members));
-						teams.commitAdd(prepared, members);
-					},
-				}, signal);
+				const { group, members } = await addPrepared(ctx, prepared, signal);
+				const told = await tellCoordinatorOfAdditions(prepared.teamId, members, prepared.members.map((m) => m.task));
 				return teamSpawnResult(
 					`Added ${group.agents.length} member(s) to ${prepared.teamId} (${prepared.name}) in ${group.id}. Task acceptance is asynchronous; inspect status for startup failures.`,
 					prepared.teamId, group, members,
+					[...(state.state === "malformed" ? [malformedWarning(state)] : []), ...(told ? [told] : [])],
 				);
 			} finally {
 				prepared.release();
@@ -2119,13 +2859,22 @@ export function registerSubagents(
 			const text = selected.map((t) => [
 				`${t.id} — ${t.name} [${t.origin === "history" ? "history, read-only" : "this session"}] · ${countsText(t)}`,
 				`Objective: ${t.objective}`,
+				...(t.coordinated ? [`Coordinated (team defaults): members report to the coordinator; only it reaches you. ${KEEP_DUTIES_NOTE}`] : []),
 				...t.members.map((m) =>
-					`  ${m.workerId} ${m.role}${m.orchestrator ? " (orchestrator)" : ""} [${m.backend}] ${m.state}${m.status ? ` (${m.status}${m.taskOutcome ? `/${m.taskOutcome}` : ""})` : ""} · owns: ${m.ownedPaths.join(", ") || "none declared"}${m.error ? ` · error: ${m.error}` : ""}${m.available ? "" : ` · unavailable: ${m.reason}`}${ejectedText(m)}`,
+					`  ${m.workerId} ${m.role}${dutyMark(m)} [${m.backend}] ${m.state}${m.status ? ` (${m.status}${m.taskOutcome ? `/${m.taskOutcome}` : ""})` : ""}${m.available ? ` · ${memberContext(m)}` : ""} · owns: ${m.ownedPaths.join(", ") || "none declared"}${m.error ? ` · error: ${m.error}` : ""}${m.available ? "" : ` · unavailable: ${m.reason}`}${ejectedText(m)}`,
 				),
 				...(t.actions.length ? ["  Recent actions:", ...t.actions.slice(-10).map((a) => `    #${a.seq} ${a.source} ${a.kind} → ${a.workerId} (${a.role}): ${a.state}${a.reason ? ` — ${a.reason}` : ""}`)] : []),
 			].join("\n"));
+			// N6: where members' questions go depends on whether the team is coordinated.
+			const coordinatedCount = selected.filter((t) => t.coordinated).length;
+			const toolsNote = coordinatedCount === 0
+				? MEMBER_TOOLS_NOTE
+				: coordinatedCount === selected.length
+					? COORDINATED_TOOLS_NOTE
+					: `Teams without a coordinator: ${MEMBER_TOOLS_NOTE} Coordinated teams: ${COORDINATED_TOOLS_NOTE}`;
+			const notes = TEAM_NOTES.map((note) => (note === MEMBER_TOOLS_NOTE ? toolsNote : note));
 			return result(
-				[retentionNotice(), text.length ? `${text.join("\n\n")}\n\n${TEAM_NOTES.join(" ")}` : "No teams in this session or on this branch."].filter(Boolean).join("\n\n"),
+				[retentionNotice(), text.length ? `${text.join("\n\n")}\n\n${notes.join(" ")}` : "No teams in this session or on this branch."].filter(Boolean).join("\n\n"),
 				{ teams: selected },
 			);
 		},
@@ -2314,8 +3063,20 @@ export function registerSubagents(
 			"- Obey the team tool descriptions, schemas and limits. All members share one filesystem; ownership does not protect files.",
 			"- Members can message teammates with team_msg (this extension delivers it) and ask you questions with team_ask (they arrive as team-question messages; answer with agent_steer on that worker ID); Claude members have the same tools through an MCP server. Give one member (pi or claude-code) orchestrator: true if the team should coordinate itself: it can see the roster and steer siblings by role but never spawn or stop anyone. You remain the authority, and each member's final answer is its report.",
 			"- When you present the plan, report the defaults and their cost: members default to the pi backend inheriting the parent model/effort (agent_models resolves exact IDs, including Claude's), and every member with wake=true (the default) starts a parent turn — which costs tokens on the parent model — when it settles. State how many wakes this team will cause, or propose wake: false to batch results into your next turn.",
+			...teamDefaultsPlanLines(),
 			"Do not start the objective's work yourself before the team exists; the /team workspace and team_list show the roster.",
 		].join("\n");
+	/** The planning message's view of team-defaults.json, read now. */
+	const teamDefaultsPlanLines = (): string[] => {
+		const state = readTeamDefaults(agentDir());
+		if (state.state === "absent") return [];
+		if (state.state === "malformed") return [`- Team defaults are off: ${state.file} is malformed (team_create will say so).`];
+		const { coordinator: c, monitor: m } = state.value;
+		if (!c.enabled) return [];
+		return [
+			`- Team defaults are on: team_create adds a coordinator "${c.role}" (${c.primary.backend}/${c.primary.model}) unless one member has orchestrator: true (then that member is the coordinator)${m.enabled ? `, and a monitor "${m.role}" (${m.primary.backend}/${m.primary.model}) that watches context and usage` : ""}. Do not plan those roles yourself. Every other member reports to the coordinator, and only the coordinator reaches you. The user can opt out per team (defaults.coordinator: false / defaults.monitor: false). Synthesized members count toward the ${MAX_BATCH}-per-call limit.`,
+		];
+	};
 	/** Objective text for a planning message: bounded, control-free (newlines/tabs kept). */
 	const planObjective = (args: string): string => {
 		const cleaned = args.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/g, " ").trim();
@@ -2332,8 +3093,16 @@ export function registerSubagents(
 	// idle. The workspace stays strictly opt-in (bare /team).
 	pi.registerCommand("team", {
 		description:
-			"Open the team workspace, or /team <objective> to ask the parent agent to plan and create the team with team_create/team_add",
+			"Open the team workspace, /team <objective> to ask the parent agent to plan and create the team with team_create/team_add, or /team defaults to show the team defaults in effect",
+		getArgumentCompletions: (prefix: string) => ("defaults".startsWith(prefix.trim().toLowerCase()) && prefix.trim() ? [{ value: "defaults", label: "defaults", description: "Show the team defaults (coordinator, monitor) in effect" }] : null),
 		handler: async (args: string, ctx: ExtensionContext) => {
+			if (args.trim().toLowerCase() === "defaults") {
+				// Read-only: what team_create would apply now. Nothing is sent and no turn starts.
+				const text = describeTeamDefaults(readTeamDefaults(agentDir()));
+				if (ctx.hasUI) ctx.ui.notify(text, "info");
+				else console.log(text);
+				return;
+			}
 			const objective = planObjective(args);
 			if (!objective) return openTeam(ctx);
 			const idle = typeof (ctx as { isIdle?: () => boolean }).isIdle === "function" ? ctx.isIdle() : true;
@@ -2421,7 +3190,10 @@ export function registerSubagents(
 					group.agents.push(worker);
 					agents.push(worker);
 					registry.resume(worker);
-					if (meta.team && teams.adoptHistoryTeam(meta.team.teamId)) ensureMailbox();
+					if (meta.team && teams.adoptHistoryTeam(meta.team.teamId)) {
+						ensureMailbox();
+						wakeRejoinedMonitor(worker);
+					}
 				}
 			} finally {
 				adopting = undefined;
@@ -2458,6 +3230,9 @@ export function registerSubagents(
 		// IDs are reserved across every branch; displayed history only from the active one.
 		teams.reserveCounter(ctx.sessionManager.getEntries());
 		teams.restoreHistory(ctx.sessionManager.getBranch?.() ?? []);
+		// A paused team stays paused across a reload: its resume check must still fire while it is idle.
+		pausedTeams.clear();
+		for (const teamId of pausedTeamsFrom(ctx.sessionManager.getBranch?.() ?? [])) pausedTeams.add(teamId);
 		hosting.setOwner(ctx.sessionManager.getSessionId?.(), ctx.sessionManager.getSessionFile?.());
 		// Asynchronous (transcript reads): earlier processes' workers appear once read.
 		void restoreWorkers(ctx).catch(() => { /* Best effort: the records stay for the next start. */ });
@@ -2495,6 +3270,7 @@ export function registerSubagents(
 		if (refreshTimer) clearTimeout(refreshTimer);
 		if (mailboxTimer) clearInterval(mailboxTimer);
 		mailboxTimer = undefined;
+		clearCoordinationTimers();
 		try {
 			teamWidget?.clear();
 		} catch {

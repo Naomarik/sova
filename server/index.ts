@@ -34,6 +34,7 @@ import { isExplanationId, listExplanations, readExplanationPage } from "./explan
 import { switchMode } from "./mode";
 import { cachedClaudeModels, delegateInfo, delegateOptions, saveDelegateSettings, type DelegateSources } from "./delegate";
 import { saveSpecSettings, specInfo, specOptions } from "./spec-settings";
+import { saveTeamDefaults, teamDefaultsInfo, teamOptions } from "./team-defaults";
 import { readModelPolicy, writeModelPolicy } from "./model-policy";
 import { listThemes } from "./themes";
 import { listPlaybooks } from "./playbooks";
@@ -538,6 +539,22 @@ app.put("/api/settings/spec", async (c) => {
   }
   const result = await saveSpecSettings(body, delegateSources);
   return "error" in result ? c.json({ error: result.error }, 400) : c.json(result);
+});
+
+// Settings → Teams: the coordinator and monitor every new team gets. The file is the subagents
+// extension's; it reads it when a team is created, so a save applies to teams created after it.
+// Discovery and the save check are Delegate's; a file that can't be read is never overwritten (409).
+app.get("/api/settings/team", (c) => c.json(teamDefaultsInfo()));
+app.get("/api/settings/team/options", async (c) => c.json(await teamOptions(delegateSources)));
+app.put("/api/settings/team", async (c) => {
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "Expected JSON body { version: 1, coordinator, monitor, handover }" }, 400);
+  }
+  const result = await saveTeamDefaults(body, delegateSources);
+  return c.json(result.body, result.status);
 });
 
 // Settings → Decisions: the decision seam's providers (Jev, a fallback model) and the two features

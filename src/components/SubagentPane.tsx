@@ -3,7 +3,7 @@ import type { ContextInfo, TeamInfo, TeamMember, TranscriptItem, WatchServerMess
 import { ApiError, claudeWatchUrl, resumeWorker, wsUrl } from "../lib/api";
 import { hostOf } from "../lib/mesh";
 import { clockTime, compactModel, shortModel } from "../lib/format";
-import { memberStatus } from "../lib/insights";
+import { memberBadges, memberStatus, newestEventLine } from "../lib/insights";
 import { createReconnectingSocket } from "../lib/socket";
 import { formatTokens } from "../lib/context";
 import { asOfClock, capTitle, ringContext, sortWorkers, sourceKey, sourceName, sourceOf, transcriptContext, transcriptUsage, usageHeadline,
@@ -77,6 +77,18 @@ export function SubagentPane(props: {
   const working = () => workers().filter((w) => w.working).length;
   const label = (w: WorkerInfo) => workerLabel(w, insight.data()?.teams);
   const teamOf = (w: WorkerInfo) => workerTeam(w, insight.data()?.teams);
+  /** A team member's badges (duty, then a successor's tie); none for a plain subagent. */
+  const badgesOf = (w: WorkerInfo) => {
+    const t = teamOf(w);
+    const m = t?.members.find((x) => x.workerId === w.id);
+    return t && m ? memberBadges(m, t) : [];
+  };
+  /** The row carries the duty only: the row is narrow, and the head of the open worker says the rest. */
+  const dutyOf = (w: WorkerInfo) => {
+    const d = badgesOf(w).find((b) => b.label === "Coordinator" || b.label === "Monitor");
+    // A member named for its duty ("coordinator", "monitor") already says it.
+    return d && d.label.toLowerCase() !== label(w).toLowerCase() ? d : undefined;
+  };
   /** The list in sections: one per team that owns a listed worker, then the plain subagents.
       Section order follows the sorted list, so a working team still leads. */
   const groups = createMemo<Group[]>(() => {
@@ -176,7 +188,14 @@ export function SubagentPane(props: {
       {(w) => (
         <button type="button" class="subagent-row" aria-current={props.selected === id ? "true" : undefined} onClick={() => open(id)}>
           <span class="subagent-row-name" title={label(w())}>
-            {label(w())}
+            <span class="subagent-row-label">{label(w())}</span>
+            <Show when={dutyOf(w())}>
+              {(d) => (
+                <span class="chip chip-count" title={d().title}>
+                  {d().label}
+                </span>
+              )}
+            </Show>
           </span>
           <span class="subagent-row-status">
             {/* The sidebar's ring: how full the worker's own context is. Beside the chip, where a
@@ -229,6 +248,14 @@ export function SubagentPane(props: {
                   {(o) => (
                     <p class="team-objective subagents-group-objective" title={capTitle(o())}>
                       {o()}
+                    </p>
+                  )}
+                </Show>
+                {/* The team's newest event only: the full list is on the team's Agents card. */}
+                <Show when={groupOf(key)?.team && newestEventLine(groupOf(key)!.team!)}>
+                  {(e) => (
+                    <p class="text-caption subagents-group-event" title={e().detail ?? e().text}>
+                      <span class="text-mono">{e().at}</span> · {e().text}
                     </p>
                   )}
                 </Show>
@@ -293,6 +320,13 @@ export function SubagentPane(props: {
                       </span>
                     )}
                   </Show>
+                  <For each={badgesOf(w())}>
+                    {(b) => (
+                      <span class="chip chip-count" title={b.title}>
+                        {b.label}
+                      </span>
+                    )}
+                  </For>
                   <p class="subagents-view-meta meta-line">
                     <span class="text-mono">{w().id}</span>
                     {/* The provider leads: the route that

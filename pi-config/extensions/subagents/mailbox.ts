@@ -19,8 +19,11 @@ const MAX_REF_CHARS = 64;
 // Single-line fields (recipient, role, team name): no control characters at all, newline included.
 const CONTROL = /[\u0000-\u001f\u007f-\u009f]/;
 const REQUEST_ID = /^[a-z0-9]{6,32}$/;
-const REQUEST_TYPES = new Set(["message", "steer", "roster", "question"]);
+const REQUEST_TYPES = new Set(["message", "steer", "roster", "question", "report", "succeed", "ready", "nudge"]);
 const STEER_MODES = new Set(["redirect", "followUp"]);
+const NOTICES = new Set(["wrap-up", "pause", "resume"]);
+const NUDGE_ACTIONS = new Set(["schedule", "list", "cancel"]);
+const MAX_NUDGE_FIELD_CHARS = 500;
 
 /** Passed to a member child through MEMBER_ENV as JSON; the child trusts only its own dir. */
 export interface MemberContext {
@@ -32,8 +35,27 @@ export interface MemberContext {
 	orchestrator: boolean;
 	/** This member's private mailbox directory, created by the parent. */
 	dir: string;
+	/** A standing role from team defaults: the team's coordinator, or its monitor. */
+	duty?: MemberDuty;
+	/** A member of a team with a coordinator: its questions and completions go there, not to the operator. */
+	coordinated?: boolean;
+	/** The role this member succeeds (team_succeed); only a successor has team_ready. */
+	successorOf?: string;
 }
-export type RequestType = "message" | "steer" | "roster" | "question";
+export type MemberDuty = "coordinator" | "monitor";
+export type RequestType = "message" | "steer" | "roster" | "question" | "report" | "succeed" | "ready" | "nudge";
+export type MonitorNotice = "wrap-up" | "pause" | "resume";
+/** team_report's optional kind; Sova shows it on the report. */
+export const REPORT_KINDS = ["milestone", "concern"] as const;
+export type ReportKind = (typeof REPORT_KINDS)[number];
+export interface NudgeRequest {
+	action: "schedule" | "list" | "cancel";
+	delay?: string;
+	/** Absolute ISO-8601 fire time. */
+	at?: string;
+	reason?: string;
+	id?: string;
+}
 export interface MailboxRequest {
 	version: 1;
 	id: string;
@@ -43,6 +65,12 @@ export interface MailboxRequest {
 	to?: string;
 	message?: string;
 	mode?: "redirect" | "followUp";
+	/** Monitor only (team_msg): what the message asks for, recorded as a team action of that kind. */
+	notice?: MonitorNotice;
+	/** team_report only: what the report is. */
+	reportKind?: ReportKind;
+	/** wake_nudge (monitor only). */
+	nudge?: NudgeRequest;
 }
 export interface MailboxResponse {
 	version: 1;
@@ -61,6 +89,53 @@ export interface InboxRecord {
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
 const isLine = (value: unknown, max: number): value is string => typeof value === "string" && value.trim().length > 0 && value.length <= max && !CONTROL.test(value);
+
+/** Member-safe tool names; the parent's spawn/kill/agent tools are never among them. */
+export const MEMBER_TOOLS = ["team_msg", "team_inbox", "team_ask"] as const;
+export const ORCHESTRATOR_TOOLS = ["team_roster", "team_steer"] as const;
+export const COORDINATOR_TOOLS = ["team_report", "team_succeed"] as const;
+export const MONITOR_TOOLS = ["team_msg", "team_inbox", "team_roster", "wake_nudge"] as const;
+export const SUCCESSOR_TOOLS = ["team_ready"] as const;
+
+/**
+ * The one list of member tools a member really has, shared by member.ts, member-mcp.ts and the
+ * team header. A monitor has MONITOR_TOOLS (no team_ask: it never reaches the operator);
+ * everyone else has MEMBER_TOOLS, plus the orchestrator pair and the coordinator pair. Any
+ * successor, a monitor's included, also has team_ready.
+ */
+export function memberToolNames(me: { orchestrator?: boolean; duty?: MemberDuty; successorOf?: string }): string[] {
+	if (me.duty === "monitor") return [...MONITOR_TOOLS, ...(me.successorOf ? SUCCESSOR_TOOLS : [])];
+	return [
+		...(me.orchestrator ? ORCHESTRATOR_TOOLS : []),
+		...MEMBER_TOOLS,
+		...(me.duty === "coordinator" ? COORDINATOR_TOOLS : []),
+		...(me.successorOf ? SUCCESSOR_TOOLS : []),
+	];
+}
+
+/** Tool texts shared with member-mcp.ts, so a pi member and a Claude member read the same contract. */
+export const memberToolText = (me: MemberContext) => {
+	const who = `${me.role} (${me.workerId}) in ${me.teamId}`;
+	return {
+		team_msg: me.duty === "monitor"
+			? `Send a message to another member of your team (${me.teamId}) by role or worker ID, or to "all". Set notice to wrap-up (a member over the context threshold must write its handover note and end its turn), pause (usage is at the limit: the team must wrap up and go idle) or resume (usage has reset: the team may continue); a notice is recorded in the team's action history. You cannot reach the operator.`
+			: `Send a message to another member of your team (${me.teamId}) by role or worker ID, or to "all" for every live sibling. The parent session delivers it as a new message in their session (they see it at their next step, or it starts a task if they are idle). Returns per-recipient delivery acceptance, not proof they acted. You cannot message yourself or workers outside your team.`,
+		team_inbox: "List messages and orchestrator instructions delivered to you so far (newest last). Deliveries also arrive as messages in your session; use this to re-read them.",
+		team_ask: me.coordinated
+			? "Raise a question to your team's coordinator (not the operator: in this team only the coordinator talks to the operator). The answer comes back later as a new message in your session. This does not block: continue with work that does not depend on the answer, or end your turn and you will be resumed with the answer."
+			: "Raise a question to the operator (the parent Pi session and its user). It is surfaced there and starts a parent turn if it is idle; the answer comes back later as a new message in your session. This does not block: continue with work that does not depend on the answer, or end your turn and you will be resumed with the answer.",
+		team_roster: me.duty === "monitor"
+			? `Read-only live roster of your team (${me.teamId}): each member's role, worker ID, backend, state and context (tokens/window/%), the current monitor thresholds from team defaults, and the provider usage windows the team's models spend from. You are ${who}.`
+			: `Live roster of your team (${me.teamId}): each member's role, worker ID, backend, model, state, context (tokens/window/%), task outcome and declared ownership, plus recent control actions. Read-only; you are ${who}.`,
+		team_steer: "Orchestrator only: send instructions to one sibling in your team by role or worker ID. mode=followUp queues after their current task; mode=redirect changes their current task; omitted uses the backend's normal steering. An idle sibling starts a fresh task. Acceptance is not execution; check team_roster. You cannot start, add or stop members; ask the operator with team_ask for that.",
+		team_report: "Coordinator only: report a milestone or a concern to the operator; set kind to milestone or concern. It is shown to them as a team-report message and does NOT start a turn or ask for action; use team_ask for a question or a decision you need.",
+		team_succeed: "Coordinator only: replace a member whose context is running out (the monitor tells you) with a fresh successor on the same backend, model and effort, named <role>-<n+1>. A working member is first told to write its handover note and end its turn; its successor starts once the note exists and that turn has ended (or at the handover timeout), and you get a message naming it. A monitor has no note: its successor starts at once and is briefed over team_msg. The old member is retired when the successor confirms with team_ready, or after the handover timeout. You can start nothing else and stop no one.",
+		team_ready: me.duty === "monitor"
+			? "Successor only: confirm you have taken over from the monitor you succeed (it briefed you over team_msg). The parent then retires that monitor, with its pending nudges; you continue the standing instruction."
+			: "Successor only: confirm you have taken over from the member you succeed (you read its handover note and asked what you needed). The parent then retires that member; you continue its work.",
+		wake_nudge: "Monitor only: schedule a wakeup. At the fire time the parent session delivers a [wake_nudge <id>] message that starts a new task for you, even while idle. action schedule needs delay (e.g. 30s, 5m, 1h30m) or at (ISO-8601); at least 10s and at most 24h ahead; at most 5 pending. list shows pending nudges; cancel takes id. After scheduling, end your turn; never sleep in a shell.",
+	};
+};
 
 export const memberPaths = (dir: string) => ({
 	requests: path.join(dir, "requests"),
@@ -100,29 +175,58 @@ export function decodeMemberContext(raw: string | undefined): MemberContext | un
 		return undefined;
 	}
 	if (!isRecord(value) || value.version !== 1) return undefined;
-	const { teamId, teamName, workerId, role, orchestrator, dir } = value;
+	const { teamId, teamName, workerId, role, orchestrator, dir, duty, coordinated, successorOf } = value;
 	if (typeof teamId !== "string" || !/^team_\d+$/.test(teamId)) return undefined;
 	if (typeof workerId !== "string" || !/^ag_\d+$/.test(workerId)) return undefined;
 	if (!isLine(teamName, MAX_REF_CHARS) || !isLine(role, MAX_REF_CHARS)) return undefined;
 	if (typeof orchestrator !== "boolean") return undefined;
 	if (typeof dir !== "string" || !path.isAbsolute(dir)) return undefined;
-	return { version: 1, teamId, teamName, workerId, role, orchestrator, dir };
+	if (duty !== undefined && duty !== "coordinator" && duty !== "monitor") return undefined;
+	if (coordinated !== undefined && typeof coordinated !== "boolean") return undefined;
+	if (successorOf !== undefined && !isLine(successorOf, MAX_REF_CHARS)) return undefined;
+	return {
+		version: 1, teamId, teamName, workerId, role, orchestrator, dir,
+		...(duty === undefined ? {} : { duty }), ...(coordinated ? { coordinated: true } : {}), ...(successorOf === undefined ? {} : { successorOf }),
+	};
 }
 
 export function decodeRequest(value: unknown): MailboxRequest | undefined {
 	if (!isRecord(value) || value.version !== 1) return undefined;
-	const { id, type, at, to, message, mode } = value;
+	const { id, type, at, to, message, mode, notice, reportKind, nudge } = value;
 	if (typeof id !== "string" || !REQUEST_ID.test(id)) return undefined;
 	if (typeof type !== "string" || !REQUEST_TYPES.has(type)) return undefined;
 	if (typeof at !== "number" || !Number.isFinite(at)) return undefined;
 	if (to !== undefined && !isLine(to, MAX_REF_CHARS)) return undefined;
 	if (message !== undefined && (typeof message !== "string" || message.length > MAX_MESSAGE_CHARS)) return undefined;
 	if (mode !== undefined && (typeof mode !== "string" || !STEER_MODES.has(mode))) return undefined;
+	if (notice !== undefined && (typeof notice !== "string" || !NOTICES.has(notice))) return undefined;
+	if (reportKind !== undefined && !REPORT_KINDS.includes(reportKind as ReportKind)) return undefined;
+	let decodedNudge: NudgeRequest | undefined;
+	if (nudge !== undefined) {
+		decodedNudge = decodeNudge(nudge);
+		if (!decodedNudge) return undefined;
+	}
 	const out: MailboxRequest = { version: 1, id, type: type as RequestType, at };
 	if (to !== undefined) out.to = to.trim();
 	if (message !== undefined) out.message = message;
 	if (mode !== undefined) out.mode = mode as MailboxRequest["mode"];
+	if (notice !== undefined) out.notice = notice as MonitorNotice;
+	if (reportKind !== undefined) out.reportKind = reportKind as ReportKind;
+	if (decodedNudge) out.nudge = decodedNudge;
 	return out;
+}
+
+function decodeNudge(value: unknown): NudgeRequest | undefined {
+	if (!isRecord(value)) return undefined;
+	const { action, delay, at, reason, id } = value;
+	if (typeof action !== "string" || !NUDGE_ACTIONS.has(action)) return undefined;
+	const field = (v: unknown) => v === undefined || (typeof v === "string" && v.length <= MAX_NUDGE_FIELD_CHARS && !CONTROL.test(v));
+	if (![delay, at, reason, id].every(field)) return undefined;
+	return {
+		action: action as NudgeRequest["action"],
+		...(typeof delay === "string" ? { delay } : {}), ...(typeof at === "string" ? { at } : {}),
+		...(typeof reason === "string" ? { reason } : {}), ...(typeof id === "string" ? { id } : {}),
+	};
 }
 
 export function decodeResponse(value: unknown): MailboxResponse | undefined {

@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ReportInfo } from "../../shared/protocol";
-import { reportChip, reportFrom, reportLine } from "./report";
+import { reportChip, reportFrom, reportLine, teamMessageChip } from "./report";
 
 const r = (agent?: ReportInfo["agent"], extra: Partial<ReportInfo> = {}): ReportInfo => ({
   source: "subagent-complete",
@@ -41,4 +41,12 @@ test("the collapsed line", () => {
   );
   assert.equal(reportLine(rep), "ag_01 · orchestrator · Success · All requested checks pass. Report for items 5 and 6, plus the item 1 flag check.");
   assert.equal(reportFrom(r(undefined, { source: "intercom_message" })), "intercom_message");
+});
+
+test("team message chip: Milestone, Concern, none without a label, Question for a question", () => {
+  const t = { kind: "report" as const, role: "coordinator", workerId: "ag_01", teamId: "team_01", teamName: "x" };
+  assert.deepEqual(teamMessageChip({ ...t, label: "milestone" }), { tone: "success", label: "Milestone" });
+  assert.deepEqual(teamMessageChip({ ...t, label: "concern" }), { tone: "warn", label: "Concern" });
+  assert.equal(teamMessageChip(t), undefined);
+  assert.deepEqual(teamMessageChip({ ...t, kind: "question" }), { tone: "warn", label: "Question" });
 });

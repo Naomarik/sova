@@ -753,3 +753,62 @@ test("the sandbox extension's entries render as nothing, on and off alike", () =
   assert.equal(items.length, 1);
   assert.ok(!JSON.stringify(items).includes("Sandbox"), "no sandbox text reaches the transcript");
 });
+
+// Coordinated teams: team-report / team-question are report rows carrying `team`; the team
+// events are info rows like a model change. Real bytes from the e2e run, plus the kind suffix.
+describe("team messages and events", () => {
+  const INFO = "(Informational: no action is requested. The coordinator asks questions as team-question messages.)";
+  const msg = (customType: string, content: unknown, id = "t1") =>
+    normalizeEntry({ type: "custom_message", customType, content, display: true, id, parentId: "p", timestamp: "2026-09-25T18:51:02.469Z" });
+
+  test("a team-report (string content, no kind) is a report row with team and a leading-line label", () => {
+    const [it] = msg("team-report", `[Team report from coordinator coordinator (ag_01), team_01 — e2e-file-test]\nMilestone: objective complete. a.txt, b.txt, c.txt written.\n\n${INFO}`);
+    assert.equal(it?.kind, "report");
+    assert.deepEqual(it?.report?.team, { kind: "report", role: "coordinator", workerId: "ag_01", teamId: "team_01", teamName: "e2e-file-test", label: "milestone" });
+    assert.equal(it?.report?.agent, undefined, "never a finished-worker report (no timeline marker)");
+    assert.equal(it?.report?.body, "objective complete. a.txt, b.txt, c.txt written.");
+    assert.equal(it?.report?.preview, "objective complete. a.txt, b.txt, c.txt written.");
+    assert.equal(it?.text, it?.report?.body);
+  });
+
+  test("a team-report with a kind, in text blocks, short enough to be an info row otherwise", () => {
+    const [it] = msg("team-report", [{ type: "text", text: "[Team report from coordinator lead (ag_03), team_02 — docs · concern]\nStuck." }]);
+    assert.equal(it?.kind, "report");
+    assert.equal(it?.report?.team?.label, "concern");
+    assert.equal(it?.report?.body, "Stuck.");
+  });
+
+  test("a team-question is a report row with team; unparsed headers keep today's generic row", () => {
+    const [q] = msg("team-question", '[Team question from writer (ag_02), team_01 — e2e]\nJSON or YAML?\n\nAnswer with agent_steer { id: "ag_02", message: "<answer>" }; the member continues.');
+    assert.equal(q?.report?.team?.kind, "question");
+    assert.equal(q?.report?.body, "JSON or YAML?");
+    const [odd] = msg("team-report", "[Team report from somebody]\nbody");
+    assert.equal(odd?.kind, "report");
+    assert.equal(odd?.report?.team, undefined);
+    assert.equal(odd?.report?.preview, "[Team report from somebody]");
+  });
+
+  const evEntry = (id: string, data: unknown) => ({ type: "custom", customType: "subagents-team-event-v1", data, id, parentId: "p", timestamp: "2026-09-25T19:04:23.971Z" });
+  const data = (kind: string, detail?: string) => ({ version: 1, teamId: "team_01", kind, workerId: "ag_02", role: "writer", at: 1790363063971, ...(detail ? { detail } : {}) });
+
+  test("every team event kind is one info row with its sentence and the decoded event", () => {
+    const rows = normalizeEntries([
+      evEntry("e1", data("handover", "successor writer-2 (ag_04) on pi/zai/glm-5.3-flash; retire on team_ready or after 2 min")),
+      evEntry("e2", data("retire", "retired: successor writer-2 (ag_04) confirmed the takeover")),
+      evEntry("e3", data("wrap-up", "context 78% of 200k")),
+      evEntry("e4", data("pause", "pause → coordinator: usage at 95%.")),
+      evEntry("e5", data("resume", "resume → coordinator: reset.")),
+      evEntry("e6", { ...data("pause"), kind: "report" }), // not a kind: nothing
+      evEntry("e7", "garbage"),
+    ]);
+    assert.deepEqual(rows.map((r) => [r.id, r.kind, r.text]), [
+      ["e1", "info", "Team: writer handed over to writer-2 (ag_04)."],
+      ["e2", "info", "Team: writer retired. writer-2 confirmed the takeover."],
+      ["e3", "info", "Team: writer was asked to wrap up: context 78% of 200k."],
+      ["e4", "info", "Team: writer paused the team: usage at 95%."],
+      ["e5", "info", "Team: writer resumed the team."],
+    ]);
+    assert.equal(rows[2]?.teamEvent?.kind, "wrap-up");
+    assert.equal(rows[2]?.teamEvent?.at, "2026-09-25T19:04:23.971Z");
+  });
+});

@@ -2,7 +2,7 @@ import { batch, createEffect, createMemo, createSignal, Match, onCleanup, Show, 
 import { createStore, reconcile } from "solid-js/store";
 import type { SessionInsight, SessionSummary, TeamInfo, WorkerInfo } from "../../shared/protocol";
 import { fetchSessionInsight } from "../lib/api";
-import { agentsHref } from "../lib/insights";
+import { agentsHref, teamPause } from "../lib/insights";
 import { relativeTime, shortModel } from "../lib/format";
 import { sourceBlocked } from "../lib/fanout";
 import { PaneScopeProvider, type PaneScope } from "../lib/pane-scope";
@@ -279,7 +279,16 @@ export function SessionView(props: {
       <ContextGauge path={path} />
       <Show
         when={working() > 0}
-        fallback={<Show when={!s().live && team()}>{(t) => <CountChip title={t().name}>Team · {t().members.length}</CountChip>}</Show>}
+        fallback={
+          <Show when={!s().live && team()}>
+            {(t) => (
+              <CountChip title={teamPause(t()) ? `${t().name} · ${teamPause(t())!.text}` : t().name}>
+                Team · {t().members.length}
+                {teamPause(t()) ? " · paused" : ""}
+              </CountChip>
+            )}
+          </Show>
+        }
       >
         <Show
           when={liveTeam()}
@@ -296,8 +305,9 @@ export function SessionView(props: {
           }
         >
           {(t) => (
-            <CountChip href={agentsHref(t().id)} title={t().name}>
+            <CountChip href={agentsHref(t().id)} title={teamPause(t()) ? `${t().name} · ${teamPause(t())!.text}` : t().name}>
               Team · {working()} working
+              {teamPause(t()) ? " · paused" : ""}
             </CountChip>
           )}
         </Show>

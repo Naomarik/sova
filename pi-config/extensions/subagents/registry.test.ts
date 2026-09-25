@@ -144,7 +144,7 @@ function harness(hosted = true) {
 		};
 		workers.push(w);
 		return w;
-	}, { hosting: { root, enabled: hosted } });
+	}, { hosting: { root, enabled: hosted }, agentDir: path.join(root, "agent") });
 	const call = (name: string, params: any) => tools.get(name).execute("t", params, undefined, () => {}, ctx);
 	return {
 		appended, workers, call, root, start: () => events.get("session_start")({}, ctx),

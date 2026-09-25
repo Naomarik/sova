@@ -1,7 +1,7 @@
 // Presentation rules for the insights surfaces (docs/insights-research.md "## UX"): labels,
 // status words and chips, derived from the /api/insights/* payloads. No fetching here.
 
-import type { AgentsInsight, TeamInfo, TeamMember, UsageBalance, UsageInsight, UsageProvider, UsageWindow } from "../../shared/protocol";
+import type { AgentsInsight, TeamEvent, TeamInfo, TeamMember, UsageBalance, UsageInsight, UsageProvider, UsageWindow } from "../../shared/protocol";
 import type { Tone } from "../components/ui";
 import { clockTime, duration, shortDate, thousands } from "./format";
 import { isHostSession } from "./workers";
@@ -313,6 +313,8 @@ const STATUS: Record<string, { text: string; tone?: Tone | "accent"; working?: b
   restored: { text: "Restored" },
   // Old-format subagent-complete reports ("… finished its task.").
   finished: { text: "Done", tone: "success" },
+  // A member's own records: its host died mid-turn ("lost").
+  interrupted: { text: "Interrupted", tone: "warn" },
 };
 
 const INTERRUPTED: (typeof STATUS)[string] = { text: "Interrupted", tone: "warn" };
@@ -322,6 +324,12 @@ const INTERRUPTED: (typeof STATUS)[string] = { text: "Interrupted", tone: "warn"
  * be working: a reported "running" is shown as its word without the pulse.
  */
 export function memberStatus(m: TeamMember, liveSource: boolean): MemberStatus {
+  // Retired by a handover: the word says what happened, as of the retirement, whatever the
+  // worker's own last state was.
+  if (m.retired) {
+    const at = Date.parse(m.retired.at);
+    return { text: "Retired", live: false, asOf: Number.isNaN(at) ? undefined : at, failed: false };
+  }
   const w = m.worker;
   if (w) {
     // Restored mid-turn: the turn it was on never finished, which is the fact worth the chip.
@@ -389,4 +397,56 @@ export function legacyInsightsTarget(hash: string): string | null {
   } catch {
     return agentsHref();
   }
+}
+
+// ---------------------------------------------------------------------------
+// Coordinated teams: duties, succession, events
+
+/** The one badge beside a member's name: its duty, else its successor tie, else orchestrator.
+    A coordinator is always an orchestrator too; the duty's word replaces that one, never adds. */
+export function memberBadges(m: TeamMember, team: Pick<TeamInfo, "members">): { label: string; title?: string }[] {
+  const out: { label: string; title?: string }[] = [];
+  if (m.duty === "coordinator") out.push({ label: "Coordinator", title: "Members report to it; only it reports to you." });
+  else if (m.duty === "monitor") out.push({ label: "Monitor", title: "Watches context and usage, and starts handovers." });
+  else if (m.orchestrator) out.push({ label: "Orchestrator" });
+  if (m.successorOf) {
+    const from = team.members.find((x) => x.workerId === m.successorOf);
+    const who = from?.role ?? m.successorOf;
+    out.push({ label: `Succeeds ${who}`, title: `Took over from ${who} (${m.successorOf}).` });
+  }
+  return out;
+}
+
+/** Coordinator first, then the working members in roster order, the monitor, and retired members
+    last (each group keeps roster order). */
+export function orderedMembers(team: Pick<TeamInfo, "members">): TeamMember[] {
+  const rank = (m: TeamMember) => (m.retired ? 3 : m.duty === "coordinator" ? 0 : m.duty === "monitor" ? 2 : m.orchestrator ? 0 : 1);
+  return team.members.map((m, i) => ({ m, i })).sort((a, b) => rank(a.m) - rank(b.m) || a.i - b.i).map((x) => x.m);
+}
+
+/** The pause in force: the newest pause/resume event, when it is a pause. */
+export function teamPause(team: Pick<TeamInfo, "events">): TeamEvent | null {
+  const events = team.events ?? [];
+  for (let i = events.length - 1; i >= 0; i--) {
+    const e = events[i]!;
+    if (e.kind === "resume") return null;
+    if (e.kind === "pause") return e;
+  }
+  return null;
+}
+
+/** How many events the team group lists before the rest fold under "Earlier events". */
+export const TEAM_EVENTS_SHOWN = 20;
+
+/** Oldest first, split: the newest TEAM_EVENTS_SHOWN, and the older ones before them. */
+export function splitTeamEvents(team: Pick<TeamInfo, "events">): { earlier: TeamEvent[]; recent: TeamEvent[] } {
+  const all = team.events ?? [];
+  const cut = Math.max(0, all.length - TEAM_EVENTS_SHOWN);
+  return { earlier: all.slice(0, cut), recent: all.slice(cut) };
+}
+
+/** The newest event, as one caption line: "7:06 PM · monitor-2 paused the team: …". */
+export function newestEventLine(team: Pick<TeamInfo, "events">): { at: string; text: string; detail?: string } | null {
+  const e = team.events?.[team.events.length - 1];
+  return e ? { at: clockTime(e.at), text: e.text, ...(e.detail ? { detail: e.detail } : {}) } : null;
 }

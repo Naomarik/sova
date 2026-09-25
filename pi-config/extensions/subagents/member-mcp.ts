@@ -19,22 +19,24 @@ import { fileURLToPath } from "node:url";
 import {
 	MAX_MESSAGE_CHARS,
 	MEMBER_ENV,
+	REPORT_KINDS,
 	awaitResponse,
 	decodeMemberContext,
+	memberToolNames,
+	memberToolText,
 	readInbox,
 	requestId,
 	writeRequest,
 	type MailboxRequest,
 	type MemberContext,
+	type ReportKind,
 } from "./mailbox.ts";
 
 /** Server name in the worker's mcp.json; Claude prefixes every tool with `mcp__<name>__`. */
 export const MCP_SERVER_NAME = "team";
 export const MCP_PROTOCOL_VERSION = "2025-06-18";
 const KNOWN_PROTOCOL_VERSIONS = new Set(["2024-11-05", "2025-03-26", MCP_PROTOCOL_VERSION]);
-/** Member-safe tool names; the parent's spawn/kill/agent tools are never among them. */
-export const MEMBER_TOOLS = ["team_msg", "team_inbox", "team_ask"] as const;
-export const ORCHESTRATOR_TOOLS = ["team_roster", "team_steer"] as const;
+export { MEMBER_TOOLS, ORCHESTRATOR_TOOLS, COORDINATOR_TOOLS, MONITOR_TOOLS, SUCCESSOR_TOOLS } from "./mailbox.ts";
 /** How Claude addresses a member tool. */
 export const mcpToolName = (tool: string): string => `mcp__${MCP_SERVER_NAME}__${tool}`;
 
@@ -71,66 +73,62 @@ const INVALID_PARAMS = -32602;
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
 const message = (description: string) => ({ type: "string", minLength: 1, maxLength: MAX_MESSAGE_CHARS, description });
 
-/** The tool surface this member really has, in the order Claude lists it. */
+/** The tool surface this member really has (memberToolNames), with member.ts's texts. */
 export function memberMcpTools(me: MemberContext): McpTool[] {
-	const who = `${me.role} (${me.workerId}) in ${me.teamId}`;
-	const tools: McpTool[] = [
-		{
-			name: "team_msg",
-			description:
-				`Send a message to another member of your team (${me.teamId}) by role or worker ID, or to "all" for every live sibling. The parent session delivers it as a new message in their session (they see it at their next step, or it starts a task if they are idle). Returns per-recipient delivery acceptance, not proof they acted. You cannot message yourself or workers outside your team.`,
-			inputSchema: {
-				type: "object",
-				properties: {
-					to: { type: "string", minLength: 1, description: "Recipient role, worker ID (ag_NN), or \"all\"." },
-					message: message("Message text."),
-				},
-				required: ["to", "message"],
-				additionalProperties: false,
+	const text = memberToolText(me);
+	const schemas: Record<string, Record<string, unknown>> = {
+		team_msg: {
+			type: "object",
+			properties: {
+				to: { type: "string", minLength: 1, description: "Recipient role, worker ID (ag_NN), or \"all\"." },
+				message: message("Message text."),
+				...(me.duty === "monitor" ? { notice: { type: "string", enum: ["wrap-up", "pause", "resume"] } } : {}),
 			},
+			required: ["to", "message"],
+			additionalProperties: false,
 		},
-		{
-			name: "team_inbox",
-			description:
-				"List messages and orchestrator instructions delivered to you so far (newest last). Deliveries also arrive as messages in your session; use this to re-read them.",
-			inputSchema: {
-				type: "object",
-				properties: { limit: { type: "integer", minimum: 1, maximum: MAX_INBOX_LIMIT, default: 50 } },
-				additionalProperties: false,
+		team_inbox: {
+			type: "object",
+			properties: { limit: { type: "integer", minimum: 1, maximum: MAX_INBOX_LIMIT, default: 50 } },
+			additionalProperties: false,
+		},
+		team_ask: { type: "object", properties: { question: message(me.coordinated ? "The question for your team's coordinator." : "The question for the operator.") }, required: ["question"], additionalProperties: false },
+		team_roster: { type: "object", properties: {}, additionalProperties: false },
+		team_steer: {
+			type: "object",
+			properties: {
+				to: { type: "string", minLength: 1, description: "Sibling role or worker ID (not yourself, not \"all\")." },
+				message: message("Instructions for the sibling."),
+				mode: { type: "string", enum: ["redirect", "followUp"] },
 			},
+			required: ["to", "message"],
+			additionalProperties: false,
 		},
-		{
-			name: "team_ask",
-			description:
-				"Raise a question to the operator (the parent Pi session and its user). It is surfaced there and starts a parent turn if it is idle; the answer comes back later as a new message in your session. This does not block: continue with work that does not depend on the answer, or end your turn and you will be resumed with the answer.",
-			inputSchema: { type: "object", properties: { question: message("The question for the operator.") }, required: ["question"], additionalProperties: false },
+		team_report: {
+			type: "object",
+			properties: { report: message("The milestone or concern."), kind: { type: "string", enum: [...REPORT_KINDS], description: "milestone or concern" } },
+			required: ["report"],
+			additionalProperties: false,
 		},
-	];
-	if (!me.orchestrator) return tools;
-	tools.push(
-		{
-			name: "team_roster",
-			description:
-				`Live roster of your team (${me.teamId}): each member's role, worker ID, backend, model, state, task outcome and declared ownership, plus recent control actions. Read-only; you are ${who}.`,
-			inputSchema: { type: "object", properties: {}, additionalProperties: false },
-		},
-		{
-			name: "team_steer",
-			description:
-				"Orchestrator only: send instructions to one sibling in your team by role or worker ID. mode=followUp queues after their current task; mode=redirect changes their current task; omitted uses the backend's normal steering. An idle sibling starts a fresh task. Acceptance is not execution; check team_roster. You cannot start, add or stop members; ask the operator with team_ask for that.",
-			inputSchema: {
-				type: "object",
-				properties: {
-					to: { type: "string", minLength: 1, description: "Sibling role or worker ID (not yourself, not \"all\")." },
-					message: message("Instructions for the sibling."),
-					mode: { type: "string", enum: ["redirect", "followUp"] },
-				},
-				required: ["to", "message"],
-				additionalProperties: false,
+		team_succeed: { type: "object", properties: { role: { type: "string", minLength: 1, description: "Role (or worker ID) of the member to succeed." } }, required: ["role"], additionalProperties: false },
+		team_ready: { type: "object", properties: {}, additionalProperties: false },
+		wake_nudge: {
+			type: "object",
+			properties: {
+				action: { type: "string", enum: ["schedule", "list", "cancel"], description: "What to do" },
+				delay: { type: "string", description: "Relative delay, e.g. 5m" },
+				at: { type: "string", description: "Absolute ISO-8601 fire time" },
+				reason: { type: "string", description: "What to do on wake" },
+				id: { type: "string", description: "Nudge id to cancel" },
 			},
+			required: ["action"],
+			additionalProperties: false,
 		},
-	);
-	return tools;
+	};
+	// The order Claude lists them in: the common tools, then each duty's additions.
+	const order = ["team_msg", "team_inbox", "team_ask", "team_roster", "team_steer", "team_report", "team_succeed", "team_ready", "wake_nudge"];
+	const names = new Set(memberToolNames(me));
+	return order.filter((name) => names.has(name)).map((name) => ({ name, description: text[name as keyof typeof text], inputSchema: schemas[name] }));
 }
 
 class ParamError extends Error {}
@@ -169,8 +167,11 @@ export function createMemberMcpServer(me: MemberContext, options: MemberMcpOptio
 	};
 	const call = async (name: string, params: Record<string, unknown>, signal: AbortSignal): Promise<string> => {
 		switch (name) {
-			case "team_msg":
-				return send({ type: "message", to: line(params, "to").trim(), message: text(params, "message") }, signal);
+			case "team_msg": {
+				const notice = params.notice;
+				if (notice !== undefined && (me.duty !== "monitor" || !["wrap-up", "pause", "resume"].includes(notice as string))) throw new ParamError("notice must be wrap-up, pause or resume (monitor only).");
+				return send({ type: "message", to: line(params, "to").trim(), message: text(params, "message"), ...(notice ? { notice: notice as "wrap-up" | "pause" | "resume" } : {}) }, signal);
+			}
 			case "team_inbox": {
 				const limit = params.limit ?? 50;
 				if (!Number.isInteger(limit) || (limit as number) < 1 || (limit as number) > MAX_INBOX_LIMIT) throw new ParamError(`limit must be an integer from 1 to ${MAX_INBOX_LIMIT}.`);
@@ -187,6 +188,26 @@ export function createMemberMcpServer(me: MemberContext, options: MemberMcpOptio
 				const mode = params.mode;
 				if (mode !== undefined && mode !== "redirect" && mode !== "followUp") throw new ParamError("mode must be redirect or followUp.");
 				return send({ type: "steer", to: line(params, "to").trim(), message: text(params, "message"), ...(mode ? { mode } : {}) }, signal);
+			}
+			case "team_report": {
+				const kind = params.kind;
+				if (kind !== undefined && !REPORT_KINDS.includes(kind as ReportKind)) throw new ParamError("kind must be milestone or concern.");
+				return send({ type: "report", message: text(params, "report"), ...(kind ? { reportKind: kind as ReportKind } : {}) }, signal);
+			}
+			case "team_succeed":
+				return send({ type: "succeed", to: line(params, "role").trim() }, signal);
+			case "team_ready":
+				return send({ type: "ready" }, signal);
+			case "wake_nudge": {
+				const action = params.action;
+				if (action !== "schedule" && action !== "list" && action !== "cancel") throw new ParamError("action must be schedule, list or cancel.");
+				const opt = (key: string) => {
+					const v = params[key];
+					if (v === undefined) return {};
+					if (typeof v !== "string") throw new ParamError(`${key} must be a string.`);
+					return v.trim() ? { [key]: v } : {};
+				};
+				return send({ type: "nudge", nudge: { action, ...opt("delay"), ...opt("at"), ...opt("reason"), ...opt("id") } }, signal);
 			}
 			default:
 				throw new ParamError(`Unknown tool: ${name}`);

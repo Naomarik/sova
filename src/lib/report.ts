@@ -1,6 +1,6 @@
 // Report rows: the status chip and the one collapsed line.
 
-import type { ReportInfo } from "../../shared/protocol";
+import type { ReportInfo, TeamMessageInfo } from "../../shared/protocol";
 import type { Tone } from "../components/ui";
 
 export interface ReportChip {
@@ -34,4 +34,13 @@ export const reportFrom = (r: ReportInfo) => (r.agent ? `${r.agent.id} · ${r.ag
 export function reportLine(r: ReportInfo): string {
   const chip = reportChip(r);
   return [reportFrom(r), chip?.label, r.preview].filter(Boolean).join(" · ");
+}
+
+/** A team message's chip: Milestone / Concern for a report that says which (none otherwise),
+    Question for a question — it waits on someone. */
+export function teamMessageChip(t: TeamMessageInfo): ReportChip | undefined {
+  if (t.kind === "question") return { tone: "warn", label: "Question" };
+  if (t.label === "milestone") return { tone: "success", label: "Milestone" };
+  if (t.label === "concern") return { tone: "warn", label: "Concern" };
+  return undefined;
 }

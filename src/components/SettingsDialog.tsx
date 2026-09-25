@@ -36,6 +36,7 @@ import { activeThemeId, applyTheme, droppedThemeId, reconcileTheme, typography }
 import type { SettingsTab } from "../lib/settings-nav";
 import { delegateDirty, resetDelegateDraft } from "../lib/delegate-draft";
 import { resetSpecDraft, specDirty } from "../lib/spec-draft";
+import { resetTeamDraft, teamDirty } from "../lib/team-draft";
 import { overseerDirty, resetOverseerDraft } from "../lib/overseer-draft";
 import { decisionDirty, resetDecisionDraft } from "../lib/decision-draft";
 import { effectiveStack } from "../lib/typography";
@@ -46,16 +47,18 @@ import { MeshSettingsSection } from "./MeshSettings";
 import { SpecSettingsSection } from "./SpecSettings";
 import { OverseerSettingsSection } from "./OverseerSettings";
 import { SummarizerSettingsSection } from "./SummarizerSettings";
+import { TeamSettingsSection } from "./TeamSettings";
 import { TypographySection } from "./TypographySection";
 import { Banner, Icon, trapFocus } from "./ui";
 
-/** The tab rail. Nine screens; the rail is the structure further settings slot into. General is
+/** The tab rail. Ten screens; the rail is the structure further settings slot into. General is
     first because it is the one screen about this browser's own behaviour rather than a subsystem.
     Same ids, same order as `SETTINGS_TABS` (lib/settings-nav.ts), which is what opens it. */
 const TABS = [
   { id: "general", label: "General", icon: "settings" as const },
   { id: "models", label: "Models", icon: "sliders" as const },
   { id: "modes", label: "Modes", icon: "worker" as const },
+  { id: "teams", label: "Teams", icon: "command" as const },
   { id: "overseer", label: "Overseer", icon: "eye" as const },
   { id: "decisions", label: "Decisions", icon: "shield" as const },
   { id: "summaries", label: "Summaries", icon: "chat" as const },
@@ -125,17 +128,18 @@ export function SettingsDialog(props: { onClose(): void; initialTab?: SettingsTa
     }
   };
 
-  /** Close was asked for over unsaved edits (Delegate, Spec, Overseer or Decisions): the foot asks what to do with them. */
+  /** Close was asked for over unsaved edits (Delegate, Spec, Teams, Overseer or Decisions): the foot asks what to do with them. */
   const [closeHeld, setCloseHeld] = createSignal(false);
-  const modesDirty = () => delegateDirty() || specDirty() || overseerDirty() || decisionDirty();
-  /** Which unsaved screens the hold names: "Delegate", "Spec", "Overseer", "Decisions", joined. */
+  const modesDirty = () => delegateDirty() || specDirty() || teamDirty() || overseerDirty() || decisionDirty();
+  /** Which unsaved screens the hold names: "Delegate", "Spec", "Teams", "Overseer", "Decisions", joined. */
   const unsavedNames = () => {
-    const names = [delegateDirty() && "Delegate", specDirty() && "Spec", overseerDirty() && "Overseer", decisionDirty() && "Decisions"].filter(Boolean) as string[];
+    const names = [delegateDirty() && "Delegate", specDirty() && "Spec", teamDirty() && "Teams", overseerDirty() && "Overseer", decisionDirty() && "Decisions"].filter(Boolean) as string[];
     return names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}` : (names[0] ?? "");
   };
   const resetModesDrafts = () => {
     resetDelegateDraft();
     resetSpecDraft();
+    resetTeamDraft();
     resetOverseerDraft();
     resetDecisionDraft();
   };
@@ -148,10 +152,12 @@ export function SettingsDialog(props: { onClose(): void; initialTab?: SettingsTa
           ? overseerDirty()
           : tab() === "modes"
             ? delegateDirty() || specDirty()
-            : tab() === "decisions"
-              ? decisionDirty()
-              : false;
-      if (!here) setTab(delegateDirty() || specDirty() ? "modes" : overseerDirty() ? "overseer" : "decisions");
+            : tab() === "teams"
+              ? teamDirty()
+              : tab() === "decisions"
+                ? decisionDirty()
+                : false;
+      if (!here) setTab(delegateDirty() || specDirty() ? "modes" : teamDirty() ? "teams" : overseerDirty() ? "overseer" : "decisions");
       setCloseHeld(true);
       return;
     }
@@ -234,6 +240,12 @@ export function SettingsDialog(props: { onClose(): void; initialTab?: SettingsTa
             <div class="settings-panel" role="tabpanel" id="settings-panel-modes" aria-labelledby="settings-tab-modes">
               <DelegateSettingsSection />
               <SpecSettingsSection />
+            </div>
+          </Show>
+          {/* Mounted only while its tab is, like Modes: it asks the same backend discovery. */}
+          <Show when={tab() === "teams"}>
+            <div class="settings-panel" role="tabpanel" id="settings-panel-teams" aria-labelledby="settings-tab-teams">
+              <TeamSettingsSection />
             </div>
           </Show>
           <Show when={tab() === "overseer"}>

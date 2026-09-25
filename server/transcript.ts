@@ -3,7 +3,7 @@ import { OVERSEER_DIALOG_ANSWER_ENTRY, OVERSEER_SENT_ENTRY, type AlignReportInfo
 import { stripImageNotes } from "../shared/image-note";
 import { parseWakeNudge } from "../shared/wake";
 import { inlineTmpImages } from "./attachments";
-import { isReport, parseReport, previewLine } from "./reports";
+import { isReport, parseReport, parseTeamMessage, previewLine, TEAM_EVENT_TYPE, teamEventOf } from "./reports";
 
 // We parse JSONL ourselves instead of using SessionManager.open(): open() is not
 // read-only (it appends "\n" to a trailing partial line and rewrites the file when
@@ -110,6 +110,14 @@ function withPaths(it: TranscriptItem, source: string): TranscriptItem {
 function customRow(id: string, entry: Entry, customType: unknown, content: unknown): TranscriptItem {
   const text = contentText(content);
   const source = typeof customType === "string" ? customType : "";
+  // A coordinated team's report or question: a report row whatever its length, with the header
+  // and trailer peeled off. Unparsed, it falls through to the generic row below.
+  const team = parseTeamMessage(source, text);
+  if (team) {
+    const it = withPaths(item(id, "report", entry, team.body), team.body);
+    it.report = { source, body: team.body, preview: previewLine(team.body), truncated: team.truncated, team: team.team };
+    return it;
+  }
   if (!isReport(source, text)) return withPaths(item(id, "info", entry, text), text);
   const report = parseReport(source, text);
   const it = withPaths(item(id, "report", entry, report.body), report.body);
@@ -326,6 +334,16 @@ function overseerAnswerRow(id: string, entry: Entry): TranscriptItem[] {
   return [it];
 }
 
+/** A subagents team event (handover, retire, pause, resume, wrap-up): one machine row, like a
+    model change, in both webapp-owned and watched sessions. Undecodable: nothing. */
+function teamEventRow(id: string, entry: Entry): TranscriptItem[] {
+  const ev = teamEventOf(entry, id);
+  if (!ev) return [];
+  const it = item(id, "info", entry, `Team: ${ev.text}`);
+  it.teamEvent = ev;
+  return [it];
+}
+
 /** Normalize one parsed JSONL entry into 0..n TranscriptItems. The header line yields none. */
 export function normalizeEntry(entry: Entry, fallbackId = "?", state?: { model?: string }): TranscriptItem[] {
   const id = typeof entry.id === "string" ? entry.id : fallbackId;
@@ -363,14 +381,15 @@ export function normalizeEntry(entry: Entry, fallbackId = "?", state?: { model?:
       // Extension state, not displayable (docs/session-format.md). Exceptions: the mode
       // extension's switch marker, which the TUI draws in the transcript too; and pi-btw's
       // thread entries, which the TUI shows in its overlay but the web can only show here; and
-      // the align document, which the TUI opens in its viewer overlay; and a finished /explain,
-      // whose page the TUI can only point at but the web can open inline.
+      // the align document, which the TUI opens in its viewer overlay; a finished /explain,
+      // whose page the TUI can only point at but the web can open inline; and a team event.
       if (entry.customType === "mode") return modeMarker(entry, id);
       if (entry.customType === "btw-thread-entry") return btwRow(id, entry);
       if (entry.customType === ALIGN_DOC) return alignRow(id, entry);
       if (entry.customType === EXPLAIN_DOC) return explainRow(id, entry);
       if (entry.customType === OVERSEER_SENT_ENTRY) return overseerSentRow(id, entry);
       if (entry.customType === OVERSEER_DIALOG_ANSWER_ENTRY) return overseerAnswerRow(id, entry);
+      if (entry.customType === TEAM_EVENT_TYPE) return teamEventRow(id, entry);
       return [];
     case "custom_message":
       return entry.display === false ? [] : [customRow(id, entry, entry.customType, entry.content)];

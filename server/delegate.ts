@@ -203,7 +203,7 @@ const sessionScoped = (backend: DelegateBackendOptions, model: string): boolean 
  * the list omits is a warning, never an error — the same reading the mode extension routes by
  * (routing.ts assess). pi's registry is local and reliable: there absence stands.
  */
-export function checkChoice(choice: WorkerChoice, options: DelegateOptions, owner = "Delegate"): { error?: string; warning?: string } {
+export function checkChoice(choice: WorkerChoice, options: DelegateOptions, owner = "Delegate", otherwise = "asks"): { error?: string; warning?: string } {
   const backend = options.backends.find((b) => b.id === choice.backend);
   if (!backend || backend.models === null)
     return { warning: `not verified — ${BACKEND_LABELS[choice.backend]} couldn't list its models${backend?.error ? ` (${backend.error})` : ""}` };
@@ -215,7 +215,7 @@ export function checkChoice(choice: WorkerChoice, options: DelegateOptions, owne
   if (!model) return { error: `${choice.model} isn't offered by ${BACKEND_LABELS[choice.backend]}` };
   if (!model.efforts.includes(choice.effort))
     return { error: `${choice.model} doesn't take effort "${choice.effort}" (it takes ${model.efforts.join(", ") || "none"})` };
-  if (model.denied) return { warning: `${model.denied}; ${owner} uses the fallback or asks` };
+  if (model.denied) return { warning: `${model.denied}; ${owner} uses the fallback or ${otherwise}` };
   return {};
 }
 
@@ -257,6 +257,8 @@ export function verifySlots(
   slots: { label: string; choice: WorkerChoice | null; stored: WorkerChoice | null | undefined }[],
   options: DelegateOptions,
   owner = "Delegate",
+  /** What happens when the fallback can't run either: Delegate asks; a team isn't created. */
+  otherwise = "asks",
 ): { warnings: string[] } | { error: string } {
   const errors: string[] = [];
   const warnings: string[] = [];
@@ -267,7 +269,7 @@ export function verifySlots(
       unlisted.set(choice.backend, [...(unlisted.get(choice.backend) ?? []), label]);
       continue;
     }
-    const verdict = checkChoice(choice, options, owner);
+    const verdict = checkChoice(choice, options, owner, otherwise);
     const unchanged = sameChoice(choice, stored);
     if (verdict.error && !unchanged) errors.push(`${label}: ${verdict.error}`);
     else if (verdict.error || verdict.warning) warnings.push(`${label}: ${verdict.error ?? verdict.warning}`);

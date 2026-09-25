@@ -63,6 +63,9 @@ import type {
   SpecSettingsInfo,
   SummarizerSettings,
   SummarizerSettingsInfo,
+  TeamDefaults,
+  TeamDefaultsInfo,
+  TeamDefaultsSaveResult,
 } from "../../shared/protocol";
 import type { TargetInfo } from "./remote-session";
 import type { DecisionKeyInfo, DecisionProbeResult, DecisionSaveResult, DecisionSettings, DecisionSettingsInfo, TagsBackfillProgress, TagsBackfillScope } from "../../shared/protocol";
@@ -173,6 +176,16 @@ export const getSpecOptions = () => request<DelegateOptions>("/api/settings/spec
 /** Replace the writer (`writer: null` = none). Sessions with spec on pick it up at their next turn. */
 export const putSpecSettings = (settings: SpecSettings) =>
   request<SpecSaveResult>("/api/settings/spec", { method: "PUT", body: JSON.stringify(settings) });
+
+/** Team defaults (Settings → Teams): the coordinator and monitor every new team gets. */
+export const getTeamDefaults = () => request<TeamDefaultsInfo>("/api/settings/team");
+
+/** What each worker backend offers for the two roles: the same discovery as Delegate's. */
+export const getTeamOptions = () => request<DelegateOptions>("/api/settings/team/options");
+
+/** Replace the whole file. Teams created afterwards, here and in the terminal, use it. */
+export const putTeamDefaults = (settings: TeamDefaults) =>
+  request<TeamDefaultsSaveResult>("/api/settings/team", { method: "PUT", body: JSON.stringify(settings) });
 
 /** Which model writes the summary line (the topic-outline extension's file; missing → its defaults). */
 export const getSummarizerSettings = () => request<SummarizerSettingsInfo>("/api/settings/summarizer");

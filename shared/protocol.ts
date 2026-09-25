@@ -210,6 +210,8 @@ export interface TranscriptItem {
   overseerMark?:
     | { kind: "sent"; targetId: string }
     | { kind: "dialog-answer"; title: string; answer: string };
+  /** kind "info" only: a subagents-team-event-v1 entry; `text` is `Team: ` + its sentence. */
+  teamEvent?: TeamEvent;
   raw: unknown;
 }
 
@@ -251,6 +253,27 @@ export interface ReportInfo {
   /** source "explain-doc" only: a forked /explain subagent finished and wrote its HTML page +
       meta to the explanations store. `preview` is the topic; `agent` is absent. */
   explain?: ExplanationInfo;
+  /** customType "team-report" / "team-question" only, when the subagents extension's header parsed
+      (server/reports.ts parseTeamMessage). `body` is then the message without its header and
+      trailer lines; `agent` is absent, so the row is never a finished-worker marker. */
+  team?: TeamMessageInfo;
+}
+
+/** A coordinated team's message to the operator, parsed from its header:
+    `[Team report from coordinator <role> (<ag_NN>), <team_NN> — <team name>[ · milestone|concern]]` or
+    `[Team question from <role>[, orchestrator] (<ag_NN>), <team_NN> — <team name>]`.
+    Informational (report) or answered by the main thread (question); never an input of its own. */
+export interface TeamMessageInfo {
+  kind: "report" | "question";
+  role: string; // "coordinator"
+  workerId: string; // "ag_01"
+  teamId: string; // "team_01"
+  teamName: string;
+  /** Question only: the asker is its team's orchestrator (a coordinator always is). */
+  orchestrator?: boolean;
+  /** Report only: the header's ` · <kind>` suffix, else a leading "Milestone:" / "Concern:" line
+      (removed from `body`); absent when neither says. */
+  label?: "milestone" | "concern";
 }
 
 /** One /explain artifact: a self-contained HTML page in the explanations store
@@ -496,6 +519,14 @@ export interface ContextInfo { tokens: number; window: number | null }
 //                                          answered it can't run; unverifiable or policy-denied tuples save with a
 //                                          warning. Sessions with spec on, in either major mode, pick it up at
 //                                          their next turn)
+// GET /api/settings/team                -> TeamDefaultsInfo (~/.pi/agent/team-defaults.json; missing → the built-in
+//                                          defaults with both roles off, `stored: false`; malformed → `error`)
+// GET /api/settings/team/options        -> DelegateOptions (the same discovery as delegate/options)
+// PUT /api/settings/team TeamDefaults   -> TeamDefaultsSaveResult (replaces the whole file. 400 bad shape, or a
+//                                          CHANGED tuple its backend answered it can't run; unverifiable or
+//                                          policy-denied tuples save with a warning. 409 while the stored file is
+//                                          malformed: it is never overwritten. The subagents extension reads it
+//                                          at team_create / team_add)
 // ---------------------------------------------------------------------------
 
 // GET /api/settings/summarizer  -> SummarizerSettingsInfo (~/.pi/agent/topic-outline.json's `summarizers`; missing
@@ -1363,6 +1394,59 @@ export interface SpecSaveResult extends SpecSettingsInfo {
   warnings: string[];
 }
 
+/** Team defaults (pi-config/extensions/subagents/team-defaults.ts, ~/.pi/agent/team-defaults.json):
+    the standing coordinator and monitor every new team gets, unless a team opts out
+    (team_create `defaults.coordinator` / `defaults.monitor` false). A missing file means both off.
+    `fallback: null` = none. */
+export interface TeamCoordinatorDefaults {
+  enabled: boolean;
+  role: string;
+  primary: WorkerChoice;
+  fallback: WorkerChoice | null;
+  instructions: string;
+}
+
+export interface TeamMonitorDefaults {
+  enabled: boolean;
+  role: string;
+  primary: WorkerChoice;
+  fallback: WorkerChoice | null;
+  /** A teammate's context fill, percent of its window, past which the monitor starts a handover. */
+  contextPct: number;
+  /** How often the monitor wakes itself to check. */
+  everyMinutes: number;
+  /** Provider usage: pause the whole team at `pausePct`, resume `resumeMarginMinutes` after the reset. */
+  usage: { enabled: boolean; pausePct: number; resumeMarginMinutes: number };
+  instructions: string;
+}
+
+export interface TeamDefaults {
+  version: 1;
+  coordinator: TeamCoordinatorDefaults;
+  monitor: TeamMonitorDefaults;
+  /** How long a member being replaced has to write its handoff before it is stopped. */
+  handover: { retireTimeoutMinutes: number };
+}
+
+/** GET /api/settings/team. `settings` is the file, or — when there is none (`stored: false`) — the
+    built-in defaults with both roles off. `error`: the file exists but can't be read; `settings`
+    is then those same defaults and every save is refused until the file is fixed or removed. */
+export interface TeamDefaultsInfo {
+  settings: TeamDefaults;
+  defaults: TeamDefaults;
+  stored: boolean;
+  error?: string;
+  backends: { id: DelegateBackendId; label: string; efforts: string[] }[];
+  /** Absolute path of the file, for the screen's footnote. */
+  file: string;
+}
+
+/** PUT /api/settings/team: what is now stored, plus anything saved that could not be verified or
+    that the policy refuses, one sentence each. */
+export interface TeamDefaultsSaveResult extends TeamDefaultsInfo {
+  warnings: string[];
+}
+
 /** Where a switch stands for the one chat it was sent to: "now" = its next message follows it;
     "after-turn" = switched mid-turn, so messages queued in this turn keep the old one;
     "new-chats" = this chat can't take a switch at all (the mode extension isn't loaded in it, or
@@ -1808,6 +1892,30 @@ export interface TeamMember {
   ejectedAt?: number;
   worker: WorkerInfo | null; // null: not in the live record (history team / trimmed worker)
   lastReport?: { status: string; outcome?: string; at: string };
+  /** The member's standing duty in a coordinated team (subagents-team-v1 `duty`). */
+  duty?: TeamDuty;
+  /** The worker id this member took over from: the record's `successorOf`, else (older files) the
+      handover event that named this member as the successor. */
+  successorOf?: string;
+  /** The newest `retire` event for this member. `reason`: the successor confirmed, or the handover
+      timed out; absent when the event's detail says neither. */
+  retired?: { at: string; reason?: "confirmed" | "timeout" };
+}
+export type TeamDuty = "coordinator" | "monitor";
+export type TeamEventKind = "handover" | "retire" | "pause" | "resume" | "wrap-up";
+/** One subagents-team-event-v1 entry on the parent's active branch. `workerId`/`role`: the member
+    the event is about (handover/retire: the old member; pause/resume: the monitor; wrap-up: the
+    member told to wrap up). `text`: the one-sentence form the UI shows (server/reports.ts
+    teamEventText), without the team; `detail` verbatim (≤ 500 chars) for a title. */
+export interface TeamEvent {
+  id: string;
+  teamId: string;
+  kind: TeamEventKind;
+  workerId: string;
+  role: string;
+  at: string; // ISO 8601
+  detail?: string;
+  text: string;
 }
 export interface TeamInfo {
   id: string; name: string; objective: string; createdAt: number;
@@ -1815,6 +1923,10 @@ export interface TeamInfo {
   live: boolean; // parent session currently running
   members: TeamMember[];
   working: number;
+  /** A member has the coordinator duty. */
+  coordinated?: true;
+  /** Oldest first; absent when the team has none. */
+  events?: TeamEvent[];
 }
 export interface LiveAgentSession {
   path: string | null; sessionId: string | null; name: string | null; cwd: string; pid: number; mode: string | null;

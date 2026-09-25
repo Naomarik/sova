@@ -1486,6 +1486,8 @@ export interface QueueItem {
   /** "client" = a send from a Sova socket; "server" = Sova queued it itself (a group batch
       prompt, a remote status probe). Both are removable; the client decides what it shows. */
   origin: "client" | "server";
+  /** The Overseer sent it (`sova_send` into a running session); the row reads "Overseer". */
+  overseer?: true;
 }
 
 /** Why a `queue_remove` was refused, and nothing was removed.
@@ -1993,9 +1995,15 @@ export interface SessionInsight {
 // PUT  /api/overseer/notes          body { text: string } -> { text: string }
 // GET  /api/sessions/summary?id=<session id> -> SessionSummary (any session file with that id,
 //                                   listed or not, e.g. an empty web session), 404 {error} when none
-// POST /api/sessions/prompt         body { path, text } -> { ok: true } (idle hosted-or-openable
-//                                   sessions only: 409 busy/mid-turn/TUI-live; used by sova_send;
-//                                   tagged as the Overseer's only on its own in-process calls)
+// POST /api/sessions/prompt         body { path, text, delivery?: "followUp" | "steer" }
+//                                   -> { ok: true, queued: boolean, kind: "prompt" | "followUp" | "steer",
+//                                   compacting?: true }
+//                                   (hosted-or-openable sessions, as the composer sends: idle, even
+//                                   with subagents working, it starts a turn (kind "prompt"); mid-turn
+//                                   or compacting it is queued in Sova's queue as `delivery`, default
+//                                   followUp; 409 TUI-live/foreign writer/Overseer's own; 400 blank
+//                                   text or a bad delivery; used by sova_send; tagged as the
+//                                   Overseer's only on its own in-process calls)
 // ---------------------------------------------------------------------------
 
 /** `customType` of the marker entry an Overseer file carries (with overseer-state.json naming it:

@@ -194,6 +194,16 @@ test("a reconnect rebuilds the queue from the snapshot alone, this tab's rows an
   if (server?.kind === "user") assert.equal(server.origin, "server");
 });
 
+test("a queued message the Overseer sent is flagged as the Overseer's; a server row without the flag is not", () => {
+  const [s, set] = store();
+  applyQueue(set, [queued("o1", "run the tests", { kind: "followUp", origin: "server", overseer: true }), queued("s7", "status check", { kind: "followUp", origin: "server" })]);
+  const row = (id: string) => s.entries.find((e) => e.kind === "user" && e.id === id);
+  const o1 = row("o1");
+  const s7 = row("s7");
+  assert.deepEqual(o1?.kind === "user" && [o1.origin, o1.overseer], ["server", true]);
+  assert.deepEqual(s7?.kind === "user" && [s7.origin, s7.overseer], ["server", undefined]);
+});
+
 test("removal is by id, so a middle duplicate goes and its twins stay", () => {
   const [s, set] = store();
   addPendingPrompt(set, "again", [], [], "c1");

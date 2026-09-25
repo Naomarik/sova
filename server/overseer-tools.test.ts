@@ -5,13 +5,14 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, test } from "node:test";
-import type { TranscriptItem } from "../shared/protocol";
+import type { SessionSummary, TranscriptItem } from "../shared/protocol";
+import type { OverseerToolHost } from "./overseer-tools";
 
 const agentDir = mkdtempSync(join(tmpdir(), "sova-overseer-tools-"));
 process.env.PI_CODING_AGENT_DIR = agentDir;
 
-const { concurrencyRefusal, renderTranscript, TurnLimits, BUILTIN_ALLOWED } = await import("./overseer-tools");
-const { buildOverseerTools, renderOverseerPrompt, briefDecision, BRIEF_MIN_GAP_MS } = await import("./overseer");
+const { concurrencyRefusal, overseerTools, renderTranscript, TurnLimits, BUILTIN_ALLOWED } = await import("./overseer-tools");
+const { buildOverseerTools, countRunning, renderOverseerPrompt, briefDecision, BRIEF_MIN_GAP_MS } = await import("./overseer");
 const { DEFAULT_CAPS, readOverseerSettings } = await import("./overseer-store");
 const { disposeAllChats } = await import("./chat-manager");
 
@@ -153,5 +154,90 @@ describe("Brief me", () => {
     // Badge-only mode keeps the baseline current, so switching to brief later does not dump old blockers.
     const badge = briefDecision({ ...base, proactivity: "badge", current: ["old"], announced });
     assert.deepEqual(briefDecision({ ...base, current: ["old"], announced: badge.announced }).brief, []);
+  });
+});
+
+describe("sova_send into running sessions", () => {
+  /** sova_send over a fake server: sessions `a`, `b`, `c`; `running` says which are mid-turn, and
+      the route answers `reply`. The host's counting is overseer.ts's own countRunning. */
+  function harness(concurrentSessions: number, reply: Record<string, unknown> = { ok: true, queued: true, kind: "followUp" }) {
+    const running = new Set<string>();
+    const started = new Set<string>();
+    const promptedAt = new Map<string, number>();
+    const sent: Record<string, unknown>[] = [];
+    const summary = (id: string) => ({ id, path: `/s/${id}.jsonl`, title: `Session ${id}` }) as SessionSummary;
+    const isRunning = (p: string) => running.has(p);
+    const host = {
+      request: async (_path: string, init?: RequestInit) => {
+        sent.push(JSON.parse(String(init?.body)));
+        return Response.json(reply);
+      },
+      overseerId: () => "ov",
+      caps: () => ({ ...DEFAULT_CAPS, concurrentSessions }),
+      session: async (ref: string) => (["a", "b", "c"].includes(ref) ? summary(ref) : null),
+      started: (p: string, prompted?: boolean) => {
+        started.add(p);
+        if (prompted) promptedAt.set(p, Date.now());
+      },
+      runningStarted: () => countRunning(started, isRunning, promptedAt),
+      counted: (p: string) => countRunning(started.has(p) ? [p] : [], isRunning, promptedAt) > 0,
+      attended: () => true,
+    } as unknown as OverseerToolHost;
+    const send = overseerTools(host, new TurnLimits()).find((t) => t.name === "sova_send")!;
+    const call = (params: Record<string, unknown>) =>
+      send.execute("tc", params, undefined, undefined, undefined as never).then(
+        (r) => (r.content[0] as { text: string }).text,
+        (e: Error) => `ERROR: ${e.message}`,
+      );
+    return { call, sent, running, started, promptedAt };
+  }
+
+  test("a running session is not refused: the message goes to the route with its delivery, and the result says it was queued", async () => {
+    const h = harness(5);
+    h.running.add("/s/a.jsonl");
+    assert.match(await h.call({ session: "a", text: "then run the tests" }), /^Queued in \[Session a\]\(sova:\/\/s\/a\) behind its running turn, as a follow-up/);
+    assert.deepEqual(h.sent, [{ path: "/s/a.jsonl", text: "then run the tests" }]);
+  });
+
+  test("delivery steer is passed through and reported as a steer; a started turn is reported as sent", async () => {
+    const steer = harness(5, { ok: true, queued: true, kind: "steer" });
+    assert.match(await steer.call({ session: "a", text: "stop", delivery: "steer" }), /^Queued as a steer in \[Session a\]/);
+    assert.deepEqual(steer.sent, [{ path: "/s/a.jsonl", text: "stop", delivery: "steer" }]);
+    const idle = harness(5, { ok: true, queued: false, kind: "prompt" });
+    assert.equal(await idle.call({ session: "b", text: "go" }), "Sent to [Session b](sova://s/b).");
+    assert.match(await idle.call({ session: "b", text: "go", delivery: "now" }), /^ERROR: delivery is "followUp" or "steer"/);
+  });
+
+  test("a session counts once: a send into one you started that is running takes no new slot", async () => {
+    const h = harness(1);
+    h.started.add("/s/a.jsonl");
+    h.running.add("/s/a.jsonl");
+    assert.match(await h.call({ session: "a", text: "one more thing" }), /^Queued/, "a is already the one running slot");
+    assert.match(await h.call({ session: "a", text: "and another" }), /^Queued/);
+    assert.equal(h.sent.length, 2);
+  });
+
+  test("a send into a running session you did not start makes it count, so it needs a free slot", async () => {
+    const h = harness(1);
+    h.started.add("/s/a.jsonl");
+    h.running.add("/s/a.jsonl");
+    h.running.add("/s/b.jsonl");
+    assert.match(await h.call({ session: "b", text: "hello" }), /^ERROR: Limit reached: 1 session you started is running/);
+    assert.equal(h.sent.length, 0, "nothing sent past the cap");
+    // With room for it, it goes, and from then on b counts too.
+    const roomy = harness(2);
+    roomy.started.add("/s/a.jsonl");
+    roomy.running.add("/s/a.jsonl");
+    roomy.running.add("/s/b.jsonl");
+    assert.match(await roomy.call({ session: "b", text: "hello" }), /^Queued/);
+    assert.match(await roomy.call({ session: "c", text: "hi" }), /^ERROR: Limit reached: 2 sessions you started are running/);
+  });
+
+  test("a session you started that has since finished takes a slot again", async () => {
+    const h = harness(1);
+    h.started.add("/s/a.jsonl");
+    h.started.add("/s/b.jsonl");
+    h.running.add("/s/b.jsonl");
+    assert.match(await h.call({ session: "a", text: "next step" }), /^ERROR: Limit reached/, "a is idle: a send would start it, beside b");
   });
 });

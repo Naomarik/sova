@@ -601,6 +601,7 @@ export function LiveEntries(props: {
                         text={e().attachments ? stripPastedPaths(e().text) : e().text}
                         state={e().state}
                         origin={e().origin}
+                        overseer={e().overseer}
                         images={e().images}
                         attachments={e().attachments}
                       />

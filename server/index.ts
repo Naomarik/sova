@@ -53,7 +53,7 @@ import {
   overseerInfo,
   overseerSettingsInfo,
   pathOfId,
-  promptIdleSession,
+  promptSession,
   overseerSender,
   OVERSEER_SENDER_HEADER,
   saveOverseerSettings,
@@ -837,21 +837,24 @@ app.get("/api/sessions/summary", async (c) => {
   return c.json(summary, 200, { "Cache-Control": "no-store" });
 });
 
-// One message to one IDLE session: the one-session twin of the group prompt (sova_send, and a
-// server-side first prompt). Refused mid-turn, TUI-live, or with subagents working; never a steer.
+// One message to one session, as its composer sends it (sova_send, and a server-side first
+// prompt): idle it starts a turn; mid-turn it is queued as `delivery` (followUp by default, or
+// steer). Refused TUI-live, for the Overseer's own file, or when a foreign writer holds it.
 app.post("/api/sessions/prompt", async (c) => {
-  let body: { path?: unknown; text?: unknown };
+  let body: { path?: unknown; text?: unknown; delivery?: unknown };
   try {
     body = await c.req.json();
   } catch {
     return c.json({ error: "Expected JSON body { path, text }" }, 400);
   }
   if (typeof body?.text !== "string") return c.json({ error: "text must be a string" }, 400);
+  if (body.delivery !== undefined && body.delivery !== "followUp" && body.delivery !== "steer")
+    return c.json({ error: 'delivery must be "followUp" or "steer"' }, 400);
   const path = resolveSessionPath(typeof body.path === "string" ? body.path : null);
   if (!path) return c.json({ error: "Invalid or missing path (must be a .jsonl under the pi sessions dir)" }, 400);
   if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
-  const r = await promptIdleSession(path, body.text, overseerSender(c.req.header(OVERSEER_SENDER_HEADER)));
-  return r.ok ? c.json({ ok: true }) : c.json({ error: r.error }, r.status);
+  const r = await promptSession(path, body.text, overseerSender(c.req.header(OVERSEER_SENDER_HEADER)), body.delivery);
+  return r.ok ? c.json({ ok: true, queued: r.queued, kind: r.kind, ...(r.compacting ? { compacting: true } : {}) }) : c.json({ error: r.error }, r.status);
 });
 // Installed extensions (server/extensions.ts), with each backend's cached health.
 app.get("/api/extensions", async (c) => c.json(await listExtensions()));

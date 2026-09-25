@@ -674,6 +674,11 @@ export function isCompactionInProgress(err: unknown): boolean {
     releases what the queue held while a compaction ran (its `paused`). */
 const QUEUE_WAKE_EVENTS = new Set(["queue_update", "message_start", "turn_end", "agent_settled", "agent_end", "compaction_end"]);
 
+/** A message the Overseer sent whose user entry still needs its `sova-overseer-sent` marker.
+    `itemId`: it rode in on a queue item; `held` while that item has not departed, so the settle
+    sweep leaves the mark alone (its message may still be in the SDK's queue). */
+type OverseerMark = { text: string; overseerId?: string; itemId?: string; held?: boolean };
+
 /** One embedded pi runtime for one session file, shared by all connected chat clients. */
 class ChatSession {
   readonly clients = new Set<ChatClient>();
@@ -701,7 +706,7 @@ class ChatSession {
   /** This runtime is the Overseer's (set by openSession from the file's marker). */
   overseer = false;
   /** Texts the Overseer sent here whose user entry still needs its `sova-overseer-sent` marker. */
-  private overseerSends: Array<{ text: string; overseerId?: string }> = [];
+  private overseerSends: OverseerMark[] = [];
   /** How the last switch of THIS chat applies (ModeApplies); set at bind and by applyMode. */
   modeApplies: ModeApplies = "now";
   /**
@@ -750,8 +755,10 @@ class ChatSession {
     // Broadcast, never addressed: a second tab on this chat has the same pending rows and must
     // learn why one left, including a removal it did not make. The text rides along for every
     // reason but "delivered", so whichever client wants to offer it back to a composer can.
-    onGone: (item, reason) =>
-      this.broadcast({ type: "queue_item_gone", itemId: item.id, reason, ...(reason === "delivered" ? {} : { text: item.text }) }),
+    onGone: (item, reason) => {
+      this.settleOverseerMark(item.id, reason === "delivered");
+      this.broadcast({ type: "queue_item_gone", itemId: item.id, reason, ...(reason === "delivered" ? {} : { text: item.text }) });
+    },
     onChange: (items) => this.broadcast({ type: "queue", items }),
     onHandOffError: (item, err) => {
       const code = err instanceof BusyError ? err.code : "internal";
@@ -833,11 +840,17 @@ class ChatSession {
     this.flushDeferredAppends();
     const images = item.images as Parameters<AgentSession["steer"]>[1];
     const toSdk = <T>(send: () => T) => this.toSdk(item.origin, send);
+    // The Overseer's mark goes in with the message, never earlier: a held item is not in the SDK,
+    // so a message the user types meanwhile with the same text must not take its mark. It stays
+    // until the message ends (markOverseerSend) or the item departs undelivered (onGone).
+    const mark = item.overseer ? { text: item.text, overseerId: item.overseer.overseerId, itemId: item.id, held: true } : null;
+    if (mark) this.overseerSends.push(mark);
     if (!streaming) {
       // Idle: this starts a turn. Its own failure belongs in this session's pane, like every other
       // turn nobody is awaiting, and must not be reported as a hand-off failure (which would hand
       // the text back to the composer for a message that HAS been sent).
       toSdk(() => this.session.prompt(item.text, { images })).catch((err) => {
+        if (mark) this.dropOverseerMark(mark);
         if (this.heldForCompaction(err, { ...item, id: undefined })) return;
         this.reportTurnFailure(err);
         // A turn that never started emits no event, so nothing would wake the queue and every
@@ -872,10 +885,28 @@ class ChatSession {
    * one has departed and the client has settled that id; it rejoins at the back. A direct send
    * keeps its sender's id, which no queue item ever had. Returns false for any other error.
    */
-  private heldForCompaction(err: unknown, item: { kind: WebQueueItem["kind"]; text: string; images?: QueueImage[]; origin: QueueItem["origin"]; id?: string }): boolean {
+  private heldForCompaction(
+    err: unknown,
+    item: { kind: WebQueueItem["kind"]; text: string; images?: QueueImage[]; origin: QueueItem["origin"]; id?: string; overseer?: WebQueueItem["overseer"] },
+  ): boolean {
     if (!isCompactionInProgress(err) || this.disposed) return false;
-    this.queue.enqueue({ kind: item.kind, text: item.text, images: item.images, origin: item.origin, ...(item.id ? { id: item.id } : {}) });
+    this.queue.enqueue({ kind: item.kind, text: item.text, images: item.images, origin: item.origin, ...(item.id ? { id: item.id } : {}), ...(item.overseer ? { overseer: item.overseer } : {}) });
     return true;
+  }
+
+  /** A queue item left: delivered, its mark waits for its message like any other (the settle
+      sweep may take it from now on); gone any other way, its message never enters, so neither
+      does the mark. */
+  private settleOverseerMark(itemId: string, delivered: boolean): void {
+    const mark = this.overseerSends.find((s) => s.itemId === itemId);
+    if (!mark) return;
+    if (delivered) mark.held = false;
+    else this.dropOverseerMark(mark);
+  }
+
+  private dropOverseerMark(mark: OverseerMark): void {
+    const i = this.overseerSends.indexOf(mark);
+    if (i >= 0) this.overseerSends.splice(i, 1);
   }
 
   /**
@@ -1054,8 +1085,9 @@ class ChatSession {
       if (event.type === "agent_settled" && this.overseerSends.length) {
         // A mark that never found its message this run (the prompt was swallowed or failed early)
         // is stale. Deferred, so a mark for a prompt made while this event is being emitted (it
-        // runs in this same settle window) is not dropped before its message ends.
-        const stale = [...this.overseerSends];
+        // runs in this same settle window) is not dropped before its message ends. A mark whose
+        // queue item has not departed yet is not stale: its message is still on its way.
+        const stale = this.overseerSends.filter((s) => !s.held);
         setTimeout(() => {
           if (!this.session.isStreaming) this.overseerSends = this.overseerSends.filter((s) => !stale.includes(s));
         }, 0);
@@ -1312,7 +1344,10 @@ class ChatSession {
         be sent verbatim. Without it the SDK would expand skills and templates a SECOND time, and a
         stored message that merely begins with "/" would be DISPATCHED as an extension command
         instead of replayed — a regenerate that runs a command rather than redoing the turn. */
-    opts?: { replay?: boolean; sentByOverseer?: { overseerId?: string } },
+    /** `sentByOverseer`: mark the user entry as the Overseer's (§app.overseer/sent-marker), now
+        or, when it is queued, at its hand-off. `delivery`: the kind it is queued as mid-turn, as
+        the composer's Steer or a Playbook's follow-up; idle, either is a plain prompt. */
+    opts?: { replay?: boolean; sentByOverseer?: { overseerId?: string }; delivery?: WebQueueItem["kind"] },
   ): { queued: boolean; turn: Promise<void> } {
     // Never write if a TUI grabbed this file, or anyone else wrote it, after we opened it.
     assertNotLive(this.path);
@@ -1325,11 +1360,12 @@ class ChatSession {
     // A compaction running is the same: pi refuses every prompt until it ends, so the message is
     // held, and the queue hands it over (as a fresh turn) at compaction_end.
     if (this.session.isStreaming || this.isCompacting()) {
-      this.queue.enqueue({ kind: "followUp", text, images: images as QueueImage[] | undefined, origin, id: clientId });
+      const overseer = opts?.sentByOverseer ? { overseer: opts.sentByOverseer } : {};
+      this.queue.enqueue({ kind: opts?.delivery ?? "followUp", text, images: images as QueueImage[] | undefined, origin, id: clientId, ...overseer });
       return { queued: true, turn: Promise.resolve() };
     }
     this.flushDeferredAppends();
-    // Marked only when it starts a turn now (the Overseer prompts idle sessions only). A pending
+    // Marked here when it starts a turn now; a queued one is marked at its hand-off. A pending
     // mark is dropped if the turn fails, and any left when the run settles are dropped too
     // (bind's agent_settled), so a later identical message the user types is never tagged.
     const send = opts?.sentByOverseer ? { text, overseerId: opts.sentByOverseer.overseerId } : null;
@@ -1344,7 +1380,8 @@ class ChatSession {
     if (opts?.replay) return { queued: false, turn };
     // Held under the sender's own id: this send was never a queue item, so the id is still free.
     const held = (err: unknown) => {
-      if (!this.heldForCompaction(err, { kind: "followUp", text, images: images as QueueImage[] | undefined, origin, id: clientId })) throw err;
+      const item = { kind: opts?.delivery ?? "followUp", text, images: images as QueueImage[] | undefined, origin, id: clientId, ...(opts?.sentByOverseer ? { overseer: opts.sentByOverseer } : {}) };
+      if (!this.heldForCompaction(err, item)) throw err;
     };
     return { queued: false, turn: turn.catch(held) };
   }

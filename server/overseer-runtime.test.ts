@@ -564,6 +564,59 @@ describe("sova_send and archived sessions", () => {
   });
 });
 
+describe("sova_send into a session mid-turn (the in-process route, as the server wires it)", () => {
+  test("queued behind the running turn (a follow-up, then a steer), then delivered in order and tagged as the Overseer's", async () => {
+    // The one route sova_send calls, dispatched as index.ts's app would (same guards, same header).
+    overseer.setOverseerDispatch(async (path, init) => {
+      if (path !== "/api/sessions/prompt") return Response.json({ error: "not wired in this test" }, { status: 404 });
+      const body = JSON.parse(String(init?.body));
+      const sender = overseer.overseerSender(new Headers(init?.headers).get(overseer.OVERSEER_SENDER_HEADER) ?? undefined);
+      const r = await overseer.promptSession(body.path, body.text, sender, body.delivery);
+      return r.ok ? Response.json({ ok: true, queued: r.queued, kind: r.kind }) : Response.json({ error: r.error }, { status: r.status });
+    });
+    writeOverseerSettings({ ...defaultSettings() });
+    const dir = join(agentDir, "sessions", "--tmp-midturn--");
+    mkdirSync(dir, { recursive: true });
+    const id = "01a0d000-0000-7000-8000-0000000b5e01";
+    const path = join(dir, `2026-09-20T00-00-00-000Z_${id}.jsonl`);
+    writeFileSync(
+      path,
+      [
+        { type: "session", version: 3, id, timestamp: "2026-09-20T00:00:00.000Z", cwd: agentDir },
+        { type: "message", id: "u1", parentId: null, timestamp: "2026-09-20T00:00:01.000Z", message: { role: "user", content: [{ type: "text", text: "hi" }], timestamp: 0 } },
+      ].map((l) => JSON.stringify(l)).join("\n") + "\n",
+    );
+    const chat = await overseerChat();
+    await userSends(chat, "tell that session to run the tests next");
+    const before = JSON.parse(readFileSync(overseerTurnFile(), "utf8")).used.prompt;
+
+    const target = await acquireChat(path, true);
+    fakeRuns(target);
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    modelCalls.push(() => gate);
+    void target.acceptPrompt("a long task").turn;
+    await until(() => target.session.isStreaming);
+
+    const send = (params: Record<string, unknown>) =>
+      tool("sova_send").execute("tc", { session: id, ...params }, undefined, undefined, undefined as never).then((r) => (r.content[0] as { text: string }).text);
+    assert.match(await send({ text: "then run the tests" }), /^Queued in .* behind its running turn, as a follow-up/);
+    assert.match(await send({ text: "use pnpm", delivery: "steer" }), /^Queued as a steer in /);
+    assert.equal(JSON.parse(readFileSync(overseerTurnFile(), "utf8")).used.prompt, before + 2, "each send is one prompt on the per-turn cap");
+    assert.deepEqual(target.queue.snapshot().map((i) => [i.text, i.kind, i.overseer]), [["then run the tests", "followUp", true], ["use pnpm", "steer", true]]);
+
+    release();
+    await until(() => readFileSync(path, "utf8").split("\n").filter((l) => l.includes("sova-overseer-sent")).length === 2);
+    await settled(target);
+    const lines = readFileSync(path, "utf8").trim().split("\n").map((l) => JSON.parse(l));
+    const marked = new Set(lines.filter((e) => e.customType === "sova-overseer-sent").map((e) => e.data.targetId));
+    const users = lines.filter((e) => e.type === "message" && e.message.role === "user").map((e) => [e.message.content[0].text, marked.has(e.id)]);
+    // In the order sent: Sova's queue hands one item to the SDK at a time, so a steer sent after a
+    // queued follow-up waits behind it, exactly as a composer Steer does (server/queue.ts).
+    assert.deepEqual(users, [["hi", false], ["a long task", false], ["then run the tests", true], ["use pnpm", true]]);
+  });
+});
+
 describe("standing notes and the extra prompt are live: read at every run's start", () => {
   test("a note or a Settings save reaches the very next run's prompt, without /clear", async () => {
     writeOverseerSettings({ ...defaultSettings() });

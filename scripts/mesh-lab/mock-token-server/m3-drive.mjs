@@ -5,7 +5,7 @@
 // in a finally. `conflict` stops two hosts' Sova to plant different pre-sync keys, then settles the
 // conflict through the Mesh page's routes (GET /api/mesh/logins, POST /api/mesh/logins/claim).
 //
-//   node scripts/mesh-lab/mock-token-server/m3-drive.mjs [h1|h2|h2c|h6|h6c|h9|all|h3|h4|h7|h8|h10|chaos|h11|conflict|conflict-clean] [--hosts a,b,c] [--plant-only]
+//   node scripts/mesh-lab/mock-token-server/m3-drive.mjs [h1|h2|h2c|h6|h6c|h9|all|h3|h4|h7|h8|h10|chaos|h11|conflict|conflict-verify|conflict-clean] [--hosts a,b,c] [--plant-only]
 //   (h11 is meant for an 8-host lab: --hosts a,b,c,d,e,f,g,h; M3_H11_SECONDS sets its length)
 //
 // Needs the lab's mock token server (laptop http://127.0.0.1:4888, MOCK_TOKEN_URL inside hosts)
@@ -472,6 +472,20 @@ async function conflict() {
   return `a and b kept their own keys and listed each other; claim on a → every host on a's key in ${spread} ms; peer-listener claim ${viaPeer}; no key/fingerprint in any body`;
 }
 
+/** After a claim made elsewhere (the Mesh page on the first host): every host on its key, no conflict left. */
+async function conflictVerify() {
+  const [a] = HOSTS;
+  const key = "pi:m3conflict";
+  const want = inHost(a, "pi-state", "m3conflict").refreshSha;
+  if (!want) throw new Error(`${a} holds no m3conflict key`);
+  await until(`every host holds ${a}'s key`, async () => HOSTS.every((h) => inHost(h, "pi-state", "m3conflict").refreshSha === want) || "not yet", 30_000);
+  await until("no conflict left", async () => {
+    const rows = await Promise.all(HOSTS.map((h) => loginRow(h, key)));
+    return rows.every((r) => r && !r.conflictWith && r.origin === a && r.loginAt > 0) || rows.map((r) => [r?.origin, r?.loginAt, r?.conflictWith ?? null]);
+  });
+  return `every host on ${a}'s key, origin ${a}, a login made at the claim, no conflict`;
+}
+
 /** Log the throwaway conflict key out everywhere (after a --plant-only run). */
 async function conflictClean() {
   const holders = HOSTS.filter((h) => inHost(h, "pi-state", "m3conflict").present);
@@ -480,7 +494,7 @@ async function conflictClean() {
   return `logged out on ${holders.join(",") || "no host"}`;
 }
 
-const ALL = { conflict, "conflict-clean": conflictClean, h1, h2, h2c, h6, h6c, h9, h3, h4, h7, h8, h10, h11 };
+const ALL = { conflict, "conflict-verify": conflictVerify, "conflict-clean": conflictClean, h1, h2, h2c, h6, h6c, h9, h3, h4, h7, h8, h10, h11 };
 const GROUPS = { all: ["h1", "h2", "h2c", "h6", "h6c", "h9"], chaos: ["h3", "h4", "h7", "h8", "h10"] };
 const run = GROUPS[which] ?? which.split(",");
 for (const name of run) {

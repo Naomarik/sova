@@ -176,6 +176,24 @@ describe("explorers: one subagent per idea, launched and addressed through the s
     assert.deepEqual(calls.at(-1)?.params, { id: "ag_01" });
   });
 
+  test("the explorer's reply comes back redacted (redactingTool covers sova_ideas); its system prompt forbids secret files and values", async () => {
+    const { Redactor } = await import("./overseer-redact");
+    const secret = "Zq8vT3mN9pL2xR7wK4sB6yH1";
+    const leak = subagents.agent_transcript!;
+    subagents.agent_transcript = (p) => ({ content: [{ type: "text", text: `found ${secret} in .env\nPLAN:\n- x` }], details: { id: p.id } });
+    try {
+      const t = overseerTools(host as never, limits, () => new Redactor([], { SOME_API_KEY: secret }).refresh()).find((x) => x.name === "sova_ideas")!;
+      const r = await t.execute("tc1", { op: "explorer", id: "mesh/health" }, undefined, undefined, CTX as never);
+      const out = (r.content as { text: string }[]).map((c) => c.text).join("\n");
+      assert.match(out, /found \[redacted\] in \.env/);
+      assert.ok(!out.includes(secret));
+    } finally {
+      subagents.agent_transcript = leak;
+    }
+    const { explorerSystemPrompt } = await import("./overseer-idea-tools");
+    assert.match(explorerSystemPrompt("§x/y"), /Never open credential or secret files[\s\S]*auth\.json[\s\S]*\.env[\s\S]*~\/\.ssh[\s\S]*Never quote a secret value/);
+  });
+
   test("tell and explorer refuse an idea whose explorer belongs to another conversation, or has ended", async () => {
     overseerId = "ov-2";
     assert.match(await refusal("sova_idea", { op: "tell", id: "mesh/health", message: "x" }), /earlier Overseer conversation/);

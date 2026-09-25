@@ -322,6 +322,10 @@ and "as of `{HH:MM}`" in the meta.
 - **Rows.** Rows are not targets: they carry no link and no hover. The role is `.list-title`.
   Ids and models are mono in the meta line. Orchestrator is a neutral count-style badge, not a
   status. Owned paths go only in the row's `title`, because they're advisory.
+- **Ejected.** A member whose team seat was released (`member.ejectedAt` set, §app.teams/seats)
+  keeps its row, its id, model and status chip, and adds a neutral `.chip` + dot, **Ejected**,
+  in `.list-title` after the Orchestrator badge. It is not a run status: it never replaces the
+  status chip at the right and never pulses.
 - **Order.** Orchestrator first, then members in roster order.
 - **Status.** The word is always shown. The pulse appears only when `member.worker` is present
   **and** its session is `fresh`.
@@ -335,6 +339,7 @@ and "as of `{HH:MM}`" in the meta.
   | `done` | `.chip.chip-success` Done |
   | `error` | `.chip.chip-error` Failed |
   | `killed` | `.chip` + dot, Stopped |
+  | `ejectedAt` set (any of the above) | also `.chip` + dot, Ejected, in `.list-title` (see Ejected) |
   | `worker` null, `lastReport` present | that status's chip with **no pulse**, and the meta adds "as of `{HH:MM}`" |
   | neither | neutral `.chip` No report yet |
 

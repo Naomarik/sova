@@ -45,8 +45,13 @@
     },
     "§app.insights/team-cards": {
       "kind": "behavior",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "src/components/AgentsView.tsx",
+        "server/insights.ts",
+        "shared/protocol.ts"
+      ]
     },
     "§app.insights/tokens-motion-and-accessibility": {
       "kind": "behavior",
@@ -317,7 +322,8 @@
         "src/lib/insights.ts",
         "src/design/base.css",
         "src/components/ContextRing.tsx",
-        "src/lib/workers.ts"
+        "src/lib/workers.ts",
+        "src/lib/workers.test.ts"
       ]
     },
     "§app/extension-dialogs": {
@@ -2818,6 +2824,34 @@
       "code": [
         "server/mesh/details.ts",
         "src/components/MeshDetails.tsx"
+      ]
+    },
+    "§app.teams/seats": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.worker-restore/restore",
+        "§app.worker-restore/resume"
+      ],
+      "code": [
+        "pi-config/extensions/subagents/teams.ts",
+        "pi-config/extensions/subagents/index.ts",
+        "pi-config/extensions/subagents/team-widget.ts",
+        "pi-config/extensions/subagents/team-modal.ts",
+        "pi-config/extensions/subagents/README.md",
+        "server/insights.ts",
+        "shared/protocol.ts",
+        "server/insights-eject.test.ts"
+      ]
+    },
+    "§app/teams": {
+      "kind": "surface",
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "pi-config/extensions/subagents/teams.ts",
+        "pi-config/extensions/subagents/index.ts"
       ]
     }
   },

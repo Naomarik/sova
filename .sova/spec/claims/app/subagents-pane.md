@@ -211,6 +211,7 @@ list/detail. From 1280 the column is 40vw and asks its own box, so it's side by 
   | `killed` | `.chip` + dot, Stopped | `{provider}` · `{model}` · `{tokens}` · as of `{HH:MM}` |
   | `restored` | `.chip` + dot, Restored | `{provider}` · `{model}` · `{tokens}` · as of `{HH:MM}` |
   | `restored`, mid-task at the restart (`interruptedAt`) | `.chip.chip-warn` Interrupted | `{provider}` · `{model}` · `{tokens}` · as of `{HH:MM}` |
+  | a team member whose `ejectedAt` is set (§app.teams/seats) | `.chip` + dot, Ejected, **before** the status chip, which stays | unchanged |
 
   **Tokens** are that worker's own running total (input + output, mono, the same §chat/context-window format and
   the same split-and-cost `title` as the head's Σ). A worker that has spent nothing yet shows

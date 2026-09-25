@@ -1934,6 +1934,8 @@ export interface ExtensionInfo {
 //                                  mesh off too, no Tailscale call; nodeId only while on)
 // ANY  /peer/<id>/api/...       -> the peer's /api/... verbatim (query included, bytes untouched).
 //                                  404 {error:"Unknown peer"}, 502 {error:"peer down", id},
+//                                  504 {error:"peer timeout", id} (took the connection, sent no response
+//                                  headers within 30 s; a body streaming after them is never cut),
 //                                  403 {error:"peer refused", id} (its allowlist does not list this host)
 // WS   /peer/<id>/ws/chat|watch -> the peer's socket; frames and close codes pass through exactly. A
 //                                  peer that is down or refuses is an HTTP 502/403 before any upgrade

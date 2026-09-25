@@ -395,8 +395,8 @@ async function applySettingsNow(): Promise<void> {
   const s = readOverseerSettings();
   const cur = chat.session.model ? `${chat.session.model.provider}/${chat.session.model.id}` : null;
   try {
-    if (s.model && s.model !== cur) await chat.setModelRef(s.model, { save: false });
-    if (s.thinking && s.thinking !== chat.session.thinkingLevel) chat.setThinking(s.thinking, { save: false });
+    if (s.model && s.model !== cur) await chat.setModelRef(s.model);
+    if (s.thinking && s.thinking !== chat.session.thinkingLevel) chat.setThinking(s.thinking);
   } catch (err) {
     console.warn("[overseer] applying settings failed:", err instanceof Error ? err.message : String(err));
   }

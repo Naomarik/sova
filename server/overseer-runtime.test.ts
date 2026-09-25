@@ -9,10 +9,10 @@
 // handlers, template expansion, the SDK's own queues and `message_start`. Only the model is a stub
 // (`fakeRuns`), since the test dir has no credentials.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, realpathSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { after, describe, test } from "node:test";
+import { after, before, describe, test } from "node:test";
 import type { ChatServerMessage } from "../shared/protocol";
 
 const agentDir = realpathSync(mkdtempSync(join(tmpdir(), "sova-overseer-runtime-")));
@@ -65,6 +65,10 @@ mkdirSync(join(agentDir, "prompts"), { recursive: true });
 writeFileSync(join(agentDir, "prompts", "mk.md"), "---\ndescription: make a session\n---\nCreate one empty session titled $1.\n");
 
 const { acquireChat, disposeAllChats } = await import("./chat-manager");
+const { SessionManager } = await import("@earendil-works/pi-coding-agent");
+const { canonicalPath } = await import("./paths");
+const { markOwned } = await import("./write-guard");
+const { getSessionSummary } = await import("./sessions-index");
 // Registers the Overseer runtime with chat-manager, as index.ts does.
 const overseer = await import("./overseer");
 const { DEFAULT_CAPS, defaultSettings, overseerTurnFile, readOverseerSettings, writeNotes, writeOverseerSettings } = await import("./overseer-store");
@@ -257,7 +261,9 @@ describe("the composer's model switch writes back the level it clamped to", () =
     (chat.session as unknown as { setModel(m: unknown): Promise<void> }).setModel = async () => {
       level = "medium";
     };
-    await chat.setModelRef("ollama-cloud/glm-5.3");
+    // The composer's own message: the one path that saves a pick (`save: true`).
+    chat.handle(client, { type: "set_model", ref: "ollama-cloud/glm-5.3" });
+    await until(() => readOverseerSettings().model === "ollama-cloud/glm-5.3");
     const stored = readOverseerSettings();
     assert.equal(stored.model, "ollama-cloud/glm-5.3");
     assert.equal(stored.thinking, "medium");
@@ -673,5 +679,71 @@ describe("worker reports reach the Overseer's model redacted", () => {
     } finally {
       delete process.env.OVERSEER_TEST_API_KEY;
     }
+  });
+});
+
+describe("a model or thinking the Overseer sets applies to that session only", () => {
+  const defaultsFile = join(agentDir, "sova", "defaults.json");
+  const bytes = () => (existsSync(defaultsFile) ? readFileSync(defaultsFile) : null);
+  /** No credentials here: every model resolves, and the SDK's own switch is a no-op. */
+  function switchable(chat: Chat): void {
+    const inner = chat as unknown as { runtime: { services: { modelRuntime: { getAvailable(): Promise<unknown[]> } } } };
+    inner.runtime.services.modelRuntime.getAvailable = async () => [{ provider: "ollama-cloud", id: "glm-5.3" }];
+    (chat.session as unknown as { setModel(m: unknown): Promise<void> }).setModel = async () => {};
+  }
+  /** What POST /api/sessions does: a header-only session file, ours, with its summary. */
+  async function newSession(): Promise<{ id: string; path: string }> {
+    const sm = SessionManager.create(agentDir);
+    const header = sm.getHeader()!;
+    writeFileSync(sm.getSessionFile()!, `${JSON.stringify(header)}\n`, { flag: "wx" });
+    const path = canonicalPath(sm.getSessionFile()!);
+    markOwned(path);
+    switchable(await acquireChat(path));
+    return { id: header.id, path };
+  }
+  /** Only the one route sova_create_session needs; everything else is a 404 the tool notes. */
+  const json = (body: unknown, status: number) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+  const created: string[] = [];
+  before(() =>
+    overseer.setOverseerDispatch(async (path, init) => {
+      if (path !== "/api/sessions" || init?.method !== "POST") return json({ error: `not in this test: ${path}` }, 404);
+      const s = await newSession();
+      created.push(s.path);
+      return json(await getSessionSummary(s.path), 201);
+    }),
+  );
+  after(() =>
+    overseer.setOverseerDispatch(() => {
+      throw new Error("The Overseer's tools are not wired to the server yet.");
+    }),
+  );
+  const result = async (name: string, params: Record<string, unknown>) => {
+    const out = (await tool(name).execute("tc", params, undefined, undefined, undefined as never)) as { content: { text: string }[] };
+    return out.content.map((c) => c.text).join("\n");
+  };
+  const pristine = (path: string) => !readFileSync(path, "utf8").includes('"role":"user"');
+
+  test("sova_create_session with a model and thinking leaves no defaults file behind", async () => {
+    writeOverseerSettings({ ...defaultSettings(), caps: { ...DEFAULT_CAPS, createPerTurn: 10, concurrentSessions: 10 } });
+    rmSync(defaultsFile, { force: true });
+    await userSends(await overseerChat(), "make a session on glm");
+    const said = await result("sova_create_session", { cwd: agentDir, model: "ollama-cloud/glm-5.3", thinking: "high" });
+    assert.doesNotMatch(said, /not set/, "the switch itself went through");
+    assert.equal(created.length, 1);
+    assert.equal(pristine(created[0]!), true, "a session no one has written to: the case that used to save");
+    assert.equal(bytes(), null, "defaults.json was never written");
+  });
+
+  test("sova_set_session on an empty session leaves the defaults file byte-identical", async () => {
+    writeOverseerSettings({ ...defaultSettings() });
+    mkdirSync(join(agentDir, "sova"), { recursive: true });
+    writeFileSync(defaultsFile, JSON.stringify({ version: 1, model: "zai/glm-5.3", thinking: "low" }) + "\n");
+    const before = bytes();
+    const s = await newSession();
+    await userSends(await overseerChat(), "switch that one to glm");
+    const said = await result("sova_set_session", { session: s.id, model: "ollama-cloud/glm-5.3", thinking: "high" });
+    assert.match(said, /model ollama-cloud\/glm-5\.3/);
+    assert.equal(pristine(s.path), true);
+    assert.deepEqual(bytes(), before);
   });
 });

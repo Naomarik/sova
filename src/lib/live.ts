@@ -67,6 +67,8 @@ export interface LiveTool {
   status: "running" | "done" | "error";
   output: string;
   images: string[];
+  /** The result's `details` (a tool's structured payload: the Overseer's navigate target, its confirm). */
+  details?: unknown;
 }
 
 export interface LiveState {
@@ -454,6 +456,7 @@ export function applyEvent(set: SetStoreFunction<LiveState>, event: unknown) {
             status: event.isError === true ? "error" : "done",
             output: toolOutput(event.result),
             images: toolImages(event.result),
+            ...(isObj(event.result) && event.result.details !== undefined ? { details: event.result.details } : {}),
           };
           break;
         }

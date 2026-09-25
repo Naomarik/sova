@@ -1971,6 +1971,20 @@ a.group-option { color: inherit; text-decoration: none; }
 .action-menu .mode-option { gap: var(--space-2); padding: var(--space-1) var(--space-3); }
 .action-menu .mode-option .icon { flex: none; color: var(--color-ink-muted); }
 .action-menu .mode-option[aria-disabled="true"] { cursor: not-allowed; }
+/* The panel is the model menu's column flex with overflow hidden, so rows used to SHRINK to their
+   min-height when the menu ran out of room and their text painted over the next row. Rows keep
+   their content's height and the panel scrolls instead. A long label (a conversation's first
+   message) stops at two lines; the row's title carries the rest. */
+.model-menu.action-menu { overflow-y: auto; overscroll-behavior: contain; }
+.action-menu > * { flex-shrink: 0; }
+.action-menu .mode-option-id {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
 
 /* ---- SESSION ROW. The row's state lives in a fixed LEFT rail, wordless, so
    every title starts on one edge and no chip eats the width the title needs.
@@ -4553,7 +4567,10 @@ a.chip:hover { color: var(--color-ink); border-color: var(--color-border-strong)
   white-space: nowrap;
 }
 .subagent-row[aria-current="true"] .subagent-row-name { font-weight: var(--fw-semibold); }
-.subagent-row-status { grid-column: 2; grid-row: 1; display: inline-flex; }
+/* The status slot: the worker's context ring (the sidebar's — same 12px box, same warn/error
+   steps, the words in its title only), then the chip. The ring sits here, not on the meta line:
+   the name gives up the room, and the meta line, already the row's tightest, keeps every fact. */
+.subagent-row-status { grid-column: 2; grid-row: 1; display: inline-flex; align-items: center; gap: var(--space-2); }
 /* A meta line where the facts have different claims on the width: everything keeps its room on
    one line, and the model id is the only part that shrinks and ellipsizes, so a dated id can
    never push a token count out of the row. */
@@ -4641,6 +4658,24 @@ a.chip:hover { color: var(--color-ink); border-color: var(--color-border-strong)
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  /* Seven facts at most (id · provider · model · context · tokens · effort) don't fit a narrow
+     view on one line: they wrap to a second rather than clip the ones at the end. */
+  flex-wrap: wrap;
+}
+
+/* The view head's context readout: the chat head's gauge ("Context 64k / 1M · 6%") as one meta
+   fact. It is in no .session-head, and the head's window-width floors (CONTEXT WINDOW) would hide
+   it on a phone, where this pane is the whole screen, so they're undone here; it collapses to the
+   percent by the pane's own width instead. */
+.context-readout { display: inline-flex; }
+.context-readout > .context-gauge { display: inline-flex; font-size: inherit; }
+.context-readout .context-label,
+.context-readout .context-value { display: inline; }
+.context-readout .context-pct { display: none; }
+@container subagents (max-width: 479px) {
+  .context-readout .context-label,
+  .context-readout .context-value { display: none; }
+  .context-readout .context-pct { display: inline; }
 }
 
 /* A restored worker's note under the head: what the restart did, and Resume Worker when this
@@ -5010,4 +5045,141 @@ a.chip:hover { color: var(--color-ink); border-color: var(--color-border-strong)
   height: 6px;
   border-radius: var(--r-full);
   background: currentColor;
+}
+
+/* =============================================================================
+   OVERSEER — the one session that watches the rest (#/overseer): its entry
+   button beside the session search (and on the spine), the unread dots on
+   session rows, its page head, the quick-actions button above its composer,
+   and the machine rows and confirm card in its thread.
+   ============================================================================= */
+
+/* The search row: the Overseer button, then the field. The button leaves the
+   row while the search is in use, and the field takes the width. */
+.sidebar-search-row { display: flex; align-items: center; gap: var(--space-2); }
+.sidebar-search-row > .search { flex: 1; min-width: 0; }
+
+/* The entry button. `position: relative` anchors its two marks: the count of
+   sessions that need you (top-right, the accent's one legitimate spend: "this
+   needs you"), and apart from it a dot for Overseer messages you haven't read
+   (bottom-right). Neither moves. Both are aria-hidden: the button's name says
+   them in words. */
+.overseer-entry { position: relative; flex: none; color: var(--color-ink-muted); }
+.overseer-entry:hover { color: var(--color-ink); }
+.overseer-entry[aria-current="page"] { background: var(--color-accent-tint); color: var(--color-ink); border-color: transparent; }
+.overseer-entry-count {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: var(--r-full);
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  line-height: 16px;
+  text-align: center;
+  pointer-events: none;
+}
+/* Finished work alone: a neutral dot, not a number. */
+.overseer-entry-dot,
+.overseer-entry-unread {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  border-radius: var(--r-full);
+  pointer-events: none;
+}
+.overseer-entry-dot { top: var(--space-1); right: var(--space-1); background: var(--color-ink-muted); }
+/* Unread messages: a hollow accent ring, so it differs from the count in shape as well as place. */
+.overseer-entry-unread {
+  bottom: var(--space-1);
+  right: var(--space-1);
+  background: var(--color-surface);
+  border: var(--stroke-icon) solid var(--color-accent);
+}
+
+/* A session row with activity since you last had it open: a small accent dot
+   leading line 1, like the draft pencil. The hidden word carries it for AT. */
+.list-title > .session-unread {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: var(--space-2);
+  vertical-align: 0.1em;
+  border-radius: var(--r-full);
+  background: var(--color-accent);
+}
+
+/* The page head: the session head's shape, with the proactivity cycle,
+   History and Clear at its end. */
+.overseer-head .button-sm { flex: none; }
+.overseer-proactivity { gap: var(--space-1); }
+.action-menu-text { display: inline-flex; align-items: center; gap: var(--space-2); }
+@container session-head (max-width: 479px) {
+  .overseer-proactivity .icon { display: none; }
+  /* History keeps its clock and its name for AT; the word goes, so Clear stays on screen. */
+  .overseer-head .action-menu-text { display: none; }
+}
+
+/* The Overseer's empty thread: a live fact, then the absence. */
+.overseer-empty .empty-mark { color: var(--color-ink-muted); }
+
+/* Quick actions: one button just above the textarea, at the end of the
+   composer's top row (beside the run status when there is one). Inside the
+   composer, in flow, so it never covers transcript content. */
+.composer-top { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.composer-top > .run-status { flex: 1; min-width: 0; }
+.composer-accessory { flex: none; margin-left: auto; }
+
+/* A row the Overseer (or its brief) wrote: a machine row, never "You". */
+.overseer-author { display: inline-flex; align-items: center; gap: var(--space-1); }
+.overseer-author .icon { color: var(--color-ink-muted); }
+.overseer-machine-row strong { font-weight: var(--fw-medium); color: var(--color-ink); }
+/* A brief: the machine row, then its blockers as quiet markdown under it. */
+.overseer-brief { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
+.overseer-brief-body { max-width: min(100%, var(--measure)); min-width: 0; }
+/* Not a message: no bubble, the machine row's quiet ink. */
+.overseer-brief-body .message-body { padding: 0 var(--space-4); background: none; border: none; font-size: var(--fs-caption); color: var(--color-ink-muted); }
+
+/* sova_confirm: the question the Overseer asked, in the thread. Answered, the
+   buttons go and the choice stays. */
+.overseer-confirm { max-width: var(--measure); }
+.overseer-confirm .card-head .icon { flex: none; color: var(--color-ink-muted); }
+.overseer-confirm-detail { white-space: pre-wrap; color: var(--color-ink-2); }
+.overseer-confirm-answer {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-ink-2);
+}
+.overseer-confirm-answer .icon { color: var(--status-success); }
+.overseer-confirm-hint { font-size: var(--fs-caption); color: var(--color-ink-muted); }
+
+/* A navigate result's Go, on the tool card's line. */
+.toolcard-summary .overseer-go { flex: none; min-height: 28px; gap: var(--space-1); }
+
+/* Settings → Overseer. */
+.overseer-radios { display: flex; flex-direction: column; gap: var(--space-1); }
+.overseer-radios .toggle { justify-content: flex-start; }
+.overseer-actions-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-3); }
+.overseer-action-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-bottom: var(--space-3);
+  border-bottom: var(--stroke-thin) solid var(--color-border);
+}
+.overseer-action-tools { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.overseer-caps { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: var(--space-3); }
+.overseer-caps-reset { align-self: flex-start; }
+/* A quick action's label is short and its description is a line: give the line the room. */
+.overseer-action-row .settings-delegate-fields { grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); }
+/* The model row: the model takes the width, thinking a short column. */
+.overseer-model-fields { grid-template-columns: minmax(0, 2fr) minmax(8rem, 1fr); }
+@media (max-width: 640px) {
+  .overseer-action-row .settings-delegate-fields,
+  .overseer-model-fields { grid-template-columns: 1fr; }
 }

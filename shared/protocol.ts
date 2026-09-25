@@ -120,6 +120,25 @@ export interface SessionSummary {
       blocks anything; only `true` disables a fork. Never affects opening, watching or chatting:
       an older-format session is only special to a route that would rewrite it. */
   legacyFormat?: true;
+  /** This file is an Overseer file (current or historical): it carries the `sova-overseer` custom
+      marker entry AND overseer-state.json names it (current or history); a marked fork of one is
+      an ordinary session. Hidden from every sidebar region, search, Recent and cleanup count
+      (src/lib/regions.ts `isMainThread`), like `workerSession`. Safe by absence. */
+  overseer?: true;
+  /** Activity from this session's live record (a TUI's, or this server's own runtime): the
+      sessions extension's `presence.activity`. Absent when no live record reports one (closed
+      sessions, older writers). `error` is set only for state "error", ≤200 chars. */
+  activity?: { state: "working" | "idle" | "needs-input" | "error"; since?: number; error?: string };
+  /** Hosted by this server and waiting on an extension dialog a browser can answer right now
+      (live-pending, not a headless fallback): how many. Absent = none. */
+  pendingDialogs?: number;
+  /** When a Sova chat or watch socket last attached to or detached from this session (ms epoch),
+      from `<stateRoot>/seen.json`. Absent = never seen by Sova. */
+  seenAt?: number;
+  /** Something happened in this session since `seenAt` (its last assistant reply / file write is
+      newer, and it is not mid-turn): the sidebar's unread dot. Web sessions (origin "web") only. Server-computed from the same seen
+      store the Overseer digest uses. The tab showing the session hides its own dot. Safe by absence. */
+  unread?: true;
 }
 
 /** A configured remote target (~/.pi/agent/targets.json, GET /api/targets). Credential-free. */
@@ -180,6 +199,17 @@ export interface TranscriptItem {
       tool-call rows; absent on other kinds and entries with neither (renderers fall back to
       the session's current model). */
   model?: string;
+  /** Overseer markers, both invisible `custom` entries (never LLM context, ignored by the TUI):
+      - `sent`: `customType:"sova-overseer-sent"`, data `OverseerSentMarkerData`. The row itself
+        renders NOTHING; the client tags the user row whose id is `targetId` with an "Overseer" tag.
+        Arrives in `hello`/`snapshot` and, when written during a live chat, in an `append`, so it
+        may arrive before or after its target row: clients resolve by id, order-free.
+      - `dialog-answer`: `customType:"sova-overseer-dialog-answer"`, data
+        `OverseerDialogAnswerData`. Rendered as a machine row; `text` = "Overseer chose: <answer>".
+      Present only on such rows (kind "info"). */
+  overseerMark?:
+    | { kind: "sent"; targetId: string }
+    | { kind: "dialog-answer"; title: string; answer: string };
   raw: unknown;
 }
 
@@ -1538,6 +1568,8 @@ export type ChatServerMessage =
       not included. Send one as a normal prompt "/name args". */
   | { type: "commands"; commands: SlashCommand[] }
   | { type: "ui_request"; id: string; request: unknown }
+  /** The dialog `id` was answered elsewhere (another tab, or the Overseer): drop it, no response. */
+  | { type: "ui_resolved"; id: string }
   /** This chat's subagent workers, from the runtime's own live record (presence.workers/workerCounts).
       Sent after hello when the record has workers, then whenever the snapshot changes (polled ~3s),
       so it keeps coming after the parent turn settles. working 0 = none running. */
@@ -1635,9 +1667,14 @@ export type ChatServerMessage =
     Both `snapshot` and `append` may carry `usage`: the tokens the whole transcript has used so
     far (always cumulative, never a delta), so an open header can tick while the file grows. It is
     absent while the transcript reports no usage at all, and carries no cost for a Claude session. */
+/** The open transcript's context fill as of its last reply, on every snapshot/append: a fill,
+    "compacted" (a compaction came after that reply), or null (no reply reports one yet). `window`
+    is known for pi files (the reply's own model); a Claude Code file doesn't name its variant, so
+    it is null there and the client takes WorkerInfo.contextWindow. Absent from older servers. */
+export type WatchContext = ContextInfo | "compacted" | null;
 export type WatchServerMessage =
-  | { type: "snapshot"; items: TranscriptItem[]; usage?: TokenUsage }
-  | { type: "append"; items: TranscriptItem[]; usage?: TokenUsage } // new JSONL rows since snapshot, as they appear
+  | { type: "snapshot"; items: TranscriptItem[]; usage?: TokenUsage; context?: WatchContext }
+  | { type: "append"; items: TranscriptItem[]; usage?: TokenUsage; context?: WatchContext } // new JSONL rows since snapshot, as they appear
   | { type: "error"; message: string };
 
 // ---------------------------------------------------------------------------
@@ -1751,6 +1788,15 @@ export interface WorkerInfo {
   /** A restored worker can be resumed from here: the session is hosted by this server and the
       backend resumes natively. Absent otherwise (a TUI session, a backend without resume). */
   resumable?: boolean;
+  /** This worker's context fill as of its last reply — the session head's rule (input + cacheRead
+      + cacheWrite of that one reply) — or "compacted" when a compaction came after it. Live
+      workers: read off the tail of their own transcript, so it lags a turn in flight; restored
+      ones: from the transcript summary. Absent when unknown: no reply reports one yet, or the
+      transcript isn't a local file this server can read. Never 0 for unknown. */
+  context?: ContextInfo | "compacted";
+  /** The worker's context window, from the model it was spawned with (claude-code: 1M for a
+      `[1m]` variant, else 200k; pi: the model's catalog window). Absent when unknown. */
+  contextWindow?: number;
 }
 export interface TeamMember {
   workerId: string; role: string; orchestrator: boolean; backend: string; model?: string;
@@ -1923,6 +1969,196 @@ export interface SessionInsight {
   explanations?: ExplanationInfo[];
 }
 
+// ---------------------------------------------------------------------------
+// OVERSEER — the one special Sova session that watches and acts on every other
+// session (.overseer-design/DECISIONS.md). Sova-owned state under <stateRoot>:
+//   overseer/ (its cwd) · overseer.json (OverseerSettings) · overseer-state.json
+//   (OverseerState) · overseer-notes.md · overseer-actions.jsonl (OverseerAction lines)
+//   · seen.json ({[sessionId]: ms})
+// Routes:
+// GET  /api/overseer                -> OverseerInfo   (ensures the current file exists)
+// POST /api/overseer/clear          -> OverseerInfo   (stops a running turn, disposes, rotates; never refuses)
+// GET  /api/overseer/attention      -> AttentionDigest (no LLM; memoised ~3 s)
+// GET  /api/settings/overseer       -> OverseerSettingsInfo
+// PUT  /api/settings/overseer       body OverseerSettings -> OverseerSaveResult (400 invalid;
+//                                   model/thinking apply at once when the Overseer is idle, else at turn end)
+// GET  /api/overseer/notes          -> { text: string }
+// PUT  /api/overseer/notes          body { text: string } -> { text: string }
+// GET  /api/sessions/summary?id=<session id> -> SessionSummary (any session file with that id,
+//                                   listed or not, e.g. an empty web session), 404 {error} when none
+// POST /api/sessions/prompt         body { path, text } -> { ok: true } (idle hosted-or-openable
+//                                   sessions only: 409 busy/mid-turn/TUI-live; used by sova_send;
+//                                   tagged as the Overseer's only on its own in-process calls)
+// ---------------------------------------------------------------------------
+
+/** `customType` of the marker entry an Overseer file carries (with overseer-state.json naming it:
+    the marker alone is copied by a fork). data: `{ v: 1 }`. */
+export const OVERSEER_ENTRY = "sova-overseer";
+/** `customType` of the invisible marker beside a prompt the Overseer sent to another session. */
+export const OVERSEER_SENT_ENTRY = "sova-overseer-sent";
+/** `customType` of the invisible marker for an extension-dialog answer the Overseer gave. */
+export const OVERSEER_DIALOG_ANSWER_ENTRY = "sova-overseer-dialog-answer";
+
+export interface OverseerSentMarkerData {
+  v: 1;
+  /** Entry id of the user message the Overseer sent (the row that gets the "Overseer" tag). */
+  targetId: string;
+  /** The Overseer session id that sent it, for the audit trail. */
+  overseerId?: string;
+}
+export interface OverseerDialogAnswerData {
+  v: 1;
+  /** The dialog's title/question as shown to the user. */
+  title: string;
+  /** The answer, as display text (the chosen option, "Yes"/"No", or the typed input). */
+  answer: string;
+  overseerId?: string;
+}
+
+export type OverseerProactivity = "off" | "badge" | "brief";
+
+export interface OverseerQuickAction {
+  id: string;
+  /** Title Case, short: "What Needs Me". */
+  label: string;
+  /** One line shown under the label in the flyout. */
+  description: string;
+  /** Sent verbatim as the user's message when picked. */
+  prompt: string;
+}
+
+/** Per user turn, except `concurrentSessions` (at once, across turns). Over a cap the tool refuses
+    and tells the model to stop and use sova_confirm / explain. */
+export interface OverseerCaps {
+  createPerTurn: number;      // default 5
+  promptsPerTurn: number;     // default 10
+  archivesPerTurn: number;    // default 50
+  concurrentSessions: number; // default 5: Overseer-started sessions running at once
+}
+
+/** `<stateRoot>/overseer.json`. Tolerant on read, strict on PUT. */
+export interface OverseerSettings {
+  version: 1;
+  /** "provider/model"; null = pi's default. Never becomes the default for new sessions. */
+  model: string | null;
+  /** off…max, clamped to the model; null = the model's default. */
+  thinking: string | null;
+  /** Appended after the Overseer's own prompt (which is appended after the user's APPEND_SYSTEM.md). */
+  extraSystemPrompt: string;
+  proactivity: OverseerProactivity; // default "badge"
+  quickActions: OverseerQuickAction[];
+  caps: OverseerCaps;
+}
+
+export interface OverseerSettingsInfo {
+  settings: OverseerSettings;
+  /** The shipped defaults, for "Reset to Defaults". */
+  defaults: { quickActions: OverseerQuickAction[]; caps: OverseerCaps };
+  /** Absolute path of overseer.json, for the screen's footnote. */
+  file: string;
+}
+export interface OverseerSaveResult extends OverseerSettingsInfo {
+  /** Anything saved that could not be verified or that the policy refuses, one sentence each. */
+  warnings: string[];
+}
+
+/** `<stateRoot>/overseer-state.json` (server-only). */
+export interface OverseerState {
+  version: 1;
+  current: string; // session id
+  history: string[]; // older Overseer session ids, newest first, ≤20
+}
+
+/** GET /api/overseer and POST /api/overseer/clear. */
+export interface OverseerInfo {
+  /** The current Overseer file: mount the normal chat on it (keyed on path). */
+  path: string;
+  id: string;
+  /** Up to 20 previous Overseer files, newest first; openable read-only (watch, no chat). */
+  history: { id: string; path: string; title: string; lastActiveAt: string }[];
+  /** Attention counts for the entry button (from the digest). act = needs you; decide = finished/look. */
+  badge: { act: number; decide: number };
+  /** Overseer assistant messages newer than the Overseer's own seenAt: the chat-unread badge on the
+      entry button, separate from `badge`. */
+  unread: number;
+  proactivity: OverseerProactivity;
+  /** The Overseer is mid-turn. */
+  busy: boolean;
+}
+
+export type AttentionTier = "act" | "decide" | "fyi";
+export type AttentionKind =
+  | "needs-input"     // extension dialog open (activity needs-input, or hosted pending dialog)
+  | "error"           // errored turn (activity error)
+  | "worker-error"    // a subagent worker errored / was killed
+  | "finished"        // replied since last seen, now idle
+  | "draft"           // idle with an unsent composer draft
+  | "queued"          // idle with queued input
+  | "context-full"    // context ≥85%
+  | "working"         // running now
+  | "stale";          // idle web session >3 days, not archived, no draft
+
+export interface AttentionItem {
+  /** Session id. */
+  id: string;
+  path: string;
+  title: string;
+  /** cwd (or target:remoteCwd), home-shortened. */
+  where: string;
+  tier: AttentionTier;
+  kind: AttentionKind;
+  /** ms epoch the condition began (or best proxy); 0 unknown. */
+  since: number;
+  /** ≤200 chars. */
+  detail?: string;
+  /** `#/s/<path>`. */
+  href: string;
+  /** The session is open in a TUI: read-only for the Overseer. */
+  tuiLive?: true;
+}
+
+/** GET /api/overseer/attention and the sova_attention tool. Sorted tier, then age; ≤30 items. */
+export interface AttentionDigest {
+  generatedAt: number;
+  counts: { act: number; decide: number; fyi: number };
+  items: AttentionItem[];
+}
+
+/** One line of `<stateRoot>/overseer-actions.jsonl`. */
+export interface OverseerAction {
+  at: string; // ISO
+  overseerId: string;
+  toolCallId: string;
+  tool: string;
+  args: unknown;
+  outcome: "ok" | "refused" | "error";
+  error?: string;
+}
+
+// --- Tool results the Overseer ChatView renders specially (tool_execution_end `result.details`
+// and the persisted tool-result row's raw `details`). ---
+
+/** `sova_navigate` details. `href` is `#/…` or `settings:<tab>[/<section>]`. Applied ONLY by the tab
+    that started the running turn (its own send_ack queued:false, or queue_item_gone delivered with
+    its own clientId); never by other tabs, reloads or proactive turns. The card always shows "Go". */
+export interface SovaNavigateDetails {
+  href: string;
+  label: string;
+}
+
+/** `sova_confirm` details. Non-blocking: the tool returns at once and the model ends its turn.
+    The card shows `options` as buttons; a click sends the option's `reply` (or its label) as the
+    next user message. Answered/disabled once any later user message exists in the transcript
+    (`answer` = that message's text when it matches an option). */
+export interface SovaConfirmDetails {
+  title: string;
+  detail?: string;
+  options: { label: string; reply?: string; tone?: "default" | "danger" }[];
+}
+
+/** Marks an Overseer turn was started by proactivity (server-sent "Brief me"). The prompt text of
+    such a turn starts with this prefix, so the transcript renders it as a machine row, not "You". */
+export const OVERSEER_BRIEF_PREFIX = "[overseer-brief]";
 /** GET /api/extensions: one entry per valid manifest record (`<state root>/extensions.json`, or
     SOVA_EXTENSIONS_FILE), in manifest order. `status` is a 1.5 s GET `<api>/api/health` (2xx =
     "ok"), cached 10 s per extension; `error` says why a "down" one is down. ext-contract-v1.2. */

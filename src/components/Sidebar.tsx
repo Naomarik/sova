@@ -1,6 +1,7 @@
 import { createEffect, createMemo, createResource, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { Dynamic } from "solid-js/web";
-import type { AgentsInsight, ContextInfo, SessionGroup, SessionSummary, UsageInsight } from "../../shared/protocol";
+import type { AgentsInsight, ContextInfo, OverseerInfo, SessionGroup, SessionSummary, UsageInsight } from "../../shared/protocol";
+import { OVERSEER_HASH, overseerButtonLabel } from "../lib/overseer";
 import { fetchTargets, listSessions, setSessionArchived } from "../lib/api";
 import { type ArchiveGroupId, groupByArchiveDate, sessionsWord } from "../lib/archive";
 import { relativeTime, shortModel, tildePath } from "../lib/format";
@@ -348,6 +349,12 @@ function SessionRow(props: { session: SessionSummary; selected: string | null; n
               session's state, and a draft is the user's own, not the session's. The pencil is
               decorative; the hidden word puts "Draft" in the row's accessible name. */}
           <p class="list-title" classList={{ "list-title-muted": s().title === "Untitled" }} title={s().title}>
+            {/* Something happened here since you last had it open (the server's seen store). The
+                open session never shows it: you are looking at it. The word is for AT. */}
+            <Show when={s().unread && props.selected !== s().path}>
+              <span class="session-unread" aria-hidden="true" />
+              <span class="visually-hidden">New activity. </span>
+            </Show>
             <Show when={showsDraftMark(s(), hasLocalDraft(s().path))}>
               <Icon name="pencil" small class="list-title-draft" />
               <span class="visually-hidden">Draft. </span>
@@ -774,8 +781,14 @@ export function Sidebar(props: {
   onOpenSettings(): void;
   /** The viewport is ≥768px: the only width where the pane can collapse to the spine. */
   unfolded: boolean;
+  /** The Overseer's counts for its entry button; undefined until the first read. */
+  overseer?: OverseerInfo;
+  /** `#/overseer` is the route: the button is the current page, and its unread dot is moot. */
+  overseerOpen?: boolean;
 }) {
   const [query, setQuery] = createSignal("");
+  /** The search field has focus: it takes the whole row, and the Overseer button steps aside. */
+  const [searchFocused, setSearchFocused] = createSignal(false);
   const [showSkeleton, setShowSkeleton] = createSignal(false);
   const skeletonTimer = setTimeout(() => setShowSkeleton(true), 300);
   let search!: HTMLInputElement;
@@ -1098,6 +1111,38 @@ export function Sidebar(props: {
   const tuiSentence = () => `${liveCount()} ${liveCount() === 1 ? "session" : "sessions"} open in a TUI`;
 
   /**
+   * The Overseer's door: an eye beside the search, with the count of sessions that need you and,
+   * apart from it, a dot for Overseer messages you haven't read. Alt+O does the same (App).
+   */
+  const OverseerButton = (p: { class: string }) => {
+    const unread = () => (props.overseerOpen ? 0 : (props.overseer?.unread ?? 0));
+    // Proactivity Off: no attention count at all. The unread dot is the Overseer's own messages, so it stays.
+    const badge = () => (props.overseer && props.overseer.proactivity !== "off" ? props.overseer.badge : null);
+    const act = () => badge()?.act ?? 0;
+    const decide = () => badge()?.decide ?? 0;
+    const label = () => overseerButtonLabel(badge(), unread());
+    return (
+      <a
+        class={`button button-icon overseer-entry ${p.class}`}
+        href={OVERSEER_HASH}
+        aria-current={props.overseerOpen ? "page" : undefined}
+        aria-label={label()}
+        title={`${label()} · Alt+O`}
+      >
+        <Icon name="eye" />
+        <Show when={act() > 0} fallback={<Show when={decide() > 0}><span class="overseer-entry-dot" aria-hidden="true" /></Show>}>
+          <span class="overseer-entry-count text-num" aria-hidden="true">
+            {act() > 99 ? "99+" : act()}
+          </span>
+        </Show>
+        <Show when={unread() > 0}>
+          <span class="overseer-entry-unread" aria-hidden="true" />
+        </Show>
+      </a>
+    );
+  };
+
+  /**
    * The collapsed pane: one 44px item per action the expanded pane offers, reading the same memos,
    * so a count can't disagree with the list it stands for. Wordless, so every item carries its
    * sentence as a title and an accessible name.
@@ -1126,6 +1171,7 @@ export function Sidebar(props: {
           <button type="button" class="button button-icon spine-item" title="Search sessions · /" aria-label="Search sessions" onClick={expandToSearch}>
             <Icon name="search" />
           </button>
+          <OverseerButton class="spine-item" />
         </div>
 
         <nav ref={tiles} class="spine-tiles pane" aria-label="Recent sessions">
@@ -1281,6 +1327,11 @@ export function Sidebar(props: {
           <label class="visually-hidden" for="session-search">
             Search sessions
           </label>
+          <div class="sidebar-search-row">
+          {/* Out of the row (and the tab order) while the search is in use: the field takes the width. */}
+          <Show when={!searchFocused() && !query()}>
+            <OverseerButton class="button-ghost" />
+          </Show>
           <div class="search">
             <Icon name="search" />
             <input
@@ -1294,6 +1345,8 @@ export function Sidebar(props: {
               spellcheck={false}
               value={query()}
               onInput={(e) => setQuery(e.currentTarget.value)}
+              onFocus={() => setSearchFocused(true)}
+              onBlur={() => setSearchFocused(false)}
               onKeyDown={(e) => {
                 if (e.key !== "Escape") return;
                 e.preventDefault();
@@ -1306,6 +1359,7 @@ export function Sidebar(props: {
                 <Icon name="close" small />
               </button>
             </Show>
+          </div>
           </div>
           <div class="spread">
             <p class="search-count" id="session-count" aria-live="polite">

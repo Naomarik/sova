@@ -45,7 +45,13 @@ export function rankCommands(commands: SlashCommand[], query: string): SlashComm
 }
 
 /** A command Sova answers itself rather than sending to the runtime. */
-export type LocalCommand = "subagents" | "new" | "tree" | "timeline";
+export type LocalCommand = "subagents" | "new" | "tree" | "timeline" | "clear";
+
+/** Which optional local commands this composer answers. "/clear" is the Overseer's alone: anywhere
+    else it is the runtime's (or plain text), exactly as before. */
+export interface LocalCommandOptions {
+  clear?: boolean;
+}
 
 /**
  * The local command a message is, if any. A bare "/agents" or
@@ -58,8 +64,9 @@ export type LocalCommand = "subagents" | "new" | "tree" | "timeline";
  * Timeline tab, the session's one time axis; pi has no such built-in either, so as a prompt it
  * would reach the model as literal text.
  */
-export function localCommand(text: string): LocalCommand | null {
+export function localCommand(text: string, opts: LocalCommandOptions = {}): LocalCommand | null {
   const t = text.trim();
+  if (opts.clear && t === "/clear") return "clear";
   if (/^\/(agents|subagents)$/.test(t)) return "subagents";
   if (t === "/new") return "new";
   if (t === "/tree") return "tree";
@@ -71,13 +78,13 @@ export function localCommand(text: string): LocalCommand | null {
  * Enter on a bare local command runs it, even with the "/" menu open: "/new" also matches
  * "btw:new" by substring, and inserting that would hijack it. Shift+Enter and Tab stay the menu's.
  */
-export function enterRunsLocal(text: string, key: string, shiftKey: boolean): boolean {
-  return key === "Enter" && !shiftKey && localCommand(text) !== null;
+export function enterRunsLocal(text: string, key: string, shiftKey: boolean, opts: LocalCommandOptions = {}): boolean {
+  return key === "Enter" && !shiftKey && localCommand(text, opts) !== null;
 }
 
 /** No "/" menu once the whole text is a bare local command ("/ne" still gets one). */
-export function slashMenuSuppressed(text: string): boolean {
-  return localCommand(text) !== null;
+export function slashMenuSuppressed(text: string, opts: LocalCommandOptions = {}): boolean {
+  return localCommand(text, opts) !== null;
 }
 
 /** Replaces the token with "/name " and returns the new text with the caret after the space. */

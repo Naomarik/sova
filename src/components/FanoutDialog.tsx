@@ -121,7 +121,7 @@ export function FanoutDialog(props: {
    */
   const [nameTouched, setNameTouched] = createSignal(false);
   const [text, setText] = createSignal("");
-  const [cwd, setCwd] = createSignal(props.presetCwd ?? newSessionCwd(props.source?.session.cwd, props.sessions) ?? home() ?? "");
+  const [cwd, setCwd] = createSignal(props.presetCwd ?? newSessionCwd(props.source?.session, props.sessions) ?? home() ?? "");
   const [picking, setPicking] = createSignal(false);
   const [folders, setFolders] = createSignal(false);
   const [creating, setCreating] = createSignal(false);

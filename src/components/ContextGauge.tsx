@@ -27,6 +27,30 @@ function fullText(s: ContextInfo | "compacted"): string {
 export const contextDescribedBy = (path: string, scope?: PaneScope) =>
   stateOf(path) ? (scope ? paneScopedId(scope, "context-desc") : "context-desc") : undefined;
 
+/** The readout itself, one copy of the markup for every place that shows it. Its visible parts
+    are aria-hidden: the caller gives AT the one sentence. */
+function Gauge(props: { s: ContextInfo | "compacted"; class?: string }) {
+  return (
+    <span
+      class={`context-gauge ${props.s === "compacted" ? "context-compacted" : stepOf(props.s)} ${props.class ?? ""}`.trim()}
+      title={contextSentence(props.s)}
+    >
+      <Show when={stepOf(props.s) === "context-error"}>
+        <Icon name="alert-circle" small />
+      </Show>
+      <span class="context-label" aria-hidden="true">
+        Context
+      </span>
+      <span class="context-value" aria-hidden="true">
+        {fullText(props.s)}
+      </span>
+      <span class="context-pct" aria-hidden="true">
+        {shortText(props.s)}
+      </span>
+    </span>
+  );
+}
+
 /**
  * The head's context readout: plain text, never a bar, never animated. All
  * visible copies are aria-hidden; AT gets the one #context-desc sentence. CSS collapses it by the
@@ -38,29 +62,26 @@ export function ContextGauge(props: { path: string }) {
     <Show when={stateOf(props.path)}>
       {(s) => (
         <>
-          <span
-            class={`context-gauge ${s() === "compacted" ? "context-compacted" : stepOf(s())}`.trim()}
-            title={contextSentence(s())}
-          >
-            <Show when={stepOf(s()) === "context-error"}>
-              <Icon name="alert-circle" small />
-            </Show>
-            <span class="context-label" aria-hidden="true">
-              Context
-            </span>
-            <span class="context-value" aria-hidden="true">
-              {fullText(s())}
-            </span>
-            <span class="context-pct" aria-hidden="true">
-              {shortText(s())}
-            </span>
-          </span>
+          <Gauge s={s()} />
           <span class="visually-hidden" id={paneId("context-desc")}>
             {contextSentence(s())}
           </span>
         </>
       )}
     </Show>
+  );
+}
+
+/**
+ * The same readout for a state the caller holds rather than a session's (a worker's, in the
+ * subagents pane's view head). The sentence rides inline, visually hidden, as the gauge's words.
+ */
+export function ContextReadout(props: { state: ContextInfo | "compacted"; class?: string }) {
+  return (
+    <span class="context-readout">
+      <Gauge s={props.state} class={props.class} />
+      <span class="visually-hidden">{contextSentence(props.state)}</span>
+    </span>
   );
 }
 

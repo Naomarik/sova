@@ -31,7 +31,7 @@ import type {
 import { forceRefresh } from "../pi-config/extensions/usage-status/fetch.ts";
 import { hasPage, listExplanations, sortExplanations } from "./explanations";
 import { readLiveRecords, type RawLiveRecord } from "./live";
-import { modelProvider } from "./models";
+import { modelProvider, sharedWorkerWindowResolver } from "./models";
 import { resolveSessionPath } from "./paths";
 import { collectSkills, hasSkills } from "./skills";
 import { activeBranch, parseLines } from "./transcript";
@@ -39,6 +39,7 @@ import { LAST_KNOWN_REASON, lastKnownUsage, rememberUsage } from "./usage-last-k
 import { workerSkills } from "./worker-skills";
 import { defaultAdapters } from "./worker-adapters";
 import { WorkerRestorer } from "./worker-restore";
+import { claudeSpawnModels, WorkerContextReader, withWorkerContext } from "./worker-context";
 import { LEGACY_REGISTRY_ENTRY_TYPE, WORKER_MANIFEST_ENTRY_TYPE, type WorkerTranscriptAdapters } from "../pi-config/extensions/subagents/worker-transcript.ts";
 
 // Read-only views over what the user's pi extensions leave on disk (sources and shapes:
@@ -863,6 +864,8 @@ async function explanations(facts: SessionFacts): Promise<ExplanationInfo[]> {
 /** The adapters restored workers are read with; tests swap them (setWorkerAdapters). */
 let adapters: () => WorkerTranscriptAdapters = defaultAdapters;
 const restorer = new WorkerRestorer(() => adapters());
+/** Live workers' context fill, off their transcripts' tails (mtime-gated: polled every 3s). */
+const contextReader = new WorkerContextReader();
 export function setWorkerAdapters(next: WorkerTranscriptAdapters | null): void {
   adapters = next ? () => next : defaultAdapters;
 }
@@ -879,8 +882,11 @@ export async function getSessionInsight(path: string): Promise<SessionInsight> {
   const presence = isRec(live?.rec.presence) ? live.rec.presence : undefined;
   // Nothing publishes this session's workers: rebuild them from its own durable records, all
   // restored or ended, none working (worker-restore.ts).
-  const restored = live || facts.workerRecords.all.length === 0 ? null : await restorer.restore(facts.workerRecords.all, facts.workerRecords.active);
-  const workers = live ? decodeWorkers(presence, live.pid === process.pid) : restored && restored.workers.length > 0 ? restored.workers : null;
+  const resolveWindow = await sharedWorkerWindowResolver();
+  const restored = live || facts.workerRecords.all.length === 0 ? null : await restorer.restore(facts.workerRecords.all, facts.workerRecords.active, resolveWindow);
+  const workers = live
+    ? withWorkerContext(decodeWorkers(presence, live.pid === process.pid), contextReader, resolveWindow, claudeSpawnModels(facts.workerRecords.all))
+    : restored && restored.workers.length > 0 ? restored.workers : null;
   const usageTotal = live ? decodeUsageTotal(presence) : restored?.usageTotal;
   // Teams first: joinTeams gives each member its teamId, and a member's spend is a "team" row. Built
   // after, the hosted view filed members under subagents while the file view (which knows the

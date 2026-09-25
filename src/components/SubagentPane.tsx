@@ -1,13 +1,16 @@
 import { createEffect, createMemo, createSignal, For, on, onCleanup, Show } from "solid-js";
-import type { TeamInfo, TeamMember, TranscriptItem, WatchServerMessage, WorkerInfo } from "../../shared/protocol";
+import type { ContextInfo, TeamInfo, TeamMember, TranscriptItem, WatchServerMessage, WorkerInfo } from "../../shared/protocol";
 import { ApiError, claudeWatchUrl, resumeWorker, wsUrl } from "../lib/api";
 import { clockTime, compactModel, shortModel } from "../lib/format";
 import { memberStatus } from "../lib/insights";
 import { createReconnectingSocket } from "../lib/socket";
 import { formatTokens } from "../lib/context";
-import { asOfClock, capTitle, sortWorkers, sourceKey, sourceName, sourceOf, transcriptUsage, usageHeadline, usageTitle,
-  usageUnavailable, type TranscriptSource, type UsageView, workerLabel, workersNoun, workerTeam, workerUsage } from "../lib/workers";
+import { asOfClock, capTitle, ringContext, sortWorkers, sourceKey, sourceName, sourceOf, transcriptContext, transcriptUsage, usageHeadline,
+  usageTitle, usageUnavailable, type TranscriptSource, type UsageView, workerContext, workerLabel, workersNoun, workerTeam,
+  workerUsage } from "../lib/workers";
 import { ConnectionBanner } from "./ConnectionBanner";
+import { ContextReadout } from "./ContextGauge";
+import { ContextRing } from "./ContextRing";
 import type { PaneInsight } from "./SessionPane";
 import { HistoryItems, TranscriptSkeleton } from "./Thread";
 import { Banner, Chip, Icon } from "./ui";
@@ -93,6 +96,14 @@ export function SubagentPane(props: {
   /** What the open transcript itself reports, which ticks between worker snapshots. Another
       worker's numbers must never linger, so the selection clears it. */
   const [watched, setWatched] = createSignal<UsageView | null>(null);
+  /** The open transcript's context fill, which ticks with every append; cleared with the selection
+      like `watched`. undefined: the transcript hasn't said (or an older server), so the row's stands. */
+  const [watchedContext, setWatchedContext] = createSignal<ContextInfo | "compacted" | null | undefined>(undefined);
+  /** A worker's fill: the open transcript's own for the selected worker, else its row's. */
+  const contextOf = (w: WorkerInfo): ContextInfo | "compacted" | null => {
+    const live = w.id === props.selected ? watchedContext() : undefined;
+    return live === undefined ? workerContext(w) : live;
+  };
   const loading = () => !props.chatWorkers && insight.pending();
   /** While the list's source is down nothing pulses. */
   const liveSource = () => !!props.chatWorkers || !insight.error();
@@ -104,7 +115,16 @@ export function SubagentPane(props: {
     return workers().find((w) => w.id === id) ?? (prev?.id === id ? prev : null);
   }, null);
 
-  createEffect(on(() => props.selected, () => setWatched(null), { defer: true }));
+  createEffect(
+    on(
+      () => props.selected,
+      () => {
+        setWatched(null);
+        setWatchedContext(undefined);
+      },
+      { defer: true },
+    ),
+  );
 
   // Nothing selected yet: the first row (working ones sort first).
   createEffect(() => {
@@ -158,6 +178,9 @@ export function SubagentPane(props: {
             {label(w())}
           </span>
           <span class="subagent-row-status">
+            {/* The sidebar's ring: how full the worker's own context is. Beside the chip, where a
+                short name leaves room, so the meta line under it keeps every fact. */}
+            <Show when={ringContext(contextOf(w()))}>{(c) => <ContextRing info={c()} />}</Show>
             <StatusChip worker={w()} liveSource={liveSource()} />
           </span>
           <WorkerMeta worker={w()} liveSource={liveSource()} class="subagent-row-meta" />
@@ -289,6 +312,15 @@ export function SubagentPane(props: {
                         </>
                       )}
                     </Show>
+                    {/* How full its own context is, as the chat head says it. */}
+                    <Show when={contextOf(w())}>
+                      {(c) => (
+                        <>
+                          <MetaSep />
+                          <ContextReadout state={c()} />
+                        </>
+                      )}
+                    </Show>
                     {/* The effort sits before the count: what the worker is thinking at is a
                         fact about the worker, where the count beside it is a running total
                         that changes under the reader. */}
@@ -358,6 +390,7 @@ export function SubagentPane(props: {
                     author={shortModel(w().model) ?? label(w())}
                     streaming={w().working}
                     onUsage={setWatched}
+                    onContext={(c) => setWatchedContext(transcriptContext(c, w()) ?? null)}
                   />
                 )}
               </Show>
@@ -521,6 +554,8 @@ function WorkerTranscript(props: {
   source: TranscriptSource; name: string; author: string; streaming: boolean;
   /** The transcript's own running token total, for the view head; null when it reports none. */
   onUsage(usage: UsageView | null): void;
+  /** Each snapshot/append that carries a context fill (the whole message; the caller reads it). */
+  onContext(msg: WatchServerMessage): void;
 }) {
   const [items, setItems] = createSignal<TranscriptItem[] | null>(null);
   const [error, setError] = createSignal<string | null>(null);
@@ -537,6 +572,7 @@ function WorkerTranscript(props: {
           setLastUpdate(new Date().toISOString());
           // Cumulative on every message, so a server that reports none leaves the row's own count.
           props.onUsage(transcriptUsage(msg));
+          if ("context" in msg) props.onContext(msg);
           break;
         case "append":
           setItems((prev) => [...(prev ?? []), ...msg.items]);
@@ -544,6 +580,7 @@ function WorkerTranscript(props: {
           // Only ever upward: an append without a total (older server) leaves what we have.
           const appended = transcriptUsage(msg);
           if (appended) props.onUsage(appended);
+          if ("context" in msg) props.onContext(msg);
           break;
         case "error":
           // A missing file stays missing: stop, rather than cycle through reconnects.

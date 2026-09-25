@@ -155,6 +155,13 @@ export interface WorkerTranscriptSummary {
 	lastAssistantText?: string;
 	usage: WorkerUsage;
 	compactions: number;
+	/**
+	 * Tokens in the worker's context as of its last reply that reports one: input + cacheRead +
+	 * cacheWrite of that ONE reply (an error, aborted or zero-usage reply says nothing, and the
+	 * reply before it stands). null: a compaction came after it, so the size is unknown until the
+	 * next reply. Absent: no reply of the worker's own reports one yet. Main chain / own branch only.
+	 */
+	lastContextTokens?: number | null;
 	/** The file ends inside a turn (prompt or tool call with no final reply): the worker died mid-turn. */
 	partialTurn: boolean;
 	items?: WorkerTranscriptItem[];

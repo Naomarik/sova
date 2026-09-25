@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises";
-import type { AlignReportInfo, EntryKind, ExplanationInfo, TranscriptItem } from "../shared/protocol";
+import { OVERSEER_DIALOG_ANSWER_ENTRY, OVERSEER_SENT_ENTRY, type AlignReportInfo, type EntryKind, type ExplanationInfo, type TranscriptItem } from "../shared/protocol";
 import { stripImageNotes } from "../shared/image-note";
 import { parseWakeNudge } from "../shared/wake";
 import { inlineTmpImages } from "./attachments";
@@ -306,6 +306,26 @@ function explainKey(entry: Entry): string | null {
   return d && typeof d === "object" && typeof d.id === "string" ? d.id : null;
 }
 
+/** The Overseer sent the user message `targetId`: a row that renders nothing itself — the client
+    tags that user row "Overseer", matching by id in either arrival order. */
+function overseerSentRow(id: string, entry: Entry): TranscriptItem[] {
+  const d: any = entry.data;
+  if (!d || typeof d.targetId !== "string" || !d.targetId) return [];
+  const it = item(id, "info", entry);
+  it.overseerMark = { kind: "sent", targetId: d.targetId };
+  return [it];
+}
+
+/** The Overseer answered an extension dialog: the machine row "Overseer chose: X". */
+function overseerAnswerRow(id: string, entry: Entry): TranscriptItem[] {
+  const d: any = entry.data;
+  const answer = d && typeof d.answer === "string" ? d.answer : "";
+  const title = d && typeof d.title === "string" ? d.title : "";
+  const it = item(id, "info", entry, `Overseer chose: ${answer}`);
+  it.overseerMark = { kind: "dialog-answer", title, answer };
+  return [it];
+}
+
 /** Normalize one parsed JSONL entry into 0..n TranscriptItems. The header line yields none. */
 export function normalizeEntry(entry: Entry, fallbackId = "?", state?: { model?: string }): TranscriptItem[] {
   const id = typeof entry.id === "string" ? entry.id : fallbackId;
@@ -349,6 +369,8 @@ export function normalizeEntry(entry: Entry, fallbackId = "?", state?: { model?:
       if (entry.customType === "btw-thread-entry") return btwRow(id, entry);
       if (entry.customType === ALIGN_DOC) return alignRow(id, entry);
       if (entry.customType === EXPLAIN_DOC) return explainRow(id, entry);
+      if (entry.customType === OVERSEER_SENT_ENTRY) return overseerSentRow(id, entry);
+      if (entry.customType === OVERSEER_DIALOG_ANSWER_ENTRY) return overseerAnswerRow(id, entry);
       return [];
     case "custom_message":
       return entry.display === false ? [] : [customRow(id, entry, entry.customType, entry.content)];

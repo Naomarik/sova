@@ -9,6 +9,8 @@ import {
   linkedSessionRow,
   seedPeerList,
   watchMove,
+  meshReadInit,
+  MESH_READ_TIMEOUT_MS,
   MOVE_WATCH_MS,
   sessionViewKey,
   pathOfViewKey,
@@ -361,4 +363,18 @@ test("the session view is keyed on its host too, and the path comes back out who
   assert.equal(sessionViewKey(null, p), sessionViewKey(null, p));
   assert.equal(pathOfViewKey(sessionViewKey("a", p)), p);
   assert.equal(pathOfViewKey(sessionViewKey(null, p)), p);
+});
+
+test("mesh reads carry a deadline only while the mesh is on; off, the request is as before", async () => {
+  assert.equal(meshReadInit(false), undefined, "mesh off: no options at all");
+  const init = meshReadInit(true)!;
+  assert.ok(init.signal instanceof AbortSignal);
+  assert.equal(init.signal!.aborted, false);
+  assert.equal(MESH_READ_TIMEOUT_MS, 4_000);
+  // The deadline really fires: a fresh one, observed past its time (short-circuited with a fake clock would test nothing).
+  const fired = await new Promise<boolean>((resolve) => {
+    init.signal!.addEventListener("abort", () => resolve(true));
+    setTimeout(() => resolve(false), MESH_READ_TIMEOUT_MS + 500);
+  });
+  assert.equal(fired, true);
 });

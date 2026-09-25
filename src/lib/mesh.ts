@@ -345,6 +345,16 @@ export function watchMove(moved: { from: string; at: number } | null, now: numbe
   return !p || p.state === "up";
 }
 
+/** How long a mesh read (hello, peers, peer lists) may take while the mesh is on. A read in flight
+    when a host vanishes can ride the front door's kept connection to it and wait 35 s; giving up
+    frees the browser's connection, so the next read reaches the host now serving. */
+export const MESH_READ_TIMEOUT_MS = 4_000;
+
+/** The fetch options of a mesh read: a deadline with the mesh on; with it off, none (as before). */
+export function meshReadInit(on: boolean): RequestInit | undefined {
+  return on ? { signal: AbortSignal.timeout(MESH_READ_TIMEOUT_MS) } : undefined;
+}
+
 /** The stale-tab check, registered by the app: a view that saw a sign of a host change asks it now. */
 let hostCheck: (() => void) | null = null;
 export function setHostCheck(check: (() => void) | null): void {

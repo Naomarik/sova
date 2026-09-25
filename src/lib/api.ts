@@ -61,7 +61,7 @@ import type {
   SummarizerSettingsInfo,
 } from "../../shared/protocol";
 import type { TargetInfo } from "./remote-session";
-import { hostOf, hostUrl, noteHost, peerBase, routeUrl } from "./mesh";
+import { hostOf, hostUrl, meshReadInit, noteHost, peerBase, routeUrl } from "./mesh";
 
 /**
  * What a batch send can come back as. The refusal is a VALUE, not a throw: it is the route's
@@ -685,10 +685,11 @@ export const RECENT_WRITE_WINDOW_MS = 120_000;
 // ---- the peer mesh (lib/mesh.ts) ----------------------------------------------------------------
 
 /** This host, its peers and what syncs. Answers from local state only: no peer is asked. */
-export const fetchMesh = () => request<MeshInfo>("/api/mesh");
+/** `init`: the poll's deadline while the mesh is on (lib/mesh `meshReadInit`); none otherwise. */
+export const fetchMesh = (init?: RequestInit) => request<MeshInfo>("/api/mesh", init);
 
 /** This host's own hello: its version and wire-contract fingerprint. */
-export const fetchMeshHello = () => request<MeshHello>("/api/mesh/hello");
+export const fetchMeshHello = () => request<MeshHello>("/api/mesh/hello", meshReadInit(true));
 
 /** Replace peers.json's list; the answer is the mesh as it stands after the write. An entry
     without `nodeId` is resolved by its name on the tailnet. */
@@ -699,7 +700,7 @@ export const putMeshPeers = (peers: MeshPeerEntry[]) =>
 export const fetchMeshCandidates = () => request<MeshCandidate[]>("/api/mesh/candidates");
 
 /** Every peer's own session list, through the proxy. Only asked for while a peer is configured. */
-export const fetchMeshSessions = () => request<MeshSessions>("/api/mesh/sessions");
+export const fetchMeshSessions = () => request<MeshSessions>("/api/mesh/sessions", meshReadInit(true));
 
 export const getMeshSettings = () => request<MeshSettings>("/api/mesh/settings");
 

@@ -20,7 +20,7 @@ import {
   setSessionArchived,
 } from "./lib/api";
 import { socketReconnects } from "./lib/socket";
-import { firstBaseline, helloStep, HELLO_POLL_MS, pathOfViewKey, sessionViewKey, watchMove, HOST_CONFIRM_MS, seedPeerList, setHostCheck, type HelloBaseline, type PendingHost, type HelloChange, sessionHrefOn } from "./lib/mesh";
+import { firstBaseline, helloStep, HELLO_POLL_MS, meshReadInit, pathOfViewKey, sessionViewKey, watchMove, HOST_CONFIRM_MS, seedPeerList, setHostCheck, type HelloBaseline, type PendingHost, type HelloChange, sessionHrefOn } from "./lib/mesh";
 import { hostLabel, hostOf, isMeshHash, joinHostLists, linkedSessionRow, meshRetryDelay, meshState, meshOn, meshPeers, mergePeerLists, noteHost, notePeerSessions, peerInfo, peerUnavailable, sessionRouteFromHash, setMeshState } from "./lib/mesh";
 import { isOverseerHash, isOverseerShortcut, OVERSEER_HASH, overseerHistoryId } from "./lib/overseer";
 import { isMainThread } from "./lib/regions";
@@ -165,7 +165,7 @@ export function App() {
   /** GET /api/mesh has answered, or failed (which reads as off): a `#/sid/` link waits for it. */
   const [meshSettled, setMeshSettled] = createSignal(false);
   const loadMesh = () =>
-    fetchMesh()
+    fetchMesh(meshReadInit(meshOn()))
       .then((s) => {
         meshFailures = 0;
         servedBy ??= { id: s.self.id, label: s.self.label || s.self.hostname };

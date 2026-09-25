@@ -345,6 +345,10 @@ export interface ProxySocketOptions {
   onResponse?: (res: IncomingMessage) => [number, object];
   /** How long the upstream may take to accept, default 10 s. */
   handshakeTimeout?: number;
+  /** Aborting it before the upstream has accepted fails the dial (onError); after, it is ignored. */
+  signal?: AbortSignal;
+  /** The upstream accepted. */
+  onOpen?: () => void;
 }
 
 /**
@@ -397,7 +401,11 @@ export function proxySocket(req: IncomingMessage, socket: Duplex, head: Buffer, 
       upstream.terminate();
     });
   }
+  opts.signal?.addEventListener("abort", () => {
+    if (!upgraded) upstream.terminate();
+  });
   upstream.once("open", () => {
+    opts.onOpen?.();
     if (socket.destroyed) {
       upstream.terminate();
       return;

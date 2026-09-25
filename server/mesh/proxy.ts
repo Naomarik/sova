@@ -14,15 +14,19 @@ import { type PeerEntry, peerUrl } from "./peers";
 
 const HOP_BY_HOP = ["connection", "keep-alive", "proxy-authenticate", "proxy-authorization", "te", "trailer", "transfer-encoding", "upgrade"];
 
-// Failing fast. A blackholed peer (host asleep, off the tailnet) never answers a SYN, and fetch
-// would wait its full ~10 s connect timeout before our 502. So before a hop to a peer not reached
-// in the last REACHED_MS, a bare TCP connect with CONNECT_TIMEOUT_MS decides; a peer that just
-// failed one is 502 at once for DOWN_MS. There is no read timeout: a slow route or a long stream
-// runs as long as the peer keeps it open. The extension proxy is untouched.
+// Failing fast. A blackholed peer (host asleep, off the tailnet, a killed container) never
+// answers a SYN, and fetch would wait its full ~10 s connect timeout before our 502 (a kept-alive
+// socket to it, longer). So before a hop to a peer not reached in the last REACHED_MS, a bare TCP
+// connect with CONNECT_TIMEOUT_MS decides; a peer that just failed one is 502 at once for DOWN_MS.
+// A hop to a recently reached peer starts at once, and if it has no answer after STALL_MS the
+// same TCP check runs beside it and aborts it when the peer is gone (≈ STALL_MS + 3 s worst case).
+// Once the peer has answered (response headers, or the socket is open) nothing times out: a slow
+// route or a long stream runs as long as the peer keeps it open. The extension proxy is untouched.
 const CONNECT_TIMEOUT_MS = 3000;
 const REACHED_MS = 15_000;
 const DOWN_MS = 3000;
 const WS_HANDSHAKE_MS = 5000;
+const STALL_MS = 500;
 const reach = new Map<string, { ok: boolean; at: number }>();
 
 /** Record what a hop, probe or preflight just learnt about a peer URL. */
@@ -49,15 +53,36 @@ function tcpReachable(url: string): Promise<boolean> {
   });
 }
 
-/** Whether to try the hop at all: recent knowledge first, else a short TCP connect. */
-async function preflight(url: string): Promise<boolean> {
+/** Whether to try the hop at all: recent knowledge first, else a short TCP connect. "recent"
+    means the hop goes ahead without a check, so it needs a stall watch (watchStall). */
+async function preflight(url: string): Promise<boolean | "recent"> {
   const known = reach.get(url);
   const age = known ? Date.now() - known.at : Infinity;
   if (known && !known.ok && age < DOWN_MS) return false;
-  if (known?.ok && age < REACHED_MS) return true;
+  if (known?.ok && age < REACHED_MS) return "recent";
   const ok = await tcpReachable(url);
   notePeerReach(url, ok);
   return ok;
+}
+
+/**
+ * For a hop that went ahead on recent knowledge: after STALL_MS without an answer, check the peer
+ * with a bare TCP connect and call `abort` if it is gone. Returns the function that says "it
+ * answered" (cancels the watch).
+ */
+function watchStall(url: string, abort: () => void): () => void {
+  let answered = false;
+  const timer = setTimeout(() => {
+    void tcpReachable(url).then((ok) => {
+      if (ok || answered) return;
+      notePeerReach(url, false);
+      abort();
+    });
+  }, STALL_MS);
+  return () => {
+    answered = true;
+    clearTimeout(timer);
+  };
 }
 
 const PEER_WS_RE = /^\/peer\/([^/]+)(\/ws\/(?:chat|watch))$/;
@@ -108,15 +133,24 @@ export async function proxyPeer(c: Context, peer: PeerEntry, tail: string): Prom
   for (const h of HOP_BY_HOP) headers.delete(h);
   headers.set(PROXIED_HEADER, host || "unknown");
   const base = peerUrl(peer);
-  if (!(await preflight(base))) return c.json({ error: "peer down", id: peer.id }, 502);
+  const go = await preflight(base);
+  if (!go) return c.json({ error: "peer down", id: peer.id }, 502);
+  const stalled = new AbortController();
+  const answered = go === "recent" ? watchStall(base, () => stalled.abort()) : () => {};
   let res: Response;
   try {
-    res = await proxy(`${base}${tail}${incoming.search}`, { raw: c.req.raw, headers });
+    res = await proxy(`${base}${tail}${incoming.search}`, {
+      raw: c.req.raw,
+      headers,
+      signal: AbortSignal.any([c.req.raw.signal, stalled.signal]),
+    });
   } catch (err) {
+    answered();
     notePeerReach(base, false);
-    console.warn(`[mesh] ${peer.id}: ${c.req.method} ${tail} failed: ${whyDown(err)}`);
+    console.warn(`[mesh] ${peer.id}: ${c.req.method} ${tail} failed: ${stalled.signal.aborted ? "no answer, and the peer is unreachable" : whyDown(err)}`);
     return c.json({ error: "peer down", id: peer.id }, 502);
   }
+  answered();
   notePeerReach(base, true);
   if (res.status === 403 && res.headers.get(REFUSED_HEADER) === "refused") {
     await res.body?.cancel();
@@ -133,23 +167,30 @@ export function upgradePeerSocket(req: IncomingMessage, socket: Duplex, head: Bu
   socket.on("error", () => {}); // a reset while we decide; proxySocket takes over from there
   const headers: Record<string, string> = { [PROXIED_HEADER]: req.headers.host || "unknown" };
   const base = peerUrl(peer);
-  void preflight(base).then((ok) => {
+  void preflight(base).then((go) => {
     if (socket.destroyed) return; // the browser gave up first
-    if (!ok) {
+    if (!go) {
       refuse(socket, 502, { error: "peer down", id: peer.id });
       return;
     }
+    const stalled = new AbortController();
+    const answered = go === "recent" ? watchStall(base, () => stalled.abort()) : () => {};
     proxySocket(req, socket, head, `${base.replace(/^http/, "ws")}${tail}${search}`, headers, {
       handshakeTimeout: WS_HANDSHAKE_MS,
+      signal: stalled.signal,
+      onOpen: answered,
       onError: (err) => {
+        answered();
         notePeerReach(base, false);
-        console.warn(`[mesh] ${peer.id}: ws ${tail} failed: ${whyDown(err)}`);
+        console.warn(`[mesh] ${peer.id}: ws ${tail} failed: ${stalled.signal.aborted ? "no answer, and the peer is unreachable" : whyDown(err)}`);
         return [502, { error: "peer down", id: peer.id }];
       },
-      onResponse: (res) =>
-        res.statusCode === 403 && res.headers[REFUSED_HEADER.toLowerCase()] === "refused"
+      onResponse: (res) => {
+        answered();
+        return res.statusCode === 403 && res.headers[REFUSED_HEADER.toLowerCase()] === "refused"
           ? [403, { error: "peer refused", id: peer.id }]
-          : [502, { error: "peer down", id: peer.id }],
+          : [502, { error: "peer down", id: peer.id }];
+      },
     });
   });
 }

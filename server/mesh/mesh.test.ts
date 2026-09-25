@@ -57,6 +57,7 @@ meshApi.onPeerUp((id) => hookLog.push(`up:${id}`));
 const settingsLog: string[] = [];
 meshApi.onSettingsChange((s) => settingsLog.push(s.hostLabel));
 const { clearProbes, ownProtocol } = await import("./hello");
+const { clearPeerReach, notePeerReach } = await import("./proxy");
 const { peersFile } = await import("./peers");
 
 let base = "";
@@ -94,6 +95,10 @@ before(async () => {
     if (url.pathname === "/api/sessions") return json(200, fakeSessions);
     if (url.pathname === "/api/gate-refused") return json(403, { error: "not a peer" }, { "X-Sova-Mesh": "refused" });
     if (url.pathname === "/api/own-403") return json(403, { error: "route says no" });
+    if (url.pathname === "/api/slow") {
+      await new Promise((r) => setTimeout(r, 1500));
+      return json(200, { slow: true });
+    }
     const chunks: Buffer[] = [];
     for await (const c of req) chunks.push(c as Buffer);
     json(url.pathname === "/api/teapot" ? 418 : 200, { method: req.method, url: req.url, body: Buffer.concat(chunks).toString(), fwd: req.headers["x-forwarded-host"] ?? null });
@@ -455,6 +460,19 @@ describe("mesh ON", () => {
     t = Date.now();
     assert.deepEqual(await wsTrip(`${wsBase}/peer/hole/ws/chat?path=p`), { status: 502 });
     assert.ok(Date.now() - t < 4500, `ws 502 took ${Date.now() - t} ms`);
+    // Seen a moment ago, gone now (a killed container): no preflight, so the stall watch decides.
+    notePeerReach("http://192.0.2.1:4801", true);
+    t = Date.now();
+    assert.deepEqual(await getJson("/peer/hole/api/health"), [502, { error: "peer down", id: "hole" }]);
+    assert.ok(Date.now() - t < 4500, `recently seen, REST 502 took ${Date.now() - t} ms`);
+    notePeerReach("http://192.0.2.1:4801", true);
+    t = Date.now();
+    assert.deepEqual(await wsTrip(`${wsBase}/peer/hole/ws/chat?path=p`), { status: 502 });
+    assert.ok(Date.now() - t < 4500, `recently seen, ws 502 took ${Date.now() - t} ms`);
+    // A live peer's slow route outlasts the stall watch untouched.
+    clearPeerReach();
+    await getJson("/peer/b/api/health"); // b reached: the next hop skips the preflight
+    assert.deepEqual(await getJson("/peer/b/api/slow"), [200, { slow: true }]);
     await putJson("/api/mesh/peers", {
       peers: [
         { id: "b", label: "B", nodeId: "nB", name: "127.0.0.1", url: `http://127.0.0.1:${fakePort}` },

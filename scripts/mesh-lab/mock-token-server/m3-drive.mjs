@@ -5,7 +5,7 @@
 // in a finally. `conflict` stops two hosts' Sova to plant different pre-sync keys, then settles the
 // conflict through the Mesh page's routes (GET /api/mesh/logins, POST /api/mesh/logins/claim).
 //
-//   node scripts/mesh-lab/mock-token-server/m3-drive.mjs [h1|h2|h2c|h6|h6c|h9|all|h3|h4|h7|h8|h10|chaos|h11|conflict] [--hosts a,b,c]
+//   node scripts/mesh-lab/mock-token-server/m3-drive.mjs [h1|h2|h2c|h6|h6c|h9|all|h3|h4|h7|h8|h10|chaos|h11|conflict|conflict-clean] [--hosts a,b,c] [--plant-only]
 //   (h11 is meant for an 8-host lab: --hosts a,b,c,d,e,f,g,h; M3_H11_SECONDS sets its length)
 //
 // Needs the lab's mock token server (laptop http://127.0.0.1:4888, MOCK_TOKEN_URL inside hosts)
@@ -455,6 +455,8 @@ async function conflict() {
   // A peer can't reach the routes through its listener (a's own browser routes are main-only).
   const viaPeer = sh(b, `curl -s -o /dev/null -w '%{http_code}' -m 5 -X POST -H 'content-type: application/json' --data '{"key":"${key}"}' http://${a}.${DOMAIN}:${PEER_PORT}/api/mesh/logins/claim`);
   if (viaPeer !== "404" && viaPeer !== "403") throw new Error(`claim through a's peer listener answered ${viaPeer}`);
+  // --plant-only: leave the conflict for a look at the Mesh page; settle it there, or run `conflict-clean`.
+  if (args.includes("--plant-only")) return `planted: ${key} differs on ${a} and ${b}, each lists the other; peer-listener claim ${viaPeer}`;
   const claimed = await mainApi(a, "/api/mesh/logins/claim", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ key }) });
   if (claimed.status !== 200 || JSON.parse(claimed.text).ok !== true) throw new Error(`claim on a: ${claimed.status} ${claimed.text.slice(0, 120)}`);
   const t0 = Date.now();
@@ -470,7 +472,15 @@ async function conflict() {
   return `a and b kept their own keys and listed each other; claim on a → every host on a's key in ${spread} ms; peer-listener claim ${viaPeer}; no key/fingerprint in any body`;
 }
 
-const ALL = { conflict, h1, h2, h2c, h6, h6c, h9, h3, h4, h7, h8, h10, h11 };
+/** Log the throwaway conflict key out everywhere (after a --plant-only run). */
+async function conflictClean() {
+  const holders = HOSTS.filter((h) => inHost(h, "pi-state", "m3conflict").present);
+  for (const h of holders) inHost(h, "pi-delete", "m3conflict");
+  await until("the throwaway key is gone everywhere", piAbsent("m3conflict"));
+  return `logged out on ${holders.join(",") || "no host"}`;
+}
+
+const ALL = { conflict, "conflict-clean": conflictClean, h1, h2, h2c, h6, h6c, h9, h3, h4, h7, h8, h10, h11 };
 const GROUPS = { all: ["h1", "h2", "h2c", "h6", "h6c", "h9"], chaos: ["h3", "h4", "h7", "h8", "h10"] };
 const run = GROUPS[which] ?? which.split(",");
 for (const name of run) {

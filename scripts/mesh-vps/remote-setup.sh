@@ -64,6 +64,9 @@ if [ ! -e "$BASE/agent/auth.json" ]; then
   log "agent: auth.json created empty (keys arrive by sync)"
 fi
 chmod 600 "$BASE/agent/auth.json"
+# Claude Code's credential store for login sync: the unit's own HOME/.claude (a hermetic agent dir syncs Claude only when
+# SOVA_SYNC_CLAUDE_DIR names the store; deploy's real ~/.claude is never used)
+mkdir -p "$BASE/home/.claude" && chmod 700 "$BASE/home/.claude"
 # this host's identity: self.id (default would be the machine hostname), label, front-door upstream
 if [ ! -e "$BASE/agent/sova/peers.json" ]; then
   mkdir -p "$BASE/agent/sova"
@@ -82,6 +85,7 @@ SOVA_PEER_HOST=$VPS_TAILNET_IP
 SOVA_PEER_PORT=$SOVA_PEER_PORT
 PI_CODING_AGENT_DIR=$BASE/agent
 HOME=$BASE/home
+SOVA_SYNC_CLAUDE_DIR=$BASE/home/.claude
 TMPDIR=$BASE/tmp
 PATH=$BASE/node/bin:/usr/bin:/bin
 EOF

@@ -9,7 +9,7 @@ Layout on the VPS (`~/sova-mesh`): `node/` (Node 22 LTS, sha256-pinned), `bin/ca
 keys arrive by sync; `sova/peers.json` is seeded once with self id `$VPS_ID` (default `vps`), no peers (logins of every kind sync, subscriptions included; Settings → Mesh can switch this host to API keys only); the
 self id is never rewritten, since host filters and the front-door order reference it), `home/` (isolated HOME), `tmp/` (TMPDIR for every build/run step, 0700: nothing of ours in /tmp; holds jiti's
 extension cache, re-warmed by `run-warm.sh` / `warm-extensions.mjs` after each build and at each unit start, so the first
-session never stalls Sova compiling 16 extensions), `sova-mesh.env`, `Caddyfile`.
+session never stalls Sova compiling 16 extensions), `sova-mesh.env` (SOVA_SYNC_CLAUDE_DIR = `home/.claude`, 0700: the Claude Code store that login sync fills), `Caddyfile`.
 Ports: Sova main 127.0.0.1:4800; peer listener <vps-tailnet-ip>:4801 (only while peers.json lists a peer);
 front door Caddy 127.0.0.1:4890 (admin 127.0.0.1:2089). Nothing binds the public interface.
 

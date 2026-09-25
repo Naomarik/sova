@@ -8,6 +8,7 @@ import {
   createSession,
   fetchAgents,
   fetchExplanations,
+  fetchExtensions,
   fetchUsage,
   getOverseer,
   getSessionSummaryById,
@@ -21,6 +22,7 @@ import { sessionIdFromHash, setGroupLinkIndex, setSessionIndex } from "./lib/ses
 import { agentsHref, insightsRouteFromHash, legacyInsightsTarget } from "./lib/insights";
 import { transcriptRoot } from "./lib/jump";
 import { groupRouteFromHash } from "./lib/group-route";
+import { extHref, extRouteFromHash } from "./lib/ext-route";
 import { loadSessionGroups, sessionGroups, sessionGroupsLoaded } from "./lib/session-groups";
 import { createThenArchive, dropArchived, newSessionCwd } from "./lib/new-session";
 import { cwdLabel } from "./lib/remote-session";
@@ -38,6 +40,7 @@ import { AgentsView } from "./components/AgentsView";
 import { NewSessionDialog } from "./components/NewSessionDialog";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { ExplainGrid } from "./components/ExplainGallery";
+import { ExtensionCards, ExtensionView } from "./components/ExtensionView";
 import { FanoutDialog, type FanoutSource } from "./components/FanoutDialog";
 import { GroupView, paneIdFor, workspaceFocus, type PaneWiring } from "./components/GroupView";
 import { OverseerView } from "./components/OverseerView";
@@ -83,6 +86,8 @@ const OVERSEER_POLL_MS = 10_000;
 
 /** `#/overseer` (null: another route), with the earlier file `#/overseer/h/<id>` names. */
 const overseerRouteFromHash = (hash: string) => (isOverseerHash(hash) ? { historyId: overseerHistoryId(hash) } : null);
+/** Installed extensions and their health; the server caches each health probe for 10 s. */
+const EXTENSIONS_POLL_MS = 15_000;
 const folded = () => window.matchMedia("(max-width: 767px)").matches;
 
 /** Live `matchMedia` (the ExplainGallery pattern): the spine is a desktop affordance, so it only
@@ -168,6 +173,12 @@ export function App() {
   createEffect(() => sessionGroupsLoaded() && setGroupLinkIndex(sessionGroups()));
   const [insightsRoute, setInsightsRoute] = createSignal(insightsRouteFromHash(location.hash));
   const [overseerRoute, setOverseerRoute] = createSignal(overseerRouteFromHash(location.hash));
+  const [extRoute, setExtRoute] = createSignal(extRouteFromHash(location.hash));
+  /** The extension on screen: the view is keyed by this, so a sub-route change never remounts it
+      (which would reload the extension's iframe). */
+  const extId = createMemo(() => extRoute()?.id ?? null);
+  /** The extension asked to fill the window (ext-contract §3.7); ExtensionView owns it. */
+  const [extMaximized, setExtMaximized] = createSignal(false);
   /** Team card to scroll to on `#/agents/<teamId>`. */
   const focusTeam = () => {
     const r = insightsRoute();
@@ -184,6 +195,12 @@ export function App() {
   const agents = createPoll(fetchAgents, AGENTS_POLL_MS);
   const explanations = createPoll(fetchExplanations, EXPLAIN_POLL_MS);
   const overseer = createPoll(getOverseer, OVERSEER_POLL_MS);
+  const extensions = createPoll(fetchExtensions, EXTENSIONS_POLL_MS);
+  /** The landing page shows the Extensions section only when something is installed. */
+  const installed = createMemo(() => {
+    const items = extensions.data();
+    return items && items.length > 0 ? items : null;
+  });
   /** The landing page renders the grid only when it has rows; the empty state stays in the modal. */
   const explained = createMemo(() => {
     const items = explanations.data();
@@ -275,6 +292,7 @@ export function App() {
     setGroupRoute(groupRouteFromHash(location.hash));
     setInsightsRoute(insightsRouteFromHash(location.hash));
     setOverseerRoute(overseerRouteFromHash(location.hash));
+    setExtRoute(extRouteFromHash(location.hash));
   };
   // A `#/sid/` route opened before the first list load resolves when the list lands.
   createEffect(on(list, () => sessionIdFromHash(location.hash) && onHash(), { defer: true }));
@@ -387,6 +405,8 @@ export function App() {
   let titleEl: HTMLHeadingElement | undefined;
   createEffect(on(route, (p) => p && folded() && queueMicrotask(() => titleEl?.focus()), { defer: true }));
   let insightsTitleEl: HTMLHeadingElement | undefined;
+  let extTitleEl: HTMLHeadingElement | undefined;
+  createEffect(on(extId, (id) => id && folded() && queueMicrotask(() => extTitleEl?.focus()), { defer: true }));
   // A team deep link focuses its card instead (AgentsView), at every width.
   createEffect(
     on(() => insightsRoute()?.page, (page) => page && !focusTeam() && folded() && queueMicrotask(() => insightsTitleEl?.focus()), { defer: true }),
@@ -628,7 +648,8 @@ export function App() {
       <div
         class="app"
         data-spine={collapsed() ? "on" : undefined}
-        data-view={groupRoute() ? "workspace" : route() || insightsRoute() || overseerRoute() ? "session" : "list"}
+        data-view={groupRoute() ? "workspace" : route() || insightsRoute() || overseerRoute() || extRoute() ? "session" : "list"}
+        data-ext-maximized={extMaximized() ? "1" : undefined}
       >
         <Sidebar
           unfolded={unfolded()}
@@ -742,6 +763,27 @@ export function App() {
                   </div>
                 </div>
               </Match>
+              {/* An installed extension's own UI (#/ext/<id>). */}
+              <Match when={extId()} keyed>
+                {(id) => (
+                  <ExtensionView
+                    id={id}
+                    sub={extRoute()?.sub ?? null}
+                    info={extensions.data()?.find((e) => e.id === id)}
+                    loaded={!extensions.pending()}
+                    titleRef={(el) => (extTitleEl = el)}
+                    onOpenSession={adoptCreated}
+                    onRoute={(sub) => {
+                      // The extension navigated inside itself: the page URL follows, so a reload or
+                      // a copied link comes back to the same place. replaceState: no history entry,
+                      // no hashchange, no reload.
+                      history.replaceState(history.state, "", extHref(id, sub));
+                      setExtRoute({ id, sub });
+                    }}
+                    onMaximized={setExtMaximized}
+                  />
+                )}
+              </Match>
               <Match when={!route() && !groupRoute()}>
                 <div class="welcome">
                   <div class="welcome-head">
@@ -768,6 +810,7 @@ export function App() {
                       </div>
                     </div>
                   </div>
+                  <Show when={installed()}>{(list) => <ExtensionCards extensions={list()} />}</Show>
                   <Show when={explained()}>
                     {(list) => (
                       <section class="explain-section" aria-labelledby="explain-section-title">

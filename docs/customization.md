@@ -72,3 +72,104 @@ prerequisite for Sova**. Its `install.sh` links configuration and extensions int
 directory, replacing existing symlinks and backing up regular files. Review it and back up your
 configuration before opting in. For the default Sova installation, the script is at
 `~/.local/share/sova/pi-config/install.sh`; do not run it merely to launch the web app.
+
+## Sova extensions
+
+A Sova extension is a small web app of your own that runs inside Sova: a card on the landing page,
+and a page at `#/ext/<id>` that shows the extension's UI beside the sessions list. Unlike the pi
+extensions above, it adds nothing to the agent. It is a built UI (a folder with an `index.html`)
+plus a backend you run yourself, on this machine.
+
+Install one by listing it in `~/.pi/agent/sova/extensions.json` (set `SOVA_EXTENSIONS_FILE` to use
+another file). Sova reads the file on every request and never writes it:
+
+```json
+{
+  "version": 1,
+  "extensions": [
+    {
+      "id": "notes",
+      "title": "Notes",
+      "description": "Scratch notes per project",
+      "icon": "file",
+      "dist": "/home/you/notes-ext/dist",
+      "api": "http://127.0.0.1:4840"
+    }
+  ]
+}
+```
+
+- `id`: letters, digits, `.`, `_` and `-`; it appears in URLs. `title` is the card title (the
+  id if omitted), `description` its body, `icon` one of Sova's icon names in `public/icons/`.
+- `dist`: an absolute folder. Sova serves it at `/ext/<id>/`. A path without a file extension
+  falls back to `index.html`, so client-side routes work.
+- `api`: the backend, `http://` or `https://` on `127.0.0.1` or `localhost` with an explicit port and an optional
+  path prefix, without a trailing slash. `/ext/<id>/api/*` is proxied to `<api>/api/*` and
+  `/ext/<id>/ws/*` (WebSockets) to `<api>/ws/*`. A backend that can't be reached answers
+  `502 {"error":"extension down","id":"<id>"}`. A streamed response must send something at
+  least every 60 seconds, or the connection may be cut.
+
+An entry with a bad `id`, a relative `dist` or an `api` that isn't loopback is skipped, and the
+server logs why. The card shows `Running` when `GET <api>/api/health` answers 2xx within 1.5 s
+(checked at most every 10 s), and `Down` with the reason otherwise. A card for an extension that
+is down still opens its page.
+
+The UI is served from Sova's own origin, so it can call every Sova API (for example
+`POST /api/sessions`) and read Sova's local storage. Install only extensions you trust. Proxied
+requests carry `X-Sova-Origin`, the address the backend can use to call Sova back.
+
+To open a session the extension just created, hand it to Sova rather than setting the page's
+hash. A new session has no messages yet, so it isn't in Sova's list, and `#/s/<path>` would find
+nothing:
+
+```js
+const res = await fetch("/api/sessions", { method: "POST", body: JSON.stringify({ cwd }) });
+const session = await res.json(); // 201: a SessionSummary
+window.parent.postMessage({ type: "sova:open-session", session }, location.origin);
+```
+
+Sova accepts the message only from its own origin and from the extension's own frame. `session`
+must be the whole `SessionSummary` that `POST /api/sessions` returned, not just its path. An
+incomplete one is ignored, and the browser console logs why. Sova opens an accepted session the
+way New Session does, with the composer focused. A session that is already in the list
+can still be opened with `window.parent.location.hash = "#/s/" + encodeURIComponent(path)`.
+
+To match Sova's look, link `/design/tokens.css` and `/design/base.css`. To follow the theme the
+user picks, copy the parent page's theme when the page loads, and again whenever it changes:
+
+```js
+const copy = () => {
+  const from = parent.document.documentElement, to = document.documentElement;
+  const theme = from.getAttribute("data-theme");
+  theme ? to.setAttribute("data-theme", theme) : to.removeAttribute("data-theme");
+  to.style.cssText = from.style.cssText;
+};
+copy();
+new MutationObserver(copy).observe(parent.document.documentElement,
+  { attributes: true, attributeFilter: ["style", "data-theme", "class"] });
+```
+
+The extension's own route (its page's hash) can be part of Sova's URL. Post
+`{ type: "sova:route", hash: location.hash || "#/" }` to the parent whenever it changes, and Sova
+shows `#/ext/<id>/<route>`. A link like that opens the extension at `/ext/<id>/#/<route>`. To use
+the whole browser window, post `{ type: "sova:maximize" }`, and `{ type: "sova:restore" }` to leave.
+Sova hides its sidebar and the page head, then answers `{ type: "sova:maximized", on }`. It binds no
+key, so the extension provides its own way out. Sova also restores the page when the user
+navigates. The iframe may use `requestFullscreen`.
+
+The classes an extension can rely on from `base.css`:
+
+- buttons: `.button`, with `.button-sm`, `.button-icon`, `.button-ghost`, `.button-primary` or
+  `.button-destructive`;
+- `.card`, `.cluster`, `.text-num`;
+- icons: `.icon` and `.icon-sm`;
+- status chips: `.chip` with `.chip-dot` and `.chip-success`, `-warn`, `-error` or `-info`;
+- banners: `.banner` with `.banner-icon`, `-main`, `-title`, `-body` and `-action`, and
+  `.banner-info`, `-success`, `-warn` or `-error`;
+- toasts: `.toast-stack`, `.toast`, `.toast-body`, `.toast-timer`;
+- tabs: `.tabs`, `.tab`, `.tab-active`;
+- skeletons: `.skeleton` with `.skeleton-line`, `-row` or `-title`;
+- empty states: `.empty` with `.empty-mark`, `-title`, `-body` and `-action`;
+- `.visually-hidden`.
+
+Style anything else, tables included, yourself.

@@ -688,7 +688,11 @@
     "§chat.transcript/landing-page": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "unreviewed",
+      "code": [
+        "src/App.tsx",
+        "src/components/ExtensionView.tsx"
+      ]
     },
     "§chat.transcript/live-watch": {
       "kind": "behavior",
@@ -1636,6 +1640,184 @@
         "server/fork.ts",
         "server/chat-manager.ts",
         "src/lib/live.ts"
+      ]
+    },
+    "§app.installer/claude-code-provider": {
+      "kind": "behavior",
+      "requires": [],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "scripts/install.sh",
+        "scripts/install.test.sh"
+      ]
+    },
+    "§app.installer/idempotent": {
+      "kind": "behavior",
+      "requires": [],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "scripts/install.sh",
+        "scripts/install.test.sh"
+      ]
+    },
+    "§app.installer/pi-extensions": {
+      "kind": "behavior",
+      "requires": [],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "scripts/install.sh",
+        "scripts/install.test.sh"
+      ]
+    },
+    "§app.installer/portable": {
+      "kind": "behavior",
+      "requires": [],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "scripts/install.sh",
+        "scripts/install.test.sh"
+      ]
+    },
+    "§app.installer/service": {
+      "kind": "behavior",
+      "requires": [],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "scripts/install.sh",
+        "scripts/install.test.sh"
+      ]
+    },
+    "§app/installer": {
+      "kind": "surface",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "scripts/install.sh",
+        "scripts/install.test.sh"
+      ]
+    },
+    "§app.extensions/cards": {
+      "kind": "behavior",
+      "requires": [
+        "§app.extensions/list",
+        "§chat.transcript/landing-page"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/App.tsx",
+        "src/components/ExtensionView.tsx",
+        "src/extensions.css"
+      ]
+    },
+    "§app.extensions/design-css": {
+      "kind": "behavior",
+      "requires": [
+        "§app.settings-dialog/themes"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/index.ts",
+        "public/sw.js",
+        "vite.config.ts"
+      ]
+    },
+    "§app.extensions/list": {
+      "kind": "behavior",
+      "requires": [
+        "§app.extensions/manifest"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/extensions.ts",
+        "server/index.ts",
+        "shared/protocol.ts",
+        "src/lib/api.ts"
+      ]
+    },
+    "§app.extensions/manifest": {
+      "kind": "behavior",
+      "requires": [],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/extensions.ts",
+        "server/extensions.test.ts"
+      ]
+    },
+    "§app.extensions/maximize": {
+      "kind": "behavior",
+      "requires": [
+        "§app.extensions/page"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/ExtensionView.tsx",
+        "src/lib/ext-route.ts",
+        "src/lib/ext-route.test.ts",
+        "src/extensions.css",
+        "src/App.tsx"
+      ]
+    },
+    "§app.extensions/page": {
+      "kind": "behavior",
+      "requires": [
+        "§app.extensions/list",
+        "§app.extensions/serving",
+        "§app/new-session-dialog"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/App.tsx",
+        "src/lib/ext-route.ts",
+        "src/lib/ext-route.test.ts",
+        "src/components/ExtensionView.tsx",
+        "src/extensions.css"
+      ]
+    },
+    "§app.extensions/serving": {
+      "kind": "behavior",
+      "requires": [
+        "§app.extensions/manifest"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/extensions.ts",
+        "server/index.ts",
+        "server/ws.ts",
+        "public/sw.js",
+        "vite.config.ts",
+        "server/extensions.test.ts"
+      ]
+    },
+    "§app.extensions/trust": {
+      "kind": "behavior",
+      "requires": [
+        "§app.extensions/serving"
+      ],
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "src/components/ExtensionView.tsx"
+      ]
+    },
+    "§app/extensions": {
+      "kind": "surface",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/extensions.ts",
+        "src/components/ExtensionView.tsx"
       ]
     }
   }

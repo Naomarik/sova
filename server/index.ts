@@ -59,11 +59,14 @@ import {
   startOverseerLoop,
 } from "./overseer";
 import { readNotes, writeNotes, NOTES_MAX } from "./overseer-store";
+import { findExtension, listExtensions, proxyExtension, serveExtensionFile, setSovaPort } from "./extensions";
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4800; // PORT=0: an ephemeral port (tests)
 // Loopback by default; set HOST=0.0.0.0 to deliberately expose on the LAN.
 const HOST = process.env.HOST || "127.0.0.1";
 const DIST_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..", "dist");
+/** tokens.css and base.css, served as is at /design/* for extension UIs (server/extensions.ts). */
+const DESIGN_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..", "src", "design");
 /** AGENTS.md for the connection agent (owned by pi-config's remote extension team; read per request). */
 const CONNECT_TEMPLATE = fileURLToPath(new URL("./connect-agent-template.md", import.meta.url));
 
@@ -765,8 +768,39 @@ app.post("/api/sessions/prompt", async (c) => {
   const r = await promptIdleSession(path, body.text, overseerSender(c.req.header(OVERSEER_SENDER_HEADER)));
   return r.ok ? c.json({ ok: true }) : c.json({ error: r.error }, r.status);
 });
+// Installed extensions (server/extensions.ts), with each backend's cached health.
+app.get("/api/extensions", async (c) => c.json(await listExtensions()));
 
 app.all("/api/*", (c) => c.json({ error: "Not found" }, 404));
+
+// Extensions: /ext/<id>/api/* and /ext/<id>/ws/* go to the extension's own backend, everything
+// else under /ext/<id>/ is its built UI (a `/x/*` pattern also matches bare `/x`). The manifest is re-read per request. All of it sits
+// before the static/SPA handlers so an /ext path is never the Sova shell. The WebSocket upgrade
+// itself never reaches Hono (server/ws.ts); a plain GET of a ws path is answered here.
+const extTail = (c: Context, id: string) => new URL(c.req.url).pathname.slice(`/ext/${id}`.length);
+app.all("/ext/:id/api/*", async (c) => {
+  const entry = findExtension(c.req.param("id"));
+  return entry ? proxyExtension(c, entry, extTail(c, entry.id)) : c.json({ error: "Unknown extension" }, 404);
+});
+app.all("/ext/:id/ws/*", (c) =>
+  findExtension(c.req.param("id")) ? c.json({ error: "WebSocket upgrade required" }, 426) : c.json({ error: "Unknown extension" }, 404),
+);
+// Relative asset URLs in the extension's index.html need the trailing slash.
+app.get("/ext/:id", (c) => (findExtension(c.req.param("id")) ? c.redirect(`/ext/${c.req.param("id")}/`) : c.text("Unknown extension", 404)));
+app.get("/ext/:id/*", (c) => {
+  const entry = findExtension(c.req.param("id"));
+  return entry ? serveExtensionFile(entry, extTail(c, entry.id).slice(1)) : c.text("Unknown extension", 404);
+});
+app.all("/ext/*", (c) => c.text("Not found", 404));
+
+// Sova's design tokens and base stylesheet at stable URLs, for extension UIs to link (the app's
+// own copies are bundled under hashed names). Read per request, so they follow a design edit.
+for (const name of ["tokens.css", "base.css"]) {
+  app.get(`/design/${name}`, (c) =>
+    c.body(readFileSync(join(DESIGN_DIR, name), "utf8"), 200, { "Content-Type": "text/css; charset=utf-8", "Cache-Control": "no-cache" }),
+  );
+}
+app.all("/design/*", (c) => c.text("Not found", 404));
 
 // The explanation page itself, raw: a standalone HTML document the gallery iframes and phones
 // open directly. Registered before the static/SPA handlers below so those never shadow it; the
@@ -796,6 +830,7 @@ app.get("*", (c, next) => (hasDist() ? spaIndex(c, next) : next()));
 export { app };
 
 export const server = serve({ fetch: app.fetch, port: PORT, hostname: HOST }, (info) => {
+  setSovaPort(info.port);
   console.log(`sova server on http://${HOST}:${info.port}`);
 }) as Server;
 server.on("error", (err) => {

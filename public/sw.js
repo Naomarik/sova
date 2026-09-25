@@ -3,8 +3,14 @@
 // Only this app's own `sova-` caches are deleted; anything else on the origin is left alone.
 const CACHE = "sova-v1";
 
-// Live data is never cached: REST under /api, WebSockets under /ws*.
-const isPassthrough = (url) => url.pathname.startsWith("/api/") || url.pathname.startsWith("/ws");
+// Live data is never cached: REST under /api, WebSockets under /ws*. Nor is anything an
+// extension serves (/ext/: its UI, its API, its sockets) or the design CSS extensions link
+// (/design/): the network and their own Cache-Control decide, so they are never served stale.
+const isPassthrough = (url) =>
+  url.pathname.startsWith("/api/") ||
+  url.pathname.startsWith("/ws") ||
+  url.pathname.startsWith("/ext/") ||
+  url.pathname.startsWith("/design/");
 
 self.addEventListener("install", (event) => {
   // Seed the shell and the hashed bundles it references: the first page load happens

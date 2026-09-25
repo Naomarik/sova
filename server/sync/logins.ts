@@ -433,7 +433,9 @@ export class CredentialSync {
   /**
    * "Use this host's login everywhere": re-stamp the entry this host holds as a login made now, so
    * it wins over every other host's (the way out of a pre-sync conflict, or any "no, THIS one").
-   * The store is not written; only the stamp changes. False when there is nothing live to claim.
+   * The store is not written; only the stamp changes. An idle login (access token expired, not
+   * dead) can be claimed too: it is refreshed at once where this host can (pi), else it spreads on
+   * its consumer's next refresh. False when there is nothing (or only a dead marker) to claim.
    */
   async claim(key: EntryKey): Promise<boolean> {
     const parsed = parseEntryKey(key);
@@ -442,12 +444,14 @@ export class CredentialSync {
       const rec = this.records[key];
       const entry = snap.entries.get(parsed.provider);
       const now = this.now();
-      if (!rec?.meta || !entry || entry.fingerprint !== rec.meta.fingerprint || !isLive(rec.meta, now)) return false;
+      if (!rec?.meta || !entry || entry.fingerprint !== rec.meta.fingerprint || rec.meta.dead) return false;
       this.setRecord(key, { ...rec, meta: { ...rec.meta, loginAt: now, issuedAt: now, origin: this.hostId } });
       return true;
     });
     if (claimed) {
       delete this.conflicts[key];
+      const meta = this.records[key]?.meta;
+      if (meta && !isLive(meta, this.now())) await this.refreshNow(key);
       await this.syncAll();
     }
     return claimed;
@@ -456,17 +460,24 @@ export class CredentialSync {
   // ---------------------------------------------------------------- peer-facing (server side)
 
   manifest(): CredentialManifest {
+    return { hostId: this.hostId, now: this.now(), entries: this.recordsView(advertisable) };
+  }
+
+  /**
+   * The records a peer may know of (tombstones always; an entry per `include`) in stores this host
+   * advertises. The manifest offers live entries only; planning also counts an idle one (rule 2).
+   */
+  private recordsView(include: (rec: KeyRecord, now: number) => boolean): Records {
     const entries: Records = {};
     const now = this.now();
-    if (!this.enabled) return { hostId: this.hostId, now, entries };
+    if (!this.enabled) return entries;
     for (const [key, rec] of Object.entries(this.records)) {
       const store = parseEntryKey(key)?.store;
       if (!store || !this.advertisesStore(store)) continue;
-      // Tombstones always travel; an entry only while live and admissible.
-      const meta = advertisable(rec, now) ? rec.meta : undefined;
+      const meta = include(rec, now) ? rec.meta : undefined;
       if (meta || rec.tombstone) entries[key] = { ...(meta ? { meta } : {}), ...(rec.tombstone ? { tombstone: rec.tombstone } : {}) };
     }
-    return { hostId: this.hostId, now, entries };
+    return entries;
   }
 
   private advertisesStore(id: StoreId): boolean {
@@ -538,7 +549,9 @@ export class CredentialSync {
           const p = parseEntryKey(k);
           if (p && this.stores.has(p.store) && isKeyRecord(rec)) theirs[k] = rec;
         }
-        const mine = this.manifest().entries;
+        // What this host holds, an idle (expired, not dead) login included: it is compared, not
+        // replaced by any live peer entry, and never re-pulled round after round.
+        const mine = this.recordsView(held);
         for (const key of new Set([...Object.keys(mine), ...Object.keys(this.conflicts)])) {
           const m = mine[key]?.meta;
           const t = theirs[key]?.meta;
@@ -684,6 +697,9 @@ export class CredentialSync {
     return structuredClone(this.records);
   }
 }
+
+/** A login this host still holds: admissible and not dead, live or idle (access token expired). */
+const held = (rec: KeyRecord): boolean => !!rec.meta && !rec.meta.dead && admissible(rec.meta, rec.tombstone);
 
 /** A peer's secret must be exactly the entry its meta describes, and a live one. */
 function verifySecret(store: StoreId, secret: Record<string, unknown>, meta: EntryMeta): boolean {

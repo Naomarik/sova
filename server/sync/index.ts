@@ -244,7 +244,7 @@ export function mountSync(app: Hono, mesh: MeshApi, paths: SyncPaths = defaultPa
       return c.json({ error: "Unknown login" }, 400);
     }
     if (!loginsOn()) return c.json({ error: "Logins sync is off" }, 409);
-    if (!(await sync.claim(key))) return c.json({ error: "No live login here to claim" }, 409);
+    if (!(await sync.claim(key))) return c.json({ error: "Nothing here to claim" }, 409);
     return c.json({ ok: true as const });
   });
   app.get("/api/peer/sync/manifest", (c) => {

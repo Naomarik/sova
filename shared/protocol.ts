@@ -1926,9 +1926,10 @@ export interface ExtensionInfo {
 //                                  no fingerprint. 404 while OFF)
 // POST /api/mesh/logins/claim MeshLoginClaim -> {ok:true}   (keep THIS host's login for that key on
 //                                  every host: it becomes a login made now. Settles a pre-sync
-//                                  conflict; to keep a peer's login, claim on that peer's page. 400 bad
-//                                  body or unknown key, 409 nothing live here to claim or the logins
-//                                  switch is off, 404 while OFF)
+//                                  conflict; to keep a peer's login, claim on that peer's page. An
+//                                  "expired" one can be claimed: it spreads once refreshed. 400 bad
+//                                  body or unknown key, 409 nothing here to claim (logged out or dead)
+//                                  or the logins switch is off, 404 while OFF)
 // GET  /api/mesh/hello          -> MeshHello   (this host's own, for the SPA's stale-tab check: id,
 //                                  version, protocol, build. Cheap (a stat), and answered with the
 //                                  mesh off too, no Tailscale call; nodeId only while on)

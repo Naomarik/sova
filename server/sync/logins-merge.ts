@@ -8,8 +8,13 @@
  *   1. Tombstones merge by the later `at`. An entry whose `loginAt` is not after the tombstone is
  *      inadmissible: a refresh keeps its lineage's `loginAt`, so a host that refreshed while it
  *      missed a logout is still logged out; only a login newer than the logout resurrects.
- *   2. A dead marker (the consumer's failed-refresh clearing) or an expired oauth entry never
- *      wins over a live one and is never taken from a peer; a host holding one pulls instead.
+ *   2. A dead marker (the consumer's failed-refresh clearing) never wins and is never taken; a host
+ *      holding one takes any live peer entry. An oauth entry whose ACCESS token expired is not
+ *      dead (its refresh token still works: an idle laptop holds exactly this) but it is never
+ *      taken from a peer either. Held locally, it gives way only to its own lineage refreshed
+ *      elsewhere (`sameLineage`: rotation made its refresh token stale) or to a newer login;
+ *      against a different, older login it stays, and once its consumer refreshes it on use it is
+ *      live and spreads by rule 3.
  *   3. Among live admissible entries the newer login wins (`loginAt`); within one lineage (the
  *      same login, refreshed) the larger `expires` wins for oauth, the newer `issuedAt` for an
  *      api key; ties fall to `issuedAt`, then `origin`, then `fingerprint`. It is one total order
@@ -116,6 +121,14 @@ export function sameLogin(a: Pick<EntryMeta, "fingerprint" | "account">, b: { fi
   return a.fingerprint === b.fingerprint || (!!a.account && a.account === b.account);
 }
 
+/**
+ * The same lineage: provably the same login, or the same login instant (a refresh keeps `loginAt`;
+ * 0 says nothing, so pre-sync entries need `sameLogin`).
+ */
+export function sameLineage(a: EntryMeta, b: EntryMeta): boolean {
+  return sameLogin(a, b) || (a.loginAt > 0 && a.loginAt === b.loginAt);
+}
+
 /** Two pre-sync entries that may be different logins: nothing says which is current. */
 export function preSyncConflict(a: EntryMeta, b: EntryMeta): boolean {
   return a.loginAt === 0 && b.loginAt === 0 && !sameLogin(a, b);
@@ -172,12 +185,19 @@ export function resolve(local: KeyRecord, remote: KeyRecord, now: number): Resol
     else candidate = rm;
   }
   const localLive = lm !== undefined && isLive(lm, now);
-  if (candidate && localLive && preSyncConflict(candidate, lm!)) {
+  // Held but expired (not dead): still a login this host can refresh (rule 2).
+  const localIdle = lm !== undefined && !lm.dead && !localLive;
+  if (candidate && (localLive || localIdle) && preSyncConflict(candidate, lm!)) {
     return { action: "keep", record: withTomb(lm), rejected: "conflict" };
   }
-  if (candidate && (!localLive || compareEntries(candidate, lm!) > 0)) {
-    return { action: "adopt", record: withTomb(candidate) };
-  }
+  const wins = !candidate
+    ? false
+    : localLive
+      ? compareEntries(candidate, lm!) > 0
+      : localIdle
+        ? sameLineage(candidate, lm!) || candidate.loginAt > lm!.loginAt
+        : true;
+  if (candidate && wins) return { action: "adopt", record: withTomb(candidate) };
   if (candidate) rejected = "older";
   if (local.meta && !lm) return { action: "delete", record: withTomb(undefined) };
   const record = withTomb(lm);

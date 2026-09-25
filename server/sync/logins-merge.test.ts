@@ -15,6 +15,7 @@ import {
   parseEntryKey,
   plan,
   resolve,
+  sameLineage,
   type EntryMeta,
   type KeyRecord,
   type Tombstone,
@@ -114,9 +115,55 @@ test("a local dead marker (Claude's invalid_grant clearing) is replaced by any l
   const dead = oauth({ expires: 0, dead: true, issuedAt: NOW });
   const live = oauth({ expires: NOW + 60_000, issuedAt: NOW - 2 * H, origin: "b" });
   assert.equal(resolve({ meta: dead }, { meta: live }, NOW).action, "adopt");
-  // ... and a local expired entry likewise (it cannot beat a live one whatever its stamps say)
+  // ... and a local expired entry of the same lineage (the same loginAt: rotated elsewhere) likewise
   const expired = oauth({ expires: NOW - 1, issuedAt: NOW });
   assert.equal(resolve({ meta: expired }, { meta: live }, NOW).action, "adopt");
+});
+
+// ---------------------------------------------------------------- idle hosts (access token expired)
+
+test("qa F2 case 1: pre-sync, A's idle (expired) personal login vs B's live work login is a conflict, not an overwrite", () => {
+  // qa-reviewer's idle-expired.mts, case 1, verbatim stamps.
+  const DAY = 24 * H;
+  const A1 = { meta: oauth({ expires: NOW - 2 * H, issuedAt: NOW - 3 * DAY, loginAt: 0, fingerprint: fp("a"), origin: "a", account: "personal" }) };
+  const B1 = { meta: oauth({ expires: NOW + 6 * H, issuedAt: NOW - 1 * DAY, loginAt: 0, fingerprint: fp("b"), origin: "b", account: "work" }) };
+  assert.deepEqual(resolve(A1, B1, NOW), { action: "keep", record: { meta: A1.meta }, rejected: "conflict" });
+  assert.deepEqual(resolve(B1, A1, NOW), { action: "keep", record: { meta: B1.meta }, rejected: "dead" }, "an expired entry is still never taken");
+  assert.deepEqual(plan({ k: A1 }, { k: B1 }, NOW), { pull: [], delete: [], push: [], tombstones: [] }, "nothing pulled, nothing pushed");
+});
+
+test("qa F2 case 2: A's newer login, idle, is not replaced by B's older live login; B does not take the expired one", () => {
+  const DAY = 24 * H;
+  const A2 = { meta: oauth({ expires: NOW - 1 * H, issuedAt: NOW - 1 * DAY, loginAt: NOW - 1 * DAY, fingerprint: fp("c"), origin: "a", account: "X" }) };
+  const B2 = { meta: oauth({ expires: NOW + 6 * H, issuedAt: NOW - 1 * H, loginAt: NOW - 10 * DAY, fingerprint: fp("d"), origin: "b", account: "Y" }) };
+  assert.deepEqual(resolve(A2, B2, NOW), { action: "keep", record: { meta: A2.meta }, rejected: "older" });
+  assert.deepEqual(resolve(B2, A2, NOW), { action: "keep", record: { meta: B2.meta }, rejected: "dead" });
+  // Once A's own consumer refreshes it (same loginAt, new expiry), the newer login spreads.
+  const refreshed = { meta: { ...A2.meta, expires: NOW + 8 * H, issuedAt: NOW, fingerprint: fp("c2") } };
+  assert.equal(resolve(B2, refreshed, NOW).action, "adopt");
+  assert.equal(resolve(refreshed, B2, NOW).action, "keep");
+});
+
+test("an idle entry still gives way to its own lineage refreshed elsewhere, and to a newer login", () => {
+  // Rotation: B refreshed the lineage while A slept, so A's refresh token is dead weight.
+  const idle = oauth({ expires: NOW - H, loginAt: NOW - 5 * H, fingerprint: fp("i") });
+  const rotated = oauth({ expires: NOW + H, loginAt: NOW - 5 * H, fingerprint: fp("r"), origin: "b" });
+  assert.equal(sameLineage(idle, rotated), true, "the same loginAt, no account");
+  assert.equal(resolve({ meta: idle }, { meta: rotated }, NOW).action, "adopt");
+  // The same account from before sync (a copied lineage, refreshed on B).
+  const idlePre = oauth({ expires: NOW - H, loginAt: 0, account: "acct", fingerprint: fp("p1") });
+  const livePre = oauth({ expires: NOW + H, loginAt: 0, account: "acct", fingerprint: fp("p2"), origin: "b" });
+  assert.equal(resolve({ meta: idlePre }, { meta: livePre }, NOW).action, "adopt");
+  // Two pre-sync entries with no account: nothing proves a lineage (loginAt 0 says nothing).
+  assert.equal(sameLineage(oauth({ expires: NOW - H, loginAt: 0, fingerprint: fp("x") }), oauth({ expires: NOW + H, loginAt: 0, fingerprint: fp("y") })), false);
+  // A newer login anywhere wins, over a pre-sync idle entry too.
+  const newer = oauth({ expires: NOW + H, loginAt: NOW - H, fingerprint: fp("n"), origin: "b", account: "other" });
+  assert.equal(resolve({ meta: idle }, { meta: newer }, NOW).action, "adopt");
+  assert.equal(resolve({ meta: idlePre }, { meta: newer }, NOW).action, "adopt");
+  // An older different login does not; a dead marker still takes anything live.
+  const older = oauth({ expires: NOW + H, loginAt: NOW - 9 * H, fingerprint: fp("o"), origin: "b" });
+  assert.deepEqual(resolve({ meta: idle }, { meta: older }, NOW), { action: "keep", record: { meta: idle }, rejected: "older" });
+  assert.equal(resolve({ meta: { ...idle, dead: true } }, { meta: older }, NOW).action, "adopt");
 });
 
 test("a dead or expired local entry stays when the peer offers nothing better (pi can still refresh it)", () => {
@@ -264,11 +311,13 @@ function randomRecord(r: () => number, hosts: string[]): KeyRecord {
   if (r() < 0.8) {
     const kind = r() < 0.75 ? "oauth" : "api_key";
     const issuedAt = NOW - small() * H;
+    const loginAt = NOW - (small() + 2) * H;
     const meta: EntryMeta = {
       kind,
       issuedAt,
-      loginAt: NOW - (small() + 2) * H,
-      fingerprint: fp(Math.floor(r() * 8)),
+      loginAt,
+      // Collisions happen, but only within one login: a fingerprint is a hash of the entry itself.
+      fingerprint: fp(`${Math.floor(r() * 8)}@${loginAt}`),
       origin: pick(hosts),
       ...(kind === "oauth" ? { expires: NOW + (small() - 2) * H } : {}),
       ...(r() < 0.1 ? { dead: true } : {}),
@@ -277,6 +326,16 @@ function randomRecord(r: () => number, hosts: string[]): KeyRecord {
   }
   if (r() < 0.3) rec.tombstone = { at: NOW - (small() + 1) * H, by: pick(hosts) };
   return rec;
+}
+
+/** `local` holds an idle (expired, not dead) admissible login that `remote`'s live entry does not replace. */
+function keepsIdle(local: KeyRecord, remote: KeyRecord): boolean {
+  const tomb = laterTombstone(local.tombstone, remote.tombstone);
+  const l = local.meta;
+  const r = remote.meta;
+  if (!l || l.dead || isLive(l, NOW) || !admissible(l, tomb)) return false;
+  if (!r || !isLive(r, NOW) || !admissible(r, tomb)) return false;
+  return !sameLineage(l, r) && r.loginAt <= l.loginAt;
 }
 
 /** What a host's record says the usable entry is, if any. */
@@ -291,7 +350,12 @@ test("property: the live winner does not depend on which side is local (commutat
     const ba = resolve(b, a, NOW).record;
     const la = a.meta && isLive(a.meta, NOW);
     const lb = b.meta && isLive(b.meta, NOW);
-    if (la || lb) {
+    if (keepsIdle(a, b) || keepsIdle(b, a)) {
+      // An idle login against a different, older live one: each side keeps its own.
+      const [idleSide, liveSide, idleRes, liveRes] = keepsIdle(a, b) ? [a, b, ab, ba] : [b, a, ba, ab];
+      assert.deepEqual(idleRes.meta, idleSide.meta, `seed ${seed}: the idle side keeps its login`);
+      assert.deepEqual(winner(liveRes), winner(liveSide), `seed ${seed}: the live side keeps its own`);
+    } else if (la || lb) {
       assert.deepEqual(winner(ab), winner(ba), `seed ${seed}`);
     }
     assert.deepEqual(ab.tombstone, ba.tombstone, `seed ${seed}: tombstone`);
@@ -338,6 +402,14 @@ test("property: random gossip converges on the same winner on every host", () =>
       .sort(compareEntries);
     const expected = candidates.at(-1);
     for (let i = 0; i < hosts.length; i++) {
+      // A host whose own idle login is newer than (and not the lineage of) the live winner keeps
+      // it: expired entries never travel, so it can only be the one it started with.
+      const own = initial[i]!.meta;
+      if (expected && own && keepsIdle({ meta: own, tombstone: tomb }, { meta: expected, tombstone: tomb })) {
+        assert.deepEqual(state[i]!.meta, own, `seed ${seed} host ${hosts[i]} keeps its idle login`);
+        assert.deepEqual(state[i]!.tombstone, tomb, `seed ${seed} host ${hosts[i]} tombstone`);
+        continue;
+      }
       assert.deepEqual(winner(state[i]!), expected, `seed ${seed} host ${hosts[i]}`);
       assert.deepEqual(state[i]!.tombstone, tomb, `seed ${seed} host ${hosts[i]} tombstone`);
       // "no host ever ends with an empty entry while another has a live one" (H11)

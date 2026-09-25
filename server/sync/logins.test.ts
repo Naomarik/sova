@@ -524,6 +524,75 @@ test("first pairing: different pre-existing keys on two hosts are both kept, rep
   }
 });
 
+for (const claimIdle of [false, true]) {
+  test(`idle host, first pairing: A's expired (not dead) personal login is kept against B's live work login, and reported${claimIdle ? "; a claim of the idle login spreads it" : ""}`, async () => {
+    const [a, b] = makeMesh(2);
+    // A laptop asleep past its access token's life: the refresh token still works.
+    const personal = mock.login({ shape: "pi", account: "personal" });
+    const work = mock.login({ shape: "pi", account: "work" });
+    writeFileSync(a!.authPath, JSON.stringify({ "openai-codex": { ...personal.credential, expires: Date.now() - 2 * 3_600_000 } }, null, 2), { mode: 0o600 });
+    writeFileSync(b!.authPath, JSON.stringify({ "openai-codex": work.credential }, null, 2), { mode: 0o600 });
+    for (const h of [a!, b!]) {
+      h.boot();
+      await h.sync.start();
+    }
+    try {
+      await converge([a!, b!]);
+      assert.equal(piRefreshSha(a!), latest(personal.lineage).refreshSha256, "A kept its own login");
+      assert.equal(piRefreshSha(b!), latest(work.lineage).refreshSha256, "B kept its own login");
+      const row = a!.sync.status().entries.find((e) => e.key === CODEX);
+      assert.equal(row?.state, "expired");
+      assert.deepEqual(row?.conflictWith, ["b"], "A reports the conflict");
+      // A's own rounds neither fetch B's secret (to throw it away) nor forget the conflict.
+      let fetched = 0;
+      const entry = b!.sync.entry.bind(b!.sync);
+      b!.sync.entry = async (k) => (fetched++, entry(k));
+      await a!.sync.syncAll();
+      await a!.sync.syncAll();
+      b!.sync.entry = entry;
+      assert.equal(fetched, 0, "no secret fetched");
+      assert.deepEqual(a!.sync.status().entries.find((e) => e.key === CODEX)?.conflictWith, ["b"]);
+      if (claimIdle) {
+        // The user keeps A's from the Mesh page while it is still idle: refreshed at once, it wins everywhere.
+        assert.equal(await a!.sync.claim(CODEX), true);
+        await converge([a!, b!]);
+        for (const h of [a!, b!]) assert.equal(piRefreshSha(h), latest(personal.lineage).refreshSha256, h.id);
+        for (const h of [a!, b!]) assert.equal(h.sync.status().entries.find((e) => e.key === CODEX)?.conflictWith, undefined, h.id);
+        return;
+      }
+      // A's pi refreshes it on use: live, still pre-sync, still a conflict on both sides until claimed.
+      assert.equal(await a!.piRefresh(), "ok");
+      await converge([a!, b!]);
+      assert.equal(piRefreshSha(a!), latest(personal.lineage).refreshSha256);
+      assert.equal(piRefreshSha(b!), latest(work.lineage).refreshSha256);
+      assert.deepEqual(b!.sync.status().entries.find((e) => e.key === CODEX)?.conflictWith, ["a"]);
+    } finally {
+      for (const h of [a!, b!]) h.sync.stop();
+    }
+  });
+}
+
+test("idle host: A's newer login, expired while asleep, is not replaced by B's older live one; refreshed, it spreads", async () => {
+  const [a, b] = makeMesh(2);
+  const older = await b!.piLogin();
+  await converge([a!, b!]);
+  assert.equal(piRefreshSha(a!), latest(older).refreshSha256);
+  // B is away while the user logs in to another account on A; A then sleeps past the access token.
+  b!.online = false;
+  const newer = mock.login({ shape: "pi", account: "newer" });
+  await AuthStorage.create(a!.authPath).modify("openai-codex", async () => ({ ...newer.credential, expires: Date.now() - 3_600_000 }));
+  await a!.sync.observe("pi");
+  b!.online = true;
+  await converge([a!, b!]);
+  assert.equal(piRefreshSha(a!), latest(newer.lineage).refreshSha256, "A kept its newer login");
+  assert.equal(piRefreshSha(b!), latest(older).refreshSha256, "an expired entry never travels");
+  assert.equal(a!.sync.status().entries.find((e) => e.key === CODEX)?.state, "expired");
+  // A's pi refreshes it on use: the newest login, live, everywhere.
+  assert.equal(await a!.piRefresh(), "ok");
+  await converge([a!, b!]);
+  for (const h of [a!, b!]) assert.equal(piRefreshSha(h), latest(newer.lineage).refreshSha256, h.id);
+});
+
 test("first pairing: a logout of A's pre-sync key does not delete B's different one", async () => {
   const [a, b] = makeMesh(2);
   writeFileSync(a!.authPath, JSON.stringify({ zai: { type: "api_key", key: "sk-a" } }, null, 2), { mode: 0o600 });

@@ -499,3 +499,25 @@ test("api-keys mode: which records sync, and the env pin", () => {
   assert.equal(isKeyRecord({ tombstone: { at: 1, by: "a", of: { fingerprint: "f", kind: "oauth" } } }), true);
   assert.equal(isKeyRecord({ tombstone: { at: 1, by: "a", of: { fingerprint: "f", kind: "password" } } }), false);
 });
+
+test("a refreshed pre-sync entry (no account) is the same login as its lineage's older copy, both ways and across refreshes", () => {
+  const old = oauth({ expires: NOW + H, loginAt: 0 });
+  const once = oauth({ expires: NOW + 8 * H, loginAt: 0, lineage: old.fingerprint });
+  const twice = oauth({ expires: NOW + 16 * H, loginAt: 0, lineage: old.fingerprint });
+  const other = oauth({ expires: NOW + 2 * H, loginAt: 0 });
+  const rejected = (l: EntryMeta, r: EntryMeta) => {
+    const res = resolve({ meta: l }, { meta: r }, NOW);
+    return "rejected" in res ? res.rejected : undefined;
+  };
+  assert.equal(resolve({ meta: old }, { meta: once }, NOW).action, "adopt", "the peer's older copy takes the refresh");
+  assert.equal(rejected(once, old), "older", "and the refresher keeps it");
+  assert.equal(resolve({ meta: once }, { meta: twice }, NOW).action, "adopt");
+  assert.equal(rejected(other, once), "conflict", "a different pre-sync login is still a conflict");
+  // A logout of the refreshed lineage rules out the peer's copy from before the refresh.
+  const logout: Tombstone = { at: NOW, by: "a", of: { fingerprint: once.fingerprint, lineage: old.fingerprint, kind: "oauth" } };
+  assert.equal(admissible(old, logout), false);
+  assert.equal(admissible(other, logout), true);
+  assert.ok(isEntryMeta(once) && isKeyRecord({ tombstone: logout }));
+  assert.equal(isEntryMeta({ ...once, lineage: "not-a-fingerprint" }), false);
+  assert.equal(isKeyRecord({ tombstone: { ...logout, of: { ...logout.of!, lineage: 7 } } }), false);
+});

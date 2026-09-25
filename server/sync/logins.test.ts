@@ -682,6 +682,43 @@ test("first pairing: one pre-existing Codex login copied to two hosts (same acco
   }
 });
 
+test("first pairing: a pre-sync Claude login refreshed on its host replaces the peer's copy, no conflict, also across missed refreshes", async () => {
+  const [a, b] = makeMesh(2);
+  // Found in A's Claude store on its first scan (loginAt 0); Claude entries name no account.
+  const { lineage } = await claudeSim.login(a!.claudeDir, mockUrl);
+  for (const h of [a!, b!]) {
+    h.boot();
+    await h.sync.start();
+  }
+  try {
+    await converge([a!, b!]);
+    assert.equal(sha(b!.claude()?.refreshToken), sha(a!.claude()?.refreshToken), "B took A's pre-sync login");
+    // Claude Code refreshes on A (inside its window): a refresh, so loginAt stays 0.
+    assert.equal(await claudeSim.refresh(a!.claudeDir, mockUrl), "ok");
+    await a!.sync.observe("claude");
+    await converge([a!, b!]);
+    for (const h of [a!, b!]) {
+      assert.equal(sha(h.claude()?.refreshToken), latest(lineage).refreshSha256, h.id);
+      assert.equal(h.sync.status().entries.find((e) => e.key === CLAUDE)?.conflictWith, undefined, `${h.id} lists no conflict`);
+    }
+    // B misses two refreshes, then comes back.
+    b!.online = false;
+    for (let i = 0; i < 2; i++) {
+      assert.equal(await claudeSim.refresh(a!.claudeDir, mockUrl, { force: true }), "ok");
+      await a!.sync.observe("claude");
+    }
+    b!.online = true;
+    await converge([a!, b!]);
+    for (const h of [a!, b!]) {
+      assert.equal(sha(h.claude()?.refreshToken), latest(lineage).refreshSha256, `${h.id} after the missed refreshes`);
+      assert.equal(h.sync.status().entries.find((e) => e.key === CLAUDE)?.conflictWith, undefined, `${h.id} lists no conflict after the missed refreshes`);
+    }
+    assert.equal(a!.sync.recordsSnapshot()[CLAUDE]?.meta?.loginAt, 0, "still the pre-sync login");
+  } finally {
+    for (const h of [a!, b!]) h.sync.stop();
+  }
+});
+
 // ---------------------------------------------------------------- API-keys-only hosts (a VPS)
 
 /** Every key a host was ever pushed, and whether any of them carried an OAuth secret. */

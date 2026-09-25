@@ -28,13 +28,13 @@
  * logout existed. With the newest login first, a tombstone that rules out the winner rules out
  * every other entry too, so no order of exchanges can lose a surviving login.
  *
- * Pre-sync entries (loginAt 0: found already in a store on a host's first sync scan) carry no
- * login time, so between two of them nothing says which is current. Two live pre-sync entries
- * that are not provably the same login (same fingerprint, or the same OAuth account: a copied and
- * since-refreshed lineage) are a CONFLICT: neither is taken, each host keeps its own, and the user
- * picks one (`claim` re-stamps it as a login made now, which then wins everywhere, as any fresh
- * login does). Likewise a logout rules a pre-sync entry out only if it is the login that was
- * logged out, so it never deletes another host's different key; that key then stays on its own
+ * Pre-sync entries (loginAt 0: found already in a store on a host's first sync scan) carry no login
+ * time, so between two of them nothing says which is current. Two live pre-sync entries that are
+ * not provably the same login (same fingerprint, the same OAuth account, or the same `lineage`: a
+ * copied and since-refreshed lineage) are a CONFLICT: neither is taken, each host keeps its own,
+ * and the user picks one (`claim` re-stamps it as a login made now, which then wins everywhere, as
+ * any fresh login does). Likewise a logout rules a pre-sync entry out only if it is the login that
+ * was logged out, so it never deletes another host's different key; that key then stays on its own
  * host (no host takes a peer's entry older than a logout it knows of) until someone claims it.
  */
 
@@ -61,13 +61,20 @@ export interface EntryMeta {
   dead?: boolean;
   /** A short non-secret digest of the account the entry names, when it names one (Codex `accountId`). */
   account?: string;
+  /**
+   * A refreshed pre-sync entry: the fingerprint its lineage had when sync first saw it. A pre-sync
+   * entry has no login time to tell its refreshes apart from another login, and one that names no
+   * account (Claude Code's) has nothing else either, so a peer still holding the entry from before
+   * the refresh would otherwise see a different login and report a conflict.
+   */
+  lineage?: string;
 }
 
 export interface Tombstone {
   at: number;
   by: string;
   /** What was logged out, so a pre-sync entry that is a different login survives the logout. */
-  of?: { fingerprint: string; account?: string; kind?: EntryKind };
+  of?: { fingerprint: string; account?: string; lineage?: string; kind?: EntryKind };
 }
 
 /** What a host knows about one key: the entry it holds (if any) and the newest logout it has seen. */
@@ -156,9 +163,12 @@ export function admissible(meta: EntryMeta, tombstone: Tombstone | undefined): b
   return meta.loginAt === 0 && !!tombstone.of && !sameLogin(meta, tombstone.of);
 }
 
-/** Provably the same login: the same entry, or the same OAuth account (a lineage refreshed since). */
-export function sameLogin(a: Pick<EntryMeta, "fingerprint" | "account">, b: { fingerprint: string; account?: string }): boolean {
-  return a.fingerprint === b.fingerprint || (!!a.account && a.account === b.account);
+/**
+ * Provably the same login: the same entry, the same OAuth account, or a pre-sync lineage refreshed
+ * since (one's `lineage` is the other's fingerprint, or both name the same one).
+ */
+export function sameLogin(a: Pick<EntryMeta, "fingerprint" | "account" | "lineage">, b: { fingerprint: string; account?: string; lineage?: string }): boolean {
+  return a.fingerprint === b.fingerprint || (!!a.account && a.account === b.account) || (a.lineage ?? a.fingerprint) === (b.lineage ?? b.fingerprint);
 }
 
 /**
@@ -297,8 +307,9 @@ export function isKeyRecord(v: unknown): v is KeyRecord {
     const t = r.tombstone as Partial<Tombstone>;
     if (!t || typeof t.at !== "number" || !Number.isFinite(t.at) || typeof t.by !== "string") return false;
     if (t.of !== undefined) {
-      const o = t.of as { fingerprint?: unknown; account?: unknown; kind?: unknown } | null;
+      const o = t.of as { fingerprint?: unknown; account?: unknown; lineage?: unknown; kind?: unknown } | null;
       if (!o || typeof o.fingerprint !== "string" || (o.account !== undefined && typeof o.account !== "string")) return false;
+      if (o.lineage !== undefined && typeof o.lineage !== "string") return false;
       if (o.kind !== undefined && o.kind !== "oauth" && o.kind !== "api_key") return false;
     }
   }
@@ -319,6 +330,7 @@ export function isEntryMeta(v: unknown): v is EntryMeta {
     typeof m.origin === "string" &&
     m.origin.length > 0 &&
     (m.dead === undefined || typeof m.dead === "boolean") &&
-    (m.account === undefined || typeof m.account === "string")
+    (m.account === undefined || typeof m.account === "string") &&
+    (m.lineage === undefined || (typeof m.lineage === "string" && /^sha256:[0-9a-f]{64}$/.test(m.lineage)))
   );
 }

@@ -360,6 +360,9 @@ export class CredentialSync {
       origin: this.hostId,
       ...(entry.dead ? { dead: true } : {}),
       ...(entry.account ? { account: entry.account } : {}),
+      // A refresh of a pre-sync entry keeps loginAt 0, so it carries the lineage: peers still
+      // holding the entry from before the refresh know it for the same login.
+      ...(refresh && prev!.loginAt === 0 ? { lineage: prev!.lineage ?? prev!.fingerprint } : {}),
     };
   }
 
@@ -762,5 +765,5 @@ const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 /** A logout's tombstone, naming what was logged out (a different pre-sync login survives it). */
 function tombstoneFor(meta: EntryMeta | undefined, at: number, by: string): Tombstone {
-  return meta ? { at, by, of: { fingerprint: meta.fingerprint, ...(meta.account ? { account: meta.account } : {}), kind: meta.kind } } : { at, by };
+  return meta ? { at, by, of: { fingerprint: meta.fingerprint, ...(meta.account ? { account: meta.account } : {}), ...(meta.lineage ? { lineage: meta.lineage } : {}), kind: meta.kind } } : { at, by };
 }

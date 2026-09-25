@@ -4,7 +4,8 @@
 // node (h3) or stops only its Sova (h4, h7, h10) through the lab's own commands, always undoing it
 // in a finally.
 //
-//   node scripts/mesh-lab/mock-token-server/m3-drive.mjs [h1|h2|h2c|h6|h6c|h9|all|h3|h4|h7|h8|h10|chaos] [--hosts a,b,c]
+//   node scripts/mesh-lab/mock-token-server/m3-drive.mjs [h1|h2|h2c|h6|h6c|h9|all|h3|h4|h7|h8|h10|chaos|h11] [--hosts a,b,c]
+//   (h11 is meant for an 8-host lab: --hosts a,b,c,d,e,f,g,h; M3_H11_SECONDS sets its length)
 //
 // Needs the lab's mock token server (laptop http://127.0.0.1:4888, MOCK_TOKEN_URL inside hosts)
 // and SOVA_SYNC_CLAUDE_DIR in the hosts for the Claude scenarios. Hosts are compared by sha256 of
@@ -339,7 +340,71 @@ async function h10() {
   return "b caught up after its restart";
 }
 
-const ALL = { h1, h2, h2c, h6, h6c, h9, h3, h4, h7, h8, h10 };
+/**
+ * H11: many hosts (run with --hosts a,b,…,h on an 8-host lab), random Sova stops/starts and
+ * concurrent refreshes for M3_H11_SECONDS (default 180). Invariant at every step: no running host
+ * holds nothing while some host holds the lineage. At the end every host is started and all must
+ * converge on the mock's latest token; then, left quiet, only one host (the origin) refreshes and no
+ * refresh fails.
+ */
+async function h11() {
+  const id = await freshLineage(HOSTS[0]);
+  const seconds = Number(process.env.M3_H11_SECONDS ?? 180);
+  const down = new Set();
+  let seed = 11;
+  const rand = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+  const pick = (xs) => xs[Math.floor(rand() * xs.length)];
+  const end = Date.now() + seconds * 1000;
+  let steps = 0;
+  try {
+    while (Date.now() < end) {
+      steps++;
+      const roll = rand();
+      const h = pick(HOSTS);
+      if (roll < 0.25 && down.size < HOSTS.length - 2) {
+        if (down.has(h)) {
+          lab("sova-start", h);
+          down.delete(h);
+        } else {
+          lab("sova-stop", h);
+          down.add(h);
+        }
+      } else {
+        const who = HOSTS.filter(() => rand() < 0.3);
+        await Promise.all(who.map((x) => inHostAsync(x, "pi-refresh", "openai-codex").catch(() => null)));
+      }
+      const up = HOSTS.filter((x) => !down.has(x));
+      const present = up.map((x) => inHost(x, "pi-state", "openai-codex").present);
+      if (present.some(Boolean) && !present.every(Boolean)) {
+        // A host may be empty only transiently while an exchange is in flight: give it a moment.
+        await sleep(3000);
+        const again = up.map((x) => inHost(x, "pi-state", "openai-codex").present);
+        if (again.some(Boolean) && !again.every(Boolean)) throw new Error(`step ${steps}: a running host holds nothing (${up.filter((_, i) => !again[i]).join(",")})`);
+      }
+      await sleep(1000);
+    }
+  } finally {
+    for (const h of down) lab("sova-start", h);
+  }
+  await until("every host on the latest token", piConverged(id), 120_000);
+  const chaos = await lineage(id);
+  // During the chaos invalid_grants are expected and harmless: k hosts refreshing at once give one
+  // winner and k-1 losers, and pi on a host whose Sova is stopped refreshes a token it can't hear
+  // has rotated. What must hold is above (no running host ever empty, all converge) and below:
+  // once quiet, only the origin refreshes (c-lite), and never with a stale token.
+  const before = (await mock("/mock/events")).length;
+  await sleep(Number(process.env.M3_H11_QUIET_SECONDS ?? 60) * 1000);
+  const quiet = (await mock("/mock/events")).slice(before).filter((e) => e.lineage === id);
+  const ok = quiet.filter((e) => e.outcome === "ok");
+  const bad = quiet.filter((e) => e.outcome !== "ok");
+  if (!ok.length) throw new Error("no c-lite refresh in the quiet period");
+  if (bad.length) throw new Error(`${bad.length} failed refreshes once quiet (${[...new Set(bad.map((e) => e.ip))].join(",")})`);
+  if (new Set(ok.map((e) => e.ip)).size !== 1) throw new Error(`more than one host refreshed once quiet: ${[...new Set(ok.map((e) => e.ip))].join(",")}`);
+  await until("still converged after the quiet period", piConverged(id), 30_000);
+  return `${steps} steps over ${seconds}s on ${HOSTS.length} hosts (chaos: ${chaos.refreshes} refreshes, ${chaos.invalidGrants} invalid_grant); quiet ${Math.round(Number(process.env.M3_H11_QUIET_SECONDS ?? 60))}s: ${ok.length} c-lite refresh(es) from one host, 0 failures`;
+}
+
+const ALL = { h1, h2, h2c, h6, h6c, h9, h3, h4, h7, h8, h10, h11 };
 const GROUPS = { all: ["h1", "h2", "h2c", "h6", "h6c", "h9"], chaos: ["h3", "h4", "h7", "h8", "h10"] };
 const run = GROUPS[which] ?? which.split(",");
 for (const name of run) {

@@ -75,6 +75,8 @@ describe("the Caddyfile", () => {
       "header_up Host {upstream_hostport}",
       "dial_timeout 2s",
       "keepalive off",
+      "default_bind {$SOVA_FRONT_DOOR_BIND}",
+      ":{$SOVA_FRONT_DOOR_PORT:80} {",
     ]) {
       assert.equal(caddyfile.split("\n").filter((l) => l.trim() === d).length, 1, d);
     }

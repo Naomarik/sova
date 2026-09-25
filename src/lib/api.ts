@@ -45,8 +45,8 @@ import type {
   MeshLogins,
   MeshPeerEntry,
   MeshSessions,
-  MeshSettings,
 } from "../../shared/protocol";
+import type { MeshLocalSettings } from "../../shared/mesh-local";
 import { type CleanupRequest, type CleanupResult, parseCleanupResult } from "./archive";
 import type { ModelPolicy } from "./model-policy";
 import type {
@@ -702,13 +702,14 @@ export const fetchMeshCandidates = () => request<MeshCandidate[]>("/api/mesh/can
 /** Every peer's own session list, through the proxy. Only asked for while a peer is configured. */
 export const fetchMeshSessions = () => request<MeshSessions>("/api/mesh/sessions", meshReadInit(true));
 
-export const getMeshSettings = () => request<MeshSettings>("/api/mesh/settings");
+/** This host's mesh settings, with the fields only its own page uses (shared/mesh-local.ts). */
+export const getMeshSettings = () => request<MeshLocalSettings>("/api/mesh/settings");
 
 /** The Caddy front door these hosts would need, in failover order. Generated only: Sova never runs Caddy. */
 export const fetchFrontDoor = () => request<FrontDoorConfig>("/api/mesh/front-door");
 
-export const putMeshSettings = (settings: Partial<MeshSettings>) =>
-  request<MeshSettings>("/api/mesh/settings", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(settings) });
+export const putMeshSettings = (settings: Partial<MeshLocalSettings>) =>
+  request<MeshLocalSettings>("/api/mesh/settings", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(settings) });
 
 /** Every login this host syncs, with the ones that differ from a peer's since before sync. */
 export const fetchMeshLogins = () => request<MeshLogins>("/api/mesh/logins");

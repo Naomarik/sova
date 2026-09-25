@@ -9,6 +9,9 @@ import {
   linkedSessionRow,
   seedPeerList,
   watchMove,
+  frontDoorLeftOut,
+  withExclusion,
+  orderKeepingLeftOut,
   meshReadInit,
   MESH_READ_TIMEOUT_MS,
   MOVE_WATCH_MS,
@@ -377,4 +380,19 @@ test("mesh reads carry a deadline only while the mesh is on; off, the request is
     setTimeout(() => resolve(false), MESH_READ_TIMEOUT_MS + 500);
   });
   assert.equal(fired, true);
+});
+
+test("the front door's left-out hosts stay listed, and a switch puts one in or leaves it out", () => {
+  const hosts = [{ id: "a", label: "A" }, { id: "b", label: "B" }, { id: "phone", label: "Phone" }];
+  assert.deepEqual(frontDoorLeftOut(hosts, undefined, ["a", "b", "phone"]), [], "absent: every host is in");
+  assert.deepEqual(frontDoorLeftOut(hosts, ["phone", "a"], ["b"]).map((h) => h.id), ["a", "phone"], "host order, this host first");
+  assert.deepEqual(frontDoorLeftOut(hosts, ["gone"], ["a", "b", "phone"]), [], "an id that is no host lists nothing");
+  assert.deepEqual(frontDoorLeftOut(hosts, ["a", "b", "phone"], ["a", "b", "phone"]), [], "a file leaving out all: the front door keeps them, so none shows out");
+  assert.deepEqual(withExclusion(null, "phone", true), ["phone"]);
+  assert.deepEqual(withExclusion(["phone"], "a", true), ["phone", "a"]);
+  assert.deepEqual(withExclusion(["phone", "a"], "a", true), ["phone", "a"], "no duplicate");
+  assert.equal(withExclusion(["phone"], "phone", false), null, "nobody left out: cleared");
+  assert.deepEqual(withExclusion(["phone", "a"], "phone", false), ["a"]);
+  assert.deepEqual(orderKeepingLeftOut(["b", "a"], ["phone"]), ["b", "a", "phone"], "a left-out host keeps a place at the end");
+  assert.deepEqual(orderKeepingLeftOut(["b", "a"], ["a"]), ["b", "a"]);
 });

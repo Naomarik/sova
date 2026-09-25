@@ -129,6 +129,10 @@
 .mesh-order { margin: 0; padding: 0; }
 .mesh-order-n { flex: none; width: 2ch; text-align: right; color: var(--color-ink-muted); font-size: var(--fs-caption); }
 .mesh-icon-up { transform: rotate(180deg); }
+/* The front door's per-host switch: "In" beside it names what it turns on; the row is the target. */
+.mesh-fd-in { flex: none; gap: var(--space-2); padding-left: var(--space-2); }
+.mesh-fd-in-word { font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); }
+.mesh-host-out .list-title { color: var(--color-ink-2); }
 .mesh-code-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
 .mesh-code { margin: 0; max-height: 24rem; overflow: auto; font-size: var(--fs-mono); line-height: var(--lh-mono); }
 .mesh-code:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }

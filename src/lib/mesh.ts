@@ -405,6 +405,32 @@ export function helloStep(
   return { change, pending: null };
 }
 
+// ---- the front door's hosts: which are in, which the user left out ------------------------------
+
+/** The hosts the user left out of the front door, in host order (this host first), as rows for the
+    order editor: the front door's own order lists only the hosts that are in. */
+export function frontDoorLeftOut(
+  hosts: readonly { id: string; label: string }[],
+  exclude: readonly string[] | null | undefined,
+  inOrder: readonly string[],
+): { id: string; label: string }[] {
+  return hosts.filter((h) => exclude?.includes(h.id) && !inOrder.includes(h.id));
+}
+
+/** `exclude` with `id` put in (left out) or taken out (back in); null once nobody is left out. */
+export function withExclusion(exclude: readonly string[] | null | undefined, id: string, leaveOut: boolean): string[] | null {
+  const rest = (exclude ?? []).filter((x) => x !== id);
+  const next = leaveOut ? [...rest, id] : rest;
+  return next.length ? next : null;
+}
+
+/** The failover order to store: the hosts that are in, as arranged, then the ones left out, so a
+    host turned back on returns to the end instead of vanishing from the order. */
+export const orderKeepingLeftOut = (inOrder: readonly string[], leftOut: readonly string[]): string[] => [
+  ...inOrder,
+  ...leftOut.filter((id) => !inOrder.includes(id)),
+];
+
 /** `items` with the one at `from` moved to `to`; a copy unchanged when either is out of range. */
 export function moveItem<T>(items: readonly T[], from: number, to: number): T[] {
   if (from === to || from < 0 || to < 0 || from >= items.length || to >= items.length) return [...items];

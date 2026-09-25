@@ -73,7 +73,9 @@ export function buildAgentDir({ tree, dir, authSource, expectAuthKeys }) {
   copyFileSync(join(tree, "scripts", "hermetic-agent-dir.mjs"), join(root, "scripts", "hermetic-agent-dir.mjs"));
   sh(NODE, [join(root, "scripts", "hermetic-agent-dir.mjs")], { env: { PATH: BARE_PATH, HOME: join(dir, "home") } });
   const agent = join(root, ".agent");
-  copyFileSync(authSource, join(agent, "auth.json"));
+  // Only the named keys are carried over, by structure (never printed): the test needs zai alone.
+  const source = JSON.parse(readFileSync(authSource, "utf8"));
+  writeFileSync(join(agent, "auth.json"), JSON.stringify(Object.fromEntries(expectAuthKeys.filter((k) => k in source).map((k) => [k, source[k]])), null, 2) + "\n", { mode: 0o600 });
   execFileSync("chmod", ["600", join(agent, "auth.json")]);
   const keys = Object.keys(JSON.parse(readFileSync(join(agent, "auth.json"), "utf8"))).sort();
   if (JSON.stringify(keys) !== JSON.stringify([...expectAuthKeys].sort()))

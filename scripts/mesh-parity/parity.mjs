@@ -54,7 +54,7 @@ const phases = new Set(opt.only ? opt.only.split(",") : ALL_PHASES);
 for (const p of (opt.skip ?? "").split(",").filter(Boolean)) phases.delete(p);
 const has = (p) => phases.has(p);
 const expectMeshUi = Object.fromEntries(opt["expect-mesh-ui"].split(",").filter(Boolean).map((kv) => kv.split("=")).map(([k, v]) => [k, Number(v)]));
-const AUTH_KEYS = ["deepseek", "ollama-cloud", "zai"];
+const AUTH_KEYS = ["zai"]; // the test model's provider only (rule 7: zai / glm-5.3)
 
 const log = (...a) => console.error(`[parity ${new Date().toISOString().slice(11, 19)}]`, ...a);
 const git = (...args) => execFileSync("git", ["-C", REPO, ...args]).toString().trim();

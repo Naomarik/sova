@@ -9,10 +9,25 @@
 .overseer-ideas-toggle { gap: var(--space-1); }
 .overseer-ideas-toggle[aria-expanded="true"] { background: var(--color-accent-tint); color: var(--color-ink); }
 @container session-head (max-width: 479px) {
-  /* Narrow: the star alone (its name says the count), so Clear stays on screen. */
-  .overseer-ideas-word,
-  .overseer-ideas-toggle .chip-count { display: none; }
-  .overseer-ideas-toggle { padding: 0 var(--space-2); }
+  /* Narrow: icon-only, the count riding its corner like the entry button's (neutral, not the
+     accent: an idea doesn't need you), so Clear stays on screen. */
+  .overseer-ideas-word { display: none; }
+  .overseer-ideas-toggle { position: relative; padding: 0 var(--space-3); }
+  .overseer-ideas-toggle .chip-count {
+    position: absolute;
+    top: -4px;
+    right: -4px;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    justify-content: center;
+    font-size: var(--fs-micro);
+    line-height: 16px;
+    background: var(--color-sunken);
+    border-color: var(--color-border-strong);
+    color: var(--color-ink);
+    pointer-events: none;
+  }
 }
 /* The smallest phones: the head's own gaps close a step so the extra button still fits.
    A media query: the head is its own container, and a container query can't style it. At

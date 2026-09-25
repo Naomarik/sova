@@ -5,13 +5,16 @@
 //   scripts/mesh-lab/lab e2e m4        (restores order a,b,c… and every host at the end)
 import assert from "node:assert/strict";
 import { after, before, describe, test } from "node:test";
-import { chaos, lab, laptopFetch, requireLab, waitFor } from "./lib.mjs";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { chaos, lab, laptopFetch, requireLab, STATE, waitFor } from "./lib.mjs";
 
 let cfg;
 let order;
 const upstreamOf = async () => {
   const r = await laptopFetch("frontdoor", "/api/health", { timeoutMs: 15000 });
-  return r.status === 200 ? r.headers.get("x-lab-upstream")?.split(".")[0] : `status ${r.status}`;
+  // Sova's generated Caddyfile names the upstream in X-Sova-Upstream; the lab's fallback template in X-Lab-Upstream
+  return r.status === 200 ? (r.headers.get("x-sova-upstream") ?? r.headers.get("x-lab-upstream"))?.split(".")[0] : `status ${r.status}`;
 };
 const servedBy = (h, timeoutMs = 20000) => waitFor(async () => (await upstreamOf()) === h, { timeoutMs, intervalMs: 500, what: `front door served by ${h}` });
 
@@ -25,6 +28,23 @@ before(() => {
 
 after(async () => {
   lab("frontdoor", "order", cfg.hosts.join(","));
+});
+
+describe("the Caddyfile", () => {
+  test("Caddy runs exactly what Sova generates for the order set on Sova (GET /api/mesh/front-door)", async () => {
+    const reversed = [...order].reverse();
+    lab("frontdoor", "order", reversed.join(","), "--sova");
+    try {
+      const gen = await (await laptopFetch(order[0], "/api/mesh/front-door")).json();
+      assert.equal(typeof gen.caddyfile, "string");
+      assert.equal(readFileSync(join(STATE, "caddy/Caddyfile"), "utf8"), gen.caddyfile, "the running file is Sova's, byte for byte");
+      assert.match(gen.caddyfile, new RegExp(`reverse_proxy ${reversed.map((h) => `http://${h}\\.mesh\\.lab:8443`).join(" ")} \\{`), "in the order set on Sova");
+      await servedBy(reversed[0]);
+    } finally {
+      lab("frontdoor", "order", order.join(","));
+    }
+    await servedBy(order[0]);
+  });
 });
 
 describe("ordered failover", () => {

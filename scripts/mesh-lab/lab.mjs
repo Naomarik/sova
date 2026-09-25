@@ -352,6 +352,53 @@ export function writeCaddyfile(cfg) {
   return { order, upstreams };
 }
 
+/** host-local HTTP to a lab host's main listener (from inside the container). */
+function hostApi(n, method, path, body) {
+  const argv = ["exec", ...(body !== undefined ? ["-i"] : []), container(n), "curl", "-sS", "-m", "5", "-X", method, "-w", "\n%{http_code}"];
+  if (body !== undefined) argv.push("-H", "content-type: application/json", "--data-binary", "@-");
+  argv.push(`http://127.0.0.1:${SOVA_PORT}${path}`);
+  const r = docker(argv, { input: body === undefined ? undefined : JSON.stringify(body), allowFail: true, quiet: true });
+  const nl = r.out.lastIndexOf("\n");
+  let json = null;
+  try {
+    json = JSON.parse(r.out.slice(0, nl));
+  } catch {}
+  return { status: Number(r.out.slice(nl + 1)) || 0, json };
+}
+
+/**
+ * The Caddyfile Sova itself generates (GET /api/mesh/front-door on `from`), after setting the order
+ * there (PUT /api/mesh/settings {frontDoorOrder}). null when that host's Sova has no generator.
+ */
+function sovaCaddyfile(cfg, from, order) {
+  if (order) {
+    const r = hostApi(from, "PUT", "/api/mesh/settings", { frontDoorOrder: order });
+    if (r.status !== 200) die(`${from}: PUT /api/mesh/settings frontDoorOrder -> ${r.status} ${JSON.stringify(r.json)}`);
+  }
+  const r = hostApi(from, "GET", "/api/mesh/front-door");
+  return r.status === 200 && typeof r.json?.caddyfile === "string" ? r.json.caddyfile : null;
+}
+
+/** Put the front door's Caddyfile in place and reload: Sova's own when it has one, else the lab's. */
+export function syncFrontDoor(cfg, { order, from = cfg.hosts[0], lab: forceLab = false } = {}) {
+  const text = forceLab ? null : sovaCaddyfile(cfg, from, order);
+  let source;
+  if (text) {
+    const dir = join(STATE, "caddy");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "Caddyfile.tmp"), text);
+    renameSync(join(dir, "Caddyfile.tmp"), join(dir, "Caddyfile"));
+    source = `Sova on ${from} (GET /api/mesh/front-door)`;
+  } else {
+    writeCaddyfile({ ...cfg, order: order ?? cfg.order });
+    source = "the lab's own template";
+  }
+  const r = reloadCaddy();
+  if (r.code !== 0) console.error(`caddy reload failed: ${r.err || r.out}`);
+  const upstreams = /reverse_proxy ([^{]+)\{/.exec(readFileSync(join(STATE, "caddy/Caddyfile"), "utf8"))?.[1].trim().split(/\s+/) ?? [];
+  return { source, upstreams };
+}
+
 function reloadCaddy() {
   return docker(["exec", container("caddy"), "caddy", "reload", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"], { allowFail: true });
 }
@@ -490,9 +537,8 @@ async function cmdUp(args) {
   await waitReady(cfg);
   pruneNodes(cfg);
   if (cfg.frontdoor) {
-    const { order } = writeCaddyfile(cfg);
-    reloadCaddy();
-    console.log(`front door: http://127.0.0.1:${PORTS.frontdoor}/ (order ${order.join(" > ")})`);
+    const { source, upstreams } = syncFrontDoor(cfg, { order: cfg.order ?? undefined, lab: cfg.frontdoorSource === "lab" });
+    console.log(`front door: http://127.0.0.1:${PORTS.frontdoor}/ ${upstreams.join(" > ")} (from ${source})`);
   }
   cmdStatus([]);
 }
@@ -648,15 +694,18 @@ async function waitSova(n, up, timeoutMs = 60000) {
 // where the host dials (http://<dnsName>:<SOVA_PEER_PORT, 4801>). This is the one place to update
 // if that format changes.
 
+/** A host's browser-facing address on the tailnet: its `tailscale serve` (plain http in the lab). */
+const serveUrl = (h) => `http://${h}.${DOMAIN}:${SERVE_PORT}`;
+
 function peersJsonFor(cfg, self, members) {
   const peers = members
     .filter((h) => h !== self)
     .map((h, i) => {
       const st = tsStatus(h);
       if (!st?.Self?.ID) die(`${h} has no tailnet identity yet`);
-      return { id: h, label: `Host ${h.toUpperCase()}`, nodeId: st.Self.ID, dnsName: `${h}.${DOMAIN}`, priority: i + 1 };
+      return { id: h, label: `Host ${h.toUpperCase()}`, nodeId: st.Self.ID, dnsName: `${h}.${DOMAIN}`, priority: i + 1, serveUrl: serveUrl(h) };
     });
-  return { version: 1, self: { id: self, label: `Host ${self.toUpperCase()}` }, peers };
+  return { version: 1, self: { id: self, label: `Host ${self.toUpperCase()}`, serveUrl: serveUrl(self) }, peers };
 }
 
 function writeAgentFile(n, rel, content) {
@@ -740,7 +789,10 @@ access
 mesh
   pair [a,b,c] [--no-restart]     write each listed host's peers.json listing the others, restart Sova
   unpair [a,b,c] [--no-restart]   remove peers.json (mesh off)
-  frontdoor [order a,b,c]         show or set the Caddy upstream order, reload Caddy
+  frontdoor [order a,b,c] [--from h] [--sova|--lab]
+                                  set the order and reload Caddy with the Caddyfile Sova generates
+                                  (GET /api/mesh/front-door on h, default the first host); --lab
+                                  uses the lab's own template instead (the choice persists)
   tls-cert <stem> [names…]        mint STATE/tls/<stem>.pem + -key.pem from the lab CA (every node trusts it)
   e2e <m0|m1|…|all> [node --test args]   run the milestone harness (scripts/mesh-lab/e2e/)
 `;
@@ -857,15 +909,19 @@ export async function main(argv) {
     case "frontdoor": {
       const cfg = requireConfig();
       if (!cfg.frontdoor) die("this lab has no front door (lab up --frontdoor)");
-      if (args[0] === "order") {
-        const order = (args[1] || "").split(",").filter(Boolean);
+      const i = args.indexOf("order");
+      let order;
+      if (i >= 0) {
+        order = (args[i + 1] || "").split(",").filter(Boolean);
         if (!order.length || order.some((h) => !cfg.hosts.includes(h))) die(`order: a comma list of ${cfg.hosts.join(",")}`);
         cfg.order = order;
-        saveConfig(cfg);
       }
-      const { order, upstreams } = writeCaddyfile(cfg);
-      if (args[0] === "order") reloadCaddy();
-      console.log(`front door http://127.0.0.1:${PORTS.frontdoor}/  order: ${order.map((h, i) => `${h}(${upstreams[i]})`).join(" > ")}`);
+      if (args.includes("--lab")) cfg.frontdoorSource = "lab";
+      if (args.includes("--sova")) cfg.frontdoorSource = "sova";
+      saveConfig(cfg);
+      const f = args.indexOf("--from");
+      const { source, upstreams } = syncFrontDoor(cfg, { order: order ?? cfg.order ?? undefined, from: f >= 0 ? args[f + 1] : cfg.hosts[0], lab: cfg.frontdoorSource === "lab" });
+      console.log(`front door http://127.0.0.1:${PORTS.frontdoor}/  ${upstreams.join(" > ")}  (Caddyfile from ${source})`);
       return;
     }
     case "e2e": {

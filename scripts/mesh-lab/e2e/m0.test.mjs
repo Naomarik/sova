@@ -165,7 +165,7 @@ describe("front door", () => {
     const first = (cfg.order && cfg.order.length ? cfg.order : cfg.hosts)[0];
     const res = await waitFor(async () => {
       const r = await laptopFetch("frontdoor", "/api/health");
-      return r.headers.get("x-lab-upstream") === `${magicName(first)}:${SERVE_PORT}` && r;
+      return (r.headers.get("x-sova-upstream") ?? r.headers.get("x-lab-upstream")) === `${magicName(first)}:${SERVE_PORT}` && r;
     }, { what: `front door on ${first}` });
     assert.equal(res.status, 200);
     const ws = await new Promise((resolve) => {

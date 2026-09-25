@@ -11,7 +11,7 @@ const tmp = mkdtempSync(join(tmpdir(), "sova-mesh-peers-"));
 process.env.PI_CODING_AGENT_DIR = join(tmp, "agent");
 after(() => rmSync(tmp, { recursive: true, force: true }));
 
-const { peersFile, peerUrl, readPeers, validatePeers, writePeers } = await import("./peers");
+const { defaultSelfId, peersFile, peerUrl, readPeers, validatePeers, writePeers } = await import("./peers");
 const { parseStatus, parseWhois, whoisAddr } = await import("./localapi");
 
 const b = { id: "b", nodeId: "nB", dnsName: "b.lab.ts.net." };
@@ -37,6 +37,26 @@ describe("validatePeers", () => {
     assert.equal(kinds("api-keys"), "api-keys");
     for (const k of ["all", null, undefined]) assert.equal(kinds(k), undefined, String(k));
     assert.equal(kinds("oauth"), 'loginKinds must be "all" or "api-keys"');
+  });
+
+  test("SOVA_HOST_ID names this host while the mesh is on, over the file; ignored while off or invalid", () => {
+    const selfOf = (raw: object) => {
+      const v = validatePeers(raw);
+      return "config" in v ? v.config.self : v.error;
+    };
+    process.env.SOVA_HOST_ID = "vps";
+    try {
+      assert.deepEqual(selfOf({ peers: [b] }), { id: "vps", label: "vps" });
+      assert.deepEqual(selfOf({ self: { id: "ubuntu-8gb", label: "VPS" }, peers: [b] }), { id: "vps", label: "VPS" });
+      assert.deepEqual(selfOf({ self: { id: "a" }, peers: [] }), { id: "a", label: "a" }, "off: the file's id");
+      assert.equal((selfOf({}) as { id: string }).id, defaultSelfId(), "off: the hostname default");
+      assert.match(String(selfOf({ peers: [{ ...b, id: "vps" }] })), /vps/, "a peer can't take this host's id");
+      process.env.SOVA_HOST_ID = "Not A Valid Id";
+      assert.deepEqual(selfOf({ self: { id: "a" }, peers: [b] }), { id: "a", label: "a" });
+    } finally {
+      delete process.env.SOVA_HOST_ID;
+    }
+    assert.deepEqual(selfOf({ self: { id: "a" }, peers: [b] }), { id: "a", label: "a" }, "unset: unchanged");
   });
 
   test("an explicit url is reduced to its origin; SOVA_PEER_PORT moves the default", () => {

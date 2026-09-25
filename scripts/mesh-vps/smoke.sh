@@ -67,14 +67,15 @@ log "mesh on: main 127.0.0.1:$SOVA_PORT, peer $VPS_TAILNET_IP:$SOVA_PEER_PORT on
 vps "curl -fsS -m 5 http://127.0.0.1:$SOVA_PORT/api/mesh" | node -e 'const m=JSON.parse(require("fs").readFileSync(0,"utf8"));console.log(JSON.stringify({enabled:m.enabled,self:m.self,peers:m.peers.map(p=>({id:p.id,state:p.state,error:p.error}))}))' | tee "$OUT/mesh.json"
 [ "$(node -e 'console.log(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).self.id)' "$OUT/mesh.json")" = "$VPS_ID" ] || fail "self.id is not $VPS_ID"
 vps "curl -fsS -m 5 http://127.0.0.1:$SOVA_PORT/api/mesh/settings" | node -e 'const s=JSON.parse(require("fs").readFileSync(0,"utf8"));console.log(JSON.stringify({loginKinds:s.loginKinds,loginKindsPinned:s.loginKindsPinned}))' | tee "$OUT/settings.json"
-grep -q '"loginKinds":"api-keys"' "$OUT/settings.json" || fail "loginKinds is not api-keys"
+grep -q 'Pinned' "$OUT/settings.json" && fail "loginKinds is pinned (SOVA_SYNC_LOGIN_KINDS is set)"
+grep -q '"loginKinds":"api-keys"' "$OUT/settings.json" && log "note: loginKinds is api-keys (set on this host's Mesh settings)"
 
 "$MESH_VPS_DIR/exposure.sh" probe | tee "$OUT/exposure.txt" || fail "exposure probe"
 # the tailnet side, for contrast: the peer port is reachable over the tailnet, the main port is not
 printf 'tailnet  %s:%s %s\n' "$VPS_TAILNET_IP" "$SOVA_PEER_PORT" "$(curl -s -m 5 -o /dev/null -w '%{http_code}' "http://$VPS_TAILNET_IP:$SOVA_PEER_PORT/api/peer/hello" || true)" | tee -a "$OUT/exposure.txt"
 printf 'tailnet  %s:%s %s\n' "$VPS_TAILNET_IP" "$SOVA_PORT" "$(curl -s -m 5 -o /dev/null -w '%{http_code}' "http://$VPS_TAILNET_IP:$SOVA_PORT/api/health" || true)" | tee -a "$OUT/exposure.txt"
 
-if [ $KEEP = 0 ]; then # back to mesh off, keeping self (id, label, serveUrl, loginKinds)
+if [ $KEEP = 0 ]; then # back to mesh off, keeping self (id, label, serveUrl) and loginKinds
   code=$(put /api/mesh/peers '{"peers":[]}')
   [ "$code" = 200 ] || { vps "cat $B/smoke-put.json" >&2; fail "PUT /api/mesh/peers [] -> $code"; }
 fi

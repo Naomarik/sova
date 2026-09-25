@@ -64,10 +64,10 @@ if [ ! -e "$BASE/agent/auth.json" ]; then
   log "agent: auth.json created empty (keys arrive by sync)"
 fi
 chmod 600 "$BASE/agent/auth.json"
-# this host's identity: self.id (default would be the machine hostname), label, front-door upstream; API-key logins only
+# this host's identity: self.id (default would be the machine hostname), label, front-door upstream
 if [ ! -e "$BASE/agent/sova/peers.json" ]; then
   mkdir -p "$BASE/agent/sova"
-  ( umask 077 && node -e 'const [id,label,port,file]=process.argv.slice(1);require("fs").writeFileSync(file+".tmp",JSON.stringify({version:1,self:{id,label,serveUrl:`http://127.0.0.1:${port}`},peers:[],sync:{},frontDoor:null,loginKinds:"api-keys"},null,2)+"\n");require("fs").renameSync(file+".tmp",file)' \
+  ( umask 077 && node -e 'const [id,label,port,file]=process.argv.slice(1);require("fs").writeFileSync(file+".tmp",JSON.stringify({version:1,self:{id,label,serveUrl:`http://127.0.0.1:${port}`},peers:[],sync:{},frontDoor:null},null,2)+"\n");require("fs").renameSync(file+".tmp",file)' \
     "$VPS_ID" "$VPS_LABEL" "$SOVA_PORT" "$BASE/agent/sova/peers.json" )
   log "agent: peers.json seeded (self $VPS_ID, no peers: mesh off)"
 fi
@@ -80,7 +80,6 @@ PORT=$SOVA_PORT
 HOST=127.0.0.1
 SOVA_PEER_HOST=$VPS_TAILNET_IP
 SOVA_PEER_PORT=$SOVA_PEER_PORT
-SOVA_SYNC_LOGIN_KINDS=api-keys
 PI_CODING_AGENT_DIR=$BASE/agent
 HOME=$BASE/home
 TMPDIR=$BASE/tmp

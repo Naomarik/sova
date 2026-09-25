@@ -24,7 +24,9 @@
 //   POST /mock/reset      forget everything
 //   GET  /healthz
 //
-// Run: PORT=8080 ACCESS_TTL_S=90 [TLS_CERT=… TLS_KEY=…] node server.mjs
+// Run: PORT=8080 ACCESS_TTL_S=90 [TLS_CERT=… TLS_KEY=… HTTP_PORT=8080] node server.mjs
+// With TLS it answers https on PORT (default 443: pi's fixed token URLs, name-redirected to this
+// container) AND plain http on HTTP_PORT (default 8080) for the harness, over one shared state.
 // The access token is a JWT (standard base64, as pi decodes it with atob) carrying the claim
 // "https://api.openai.com/auth".chatgpt_account_id, so pi's Codex refresh accepts it.
 
@@ -210,12 +212,17 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const state = createMockTokenState({ accessTtlS: Number(process.env.ACCESS_TTL_S ?? 90) });
   const handler = createHandler(state);
   const tls = process.env.TLS_CERT && process.env.TLS_KEY;
-  const server = tls
-    ? createHttpsServer({ cert: readFileSync(process.env.TLS_CERT), key: readFileSync(process.env.TLS_KEY) }, handler)
-    : createHttpServer(handler);
-  const port = Number(process.env.PORT ?? (tls ? 443 : 8080));
-  server.listen(port, process.env.HOST ?? "0.0.0.0", () => {
-    console.log(`mock-token-server listening on ${tls ? "https" : "http"}://${process.env.HOST ?? "0.0.0.0"}:${port}`);
-  });
-  for (const sig of ["SIGINT", "SIGTERM"]) process.on(sig, () => server.close(() => process.exit(0)));
+  const host = process.env.HOST ?? "0.0.0.0";
+  const servers = [];
+  const listen = (server, port, scheme) => {
+    server.listen(port, host, () => console.log(`mock-token-server listening on ${scheme}://${host}:${port}`));
+    servers.push(server);
+  };
+  if (tls) {
+    listen(createHttpsServer({ cert: readFileSync(process.env.TLS_CERT), key: readFileSync(process.env.TLS_KEY) }, handler), Number(process.env.PORT ?? 443), "https");
+    listen(createHttpServer(handler), Number(process.env.HTTP_PORT ?? 8080), "http");
+  } else {
+    listen(createHttpServer(handler), Number(process.env.PORT ?? 8080), "http");
+  }
+  for (const sig of ["SIGINT", "SIGTERM"]) process.on(sig, () => { for (const s of servers) s.close(); process.exit(0); });
 }

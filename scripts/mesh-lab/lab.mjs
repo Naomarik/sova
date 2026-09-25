@@ -526,18 +526,20 @@ async function waitSova(n, up, timeoutMs = 60000) {
   return false;
 }
 
-// ---- pairing (peers.json) — follows mesh-core's format (mesh-core-design.md §2); if that format
-// changes, this is the one place to update.
+// ---- pairing (peers.json) — mesh-core's format (server/mesh/peers.ts validatePeers): peers are
+// authenticated by nodeId (the Tailscale StableID; a decimal string on Headscale) alone; dnsName is
+// where the host dials (http://<dnsName>:<SOVA_PEER_PORT, 4801>). This is the one place to update
+// if that format changes.
 
-function peersJsonFor(cfg, self, members, opts = {}) {
+function peersJsonFor(cfg, self, members) {
   const peers = members
     .filter((h) => h !== self)
     .map((h, i) => {
       const st = tsStatus(h);
       if (!st?.Self?.ID) die(`${h} has no tailnet identity yet`);
-      return { id: h, label: `Host ${h.toUpperCase()}`, nodeId: st.Self.ID, name: `${h}.${DOMAIN}`, port: PEER_PORT, order: i + 1 };
+      return { id: h, label: `Host ${h.toUpperCase()}`, nodeId: st.Self.ID, dnsName: `${h}.${DOMAIN}`, priority: i + 1 };
     });
-  return { version: 1, self: { id: self, label: `Host ${self.toUpperCase()}` }, port: opts.port ?? PEER_PORT, peers };
+  return { version: 1, self: { id: self, label: `Host ${self.toUpperCase()}` }, peers };
 }
 
 function writeAgentFile(n, rel, content) {
@@ -557,7 +559,13 @@ async function cmdPair(args) {
   const members = list.length ? list[0].split(",") : cfg.hosts;
   for (const h of members) needNode(cfg, h, ["tailnet", "sova"]);
   for (const h of members) {
-    writeAgentFile(h, "sova/peers.json", JSON.stringify(peersJsonFor(cfg, h, members), null, 2) + "\n");
+    // keep what else the file holds (sync switches, frontDoor); replace self + peers
+    const cur = docker(["exec", container(h), "sh", "-c", 'cat "$PI_CODING_AGENT_DIR/sova/peers.json" 2>/dev/null || true']).out;
+    let prev = {};
+    try {
+      prev = cur ? JSON.parse(cur) : {};
+    } catch {}
+    writeAgentFile(h, "sova/peers.json", JSON.stringify({ ...prev, ...peersJsonFor(cfg, h, members) }, null, 2) + "\n");
     console.log(`${h}: peers.json -> ${members.filter((m) => m !== h).join(", ")}`);
   }
   if (!noRestart) {

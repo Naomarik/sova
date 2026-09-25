@@ -74,7 +74,14 @@ export function curlFrom(node, url, { method = "GET", body, headers = {}, timeou
 /** HTTP from the laptop to a lab node's published port (`a`…`h`, `plain`, `frontdoor`). */
 export async function laptopFetch(node, path, init = {}) {
   const port = node === "plain" ? PORTS.plain : node === "frontdoor" ? PORTS.frontdoor : PORTS.host(node);
-  return fetch(`http://127.0.0.1:${port}${path}`, { ...init, signal: AbortSignal.timeout(init.timeoutMs ?? 10000) });
+  const go = () => fetch(`http://127.0.0.1:${port}${path}`, { ...init, signal: AbortSignal.timeout(init.timeoutMs ?? 10000) });
+  try {
+    return await go();
+  } catch (e) {
+    // a pooled keep-alive connection to a Sova process that has since restarted: retry once
+    if (e?.cause?.code === "UND_ERR_SOCKET" && init.body === undefined) return go();
+    throw e;
+  }
 }
 export const hostUrl = (node) => `http://127.0.0.1:${node === "plain" ? PORTS.plain : node === "frontdoor" ? PORTS.frontdoor : PORTS.host(node)}`;
 

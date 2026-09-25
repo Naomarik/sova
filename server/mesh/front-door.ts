@@ -26,7 +26,8 @@ const origin = (host: string, port: number) => `https://${host.includes(":") ? `
 
 /**
  * The hosts in failover order: the user's `frontDoorOrder` first (ids that are no longer hosts are
- * skipped), then every host it leaves out, this host first, then peers.json order.
+ * skipped), then every host it leaves out, this host first, then peers.json order; hosts in
+ * `frontDoorExclude` are left out.
  * `selfDnsName` is this node's MagicDNS name when known (the mesh is on and tailscaled answered);
  * without it and without a self serveUrl, the self upstream is a placeholder the Caddyfile flags.
  */
@@ -45,7 +46,11 @@ export function frontDoorOrder(config: PeersConfig, selfDnsName: string | null):
   ];
   const byId = new Map(hosts.map((h) => [h.id, h]));
   const chosen = (config.frontDoorOrder ?? []).filter((id) => byId.has(id));
-  return [...chosen, ...hosts.map((h) => h.id).filter((id) => !chosen.includes(id))].map((id) => byId.get(id)!);
+  const all = [...chosen, ...hosts.map((h) => h.id).filter((id) => !chosen.includes(id))].map((id) => byId.get(id)!);
+  // Left out by the user (a host with no browser-facing address, e.g. a phone). Leaving out every
+  // host is refused when set; a hand-edited file that does it keeps them all.
+  const kept = all.filter((h) => !config.frontDoorExclude?.includes(h.id));
+  return kept.length ? kept : all;
 }
 
 export function frontDoorConfig(config: PeersConfig, selfDnsName: string | null): FrontDoorConfig {
@@ -119,6 +124,10 @@ export function frontDoorConfig(config: PeersConfig, selfDnsName: string | null)
       : []),
     ...(schemes.size > 1
       ? [`#`, `# WARNING: Caddy needs every upstream on one scheme, and these mix http and https: give them`, `# all https (tailscale serve) or all http serve URLs, or Caddy refuses this file.`]
+      : []),
+    // An excluded host is only in the order when every host was excluded (then all are kept).
+    ...(order.some((h) => config.frontDoorExclude?.includes(h.id))
+      ? [`#`, `# WARNING: every host is left out of the front door (frontDoorExclude), so all are listed.`]
       : []),
     ...(loops.length
       ? [`#`, `# WARNING: ${loops.join(", ")}'s upstream is this front door's own address (${door}): it would proxy`, `# to itself. Set that host's address on Sova's Mesh page (e.g. its other tailscale serve port).`]

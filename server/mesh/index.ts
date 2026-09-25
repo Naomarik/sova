@@ -202,6 +202,7 @@ export function readMeshSettings(config: PeersConfig | null = rt.config): MeshSe
     sync,
     frontDoor: c.frontDoor,
     ...(c.frontDoorOrder ? { frontDoorOrder: c.frontDoorOrder } : {}),
+    ...(c.frontDoorExclude ? { frontDoorExclude: c.frontDoorExclude } : {}),
     ...(c.self.serveUrl ? { serveUrl: c.self.serveUrl } : {}),
     ...(loginKinds ? { loginKinds } : {}),
     ...(pinned ? { loginKindsPinned: true as const } : {}),
@@ -446,6 +447,12 @@ async function putSettings(c: Context): Promise<Response> {
     const unknown = Array.isArray(body.frontDoorOrder) ? body.frontDoorOrder.filter((id) => !hosts.has(id)) : [];
     if (unknown.length) return c.json({ error: `frontDoorOrder: not a host here: ${unknown.join(", ")}` }, 400);
   }
+  if (Array.isArray(body.frontDoorExclude) && body.frontDoorExclude.length) {
+    const hosts = [base.config.self.id, ...base.config.peers.map((p) => p.id)];
+    const unknown = body.frontDoorExclude.filter((id) => !hosts.includes(id));
+    if (unknown.length) return c.json({ error: `frontDoorExclude: not a host here: ${unknown.join(", ")}` }, 400);
+    if (hosts.every((id) => body.frontDoorExclude!.includes(id))) return c.json({ error: "frontDoorExclude: the front door needs at least one host" }, 400);
+  }
   const pinned = pinnedLoginKinds();
   if (body.loginKinds !== undefined && pinned && (body.loginKinds ?? "all") !== pinned) {
     return c.json({ error: "loginKinds is pinned by SOVA_SYNC_LOGIN_KINDS on this host" }, 409);
@@ -462,6 +469,8 @@ async function putSettings(c: Context): Promise<Response> {
   };
   if (body.frontDoorOrder === null) delete next.frontDoorOrder;
   else if (body.frontDoorOrder !== undefined) next.frontDoorOrder = body.frontDoorOrder;
+  if (body.frontDoorExclude === null) delete next.frontDoorExclude; // [] is dropped by validation too
+  else if (body.frontDoorExclude !== undefined) next.frontDoorExclude = body.frontDoorExclude;
   if (body.loginKinds !== undefined) next.loginKinds = body.loginKinds;
   const v = validatePeers(next);
   if ("error" in v) return c.json({ error: v.error }, 400);

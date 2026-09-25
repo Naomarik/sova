@@ -168,3 +168,28 @@ describe("the bare-502 fallback (Sova down behind tailscale serve)", () => {
     assert.equal(upstreamHostport("https://[fd7a:115c:a1e0::3]:8443"), "[fd7a:115c:a1e0::3]:8443");
   });
 });
+
+describe("leaving hosts out (frontDoorExclude)", () => {
+  test("excluded hosts are not upstreams and get no fallback; the rest keep their order", () => {
+    const fd = frontDoorConfig(config({ frontDoorOrder: ["c", "a", "b"], frontDoorExclude: ["a"] }), "a.x.ts.net");
+    assert.deepEqual(fd.order.map((h) => h.id), ["c", "b"]);
+    assert.deepEqual(upstreamsOf(fd.caddyfile), ["https://c.x.ts.net:8443", "https://b.x.ts.net:8443"]);
+    assert.doesNotMatch(fd.caddyfile, /a\.x\.ts\.net|@from_a|WARNING/);
+  });
+
+  test("ids that are no longer hosts are ignored; absent or empty is every host", () => {
+    const all = frontDoorConfig(config(), "a.x.ts.net").caddyfile;
+    assert.equal(frontDoorConfig(config({ frontDoorExclude: [] }), "a.x.ts.net").caddyfile, all);
+    assert.equal(frontDoorConfig(config({ frontDoorExclude: ["gone"] }), "a.x.ts.net").caddyfile, all);
+  });
+
+  test("leaving out every host (a hand edit) keeps them all, flagged", () => {
+    const fd = frontDoorConfig(config({ frontDoorExclude: ["a", "b", "c"] }), "a.x.ts.net");
+    assert.deepEqual(fd.order.map((h) => h.id), ["a", "b", "c"]);
+    assert.match(fd.caddyfile, /# WARNING: every host is left out of the front door/);
+    // Leaving out two of three leaves one host: no fallback either.
+    const one = frontDoorConfig(config({ frontDoorExclude: ["a", "b"] }), "a.x.ts.net");
+    assert.deepEqual(upstreamsOf(one.caddyfile), ["https://c.x.ts.net:8443"]);
+    assert.doesNotMatch(one.caddyfile, /bare502|WARNING/);
+  });
+});

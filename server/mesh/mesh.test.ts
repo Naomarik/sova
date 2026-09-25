@@ -820,6 +820,40 @@ describe("mesh ON", () => {
     assert.deepEqual([cleared.frontDoorOrder, cleared.serveUrl], [undefined, undefined]);
   });
 
+  test("front door: a host can be left out (frontDoorExclude), validated, kept by a peers PUT, cleared by null or []", async () => {
+    await putJson("/api/mesh/peers", {
+      peers: [
+        { id: "b", label: "B", nodeId: "nB", name: "b.lab", url: `http://127.0.0.1:${fakePort}` },
+        { id: "phone", nodeId: "nP", name: "127.0.0.1", url: `http://127.0.0.1:${deadPort}` },
+      ],
+    });
+    const stored = () => (JSON.parse(readFileSync(peersFile(), "utf8")) as { frontDoorExclude?: string[] }).frontDoorExclude;
+    let [, fd] = await getJson<FrontDoorConfig>("/api/mesh/front-door");
+    const self = fd.order[0]!.id;
+    assert.deepEqual(fd.order.map((h) => h.id), [self, "b", "phone"], "absent: every host, as before");
+    assert.equal(stored(), undefined);
+    assert.equal((await putJson("/api/mesh/settings", { frontDoorExclude: ["nobody"] }))[0], 400);
+    assert.equal((await putJson("/api/mesh/settings", { frontDoorExclude: ["phone", "phone"] }))[0], 400);
+    assert.equal((await putJson("/api/mesh/settings", { frontDoorExclude: [self, "b", "phone"] }))[0], 400, "never every host");
+    const [s, settings] = await putJson<MeshSettings>("/api/mesh/settings", { frontDoorExclude: ["phone"] });
+    assert.deepEqual([s, settings.frontDoorExclude, stored()], [200, ["phone"], ["phone"]]);
+    [, fd] = await getJson<FrontDoorConfig>("/api/mesh/front-door");
+    assert.deepEqual(fd.order.map((h) => h.id), [self, "b"]);
+    assert.doesNotMatch(fd.caddyfile, /@from_phone|127\.0\.0\.1:8443/);
+    await putJson("/api/mesh/peers", {
+      peers: [
+        { id: "b", label: "B", nodeId: "nB", name: "b.lab", url: `http://127.0.0.1:${fakePort}` },
+        { id: "phone", nodeId: "nP", name: "127.0.0.1", url: `http://127.0.0.1:${deadPort}` },
+      ],
+    });
+    assert.deepEqual(stored(), ["phone"], "a peers PUT keeps it");
+    let [, cleared] = await putJson<MeshSettings>("/api/mesh/settings", { frontDoorExclude: [] });
+    assert.deepEqual([cleared.frontDoorExclude, stored()], [undefined, undefined]);
+    await putJson("/api/mesh/settings", { frontDoorExclude: ["b"] });
+    [, cleared] = await putJson<MeshSettings>("/api/mesh/settings", { frontDoorExclude: null });
+    assert.deepEqual([cleared.frontDoorExclude, stored()], [undefined, undefined]);
+  });
+
   test("login kinds: stored only as api-keys, null/all clear it, bad values 400; SOVA_SYNC_LOGIN_KINDS pins it", async () => {
     const stored = () => (JSON.parse(readFileSync(peersFile(), "utf8")) as { loginKinds?: string }).loginKinds;
     let [, got] = await getJson<MeshSettings>("/api/mesh/settings");

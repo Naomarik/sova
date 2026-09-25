@@ -44,6 +44,8 @@ export interface PeersConfig {
   frontDoor: string | null;
   /** The front door's upstream order the user set: host ids (self included). */
   frontDoorOrder?: string[];
+  /** Hosts the front door leaves out (ids); absent = none. */
+  frontDoorExclude?: string[];
   /** Which logins this host syncs; stored only when "api-keys" (absent = all). */
   loginKinds?: "api-keys";
 }
@@ -149,21 +151,35 @@ export function validatePeers(raw: unknown): { config: PeersConfig } | { error: 
     if ("error" in fd) return { error: `frontDoor ${fd.error}` };
     frontDoor = fd.url;
   }
-  let frontDoorOrder: string[] | undefined;
-  if (r.frontDoorOrder !== undefined && r.frontDoorOrder !== null) {
-    if (!Array.isArray(r.frontDoorOrder) || r.frontDoorOrder.some((x) => typeof x !== "string" || !PEER_ID_RE.test(x))) {
-      return { error: "frontDoorOrder must be a list of host ids" };
-    }
-    if (new Set(r.frontDoorOrder).size !== r.frontDoorOrder.length) return { error: "frontDoorOrder lists a host twice" };
-    // Ids that are no longer hosts (a removed peer) are tolerated here and skipped where it is used.
-    frontDoorOrder = r.frontDoorOrder as string[];
-  }
+  // Ids that are no longer hosts (a removed peer) are tolerated in both lists and skipped where used.
+  const frontDoorOrder = hostIds(r.frontDoorOrder, "frontDoorOrder");
+  if (frontDoorOrder && "error" in frontDoorOrder) return frontDoorOrder;
+  const frontDoorExclude = hostIds(r.frontDoorExclude, "frontDoorExclude");
+  if (frontDoorExclude && "error" in frontDoorExclude) return frontDoorExclude;
   if (r.loginKinds !== undefined && r.loginKinds !== null && r.loginKinds !== "all" && r.loginKinds !== "api-keys") {
     return { error: 'loginKinds must be "all" or "api-keys"' };
   }
   const apiKeysOnly = r.loginKinds === "api-keys";
   const self = { id: selfId, label: text(selfRaw.label) ?? selfId, ...(selfServe ? { serveUrl: selfServe.url } : {}) };
-  return { config: { self, peers, sync, frontDoor, ...(frontDoorOrder ? { frontDoorOrder } : {}), ...(apiKeysOnly ? { loginKinds: "api-keys" as const } : {}) } };
+  return {
+    config: {
+      self,
+      peers,
+      sync,
+      frontDoor,
+      ...(frontDoorOrder ? { frontDoorOrder } : {}),
+      ...(frontDoorExclude?.length ? { frontDoorExclude } : {}),
+      ...(apiKeysOnly ? { loginKinds: "api-keys" as const } : {}),
+    },
+  };
+}
+
+/** A list of host ids (absent/null → undefined), or why it isn't one. */
+function hostIds(v: unknown, name: string): string[] | { error: string } | undefined {
+  if (v === undefined || v === null) return undefined;
+  if (!Array.isArray(v) || v.some((x) => typeof x !== "string" || !PEER_ID_RE.test(x))) return { error: `${name} must be a list of host ids` };
+  if (new Set(v).size !== v.length) return { error: `${name} lists a host twice` };
+  return v as string[];
 }
 
 /** The file, parsed and validated. Missing → `missing: true`; anything else wrong → its reason. */
@@ -195,6 +211,7 @@ export function writePeers(config: PeersConfig, file = peersFile()): void {
     sync: config.sync,
     frontDoor: config.frontDoor,
     ...(config.frontDoorOrder ? { frontDoorOrder: config.frontDoorOrder } : {}),
+    ...(config.frontDoorExclude?.length ? { frontDoorExclude: config.frontDoorExclude } : {}),
     ...(config.loginKinds ? { loginKinds: config.loginKinds } : {}),
   };
   const tmp = `${file}.${process.pid}.tmp`;

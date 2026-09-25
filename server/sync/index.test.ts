@@ -20,7 +20,7 @@ interface FakeHost {
   rt: SyncRuntime;
   agentDir: string;
   settings: MeshSettings;
-  fire: { start(): void; stop(): void; peerUp(id: string): void };
+  fire: { start(): void; stop(): void; peerUp(id: string): void; settings(): void };
   status: () => SyncStatus[];
 }
 
@@ -31,7 +31,7 @@ function host(id: string, others: Map<string, FakeHost>): FakeHost {
   mkdirSync(join(agentDir, "sova"), { recursive: true });
   const app = new Hono();
   app.use("/api/peer/*", async (c, next) => ((c.env as { meshPeer?: unknown } | undefined)?.meshPeer ? next() : c.json({ error: "Not found" }, 404)));
-  const hooks = { start: [] as Array<() => void>, stop: [] as Array<() => void>, up: [] as Array<(id: string) => void> };
+  const hooks = { start: [] as Array<() => void>, stop: [] as Array<() => void>, up: [] as Array<(id: string) => void>, settings: [] as Array<() => void> };
   let statusProvider: () => SyncStatus[] = () => [];
   const settings: MeshSettings = { hostLabel: id, sync: { settings: true, themes: true, extensions: true, logins: true }, frontDoor: null };
   const peerEntry = (pid: string) => ({ id: pid, label: pid, nodeId: `n-${pid}`, dnsName: `${pid}.lab` });
@@ -49,6 +49,7 @@ function host(id: string, others: Map<string, FakeHost>): FakeHost {
     onMeshStart: (fn: () => void) => hooks.start.push(fn),
     onMeshStop: (fn: () => void) => hooks.stop.push(fn),
     onPeerUp: (fn: (id: string) => void) => hooks.up.push(fn),
+    onSettingsChange: (fn: () => void) => hooks.settings.push(fn),
     onSyncStatus: (fn: () => SyncStatus[]) => {
       statusProvider = fn;
     },
@@ -64,6 +65,7 @@ function host(id: string, others: Map<string, FakeHost>): FakeHost {
       start: () => hooks.start.forEach((f) => f()),
       stop: () => hooks.stop.forEach((f) => f()),
       peerUp: (pid) => hooks.up.forEach((f) => f(pid)),
+      settings: () => hooks.settings.forEach((f) => f()),
     },
     status: () => statusProvider(),
   };
@@ -165,6 +167,10 @@ test("two hosts over the real routes: start pulls, a change propagates, a logout
     writeAuth(a, { ...auth(a), fresh: { type: "api_key", key: "sk-fresh" } });
     await new Promise((r) => setTimeout(r, 1200));
     assert.equal(auth(b).fresh, undefined, "B took nothing while its switch is off");
+    // Switched back on: the settings hook reconciles at once.
+    b.settings.sync.logins = true;
+    b.fire.settings();
+    assert.equal(await until(() => !!auth(b).fresh), true, "B caught up when switched back on");
   } finally {
     a.fire.stop();
     b.fire.stop();

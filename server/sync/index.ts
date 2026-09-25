@@ -155,7 +155,7 @@ export function mountSync(app: Hono, mesh: MeshApi, paths: SyncPaths = defaultPa
     if (rt.docs) void rt.docs.syncWith(httpDocPeer(mesh, id));
   });
   // A switch turned back on takes effect at once (off is read at every entry point anyway).
-  (mesh as MeshApi & { onSettingsChange?: (fn: () => void) => void }).onSettingsChange?.(() => {
+  mesh.onSettingsChange(() => {
     rt.docs?.observe();
     syncEverything();
   });

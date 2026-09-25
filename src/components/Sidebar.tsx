@@ -28,7 +28,7 @@ import {
 } from "../lib/session-groups";
 import { announce, hasLocalDraft, home, localRunning, sessionContext, toast } from "../lib/ui-state";
 import { showsDraftMark } from "../lib/draft-mark";
-import { readKey, writeKey } from "../lib/storage-keys";
+import { readKey, removeKey, writeKey } from "../lib/storage-keys";
 import { monogram, setSpine, spine } from "../lib/spine";
 import { createHoldGesture } from "../lib/hold-select";
 import {
@@ -54,7 +54,19 @@ import { GroupNameField } from "./Groups";
 import { RemoteGroupDot } from "./RemoteStatus";
 import { Banner, Chip, Icon } from "./ui";
 import { showSummaries } from "../lib/summary-line";
-import { hostLabel, hostOf, peerInfo, peerUnavailable, sessionHrefOn } from "../lib/mesh";
+import {
+  effectiveHostFilter,
+  HOST_FILTER_KEY,
+  hostFilterShown,
+  hostLabel,
+  hostOf,
+  meshPeers,
+  passesHostFilter,
+  peerInfo,
+  peerUnavailable,
+  sessionHrefOn,
+} from "../lib/mesh";
+import { HostFilter } from "./HostFilter";
 
 const ARCHIVE_KEY = "sova:archive-open";
 /** One key per Archive date section, same "1"/"0" values as ARCHIVE_KEY. */
@@ -814,6 +826,15 @@ export function Sidebar(props: {
   unfolded: boolean;
 }) {
   const [query, setQuery] = createSignal("");
+  /** The host filter as remembered (lib/mesh.ts); what applies is `hostFilter()`, which reads All
+      while its host isn't known or the filter isn't shown. */
+  const [storedHostFilter, setStoredHostFilter] = createSignal(readKey(localStorage, HOST_FILTER_KEY));
+  const hostFilter = () => effectiveHostFilter(storedHostFilter(), meshPeers(), hostFilterShown());
+  const chooseHostFilter = (value: string | null) => {
+    setStoredHostFilter(value);
+    if (value === null) removeKey(localStorage, HOST_FILTER_KEY);
+    else writeKey(localStorage, HOST_FILTER_KEY, value);
+  };
   const [showSkeleton, setShowSkeleton] = createSignal(false);
   const skeletonTimer = setTimeout(() => setShowSkeleton(true), 300);
   let search!: HTMLInputElement;
@@ -995,7 +1016,10 @@ export function Sidebar(props: {
       const r = remotePlaceOf(s);
       return r ? `${r.target} ${targets().find((t) => t.name === r.target)?.label ?? ""} ${r.remoteCwd}` : s.cwd;
     };
-    return q ? all().filter((s) => `${s.title} ${where(s)} ${s.model ?? ""}`.toLowerCase().includes(q)) : all();
+    // The host filter narrows first; with the mesh off it is always All and changes nothing.
+    const h = hostFilter();
+    const pool = h === null ? all() : all().filter((s) => passesHostFilter(h, s.path));
+    return q ? pool.filter((s) => `${s.title} ${where(s)} ${s.model ?? ""}`.toLowerCase().includes(q)) : pool;
   });
   // Pane rule: live, or web-spawned and not archived, stays on top (src/lib/regions.ts).
   const isTop = isTopSession;
@@ -1345,10 +1369,14 @@ export function Sidebar(props: {
               </button>
             </Show>
           </div>
+          {/* Only with the mesh on and a peer: one host's sessions, or All. */}
+          <Show when={hostFilterShown()}>
+            <HostFilter value={hostFilter()} onChange={chooseHostFilter} />
+          </Show>
           <div class="spread">
             <p class="search-count" id="session-count" aria-live="polite">
               <Show when={props.sessions}>
-                <Show when={query().trim()} fallback={`${all().length} sessions`}>
+                <Show when={query().trim() || hostFilter() !== null} fallback={`${all().length} sessions`}>
                   {hits().length} of {all().length} sessions
                 </Show>
               </Show>

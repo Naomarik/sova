@@ -68,3 +68,46 @@
 .session-host-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .session-host .chip-dot { width: 6px; height: 6px; flex: none; }
 .session-host-down { color: var(--status-error); max-width: 18ch; }
+
+/* The session pane's host filter, under the search field: one choice among All and the hosts.
+   The button is the 44px target; the pill inside is what shows. Chosen is a tint AND a heavier
+   weight and border, never the tint alone. */
+.host-filter { display: flex; flex-wrap: wrap; column-gap: var(--space-1); margin: calc(var(--space-2) * -1) 0; }
+.host-filter-option {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--tap-min);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.host-filter-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  max-width: 16ch;
+  padding: 2px var(--space-2);
+  border: var(--stroke-thin) solid var(--color-border);
+  border-radius: var(--r-full);
+  background: var(--color-surface);
+  color: var(--color-ink-2);
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+  transition: border-color var(--dur-fast) var(--ease-standard), background-color var(--dur-fast) var(--ease-standard);
+}
+.host-filter-option:hover .host-filter-pill { border-color: var(--color-border-strong); }
+.host-filter-option:focus-visible { outline: none; }
+.host-filter-option:focus-visible .host-filter-pill { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.host-filter-option[aria-checked="true"] .host-filter-pill {
+  background: var(--color-accent-tint);
+  border-color: var(--color-border-strong);
+  color: var(--color-ink);
+  font-weight: var(--fw-semibold);
+}
+.host-filter-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.host-filter-up { color: var(--status-success); }
+.host-filter-down { color: var(--status-error); }
+.host-filter-state { color: var(--status-error); font-size: var(--fs-micro); }

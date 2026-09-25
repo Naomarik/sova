@@ -182,3 +182,30 @@ export function mergePeerLists(
   for (const id of listed) if (!next.has(id) && prev.has(id)) next.set(id, prev.get(id)!);
   return next;
 }
+
+// ---- the sidebar's host filter -----------------------------------------------------------------
+
+/** Where the sidebar's host filter is remembered. Absent: All. */
+export const HOST_FILTER_KEY = "sova:host-filter";
+/** The stored value for the host serving this page. A peer id can't contain ":", so it can't collide. */
+export const SELF_FILTER = ":self";
+
+/** The filter only exists while the mesh is on with at least one peer: two hosts or more. */
+export const hostFilterShown = (): boolean => !!meshState()?.enabled && meshPeers().length > 0;
+
+/**
+ * The filter in effect: the remembered one while it still names a known host, else null (All).
+ * A host dropped from peers.json, or the mesh going off, reads as All without touching the store.
+ */
+export function effectiveHostFilter(stored: string | null, peers: readonly { id: string }[], shown: boolean): string | null {
+  if (!shown || !stored) return null;
+  if (stored === SELF_FILTER) return stored;
+  return peers.some((p) => p.id === stored) ? stored : null;
+}
+
+/** Whether a session at `path` passes `filter` (null: every session passes). */
+export function passesHostFilter(filter: string | null, path: string): boolean {
+  if (filter === null) return true;
+  const host = hostOf(path);
+  return filter === SELF_FILTER ? host === null : host === filter;
+}

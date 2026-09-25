@@ -12,6 +12,9 @@ import {
   resetHosts,
   routeUrl,
   sessionHrefOn,
+  effectiveHostFilter,
+  passesHostFilter,
+  SELF_FILTER,
   sessionRouteFromHash,
   
 } from "./mesh";
@@ -104,4 +107,24 @@ test("only an up peer can be used, and every other status says why in words", ()
   assert.equal(peerUnavailable(peer("a", "up")), null);
   for (const s of ["down", "skewed", "refused"] as const) assert.match(peerUnavailable(peer("a", s))!, /\w+/);
   assert.match(peerUnavailable(peer("a", "down", "timed out"))!, /timed out/);
+});
+
+test("the host filter falls back to All when its host is gone or the filter isn't shown", () => {
+  const peers = [{ id: "laptop" }];
+  assert.equal(effectiveHostFilter(null, peers, true), null);
+  assert.equal(effectiveHostFilter("laptop", peers, true), "laptop");
+  assert.equal(effectiveHostFilter(SELF_FILTER, peers, true), SELF_FILTER);
+  assert.equal(effectiveHostFilter("vps", peers, true), null, "a host no longer in peers.json");
+  assert.equal(effectiveHostFilter("laptop", peers, false), null, "mesh off: never a filter");
+});
+
+test("the host filter narrows to one host's sessions, this host's included", () => {
+  resetHosts();
+  noteHost(A, "laptop");
+  assert.equal(passesHostFilter(null, A), true);
+  assert.equal(passesHostFilter(null, B), true);
+  assert.equal(passesHostFilter("laptop", A), true);
+  assert.equal(passesHostFilter("laptop", B), false);
+  assert.equal(passesHostFilter(SELF_FILTER, B), true);
+  assert.equal(passesHostFilter(SELF_FILTER, A), false);
 });

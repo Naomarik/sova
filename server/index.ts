@@ -44,7 +44,8 @@ import { modeInfo, parseModeRequest, readMode } from "./mode-state";
 import { parseSandboxBody } from "./sandbox-state";
 import { WORKER_ID_RE } from "./worker-resume";
 import { attachWebSockets, upgradeSovaSocket } from "./ws";
-import { meshRoutes, startMesh, stopMesh } from "./mesh";
+import { meshApi, meshRoutes, startMesh, stopMesh } from "./mesh";
+import { mountSync } from "./sync";
 import { findExtension, listExtensions, proxyExtension, serveExtensionFile, setSovaPort } from "./extensions";
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4800; // PORT=0: an ephemeral port (tests)
@@ -695,6 +696,8 @@ app.get("/api/extensions", async (c) => c.json(await listExtensions()));
 // The mesh (server/mesh/): /api/mesh/*, the peer-only /api/peer/*, and the /peer/<id>/ proxy,
 // which falls through to the handlers below while no peer is configured.
 meshRoutes(app);
+// Host-to-host sync (server/sync/): routes under /api/peer/* and mesh hooks only; OFF, inert.
+mountSync(app, meshApi);
 
 app.all("/api/*", (c) => c.json({ error: "Not found" }, 404));
 

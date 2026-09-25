@@ -54,6 +54,8 @@ const hookLog: string[] = [];
 meshApi.onMeshStart(() => hookLog.push("start"));
 meshApi.onMeshStop(() => hookLog.push("stop"));
 meshApi.onPeerUp((id) => hookLog.push(`up:${id}`));
+const settingsLog: string[] = [];
+meshApi.onSettingsChange((s) => settingsLog.push(s.hostLabel));
 const { clearProbes, ownProtocol } = await import("./hello");
 const { peersFile } = await import("./peers");
 
@@ -218,6 +220,8 @@ describe("mesh OFF (no peers.json)", () => {
       ["/peer/b/api/health", "/nopeer/b/api/health"],
       ["/peer/b/ws/chat", "/nopeer/b/ws/chat"],
       ["/api/peer/hello", "/api/nopeer/hello"],
+      ["/api/peer/credentials/manifest", "/api/nopeer/credentials/manifest"],
+      ["/api/peer/credentials/entry?key=pi:x", "/api/nopeer/credentials/entry?key=pi:x"],
     ] as const) {
       const [a, b] = await Promise.all([app.request(mesh), app.request(other)]);
       assert.equal(a.status, b.status, mesh);
@@ -234,12 +238,14 @@ describe("mesh OFF (no peers.json)", () => {
     assert.equal(settings.hostLabel, "Host A");
     assert.equal(settings.sync.logins, false);
     assert.equal(settings.sync.themes, true);
+    assert.deepEqual(settingsLog, ["Host A"], "onSettingsChange fires after the write");
     const [, info] = await getJson<MeshInfo>("/api/mesh");
     assert.equal(info.enabled, false);
     assert.equal(info.self.label, "Host A");
     assert.equal(listenerInfo(), null);
     assert.equal(identityCalls, 0);
     assert.equal((await putJson("/api/mesh/settings", { frontDoor: "ftp://x" }))[0], 400);
+    assert.deepEqual(settingsLog, ["Host A"], "not after a refused write");
   });
 });
 

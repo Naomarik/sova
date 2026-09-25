@@ -41,6 +41,7 @@ let dispatch: Dispatch | null = null;
 const startHooks: Array<() => void> = [];
 const stopHooks: Array<() => void> = [];
 const peerUpHooks: Array<(peerId: string) => void> = [];
+const settingsHooks: Array<(settings: MeshSettings) => void> = [];
 /** Whether each peer was last seen up (by a probe, or by its own call through the gate). */
 const upNow = new Map<string, boolean>();
 
@@ -197,6 +198,10 @@ export const meshApi = {
   /** Fires when a peer not known to be up is seen up: a hello probe, or its own call through the gate. */
   onPeerUp: (fn: (peerId: string) => void): void => {
     peerUpHooks.push(fn);
+  },
+  /** Fires after each successful PUT /api/mesh/settings (also while off: the user's own action). */
+  onSettingsChange: (fn: (settings: MeshSettings) => void): void => {
+    settingsHooks.push(fn);
   },
   onSyncStatus,
 };
@@ -387,7 +392,9 @@ async function putSettings(c: Context): Promise<Response> {
   if ("error" in v) return c.json({ error: v.error }, 400);
   writePeers(v.config);
   reload();
-  return c.json(readMeshSettings(v.config));
+  const settings = readMeshSettings(v.config);
+  runHooks(settingsHooks, settings);
+  return c.json(settings);
 }
 
 // ---- routes -----------------------------------------------------------------------------------

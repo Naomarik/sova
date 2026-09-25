@@ -370,18 +370,23 @@ function hostApi(n, method, path, body) {
  * The Caddyfile Sova itself generates (GET /api/mesh/front-door on `from`), after setting the order
  * there (PUT /api/mesh/settings {frontDoorOrder}). null when that host's Sova has no generator.
  */
-function sovaCaddyfile(cfg, from, order) {
+function sovaCaddyfile(cfg, from, order, soft) {
   if (order) {
     const r = hostApi(from, "PUT", "/api/mesh/settings", { frontDoorOrder: order });
-    if (r.status !== 200) die(`${from}: PUT /api/mesh/settings frontDoorOrder -> ${r.status} ${JSON.stringify(r.json)}`);
+    if (r.status !== 200) {
+      const msg = `${from}: PUT /api/mesh/settings frontDoorOrder -> ${r.status} ${JSON.stringify(r.json)}`;
+      // `up` on a fresh (unpaired) lab: Sova refuses an order of hosts that aren't its peers yet
+      if (soft) return console.error(`${msg}; using the lab's template until \`lab pair\` + \`lab frontdoor order\``), null;
+      die(msg);
+    }
   }
   const r = hostApi(from, "GET", "/api/mesh/front-door");
   return r.status === 200 && typeof r.json?.caddyfile === "string" ? r.json.caddyfile : null;
 }
 
 /** Put the front door's Caddyfile in place and reload: Sova's own when it has one, else the lab's. */
-export function syncFrontDoor(cfg, { order, from = cfg.hosts[0], lab: forceLab = false } = {}) {
-  const text = forceLab ? null : sovaCaddyfile(cfg, from, order);
+export function syncFrontDoor(cfg, { order, from = cfg.hosts[0], lab: forceLab = false, soft = false } = {}) {
+  const text = forceLab ? null : sovaCaddyfile(cfg, from, order, soft);
   let source;
   if (text) {
     const dir = join(STATE, "caddy");
@@ -537,7 +542,7 @@ async function cmdUp(args) {
   await waitReady(cfg);
   pruneNodes(cfg);
   if (cfg.frontdoor) {
-    const { source, upstreams } = syncFrontDoor(cfg, { order: cfg.order ?? undefined, lab: cfg.frontdoorSource === "lab" });
+    const { source, upstreams } = syncFrontDoor(cfg, { order: cfg.order ?? undefined, lab: cfg.frontdoorSource === "lab", soft: true });
     console.log(`front door: http://127.0.0.1:${PORTS.frontdoor}/ ${upstreams.join(" > ")} (from ${source})`);
   }
   cmdStatus([]);

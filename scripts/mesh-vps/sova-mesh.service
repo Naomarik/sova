@@ -1,0 +1,22 @@
+# systemd USER unit for Sova on the VPS (deploy). Install (as deploy, no sudo, after the parent ran
+# `sudo loginctl enable-linger deploy`):
+#   mkdir -p ~/.config/systemd/user && cp ~/sova-mesh/app/scripts/mesh-vps/sova-mesh.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload && systemctl --user enable --now sova-mesh.service
+# Main listener 127.0.0.1:4800, peer listener 100.64.0.2:4801 (see ~/sova-mesh/sova-mesh.env).
+[Unit]
+Description=Sova (mesh host)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=%h/sova-mesh/app/scripts/mesh-vps/run-sova.sh
+Restart=on-failure
+RestartSec=3
+# Stop quickly: the front door fails over on its health checks
+TimeoutStopSec=10
+Nice=5
+UMask=0077
+
+[Install]
+WantedBy=default.target

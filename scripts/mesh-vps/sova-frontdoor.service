@@ -1,0 +1,19 @@
+# systemd USER unit for the Caddy front door on the VPS (deploy). Install like sova-mesh.service:
+#   cp ~/sova-mesh/app/scripts/mesh-vps/sova-frontdoor.service ~/.config/systemd/user/
+#   ~/sova-mesh/app/scripts/mesh-vps/frontdoor-config.sh     (writes ~/sova-mesh/Caddyfile; needs Sova running)
+#   systemctl --user daemon-reload && systemctl --user enable --now sova-frontdoor.service
+# Listens on 127.0.0.1:4890 only (admin 127.0.0.1:2089); `tailscale serve --https=443` is the way in.
+[Unit]
+Description=Sova front door (Caddy, 127.0.0.1:4890)
+After=network-online.target sova-mesh.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=%h/sova-mesh/app/scripts/mesh-vps/run-frontdoor.sh
+ExecReload=%h/sova-mesh/bin/caddy reload --config %h/sova-mesh/Caddyfile --adapter caddyfile --address 127.0.0.1:2089
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target

@@ -425,6 +425,10 @@ any other. A delivered row never draws one: nothing can be recalled then. A queu
 `.entry`, so it wraps itself in a `display: contents` host that gives its Remove the same hover
 and tap region every other strip has.
 
+The row's head names who queued it: `You`, `Overseer` for a message the Overseer sent into this
+session (§app.overseer/sent-marker), or `Sent by Sova` for one Sova queued for the session itself
+(a group send, a remote status probe). Every one of them is removable the same way.
+
 The states are the server's to report, and a queue snapshot proves only what it still holds. Every
 departure is broadcast to EVERY client of the chat as `queue_item_gone {itemId, reason, text?}`,
 and THAT moves the row — a message simply missing from the next snapshot is never called "sent",

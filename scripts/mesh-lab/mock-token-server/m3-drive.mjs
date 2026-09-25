@@ -5,8 +5,10 @@
 // in a finally. `conflict` stops two hosts' Sova to plant different pre-sync keys, then settles the
 // conflict through the Mesh page's routes (GET /api/mesh/logins, POST /api/mesh/logins/claim).
 //
-//   node scripts/mesh-lab/mock-token-server/m3-drive.mjs [h1|h2|h2c|h6|h6c|h9|all|h3|h4|h7|h8|h10|chaos|h11|conflict|conflict-verify|conflict-clean] [--hosts a,b,c] [--plant-only]
+//   node scripts/mesh-lab/mock-token-server/m3-drive.mjs [h1|h2|h2c|h6|h6c|h9|all|h3|h4|h7|h8|h10|chaos|h11|conflict|conflict-verify|conflict-clean|apikeys] [--hosts a,b,c] [--plant-only]
 //   (h11 is meant for an 8-host lab: --hosts a,b,c,d,e,f,g,h; M3_H11_SECONDS sets its length)
+//   `apikeys` puts the LAST host in API-keys-only mode (MeshSettings.loginKinds, the VPS's mode) and
+//   proves it takes API keys but never an OAuth login, then switches it back.
 //
 // Needs the lab's mock token server (laptop http://127.0.0.1:4888, MOCK_TOKEN_URL inside hosts)
 // and SOVA_SYNC_CLAUDE_DIR in the hosts for the Claude scenarios. Hosts are compared by sha256 of
@@ -495,7 +497,78 @@ async function conflictClean() {
   return `logged out on ${holders.join(",") || "no host"}`;
 }
 
-const ALL = { conflict, "conflict-verify": conflictVerify, "conflict-clean": conflictClean, h1, h2, h2c, h6, h6c, h9, h3, h4, h7, h8, h10, h11 };
+// ---- API-keys-only host (M5: the VPS's mode) ------------------------------------------------------
+
+const settingsOf = async (host) => JSON.parse((await mainApi(host, "/api/mesh/settings")).text);
+async function setKinds(host, loginKinds) {
+  const r = await mainApi(host, "/api/mesh/settings", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ loginKinds }) });
+  if (r.status !== 200) throw new Error(`${host}: PUT loginKinds ${loginKinds}: ${r.status} ${r.text.slice(0, 120)}`);
+  const got = (await settingsOf(host)).loginKinds ?? "all";
+  if (got !== (loginKinds ?? "all")) throw new Error(`${host}: loginKinds reads ${got}`);
+}
+const logLines = (host) => Number(sh(host, "wc -l < /var/log/lab/sova.log"));
+const logSince = (host, from) => sh(host, `tail -n +${from + 1} /var/log/lab/sova.log | grep -c 'api-keys-only' || true`);
+
+/**
+ * The last host syncs API keys only: it drops its own OAuth logins locally without logging anyone
+ * else out, never receives a new OAuth login (pi or Claude), and still takes and spreads API keys
+ * (a change and a logout, both ways). No peer logs a refusal (nothing OAuth is ever sent to it).
+ * Switched back to "all", it catches up with the OAuth logins. Keys are throwaways.
+ */
+async function apikeys() {
+  const v = HOSTS.at(-1);
+  const others = HOSTS.slice(0, -1);
+  const [a] = others;
+  const from = Object.fromEntries(HOSTS.map((h) => [h, logLines(h)]));
+  await setKinds(v, "api-keys");
+  try {
+    // Its own OAuth logins go, locally only: a logout of an OAuth entry is not sent anywhere.
+    const claudeBefore = Object.fromEntries(others.map((h) => [h, claudeSim(h, "status").refreshSha256 ?? null]));
+    if (inHost(v, "pi-state", "openai-codex").present) inHost(v, "pi-delete", "openai-codex");
+    // Claude Code's logout is deleting its file; claude-sim's logout would also revoke the lineage
+    // at the mock, which the others may share.
+    sh(v, `rm -f "$SOVA_SYNC_CLAUDE_DIR/.credentials.json"`);
+    await sleep(4000);
+    for (const h of others) {
+      if (!inHost(h, "pi-state", "openai-codex").present) throw new Error(`${h} lost openai-codex after ${v}'s local logout`);
+      if ((claudeSim(h, "status").refreshSha256 ?? null) !== claudeBefore[h]) throw new Error(`${h}'s Claude login changed after ${v}'s local logout`);
+    }
+    // New OAuth logins on a reach the others, never v.
+    const pi = JSON.parse(sh(a, `cd /sova && node scripts/mesh-lab/mock-token-server/pi-login.mjs --mock "$MOCK_TOKEN_URL"`).split("\n").at(-1)).lineage;
+    const { lineage: claude } = claudeSim(a, "login");
+    await until("the new OAuth logins on every other host", async () => ((await piConverged(pi, "openai-codex", others)()) === true && (await claudeConverged(claude, others)()) === true) || "not yet", 30_000);
+    // API keys move both ways: a new one from a, a change from v, a logout from a.
+    const provider = `m5key${Date.now().toString(36)}`;
+    const k1 = `m5-${randomBytes(6).toString("hex")}`;
+    const k2 = `m5-${randomBytes(6).toString("hex")}`;
+    const shaK = async (k) => (await import("node:crypto")).createHash("sha256").update(k).digest("hex");
+    inHost(a, "pi-set-key", provider, k1);
+    const want1 = await shaK(k1);
+    await until("the API key on every host", async () => HOSTS.every((h) => inHost(h, "pi-state", provider).refreshSha === want1) || "not yet", 30_000);
+    inHost(v, "pi-set-key", provider, k2);
+    const want2 = await shaK(k2);
+    await until(`${v}'s changed key on every host`, async () => HOSTS.every((h) => inHost(h, "pi-state", provider).refreshSha === want2) || "not yet", 30_000);
+    inHost(a, "pi-delete", provider);
+    await until("the API key logout on every host", piAbsent(provider), 30_000);
+    // v still holds no OAuth login, lists none, and nobody refused anything.
+    await sleep(3000);
+    if (inHost(v, "pi-state", "openai-codex").present) throw new Error(`${v} holds an openai-codex login`);
+    if (claudeSim(v, "status").state !== "missing") throw new Error(`${v} holds a Claude login`);
+    const rows = JSON.parse((await mainApi(v, "/api/mesh/logins")).text).entries.map((e) => e.key);
+    if (rows.some((k) => k === "pi:openai-codex" || k.startsWith("claude:"))) throw new Error(`${v} lists ${rows.join(",")}`);
+    const refusals = HOSTS.map((h) => [h, Number(logSince(h, from[h]))]).filter(([, n]) => n > 0);
+    if (refusals.length) throw new Error(`refusals logged: ${JSON.stringify(refusals)}`);
+    const note = `${v} api-keys: kept no OAuth (pi ${pi}, Claude ${claude} reached ${others.join(",")} only), API key add/change/logout both ways, 0 refusals`;
+    // Back to "all": v catches up with both OAuth logins.
+    await setKinds(v, null);
+    await until(`${v} caught up with the OAuth logins`, async () => ((await piConverged(pi)()) === true && (await claudeConverged(claude)()) === true) || "not yet", 60_000);
+    return `${note}; back to all: ${v} caught up`;
+  } finally {
+    if (((await settingsOf(v).catch(() => ({}))).loginKinds ?? "all") !== "all") await setKinds(v, null).catch((e) => console.error(`restore ${v}: ${e.message}`));
+  }
+}
+
+const ALL = { apikeys, conflict, "conflict-verify": conflictVerify, "conflict-clean": conflictClean, h1, h2, h2c, h6, h6c, h9, h3, h4, h7, h8, h10, h11 };
 const GROUPS = { all: ["h1", "h2", "h2c", "h6", "h6c", "h9"], chaos: ["h3", "h4", "h7", "h8", "h10"] };
 const run = GROUPS[which] ?? which.split(",");
 for (const name of run) {

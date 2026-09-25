@@ -44,6 +44,8 @@ export interface PeersConfig {
   frontDoor: string | null;
   /** The front door's upstream order the user set: host ids (self included). */
   frontDoorOrder?: string[];
+  /** Which logins this host syncs; stored only when "api-keys" (absent = all). */
+  loginKinds?: "api-keys";
 }
 
 export type PeersRead = { ok: true; config: PeersConfig } | { ok: false; error: string; missing?: true };
@@ -156,8 +158,12 @@ export function validatePeers(raw: unknown): { config: PeersConfig } | { error: 
     // Ids that are no longer hosts (a removed peer) are tolerated here and skipped where it is used.
     frontDoorOrder = r.frontDoorOrder as string[];
   }
+  if (r.loginKinds !== undefined && r.loginKinds !== null && r.loginKinds !== "all" && r.loginKinds !== "api-keys") {
+    return { error: 'loginKinds must be "all" or "api-keys"' };
+  }
+  const apiKeysOnly = r.loginKinds === "api-keys";
   const self = { id: selfId, label: text(selfRaw.label) ?? selfId, ...(selfServe ? { serveUrl: selfServe.url } : {}) };
-  return { config: { self, peers, sync, frontDoor, ...(frontDoorOrder ? { frontDoorOrder } : {}) } };
+  return { config: { self, peers, sync, frontDoor, ...(frontDoorOrder ? { frontDoorOrder } : {}), ...(apiKeysOnly ? { loginKinds: "api-keys" as const } : {}) } };
 }
 
 /** The file, parsed and validated. Missing → `missing: true`; anything else wrong → its reason. */
@@ -189,6 +195,7 @@ export function writePeers(config: PeersConfig, file = peersFile()): void {
     sync: config.sync,
     frontDoor: config.frontDoor,
     ...(config.frontDoorOrder ? { frontDoorOrder: config.frontDoorOrder } : {}),
+    ...(config.loginKinds ? { loginKinds: config.loginKinds } : {}),
   };
   const tmp = `${file}.${process.pid}.tmp`;
   writeFileSync(tmp, `${JSON.stringify(doc, null, 2)}\n`, { mode: 0o600 });

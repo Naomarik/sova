@@ -820,6 +820,45 @@ describe("mesh ON", () => {
     assert.deepEqual([cleared.frontDoorOrder, cleared.serveUrl], [undefined, undefined]);
   });
 
+  test("login kinds: stored only as api-keys, null/all clear it, bad values 400; SOVA_SYNC_LOGIN_KINDS pins it", async () => {
+    const stored = () => (JSON.parse(readFileSync(peersFile(), "utf8")) as { loginKinds?: string }).loginKinds;
+    assert.equal((await getJson<MeshSettings>("/api/mesh/settings"))[1].loginKinds, undefined, "absent = all");
+    assert.equal((await putJson("/api/mesh/settings", { loginKinds: "oauth" }))[0], 400);
+    let [s, settings] = await putJson<MeshSettings>("/api/mesh/settings", { loginKinds: "api-keys" });
+    assert.deepEqual([s, settings.loginKinds, stored()], [200, "api-keys", "api-keys"]);
+    // A peers PUT keeps it.
+    await putJson("/api/mesh/peers", {
+      peers: [
+        { id: "b", label: "B", nodeId: "nB", name: "127.0.0.1", url: `http://127.0.0.1:${fakePort}` },
+        { id: "dead", nodeId: "nD", name: "127.0.0.1", url: `http://127.0.0.1:${deadPort}` },
+      ],
+    });
+    assert.equal(stored(), "api-keys");
+    [, settings] = await putJson<MeshSettings>("/api/mesh/settings", { loginKinds: "all" });
+    assert.deepEqual([settings.loginKinds, stored()], [undefined, undefined], "all is the default, never stored");
+    await putJson("/api/mesh/settings", { loginKinds: "api-keys" });
+    [, settings] = await putJson<MeshSettings>("/api/mesh/settings", { loginKinds: null });
+    assert.deepEqual([settings.loginKinds, stored()], [undefined, undefined]);
+    process.env.SOVA_SYNC_LOGIN_KINDS = "api-keys";
+    try {
+      assert.equal((await getJson<MeshSettings>("/api/mesh/settings"))[1].loginKinds, "api-keys", "the pin wins over the file");
+      assert.equal(meshApi.settings().loginKinds, "api-keys", "server/sync sees the pin");
+      for (const other of ["all", null]) {
+        assert.deepEqual(await putJson("/api/mesh/settings", { loginKinds: other }), [409, { error: "loginKinds is pinned by SOVA_SYNC_LOGIN_KINDS on this host" }]);
+      }
+      assert.equal((await putJson("/api/mesh/settings", { loginKinds: "api-keys" }))[0], 200, "the pinned value itself is fine");
+      assert.equal((await putJson("/api/mesh/settings", { hostLabel: "A" }))[0], 200, "a PUT that leaves loginKinds alone is fine");
+      delete process.env.SOVA_SYNC_LOGIN_KINDS;
+      await putJson("/api/mesh/settings", { loginKinds: null });
+      assert.equal(stored(), undefined);
+      process.env.SOVA_SYNC_LOGIN_KINDS = "api-key"; // a typo fails closed
+      assert.equal((await getJson<MeshSettings>("/api/mesh/settings"))[1].loginKinds, "api-keys");
+    } finally {
+      delete process.env.SOVA_SYNC_LOGIN_KINDS;
+      await putJson("/api/mesh/settings", { loginKinds: null });
+    }
+  });
+
   test("revocation: a hand edit that drops a peer takes effect on its very next call, and cuts its open socket", async () => {
     const keep = [
       { id: "b", label: "B", nodeId: "nB", name: "127.0.0.1", url: `http://127.0.0.1:${fakePort}` },

@@ -163,8 +163,24 @@ export const onSyncStatus = (provider: () => SyncStatus[]): void => {
   syncProvider = provider;
 };
 
+/**
+ * SOVA_SYNC_LOGIN_KINDS pins this host's login kinds ("all" | "api-keys"), else null. Any other
+ * value pins "api-keys": the variable exists to keep subscription logins off a host, so a typo
+ * must not let them in.
+ */
+function pinnedLoginKinds(): "all" | "api-keys" | null {
+  const v = process.env.SOVA_SYNC_LOGIN_KINDS?.trim();
+  if (!v) return null;
+  if (v === "all" || v === "api-keys") return v;
+  if (!warnedLoginKinds) console.warn(`[mesh] SOVA_SYNC_LOGIN_KINDS=${JSON.stringify(v)} is not "all" or "api-keys": treating it as "api-keys"`);
+  warnedLoginKinds = true;
+  return "api-keys";
+}
+let warnedLoginKinds = false;
+
 export function readMeshSettings(config: PeersConfig | null = rt.config): MeshSettings {
   const c = config ?? emptyConfig();
+  const loginKinds = pinnedLoginKinds() ?? c.loginKinds;
   const sync = Object.fromEntries(SYNC_CATEGORIES.map((k) => [k, c.sync[k] ?? true])) as Record<SyncCategory, boolean>;
   return {
     hostLabel: c.self.label,
@@ -172,6 +188,7 @@ export function readMeshSettings(config: PeersConfig | null = rt.config): MeshSe
     frontDoor: c.frontDoor,
     ...(c.frontDoorOrder ? { frontDoorOrder: c.frontDoorOrder } : {}),
     ...(c.self.serveUrl ? { serveUrl: c.self.serveUrl } : {}),
+    ...(loginKinds ? { loginKinds } : {}),
   };
 }
 
@@ -413,6 +430,10 @@ async function putSettings(c: Context): Promise<Response> {
     const unknown = Array.isArray(body.frontDoorOrder) ? body.frontDoorOrder.filter((id) => !hosts.has(id)) : [];
     if (unknown.length) return c.json({ error: `frontDoorOrder: not a host here: ${unknown.join(", ")}` }, 400);
   }
+  const pinned = pinnedLoginKinds();
+  if (body.loginKinds !== undefined && pinned && (body.loginKinds ?? "all") !== pinned) {
+    return c.json({ error: "loginKinds is pinned by SOVA_SYNC_LOGIN_KINDS on this host" }, 409);
+  }
   const self = { ...base.config.self };
   if (body.hostLabel !== undefined) self.label = body.hostLabel;
   if (body.serveUrl === null) delete self.serveUrl;
@@ -425,6 +446,7 @@ async function putSettings(c: Context): Promise<Response> {
   };
   if (body.frontDoorOrder === null) delete next.frontDoorOrder;
   else if (body.frontDoorOrder !== undefined) next.frontDoorOrder = body.frontDoorOrder;
+  if (body.loginKinds !== undefined) next.loginKinds = body.loginKinds;
   const v = validatePeers(next);
   if ("error" in v) return c.json({ error: v.error }, 400);
   writePeers(v.config);

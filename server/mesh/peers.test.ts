@@ -29,6 +29,16 @@ describe("validatePeers", () => {
     assert.equal(peerUrl(v.config.peers[0]!), "http://b.lab.ts.net:4801");
   });
 
+  test("loginKinds: api-keys kept, all/null/absent dropped, anything else refused", () => {
+    const kinds = (loginKinds: unknown) => {
+      const v = validatePeers({ peers: [b], loginKinds });
+      return "config" in v ? v.config.loginKinds : v.error;
+    };
+    assert.equal(kinds("api-keys"), "api-keys");
+    for (const k of ["all", null, undefined]) assert.equal(kinds(k), undefined, String(k));
+    assert.equal(kinds("oauth"), 'loginKinds must be "all" or "api-keys"');
+  });
+
   test("an explicit url is reduced to its origin; SOVA_PEER_PORT moves the default", () => {
     const v = validatePeers({ peers: [{ ...b, url: "https://b.lab.ts.net:9000/" }, { id: "c", nodeId: "nC", dnsName: "fd7a::1" }] });
     assert.ok("config" in v);

@@ -2488,6 +2488,17 @@
         "src/lib/path-attachments.ts",
         "src/components/FolderPicker.tsx"
       ]
+    },
+    "§mesh.peers/address-identity": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/mesh/address-identity.ts",
+        "server/mesh/address-identity.test.ts",
+        "server/mesh/index.ts",
+        "server/mesh/localapi.ts"
+      ]
     }
   },
   "boundary": {

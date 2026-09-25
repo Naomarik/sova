@@ -34,6 +34,21 @@ before the mesh: any device that can reach one Sova host can use every peer thro
 Sova host must be reachable by the same devices; a host that others must not reach through it (a
 shared or tagged server) does not belong in the same mesh yet.
 
+## §mesh.peers/address-identity — Hosts without Tailscale LocalAPI
+
+A host that can't ask Tailscale who a caller is (the Android app offers no LocalAPI) can opt into
+identifying callers by address instead (`SOVA_MESH_IDENTITY=addresses`). Such a host must name its own
+tailnet address (`SOVA_PEER_HOST`, tailnet addresses only), and its peer listener opens there and
+nowhere else; without a valid one it stays closed. A caller is served only if its connection comes
+from a tailnet address that is not this host's own and exactly one `peers.json` entry names that
+address (as its name or its URL's host); that entry is the caller. Any other caller is refused before
+any route runs, as with `whois`. Unset, the host uses `whois` as before.
+
+This is weaker than `whois`: it trusts that the tailnet delivers packets only from the node that
+owns their source address (the device's Tailscale VPN checks this), and if the control plane gives
+a deleted node's address to a new node, the new node passes as the old peer until `peers.json` is
+edited. Remove a deleted peer from `peers.json` promptly.
+
 ## §mesh.peers/hello — hello
 
 Each host answers `hello` on its peer listener with its id, label, host name, Sova version, a

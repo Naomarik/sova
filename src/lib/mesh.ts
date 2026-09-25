@@ -49,7 +49,17 @@ const [hostsVersion, setHostsVersion] = createSignal(0);
 /** The peer a path lives on (a session file, a worker's session, an attachment), or null: here. */
 export function hostOf(path: string): string | null {
   hostsVersion();
-  return hosts.get(path) ?? null;
+  return mappedHost(path);
+}
+
+/**
+ * The peer a path is recorded on, unless that is the host serving this page: after a failover the
+ * front door can land this tab on a host whose sessions it had recorded as a peer's, and a request
+ * to `/peer/<self>` is one no host answers.
+ */
+function mappedHost(path: string): string | null {
+  const h = hosts.get(path) ?? null;
+  return h !== null && h === state()?.self.id ? null : h;
 }
 
 /** Record where `path` lives; `host` null forgets it (it is this host's). */
@@ -124,8 +134,8 @@ export function routeUrl(url: string, body?: unknown): string {
   if (!url.startsWith("/api/") || hosts.size === 0) return url;
   const named = pathsNamed(url, body);
   if (named.length === 0) return url;
-  const first = hosts.get(named[0]!) ?? null;
-  if (!named.every((p) => (hosts.get(p) ?? null) === first)) return url;
+  const first = mappedHost(named[0]!);
+  if (!named.every((p) => mappedHost(p) === first)) return url;
   return hostUrl(first, url);
 }
 
@@ -223,4 +233,35 @@ const MESH_RETRY_MS = [5_000, 15_000, 30_000, 60_000];
 export function meshRetryDelay(status: number, attempt: number): number | null {
   if (status >= 400 && status < 500) return null;
   return MESH_RETRY_MS[Math.min(attempt, MESH_RETRY_MS.length) - 1]!;
+}
+
+// ---- the stale-tab check (the front door can move a tab between hosts) --------------------------
+
+/** What a tab remembers of the host that served it: GET /api/mesh/hello at load. */
+export interface HelloBaseline {
+  id: string;
+  label: string;
+  protocol: string;
+  build?: string;
+}
+
+/** How the host answering now differs from the one this tab was loaded from. */
+export interface HelloChange {
+  /** Another wire contract: this tab can't be trusted to talk to it. */
+  protocol: boolean;
+  /** Another build of the page: this tab is an older (or newer) app than the host serves. */
+  build: boolean;
+  /** Another host altogether (a failover): its label, and the one the tab came from. */
+  host: { from: string; to: string } | null;
+}
+
+/**
+ * The difference between the baseline and a fresh hello, or null when there is none. A build that
+ * either side doesn't report (a dev server behind Vite serves none) is unknown, never different.
+ */
+export function helloChange(was: HelloBaseline, now: HelloBaseline): HelloChange | null {
+  const protocol = was.protocol !== now.protocol;
+  const build = !!was.build && !!now.build && was.build !== now.build;
+  const host = was.id !== now.id ? { from: was.label || was.id, to: now.label || now.id } : null;
+  return protocol || build || host ? { protocol, build, host } : null;
 }

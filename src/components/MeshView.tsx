@@ -8,6 +8,7 @@ import {
   peerUnavailable,
   selfLabel,
   setMeshState,
+  type HelloChange,
   type MeshCandidate,
   type MeshPeerEntry,
   type PeerState,
@@ -490,5 +491,60 @@ function SyncRow(props: { row: SyncStatus; now: number }) {
       </div>
       {chip()}
     </li>
+  );
+}
+
+/**
+ * The stale-tab banner: the host answering this tab is not the one that loaded it, or serves a
+ * different Sova. A different protocol can't be worked around, so it has no Dismiss; a newer build
+ * or a new host is information, and the tab keeps working.
+ */
+export function StaleTabBanner(props: { change: HelloChange; onDismiss(): void }) {
+  const c = () => props.change;
+  const reload = (
+    <button type="button" class="button button-sm button-primary" onClick={() => location.reload()}>
+      Reload Tab
+    </button>
+  );
+  return (
+    <div class="stale-tab">
+      <Show
+        when={!c().protocol}
+        fallback={
+          <Banner
+            tone="warn"
+            title="This tab is older than the Sova answering it."
+            body={`${c().host ? `The front door moved it to ${c().host!.to}, which` : "The host"} runs a different version, so this tab can't talk to it reliably. Reload to continue; your sessions are unchanged.`}
+            action={reload}
+          />
+        }
+      >
+        <Banner
+          tone="info"
+          title={c().host ? `You're now on ${c().host!.to}.` : "A newer Sova is available."}
+          body={
+            <>
+              <Show when={c().host}>
+                {(h) => (
+                  <>
+                    The front door moved this tab from {h().from}. Sessions stay on the host that made them: {h().from}'s open again
+                    once it answers.{" "}
+                  </>
+                )}
+              </Show>
+              <Show when={c().build}>This host serves a newer build of this page. Reload when you're ready.</Show>
+            </>
+          }
+          action={
+            <span class="cluster">
+              <Show when={c().build}>{reload}</Show>
+              <button type="button" class="button button-sm button-ghost" onClick={() => props.onDismiss()}>
+                Dismiss
+              </button>
+            </span>
+          }
+        />
+      </Show>
+    </div>
   );
 }

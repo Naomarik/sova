@@ -15,6 +15,11 @@ const PERMANENT_CLOSE = new Set([4422]);
 
 export const isPermanentClose = (code: number): boolean => PERMANENT_CLOSE.has(code);
 
+const [reconnects, setReconnects] = createSignal(0);
+/** Bumped whenever any socket reconnects after having been open: the server may have changed
+    under the page (a restart, or the front door moving it to another host). */
+export const socketReconnects = reconnects;
+
 export interface ReconnectingSocket {
   status: Accessor<SocketStatus>;
   /** Retry number currently scheduled/in flight (0 when connected). */
@@ -55,6 +60,7 @@ export function createReconnectingSocket<M>(url: string, handlers: SocketHandler
       setAttempt(0);
       setStatus("open");
       handlers.onOpen?.(everOpened);
+      if (everOpened) setReconnects((n) => n + 1);
       everOpened = true;
     };
     sock.onmessage = (ev) => {

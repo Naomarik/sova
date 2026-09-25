@@ -111,3 +111,16 @@
 .host-filter-up { color: var(--status-success); }
 .host-filter-down { color: var(--status-error); }
 .host-filter-state { color: var(--status-error); font-size: var(--fs-micro); }
+
+/* The stale-tab banner floats over the app's top edge: it concerns the whole tab, not one pane.
+   Under Sova's dialogs and toasts (50+), over the app's own chrome. */
+.stale-tab {
+  position: fixed;
+  top: var(--space-3);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 45;
+  width: min(640px, calc(100vw - 2 * var(--space-4)));
+  box-shadow: var(--shadow-2);
+  border-radius: var(--r-lg);
+}

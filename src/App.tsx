@@ -9,12 +9,15 @@ import {
   fetchExplanations,
   fetchExtensions,
   fetchMesh,
+  fetchMeshHello,
   fetchMeshSessions,
   fetchUsage,
   getThemes,
   listSessions,
   setSessionArchived,
 } from "./lib/api";
+import { socketReconnects } from "./lib/socket";
+import { helloChange, type HelloBaseline, type HelloChange, sessionHrefOn } from "./lib/mesh";
 import { hostLabel, hostOf, isMeshHash, meshRetryDelay, meshState, meshOn, meshPeers, mergePeerLists, noteHost, notePeerSessions, peerInfo, peerUnavailable, sessionRouteFromHash, setMeshState } from "./lib/mesh";
 import { agentsHref, insightsRouteFromHash, legacyInsightsTarget } from "./lib/insights";
 import { transcriptRoot } from "./lib/jump";
@@ -38,7 +41,7 @@ import { NewSessionDialog } from "./components/NewSessionDialog";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { ExplainGrid } from "./components/ExplainGallery";
 import { ExtensionCards, ExtensionView } from "./components/ExtensionView";
-import { MeshCard, MeshView } from "./components/MeshView";
+import { MeshCard, MeshView, StaleTabBanner } from "./components/MeshView";
 import { FanoutDialog, type FanoutSource } from "./components/FanoutDialog";
 import { GroupView, paneIdFor, workspaceFocus, type PaneWiring } from "./components/GroupView";
 import { SessionPane, type PaneInsight, type TabId } from "./components/SessionPane";
@@ -205,6 +208,7 @@ export function App() {
       if (document.hidden) return;
       void loadMesh();
       void loadPeerSessions();
+      void checkHello();
     }, MESH_POLL_MS);
     onCleanup(() => clearInterval(t));
   });
@@ -333,6 +337,61 @@ export function App() {
     window.removeEventListener("hashchange", onHash);
     clearInterval(tick);
   });
+
+  // ---- The stale-tab check: the front door can move this tab to another host -----------------
+  // Only with the mesh on (no front door exists without it). The tab remembers the hello of the
+  // host it was loaded from and asks again whenever the server may have changed under it: a
+  // socket reconnect, the tab coming back into view, the mesh poll.
+  const [helloBase, setHelloBase] = createSignal<HelloBaseline | null>(null);
+  const [staleChange, setStaleChange] = createSignal<HelloChange | null>(null);
+  const checkHello = async () => {
+    if (!meshOn()) return;
+    let hello;
+    try {
+      hello = await fetchMeshHello();
+    } catch {
+      return; // no answer is the reconnect's business, not a verdict on the host
+    }
+    const now: HelloBaseline = { id: hello.id, label: hello.label, protocol: hello.protocol, build: hello.build };
+    const base = helloBase();
+    if (!base) return setHelloBase(now);
+    const change = helloChange(base, now);
+    if (!change) return;
+    // The tab's own code hasn't changed: its protocol and build stay the baseline's. Only the host
+    // it talks to moves.
+    setHelloBase({ ...base, id: now.id, label: now.label });
+    setStaleChange((prev) => ({
+      protocol: change.protocol || !!prev?.protocol,
+      build: change.build || !!prev?.build,
+      host: change.host ?? prev?.host ?? null,
+    }));
+    if (change.host) onFailover(base.id);
+  };
+  /**
+   * This tab now talks to another host. The open session, if it was the old host's own, keeps
+   * pointing there (`?host=<old>`); everything else re-reads, and the old host's sessions come
+   * back through its peer list (a session is still driven only by the host holding it).
+   */
+  const onFailover = (oldId: string) => {
+    const r = sessionRouteFromHash(location.hash);
+    if (r && !r.host) {
+      noteHost(r.path, oldId);
+      history.replaceState(history.state, "", sessionHrefOn(oldId, r.path));
+    }
+    void loadMesh().then(() => {
+      refresh();
+      void loadPeerSessions();
+    });
+  };
+  createEffect(() => {
+    if (meshOn() && !helloBase()) void checkHello();
+  });
+  createEffect(on(socketReconnects, () => void checkHello(), { defer: true }));
+  const onVisible = () => {
+    if (!document.hidden) void checkHello();
+  };
+  document.addEventListener("visibilitychange", onVisible);
+  onCleanup(() => document.removeEventListener("visibilitychange", onVisible));
 
   /** The session-list row for a path: the list's, else one this tab created, else the kept one. */
   const summaryOf = (p: string): SessionSummary | undefined => {
@@ -933,6 +992,9 @@ export function App() {
         <Portal>
           <SettingsDialog initialTab={settingsOpenAt() ?? undefined} onClose={closeSettings} />
         </Portal>
+      </Show>
+      <Show when={staleChange()}>
+        {(change) => <StaleTabBanner change={change()} onDismiss={() => setStaleChange(null)} />}
       </Show>
       <GlobalRegions />
     </>

@@ -16,6 +16,8 @@ import {
   passesHostFilter,
   SELF_FILTER,
   meshRetryDelay,
+  helloChange,
+  setMeshState,
   sessionRouteFromHash,
   
 } from "./mesh";
@@ -136,4 +138,30 @@ test("GET /api/mesh is asked again only after a failure that may pass", () => {
   assert.equal(meshRetryDelay(500, 1), 5_000);
   assert.equal(meshRetryDelay(0, 2), 15_000, "no answer at all: a host mid-restart");
   assert.equal(meshRetryDelay(502, 9), 60_000, "the last wait repeats");
+});
+
+test("a hello that differs says how; an unknown build is never a difference", () => {
+  const a = { id: "a", label: "Host A", protocol: "p1", build: "b1" };
+  assert.equal(helloChange(a, { ...a }), null);
+  assert.deepEqual(helloChange(a, { ...a, build: "b2" }), { protocol: false, build: true, host: null });
+  assert.equal(helloChange(a, { ...a, build: undefined }), null, "no build served (Vite): unknown");
+  assert.equal(helloChange({ ...a, build: undefined }, { ...a, build: "b2" }), null);
+  assert.deepEqual(helloChange(a, { id: "b", label: "Host B", protocol: "p1", build: "b1" }), {
+    protocol: false,
+    build: false,
+    host: { from: "Host A", to: "Host B" },
+  });
+  assert.equal(helloChange(a, { ...a, protocol: "p2" })!.protocol, true);
+});
+
+test("after a failover, the new host's own paths are local again", () => {
+  resetHosts();
+  noteHost(A, "b");
+  setMeshState({ enabled: true, self: { id: "a", label: "", hostname: "a" }, peers: [], sync: [], frontDoor: null });
+  assert.equal(hostOf(A), "b");
+  assert.equal(routeUrl(`/api/transcript?path=${q(A)}`), `/peer/b/api/transcript?path=${q(A)}`);
+  setMeshState({ enabled: true, self: { id: "b", label: "", hostname: "b" }, peers: [], sync: [], frontDoor: null });
+  assert.equal(hostOf(A), null, "b's session, and this page is now served by b");
+  assert.equal(routeUrl(`/api/transcript?path=${q(A)}`), `/api/transcript?path=${q(A)}`);
+  setMeshState(null);
 });

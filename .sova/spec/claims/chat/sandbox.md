@@ -120,6 +120,21 @@ so. It is not a choice in the UI. Under `workspace-write`:
   passed off as command output.
 - **Credentialed actions fail cleanly.** With no keys, agent socket or credentials visible,
   `git push` fails; the user pushes, or turns the sandbox off.
+- **On macOS** the same policy is enforced by Seatbelt, which filters operations but cannot
+  remap paths, so a few effects differ. Hidden paths are refused ("Operation not permitted")
+  rather than read as empty, and the Keychain files and the securityd services are always
+  denied, whatever the policy lists. There is no private `/tmp`: a literal `/tmp` is not
+  writable, for `bash` or the file tools, and `TMPDIR` points `bash` at the session tmp.
+  Shadowed caches are reached through the environment: the host `~/.cache`, `~/.npm` and `~/.m2`
+  are read-only, and `XDG_CACHE_HOME`, `npm_config_cache` and Maven's local repository point at
+  the private copies.
+  Protected paths and their ancestors cannot be renamed ("Operation not permitted"). The network
+  is denied except one loopback port, a host-side relay to the session's proxy, plus the
+  policy's `localPorts`; there is no DNS, nothing can listen on a TCP port, and Unix sockets work
+  only under the writable roots, so ssh-agent, Docker, launchd's and mDNSResponder's sockets and
+  every other host port, Sova's API included, are unreachable. Mach services are denied except a
+  short allowlist (user lookups, notifications, logging, certificate checks), so the pasteboard,
+  Apple events and the GUI do not work, and setuid programs (`sudo`, `ps`) cannot run.
 
 ## §chat.sandbox/fail-closed — Fail closed
 
@@ -149,7 +164,8 @@ is the workspace. `install.sh --check` reports drift from the template and never
   paths too. This holds even when the session's cwd contains the agent directory.
 - **Its `CLAUDE.md`** explains each key, says per-project files may only tighten, and opens by
   telling an agent that it cannot edit the policy from inside the sandbox by design and should
-  ask the user instead of working around it. The `darwin/` copy says no backend exists yet.
+  ask the user instead of working around it. The `darwin/` copy explains what Seatbelt enforces
+  differently on macOS (§chat.sandbox/what-on-enforces).
 
 ## §chat.sandbox/project-tightening — Per-project config only tightens
 
@@ -183,12 +199,13 @@ unavailable refuses to start.
 Any worker whose enforcement is `partial` refuses to start unattended unless the policy sets
 `acceptPartial`.
 
-## §chat.sandbox/backends — Platform-neutral, Linux only
+## §chat.sandbox/backends — Platform-neutral: Linux and macOS
 
 The sandbox is built on a platform-neutral backend interface (probe, confine) with one shared
-contract test suite that asserts real host-side effects. Only the Linux backend (bubblewrap) is
-implemented. On any other platform the probe refuses, so the tools refuse as above; there is
-never a passthrough. Remote sessions run their tools on the target, so the extension registers
+contract test suite that asserts real host-side effects. Two backends are implemented: Linux
+(bubblewrap) and macOS (Seatbelt, through `/usr/bin/sandbox-exec -f` with a profile file
+generated from the policy, never an inline profile). On any other platform the probe refuses, so
+the tools refuse as above; there is never a passthrough. Remote sessions run their tools on the target, so the extension registers
 no confined tools there: an on state is recorded with enforcement `none` and the reason "not
 enforced on remote", and reads "Sandbox on · not enforced on remote" (§chat.sandbox/toggle).
 
@@ -214,7 +231,10 @@ enforced on remote", and reads "Sandbox on · not enforced on remote" (§chat.sa
   command running at the same time could swap in a symlink between the two steps.
 - **Background processes end with the command.** Anything a `bash` call starts in the background
   dies when that call returns; long-running servers cannot be started from inside. Exposing a
-  host port inside (`localPorts`) is not implemented.
+  host port inside (`localPorts`) is implemented on macOS only.
 - **Kernel and bubblewrap bugs.** The boundary is as strong as user namespaces and bubblewrap on
-  this kernel.
+  this kernel. On macOS it is as strong as Seatbelt, whose profile language Apple does not
+  document and whose `sandbox-exec` it marks deprecated.
+- **macOS tools that ignore the environment.** A tool that writes a fixed temp or cache path
+  instead of honouring `TMPDIR` or the cache variables fails under the sandbox there.
 - **The user's own `!` commands** are not confined.

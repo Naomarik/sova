@@ -1363,6 +1363,7 @@
       "code": [
         "pi-config/extensions/sandbox/backend.ts",
         "pi-config/extensions/sandbox/backends/linux-bwrap.ts",
+        "pi-config/extensions/sandbox/backends/darwin-seatbelt.ts",
         "pi-config/extensions/sandbox/backends/unsupported.ts"
       ]
     },
@@ -1374,6 +1375,7 @@
       "code": [
         "pi-config/extensions/sandbox/backend.ts",
         "pi-config/extensions/sandbox/backends/linux-bwrap.ts",
+        "pi-config/extensions/sandbox/backends/darwin-seatbelt.ts",
         "pi-config/extensions/sandbox/backends/unsupported.ts",
         "pi-config/extensions/sandbox/index.ts",
         "pi-config/extensions/sandbox/tools.ts"
@@ -1385,7 +1387,8 @@
       "evidence": "verified",
       "code": [
         "pi-config/extensions/sandbox/tools.ts",
-        "pi-config/extensions/sandbox/backends/linux-bwrap.ts"
+        "pi-config/extensions/sandbox/backends/linux-bwrap.ts",
+        "pi-config/extensions/sandbox/backends/darwin-seatbelt.ts"
       ]
     },
     "§chat.sandbox/off-is-today": {
@@ -1406,6 +1409,7 @@
       "code": [
         "pi-config/extensions/sandbox/policy.ts",
         "pi-config/extensions/sandbox/backends/linux-bwrap.ts",
+        "pi-config/extensions/sandbox/backends/darwin-seatbelt.ts",
         "pi-config/extensions/sandbox/tools.ts",
         "pi-config/extensions/sandbox/index.ts",
         "pi-config/sandbox-policy/linux/policy.json",
@@ -1444,6 +1448,7 @@
       "code": [
         "pi-config/extensions/sandbox/backend.ts",
         "pi-config/extensions/sandbox/backends/linux-bwrap.ts",
+        "pi-config/extensions/sandbox/backends/darwin-seatbelt.ts",
         "pi-config/extensions/sandbox/policy.ts",
         "pi-config/extensions/sandbox/proxy.ts",
         "pi-config/extensions/sandbox/env.ts",

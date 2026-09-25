@@ -1919,7 +1919,8 @@
         "server/mesh/front-door.ts",
         "server/mesh/index.ts",
         "src/components/MeshView.tsx",
-        "server/mesh/front-door.test.ts"
+        "server/mesh/front-door.test.ts",
+        "shared/mesh-local.ts"
       ]
     },
     "§mesh.front-door/failover": {

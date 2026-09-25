@@ -289,6 +289,19 @@ export function SubagentPane(props: {
                         </>
                       )}
                     </Show>
+                    {/* The effort sits before the count: what the worker is thinking at is a
+                        fact about the worker, where the count beside it is a running total
+                        that changes under the reader. */}
+                    <Show when={w().effort}>
+                      {(e) => (
+                        <>
+                          <MetaSep />
+                          <span>
+                            effort <span class="text-mono">{e()}</span>
+                          </span>
+                        </>
+                      )}
+                    </Show>
                     <Show
                       when={watched() ?? workerUsage(w())}
                       fallback={
@@ -303,16 +316,6 @@ export function SubagentPane(props: {
                           <MetaSep />
                           <span class="text-mono" title={usageTitle(u())}>
                             {formatTokens(usageHeadline(u()))} tokens
-                          </span>
-                        </>
-                      )}
-                    </Show>
-                    <Show when={w().effort}>
-                      {(e) => (
-                        <>
-                          <MetaSep />
-                          <span>
-                            effort <span class="text-mono">{e()}</span>
                           </span>
                         </>
                       )}

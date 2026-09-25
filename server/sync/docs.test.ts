@@ -329,3 +329,29 @@ test("a theme deleted inside a themes folder that did not exist at start is stil
     a.sync.stop();
   }
 });
+
+test("a local delete first noticed by a peer's request still reaches every other peer at once", async () => {
+  // The lab's repro: b has themes off while a adds a theme (c takes it); a deletes it and b turns
+  // themes back on at once, so b's pull asks a for the document before a's own watcher scans.
+  const [a, b, c] = mesh(3);
+  for (const h of [a!, b!, c!]) await h.sync.start();
+  const until = async (cond: () => boolean) => {
+    const end = Date.now() + 3000;
+    while (!cond() && Date.now() < end) await new Promise((r) => setTimeout(r, 20));
+    return cond();
+  };
+  try {
+    b!.enabled.themes = false;
+    a!.write("sova/themes/toggle.json", theme("Toggle"));
+    a!.sync.observe();
+    await converge([a!, b!, c!]);
+    assert.equal(c!.read("sova/themes/toggle.json"), theme("Toggle"));
+    rmSync(join(a!.stateDir, "themes", "toggle.json"));
+    b!.enabled.themes = true;
+    // b pulls from a before a's watcher fires: a.doc() folds the delete into a's records.
+    await b!.sync.syncWith(b!.peerTo(a!));
+    assert.equal(await until(() => c!.read("sova/themes/toggle.json") === undefined), true, "c lost it without a reconcile");
+  } finally {
+    for (const h of [a!, b!, c!]) h.sync.stop();
+  }
+});

@@ -218,6 +218,7 @@ export class DocSync {
   private watchers: FSWatcher[] = [];
   private themesWatcher: FSWatcher | null = null;
   private debounce: NodeJS.Timeout | undefined;
+  private syncTimer: NodeJS.Timeout | undefined;
   private started = false;
   private firstRun = false;
   private loaded = false;
@@ -306,6 +307,8 @@ export class DocSync {
     for (const w of this.watchers.splice(0)) w.close();
     clearTimeout(this.debounce);
     this.debounce = undefined;
+    clearTimeout(this.syncTimer);
+    this.syncTimer = undefined;
   }
 
   private scheduleObserve(): void {
@@ -313,9 +316,23 @@ export class DocSync {
     clearTimeout(this.debounce);
     this.debounce = setTimeout(() => {
       this.debounce = undefined;
-      if (this.observe().length) void this.syncAll().catch((e) => this.log(`sync: ${(e as Error).message}`));
+      this.observe(); // a change it finds schedules the push
     }, this.opts.debounceMs ?? 500);
     this.debounce.unref?.();
+  }
+
+  /**
+   * Coalesce "a local change was recorded: tell every peer". Whatever path records it — our own
+   * watcher's scan, or a peer's request (`doc`, `apply`) that folded an unseen local edit in first
+   * — must push it: a record that is already up to date makes every later scan report no change.
+   */
+  private scheduleSync(): void {
+    if (!this.started || this.syncTimer) return;
+    this.syncTimer = setTimeout(() => {
+      this.syncTimer = undefined;
+      void this.syncAll().catch((e) => this.log(`sync: ${(e as Error).message}`));
+    }, this.opts.debounceMs ?? 500);
+    this.syncTimer.unref?.();
   }
 
   private loadSidecar(): void {
@@ -372,6 +389,7 @@ export class DocSync {
       if (hash === null) return false;
     }
     this.records[spec.key] = { hash, modifiedAt, origin: this.opts.hostId };
+    this.scheduleSync();
     return true;
   }
 
@@ -389,7 +407,7 @@ export class DocSync {
   doc(key: string): DocReply | null {
     const spec = this.specFor(key);
     if (!spec || !this.enabled(spec.category)) return null;
-    this.observeOne(spec);
+    if (this.observeOne(spec)) this.persist();
     const meta = this.records[key];
     const local = readLocal(spec);
     if (!meta || local.kind === "local-only") return null;
@@ -403,7 +421,7 @@ export class DocSync {
     if (!this.enabled(spec.category)) return "disabled";
     if (!isDocMeta(remote.meta)) return "invalid";
     if (readLocal(spec).kind === "local-only") return "local-only";
-    this.observeOne(spec);
+    if (this.observeOne(spec)) this.persist();
     const local = this.records[key];
     if (local && compareDocs(remote.meta, local) <= 0) return "older";
     if (remote.meta.hash !== null) {

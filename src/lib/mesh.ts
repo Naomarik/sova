@@ -141,6 +141,11 @@ export function routeUrl(url: string, body?: unknown): string {
 
 // ---- hash route ---------------------------------------------------------------------------------
 
+/** What the whole-pane session view is keyed on: its path, and the peer holding it (none: this
+    host). A host id holds no newline, so the first one ends it. Mesh off: the path decides alone. */
+export const sessionViewKey = (host: string | null, path: string): string => `${host ?? ""}\n${path}`;
+export const pathOfViewKey = (key: string): string => key.slice(key.indexOf("\n") + 1);
+
 /** `#/s/<path>?host=<id>`: a peer's session. A local one keeps `#/s/<path>`, exactly as before.
     The path is encoded, so the first `?` is always ours. */
 export function sessionHrefOn(host: string | null, path: string): string {
@@ -207,6 +212,21 @@ export function linkedSessionRow(
  * a list this page already had stands in when it sends none), marked down by the sidebar rather
  * than vanishing. A peer no longer in peers.json is dropped.
  */
+/**
+ * After a confirmed host change: the old host's sessions, as this tab last listed them, stand in as
+ * that peer's list until the peer answers, so they stay in the sidebar (marked down while it is)
+ * instead of vanishing. A list the peer already sent wins.
+ */
+export function seedPeerList(
+  lists: ReadonlyMap<string, SessionSummary[]>,
+  host: string,
+  rows: readonly SessionSummary[],
+): Map<string, SessionSummary[]> {
+  const next = new Map(lists);
+  if (!next.has(host)) next.set(host, peerRows(rows));
+  return next;
+}
+
 export function mergePeerLists(
   prev: ReadonlyMap<string, SessionSummary[]>,
   answer: MeshSessions,
@@ -275,6 +295,10 @@ export interface HelloBaseline {
   build?: string;
 }
 
+/** The stale-tab banner's words for another build. Different, not newer: after a failover the next
+    host may well run an older build than the one that served this tab. */
+export const STALE_BUILD_NOTE = "This host serves a different build of this page. Reload when you're ready.";
+
 /** How the host answering now differs from the one this tab was loaded from. */
 export interface HelloChange {
   /** Another wire contract: this tab can't be trusted to talk to it. */
@@ -307,6 +331,61 @@ export function firstBaseline(servedBy: { id: string; label: string } | null, he
 
 /** A host change counts once a second hello, at least this much later, answers from the same new host. */
 export const HOST_CONFIRM_MS = 1_000;
+/** While the mesh is on, how often the tab asks which host serves it: a host that vanished (killed,
+    cut off) leaves the open socket silent, so only this notices the front door moved the tab. */
+export const HELLO_POLL_MS = 5_000;
+
+/** How long after a host change the tab keeps re-reading GET /api/mesh with each hello. */
+export const MOVE_WATCH_MS = 60_000;
+
+/**
+ * After the front door moved this tab, the old host's state comes from the new host's GET /api/mesh,
+ * which the tab otherwise re-reads every 15 s: re-read it with each hello while the new host still
+ * calls the old one up (a host that vanished takes it a while to notice), for MOVE_WATCH_MS at most.
+ */
+export function watchMove(moved: { from: string; at: number } | null, now: number, peers: readonly PeerStatus[]): boolean {
+  if (!moved || now - moved.at > MOVE_WATCH_MS) return false;
+  const p = peers.find((x) => x.id === moved.from);
+  return !p || p.state === "up";
+}
+
+/** How long a mesh read (hello, peers, peer lists) may take while the mesh is on. A read in flight
+    when a host vanishes can ride the front door's kept connection to it and wait 35 s; giving up
+    frees the browser's connection, so the next read reaches the host now serving. */
+export const MESH_READ_TIMEOUT_MS = 4_000;
+
+/** The fetch options of a mesh read: a deadline with the mesh on; with it off, none (as before). */
+export function meshReadInit(on: boolean): RequestInit | undefined {
+  return on ? { signal: AbortSignal.timeout(MESH_READ_TIMEOUT_MS) } : undefined;
+}
+
+/** The stale-tab check, registered by the app: a view that saw a sign of a host change asks it now. */
+let hostCheck: (() => void) | null = null;
+export function setHostCheck(check: (() => void) | null): void {
+  hostCheck = check;
+}
+export function recheckHost(): void {
+  hostCheck?.();
+}
+
+/** The server's words for a transcript it doesn't hold (the chat socket's error before close 4404). */
+export const FILE_NOT_FOUND = "Session file not found";
+/** The same answer from a host whose sessions dir doesn't hold the path at all (another machine's
+    home, as on a real mesh): its chat socket refuses the path before looking for the file. */
+export const PATH_NOT_HERE = "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)";
+/** How long a "not found" that may be a host change waits before it is shown: the confirming
+    hello comes HOST_CONFIRM_MS after the first, and the view is replaced when it does. */
+export const HOST_MOVE_GRACE_MS = 3_000;
+
+/**
+ * A chat socket error that may only mean the front door moved this tab: with the mesh on, this
+ * host's own session (no peer holds it) answered "not found" (or, from a host whose sessions dir is
+ * elsewhere, "not a session path") on a connection that had opened before, which is what the next
+ * host says when the reconnect lands there. Anything else is shown at once, as before.
+ */
+export function mayBeHostMove(err: { code?: string; message: string }, reopened: boolean, local: boolean, on: boolean): boolean {
+  return on && reopened && local && err.code === "internal" && (err.message === FILE_NOT_FOUND || err.message === PATH_NOT_HERE);
+}
 
 /** A host change seen once and not yet confirmed: which host, and when it first answered. */
 export interface PendingHost {
@@ -332,6 +411,32 @@ export function helloStep(
   if (t - pending.at < HOST_CONFIRM_MS) return { change: null, pending };
   return { change, pending: null };
 }
+
+// ---- the front door's hosts: which are in, which the user left out ------------------------------
+
+/** The hosts the user left out of the front door, in host order (this host first), as rows for the
+    order editor: the front door's own order lists only the hosts that are in. */
+export function frontDoorLeftOut(
+  hosts: readonly { id: string; label: string }[],
+  exclude: readonly string[] | null | undefined,
+  inOrder: readonly string[],
+): { id: string; label: string }[] {
+  return hosts.filter((h) => exclude?.includes(h.id) && !inOrder.includes(h.id));
+}
+
+/** `exclude` with `id` put in (left out) or taken out (back in); null once nobody is left out. */
+export function withExclusion(exclude: readonly string[] | null | undefined, id: string, leaveOut: boolean): string[] | null {
+  const rest = (exclude ?? []).filter((x) => x !== id);
+  const next = leaveOut ? [...rest, id] : rest;
+  return next.length ? next : null;
+}
+
+/** The failover order to store: the hosts that are in, as arranged, then the ones left out, so a
+    host turned back on returns to the end instead of vanishing from the order. */
+export const orderKeepingLeftOut = (inOrder: readonly string[], leftOut: readonly string[]): string[] => [
+  ...inOrder,
+  ...leftOut.filter((id) => !inOrder.includes(id)),
+];
 
 /** `items` with the one at `from` moved to `to`; a copy unchanged when either is out of range. */
 export function moveItem<T>(items: readonly T[], from: number, to: number): T[] {

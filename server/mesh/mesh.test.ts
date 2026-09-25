@@ -11,6 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, describe, test } from "node:test";
 import { WebSocket, WebSocketServer } from "ws";
+import type { MeshLocalSettings } from "../../shared/mesh-local";
 import type { FrontDoorConfig, MeshCandidate, MeshHello, MeshInfo, MeshSessions, MeshSettings } from "../../shared/protocol";
 
 const tmp = mkdtempSync(join(tmpdir(), "sova-mesh-test-"));
@@ -818,6 +819,40 @@ describe("mesh ON", () => {
     assert.equal(fd.order[1]!.upstream, "https://b.lab:9443", "the peer's serveUrl survives a PUT that omits it");
     const [, cleared] = await putJson<MeshSettings>("/api/mesh/settings", { frontDoorOrder: null, serveUrl: null });
     assert.deepEqual([cleared.frontDoorOrder, cleared.serveUrl], [undefined, undefined]);
+  });
+
+  test("front door: a host can be left out (frontDoorExclude), validated, kept by a peers PUT, cleared by null or []", async () => {
+    await putJson("/api/mesh/peers", {
+      peers: [
+        { id: "b", label: "B", nodeId: "nB", name: "b.lab", url: `http://127.0.0.1:${fakePort}` },
+        { id: "phone", nodeId: "nP", name: "127.0.0.1", url: `http://127.0.0.1:${deadPort}` },
+      ],
+    });
+    const stored = () => (JSON.parse(readFileSync(peersFile(), "utf8")) as { frontDoorExclude?: string[] }).frontDoorExclude;
+    let [, fd] = await getJson<FrontDoorConfig>("/api/mesh/front-door");
+    const self = fd.order[0]!.id;
+    assert.deepEqual(fd.order.map((h) => h.id), [self, "b", "phone"], "absent: every host, as before");
+    assert.equal(stored(), undefined);
+    assert.equal((await putJson("/api/mesh/settings", { frontDoorExclude: ["nobody"] }))[0], 400);
+    assert.equal((await putJson("/api/mesh/settings", { frontDoorExclude: ["phone", "phone"] }))[0], 400);
+    assert.equal((await putJson("/api/mesh/settings", { frontDoorExclude: [self, "b", "phone"] }))[0], 400, "never every host");
+    const [s, settings] = await putJson<MeshLocalSettings>("/api/mesh/settings", { frontDoorExclude: ["phone"] });
+    assert.deepEqual([s, settings.frontDoorExclude, stored()], [200, ["phone"], ["phone"]]);
+    [, fd] = await getJson<FrontDoorConfig>("/api/mesh/front-door");
+    assert.deepEqual(fd.order.map((h) => h.id), [self, "b"]);
+    assert.doesNotMatch(fd.caddyfile, /@from_phone|127\.0\.0\.1:8443/);
+    await putJson("/api/mesh/peers", {
+      peers: [
+        { id: "b", label: "B", nodeId: "nB", name: "b.lab", url: `http://127.0.0.1:${fakePort}` },
+        { id: "phone", nodeId: "nP", name: "127.0.0.1", url: `http://127.0.0.1:${deadPort}` },
+      ],
+    });
+    assert.deepEqual(stored(), ["phone"], "a peers PUT keeps it");
+    let [, cleared] = await putJson<MeshLocalSettings>("/api/mesh/settings", { frontDoorExclude: [] });
+    assert.deepEqual([cleared.frontDoorExclude, stored()], [undefined, undefined]);
+    await putJson("/api/mesh/settings", { frontDoorExclude: ["b"] });
+    [, cleared] = await putJson<MeshLocalSettings>("/api/mesh/settings", { frontDoorExclude: null });
+    assert.deepEqual([cleared.frontDoorExclude, stored()], [undefined, undefined]);
   });
 
   test("login kinds: stored only as api-keys, null/all clear it, bad values 400; SOVA_SYNC_LOGIN_KINDS pins it", async () => {

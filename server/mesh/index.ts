@@ -13,12 +13,13 @@ import type {
   SyncCategory,
   SyncStatus,
 } from "../../shared/protocol";
+import type { MeshLocalSettings } from "../../shared/mesh-local";
 import { frontDoorConfig } from "./front-door";
 import { ownHello, probeHello, probePeer, peerLastSeen, PROBE_TIMEOUT_MS } from "./hello";
 import { type ListenerDeps, PeerListener } from "./listener";
 import { addressIdentity, identityMode } from "./address-identity";
 import { getIdentity, setIdentity, type TailnetStatus } from "./localapi";
-import { defaultSelfId, type PeerEntry, type PeersConfig, peerPort, peerUrl, peersFile, readPeers, SYNC_CATEGORIES, validatePeers, writePeers } from "./peers";
+import { defaultSelfId, nextLabelAt, type PeerEntry, type PeersConfig, peerPort, peerUrl, peersFile, readPeers, SYNC_CATEGORIES, validatePeers, writePeers } from "./peers";
 import { PROXIED_HEADER, peerSocketRoute, proxyTail, proxyPeer, upgradePeerSocket } from "./proxy";
 import { loginKindsPin } from "../sync/logins-merge";
 
@@ -59,6 +60,8 @@ const peerUpHooks: Array<(peerId: string) => void> = [];
 const settingsHooks: Array<(settings: MeshSettings) => void> = [];
 /** Whether each peer was last seen up (by a probe, or by its own call through the gate). */
 const upNow = new Map<string, boolean>();
+/** When each peer's last-seen state (up or not) began, as this server saw it. */
+const upSince = new Map<string, number>();
 
 function runHooks<A extends unknown[]>(hooks: Array<(...a: A) => void>, ...args: A): void {
   for (const h of hooks) {
@@ -73,6 +76,7 @@ function runHooks<A extends unknown[]>(hooks: Array<(...a: A) => void>, ...args:
 /** Record what was just learnt about a peer; a peer that was not up and now is fires onPeerUp. */
 function sawPeer(id: string, up: boolean): void {
   const was = upNow.get(id) ?? false;
+  if (upNow.get(id) !== up) upSince.set(id, Date.now());
   upNow.set(id, up);
   if (up && !was) runHooks(peerUpHooks, id);
 }
@@ -144,6 +148,7 @@ function apply(): void {
     rt.listener.close();
     rt.listener = null;
     upNow.clear();
+    upSince.clear();
     runHooks(stopHooks);
   }
 }
@@ -162,6 +167,7 @@ export function stopMesh(): void {
   rt.listener.close();
   rt.listener = null;
   upNow.clear();
+  upSince.clear();
   runHooks(stopHooks);
 }
 
@@ -192,7 +198,7 @@ function pinnedLoginKinds(): "all" | "api-keys" | null {
 }
 let warnedLoginKinds = false;
 
-export function readMeshSettings(config: PeersConfig | null = rt.config): MeshSettings {
+export function readMeshSettings(config: PeersConfig | null = rt.config): MeshLocalSettings {
   const c = config ?? emptyConfig();
   const pinned = pinnedLoginKinds();
   const loginKinds = pinned ?? c.loginKinds;
@@ -202,6 +208,7 @@ export function readMeshSettings(config: PeersConfig | null = rt.config): MeshSe
     sync,
     frontDoor: c.frontDoor,
     ...(c.frontDoorOrder ? { frontDoorOrder: c.frontDoorOrder } : {}),
+    ...(c.frontDoorExclude ? { frontDoorExclude: c.frontDoorExclude } : {}),
     ...(c.self.serveUrl ? { serveUrl: c.self.serveUrl } : {}),
     ...(loginKinds ? { loginKinds } : {}),
     ...(pinned ? { loginKindsPinned: true as const } : {}),
@@ -235,6 +242,23 @@ export function peerFetch(peerId: string, path: string, init?: RequestInit): Pro
   return fetch(`${peerUrl(peer)}${path}`, { ...init, headers });
 }
 
+/**
+ * Change peers.json: `change` gets the file as it is now and returns the next config (or why not);
+ * the result is validated, written atomically and reloaded. A malformed file is never overwritten.
+ */
+export function updatePeers(change: (config: PeersConfig) => PeersConfig | { error: string }): { config: PeersConfig } | { error: string; status: 400 | 409 } {
+  const base = baseForWrite();
+  if ("error" in base) return { error: base.error, status: 409 };
+  const next = change(base.config);
+  if ("error" in next) return { error: next.error, status: 400 };
+  if (next === base.config) return { config: base.config }; // nothing changed: no write
+  const v = validatePeers(next);
+  if ("error" in v) return { error: v.error, status: 400 };
+  writePeers(v.config);
+  reload();
+  return v;
+}
+
 /** The surface server/sync builds on (mountSync(app, meshApi)). */
 export const meshApi = {
   enabled: meshEnabled,
@@ -262,6 +286,24 @@ export const meshApi = {
     settingsHooks.push(fn);
   },
   onSyncStatus,
+  /** Each sync category's status now; empty while off or before server/sync registered. */
+  syncStatus: (): SyncStatus[] => (meshEnabled() && syncProvider ? syncProvider() : []),
+  /** This node as the listener learnt it (while on), and the addresses it listens on. */
+  selfNode: (): { nodeId?: string; dnsName?: string; addresses: string[] } => ({
+    ...(rt.self?.nodeId ? { nodeId: rt.self.nodeId } : {}),
+    ...(rt.self?.dnsName ? { dnsName: rt.self.dnsName } : {}),
+    addresses: rt.listener?.info().addresses ?? [],
+  }),
+  /** When a peer's current up/down state began (this server's view), or null. */
+  peerSince: (id: string): number | null => upSince.get(id) ?? null,
+  /** Record a peer's up/down state learnt elsewhere (the details route's own calls). */
+  sawPeer,
+  updatePeers,
+  /** The config as peers.json has it now (a hand edit is picked up with one stat). */
+  config: (): PeersConfig | null => {
+    reloadIfChanged();
+    return rt.config;
+  },
 };
 export type MeshApi = typeof meshApi;
 
@@ -414,6 +456,9 @@ async function putPeers(c: Context): Promise<Response> {
       dnsName = n.name || name;
     }
     const prior = base.config.peers.find((p) => p.id === e.id);
+    // Stamped when a node is first paired; kept across edits (matched by node, the id may change).
+    const known = base.config.peers.find((p) => p.nodeId === nodeId);
+    const pairedAt = known ? known.pairedAt : Date.now();
     peers.push({
       id: e.id,
       ...(e.label !== undefined ? { label: e.label } : prior ? { label: prior.label } : {}),
@@ -422,6 +467,10 @@ async function putPeers(c: Context): Promise<Response> {
       ...(e.url !== undefined ? { url: e.url } : prior?.url ? { url: prior.url } : {}),
       ...(e.priority !== undefined ? { priority: e.priority } : prior?.priority !== undefined ? { priority: prior.priority } : {}),
       ...(e.serveUrl !== undefined ? { serveUrl: e.serveUrl } : prior?.serveUrl ? { serveUrl: prior.serveUrl } : {}),
+      ...(pairedAt !== undefined ? { pairedAt } : {}),
+      // The stamp of the last name the peer gave itself, kept through a local edit: only a newer
+      // rename by that host replaces what the user typed here.
+      ...(known?.labelAt !== undefined ? { labelAt: known.labelAt } : {}),
     });
   }
   const v = validatePeers({ ...base.config, peers });
@@ -432,7 +481,7 @@ async function putPeers(c: Context): Promise<Response> {
 }
 
 async function putSettings(c: Context): Promise<Response> {
-  let body: Partial<MeshSettings>;
+  let body: Partial<MeshLocalSettings>;
   try {
     body = await c.req.json();
   } catch {
@@ -446,11 +495,19 @@ async function putSettings(c: Context): Promise<Response> {
     const unknown = Array.isArray(body.frontDoorOrder) ? body.frontDoorOrder.filter((id) => !hosts.has(id)) : [];
     if (unknown.length) return c.json({ error: `frontDoorOrder: not a host here: ${unknown.join(", ")}` }, 400);
   }
+  if (Array.isArray(body.frontDoorExclude) && body.frontDoorExclude.length) {
+    const hosts = [base.config.self.id, ...base.config.peers.map((p) => p.id)];
+    const unknown = body.frontDoorExclude.filter((id) => !hosts.includes(id));
+    if (unknown.length) return c.json({ error: `frontDoorExclude: not a host here: ${unknown.join(", ")}` }, 400);
+    if (hosts.every((id) => body.frontDoorExclude!.includes(id))) return c.json({ error: "frontDoorExclude: the front door needs at least one host" }, 400);
+  }
   const pinned = pinnedLoginKinds();
   if (body.loginKinds !== undefined && pinned && (body.loginKinds ?? "all") !== pinned) {
     return c.json({ error: "loginKinds is pinned by SOVA_SYNC_LOGIN_KINDS on this host" }, 409);
   }
   const self = { ...base.config.self };
+  // A new name is stamped (this host's clock), so peers take it (server/mesh/details.ts) and never an older one.
+  if (body.hostLabel !== undefined && body.hostLabel !== self.label) self.labelAt = nextLabelAt(self.labelAt);
   if (body.hostLabel !== undefined) self.label = body.hostLabel;
   if (body.serveUrl === null) delete self.serveUrl;
   else if (body.serveUrl !== undefined) self.serveUrl = body.serveUrl;
@@ -462,6 +519,8 @@ async function putSettings(c: Context): Promise<Response> {
   };
   if (body.frontDoorOrder === null) delete next.frontDoorOrder;
   else if (body.frontDoorOrder !== undefined) next.frontDoorOrder = body.frontDoorOrder;
+  if (body.frontDoorExclude === null) delete next.frontDoorExclude; // [] is dropped by validation too
+  else if (body.frontDoorExclude !== undefined) next.frontDoorExclude = body.frontDoorExclude;
   if (body.loginKinds !== undefined) next.loginKinds = body.loginKinds;
   const v = validatePeers(next);
   if ("error" in v) return c.json({ error: v.error }, 400);

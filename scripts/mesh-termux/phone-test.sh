@@ -8,9 +8,13 @@
 #   scripts/mesh-termux/phone-test.sh gate                 mesh on with a placeholder peer: non-peer tailnet node, the phone
 #                                                          itself and a Wi-Fi source are refused; back to mesh off
 #   scripts/mesh-termux/phone-test.sh check                health, listeners, exposure, runit restart after a kill
+#   scripts/mesh-termux/phone-test.sh deps                 every command the scripts and Sova run on the phone comes from
+#                                                          install.sh's WANT or Termux's bootstrap; apt-get -s resolves WANT
 #   scripts/mesh-termux/phone-test.sh uninstall [--keep-ssh]
 #   scripts/mesh-termux/phone-test.sh snapshot <name>      packages, files, services, processes → $OUT/<name>/
 #   scripts/mesh-termux/phone-test.sh diff <a> <b>         what changed between two snapshots
+#   scripts/mesh-termux/phone-test.sh dry-packages         no phone: install.sh's package block against a fake dpkg/apt;
+#                                                          a rerun must never record a package the user installed
 #   scripts/mesh-termux/phone-test.sh loop [args…]         snapshot pre, install, check, uninstall --keep-ssh, snapshot post,
 #                                                          diff pre post (must be empty), install again, check
 # Env: PHONE (ssh target, required), PHONE_PORT (8022), OUT (~/.cache/sova-mesh/termux-engineer/phone),
@@ -180,6 +184,57 @@ diffsnap() {
   [ $bad = 0 ] && echo "DIFF CLEAN: $1 == $2" || { echo "DIFF: $1 != $2"; return 1; }
 }
 
+# ---- dry: which packages an install run records as its own (no phone) ------------------------------------------------
+# install.sh's package block (its "# ---- packages" section; from $REV when set) against a fake dpkg/apt: a first install,
+# then the user installs a package of their own and removes tmux, then a rerun (it needs apt for tmux), then a rerun with
+# nothing missing. packages-added (what uninstall purges) must hold what the apt runs installed and never the user's package.
+dry_packages() {
+  local d; d=$(mktemp -d "$OUT/dry.XXXXXX")
+  mkdir -p "$d/prefix/bin" "$d/base/.install"
+  script "$HERE/install.sh" | sed -n '/^# ---- packages/,/^# ---- layout/p' > "$d/block.sh"
+  grep -q 'packages-added' "$d/block.sh" || { rm -rf "$d"; die "no package block in install.sh"; }
+  cat > "$d/run.sh" <<'EOS'
+set -eu
+export LC_ALL=C
+D=$1; PREFIX=$D/prefix; BASE=$D/base; M=$D/base/.install; SSH_KEY=''; STATUS=$D/status
+log() { printf '[dry] %s\n' "$*" >&2; }
+die() { log "error: $*"; exit 1; }
+node() { return 0; }
+# the fake dpkg database: "<package> <version>" lines; a package's commands are TOOLS' names for it
+add() { grep -q "^$1 " "$STATUS" || echo "$1 1.0" >> "$STATUS"; sort -o "$STATUS" "$STATUS"
+        for c in $(printf '%s\n' $TOOLS | awk -F: -v p="$1" '$2==p{print $1}'); do : > "$PREFIX/bin/$c"; chmod +x "$PREFIX/bin/$c"; done; }
+dpkg-query() {
+  if [ -n "${3:-}" ]; then grep -q "^$3 " "$STATUS" || return 1; printf 'ii '; return 0; fi
+  case "$2" in *Version*) awk '{print "ii  "$1" "$2}' "$STATUS" ;; *) awk '{print "ii  "$1}' "$STATUS" ;; esac
+}
+apt-get() {
+  case " $* " in *" update "*) return 0 ;; esac
+  local p; for p in "$@"; do case "$p" in -*|*::*|install) ;; *) add "$p"; [ "$p" != nodejs-lts ] || add c-ares ;; esac; done
+}
+. "$D/block.sh"
+EOS
+  local run="bash $d/run.sh $d" boot p rc=0
+  boot="apt dpkg bash curl gzip tar findutils procps diffutils coreutils termux-tools net-tools"
+  : > "$d/status"; for p in $boot; do echo "$p 1.0" >> "$d/status"; done; sort -o "$d/status" "$d/status"
+  # the bootstrap's commands
+  ( TOOLS=$(sed -n '/^TOOLS="/,/"$/p' "$d/block.sh" | tr -d '"' | sed 's/^TOOLS=//')
+    for t in $TOOLS; do case " $boot " in *" ${t#*:} "*) : > "$d/prefix/bin/${t%%:*}"; chmod +x "$d/prefix/bin/${t%%:*}" ;; esac; done )
+  $run 2>"$d/run1.log" || { cat "$d/run1.log" >&2; rm -rf "$d"; die "first install run failed"; }
+  echo "python 3.12" >> "$d/status"; sort -o "$d/status" "$d/status"                 # the user's own package
+  sed -i '/^tmux /d' "$d/status"; rm -f "$d/prefix/bin/tmux"                           # and tmux removed by the user
+  $run 2>"$d/run2.log" || { cat "$d/run2.log" >&2; rm -rf "$d"; die "rerun failed"; }
+  cp "$d/base/.install/packages-added" "$d/added2"
+  $run 2>"$d/run3.log" || { cat "$d/run3.log" >&2; rm -rf "$d"; die "second rerun failed"; }
+  log "packages-added: $(echo $(cat "$d/base/.install/packages-added"))"
+  grep -q 'packages:' "$d/run2.log" || { log "the rerun did not call apt"; rc=1; }
+  grep -q 'packages:' "$d/run3.log" && { log "the rerun with nothing missing called apt"; rc=1; }
+  for p in nodejs-lts c-ares ripgrep fd git tmux termux-services; do grep -qx "$p" "$d/base/.install/packages-added" || { log "missing from packages-added: $p"; rc=1; }; done
+  grep -qx python "$d/base/.install/packages-added" && { log "python (the user's) is in packages-added: a full uninstall would purge it"; rc=1; }
+  cmp -s "$d/added2" "$d/base/.install/packages-added" || { log "a rerun with nothing to install changed packages-added"; rc=1; }
+  rm -rf "$d"
+  [ $rc = 0 ] && echo "DRY PACKAGES PASS" || { echo "DRY PACKAGES FAIL"; return 1; }
+}
+
 # ---- full port scans (L2) --------------------------------------------------------------------------------------------
 # Every non-loopback address of the phone, from node's os.networkInterfaces() (the phone denies ifconfig/ip IPv6 to apps:
 # /proc/net/if_inet6 and netlink are EACCES). Without node (not installed) the last list saved in $OUT/addrs.txt is used.
@@ -191,8 +246,8 @@ addrs() {
   cat "$OUT/addrs.txt"
 }
 # a connect() to every port 1-65535 of every address, run ON the phone with explicit bash (/dev/tcp; no fork per port, so no
-# phantom-process pressure): 16 parallel chunks per address. bash's connect has no timeout, so each chunk writes the port it
-# is on and a watchdog (every 5 s) kills a chunk stuck on one port for >10 s, records "HANG <addr> <port>" and resumes the
+# phantom-process pressure): SCAN_PAR (default 4; 16 once coincided with Android killing Termux) parallel chunks per
+# address. bash's connect has no timeout, so each chunk writes the port it is on and a watchdog (every 5 s) kills a chunk stuck on one port for >10 s, records "HANG <addr> <port>" and resumes the
 # chunk after it. Detached on the phone (nohup; $PREFIX/tmp/sova-scan.*, removed at the end); this side polls every 10 s.
 # Positive control: the sshd this harness uses ($PHONE:$PHONE_PORT) must be in the result, else the scan is broken.
 scan() {
@@ -202,6 +257,7 @@ scan() {
   local script
   script=$(cat <<'EOS'
 W=$PREFIX/tmp/sova-scan.d; mkdir -p $W
+PAR=SCANPAR; SPAN=$(( (65535 + PAR - 1) / PAR ))
 chunk() { # addr lo hi id
   local p
   for ((p=$2; p<=$3; p++)); do echo $p > $W/pos.$4; { : 3<>/dev/tcp/$1/$p; } 2>/dev/null && echo "$1 $p" >> $W/open.$4; done
@@ -209,11 +265,11 @@ chunk() { # addr lo hi id
 }
 for a in ADDRS; do
   declare -A pid last same
-  for c in $(seq 0 15); do lo=$((c*4096+1)); hi=$((lo+4095)); [ $hi -gt 65535 ] && hi=65535; hi_[$c]=$hi
+  for c in $(seq 0 $((PAR-1))); do lo=$((c*SPAN+1)); hi=$((lo+SPAN-1)); [ $hi -gt 65535 ] && hi=65535; hi_[$c]=$hi
     chunk $a $lo $hi $c & pid[$c]=$!; last[$c]=''; same[$c]=0; done
   while :; do
     sleep 5; alive=0
-    for c in $(seq 0 15); do
+    for c in $(seq 0 $((PAR-1))); do
       kill -0 ${pid[$c]} 2>/dev/null || continue
       alive=1; p=$(cat $W/pos.$c 2>/dev/null)
       if [ "$p" = "${last[$c]}" ]; then same[$c]=$((same[$c]+1)); else same[$c]=0; last[$c]=$p; fi
@@ -242,14 +298,83 @@ rm -rf $W
 touch $PREFIX/tmp/sova-scan.done
 EOS
 )
+  local par=${SCAN_PAR:-4}; script=${script//SCANPAR/$par}
   printf '%s\n' "${script//ADDRS/$list}" | ph "cat > \$PREFIX/tmp/sova-scan.sh; rm -rf \$PREFIX/tmp/sova-scan.d \$PREFIX/tmp/sova-scan.res \$PREFIX/tmp/sova-scan.done; nohup bash \$PREFIX/tmp/sova-scan.sh > /dev/null 2>&1 < /dev/null &"
-  until ph 'test -e $PREFIX/tmp/sova-scan.done'; do
+  local down=0 rc
+  while :; do
+    rc=0; ph 'test -e $PREFIX/tmp/sova-scan.done' 2>/dev/null || rc=$?
+    [ $rc = 0 ] && break
+    # ssh itself failing (255) three polls in a row: the phone's sshd is gone, stop instead of retrying for 90 min
+    if [ $rc = 255 ]; then down=$((down+1)); [ $down -lt 3 ] || die "scan $name: ssh to the phone fails (sshd gone? Termux killed?)"; else down=0; fi
     sleep 10
     [ $((SECONDS - t0)) -lt 5400 ] || die "scan $name: not done within 90 min"
   done
   ph 'cat $PREFIX/tmp/sova-scan.res; rm -f $PREFIX/tmp/sova-scan.sh $PREFIX/tmp/sova-scan.res $PREFIX/tmp/sova-scan.done' > "$d/$name.txt"
   grep -qx "$PHONE $PHONE_PORT" "$d/$name.txt" || die "scan $name broken: the control (sshd $PHONE:$PHONE_PORT) is not in the result"
-  log "scan $name: $(grep -vcE '^(HANG|SELF)' "$d/$name.txt") open (address, port) pairs, $(grep -c '^ONCE' "$d/$name.txt") of them accepting once only, $(grep -c '^HANG' "$d/$name.txt") hung ports, $(grep -c '^SELF' "$d/$name.txt") self-connects (ephemeral range) set aside, $(echo $list | wc -w) addresses, $((SECONDS - t0)) s; control $PHONE:$PHONE_PORT open"
+  log "scan $name: $(grep -vcE '^(HANG|SELF)' "$d/$name.txt") open (address, port) pairs, $(grep -c '^ONCE' "$d/$name.txt") of them accepting once only, $(grep -c '^HANG' "$d/$name.txt") hung ports, $(grep -c '^SELF' "$d/$name.txt") self-connects (ephemeral range) set aside, $(echo $list | wc -w) addresses, $par parallel, $((SECONDS - t0)) s; control $PHONE:$PHONE_PORT open"
+}
+
+# ---- deps: every command the phone runs comes from WANT or Termux's bootstrap -----------------------------------------
+# What every Termux has from its first start: the packages (not libraries) of an older aarch64 bootstrap, all of them also
+# in the current one (termux-packages bootstrap-2026.09.20: that one adds gzip, bzip2, xz-utils, lsof, ... which an older
+# Termux lacks). Only the Essential ones can't be removed; any other command must be in install.sh's TOOLS.
+BOOTSTRAP="apt dpkg bash ca-certificates command-not-found coreutils curl dash debianutils diffutils dos2unix ed findutils gawk
+  gpgv grep inetutils less nano net-tools openssl patch procps psmisc readline sed tar termux-am termux-exec termux-keyring
+  termux-licenses termux-tools unzip util-linux"
+# what Sova and pi run at runtime (not visible in these scripts), and the commands phone-test itself runs on the phone
+RUNTIME="node corepack rg fd git tmux bash sh uname pgrep ps kill"
+PHONE_CMDS="bash node curl ifconfig dpkg-query apt-mark find ps awk sort stat md5sum timeout tr readlink seq grep sed cat head
+  tail wc rm mkdir nohup sleep touch test ls cut sv termux-wake-lock"
+# Words of these scripts that are never commands there (text in messages, options, file names)
+NOT_CMDS="install file service dir top time more test link join users script claude"  # claude: the ~/.claude dir name
+deps() {
+  local want tools words out bad=0
+  want=$(script "$HERE/install.sh" | sed -n 's/^WANT="\(.*\)"$/\1/p')
+  tools=$(script "$HERE/install.sh" | sed -n '/^TOOLS="/,/"$/p' | tr -d '"' | sed 's/^TOOLS=//' | tr ' ' '\n' | grep : || true)
+  [ -n "$want" ] && [ -n "$tools" ] || die "can't read WANT/TOOLS from install.sh"
+  want="$want openssh"   # install.sh adds it with --ssh-key, the only case its ssh/sshd lines run
+  # candidate command words: code only (comments dropped), then whatever of them is an executable on the phone
+  words=$( { script "$HERE/install.sh"; script "$HERE/uninstall.sh"; } | sed -E 's/(^|[[:space:]])#.*$//' \
+    | grep -oE '[a-zA-Z][a-zA-Z0-9_.+-]*' | sort -u | grep -vxF -f <(tr ' ' '\n' <<< "$NOT_CMDS") ; tr ' \n' '\n\n' <<< "$RUNTIME $PHONE_CMDS" | grep . )
+  words=$(sort -u <<< "$words")
+  out=$( { echo "WANT=\"$want\""; echo "BOOT=\"$(echo $BOOTSTRAP)\""; echo 'WORDS="'"$(echo $words)"'"'; cat <<'EOS'
+closure() { apt-cache depends --recurse --no-recommends --no-suggests --no-conflicts --no-breaks --no-replaces --no-enhances --no-pre-depends $1 2>/dev/null | grep -v '^ ' | grep -v '[<>]' | sort -u; }
+closure "$WANT" > $PREFIX/tmp/sova-deps.want
+closure "$BOOT" > $PREFIX/tmp/sova-deps.boot
+dpkg-query -W -f='${Package} ${Essential}\n' | awk '$2=="yes"{print $1}' > $PREFIX/tmp/sova-deps.ess
+for w in $WORDS; do
+  f=$PREFIX/bin/$w; [ -e "$f" ] || { echo "absent $w"; continue; }
+  o=$(dpkg -S "$(readlink -f "$f")" 2>/dev/null | head -1 | cut -d: -f1); [ -n "$o" ] || o=$(dpkg -S "$f" 2>/dev/null | head -1 | cut -d: -f1)
+  if grep -qxF "$o" $PREFIX/tmp/sova-deps.want; then k=want; elif grep -qxF "$o" $PREFIX/tmp/sova-deps.ess; then k=essential
+  elif grep -qxF "$o" $PREFIX/tmp/sova-deps.boot; then k=bootstrap; else k=OTHER; fi
+  echo "cmd $w ${o:-?} $k"
+done
+echo "sim $(apt-get install -s --reinstall --no-install-recommends $WANT 2>&1 | grep -c '^Reinst\|^Inst') of $(echo $WANT | wc -w)"
+for p in $WANT; do apt-cache policy $p | grep -q 'Candidate: [0-9]' && echo "candidate $p" || echo "nocandidate $p"; done
+rm -f $PREFIX/tmp/sova-deps.*
+EOS
+  } | ph 'bash -s' )
+  printf '%s\n' "$out" > "$OUT/deps.txt"
+  # every TOOLS command is in $PREFIX/bin (the service's PATH) once installed: not Android's /system/bin copy
+  if ph 'test -d ~/sova-mesh'; then
+    local c0; for c0 in $(cut -d: -f1 <<< "$tools"); do grep -q "^cmd $c0 " <<< "$out" || { log "TOOLS command $c0 is not in \$PREFIX/bin although Sova is installed"; bad=1; }; done
+  fi
+  # a command whose package is neither Essential nor brought by WANT (a non-essential bootstrap package a user can remove,
+  # one only newer bootstraps have, or one only this phone's user installed): install.sh must know its package (TOOLS)
+  local c o k
+  while read -r _ c o k; do
+    grep -qxF "$c:$o" <<< "$tools" || { log "$c ($o, $k) is not in install.sh's TOOLS: a fresh Termux may lack it"; bad=1; }
+  done < <(grep -E ' (bootstrap|OTHER)$' <<< "$out")
+  # TOOLS names the right package for every command that is on the phone
+  while IFS=: read -r c o; do
+    local real; real=$(grep "^cmd $c " <<< "$out" | awk '{print $3}' || true)
+    [ -z "$real" ] || [ "$real" = "$o" ] || { log "TOOLS says $c:$o, the phone says $real"; bad=1; }
+  done <<< "$tools"
+  if grep '^nocandidate' <<< "$out" >&2; then bad=1; fi
+  local sim; sim=$(sed -n 's/^sim //p' <<< "$out")
+  [ "${sim%% of*}" = "${sim##*of }" ] || { log "apt-get -s resolves $sim WANT packages"; bad=1; }
+  log "deps: $(grep -c '^cmd ' <<< "$out") commands on the phone ($(grep -c ' want$' <<< "$out") from WANT, $(grep -c ' essential$' <<< "$out") essential, $(grep -cE ' (bootstrap|OTHER)$' <<< "$out") via TOOLS), $(grep -c '^absent' <<< "$out") words not a command there; apt-get -s: $sim; WANT: $want"
+  [ $bad = 0 ] && echo "DEPS PASS" || { echo "DEPS FAIL"; return 1; }
 }
 
 # ---- pairing (only with PAIR_GO=1: coordinator-2's go) ---------------------------------------------------------
@@ -352,7 +477,7 @@ unpair() {
 }
 
 cmd=${1:-}; shift || true
-case "$cmd" in tarball|diff|"") ;; *) need PHONE ;; esac
+case "$cmd" in tarball|diff|dry-packages|"") ;; *) need PHONE ;; esac
 case "$cmd" in install-http) need LAPTOP_IP ;; pair|unpair) pairing_vars ;; esac
 case "$cmd" in
   tarball) tarball ;;
@@ -366,6 +491,7 @@ case "$cmd" in
   unpair) unpair ;;
   snapshot) snapshot "$@" ;;
   addrs) addrs ;;
+  deps) deps ;;
   placeholder) # on: mesh on with the gate's placeholder peer (listener on the tailnet IP); off: mesh off
     case "${1:-}" in
       on) [ "$(phone_put /api/mesh/peers '{"peers":[{"id":"gate-dummy","label":"gate dummy","nodeId":"nGATEDUMMY00CNTRL","name":"100.64.0.1","url":"http://100.64.0.1:4801"}]}')" = 200 ] || die "PUT placeholder" ;;
@@ -375,6 +501,7 @@ case "$cmd" in
   scan) scan "$@" ;;
   scandiff) d="$OUT/scan"; diff <(grep -v '^SELF' "$d/${1:?}.txt") <(grep -v '^SELF' "$d/${2:?}.txt") && echo "SCAN SAME: $1 == $2 (open + hung, self-connects in the ephemeral range excluded; they stay listed in the scan files)" || { echo "SCAN DIFFERS: $1 != $2"; exit 1; } ;;
   diff) diffsnap "$@" ;;
+  dry-packages) dry_packages ;;
   loop)
     # INSTALL=ssh (tarball of HEAD/REV over ssh, default) | github (the real one-liner); UNINSTALL=keep-ssh (default) | full.
     # A full uninstall releases the Termux wake lock, which this ssh loop needs: it is taken again right after, in the same

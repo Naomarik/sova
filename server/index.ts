@@ -16,7 +16,7 @@ import { markOwned } from "./write-guard";
 import { addWebSession } from "./web-sessions";
 import { draftForClient, setDraft } from "./drafts";
 import { decodeWorkers, getAgentsInsight, getSessionInsight, getUsageInsight, refreshUsageInsight } from "./insights";
-import { archiveSession, cleanupSessions, getSessionSummary, idOf, lastReplyAtOf, listCwds, listSessions } from "./sessions-index";
+import { archiveSession, cleanupSessions, getSessionSummary, idOf, lastReplyAtOf, listCwds, listSessionFiles, listSessions } from "./sessions-index";
 import { cleanSessionTitle, SESSION_TITLE_MAX, setSessionTitle } from "./session-titles";
 import { contextForBranch, normalizeEntries, readActiveBranch } from "./transcript";
 import { checkTmpImage, deleteAttachment, MAX_ATTACHMENT_BYTES, readTmpImage, saveUploadedImage, sessionAttachmentsDir, UploadError } from "./attachments";
@@ -45,6 +45,7 @@ import { parseSandboxBody } from "./sandbox-state";
 import { WORKER_ID_RE } from "./worker-resume";
 import { attachWebSockets, upgradeSovaSocket } from "./ws";
 import { meshApi, meshRoutes, startMesh, stopMesh } from "./mesh";
+import { mountDetails } from "./mesh/details";
 import { mountSync } from "./sync";
 import { markSeen } from "./seen";
 import {
@@ -860,7 +861,17 @@ app.get("/api/extensions", async (c) => c.json(await listExtensions()));
 // which falls through to the handlers below while no peer is configured.
 meshRoutes(app);
 // Host-to-host sync (server/sync/): routes under /api/peer/* and mesh hooks only; OFF, inert.
-mountSync(app, meshApi);
+const sync = mountSync(app, meshApi);
+// Per-host details and rename (server/mesh/details.ts): /api/mesh/details|label, /api/peer/*; OFF, 404.
+mountDetails(app, meshApi, {
+  sessions: async () => (await listSessionFiles()).length,
+  logins: () => {
+    // Read at call time: the sync runtime replaces it on every mesh start. Counts only.
+    const entries = sync.credentials?.status().entries;
+    if (!entries) return null;
+    return { count: entries.filter((e) => e.state === "live" || e.state === "expired").length, conflicts: entries.filter((e) => e.conflictWith?.length).length };
+  },
+});
 
 app.all("/api/*", (c) => c.json({ error: "Not found" }, 404));
 

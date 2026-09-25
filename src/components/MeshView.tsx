@@ -1,5 +1,5 @@
 import { createEffect, createResource, createSignal, For, onCleanup, Show } from "solid-js";
-import { ApiError, claimMeshLogin, fetchFrontDoor, fetchMesh, fetchMeshCandidates, fetchMeshLogins, putMeshPeers, putMeshSettings } from "../lib/api";
+import { ApiError, claimMeshLogin, fetchFrontDoor, fetchMesh, fetchMeshCandidates, fetchMeshLogins, getMeshSettings, putMeshPeers, putMeshSettings } from "../lib/api";
 import { copyText } from "../lib/ui-state";
 import { relativeTime } from "../lib/format";
 import {
@@ -13,14 +13,19 @@ import {
   loginConflicts,
   loginName,
   MESH_HREF,
+  meshOn,
   meshPeers,
   moveItem,
+  frontDoorLeftOut,
+  withExclusion,
+  orderKeepingLeftOut,
   PLACEHOLDER_HOST,
   serveUrlProblem,
   meshState,
   peerUnavailable,
   selfLabel,
   setMeshState,
+  STALE_BUILD_NOTE,
   type HelloChange,
   type MeshCandidate,
   type MeshLoginEntry,
@@ -35,6 +40,7 @@ import { openSettings } from "../lib/settings-nav";
 import { announce } from "../lib/ui-state";
 import { iso, InsightsPage } from "./InsightsPage";
 import { Banner, Chip, CopyButton, Icon } from "./ui";
+import { openMeshDetails, SYNC_LABEL } from "../lib/mesh-details";
 import "../mesh.css";
 
 /** While #/mesh is open the host list is re-read this often: status is what the page is for. */
@@ -51,13 +57,6 @@ export function PeerStateChip(props: { peer: PeerStatus }) {
     </Chip>
   );
 }
-
-export const SYNC_LABEL: Record<SyncCategory, string> = {
-  settings: "Settings",
-  themes: "Themes",
-  extensions: "Extensions",
-  logins: "Logins",
-};
 
 /** The card's one-line summary of the peers: a count, and the first host that needs attention. */
 function cardSummary(peers: PeerStatus[]): { chip: string; tone?: "success" | "warn"; line: string; problem: string | null } {
@@ -273,9 +272,17 @@ export function MeshView(props: { now: number; titleRef(el: HTMLHeadingElement):
       </Show>
 
       <section class="card mesh-card" aria-labelledby="mesh-hosts-title">
-        <h2 class="mesh-card-title" id="mesh-hosts-title">
-          Hosts
-        </h2>
+        <div class="mesh-card-head">
+          <h2 class="mesh-card-title" id="mesh-hosts-title">
+            Hosts
+          </h2>
+          <Show when={meshOn()}>
+            <button type="button" class="button button-sm" onClick={openMeshDetails}>
+              <Icon name="info" small />
+              Mesh Details
+            </button>
+          </Show>
+        </div>
         <ul class="list mesh-hosts">
           <li class="list-row mesh-host">
             <Icon name="terminal" small />
@@ -644,7 +651,7 @@ function LoginList(props: { tick: number; onConflicts(n: number): void }) {
 
 /**
  * The stale-tab banner: the host answering this tab is not the one that loaded it, or serves a
- * different Sova. A different protocol can't be worked around, so it has no Dismiss; a newer build
+ * different Sova. A different protocol can't be worked around, so it has no Dismiss; another build
  * or a new host is information, and the tab keeps working.
  */
 export function StaleTabBanner(props: { change: HelloChange; onDismiss(): void }) {
@@ -680,7 +687,7 @@ export function StaleTabBanner(props: { change: HelloChange; onDismiss(): void }
                   </>
                 )}
               </Show>
-              <Show when={c().build}>This host serves a newer build of this page. Reload when you're ready.</Show>
+              <Show when={c().build}>{STALE_BUILD_NOTE}</Show>
             </>
           }
           action={
@@ -742,6 +749,34 @@ function FrontDoorSection(props: { frontDoor: string | null }) {
   };
   const buttons = new Map<string, HTMLButtonElement>();
 
+  // Leaving a host out (one with no browser-facing address, e.g. a phone). Only with the mesh on:
+  // with this host alone there is nothing to leave out, and nothing new is read.
+  const [settings, { mutate: setSettings }] = createResource(() => (meshOn() ? { on: true } : false), getMeshSettings);
+  const leftOut = () => {
+    const st = meshState();
+    if (!st || !meshOn()) return [];
+    const hosts = [{ id: st.self.id, label: st.self.label || st.self.hostname }, ...meshPeers().map((p) => ({ id: p.id, label: p.label }))];
+    return frontDoorLeftOut(hosts, settings.latest?.frontDoorExclude, (config.latest?.order ?? []).map((h) => h.id));
+  };
+  const [includeError, setIncludeError] = createSignal<string | null>(null);
+  /** Put a host in or leave it out; false when the server refused (the switch goes back). */
+  const setIncluded = async (id: string, name: string, include: boolean): Promise<boolean> => {
+    if (saving()) return false;
+    setSaving(true);
+    setIncludeError(null);
+    try {
+      setSettings(await putMeshSettings({ frontDoorExclude: withExclusion(settings.latest?.frontDoorExclude, id, !include) }));
+      announce(include ? `${name} is back in the front door, last in the order.` : `${name} is left out of the front door.`);
+      await refetch();
+      return true;
+    } catch (err) {
+      setIncludeError((err as Error).message);
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const move = async (from: number, to: number) => {
     const c = config();
     if (!c || saving()) return;
@@ -752,7 +787,7 @@ function FrontDoorSection(props: { frontDoor: string | null }) {
     setSaving(true);
     setError(null);
     try {
-      await putMeshSettings({ frontDoorOrder: order.map((h) => h.id) });
+      await putMeshSettings({ frontDoorOrder: orderKeepingLeftOut(order.map((h) => h.id), leftOut().map((h) => h.id)) });
       announce(`${moved.label || moved.id} is now number ${to + 1} of ${order.length}.`);
       await refetch();
     } catch (err) {
@@ -790,6 +825,9 @@ function FrontDoorSection(props: { frontDoor: string | null }) {
       <Show when={error()}>
         {(msg) => <Banner tone="error" title="Couldn't save the order." body={`The previous order stands. ${msg()}`} />}
       </Show>
+      <Show when={includeError()}>
+        {(msg) => <Banner tone="error" title="Couldn't change which hosts are in." body={`Nothing changed. ${msg()}`} />}
+      </Show>
       <Show when={problems().placeholders.length > 0}>
         <Banner
           tone="warn"
@@ -813,6 +851,8 @@ function FrontDoorSection(props: { frontDoor: string | null }) {
                   const name = () => h.label || h.id;
                   const first = () => i() === 0;
                   const last = () => i() === c().order.length - 1;
+                  /** The front door needs one host: the last one in can't be left out. */
+                  const onlyIn = () => c().order.length === 1;
                   return (
                     <li class="list-row mesh-host">
                       <span class="mesh-order-n text-num" aria-hidden="true">
@@ -823,6 +863,11 @@ function FrontDoorSection(props: { frontDoor: string | null }) {
                         <p class="list-meta text-mono">{h.upstream}</p>
                         <Show when={h.upstream.includes(PLACEHOLDER_HOST)}>
                           <p class="mesh-host-warn">Placeholder: set this host's address.</p>
+                        </Show>
+                        <Show when={onlyIn() && leftOut().length > 0}>
+                          <p class="list-meta" id={`mesh-fd-only-${h.id}`}>
+                            The only host in. The front door needs at least one.
+                          </p>
                         </Show>
                         <Show when={editing()?.id === h.id}>
                           <form
@@ -911,11 +956,66 @@ function FrontDoorSection(props: { frontDoor: string | null }) {
                       >
                         <Icon name="chevron-down" />
                       </button>
+                      <Show when={meshOn()}>
+                        <label class="toggle toggle-switch mesh-fd-in">
+                          <input
+                            type="checkbox"
+                            checked
+                            disabled={saving() || onlyIn()}
+                            aria-label={`${name()} in the Front Door`}
+                            aria-describedby={onlyIn() && leftOut().length > 0 ? `mesh-fd-only-${h.id}` : undefined}
+                            onChange={(e) => {
+                              const el = e.currentTarget;
+                              void setIncluded(h.id, name(), false).then((ok) => ok || (el.checked = true));
+                            }}
+                          />
+                          <span class="mesh-fd-in-word" aria-hidden="true">
+                            In
+                          </span>
+                          <span class="toggle-box" />
+                        </label>
+                      </Show>
                     </li>
                   );
                 }}
               </For>
             </ol>
+            <Show when={leftOut().length > 0}>
+              <ul class="list mesh-order" aria-label="Left out of the front door">
+                <For each={leftOut()}>
+                  {(h) => {
+                    const name = () => h.label || h.id;
+                    return (
+                      <li class="list-row mesh-host mesh-host-out">
+                        <span class="mesh-order-n text-num" aria-hidden="true">
+                          –
+                        </span>
+                        <div class="list-main">
+                          <p class="list-title">{name()}</p>
+                          <p class="list-meta">Left out. The front door never sends you here.</p>
+                        </div>
+                        <label class="toggle toggle-switch mesh-fd-in">
+                          <input
+                            type="checkbox"
+                            checked={false}
+                            disabled={saving()}
+                            aria-label={`${name()} in the Front Door`}
+                            onChange={(e) => {
+                              const el = e.currentTarget;
+                              void setIncluded(h.id, name(), true).then((ok) => ok || (el.checked = false));
+                            }}
+                          />
+                          <span class="mesh-fd-in-word" aria-hidden="true">
+                            In
+                          </span>
+                          <span class="toggle-box" />
+                        </label>
+                      </li>
+                    );
+                  }}
+                </For>
+              </ul>
+            </Show>
             <div class="mesh-code-head">
               <h3 class="mesh-add-title">Caddyfile</h3>
               <CopyButton label="Copy Caddyfile" text={() => c().caddyfile} onCopy={(t) => copyText(t, "Copied the Caddyfile.")} />

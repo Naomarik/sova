@@ -19,8 +19,8 @@
 #                          runit sshd service (unless an sshd already runs). `uninstall.sh --keep-ssh` keeps these.
 #
 # What it adds, all recorded in ~/sova-mesh/.install so uninstall.sh removes exactly that:
-#   packages nodejs-lts fd tmux termux-services (+ their new dependencies; pnpm comes from node's corepack, pinned by
-#   package.json), ~/sova-mesh (app, agent dir, isolated HOME, TMPDIR, env), the runit service sova-mesh,
+#   packages nodejs-lts ripgrep fd git tmux termux-services, plus the package of any other command it or Sova runs that
+#   is missing (+ their new dependencies; pnpm comes from node's corepack, pinned by package.json), ~/sova-mesh (app, agent dir, isolated HOME, TMPDIR, env), the runit service sova-mesh,
 #   ~/.termux/boot/sova-mesh (used by Termux:Boot), and a Termux wake lock.
 # It never touches /sdcard, never binds 0.0.0.0, never prints a secret, and writes nothing outside $HOME and $PREFIX.
 set -eu
@@ -64,7 +64,11 @@ done
 case "$PREFIX" in /data/data/com.termux/files/usr) ;; *) die "unexpected \$PREFIX $PREFIX (Termux's is /data/data/com.termux/files/usr)" ;; esac
 case "$HOME" in /data/data/com.termux/files/home*) ;; *) die "\$HOME must be Termux's home (never /sdcard): $HOME" ;; esac
 [ "$(id -u)" != 0 ] || die "do not run as root"
-command -v termux-wake-lock >/dev/null || die "termux-wake-lock is missing (package termux-tools)"
+# what this script runs before apt can install anything (Termux's essential packages: a normal Termux has them all)
+for t in dpkg-query:dpkg apt-get:apt uname:coreutils id:coreutils cut:coreutils sort:coreutils head:coreutils comm:coreutils \
+         join:coreutils awk:gawk grep:grep sed:sed termux-wake-lock:termux-tools; do
+  [ -x "$PREFIX/bin/${t%%:*}" ] || die "${t%%:*} is missing (package ${t#*:}): run 'pkg install ${t#*:}' and rerun"
+done
 case "$PORT$PEER_PORT" in *[!0-9]*) die "ports must be numbers" ;; esac
 [ "$PORT" != "$PEER_PORT" ] || die "--port and --peer-port must differ"
 
@@ -84,6 +88,7 @@ tailnet_ipv4() {
   [ "$b" -ge 64 ] && [ "$b" -le 127 ]
 }
 if [ -z "$TAILNET_IP" ]; then
+  [ -x "$PREFIX/bin/ifconfig" ] || die "ifconfig is missing (package net-tools): run 'pkg install net-tools' and rerun, or pass --tailnet-ip 100.x.y.z"
   TAILNET_IP=$(ifconfig 2>/dev/null | awk '/^[a-z]/{i=$1} i~/^tun/ && $1=="inet"{print $2}' | while read -r a; do tailnet_ipv4 "$a" && echo "$a"; done | head -1)
   [ -n "$TAILNET_IP" ] || die "no Tailscale address found on tun*: open the Tailscale app, connect, keep Termux out of its excluded apps, rerun (or pass --tailnet-ip 100.x.y.z)"
 fi
@@ -93,11 +98,26 @@ log "tailnet IP: $TAILNET_IP (peer listener), main listener 127.0.0.1:$PORT"
 # ---- packages --------------------------------------------------------------------------------------
 installed() { dpkg-query -W -f='${db:Status-Abbrev} ${Package}\n' 2>/dev/null | awk '$1=="ii"{print $2}' | sort; }
 versions() { dpkg-query -W -f='${db:Status-Abbrev} ${Package} ${Version}\n' 2>/dev/null | awk '$1=="ii"{print $2" "$3}' | sort; }
-[ -f "$M/packages-before" ] || installed > "$M/packages-before"   # the state before the FIRST install, kept forever
-WANT="nodejs-lts fd tmux termux-services"
+# the packages before the FIRST install (for the record: what counts as added is decided per apt run, below)
+[ -f "$M/packages-before" ] || installed > "$M/packages-before"
+# Beyond Termux's bootstrap (termux-packages scripts/generate-bootstraps.sh), Sova needs these: node, rg and fd (pi's
+# grep/find tools and Sova's own file tools), git (worktrees, diffs, the source's commit id), tmux, runit + service-daemon.
+WANT="nodejs-lts ripgrep fd git tmux termux-services"
 [ -z "$SSH_KEY" ] || WANT="$WANT openssh"
+# Every command install.sh, the service, the boot script, uninstall.sh and Sova's runtime call, with its package. Those
+# outside WANT come with Termux's bootstrap; one that is missing anyway (a user removed it) is installed with the rest.
+# Looked up in $PREFIX/bin, the service's whole PATH: Android's /system/bin toybox copies (gzip) don't count.
+TOOLS="node:nodejs-lts corepack:nodejs-lts rg:ripgrep fd:fd git:git tmux:tmux sv:runit runsv:runit svlogd:runit
+  service-daemon:termux-services bash:bash curl:curl gzip:gzip tar:tar find:findutils xargs:findutils pgrep:procps
+  ps:procps cmp:diffutils sha256sum:coreutils nice:coreutils env:coreutils termux-wake-unlock:termux-tools
+  ifconfig:net-tools"
+[ -z "$SSH_KEY" ] || TOOLS="$TOOLS sshd:openssh"
 missing=''
 for p in $WANT; do dpkg-query -W -f='${db:Status-Abbrev}' "$p" 2>/dev/null | grep -q '^ii' || missing="$missing $p"; done
+for t in $TOOLS; do
+  [ -x "$PREFIX/bin/${t%%:*}" ] && continue
+  case " $missing " in *" ${t#*:} "*) ;; *) missing="$missing ${t#*:}" ;; esac
+done
 if [ -n "$missing" ]; then
   log "packages:$missing"
   mkdir -p "$BASE/dl/apt/partial"
@@ -110,22 +130,24 @@ if [ -n "$missing" ]; then
   # shellcheck disable=SC2086
   apt-get $APT install -y -qq --no-install-recommends $missing >&2 || die "apt-get install$missing failed"
   versions > "$M/.versions-post"
-  installed | comm -13 "$M/packages-before" - > "$M/.new"
+  # added = what THIS apt run newly installed (never a package the user installed since an earlier run)
+  cut -d' ' -f1 "$M/.versions-pre" > "$M/.pre"
+  cut -d' ' -f1 "$M/.versions-post" | comm -13 "$M/.pre" - > "$M/.new"
   cat "$M/.new" "$M/packages-added" 2>/dev/null | sort -u > "$M/.added" && mv "$M/.added" "$M/packages-added"
   # packages that existed and were upgraded as a dependency: reported, never rolled back
   join "$M/.versions-pre" "$M/.versions-post" | awk '$2!=$3' >> "$M/packages-upgraded" || true
-  rm -f "$M/.new" "$M/.versions-pre" "$M/.versions-post"
+  rm -f "$M/.new" "$M/.pre" "$M/.versions-pre" "$M/.versions-post"
   rm -rf "$BASE/dl/apt"
 fi
 touch "$M/packages-added"
 log "packages added by this installer: $(wc -l < "$M/packages-added" | tr -d ' ')"
 node -e 'const [a,b]=process.versions.node.split(".").map(Number);process.exit(a>22||(a===22&&b>=19)?0:1)' \
   || die "node $(node -v) is older than Sova's >=22.19"
-for t in rg fd git curl; do command -v $t >/dev/null || die "$t is missing"; done
+for t in $TOOLS; do [ -x "$PREFIX/bin/${t%%:*}" ] || die "${t%%:*} is missing after installing its package ${t#*:}"; done
 
 # ---- layout ----------------------------------------------------------------------------------------
-mkdir -p "$BASE/home" "$BASE/tmp" "$BASE/agent" "$BASE/dl" "$BASE/bin"
-chmod 700 "$BASE/home" "$BASE/tmp" "$BASE/agent"
+mkdir -p "$BASE/home" "$BASE/tmp" "$BASE/agent" "$BASE/dl" "$BASE/bin" "$BASE/home/.claude"
+chmod 700 "$BASE/home" "$BASE/tmp" "$BASE/agent" "$BASE/home/.claude"
 RUN_ENV="HOME=$BASE/home TMPDIR=$BASE/tmp COREPACK_HOME=$BASE/home/.cache/corepack COREPACK_ENABLE_DOWNLOAD_PROMPT=0 CI=1"
 # pnpm through node's corepack (Termux has no pnpm package), cached inside ~/sova-mesh. Not the 12.x package.json
 # pins: pnpm 12 is a native binary whose store lock fails on Android ("lock_shared() not supported"). pnpm 11 (plain
@@ -190,6 +212,9 @@ fi
   [ -z "$NODE_ID" ] || echo "SOVA_SELF_NODE_ID=$NODE_ID"
   [ -z "$DNS_NAME" ] || echo "SOVA_SELF_DNS=$DNS_NAME"
   echo "PI_CODING_AGENT_DIR=$BASE/agent"
+  # Claude Code's store for login sync (the Claude Code login syncs like every other): Sova syncs it only when told
+  # where, since its agent dir is not the default one; Claude Code's own place under this HOME
+  echo "SOVA_SYNC_CLAUDE_DIR=$BASE/home/.claude"
   echo "HOME=$BASE/home"
   echo "TMPDIR=$BASE/tmp"
   echo "PATH=$PREFIX/bin"

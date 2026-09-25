@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import type { PeerStatus, SessionSummary } from "../../shared/protocol";
 import {
@@ -7,6 +8,22 @@ import {
   mergePeerLists,
   joinHostLists,
   linkedSessionRow,
+  seedPeerList,
+  watchMove,
+  frontDoorLeftOut,
+  withExclusion,
+  orderKeepingLeftOut,
+  meshReadInit,
+  MESH_READ_TIMEOUT_MS,
+  MOVE_WATCH_MS,
+  sessionViewKey,
+  pathOfViewKey,
+  mayBeHostMove,
+  recheckHost,
+  setHostCheck,
+  FILE_NOT_FOUND,
+  PATH_NOT_HERE,
+  STALE_BUILD_NOTE,
   noteHost,
   notePeerSessions,
   pathsNamed,
@@ -305,4 +322,94 @@ test("a sova://s/ link to a peer's session finds the peer's row, and waits for t
   // Mesh off: this host's list alone, exactly as before.
   assert.equal(linkedSessionRow("m1", [mine], new Map(), true), mine);
   assert.equal(linkedSessionRow("v1", [mine], new Map(), true), null);
+});
+
+test("after a host change the old host's sessions stay listed as that peer's, until the peer's own list wins", () => {
+  const row = (path: string, groupId?: string) => ({ path, groupId }) as SessionSummary;
+  const seeded = seedPeerList(new Map(), "a", [row("/a/1.jsonl", "g1"), row("/a/2.jsonl")]);
+  assert.deepEqual([...seeded.keys()], ["a"]);
+  assert.deepEqual(seeded.get("a")!.map((s) => [s.path, s.groupId]), [["/a/1.jsonl", undefined], ["/a/2.jsonl", undefined]], "groups never cross hosts");
+  const sent = new Map([["a", [row("/a/3.jsonl")]]]);
+  assert.deepEqual(seedPeerList(sent, "a", [row("/a/1.jsonl")]).get("a")!.map((s) => s.path), ["/a/3.jsonl"], "a list the peer sent wins");
+  // A down peer keeps the seeded rows through the next merge.
+  const merged = mergePeerLists(seeded, { peers: [{ id: "a", label: "", state: "down" }] }, [{ id: "a" } as PeerStatus]);
+  assert.equal(merged.get("a")!.length, 2);
+});
+
+test("a reconnect's 'not found' is held as a possible host change only with the mesh on, for this host's own session", () => {
+  const nf = { code: "internal", message: FILE_NOT_FOUND };
+  assert.equal(mayBeHostMove(nf, true, true, true), true);
+  assert.equal(mayBeHostMove(nf, true, true, false), false, "mesh off: shown at once, as before");
+  assert.equal(mayBeHostMove(nf, false, true, true), false, "the first connection: the file was never there");
+  assert.equal(mayBeHostMove(nf, true, false, true), false, "a peer's session doesn't move with the front door");
+  assert.equal(mayBeHostMove({ code: "internal", message: "boom" }, true, true, true), false);
+  assert.equal(mayBeHostMove({ code: "config", message: FILE_NOT_FOUND }, true, true, true), false);
+  // The next host keeps its sessions elsewhere (another machine's home): it refuses the path itself.
+  const away = { code: "internal", message: PATH_NOT_HERE };
+  assert.equal(mayBeHostMove(away, true, true, true), true, "a host with another sessions dir");
+  assert.equal(mayBeHostMove(away, true, true, false), false, "mesh off: shown at once, as before");
+  assert.equal(mayBeHostMove(away, false, true, true), false, "the first connection: a bad path is a bad path");
+  assert.equal(mayBeHostMove(away, true, false, true), false);
+  // Both are the server's own words (server/ws.ts): a reworded server must reword these too.
+  const ws = readFileSync(new URL("../../server/ws.ts", import.meta.url), "utf8");
+  assert.ok(ws.includes(JSON.stringify(FILE_NOT_FOUND)) && ws.includes(JSON.stringify(PATH_NOT_HERE)), "server/ws.ts says both");
+  let asked = 0;
+  recheckHost(); // nothing registered: a no-op
+  setHostCheck(() => asked++);
+  recheckHost();
+  setHostCheck(null);
+  recheckHost();
+  assert.equal(asked, 1);
+});
+
+test("after a host change the old host's state is re-read quickly until the new host calls it down, for a bounded time", () => {
+  const peer = (state: PeerStatus["state"]) => [{ id: "a", state } as PeerStatus];
+  const moved = { from: "a", at: 1_000 };
+  assert.equal(watchMove(null, 2_000, peer("up")), false, "no host change: the 15 s poll alone");
+  assert.equal(watchMove(moved, 2_000, peer("up")), true, "the new host still calls it up");
+  assert.equal(watchMove(moved, 2_000, []), true, "not in the new host's state yet");
+  assert.equal(watchMove(moved, 2_000, peer("down")), false, "called down: done");
+  assert.equal(watchMove(moved, 1_000 + MOVE_WATCH_MS + 1, peer("up")), false, "a flap that never went down stops after the window");
+});
+
+test("the session view is keyed on its host too, and the path comes back out whole", () => {
+  const p = "/s/odd\nname.jsonl";
+  assert.notEqual(sessionViewKey("a", p), sessionViewKey(null, p), "handed to a peer: a new view");
+  assert.equal(sessionViewKey(null, p), sessionViewKey(null, p));
+  assert.equal(pathOfViewKey(sessionViewKey("a", p)), p);
+  assert.equal(pathOfViewKey(sessionViewKey(null, p)), p);
+});
+
+test("mesh reads carry a deadline only while the mesh is on; off, the request is as before", async () => {
+  assert.equal(meshReadInit(false), undefined, "mesh off: no options at all");
+  const init = meshReadInit(true)!;
+  assert.ok(init.signal instanceof AbortSignal);
+  assert.equal(init.signal!.aborted, false);
+  assert.equal(MESH_READ_TIMEOUT_MS, 4_000);
+  // The deadline really fires: a fresh one, observed past its time (short-circuited with a fake clock would test nothing).
+  const fired = await new Promise<boolean>((resolve) => {
+    init.signal!.addEventListener("abort", () => resolve(true));
+    setTimeout(() => resolve(false), MESH_READ_TIMEOUT_MS + 500);
+  });
+  assert.equal(fired, true);
+});
+
+test("the front door's left-out hosts stay listed, and a switch puts one in or leaves it out", () => {
+  const hosts = [{ id: "a", label: "A" }, { id: "b", label: "B" }, { id: "phone", label: "Phone" }];
+  assert.deepEqual(frontDoorLeftOut(hosts, undefined, ["a", "b", "phone"]), [], "absent: every host is in");
+  assert.deepEqual(frontDoorLeftOut(hosts, ["phone", "a"], ["b"]).map((h) => h.id), ["a", "phone"], "host order, this host first");
+  assert.deepEqual(frontDoorLeftOut(hosts, ["gone"], ["a", "b", "phone"]), [], "an id that is no host lists nothing");
+  assert.deepEqual(frontDoorLeftOut(hosts, ["a", "b", "phone"], ["a", "b", "phone"]), [], "a file leaving out all: the front door keeps them, so none shows out");
+  assert.deepEqual(withExclusion(null, "phone", true), ["phone"]);
+  assert.deepEqual(withExclusion(["phone"], "a", true), ["phone", "a"]);
+  assert.deepEqual(withExclusion(["phone", "a"], "a", true), ["phone", "a"], "no duplicate");
+  assert.equal(withExclusion(["phone"], "phone", false), null, "nobody left out: cleared");
+  assert.deepEqual(withExclusion(["phone", "a"], "phone", false), ["a"]);
+  assert.deepEqual(orderKeepingLeftOut(["b", "a"], ["phone"]), ["b", "a", "phone"], "a left-out host keeps a place at the end");
+  assert.deepEqual(orderKeepingLeftOut(["b", "a"], ["a"]), ["b", "a"]);
+});
+
+test("the stale-tab banner calls another build different, never newer: the next host may run an older one", () => {
+  assert.match(STALE_BUILD_NOTE, /a different build of this page/);
+  assert.doesNotMatch(STALE_BUILD_NOTE, /newer|older/);
 });

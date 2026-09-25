@@ -112,7 +112,8 @@ export async function captureScreens(browser, base, f, dir) {
         // The sidebar's host filter must not exist while the mesh is off. Counted only together
         // with the sidebar's search box, so "absent" cannot come from a sidebar that never rendered.
         const hostFilter = await page.evaluate(() => ({
-          filter: document.querySelectorAll('.host-filter, [role="radiogroup"][aria-label="Host"]').length,
+          // the chips' row (until 7c01041), the host menu that replaced it, and its Mesh details dialog
+          filter: document.querySelectorAll('.host-filter, [role="radiogroup"][aria-label="Host"], .host-menu, .mesh-details').length,
           sidebar: document.querySelectorAll('input[type="search"], [role="searchbox"], input[placeholder*="Search" i]').length,
         }));
         const meshUi = await page.evaluate(() => {
@@ -155,6 +156,25 @@ export async function captureScreens(browser, base, f, dir) {
       } finally {
         await page.close();
       }
+    }
+    // The Mesh page (#/mesh) with the mesh off: its Hosts list renders, but no "Mesh Details" button,
+    // host menu or details dialog. Not compared with the baseline (master has no #/mesh); "Hosts"
+    // proves the page rendered, so "no button" can't come from a page that never loaded.
+    const page = await context.newPage();
+    try {
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await page.goto(`${base}/#/mesh`, { waitUntil: "load" });
+      await page.waitForTimeout(2500);
+      await page.waitForLoadState("networkidle", { timeout: 5000 }).catch(() => {});
+      shots._meshPage = await page.evaluate(() => ({
+        hostsHeading: [...document.querySelectorAll("h2")].filter((h) => h.textContent.trim() === "Hosts").length,
+        detailsButtons: [...document.querySelectorAll("button")].filter((b) => /mesh details/i.test(b.textContent)).length,
+        meshOnUi: document.querySelectorAll(".host-menu, .mesh-details").length,
+      }));
+    } catch (err) {
+      shots._meshPage = { error: String(err?.message ?? err) };
+    } finally {
+      await page.close();
     }
   } finally {
     await context.close();

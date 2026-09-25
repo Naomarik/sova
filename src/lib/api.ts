@@ -46,8 +46,9 @@ import type {
   MeshLogins,
   MeshPeerEntry,
   MeshSessions,
-  MeshSettings,
 } from "../../shared/protocol";
+import type { MeshLocalSettings } from "../../shared/mesh-local";
+import type { HostRename, HostRenameResult, MeshDetails } from "../../shared/mesh-details";
 import { type CleanupRequest, type CleanupResult, parseCleanupResult } from "./archive";
 import type { ModelPolicy } from "./model-policy";
 import type {
@@ -63,7 +64,7 @@ import type {
 } from "../../shared/protocol";
 import type { TargetInfo } from "./remote-session";
 import type { DecisionKeyInfo, DecisionProbeResult, DecisionSaveResult, DecisionSettings, DecisionSettingsInfo, TagsBackfillProgress, TagsBackfillScope } from "../../shared/protocol";
-import { hostOf, hostUrl, noteHost, peerBase, routeUrl } from "./mesh";
+import { hostOf, hostUrl, meshReadInit, noteHost, peerBase, routeUrl } from "./mesh";
 
 /**
  * What a batch send can come back as. The refusal is a VALUE, not a throw: it is the route's
@@ -690,10 +691,11 @@ export const RECENT_WRITE_WINDOW_MS = 120_000;
 // ---- the peer mesh (lib/mesh.ts) ----------------------------------------------------------------
 
 /** This host, its peers and what syncs. Answers from local state only: no peer is asked. */
-export const fetchMesh = () => request<MeshInfo>("/api/mesh");
+/** `init`: the poll's deadline while the mesh is on (lib/mesh `meshReadInit`); none otherwise. */
+export const fetchMesh = (init?: RequestInit) => request<MeshInfo>("/api/mesh", init);
 
 /** This host's own hello: its version and wire-contract fingerprint. */
-export const fetchMeshHello = () => request<MeshHello>("/api/mesh/hello");
+export const fetchMeshHello = () => request<MeshHello>("/api/mesh/hello", meshReadInit(true));
 
 /** Replace peers.json's list; the answer is the mesh as it stands after the write. An entry
     without `nodeId` is resolved by its name on the tailnet. */
@@ -704,15 +706,16 @@ export const putMeshPeers = (peers: MeshPeerEntry[]) =>
 export const fetchMeshCandidates = () => request<MeshCandidate[]>("/api/mesh/candidates");
 
 /** Every peer's own session list, through the proxy. Only asked for while a peer is configured. */
-export const fetchMeshSessions = () => request<MeshSessions>("/api/mesh/sessions");
+export const fetchMeshSessions = () => request<MeshSessions>("/api/mesh/sessions", meshReadInit(true));
 
-export const getMeshSettings = () => request<MeshSettings>("/api/mesh/settings");
+/** This host's mesh settings, with the fields only its own page uses (shared/mesh-local.ts). */
+export const getMeshSettings = () => request<MeshLocalSettings>("/api/mesh/settings");
 
 /** The Caddy front door these hosts would need, in failover order. Generated only: Sova never runs Caddy. */
 export const fetchFrontDoor = () => request<FrontDoorConfig>("/api/mesh/front-door");
 
-export const putMeshSettings = (settings: Partial<MeshSettings>) =>
-  request<MeshSettings>("/api/mesh/settings", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(settings) });
+export const putMeshSettings = (settings: Partial<MeshLocalSettings>) =>
+  request<MeshLocalSettings>("/api/mesh/settings", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(settings) });
 
 /** Every login this host syncs, with the ones that differ from a peer's since before sync. */
 export const fetchMeshLogins = () => request<MeshLogins>("/api/mesh/logins");
@@ -723,6 +726,17 @@ export const claimMeshLogin = (key: string) =>
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ key } satisfies MeshLoginClaim),
+  });
+
+/** Every host's own details (shared/mesh-details.ts), this host first; mesh on only. */
+export const fetchMeshDetails = () => request<MeshDetails>("/api/mesh/details", meshReadInit(true));
+
+/** Rename a host: this one, or a peer (which then tells its own peers). */
+export const putHostLabel = (id: string, label: string) =>
+  request<HostRenameResult>("/api/mesh/label", {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ id, label } satisfies HostRename),
   });
 
 // ---- Settings → Decisions (components/DecisionSettings.tsx) --------------------------------------

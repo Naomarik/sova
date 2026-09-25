@@ -26,6 +26,7 @@ the user adds it to this host's own list, and that entry wins.
 Logins (pi `auth.json`: OAuth and API keys; Claude Code credentials) merge per provider: the most recent
 login wins, and within one login the entry with the newest expiry wins, dead or failed entries never win, a login whose access has merely expired (its refresh still works, e.g. a host that slept) gives way only to the same login or a newer one, never to a different older login, a logout is a tombstone with its own
 login time so a later refresh can't resurrect it, and the host that refreshed last refreshes early.
+A host is never sent a login, secret or logout for a store it doesn't keep (e.g. no Claude Code on it).
 Every local write takes the owning program's own lock and replaces the file atomically at mode 0600. Claude Code's credentials name no account, so a new entry that
 replaces one with more than 10 minutes left is a login (a re-login or another account), not a refresh. Known gap:
 a Claude Code re-login made in the last 10 minutes of a pre-sync login's access token is taken for a

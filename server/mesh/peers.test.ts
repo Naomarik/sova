@@ -39,6 +39,19 @@ describe("validatePeers", () => {
     assert.equal(kinds("oauth"), 'loginKinds must be "all" or "api-keys"');
   });
 
+  test("frontDoorExclude: a list of host ids, kept; empty/null/absent dropped; stale ids tolerated", () => {
+    const ex = (frontDoorExclude: unknown) => {
+      const v = validatePeers({ peers: [b], frontDoorExclude });
+      return "config" in v ? v.config.frontDoorExclude : v.error;
+    };
+    assert.deepEqual(ex(["b"]), ["b"]);
+    assert.deepEqual(ex(["gone"]), ["gone"]);
+    for (const e of [[], null, undefined]) assert.equal(ex(e), undefined, String(e));
+    assert.equal(ex(["b", "b"]), "frontDoorExclude lists a host twice");
+    assert.equal(ex(["Bad Id"]), "frontDoorExclude must be a list of host ids");
+    assert.equal(ex("b"), "frontDoorExclude must be a list of host ids");
+  });
+
   test("an explicit url is reduced to its origin; SOVA_PEER_PORT moves the default", () => {
     const v = validatePeers({ peers: [{ ...b, url: "https://b.lab.ts.net:9000/" }, { id: "c", nodeId: "nC", dnsName: "fd7a::1" }] });
     assert.ok("config" in v);
@@ -79,11 +92,12 @@ describe("readPeers / writePeers", () => {
   });
 
   test("round-trips at mode 0600, and a malformed file is an error, not missing", () => {
-    const v = validatePeers({ self: { id: "a", label: "Host A" }, peers: [{ ...b, priority: 2 }] });
+    const v = validatePeers({ self: { id: "a", label: "Host A" }, peers: [{ ...b, priority: 2 }], frontDoorExclude: ["b"] });
     assert.ok("config" in v);
     writePeers(v.config);
     assert.equal(statSync(peersFile()).mode & 0o777, 0o600);
     assert.equal(JSON.parse(readFileSync(peersFile(), "utf8")).version, 1);
+    assert.deepEqual(JSON.parse(readFileSync(peersFile(), "utf8")).frontDoorExclude, ["b"]);
     const r = readPeers();
     assert.ok(r.ok);
     assert.deepEqual(r.config, v.config);

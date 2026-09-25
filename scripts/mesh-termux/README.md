@@ -14,16 +14,20 @@ Remove everything it added (default), or keep sshd, its key and the wake lock fo
 
 ## What install.sh does
 
-- Packages: `nodejs-lts` (24.x, Sova needs >= 22.19), `fd`, `tmux`, `termux-services` (runit), plus their new
-  dependencies; `--ssh-key` adds `openssh`. Never `pkg upgrade`; debs are cached inside `~/sova-mesh`. What was
-  installed before the first run is recorded, and only what the installer added is ever removed.
+- Packages: `nodejs-lts` (24.x, Sova needs >= 22.19), `ripgrep` and `fd` (pi's grep/find tools, Sova's file tools), `git`,
+  `tmux`, `termux-services` (runit), plus their new dependencies; `--ssh-key` adds `openssh`. Every other command the
+  scripts or Sova run comes with Termux's bootstrap; one that is missing from `$PREFIX/bin` anyway (removed, or only
+  Android's `/system/bin` copy, e.g. `gzip`) gets its package installed too (install.sh's `TOOLS` table). The tools it
+  needs before apt runs (dpkg, apt, coreutils, gawk, grep, sed, termux-tools; net-tools unless `--tailnet-ip`) are
+  checked first, naming the package. Never `pkg upgrade`; debs are cached inside `~/sova-mesh`. What was installed
+  before the first run is recorded, and only what the installer added is ever removed.
 - pnpm: `corepack pnpm@11.27.1`, cached inside `~/sova-mesh`. Termux has no pnpm package, and the pinned pnpm 12 is a native
   binary whose store lock fails on Android (`lock_shared() not supported`). pnpm 11 installs the same lockfile
   unchanged (`--frozen-lockfile`).
 - `~/sova-mesh` (0700): `app/` (the source tarball; `pnpm install`, `vite build` on the phone; `app.prev` = the previous
   build), `agent/` (PI_CODING_AGENT_DIR from `scripts/hermetic-agent-dir.mjs`; `auth.json` starts as `{}` and logins, subscriptions
   included, arrive by mesh sync; `sova/peers.json` is seeded once with the self id and no peers, so the mesh is off),
-  `home/` (isolated HOME), `tmp/` (TMPDIR; jiti's extension cache, warmed at every service start), `sova-mesh.env`,
+  `home/` (isolated HOME; `home/.claude` (0700) is Claude Code's store, synced by the mesh via `SOVA_SYNC_CLAUDE_DIR`), `tmp/` (TMPDIR; jiti's extension cache, warmed at every service start), `sova-mesh.env`,
   `bin/run-sova`, `uninstall.sh`, `.install/` (the manifest).
 - Listeners: main `127.0.0.1:4800` only. Peer listener `<tailnet IP>:4801`, only while peers.json lists a peer. The
   tailnet IP is read from `tun*` (`--tailnet-ip` overrides), because Termux can't reach Tailscale's LocalAPI. Nothing
@@ -53,10 +57,14 @@ anything else that took it.
 ## Testing from the laptop
 
 `phone-test.sh` (ssh to the phone's Termux sshd on 8022; site values in the untracked `local.env`, see
-`local.env.example`): `loop` = uninstall first if installed, snapshot, install, check (health, SPA, listeners by
+`local.env.example`): `deps` = every command word of install.sh/uninstall.sh (plus Sova's runtime tools and
+phone-test's own) that is an executable on the phone maps, by `dpkg -S`, to WANT's closure or Termux's bootstrap, non-essential
+bootstrap ones are in `TOOLS`, and `apt-get install -s` resolves WANT. `loop` = uninstall first if installed, snapshot, install, check (health, SPA, listeners by
 connect since the phone has no ss/netstat for apps, runit restart after `kill -9`, logger), gate (mesh on with a
 placeholder peer: a non-peer tailnet node, the phone itself and a Wi-Fi source get 403 and `[mesh] refused` lines;
 back to mesh off), uninstall, snapshot, diff (must be clean), install, check. `INSTALL=github` uses the real
 one-liner (`GH_REF`, default master), otherwise a tarball of HEAD (or `REV=<sha>`) goes over ssh. `UNINSTALL=full`
 runs the default uninstall and takes the wake lock again for the ssh loop; the default keeps ssh. `install-http` runs
 `curl | sh` with both files served from the laptop's tailnet IP for the run only. `pair`/`unpair` need `PAIR_GO=1`.
+`dry-packages` (no phone) runs install.sh's package section against a fake dpkg/apt: a rerun that needs apt must never
+record a package the user installed since an earlier run (a full uninstall would purge it).

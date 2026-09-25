@@ -23,7 +23,9 @@ once it is confirmed, never on one request answered by another host during a net
 ## §mesh.front-door/config — The order and the configuration
 
 The Mesh page shows the front door's host order, which the user can change, and the reverse-proxy
-configuration generated from it. That configuration sends to the first healthy host in order,
+configuration generated from it. The user can leave a host out of the front door (a host that can't
+serve it, such as a phone); a left-out host stays listed as off, every host is in until the user
+says otherwise, and the last host can't be left out. That configuration sends to the first healthy host in order,
 checks each host's health, gives up quickly on a host that stops answering new connections, reuses
 idle connections to a host for a short while, and waits at most 35 seconds for a host's response
 headers. When a host is addressed by a tailnet name, the configuration resolves it through the

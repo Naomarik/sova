@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createResource, createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createMemo, createResource, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import type { AgentsInsight, ContextInfo, OverseerInfo, SessionGroup, SessionSummary, UsageInsight } from "../../shared/protocol";
 import { OVERSEER_HASH, overseerButtonLabel } from "../lib/overseer";
@@ -70,7 +70,8 @@ import {
   peerUnavailable,
   sessionHrefOn,
 } from "../lib/mesh";
-import { HostFilter } from "./HostFilter";
+import { MeshHostMenu } from "./MeshHostMenu";
+import { hostFilterAsk } from "../lib/mesh-details";
 
 const ARCHIVE_KEY = "sova:archive-open";
 /** One key per Archive date section, same "1"/"0" values as ARCHIVE_KEY. */
@@ -873,6 +874,8 @@ export function Sidebar(props: {
     if (value === null) removeKey(localStorage, HOST_FILTER_KEY);
     else writeKey(localStorage, HOST_FILTER_KEY, value);
   };
+  // "Open Through This Host" in the mesh details: the filter takes that host (a fresh ask each time).
+  createEffect(on(hostFilterAsk, (ask) => ask && chooseHostFilter(ask.value), { defer: true }));
   /** The search field has focus: it takes the whole row, and the Overseer button steps aside. */
   const [searchFocused, setSearchFocused] = createSignal(false);
   const [showSkeleton, setShowSkeleton] = createSignal(false);
@@ -1460,9 +1463,9 @@ export function Sidebar(props: {
             </Show>
           </div>
           </div>
-          {/* Only with the mesh on and a peer: one host's sessions, or All. */}
+          {/* Only with the mesh on and a peer: one host's sessions, or All, and the mesh details. */}
           <Show when={hostFilterShown()}>
-            <HostFilter value={hostFilter()} onChange={chooseHostFilter} />
+            <MeshHostMenu value={hostFilter()} onChange={chooseHostFilter} />
           </Show>
           <div class="spread">
             <p class="search-count" id="session-count" aria-live="polite">

@@ -87,7 +87,7 @@ export function exploreMessage(idea: Pick<IdeaRecord, "id" | "explorerId">): str
     : `Explore idea ${idea.id}: launch an exploratory agent for it.`;
 }
 
-/** What "Start a Session" sends. The Overseer asks where, and confirms, like any session it starts. */
+/** What "Start a Session" sends. The click is the go-ahead: the Overseer asks only when the folder is unclear. */
 export const startMessage = (idea: Pick<IdeaRecord, "id">) => `Start a session to work on idea ${idea.id}.`;
 
 /** Tags as the user types them ("a, b c") → the list the server takes (lowercase, deduped). */

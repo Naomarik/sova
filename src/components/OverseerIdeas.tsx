@@ -488,7 +488,7 @@ function IdeaDetailView(props: {
                   type="button"
                   class="button"
                   aria-disabled={blocked() || d().idea.status === "dropped" ? "true" : undefined}
-                  title={blocked() ?? "Asks the Overseer to start a session for this idea. It confirms first."}
+                  title={blocked() ?? "Asks the Overseer to start a session for this idea. It asks which folder only when that is unclear."}
                   onClick={() => !blocked() && d().idea.status !== "dropped" && sendToOverseer(startMessage(d().idea))}
                 >
                   Start a Session

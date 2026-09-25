@@ -1975,6 +1975,8 @@ export interface SessionInsight {
 //   overseer/ (its cwd) · overseer.json (OverseerSettings) · overseer-state.json
 //   (OverseerState) · overseer-notes.md · overseer-actions.jsonl (OverseerAction lines)
 //   · seen.json ({[sessionId]: ms})
+//   · ideas/manifest.json (IdeasManifest) + ideas/<ns>/<name>.md and ideas/<ns>/<parent>/<name>.md
+//     (each idea's prose; see IDEA_ID_RE). The Overseer (sova_idea) and PATCH are the only writers.
 // Routes:
 // GET  /api/overseer                -> OverseerInfo   (ensures the current file exists)
 // POST /api/overseer/clear          -> OverseerInfo   (stops a running turn, disposes, rotates; never refuses)
@@ -1983,6 +1985,11 @@ export interface SessionInsight {
 // PUT  /api/settings/overseer       body OverseerSettings -> OverseerSaveResult (400 invalid;
 //                                   model/thinking apply at once when the Overseer is idle, else at turn end)
 // GET  /api/overseer/notes          -> { text: string }
+// GET  /api/overseer/ideas          -> OverseerIdeasInfo (ToC + every record + link edges; no prose)
+// GET  /api/overseer/idea?id=<§id>  -> OverseerIdeaDetail, 404 {error} unknown id, 400 bad id
+// PATCH /api/overseer/idea?id=<§id> body IdeaPatch -> OverseerIdeaDetail; 409 IdeaConflict when
+//                                   `base` is not the record's current updatedAt; 400 invalid (bad
+//                                   status/link/tag, a link to itself or to an unknown idea)
 // PUT  /api/overseer/notes          body { text: string } -> { text: string }
 // GET  /api/sessions/summary?id=<session id> -> SessionSummary (any session file with that id,
 //                                   listed or not, e.g. an empty web session), 404 {error} when none
@@ -2034,6 +2041,7 @@ export interface OverseerCaps {
   promptsPerTurn: number;     // default 10
   archivesPerTurn: number;    // default 50
   concurrentSessions: number; // default 5: Overseer-started sessions running at once
+  explorePerTurn: number;     // default 2: explorer subagents launched (sova_idea explore); absent on read → default
 }
 
 /** `<stateRoot>/overseer.json`. Tolerant on read, strict on PUT. */
@@ -2048,12 +2056,16 @@ export interface OverseerSettings {
   proactivity: OverseerProactivity; // default "badge"
   quickActions: OverseerQuickAction[];
   caps: OverseerCaps;
+  /** The exploratory agent: the subagent sova_idea `explore` launches per idea. Default
+      `{backend:"claude-code", model:"opus[1m]", effort:"medium"}` (Claude Opus 5.5). Absent or
+      invalid on read → the default. */
+  explorer: WorkerChoice;
 }
 
 export interface OverseerSettingsInfo {
   settings: OverseerSettings;
   /** The shipped defaults, for "Reset to Defaults". */
-  defaults: { quickActions: OverseerQuickAction[]; caps: OverseerCaps };
+  defaults: { quickActions: OverseerQuickAction[]; caps: OverseerCaps; explorer: WorkerChoice };
   /** Absolute path of overseer.json, for the screen's footnote. */
   file: string;
 }
@@ -2154,6 +2166,106 @@ export interface SovaConfirmDetails {
   title: string;
   detail?: string;
   options: { label: string; reply?: string; tone?: "default" | "danger" }[];
+}
+
+// --- The Overseer's ideas backlog: spec-shaped (manifest + one .md per idea, § ids), its own
+// small reader and link graph. Nothing is deleted; `dropped` is terminal. ---
+
+/** `open` filed · `exploring` an explorer subagent is linked · `started` a session is linked ·
+    `done` / `dropped` only when the user says so (dropped is terminal: no further status change). */
+export type IdeaStatus = "open" | "exploring" | "started" | "done" | "dropped";
+export const IDEA_STATUSES: IdeaStatus[] = ["open", "exploring", "started", "done", "dropped"];
+
+/** An idea id. Main entry `§<ns>/<name>` (file `ideas/<ns>/<name>.md`); sub-entry
+    `§<ns>.<parent>/<name>` (file `ideas/<ns>/<parent>/<name>.md`), whose parent `§<ns>/<parent>`
+    must exist. ns = the project; each segment is lowercase `[a-z0-9][a-z0-9-]*`, ns ≤ 32 chars,
+    parent and name ≤ 64. The `§` is canonical; inputs may omit it. Groups: 1 ns, 2 parent?, 3 name. */
+export const IDEA_ID_RE = /^§?([a-z0-9][a-z0-9-]{0,31})(?:\.([a-z0-9][a-z0-9-]{0,63}))?\/([a-z0-9][a-z0-9-]{0,63})$/;
+
+/** One record of ideas/manifest.json (the id is its key there). */
+export interface IdeaMeta {
+  /** One line, ≤ 120 chars: what the ToC shows. */
+  title: string;
+  status: IdeaStatus;
+  /** Themes: lowercase `[a-z0-9-]`, ≤ 8, each ≤ 32. */
+  tags: string[];
+  /** Other ideas this one relates to (any namespace), canonical § ids; directed edges this → link. */
+  links: string[];
+  /** The session started from it (sova_create_session's id). Linking one sets `started`. */
+  sessionId?: string;
+  /** Its exploratory subagent's worker id (`ag_NN`). Linking one sets `exploring`. */
+  explorerId?: string;
+  /** The Overseer conversation (session id) that owns that explorer: workers die with it (/clear,
+      restart), so `tell` refuses when this is not the current conversation. */
+  explorerOverseerId?: string;
+  createdAt: string; // ISO
+  updatedAt: string; // ISO; also the PATCH `base`
+}
+
+/** `<stateRoot>/ideas/manifest.json`. Tolerant read: bad records are dropped, never thrown. */
+export interface IdeasManifest {
+  formatVersion: 1;
+  ideas: Record<string, IdeaMeta>;
+}
+
+export interface IdeaRecord extends IdeaMeta {
+  id: string; // canonical, with §
+  ns: string;
+  /** For a sub-entry, its main entry's id. */
+  parent?: string;
+}
+
+/** The ToC: namespaces sorted by name; within one, main entries by id, each followed by its
+    sub-entries. `counts` has every status (0 included). */
+export interface IdeasToc {
+  total: number;
+  namespaces: {
+    ns: string;
+    counts: Record<IdeaStatus, number>;
+    entries: { id: string; title: string; status: IdeaStatus; parent?: string }[];
+  }[];
+}
+
+/** GET /api/overseer/ideas. `edges` = every link (from → to), for the graph view. */
+export interface OverseerIdeasInfo {
+  toc: IdeasToc;
+  ideas: IdeaRecord[];
+  edges: { from: string; to: string }[];
+  /** Absolute path of the ideas dir, for the footnote. */
+  dir: string;
+}
+
+/** GET/PATCH /api/overseer/idea. `text` = the prose .md ("" when missing). `scope` = every idea it
+    reaches through links, transitively (itself excluded; sub-entries of it included); `linkedBy` =
+    the ideas that link to it directly (its impact). */
+export interface OverseerIdeaDetail {
+  idea: IdeaRecord;
+  text: string;
+  scope: string[];
+  linkedBy: string[];
+}
+
+/** PATCH body. Absent fields are unchanged. `base` = the updatedAt the editor started from; when it
+    no longer matches → 409. Setting a status on a dropped idea is 400. */
+export interface IdeaPatch {
+  base?: string;
+  title?: string;
+  status?: IdeaStatus;
+  tags?: string[];
+  links?: string[];
+  text?: string;
+}
+export interface IdeaConflict {
+  error: string;
+  current: OverseerIdeaDetail;
+}
+
+/** `sova_idea` details (every op): the idea it touched, so a card or the panel can link it. */
+export interface SovaIdeaDetails {
+  id: string;
+  op: "add" | "update" | "append" | "link" | "explore" | "tell";
+  status: IdeaStatus;
+  explorerId?: string;
 }
 
 /** Marks an Overseer turn was started by proactivity (server-sent "Brief me"). The prompt text of

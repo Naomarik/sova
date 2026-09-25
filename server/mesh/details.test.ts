@@ -58,6 +58,8 @@ let fakePort = 0;
 let deadPort = 0;
 let fakeDetails: "ok" | "old" = "ok";
 let fakeLabel = "B";
+/** The fake peer drops every connection, as a stopped host does. */
+let fakeAway = false;
 const told: Array<{ path: string; body: unknown }> = [];
 
 const fakeHostDetails = (): HostDetails => ({
@@ -77,6 +79,7 @@ before(async () => {
   await new Promise<void>((r) => (server.listening ? r() : server.once("listening", r)));
   base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
   fake = createServer(async (req: IncomingMessage, res) => {
+    if (fakeAway) return req.socket.destroy();
     const url = new URL(req.url ?? "/", "http://x");
     const json = (status: number, body: unknown) => {
       res.writeHead(status, { "Content-Type": "application/json" });
@@ -304,6 +307,19 @@ describe("mesh on", () => {
     assert.deepEqual(told, [{ path: "/api/peer/label", body: { label: "Laptop", labelAt: self.labelAt } }]);
     assert.deepEqual(res.told.find((t) => t.id === "b"), { id: "b", ok: true });
     assert.equal(res.told.find((t) => t.id === "c")!.ok, false, "a down peer is reported, not hidden");
+  });
+
+  test("a peer that was up and missed a rename hears it when it answers again, with no page open meanwhile", async () => {
+    fresh();
+    await call("GET", "/api/mesh"); // b is up here
+    fakeAway = true;
+    await call("PUT", "/api/mesh/label", { id: peersDoc().self.id, label: "Renamed while b was away" });
+    fakeAway = false;
+    told.length = 0;
+    fresh();
+    await call("GET", "/api/mesh"); // b answers again
+    await waitFor(() => told.some((t) => t.path === "/api/peer/label"));
+    assert.deepEqual(told.find((t) => t.path === "/api/peer/label")!.body, { label: "Renamed while b was away", labelAt: peersDoc().self.labelAt });
   });
 
   test("Settings → Mesh: a new name goes out like one made here; another setting doesn't", async () => {

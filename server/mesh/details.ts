@@ -208,6 +208,8 @@ export function mountDetails(app: Hono, mesh: MeshApi, sources: DetailsSources, 
             await res.body?.cancel();
             return res.ok ? { id: p.id, ok: true } : { id: p.id, ok: false, error: res.status === 404 ? "runs an older build" : `answered ${res.status}` };
           } catch (err) {
+            // Unreachable: marked down, so its next answer is a comeback and onPeerUp resends the name.
+            mesh.sawPeer(p.id, false);
             const e = err as Error & { cause?: { code?: string } };
             return { id: p.id, ok: false, error: e.name === "TimeoutError" ? "no answer in time" : (e.cause?.code ?? e.message) };
           }

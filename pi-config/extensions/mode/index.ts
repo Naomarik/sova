@@ -154,6 +154,43 @@ export default function modeExtension(pi: ExtensionAPI): void {
 	}
 
 	/**
+	 * pi's base prompt options, live. A turn the user starts builds its prompt in before_agent_start,
+	 * where this extension writes its block into the turn's sections. A turn an extension's message
+	 * starts (`sendMessage(…, {triggerTurn: true})`: a subagent settling, a team question) skips that
+	 * hook, and pi's own refresh before the turn's second request rebuilds the prompt from these base
+	 * options, which know nothing of extension sections — so the mode section was patched out
+	 * mid-turn and back in at the next user prompt, and every switch restarted the claude-code CLI.
+	 * Keeping the block in the base options makes the prompt the same whoever started the turn.
+	 *
+	 * Only a command context exposes the getter (`ctx.getSystemPromptOptions`): `/mode` and `/align`
+	 * adopt it, and Sova runs `/mode` at every chat open. Until one arrives (a session restored and
+	 * driven only by the TUI shortcut or palette), the old behaviour stands.
+	 */
+	let hostPromptOptions: (() => { sections?: Record<string, string> }) | undefined;
+
+	function adoptHost(ctx: ExtensionContext): void {
+		const get = (ctx as { getSystemPromptOptions?: unknown }).getSystemPromptOptions;
+		if (typeof get === "function") hostPromptOptions = get as () => { sections?: Record<string, string> };
+	}
+
+	/**
+	 * Write this state's block (or the given one, the one a turn was just built with) into the host's
+	 * base sections. pi replaces the base object when tools change, so this is re-run at every run
+	 * start and after every switch, not once. A getter whose runner was replaced is dropped.
+	 */
+	function syncHostSection(block: string | undefined = composePrompt(active, routes, writerRoute)): void {
+		if (hostPromptOptions === undefined) return;
+		let sections: Record<string, string> | undefined;
+		try {
+			sections = hostPromptOptions().sections;
+		} catch {
+			hostPromptOptions = undefined;
+			return;
+		}
+		if (sections) applyModeSection(sections, block);
+	}
+
+	/**
 	 * Route every profile of the routing (in delegate) and the spec writer (while spec is on) as they
 	 * are NOW (files and policy re-read) against the last discovery. Synchronous and cheap: what a
 	 * turn boundary runs. Normal mode never reads the Delegate file; spec off never reads the writer's.
@@ -214,6 +251,7 @@ export default function modeExtension(pi: ExtensionAPI): void {
 			}
 			probedKey = key;
 			recomputeRoutes();
+			syncHostSection();
 			renderStatus(ctx);
 			if (!run.notify) return;
 			const notices = active.mode === "delegate" ? routes.map(routeNotice).filter((line): line is string => line !== undefined) : [];
@@ -265,12 +303,14 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		if (next === "delegate") {
 			if (active.strict) applyStrictTools();
 			recomputeRoutes();
+			syncHostSection();
 			renderStatus(ctx);
 			ctx.ui.notify("Mode: delegate", "info");
 			await refreshRouting(ctx, true);
 		} else {
 			restoreTools();
 			recomputeRoutes();
+			syncHostSection();
 			renderStatus(ctx);
 			ctx.ui.notify("Mode: normal", "info");
 			// The spec writer, if one is set, is still probed; otherwise nothing is.
@@ -287,6 +327,7 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		active = withMinor(active, minor, on);
 		appendSwitch({ minor, on });
 		if (minor === "spec") recomputeRoutes();
+		syncHostSection();
 		renderStatus(ctx);
 		if (minor === "align") syncAlignWidget(ctx);
 		ctx.ui.notify(`Minor mode: ${minor} ${on ? "on" : "off"}`, "info");
@@ -355,6 +396,7 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		if (active.mode === "delegate" && active.strict) applyStrictTools();
 		else restoreTools();
 		recomputeRoutes();
+		syncHostSection();
 		renderStatus(ctx);
 		if (probeWanted()) void refreshRouting(ctx, false);
 		else dropProbe();
@@ -564,6 +606,8 @@ export default function modeExtension(pi: ExtensionAPI): void {
 			return items.length > 0 ? items : null;
 		},
 		handler: async (args, ctx) => {
+			adoptHost(ctx);
+			syncHostSection();
 			const arg = args.trim();
 			if (arg === "") {
 				await openAlignViewer(ctx);
@@ -604,6 +648,10 @@ export default function modeExtension(pi: ExtensionAPI): void {
 			return items.length > 0 ? items : null;
 		},
 		handler: async (args, ctx) => {
+			// Any /mode call, even one that changes nothing (Sova's re-assertion at chat open), is the
+			// moment the host's base sections become reachable: adopt and bring them in step now.
+			adoptHost(ctx);
+			syncHostSection();
 			const arg = args.trim();
 			if (arg === "") {
 				if (ctx.mode === "tui") {
@@ -641,6 +689,7 @@ export default function modeExtension(pi: ExtensionAPI): void {
 						if (strict) applyStrictTools();
 						else restoreTools();
 					}
+					syncHostSection();
 				}
 				const appliedNow = changed && active.mode === "delegate";
 				ctx.ui.notify(
@@ -727,6 +776,9 @@ export default function modeExtension(pi: ExtensionAPI): void {
 			}
 		}
 		const block = composePrompt(active, routes, writerRoute);
+		// The same block into the base options, so a later request of this run, or a run an
+		// extension's message starts, is built with it too (see hostPromptOptions).
+		syncHostSection(block);
 		const sections = (event.systemPromptOptions as { sections?: Record<string, string> } | undefined)?.sections;
 		if (sections) {
 			applyModeSection(sections, block);
@@ -735,6 +787,10 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		if (block === undefined) return;
 		return { systemPrompt: `${event.systemPrompt}\n\n${block}` };
 	});
+
+	// Every run, whoever started it, and after pi may have rebuilt its base options (a tool
+	// change): the base sections carry the current block before the run's first request.
+	pi.on("agent_start", async () => syncHostSection());
 
 	pi.on("session_start", async (event, ctx) => {
 		restoreActiveState(event?.reason, ctx);

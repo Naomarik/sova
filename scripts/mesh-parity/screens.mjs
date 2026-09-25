@@ -97,6 +97,14 @@ export async function captureScreens(browser, base, f, dir) {
           for (const n of nodes) n.remove();
           return nodes.length;
         });
+        // Ages under an hour can only come from this run's own writes (fixtures are dated 2025): the
+        // REST phase's draft on real-chat reads "just now" or "1m ago" by a second either way
+        // (measured at 0d2ac3d: 45 s boundary, 0.7 s apart). The instant itself is compared as
+        // <now-iso> by the REST phase; here the label is masked in the DOM, so pixels match too.
+        await page.evaluate(() => {
+          const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+          for (let n; (n = walk.nextNode()); ) n.nodeValue = n.nodeValue.replace(/\b(just now|\d{1,2}m ago)\b/g, "(age)");
+        });
         await page.waitForTimeout(300);
         // A transcript's scroll-to-bottom can still be moving (measured once: base 45 px short on
         // session-mobile, text identical): wait until no scroll position changes for 600 ms.

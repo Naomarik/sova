@@ -442,6 +442,25 @@ describe("mesh ON", () => {
     assert.equal((await peerRequest("GET", "/api/%70eer/hello")).status, 200);
   });
 
+  test("/api/mesh/logins*: served on the main listener only, never to a peer, never forwarded by /peer", async () => {
+    // Not vacuous: the routes are live here (mesh ON), so the 404s below are the gates.
+    assert.equal((await realFetch(`${base}/api/mesh/logins`)).status, 200);
+    whoisNode = "nB";
+    const paths = ["/api/mesh/logins", "/api/mesh/logins/claim", "/api/%6Desh/logins", "/api/mesh/%6Cogins/claim", "/api/MESH/LOGINS", "/api//mesh/logins/claim"];
+    const notFoundBody = await (await app.request("/api/no-such-route")).text();
+    const before = fetches;
+    for (const path of paths) {
+      for (const method of ["GET", "POST"]) {
+        const body = method === "POST" ? JSON.stringify({ key: "pi:zai" }) : undefined;
+        assert.equal((await peerRequest(method, path, body)).status, 404, `peer listener ${method} ${path}`);
+        const res = await rawRequest(method, `/peer/b${path}`, body);
+        assert.equal(res.status, 404, `${method} /peer/b${path}`);
+        assert.equal(res.body, notFoundBody, `${method} /peer/b${path}`);
+      }
+    }
+    assert.equal(fetches, before, "nothing was forwarded");
+  });
+
   test("peer listener WS: refused without whois, dispatched to Sova's own sockets with it", async () => {
     const port = listenerInfo()!.port;
     whoisNode = null;

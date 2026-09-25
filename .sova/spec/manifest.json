@@ -1714,7 +1714,8 @@
       "evidence": "verified",
       "code": [
         "server/mesh/peers.ts",
-        "server/mesh/index.ts"
+        "server/mesh/index.ts",
+        "server/mesh/peers.test.ts"
       ]
     },
     "§mesh.peers/discovery": {
@@ -1769,7 +1770,8 @@
       "evidence": "verified",
       "code": [
         "server/mesh/index.ts",
-        "server/mesh/peers.ts"
+        "server/mesh/peers.ts",
+        "server/mesh/mesh.test.ts"
       ]
     },
     "§mesh.remote-sessions/host-filter": {
@@ -1798,7 +1800,8 @@
       "code": [
         "server/mesh/index.ts",
         "src/lib/mesh.ts",
-        "src/components/Sidebar.tsx"
+        "src/components/Sidebar.tsx",
+        "src/lib/mesh.test.ts"
       ]
     },
     "§mesh.remote-sessions/proxy": {
@@ -1830,7 +1833,10 @@
       "code": [
         "server/sync/docs.ts",
         "server/sync/extensions.ts",
-        "server/sync/index.ts"
+        "server/sync/index.ts",
+        "server/sync/docs.test.ts",
+        "server/sync/extensions.test.ts",
+        "server/sync/index.test.ts"
       ]
     },
     "§mesh.sync/logins": {
@@ -1842,7 +1848,10 @@
         "server/sync/logins-merge.ts",
         "server/sync/logins-stores.ts",
         "server/sync/index.ts",
-        "src/components/MeshView.tsx"
+        "src/components/MeshView.tsx",
+        "server/sync/logins-merge.test.ts",
+        "server/sync/logins-stores.test.ts",
+        "server/sync/logins.test.ts"
       ]
     },
     "§mesh.ui/card": {
@@ -1870,7 +1879,9 @@
       "code": [
         "src/components/MeshSettings.tsx",
         "src/components/SettingsDialog.tsx",
-        "server/mesh/index.ts"
+        "server/mesh/index.ts",
+        "src/lib/settings-nav.ts",
+        "src/lib/settings-nav.test.ts"
       ]
     },
     "§mesh/remote-sessions": {
@@ -1896,7 +1907,8 @@
       "authority": "accepted",
       "evidence": "verified",
       "code": [
-        "src/components/MeshView.tsx"
+        "src/components/MeshView.tsx",
+        "src/mesh.css"
       ]
     },
     "§mesh.front-door/config": {
@@ -1906,7 +1918,8 @@
       "code": [
         "server/mesh/front-door.ts",
         "server/mesh/index.ts",
-        "src/components/MeshView.tsx"
+        "src/components/MeshView.tsx",
+        "server/mesh/front-door.test.ts"
       ]
     },
     "§mesh.front-door/failover": {
@@ -1924,7 +1937,8 @@
       "code": [
         "src/App.tsx",
         "src/lib/mesh.ts",
-        "server/mesh/hello.ts"
+        "server/mesh/hello.ts",
+        "src/lib/socket.ts"
       ]
     },
     "§mesh/front-door": {
@@ -2457,6 +2471,32 @@
       "requires": [
         "§app.overseer/ideas"
       ]
+    },
+    "§mesh.remote-sessions/host-scope": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/lib/host-scope.ts",
+        "src/lib/models.ts",
+        "src/lib/models.test.ts",
+        "src/lib/model-policy.ts",
+        "src/components/ModelMenu.tsx",
+        "src/components/ModeMenu.tsx",
+        "src/lib/files.ts",
+        "src/lib/images.ts",
+        "src/lib/path-attachments.ts",
+        "src/components/FolderPicker.tsx"
+      ]
     }
+  },
+  "boundary": {
+    "include": [
+      "server",
+      "shared",
+      "src",
+      "vite.config.ts"
+    ],
+    "exclude": []
   }
 }

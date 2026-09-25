@@ -32,6 +32,14 @@ folders, targets and models to that host. Remote keeps meaning where the tools r
 A peer session's address carries its host (`#/s/<path>?host=<id>`; a local session's address is unchanged), so a reload or a shared link opens
 it on the right host. Paths stay each host's own.
 
+## §mesh.remote-sessions/host-scope — A peer session's pane uses its host
+
+Everything a peer session's pane reads or changes comes from and goes to that session's host: its
+models (the ones that host can run, with its own keys, favorites and model policy), its modes and
+mode default, its folder index for file mentions, and its attachments and image previews. Settings →
+Models still edits only the host serving the page. With a Host chosen in New Session, the folder
+picker lists that host's folders.
+
 ## §mesh.remote-sessions/host-filter — Filter the list by host
 
 While the mesh is on and more than one host is known, the session pane shows a host filter

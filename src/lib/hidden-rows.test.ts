@@ -99,6 +99,13 @@ test("labels: digits, singular and plural", () => {
   assert.equal(thinkingHiddenLabel(8), "8 thinking blocks hidden");
 });
 
+test("visibleCount: a change row is not new", () => {
+  const change = row("m1", "info", { text: "Model: anthropic/claude-opus-5", raw: { type: "model_change" } });
+  const items = [row("u1", "user"), change, row("x1", "assistant-text")];
+  assert.equal(visibleCount(items, { tools: false, thinking: false }), 2);
+  assert.equal(visibleCount([change], { tools: false, thinking: false }), 0);
+});
+
 test("visibleCount: hidden rows don't count, each kind on its own", () => {
   const items = [row("u1", "user"), row("t1", "thinking"), call("c1", "a"), result("r1", "a"), row("x1", "assistant-text")];
   assert.equal(visibleCount(items, { tools: false, thinking: false }), 5);

@@ -1,4 +1,5 @@
 import type { TranscriptItem } from "../../shared/protocol";
+import { isChangeRow } from "./change-rows";
 import type { LiveBlock, LiveState } from "./live";
 import { toolResultView } from "./message";
 import { isTurnStart } from "./turn";
@@ -99,4 +100,4 @@ export const thinkingHiddenLabel = (blocks: number) => `${blocks} thinking ${blo
 
 /** Rows the transcript renders, for the scroller's "N new": hidden rows aren't new to the reader. */
 export const visibleCount = (items: TranscriptItem[], hide: HideKinds) =>
-  hide.tools || hide.thinking ? items.filter((it) => !isHidden(it, hide)).length : items.length;
+  items.filter((it) => !isHidden(it, hide) && !isChangeRow(it)).length;

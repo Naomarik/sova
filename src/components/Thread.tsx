@@ -8,6 +8,7 @@ import { home } from "../lib/ui-state";
 import { entryIdOf, registerTranscript } from "../lib/jump";
 import { usePaneId } from "../lib/pane-scope";
 import { isHiddenBlock, liveHiddenCounts, splitHidden, thinkingHiddenLabel, toolsHiddenLabel } from "../lib/hidden-rows";
+import { isChangeRow } from "../lib/change-rows";
 import { isTurnStart } from "../lib/turn";
 import { parseWakeNudge } from "../../shared/wake";
 import { ImageStrip } from "./ImageStrip";
@@ -282,11 +283,17 @@ export function HistoryItems(props: {
       disclosure) — an action is about the chat you are in, not about every transcript on screen. */
   actions?: MessageActionsProvider;
 }) {
+  /**
+   * The items the thread may render: the settings-change rows are dropped before anything else,
+   * so they can't appear even inside the hidden-rows disclosure. Every scan that speaks the
+   * rendered rows' coordinates (the last-user/openFrom scan) runs on this same array.
+   */
+  const renderable = createMemo(() => props.items.filter((it) => !isChangeRow(it)));
   const split = createMemo(() =>
-    props.hideTools || props.hideThinking ? splitHidden(props.items, { tools: !!props.hideTools, thinking: !!props.hideThinking }) : null,
+    props.hideTools || props.hideThinking ? splitHidden(renderable(), { tools: !!props.hideTools, thinking: !!props.hideThinking }) : null,
   );
   /** The rows rendered: all of them, or everything but tool rows while they're hidden. */
-  const rows = () => split()?.shown ?? props.items;
+  const rows = () => split()?.shown ?? renderable();
   const results = createMemo(() => {
     const byCall = new Map<string, TranscriptItem>();
     for (const it of props.items) if (it.kind === "tool-result" && it.toolCallId) byCall.set(it.toolCallId, it);
@@ -313,7 +320,7 @@ export function HistoryItems(props: {
   const strips = createMemo(() => (props.actions ? stripsByRow(rows()) : new Map<number, MessageStrip>()));
   // Only calls after the last user message (or wake nudge — isTurnStart) can still be in flight.
   const lastUserIndex = createMemo(() => {
-    for (let i = props.items.length - 1; i >= 0; i--) if (isTurnStart(props.items[i]!)) return i;
+    for (let i = renderable().length - 1; i >= 0; i--) if (isTurnStart(renderable()[i]!)) return i;
     return -1;
   });
   const openFrom = () => props.openFrom ?? lastUserIndex() + 1;

@@ -320,6 +320,71 @@ describe("mesh ON", () => {
     assert.deepEqual(await getJson("/peer/b/ws/chat"), [426, { error: "WebSocket upgrade required" }]);
   });
 
+  test("proxy: /api/peer/* and /api/mesh/* on a peer are never reachable from a browser, in any spelling", async () => {
+    // The check is not vacuous: an allowed tail does reach the fake peer through the counted fetch.
+    let before = fetches;
+    await realFetch(`${base}/peer/b/api/echo`);
+    assert.equal(fetches, before + 1);
+    const tails = [
+      "/api/peer/hello",
+      "/api/peer/credentials/entry?key=x",
+      "/api/peer/credentials/push",
+      "/api/Peer/hello",
+      "/api/%70eer/hello",
+      "/%61pi/peer/hello",
+      "/api//peer/hello",
+      "/api/peer",
+      "/api/mesh",
+      "/api/mesh/peers",
+      "/api/%ZZ",
+    ];
+    const notFound = await app.request("/api/no-such-route");
+    const notFoundBody = await notFound.text();
+    before = fetches;
+    for (const tail of tails) {
+      for (const peer of ["b", "%62"]) {
+        for (const method of ["GET", "POST", "PUT"]) {
+          const res = await realFetch(`${base}/peer/${peer}${tail}`, { method, ...(method === "GET" ? {} : { body: "{}" }) });
+          assert.equal(res.status, 404, `${method} /peer/${peer}${tail}`);
+          assert.equal(await res.text(), notFoundBody, `${method} /peer/${peer}${tail}`);
+        }
+      }
+    }
+    assert.equal(fetches, before, "nothing was forwarded");
+  });
+
+  test("peer side: a proxied request (X-Forwarded-Host) never counts as the peer speaking", async () => {
+    whoisNode = "nB";
+    const info = listenerInfo()!;
+    const r = await new Promise<number>((resolve, reject) => {
+      const req = request({ host: "127.0.0.1", port: info.port, path: "/api/peer/hello", agent: false, headers: { "X-Forwarded-Host": "x" } }, (res) => {
+        res.resume();
+        resolve(res.statusCode!);
+      });
+      req.on("error", reject);
+      req.end();
+    });
+    assert.equal(r, 404);
+    assert.equal((await peerGet("/api/peer/hello")).status, 200);
+    // peerFetch drops a caller-supplied X-Forwarded-Host, so this host's own calls still count.
+    await putJson("/api/mesh/peers", {
+      peers: [
+        { id: "b", label: "B", nodeId: "nB", name: "127.0.0.1", url: `http://127.0.0.1:${fakePort}` },
+        { id: "dead", nodeId: "nD", name: "127.0.0.1", url: `http://127.0.0.1:${deadPort}` },
+        { id: "self", nodeId: "nSelf", name: "127.0.0.1", url: `http://127.0.0.1:${info.port}` },
+      ],
+    });
+    whoisNode = "nSelf";
+    const res = await meshApi.peerFetch("self", "/api/peer/hello", { headers: { "X-Forwarded-Host": "x" } });
+    assert.equal(res.status, 200);
+    await putJson("/api/mesh/peers", {
+      peers: [
+        { id: "b", label: "B", nodeId: "nB", name: "127.0.0.1", url: `http://127.0.0.1:${fakePort}` },
+        { id: "dead", nodeId: "nD", name: "127.0.0.1", url: `http://127.0.0.1:${deadPort}` },
+      ],
+    });
+  });
+
   test("proxy WS: frames both ways, every close code mirrored exactly", async () => {
     for (const code of [1000, 4404, 4409, 4422, 4500]) {
       const r = await wsTrip(`${wsBase}/peer/b/ws/chat?path=p&close=${code}`, "ping");

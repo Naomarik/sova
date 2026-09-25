@@ -16,7 +16,7 @@ import { ownHello, probeHello, probePeer, peerLastSeen, PROBE_TIMEOUT_MS } from 
 import { type ListenerDeps, PeerListener } from "./listener";
 import { getIdentity, type TailnetStatus } from "./localapi";
 import { defaultSelfId, type PeerEntry, type PeersConfig, peerPort, peerUrl, peersFile, readPeers, SYNC_CATEGORIES, validatePeers, writePeers } from "./peers";
-import { peerSocketRoute, proxyPeer, upgradePeerSocket } from "./proxy";
+import { PROXIED_HEADER, peerSocketRoute, proxyableTail, proxyPeer, upgradePeerSocket } from "./proxy";
 
 // The mesh (brief: settled decisions). ON exactly while peers.json lists a peer; OFF, nothing
 // here listens, polls, calls Tailscale or dials a peer, and every pre-existing route and socket
@@ -153,8 +153,15 @@ export function readMeshSettings(config: PeersConfig | null = rt.config): MeshSe
 export const meshPeers = (): PeerEntry[] => rt.config?.peers ?? [];
 export const meshSelf = (): { id: string; label: string } => (rt.config ?? emptyConfig()).self;
 
-/** A route under /api/peer/*: the calling peer (the peer listener put it there), else null. */
-export const requestPeer = (c: Context): PeerEntry | null => ((c.env as { meshPeer?: PeerEntry } | undefined)?.meshPeer ?? null);
+/**
+ * A route under /api/peer/*: the calling peer (the peer listener put it there), else null. A
+ * request a peer merely proxied for a browser (it carries X-Forwarded-Host, which proxyPeer always
+ * sets and peerFetch never does) is not the peer speaking, so it is null too.
+ */
+export const requestPeer = (c: Context): PeerEntry | null => {
+  const peer = (c.env as { meshPeer?: PeerEntry } | undefined)?.meshPeer ?? null;
+  return peer && !c.req.header(PROXIED_HEADER) ? peer : null;
+};
 
 /**
  * GET/POST/… <peer>/<path> over the peer hop (the peer's gate sees this host's node). Throws when
@@ -164,7 +171,9 @@ export const requestPeer = (c: Context): PeerEntry | null => ((c.env as { meshPe
 export function peerFetch(peerId: string, path: string, init?: RequestInit): Promise<Response> {
   const peer = rt.config?.peers.find((p) => p.id === peerId);
   if (!meshEnabled() || !peer) return Promise.reject(new Error(`unknown peer ${peerId}`));
-  return fetch(`${peerUrl(peer)}${path}`, init);
+  const headers = new Headers(init?.headers);
+  headers.delete(PROXIED_HEADER); // it would make the peer treat this host's own call as a browser's
+  return fetch(`${peerUrl(peer)}${path}`, { ...init, headers });
 }
 
 /** The surface server/sync builds on (mountSync(app, meshApi)). */
@@ -408,11 +417,16 @@ export function meshRoutes(app: Hono): void {
   app.get("/api/peer/hello", (c) => c.json(ownHello(meshSelf(), rt.self?.nodeId)));
 
   // The proxy. While OFF these paths fall through to exactly what answered them before.
-  const peerTail = (c: Context, id: string) => new URL(c.req.url).pathname.slice(`/peer/${id}`.length);
+  // Strip the raw "/peer/<segment>" by shape, never by the decoded id's length: an encoded id
+  // ("/peer/%62/…") must not shift what is left.
+  const peerTail = (c: Context) => new URL(c.req.url).pathname.replace(/^\/peer\/[^/]+/, "");
   app.all("/peer/:id/api/*", async (c, next) => {
     if (!meshEnabled()) return next();
     const peer = rt.config!.peers.find((p) => p.id === c.req.param("id"));
-    return peer ? proxyPeer(c, peer, peerTail(c, peer.id)) : c.json({ error: "Unknown peer" }, 404);
+    if (!peer) return c.json({ error: "Unknown peer" }, 404);
+    const tail = peerTail(c);
+    // The same 404 as any unknown /api route: never proxied, never distinguishable.
+    return proxyableTail(tail) ? proxyPeer(c, peer, tail) : c.json({ error: "Not found" }, 404);
   });
   app.all("/peer/:id/ws/*", async (c, next) => {
     if (!meshEnabled()) return next();

@@ -21,6 +21,28 @@ export function peerSocketRoute(pathname: string): [string, string] | null {
   return m ? [m[1]!, m[2]!] : null;
 }
 
+/**
+ * Whether the browser may reach this tail of a peer through /peer/<id>/. Never /api/peer/* (the
+ * peer-only routes: the peer's gate would see THIS host, a legitimate peer, so a browser could
+ * read or plant what peers exchange) nor /api/mesh/* (the peer listener refuses it anyway).
+ * Judged on the decoded, slash-collapsed, lower-cased path, so no spelling the peer's router
+ * would still match gets through; an undecodable tail is refused too. peerFetch (server-side) is
+ * the only way to a peer's /api/peer/*.
+ */
+export function proxyableTail(tail: string): boolean {
+  let path: string;
+  try {
+    path = decodeURIComponent(tail);
+  } catch {
+    return false;
+  }
+  path = path.replace(/[\\/]+/g, "/").toLowerCase();
+  return path.startsWith("/api/") && !/^\/api\/(?:peer|mesh)(?:\/|$)/.test(path);
+}
+
+/** Every proxied request and socket carries this, so the peer can tell it from a peerFetch. */
+export const PROXIED_HEADER = "X-Forwarded-Host";
+
 function whyDown(err: unknown): string {
   const e = err as Error & { cause?: { code?: string; message?: string } };
   return e.cause?.code ?? e.cause?.message ?? e.message ?? String(err);
@@ -32,7 +54,7 @@ export async function proxyPeer(c: Context, peer: PeerEntry, tail: string): Prom
   const host = headers.get("host");
   headers.delete("host");
   for (const h of HOP_BY_HOP) headers.delete(h);
-  if (host) headers.set("X-Forwarded-Host", host);
+  headers.set(PROXIED_HEADER, host || "unknown");
   let res: Response;
   try {
     res = await proxy(`${peerUrl(peer)}${tail}${incoming.search}`, { raw: c.req.raw, headers });
@@ -52,8 +74,7 @@ export function upgradePeerSocket(req: IncomingMessage, socket: Duplex, head: Bu
     refuse(socket, 404, { error: "Unknown peer" });
     return;
   }
-  const headers: Record<string, string> = {};
-  if (req.headers.host) headers["X-Forwarded-Host"] = req.headers.host;
+  const headers: Record<string, string> = { [PROXIED_HEADER]: req.headers.host || "unknown" };
   const url = `${peerUrl(peer).replace(/^http/, "ws")}${tail}${search}`;
   proxySocket(req, socket, head, url, headers, {
     onError: (err) => {

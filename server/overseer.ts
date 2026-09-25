@@ -51,7 +51,7 @@ import type { SubagentTool } from "./overseer-idea-tools";
 import { workerDenial } from "./delegate";
 import { BUILTIN_ALLOWED, overseerTools, type OverseerToolHost, TurnLimits, UserTurns } from "./overseer-tools";
 import { overseerFileTools } from "./overseer-file-tools";
-import { type Redactor, serverRedactor } from "./overseer-redact";
+import { type Redactor, redactExtensionMessages, serverRedactor } from "./overseer-redact";
 import { canonicalPath, resolveSessionPath } from "./paths";
 import { isViewing, markSeen, readSeen } from "./seen";
 import { cleanupSessions, getSessionSummary, idOf, indexedSessionPaths, lastReplyAtOf, listSessionFiles, listSessions } from "./sessions-index";
@@ -582,6 +582,11 @@ setOverseerRuntime({
               // A run started by a message: its prompt, with the notes and settings as they are now.
               pi.on("before_agent_start", (event) => {
                 event.systemPromptOptions.appendSystemPrompt = prompt.refresh();
+              });
+              // Worker reports and other extension messages reach the model redacted, like every tool's output.
+              pi.on("context", (event) => {
+                const messages = redactExtensionMessages(event.messages, serverRedactor());
+                return messages === event.messages ? undefined : { messages };
               });
             },
           },

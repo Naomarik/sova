@@ -221,6 +221,31 @@ export function serverRedactor(): Redactor {
   return shared.refresh();
 }
 
+/**
+ * Extension messages in the Overseer's context, redacted: a worker's completion report (an
+ * explorer's wake), an /explain result, a team question. They reach the model as `custom` messages,
+ * never through a tool, so `redactingTool` doesn't see them, and an explorer reads with the plain
+ * read tools (it can open a file the Overseer's own guarded read refuses). Applied to what each
+ * request sends (the `context` hook); the session file keeps what the extension wrote, for the
+ * user's own transcript. Returns the same array when nothing changed, so a clean context costs no
+ * copy. The user's messages and tool results are left alone (tools redact their own).
+ */
+export function redactExtensionMessages<M>(messages: M[], r: Redactor): M[] {
+  let changed = false;
+  const next = messages.map((m) => {
+    const msg = m as { role?: unknown; content?: unknown };
+    if (msg?.role !== "custom") return m;
+    let content = msg.content;
+    if (typeof content === "string") content = r.redact(content);
+    else if (Array.isArray(content))
+      content = (content as Content).map((b) => (b?.type === "text" && typeof b.text === "string" ? { ...b, text: r.redact(b.text) } : b));
+    if (typeof content === "string" ? content === msg.content : (content as Content).every((b, i) => b === (msg.content as Content)[i])) return m;
+    changed = true;
+    return { ...msg, content } as M;
+  });
+  return changed ? next : messages;
+}
+
 /** Marks a tool that went through `redactingTool` (the test that every Overseer tool is covered). */
 export const REDACTING = Symbol.for("sova.overseer.redacting");
 

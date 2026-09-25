@@ -288,3 +288,23 @@ describe("what the Overseer stores and is prompted with", () => {
     assert.match(text, /\[Deploy \[redacted\]\]\(sova:\/\/s\/s1\) — 401 for \[redacted\]$/);
   });
 });
+
+describe("extension messages in the Overseer's context", () => {
+  test("a worker's report is redacted on its way to the model; user messages and tool results are left alone", async () => {
+    const { redactExtensionMessages } = await import("./overseer-redact");
+    const secret = "Zq8vT3mN9pL2xR7wK4sB6yH1";
+    const r = new Redactor([], { SOME_API_KEY: secret }).refresh();
+    const report = { role: "custom", customType: "subagent-complete", content: `### ag_01 (explore §x) — waiting\nfound ${secret} in .env`, display: true };
+    const parts = { role: "custom", customType: "explain-complete", content: [{ type: "text", text: `key ${secret}` }, { type: "image", data: "AAAA", mimeType: "image/png" }] };
+    const user = { role: "user", content: `mine ${secret}` };
+    const tool = { role: "toolResult", content: [{ type: "text", text: "already clean" }] };
+    const out = redactExtensionMessages([user, report, parts, tool], r) as any[];
+    assert.equal(out[0], user);
+    assert.equal(out[1].content, "### ag_01 (explore §x) — waiting\nfound [redacted] in .env");
+    assert.equal(out[2].content[0].text, "key [redacted]");
+    assert.equal(out[2].content[1], parts.content[1], "an image is left alone");
+    assert.equal(out[3], tool);
+    const clean = [user, tool];
+    assert.equal(redactExtensionMessages(clean, r), clean, "nothing to redact: the same array");
+  });
+});

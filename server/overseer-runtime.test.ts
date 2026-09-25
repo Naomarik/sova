@@ -657,3 +657,21 @@ describe("the ideas backlog in the prompt, and explorers through the runtime's s
     assert.equal(((globalThis as { __fakeSpawns?: unknown[] }).__fakeSpawns ?? []).length, n);
   });
 });
+
+describe("worker reports reach the Overseer's model redacted", () => {
+  test("a subagent-complete message carrying a secret is sent as [redacted]; the file keeps what the extension wrote", async () => {
+    const secret = "Zq8vT3mN9pL2xR7wK4sB6yH1";
+    process.env.OVERSEER_TEST_API_KEY = secret;
+    try {
+      const chat = await overseerChat();
+      const n = contexts.length;
+      await chat.session.sendCustomMessage({ customType: "subagent-complete", content: `### ag_01 (explore §rt/x) — waiting\nThe .env holds ${secret}.`, display: true }, { deliverAs: "followUp", triggerTurn: true });
+      await settled(chat);
+      const sent = JSON.stringify(contexts.slice(n));
+      assert.ok(sent.includes("The .env holds [redacted]."), "the model saw the report, redacted");
+      assert.ok(!sent.includes(secret));
+    } finally {
+      delete process.env.OVERSEER_TEST_API_KEY;
+    }
+  });
+});

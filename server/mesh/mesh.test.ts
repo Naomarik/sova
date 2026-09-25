@@ -862,28 +862,6 @@ describe("mesh ON", () => {
     }
   });
 
-  test("SOVA_HOST_ID: this host's id in hello, GET /api/mesh and the front door while on", async () => {
-    const before = (await getJson<MeshInfo>("/api/mesh"))[1].self.id;
-    process.env.SOVA_HOST_ID = "vps";
-    try {
-      await putJson("/api/mesh/settings", {}); // a write re-reads peers.json, as a restart would
-      assert.equal((await getJson<MeshInfo>("/api/mesh"))[1].self.id, "vps");
-      assert.equal((await getJson<MeshHello>("/api/mesh/hello"))[1].id, "vps");
-      whoisNode = "nB";
-      assert.equal((await peerGet("/api/peer/hello").then((r) => JSON.parse(r.body) as MeshHello)).id, "vps");
-      assert.equal((await getJson<FrontDoorConfig>("/api/mesh/front-door"))[1].order[0]!.id, "vps");
-    } finally {
-      delete process.env.SOVA_HOST_ID;
-    }
-    assert.equal((await getJson<MeshInfo>("/api/mesh"))[1].self.id, "vps", "the write persisted it");
-    // Put the old id back by hand (settings can't rename a host) for the tests after this one.
-    const doc = JSON.parse(readFileSync(peersFile(), "utf8")) as { self: { id: string } };
-    doc.self.id = before;
-    writeFileSync(peersFile(), JSON.stringify(doc));
-    await putJson("/api/mesh/settings", {});
-    assert.equal((await getJson<MeshInfo>("/api/mesh"))[1].self.id, before);
-  });
-
   test("revocation: a hand edit that drops a peer takes effect on its very next call, and cuts its open socket", async () => {
     const keep = [
       { id: "b", label: "B", nodeId: "nB", name: "127.0.0.1", url: `http://127.0.0.1:${fakePort}` },

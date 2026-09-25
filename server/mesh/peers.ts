@@ -53,21 +53,6 @@ export type PeersRead = { ok: true; config: PeersConfig } | { ok: false; error: 
 /** Read per call, like every state path: PI_CODING_AGENT_DIR is what the tests move. */
 export const peersFile = (): string => join(stateRoot(), "peers.json");
 
-/**
- * SOVA_HOST_ID, this host's id when set and valid (a machine whose hostname isn't the name it goes
- * by, e.g. a VPS). It applies only while the mesh is on (peers.json lists a peer), and there it
- * wins over self.id in the file. An invalid value is ignored with a warning.
- */
-export function hostIdOverride(): string | null {
-  const v = process.env.SOVA_HOST_ID?.trim();
-  if (!v) return null;
-  if (PEER_ID_RE.test(v)) return v;
-  if (!warnedHostId) console.warn(`[mesh] SOVA_HOST_ID=${JSON.stringify(v)} is not a valid host id (${PEER_ID_RE}): ignored`);
-  warnedHostId = true;
-  return null;
-}
-let warnedHostId = false;
-
 /** This machine's short hostname as a peer-id slug (the default self id). */
 export function defaultSelfId(): string {
   const slug = hostname()
@@ -113,8 +98,7 @@ export function validatePeers(raw: unknown): { config: PeersConfig } | { error: 
   if (r.version !== undefined && r.version !== 1) return { error: `unsupported version ${JSON.stringify(r.version)}` };
   const selfRaw = (r.self ?? {}) as Record<string, unknown>;
   if (typeof selfRaw !== "object" || selfRaw === null || Array.isArray(selfRaw)) return { error: "self must be an object" };
-  const on = Array.isArray(r.peers) && r.peers.length > 0;
-  const selfId = (on ? hostIdOverride() : null) ?? (selfRaw.id === undefined ? defaultSelfId() : selfRaw.id);
+  const selfId = selfRaw.id === undefined ? defaultSelfId() : selfRaw.id;
   if (typeof selfId !== "string" || !PEER_ID_RE.test(selfId)) return { error: `self.id must match ${PEER_ID_RE}` };
   if (selfRaw.label !== undefined && !text(selfRaw.label)) return { error: "self.label must be a non-empty string (≤ 80)" };
   const selfServe = selfRaw.serveUrl === undefined || selfRaw.serveUrl === null ? null : checkUrl(selfRaw.serveUrl);

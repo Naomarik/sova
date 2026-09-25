@@ -8,7 +8,9 @@
 //   node scripts/mesh-lab/mock-token-server/m3-drive.mjs [h1|h2|h2c|h6|h6c|h9|all|h3|h4|h7|h8|h10|chaos|h11|conflict|conflict-verify|conflict-clean|apikeys] [--hosts a,b,c] [--plant-only]
 //   (h11 is meant for an 8-host lab: --hosts a,b,c,d,e,f,g,h; M3_H11_SECONDS sets its length)
 //   `apikeys` puts the LAST host in API-keys-only mode (MeshSettings.loginKinds, the VPS's mode) and
-//   proves it takes API keys but never an OAuth login, then switches it back.
+//   proves it takes API keys but never an OAuth login, then switches it back. With --pin the mode is
+//   set as the VPS sets it: SOVA_SYNC_LOGIN_KINDS=api-keys in the host's env (`lab sova-env`) + a Sova
+//   restart (then GET reports it pinned and a PUT of "all" is 409).
 //
 // Needs the lab's mock token server (laptop http://127.0.0.1:4888, MOCK_TOKEN_URL inside hosts)
 // and SOVA_SYNC_CLAUDE_DIR in the hosts for the Claude scenarios. Hosts are compared by sha256 of
@@ -500,7 +502,22 @@ async function conflictClean() {
 // ---- API-keys-only host (M5: the VPS's mode) ------------------------------------------------------
 
 const settingsOf = async (host) => JSON.parse((await mainApi(host, "/api/mesh/settings")).text);
+const PIN = args.includes("--pin");
+async function pinKinds(host, loginKinds) {
+  if (loginKinds) lab("sova-env", host, `SOVA_SYNC_LOGIN_KINDS=${loginKinds}`);
+  else lab("sova-env", host, "--clear");
+  lab("sova-restart", host);
+  const s = await settingsOf(host);
+  if ((s.loginKinds ?? "all") !== (loginKinds ?? "all") || !!s.loginKindsPinned !== !!loginKinds) {
+    throw new Error(`${host}: after the pin, settings read ${JSON.stringify({ loginKinds: s.loginKinds, loginKindsPinned: s.loginKindsPinned })}`);
+  }
+  if (loginKinds) {
+    const r = await mainApi(host, "/api/mesh/settings", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ loginKinds: "all" }) });
+    if (r.status !== 409) throw new Error(`${host}: PUT loginKinds all on a pinned host answered ${r.status}`);
+  }
+}
 async function setKinds(host, loginKinds) {
+  if (PIN) return pinKinds(host, loginKinds);
   const r = await mainApi(host, "/api/mesh/settings", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ loginKinds }) });
   if (r.status !== 200) throw new Error(`${host}: PUT loginKinds ${loginKinds}: ${r.status} ${r.text.slice(0, 120)}`);
   const got = (await settingsOf(host)).loginKinds ?? "all";
@@ -558,13 +575,14 @@ async function apikeys() {
     if (rows.some((k) => k === "pi:openai-codex" || k.startsWith("claude:"))) throw new Error(`${v} lists ${rows.join(",")}`);
     const refusals = HOSTS.map((h) => [h, Number(logSince(h, from[h]))]).filter(([, n]) => n > 0);
     if (refusals.length) throw new Error(`refusals logged: ${JSON.stringify(refusals)}`);
-    const note = `${v} api-keys: kept no OAuth (pi ${pi}, Claude ${claude} reached ${others.join(",")} only), API key add/change/logout both ways, 0 refusals`;
+    const note = `${v} api-keys${PIN ? " (env pin, PUT all → 409)" : " (settings)"}: kept no OAuth (pi ${pi}, Claude ${claude} reached ${others.join(",")} only), API key add/change/logout both ways, 0 refusals`;
     // Back to "all": v catches up with both OAuth logins.
     await setKinds(v, null);
     await until(`${v} caught up with the OAuth logins`, async () => ((await piConverged(pi)()) === true && (await claudeConverged(claude)()) === true) || "not yet", 60_000);
     return `${note}; back to all: ${v} caught up`;
   } finally {
-    if (((await settingsOf(v).catch(() => ({}))).loginKinds ?? "all") !== "all") await setKinds(v, null).catch((e) => console.error(`restore ${v}: ${e.message}`));
+    const left = await settingsOf(v).catch(() => ({}));
+    if ((left.loginKinds ?? "all") !== "all" || left.loginKindsPinned) await setKinds(v, null).catch((e) => console.error(`restore ${v}: ${e.message}`));
   }
 }
 

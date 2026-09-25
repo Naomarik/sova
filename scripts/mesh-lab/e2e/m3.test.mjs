@@ -152,4 +152,10 @@ describe("login sync scenarios (credential-sync.md §5.5, via m3-drive.mjs)", ()
     ["H10", "h10", "restart and catch up"],
   ])
     test(`${id} ${what}`, () => drive(name));
+  // H11 needs `lab up --hosts 8` (random sova-stop/start on up to 6 of 8 hosts, ~6 min)
+  test("H11 many hosts", { skip: false }, (t) => {
+    if (cfg.hosts.length < 8) return t.skip("needs lab up --hosts 8");
+    const r = spawnSync(process.execPath, [join(LAB_DIR, "mock-token-server/m3-drive.mjs"), "h11", "--hosts", cfg.hosts.join(",")], { encoding: "utf8", timeout: 900000 });
+    assert.equal(r.status, 0, (r.stdout + r.stderr).trim().split("\n").slice(-8).join("\n"));
+  });
 });

@@ -461,6 +461,21 @@ describe("mesh ON", () => {
     assert.equal(fetches, before, "nothing was forwarded");
   });
 
+  test("a peer's unparseable request target is a 400, request and upgrade alike (never a hung socket)", async () => {
+    whoisNode = "nB";
+    for (const path of ["//x%zz/api/health", "//[/api/health"]) {
+      assert.deepEqual(await peerRequest("GET", path), { status: 400, body: JSON.stringify({ error: "Bad request" }) }, path);
+      const sock = connect({ host: "127.0.0.1", port: listenerInfo()!.port });
+      sock.on("error", () => {});
+      let text = "";
+      sock.on("data", (d) => (text += d.toString()));
+      const closed = new Promise<void>((r) => sock.once("close", () => r()));
+      sock.write(`GET ${path.replace("/api/health", "/ws/chat")} HTTP/1.1\r\nHost: peer\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n`);
+      await within(closed, 3000, `the upgrade to ${path} ends`);
+      assert.match(text, /^HTTP\/1\.1 400 /, path);
+    }
+  });
+
   test("peer listener WS: refused without whois, dispatched to Sova's own sockets with it", async () => {
     const port = listenerInfo()!.port;
     whoisNode = null;

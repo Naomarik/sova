@@ -189,7 +189,12 @@ export class PeerListener {
         res.end(JSON.stringify(REFUSAL));
         return;
       }
-      const url = new URL(req.url ?? "/", "http://peer");
+      const url = requestUrl(req);
+      if (!url) {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "Bad request" }));
+        return;
+      }
       if (!peerMayReach(url.pathname) || url.pathname.startsWith("/ws/")) {
         res.writeHead(404, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ error: "Not found" }));
@@ -205,7 +210,11 @@ export class PeerListener {
         refuseWith(socket, 403, REFUSAL, { [REFUSED_HEADER]: "refused" });
         return;
       }
-      const url = new URL(req.url ?? "/", "http://peer");
+      const url = requestUrl(req);
+      if (!url) {
+        refuse(socket, 400, { error: "Bad request" });
+        return;
+      }
       if (url.pathname !== "/ws/chat" && url.pathname !== "/ws/watch") {
         refuse(socket, 404, { error: "Not found" });
         return;
@@ -213,6 +222,15 @@ export class PeerListener {
       this.deps.upgrade(req, socket, head);
     });
     return server;
+  }
+}
+
+/** The request target as a URL, or null when it doesn't parse (e.g. "//x%zz/api": a bad authority). */
+function requestUrl(req: IncomingMessage): URL | null {
+  try {
+    return new URL(req.url ?? "/", "http://peer");
+  } catch {
+    return null;
   }
 }
 

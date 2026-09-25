@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Exposure proof, from the laptop (read-only on the VPS):
-#   scripts/mesh-vps/exposure.sh probe              public 203.0.113.10:{4800,4801,4890} must TIME OUT; controls 80/443 must connect
+#   scripts/mesh-vps/exposure.sh probe              public 203.0.113.10:{4800,4801,4890,2089,8443,10443} must TIME OUT; controls 80/443 must connect
 #   scripts/mesh-vps/exposure.sh snapshot <file>    the production state: listening sockets + `systemctl is-active` of the prod units
 #   scripts/mesh-vps/exposure.sh compare <a> <b>    identical, or print the difference and fail
 # A TCP connect that neither connects nor is refused within 6 s counts as a timeout (ufw drops it on eth0).
@@ -20,11 +20,11 @@ case "${1:-}" in
       r=$(connect "$VPS_PUBLIC_IP" "$p"); printf 'control  %s:%-5s %s\n' "$VPS_PUBLIC_IP" "$p" "$r"
       [ "$r" = open ] || { log "control port $p is not open: the probe itself is broken"; bad=1; }
     done
-    for p in "$SOVA_PORT" "$SOVA_PEER_PORT" "$FRONTDOOR_PORT"; do
+    for p in "$SOVA_PORT" "$SOVA_PEER_PORT" "$FRONTDOOR_PORT" "${CADDY_ADMIN##*:}" "$FRONTDOOR_SERVE_PORT" "$HOST_SERVE_PORT"; do
       r=$(connect "$VPS_PUBLIC_IP" "$p"); printf 'public   %s:%-5s %s\n' "$VPS_PUBLIC_IP" "$p" "$r"
       [ "$r" = timeout ] || bad=1
     done
-    [ $bad = 0 ] && echo "PASS: every Sova port times out from the public IP" || { echo "FAIL"; exit 1; }
+    [ $bad = 0 ] && echo "PASS: every Sova port (incl. Caddy admin and the serve ports) times out from the public IP" || { echo "FAIL"; exit 1; }
     ;;
   snapshot)
     out=${2:?snapshot <file>}

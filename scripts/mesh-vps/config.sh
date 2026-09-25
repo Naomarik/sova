@@ -17,6 +17,10 @@ SOVA_PORT=${SOVA_PORT:-4800}
 SOVA_PEER_PORT=${SOVA_PEER_PORT:-4801}
 FRONTDOOR_PORT=${FRONTDOOR_PORT:-4890}
 CADDY_ADMIN=${CADDY_ADMIN:-127.0.0.1:2089}
+# tailscale serve (set up by the parent, tailnet only): the front door and this host
+FRONTDOOR_SERVE_PORT=${FRONTDOOR_SERVE_PORT:-8443}
+HOST_SERVE_PORT=${HOST_SERVE_PORT:-10443}
+VPS_DNS=${VPS_DNS:-vps.<tailnet>.ts.net}
 
 # Node 22 LTS, official tarball, pinned by the sha256 in nodejs.org's SHASUMS256.txt
 NODE_VERSION=${NODE_VERSION:-v22.23.3}
@@ -32,6 +36,8 @@ LAPTOP_LABEL=${LAPTOP_LABEL:-laptop}
 LAPTOP_NODE_ID=${LAPTOP_NODE_ID:-nLAPTOP0000CNTRL}
 LAPTOP_DNS=${LAPTOP_DNS:-laptop.<tailnet>.ts.net}
 LAPTOP_PEER_URL=${LAPTOP_PEER_URL:-http://100.64.0.4:4801}
+# the front door's upstream for the laptop: a user-level socat forwarder 100.64.0.4:4872 -> the team server 127.0.0.1:4870
+LAPTOP_SERVE_URL=${LAPTOP_SERVE_URL:-http://100.64.0.4:4872}
 
 # Production units on the VPS whose state must be identical before and after anything we do
 PROD_UNITS=${PROD_UNITS:-}

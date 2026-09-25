@@ -2,7 +2,8 @@
 # `sudo loginctl enable-linger deploy`):
 #   mkdir -p ~/.config/systemd/user && cp ~/sova-mesh/app/scripts/mesh-vps/sova-mesh.service ~/.config/systemd/user/
 #   systemctl --user daemon-reload && systemctl --user enable --now sova-mesh.service
-# Main listener 127.0.0.1:4800, peer listener 100.64.0.2:4801 (see ~/sova-mesh/sova-mesh.env).
+# Main listener 127.0.0.1:4800 (tailnet: `tailscale serve --https=10443`, https://vps.<tailnet>.ts.net:10443/),
+# peer listener 100.64.0.2:4801 (see ~/sova-mesh/sova-mesh.env).
 [Unit]
 Description=Sova (mesh host)
 After=network-online.target

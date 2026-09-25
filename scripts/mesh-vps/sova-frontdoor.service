@@ -2,7 +2,8 @@
 #   cp ~/sova-mesh/app/scripts/mesh-vps/sova-frontdoor.service ~/.config/systemd/user/
 #   ~/sova-mesh/app/scripts/mesh-vps/frontdoor-config.sh     (writes ~/sova-mesh/Caddyfile; needs Sova running)
 #   systemctl --user daemon-reload && systemctl --user enable --now sova-frontdoor.service
-# Listens on 127.0.0.1:4890 only (admin 127.0.0.1:2089); `tailscale serve --https=443` is the way in.
+# Listens on 127.0.0.1:4890 only (admin 127.0.0.1:2089); the way in is `tailscale serve --https=8443`:
+# https://vps.<tailnet>.ts.net:8443/ (tailnet only).
 [Unit]
 Description=Sova front door (Caddy, 127.0.0.1:4890)
 After=network-online.target sova-mesh.service

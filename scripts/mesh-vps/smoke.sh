@@ -5,7 +5,7 @@
 # 2. start Sova by hand (setsid nohup run-sova.sh, as deploy); wait for 127.0.0.1:4800/api/health
 # 3. mesh OFF (no peers.json): nothing on the peer port
 # 4. PUT /api/mesh/peers (the laptop's team server) + /api/mesh/settings (label, serveUrl): the peer listener binds 100.64.0.2:4801 ONLY
-# 5. exposure probe from the laptop while it runs: public 4800/4801/4890 time out
+# 5. exposure probe from the laptop while it runs: public 4800/4801/4890/2089/8443/10443 time out
 # 6. stop Sova, check its ports are closed, snapshot again: production state identical
 # The peers are emptied again (self kept) unless --keep-peers (then the next start comes up with the mesh on).
 set -euo pipefail
@@ -46,8 +46,8 @@ fi
 put() { # path json -> http code (answer in $B/smoke-put.json)
   printf '%s' "$2" | vps "curl -sS -m 10 -o $B/smoke-put.json -w '%{http_code}' -X PUT -H 'content-type: application/json' --data-binary @- http://127.0.0.1:$SOVA_PORT$1"
 }
-peers=$(printf '{"peers":[{"id":"%s","name":"%s","label":"%s","nodeId":"%s","url":"%s","priority":1}]}' \
-  "$LAPTOP_ID" "$LAPTOP_DNS" "$LAPTOP_LABEL" "$LAPTOP_NODE_ID" "$LAPTOP_PEER_URL")
+peers=$(printf '{"peers":[{"id":"%s","name":"%s","label":"%s","nodeId":"%s","url":"%s","serveUrl":"%s","priority":1}]}' \
+  "$LAPTOP_ID" "$LAPTOP_DNS" "$LAPTOP_LABEL" "$LAPTOP_NODE_ID" "$LAPTOP_PEER_URL" "$LAPTOP_SERVE_URL")
 code=$(put /api/mesh/peers "$peers")
 [ "$code" = 200 ] || { vps "cat $B/smoke-put.json" >&2; fail "PUT /api/mesh/peers -> $code"; }
 # this host's label and its front-door upstream (the front door runs on this host: loopback)

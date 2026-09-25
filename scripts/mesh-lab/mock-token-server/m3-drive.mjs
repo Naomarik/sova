@@ -99,6 +99,8 @@ const claudeSim = (host, cmd, extra = "") =>
 
 const mock = async (path) => (await fetch(new URL(path, MOCK))).json();
 const lineage = async (id) => (await mock("/mock/lineages"))[id];
+/** The throwaway provider of the conflict scenarios; a fresh name has no logout history on the mesh. */
+const CONFLICT_PROVIDER = process.env.M3_CONFLICT_PROVIDER ?? "m3conflict";
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function until(what, cond, ms = 20_000) {
@@ -422,7 +424,7 @@ const loginRow = async (host, key) => JSON.parse((await mainApi(host, "/api/mesh
  */
 async function conflict() {
   const [a, b] = HOSTS;
-  const provider = "m3conflict";
+  const provider = CONFLICT_PROVIDER;
   const key = `pi:${provider}`;
   const val = Object.fromEntries([a, b].map((h) => [h, `m3c-${h}-${randomBytes(6).toString("hex")}`]));
   const shaOf = (h) => inHost(h, "pi-state", provider).refreshSha;
@@ -474,10 +476,10 @@ async function conflict() {
 /** After a claim made elsewhere (the Mesh page on the first host): every host on its key, no conflict left. */
 async function conflictVerify() {
   const [a] = HOSTS;
-  const key = "pi:m3conflict";
-  const want = inHost(a, "pi-state", "m3conflict").refreshSha;
-  if (!want) throw new Error(`${a} holds no m3conflict key`);
-  await until(`every host holds ${a}'s key`, async () => HOSTS.every((h) => inHost(h, "pi-state", "m3conflict").refreshSha === want) || "not yet", 30_000);
+  const key = `pi:${CONFLICT_PROVIDER}`;
+  const want = inHost(a, "pi-state", CONFLICT_PROVIDER).refreshSha;
+  if (!want) throw new Error(`${a} holds no ${CONFLICT_PROVIDER} key`);
+  await until(`every host holds ${a}'s key`, async () => HOSTS.every((h) => inHost(h, "pi-state", CONFLICT_PROVIDER).refreshSha === want) || "not yet", 30_000);
   await until("no conflict left", async () => {
     const rows = await Promise.all(HOSTS.map((h) => loginRow(h, key)));
     return rows.every((r) => r && !r.conflictWith && r.origin === a && r.loginAt > 0) || rows.map((r) => [r?.origin, r?.loginAt, r?.conflictWith ?? null]);
@@ -487,9 +489,9 @@ async function conflictVerify() {
 
 /** Log the throwaway conflict key out everywhere (after a --plant-only run). */
 async function conflictClean() {
-  const holders = HOSTS.filter((h) => inHost(h, "pi-state", "m3conflict").present);
-  for (const h of holders) inHost(h, "pi-delete", "m3conflict");
-  await until("the throwaway key is gone everywhere", piAbsent("m3conflict"));
+  const holders = HOSTS.filter((h) => inHost(h, "pi-state", CONFLICT_PROVIDER).present);
+  for (const h of holders) inHost(h, "pi-delete", CONFLICT_PROVIDER);
+  await until("the throwaway key is gone everywhere", piAbsent(CONFLICT_PROVIDER));
   return `logged out on ${holders.join(",") || "no host"}`;
 }
 

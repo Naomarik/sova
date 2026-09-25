@@ -83,13 +83,14 @@ const GET_PROSE = 12_000;
 const SEED_MAX = 60_000;
 const WORKER_GONE = new Set(["stopping", "done", "killed", "error", "restored"]);
 
-/** One idea as a listing row. */
-export function ideaRow(r: IdeaRecord): string {
+/** One idea as a listing row. An explorer is this conversation's, or marked as an earlier one's:
+    worker ids restart with the server, so a bare earlier `ag_01` would read as the current one. */
+export function ideaRow(r: IdeaRecord, overseerId: string): string {
   const extra = [
     r.tags.length ? `#${r.tags.join(" #")}` : "",
     r.links.length ? `→ ${r.links.join(", ")}` : "",
     r.sessionId ? `session sova://s/${r.sessionId}` : "",
-    r.explorerId ? `explorer ${r.explorerId}` : "",
+    r.explorerId ? (r.explorerOverseerId === overseerId ? `explorer ${r.explorerId}` : `explorer ${r.explorerId} of an earlier conversation (ended)`) : "",
   ].filter(Boolean);
   return `- ${r.id} · ${r.status} · ${cut(r.title, 100)}${extra.length ? ` · ${extra.join(" · ")}` : ""}`;
 }
@@ -195,7 +196,7 @@ export function ideaTools(d: IdeaToolDeps): Tool[] {
               for (const n of nss) {
                 const counts = IDEA_STATUSES.filter((s) => n.counts[s]).map((s) => `${n.counts[s]} ${s}`).join(", ");
                 lines.push(`§${n.ns} (${counts})`);
-                for (const e of n.entries) lines.push(`${e.parent ? "    " : "  "}${ideaRow({ ...m.ideas[e.id]!, id: e.id, ns: n.ns })}`);
+                for (const e of n.entries) lines.push(`${e.parent ? "    " : "  "}${ideaRow({ ...m.ideas[e.id]!, id: e.id, ns: n.ns }, host.overseerId())}`);
               }
               return { content: text(lines.join("\n")), details: { total: toc.total, ids: nss.flatMap((n) => n.entries.map((e) => e.id)) } };
             }
@@ -203,13 +204,13 @@ export function ideaTools(d: IdeaToolDeps): Tool[] {
               if (typeof p.query !== "string" || !p.query.trim()) throw new IdeaError("search needs a query.");
               const hits = searchIdeas(p.query, { ns: p.ns ? String(p.ns).replace(/^§/, "") : undefined, status: p.status, limit: p.limit });
               const body = hits.length
-                ? hits.map((h) => `${ideaRow(h.record)} · match ${h.score.toFixed(1)}`).join("\n")
+                ? hits.map((h) => `${ideaRow(h.record, host.overseerId())} · match ${h.score.toFixed(1)}`).join("\n")
                 : "No similar idea. Propose a new entry.";
               return { content: text(`Similar ideas for "${cut(p.query, 80)}":\n${body}`), details: { ids: hits.map((h) => h.record.id) } };
             }
             case "get": {
               const r = need(p.id);
-              const lines = [ideaRow(r), `Filed ${r.createdAt.slice(0, 10)}, updated ${r.updatedAt.slice(0, 10)}.`];
+              const lines = [ideaRow(r, host.overseerId()), `Filed ${r.createdAt.slice(0, 10)}, updated ${r.updatedAt.slice(0, 10)}.`];
               if (r.parent) lines.push(`Sub-entry of ${r.parent}.`);
               const by = linkedBy(r.id, m);
               if (by.length) lines.push(`Linked from: ${by.join(", ")}`);
@@ -227,7 +228,7 @@ export function ideaTools(d: IdeaToolDeps): Tool[] {
                 const meta = m.ideas[id]!;
                 const prose = clip(readProse(id).trim(), Math.min(SCOPE_EACH, Math.max(0, budget)));
                 budget -= prose.length;
-                parts.push(`${ideaRow({ ...meta, id, ns: id.slice(1).split(/[./]/)[0]! })}\n${prose || "(title only)"}`);
+                parts.push(`${ideaRow({ ...meta, id, ns: id.slice(1).split(/[./]/)[0]! }, host.overseerId())}\n${prose || "(title only)"}`);
               }
               return { content: text(`${ids.length} idea${ids.length === 1 ? "" : "s"} in the scope of ${r.id}:\n\n${parts.join("\n\n")}`), details: { id: r.id, ids } };
             }
@@ -236,7 +237,7 @@ export function ideaTools(d: IdeaToolDeps): Tool[] {
               const direct = new Set(linkedBy(r.id, m));
               const all = impactOf(r.id, m);
               const body = all.length
-                ? all.map((id) => `${ideaRow({ ...m.ideas[id]!, id, ns: id.slice(1).split(/[./]/)[0]! })}${direct.has(id) ? "" : " · (indirect)"}`).join("\n")
+                ? all.map((id) => `${ideaRow({ ...m.ideas[id]!, id, ns: id.slice(1).split(/[./]/)[0]! }, host.overseerId())}${direct.has(id) ? "" : " · (indirect)"}`).join("\n")
                 : "Nothing links to it.";
               return { content: text(`What links to ${r.id}:\n${body}`), details: { id: r.id, ids: all } };
             }

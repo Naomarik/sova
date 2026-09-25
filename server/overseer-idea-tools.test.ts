@@ -195,7 +195,11 @@ describe("explorers: one subagent per idea, launched and addressed through the s
   });
 
   test("tell and explorer refuse an idea whose explorer belongs to another conversation, or has ended", async () => {
+    assert.match(await run("sova_ideas", { op: "get", id: "mesh/health" }), /· explorer ag_01$/m, "this conversation's explorer, bare");
     overseerId = "ov-2";
+    // Worker ids restart with the server: an earlier conversation's ag_01 must never read as the current one.
+    for (const op of ["toc", "get"]) assert.match(await run("sova_ideas", { op, id: "mesh/health" }), /explorer ag_01 of an earlier conversation \(ended\)/, op);
+    assert.match(await run("sova_ideas", { op: "search", query: "peer health" }), /explorer ag_01 of an earlier conversation/);
     assert.match(await refusal("sova_idea", { op: "tell", id: "mesh/health", message: "x" }), /earlier Overseer conversation/);
     assert.match(await refusal("sova_ideas", { op: "explorer", id: "mesh/health" }), /earlier Overseer conversation/);
     overseerId = "ov-1";

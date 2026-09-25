@@ -822,7 +822,8 @@ describe("mesh ON", () => {
 
   test("login kinds: stored only as api-keys, null/all clear it, bad values 400; SOVA_SYNC_LOGIN_KINDS pins it", async () => {
     const stored = () => (JSON.parse(readFileSync(peersFile(), "utf8")) as { loginKinds?: string }).loginKinds;
-    assert.equal((await getJson<MeshSettings>("/api/mesh/settings"))[1].loginKinds, undefined, "absent = all");
+    let [, got] = await getJson<MeshSettings>("/api/mesh/settings");
+    assert.deepEqual([got.loginKinds, got.loginKindsPinned], [undefined, undefined], "absent = all, not pinned");
     assert.equal((await putJson("/api/mesh/settings", { loginKinds: "oauth" }))[0], 400);
     let [s, settings] = await putJson<MeshSettings>("/api/mesh/settings", { loginKinds: "api-keys" });
     assert.deepEqual([s, settings.loginKinds, stored()], [200, "api-keys", "api-keys"]);
@@ -841,13 +842,15 @@ describe("mesh ON", () => {
     assert.deepEqual([settings.loginKinds, stored()], [undefined, undefined]);
     process.env.SOVA_SYNC_LOGIN_KINDS = "api-keys";
     try {
-      assert.equal((await getJson<MeshSettings>("/api/mesh/settings"))[1].loginKinds, "api-keys", "the pin wins over the file");
+      [, got] = await getJson<MeshSettings>("/api/mesh/settings");
+      assert.deepEqual([got.loginKinds, got.loginKindsPinned], ["api-keys", true], "the pin wins over the file, and says so");
       assert.equal(meshApi.settings().loginKinds, "api-keys", "server/sync sees the pin");
       for (const other of ["all", null]) {
         assert.deepEqual(await putJson("/api/mesh/settings", { loginKinds: other }), [409, { error: "loginKinds is pinned by SOVA_SYNC_LOGIN_KINDS on this host" }]);
       }
       assert.equal((await putJson("/api/mesh/settings", { loginKinds: "api-keys" }))[0], 200, "the pinned value itself is fine");
-      assert.equal((await putJson("/api/mesh/settings", { hostLabel: "A" }))[0], 200, "a PUT that leaves loginKinds alone is fine");
+      const [ok, afterPut] = await putJson<MeshSettings>("/api/mesh/settings", { hostLabel: "A" });
+      assert.deepEqual([ok, afterPut.loginKindsPinned], [200, true], "a PUT that leaves loginKinds alone is fine");
       delete process.env.SOVA_SYNC_LOGIN_KINDS;
       await putJson("/api/mesh/settings", { loginKinds: null });
       assert.equal(stored(), undefined);

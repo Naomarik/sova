@@ -19,6 +19,7 @@ import { type ListenerDeps, PeerListener } from "./listener";
 import { getIdentity, type TailnetStatus } from "./localapi";
 import { defaultSelfId, type PeerEntry, type PeersConfig, peerPort, peerUrl, peersFile, readPeers, SYNC_CATEGORIES, validatePeers, writePeers } from "./peers";
 import { PROXIED_HEADER, peerSocketRoute, proxyTail, proxyPeer, upgradePeerSocket } from "./proxy";
+import { loginKindsPin } from "../sync/logins-merge";
 
 // The mesh (brief: settled decisions). ON exactly while peers.json lists a peer; OFF, nothing
 // here listens, polls, calls Tailscale or dials a peer, and every pre-existing route and socket
@@ -164,23 +165,25 @@ export const onSyncStatus = (provider: () => SyncStatus[]): void => {
 };
 
 /**
- * SOVA_SYNC_LOGIN_KINDS pins this host's login kinds ("all" | "api-keys"), else null. Any other
- * value pins "api-keys": the variable exists to keep subscription logins off a host, so a typo
- * must not let them in.
+ * SOVA_SYNC_LOGIN_KINDS pins this host's login kinds, read the way server/sync reads it: any value
+ * but "all" pins "api-keys" (the variable keeps subscription logins off a host, so a typo must not
+ * let them in). Null when unset.
  */
 function pinnedLoginKinds(): "all" | "api-keys" | null {
-  const v = process.env.SOVA_SYNC_LOGIN_KINDS?.trim();
-  if (!v) return null;
-  if (v === "all" || v === "api-keys") return v;
-  if (!warnedLoginKinds) console.warn(`[mesh] SOVA_SYNC_LOGIN_KINDS=${JSON.stringify(v)} is not "all" or "api-keys": treating it as "api-keys"`);
-  warnedLoginKinds = true;
-  return "api-keys";
+  const pin = loginKindsPin();
+  const raw = process.env.SOVA_SYNC_LOGIN_KINDS?.trim();
+  if (pin && raw !== pin && !warnedLoginKinds) {
+    console.warn(`[mesh] SOVA_SYNC_LOGIN_KINDS=${JSON.stringify(raw)} is not "all" or "api-keys": treating it as "api-keys"`);
+    warnedLoginKinds = true;
+  }
+  return pin;
 }
 let warnedLoginKinds = false;
 
 export function readMeshSettings(config: PeersConfig | null = rt.config): MeshSettings {
   const c = config ?? emptyConfig();
-  const loginKinds = pinnedLoginKinds() ?? c.loginKinds;
+  const pinned = pinnedLoginKinds();
+  const loginKinds = pinned ?? c.loginKinds;
   const sync = Object.fromEntries(SYNC_CATEGORIES.map((k) => [k, c.sync[k] ?? true])) as Record<SyncCategory, boolean>;
   return {
     hostLabel: c.self.label,
@@ -189,6 +192,7 @@ export function readMeshSettings(config: PeersConfig | null = rt.config): MeshSe
     ...(c.frontDoorOrder ? { frontDoorOrder: c.frontDoorOrder } : {}),
     ...(c.self.serveUrl ? { serveUrl: c.self.serveUrl } : {}),
     ...(loginKinds ? { loginKinds } : {}),
+    ...(pinned ? { loginKindsPinned: true as const } : {}),
   };
 }
 

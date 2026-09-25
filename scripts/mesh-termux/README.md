@@ -23,7 +23,7 @@ Remove everything it added (default), or keep sshd, its key and the wake lock fo
 - `~/sova-mesh` (0700): `app/` (the source tarball; `pnpm install`, `vite build` on the phone; `app.prev` = the previous
   build), `agent/` (PI_CODING_AGENT_DIR from `scripts/hermetic-agent-dir.mjs`; `auth.json` starts as `{}` and logins, subscriptions
   included, arrive by mesh sync; `sova/peers.json` is seeded once with the self id and no peers, so the mesh is off),
-  `home/` (isolated HOME), `tmp/` (TMPDIR; jiti's extension cache, warmed at every service start), `sova-mesh.env`,
+  `home/` (isolated HOME; `home/.claude` (0700) is Claude Code's store, synced by the mesh via `SOVA_SYNC_CLAUDE_DIR`), `tmp/` (TMPDIR; jiti's extension cache, warmed at every service start), `sova-mesh.env`,
   `bin/run-sova`, `uninstall.sh`, `.install/` (the manifest).
 - Listeners: main `127.0.0.1:4800` only. Peer listener `<tailnet IP>:4801`, only while peers.json lists a peer. The
   tailnet IP is read from `tun*` (`--tailnet-ip` overrides), because Termux can't reach Tailscale's LocalAPI. Nothing

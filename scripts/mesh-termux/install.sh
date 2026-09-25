@@ -124,8 +124,8 @@ node -e 'const [a,b]=process.versions.node.split(".").map(Number);process.exit(a
 for t in rg fd git curl; do command -v $t >/dev/null || die "$t is missing"; done
 
 # ---- layout ----------------------------------------------------------------------------------------
-mkdir -p "$BASE/home" "$BASE/tmp" "$BASE/agent" "$BASE/dl" "$BASE/bin"
-chmod 700 "$BASE/home" "$BASE/tmp" "$BASE/agent"
+mkdir -p "$BASE/home" "$BASE/tmp" "$BASE/agent" "$BASE/dl" "$BASE/bin" "$BASE/home/.claude"
+chmod 700 "$BASE/home" "$BASE/tmp" "$BASE/agent" "$BASE/home/.claude"
 RUN_ENV="HOME=$BASE/home TMPDIR=$BASE/tmp COREPACK_HOME=$BASE/home/.cache/corepack COREPACK_ENABLE_DOWNLOAD_PROMPT=0 CI=1"
 # pnpm through node's corepack (Termux has no pnpm package), cached inside ~/sova-mesh. Not the 12.x package.json
 # pins: pnpm 12 is a native binary whose store lock fails on Android ("lock_shared() not supported"). pnpm 11 (plain
@@ -190,6 +190,9 @@ fi
   [ -z "$NODE_ID" ] || echo "SOVA_SELF_NODE_ID=$NODE_ID"
   [ -z "$DNS_NAME" ] || echo "SOVA_SELF_DNS=$DNS_NAME"
   echo "PI_CODING_AGENT_DIR=$BASE/agent"
+  # Claude Code's store for login sync (the Claude Code login syncs like every other): Sova syncs it only when told
+  # where, since its agent dir is not the default one; Claude Code's own place under this HOME
+  echo "SOVA_SYNC_CLAUDE_DIR=$BASE/home/.claude"
   echo "HOME=$BASE/home"
   echo "TMPDIR=$BASE/tmp"
   echo "PATH=$PREFIX/bin"

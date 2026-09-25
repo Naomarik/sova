@@ -7,8 +7,8 @@
 # Removed: the runit service sova-mesh and its log, the supervise/ dirs runit created in services that were already
 # there, ~/.termux/boot/sova-mesh (and the dirs install.sh created for it), the wake lock, the packages install.sh
 # installed that weren't there before (never one that was, never one a remaining package still needs), and ~/sova-mesh
-# (app, agent dir with its sessions and logins, HOME, TMPDIR). With --ssh-key installs it also removes the key line it
-# added, the runit sshd it enabled, and openssh if it installed it.
+# (app, agent dir with its sessions and logins, HOME with the synced Claude Code login in home/.claude, TMPDIR). With
+# --ssh-key installs it also removes the key line it added, the runit sshd it enabled, and openssh if it installed it.
 #   --keep-ssh   keep sshd (package, runit service, the key line) and the wake lock, for remote test loops.
 # Left as they were changed: apt's package lists, apt/dpkg logs, and packages that were upgraded as dependencies
 # (install.sh lists those in its manifest; this script prints them).

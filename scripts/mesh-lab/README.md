@@ -31,12 +31,19 @@ decimal string on Headscale.
 
 ### Each Sova host
 
-- **Code**: the image is built from the **working tree** (`git status` included, not HEAD), with
-  `pnpm install --frozen-lockfile` and `vite build`. There is no typecheck, so a mid-branch type
-  error doesn't block the lab. Every `lab up` rebuilds (cached layers make it fast) and recreates
-  the containers whose image changed. The ignore list is `Dockerfile.dockerignore`: `node_modules`,
-  `dist`, `.agent`, `.git`, `auth.json`, `.env*`, `*.key`, `*.pem`, `llmkeys`, `.npmrc`. So
-  **`*.pem`/`*.key` files in the tree never reach the image.**
+- **Code**: by default the image is built from **`git archive HEAD`**, so a run names one commit
+  and uncommitted edits never reach a host. `--rev <sha>` picks another commit, and `--dirty`
+  builds the working tree as it is on disk. The lab's own build files (`Dockerfile`, `host/`)
+  always come from the working tree. Every container records what it was built from in
+  `/sova/BUILD_COMMIT`: commit, source, the dirty paths under server/ shared/ src/ pi-config/
+  scripts/…, and build time. The images carry `sova.mesh-lab.commit` and `sova.mesh-lab.dirty`
+  labels, and `lab status` and every `lab e2e` run print a "built from:" line. A PASS counts
+  for acceptance only when that line says `git archive, clean`. The build installs with
+  `pnpm install --frozen-lockfile` and runs `vite build`. There is no typecheck, so a mid-branch
+  type error doesn't block the lab. Cached layers make rebuilds fast, and `lab up` recreates the
+  containers whose image changed. With `--dirty`, the ignore list in `Dockerfile.dockerignore`
+  applies (`node_modules`, `dist`, `.agent`, `.git`, `auth.json`, `.env*`, `*.key`, `*.pem`,
+  `llmkeys`, `.npmrc`).
 - **Agent dir** `/sova/.agent` (volume `sovamesh_<id>-agent`) is built by
   `scripts/hermetic-agent-dir.mjs` at every start. Sessions live there, and a fixture session
   "fixture session on lab host <id>" is seeded on first boot (`--no-seed` turns that off).
@@ -105,9 +112,14 @@ mesh        pair [a,b,c] [--no-restart] · unpair [a,b,c] · frontdoor [order a,
   so dials to it wait for their timeout.
 - `sova-stop` stops only the Sova process (the node stays on the tailnet). The entrypoint
   supervises Sova and restarts it if it dies, unless `sova-stop` was used.
-- `frontdoor order c,a,b` regenerates `STATE/caddy/Caddyfile` and reloads Caddy. The upstreams are
-  `<id>.mesh.lab:8443`, with `header_up Host` set to the upstream, because `tailscale serve` routes
-  by Host. Each response carries `X-Lab-Upstream`, the host that served it.
+- `frontdoor order c,a,b` sets the order on Sova itself (`PUT /api/mesh/settings {frontDoorOrder}`
+  on the first host, or `--from h`). It then puts the Caddyfile **Sova generates**
+  (`GET /api/mesh/front-door`) in `STATE/caddy/Caddyfile` and reloads Caddy, so the lab tests
+  the file a user would copy. The upstreams are each host's `serveUrl`, which `lab pair` sets to
+  `http://<id>.mesh.lab:8443` because the lab's serve is plain http. `X-Sova-Upstream` names the
+  host that answered. `--lab` switches to the lab's own template instead (`X-Lab-Upstream`), and
+  `--sova` switches back; the choice persists. m4 asserts that the running file is Sova's, byte
+  for byte.
 - `tls-cert <stem> names…` mints `STATE/tls/<stem>.pem`/`-key.pem` from the lab CA, which every
   node trusts (system store, plus `NODE_EXTRA_CA_CERTS=/run/lab/ca-bundle.pem`, a bundle of the lab
   CA and the mock's CA).

@@ -202,6 +202,8 @@ export function streamClaudeCode(
 				systemPrompt: systemPrompt || undefined,
 				tools,
 				messages: transcript.messages,
+				contextWindow: model.contextWindow,
+				maxTokens: model.maxTokens,
 			};
 			const replacement = await options?.onPayload?.(payload, model);
 			if (replacement && typeof replacement === "object") payload = replacement as ClaudeTurnPayload;

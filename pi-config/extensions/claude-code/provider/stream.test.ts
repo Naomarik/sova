@@ -399,6 +399,15 @@ test("onPayload and onResponse are both called, and a replacement payload is use
 	assert.equal(state.request?.model, "haiku", "the replacement payload must reach the bridge");
 });
 
+test("the model's context window and output cap reach the bridge, so the fold can be sized from them", async () => {
+	for (const [id, window] of [["sonnet", 200_000], ["opus[1m]", 1_000_000]] as const) {
+		const { bridge, state } = fakeBridge(load("text-turn.ndjson"));
+		await collect(streamClaudeCode(bridge, model(id), context()));
+		assert.equal(state.request?.contextWindow, window, id);
+		assert.equal(state.request?.maxTokens, 64_000, id);
+	}
+});
+
 test("thinking level maps to the CLI effort ladder, and off means no effort", () => {
 	assert.equal(resolveClaudeEffort(model(), undefined), undefined);
 	assert.equal(resolveClaudeEffort(model(), "low"), "low");

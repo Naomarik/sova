@@ -106,7 +106,9 @@ turn. Each `streamSimple` call:
 2. Classify the new tail:
    - trailing `toolResult` messages matching held MCP calls → **resolve those held calls**; the CLI continues
      the same turn and its output streams into this pi message.
-   - a trailing `user` message → forward it as a stream-json user message. If held calls are also present,
+   - trailing `user` message(s) → forward them as ONE stream-json user message (as built: every user message
+     in the tail, in order, joined with a blank line; the first build sent only the last and dropped the
+     rest while fingerprinting them as sent). If held calls are also present,
      answer the held calls **first**, then send the user message (the probe showed a mid-turn user message is
      folded into the active turn, which is what we want for steering).
    - both, in that order.
@@ -163,8 +165,8 @@ treat it as context you are being told about, not as your own memory>
 ...
 ## Assistant
 ...
-## Assistant tool call `<name>` (id <id>)
-## Tool `<name>` (id <id>) returned
+## Assistant tool call `mcp__sova__<name>` (id <id>)
+## Tool `mcp__sova__<name>` (id <id>) returned
 <text, clipped: first 60% … [truncated: N chars omitted] last 40%>
 </conversation-history>
 
@@ -175,7 +177,34 @@ Each tool result is clipped to `maxFoldedResultChars` (8,000), or `maxFoldedRepo
 subagent retrieval tools `agent_transcript` / `agent_wait` (matched with or without an `mcp__<server>__`
 prefix): a worker's report is the deliverable, and every restart re-folds it. A clipped result keeps its head
 and its tail, joined by `\n… [truncated: N chars omitted]\n`, so a report's conclusion survives; a result
-within its cap is folded verbatim. The whole folded body is still bounded by `maxFoldedChars` (512 KiB).
+within its cap is folded verbatim.
+
+*As built (superseding a head-kept 512 KiB character clip).* Tool names are the CLI's (`mcp__sova__<name>`):
+the fold once used pi's bare names, the model copied them, and the CLI answered "No such tool available:
+bash". The whole body is bounded by a budget sized per request from the model (`foldBudgetChars`,
+`contextWindow`/`maxTokens` ride `ClaudeTurnRequest` from stream.ts):
+
+```
+overheadTokens = (systemPrompt.length + JSON(tools).length) / 2.2 + 4_000
+budgetChars    = clamp((contextWindow - 16_384 - overheadTokens - maxTokens) * 0.85 * 2.2, 64 KiB, 2 MiB)
+```
+
+16,384 mirrors pi's default `compaction.reserveTokens` (the provider cannot read pi's settings). 2.2 is
+`FOLD_CHARS_PER_TOKEN`, used for every chars-to-tokens conversion, and it is measured: tester live run 1
+restarted a real opus[1m] session with a 524,682-character fold, and its first call reported 231,491 input
+tokens, system prompt and tools included, so about 2.3 characters per token. The first draft's 4 would have let a
+2 MiB fold (about 910K real tokens) overflow a 1M window. 0.85 is headroom for folds denser than that sample. With
+the hermetic runtime's system prompt (33.5K / 42.6K characters) and 19 active tools (29.6K characters), the cap is
+154,866–162,584 characters on a 200K window and 1,650,866–1,658,584 on 1M (1,712,201 and 216,201 with neither).
+2 MiB keeps the one stdin line well under the transport's 4 MiB
+`maxLineBytes` with room for JSON escaping and images. A request with no window uses `maxFoldedChars`.
+Over budget, whole messages are dropped OLDEST first: the last user message is kept whole whatever its size,
+the first user message is kept if it fits in a quarter of the budget, then the newest messages back from the
+end until the next would not fit. The body opens with `[N earlier message(s) omitted to fit the context
+window]`, the restart header gains a sentence saying the replay does not start at the beginning, a gap after
+the kept first message gets `[… N message(s) omitted here …]`, and the images of
+dropped messages are dropped with them. The previous head-kept clip replayed the start of a long session and
+cut off exactly the recent messages the model had to continue from.
 
 Images cannot be folded into text, so they ride the same user message as stream-json `image` content blocks
 alongside the text block. What is lost: thinking content and signatures, exact prompt-cache state, the CLI's
@@ -417,22 +446,49 @@ request moves a running CLI. Carrying on in the old directory would leave the mo
 where it is. `cwd` is therefore part of `turnMeta`, so the existing fingerprint machinery handles it with no
 special case.
 
-## Compaction costs two restarts (measured, not inferred)
+## Compaction (pi 0.87.1; supersedes "Compaction costs two restarts")
 
-Asked and answered offline with the fake child (`bridge.test.ts`, "a compaction summary costs two restarts").
-**Yes — a compaction summary restarts the CLI child twice**, and the test counts the children rather than
-reasoning about it.
+The section this replaces measured pi 0.86.1, whose summary request reused the conversation's session id and so
+cost two restarts. In 0.87.1 `completeSummarization` gives the summary request a fresh `uuidv7()` session id
+(its caller passes none), with no tools and pi's summarizer system prompt. The bridge therefore sees a new
+session: a first-contact child that receives the summarizer prompt as-is, while the conversation's child is
+untouched. The 0.86.1 test ("a compaction summary costs two restarts") was replaced by "a compaction summary runs
+on its own child, which is disposed after; the conversation restarts once".
 
-Why, from `buildSummarizationContext` in 0.86.1: the summarization request carries its own system prompt, an
-empty tool set, and a single user message holding the text to summarize. It is not an extension of the
-conversation, so:
+- **One-shot children.** A request for a session the bridge has no child for, with no tools and no recorded cwd
+  (`setSessionCwd` runs for every real pi session at `session_start`), is one-shot: `SessionBridge.runOneShot`
+  disposes its child as soon as the answer is read, instead of leaving it idle until `reapIdle`. pi's
+  compaction and branch summaries both arrive this way. Net cost of a compaction: one throwaway child for the
+  summary, then one restart of the conversation's child onto summary + kept messages (its prefix changed).
+- **Never hang on a message the child did not get.** `ClaudeTransport.send` refuses a line over `maxLineBytes`
+  (4 MiB) and returns false. The bridge used to ignore that, so an oversized summary prompt (pi serializes the
+  whole to-be-summarized history into it, with no input budget) waited forever. A refused send now ends the
+  turn with an error result naming the byte count, and marks the child out of step. A restart whose one
+  message certainly cannot fit fails the same way before sending (`windowOverflow`): (message + system prompt
+  characters) / 2.2 + `maxTokens` over `contextWindow - 16,384`. There is no safety factor, because it refuses
+  only what would fail anyway after a full upload. pi's summary input for the two real 3 MB sessions is 769K
+  and 549K characters (about 350K and 250K tokens at 2.2): it fits opus[1m] and is refused at once on a 200K model. Neither check shortens the message; a summary of part of the
+  history would read as a summary of all of it.
+- **pi owns compaction.** The child is launched with `DISABLE_AUTO_COMPACT=1`. CLI 2.1.282 reads it with
+  `M.bool()`, and `fat() = DISABLE_COMPACT || DISABLE_AUTO_COMPACT` makes `autoCompactEnabled` false.
+  `DISABLE_COMPACT` is not set because it also removes the manual `/compact`. A `system/compact_boundary`
+  frame (the child compacted anyway) marks the child out of step, so the next turn restarts onto pi's view
+  rather than letting the two diverge silently.
+- **The trigger.** pi's threshold (`contextWindow - reserveTokens`, 983,616 tokens for `[1m]`) is far above the
+  fold budget, so nothing compacted and every restart clipped. `auto-compact.ts` hooks `agent_settled`: on a
+  `claude-code-cli` model, idle, with nothing queued, and with a leaf that is not already a compaction, it
+  estimates the unclipped fold (`foldSizeEstimate` over `convertToLlm(buildSessionProjection().messages)`,
+  about 2 ms for a 1,000-message session) against `foldBudgetChars` for the model, the stripped system prompt
+  and the ACTIVE tools. If the fold is over, it calls `ctx.compact()`. There is at most one request per leaf,
+  and after a failure it retries only once the fold has grown 25%. It uses `agent_settled` rather than
+  `agent_end` because `AgentSession.compact()` calls `abort()` first. At `agent_end` `_isAgentRunActive` is
+  still true, so that abort would set `_agentRunAbortRequested` and cancel pi's retry of an errored message,
+  queued follow-ups and its own `_checkCompaction`. At `agent_settled` the run is over.
+- **TUI `/compact`** is built into pi (0.87.0 and 0.87.1: `slash-commands.js`, `interactive-mode.js`
+  `handleCompactCommand`), so no extension command is registered. One would also appear as a second
+  `/compact` in Sova's command list.
 
-1. the summary request diverges (different system prompt, no tools) → restart, and
-2. the next real turn carries the compacted transcript, which is not an extension of what the summary child
-   saw either → restart again.
-
-Accepted for v1. It is correct, just wasteful: three children across a compaction boundary where one would
-do, and the prompt cache is lost twice. The obvious improvement is to route requests that are clearly not
-conversation turns — no tools, a foreign system prompt — to a short-lived child of their own instead of
-evicting the session's, which would cut it to zero restarts for the summary and one for the resume. Not done
-here because it needs a way to recognize such a request that does not amount to guessing.
+Measured offline on two real `opus[1m]` sessions (607 and 1,062 messages): unclipped folds of 886K and 959K
+characters. `[1m]` now folds them whole, where the old code clipped them at 512K and kept the head; a
+200K-window model (2.2 characters per token, a 30K-character system prompt, no tools) clips them to about 190K
+characters by dropping the oldest 438 and 749 messages, and keeps the task and the last user message.

@@ -247,7 +247,7 @@ effort, system-prompt or tool-set change between turns restarts the CLI process
 no thinking levels. The child gets `MCP_TOOL_TIMEOUT=86400000` so a held call
 outlives any pi tool (the CLI's own default is ~27.8 h; a stray value in the
 user's shell would otherwise truncate long tools with a synthetic timeout
-result).
+result), and `DISABLE_AUTO_COMPACT=1`, because pi owns compaction (below).
 
 ### Rebuild on divergence
 
@@ -256,9 +256,53 @@ next context does not extend it — rewind, branch, compaction, a changed system
 prompt or tool set — the CLI process is restarted and the prior history is folded
 into one user message. Prior tool calls and results are flattened to prose in
 that fold: the CLI never pairs a replayed `tool_result` to a `tool_use`
-(investigation invariant 1). Compaction summaries, which pi requests through the
-same `streamSimple` without tools, count as a divergence too: they restart the
-session's process, and the next real turn restarts it again.
+(investigation invariant 1). Tools are named in the fold as the CLI exposes them
+(`mcp__sova__bash`, not `bash`): a model that copies a bare name from the
+replay gets "No such tool available".
+
+The fold is sized from the model's context window: the window, less pi's
+compaction reserve (16,384), the system prompt, the tool declarations, the
+CLI's overhead and the output cap, times 0.85, at 2.2 characters per token,
+clamped to 64 KiB–2 MiB (`foldBudgetChars`). 2.2 (`FOLD_CHARS_PER_TOKEN`) is
+measured, not the usual 4: a live restart sent a 524,682-character fold that cost
+231,491 input tokens. With Sova's system prompt (~34–43K characters) and 19 tools
+(~30K characters) that comes to about 155K–163K characters for a 200K model and
+about 1.65M for a `[1m]` one. Over budget, the OLDEST
+messages go first: the last user message is always kept whole, the first
+(usually the task) is kept if it is small, then the newest messages back from
+the end, and the fold opens with `[N earlier message(s) omitted to fit the
+context window]`.
+
+A clean append sends every user message pi added since the last turn (steering
+and queued follow-ups), in order, joined into one stream-json user message.
+
+### Compaction
+
+pi owns compaction; the CLI child's own auto-compact is off
+(`DISABLE_AUTO_COMPACT=1`, which CLI 2.1.282 reads as a boolean; not
+`DISABLE_COMPACT`, which would also remove the manual `/compact`). If a child
+compacts anyway (a literal `/compact` text reaching it), its
+`system/compact_boundary` marks it out of step and the next turn restarts onto
+pi's transcript.
+
+pi's own threshold (`contextWindow - reserveTokens`, ~984K tokens on `[1m]`
+models) sits far above what a restart can fold, so the provider also asks pi to
+compact from `agent_settled` when the fold a restart would send exceeds the
+budget above (`provider/auto-compact.ts`): once per session leaf, never mid-run
+or with messages queued, and after a failure only once the history has grown
+by a quarter. It hooks `agent_settled`, not `agent_end`: `ctx.compact()` aborts
+the agent first, and at `agent_end` the run is still active, so that abort
+would cancel pi's retry, queued follow-ups and its own compaction check.
+
+The summary itself (pi 0.87.1) arrives with a fresh uuid session id, no tools
+and pi's summarizer prompt, so it runs on a one-shot child that is disposed as
+soon as it answers; the conversation's child is untouched, and the next real
+turn restarts once onto summary + kept messages. A message over the transport's
+4 MiB stdin line limit, or a restart message that with the system prompt (at
+2.2 characters per token) and the reply's `maxTokens` exceeds the model's window
+less the 16,384 reserve, fails the turn at once with the sizes instead of waiting for an
+answer the child never got; neither is ever shortened. pi's TUI has `/compact` built in (0.87.0 and
+0.87.1), so the extension registers no command for it.
 
 ### Limitations (read before relying on it)
 
@@ -282,7 +326,9 @@ divergence is stated, and are confirmed by `docs/protocol-probes.md`.
 - **Cost shows as $0.** Subscription turns have no per-token price; the CLI's
   own `total_cost_usd` is a list-price estimate and is not surfaced.
 - **Rebuild on divergence is lossy and cache-cold** (see above); a turn right
-  after a rewind or compaction pays a full re-send.
+  after a rewind or compaction pays a full re-send. The fold budget is a
+  2.2-characters-per-token estimate; with `PI_CLAUDE_CODE_DEBUG=1` each fold's size and budget are
+  logged (`event: "fold"`) to compare with the next call's input tokens.
 - **Policy drift.** The control protocol is undocumented and version-sensitive;
   probes cover 2.1.276–2.1.278 only. A CLI update can change frame shapes or
   the permission handling that `--allowedTools mcp__sova` relies on; the bridge

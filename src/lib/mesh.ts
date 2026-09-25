@@ -209,3 +209,18 @@ export function passesHostFilter(filter: string | null, path: string): boolean {
   const host = hostOf(path);
   return filter === SELF_FILTER ? host === null : host === filter;
 }
+
+/** Waits between tries at GET /api/mesh after a failure that may pass (ms), the last one repeating. */
+const MESH_RETRY_MS = [5_000, 15_000, 30_000, 60_000];
+
+/**
+ * How long to wait before asking GET /api/mesh again after the `attempt`-th failure in a row (1 for
+ * the first), or null to not ask again. A 4xx is an answer — a server without the route, or one
+ * that refuses — so a page served by one makes exactly the one request it always did. A 5xx or no
+ * answer at all (status 0) is a host mid-restart: the page would otherwise stay mesh-off until
+ * reloaded, and a peer session it was opened on would read as unreachable.
+ */
+export function meshRetryDelay(status: number, attempt: number): number | null {
+  if (status >= 400 && status < 500) return null;
+  return MESH_RETRY_MS[Math.min(attempt, MESH_RETRY_MS.length) - 1]!;
+}

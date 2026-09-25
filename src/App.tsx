@@ -3,6 +3,7 @@ import { createStore, reconcile } from "solid-js/store";
 import { Portal } from "solid-js/web";
 import type { SessionSummary, WorkerInfo } from "../shared/protocol";
 import {
+  ApiError,
   createSession,
   fetchAgents,
   fetchExplanations,
@@ -14,7 +15,7 @@ import {
   listSessions,
   setSessionArchived,
 } from "./lib/api";
-import { hostLabel, hostOf, isMeshHash, meshState, meshOn, meshPeers, mergePeerLists, noteHost, notePeerSessions, peerInfo, peerUnavailable, sessionRouteFromHash, setMeshState } from "./lib/mesh";
+import { hostLabel, hostOf, isMeshHash, meshRetryDelay, meshState, meshOn, meshPeers, mergePeerLists, noteHost, notePeerSessions, peerInfo, peerUnavailable, sessionRouteFromHash, setMeshState } from "./lib/mesh";
 import { agentsHref, insightsRouteFromHash, legacyInsightsTarget } from "./lib/insights";
 import { transcriptRoot } from "./lib/jump";
 import { groupRouteFromHash } from "./lib/group-route";
@@ -163,14 +164,24 @@ export function App() {
   /** Why the mesh couldn't be read (a server without the mesh routes, say). The page then reads
       as mesh off; only a peer's own link says it (see `peerDown`). */
   const [meshError, setMeshError] = createSignal<string | null>(null);
+  /** Failures in a row, and the retry they scheduled (only for a failure that may pass). */
+  let meshFailures = 0;
+  let meshRetry: ReturnType<typeof setTimeout> | undefined;
   const loadMesh = () =>
     fetchMesh()
       .then((s) => {
+        meshFailures = 0;
         setMeshState(s);
         setMeshError(null);
       })
-      .catch((err: Error) => setMeshError(err.message));
+      .catch((err: Error) => {
+        setMeshError(err.message);
+        const wait = meshRetryDelay(err instanceof ApiError ? err.status : 0, ++meshFailures);
+        clearTimeout(meshRetry);
+        if (wait !== null) meshRetry = setTimeout(() => void loadMesh(), wait);
+      });
   void loadMesh();
+  onCleanup(() => clearTimeout(meshRetry));
   /** Each peer's last good session list, by peer id. */
   const [peerLists, setPeerLists] = createSignal<Map<string, SessionSummary[]>>(new Map());
   const loadPeerSessions = async () => {

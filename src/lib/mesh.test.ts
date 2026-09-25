@@ -15,6 +15,7 @@ import {
   effectiveHostFilter,
   passesHostFilter,
   SELF_FILTER,
+  meshRetryDelay,
   sessionRouteFromHash,
   
 } from "./mesh";
@@ -127,4 +128,12 @@ test("the host filter narrows to one host's sessions, this host's included", () 
   assert.equal(passesHostFilter("laptop", B), false);
   assert.equal(passesHostFilter(SELF_FILTER, B), true);
   assert.equal(passesHostFilter(SELF_FILTER, A), false);
+});
+
+test("GET /api/mesh is asked again only after a failure that may pass", () => {
+  assert.equal(meshRetryDelay(404, 1), null, "a server without the route: one request, as before");
+  assert.equal(meshRetryDelay(403, 1), null);
+  assert.equal(meshRetryDelay(500, 1), 5_000);
+  assert.equal(meshRetryDelay(0, 2), 15_000, "no answer at all: a host mid-restart");
+  assert.equal(meshRetryDelay(502, 9), 60_000, "the last wait repeats");
 });

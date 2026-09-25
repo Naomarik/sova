@@ -343,6 +343,8 @@ export interface ProxySocketOptions {
   /** The upstream answered the handshake with a non-101 response → the refusal; without it such
       an answer is an error like any other. */
   onResponse?: (res: IncomingMessage) => [number, object];
+  /** How long the upstream may take to accept, default 10 s. */
+  handshakeTimeout?: number;
 }
 
 /**
@@ -357,7 +359,7 @@ export function proxySocket(req: IncomingMessage, socket: Duplex, head: Buffer, 
     .split(",")
     .map((p) => p.trim())
     .filter(Boolean);
-  const upstream = new WebSocket(url, protocols, { headers, handshakeTimeout: 10_000 });
+  const upstream = new WebSocket(url, protocols, { headers, handshakeTimeout: opts.handshakeTimeout ?? 10_000 });
   let upgraded = false;
   let refused = false;
   const refuseOnce = ([status, body]: [number, object]) => {

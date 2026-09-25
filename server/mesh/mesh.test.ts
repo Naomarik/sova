@@ -204,6 +204,9 @@ describe("mesh OFF (no peers.json)", () => {
     const [, hello] = await getJson<MeshHello>("/api/mesh/hello");
     assert.equal(hello.protocol, ownProtocol());
     assert.equal(hello.nodeId, undefined);
+    const again = (await getJson<MeshHello>("/api/mesh/hello"))[1];
+    assert.equal(again.build, hello.build, "the build id is stable while dist/ is unchanged");
+    if (hello.build !== undefined) assert.match(hello.build, /^[0-9a-f]{16}$/);
     const [, settings] = await getJson<MeshSettings>("/api/mesh/settings");
     assert.deepEqual(settings.sync, { settings: true, themes: true, extensions: true, logins: true });
     await realFetch(`${base}/peer/b/api/health`);
@@ -432,6 +435,32 @@ describe("mesh ON", () => {
     assert.deepEqual(await wsTrip(`${wsBase}/peer/dead/ws/chat?path=p`), { status: 502 });
     assert.deepEqual(await wsTrip(`${wsBase}/peer/b/ws/chat?refuse=1`), { status: 403 });
     assert.deepEqual(await wsTrip(`${wsBase}/peer/nope/ws/chat`), { status: 404 });
+  });
+
+  test("a blackholed peer is a 502 within the connect timeout, then at once for a while", async () => {
+    // 192.0.2.1 (TEST-NET-1) answers nothing: without the preflight, fetch waits ~10 s.
+    await putJson("/api/mesh/peers", {
+      peers: [
+        { id: "b", label: "B", nodeId: "nB", name: "127.0.0.1", url: `http://127.0.0.1:${fakePort}` },
+        { id: "dead", nodeId: "nD", name: "127.0.0.1", url: `http://127.0.0.1:${deadPort}` },
+        { id: "hole", nodeId: "nH", name: "192.0.2.1", url: "http://192.0.2.1:4801" },
+      ],
+    });
+    let t = Date.now();
+    assert.deepEqual(await getJson("/peer/hole/api/health"), [502, { error: "peer down", id: "hole" }]);
+    assert.ok(Date.now() - t < 4500, `first 502 took ${Date.now() - t} ms`);
+    t = Date.now();
+    assert.deepEqual(await getJson("/peer/hole/api/health"), [502, { error: "peer down", id: "hole" }]);
+    assert.ok(Date.now() - t < 500, `a known-down peer answers at once (${Date.now() - t} ms)`);
+    t = Date.now();
+    assert.deepEqual(await wsTrip(`${wsBase}/peer/hole/ws/chat?path=p`), { status: 502 });
+    assert.ok(Date.now() - t < 4500, `ws 502 took ${Date.now() - t} ms`);
+    await putJson("/api/mesh/peers", {
+      peers: [
+        { id: "b", label: "B", nodeId: "nB", name: "127.0.0.1", url: `http://127.0.0.1:${fakePort}` },
+        { id: "dead", nodeId: "nD", name: "127.0.0.1", url: `http://127.0.0.1:${deadPort}` },
+      ],
+    });
   });
 
   test("the whole trip: proxy → peer listener → whois gate → this app", async () => {

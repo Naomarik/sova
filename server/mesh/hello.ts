@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { hostname } from "node:os";
 import { VERSION as PI_VERSION } from "@earendil-works/pi-coding-agent";
 import type { MeshHello, PeerState } from "../../shared/protocol";
@@ -10,6 +10,8 @@ import { type PeerEntry, peerUrl } from "./peers";
 
 const PROTOCOL_FILE = new URL("../../shared/protocol.ts", import.meta.url);
 const PACKAGE_FILE = new URL("../../package.json", import.meta.url);
+/** The same index.html server/index.ts serves (checked per request there too). */
+const INDEX_FILE = new URL("../../dist/index.html", import.meta.url);
 export const PROBE_TIMEOUT_MS = 2500;
 const PROBE_CACHE_MS = 3000;
 /** Set on the gate's refusals, so a proxy tells "this host refused you" from a route's own 403. */
@@ -29,9 +31,42 @@ function ownFingerprint(): { protocol: string; version: string } {
   return fingerprint;
 }
 
+// The served build: re-hashed only when index.html's mtime or size changes, so a hello is a stat.
+let buildCache: { key: string; build: string } | null = null;
+function ownBuild(): string | undefined {
+  let key: string;
+  try {
+    const st = statSync(INDEX_FILE);
+    key = `${st.mtimeMs}:${st.size}`;
+  } catch {
+    buildCache = null;
+    return undefined; // no build served (dev server behind Vite, or not built yet)
+  }
+  if (buildCache?.key !== key) {
+    try {
+      buildCache = { key, build: createHash("sha256").update(readFileSync(INDEX_FILE)).digest("hex").slice(0, 16) };
+    } catch {
+      return undefined;
+    }
+  }
+  return buildCache.build;
+}
+
 export function ownHello(self: { id: string; label: string }, nodeId?: string): MeshHello {
   const { protocol, version } = ownFingerprint();
-  return { mesh: 1, id: self.id, label: self.label, hostname: hostname(), version, protocol, pi: PI_VERSION, ...(nodeId ? { nodeId } : {}), now: Date.now() };
+  const build = ownBuild();
+  return {
+    mesh: 1,
+    id: self.id,
+    label: self.label,
+    hostname: hostname(),
+    version,
+    protocol,
+    pi: PI_VERSION,
+    ...(build ? { build } : {}),
+    ...(nodeId ? { nodeId } : {}),
+    now: Date.now(),
+  };
 }
 
 export const ownProtocol = (): string => ownFingerprint().protocol;

@@ -1921,7 +1921,9 @@ export interface ExtensionInfo {
 // GET  /api/mesh/settings       -> MeshSettings
 // PUT  /api/mesh/settings Partial<MeshSettings> -> MeshSettings   (stored in peers.json; with no peers
 //                                  the mesh stays OFF. 400 bad body, 409 malformed peers.json)
-// GET  /api/mesh/hello          -> MeshHello   (this host's own, for the SPA's version check)
+// GET  /api/mesh/hello          -> MeshHello   (this host's own, for the SPA's stale-tab check: id,
+//                                  version, protocol, build. Cheap (a stat), and answered with the
+//                                  mesh off too, no Tailscale call; nodeId only while on)
 // ANY  /peer/<id>/api/...       -> the peer's /api/... verbatim (query included, bytes untouched).
 //                                  404 {error:"Unknown peer"}, 502 {error:"peer down", id},
 //                                  403 {error:"peer refused", id} (its allowlist does not list this host)
@@ -1948,6 +1950,10 @@ export interface MeshHello {
   protocol: string;
   /** The pinned pi package version. */
   pi: string;
+  /** First 16 hex of sha256 of the served dist/index.html (it names every hashed asset, so it
+      changes with every frontend build); absent when no build is served. A tab whose own build
+      differs is running an older (or newer) app than this host serves. */
+  build?: string;
   /** This node's Tailscale StableID, when the mesh is on and tailscaled answered. */
   nodeId?: string;
   /** ms epoch, for a clock-skew check. */

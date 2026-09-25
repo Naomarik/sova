@@ -36,7 +36,13 @@ function fakePi(flag = true) {
 		between?.();
 		await new Promise((resolve) => setTimeout(resolve, 5));
 	};
-	return { pi, handlers, settle };
+	/** Fire one event at every handler, returning the last result. */
+	const fire = (event: { type: string } & Record<string, unknown>, ctx: ExtensionContext): unknown => {
+		let result: unknown;
+		for (const handler of handlers.get(event.type) ?? []) result = handler(event, ctx);
+		return result;
+	};
+	return { pi, handlers, settle, fire };
 }
 
 const text = (role: "user" | "assistant", body: string): Message => (role === "user"
@@ -182,4 +188,66 @@ test("the check waits a tick: a prompt the host hands off on settle wins, and no
 	await settle(ctx, () => { synchronous = calls.length; state.idle = false; });
 	assert.equal(synchronous, 0, "nothing is decided inside the event itself");
 	assert.equal(calls.length, 0, "the handed-off prompt is not aborted by a compaction");
+});
+
+test("a prompt already under way when the check runs, though not yet active, stops the compaction", async () => {
+	const { pi, settle, fire } = fakePi();
+	registerAutoCompact(pi, CLAUDE_PROVIDER_ID, () => true);
+	const { ctx, calls } = fakeCtx(conversation(budget200k() + 20_000));
+	// pi's prompt() reached the input handlers; isIdle() is still true.
+	await settle(ctx, () => { fire({ type: "input", text: "next", source: "rpc" }, ctx); });
+	assert.equal(calls.length, 0);
+});
+
+test("a prompt that starts after the check but before pi summarizes cancels our compaction, and it is not a failure", async () => {
+	const { pi, settle, fire } = fakePi();
+	registerAutoCompact(pi, CLAUDE_PROVIDER_ID, () => true);
+	const { ctx, calls, notes } = fakeCtx(conversation(budget200k() + 20_000));
+	await settle(ctx);
+	assert.equal(calls.length, 1);
+	fire({ type: "before_agent_start", prompt: "next" }, ctx);
+	assert.deepEqual(fire({ type: "session_before_compact", reason: "manual", willRetry: false }, ctx), { cancel: true });
+	calls[0]!.onError?.(new Error("Compaction cancelled"));
+	assert.deepEqual(notes, [], "our own cancel is not reported as a failure");
+	// The same transcript may be tried again at the next settle, with no growth required.
+	await settle(ctx);
+	assert.equal(calls.length, 2);
+	assert.equal(fire({ type: "session_before_compact", reason: "manual", willRetry: false }, ctx), undefined, "no prompt in between: it proceeds");
+});
+
+test("a /compact the hook did not start, and pi's own compactions, are never vetoed", async () => {
+	const { pi, fire } = fakePi();
+	registerAutoCompact(pi, CLAUDE_PROVIDER_ID, () => true);
+	const { ctx } = fakeCtx([]);
+	fire({ type: "input", text: "/compact", source: "rpc" }, ctx);
+	for (const reason of ["manual", "threshold", "overflow"]) {
+		assert.equal(fire({ type: "session_before_compact", reason, willRetry: false }, ctx), undefined, reason);
+	}
+});
+
+test("the input hook passes every input through untouched", () => {
+	const { pi, fire } = fakePi();
+	registerAutoCompact(pi, CLAUDE_PROVIDER_ID, () => true);
+	const { ctx } = fakeCtx([]);
+	assert.deepEqual(fire({ type: "input", text: "hello", source: "interactive" }, ctx), { action: "continue" });
+});
+
+test("a compaction the user stopped is not restarted by the next settles until the history has grown, and is not reported", async () => {
+	const { pi, settle } = fakePi();
+	registerAutoCompact(pi, CLAUDE_PROVIDER_ID, () => true);
+	const over = conversation(budget200k() + 20_000);
+	const first = fakeCtx(over);
+	await settle(first.ctx);
+	assert.equal(first.calls.length, 1);
+	// Sova's Stop aborts it; pi's compact() throws "Compaction cancelled".
+	first.calls[0]!.onError?.(new Error("Compaction cancelled"));
+	assert.deepEqual(first.notes, [], "the user's own stop is not reported as a failure");
+	await settle(first.ctx);
+	assert.equal(first.calls.length, 1, "the same transcript is not compacted again");
+	const next = fakeCtx([...over, ...conversation(10_000)], { leaf: "leaf-2" });
+	await settle(next.ctx);
+	assert.equal(next.calls.length, 0, "a new message alone does not restart what the user stopped");
+	const grown = fakeCtx(conversation(Math.ceil((budget200k() + 20_000) * 1.3)), { leaf: "leaf-3" });
+	await settle(grown.ctx);
+	assert.equal(grown.calls.length, 1, "once the history has grown by a quarter it may compact again");
 });

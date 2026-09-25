@@ -483,7 +483,16 @@ on its own child, which is disposed after; the conversation restarts once".
   and after a failure it retries only once the fold has grown 25%. It uses `agent_settled` rather than
   `agent_end` because `AgentSession.compact()` calls `abort()` first. At `agent_end` `_isAgentRunActive` is
   still true, so that abort would set `_agentRunAbortRequested` and cancel pi's retry of an errored message,
-  queued follow-ups and its own `_checkCompaction`. At `agent_settled` the run is over.
+  queued follow-ups and its own `_checkCompaction`. At `agent_settled` the run is over. The check is deferred
+  a tick, because a host hands a queued prompt off on the session's `agent_settled`, which pi emits after the
+  extension's, and pi runs that prompt once the emission ends. `isIdle()` cannot see that prompt in time:
+  `prompt()` passes its compaction check, then awaits input handlers, auth, `_checkCompaction` and
+  `before_agent_start` before `_isAgentRunActive` is set. So `input`, `before_agent_start` and `agent_start`
+  bump a per-session prompt counter, and the counter must be unchanged since the settle both at the deferred
+  check and at `session_before_compact`. A move at that second point cancels the compaction this hook started.
+  pi's own threshold/overflow compactions and a user's `/compact` are never cancelled. The hook's own cancel
+  is not recorded as a failure, so the next settle may retry. A user's Stop (Sova aborts any compaction) is
+  recorded like a failure, so nothing re-triggers until the history has grown 25%, but it is not reported.
 - **TUI `/compact`** is built into pi (0.87.0 and 0.87.1: `slash-commands.js`, `interactive-mode.js`
   `handleCompactCommand`), so no extension command is registered. One would also appear as a second
   `/compact` in Sova's command list.

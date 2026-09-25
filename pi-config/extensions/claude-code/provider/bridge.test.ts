@@ -8,11 +8,11 @@
  */
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough, Writable } from "node:stream";
-import { test } from "node:test";
+import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { type Api, type AssistantMessageEvent, type Model, normalizeContext, Type, type Message, type Tool } from "@earendil-works/pi-ai";
 import {
@@ -147,6 +147,8 @@ const tools: Tool[] = [
  */
 /** An empty CLI projects dir, so no test reads the real ~/.claude. */
 const EMPTY_PROJECTS = mkdtempSync(join(tmpdir(), "pi-bridge-projects-"));
+// /tmp is inode-limited on the dev machine: leave nothing behind.
+after(() => rmSync(EMPTY_PROJECTS, { recursive: true, force: true }));
 
 function harness({ refuseSessionId = 0, manualInitialize = false, projectsRoot = EMPTY_PROJECTS, limits }: { refuseSessionId?: number; manualInitialize?: boolean; projectsRoot?: string; limits?: Partial<typeof LIMITS> } = {}) {
 	const children: FakeClaude[] = [];
@@ -436,8 +438,9 @@ test("a --session-id the CLI already wrote is probed past, not retried forever",
  * 0..42, and every turn failed with "session id already in use, for 33 ids in
  * a row". The first launch now starts past the records on disk.
  */
-test("a new bridge starts past the session records a previous process left", { timeout: 8000 }, async () => {
+test("a new bridge starts past the session records a previous process left", { timeout: 8000 }, async (t) => {
 	const root = mkdtempSync(join(tmpdir(), "pi-bridge-projects-"));
+	t.after(() => rmSync(root, { recursive: true, force: true }));
 	const dir = join(root, "-tmp-pi-bridge-test");
 	mkdirSync(dir);
 	for (let n = 0; n <= 42; n++) writeFileSync(join(dir, `${claudeSessionId("pi-session-1", n)}.jsonl`), "{}\n");

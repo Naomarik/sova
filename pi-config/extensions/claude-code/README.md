@@ -292,7 +292,11 @@ budget above (`provider/auto-compact.ts`): once per session leaf, never mid-run
 or with messages queued, and after a failure only once the history has grown
 by a quarter. It hooks `agent_settled`, not `agent_end`: `ctx.compact()` aborts
 the agent first, and at `agent_end` the run is still active, so that abort
-would cancel pi's retry, queued follow-ups and its own compaction check.
+would cancel pi's retry, queued follow-ups and its own compaction check. The
+decision waits one tick and is dropped if a prompt has started since the settle
+(counted from `input`, `before_agent_start` and `agent_start`, since `isIdle()` only
+turns false late in `prompt()`), and a compaction of its own that a prompt
+overtakes is cancelled at `session_before_compact`.
 
 The summary itself (pi 0.87.1) arrives with a fresh uuid session id, no tools
 and pi's summarizer prompt, so it runs on a one-shot child that is disposed as

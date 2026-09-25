@@ -1,0 +1,177 @@
+/* =============================================================================
+   OVERSEER TODOS — the Todos panel on the Overseer page (#/overseer): the
+   user's checklist, open todos in their order, done ones folded under "Done".
+   Component-local (imported by OverseerTodos.tsx), built on base.css's list,
+   toggle, input, button and banner rules and the tokens only. It takes the same
+   place and elevation as the Ideas panel (overseer-ideas.css); one is open at a time.
+   ============================================================================= */
+
+/* The head's toggle: check, word, count. Narrow: icon-only with the count on its corner. */
+.overseer-todos-toggle { gap: var(--space-1); }
+.overseer-todos-toggle[aria-expanded="true"] { background: var(--color-accent-tint); color: var(--color-ink); }
+@container session-head (max-width: 479px) {
+  .overseer-todos-word { display: none; }
+  .overseer-todos-toggle { position: relative; padding: 0 var(--space-2); }
+  .overseer-todos-toggle .chip-count {
+    position: absolute;
+    top: -4px;
+    right: -4px;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    justify-content: center;
+    font-size: var(--fs-micro);
+    line-height: 16px;
+    background: var(--color-sunken);
+    border-color: var(--color-border-strong);
+    color: var(--color-ink);
+    pointer-events: none;
+  }
+}
+
+/* Over the chat's right side (all of it when folded); beside it on a desktop. */
+.app-main:has(> .todos-panel) { position: relative; }
+.todos-panel {
+  position: absolute;
+  inset: 0 0 0 auto;
+  z-index: 5;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--color-surface);
+  box-shadow: var(--shadow-2);
+  container: todos-panel / inline-size;
+}
+@media (min-width: 768px) {
+  .todos-panel {
+    width: min(480px, 100%);
+    border-left: var(--stroke-thin) solid var(--color-border);
+  }
+}
+@media (min-width: 1120px) {
+  .app-main:has(> .todos-panel) { padding-right: 480px; }
+  .todos-panel { box-shadow: none; }
+}
+
+.todos-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 56px;
+  padding: var(--space-2) var(--space-3) var(--space-2) var(--space-4);
+  border-bottom: var(--stroke-thin) solid var(--color-border);
+  flex: none;
+}
+.todos-head-main { flex: 1; min-width: 0; }
+.todos-title {
+  margin: 0;
+  font-size: var(--fs-heading-s);
+  line-height: var(--lh-heading-s);
+  font-weight: var(--fw-semibold);
+  color: var(--color-ink);
+}
+.todos-title:focus { outline: none; }
+.todos-title:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); border-radius: var(--r-xs); }
+.todos-meta { margin: 0; font-size: var(--fs-caption); color: var(--color-ink-muted); }
+
+/* Inline add: the field takes the row, Add beside it, the refusal under both. */
+.todos-add {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: var(--stroke-thin) solid var(--color-border);
+}
+.todos-add-input { flex: 1 1 12rem; min-width: 0; }
+.todos-add .button { gap: var(--space-1); }
+.todos-add-error { flex-basis: 100%; margin: 0; }
+
+.todos-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.todos-body > .banner { margin: var(--space-3) var(--space-4) 0; }
+.todos-note { margin: 0; padding: var(--space-3) var(--space-4); font-size: var(--fs-caption); color: var(--color-ink-muted); }
+.todos-empty { padding: var(--space-7) var(--space-4); }
+.todos-file {
+  flex: none;
+  margin: 0;
+  padding: var(--space-2) var(--space-4);
+  border-top: var(--stroke-thin) solid var(--color-border);
+  font-size: var(--fs-caption);
+  color: var(--color-ink-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* One todo: checkbox, text, links under it, then ↑ ↓ ×. The controls are the 44px
+   squares; the row keeps the list's 44px height and divider. */
+.todos-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-1);
+  min-height: var(--row-height);
+  padding: 0 var(--space-2) 0 var(--space-3);
+  border-bottom: var(--stroke-thin) solid var(--color-border);
+}
+.todos-row:last-child { border-bottom: 0; }
+.todos-check { flex: none; justify-content: center; width: var(--tap-min); margin-left: calc(var(--space-2) * -1); }
+/* A ticked box shows its check, not just the fill: state never by colour alone. */
+.todos-check input:checked ~ .toggle-box {
+  position: relative;
+}
+.todos-check input:checked ~ .toggle-box::after {
+  content: "";
+  position: absolute;
+  inset: 1px;
+  background: var(--color-on-accent);
+  -webkit-mask: url(/icons/check.svg) center / contain no-repeat;
+  mask: url(/icons/check.svg) center / contain no-repeat;
+}
+.todos-main { flex: 1; min-width: 0; padding: var(--space-1) 0; }
+.todos-text {
+  display: block;
+  width: 100%;
+  min-height: calc(var(--tap-min) - var(--space-2));
+  padding: var(--space-2) var(--space-2);
+  margin-left: calc(var(--space-2) * -1);
+  border: 0;
+  border-radius: var(--r-md);
+  background: none;
+  color: var(--color-ink);
+  font: inherit;
+  font-size: var(--fs-body);
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: text;
+}
+button.todos-text:hover { background: var(--color-sunken); }
+.todos-text:focus-visible { outline: var(--focus-ring); outline-offset: calc(var(--focus-offset) * -1); }
+.todos-text-static { cursor: default; }
+.todos-row-done .todos-text { color: var(--color-ink-muted); text-decoration: line-through; }
+.todos-edit { width: 100%; }
+.todos-notice { margin: var(--space-1) 0 0; }
+.todos-links {
+  margin: 0;
+  font-size: var(--fs-caption);
+  color: var(--color-ink-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.todos-row .button-icon { flex: none; color: var(--color-ink-2); }
+.todos-row .button-icon[aria-disabled="true"] { opacity: .42; cursor: default; }
+.todos-flip { transform: rotate(180deg); }
+
+/* Done: a folded section with its own Clear. */
+.todos-done-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-top: var(--stroke-thin) solid var(--color-border);
+}
+.todos-done-toggle { gap: var(--space-1); }
+.todos-closed { transform: rotate(-90deg); }

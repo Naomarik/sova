@@ -47,6 +47,7 @@ import {
   overseerTurnFile,
 } from "./overseer-store";
 import { promptToc, readManifest } from "./overseer-ideas";
+import { promptTodos, readTodos } from "./overseer-todos";
 import type { SubagentTool } from "./overseer-idea-tools";
 import { workerDenial } from "./delegate";
 import { BUILTIN_ALLOWED, overseerTools, type OverseerToolHost, TurnLimits, UserTurns } from "./overseer-tools";
@@ -515,6 +516,7 @@ export function renderOverseerPrompt(
   return template
     .replaceAll("{{TOOLS}}", toolCatalogue(tools))
     .replaceAll("{{IDEAS}}", ideas)
+    .replaceAll("{{TODOS}}", promptTodos(readTodos()))
     .replaceAll("{{NOTES}}", notes ? redactor().redact(notes.slice(0, 4000)) : "(none yet)")
     .replaceAll("{{NOW}}", now.toString())
     .replaceAll("{{HOME}}", homedir())

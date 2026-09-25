@@ -274,13 +274,14 @@ describe("turns the user did not start are read-only", () => {
     sova_group: { op: "create", name: "g" },
     sova_answer_dialog: { session: "some-id", dialog: "d1", answer: "yes" },
     sova_idea: { op: "add", id: "§test/readonly-probe", title: "A probe" },
+    sova_todo: { op: "add", text: "A probe" },
   };
   const ALLOWED: Record<string, Record<string, unknown>> = {
     sova_note: { op: "read" },
     sova_confirm: { title: "Archive these?", options: ["Yes", "No"] },
     sova_navigate: { page: "usage" },
   };
-  const READS = ["sova_attention", "sova_list_sessions", "sova_session", "sova_read_session", "sova_list_groups", "sova_list_targets", "sova_list_models", "sova_list_folders", "sova_ideas"];
+  const READS = ["sova_attention", "sova_list_sessions", "sova_session", "sova_read_session", "sova_list_groups", "sova_list_targets", "sova_list_models", "sova_list_folders", "sova_ideas", "sova_todos"];
 
   test("every Overseer tool is classified: acting, allowed unattended, or a read", () => {
     const names = overseer.buildOverseerTools().map((t) => t.name).sort();
@@ -431,6 +432,7 @@ describe("every run starts unattended; only the user's own message makes it thei
     sova_group: { op: "create", name: "g" },
     sova_answer_dialog: { session: "some-id", dialog: "d1", answer: "yes" },
     sova_idea: { op: "add", id: "§test/readonly-probe", title: "A probe" },
+    sova_todo: { op: "add", text: "A probe" },
   };
   /** Every acting tool's outcome, called from inside the model call the run is making now. */
   const actingNow = async () => {
@@ -655,6 +657,25 @@ describe("the ideas backlog in the prompt, and explorers through the runtime's s
     await chat.acceptPrompt(`${OVERSEER_BRIEF_PREFIX} w`, undefined, "server").turn;
     assert.equal(await run("sova_idea", { op: "explore", id: "rt/second" }), "readonly");
     assert.equal(((globalThis as { __fakeSpawns?: unknown[] }).__fakeSpawns ?? []).length, n);
+  });
+});
+
+describe("the todos counts in the prompt", () => {
+  test("counts only, live at each run, and an unchanged list adds nothing", async () => {
+    const { addTodo, updateTodo } = await import("./overseer-todos");
+    writeOverseerSettings({ ...defaultSettings() });
+    const chat = await overseerChat();
+    const t = addTodo({ text: "TODO-TEXT-NOT-IN-PROMPT" });
+    await userSends(chat, "one");
+    assert.match(systemOf(contexts.at(-1)), /Todos checklist(\\n)+1 open, 0 done \(sova_todos lists them\)/);
+    assert.doesNotMatch(systemOf(contexts.at(-1)), /TODO-TEXT-NOT-IN-PROMPT/);
+    const systems = () => chat.session.sessionManager.getEntries().filter((e) => e.type === "message" && e.message.role === "system").length;
+    const before = systems();
+    await userSends(chat, "two");
+    assert.equal(systems(), before, "the same list: the same bytes, no delta");
+    updateTodo(t.id, { done: true });
+    await userSends(chat, "three");
+    assert.equal(systems(), before + 1, "a ticked todo is one delta");
   });
 });
 

@@ -170,7 +170,7 @@ test("resetWhen / meterReset: under 24h a duration, else a date, past a clock ti
   assert.deepEqual(meterReset({ label: "7d", pct: 40, resetsAt: "2026-09-25T10:00:00Z" }, NOW), { lead: "Resets Sep 25" });
   const past = meterReset({ label: "5h", pct: 96, resetsAt: inMs(-60_000) }, NOW);
   assert.equal(past?.lead, "Reset at ");
-  assert.match(past?.time ?? "", /^\d\d:\d\d$/);
+  assert.match(past?.time ?? "", /^(1[0-2]|[1-9]):[0-5]\d [AP]M$/);
   assert.equal(past?.rest, ". New reading at the next refresh.");
   assert.equal(meterReset({ label: "7d", pct: 40 }, NOW), null);
 });

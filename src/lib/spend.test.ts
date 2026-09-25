@@ -82,10 +82,10 @@ test("firstLine takes one line and cuts on a word", () => {
   assert.equal(firstLine("abcdefghijklmnop", 8), "abcdefgh…");
 });
 
-test("absoluteTime is the 24-hour clock, dated", () => {
+test("absoluteTime is the 12-hour clock, dated", () => {
   const now = Date.parse("2026-09-20T12:00:00");
-  assert.equal(absoluteTime("2026-09-20T14:06:00", now), "Sep 20 14:06");
-  assert.equal(absoluteTime("2024-03-04T09:05:00", now), "Mar 4, 2024 09:05");
+  assert.equal(absoluteTime("2026-09-20T14:06:00", now), "Sep 20 2:06 PM");
+  assert.equal(absoluteTime("2024-03-04T09:05:00", now), "Mar 4, 2024 9:05 AM");
   assert.equal(absoluteTime("not a date", now), "");
 });
 

@@ -58,7 +58,10 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   `claude-code/transcript-adapter.ts` and `claude-code/provider/session-records.ts` (the per-backend
   readers: locating a worker's transcript and counting its usage, for restored workers and for
   every `/ws/watch` usage total; the dev watcher does not watch these, so an edit there reaches a
-  running server only at its next restart). So an edit to any of these can break Sova's
+  running server only at its next restart). The frontend imports one file, the only pi-config
+  import in `src/`: `src/lib/format.ts` re-exports `pi-config/extensions/stamp/format.ts` (the
+  12-hour clock, stamp and relative time, shared with the TUI's `stamp` extension). Vite bundles
+  it for the browser, so it must import nothing at all. So an edit to any of these can break Sova's
   typecheck. Keep them pi-runtime-free (node builtins and, for the mode trio and the protocol set,
   each other only), and import nothing else from pi-config at runtime. `minor.ts` also reads its sibling `spec-mode.md` once at load, and
   refuses to load if that file's shell block is malformed. One test-only exception: `server/claude-models.test.ts` imports

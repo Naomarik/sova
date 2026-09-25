@@ -1,7 +1,8 @@
 import { children, createEffect, createMemo, createSignal, For, Match, on, onCleanup, Show, Switch, type JSX } from "solid-js";
 import type { TmpAttachment, TranscriptItem } from "../../shared/protocol";
 import type { LiveBlock, LiveEntry, LiveState, LiveUserState } from "../lib/live";
-import { clockTime, prettyJson, shortModel, stampTime, thousands, tildePath } from "../lib/format";
+import { agoTime, clockTime, prettyJson, shortModel, stampTime, thousands, tildePath } from "../lib/format";
+import { useMinuteNow } from "../lib/minute-clock";
 import { isObj, str, timestampOf, toolCallArgs, toolResultView } from "../lib/message";
 import { stripPastedPaths } from "../lib/path-attachments";
 import { home } from "../lib/ui-state";
@@ -39,12 +40,18 @@ export interface MessageActionsProvider {
   note?(entryId: string): string | null;
 }
 
+/** "1:43 PM · 5m ago": the clock in mono, then its age, kept current by the one minute clock
+    every head shares. The age drops once it would only repeat the date (past 7 days). */
 function Stamp(props: { iso?: string }) {
+  const now = useMinuteNow();
   return (
     <Show when={props.iso}>
-      <span class="message-time" title={props.iso}>
-        {stampTime(props.iso!)}
-      </span>
+      {(iso) => (
+        <span class="message-stamp" title={iso()}>
+          <span class="message-time">{stampTime(iso(), now())}</span>
+          <Show when={agoTime(iso(), now())}>{(ago) => <span class="message-ago"> · {ago()}</span>}</Show>
+        </span>
+      )}
     </Show>
   );
 }
@@ -340,7 +347,7 @@ export function HistoryItems(props: {
     return at;
   });
   /**
-   * The forked entry's OWN timestamp, in `HH:MM` — the marker's "· 14:06". It is the time of the
+   * The forked entry's OWN timestamp, as the clock — the marker's "· 2:06 PM". It is the time of the
    * last shared moment (the row the marker follows), NOT the wall-clock of the fanout gesture:
    * the gesture time lives nowhere in `seed`, and adding a field for it
    * would put a write-time fact in marker data whose only reader is this decoration. Derived
@@ -776,7 +783,7 @@ export interface ForkMarker {
  * The marker row: above it is shared with the source, below it is this member's own. A rendered
  * row, never an entry — nothing is written into the session file for it, because the fact it
  * states already lives in the group registry, and a written marker would need the write guards.
- * `time` is the forked entry's own `HH:MM` (see `forkTime`), or null to omit the clock half —
+ * `time` is the forked entry's own clock (`2:06 PM`) (see `forkTime`), or null to omit the clock half —
  * an entry with no timestamp is not a thing to guess at.
  */
 function ForkRow(props: { fork: ForkMarker; time: string | null }) {

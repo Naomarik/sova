@@ -1281,6 +1281,8 @@ button.list-row { width: 100%; border: 0; background: none; text-align: left; }
 }
 .message-author { font-weight: var(--fw-semibold); color: var(--color-ink); }
 .message-time   { font-family: var(--font-mono); font-size: var(--fs-mono); font-variant-numeric: tabular-nums; }
+/* "1:43 PM · 5m ago": the clock stays mono, its age reads as prose; both keep the head's muted ink. */
+.message-stamp  { white-space: nowrap; }
 .message-body {
   padding: var(--space-3) var(--space-4);
   border-radius: var(--r-lg);
@@ -4779,7 +4781,7 @@ a.chip:hover { color: var(--color-ink); border-color: var(--color-border-strong)
   /* Rail geometry, local to this block: the clock column, the rail column, and
      the y the dot centres on, measured from a row's content-box top (half a
      caption line). */
-  --timeline-time: 5ch;
+  --timeline-time: 8ch; /* "12:43 PM", the widest 12-hour clock */
   --timeline-rail: 14px;
   --timeline-dot-y: 9px;
 }

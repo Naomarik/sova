@@ -38,7 +38,7 @@ export function firstLine(text: string | null | undefined, max = 120): string {
   return `${(space > max * 0.6 ? cut.slice(0, space) : cut).trimEnd()}…`;
 }
 
-/** "Mar 4 14:06", with the year when it isn't this one: the `title` behind a relative time. */
+/** "Mar 4 2:06 PM", with the year when it isn't this one: the `title` behind a relative time. */
 export function absoluteTime(iso: string, now = Date.now()): string {
   const t = Date.parse(iso);
   if (Number.isNaN(t)) return "";

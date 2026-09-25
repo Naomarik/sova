@@ -4,7 +4,7 @@
 // "unreachable" with the error's first line, nothing yet says "checking…", never green.
 
 import { createSignal } from "solid-js";
-import { duration } from "./format";
+import { clockTime, duration } from "./format";
 import { remotePlaceOf } from "./remote-session";
 
 export type RemoteState = "online" | "unreachable" | "unknown";
@@ -224,7 +224,7 @@ export function remoteView(entry: RemoteEntry, now = Date.now()): RemoteView {
       ? `Fast channel pinned${s.channelState ? `, ${CHANNEL_WORDS[s.channelState]}` : ""}`
       : `Fast channel not pinned${s.channelState && s.channelState !== "off" ? ` (${CHANNEL_WORDS[s.channelState]})` : ""}; calls use per-call ssh`,
   );
-  lines.push(s.lastOkAt > 0 ? `Last successful call ${age}, at ${new Date(s.lastOkAt).toLocaleTimeString()}` : "No successful call yet");
+  lines.push(s.lastOkAt > 0 ? `Last successful call ${age}, at ${clockTime(s.lastOkAt)}` : "No successful call yet");
   if (running) lines.push(`A command has been ${running}`);
   const base = {
     host: s.host,

@@ -2,12 +2,12 @@
 // PI_CODING_AGENT_DIR in the OS temp dir; ~/.pi is never read or written. The server is imported
 // with PORT=0 so it binds an ephemeral port instead of the dev port.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, test } from "node:test";
 
-const agentDir = mkdtempSync(join(tmpdir(), "sova-summary-route-"));
+const agentDir = realpathSync(mkdtempSync(join(tmpdir(), "sova-summary-route-")));
 process.env.PI_CODING_AGENT_DIR = agentDir;
 process.env.PORT = "0";
 const sessionsDir = join(agentDir, "sessions", "--tmp-summary--");

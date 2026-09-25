@@ -6,15 +6,15 @@
 // production, minus the network.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, realpathSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, beforeEach, test } from "node:test";
 import type { GitRepoSummary, GitSummary } from "../shared/protocol";
 
-const agentDir = mkdtempSync(join(tmpdir(), "sova-git-test-agent-"));
+const agentDir = realpathSync(mkdtempSync(join(tmpdir(), "sova-git-test-agent-")));
 process.env.PI_CODING_AGENT_DIR = agentDir; // before the modules below compute their paths
-const scratch = mkdtempSync(join(tmpdir(), "sova-git-test-"));
+const scratch = realpathSync(mkdtempSync(join(tmpdir(), "sova-git-test-")));
 after(() => {
   rmSync(agentDir, { recursive: true, force: true });
   rmSync(scratch, { recursive: true, force: true });

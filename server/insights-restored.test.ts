@@ -3,13 +3,13 @@
 // durable worker records plus each worker's transcript, through the worker-transcript protocol.
 // Uses a throwaway PI_CODING_AGENT_DIR and CLAUDE_CONFIG_DIR; ~/.pi and ~/.claude are never touched.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import type { WorkerInfo } from "../shared/protocol";
 
-const root = mkdtempSync(join(tmpdir(), "sova-restored-test-"));
+const root = realpathSync(mkdtempSync(join(tmpdir(), "sova-restored-test-")));
 const agentDir = join(root, "agent");
 process.env.PI_CODING_AGENT_DIR = agentDir; // before the modules below compute their paths
 process.env.CLAUDE_CONFIG_DIR = join(root, "claude");

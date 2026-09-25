@@ -5,7 +5,7 @@
 // PI_SANDBOX_ROUTE_ABSENT=1 (no extension linked). No model request is made: the flip runs the
 // extension's command handler, never a prompt.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -14,8 +14,8 @@ import type { ChatServerMessage } from "../shared/protocol";
 
 const absent = process.env.PI_SANDBOX_ROUTE_ABSENT === "1";
 const here = dirname(fileURLToPath(import.meta.url));
-const dir = mkdtempSync(join(tmpdir(), "sova-sandbox-route-"));
-const cwd = mkdtempSync(join(tmpdir(), "sova-sandbox-route-cwd-"));
+const dir = realpathSync(mkdtempSync(join(tmpdir(), "sova-sandbox-route-")));
+const cwd = realpathSync(mkdtempSync(join(tmpdir(), "sova-sandbox-route-cwd-")));
 mkdirSync(join(dir, "extensions"), { recursive: true });
 if (!absent) symlinkSync(resolve(here, "../pi-config/extensions/sandbox"), join(dir, "extensions", "sandbox"));
 process.env.PI_CODING_AGENT_DIR = dir;

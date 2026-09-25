@@ -4,7 +4,7 @@
 // The resolver tests build their own projects dir under /tmp and point CLAUDE_CONFIG_DIR at it.
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, test } from "node:test";
@@ -41,7 +41,7 @@ after(() => {
 
 /** A throwaway ~/.claude with one project dir, wired up as CLAUDE_CONFIG_DIR. */
 function projectsRoot(): string {
-  const root = mkdtempSync(join(tmpdir(), "sova-claude-"));
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "sova-claude-")));
   roots.push(root);
   mkdirSync(join(root, "projects", "-home-user-webapps-sova"), { recursive: true });
   process.env.CLAUDE_CONFIG_DIR = root;

@@ -3,6 +3,7 @@ import { ApiError, claimMeshLogin, fetchFrontDoor, fetchMesh, fetchMeshCandidate
 import { copyText } from "../lib/ui-state";
 import { relativeTime } from "../lib/format";
 import {
+  claimable,
   claimRefusal,
   frontDoorProblems,
   hostLabel,
@@ -612,8 +613,8 @@ function LoginList(props: { tick: number }) {
                     <button
                       type="button"
                       class="button button-sm"
-                      disabled={claiming() === e.key || e.state !== "live"}
-                      title={e.state !== "live" ? `This host's ${noun(e)} isn't live.` : undefined}
+                      disabled={claiming() === e.key || !claimable(e)}
+                      title={claimable(e) ? undefined : `This host's ${noun(e)} is ${e.state === "dead" ? "failed" : "logged out"}.`}
                       onClick={() => setAsking(e.key)}
                     >
                       {claiming() === e.key ? "Keeping…" : `Keep This Host's ${noun(e) === "key" ? "Key" : "Login"}`}

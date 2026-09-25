@@ -22,6 +22,7 @@ import {
   serveUrlProblem,
   setMeshState,
   sessionRouteFromHash,
+  claimable,
   claimRefusal,
   listWords,
   loginConflicts,
@@ -212,9 +213,14 @@ test("login conflicts: only keys some peer holds differently, named for the page
 
 test("a refused claim reads as what to do next", () => {
   const key = { key: "pi:zai", store: "pi" as const, provider: "zai", kind: "api_key" as const, state: "live" as const };
-  assert.match(claimRefusal(key, 409, "No live login here to claim"), /isn't live any more.*Add it again here/);
+  assert.match(claimRefusal(key, 409, "No live login here to claim"), /logged out or failed.*Add it again here/);
   assert.match(claimRefusal({ ...key, kind: "oauth" }, 409, "No live login here to claim"), /Log in again here/);
   assert.match(claimRefusal(key, 409, "Logins sync is off"), /Login sync is off on this host/);
   assert.equal(claimRefusal(key, 400, "Unknown login"), "This host doesn't hold the zai API key any more.");
   assert.equal(claimRefusal(key, 0, "The Sova server isn't reachable."), "The Sova server isn't reachable.");
+});
+
+test("live and expired logins can be kept; dead and logged-out ones can't", () => {
+  const e = (state: "live" | "expired" | "dead" | "logged-out") => ({ key: "pi:x", store: "pi" as const, provider: "x", state });
+  assert.deepEqual((["live", "expired", "dead", "logged-out"] as const).map((s) => claimable(e(s))), [true, true, false, false]);
 });

@@ -325,12 +325,15 @@ export function listWords(items: readonly string[]): string {
   return `${items.slice(0, -1).join(", ")}, and ${items[items.length - 1]}`;
 }
 
+/** Whether this host's copy can be kept everywhere: a live one, or an idle expired OAuth login (refreshed on claim). */
+export const claimable = (e: MeshLoginEntry): boolean => e.state === "live" || e.state === "expired";
+
 /** What a refused claim means, in the page's words; the server's own message when it's none of these. */
 export function claimRefusal(e: MeshLoginEntry, status: number, message: string): string {
   const noun = e.kind === "api_key" ? "key" : "login";
   if (status === 409 && /sync is off/i.test(message)) return "Login sync is off on this host. Turn it on in Settings → Mesh, then keep one.";
   if (status === 409) {
-    return `This host's ${noun} isn't live any more, so there's nothing to keep. ${e.kind === "api_key" ? "Add it again here" : "Log in again here"}, or keep another host's from its own Mesh page.`;
+    return `This host's ${noun} is logged out or failed, so there's nothing to keep. ${e.kind === "api_key" ? "Add it again here" : "Log in again here"}, or keep another host's from its own Mesh page.`;
   }
   if (status === 400) return `This host doesn't hold the ${loginName(e)} any more.`;
   return message;

@@ -59,23 +59,26 @@ describe("front door order", () => {
 });
 
 describe("the Caddyfile", () => {
-  test("carries the lab-proven directives, each once", () => {
+  test("carries the lab-proven directives, each once; one failed connect never benches a host", () => {
     const { caddyfile } = frontDoorConfig(config(), "a.x.ts.net");
     for (const d of [
       "lb_policy first",
-      "lb_try_duration 5s",
-      "fail_duration 10s",
+      "lb_try_duration 6s",
+      "max_fails 3",
+      "fail_duration 3s",
       "health_uri /api/health",
       "health_interval 1s",
-      "health_timeout 1s",
+      "health_timeout 2500ms",
+      "health_fails 2",
+      "health_passes 2",
       "flush_interval -1",
       "header_up Host {upstream_hostport}",
-      "dial_timeout 1s",
+      "dial_timeout 2s",
       "keepalive off",
     ]) {
       assert.equal(caddyfile.split("\n").filter((l) => l.trim() === d).length, 1, d);
     }
-    assert.match(caddyfile, /\ttransport http \{\n\t\t\tdial_timeout 1s\n\t\t\tkeepalive off\n\t\t\}/);
+    assert.match(caddyfile, /\ttransport http \{\n\t\t\tdial_timeout 2s\n\t\t\tkeepalive off\n\t\t\}/);
   });
 
   test("braces balance and every non-comment line is inside a block or a block edge", () => {

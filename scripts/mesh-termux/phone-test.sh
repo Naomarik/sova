@@ -8,6 +8,8 @@
 #   scripts/mesh-termux/phone-test.sh gate                 mesh on with a placeholder peer: non-peer tailnet node, the phone
 #                                                          itself and a Wi-Fi source are refused; back to mesh off
 #   scripts/mesh-termux/phone-test.sh check                health, listeners, exposure, runit restart after a kill
+#   scripts/mesh-termux/phone-test.sh deps                 every command the scripts and Sova run on the phone comes from
+#                                                          install.sh's WANT or Termux's bootstrap; apt-get -s resolves WANT
 #   scripts/mesh-termux/phone-test.sh uninstall [--keep-ssh]
 #   scripts/mesh-termux/phone-test.sh snapshot <name>      packages, files, services, processes → $OUT/<name>/
 #   scripts/mesh-termux/phone-test.sh diff <a> <b>         what changed between two snapshots
@@ -252,6 +254,69 @@ EOS
   log "scan $name: $(grep -vcE '^(HANG|SELF)' "$d/$name.txt") open (address, port) pairs, $(grep -c '^ONCE' "$d/$name.txt") of them accepting once only, $(grep -c '^HANG' "$d/$name.txt") hung ports, $(grep -c '^SELF' "$d/$name.txt") self-connects (ephemeral range) set aside, $(echo $list | wc -w) addresses, $((SECONDS - t0)) s; control $PHONE:$PHONE_PORT open"
 }
 
+# ---- deps: every command the phone runs comes from WANT or Termux's bootstrap -----------------------------------------
+# What every Termux has from its first start: the packages (not libraries) of an older aarch64 bootstrap, all of them also
+# in the current one (termux-packages bootstrap-2026.09.20: that one adds gzip, bzip2, xz-utils, lsof, ... which an older
+# Termux lacks). Only the Essential ones can't be removed; any other command must be in install.sh's TOOLS.
+BOOTSTRAP="apt dpkg bash ca-certificates command-not-found coreutils curl dash debianutils diffutils dos2unix ed findutils gawk
+  gpgv grep inetutils less nano net-tools openssl patch procps psmisc readline sed tar termux-am termux-exec termux-keyring
+  termux-licenses termux-tools unzip util-linux"
+# what Sova and pi run at runtime (not visible in these scripts), and the commands phone-test itself runs on the phone
+RUNTIME="node corepack rg fd git tmux bash sh uname pgrep ps kill"
+PHONE_CMDS="bash node curl ifconfig dpkg-query apt-mark find ps awk sort stat md5sum timeout tr readlink seq grep sed cat head
+  tail wc rm mkdir nohup sleep touch test ls cut sv termux-wake-lock"
+# Words of these scripts that are never commands there (text in messages, options, file names)
+NOT_CMDS="install file service dir top time more test link join users script claude"  # claude: the ~/.claude dir name
+deps() {
+  local want tools words out bad=0
+  want=$(script "$HERE/install.sh" | sed -n 's/^WANT="\(.*\)"$/\1/p')
+  tools=$(script "$HERE/install.sh" | sed -n '/^TOOLS="/,/"$/p' | tr -d '"' | sed 's/^TOOLS=//' | tr ' ' '\n' | grep : || true)
+  [ -n "$want" ] && [ -n "$tools" ] || die "can't read WANT/TOOLS from install.sh"
+  want="$want openssh"   # install.sh adds it with --ssh-key, the only case its ssh/sshd lines run
+  # candidate command words: code only (comments dropped), then whatever of them is an executable on the phone
+  words=$( { script "$HERE/install.sh"; script "$HERE/uninstall.sh"; } | sed -E 's/(^|[[:space:]])#.*$//' \
+    | grep -oE '[a-zA-Z][a-zA-Z0-9_.+-]*' | sort -u | grep -vxF -f <(tr ' ' '\n' <<< "$NOT_CMDS") ; tr ' \n' '\n\n' <<< "$RUNTIME $PHONE_CMDS" | grep . )
+  words=$(sort -u <<< "$words")
+  out=$( { echo "WANT=\"$want\""; echo "BOOT=\"$(echo $BOOTSTRAP)\""; echo 'WORDS="'"$(echo $words)"'"'; cat <<'EOS'
+closure() { apt-cache depends --recurse --no-recommends --no-suggests --no-conflicts --no-breaks --no-replaces --no-enhances --no-pre-depends $1 2>/dev/null | grep -v '^ ' | grep -v '[<>]' | sort -u; }
+closure "$WANT" > $PREFIX/tmp/sova-deps.want
+closure "$BOOT" > $PREFIX/tmp/sova-deps.boot
+dpkg-query -W -f='${Package} ${Essential}\n' | awk '$2=="yes"{print $1}' > $PREFIX/tmp/sova-deps.ess
+for w in $WORDS; do
+  f=$PREFIX/bin/$w; [ -e "$f" ] || { echo "absent $w"; continue; }
+  o=$(dpkg -S "$(readlink -f "$f")" 2>/dev/null | head -1 | cut -d: -f1); [ -n "$o" ] || o=$(dpkg -S "$f" 2>/dev/null | head -1 | cut -d: -f1)
+  if grep -qxF "$o" $PREFIX/tmp/sova-deps.want; then k=want; elif grep -qxF "$o" $PREFIX/tmp/sova-deps.ess; then k=essential
+  elif grep -qxF "$o" $PREFIX/tmp/sova-deps.boot; then k=bootstrap; else k=OTHER; fi
+  echo "cmd $w ${o:-?} $k"
+done
+echo "sim $(apt-get install -s --reinstall --no-install-recommends $WANT 2>&1 | grep -c '^Reinst\|^Inst') of $(echo $WANT | wc -w)"
+for p in $WANT; do apt-cache policy $p | grep -q 'Candidate: [0-9]' && echo "candidate $p" || echo "nocandidate $p"; done
+rm -f $PREFIX/tmp/sova-deps.*
+EOS
+  } | ph 'bash -s' )
+  printf '%s\n' "$out" > "$OUT/deps.txt"
+  # every TOOLS command is in $PREFIX/bin (the service's PATH) once installed: not Android's /system/bin copy
+  if ph 'test -d ~/sova-mesh'; then
+    local c0; for c0 in $(cut -d: -f1 <<< "$tools"); do grep -q "^cmd $c0 " <<< "$out" || { log "TOOLS command $c0 is not in \$PREFIX/bin although Sova is installed"; bad=1; }; done
+  fi
+  # a command whose package is neither Essential nor brought by WANT (a non-essential bootstrap package a user can remove,
+  # one only newer bootstraps have, or one only this phone's user installed): install.sh must know its package (TOOLS)
+  local c o k
+  while read -r _ c o k; do
+    grep -qxF "$c:$o" <<< "$tools" || { log "$c ($o, $k) is not in install.sh's TOOLS: a fresh Termux may lack it"; bad=1; }
+  done < <(grep -E ' (bootstrap|OTHER)$' <<< "$out")
+  # TOOLS names the right package for every command that is on the phone
+  while IFS=: read -r c o; do
+    local real; real=$(grep "^cmd $c " <<< "$out" | awk '{print $3}' || true)
+    [ -z "$real" ] || [ "$real" = "$o" ] || { log "TOOLS says $c:$o, the phone says $real"; bad=1; }
+  done <<< "$tools"
+  if grep '^nocandidate' <<< "$out" >&2; then bad=1; fi
+  local sim; sim=$(sed -n 's/^sim //p' <<< "$out")
+  [ "${sim%% of*}" = "${sim##*of }" ] || { log "apt-get -s resolves $sim WANT packages"; bad=1; }
+  log "deps: $(grep -c '^cmd ' <<< "$out") commands on the phone ($(grep -c ' want$' <<< "$out") from WANT, $(grep -c ' essential$' <<< "$out") essential, $(grep -cE ' (bootstrap|OTHER)$' <<< "$out") via TOOLS), $(grep -c '^absent' <<< "$out") words not a command there; apt-get -s: $sim; WANT: $want"
+  [ $bad = 0 ] && echo "DEPS PASS" || { echo "DEPS FAIL"; return 1; }
+}
+
 # ---- pairing (only with PAIR_GO=1: coordinator-2's go) ---------------------------------------------------------
 # The phone knows callers by tailnet IP (SOVA_MESH_IDENTITY=addresses): its entry for the laptop carries the laptop's
 # StableID AND its tailnet IP as the url host. The laptop's team server (4870, LocalAPI whois) lists the phone by StableID.
@@ -366,6 +431,7 @@ case "$cmd" in
   unpair) unpair ;;
   snapshot) snapshot "$@" ;;
   addrs) addrs ;;
+  deps) deps ;;
   placeholder) # on: mesh on with the gate's placeholder peer (listener on the tailnet IP); off: mesh off
     case "${1:-}" in
       on) [ "$(phone_put /api/mesh/peers '{"peers":[{"id":"gate-dummy","label":"gate dummy","nodeId":"nGATEDUMMY00CNTRL","name":"100.64.0.1","url":"http://100.64.0.1:4801"}]}')" = 200 ] || die "PUT placeholder" ;;

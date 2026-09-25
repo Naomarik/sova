@@ -59,6 +59,7 @@ import {
   startOverseerLoop,
 } from "./overseer";
 import { readNotes, writeNotes, NOTES_MAX } from "./overseer-store";
+import { IdeaConflictError, IdeaError, ideaDetail, ideasInfo, parseIdeaId, updateIdea, type IdeaUpdate } from "./overseer-ideas";
 import { findExtension, listExtensions, proxyExtension, serveExtensionFile, setSovaPort } from "./extensions";
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4800; // PORT=0: an ephemeral port (tests)
@@ -729,13 +730,53 @@ app.put("/api/overseer/notes", async (c) => {
     return c.json({ error: "The standing notes changed since you opened them (the Overseer added one). Nothing was saved.", text: current }, 409);
   return c.json({ text: writeNotes(body.text) });
 });
+// The ideas backlog (server/overseer-ideas.ts). The Overseer's sova_idea and this PATCH are its
+// only writers; `base` (the updatedAt the editor started from) makes a stale edit a 409 carrying
+// the current idea, so the panel never overwrites what the Overseer appended meanwhile.
+app.get("/api/overseer/ideas", (c) => c.json(ideasInfo(), 200, { "Cache-Control": "no-store" }));
+app.get("/api/overseer/idea", (c) => {
+  const id = parseIdeaId(c.req.query("id") ?? "")?.id;
+  if (!id) return c.json({ error: "id must be an idea id: §<project>/<name> or §<project>.<main>/<name>" }, 400);
+  const detail = ideaDetail(id);
+  return detail ? c.json(detail, 200, { "Cache-Control": "no-store" }) : c.json({ error: `No idea ${id}` }, 404);
+});
+app.patch("/api/overseer/idea", async (c) => {
+  const id = parseIdeaId(c.req.query("id") ?? "")?.id;
+  if (!id) return c.json({ error: "id must be an idea id: §<project>/<name> or §<project>.<main>/<name>" }, 400);
+  let body: Record<string, unknown>;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "Expected JSON body { base?, title?, status?, tags?, links?, text? }" }, 400);
+  }
+  if (!body || typeof body !== "object" || Array.isArray(body)) return c.json({ error: "Expected a JSON object" }, 400);
+  const patch: IdeaUpdate = {};
+  for (const key of ["base", "title", "status", "text"] as const) {
+    if (body[key] === undefined) continue;
+    if (typeof body[key] !== "string") return c.json({ error: `${key} must be a string` }, 400);
+    (patch as Record<string, unknown>)[key] = body[key];
+  }
+  for (const key of ["tags", "links"] as const) {
+    if (body[key] === undefined) continue;
+    if (!Array.isArray(body[key])) return c.json({ error: `${key} must be a list` }, 400);
+    (patch as Record<string, unknown>)[key] = body[key];
+  }
+  if (!ideaDetail(id)) return c.json({ error: `No idea ${id}` }, 404);
+  try {
+    return c.json(updateIdea(id, patch));
+  } catch (err) {
+    if (err instanceof IdeaConflictError) return c.json({ error: err.message, current: err.current }, 409);
+    if (err instanceof IdeaError) return c.json({ error: err.message }, 400);
+    throw err;
+  }
+});
 app.get("/api/settings/overseer", (c) => c.json(overseerSettingsInfo()));
 app.put("/api/settings/overseer", async (c) => {
   let body: unknown;
   try {
     body = await c.req.json();
   } catch {
-    return c.json({ error: "Expected JSON body { version: 1, model, thinking, extraSystemPrompt, proactivity, quickActions, caps }" }, 400);
+    return c.json({ error: "Expected JSON body { version: 1, model, thinking, extraSystemPrompt, proactivity, quickActions, caps, explorer }" }, 400);
   }
   const result = await saveOverseerSettings(body);
   return "error" in result ? c.json({ error: result.error }, 400) : c.json(result);

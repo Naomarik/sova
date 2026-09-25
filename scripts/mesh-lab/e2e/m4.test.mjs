@@ -47,6 +47,41 @@ describe("the Caddyfile", () => {
   });
 });
 
+describe("steady state", () => {
+  test("with every host healthy the front door never leaves the first host (no spurious failover)", async () => {
+    // One stalled connect to a healthy upstream must not bench it: poll the front door for a while
+    // and fail on any answer that is not the first host's.
+    const secs = Number(process.env.M4_STEADY_SECONDS || 120);
+    await servedBy(order[0], 30000);
+    const flips = [];
+    const end = Date.now() + secs * 1000;
+    let n = 0;
+    while (Date.now() < end) {
+      let got;
+      try {
+        got = await upstreamOf();
+      } catch (e) {
+        got = `error ${e?.cause?.code || e?.name}`;
+      }
+      n++;
+      if (got !== order[0]) flips.push(`${new Date().toISOString().slice(11, 23)} ${got}`);
+      await new Promise((r) => setTimeout(r, 200));
+    }
+    // runs of consecutive answers from the same wrong upstream: "10:05:28.366–10:05:37.952 b ×48"
+    const episodes = [];
+    for (const f of flips) {
+      const [at, ...rest] = f.split(" ");
+      const who = rest.join(" ");
+      const last = episodes.at(-1);
+      if (last && last.who === who && Date.parse(`1970-01-01T${at}Z`) - Date.parse(`1970-01-01T${last.to}Z`) < 1000) (last.to = at), last.n++;
+      else episodes.push({ from: at, to: at, who, n: 1 });
+    }
+    const summary = episodes.map((e) => `${e.from}–${e.to} ${e.who} ×${e.n}`);
+    console.log(`# steady state: ${n} requests over ${secs} s, ${flips.length} not served by ${order[0]}${summary.length ? `: ${summary.join("; ")}` : ""}`);
+    assert.deepEqual(summary, [], `answers not from ${order[0]} while every host was healthy`);
+  });
+});
+
 describe("ordered failover", () => {
   test("the first host in the order serves", async () => {
     await servedBy(order[0]);
@@ -61,7 +96,9 @@ describe("ordered failover", () => {
     try {
       const t0 = Date.now();
       await servedBy(second);
-      console.log(`# failover ${first} -> ${second} (sova stopped): ${Date.now() - t0} ms`);
+      const ms = Date.now() - t0;
+      console.log(`# failover ${first} -> ${second} (sova stopped): ${ms} ms`);
+      assert.ok(ms <= 3000, `failover on a stopped Sova took ${ms} ms (bound 3 s)`);
     } finally {
       chaos.sovaStart(first);
     }
@@ -76,7 +113,9 @@ describe("ordered failover", () => {
     try {
       const t0 = Date.now();
       await servedBy(second, 30000);
-      console.log(`# failover ${first} -> ${second} (container killed): ${Date.now() - t0} ms`);
+      const ms = Date.now() - t0;
+      console.log(`# failover ${first} -> ${second} (container killed): ${ms} ms`);
+      assert.ok(ms <= 6000, `failover on a killed host took ${ms} ms (bound 6 s)`);
     } finally {
       chaos.start(first);
     }

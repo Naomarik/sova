@@ -327,18 +327,22 @@ export function writeCaddyfile(cfg) {
 :80 {
 \treverse_proxy ${upstreams.join(" ")} {
 \t\tlb_policy first
-\t\tlb_try_duration 5s
+\t\tlb_try_duration 6s
 \t\tlb_try_interval 250ms
-\t\tfail_duration 10s
+\t\t# same tolerances as Sova's generated file: one stalled connect must not bench a healthy host
+\t\tmax_fails 3
+\t\tfail_duration 3s
 \t\thealth_uri /api/health
 \t\thealth_interval 1s
-\t\thealth_timeout 1s
+\t\thealth_timeout 2500ms
+\t\thealth_fails 2
+\t\thealth_passes 2
 \t\tflush_interval -1
 \t\theader_up Host {upstream_hostport}
 \t\t# a killed host's address blackholes: bound the dial, and never reuse an idle upstream
 \t\t# connection (a request written into a dead host's pooled connection waits forever)
 \t\ttransport http {
-\t\t\tdial_timeout 1s
+\t\t\tdial_timeout 2s
 \t\t\tkeepalive off
 \t\t}
 \t\theader_down X-Lab-Upstream {upstream_hostport}

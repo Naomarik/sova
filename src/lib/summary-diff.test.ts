@@ -37,6 +37,9 @@ const full = (): Required<SessionSummary> => ({
   pendingDialogs: 1,
   seenAt: 10,
   unread: true,
+  signals: { at: 11, turnId: "e1", provider: "jev", asksUser: 0.9, kinds: ["asks-you"] },
+  workerSignals: { stuck: 0, failed: 1 },
+  tags: { topic: "feature", status: "done" },
 });
 
 /** A different value of the same shape, reaching inside objects. */

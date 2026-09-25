@@ -7,7 +7,7 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import { getAgentDir, SessionManager } from "@earendil-works/pi-coding-agent";
 import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
-import { disposeAllChats, getModelRuntime, heldChat, warmClaudeCodeProvider } from "./chat-manager";
+import { disposeAllChats, getModelRuntime, heldChat, onAgentSettled, warmClaudeCodeProvider } from "./chat-manager";
 import { canonicalPath, resolveSessionPath } from "./paths";
 import { stateRoot } from "./state-root";
 import { claudeCodeModelCount, listModels, listRegistryModels, resolveContext } from "./models";
@@ -15,8 +15,8 @@ import { setFavorite } from "./model-favorites";
 import { markOwned } from "./write-guard";
 import { addWebSession } from "./web-sessions";
 import { draftForClient, setDraft } from "./drafts";
-import { getAgentsInsight, getSessionInsight, getUsageInsight, refreshUsageInsight } from "./insights";
-import { archiveSession, cleanupSessions, getSessionSummary, idOf, listCwds, listSessions } from "./sessions-index";
+import { decodeWorkers, getAgentsInsight, getSessionInsight, getUsageInsight, refreshUsageInsight } from "./insights";
+import { archiveSession, cleanupSessions, getSessionSummary, idOf, lastReplyAtOf, listCwds, listSessions } from "./sessions-index";
 import { cleanSessionTitle, SESSION_TITLE_MAX, setSessionTitle } from "./session-titles";
 import { contextForBranch, normalizeEntries, readActiveBranch } from "./transcript";
 import { checkTmpImage, deleteAttachment, MAX_ATTACHMENT_BYTES, readTmpImage, saveUploadedImage, sessionAttachmentsDir, UploadError } from "./attachments";
@@ -63,6 +63,15 @@ import {
 import { readNotes, writeNotes, NOTES_MAX } from "./overseer-store";
 import { IdeaConflictError, IdeaError, ideaDetail, ideasInfo, parseIdeaId, updateIdea, type IdeaUpdate } from "./overseer-ideas";
 import { findExtension, listExtensions, proxyExtension, serveExtensionFile, setSovaPort } from "./extensions";
+import { decisionRuntime, decisions, decisionSettings, decisionsReady } from "./decide-runtime";
+import { decisionsInfo, decisionsOptions, deleteKey, probeDecisions, putJevKey, saveDecisions } from "./decide-routes";
+import { AttentionSignals } from "./attention-signals";
+import { configureSessionFeed, nudgeMarks, publishFeed } from "./session-feed";
+import { onTagsChanged } from "./session-tags";
+import { startSessionTags, tagRoutes } from "./tags-backfill";
+import { readLiveRecords } from "./live";
+import { defaultAdapters } from "./worker-adapters";
+import { serverRedactor } from "./overseer-redact";
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4800; // PORT=0: an ephemeral port (tests)
 // Loopback by default; set HOST=0.0.0.0 to deliberately expose on the LAN.
@@ -529,6 +538,39 @@ app.put("/api/settings/spec", async (c) => {
   return "error" in result ? c.json({ error: result.error }, 400) : c.json(result);
 });
 
+// Settings → Decisions: the decision seam's providers (Jev, a fallback model) and the two features
+// that use it, attention signals and session tags (server/decide-routes.ts). The Jev key is written
+// and deleted here but never sent back: only its last four characters and status.
+async function jsonOrNull(c: Context): Promise<{ body: unknown } | null> {
+  try {
+    return { body: await c.req.json() };
+  } catch {
+    return null;
+  }
+}
+app.get("/api/settings/decisions", (c) => c.json(decisionsInfo(), 200, { "Cache-Control": "no-store" }));
+app.get("/api/settings/decisions/options", async (c) => c.json(await decisionsOptions(delegateSources)));
+app.put("/api/settings/decisions", async (c) => {
+  const req = await jsonOrNull(c);
+  if (!req) return c.json({ error: "Expected JSON body { version: 1, jev, fallback, features, exclusions, neverSendTui }" }, 400);
+  const r = await saveDecisions(req.body, delegateSources);
+  return c.json(r.body, r.status);
+});
+app.put("/api/settings/decisions/key", async (c) => {
+  const req = await jsonOrNull(c);
+  if (!req) return c.json({ error: "Expected JSON body { key }" }, 400);
+  const r = await putJevKey(req.body);
+  return c.json(r.body, r.status);
+});
+app.delete("/api/settings/decisions/key", (c) => {
+  const r = deleteKey();
+  return c.json(r.body, r.status);
+});
+app.post("/api/settings/decisions/probe", async (c) => c.json(await probeDecisions()));
+
+// Session tags (server/tags-backfill.ts): manual tags, and the backfill job of Settings → Decisions.
+app.route("/api/sessions/tags", tagRoutes);
+
 // Settings → Summaries: which model writes the sidebar's summary line. The file is the
 // topic-outline extension's; the TUI and every runtime read it once per session, at session start,
 // so a save applies to sessions started afterwards. Only the chain changes — every other key, and a
@@ -893,6 +935,39 @@ attachWebSockets(server);
 // The Overseer's tools call these same routes in-process (no socket, every guard applies).
 setOverseerDispatch((path, init) => app.request(path, init));
 startOverseerLoop();
+
+// Decisions (Settings → Decisions; both features off by default, and then nothing is ever sent).
+// The list's decision overlays are pushed on /ws/watch?feed=sessions (server/session-feed.ts);
+// attention signals classify finished turns and long-running workers; session tags tag sessions.
+configureSessionFeed({ list: listSessions });
+const attentionSignals = new AttentionSignals({
+  settings: decisionSettings,
+  provider: () => (decisionsReady() ? decisions() : null),
+  list: listSessions,
+  summary: (path) => getSessionSummary(path),
+  lastReplyAt: lastReplyAtOf,
+  held: (path) => !!heldChat(path),
+  liveRecords: () => readLiveRecords({ includeOwn: true }),
+  decodeWorkers: (presence) => decodeWorkers(presence),
+  adapters: defaultAdapters,
+  redact: (value) => serverRedactor().redactDeep(value),
+  changed: nudgeMarks,
+});
+attentionSignals.start();
+onAgentSettled((path) => attentionSignals.turnSettled(path));
+startSessionTags({
+  list: listSessions,
+  onAgentSettled,
+  held: (path) => !!heldChat(path),
+  provider: decisions,
+  settings: decisionSettings,
+  ready: () => {
+    const s = decisionRuntime().chain.status();
+    return { ready: s.ready, ...(s.reason ? { reason: s.reason } : {}) };
+  },
+  publish: (progress) => publishFeed({ type: "tags_backfill", progress }),
+});
+onTagsChanged(() => nudgeMarks());
 
 // With the experimental switch on, register the Claude Code provider now rather than when the
 // user first opens a session, so its models are in GET /api/models for the picker straight away.

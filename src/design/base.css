@@ -5199,3 +5199,46 @@ a.chip:hover { color: var(--color-ink); border-color: var(--color-border-strong)
   .overseer-action-row .settings-delegate-fields,
   .overseer-model-fields { grid-template-columns: 1fr; }
 }
+
+/* =============================================================================
+   DECISIONS — what the opt-in classifier (Settings → Decisions) adds: the
+   "needs you" mark on a session row's line 1, the status word on its line 3,
+   and the Decisions tab's key and provider lines.
+   ============================================================================= */
+
+/* A finished turn that needs you: one glyph after the unread dot, before the draft pencil. It
+   is inline text like the pencil, not an indicator, so line 1 stays the title's. One mark per
+   row, the most urgent kind: failed, then asks, then looping. The kind differs in shape as well
+   as tone, so hue never carries it alone: asks-you is a speech bubble in the accent (the
+   accent's one spend, "this needs you"), task-failed an alert circle in error, looping the
+   refresh arrows in warn. The glyph is aria-hidden; the hidden word beside it names the kind.
+   A wrapping span may carry the tooltip; it adds no box of its own. */
+.list-title .session-signal {
+  width: 1em;
+  height: 1em;
+  margin-right: var(--space-1);
+  vertical-align: -0.125em;
+}
+.session-signal-asks    { color: var(--color-accent); }
+.session-signal-failed  { color: var(--status-error); }
+.session-signal-looping { color: var(--status-warn); }
+
+/* The tag's status word joins line 3's facts, "2h ago · done · model", in the meta's own
+   muted voice: a tag organises, the line-1 mark is what calls. It never wraps or splits. */
+.session-row .list-meta .session-status-word { white-space: nowrap; }
+
+/* Settings → Decisions. Each provider is one line: a chip (dot and word) for its state, then
+   the fact in caption ink ("Key ending 3f9a · checked 2h ago", "Rate-limited · retrying in 30 s"). */
+.decisions-providers { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
+.decisions-provider { display: flex; align-items: center; gap: var(--space-2); min-width: 0; font-size: var(--fs-caption); color: var(--color-ink-2); }
+.decisions-provider > .chip { flex: none; }
+.decisions-provider-name { flex: none; font-weight: var(--fw-semibold); color: var(--color-ink); }
+.decisions-provider-fact { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The key field: a password input and its Save/Remove buttons on one line, wrapping on a phone. */
+.decisions-key { display: flex; align-items: flex-end; gap: var(--space-2); flex-wrap: wrap; }
+.decisions-key > .field { flex: 1; min-width: 12rem; }
+/* What leaves the machine: one sentence, above the switches that send it, never below them. */
+.decisions-privacy { margin: 0; font-size: var(--fs-caption); color: var(--color-ink-2); max-width: var(--measure); }
+/* Backfill: the scope buttons, then a progress line in figures ("Tagged 40 of 147 · 2 failed"). */
+.decisions-backfill { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+.decisions-backfill-progress { margin: 0; font-size: var(--fs-caption); color: var(--color-ink-muted); font-variant-numeric: tabular-nums; }

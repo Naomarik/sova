@@ -41,6 +41,9 @@ const FIELDS: { [K in keyof Required<SessionSummary>]: "compare" | { exempt: str
   pendingDialogs: "compare",
   seenAt: { exempt: "Nothing renders it (`unread`, which does, is compared); it moves at every open and close of any tab, and a new row object would re-mount the row for nothing." },
   unread: "compare",
+  signals: "compare",
+  workerSignals: "compare",
+  tags: "compare",
 };
 
 export const COMPARED_FIELDS = (Object.keys(FIELDS) as (keyof SessionSummary)[]).filter((k) => FIELDS[k] === "compare");

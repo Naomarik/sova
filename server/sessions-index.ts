@@ -20,6 +20,9 @@ import { parseTargetCwd } from "./targets";
 import { messageContextTokens } from "./transcript";
 import { WorkerSessions } from "./worker-sessions";
 import { isOverseerId, overseerDir } from "./overseer-store";
+import { readDecisionSettings } from "./decide-settings";
+import { readSignals, signalsOverlay, workerSignalsOverlay } from "./signals-store";
+import { dropSessionTags, tagsFor } from "./session-tags";
 
 type BaseSummary = Omit<SessionSummary, "live" | "workers" | "origin" | "archived" | "busy">;
 
@@ -675,6 +678,32 @@ function attentionFields(
   };
 }
 
+/**
+ * The decision overlays of one row (Settings → Decisions): attention signals and worker checks
+ * from signals.json, present only while they should show (signals-store.ts), and the session's
+ * tags. Like attentionFields, never part of the cached summary: the stores change, the file doesn't.
+ */
+function decisionFields(
+  s: BaseSummary,
+  l: LiveRecord | undefined,
+  own: RawLiveRecord | undefined,
+  seen: Record<string, number>,
+  attention: boolean,
+): Pick<SessionSummary, "signals" | "workerSignals" | "tags"> {
+  const tags = tagsFor(s.id);
+  if (!attention) return tags ? { tags } : {};
+  const data = readSignals();
+  const ctx = { enabled: true, seenAt: seen[s.id], viewing: isViewing(s.id) };
+  const running = isSessionBusy(s.path) || (l?.activity ?? activityOf(own?.rec))?.state === "working";
+  const signals = signalsOverlay(s.id, { ...ctx, running }, data);
+  const workerSignals = workerSignalsOverlay(s.id, ctx, Date.now(), data);
+  return {
+    ...(signals ? { signals } : {}),
+    ...(workerSignals ? { workerSignals } : {}),
+    ...(tags ? { tags } : {}),
+  };
+}
+
 /** All sessions, newest activity first, with fresh live presence merged in. */
 export async function listSessions(): Promise<SessionSummary[]> {
   const files = await listSessionFiles();
@@ -685,6 +714,7 @@ export async function listSessions(): Promise<SessionSummary[]> {
   const titles = readSessionTitles();
   const groups = readAssignments();
   const seen = readSeen();
+  const attention = readDecisionSettings().features.attention;
   // A member whose file is gone KEEPS its assignment, on purpose: the workspace's "This
   // session's file is gone" pane IS that assignment rendered (spec 14-workspaces "Gone from
   // disk"), and pruning here — on every listing pass — would race the pane's own Remove From
@@ -732,6 +762,7 @@ export async function listSessions(): Promise<SessionSummary[]> {
       ...(groups[s.id] !== undefined ? { groupId: groups[s.id] } : {}),
       busy: isSessionBusy(s.path),
       ...attentionFields(s, l, ownRec, seen),
+      ...decisionFields(s, l, ownRec, seen, attention),
       ...(preview !== undefined ? { draftPreview: preview } : {}),
       ...(hasDraft ? { hasDraft: true as const } : {}),
     });
@@ -774,6 +805,7 @@ export async function getSessionSummary(path: string, resolveWindow?: WindowReso
     ...(groupId !== undefined ? { groupId } : {}),
     busy: isSessionBusy(s.path),
     ...attentionFields(s, l, ownRec, readSeen()),
+    ...decisionFields(s, l, ownRec, readSeen(), readDecisionSettings().features.attention),
   };
 }
 
@@ -823,6 +855,7 @@ export async function archiveSession(path: string, archived: boolean): Promise<A
         removeWebSession(s.id);
         dropDrafts([s.id]);
         dropSessionTitles([s.id]);
+        dropSessionTags([s.id]);
         removeSessionAttachments(s.id);
         dropGroupAssignments([s.id]);
         return { ok: true, summary: { ...s, archived: true } };
@@ -960,6 +993,7 @@ export async function cleanupSessions(req: CleanupRequest): Promise<CleanupResul
       removeWebSession(id);
       dropDrafts([id]);
       dropSessionTitles([id]);
+      dropSessionTags([id]);
       removeSessionAttachments(id);
       deletedIds.push(id);
       forgotten.push(id);

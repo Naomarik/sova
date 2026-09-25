@@ -58,6 +58,7 @@ import { cleanupSessions, getSessionSummary, idOf, indexedSessionPaths, lastRepl
 import { getSessionInsight } from "./insights";
 import { normalizeEntries, readActiveBranch } from "./transcript";
 import { markOwned } from "./write-guard";
+import { signalTextOf } from "./signals-store";
 
 /**
  * The Overseer: ONE special Sova session that watches every other session and acts on them
@@ -308,6 +309,7 @@ export function attentionDigest(): Promise<ReturnType<typeof buildDigest>> {
         viewing: isViewing(s.id),
         activitySince: live?.since ?? 0,
         lastReplyAt: lastReplyAtOf(s.path),
+        ...(s.signals || s.workerSignals ? { signalText: signalTextOf(s.id, nowMs) } : {}),
       };
     });
     return buildDigest(rows, Date.now(), homedir());

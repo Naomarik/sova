@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import type { SessionSummary } from "../shared/protocol";
-import { type AttentionRow, buildDigest, DIGEST_MAX, sessionItems, STALE_MS, whereOf, workerErrorTime } from "./attention";
+import { type AttentionRow, blockerKey, buildDigest, DIGEST_MAX, sessionItems, STALE_MS, whereOf, workerErrorTime } from "./attention";
 import { workerErrorTimesOf } from "./live";
 
 const NOW = Date.parse("2026-09-25T12:00:00.000Z");
@@ -164,5 +164,46 @@ describe("attention: the digest", () => {
     assert.equal(it!.href, `#/s/${encodeURIComponent("/s/x.jsonl")}`);
     assert.equal(it!.where, "~/proj");
     assert.equal(whereOf({ cwd: "/p", target: "cell", remoteCwd: "/srv/app" }), "cell:/srv/app");
+  });
+});
+
+describe("attention: decision signals (the list carries them only while unseen and idle)", () => {
+  const signals = (kinds: ("asks-you" | "task-failed" | "looping")[]) => ({ at: NOW - 5000, turnId: "t", provider: "jev" as const, kinds });
+
+  test("asks-you and task-failed are act; a main session's looping is decide; each dated by the classification", () => {
+    const items = sessionItems(row(summary("s", { signals: signals(["asks-you", "task-failed", "looping"]) })), NOW);
+    assert.deepEqual(items.map((i) => `${i.tier}:${i.kind}`), ["act:asks-you", "act:task-failed", "decide:looping"]);
+    assert.ok(items.every((i) => i.since === NOW - 5000));
+  });
+
+  test("worker checks: stuck and failed subagents are act, one item per kind with the session's own", () => {
+    const items = sessionItems(row(summary("s", { signals: signals(["task-failed", "looping"]), workerSignals: { stuck: 2, failed: 1 } })), NOW);
+    assert.deepEqual(items.map((i) => `${i.tier}:${i.kind}`), ["act:task-failed", "act:looping"]);
+    assert.equal(items[0]!.detail, "The last turn looks like it failed. 1 subagent finished without doing the task.");
+    assert.equal(items[1]!.detail, "2 subagents look stuck. The last turn looks like it went in circles too.");
+  });
+
+  test("details quote the stored sentence and name stuck workers; fixed fallbacks without them", () => {
+    const text = { sentence: "Should I merge them first?", stuckWorkers: ["builder"] };
+    const detail = (s: SessionSummary, t?: AttentionRow["signalText"]) =>
+      sessionItems(row(s, t ? { signalText: t } : {}), NOW).map((i) => `${i.tier}:${i.kind}:${i.detail}`);
+    assert.deepEqual(detail(summary("a", { signals: signals(["asks-you"]) }), text), ["act:asks-you:Asks you: Should I merge them first?"]);
+    assert.deepEqual(detail(summary("a", { signals: signals(["asks-you"]) })), ["act:asks-you:The last reply asks you something."]);
+    assert.deepEqual(detail(summary("f", { signals: signals(["task-failed"]) }), { sentence: "The build still fails.", stuckWorkers: [] }), ["act:task-failed:The last turn looks like it failed. The build still fails."]);
+    assert.deepEqual(detail(summary("l", { signals: signals(["looping"]) })), ["decide:looping:The last turn looks like it went in circles."]);
+    assert.deepEqual(detail(summary("w", { workerSignals: { stuck: 1, failed: 0 } }), text), ["act:looping:A subagent looks stuck: builder."]);
+    assert.deepEqual(detail(summary("w", { workerSignals: { stuck: 2, failed: 0 } }), { stuckWorkers: ["a", "b"] }), ["act:looping:Subagents look stuck: a, b."]);
+  });
+
+  test("no kinds, no items; an empty kinds list is not a mark; the badge counts a signalled session as needs-you", () => {
+    assert.deepEqual(kinds(row(summary("s", { signals: signals([]) }))), []);
+    const d = buildDigest([row(summary("a", { signals: signals(["asks-you"]), unread: true }))], NOW);
+    assert.deepEqual(d.badge, { act: 1, decide: 0 });
+    assert.equal(blockerKey(d.items[0]!), "a:asks-you");
+  });
+
+  test("Overseer and worker sessions never carry items, signals or not", () => {
+    assert.deepEqual(kinds(row(summary("o", { overseer: true, signals: signals(["asks-you"]) }))), []);
+    assert.deepEqual(kinds(row(summary("w", { workerSession: true, workerSignals: { stuck: 1, failed: 0 } }))), []);
   });
 });

@@ -2,11 +2,12 @@ import { existsSync } from "node:fs";
 import type { IncomingMessage, Server } from "node:http";
 import type { Duplex } from "node:stream";
 import { type WebSocket, WebSocketServer } from "ws";
-import type { ChatClientMessage, ChatServerMessage, WatchServerMessage } from "../shared/protocol";
+import type { ChatClientMessage, ChatServerMessage, SessionFeedMessage, WatchServerMessage } from "../shared/protocol";
 import { acquireChat, BusyError, ConfigError, type ChatClient } from "./chat-manager";
 import { normalizeClaudeText, resolveClaudeSession } from "./claude-transcript";
 import { resolveSessionPath } from "./paths";
 import { trackViewer } from "./seen";
+import { nudgeMarks, sessionFeed } from "./session-feed";
 import { idOf } from "./sessions-index";
 import { extensionSocketRoute, upgradeExtensionSocket } from "./extensions";
 import { meshUpgrade } from "./mesh";
@@ -15,7 +16,7 @@ import { type Normalize, SessionTail } from "./watch";
 import { sharedWorkerWindowResolver } from "./models";
 import { contextTally, type Format, type WindowResolver } from "./worker-context";
 
-function sendJson(ws: WebSocket, msg: ChatServerMessage | WatchServerMessage): void {
+function sendJson(ws: WebSocket, msg: ChatServerMessage | WatchServerMessage | SessionFeedMessage): void {
   if (ws.readyState !== ws.OPEN) return;
   try {
     ws.send(JSON.stringify(msg));
@@ -45,6 +46,7 @@ async function handleChat(ws: WebSocket, path: string, force: boolean): Promise<
   // detach, whether or not the runtime opens — a refused chat is still a session the user looked at.
   const id = idOf(path);
   trackViewer(id, 1);
+  nudgeMarks(); // a mark clears once its session is on screen (server/session-feed.ts)
   ws.on("close", () => {
     gone = true;
     trackViewer(id, -1);
@@ -78,7 +80,10 @@ function handleWatch(ws: WebSocket, path: string, normalize?: Normalize, tally?:
   const tail = new SessionTail(path, (msg) => sendJson(ws, msg), normalize, tally, contextTally(format, (ref) => resolve(ref)));
   // A claude-code worker's own file has no Sova session id: nothing to stamp.
   const id = normalize ? "" : idOf(path);
-  if (id) trackViewer(id, 1);
+  if (id) {
+    trackViewer(id, 1);
+    nudgeMarks();
+  }
   ws.on("close", () => {
     if (id) trackViewer(id, -1);
     tail.close();
@@ -89,6 +94,19 @@ function handleWatch(ws: WebSocket, path: string, normalize?: Normalize, tally?:
     sendJson(ws, { type: "error", message: err instanceof Error ? err.message : String(err) });
     ws.close(4500, "watch failed");
   });
+}
+
+/** /ws/watch?feed=sessions: the session list's decision overlays, pushed (server/session-feed.ts). */
+function handleFeed(ws: WebSocket): void {
+  const feed = sessionFeed();
+  if (!feed) {
+    sendJson(ws, { type: "error", message: "The session feed is not running" });
+    ws.close(4500, "no feed");
+    return;
+  }
+  const remove = feed.add((msg) => sendJson(ws, msg));
+  ws.on("close", remove);
+  ws.on("message", () => {}); // read-only: ignore anything the client sends
 }
 
 const wss = new WebSocketServer({ noServer: true });
@@ -103,6 +121,11 @@ export function upgradeSovaSocket(req: IncomingMessage, socket: Duplex, head: Bu
     return;
   }
   wss.handleUpgrade(req, socket, head, (ws) => {
+    // /ws/watch?feed=sessions: no session at all, the list's pushed overlays.
+    if (route === "/ws/watch" && url.searchParams.get("feed") === "sessions") {
+      handleFeed(ws);
+      return;
+    }
     // /ws/watch?claude=<uuid>: a claude-code worker's own session file, in CC's own format.
     const claudeId = route === "/ws/watch" ? url.searchParams.get("claude") : null;
     if (claudeId) {

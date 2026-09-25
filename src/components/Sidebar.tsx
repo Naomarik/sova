@@ -29,6 +29,9 @@ import {
 } from "../lib/session-groups";
 import { announce, hasLocalDraft, home, localRunning, sessionContext, toast } from "../lib/ui-state";
 import { showsDraftMark } from "../lib/draft-mark";
+import { overlaid, rowNeedsYou, SIGNAL_CLASS, SIGNAL_ICON, signalTitle, signalWords, tagSearchText, tagStatusWord, tagsTitle } from "../lib/signals";
+import { marksOverlay, openSessionFeed } from "../lib/session-feed";
+import { reuseUnchanged } from "../lib/summary-diff";
 import { readKey, removeKey, writeKey } from "../lib/storage-keys";
 import { monogram, setSpine, spine } from "../lib/spine";
 import { createHoldGesture } from "../lib/hold-select";
@@ -199,6 +202,9 @@ function SessionRow(props: { session: SessionSummary; selected: string | null; n
     return m ? remoteMarkTitle(m, props.targets.find((t) => t.name === m.place.target)?.host) : "";
   };
   const isBusy = () => sessionBusy(s());
+  /** Line 1's "needs you" mark (src/lib/signals.ts): the server's kinds, never on the open or a running session. */
+  const needsYou = createMemo(() => rowNeedsYou(s(), { selected: props.selected, busy: isBusy() }));
+  const statusWord = () => tagStatusWord(s().tags);
   const tuiTitle = () => `Open in a TUI · pid ${s().live!.pid} · ${s().live!.status}`;
   const working = () => sessionWorking(s());
   /** The row's context fill: the open session's live value wins over the list's tail value, and a
@@ -403,6 +409,18 @@ function SessionRow(props: { session: SessionSummary; selected: string | null; n
               <span class="session-unread" aria-hidden="true" />
               <span class="visually-hidden">New activity. </span>
             </Show>
+            {/* What the last finished turn says about you (Settings → Decisions): one mark, the most
+                urgent kind, its shape and word per kind. Gone once you've seen the session. */}
+            <Show when={needsYou()}>
+              {(m) => (
+                <>
+                  <span class="session-signal-wrap" title={signalTitle(m())}>
+                    <Icon name={SIGNAL_ICON[m().kind]} small class={SIGNAL_CLASS[m().kind]} />
+                  </span>
+                  <span class="visually-hidden">{signalWords(m())}</span>
+                </>
+              )}
+            </Show>
             <Show when={showsDraftMark(s(), hasLocalDraft(s().path))}>
               <Icon name="pencil" small class="list-title-draft" />
               <span class="visually-hidden">Draft. </span>
@@ -455,8 +473,17 @@ function SessionRow(props: { session: SessionSummary; selected: string | null; n
                 </span>
               )}
             </Show>
-            <p class="list-meta">
+            <p class="list-meta" title={tagsTitle(s().tags) ?? undefined}>
               {relativeTime(s().lastActiveAt, props.now)}
+              {/* The session's status tag, between the time and the model. The topic is search-only. */}
+              <Show when={statusWord()}>
+                {(w) => (
+                  <>
+                    {" · "}
+                    <span class="session-status-word">{w()}</span>
+                  </>
+                )}
+              </Show>
               <Show when={s().model}>
                 {" · "}
                 <span class="text-mono" title={s().model!}>
@@ -1002,8 +1029,18 @@ export function Sidebar(props: {
     clearTimeout(skeletonTimer);
   });
 
-  /** Main threads only (src/lib/regions.ts): every region, search hit and count reads this. */
-  const all = createMemo(() => (props.sessions ?? []).filter(isMainThread));
+  // Decision marks arrive over the session feed as they change, and so does word that the list itself
+  // changed (a session a TUI just started): that re-reads it. The list poll stays the fallback.
+  openSessionFeed(() => props.onRefresh());
+  /** Main threads only (src/lib/regions.ts): every region, search hit and count reads this. Each row
+      carries the feed's marks over the list's (a peer's row keeps its own); `reuseUnchanged` keeps a
+      row's object across feed messages that don't touch it, so rows update in place. */
+  const all = createMemo<SessionSummary[]>((prev) =>
+    reuseUnchanged(
+      (props.sessions ?? []).filter(isMainThread).map((s) => overlaid(s, marksOverlay(), !!hostOf(s.path))),
+      prev,
+    ),
+  );
   /**
    * The selection lives in module state and is keyed by PATH, so a background poll can neither
    * reset it nor unpick a row whose object was rebuilt. The one thing a poll may change about it:
@@ -1032,7 +1069,7 @@ export function Sidebar(props: {
     // The host filter narrows first; with the mesh off it is always All and changes nothing.
     const h = hostFilter();
     const pool = h === null ? all() : all().filter((s) => passesHostFilter(h, s.path));
-    return q ? pool.filter((s) => `${s.title} ${where(s)} ${s.model ?? ""}`.toLowerCase().includes(q)) : pool;
+    return q ? pool.filter((s) => `${s.title} ${where(s)} ${s.model ?? ""} ${tagSearchText(s.tags)}`.toLowerCase().includes(q)) : pool;
   });
   // Pane rule: live, or web-spawned and not archived, stays on top (src/lib/regions.ts).
   const isTop = isTopSession;
@@ -1401,7 +1438,7 @@ export function Sidebar(props: {
               class="input"
               id="session-search"
               type="search"
-              placeholder="Title, folder, or model"
+              placeholder="Title, folder, or tag"
               aria-describedby="session-count"
               autocomplete="off"
               spellcheck={false}
@@ -1510,7 +1547,7 @@ export function Sidebar(props: {
               <p class="empty-title">
                 0 of {all().length} match “{query().trim()}”.
               </p>
-              <p class="empty-body">We search titles, folders, and models.</p>
+              <p class="empty-body">We search titles, folders, models, and tags.</p>
               <button type="button" class="button empty-action" onClick={clear}>
                 Clear Search
               </button>

@@ -30,6 +30,7 @@ const V = {
   modelsKey: fake("rdModelsKey"),
   modelsHeader: fake("rdModelsHdr"),
   envToken: fake("rdEnvToken"),
+  jevKey: fake("rdJevKey", 100), // Sova's own plain-text key file (decide-secret.ts)
 };
 /** Present but not secret: must come through untouched. */
 const PLAIN = {
@@ -60,11 +61,12 @@ put(
     },
   }),
 );
+put(join(agentDir, "sova", "secrets", "jev-key"), `${V.jevKey}\n`);
 process.env.RD_TEST_API_TOKEN = V.envToken;
 process.env.RD_TEST_PLAIN = PLAIN.envPlain;
 process.env.GIT_AUTHOR_EMAIL = PLAIN.author;
 
-const { REDACTED, REDACTING, Redactor, redactingTool, isSecretEnvName, modelsJsonValues, serverRedactor } = await import("./overseer-redact");
+const { REDACTED, REDACTING, Redactor, redactingTool, isSecretEnvName, modelsJsonValues, redactPatterns, serverRedactor } = await import("./overseer-redact");
 const { overseerFileTools } = await import("./overseer-file-tools");
 const { briefText, buildOverseerTools, renderOverseerPrompt, extraInstructions } = await import("./overseer");
 const { logAction, overseerActionsFile, overseerNotesFile, readNotes, readOverseerSettings, writeNotes } = await import("./overseer-store");
@@ -306,5 +308,58 @@ describe("extension messages in the Overseer's context", () => {
     assert.equal(out[3], tool);
     const clean = [user, tool];
     assert.equal(redactExtensionMessages(clean, r), clean, "nothing to redact: the same array");
+  });
+});
+
+describe("secrets recognised by shape (no credential file names them)", () => {
+  // Every value here is fake and built in pieces, so the file itself holds no real-looking token.
+  const cases: [string, string, string][] = [
+    ["sk- key", `err: invalid key ${"sk-" + "test-FAKE0123456789abcdef"} used`, `err: invalid key ${REDACTED} used`],
+    ["sk-proj- key", `${"sk-" + "proj-FAKEfakeFAKEfake1234567890"}`, REDACTED],
+    ["sk-ant- key", `x ${"sk-" + "ant-api03-FAKE0123456789abcdefFAKE"} y`, `x ${REDACTED} y`],
+    ["ghp_ token", `${"ghp_" + "FAKE0123456789abcdefFAKE0123"}`, REDACTED],
+    ["gho_ token", `t=${"gho_" + "FAKE0123456789abcdefFAKE0123"}`, `t=${REDACTED}`],
+    ["github_pat_", `${"github_pat_" + "11FAKE0123456789_abcdefFAKE0123456789"}`, REDACTED],
+    ["AKIA id", `aws ${"AKIA" + "FAKE0123456789AB"} ok`, `aws ${REDACTED} ok`],
+    ["ASIA id", `${"ASIA" + "FAKE0123456789AB"}`, REDACTED],
+    ["xoxb- token", `${"xoxb-" + "123456789012-FAKEfakeFAKE"}`, REDACTED],
+    ["xoxp- token", `${"xoxp-" + "123456789012-FAKEfakeFAKE"}`, REDACTED],
+    ["Bearer (name kept)", `Authorization: Bearer ${"FAKEfake0123456789.abc"}`, `Authorization: Bearer ${REDACTED}`],
+    ["JWT", `${"eyJ" + "hbGciOiJIUzI1NiJ9"}.${"eyJzdWIiOiIxMjM0In0"}.${"FAKEsig_0123456789"}`, REDACTED],
+    ["PEM block", `a\n-----BEGIN RSA PRIVATE KEY-----\nMIIFAKE\nFAKE==\n-----END RSA PRIVATE KEY-----\nb`, `a\n${REDACTED}\nb`],
+    ["PEM cut short", `-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1FAKE`, REDACTED],
+    ["NAME=value (env)", `API_KEY=fake_api_key_9876543210 next`, `API_KEY=${REDACTED} next`],
+    ["NAME=value (sk inside)", `OPENAI_API_KEY=${"sk-" + "proj-FAKEfakeFAKEfake1234567890"}`, `OPENAI_API_KEY=${REDACTED}`],
+    ["NAME=\"value\"", `DB_PASSWORD="hunter2hunter2"`, `DB_PASSWORD="${REDACTED}"`],
+    ["flag", `--auth-token=abcdef123456 --x`, `--auth-token=${REDACTED} --x`],
+    ["query string", `?client_secret=abc123def&x=1`, `?client_secret=${REDACTED}&x=1`],
+    ["JSON field", `{"apiKey": "fake-value-123", "name": "n"}`, `{"apiKey": "${REDACTED}", "name": "n"}`],
+    ["JSON credential", `{"credentials":"c-fake-0001","passwd": "x1y2z3"}`, `{"credentials":"${REDACTED}","passwd": "${REDACTED}"}`],
+  ];
+  for (const [name, input, expected] of cases)
+    test(name, () => {
+      assert.equal(redactPatterns(input), expected);
+      // And through the redactor itself, with no known values loaded (the path a decision takes).
+      assert.equal(new Redactor([], {}).refresh().redact(input), expected);
+    });
+
+  test("no false positives: paths, short hashes, `key: value` prose, numbers, author fields", () => {
+    const plain = [
+      "/home/user/.ssh/id_rsa and ~/work/secret-project/src/token.ts",
+      "3302ca6 mesh-termux scan; d422579 mesh-lab m4",
+      "The key: value pairs are documented; the token: count is 435.",
+      "input_tokens=435 output_tokens=20 max_tokens=4096 cache=true",
+      '{"input_tokens": "435", "author": "someone", "keywords": ["a"], "authority": "x"}',
+      "sk-ant-oat01- is only a prefix; sk-learn is a library",
+      "Bearer short",
+      "GIT_AUTHOR_NAME=someone",
+    ];
+    for (const t of plain) assert.equal(redactPatterns(t), t, t);
+  });
+
+  test("redactDeep applies the patterns with no known values loaded, and keeps object keys", () => {
+    const r = new Redactor([], {}).refresh();
+    const state = { tool_failures: [{ input: "echo $OPENAI_API_KEY", error: `OPENAI_API_KEY=${"sk-" + "proj-FAKEfakeFAKEfake1234567890"}` }], api_key_note: "fine" };
+    assert.deepEqual(r.redactDeep(state), { tool_failures: [{ input: "echo $OPENAI_API_KEY", error: `OPENAI_API_KEY=${REDACTED}` }], api_key_note: "fine" });
   });
 });

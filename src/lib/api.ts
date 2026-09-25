@@ -62,6 +62,7 @@ import type {
   SummarizerSettingsInfo,
 } from "../../shared/protocol";
 import type { TargetInfo } from "./remote-session";
+import type { DecisionKeyInfo, DecisionProbeResult, DecisionSaveResult, DecisionSettings, DecisionSettingsInfo, TagsBackfillProgress, TagsBackfillScope } from "../../shared/protocol";
 import { hostOf, hostUrl, noteHost, peerBase, routeUrl } from "./mesh";
 
 /**
@@ -723,3 +724,39 @@ export const claimMeshLogin = (key: string) =>
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ key } satisfies MeshLoginClaim),
   });
+
+// ---- Settings → Decisions (components/DecisionSettings.tsx) --------------------------------------
+
+export const getDecisionSettings = () => request<DecisionSettingsInfo>("/api/settings/decisions");
+
+/** What each backend offers for the fallback row: the same discovery as Delegate's. */
+export const getDecisionOptions = () => request<DelegateOptions>("/api/settings/decisions/options");
+
+export const putDecisionSettings = (settings: DecisionSettings) =>
+  request<DecisionSaveResult>("/api/settings/decisions", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(settings) });
+
+/** Store a Jev key once Jev accepts it. A rejected key isn't stored: the 422's body is its status,
+    returned like a success so the screen can say so. Only `last4` ever comes back. */
+export async function putDecisionKey(key: string): Promise<DecisionKeyInfo> {
+  try {
+    return await request<DecisionKeyInfo>("/api/settings/decisions/key", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ key }) });
+  } catch (err) {
+    const body = err instanceof ApiError && err.status === 422 ? (err.body as Partial<DecisionKeyInfo> | undefined) : undefined;
+    if (body && typeof body.status === "string" && typeof body.present === "boolean") return body as DecisionKeyInfo;
+    throw err;
+  }
+}
+
+export const deleteDecisionKey = () => request<DecisionKeyInfo>("/api/settings/decisions/key", { method: "DELETE" });
+
+/** One canned decision through the chain (the Test button). A provider failure is `ok: false`, not a throw. */
+export const probeDecisions = () => request<DecisionProbeResult>("/api/settings/decisions/probe", { method: "POST" });
+
+export const getTagsBackfill = () => request<TagsBackfillProgress>("/api/sessions/tags/backfill");
+
+/** Start tagging past sessions, or get the job already running. */
+export const startTagsBackfill = (scope: TagsBackfillScope) =>
+  request<TagsBackfillProgress>("/api/sessions/tags/backfill", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ scope }) });
+
+/** Stop the running backfill; what it tagged stays. */
+export const cancelTagsBackfill = () => request<TagsBackfillProgress>("/api/sessions/tags/backfill/cancel", { method: "POST" });

@@ -27,6 +27,9 @@ export interface AttentionRow {
   activitySince: number;
   /** ms epoch of the last assistant reply; undefined unknown. */
   lastReplyAt?: number;
+  /** Words for the decision-signal items (signals-store.ts signalTextOf): the reply's quoted
+      sentence, and the names of subagents that look stuck. Absent: the fixed fallbacks. */
+  signalText?: { sentence?: string; stuckWorkers: string[] };
 }
 
 export const DIGEST_MAX = 30;
@@ -77,6 +80,24 @@ export function sessionItems(row: AttentionRow, now: number, home?: string): Att
     row.viewing === true || (s.seenAt !== undefined && row.workerErrorAt !== undefined && s.seenAt >= row.workerErrorAt);
   if (row.failedWorkers > 0 && !errorSeen)
     add("act", "worker-error", lastActive, `${row.failedWorkers} subagent${row.failedWorkers === 1 ? "" : "s"} ended in an error.`);
+  // Decision signals (server/signals-store.ts): the list carries them only while unseen and idle,
+  // with the kinds already derived from the fixed thresholds. A main session's "looping" is a
+  // judgement call (decide); a looping or failed subagent is a blocker (act).
+  const sig = s.signals?.kinds ?? [];
+  const at = s.signals?.at ?? lastActive;
+  const sentence = row.signalText?.sentence;
+  if (sig.includes("asks-you")) add("act", "asks-you", at, sentence ? `Asks you: ${sentence}` : "The last reply asks you something.");
+  const ws = s.workerSignals;
+  const failedDetail = [
+    ...(sig.includes("task-failed") ? [sentence ? `The last turn looks like it failed. ${sentence}` : "The last turn looks like it failed."] : []),
+    ...(ws?.failed ? [`${ws.failed} subagent${ws.failed === 1 ? "" : "s"} finished without doing the task.`] : []),
+  ];
+  if (failedDetail.length) add("act", "task-failed", at, failedDetail.join(" "));
+  if (ws?.stuck) {
+    const names = row.signalText?.stuckWorkers ?? [];
+    const who = names.length === 1 ? `A subagent looks stuck: ${names[0]}.` : names.length > 1 ? `Subagents look stuck: ${names.join(", ")}.` : ws.stuck === 1 ? "A subagent looks stuck." : `${ws.stuck} subagents look stuck.`;
+    add("act", "looping", at, sig.includes("looping") ? `${who} The last turn looks like it went in circles too.` : who);
+  } else if (sig.includes("looping")) add("decide", "looping", at, "The last turn looks like it went in circles.");
   // An archived session is out of the user's way on purpose: only a blocker brings it back.
   if (s.archived) return out;
 

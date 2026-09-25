@@ -12,7 +12,11 @@ export const MIN_SECRET_LENGTH = 12;
 /** A secret cut short (a truncated line, `abc…`) is caught from this many of its first or last characters. */
 export const MIN_FRAGMENT_LENGTH = 16;
 
-export type SecretSource = { path: string; pick: (json: unknown) => string[] };
+/** `text: true` = the file is read as plain text (`pick` gets the string), not parsed as JSON. */
+export type SecretSource = { path: string; pick: (json: unknown) => string[]; text?: true };
+
+/** A plain-text secret file (one value, e.g. Sova's own Jev key): the trimmed text when it is plausible. */
+export const textValue = (text: unknown): string[] => (typeof text === "string" && plausibleSecret(text.trim()) ? [text.trim()] : []);
 
 /**
  * Where the secret values come from: the credential files the deny list (overseer-deny.ts) names,
@@ -31,6 +35,9 @@ export function secretSources(home = homedir(), agentDir = getAgentDir()): Secre
     // Claude Code's OAuth tokens, and the account record's API key (the rest of that file is not secret).
     { path: join(home, ".claude", ".credentials.json"), pick: all },
     { path: join(home, ".claude.json"), pick: (j: unknown) => stringLeaves((j as { primaryApiKey?: unknown } | null)?.primaryApiKey) },
+    // Sova's own Jev key (Settings → Decisions, server/decide-secret.ts): the whole file is the key.
+    { path: join(home, ".pi", "agent", "sova", "secrets", "jev-key"), pick: textValue, text: true as const },
+    { path: join(agentDir, "sova", "secrets", "jev-key"), pick: textValue, text: true as const },
   ].filter((s, i, list) => list.findIndex((o) => o.path === s.path) === i);
 }
 
@@ -95,6 +102,47 @@ export function plausibleSecret(v: string): boolean {
 const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /**
+ * Secrets recognised by their shape, for values no credential file names (a key a failing command
+ * prints, a token in a tool's output). Each match becomes REDACTED; for `Bearer <token>` and the
+ * `NAME=value` / `"name": "value"` forms the name stays and only the value goes. Order matters:
+ * whole blocks and prefixed tokens first, the generic name rules last. Redacting too much is the
+ * safe direction; the cases that must NOT match (paths, short git hashes, `key: value` prose,
+ * numbers) are pinned in overseer-redact.test.ts.
+ */
+const SECRET_NAME = String.raw`[A-Za-z0-9_.-]*(?:key|token|secret|password|passwd|auth(?!or)|credential)[A-Za-z0-9_.-]*`;
+const SECRET_PATTERNS: [RegExp, string][] = [
+  // PEM private-key blocks, whole (to the END line, or the end of the text when it was cut short).
+  [/-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z0-9 ]*PRIVATE KEY-----|$)/g, REDACTED],
+  // OpenAI / Anthropic style keys: sk-…, sk-proj-…, sk-ant-… (a digit somewhere, 16+ characters).
+  [/\bsk-(?=[A-Za-z0-9_-]*\d)[A-Za-z0-9_-]{16,}/g, REDACTED],
+  // GitHub tokens.
+  [/\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{20,}/g, REDACTED],
+  [/\bgithub_pat_[A-Za-z0-9_]{20,}/g, REDACTED],
+  // AWS access key ids.
+  [/\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/g, REDACTED],
+  // Slack tokens.
+  [/\bxox[abposr]-[A-Za-z0-9-]{10,}/g, REDACTED],
+  // JSON Web Tokens (three base64url parts).
+  [/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g, REDACTED],
+  // Authorization: Bearer <token> — keep the scheme.
+  [/\b(Bearer\s+)[A-Za-z0-9._~+/=-]{12,}/gi, `$1${REDACTED}`],
+];
+/** `NAME=value` (env lines, flags, query strings) and `"name": "value"` (JSON) with a secret-like name. */
+const ASSIGNMENT = new RegExp(String.raw`\b(${SECRET_NAME})(\s*=\s*)(["']?)([^\s"'&;,)]+)\3`, "gi");
+const JSON_FIELD = new RegExp(String.raw`("${SECRET_NAME}"\s*:\s*)"((?:[^"\\]|\\.)*)"`, "gi");
+/** Not secrets however they are named: numbers, booleans, empties, what is already redacted. */
+const notSecret = (v: string) => !v || v === REDACTED || /^(?:\d+(?:\.\d+)?|true|false|null|none|undefined)$/i.test(v);
+
+/** `text` with every shape-recognised secret replaced (see SECRET_PATTERNS). The same string when none is found. */
+export function redactPatterns(text: string): string {
+  let out = text;
+  for (const [re, to] of SECRET_PATTERNS) out = out.replace(re, to);
+  out = out.replace(ASSIGNMENT, (m, name: string, eq: string, q: string, v: string) => (notSecret(v) ? m : `${name}${eq}${q}${REDACTED}${q}`));
+  out = out.replace(JSON_FIELD, (m, head: string, v: string) => (notSecret(v) ? m : `${head}"${REDACTED}"`));
+  return out === text ? text : out;
+}
+
+/**
  * Knows the secret values and replaces each occurrence with REDACTED. The values are read from the
  * credential files and the server's environment, cached, and read again only when a file's mtime,
  * size or inode (or the environment's secret values) change. They are never logged or sent anywhere.
@@ -129,7 +177,8 @@ export class Redactor {
     for (const s of this.sources) {
       let json: unknown;
       try {
-        json = JSON.parse(readFileSync(s.path, "utf8"));
+        const raw = readFileSync(s.path, "utf8");
+        json = s.text ? raw : JSON.parse(raw);
       } catch {
         continue;
       }
@@ -144,15 +193,17 @@ export class Redactor {
   }
 
   /** `text` with every secret value replaced, and a secret cut short at either end (a truncated line,
-      `sk-abc…`) too, from its first or last MIN_FRAGMENT_LENGTH characters on. */
+      `sk-abc…`) too, from its first or last MIN_FRAGMENT_LENGTH characters on; then every secret
+      the patterns recognise by shape (`redactPatterns`), known or not. */
   redact(text: string): string {
-    if (!this.matcher || !text) return text;
+    if (!text) return text;
+    if (!this.matcher) return redactPatterns(text);
     let out = text.replace(this.matcher, REDACTED);
     if (this.fragments) {
       this.fragments.lastIndex = 0;
       if (this.fragments.test(out)) out = this.redactFragments(out);
     }
-    return out;
+    return redactPatterns(out);
   }
 
   /** Replace each run of text that is a secret's start (running to wherever the text stops matching
@@ -188,7 +239,6 @@ export class Redactor {
 
   /** Every string in `value` (arrays and plain objects, deeply) redacted; the same object when nothing changed. */
   redactDeep<T>(value: T): T {
-    if (!this.matcher) return value;
     if (typeof value === "string") return this.redact(value) as T;
     if (Array.isArray(value)) {
       const next = value.map((v) => this.redactDeep(v));

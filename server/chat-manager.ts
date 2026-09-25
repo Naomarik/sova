@@ -1060,6 +1060,7 @@ class ChatSession {
           if (!this.session.isStreaming) this.overseerSends = this.overseerSends.filter((s) => !stale.includes(s));
         }, 0);
       }
+      if (event.type === "agent_settled") settledTurn(this.path);
       if (event.type === "agent_settled" && this.modeApplies === "after-turn") {
         // A mid-turn switch reaches the next prompt from here on.
         this.modeApplies = "now";
@@ -1960,6 +1961,23 @@ class ChatSession {
       getToolsExpanded: () => false,
       setToolsExpanded: () => {},
     };
+  }
+}
+
+/** Listeners told each time a hosted chat's run settles (attention signals, tags). A registry, not
+    an import, so those modules can import the list without a cycle back into this one. */
+const settledListeners = new Set<(path: string) => void>();
+export function onAgentSettled(fn: (path: string) => void): () => void {
+  settledListeners.add(fn);
+  return () => settledListeners.delete(fn);
+}
+function settledTurn(path: string): void {
+  for (const fn of settledListeners) {
+    try {
+      fn(path);
+    } catch (err) {
+      console.error("[chat] agent_settled listener failed", err);
+    }
   }
 }
 

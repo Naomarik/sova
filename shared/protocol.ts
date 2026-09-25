@@ -2108,7 +2108,10 @@ export type AttentionKind =
   | "queued"          // idle with queued input
   | "context-full"    // context ≥85%
   | "working"         // running now
-  | "stale";          // idle web session >3 days, not archived, no draft
+  | "stale"           // idle web session >3 days, not archived, no draft
+  | "asks-you"        // decisions: the last reply asks the user something (SessionSignals.kinds)
+  | "task-failed"     // decisions: the last turn's outcome is "failed"
+  | "looping";        // decisions: the session or a worker is repeating itself
 
 export interface AttentionItem {
   /** Session id. */
@@ -2511,3 +2514,233 @@ export interface FrontDoorConfig {
   /** A complete Caddyfile (lb_policy first, active health checks), with setup notes as comments. */
   caddyfile: string;
 }
+
+// ---------------------------------------------------------------------------
+// DECISIONS (opt-in): one provider-neutral decision seam (server/decide*.ts), used by two
+// features: attention signals ("needs you" marks) and session tags. Providers are Jev
+// (TypeSafe, api.typesafe.ai) and a configured pi / Claude Code model; the chain picks.
+// Everything here is SAFE BY ABSENCE: an older server sends none of these fields.
+//
+// GET  /api/settings/decisions            -> DecisionSettingsInfo (<stateRoot>/decisions.json; missing → defaults:
+//                                            both features off, fallback null, Jev enabled)
+// GET  /api/settings/decisions/options    -> DelegateOptions (the same discovery as delegate/options)
+// PUT  /api/settings/decisions DecisionSettings -> DecisionSaveResult (replaces the whole file; 400 bad shape;
+//                                            an unverifiable or policy-denied fallback saves with a warning)
+// PUT  /api/settings/decisions/key {key: string} -> DecisionKeyInfo (checks the key against Jev's
+//                                            GET /v1/models first; 400 empty/malformed; a rejected key is NOT
+//                                            stored and answers 422 with status "rejected". The key itself is
+//                                            never sent back, only `last4`)
+// DELETE /api/settings/decisions/key     -> DecisionKeyInfo (present: false)
+// POST /api/settings/decisions/probe      -> DecisionProbeResult (one canned decision through the chain — the
+//                                            "Test" button; never 5xx for a provider failure: ok false + failure)
+// POST /api/sessions/tags {id, user: string[] | null} -> { tags: SessionTags | null }   (manual tags; null clears)
+// POST /api/sessions/tags/backfill {scope: TagsBackfillScope} -> TagsBackfillProgress  (starts, or returns the
+//                                            running job; 409 while the tags feature is off or the chain is
+//                                            unavailable)
+// GET  /api/sessions/tags/backfill       -> TagsBackfillProgress ({running:false, done:0, total:0, failed:0} before any run)
+// POST /api/sessions/tags/backfill/cancel -> TagsBackfillProgress (stops the running job; what it classified stays)
+// Errors on every route above are {error: "one sentence"} (409 on backfill included), except the
+// rejected-key 422, whose body is a DecisionKeyInfo with status "rejected".
+//
+// Push: WS /ws/watch?feed=sessions — the existing read-only socket, in a session-less mode (no
+// ?path=). Sends SessionFeedMessage: a full `marks` snapshot on connect, then one `marks` message
+// per change (a signal or tag written, cleared, or pruned) and `tags_backfill` progress while a
+// backfill runs. The client overlays these onto its SessionSummary list by id without waiting for
+// the list poll; the list itself still carries the same fields (the poll stays the source of truth
+// after a reconnect). Never writes; the socket ignores anything the client sends.
+// ---------------------------------------------------------------------------
+
+/** Why a decision could not be made (server/decide.ts DecisionError.failure). */
+export type DecisionFailure =
+  | "unavailable"      // no key / Jev off / no model configured / policy denies the model / CLI missing / breaker open
+  | "auth"             // 401/403 from Jev, no auth configured for the model
+  | "quota"            // credits/billing exhausted
+  | "rate-limit"       // 429
+  | "overloaded"       // 529 / 503
+  | "timeout"          // our own deadline
+  | "network"          // fetch threw, spawn failed
+  | "too-large"        // state over the provider's limit
+  | "bad-request"      // OUR bug: a malformed question. Never falls through to the next provider.
+  | "malformed-answer" // the provider answered outside the contract
+  | "server";          // other 5xx / unknown
+
+export type DecisionProviderId = "jev" | "pi" | "claude-code";
+
+/** <stateRoot>/decisions.json. Nothing leaves the machine unless a feature is on. */
+export interface DecisionSettings {
+  version: 1;
+  /** Jev's own switch, independent of the key. Off → the fallback model is the only provider. */
+  jev: { enabled: boolean };
+  /** The model used when Jev is off, has no working key, or fails. null = none (the default):
+      nothing is ever picked for the user. */
+  fallback: WorkerChoice | null;
+  features: { attention: boolean; tags: boolean };
+  /** Absolute cwd prefixes (a leading `~/` is allowed) whose sessions are never sent. */
+  exclusions: string[];
+  /** Never send terminal sessions: open in a TUI now, or started outside Sova (origin "external")
+      and not hosted by this server (server/decide-settings.ts terminalSession). */
+  neverSendTui: boolean;
+}
+
+export type DecisionKeyStatus =
+  | "absent"      // no key file and no SOVA_JEV_KEY
+  | "unverified"  // stored, not checked since the server started
+  | "ok"          // the last check or call succeeded
+  | "rejected"    // Jev answered 401/403
+  | "error";      // the last check failed for another reason (network, 5xx) — the key may be fine
+
+/** The Jev key as the wire sees it. The key itself NEVER crosses the wire. */
+export interface DecisionKeyInfo {
+  present: boolean;
+  /** Last 4 characters, for recognition. */
+  last4?: string;
+  /** "env" = SOVA_JEV_KEY overrides the file (the screen can't change or delete it). */
+  source?: "file" | "env";
+  status: DecisionKeyStatus;
+  /** ms epoch of the last check/call that set `status`. */
+  checkedAt?: number;
+  /** One sentence when status is rejected/error. */
+  message?: string;
+}
+
+export interface DecisionProviderStatus {
+  id: DecisionProviderId;
+  /** "Jev", "pi · ollama-cloud/deepseek-v4.1-flash", "Claude Code · haiku". */
+  label: string;
+  /** "ok" = will be tried; "skipped" = its breaker is open until `until`. */
+  state: "ok" | "skipped";
+  until?: number;
+  lastFailure?: { failure: DecisionFailure; message: string; at: number; requestId?: string };
+  lastOkAt?: number;
+}
+
+/** The chain as configured right now, in order. `ready: false` ⇔ no provider at all (Jev off or
+    keyless AND no fallback): both features then report unavailable and send nothing. */
+export interface DecisionChainStatus {
+  ready: boolean;
+  providers: DecisionProviderStatus[];
+  /** One sentence when not ready. */
+  reason?: string;
+}
+
+/** GET /api/settings/decisions. */
+export interface DecisionSettingsInfo {
+  settings: DecisionSettings;
+  defaults: DecisionSettings;
+  key: DecisionKeyInfo;
+  chain: DecisionChainStatus;
+  /** Shown as hints beside the fallback row, never pre-selected. */
+  suggestions: WorkerChoice[];
+  backends: { id: DelegateBackendId; label: string; efforts: string[] }[];
+  /** Absolute path of decisions.json, for the footnote. */
+  file: string;
+}
+
+/** PUT /api/settings/decisions: what is now stored, plus one sentence per warning. */
+export interface DecisionSaveResult extends DecisionSettingsInfo {
+  warnings: string[];
+}
+
+/** POST /api/settings/decisions/probe. */
+export interface DecisionProbeResult {
+  ok: boolean;
+  provider?: DecisionProviderId;
+  model?: string;
+  latencyMs?: number;
+  /** The first provider failed and a later one answered. */
+  fellBackFrom?: { provider: DecisionProviderId; failure: DecisionFailure; message: string };
+  /** When ok is false. */
+  failure?: DecisionFailure;
+  message?: string;
+  chain: DecisionChainStatus;
+}
+
+/** Attention-signal kinds the thresholds (fixed in server/attention-signals.ts) derive from raw answers. */
+export type SignalKind = "asks-you" | "task-failed" | "looping";
+export type SignalOutcome = "done" | "partial" | "failed" | "blocked_on_user";
+
+/** One classified finished turn of a session (<stateRoot>/signals.json keeps the raw answers). */
+export interface SessionSignals {
+  /** ms epoch the turn was classified. */
+  at: number;
+  /** Id of the last assistant entry on the active branch when classified (the cache key). */
+  turnId: string;
+  provider: DecisionProviderId;
+  /** P(the reply ends by asking the user something), 0..1. */
+  asksUser?: number;
+  /** P(the turn's work failed), 0..1. task-failed fires on workFailed ≥ 0.7 OR outcome "failed"
+      with confidence ≥ 0.5, so `outcome` may say "done" while kinds holds "task-failed". */
+  workFailed?: number;
+  outcome?: { choice: SignalOutcome; confidence: number };
+  /** score in [0, 2]: 0 progressing … 2 clearly looping. */
+  stuck?: { score: number; confidence: number };
+  /** The kinds that fire under the server's thresholds; [] = none. The client never re-derives
+      them. Visibility is server-computed too: `signals` (and `workerSignals`) are present on a
+      SessionSummary / SessionMarks only while the mark should show (attention on, kinds non-empty,
+      not seen since `at`, not running). Present = show. */
+  kinds: SignalKind[];
+}
+
+/** Fixed topic taxonomy v1 (order = display order). */
+export const TAG_TOPICS = [
+  "feature", "bugfix", "refactor", "tests", "docs", "infra", "research",
+  "planning", "review", "data", "config", "experiment", "chore", "other",
+] as const;
+export type TagTopic = (typeof TAG_TOPICS)[number];
+export const TAG_STATUSES = ["done", "in_progress", "abandoned", "blocked"] as const;
+export type TagStatus = (typeof TAG_STATUSES)[number];
+
+/** A session's tags, confidence-gated on the server (a field is absent when below its threshold). */
+export interface SessionTags {
+  topic?: TagTopic;
+  status?: TagStatus;
+  /** A test or scratch session with no lasting work. */
+  throwaway?: true;
+  /** Manual tags (POST /api/sessions/tags), lowercase, deduped. */
+  user?: string[];
+}
+
+// Declaration merge: the two overlays SessionSummary gains (listSessions sets them from the
+// stores, never from the (mtime,size) cache). Absent = not classified, feature off, or an older server.
+export interface SessionSummary {
+  signals?: SessionSignals;
+  /** Worker checks of this session's subagents: counts only; details are in the attention digest. */
+  workerSignals?: { stuck: number; failed: number };
+  tags?: SessionTags;
+}
+
+export type TagsBackfillScope = "recent" | "all";
+
+/** GET/POST /api/sessions/tags/backfill. `recent` = sessions active in the last 30 days. */
+export interface TagsBackfillProgress {
+  running: boolean;
+  scope?: TagsBackfillScope;
+  done: number;
+  total: number;
+  failed: number;
+  startedAt?: number;
+  finishedAt?: number;
+  /** Why it stopped early (feature switched off, chain unavailable, …). */
+  stoppedReason?: string;
+}
+
+/** One session's decision overlays. `null` = cleared (remove the field); absent key = unchanged. */
+export interface SessionMarks {
+  id: string;
+  path: string;
+  signals?: SessionSignals | null;
+  workerSignals?: { stuck: number; failed: number } | null;
+  tags?: SessionTags | null;
+}
+
+/** WS /ws/watch?feed=sessions (see the route comment at the top of this block). */
+export type SessionFeedMessage =
+  /** `full: true` on connect, ALWAYS (even with zero sessions): every session with a mark (replace
+      all overlays); then deltas. The client matches rows by `path` (= SessionSummary.path). */
+  | { type: "marks"; full?: true; sessions: SessionMarks[] }
+  | { type: "tags_backfill"; progress: TagsBackfillProgress }
+  /** This host's session list changed beyond the marks (a path added or removed, or a change
+      to live, busy/activity or lastActiveAt). No payload: the client refetches the list
+      (coalesced). */
+  | { type: "list_changed" }
+  | { type: "error"; message: string };

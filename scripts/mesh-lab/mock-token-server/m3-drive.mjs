@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 // M3 login-sync scenarios against the running mesh lab, driven from the laptop through
-// `scripts/mesh-lab/lab exec` (no chaos: nothing here kills or partitions a node).
+// `scripts/mesh-lab/lab`. `all` runs the non-chaos ones; `chaos` (h3,h4,h7,h8,h10) partitions a
+// node (h3) or stops only its Sova (h4, h7, h10) through the lab's own commands, always undoing it
+// in a finally.
 //
-//   node scripts/mesh-lab/mock-token-server/m3-drive.mjs [h1|h2|h2c|h6|h6c|h9|all] [--hosts a,b,c]
+//   node scripts/mesh-lab/mock-token-server/m3-drive.mjs [h1|h2|h2c|h6|h6c|h9|all|h3|h4|h7|h8|h10|chaos] [--hosts a,b,c]
 //
 // Needs the lab's mock token server (laptop http://127.0.0.1:4888, MOCK_TOKEN_URL inside hosts)
 // and SOVA_SYNC_CLAUDE_DIR in the hosts for the Claude scenarios. Hosts are compared by sha256 of
@@ -225,8 +227,121 @@ async function h9() {
   return "peers never saw a torn file; the final one arrived";
 }
 
-const ALL = { h1, h2, h2c, h6, h6c, h9 };
-const run = which === "all" ? Object.keys(ALL) : which.split(",");
+// ---- chaos (lab partition/restore, sova-stop/start) ---------------------------------------------
+
+function lab(...a) {
+  const r = spawnSync(LAB, a, { encoding: "utf8" });
+  if (r.status !== 0) throw new Error(`lab ${a.join(" ")}: ${(r.stderr || r.stdout).trim().slice(0, 200)}`);
+  return r.stdout.trim();
+}
+async function partitioned(host, fn) {
+  lab("partition", host);
+  try {
+    return await fn();
+  } finally {
+    lab("restore", host);
+  }
+}
+/** The origin a host's sidecar records for a key (metadata, no secret). */
+const originOn = (host, key) =>
+  JSON.parse(sh(host, `cat "$PI_CODING_AGENT_DIR/sova/login-sync.json"`)).records?.[key]?.meta?.origin ?? null;
+async function freshLineage(host) {
+  const out = JSON.parse(sh(host, `cd /sova && node scripts/mesh-lab/mock-token-server/pi-login.mjs --mock "$MOCK_TOKEN_URL"`).split("\n").at(-1));
+  await until("new lineage everywhere", piConverged(out.lineage));
+  return out.lineage;
+}
+
+async function h3() {
+  const [a, b, c] = HOSTS;
+  const id = await freshLineage(a);
+  const outcomes = await partitioned(a, async () => {
+    const r = await Promise.all([inHostAsync(b, "pi-refresh", "openai-codex"), inHostAsync(c, "pi-refresh", "openai-codex")]);
+    await until("b and c converge while a is away", piConverged(id, "openai-codex", [b, c]), 30_000);
+    return r.map((x) => x.outcome);
+  });
+  await until("a catches up after restore", piConverged(id), 60_000);
+  const origins = HOSTS.map((h) => originOn(h, "pi:openai-codex"));
+  if (new Set(origins).size !== 1 || origins[0] === a) throw new Error(`origins ${origins.join(",")}`);
+  return `b=${outcomes[0]} c=${outcomes[1]}; new origin ${origins[0]} on every host`;
+}
+
+/**
+ * A host that "misses" updates: only its Sova is stopped, so pi on it still reaches the mock (a
+ * `lab partition` would cut it off the mock too, and no refresh could happen there at all).
+ */
+async function sovaDown(host, fn) {
+  lab("sova-stop", host);
+  try {
+    return await fn();
+  } finally {
+    lab("sova-start", host);
+  }
+}
+
+async function h4() {
+  const [a, , c] = HOSTS;
+  const id = await freshLineage(a);
+  await sovaDown(c, async () => {
+    for (let i = 0; i < 2; i++) if (inHost(a, "pi-refresh", "openai-codex").outcome !== "ok") throw new Error("a's refresh failed");
+    await until("a and b on the latest", piConverged(id, "openai-codex", HOSTS.filter((h) => h !== c)));
+    sh(c, `touch -d '+1 hour' "$PI_CODING_AGENT_DIR/auth.json"`); // the stale file looks newest
+    const r = inHost(c, "pi-refresh", "openai-codex");
+    if (r.outcome !== "failed" || !/invalid_grant|400/.test(r.why ?? "")) throw new Error(`c's stale refresh: ${r.outcome} ${r.why ?? ""}`);
+  });
+  await until("c adopts the latest; nobody took c's stale entry", piConverged(id), 90_000);
+  return "c's rotated-away token failed with invalid_grant, its newer mtime won nothing, c adopted the latest (clock skew: unit tests; the lab shares one kernel clock)";
+}
+
+async function h7() {
+  const [a, , c] = HOSTS;
+  await freshLineage(a);
+  await sovaDown(c, async () => {
+    inHost(a, "pi-delete", "openai-codex");
+    await until("logged out on the hosts that were up", piAbsent("openai-codex", HOSTS.filter((h) => h !== c)));
+    const r = inHost(c, "pi-refresh", "openai-codex");
+    if (r.outcome !== "ok") throw new Error(`c's refresh ${r.outcome} (${r.why ?? ""})`);
+  });
+  await until("c is logged out too once back (a refresh is not a login)", piAbsent("openai-codex"), 90_000);
+  await sleep(3000);
+  if (!(await piAbsent("openai-codex")())) throw new Error("the refreshed lineage came back");
+  return "c's post-logout refresh was discarded everywhere";
+}
+
+async function h8() {
+  const [a, , c] = HOSTS;
+  const providers = (h) => sh(h, `node -e 'console.log(Object.keys(JSON.parse(require("fs").readFileSync(process.env.PI_CODING_AGENT_DIR+"/auth.json","utf8"))).sort().join())'`);
+  const want = providers(a);
+  sh(c, `rm "$PI_CODING_AGENT_DIR/auth.json"`);
+  await until("c re-pulled every entry", async () => {
+    try {
+      return providers(c) === want || providers(c);
+    } catch {
+      return "no file yet";
+    }
+  }, 60_000);
+  const keysA = want.split(",").map((p) => inHost(a, "pi-state", p).refreshSha);
+  const keysC = want.split(",").map((p) => inHost(c, "pi-state", p).refreshSha);
+  if (JSON.stringify(keysA) !== JSON.stringify(keysC)) throw new Error("c's entries differ from a's");
+  if (providers(a) !== want) throw new Error("a lost entries: the delete was taken as a logout");
+  return `c re-pulled ${want}`;
+}
+
+async function h10() {
+  const [a, b] = HOSTS;
+  const id = await freshLineage(a);
+  lab("sova-stop", b);
+  try {
+    if (inHost(a, "pi-refresh", "openai-codex").outcome !== "ok") throw new Error("a's refresh failed");
+  } finally {
+    lab("sova-start", b);
+  }
+  await until("b pulls the newest lineage once it is back", piConverged(id), 90_000);
+  return "b caught up after its restart";
+}
+
+const ALL = { h1, h2, h2c, h6, h6c, h9, h3, h4, h7, h8, h10 };
+const GROUPS = { all: ["h1", "h2", "h2c", "h6", "h6c", "h9"], chaos: ["h3", "h4", "h7", "h8", "h10"] };
+const run = GROUPS[which] ?? which.split(",");
 for (const name of run) {
   if (!ALL[name]) {
     console.error(`unknown scenario ${name}; one of ${Object.keys(ALL).join(", ")}, all`);

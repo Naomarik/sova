@@ -262,6 +262,21 @@ function ensureTls() {
   mintCert("headscale", ["headscale"]);
 }
 
+/** Forget Headscale nodes that are no longer part of the lab (after `up --hosts` shrank it), so the
+ *  tailnet holds exactly the running lab's nodes. Their agent/home volumes are left for `reset`. */
+function pruneNodes(cfg) {
+  const want = new Set(tailnetNodes(cfg));
+  const nodes = JSON.parse(hs(["nodes", "list", "-o", "json"]).out || "[]") || [];
+  for (const n of nodes) {
+    const name = n.given_name ?? n.name;
+    if (want.has(name)) continue;
+    hs(["nodes", "delete", "-i", String(n.id), "--force"], { allowFail: true });
+    // its tailscale state now names a deleted node: drop it, so a later `up --hosts` joins afresh
+    docker(["volume", "rm", `${PROJECT}_${name}-ts`], { allowFail: true, quiet: true });
+    console.log(`headscale: removed node ${name} (no longer in the lab)`);
+  }
+}
+
 export function tsStatus(name) {
   const r = docker(["exec", container(name), "tailscale", "status", "--json"], { allowFail: true, quiet: true });
   if (r.code !== 0) return null;
@@ -402,6 +417,7 @@ async function cmdUp(args) {
   compose(["up", "-d", "--remove-orphans"], { inherit: true });
   console.log("waiting for tailnet + sova health …");
   await waitReady(cfg);
+  pruneNodes(cfg);
   if (cfg.frontdoor) {
     const { order } = writeCaddyfile(cfg);
     reloadCaddy();

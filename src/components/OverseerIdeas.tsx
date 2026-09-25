@@ -434,7 +434,7 @@ function IdeaDetailView(props: {
         const current = (err.body as IdeaConflict | undefined)?.current;
         if (current) mutate(current);
         else void refetch();
-        setNotice("The Overseer changed this idea while you were on it, so nothing was saved. This is its latest version.");
+        setNotice("This idea changed while you were editing it, so nothing was saved. This is its latest version.");
       } else setSaveError((err instanceof Error ? err.message : String(err)).replace(/\.$/, ""));
       return false;
     } finally {

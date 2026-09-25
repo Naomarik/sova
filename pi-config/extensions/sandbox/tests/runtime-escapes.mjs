@@ -8,7 +8,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync
 import path from "node:path";
 import { makeSuite, ok, eq, includes, notIncludes } from "./kit.mjs";
 import {
-	EXT_ENTRY, PLATFORM_DIR, cleanupAll, envKeys, hostHttpStatus, hostMntNs, makeFixture, openSession, rand, sha,
+	EXT_ENTRY, PLATFORM_DIR, cleanupAll, confinedCheck, envKeys, hostHttpStatus, makeFixture, openSession, rand, sha,
 } from "./harness.mjs";
 
 const t = makeSuite("runtime-escapes");
@@ -32,8 +32,8 @@ if (!existsSync(EXT_ENTRY)) {
 		s = await openSession({ cwd: fx.cwd, agentDir: fx.agentDir, withExtension: true });
 		eq(s.errors.length, 0, `session loaded clean: ${s.errors.join(" | ")}`);
 		await s.command("sandbox", "on");
-		const r = await s.bash("readlink /proc/self/ns/mnt");
-		ok(!r.isError && r.text.trim() !== hostMntNs(), `ON confirmed by mount namespace (got ${r.text.trim()})`);
+		const c = await confinedCheck(s.bash, fx.escape);
+		eq(c.state, "confined", `ON confirmed by the confinement oracle (${c.detail})`);
 	});
 
 	const needOn = (n) => { if (!s) { t.skip(n, "no ON runtime"); return false; } return true; };
@@ -170,13 +170,36 @@ if (!existsSync(EXT_ENTRY)) {
 		}
 	});
 
-	// RE11 — fail-closed through the tools: PATH with a fake bwrap before the runtime even opens.
-	// Kept last; restores PATH in a finally. (plan §11 #2, tool level: refusal names the sandbox.)
-	await t.test("RE11 fake bwrap on PATH → refusing tools, no file, error names the sandbox", async () => {
-		const fakebin = path.join(fx.root, "fakebin");
+	// RE11 — fail-closed through the tools: a broken sandbox runner before the runtime even opens.
+	// Kept last; restores the hijack in a finally. (plan §11 #2, tool level: refusal names the sandbox.)
+	// Linux: a fake `bwrap` on PATH (findExecutable searches PATH; that's how the real one is found).
+	// Darwin: `/usr/bin/sandbox-exec` is a hardcoded absolute path (never PATH-searched — a malicious
+	// PATH entry must not be able to swap out the actual sandboxing tool), so DarwinSeatbeltBackend
+	// instead reads a test-only in-process override (backend's note): a global only code already
+	// running in this process can set, never inherited by a child process or a worker the way an env
+	// var would be.
+	function breakSandboxRunner(root) {
+		const fakebin = path.join(root, "fakebin");
 		mkdirSync(fakebin, { recursive: true });
-		writeFileSync(path.join(fakebin, "bwrap"), "#!/bin/sh\nexit 1\n", { mode: 0o755 });
+		if (process.platform === "darwin") {
+			const fake = path.join(fakebin, "sandbox-exec");
+			writeFileSync(fake, "#!/bin/sh\nexit 1\n", { mode: 0o755 });
+			const K = Symbol.for("sova.sandbox.test.sandboxExec");
+			globalThis[K] = fake;
+			return () => {
+				delete globalThis[K];
+			};
+		}
+		const fake = path.join(fakebin, "bwrap");
+		writeFileSync(fake, "#!/bin/sh\nexit 1\n", { mode: 0o755 });
 		const realPath = process.env.PATH;
+		process.env.PATH = `${fakebin}:${realPath}`;
+		return () => {
+			process.env.PATH = realPath;
+		};
+	}
+
+	await t.test("RE11 fake sandbox runner → refusing tools, no file, error names the sandbox", async () => {
 		const fx2 = makeFixture();
 		let s3;
 		const realTemplate = existsSync(fx2.policyFile); // copied from pi-config/sandbox-policy by makeFixture
@@ -184,8 +207,8 @@ if (!existsSync(EXT_ENTRY)) {
 			console.log("       policy template absent; fx2 has no valid policy — case would refuse vacuously; skipping");
 			return;
 		}
+		const restore = breakSandboxRunner(fx.root);
 		try {
-			process.env.PATH = `${fakebin}:${realPath}`;
 			s3 = await openSession({ cwd: fx2.cwd, agentDir: fx2.agentDir, withExtension: true });
 			eq(s3.errors.length, 0, `session loaded clean: ${s3.errors.join(" | ")}`);
 			await s3.command("sandbox", "on");
@@ -200,7 +223,7 @@ if (!existsSync(EXT_ENTRY)) {
 			ok(entries.length >= 1, "a sandbox entry exists");
 			console.log(`       last entry: ${JSON.stringify(entries.at(-1).data ?? entries.at(-1)).slice(0, 200)}`);
 		} finally {
-			process.env.PATH = realPath;
+			restore();
 			await s3?.dispose().catch(() => {});
 		}
 	});

@@ -64,6 +64,70 @@ export const hostMntNs = () => readlinkSync("/proc/self/ns/mnt");
 export const hostNetNs = () => readlinkSync("/proc/self/ns/net");
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+/**
+ * Cross-platform confinement oracle. Tri-state — "confined" | "unconfined" | "unknown" — never a
+ * boolean: a broken shell, empty output, or a line that matches neither expected shape must read as
+ * "unknown", not default to one side, so a broken oracle fails EVERY assertion (`eq(state, "...")`)
+ * instead of silently satisfying whichever ones happen to expect "not confined".
+ *
+ * Linux: bwrap always makes a fresh mount namespace, even for an otherwise-unconfined command, so
+ * comparing `/proc/self/ns/mnt` to the host's is a reliable, side-effect-free signal: "unconfined"
+ * iff the line is exactly the host's namespace, "confined" iff it is a well-formed, different one.
+ *
+ * Darwin: sandbox-exec raises no new namespace of any kind, so a namespace comparison would either
+ * throw (no /proc) or silently read as "always unconfined" — never a false pass. The oracle is
+ * instead behavioral and host-confirmed: it asks the shell to create a marker file at `outside`,
+ * a host path the caller guarantees is writable when unconfined and excluded from every policy
+ * under test (a fixture's `escape` dir). "confined" iff the shell reported REFUSED AND the marker
+ * is absent; "unconfined" iff it reported WROTE AND the marker exists — both checked from this
+ * (unconfined) process, so a compromised or mistaken shell reply alone can never flip the verdict;
+ * anything else (a mismatch between the reply and the file) is "unknown".
+ *
+ * `confineProbeFragment`/`confineProbeVerdict` split the same oracle in two for callers (midflight)
+ * that must splice the probe into a longer command instead of issuing it alone.
+ */
+export function confineProbeFragment(outside) {
+	if (process.platform !== "darwin") return { command: "readlink /proc/self/ns/mnt", marker: undefined };
+	if (!outside) throw new Error("confineProbeFragment: an `outside` host directory is required on darwin");
+	const marker = path.join(outside, `.confine-probe-${rand()}`);
+	return { command: `( : > '${marker}' ) 2>/dev/null && echo WROTE || echo REFUSED`, marker };
+}
+
+/** Interprets one output line of a `confineProbeFragment` command into a tri-state verdict. */
+export function confineProbeVerdict(line, marker) {
+	const l = line.trim();
+	if (process.platform !== "darwin") {
+		if (l === hostMntNs()) return "unconfined";
+		if (/^mnt:\[\d+\]$/.test(l) && l !== hostMntNs()) return "confined";
+		return "unknown";
+	}
+	const landed = !!marker && existsSync(marker);
+	if (l === "REFUSED" && !landed) return "confined";
+	if (l === "WROTE" && landed) return "unconfined";
+	return "unknown";
+}
+
+/** Verdict plus marker cleanup, for callers reading a spliced fragment's line themselves. */
+export function confineProbeReadResult(line, marker) {
+	const state = confineProbeVerdict(line, marker);
+	if (marker) {
+		try {
+			rmSync(marker, { force: true });
+		} catch {}
+	}
+	return state;
+}
+
+export async function confinedCheck(bashFn, outside) {
+	const { command, marker } = confineProbeFragment(outside);
+	const r = await bashFn(command);
+	if (r.isError) {
+		if (marker) try { rmSync(marker, { force: true }); } catch {}
+		return { state: "unknown", detail: r.text };
+	}
+	return { state: confineProbeReadResult(r.text.trim(), marker), detail: r.text.trim() };
+}
+
 /** All red-team artifacts live under one host directory in $HOME (not /tmp: the sandbox replaces /tmp,
  * and not ~/.cache: that is a default writable root). Removed by `cleanupAll`. */
 export const ARTIFACT_ROOT = path.join(homedir(), ".sova-redteam");

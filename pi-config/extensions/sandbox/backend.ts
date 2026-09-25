@@ -10,6 +10,7 @@
 import { lstatSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, resolve, sep } from "node:path";
+import { DarwinSeatbeltBackend } from "./backends/darwin-seatbelt.ts";
 import { LinuxBwrapBackend } from "./backends/linux-bwrap.ts";
 import { UnsupportedBackend } from "./backends/unsupported.ts";
 
@@ -30,15 +31,17 @@ export interface Policy {
 	 * The backend adds the git ones by itself (see `gitProtectedPaths`); this list is extra. */
 	readOnlyWithinWritable: string[];
 	/** Canonical secrets and service paths: a directory becomes empty and read-only, a file cannot
-	 * be opened at all (EACCES on Linux). The policy file itself belongs here. Missing ones are skipped. */
+	 * be opened at all (EACCES on Linux; on macOS both are refused, EPERM). The policy file itself
+	 * belongs here. Missing ones are skipped. */
 	hidden: string[];
-	/** Per-session host directory that the sandbox sees as its temp dir (Linux: mounted at /tmp). */
+	/** Per-session host directory that the sandbox sees as its temp dir (Linux: mounted at /tmp; macOS: TMPDIR). */
 	tmpDir: string;
 	network: {
 		mode: Exclude<NetworkMode, "host">;
 		/** Mode "proxy": the host-side proxy's Unix socket (proxy.ts). Allowlisting happens there. */
 		proxy?: { socket: string; allow: string[] };
-		/** Not implemented yet (plan §8 option A); a non-empty list is reported in `notes`. */
+		/** Loopback ports the sandbox may connect to: allowed by darwin-seatbelt; not implemented by
+		 * linux-bwrap yet (plan §8 option A), where a non-empty list is reported in `notes`. */
 		localPorts?: number[];
 	};
 	/** The already-scrubbed environment (env.ts `scrubEnv`). Backends add, never widen. */
@@ -124,6 +127,7 @@ export interface Backend {
 
 export function backendFor(platform: NodeJS.Platform = process.platform): Backend {
 	if (platform === "linux") return new LinuxBwrapBackend();
+	if (platform === "darwin") return new DarwinSeatbeltBackend();
 	return new UnsupportedBackend(platform);
 }
 
@@ -224,7 +228,7 @@ export function gitProtectedPaths(root: string): { writable: string[]; readOnly:
 			if (common && common !== gitDir) {
 				writable.push(common);
 				// <common>/worktrees becomes read-only; this worktree's own admin dir sits inside it
-				// and is re-exposed writable by its deeper bind.
+				// and is re-exposed writable by its deeper bind (Seatbelt: a later rule).
 				protectGitDir(common, true);
 				// The main checkout's own HEAD and index live in the common dir: not this session's.
 				readOnly.push(join(common, "HEAD"), join(common, "index"));

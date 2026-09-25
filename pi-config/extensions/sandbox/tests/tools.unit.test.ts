@@ -159,13 +159,21 @@ test("file tools: allowed inside the workspace, refused outside, hidden and poli
 	await assert.rejects(run(d.get("write")!, { path: "dangle", content: "z" }, ws), /\[sandbox:/);
 	assert.equal(existsSync(join(root, "outside", "z.txt")), false);
 
-	// /tmp in the file tools is the session tmp, as bash sees it; host /tmp is never written.
-	await run(d.get("write")!, { path: join(tmpdir(), "sbx-unit-host.txt"), content: "h" }, ws);
-	assert.equal(existsSync(join(tmpdir(), "sbx-unit-host.txt")), false);
-	assert.equal(readFileSync(join(tmpDir, "sbx-unit-host.txt"), "utf8"), "h");
-	await run(d.get("write")!, { path: "/tmp/note.txt", content: "t" }, ws);
-	assert.equal(readFileSync(join(tmpDir, "note.txt"), "utf8"), "t");
-	assert.match(text(await run(d.get("read")!, { path: "/tmp/note.txt" }, ws)), /^t/);
+	if (process.platform === "linux") {
+		// /tmp in the file tools is the session tmp, as bash sees it; host /tmp is never written.
+		await run(d.get("write")!, { path: join(tmpdir(), "sbx-unit-host.txt"), content: "h" }, ws);
+		assert.equal(existsSync(join(tmpdir(), "sbx-unit-host.txt")), false);
+		assert.equal(readFileSync(join(tmpDir, "sbx-unit-host.txt"), "utf8"), "h");
+		await run(d.get("write")!, { path: "/tmp/note.txt", content: "t" }, ws);
+		assert.equal(readFileSync(join(tmpDir, "note.txt"), "utf8"), "t");
+		assert.match(text(await run(d.get("read")!, { path: "/tmp/note.txt" }, ws)), /^t/);
+	} else {
+		// darwin: no /tmp mapping by design (mapTmp is linux-only); the real host /tmp is just
+		// another path outside the writable roots, refused rather than redirected.
+		const hostTmpNote = `/tmp/sbx-unit-darwin-${process.pid}.txt`;
+		await assert.rejects(run(d.get("write")!, { path: hostTmpNote, content: "t" }, ws), /outside the sandbox's writable roots.*\[sandbox:/);
+		assert.equal(existsSync(hostTmpNote), false);
+	}
 	cleanup();
 });
 

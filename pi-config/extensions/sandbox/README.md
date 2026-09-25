@@ -1,7 +1,7 @@
 # sandbox
 
 Confines what an agent's **tools** do to the machine, per session, on or off, only by the user.
-`bash` runs inside an OS sandbox (Linux: bubblewrap); `read`, `write`, `edit`, `ls`, `find` and
+`bash` runs inside an OS sandbox (Linux: bubblewrap; macOS: Seatbelt); `read`, `write`, `edit`, `ls`, `find` and
 `grep` check every canonical path against the same policy. The agent process itself is not
 confined. Spec: `§chat/sandbox` (draft `sandbox-feature`).
 
@@ -56,13 +56,13 @@ Always protected, whatever the file says: every `policy.json` under `<agentDir>/
 hidden, the directory itself (with the `CLAUDE.md` notes, which are written for an agent to read)
 is read-only, and so is the whole agent dir (sessions, settings and extensions there run later
 outside the sandbox). That holds when the agent dir is inside the workspace (the test server's
-`<worktree>/.agent`): the file tools refuse by canonical path, and the backend masks the files and
-pins their ancestors.
+`<worktree>/.agent`): the file tools refuse by canonical path, and the backend masks (Seatbelt:
+denies) the files and pins their ancestors.
 
 ## File tools
 
-Paths resolve like pi's, then `/tmp` maps into the session tmp (bash sees that at `/tmp`) unless a
-writable root is bound over it, then `canonicalize` (realpath of the deepest existing ancestor,
+Paths resolve like pi's, then (Linux) `/tmp` maps into the session tmp (bash sees that at `/tmp`)
+unless a writable root is bound over it, then `canonicalize` (realpath of the deepest existing ancestor,
 dangling links followed). Reads are refused under `hidden`. Writes are refused outside the
 writable roots, under `hidden` or `readOnlyWithinWritable`, and when creating an ancestor of a
 protected path; they open the checked canonical path with `O_NOFOLLOW`. `find` and `grep` (pi
@@ -78,11 +78,22 @@ Known gap (decided, plan OQ9): in a linked worktree the main checkout's git dir 
 commits work, so a sandboxed session can move other branches' refs there. Its hooks, config,
 `HEAD`, index and the other worktrees' admin dirs stay read-only.
 
+## Backends
+
+| Backend | `bash` runs under | Differences |
+|---|---|---|
+| `linux-bwrap` | `bwrap`: every namespace unshared, read-only binds, hidden paths masked, session tmp at `/tmp`, a relay to the proxy inside the empty network namespace | the reference; `localPorts` not implemented |
+| `darwin-seatbelt` | `/usr/bin/sandbox-exec -f <profile>`, a Seatbelt profile generated per policy (a 0600 file named by its hash beside the session tmp; never inline `-p`) | no remapping: hidden paths are refused (EPERM) rather than emptied, no `/tmp` mapping (bash uses `$TMPDIR`), shadowed caches are read-only with the tool variables (`XDG_CACHE_HOME`, `npm_config_cache`, `MAVEN_OPTS`) pointed at the private copy; SBPL is last-match-wins, so the write rules go shallow to deep (`writeLayers`); mach services denied except a short allowlist, Keychain always denied; the proxy is reached through a host TCP relay on one loopback port, and `localPorts` are allowed; setuid programs cannot run |
+| `unsupported` | nothing: every sandboxed tool refuses | Windows and the rest |
+
+User-facing notes for macOS: `pi-config/sandbox-policy/darwin/CLAUDE.md`.
+
 ## Session resources
 
 Per session: a tmp at `<os tmpdir>/pi-sandbox-<uid>/<session id>/tmp` (0700, ownership checked)
 and, under `workspace-write`, the allowlisting proxy on a Unix socket (`proxy.ts`), started on the
-first confined call. Both go at `session_shutdown`.
+first confined call. Both go at `session_shutdown`. On macOS the Seatbelt profile sits beside the
+tmp, and a host TCP relay to the proxy socket lives until that socket is gone.
 
 ## Files
 
@@ -92,15 +103,17 @@ first confined call. Both go at `session_shutdown`.
 | `state.ts` | extension | the entry type, `restoreActive`, `parseOnOff`, event names, copy |
 | `policy.ts` | extension | load/validate, tighten-only project file, canonical paths, read/write verdicts |
 | `tools.ts` | extension | `stockDefinitions`, `confinedDefinitions`, `claudeSettingsFor` |
-| `backend.ts`, `backends/*`, `env.ts`, `proxy.ts` | backend | the seam, bwrap, env allowlist, proxy |
+| `backend.ts`, `backends/*`, `env.ts`, `proxy.ts` | backend | the seam, bwrap, Seatbelt, env allowlist, proxy |
+| `tests/unit/*.test.ts` | backend | unit tests of the backend files |
 | `tests/*.unit.test.ts` | extension | unit tests of the four files above (`index.unit.test.ts` drives the factory on a fake `pi`) |
 | `tests/*` (other) | red-team | contract and escape suite |
 
 ## Tests
 
 ```sh
-cd pi-config/extensions/sandbox && node --test tests/*.unit.test.ts
+cd pi-config/extensions/sandbox && node --test tests/*.unit.test.ts tests/unit/*.test.ts
 ```
 
 No model requests. `tools.unit.test.ts` includes one run through the real bwrap backend when
-`/usr/bin/bwrap` exists.
+`/usr/bin/bwrap` exists; `tests/unit/darwin-seatbelt.unit.test.ts` runs real `sandbox-exec` on
+macOS (writes, git paths including a linked worktree, hidden paths, Keychain, loopback, probe).

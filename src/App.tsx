@@ -21,7 +21,7 @@ import {
 } from "./lib/api";
 import { socketReconnects } from "./lib/socket";
 import { firstBaseline, helloStep, HOST_CONFIRM_MS, type HelloBaseline, type PendingHost, type HelloChange, sessionHrefOn } from "./lib/mesh";
-import { hostLabel, hostOf, isMeshHash, joinHostLists, meshRetryDelay, meshState, meshOn, meshPeers, mergePeerLists, noteHost, notePeerSessions, peerInfo, peerUnavailable, sessionRouteFromHash, setMeshState } from "./lib/mesh";
+import { hostLabel, hostOf, isMeshHash, joinHostLists, linkedSessionRow, meshRetryDelay, meshState, meshOn, meshPeers, mergePeerLists, noteHost, notePeerSessions, peerInfo, peerUnavailable, sessionRouteFromHash, setMeshState } from "./lib/mesh";
 import { isOverseerHash, isOverseerShortcut, OVERSEER_HASH, overseerHistoryId } from "./lib/overseer";
 import { isMainThread } from "./lib/regions";
 import { sessionIdFromHash, setGroupLinkIndex, setSessionIndex } from "./lib/session-links";
@@ -162,6 +162,8 @@ export function App() {
   let meshRetry: ReturnType<typeof setTimeout> | undefined;
   /** The host the first answer came from: the one that served this page, whatever answers later. */
   let servedBy: { id: string; label: string } | null = null;
+  /** GET /api/mesh has answered, or failed (which reads as off): a `#/sid/` link waits for it. */
+  const [meshSettled, setMeshSettled] = createSignal(false);
   const loadMesh = () =>
     fetchMesh()
       .then((s) => {
@@ -169,9 +171,11 @@ export function App() {
         servedBy ??= { id: s.self.id, label: s.self.label || s.self.hostname };
         setMeshState(s);
         setMeshError(null);
+        setMeshSettled(true);
       })
       .catch((err: Error) => {
         setMeshError(err.message);
+        setMeshSettled(true);
         const wait = meshRetryDelay(err instanceof ApiError ? err.status : 0, ++meshFailures);
         clearTimeout(meshRetry);
         if (wait !== null) meshRetry = setTimeout(() => void loadMesh(), wait);
@@ -180,6 +184,8 @@ export function App() {
   onCleanup(() => clearTimeout(meshRetry));
   /** Each peer's last good session list, by peer id. */
   const [peerLists, setPeerLists] = createSignal<Map<string, SessionSummary[]>>(new Map());
+  /** The first GET /api/mesh/sessions has answered or failed: a peer's session a link names is known by now. */
+  const [peersSettled, setPeersSettled] = createSignal(false);
   const loadPeerSessions = async () => {
     if (!meshOn()) return;
     try {
@@ -190,6 +196,7 @@ export function App() {
     } catch {
       // Keep the last lists: the peers' own status (GET /api/mesh) says what is down.
     }
+    setPeersSettled(true);
   };
   createEffect(() => {
     if (!meshOn()) {
@@ -321,17 +328,18 @@ export function App() {
   };
   /**
    * A session link from a message (`sova://s/<id>`) the list couldn't resolve points at
-   * `#/sid/<id>`: swapped in place for the session's own route. The list first; a session it
-   * doesn't carry (it omits those with no user message) is asked of the server, and only the
-   * server's "not found" says the session is gone.
+   * `#/sid/<id>`: swapped in place for the session's own route. The list first, peers' rows
+   * included (a peer's session opens on its host); a session it doesn't carry (it omits those
+   * with no user message) is asked of this host's server, and only the server's "not found" says
+   * the session is gone.
    */
   let resolvingId: string | null = null;
   const resolveSessionIdRoute = () => {
     const id = sessionIdFromHash(location.hash);
     if (!id) return;
-    const l = list();
-    if (!l) return; // the list effect below comes back here once it lands
-    const s = l.find((x) => x.id === id);
+    // "wait": the effect below comes back here once the lists land
+    const s = linkedSessionRow(id, list(), peerLists(), meshSettled() && (!meshOn() || peersSettled()));
+    if (s === "wait") return;
     if (s) {
       history.replaceState(history.state, "", sessionHref(s.path));
       return;
@@ -365,8 +373,8 @@ export function App() {
     setExtRoute(extRouteFromHash(location.hash));
     setMeshRoute(isMeshHash(location.hash));
   };
-  // A `#/sid/` route opened before the first list load resolves when the list lands.
-  createEffect(on(list, () => sessionIdFromHash(location.hash) && onHash(), { defer: true }));
+  // A `#/sid/` route opened before the first list load resolves when the lists land.
+  createEffect(on([list, peerLists, meshSettled, peersSettled], () => sessionIdFromHash(location.hash) && onHash(), { defer: true }));
   /** Alt+O: the Overseer, from anywhere (lib/overseer `isOverseerShortcut`). */
   const onKeyDown = (e: KeyboardEvent) => {
     if (!isOverseerShortcut(e)) return;

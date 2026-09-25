@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # Exposure proof, from the laptop (read-only on the VPS):
-#   scripts/mesh-vps/exposure.sh probe              public 203.0.113.10:{4800,4801,4890,2089,8443,10443} must TIME OUT; controls 80/443 must connect
-#   scripts/mesh-vps/exposure.sh snapshot <file>    the production state: listening sockets + `systemctl is-active` of the prod units
+#   scripts/mesh-vps/exposure.sh probe              public $VPS_PUBLIC_IP:{4800,4801,4890,2089,8443,10443} must TIME OUT; $VPS_CONTROL_PORTS must connect
+#   scripts/mesh-vps/exposure.sh snapshot <file>    the production state: listening sockets + `systemctl is-active` of $PROD_UNITS (skipped if empty)
 #   scripts/mesh-vps/exposure.sh compare <a> <b>    identical, or print the difference and fail
-# A TCP connect that neither connects nor is refused within 6 s counts as a timeout (ufw drops it on eth0).
+# A TCP connect that neither connects nor is refused within 6 s counts as a timeout (the firewall drops it on the public interface).
 set -euo pipefail
 . "$(dirname "$0")/config.sh"
+need VPS_SSH VPS_PUBLIC_IP
 
 connect() { # host port -> open | refused | timeout
   local rc=0
@@ -16,7 +17,8 @@ connect() { # host port -> open | refused | timeout
 case "${1:-}" in
   probe)
     bad=0
-    for p in 80 443; do  # never 22: ssh goes over the tailnet
+    [ -n "$VPS_CONTROL_PORTS" ] || log "no VPS_CONTROL_PORTS: the probe has no open control port to prove it works"
+    for p in $VPS_CONTROL_PORTS; do  # never 22: ssh goes over the tailnet
       r=$(connect "$VPS_PUBLIC_IP" "$p"); printf 'control  %s:%-5s %s\n' "$VPS_PUBLIC_IP" "$p" "$r"
       [ "$r" = open ] || { log "control port $p is not open: the probe itself is broken"; bad=1; }
     done
@@ -28,6 +30,7 @@ case "${1:-}" in
     ;;
   snapshot)
     out=${2:?snapshot <file>}
+    [ -n "$PROD_UNITS" ] || log "PROD_UNITS is empty: the snapshot has the listening sockets only (no units check)"
     vps "ss -ltnH | awk '{print \$4}' | grep -vE ':($SOVA_PORT|$SOVA_PEER_PORT|$FRONTDOOR_PORT|2089)\$' | sort -u; \
          for u in $PROD_UNITS; do printf '%s %s\n' \"\$u\" \"\$(systemctl is-active \$u 2>&1)\"; done" > "$out"
     echo "snapshot: $out ($(wc -l < "$out") lines)"

@@ -4,12 +4,13 @@
 # 1. snapshot the production state; refuse if anything already listens on the Sova ports
 # 2. start Sova by hand (setsid nohup run-sova.sh, as deploy); wait for 127.0.0.1:4800/api/health
 # 3. mesh OFF (no peers.json): nothing on the peer port
-# 4. PUT /api/mesh/peers (the laptop's team server) + /api/mesh/settings (label, serveUrl): the peer listener binds 100.64.0.2:4801 ONLY
+# 4. PUT /api/mesh/peers (the laptop's team server) + /api/mesh/settings (label, serveUrl): the peer listener binds $VPS_TAILNET_IP:4801 ONLY
 # 5. exposure probe from the laptop while it runs: public 4800/4801/4890/2089/8443/10443 time out
 # 6. stop Sova, check its ports are closed, snapshot again: production state identical
 # The peers are emptied again (self kept) unless --keep-peers (then the next start comes up with the mesh on).
 set -euo pipefail
 . "$(dirname "$0")/config.sh"
+need VPS_SSH VPS_PUBLIC_IP VPS_TAILNET_IP LAPTOP_ID LAPTOP_NODE_ID LAPTOP_DNS LAPTOP_PEER_URL LAPTOP_SERVE_URL
 KEEP=0
 [ "${1:-}" = --keep-peers ] && KEEP=1
 OUT=${SMOKE_OUT:-$HOME/.cache/sova-mesh/lab-engineer/vps-smoke}

@@ -10,13 +10,16 @@
 #   scripts/mesh-termux/phone-test.sh diff <a> <b>         what changed between two snapshots
 #   scripts/mesh-termux/phone-test.sh loop [args…]         snapshot pre, install, check, uninstall --keep-ssh, snapshot post,
 #                                                          diff pre post (must be empty), install again, check
-# Env: PHONE (ssh target, default 100.64.0.3), PHONE_PORT (8022), OUT (~/.cache/sova-mesh/termux-engineer/phone),
-#      LAPTOP_IP (tailnet IP for install-http, default 100.64.0.4), HTTP_PORT (4879).
+# Env: PHONE (ssh target, required), PHONE_PORT (8022), OUT (~/.cache/sova-mesh/termux-engineer/phone),
+#      LAPTOP_IP (tailnet IP for install-http, required there), HTTP_PORT (4879).
+# Site-specific values (PHONE, LAPTOP_IP, the pairing ids below) live in the untracked scripts/mesh-termux/local.env:
+#   cp scripts/mesh-termux/local.env.example scripts/mesh-termux/local.env   (then fill it in)
 set -euo pipefail
-PHONE=${PHONE:-100.64.0.3}
+[ -f "$(dirname "$0")/local.env" ] && . "$(dirname "$0")/local.env"
+PHONE=${PHONE:-}
 PHONE_PORT=${PHONE_PORT:-8022}
 OUT=${OUT:-$HOME/.cache/sova-mesh/termux-engineer/phone}
-LAPTOP_IP=${LAPTOP_IP:-100.64.0.4}
+LAPTOP_IP=${LAPTOP_IP:-}
 HTTP_PORT=${HTTP_PORT:-4879}
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 HERE="$ROOT/scripts/mesh-termux"
@@ -25,26 +28,34 @@ PHONE_TGZ='$PREFIX/tmp/sova-src.tar.gz'
 mkdir -p "$OUT/src"
 log() { printf '[phone-test] %s\n' "$*" >&2; }
 die() { log "FAIL: $*"; exit 1; }
+need() { local v; for v in "$@"; do [ -n "${!v:-}" ] || die "$v is not set: put it in scripts/mesh-termux/local.env (see local.env.example)"; done; }
 ph() { ssh -o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=15 -p "$PHONE_PORT" "$PHONE" "$@"; }
 
 tarball() {
-  local stage="$OUT/src/stage"
+  local stage="$OUT/src/stage" sha
+  sha=$(git -C "$ROOT" rev-parse --verify "${REV:-HEAD}^{commit}") || die "no such commit: ${REV:-HEAD}"
   rm -rf "$stage" && mkdir -p "$stage"
-  git -C "$ROOT" archive --format=tar --prefix=sova-test/ HEAD > "$stage/src.tar"
-  # overlay the working copy of this directory (not committed yet while it is being written)
-  mkdir -p "$stage/sova-test/scripts/mesh-termux"
-  cp "$HERE"/* "$stage/sova-test/scripts/mesh-termux/"
-  tar -C "$stage" -rf "$stage/src.tar" sova-test/scripts/mesh-termux
+  # git archive of a commit carries its id (git get-tar-commit-id), which install.sh records in BUILD_COMMIT
+  git -C "$ROOT" archive --format=tar --prefix=sova-test/ "$sha" > "$stage/src.tar"
+  if [ -z "${REV:-}" ]; then
+    # HEAD: overlay the working copy of this directory (uncommitted while it is being written)
+    mkdir -p "$stage/sova-test/scripts/mesh-termux"
+    find "$HERE" -maxdepth 1 -type f ! -name local.env -exec cp {} "$stage/sova-test/scripts/mesh-termux/" \;   # never local.env
+    tar -C "$stage" -rf "$stage/src.tar" sova-test/scripts/mesh-termux
+  fi
   gzip -9 -c "$stage/src.tar" > "$TARBALL"
   rm -rf "$stage"
-  log "tarball: $TARBALL ($(du -h "$TARBALL" | cut -f1), HEAD $(git -C "$ROOT" rev-parse --short HEAD) + working scripts/mesh-termux)"
+  log "tarball: $TARBALL ($(du -h "$TARBALL" | cut -f1), ${sha:0:12}$([ -n "${REV:-}" ] || echo ' + working scripts/mesh-termux'))"
 }
+
+# a script of this directory: the working copy, or the one in $REV
+script() { if [ -n "${REV:-}" ]; then git -C "$ROOT" show "$REV:scripts/mesh-termux/${1##*/}"; else cat "$1"; fi; }
 
 install_ssh() {
   [ -f "$TARBALL" ] || tarball
   ph "cat > $PHONE_TGZ" < "$TARBALL"
   local t0=$SECONDS rc=0
-  ph "sh -s -- --source-url file://$PHONE_TGZ $(printf '%q ' "$@")" < "$HERE/install.sh" 2>&1 | tee "$OUT/install.log" || rc=$?
+  script "$HERE/install.sh" | ph "sh -s -- --source-url file://$PHONE_TGZ $(printf '%q ' "$@")" 2>&1 | tee "$OUT/install.log" || rc=$?
   ph "rm -f $PHONE_TGZ"
   log "install exit ${PIPESTATUS[0]:-$rc} after $((SECONDS - t0)) s"
   grep -q 'Sova is running' "$OUT/install.log" || die "install did not finish"
@@ -55,7 +66,7 @@ install_http() {
   local dir="$OUT/src/http"
   rm -rf "$dir" && mkdir -p "$dir"
   cp "$TARBALL" "$dir/sova-src.tar.gz"
-  cp "$HERE/install.sh" "$dir/install.sh"
+  script "$HERE/install.sh" > "$dir/install.sh"
   python3 -m http.server --bind "$LAPTOP_IP" --directory "$dir" "$HTTP_PORT" > "$OUT/http.log" 2>&1 &
   local srv=$!
   trap 'kill $srv 2>/dev/null || true; rm -rf "$dir"' RETURN
@@ -131,20 +142,116 @@ diffsnap() {
   [ $bad = 0 ] && echo "DIFF CLEAN: $1 == $2" || { echo "DIFF: $1 != $2"; return 1; }
 }
 
+# ---- pairing (only with PAIR_GO=1: coordinator-2's go) ---------------------------------------------------------
+# The phone knows callers by tailnet IP (SOVA_MESH_IDENTITY=addresses): its entry for the laptop carries the laptop's
+# StableID AND its tailnet IP as the url host. The laptop's team server (4870, LocalAPI whois) lists the phone by StableID.
+LAPTOP_API=${LAPTOP_API:-http://127.0.0.1:4870}
+# Required for gate/pair/unpair (local.env): LAPTOP_ID, LAPTOP_NODE_ID, LAPTOP_PEER_URL, PHONE_ID, PHONE_NODE_ID, PHONE_DNS
+PHONE_LABEL=${PHONE_LABEL:-${PHONE_ID:-}}
+PHONE_PEER_URL=${PHONE_PEER_URL:-http://$PHONE:4801}
+LAPTOP_PEERS_FILE=${LAPTOP_PEERS_FILE:-$ROOT/.agent/sova/peers.json}
+go() { [ "${PAIR_GO:-}" = 1 ] || die "pairing needs coordinator-2's go: rerun with PAIR_GO=1"; }
+pairing_vars() { need LAPTOP_ID LAPTOP_NODE_ID LAPTOP_PEER_URL PHONE_ID PHONE_NODE_ID PHONE_DNS; }
+phone_put() { # path json -> http code
+  printf '%s' "$2" | ph "curl -sS -m 10 -o \$PREFIX/tmp/sova-put.json -w '%{http_code}' -X PUT -H 'content-type: application/json' --data-binary @- http://127.0.0.1:4800$1; cat \$PREFIX/tmp/sova-put.json >&2; rm -f \$PREFIX/tmp/sova-put.json"
+}
+laptop_put() { printf '%s' "$2" | curl -sS -m 10 -o "$OUT/put.json" -w '%{http_code}' -X PUT -H 'content-type: application/json' --data-binary @- "$LAPTOP_API$1"; }
+code_from_laptop() { curl -s -m 8 -o /dev/null -w '%{http_code}' "$PHONE_PEER_URL$1" || true; }
+phone_log_tail() { ph 'tail -n 40 $PREFIX/var/log/sv/sova-mesh/current' | grep -E '\[mesh\]' | tail -"${1:-8}" >&2 || true; }
+
+# the gate with a placeholder peer (an unused tailnet IP, a fake StableID): mesh on, but the laptop is NOT a peer yet
+gate() {
+  go
+  local dummy='{"peers":[{"id":"gate-dummy","label":"gate dummy","nodeId":"nGATEDUMMY00CNTRL","dnsName":"100.64.0.1","url":"http://100.64.0.1:4801"}]}'
+  [ "$(phone_put /api/mesh/peers "$dummy")" = 200 ] || die "phone PUT peers (placeholder)"
+  local ok=0 c
+  for _ in $(seq 1 20); do c=$(code_from_laptop /api/peer/hello); [ "$c" != 000 ] && { ok=1; break; }; sleep 0.5; done
+  [ $ok = 1 ] || die "the phone's peer listener did not come up on $PHONE_PEER_URL"
+  [ "$c" = 403 ] || die "a tailnet node that is not a peer (the laptop) got $c, want 403"
+  log "gate: laptop (tailnet, not a peer) -> $c"
+  c=$(ph "curl -s -m 5 -o /dev/null -w '%{http_code}' $PHONE_PEER_URL/api/peer/hello" || true)
+  [ "$c" = 403 ] || die "the phone calling itself got $c, want 403"
+  log "gate: the phone itself -> $c"
+  # a non-tailnet source: the phone's Wi-Fi address as the source of a connection to the tun0 IP
+  local wl; wl=$(ph "ifconfig 2>/dev/null | awk '/^wlan/{i=1} i&&\$1==\"inet\"{print \$2; exit}'")
+  if [ -n "$wl" ]; then
+    c=$(ph "curl -s -m 5 --interface $wl -o /dev/null -w '%{http_code}' $PHONE_PEER_URL/api/peer/hello" || true)
+    case "$c" in 403|000) log "gate: non-tailnet source $wl -> $c (403 = refused by the gate, 000 = no route)";; *) die "non-tailnet source $wl got $c";; esac
+    c=$(ph "curl -s -m 5 -o /dev/null -w '%{http_code}' http://$wl:4801/api/peer/hello" || true)
+    [ "$c" = 000 ] || die "the peer port answers on the Wi-Fi address $wl ($c)"
+    log "gate: $wl:4801 not bound"
+  fi
+  c=$(ph "curl -s -m 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:4801/api/peer/hello" || true)
+  [ "$c" = 000 ] || die "the peer port answers on loopback ($c)"
+  timeout 6 bash -c "exec 3<>/dev/tcp/$PHONE/4800" 2>/dev/null && die "main port reachable over the tailnet"
+  phone_log_tail 8
+  echo "GATE PASS"
+}
+
+pair() {
+  go
+  [ -f "$LAPTOP_PEERS_FILE" ] || die "no $LAPTOP_PEERS_FILE"
+  cp "$LAPTOP_PEERS_FILE" "$OUT/laptop-peers.before.json"
+  # the laptop: its current peers plus the phone (PUT replaces the list)
+  local body
+  body=$(node -e 'const [f,id,label,nodeId,dns,url]=process.argv.slice(1);const c=JSON.parse(require("fs").readFileSync(f,"utf8"));const peers=(c.peers||[]).filter(p=>p.id!==id);peers.push({id,label,nodeId,dnsName:dns,url});console.log(JSON.stringify({peers}))' \
+    "$LAPTOP_PEERS_FILE" "$PHONE_ID" "$PHONE_LABEL" "$PHONE_NODE_ID" "$PHONE_DNS" "$PHONE_PEER_URL")
+  [ "$(laptop_put /api/mesh/peers "$body")" = 200 ] || { cat "$OUT/put.json" >&2; die "laptop PUT peers"; }
+  local lip=${LAPTOP_PEER_URL#http://}; lip=${lip%%:*}
+  body=$(printf '{"peers":[{"id":"%s","label":"%s","nodeId":"%s","dnsName":"%s","url":"%s"}]}' "$LAPTOP_ID" "$LAPTOP_ID" "$LAPTOP_NODE_ID" "$lip" "$LAPTOP_PEER_URL")
+  [ "$(phone_put /api/mesh/peers "$body")" = 200 ] || die "phone PUT peers"
+  local ok=0 a b
+  for _ in $(seq 1 40); do
+    a=$(ph 'curl -s -m 5 http://127.0.0.1:4800/api/mesh/hello >/dev/null; curl -s -m 5 http://127.0.0.1:4800/api/mesh' | node -e 'const m=JSON.parse(require("fs").readFileSync(0,"utf8"));const p=m.peers.find(p=>p.id===process.argv[1]);console.log(p?.state??"none")' "$LAPTOP_ID" || true)
+    b=$(curl -s -m 5 "$LAPTOP_API/api/mesh/hello" >/dev/null; curl -s -m 5 "$LAPTOP_API/api/mesh" | node -e 'const m=JSON.parse(require("fs").readFileSync(0,"utf8"));const p=m.peers.find(p=>p.id===process.argv[1]);console.log(p?.state??"none")' "$PHONE_ID" || true)
+    [ "$a" = up ] && [ "$b" = up ] && { ok=1; break; }
+    sleep 1
+  done
+  log "phone sees $LAPTOP_ID: $a; laptop sees $PHONE_ID: $b"
+  [ $ok = 1 ] || { phone_log_tail 12; die "hello not up both ways"; }
+  local c
+  c=$(curl -s -m 10 -o /dev/null -w '%{http_code}' "$LAPTOP_API/peer/$PHONE_ID/api/health"); [ "$c" = 200 ] || die "/peer/$PHONE_ID/api/health via the laptop -> $c"
+  log "laptop /peer/$PHONE_ID/api/health -> 200"
+  c=$(code_from_laptop /api/peer/hello); [ "$c" = 200 ] || die "the laptop (now a peer) calling the phone directly -> $c"
+  log "laptop -> phone peer listener /api/peer/hello -> 200"
+  c=$(ph "curl -s -m 5 -o /dev/null -w '%{http_code}' $PHONE_PEER_URL/api/peer/hello" || true)
+  [ "$c" = 403 ] || die "the phone calling itself got $c after pairing, want 403"
+  curl -s -m 5 "$LAPTOP_API/api/mesh/sessions" | node -e 'const m=JSON.parse(require("fs").readFileSync(0,"utf8"));console.log(JSON.stringify(m.peers.map(p=>({id:p.id,state:p.state,sessions:p.sessions?.length}))))'
+  ph 'curl -s -m 5 http://127.0.0.1:4800/api/mesh' | node -e 'const m=JSON.parse(require("fs").readFileSync(0,"utf8"));console.log(JSON.stringify({enabled:m.enabled,self:m.self,peers:m.peers.map(p=>({id:p.id,state:p.state,error:p.error})),sync:m.sync}))'
+  phone_log_tail 8
+  echo "PAIR PASS"
+}
+
+unpair() {
+  [ -f "$OUT/laptop-peers.before.json" ] || die "no saved laptop peers list"
+  local body
+  body=$(node -e 'const c=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log(JSON.stringify({peers:c.peers||[]}))' "$OUT/laptop-peers.before.json")
+  [ "$(laptop_put /api/mesh/peers "$body")" = 200 ] || die "laptop PUT peers (restore)"
+  [ "$(phone_put /api/mesh/peers '{"peers":[]}')" = 200 ] || die "phone PUT peers []"
+  sleep 1
+  timeout 6 bash -c "exec 3<>/dev/tcp/$PHONE/4801" 2>/dev/null && die "phone peer port still open after unpair"
+  echo "UNPAIRED (laptop peers restored, phone mesh off)"
+}
+
 cmd=${1:-}; shift || true
+case "$cmd" in tarball|diff|"") ;; *) need PHONE ;; esac
+case "$cmd" in install-http) need LAPTOP_IP ;; gate|pair|unpair) pairing_vars ;; esac
 case "$cmd" in
   tarball) tarball ;;
   install) install_ssh "$@" ;;
   install-http) install_http "$@" ;;
   check) check ;;
-  uninstall) ph "sh -s -- $*" < "$HERE/uninstall.sh" 2>&1 | tee "$OUT/uninstall.log" ;;
+  uninstall) script "$HERE/uninstall.sh" | ph "sh -s -- $*" 2>&1 | tee "$OUT/uninstall.log" ;;
+  gate) gate ;;
+  pair) pair ;;
+  unpair) unpair ;;
   snapshot) snapshot "$@" ;;
   diff) diffsnap "$@" ;;
   loop)
     tarball
     snapshot pre
     install_ssh "$@"; check
-    ph "sh -s -- --keep-ssh" < "$HERE/uninstall.sh" 2>&1 | tee "$OUT/uninstall.log"
+    script "$HERE/uninstall.sh" | ph "sh -s -- --keep-ssh" 2>&1 | tee "$OUT/uninstall.log"
     snapshot post
     diffsnap pre post
     install_ssh "$@"; check

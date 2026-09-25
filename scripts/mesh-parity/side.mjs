@@ -4,12 +4,13 @@
 import { execFileSync, spawn } from "node:child_process";
 import { copyFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { createServer } from "node:net";
 import { pathToFileURL } from "node:url";
 
-export const NODE_BIN = "/usr/local/bin";
-export const PNPM = "/usr/local/bin/pnpm";
+/** The node running this harness (run.sh: `command -v node`) and pnpm from PATH; NODE_BIN / PNPM override. */
+export const NODE_BIN = process.env.NODE_BIN || dirname(process.execPath);
+export const PNPM = process.env.PNPM || execFileSync("sh", ["-c", "command -v pnpm"]).toString().trim();
 export const NODE = join(NODE_BIN, "node");
 /** A PATH with node but without the user's ~/.local/bin, mise shims or claude/tailscale CLIs. */
 export const BARE_PATH = `${NODE_BIN}:/usr/bin:/bin`;

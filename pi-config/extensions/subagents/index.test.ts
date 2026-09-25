@@ -2619,3 +2619,77 @@ test("sandbox on: every worker is checked by the extension first, and its refusa
 		fs.rmSync(outside, { recursive: true, force: true });
 	}
 });
+
+test("team_eject: parent-only, refuses occupied members, persists the op, frees a seat, and ejected members drop out of messaging", async () => {
+	const h = teamHarness();
+	try {
+		// Members and orchestrators never get the tool.
+		const { MEMBER_TOOLS, ORCHESTRATOR_TOOLS } = await import("./member.ts");
+		const mcp = await import("./member-mcp.ts");
+		for (const list of [MEMBER_TOOLS, ORCHESTRATOR_TOOLS, mcp.MEMBER_TOOLS, mcp.ORCHESTRATOR_TOOLS]) assert.ok(!(list as readonly string[]).includes("team_eject"));
+		assert.ok(h.tools.has("team_eject"));
+		await h.call("team_create", {
+			name: "Crew", objective: "Ship", members: [
+				{ role: "lead", prompt: "coordinate", orchestrator: true, wake: false },
+				{ role: "dev", prompt: "build", wake: false },
+				{ role: "writer", prompt: "document", wake: false },
+			],
+		});
+		const [lead, dev, writer] = ["ag_01", "ag_02", "ag_03"].map((id) => h.workers.find((w: any) => w.id === id));
+		// Occupied members are refused with the agent_kill hint; nothing is persisted.
+		await assert.rejects(h.call("team_eject", { team: "Crew", member: "dev" }), /dev \(ag_02\) is still working; stop it with agent_kill first/);
+		dev.settle(undefined, "waiting");
+		await assert.rejects(h.call("team_eject", { team: "team_01", member: "ag_02" }), /is still idle/);
+		await assert.rejects(h.call("team_eject", { team: "Crew", member: "ghost" }), /No member ghost in team_01/);
+		await assert.rejects(h.call("team_eject", { team: "team_09", member: "dev" }), /No such team: team_09/);
+		assert.equal(h.appended.filter((e) => e.data?.op === "eject").length, 0);
+
+		await h.call("agent_kill", { id: "ag_02" });
+		const out = await h.call("team_eject", { team: "crew", member: " DEV " });
+		assert.match(out.content[0].text, /^Ejected ag_02 \(dev\) from team_01 at \d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ\. 2 of 24 seats taken; the role dev stays reserved\.$/);
+		const ops = h.appended.filter((e) => e.customType === "subagents-team-v1" && e.data.op === "eject");
+		assert.deepEqual(ops.map((e) => ({ ...e.data, at: typeof e.data.at })), [{ version: 1, op: "eject", teamId: "team_01", workerId: "ag_02", at: "number" }]);
+		assert.equal(out.details.ejectedAt, ops[0].data.at);
+		await assert.rejects(h.call("team_eject", { team: "Crew", member: "ag_02" }), /already ejected/);
+
+		const list = await h.call("team_list", { team: "Crew" });
+		assert.match(list.content[0].text, /team_01 — Crew \[this session\] · 2 working · 1 ejected\n/);
+		assert.match(list.content[0].text, /ag_02 dev \[pi\] stopped \(killed\) · owns: none declared · ejected \d{4}-[^\n]*Z\n/);
+		assert.match(list.content[0].text, /#\d+ parent eject → ag_02 \(dev\): accepted-or-queued/);
+		assert.equal(list.details.teams[0].members[1].ejectedAt, ops[0].data.at);
+		assert.equal(list.details.teams[0].actions.filter((a: any) => a.kind === "eject").length, 1);
+		const roster = await h.ask("ag_01", { type: "roster" });
+		assert.match(roster.text, /^team_01 — Crew · 2 working · 1 ejected\n/);
+		assert.match(roster.text, /ag_02 dev \[pi, has team tools\] stopped \(killed\) · owns: none declared · ejected /);
+
+		// Broadcast skips the ejected member (no failed delivery); a direct message says it was ejected.
+		const all = await h.ask("ag_01", { type: "message", to: "all", message: "sync" });
+		assert.match(all.text, /^Delivered \(accepted or queued; not proof they acted\)\.\nwriter \(ag_03\): accepted or queued$/);
+		for (const request of [{ type: "message", to: "dev", message: "x" }, { type: "steer", to: "ag_02", message: "x" }] as const) {
+			const direct = await h.ask("ag_01", request);
+			assert.equal(direct.ok, false);
+			assert.match(direct.text, /dev \(ag_02\) was ejected from team_01 at .*; it no longer receives team messages/);
+		}
+		assert.equal(writer.steerCount, 1);
+		// An ejected member cannot be resumed back into a seat.
+		await assert.rejects(h.call("agent_resume", { id: "ag_02" }), /Cannot resume ag_02: it was ejected from its team/);
+
+		// Fill every seat with finished members; the cap names the ejectable ones; an eject lets the next one in.
+		lead.settle(undefined, "done");
+		writer.settle(undefined, "done");
+		for (let batch = 0; batch < 3; batch++) {
+			const count = batch < 2 ? 8 : 6;
+			await h.call("team_add", { team: "Crew", members: Array.from({ length: count }, (_, i) => ({ role: `r${batch}-${i}`, prompt: "p", wake: false })) });
+			for (const w of h.workers.slice(-count)) w.settle(undefined, "done");
+		}
+		assert.equal((await h.call("team_list", { team: "Crew" })).details.teams[0].members.length, 25, "24 seated plus one ejected");
+		const refused = await h.call("team_add", { team: "Crew", members: [{ role: "late", prompt: "p" }] }).then(() => "", (e: Error) => e.message);
+		assert.match(refused, /would exceed 24 members/);
+		assert.match(refused, /Ended members you can release with team_eject: ag_01 \(lead\), ag_03 \(writer\), ag_04 \(r0-0\)/);
+		assert.doesNotMatch(refused, /ag_02/, "an already-ejected member is not offered again");
+		await h.call("team_eject", { team: "Crew", member: "r0-0" });
+		const added = await h.call("team_add", { team: "Crew", members: [{ role: "late", prompt: "p", wake: false }] });
+		assert.match(added.content[0].text, /Added 1 member\(s\) to team_01/);
+		await assert.rejects(h.call("team_add", { team: "Crew", members: [{ role: "dev", prompt: "p" }] }), /Role dev already exists/);
+	} finally { await h.cleanup(); }
+});

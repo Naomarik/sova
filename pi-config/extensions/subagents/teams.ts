@@ -71,7 +71,9 @@ export interface PersistedMember {
 }
 export type TeamEntryData =
 	| { version: 1; op: "create"; team: { id: string; name: string; objective: string; createdAt: number }; members: PersistedMember[] }
-	| { version: 1; op: "add"; teamId: string; members: PersistedMember[] };
+	| { version: 1; op: "add"; teamId: string; members: PersistedMember[] }
+	/** The member no longer holds a seat; its role stays reserved. */
+	| { version: 1; op: "eject"; teamId: string; workerId: string; at: number };
 
 /** Last state observed before retention removed the worker from the manager. */
 export interface MemberSnapshot {
@@ -79,7 +81,11 @@ export interface MemberSnapshot {
 	taskOutcome?: TaskOutcome;
 	error?: string;
 }
-interface MemberRecord extends PersistedMember { last?: MemberSnapshot }
+interface MemberRecord extends PersistedMember {
+	last?: MemberSnapshot;
+	/** Released its seat (team_eject or a system eject). Never cleared. */
+	ejectedAt?: number;
+}
 export type TeamOrigin = "session" | "history";
 interface TeamRecord {
 	id: string;
@@ -95,7 +101,7 @@ interface TeamRecord {
 
 /** Human/parent-origin control requests. States never claim delivery or execution. */
 export type TeamActionState = "requested" | "accepted-or-queued" | "failed" | "unknown";
-export type TeamActionKind = "followUp" | "redirect" | "steer" | "stop" | "message" | "question";
+export type TeamActionKind = "followUp" | "redirect" | "steer" | "stop" | "message" | "question" | "eject";
 /** member = a sibling's team_msg/team_ask; orchestrator = a sibling orchestrator's team_steer. */
 export type TeamActionSource = "parent" | "user" | "member" | "orchestrator";
 export interface TeamAction {
@@ -141,6 +147,8 @@ export interface TeamMemberView {
 	taskOutcome?: TaskOutcome;
 	error?: string;
 	processAlive?: boolean;
+	/** When the member released its seat; it is then left out of `counts`. */
+	ejectedAt?: number;
 }
 export interface TeamView {
 	id: string;
@@ -150,7 +158,9 @@ export interface TeamView {
 	origin: TeamOrigin;
 	members: TeamMemberView[];
 	actions: TeamAction[];
+	/** Seated members by state; ejected members are counted only in `ejected`. */
 	counts: Record<MemberState, number>;
+	ejected: number;
 }
 
 export const PRUNED_REASON = "Removed from the manager by finished-worker retention; last known status shown.";
@@ -316,7 +326,14 @@ function decodeMember(value: unknown): PersistedMember | undefined {
 
 /** Strict decoder for persisted entries; anything malformed is ignored, never partially adopted. */
 export function decodeTeamEntry(data: unknown): TeamEntryData | undefined {
-	if (!isRecord(data) || data.version !== 1 || !Array.isArray(data.members)) return undefined;
+	if (!isRecord(data) || data.version !== 1) return undefined;
+	if (data.op === "eject") {
+		const { teamId, workerId, at } = data;
+		if (typeof teamId !== "string" || !TEAM_ID.test(teamId) || typeof workerId !== "string" || !WORKER_ID.test(workerId)) return undefined;
+		if (typeof at !== "number" || !Number.isFinite(at)) return undefined;
+		return { version: 1, op: "eject", teamId, workerId, at };
+	}
+	if (!Array.isArray(data.members)) return undefined;
 	if (data.members.length > MAX_TEAM_MEMBERS) return undefined;
 	const members = data.members.map(decodeMember);
 	if (members.some((m) => !m)) return undefined;
@@ -345,6 +362,15 @@ const teamEntries = (entries: readonly unknown[]) =>
 		const decoded = decodeTeamEntry(e.data);
 		return decoded ? [decoded] : [];
 	});
+
+/** Members holding a seat: everyone recorded except ejected members. */
+const seated = (team: { members: readonly MemberRecord[] }) => team.members.filter((m) => m.ejectedAt === undefined).length;
+/** UTC second precision, for tool text the model reads. */
+export const ejectedStamp = (at: number) => new Date(at).toISOString().replace(/\.\d{3}Z$/, "Z");
+const historyRefusal = (team: { id: string; name: string }) =>
+	`Team ${team.id} (${team.name}) is history from an earlier session; its workers are gone. Create a new team with team_create.`;
+/** States in which a member still occupies its worker; team_eject refuses these. */
+const BUSY_STATES: ReadonlySet<MemberState> = new Set(["working", "idle", "stopping"]);
 
 function emptyCounts(): Record<MemberState, number> {
 	return { working: 0, idle: 0, failed: 0, done: 0, stopping: 0, stopped: 0, unavailable: 0 };
@@ -419,9 +445,12 @@ export class TeamStore {
 				byId.set(team.id, team);
 				restored.push(team);
 				this.addMembers(team, entry.members);
-			} else {
+			} else if (entry.op === "add") {
 				const team = byId.get(entry.teamId);
 				if (team) this.addMembers(team, entry.members);
+			} else {
+				const member = byId.get(entry.teamId)?.members.find((m) => m.workerId === entry.workerId);
+				if (member && member.ejectedAt === undefined) member.ejectedAt = entry.at;
 			}
 		}
 		this.history = restored.slice(-MAX_HISTORY_TEAMS);
@@ -443,7 +472,7 @@ export class TeamStore {
 
 	private addMembers(team: TeamRecord, members: readonly PersistedMember[]): void {
 		for (const m of members) {
-			if (team.members.length >= MAX_TEAM_MEMBERS) return;
+			if (seated(team) >= MAX_TEAM_MEMBERS) return;
 			if (team.members.some((x) => x.workerId === m.workerId || labelKey(x.role) === labelKey(m.role))) continue;
 			team.members.push({ ...m, ownedPaths: [...m.ownedPaths] });
 		}
@@ -518,16 +547,27 @@ export class TeamStore {
 	}
 
 	/** Validate and reserve roles on an existing session team. History teams are read-only. */
-	prepareAdd(ref: string, members: TeamMemberInput[]): PreparedAdd {
+	/**
+	 * Validate and reserve roles on an existing session team. History teams are read-only.
+	 * Ejected members keep their roles reserved but hold no seat. `observe` (exact IDs
+	 * among retained workers) only names the ejectable members in the cap error.
+	 */
+	prepareAdd(ref: string, members: TeamMemberInput[], observe?: (workerId: string) => WorkerObservation | undefined): PreparedAdd {
 		const team = this.find(ref);
-		if (team.origin === "history")
-			throw new Error(`Team ${team.id} (${team.name}) is history from an earlier session; its workers are gone. Create a new team with team_create.`);
+		if (team.origin === "history") throw new Error(historyRefusal(team));
 		const pending = this.pendingRoles.get(team.id) ?? new Set<string>();
 		const taken = new Set([...team.members.map((m) => labelKey(m.role)), ...pending]);
 		const checked = this.checkMembers(members, taken, team.defaults);
-		if (team.members.length + pending.size + checked.length > MAX_TEAM_MEMBERS)
-			throw new Error(`Team ${team.id} would exceed ${MAX_TEAM_MEMBERS} members (including finished and pending members).`);
-		const existing = team.members.map((m): HeaderMember => ({ role: m.role, ownedPaths: m.ownedPaths, orchestrator: m.orchestrator === true }));
+		if (seated(team) + pending.size + checked.length > MAX_TEAM_MEMBERS) {
+			const ejectable = team.members.filter((m) => m.ejectedAt === undefined && !BUSY_STATES.has(memberState(observe?.(m.workerId))));
+			throw new Error(
+				`Team ${team.id} would exceed ${MAX_TEAM_MEMBERS} members (counting every member not ejected, finished ones included, and pending additions). ` +
+				(ejectable.length
+					? `Ended members you can release with team_eject: ${ejectable.map((m) => `${m.workerId} (${m.role})`).join(", ")}.`
+					: "No member has ended; stop one with agent_kill, then release its seat with team_eject."),
+			);
+		}
+		const existing = team.members.filter((m) => m.ejectedAt === undefined).map((m): HeaderMember => ({ role: m.role, ownedPaths: m.ownedPaths, orchestrator: m.orchestrator === true }));
 		const composed = checked.map((m): PreparedMember => ({
 			role: m.role,
 			ownedPaths: m.ownedPaths,
@@ -599,7 +639,7 @@ export class TeamStore {
 		return {
 			team: { id: found.team.id, name: found.team.name },
 			member: copy(found.member),
-			siblings: found.team.members.filter((m) => m !== found.member).map(copy),
+			siblings: found.team.members.filter((m) => m !== found.member && m.ejectedAt === undefined).map(copy),
 		};
 	}
 
@@ -613,6 +653,9 @@ export class TeamStore {
 		if (!info) throw new Error(`${senderId} is not a member of a session team.`);
 		const trimmed = ref.trim();
 		if (trimmed === senderId || labelKey(trimmed) === labelKey(info.member.role)) throw new Error("You cannot address yourself.");
+		const ejected = this.sessionMember(senderId)!.team.members.find((m) =>
+			m.ejectedAt !== undefined && (WORKER_ID.test(trimmed) ? m.workerId === trimmed : labelKey(m.role) === labelKey(trimmed)));
+		if (ejected) throw new Error(`${ejected.role} (${ejected.workerId}) was ejected from ${info.team.id} at ${ejectedStamp(ejected.ejectedAt!)}; it no longer receives team messages.`);
 		const byId = WORKER_ID.test(trimmed) ? info.siblings.find((m) => m.workerId === trimmed) : undefined;
 		if (byId) return byId;
 		if (WORKER_ID.test(trimmed)) throw new Error(`${trimmed} is not a member of ${info.team.id}; use team_roster or your header's roles.`);
@@ -652,12 +695,57 @@ export class TeamStore {
 	}
 
 	/**
+	 * Validate a seat release on a session team. `member` is an exact worker ID or a
+	 * role. Refuses history teams, unknown or already-ejected members, and members
+	 * whose worker is still working, idle or stopping. Nothing changes here: persist
+	 * ejectEntry(), then commitEject().
+	 */
+	checkEject(ref: string, member: string, observe: (workerId: string) => WorkerObservation | undefined): { teamId: string; workerId: string; role: string } {
+		const team = this.find(ref);
+		if (team.origin === "history") throw new Error(historyRefusal(team));
+		const trimmed = member.trim();
+		const found = WORKER_ID.test(trimmed)
+			? team.members.find((m) => m.workerId === trimmed)
+			: team.members.find((m) => labelKey(m.role) === labelKey(trimmed));
+		if (!found) throw new Error(`No member ${trimmed} in ${team.id}. Members: ${team.members.map((m) => `${m.workerId} (${m.role})`).join(", ") || "none"}.`);
+		if (found.ejectedAt !== undefined) throw new Error(`${found.role} (${found.workerId}) was already ejected from ${team.id} at ${ejectedStamp(found.ejectedAt)}.`);
+		const state = memberState(observe(found.workerId));
+		if (BUSY_STATES.has(state))
+			throw new Error(`${found.role} (${found.workerId}) is still ${state}; stop it with agent_kill first, then team_eject it.`);
+		return { teamId: team.id, workerId: found.workerId, role: found.role };
+	}
+
+	ejectEntry(teamId: string, workerId: string, at: number): TeamEntryData {
+		return { version: 1, op: "eject", teamId, workerId, at };
+	}
+
+	/** Mark the member ejected and record one action row; call only after the entry was persisted. */
+	commitEject(teamId: string, workerId: string, at: number, source: TeamActionSource): TeamAction | undefined {
+		const member = this.session.find((t) => t.id === teamId)?.members.find((m) => m.workerId === workerId);
+		if (!member || member.ejectedAt !== undefined) return undefined;
+		member.ejectedAt = at;
+		const action = this.recordAction(workerId, "eject", source);
+		this.settleAction(action, "accepted-or-queued");
+		return action;
+	}
+
+	/** When a member of any known team (session or history) was ejected, if it was. */
+	ejectedAt(workerId: string): number | undefined {
+		for (const team of this.all()) {
+			const member = team.members.find((m) => m.workerId === workerId);
+			if (member?.ejectedAt !== undefined) return member.ejectedAt;
+		}
+		return undefined;
+	}
+
+	/**
 	 * Fresh, detached views. `observe` must look up exact IDs among retained workers
 	 * only; it is never consulted for history teams.
 	 */
 	views(observe: (workerId: string) => WorkerObservation | undefined): TeamView[] {
 		return this.all().map((team) => {
 			const counts = emptyCounts();
+			let ejected = 0;
 			const members = team.members.map((m): TeamMemberView => {
 				const base = { workerId: m.workerId, role: m.role, ownedPaths: [...m.ownedPaths], orchestrator: m.orchestrator === true, backend: m.backend, groupId: m.groupId, addedAt: m.addedAt };
 				let view: TeamMemberView;
@@ -677,12 +765,16 @@ export class TeamStore {
 						...(team.origin === "session" && m.last ? { ...m.last } : {}),
 					};
 				}
-				counts[view.state]++;
+				if (m.ejectedAt === undefined) counts[view.state]++;
+				else {
+					view.ejectedAt = m.ejectedAt;
+					ejected++;
+				}
 				return view;
 			});
 			return {
 				id: team.id, name: team.name, objective: team.objective, createdAt: team.createdAt, origin: team.origin,
-				members, actions: team.actions.map((a) => ({ ...a })), counts,
+				members, actions: team.actions.map((a) => ({ ...a })), counts, ejected,
 			};
 		});
 	}

@@ -95,6 +95,7 @@ function makeMember(p: Record<string, unknown> = {}): TeamMemberView {
 		taskOutcome: p.taskOutcome as TeamMemberView["taskOutcome"],
 		error: p.error as string | undefined,
 		processAlive: (p.processAlive as boolean) ?? true,
+		...(p.ejectedAt === undefined ? {} : { ejectedAt: p.ejectedAt as number }),
 	};
 }
 
@@ -105,7 +106,8 @@ function makeTeam(
 	p: { origin?: "session" | "history"; objective?: string; createdAt?: number; actions?: TeamAction[] } = {},
 ): TeamView {
 	const counts = { working: 0, idle: 0, failed: 0, done: 0, stopping: 0, stopped: 0, unavailable: 0 };
-	for (const m of members) counts[m.state]++;
+	let ejected = 0;
+	for (const m of members) if (m.ejectedAt === undefined) counts[m.state]++; else ejected++;
 	return {
 		id,
 		name,
@@ -115,6 +117,7 @@ function makeTeam(
 		members,
 		actions: p.actions ?? [],
 		counts,
+		ejected,
 	};
 }
 
@@ -323,6 +326,20 @@ test("states: member dots are failure-aware and status/availability are spelled 
 	const previous = lines.slice(1).find((l) => l.includes("m-old") && l.includes("○"));
 	assert.ok(previous, "previous-session member row is hollow");
 	assert.ok(lines.slice(1).some((l) => l.includes("unavailable · history")), "previous-session availability spelled out");
+});
+
+test("roster: an ejected member stays listed with · ejected right after its state; the pane title counts it apart", () => {
+	const members = [
+		makeMember({ workerId: "ag_01", role: "keeper", state: "working", status: "running" }),
+		makeMember({ workerId: "ag_02", role: "leaver", state: "stopped", status: "killed", ejectedAt: 5 }),
+	];
+	const { modal } = makeModal(TUI(30), [makeTeam("team_01", "t", members)], new Map([["ag_01", makeWorker({ id: "ag_01" })], ["ag_02", makeWorker({ id: "ag_02" })]]));
+	modal.handleInput(TAB);
+	const lines = modal.render(220);
+	assert.ok(lines.some((l) => l.includes("stopped · ejected (killed)")), lines.join("\n"));
+	assert.ok(!lines.some((l) => l.includes("running") && l.includes("ejected")), "only the ejected member is marked");
+	// The member pane's title is truncated to its width, so only its head is certain.
+	assert.match(lines[0]!, /team_01 · 1 working · 1 ej/, "the roster title counts the ejected member apart, never as stopped");
 });
 
 test("activity: pruned member shows its reason and last known state, history member the history reason", () => {

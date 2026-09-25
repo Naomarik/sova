@@ -131,16 +131,18 @@ export function isTornDown(member: TeamMemberView): boolean {
  */
 export function visibleTeams(teams: readonly TeamView[]): TeamView[] {
 	const visible: TeamView[] = [];
+	// Ejected members released their seat: hidden like torn-down ones, but already out of `counts`.
+	const hidden = (member: TeamMemberView) => member.ejectedAt !== undefined || isTornDown(member);
 	for (const team of teams) {
-		if (team.origin === "history" || !team.members.some(isTornDown)) {
+		if (team.origin === "history" || !team.members.some(hidden)) {
 			visible.push(team);
 			continue;
 		}
-		const members = team.members.filter((member) => !isTornDown(member));
+		const members = team.members.filter((member) => !hidden(member));
 		if (members.length === 0) continue;
 		const counts = { ...team.counts };
 		for (const member of team.members)
-			if (isTornDown(member)) counts[member.state] = Math.max(0, (counts[member.state] ?? 0) - 1);
+			if (member.ejectedAt === undefined && isTornDown(member)) counts[member.state] = Math.max(0, (counts[member.state] ?? 0) - 1);
 		visible.push({ ...team, members, counts });
 	}
 	return visible;

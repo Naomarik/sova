@@ -24,6 +24,7 @@ import {
   usageHeadline,
   usageTitle,
   usageTotal,
+  workerEjected,
   workerLabel,
   workersNoun,
   workersRunningLabel,
@@ -141,6 +142,18 @@ test("sortWorkers: working first, then newest activity (else start) first", () =
   ];
   assert.deepEqual(sortWorkers(ws).map((w) => w.id), ["d", "b", "c", "a", "e"]);
   assert.equal(ws[0]!.id, "a"); // input untouched
+});
+
+test("workerEjected: only a member whose own entry carries ejectedAt, in any of the teams", () => {
+  const teams = [
+    { members: [{ workerId: "ag_02", role: "ui", ejectedAt: 0 }, { workerId: "ag_03", role: "api" }] },
+    { members: [{ workerId: "ag_05", role: "docs", ejectedAt: 1_700_000_000_000 }] },
+  ];
+  assert.equal(workerEjected({ id: "ag_02" }, teams as never), true, "a 0 timestamp is still an eject");
+  assert.equal(workerEjected({ id: "ag_05" }, teams as never), true);
+  assert.equal(workerEjected({ id: "ag_03" }, teams as never), false);
+  assert.equal(workerEjected({ id: "ag_09" }, teams as never), false);
+  assert.equal(workerEjected({ id: "ag_02" }, undefined), false);
 });
 
 test("workerLabel: team role by workerId, else the worker's name", () => {

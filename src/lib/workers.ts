@@ -56,6 +56,11 @@ export function workerLabel(w: Pick<WorkerInfo, "id" | "name">, teams: readonly 
   return w.name;
 }
 
+/** Whether a worker's team released its seat: it then shows the Ejected chip. */
+export function workerEjected(w: Pick<WorkerInfo, "id">, teams: readonly Pick<TeamInfo, "members">[] | undefined): boolean {
+  return (teams ?? []).some((t) => t.members.some((m) => m.workerId === w.id && m.ejectedAt !== undefined));
+}
+
 /** The team a worker belongs to, or null when it's a plain subagent. */
 export function workerTeam<T extends { members: readonly { workerId: string }[] }>(
   w: Pick<WorkerInfo, "id">,

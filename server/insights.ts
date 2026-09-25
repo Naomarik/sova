@@ -374,7 +374,15 @@ function decodeMember(m: unknown): RosterTeam["members"][number] | null {
 }
 
 function addTeamEntry(teams: Map<string, RosterTeam>, data: unknown): void {
-  if (!isRec(data) || data.version !== 1 || !Array.isArray(data.members)) return;
+  if (!isRec(data) || data.version !== 1) return;
+  if (data.op === "eject") {
+    // The member released its seat; the first eject stands, like the extension's fold.
+    const at = num(data.at);
+    const member = teams.get(str(data.teamId) ?? "")?.members.find((m) => m.workerId === str(data.workerId));
+    if (member && at !== undefined && member.ejectedAt === undefined) member.ejectedAt = at;
+    return;
+  }
+  if (!Array.isArray(data.members)) return;
   const members = data.members.map(decodeMember);
   if (members.some((m) => !m)) return; // like the extension: never adopt a partial entry
   const valid = members as RosterTeam["members"];

@@ -7,7 +7,7 @@ import { memberStatus } from "../lib/insights";
 import { createReconnectingSocket } from "../lib/socket";
 import { formatTokens } from "../lib/context";
 import { asOfClock, capTitle, ringContext, sortWorkers, sourceKey, sourceName, sourceOf, transcriptContext, transcriptUsage, usageHeadline,
-  usageTitle, usageUnavailable, type TranscriptSource, type UsageView, workerContext, workerLabel, workersNoun, workerTeam,
+  usageTitle, usageUnavailable, type TranscriptSource, type UsageView, workerContext, workerEjected, workerLabel, workersNoun, workerTeam,
   workerUsage } from "../lib/workers";
 import { ConnectionBanner } from "./ConnectionBanner";
 import { ContextReadout } from "./ContextGauge";
@@ -182,6 +182,9 @@ export function SubagentPane(props: {
             {/* The sidebar's ring: how full the worker's own context is. Beside the chip, where a
                 short name leaves room, so the meta line under it keeps every fact. */}
             <Show when={ringContext(contextOf(w()))}>{(c) => <ContextRing info={c()} />}</Show>
+            <Show when={workerEjected(w(), insight.data()?.teams)}>
+              <Chip>Ejected</Chip>
+            </Show>
             <StatusChip worker={w()} liveSource={liveSource()} />
           </span>
           <WorkerMeta worker={w()} liveSource={liveSource()} class="subagent-row-meta" />

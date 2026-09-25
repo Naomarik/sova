@@ -31,6 +31,7 @@ the parent session so old references cannot target unrelated new workers.
 | `team_create`      | Create an explicit coordinated team with unique roles and advisory ownership.   |
 | `team_add`         | Add members to a live session team; history teams remain read-only.             |
 | `team_list`        | Inspect teams, actual member state, declared scope, and bounded actions.         |
+| `team_eject`       | Release an ended member's seat in a session team (parent only; see below).       |
 
 Team members additionally get `team_msg`, `team_inbox`, `team_ask`, and for an
 orchestrator member `team_roster` and `team_steer`: Pi members through a
@@ -365,6 +366,33 @@ operator questions, but only through this extension: there is no direct
 process-to-process channel (next section). `/team <objective>` sends one
 extension-origin planning message and starts a parent turn if idle; bare `/team` only
 opens the workspace. See [../../docs/native-teams.md](../../docs/native-teams.md).
+
+### Seats and `team_eject`
+
+A team seats 24 members. Every recorded member holds a seat, finished ones
+included, until it is **ejected**; pending additions count too. When a
+`team_add` would pass 24 it is refused, and the error names the members that
+have ended (and so can be ejected).
+
+`team_eject { team, member }` (`member` = exact `ag_NN` or role) is a parent
+tool only: members and orchestrators never get it. It refuses a team restored
+from history (read-only, same as `team_add`), an unknown team or member, a
+member already ejected, and a member whose worker is still working, idle or
+stopping (stop it with `agent_kill` first). It persists
+`{ version: 1, op: "eject", teamId, workerId, at }` in the same
+`subagents-team-v1` entry stream before marking the member, and records one
+`eject` action (source `parent`). The restore fold replays it, and counts only
+seated members against the cap, so a member added after an eject survives a
+reload or restart.
+
+An ejected member keeps its role reserved (roles stay unique for the team's
+life), its worker ID, transcript and action history. It no longer counts in the
+team's state counts (`team_list` and `team_roster` show a separate `N ejected`
+and mark its line `· ejected <time>`), is left out of "Other members" in new
+members' headers, is skipped by a `team_msg` to `all`, and a direct `team_msg`
+or `team_steer` to it fails saying it was ejected. `agent_resume` refuses it.
+The `/team` widget hides it like a stopped member; the workspace roster marks
+it `· ejected`. Sova's Agents page and subagents pane show an `Ejected` chip.
 
 ### Team messaging, orchestrators and operator questions
 

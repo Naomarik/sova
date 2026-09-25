@@ -13,6 +13,8 @@ import { Chip, CountChip, Icon } from "./ui";
 function MemberRow(props: {
   title: string;
   orchestrator?: boolean;
+  /** Released its team seat: a neutral chip beside the role, never the run status. */
+  ejected?: boolean;
   id: string;
   model?: string | null;
   status: MemberStatus;
@@ -27,6 +29,9 @@ function MemberRow(props: {
           {props.title}
           <Show when={props.orchestrator}>
             <CountChip>Orchestrator</CountChip>
+          </Show>
+          <Show when={props.ejected}>
+            <Chip>Ejected</Chip>
           </Show>
         </p>
         <p class="list-meta">
@@ -86,6 +91,7 @@ function TeamGroup(props: { team: TeamInfo; fresh: boolean; now: number; parentT
             <MemberRow
               title={m.role}
               orchestrator={m.orchestrator}
+              ejected={m.ejectedAt !== undefined}
               id={m.workerId}
               model={m.worker?.model ?? m.model}
               status={memberStatus(m, liveSource())}

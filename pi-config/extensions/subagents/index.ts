@@ -23,8 +23,10 @@ import {
 	MAX_LABEL_CHARS,
 	MAX_OBJECTIVE_CHARS,
 	MAX_OWNED_PATHS,
+	MAX_TEAM_MEMBERS,
 	TEAM_ENTRY_TYPE,
 	TeamStore,
+	ejectedStamp,
 	memberTooling,
 	type PersistedMember,
 	type TeamActionKind,
@@ -1270,6 +1272,17 @@ export function registerSubagents(
 			if (action) scheduleRefresh();
 		}
 	};
+	/**
+	 * Release a member's team seat: persist the eject op first, then mark it. The one
+	 * path for every eject; `source` records who asked.
+	 */
+	const ejectMember = (teamId: string, workerId: string, source: TeamActionSource): number => {
+		const at = Date.now();
+		pi.appendEntry(TEAM_ENTRY_TYPE, teams.ejectEntry(teamId, workerId, at));
+		teams.commitEject(teamId, workerId, at, source);
+		scheduleRefresh();
+		return at;
+	};
 	// ── Team member mailbox ─────────────────────────────────────────────────
 	// Members (member.ts in Pi children, member-mcp.ts beside Claude children)
 	// write requests into their own directory under a private root;
@@ -1308,14 +1321,21 @@ export function registerSubagents(
 		}
 	};
 	const memberLine = (m: PersistedMember) => `${m.role}${m.orchestrator ? " (orchestrator)" : ""} (${m.workerId}, ${m.backend})`;
+	/** Seated members by state, then the ejected ones, which hold no seat. */
+	const countsText = (t: TeamView): string =>
+		[
+			...(["working", "idle", "failed", "done", "stopping", "stopped", "unavailable"] as const).filter((k) => t.counts[k]).map((k) => `${t.counts[k]} ${k}`),
+			...(t.ejected ? [`${t.ejected} ejected`] : []),
+		].join(" · ") || "no members";
+	const ejectedText = (m: TeamView["members"][number]) => (m.ejectedAt === undefined ? "" : ` · ejected ${ejectedStamp(m.ejectedAt)}`);
 	const rosterText = (teamId: string): string => {
 		const t = teamViews().find((v) => v.id === teamId);
 		if (!t) return `Team ${teamId} is not available.`;
 		return [
-			`${t.id} — ${t.name} · ${(["working", "idle", "failed", "done", "stopping", "stopped", "unavailable"] as const).filter((k) => t.counts[k]).map((k) => `${t.counts[k]} ${k}`).join(" · ") || "no members"}`,
+			`${t.id} — ${t.name} · ${countsText(t)}`,
 			`Objective: ${t.objective}`,
 			...t.members.map((m) =>
-				`  ${m.workerId} ${m.role}${m.orchestrator ? " (orchestrator)" : ""} [${m.backend}${memberTooling(m.backend) === "none" ? ", receives messages only" : ", has team tools"}] ${m.state}${m.status ? ` (${m.status}${m.taskOutcome ? `/${m.taskOutcome}` : ""})` : ""} · owns: ${m.ownedPaths.join(", ") || "none declared"}${m.error ? ` · error: ${m.error}` : ""}${m.available ? "" : ` · unavailable: ${m.reason}`}`,
+				`  ${m.workerId} ${m.role}${m.orchestrator ? " (orchestrator)" : ""} [${m.backend}${memberTooling(m.backend) === "none" ? ", receives messages only" : ", has team tools"}] ${m.state}${m.status ? ` (${m.status}${m.taskOutcome ? `/${m.taskOutcome}` : ""})` : ""} · owns: ${m.ownedPaths.join(", ") || "none declared"}${m.error ? ` · error: ${m.error}` : ""}${m.available ? "" : ` · unavailable: ${m.reason}`}${ejectedText(m)}`,
 			),
 			...(t.actions.length ? ["  Recent actions:", ...t.actions.slice(-10).map((a) => `    #${a.seq} ${a.source} ${a.kind} → ${a.workerId} (${a.role}): ${a.state}${a.reason ? ` — ${a.reason}` : ""}`)] : []),
 			"States are observations; accepted-or-queued never means executed.",
@@ -1539,6 +1559,8 @@ export function registerSubagents(
 		if (resumingIds.has(id)) throw new Error(`${id} is already being resumed.`);
 		const current = agents.find((a) => a.id === id);
 		if (current && !current.isFinished()) throw new Error(`${id} is live (${current.status}); use agent_steer to give it work.`);
+		const ejectedAt = teams.ejectedAt(id);
+		if (ejectedAt !== undefined) throw new Error(`Cannot resume ${id}: it was ejected from its team at ${ejectedStamp(ejectedAt)} and holds no seat.`);
 		const manifest = readWorkerManifests(ctx.sessionManager.getEntries()).manifests.get(id);
 		if (!manifest) throw new Error(`No record of ${id} in this session; only workers recorded in this session file can be resumed.`);
 		const refusal = resumeRefusal(manifest);
@@ -1942,6 +1964,7 @@ export function registerSubagents(
 		"Declared ownership is advisory, not a lock; members share the filesystem.",
 		"Members have team_msg/team_inbox/team_ask (messages to teammates are delivered by this extension; questions arrive here as team-question messages — answer them with agent_steer on that worker ID). An orchestrator member also has team_roster/team_steer over its own team. Claude members get the same tools from an MCP server (mcp__team__<tool>).",
 		"Steer or stop members with agent_steer/agent_kill using exact worker IDs; team_list shows roles beside actual status. No member can spawn, add or stop workers.",
+		`A team seats ${MAX_TEAM_MEMBERS} members; team_eject releases an ended member's seat (its role stays taken).`,
 		"Members are session-scoped: reload, session switch or quit stops them; agent_resume brings one back idle, rejoining its team.",
 	];
 	/** Runs inside spawnBatch before publication, so a failure rolls the batch back. */
@@ -1984,7 +2007,7 @@ export function registerSubagents(
 			"Use team_create when the user wants a coordinated team with distinct roles and ownership; use agent_spawn for ad hoc independent workers.",
 			"team_create ownership is advisory: members share the filesystem, and each settled member with wake=true starts a parent turn. Members (pi or Claude) can message teammates (team_msg) and ask you questions (team_ask); answer a team-question message with agent_steer on that worker ID.",
 			"Set orchestrator: true on one member (pi or claude-code) when the team should coordinate itself: it can see the roster and steer siblings by role, but never spawn or stop anyone; you keep the authority to add/stop members.",
-			"Use team_add to extend a team created in this session and team_list to see roles beside actual worker status; steer and stop members with agent_steer and agent_kill by exact worker ID.",
+			"Use team_add to extend a team created in this session and team_list to see roles beside actual worker status; steer and stop members with agent_steer and agent_kill by exact worker ID; team_eject releases an ended member's seat when the team is full.",
 		],
 		parameters: Type.Object(
 			{
@@ -2035,7 +2058,7 @@ export function registerSubagents(
 			context(ctx);
 			signal?.throwIfAborted();
 			checkTeamKeys(params.members);
-			const prepared = teams.prepareAdd(params.team, params.members);
+			const prepared = teams.prepareAdd(params.team, params.members, observeWorker);
 			try {
 				const addedAt = Date.now();
 				let members: PersistedMember[] = [];
@@ -2059,6 +2082,31 @@ export function registerSubagents(
 		},
 	});
 	pi.registerTool({
+		name: "team_eject",
+		label: "Eject Team Member",
+		description:
+			`Release an ended member's seat in a team created in this session (a team seats ${MAX_TEAM_MEMBERS} members; ejected members do not count). member is an exact worker ID (ag_NN) or a role. The member must have ended: stop a working or idle one with agent_kill first. Its role stays reserved, its transcript and history stay, it stops receiving team messages and cannot be resumed. Teams restored from history are read-only. Persisted, so it survives reload and restart.`,
+		parameters: Type.Object(
+			{
+				team: Type.String({ minLength: 1, description: "Team ID (team_NN) or unique team name." }),
+				member: Type.String({ minLength: 1, description: "Exact worker ID (ag_NN) or role." }),
+			},
+			{ additionalProperties: false },
+		),
+		async execute(_id, params, signal, _update, ctx) {
+			context(ctx);
+			signal?.throwIfAborted();
+			const target = teams.checkEject(params.team, params.member, observeWorker);
+			const at = ejectMember(target.teamId, target.workerId, "parent");
+			const team = teamViews().find((t) => t.id === target.teamId)!;
+			const seatedCount = team.members.length - team.ejected;
+			return result(
+				`Ejected ${target.workerId} (${target.role}) from ${target.teamId} at ${ejectedStamp(at)}. ${seatedCount} of ${MAX_TEAM_MEMBERS} seats taken; the role ${target.role} stays reserved.`,
+				{ teamId: target.teamId, workerId: target.workerId, role: target.role, ejectedAt: at, seated: seatedCount },
+			);
+		},
+	});
+	pi.registerTool({
 		name: "team_list",
 		label: "List Teams",
 		description:
@@ -2069,10 +2117,10 @@ export function registerSubagents(
 			const views = teamViews();
 			const selected = params.team === undefined ? views : [views.find((t) => t.id === teams.find(params.team!).id)!];
 			const text = selected.map((t) => [
-				`${t.id} — ${t.name} [${t.origin === "history" ? "history, read-only" : "this session"}] · ${(["working", "idle", "failed", "done", "stopping", "stopped", "unavailable"] as const).filter((k) => t.counts[k]).map((k) => `${t.counts[k]} ${k}`).join(" · ") || "no members"}`,
+				`${t.id} — ${t.name} [${t.origin === "history" ? "history, read-only" : "this session"}] · ${countsText(t)}`,
 				`Objective: ${t.objective}`,
 				...t.members.map((m) =>
-					`  ${m.workerId} ${m.role}${m.orchestrator ? " (orchestrator)" : ""} [${m.backend}] ${m.state}${m.status ? ` (${m.status}${m.taskOutcome ? `/${m.taskOutcome}` : ""})` : ""} · owns: ${m.ownedPaths.join(", ") || "none declared"}${m.error ? ` · error: ${m.error}` : ""}${m.available ? "" : ` · unavailable: ${m.reason}`}`,
+					`  ${m.workerId} ${m.role}${m.orchestrator ? " (orchestrator)" : ""} [${m.backend}] ${m.state}${m.status ? ` (${m.status}${m.taskOutcome ? `/${m.taskOutcome}` : ""})` : ""} · owns: ${m.ownedPaths.join(", ") || "none declared"}${m.error ? ` · error: ${m.error}` : ""}${m.available ? "" : ` · unavailable: ${m.reason}`}${ejectedText(m)}`,
 				),
 				...(t.actions.length ? ["  Recent actions:", ...t.actions.slice(-10).map((a) => `    #${a.seq} ${a.source} ${a.kind} → ${a.workerId} (${a.role}): ${a.state}${a.reason ? ` — ${a.reason}` : ""}`)] : []),
 			].join("\n"));

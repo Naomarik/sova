@@ -434,6 +434,7 @@ export class TeamModal {
 		const counts = team ? (["working", "idle", "failed", "done", "stopping", "stopped", "unavailable"] as const)
 			.filter((k) => team.counts[k])
 			.map((k) => `${team.counts[k]} ${k}`)
+			.concat(team.ejected ? [`${team.ejected} ejected`] : [])
 			.join(" · ") : "";
 		const lines: string[] = [];
 		lines.push(
@@ -617,7 +618,8 @@ export class TeamModal {
 			// shows the full reason): status detail is repeated there in full too.
 			const statusText = member.status ? ` (${inline(member.status)}${member.taskOutcome ? `/${member.taskOutcome}` : ""})` : "";
 			const unavailable = member.availability === "pruned" ? " · pruned" : member.availability === "previous-session" ? " · history" : "";
-			const line2 = `   ${th.fg("dim", `${member.state}${unavailable}${statusText} · owns: ${member.ownedPaths.map(inline).join(", ") || "none declared"}`)}`;
+			const ejected = member.ejectedAt === undefined ? "" : " · ejected";
+			const line2 = `   ${th.fg("dim", `${member.state}${ejected}${unavailable}${statusText} · owns: ${member.ownedPaths.map(inline).join(", ") || "none declared"}`)}`;
 			rows.push(...this.listRow(line1, line2, width, selected && focused));
 		}
 		return rows;

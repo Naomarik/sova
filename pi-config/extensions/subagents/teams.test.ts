@@ -332,3 +332,116 @@ test("action history is bounded, member-only, previewed and settles once", () =>
 	store.clear();
 	assert.deepEqual(store.views(() => undefined), []);
 });
+
+/** A full session team: r0 (ag_01) plus m0..m22 (ag_10..ag_32), all 24 seats taken. */
+function fullTeam() {
+	const store = new TeamStore();
+	const created = commit(store, "Big", ["r0"]);
+	const members = Array.from({ length: MAX_TEAM_MEMBERS - 1 }, (_, i) => member(i + 10, { role: `m${i}` }));
+	store.commitAdd({ ...created.prepared, members: [] } as any, members);
+	return { store, teamId: created.prepared.teamId };
+}
+const ended: WorkerObservation = { status: "done", processAlive: false, settled: true, finished: true };
+const idle: WorkerObservation = { status: "waiting", taskOutcome: "success", processAlive: true, settled: true, finished: false };
+
+test("eject frees a seat at the cap; the cap error names ejectable members; roles stay reserved", () => {
+	const { store, teamId } = fullTeam();
+	// ag_10 has ended, ag_11 is idle, the rest are gone from the manager (unavailable).
+	const observe = (id: string) => (id === "ag_10" ? ended : id === "ag_11" ? idle : id === "ag_01" ? running : undefined);
+	const full = (() => { try { store.prepareAdd("Big", [{ role: "extra", prompt: "t" }], observe); } catch (e) { return String(e); } return ""; })();
+	assert.match(full, /would exceed 24 members/);
+	assert.match(full, /team_eject: ag_10 \(m0\), ag_12 \(m2\)/, "ended and unavailable members are named");
+	assert.doesNotMatch(full, /ag_01|ag_11 /, "working and idle members are not ejectable");
+
+	const target = store.checkEject("Big", "m0", observe);
+	assert.deepEqual(target, { teamId, workerId: "ag_10", role: "m0" });
+	assert.deepEqual(store.ejectEntry(teamId, "ag_10", 5000), { version: 1, op: "eject", teamId, workerId: "ag_10", at: 5000 });
+	const action = store.commitEject(teamId, "ag_10", 5000, "parent")!;
+	assert.deepEqual([action.kind, action.source, action.state, action.role], ["eject", "parent", "accepted-or-queued", "m0"]);
+	assert.equal(store.commitEject(teamId, "ag_10", 6000, "parent"), undefined, "a second commit changes nothing");
+	assert.equal(store.views(observe)[0].actions.filter((a) => a.kind === "eject").length, 1, "exactly one action row");
+	assert.equal(store.ejectedAt("ag_10"), 5000);
+
+	// The seat is free: one addition fits, two do not.
+	const added = store.prepareAdd("Big", [{ role: "extra", prompt: "t" }], observe);
+	assert.doesNotMatch(added.members[0].spec.prompt, /- m0:/, "an ejected member is not among Other members");
+	assert.match(added.members[0].spec.prompt, /- m1:/);
+	added.release();
+	assert.throws(() => store.prepareAdd("Big", [{ role: "x1", prompt: "t" }, { role: "x2", prompt: "t" }], observe), /exceed 24 members/);
+	// Its role stays taken, in any case or spacing.
+	assert.throws(() => store.prepareAdd("Big", [{ role: " M0 ", prompt: "t" }], observe), /Role M0 already exists/);
+});
+
+test("eject refusals: history, unknown team or member, already ejected, still occupied", () => {
+	const { store, teamId } = fullTeam();
+	const observe = (id: string) => (id === "ag_10" ? running : id === "ag_11" ? idle : id === "ag_12" ? { ...running, status: "stopping" as const, settled: true } : id === "ag_13" ? { ...running, status: "starting" as const } : undefined);
+	assert.throws(() => store.checkEject("team_99", "m0", observe), /No such team: team_99/);
+	assert.throws(() => store.checkEject("Big", "ag_77", observe), /No member ag_77 in team_01/);
+	assert.throws(() => store.checkEject("Big", "nobody", observe), /No member nobody in team_01/);
+	assert.throws(() => store.checkEject("Big", "m0", observe), /m0 \(ag_10\) is still working; stop it with agent_kill first/);
+	assert.throws(() => store.checkEject("Big", "ag_11", observe), /is still idle; stop it with agent_kill first/);
+	assert.throws(() => store.checkEject("Big", "m2", observe), /is still stopping/);
+	assert.throws(() => store.checkEject("Big", "m3", observe), /is still working/, "starting counts as working");
+	store.commitEject(teamId, "ag_14", 1_700_000_000_000, "parent");
+	assert.throws(() => store.checkEject("Big", "m4", observe), /m4 \(ag_14\) was already ejected from team_01 at 2023-11-14T22:13:20Z/);
+	// A history team is read-only, with team_add's wording.
+	const history = new TeamStore();
+	history.restoreHistory([create("team_05", "Old", [member(1)])]);
+	const addRefusal = (() => { try { history.prepareAdd("Old", [{ role: "x", prompt: "t" }]); } catch (e) { return (e as Error).message; } return ""; })();
+	assert.throws(() => history.checkEject("Old", "ag_01", () => undefined), (e: Error) => e.message === addRefusal && /history from an earlier session/.test(e.message));
+});
+
+test("eject entries decode strictly and fold on restore: eject then add past 24 keeps the 25th", () => {
+	const good = { version: 1, op: "eject", teamId: "team_02", workerId: "ag_03", at: 12 };
+	assert.deepEqual(decodeTeamEntry(good), good);
+	assert.deepEqual(decodeTeamEntry({ ...good, members: "ignored" }), good);
+	for (const bad of [
+		{ ...good, teamId: "02" }, { ...good, workerId: "3" }, { ...good, workerId: undefined }, { ...good, at: "12" },
+		{ ...good, at: Number.NaN }, { ...good, version: 2 }, { version: 1, op: "eject" },
+	]) assert.equal(decodeTeamEntry(bad), undefined, JSON.stringify(bad));
+
+	const seats = Array.from({ length: MAX_TEAM_MEMBERS }, (_, i) => member(i + 1, { role: `s${i}` }));
+	const branch = [
+		create("team_02", "Full", seats.slice(0, 12)),
+		entry({ version: 1, op: "add", teamId: "team_02", members: seats.slice(12) }),
+		entry({ version: 1, op: "eject", teamId: "team_02", workerId: "ag_05", at: 40 }),
+		entry({ version: 1, op: "eject", teamId: "team_02", workerId: "ag_05", at: 99 }), // repeat: the first stands
+		entry({ version: 1, op: "eject", teamId: "team_02", workerId: "ag_88", at: 41 }), // not a member: ignored
+		entry({ version: 1, op: "eject", teamId: "team_07", workerId: "ag_01", at: 42 }), // unknown team: ignored
+		entry({ version: 1, op: "add", teamId: "team_02", members: [member(30, { role: "late" })] }),
+		entry({ version: 1, op: "add", teamId: "team_02", members: [member(31, { role: "later" })] }), // over the cap again: dropped
+	];
+	const store = new TeamStore();
+	store.restoreHistory(branch);
+	store.reserveCounter(branch);
+	assert.equal(store.teamCounter, 7, "eject entries reserve their team IDs too");
+	const [view] = store.views(() => undefined);
+	assert.equal(view.members.length, 25);
+	assert.equal(view.members.at(-1)!.workerId, "ag_30", "the member added after the eject survives restore");
+	assert.deepEqual(view.members.filter((m) => m.ejectedAt !== undefined).map((m) => [m.workerId, m.ejectedAt]), [["ag_05", 40]]);
+	assert.equal(view.ejected, 1);
+	assert.equal(view.counts.unavailable, 24, "counts cover seated members only");
+	// Adopting the history team keeps its released seats.
+	assert.ok(store.adoptHistoryTeam("team_02"));
+	assert.equal(store.ejectedAt("ag_05"), 40);
+	assert.throws(() => store.prepareAdd("Full", [{ role: "more", prompt: "t" }]), /exceed 24 members/);
+	assert.throws(() => store.prepareAdd("Full", [{ role: "s4", prompt: "t" }]), /Role s4 already exists/);
+});
+
+test("views carry ejectedAt and leave ejected members out of the state counts", () => {
+	const store = new TeamStore();
+	const { prepared } = commit(store, "T", ["a", "b", "c"]);
+	store.commitEject(prepared.teamId, "ag_02", 77, "user");
+	const [view] = store.views((id) => (id === "ag_01" ? running : ended));
+	assert.deepEqual(view.members.map((m) => m.ejectedAt), [undefined, 77, undefined]);
+	assert.deepEqual(view.counts, { working: 1, idle: 0, failed: 0, done: 1, stopping: 0, stopped: 0, unavailable: 0 });
+	assert.equal(view.ejected, 1);
+	assert.equal(view.members[1].state, "done", "an ejected member keeps its observed state");
+	assert.deepEqual([view.actions[0].kind, view.actions[0].source], ["eject", "user"]);
+	// Siblings: an ejected member is out of broadcasts, and addressing it says why.
+	assert.deepEqual(store.memberInfo("ag_01")!.siblings.map((m) => m.role), ["c"]);
+	assert.throws(() => store.resolveSibling("ag_01", "B"), /b \(ag_02\) was ejected from team_01 at 1970-01-01T00:00:00Z; it no longer receives team messages/);
+	assert.throws(() => store.resolveSibling("ag_01", "ag_02"), /was ejected/);
+	assert.throws(() => store.resolveSibling("ag_01", "zzz"), /Known roles: c\./);
+	assert.equal(store.resolveSibling("ag_01", "c").workerId, "ag_03");
+});

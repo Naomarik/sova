@@ -601,3 +601,36 @@ test("attachTeamWidget passes placement through and themes the factory component
 	assert.ok(lines.some((line) => line.includes("[success]{●}") && line.includes("**")), "member dot and bold role are themed");
 	assert.ok(!lines.some((line) => line.includes("advisory")), "options reach the component");
 });
+
+test("ejected members are hidden like torn-down ones, and counts (which already leave them out) are not reduced twice", () => {
+	const store = new TeamStore();
+	const roles = ["live", "stopped", "gone", "finished", "pruned"];
+	const prepared = store.prepareCreate({ name: "seats", objective: "obj", members: roles.map((role) => ({ role, prompt: "t" })) });
+	store.commitCreate(prepared, 1, prepared.members.map((m, i) => ({
+		workerId: `ag_0${i + 1}`, role: m.role, ownedPaths: m.ownedPaths, backend: "pi", groupId: "run_01", addedAt: 1,
+	})));
+	prepared.release();
+	const running: WorkerObservation = { status: "running", processAlive: true, settled: false, finished: false };
+	const killed: WorkerObservation = { status: "killed", taskOutcome: "aborted", processAlive: false, settled: true, finished: true };
+	const done: WorkerObservation = { status: "done", taskOutcome: "success", processAlive: false, settled: true, finished: true };
+	// ag_03 was killed then pruned, and ejected; ag_04 finished cleanly and was ejected; ag_05 is pruned (not killed).
+	store.recordEviction("ag_03", { status: "killed", taskOutcome: "aborted" });
+	store.recordEviction("ag_05", { status: "done", taskOutcome: "success" });
+	store.commitEject(prepared.teamId, "ag_03", 10, "parent");
+	store.commitEject(prepared.teamId, "ag_04", 11, "parent");
+	const observe = (id: string) => (id === "ag_01" ? running : id === "ag_02" ? killed : id === "ag_04" ? done : undefined);
+	const [view] = store.views(observe);
+	assert.deepEqual(view.counts, { working: 1, idle: 0, failed: 0, done: 0, stopping: 0, stopped: 1, unavailable: 1 });
+	assert.equal(view.ejected, 2);
+	const [shown] = visibleTeams([view]);
+	assert.deepEqual(shown.members.map((m) => m.role), ["live", "pruned"], "the finished-but-ejected member is hidden too");
+	assert.deepEqual(shown.counts, { working: 1, idle: 0, failed: 0, done: 0, stopping: 0, stopped: 0, unavailable: 1 }, "the pruned sibling keeps its count");
+	const widget = new TeamWidget(plainTheme);
+	widget.update([view]);
+	const lines = widget.render(200).map((line) => line.replace(/ +$/g, ""));
+	assert.ok(lines.includes("◆ seats (team_01) · 1 working · 1 unavailable"), lines.join("\n"));
+	assert.ok(!lines.some((line) => /gone|finished/.test(line)));
+	// A team whose every member is ejected or torn down leaves the widget.
+	store.commitEject(prepared.teamId, "ag_05", 12, "parent");
+	assert.deepEqual(visibleTeams(store.views((id) => (id === "ag_01" || id === "ag_02" ? killed : observe(id)))), []);
+});

@@ -1,5 +1,6 @@
 import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
 import type { SlashCommand, UploadResult } from "../../shared/protocol";
+import { runControls } from "../lib/compact";
 import { enterRunsLocal, insertCommand, localCommand, rankCommands, slashMenuSuppressed, slashTokenAt, type SlashToken } from "../lib/slash";
 import { commandOptionIds, SlashMenu } from "./SlashMenu";
 import {
@@ -76,6 +77,8 @@ export function Composer(props: {
   readOnly?: ComposerReason | null;
   blocked?: ComposerReason | null;
   running: boolean;
+  /** A compaction runs (§chat.slash-commands/compact): Stop and the status row, but no Steer. */
+  compacting?: boolean;
   stopping: boolean;
   /** "running bash" / "thinking" / "writing" / "Compacting context" … */
   detail: string | null;
@@ -203,6 +206,7 @@ export function Composer(props: {
   });
 
   const reason = () => props.readOnly ?? props.blocked ?? null;
+  const controls = () => runControls(props.running, !!props.compacting);
   /** TUI-live, connecting, reconnecting: nothing attaches and nothing sends. */
   const disabled = () => !!reason();
   /** What the foot says: the state's reason, else that an attachment is still uploading. */
@@ -721,9 +725,9 @@ export function Composer(props: {
         </Show>
         {/* One row, whichever of the three has something to say (they can coexist: the inputs
             trigger sits at its right end while a turn streams, and alone when nothing runs). */}
-        <Show when={props.running || workersRow() || inputsRow()}>
+        <Show when={controls().status || workersRow() || inputsRow()}>
           <p class="run-status">
-            <Show when={props.running}>
+            <Show when={controls().status}>
               <span class="live-dot" />
               <Show when={!props.stopping} fallback="Stopping…">
                 Working
@@ -975,10 +979,10 @@ export function Composer(props: {
                 aria-describedby={paneId("composer-reason")}
               >
                 <Icon name="arrow-right" small />
-                <span class="button-label">{props.running ? "Steer" : "Send"}</span>
+                <span class="button-label">{controls().steer ? "Steer" : "Send"}</span>
               </button>
             </Show>
-            <Show when={props.running && !props.readOnly}>
+            <Show when={controls().stop && !props.readOnly}>
               {/* Icon only, at every width: the 44px square is the form the actions row already
                   collapses to under 480px, and the run-status row above says "Stopping…" — so the
                   word was repeating what the status row and the glyph already say. */}

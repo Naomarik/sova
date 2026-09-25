@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { COMPACT_COMMAND, compactCommand } from "../../shared/compact";
 import { COMPACT_IMAGES_REFUSAL } from "../../shared/compact";
-import { compactedAnnouncement } from "./compact";
+import { compactedAnnouncement, runControls } from "./compact";
 
 test("only a WHOLE /compact message is one, with its instructions trimmed", () => {
   assert.deepEqual(compactCommand("/compact"), {});
@@ -26,4 +26,11 @@ test("the images refusal is one the menu's own copy can say", () => {
 test("the landed announcement names the count only when there is one", () => {
   assert.equal(compactedAnnouncement(123456), "Compacted 123,456 tokens of context.");
   assert.equal(compactedAnnouncement(0), "Compacted.");
+});
+
+test("a compaction is not a turn: Stop and the status row, never Steer", () => {
+  assert.deepEqual(runControls(false, true), { steer: false, stop: true, status: true });
+  assert.deepEqual(runControls(true, false), { steer: true, stop: true, status: true });
+  assert.deepEqual(runControls(true, true), { steer: true, stop: true, status: true });
+  assert.deepEqual(runControls(false, false), { steer: false, stop: false, status: false });
 });

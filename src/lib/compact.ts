@@ -8,6 +8,15 @@ export const COMPACTING_REASON = "Compacting…";
     The server's own copy for the same refusal. */
 export const COMPACT_STREAMING_REASON = "Stop the turn first, then compact.";
 
+/**
+ * What the composer's run controls show. A compaction is not a turn: nothing to steer, so the
+ * placeholder and the button stay Send's (blocked() is what disables it). But it has a status row
+ * and a Stop that cancels it.
+ */
+export function runControls(running: boolean, compacting: boolean): { steer: boolean; stop: boolean; status: boolean } {
+  return { steer: running, stop: running || compacting, status: running || compacting };
+}
+
 /** One line for the live region when the compaction landed. */
 export function compactedAnnouncement(tokensBefore: number): string {
   return tokensBefore > 0 ? `Compacted ${tokensBefore.toLocaleString("en-US")} tokens of context.` : "Compacted.";

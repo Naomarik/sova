@@ -1368,8 +1368,8 @@ export function ChatView(props: {
         cwd={props.summary?.()?.cwd ?? null}
         blocked={blocked()}
         commands={commands()}
-        // A compaction has no turn, but it has a status line and a Stop that cancels it.
-        running={live.running || compacting()}
+        running={live.running}
+        compacting={compacting()}
         stopping={live.stopping}
         detail={live.activity ?? runDetail(live)}
         workersWorking={workersWorking()}

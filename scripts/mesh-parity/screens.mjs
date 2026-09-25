@@ -79,6 +79,12 @@ export async function captureScreens(browser, base, f, dir) {
         await page.evaluate(() => document.fonts.ready);
         const width = await page.evaluate(() => innerWidth);
         if (width !== viewport.width) throw new Error(`viewport is ${width}, wanted ${viewport.width}`);
+        // The sidebar's host filter must not exist while the mesh is off. Counted only together
+        // with the sidebar's search box, so "absent" cannot come from a sidebar that never rendered.
+        const hostFilter = await page.evaluate(() => ({
+          filter: document.querySelectorAll('.host-filter, [role="radiogroup"][aria-label="Host"]').length,
+          sidebar: document.querySelectorAll('input[type="search"], [role="searchbox"], input[placeholder*="Search" i]').length,
+        }));
         const meshUi = await page.evaluate(() => {
           const nodes = [...document.querySelectorAll("[data-mesh-ui]")];
           for (const n of nodes) n.remove();
@@ -94,7 +100,7 @@ export async function captureScreens(browser, base, f, dir) {
         const aria = await page.locator("body").ariaSnapshot({ timeout: 5000 }).catch((e) => `<ariaSnapshot failed: ${e.message}>`);
         const titles = await page.evaluate(() => [...document.querySelectorAll("[title],[aria-label]")].map((e) => `${e.tagName.toLowerCase()} title=${e.getAttribute("title") ?? ""} label=${e.getAttribute("aria-label") ?? ""}`).join("\n"));
         writeFileSync(join(dir, `${name}.aria.txt`), `${aria}\n--- titles/labels\n${titles}\n`);
-        shots[name] = { png, text, aria: `${aria}\n${titles}`, meshUi, width, url: page.url() };
+        shots[name] = { png, text, aria: `${aria}\n${titles}`, meshUi, hostFilter, width, url: page.url() };
       } catch (err) {
         shots[name] = { error: String(err?.message ?? err) };
       } finally {

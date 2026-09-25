@@ -380,6 +380,8 @@ function compareSides(A, B) {
         record(`screen:${name}:mesh-ui-count(base)`, a.meshUi === 0, `found ${a.meshUi}`);
         const want = expectMeshUi[name] ?? 0;
         record(`screen:${name}:mesh-ui-count(mesh)`, b.meshUi === want, `found ${b.meshUi}, expected ${want}`);
+        if (/^home-/.test(name)) record(`screen:${name}:sidebar-search-present(mesh)`, (b.hostFilter?.sidebar ?? 0) > 0, `search inputs: ${b.hostFilter?.sidebar}`);
+        record(`screen:${name}:no-host-filter(mesh off)`, b.hostFilter?.filter === 0, `host filter elements: ${b.hostFilter?.filter}; sidebar search inputs: ${b.hostFilter?.sidebar}`);
         const ta = mk(A).text(a.text), tb = mk(B).text(b.text);
         record(`screen:${name}:text`, ta === tb, ta === tb ? "" : textDiff(ta, tb));
         // Link targets in the tree are URL-encoded (#/s/%2Fhome%2F…): decode the slashes so the run

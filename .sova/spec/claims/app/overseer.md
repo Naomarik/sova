@@ -98,7 +98,8 @@ sentences come back as the tool's error. Sessions are addressed by id. No tool p
     `apiKey` and headers may be a literal key or a `!command`); Claude Code's
     `~/.claude/.credentials.json` and `~/.claude.json`; `~/.netrc`; `~/.config/gh/hosts.yml`;
   - whole directories: `~/.ssh`, `~/.gnupg`, `~/.aws`, `~/.claude/backups`, `/proc` (every
-    process's environment and command line, the server's own included) and `/sys`;
+    process's environment and command line, the server's own included), `/sys` and `/dev/fd`
+    (the server's own open files; on Linux it resolves into `/proc`, on macOS it does not);
   - names, anywhere on the machine, so a copy is denied like the original (another worktree's
     `.agent/auth.json`, a `.credentials.json.mtn` backup): `auth.json` and `auth.json.*`;
     `.claude.json` and `.claude.json.*`; any name containing `credentials`; `.env` and `.env.*`

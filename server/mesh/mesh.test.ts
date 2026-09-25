@@ -11,6 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, describe, test } from "node:test";
 import { WebSocket, WebSocketServer } from "ws";
+import type { MeshLocalSettings } from "../../shared/mesh-local";
 import type { FrontDoorConfig, MeshCandidate, MeshHello, MeshInfo, MeshSessions, MeshSettings } from "../../shared/protocol";
 
 const tmp = mkdtempSync(join(tmpdir(), "sova-mesh-test-"));
@@ -835,7 +836,7 @@ describe("mesh ON", () => {
     assert.equal((await putJson("/api/mesh/settings", { frontDoorExclude: ["nobody"] }))[0], 400);
     assert.equal((await putJson("/api/mesh/settings", { frontDoorExclude: ["phone", "phone"] }))[0], 400);
     assert.equal((await putJson("/api/mesh/settings", { frontDoorExclude: [self, "b", "phone"] }))[0], 400, "never every host");
-    const [s, settings] = await putJson<MeshSettings>("/api/mesh/settings", { frontDoorExclude: ["phone"] });
+    const [s, settings] = await putJson<MeshLocalSettings>("/api/mesh/settings", { frontDoorExclude: ["phone"] });
     assert.deepEqual([s, settings.frontDoorExclude, stored()], [200, ["phone"], ["phone"]]);
     [, fd] = await getJson<FrontDoorConfig>("/api/mesh/front-door");
     assert.deepEqual(fd.order.map((h) => h.id), [self, "b"]);
@@ -847,10 +848,10 @@ describe("mesh ON", () => {
       ],
     });
     assert.deepEqual(stored(), ["phone"], "a peers PUT keeps it");
-    let [, cleared] = await putJson<MeshSettings>("/api/mesh/settings", { frontDoorExclude: [] });
+    let [, cleared] = await putJson<MeshLocalSettings>("/api/mesh/settings", { frontDoorExclude: [] });
     assert.deepEqual([cleared.frontDoorExclude, stored()], [undefined, undefined]);
     await putJson("/api/mesh/settings", { frontDoorExclude: ["b"] });
-    [, cleared] = await putJson<MeshSettings>("/api/mesh/settings", { frontDoorExclude: null });
+    [, cleared] = await putJson<MeshLocalSettings>("/api/mesh/settings", { frontDoorExclude: null });
     assert.deepEqual([cleared.frontDoorExclude, stored()], [undefined, undefined]);
   });
 

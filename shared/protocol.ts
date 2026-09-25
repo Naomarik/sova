@@ -2463,10 +2463,6 @@ export interface MeshSettings {
       peers.json order (this host first); ids that are no longer hosts are skipped. Absent = that
       default order. */
   frontDoorOrder?: string[];
-  /** Hosts left out of the front door (ids, this host possible), e.g. a phone with no tailscale
-      serve. Absent = every host is an upstream. In a PUT, null or [] clears it; leaving out every
-      host is refused. */
-  frontDoorExclude?: string[] | null;
   /** This host's browser-facing address (its front-door upstream), when not
       https://<its MagicDNS name>:8443. null clears it. */
   serveUrl?: string | null;

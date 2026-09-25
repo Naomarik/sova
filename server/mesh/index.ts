@@ -13,6 +13,7 @@ import type {
   SyncCategory,
   SyncStatus,
 } from "../../shared/protocol";
+import type { MeshLocalSettings } from "../../shared/mesh-local";
 import { frontDoorConfig } from "./front-door";
 import { ownHello, probeHello, probePeer, peerLastSeen, PROBE_TIMEOUT_MS } from "./hello";
 import { type ListenerDeps, PeerListener } from "./listener";
@@ -192,7 +193,7 @@ function pinnedLoginKinds(): "all" | "api-keys" | null {
 }
 let warnedLoginKinds = false;
 
-export function readMeshSettings(config: PeersConfig | null = rt.config): MeshSettings {
+export function readMeshSettings(config: PeersConfig | null = rt.config): MeshLocalSettings {
   const c = config ?? emptyConfig();
   const pinned = pinnedLoginKinds();
   const loginKinds = pinned ?? c.loginKinds;
@@ -433,7 +434,7 @@ async function putPeers(c: Context): Promise<Response> {
 }
 
 async function putSettings(c: Context): Promise<Response> {
-  let body: Partial<MeshSettings>;
+  let body: Partial<MeshLocalSettings>;
   try {
     body = await c.req.json();
   } catch {

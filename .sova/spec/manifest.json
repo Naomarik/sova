@@ -1904,24 +1904,28 @@
     "§app.overseer/caps": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "verified",
       "code": [
         "server/overseer-tools.ts",
-        "server/overseer-store.ts"
+        "server/overseer-store.ts",
+        "server/overseer-redact.ts"
       ],
       "requires": []
     },
     "§app.overseer/confirm": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "verified",
       "code": [
         "server/overseer-tools.ts",
         "src/components/OverseerCards.tsx",
         "src/lib/overseer.ts",
-        "src/components/Thread.tsx"
+        "src/components/Thread.tsx",
+        "server/overseer-redact.ts"
       ],
-      "requires": []
+      "requires": [
+        "§app.overseer/tools"
+      ]
     },
     "§app.overseer/dialog-answers": {
       "kind": "behavior",
@@ -1956,13 +1960,16 @@
     "§app.overseer/hosting": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "verified",
       "code": [
         "server/overseer.ts",
         "server/chat-manager.ts",
-        "server/overseer-prompt.md"
+        "server/overseer-prompt.md",
+        "server/overseer-redact.ts"
       ],
-      "requires": []
+      "requires": [
+        "§app.overseer/tools"
+      ]
     },
     "§app.overseer/identity-and-clear": {
       "kind": "behavior",
@@ -2017,13 +2024,15 @@
     "§app.overseer/proactivity": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "verified",
       "code": [
         "server/overseer.ts",
-        "src/components/OverseerView.tsx"
+        "src/components/OverseerView.tsx",
+        "server/overseer-redact.ts"
       ],
       "requires": [
-        "§app.overseer/attention-digest"
+        "§app.overseer/attention-digest",
+        "§app.overseer/tools"
       ]
     },
     "§app.overseer/quick-actions": {
@@ -2068,23 +2077,30 @@
     "§app.overseer/standing-notes": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "verified",
       "code": [
         "server/overseer-store.ts",
         "server/overseer-tools.ts",
-        "server/index.ts"
+        "server/index.ts",
+        "server/overseer-redact.ts",
+        "server/overseer.ts"
       ],
-      "requires": []
+      "requires": [
+        "§app.overseer/tools"
+      ]
     },
     "§app.overseer/tools": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "verified",
       "code": [
         "server/overseer-tools.ts",
         "server/overseer-deny.ts",
         "server/overseer-file-tools.ts",
-        "server/overseer-prompt.md"
+        "server/overseer-prompt.md",
+        "server/overseer-redact.ts",
+        "server/overseer.ts",
+        "server/overseer-store.ts"
       ],
       "requires": [
         "§app.overseer/caps"

@@ -52,7 +52,9 @@ log) and `seen.json` (the seen store). All writes are atomic tmp+rename.
 - **Prompt.** A repo-owned prompt file (`server/overseer-prompt.md`) says what the Overseer is,
   every tool, its scope and its rules. It is **appended** through the resource loader's
   append-override, so the user's own `APPEND_SYSTEM.md` is kept. The standing notes and the limits
-  ride inside it, and the user's **extra system prompt** from Settings is appended after it.
+  ride inside it, and the user's **extra system prompt** from Settings is appended after it. Both the
+  notes and the extra prompt are redacted (§app.overseer/tools) as they are put in: a secret value in
+  either reaches the model as `[redacted]`.
 - **Live.** The notes, the limits and the extra system prompt are read again at the start of every
   run, so a `sova_note`, a notes edit or a Settings save reaches the Overseer from its next run (the
   next message, brief or wake-up), with no `/clear`. A run an extension's message starts (an
@@ -86,17 +88,48 @@ sentences come back as the tool's error. Sessions are addressed by id. No tool p
 - **TUI-live sessions are read-only**: every act on one is refused.
 - **Files: anywhere but credentials.** The Overseer's `read`, `grep`, `find` and `ls` reach any
   file on the machine except secret files, which none of them reads, lists or matches:
-  `auth.json` and `models.json` anywhere under `~/.pi` and under the active agent dir (pi's stored
-  keys; the model registry, whose `apiKey` and headers may be a literal key or a `!command`),
-  Claude Code's `~/.claude/.credentials.json` and `~/.claude.json`, `~/.ssh`, `~/.gnupg`,
-  `~/.aws`, `~/.netrc`, `~/.config/gh/hosts.yml`, and `.env`/`.env.*` files anywhere except
-  `.env.example` and `.env.sample`. A path is checked as written, with `..` resolved, and at its
-  realpath, so a symlink or a `..` can't reach a secret under another name; a fixed file's own
-  symlink target is secret too. A path that names one is refused with "That file holds
-  credentials; the Overseer can't read it."; a search or listing from a parent directory (`~`,
-  `~/.pi`) leaves them out of its results, uncounted. The list is kept in one place in the server,
-  and the Overseer's prompt states it. Only the Overseer's tools are guarded; every other session
-  keeps pi's own.
+  - fixed places: `auth.json` and `models.json` in `~/.pi/agent` and in the active agent dir, and
+    `models.json` anywhere under `~/.pi` and under the active agent dir (the model registry, whose
+    `apiKey` and headers may be a literal key or a `!command`); Claude Code's
+    `~/.claude/.credentials.json` and `~/.claude.json`; `~/.netrc`; `~/.config/gh/hosts.yml`;
+  - whole directories: `~/.ssh`, `~/.gnupg`, `~/.aws`, `~/.claude/backups`, `/proc` (every
+    process's environment and command line, the server's own included) and `/sys`;
+  - names, anywhere on the machine, so a copy is denied like the original (another worktree's
+    `.agent/auth.json`, a `.credentials.json.mtn` backup): `auth.json` and `auth.json.*`;
+    `.claude.json` and `.claude.json.*`; any name containing `credentials`; `.env` and `.env.*`
+    except `.env.example` and `.env.sample`; `id_*` except `*.pub`; `*.pem`, `*.key`, `*.p12`,
+    `*.pfx`; `.netrc`; `.pgpass`;
+  - hard links: a file with the same device and inode as one of the fixed files, whatever its name.
+
+  A path is checked as written, with `..` resolved, and at its realpath, so a symlink or a `..`
+  can't reach a secret under another name (a symlink to a copy is denied by the copy's name); a
+  fixed file's own symlink target is secret too. A path that names one is refused with "That file
+  holds credentials; the Overseer can't read it."; a search or listing from a parent directory
+  (`~`, `~/.pi`) leaves them out of its results, uncounted. The list is kept in one place in the
+  server, and the Overseer's prompt names every entry. Only the Overseer's tools are guarded; every
+  other session keeps pi's own.
+- **Secret values are redacted everywhere the Overseer reads or writes.** Where the file rules
+  can't reach (a key copied into an ordinary file, a token a session printed into its transcript),
+  every occurrence of a known secret value becomes `[redacted]`. The values are read by the server
+  from pi's `auth.json` in `~/.pi/agent` and in the active agent dir (every value), Claude Code's
+  `~/.claude/.credentials.json` (every value but the descriptive fields: scopes, subscription type,
+  rate-limit tier) and `~/.claude.json`'s `primaryApiKey`, the literal `apiKey` and header values
+  in both `models.json` files (the literal parts of a `$NAME` template; a `!command` is never run
+  and never taken as a value), and the server's environment variables whose name contains `KEY`,
+  `TOKEN`, `SECRET`, `PASSWORD` or `AUTH` (not `AUTHOR`/`AUTHORITY`). A value counts only when it
+  is at least 12 characters and not a boolean, a number, a path or a URL without credentials. A
+  secret cut short at either end (a truncated transcript row, `sk-…`) is redacted from 16 of its
+  characters on. The values are kept in memory, re-read only when a file's mtime, size or inode (or
+  the environment) changes, and never logged or sent anywhere.
+  - **Every Overseer tool** goes through one wrapper, so a tool added later is covered by default:
+    its result (text and details, partial updates, an error's message; an image's bytes are left
+    alone) is redacted, and so are its arguments before it runs, so what a tool stores or sends
+    (notes, a confirm card, a prompt to another session, the action log) never holds a value.
+    `read`, `grep`, `find` and `ls` keep their arguments as given (they store nothing, and a
+    redacted pattern would be a different search); what they return is redacted.
+  - The standing notes and the extra system prompt are redacted when they are put into the prompt
+    (§app.overseer/hosting), and a brief's body is too (§app.overseer/proactivity).
+  - Only the Overseer is redacted; other sessions and pi-config are unchanged.
 - **Runs the user did not start are read-only.** Who a run belongs to is decided per run, as the
   user turn in §app.overseer/caps. **Every run starts unattended**, whatever the run before it was,
   and it becomes the user's only when a message the user sent from the UI (typed, a quick action, a
@@ -137,6 +170,8 @@ dangerous enough to ask.
 - The chat renders that tool call as a **confirm card** in the thread: title, detail, and one button
   per option.
 - A click sends the option's reply as the next user message.
+- Its title, detail and options never hold a secret value: the arguments are redacted before the
+  card is built, so a card shows `[redacted]` in its place (§app.overseer/tools).
 - Once any later user message exists, the card shows as answered (the chosen option marked when the
   message matches one) and its buttons are disabled. Because the state is read from the transcript,
   it survives reloads and server restarts.
@@ -169,7 +204,8 @@ dangerous enough to ask.
 - Over a cap, the tool refuses with a message telling the model to stop and ask with `sova_confirm`
   or explain, and not to schedule a wake-up to carry on. Nothing partial happens past the cap.
 - Every act tool call appends one line to `overseer-actions.jsonl`: time, Overseer id, tool call id,
-  tool, arguments, outcome and error.
+  tool, arguments, outcome and error. The arguments and the error are redacted before the line is
+  written (§app.overseer/tools), so the log never holds a secret value.
 
 ## §app.overseer/sent-marker — Prompts the Overseer sent
 
@@ -264,7 +300,8 @@ Three modes, cycled with a control on the Overseer page and set in Settings: **O
 - **Off:** no badge polling side effects; the button shows no attention count.
 - **Badge Only:** the attention badge only. It costs no tokens.
 - **Brief Me:** when a **new** needs-you item appears and the Overseer is idle, the server starts
-  one Overseer turn, at most once per 10 minutes. Its prompt is tagged `[overseer-brief]`, renders
+  one Overseer turn, at most once per 10 minutes. Its prompt (the blockers' titles and details, from
+  other sessions) is redacted like any tool output (§app.overseer/tools); it is tagged `[overseer-brief]`, renders
   as a machine row ("Brief · <time>") with its body under it as markdown (the blockers as a list, each
   an in-app session link), and never navigates any tab. A brief turn is not a user turn: it is
   read-only (§app.overseer/tools), so it can report and offer a `sova_confirm` card but never act,
@@ -273,8 +310,9 @@ Three modes, cycled with a control on the Overseer page and set in Settings: **O
 ## §app.overseer/standing-notes — Standing notes
 
 `overseer-notes.md` holds standing instructions that survive `/clear`. The `sova_note` tool
-appends to it or replaces it, and it is editable in Settings → Overseer. Its text is included in the
-Overseer's prompt (capped), read again at the start of every run, so an edit applies from the next
+appends to it or replaces it, and it is editable in Settings → Overseer. `sova_note` stores a
+secret value as `[redacted]` (§app.overseer/tools); a user's own edit is stored as typed, and reaches
+the prompt redacted. Its text is included in the Overseer's prompt (capped), read again at the start of every run, so an edit applies from the next
 run (§app.overseer/hosting). No Settings save deletes a note `sova_note` wrote: a save leaves the file
 alone unless the user edited the notes; a note the Overseer appended meanwhile is kept after the
 user's edit; and if the Overseer rewrote them meanwhile the save refuses and says so. `PUT

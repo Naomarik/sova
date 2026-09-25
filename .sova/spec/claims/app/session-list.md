@@ -19,7 +19,7 @@
     <label class="visually-hidden" for="session-search">Search sessions</label>
     <div class="search">
       <svg class="icon" aria-hidden="true">…search…</svg>
-      <input class="input" id="session-search" type="search" placeholder="Title, folder, or model"
+      <input class="input" id="session-search" type="search" placeholder="Title, folder, or tag"
              aria-describedby="session-count" autocomplete="off" spellcheck="false">
       <!-- only when the query is non-empty -->
       <button class="button button-icon" type="button" aria-label="Clear Search">…close…</button>
@@ -57,8 +57,9 @@
                     2h ago · claude-opus-5                        ◔
             2├──30px──┤2├───────── 270 at a 320px sidebar ─────────┤
 
-             Line 1 is the title and nothing else — the rail exists because
-             chips beside the title cost it width. Lines 2 and 3 each carry
+             Line 1 is the title and no indicator — the rail exists because
+             chips beside the title cost it width. Only inline marks may lead
+             it (below: the unread dot, then the needs-you mark). Lines 2 and 3 each carry
              ONE indicator on a shared right edge: the topic count on the
              "now" line, the context ring on the meta line.
         -->
@@ -81,6 +82,29 @@
           </div>
           <a class="list-row list-row-interactive session-row" href="#/s/…" aria-current="page">
             <div class="list-main">
+              <!-- line 1 may lead with inline marks, each aria-hidden with its words in a hidden span:
+                   the unread dot (§app.overseer/seen), then at most ONE needs-you mark
+                   (§app.decisions/attention-signals), the most urgent kind first:
+                     task-failed  alert-circle, --status-error   "Task failed. "     (a subagent's: "A subagent failed. ")
+                     asks-you     chat,         --color-accent   "Asks you. "
+                     looping      refresh,      --status-warn    "May be looping. "  (a subagent's: "A subagent may be stuck. ")
+                   The kind comes from the server (the session's `signals.kinds`, and its subagents'
+                   `workerSignals` counts); kind precedence first, then the session's own signal over
+                   its subagents'. The glyph sits in a span whose `title` says the fact in one sentence
+                   ("The last reply asks you something.", "The last turn looks like it failed.", "The
+                   last turn looks like it went in circles.", "A subagent finished without doing the
+                   task.", "A subagent looks stuck.").
+                   Kinds differ in glyph as well as tone. The session's own mark is gone once the session
+                   is seen after it was classified, and no mark shows while this tab runs a turn there.
+                   Both marks are hidden on the open session,
+                   so this row (the open one) has neither; on another row line 1 reads:
+                   <p class="list-title"><span class="session-unread" aria-hidden="true"></span><span
+                     class="visually-hidden">New activity. </span><span class="session-signal-wrap"
+                     title="The last reply asks you something."><span class="icon icon-sm session-signal
+                     session-signal-asks" style="--icon:url(/icons/chat.svg)" aria-hidden="true"></span></span><span
+                     class="visually-hidden">Asks you. </span>{title}</p>
+                   The subagent marks come only from `workerSignals`, which the server sends only while
+                   they apply. -->
               <p class="list-title">Add a watch endpoint for TUI sessions</p>
               <!-- line 2: the "now" line, then the outline's topic count -->
               <div class="list-line list-summary-row">
@@ -88,11 +112,15 @@
                 <span class="chip chip-count session-topics" title="7 topics in this session">
                   <span class="text-num">7</span></span>
               </div>
-              <!-- line 3: time and model, then the context ring. A remote row opens the line with its
+              <!-- line 3: time, the tag's status word when there is one (§app.decisions/session-tags:
+                   done, in progress, abandoned, blocked — lowercase, the meta's own muted voice, no
+                   tone), and model, then the context ring. A tagged row's `.list-meta` has the `title`
+                   "Topic: bug fix · status: in progress (tagged automatically)" ("Status: done (tagged
+                   automatically)" without a topic); the topic shows nowhere else on the row. A remote row opens the line with its
                    own mark (§app/session-list "Remote sessions"): one 6px muted dot before the time. Local rows
                    open with the time, as here. -->
               <div class="list-line list-meta-row">
-                <p class="list-meta">2h ago · <span class="text-mono" title="anthropic/claude-opus-5">claude-opus-5</span></p>
+                <p class="list-meta">2h ago · <span class="session-status-word">in progress</span> · <span class="text-mono" title="anthropic/claude-opus-5">claude-opus-5</span></p>
                 <span class="context-ring {context-warn|context-error}" title="{the head's exact sentence}">
                   <svg viewBox="0 0 12 12" aria-hidden="true">
                     <circle class="context-ring-track" cx="6" cy="6" r="5" fill="none"/>
@@ -1199,8 +1227,10 @@ after).
 
 ## §app.session-list/search — Search
 
-- **Matching.** Case-insensitive substring match on `title`, `cwd`, and `model`, filtered on the
-  client as the user types (no debounce needed for fewer than 2k rows).
+- **Matching.** Case-insensitive substring match on `title`, `cwd`, `model`, and the session's
+  tags (§app.decisions/session-tags: its topic and status, as stored and as displayed — `bugfix`
+  and "bug fix", `in_progress` and "in progress" — and its manual tags), filtered on the client as
+  the user types (no debounce needed for fewer than 2k rows). Without tags, a row matches as before.
 - **Empty groups.** A group with no matching rows is hidden, and so is a region with none.
 - **Both regions.** The query filters the top region and the Archive alike. While the query is
   non-empty, the Archive is forced open so matches are never hidden in a collapsed region.
@@ -1223,7 +1253,7 @@ after).
 | Loading (first fetch, after 300ms) | 6 × `<div class="skeleton skeleton-row">` inside `.sidebar-list`, separated by `--space-2`. Put `aria-busy="true"` on the `nav`. Nothing appears before 300ms |
 | Error | `.banner.banner-error` at `--space-3` inset, with `alert-circle`. Title: "Couldn't read your sessions." Body: "`~/.pi/agent/sessions` wasn't changed. Check the server is running, then retry." `.banner-action`: `<button class="button button-sm">Retry</button>`. If rows loaded earlier, keep them visible below the banner |
 | Empty (0 sessions on disk) | `.empty`. Title: "0 sessions in `~/.pi/agent/sessions`." Body: "Start one here, or run `pi` in a terminal. It'll show up in this list." One `.empty-action`: `New Session` (secondary) |
-| No matches | `.empty`. Title: "0 of 48 match “{query}”." Body: "We search titles, folders, and models." Action: `<button class="button">Clear Search</button>` |
+| No matches | `.empty`. Title: "0 of 48 match “{query}”." Body: "We search titles, folders, models, and tags." Action: `<button class="button">Clear Search</button>` |
 
 ## §app.session-list/tokens — Tokens
 

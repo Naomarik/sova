@@ -83,7 +83,9 @@
         "src/components/Sidebar.tsx",
         "src/design/base.css",
         "src/lib/folder-open.ts",
-        "src/lib/storage-keys.ts"
+        "src/lib/storage-keys.ts",
+        "src/lib/signals.ts",
+        "src/lib/signals.test.ts"
       ]
     },
     "§app.session-list/archive-by-date": {
@@ -143,9 +145,10 @@
     "§app.session-list/search": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "verified",
       "code": [
-        "src/components/Sidebar.tsx"
+        "src/components/Sidebar.tsx",
+        "src/lib/signals.ts"
       ]
     },
     "§app.session-list/selecting-several-sessions": {
@@ -155,8 +158,11 @@
     },
     "§app.session-list/states": {
       "kind": "behavior",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "src/components/Sidebar.tsx"
+      ]
     },
     "§app.session-list/tokens": {
       "kind": "note",
@@ -337,7 +343,7 @@
     "§app/settings-dialog": {
       "kind": "surface",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "reviewed",
       "code": [
         "src/components/SettingsDialog.tsx",
         "src/lib/settings-nav.ts"
@@ -947,7 +953,7 @@
     "§design.copy-deck/sidebar": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "verified"
+      "evidence": "reviewed"
     },
     "§design.copy-deck/slash-commands": {
       "kind": "note",
@@ -2178,8 +2184,10 @@
       "evidence": "reviewed",
       "code": [
         "server/attention.ts",
+        "server/live.ts",
         "server/overseer.ts",
-        "server/live.ts"
+        "server/signals-store.ts",
+        "server/attention.test.ts"
       ],
       "requires": [
         "§app.overseer/seen"
@@ -2376,7 +2384,7 @@
     "§app.overseer/tools": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "server/overseer-tools.ts",
         "server/overseer-deny.ts",
@@ -2384,7 +2392,8 @@
         "server/overseer-prompt.md",
         "server/overseer-redact.ts",
         "server/overseer.ts",
-        "server/overseer-store.ts"
+        "server/overseer-store.ts",
+        "server/overseer-redact.test.ts"
       ],
       "requires": [
         "§app.overseer/caps"
@@ -2509,6 +2518,165 @@
         "server/mesh/index.ts",
         "server/mesh/localapi.ts"
       ]
+    },
+    "§app.decisions/attention-signals": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/attention-signals.ts",
+        "server/signals-store.ts",
+        "server/chat-manager.ts",
+        "server/sessions-index.ts",
+        "server/index.ts",
+        "server/attention-signals.test.ts",
+        "server/signals-store.test.ts"
+      ],
+      "requires": [
+        "§app.decisions/interface",
+        "§app.decisions/privacy",
+        "§app.overseer/seen"
+      ]
+    },
+    "§app.decisions/backfill": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/tags-backfill.ts",
+        "server/session-tags.ts",
+        "server/tags-backfill.test.ts"
+      ],
+      "requires": [
+        "§app.decisions/session-tags"
+      ]
+    },
+    "§app.decisions/interface": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "server/decide.ts",
+        "server/decide.test.ts",
+        "server/decide-fake.ts"
+      ],
+      "requires": []
+    },
+    "§app.decisions/key": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "server/decide-secret.ts",
+        "server/decide-routes.ts",
+        "server/overseer-redact.ts"
+      ],
+      "requires": []
+    },
+    "§app.decisions/privacy": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "server/decide-settings.ts",
+        "server/decide-runtime.ts",
+        "server/attention-signals.ts",
+        "server/session-tags.ts",
+        "server/overseer-redact.ts",
+        "server/decide-settings.test.ts",
+        "server/overseer-redact.test.ts"
+      ],
+      "requires": [
+        "§app.decisions/providers"
+      ]
+    },
+    "§app.decisions/providers": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "server/decide-jev.ts",
+        "server/decide-llm.ts",
+        "server/decide-chain.ts",
+        "server/decide-runtime.ts",
+        "server/decide-chain.test.ts",
+        "server/decide-jev.test.ts",
+        "server/decide-llm.test.ts"
+      ],
+      "requires": [
+        "§app.decisions/interface",
+        "§app.settings-dialog/models"
+      ]
+    },
+    "§app.decisions/push": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/ws.ts",
+        "server/session-feed.ts",
+        "src/lib/session-feed.ts",
+        "src/components/Sidebar.tsx",
+        "server/session-feed.test.ts",
+        "src/lib/summary-diff.ts",
+        "src/lib/summary-diff.test.ts"
+      ],
+      "requires": [
+        "§app.decisions/attention-signals",
+        "§app.decisions/session-tags"
+      ]
+    },
+    "§app.decisions/session-tags": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/session-tags.ts",
+        "server/sessions-index.ts",
+        "server/session-tags.test.ts"
+      ],
+      "requires": [
+        "§app.decisions/interface",
+        "§app.decisions/privacy"
+      ]
+    },
+    "§app.settings-dialog/decisions": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "src/components/DecisionSettings.tsx",
+        "src/lib/decision-form.ts",
+        "src/lib/decision-draft.ts",
+        "src/lib/api.ts",
+        "src/lib/settings-nav.ts",
+        "src/components/SettingsDialog.tsx",
+        "server/decide-settings.ts",
+        "server/decide-routes.ts",
+        "src/lib/decision-form.test.ts"
+      ],
+      "requires": [
+        "§app.decisions/providers",
+        "§app.decisions/key",
+        "§app.decisions/privacy",
+        "§app.decisions/backfill",
+        "§app.settings-dialog/modes",
+        "§design.copy-deck/settings-decisions"
+      ]
+    },
+    "§app/decisions": {
+      "kind": "surface",
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "shared/protocol.ts",
+        "server/decide.ts"
+      ]
+    },
+    "§design.copy-deck/settings-decisions": {
+      "kind": "note",
+      "authority": "accepted",
+      "evidence": "reviewed"
     }
   },
   "boundary": {

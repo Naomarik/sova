@@ -127,6 +127,15 @@ sentences come back as the tool's error. Sessions are addressed by id. No tool p
   secret cut short at either end (a truncated transcript row, `sk-…`) is redacted from 16 of its
   characters on. The values are kept in memory, re-read only when a file's mtime, size or inode (or
   the environment) changes, and never logged or sent anywhere.
+  The Jev key file (§app.decisions/key) is one of these sources. Secrets no file names are
+  also recognised by their shape and replaced: PEM private-key blocks (to their END line, or the
+  end of a cut text), `sk-…` keys (16+ characters with a digit), GitHub `ghp_`/`gho_`/`ghu_`/
+  `ghs_`/`ghr_` and `github_pat_` tokens, AWS `AKIA`/`ASIA` key ids, Slack `xox?-` tokens, JWTs,
+  and the token after `Bearer ` (the word stays). In `NAME=value` (env lines, flags, query
+  strings) and `"name": "value"` (JSON), where the name contains key, token, secret, password,
+  passwd, auth (not author…) or credential, the value is replaced and the name stays. A value
+  that is only a number, a boolean, null/none or empty is never replaced. Paths, short git
+  hashes, `key: value` prose and fields such as author, authority or keywords are left alone.
   - **Every Overseer tool** goes through one wrapper, so a tool added later is covered by default:
     its result (text and details, partial updates, an error's message; an image's bytes are left
     alone) is redacted, and so are its arguments before it runs, so what a tool stores or sends
@@ -138,7 +147,8 @@ sentences come back as the tool's error. Sessions are addressed by id. No tool p
   - Messages an extension puts into the Overseer's context (a worker's or explorer's report, an
     `/explain` result) are redacted in every request the model gets; the session file keeps them
     as they came, for the user.
-  - Only the Overseer is redacted; other sessions and pi-config are unchanged.
+  - Only the Overseer is redacted; other sessions and pi-config are unchanged. (Decisions runs
+    the same redactor over what it sends, §app.decisions/privacy.)
 - **Runs the user did not start are read-only.** Who a run belongs to is decided per run, as the
   user turn in §app.overseer/caps. **Every run starts unattended**, whatever the run before it was,
   and it becomes the user's only when a message the user sent from the UI (typed, a quick action, a
@@ -242,8 +252,10 @@ dangerous enough to ask.
 
 ## §app.overseer/attention-digest — The attention digest
 
-A server-side digest, built with no LLM from live records, summaries, held-chat state and the seen
-store. It is memoised for about 3 seconds and never includes the Overseer itself.
+A server-side digest, built with no model call from live records, summaries, held-chat state, the
+seen store and — when attention signals are on — the signals store (§app.decisions/attention-signals),
+which it reads and never fills. It is memoised for about 3 seconds and never includes the Overseer
+itself.
 
 - **Needs you (act):** a dialog open (`activity.state` needs-input, own and foreign, or a hosted
   pending dialog); an errored turn (`activity.state` error); a worker that ended in an error. A
@@ -254,6 +266,18 @@ store. It is memoised for about 3 seconds and never includes the Overseer itself
   for size, the time this server saw the error count rise stands in (in memory, so after a restart
   such an error shows again until the session is seen). A session never seen, or an error of
   unknown time, still shows. This holds for archived sessions too.
+- **Needs you, from signals** (§app.decisions/attention-signals, only while the list carries them):
+  `asks-you` ("Asks you: {sentence}", the last question among the reply's last three sentences,
+  else its last sentence — a sentence ends at `.`, `!` or `?` (and any closing quote or bracket)
+  followed by a space or the end, so `notes.md` is not an end — code skipped, ≤160 characters, redacted; without one "The last reply asks
+  you something."); `task-failed` for the session's own turn ("The last turn looks like it failed."
+  then the reply's last sentence when there is one) and for subagents ("{n} subagent(s) finished
+  without doing the task."), one item; `looping` for stuck subagents ("A subagent looks stuck:
+  {name}.", "Subagents look stuck: {a}, {b}.", else "{n} subagents look stuck."; adding " The last
+  turn looks like it went in circles too." when it does), one item. A main session's own
+  `looping`, alone, is **Finished (decide)**: "The last turn looks like it went in circles." The
+  sentence and the names are stored with the signal and reach only the digest, never the session
+  list or the feed. With the feature off, none of these appear.
 - **Finished (decide):** replied since last seen and now idle; idle with an unsent draft or queued
   input.
 - **FYI:** running now; context at or above 85%; idle web sessions older than 3 days that aren't

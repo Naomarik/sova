@@ -10,7 +10,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 |---|---|
 | Pane resizer (§app/shell) | `aria-label` "Resize the sessions pane" · `title` "Drag to resize · Double-click to reset" — the title is the only place the two gestures are named, and it is pointer-only copy for a pointer-only control |
 | Search label (visually hidden) | Search sessions |
-| Search placeholder | Title, folder, or model |
+| Search placeholder | Title, folder, or tag (model still matches; the placeholder must fit the 320px field) |
 | Count | `{n} sessions` · filtered: `{visible} of {total} sessions` |
 | TUI count chip (count row under search) | `{n} TUI` (only when n ≥ 1), static — a count is not work in flight. `title`: "Sessions open in a TUI" |
 | Row TUI chip (rail) | `TUI`, static, no dot · `aria-label` (replaces the visible word in the accessible name): "Open in a TUI. Pid {pid}, status {status}." · `title`: "Open in a TUI · pid {pid} · {status}" · tap: the `title` as a toast |
@@ -18,6 +18,11 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Row worker count (rail) | `{n}` + worker icon · `aria-label` and `title`: "{n} subagents working now" |
 | Row link hidden suffix | ", open in a TUI" · ", pi is replying in this session" · ", {n} subagents working now" |
 | Folder head, an agent at work in it | Busy's dot, wordless, pulsing · `title`: "An agent is working in this folder" · hidden clause in the heading: ", an agent is working here" |
+| Row unread dot (line 1) | wordless accent dot · hidden: "New activity. " |
+| Row needs-you mark (line 1, after the unread dot; one per row, §app.decisions/attention-signals) | wordless glyph · hidden: task-failed "Task failed. " · asks-you "Asks you. " · looping "May be looping. " · a failed subagent "A subagent failed. " · a stuck subagent "A subagent may be stuck. " · `title`: "The last reply asks you something." · "The last turn looks like it failed." · "The last turn looks like it went in circles." · "A subagent finished without doing the task." · "A subagent looks stuck." |
+| Row meta title, when tagged | Topic: {topic word} · status: {status word} (tagged automatically) · without a topic: Status: {status word} (tagged automatically) |
+| Row status word (line 3, between time and model) | done · in progress · abandoned · blocked (lowercase) |
+| Topic words (search; §app.decisions/session-tags) | feature · bug fix · refactor · tests · docs · infra · research · planning · review · data · config · experiment · chore · other |
 | Untitled row | Untitled (muted) |
 | Draft row (a never-sent session with a stored draft) | title Untitled (muted) · line 2: `pencil` icon, then the draft's first non-empty line, about 80 characters · image-only: `1 image` / `2 images` · accessible name and `title`: Draft: {preview} |
 | Top region head | Live & web · {n} · searching: Live & web · {hits} of {total} |
@@ -41,7 +46,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Loading | skeleton only, no text |
 | Error banner | **Couldn't read your sessions.** `~/.pi/agent/sessions` wasn't changed. Check the server is running, then retry. · button: `Retry` |
 | Empty (0 on disk) | **0 sessions in `~/.pi/agent/sessions`.** Start one here, or run `pi` in a terminal. It'll show up in this list. · button: `New Session` |
-| No matches | **0 of {total} match “{query}”.** We search titles, folders, and models. · button: `Clear Search` |
+| No matches | **0 of {total} match “{query}”.** We search titles, folders, models, and tags. · button: `Clear Search` |
 
 ## §design.copy-deck/main-pane — Main pane
 
@@ -414,6 +419,36 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Buttons | Reset to Defaults · Discard Changes · Save Changes (Saving…) |
 | Announcement | Delegate routing saved. Chats in Delegate use it from their next message. |
 | Footnote | Stored in `~/.pi/agent/mode-delegate.json`, shared with pi in the terminal. |
+
+## §design.copy-deck/settings-decisions — Settings · Decisions (§app.settings-dialog/decisions)
+
+| Where | Copy |
+|---|---|
+| Tab | Decisions (icon `shield`) |
+| Intro | Sova can ask a small classifier about your sessions — whether a finished turn is waiting on you, and what a session is about. Everything here is off until you turn it on. |
+| What is sent (above the switches) | Each check sends a short, redacted excerpt of one session — its title, the last exchange, and recent tool names — to Jev (TypeSafe) or your fallback model; never whole transcripts, images, or files. The Overseer's own sessions are never checked. |
+| Load failed (banner-error) | **Couldn't load the decision settings.** Nothing was changed. [Try Again] |
+| Jev (legend · hint) | Jev · TypeSafe's classifier. Fast and cheap — about $0.0001 a check. |
+| Jev switch | Use Jev |
+| Jev chip (dot and word) | Working · Not checked · Checking · Off · No key · Rejected · Out of credit · Paused |
+| Jev fact | No key stored. · Key ending {last4} · checked {2h ago}. · Key ending {last4} · not checked yet. · Key ending {last4} · couldn't check it: {reason}. · Jev rejected this key. Replace it, or turn Jev off. · Jev says this account is out of credit. · Checking the key… · env: "Key ending {last4} (from SOVA_JEV_KEY) …" |
+| Key field | label Jev key · placeholder Paste a key · `Save Key` · stored: `Replace Key` · `Remove Key` · issues: Paste a key. · A key has no spaces. · That doesn't look like a Jev key. |
+| Key from the environment | The key comes from SOVA_JEV_KEY in the server's environment, so it can't be changed here. |
+| Remove Key, asking | The stored key is deleted from this machine. Jev stays switched on but can't answer until you save another. · `Remove Key` (Removing…) · `Cancel` |
+| Rejected key | Jev didn't accept that key, so it wasn't saved. {server reason} |
+| Fallback model (legend · hint) | Fallback model · Answers when Jev is off or can't. Its provider bills it — a local model keeps every check on this machine. |
+| Fallback choice | None · A model · then the row labelled Fallback model · Suggested: `{model} ({backend})` buttons |
+| Options failed (banner-warn) | **Couldn't check which models are offered.** Your saved choice stays, marked not verified. [Check Again] |
+| Features (legend) | Features · Flag sessions that need you — After each finished turn, checks whether it asks you something, failed, or is going in circles, and marks the row. The Overseer lists them too. · Tag sessions — Gives each session a topic and a status word you can search. |
+| Unavailable (replaces a switched-on feature's hint, warn) | Unavailable: Jev is off and no fallback model is set. Nothing is checked. · Unavailable: Jev can't answer ({reason}) and no fallback model is set. Nothing is checked until one of them can. |
+| Never send (legend) | Never send · switch Never send TUI sessions — Sessions started in the pi terminal stay on this machine. · Folders — One per line. Sessions in these folders, and their subfolders, are never checked. · issue: "{line}" isn't a full path. Start it with / or ~/. · That's {n} folders. Use at most 100. |
+| Check (legend) | Check · Asks Jev, then {model}. · a paused provider: Jev (paused, retrying in {n} s) · `Test Decisions` |
+| Test result | Answered by Jev in 0.4 s. · Answered by {model} in 4.1 s, after Jev {was rate-limited / rejected the key / was out of credit / was overloaded / timed out / was unreachable / was sent too much to read / gave an unusable answer / had a server error / couldn't be used}. · a model without auth: {model} had no auth · No answer. {why} |
+| Tag past sessions (legend · hint) | Tag past sessions · New sessions are tagged as they finish. This tags the ones from before, 2 at a time, and skips any already tagged. On a fallback model it costs more and takes longer. |
+| Backfill buttons | `Tag Last 30 Days` · `Tag All Sessions` · running: `Stop Tagging` · held: Save your changes first. · Nothing can answer yet, so nothing can be tagged. |
+| Backfill progress | counting: Finding sessions to tag… · Tagged {done} of {total}{ · n failed}. · Tagged {total} sessions{ · n failed}. New sessions are tagged as they finish. · Stopped at {done} of {total}{ · n failed}. {reason} (cancelled: no reason). · Every session from the last 30 days is tagged. · Every session is tagged. |
+| Saved with notes (banner-warn, clears at the next edit) | **Saved, with notes.** {server warnings as sentences} |
+| Footnote | Stored in `~/.pi/agent/sova/decisions.json`. The key is stored separately, readable by you only. |
 
 ## §design.copy-deck/settings-themes — Settings · Themes (§app/settings-dialog)
 

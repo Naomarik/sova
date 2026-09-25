@@ -6,8 +6,8 @@ one panel, wider than the product's question-asking modals because two panes hav
 each other (§design/ground-rules and §design/deviations record the deviation). There is no route and no URL — Settings is a modal
 the session stays behind, closed by the scrim, Esc, or its Close button.
 
-The rail is the structure: each settings screen is one tab — General, Models, Modes, Overseer, Themes,
-Experimental.
+The rail is the structure: each settings screen is one tab — General, Models, Modes, Overseer,
+Decisions, Themes, Experimental.
 Tabs move with the arrow keys as well as the pointer, and the selected tab has focus on open: the
 two have to name the same screen. The gear opens General; the mode menu's **Configure Delegate** gear
 (§chat/mode-menu) opens Modes directly, and nothing else about the chat changes. Which tab is open lives in
@@ -300,3 +300,59 @@ TUI never reads it.
   change is not written.
 - The PUT is strict: an invalid body is refused with its reason, and a model that can't be verified
   or that the policy refuses comes back as a warning sentence.
+
+## §app.settings-dialog/decisions — Decisions
+
+The settings of the opt-in classifier (§app/decisions), stored in `<stateRoot>/decisions.json`
+and, for the key, `<stateRoot>/secrets/jev-key`. Sova-owned; the TUI never reads them. The tab
+is named **Decisions**: it names what the features do, not a provider.
+
+In this order:
+
+- **An intro and what is sent.** The intro says Sova can ask a small classifier about sessions
+  and that everything on the tab is off until turned on. Directly under it, above every switch
+  that sends anything, one sentence says what one check sends and to whom, and that the
+  Overseer's own sessions are never checked (§app.decisions/privacy).
+- **Jev.** A **Use Jev** switch, independent of the key, then one status line: a chip (dot and
+  word — Working, Not checked, Off, No key, Rejected, Out of credit, Paused) and the fact ("Key
+  ending ab12 · checked 2h ago.", "· not checked yet.", "· couldn't check it: …", "No key
+  stored.", or why Jev is paused and when it tries again). Then the key: with none stored, a password
+  field and **Save Key**; with one stored, **Replace Key** (the field again, with Save Key and
+  Cancel) and **Remove Key** (which asks first, with Cancel). The field never shows a stored key — only
+  its last 4 characters. A key from `SOVA_JEV_KEY` is shown as such, with no key controls. A key
+  Jev rejects is not stored; the field keeps what was typed, with the reason.
+- **Fallback model.** A choice of **None** (the default) or **A model**; A model shows one
+  backend/model/effort row (§app.settings-dialog/modes's picker rules: choices, not free text;
+  nothing picked for you; a stored pick is always shown). The server's suggestions appear as
+  "Suggested:" buttons that apply one only when clicked — only those this machine can run (the
+  backend offers the model at that effort and the policy allows it); a backend that couldn't list
+  its models keeps its suggestions, a failed check shows them all, and none show while it runs. Its hint says when it answers (Jev off,
+  or Jev can't) and that its provider bills it.
+- **Features.** **Flag sessions that need you** and **Tag sessions**, both off by default. With a
+  feature on while nothing can answer, the switch stays on and its hint is replaced, in warn, by
+  the unavailable sentence ("Unavailable: Jev is off and no fallback model is set. Nothing is
+  checked.", or Jev can't answer and why).
+- **Never send.** A **Never send TUI sessions** switch (sessions started in the pi terminal) and
+  a Folders textarea, one full path per line (`/…`, `~` or `~/…`); a line that isn't one, or more
+  than 100 lines, holds Save with the reason (§app.decisions/privacy).
+- **Save.** Discard Changes and Save Changes. Unsaved edits are kept and never dropped silently,
+  as Delegate's are (§app.settings-dialog/modes); the key is saved on its own button, not with the
+  form. The PUT is strict: an invalid body is refused with its reason; a newly chosen fallback model
+  its backend can't run is refused; one that can't be verified or that the model policy refuses is
+  saved with a warning sentence, and so is a feature switched on while the chain has no provider
+  (it stays unavailable and sends nothing). Warnings show in a "Saved, with notes." banner
+  that clears at the next edit.
+- **Check.** The saved chain in words ("Asks Jev, then Claude Code · haiku.", a paused provider
+  with when it retries, or the unavailable sentence) and **Test Decisions**, which runs one canned
+  check with no session data and says who answered and how long it took ("Answered by haiku in
+  4.1 s, after Jev was rate-limited."), or why nothing could. The Jev line reflects the test at once — Working and
+  "checked just now" when Jev answered, Rejected when it refused the key — and the tab then
+  re-reads the settings so the server's key status stands.
+- **Tag past sessions**, only while Tag sessions is saved on or a backfill runs: **Tag Last 30
+  Days** and **Tag All Sessions**, a hint that it runs 2 at a time, skips what's already tagged
+  and costs more on a fallback model; **Stop Tagging** while one runs; a progress line ("Tagged 40
+  of 147 · 2 failed.", then "Tagged 147 sessions · 2 failed. New sessions are tagged as they
+  finish.", or "Stopped at … ." with the reason). Starting is held with a reason while there are
+  unsaved changes or nothing can answer (§app.decisions/backfill).
+- A footnote names where the settings are stored, and that the key is stored separately, readable
+  only by the user.

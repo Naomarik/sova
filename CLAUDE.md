@@ -206,6 +206,8 @@ TS strict, ESM, no new dependencies without asking. Server normalizes JSONL entr
 `TranscriptItem`; frontend renders those, and renders live streaming from the raw passthrough events.
 Frontend is SolidJS (NOT React): signals/stores, `<For>/<Show>`, `onCleanup` for WS teardown.
 
+- Never keep secrets or machine-specific details in the repo (it is public): no keys, tokens, real IPs, hostnames, tailnet names, device IDs or home paths in code, scripts, tests, docs or commit messages. Read them from a gitignored env file (e.g. `local.env`, with a committed `local.env.example` of placeholders); when you create one, tell the user so they can fill it in.
+
 ## Backend notes (SDK surprises, pi 0.87.1)
 
 - `SessionManager.open(path)` is NOT read-only: `loadEntriesFromFile` appends `"\n"` to a trailing

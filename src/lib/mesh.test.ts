@@ -27,6 +27,8 @@ import {
   sessionRouteFromHash,
   claimable,
   claimRefusal,
+  conflictLine,
+  conflictSummary,
   listWords,
   loginConflicts,
   loginName,
@@ -263,4 +265,14 @@ test("one answer from another host is not a failover; a second from it, 1 s or m
   s = helloStep(base, b, null, 0);
   assert.equal(s.change, null);
   assert.deepEqual(helloStep(base, b, s.pending, 1_100).change?.host, { from: "Host A", to: "Host B" });
+});
+
+test("conflict wording reads right for one host and for several", () => {
+  const key = { key: "pi:zai", store: "pi" as const, provider: "zai", kind: "api_key" as const, state: "live" as const };
+  const label = (id: string) => ({ b: "Host B", c: "Host C", d: "Host D" })[id] ?? id;
+  assert.equal(conflictLine({ ...key, conflictWith: ["b"] }, label), "Host B has a different key, from before they synced. It doesn't sync until you keep one.");
+  assert.equal(conflictLine({ ...key, conflictWith: ["b", "c"] }, label), "Host B and Host C have different keys, from before they synced. It doesn't sync until you keep one.");
+  assert.equal(conflictLine({ ...key, kind: "oauth", conflictWith: ["b", "c", "d"] }, label), "Host B, Host C, and Host D have different logins, from before they synced. It doesn't sync until you keep one.");
+  assert.equal(conflictSummary(1), "1 login differs between hosts. Choose below which to keep.");
+  assert.equal(conflictSummary(2), "2 logins differ between hosts. Choose below which to keep.");
 });

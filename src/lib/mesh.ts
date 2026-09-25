@@ -365,6 +365,18 @@ export function listWords(items: readonly string[]): string {
 /** Whether this host's copy can be kept everywhere: a live one, or an idle expired OAuth login (refreshed on claim). */
 export const claimable = (e: MeshLoginEntry): boolean => e.state === "live" || e.state === "expired";
 
+/** A conflicting login's line: which hosts hold another one, and that it waits on the user. */
+export function conflictLine(e: MeshLoginEntry, label: (id: string) => string = (id) => id): string {
+  const noun = e.kind === "api_key" ? "key" : "login";
+  const others = (e.conflictWith ?? []).map(label);
+  const who = others.length === 1 ? `${others[0]} has a different ${noun}` : `${listWords(others)} have different ${noun}s`;
+  return `${who}, from before they synced. It doesn't sync until you keep one.`;
+}
+
+/** The Logins sync row while logins wait on a choice, in place of the server's raw line. */
+export const conflictSummary = (n: number): string =>
+  `${n} ${n === 1 ? "login differs" : "logins differ"} between hosts. Choose below which to keep.`;
+
 /** What a refused claim means, in the page's words; the server's own message when it's none of these. */
 export function claimRefusal(e: MeshLoginEntry, status: number, message: string): string {
   const noun = e.kind === "api_key" ? "key" : "login";

@@ -1,10 +1,12 @@
-import { createResource, createSignal, For, Show } from "solid-js";
+import { createEffect, createResource, createSignal, For, onCleanup, Show } from "solid-js";
 import { ApiError, claimMeshLogin, fetchFrontDoor, fetchMesh, fetchMeshCandidates, fetchMeshLogins, putMeshPeers, putMeshSettings } from "../lib/api";
 import { copyText } from "../lib/ui-state";
 import { relativeTime } from "../lib/format";
 import {
   claimable,
   claimRefusal,
+  conflictLine,
+  conflictSummary,
   frontDoorProblems,
   hostLabel,
   listWords,
@@ -156,6 +158,8 @@ function candidateNote(c: MeshCandidate): string {
 export function MeshView(props: { now: number; titleRef(el: HTMLHeadingElement): void }) {
   // Every answer is the app's mesh state too: the sidebar's marks and New Session follow this page.
   const [ticks, setTicks] = createSignal(0);
+  /** Logins the list below shows waiting on a choice: the Logins row then says so in words. */
+  const [loginConflictCount, setLoginConflictCount] = createSignal(0);
   const poll = createPoll(
     () =>
       fetchMesh().then((s) => {
@@ -453,10 +457,10 @@ export function MeshView(props: { now: number; titleRef(el: HTMLHeadingElement):
           }
         >
           <ul class="list">
-            <For each={state()?.sync ?? []}>{(row) => <SyncRow row={row} now={props.now} />}</For>
+            <For each={state()?.sync ?? []}>{(row) => <SyncRow row={row} now={props.now} conflicts={row.category === "logins" ? loginConflictCount() : 0} />}</For>
           </ul>
           <Show when={state()?.sync.find((r) => r.category === "logins" && r.enabled && r.state !== "off")}>
-            <LoginList tick={ticks()} />
+            <LoginList tick={ticks()} onConflicts={setLoginConflictCount} />
           </Show>
         </Show>
       </section>
@@ -486,11 +490,14 @@ export function MeshView(props: { now: number; titleRef(el: HTMLHeadingElement):
   );
 }
 
-function SyncRow(props: { row: SyncStatus; now: number }) {
+function SyncRow(props: { row: SyncStatus; now: number; conflicts?: number }) {
   const r = () => props.row;
+  /** Conflicts the login list below names: the choice is the user's, not a failure. */
+  const waiting = () => (r().state === "error" ? props.conflicts ?? 0 : 0);
   const chip = () => {
     const row = r();
     if (!row.enabled || row.state === "off") return <Chip>Off</Chip>;
+    if (waiting()) return <Chip tone="warn">Needs a choice</Chip>;
     if (row.state === "error") return <Chip tone="error" title={row.error}>Failed</Chip>;
     if (row.state === "pending") return <Chip tone="info">Syncing</Chip>;
     return <Chip tone="success">In sync</Chip>;
@@ -506,7 +513,10 @@ function SyncRow(props: { row: SyncStatus; now: number }) {
             </Show>
           </Show>
         </p>
-        <Show when={r().state === "error" && r().error}>{(e) => <p class="mesh-host-error">{e()}</p>}</Show>
+        <Show when={!waiting() && r().state === "error" && r().error}>{(e) => <p class="mesh-host-error">{e()}</p>}</Show>
+        <Show when={waiting()}>
+          {(n) => <p class="list-meta">{conflictSummary(n())}</p>}
+        </Show>
       </div>
       {chip()}
     </li>
@@ -525,7 +535,7 @@ const LOGIN_STATE: Record<MeshLoginEntry["state"], { word: string; tone?: "succe
  * synced stays unsynced until the user keeps one host's: that host's then wins everywhere, so the
  * button asks first. Read only while the mesh is on and login sync is, re-read on each page poll.
  */
-function LoginList(props: { tick: number }) {
+function LoginList(props: { tick: number; onConflicts(n: number): void }) {
   const [logins, { refetch }] = createResource(
     () => ({ tick: props.tick }),
     () => fetchMeshLogins().then((r) => r.entries).catch(() => null),
@@ -539,6 +549,8 @@ function LoginList(props: { tick: number }) {
     const waiting = loginConflicts(all);
     return [...waiting, ...all.filter((e) => !waiting.includes(e))];
   };
+  createEffect(() => props.onConflicts(loginConflicts(logins.latest ?? []).length));
+  onCleanup(() => props.onConflicts(0));
   const noun = (e: MeshLoginEntry) => (e.kind === "api_key" ? "key" : "login");
   const hosts = (e: MeshLoginEntry) => listWords((e.conflictWith ?? []).map(hostLabel));
 
@@ -579,7 +591,7 @@ function LoginList(props: { tick: number }) {
                     }
                   >
                     <p class="list-meta">
-                      Different {noun(e)}s on {hosts(e)}, from before they synced. It doesn't sync until you keep one.
+                      {conflictLine(e, hostLabel)}
                     </p>
                     <Show when={asking() === e.key}>
                       <div class="mesh-login-ask">

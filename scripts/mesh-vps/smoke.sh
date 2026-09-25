@@ -4,7 +4,7 @@
 # 1. snapshot the production state; refuse if anything already listens on the Sova ports
 # 2. start Sova by hand (setsid nohup run-sova.sh, as deploy); wait for 127.0.0.1:4800/api/health
 # 3. mesh OFF (no peers.json): nothing on the peer port
-# 4. PUT /api/mesh/peers (self vps + the laptop's team server): the peer listener binds 100.64.0.2:4801 ONLY
+# 4. PUT /api/mesh/peers (the laptop's team server) + /api/mesh/settings (label, serveUrl): the peer listener binds 100.64.0.2:4801 ONLY
 # 5. exposure probe from the laptop while it runs: public 4800/4801/4890 time out
 # 6. stop Sova, check its ports are closed, snapshot again: production state identical
 # peers.json is removed again unless --keep-peers (then the next start comes up with the mesh on).
@@ -42,10 +42,16 @@ if [ "$peers" = no ]; then
   log "mesh off: only 127.0.0.1:$SOVA_PORT listens"
 fi
 
-body=$(printf '{"version":1,"self":{"id":"%s","label":"%s","serveUrl":"http://127.0.0.1:%s"},"peers":[{"id":"%s","label":"%s","nodeId":"%s","dnsName":"%s","url":"%s","priority":1}]}' \
-  "$VPS_ID" "$VPS_LABEL" "$SOVA_PORT" "$LAPTOP_ID" "$LAPTOP_LABEL" "$LAPTOP_NODE_ID" "$LAPTOP_DNS" "$LAPTOP_PEER_URL")
-code=$(printf '%s' "$body" | vps "curl -sS -m 10 -o $B/smoke-put.json -w '%{http_code}' -X PUT -H 'content-type: application/json' --data-binary @- http://127.0.0.1:$SOVA_PORT/api/mesh/peers")
+put() { # path json -> http code (answer in $B/smoke-put.json)
+  printf '%s' "$2" | vps "curl -sS -m 10 -o $B/smoke-put.json -w '%{http_code}' -X PUT -H 'content-type: application/json' --data-binary @- http://127.0.0.1:$SOVA_PORT$1"
+}
+peers=$(printf '{"peers":[{"id":"%s","name":"%s","label":"%s","nodeId":"%s","url":"%s","priority":1}]}' \
+  "$LAPTOP_ID" "$LAPTOP_DNS" "$LAPTOP_LABEL" "$LAPTOP_NODE_ID" "$LAPTOP_PEER_URL")
+code=$(put /api/mesh/peers "$peers")
 [ "$code" = 200 ] || { vps "cat $B/smoke-put.json" >&2; fail "PUT /api/mesh/peers -> $code"; }
+# this host's label and its front-door upstream (the front door runs on this host: loopback)
+code=$(put /api/mesh/settings "$(printf '{"hostLabel":"%s","serveUrl":"http://127.0.0.1:%s"}' "$VPS_LABEL" "$SOVA_PORT")")
+[ "$code" = 200 ] || { vps "cat $B/smoke-put.json" >&2; fail "PUT /api/mesh/settings -> $code"; }
 ok=0
 for i in $(seq 1 20); do
   L=$(listeners)

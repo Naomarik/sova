@@ -1,7 +1,7 @@
 # Root steps on the VPS: the PARENT runs these (members never use sudo there)
 
 Everything else runs as `deploy` without sudo (`deploy.sh`, `smoke.sh`, the user units). Run in this order, on
-the VPS (ssh $VPS_SSH, then sudo), after `scripts/mesh-vps/deploy.sh --rev <M5 sha>` succeeded.
+the VPS (ssh $VPS_SSH over the tailnet, then sudo), after `scripts/mesh-vps/deploy.sh --rev <M5 sha>` succeeded.
 
 ```sh
 # 1. let deploy's user units run without a login session (sova-mesh.service, sova-frontdoor.service)

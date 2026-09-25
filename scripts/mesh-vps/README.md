@@ -16,7 +16,8 @@ From the laptop:
 - `smoke.sh [--keep-peers]`: start Sova by hand, check health, mesh off = no peer port, PUT peers.json (the
   laptop's team server) → the peer listener binds the tailnet IP only, exposure probe, stop, and compare the
   production state (listening sockets + `systemctl is-active` of the prod units) before and after.
-- `exposure.sh probe`: public 4800/4801/4890 must time out (22/443 are controls that must connect).
+- `exposure.sh probe`: public 4800/4801/4890 must time out (80/443 are controls that must connect). ssh goes over the tailnet
+  ($VPS_SSH).
 
 On the VPS: `run-sova.sh`, `run-frontdoor.sh` (the units' ExecStart), `frontdoor-config.sh` (Caddyfile from
 Sova's own GET /api/mesh/front-door, rebound to 127.0.0.1).

@@ -2,7 +2,8 @@
 # The VPS may be a shared host that also runs other services: these scripts only ever write under ~deploy/sova-mesh, never
 # use sudo, and never touch /etc or any running service (see README.md).
 
-VPS_SSH=${VPS_SSH:-deploy@203.0.113.10}
+# ssh over the tailnet
+VPS_SSH=${VPS_SSH:-deploy@100.64.0.2}
 VPS_PUBLIC_IP=${VPS_PUBLIC_IP:-203.0.113.10}
 VPS_TAILNET_IP=${VPS_TAILNET_IP:-100.64.0.2}
 VPS_ID=${VPS_ID:-vps}

@@ -12,6 +12,7 @@ import type {
   SyncCategory,
   SyncStatus,
 } from "../../shared/protocol";
+import { frontDoorConfig } from "./front-door";
 import { ownHello, probeHello, probePeer, peerLastSeen, PROBE_TIMEOUT_MS } from "./hello";
 import { type ListenerDeps, PeerListener } from "./listener";
 import { getIdentity, type TailnetStatus } from "./localapi";
@@ -147,7 +148,13 @@ export const onSyncStatus = (provider: () => SyncStatus[]): void => {
 export function readMeshSettings(config: PeersConfig | null = rt.config): MeshSettings {
   const c = config ?? emptyConfig();
   const sync = Object.fromEntries(SYNC_CATEGORIES.map((k) => [k, c.sync[k] ?? true])) as Record<SyncCategory, boolean>;
-  return { hostLabel: c.self.label, sync, frontDoor: c.frontDoor };
+  return {
+    hostLabel: c.self.label,
+    sync,
+    frontDoor: c.frontDoor,
+    ...(c.frontDoorOrder ? { frontDoorOrder: c.frontDoorOrder } : {}),
+    ...(c.self.serveUrl ? { serveUrl: c.self.serveUrl } : {}),
+  };
 }
 
 /** The current allowlist (for server/sync). */
@@ -363,6 +370,7 @@ async function putPeers(c: Context): Promise<Response> {
       dnsName,
       ...(e.url !== undefined ? { url: e.url } : prior?.url ? { url: prior.url } : {}),
       ...(e.priority !== undefined ? { priority: e.priority } : prior?.priority !== undefined ? { priority: prior.priority } : {}),
+      ...(e.serveUrl !== undefined ? { serveUrl: e.serveUrl } : prior?.serveUrl ? { serveUrl: prior.serveUrl } : {}),
     });
   }
   const v = validatePeers({ ...base.config, peers });
@@ -382,12 +390,23 @@ async function putSettings(c: Context): Promise<Response> {
   if (typeof body !== "object" || body === null || Array.isArray(body)) return c.json({ error: "Expected an object" }, 400);
   const base = baseForWrite();
   if ("error" in base) return c.json({ error: base.error }, 409);
-  const next = {
+  if (body.frontDoorOrder !== undefined && body.frontDoorOrder !== null) {
+    const hosts = new Set([base.config.self.id, ...base.config.peers.map((p) => p.id)]);
+    const unknown = Array.isArray(body.frontDoorOrder) ? body.frontDoorOrder.filter((id) => !hosts.has(id)) : [];
+    if (unknown.length) return c.json({ error: `frontDoorOrder: not a host here: ${unknown.join(", ")}` }, 400);
+  }
+  const self = { ...base.config.self };
+  if (body.hostLabel !== undefined) self.label = body.hostLabel;
+  if (body.serveUrl === null) delete self.serveUrl;
+  else if (body.serveUrl !== undefined) self.serveUrl = body.serveUrl;
+  const next: Record<string, unknown> = {
     ...base.config,
-    self: body.hostLabel !== undefined ? { ...base.config.self, label: body.hostLabel } : base.config.self,
+    self,
     sync: body.sync !== undefined ? { ...base.config.sync, ...body.sync } : base.config.sync,
     frontDoor: body.frontDoor !== undefined ? body.frontDoor : base.config.frontDoor,
   };
+  if (body.frontDoorOrder === null) delete next.frontDoorOrder;
+  else if (body.frontDoorOrder !== undefined) next.frontDoorOrder = body.frontDoorOrder;
   const v = validatePeers(next);
   if ("error" in v) return c.json({ error: v.error }, 400);
   writePeers(v.config);
@@ -416,6 +435,12 @@ export function meshRoutes(app: Hono): void {
   app.get("/api/mesh/sessions", async (c) => c.json(meshEnabled() ? await meshSessions() : { peers: [] }));
   app.get("/api/mesh/settings", (c) => c.json(readMeshSettings()));
   app.put("/api/mesh/settings", putSettings);
+  // Generated only, from local state: no Tailscale call (this node's name is the one the listener
+  // already learnt, while on), no file written.
+  app.get("/api/mesh/front-door", (c) => {
+    reload();
+    return c.json(frontDoorConfig(rt.config ?? emptyConfig(), meshEnabled() ? (rt.self?.dnsName ?? null) : null));
+  });
   app.get("/api/mesh/hello", (c) => c.json(ownHello(meshSelf(), rt.self?.nodeId)));
 
   // Peer-only routes: reached through the peer listener alone. On the main listener they are the

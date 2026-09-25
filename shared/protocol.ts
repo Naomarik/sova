@@ -1921,6 +1921,7 @@ export interface ExtensionInfo {
 // GET  /api/mesh/settings       -> MeshSettings
 // PUT  /api/mesh/settings Partial<MeshSettings> -> MeshSettings   (stored in peers.json; with no peers
 //                                  the mesh stays OFF. 400 bad body, 409 malformed peers.json)
+// GET  /api/mesh/front-door     -> FrontDoorConfig   (generated from peers.json + settings; OFF too)
 // GET  /api/mesh/hello          -> MeshHello   (this host's own, for the SPA's stale-tab check: id,
 //                                  version, protocol, build. Cheap (a stat), and answered with the
 //                                  mesh off too, no Tailscale call; nodeId only while on)
@@ -2022,6 +2023,8 @@ export interface MeshPeerEntry {
   /** http(s)://host:port when not http://<name>:4801. */
   url?: string;
   priority?: number;
+  /** Its browser-facing address, the front door's upstream, when not https://<name>:8443. */
+  serveUrl?: string;
 }
 
 export interface MeshPeersUpdate {
@@ -2066,4 +2069,20 @@ export interface MeshSettings {
   sync: Record<SyncCategory, boolean>;
   /** The front door's URL, when the user set one. */
   frontDoor: string | null;
+  /** The front door's upstream order: host ids, this host included. Hosts it leaves out follow in
+      peers.json order (this host first); ids that are no longer hosts are skipped. Absent = that
+      default order. */
+  frontDoorOrder?: string[];
+  /** This host's browser-facing address (its front-door upstream), when not
+      https://<its MagicDNS name>:8443. null clears it. */
+  serveUrl?: string | null;
+}
+
+/** GET /api/mesh/front-door: a Caddy front door for these hosts, generated only; Sova never runs
+    or writes Caddy. Also answered with the mesh off (this host alone, no Tailscale call). */
+export interface FrontDoorConfig {
+  /** Upstreams in failover order: the first healthy one serves. */
+  order: Array<{ id: string; label: string; upstream: string }>;
+  /** A complete Caddyfile (lb_policy first, active health checks), with setup notes as comments. */
+  caddyfile: string;
 }

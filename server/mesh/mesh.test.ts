@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, describe, test } from "node:test";
 import { WebSocket, WebSocketServer } from "ws";
-import type { MeshCandidate, MeshHello, MeshInfo, MeshSessions, MeshSettings } from "../../shared/protocol";
+import type { FrontDoorConfig, MeshCandidate, MeshHello, MeshInfo, MeshSessions, MeshSettings } from "../../shared/protocol";
 
 const tmp = mkdtempSync(join(tmpdir(), "sova-mesh-test-"));
 process.env.PI_CODING_AGENT_DIR = join(tmp, "agent");
@@ -228,6 +228,11 @@ describe("mesh OFF (no peers.json)", () => {
     if (hello.build !== undefined) assert.match(hello.build, /^[0-9a-f]{16}$/);
     const [, settings] = await getJson<MeshSettings>("/api/mesh/settings");
     assert.deepEqual(settings.sync, { settings: true, themes: true, extensions: true, logins: true });
+    const [fs, fd] = await getJson<FrontDoorConfig>("/api/mesh/front-door");
+    assert.equal(fs, 200);
+    assert.equal(fd.order.length, 1, "OFF: this host alone");
+    assert.match(fd.order[0]!.upstream, /YOUR-TAILNET/);
+    assert.match(fd.caddyfile, /lb_policy first/);
     await realFetch(`${base}/peer/b/api/health`);
     await wsTrip(`${wsBase}/peer/b/ws/chat?path=x`);
     assert.equal(identityCalls, 0);
@@ -618,6 +623,46 @@ describe("mesh ON", () => {
     assert.equal((await putJson("/api/mesh/peers", { peers: [{ id: "x", name: "a.lab" }] }))[0], 400);
     assert.equal((await putJson("/api/mesh/peers", { peers: [{ id: "Bad Id", nodeId: "n1", name: "x" }] }))[0], 400);
     assert.equal((await putJson("/api/mesh/peers", { nope: 1 }))[0], 400);
+  });
+
+  test("front door: the user's order and serve URLs, validated; the self name from the listener", async () => {
+    await putJson("/api/mesh/peers", {
+      peers: [
+        { id: "b", label: "B", nodeId: "nB", name: "b.lab", url: `http://127.0.0.1:${fakePort}`, serveUrl: "https://b.lab:9443/" },
+        { id: "dead", nodeId: "nD", name: "127.0.0.1", url: `http://127.0.0.1:${deadPort}` },
+      ],
+    });
+    const calls = identityCalls;
+    let [, fd] = await getJson<FrontDoorConfig>("/api/mesh/front-door");
+    assert.equal(identityCalls, calls, "no Tailscale call: the name the listener learnt is reused");
+    assert.deepEqual(
+      fd.order.map((h) => [h.id, h.upstream]),
+      [
+        [fd.order[0]!.id, "https://a.lab:8443"],
+        ["b", "https://b.lab:9443"],
+        ["dead", "https://127.0.0.1:8443"],
+      ],
+    );
+    assert.equal((await putJson("/api/mesh/settings", { frontDoorOrder: ["b", "nobody"] }))[0], 400);
+    assert.equal((await putJson("/api/mesh/settings", { frontDoorOrder: ["b", "b"] }))[0], 400);
+    assert.equal((await putJson("/api/mesh/settings", { serveUrl: "ftp://x" }))[0], 400);
+    const [s, settings] = await putJson<MeshSettings>("/api/mesh/settings", { frontDoorOrder: ["dead", "b"], serveUrl: "http://a.lab:8443" });
+    assert.equal(s, 200);
+    assert.deepEqual([settings.frontDoorOrder, settings.serveUrl], [["dead", "b"], "http://a.lab:8443"]);
+    [, fd] = await getJson<FrontDoorConfig>("/api/mesh/front-door");
+    assert.deepEqual(fd.order.map((h) => h.upstream), ["https://127.0.0.1:8443", "https://b.lab:9443", "http://a.lab:8443"]);
+    assert.match(fd.caddyfile, /WARNING: Caddy needs every upstream on one scheme/);
+    // A peers PUT keeps what it doesn't mention; null clears.
+    await putJson("/api/mesh/peers", {
+      peers: [
+        { id: "b", label: "B", nodeId: "nB", name: "b.lab", url: `http://127.0.0.1:${fakePort}` },
+        { id: "dead", nodeId: "nD", name: "127.0.0.1", url: `http://127.0.0.1:${deadPort}` },
+      ],
+    });
+    [, fd] = await getJson<FrontDoorConfig>("/api/mesh/front-door");
+    assert.equal(fd.order[1]!.upstream, "https://b.lab:9443", "the peer's serveUrl survives a PUT that omits it");
+    const [, cleared] = await putJson<MeshSettings>("/api/mesh/settings", { frontDoorOrder: null, serveUrl: null });
+    assert.deepEqual([cleared.frontDoorOrder, cleared.serveUrl], [undefined, undefined]);
   });
 
   test("a malformed peers.json turns the mesh off and is never overwritten", async () => {

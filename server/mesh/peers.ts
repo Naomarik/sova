@@ -30,16 +30,20 @@ export interface PeerEntry {
   url?: string;
   /** Front-door order hint; Sova only reports it. */
   priority?: number;
+  /** Its browser-facing address (the front door's upstream), when not https://<dnsName>:8443. */
+  serveUrl?: string;
 }
 
 export const SYNC_CATEGORIES: readonly SyncCategory[] = ["settings", "themes", "extensions", "logins"];
 
 export interface PeersConfig {
-  self: { id: string; label: string };
+  self: { id: string; label: string; serveUrl?: string };
   peers: PeerEntry[];
   /** Per-category sync switches the user has set; an absent category is on. */
   sync: Partial<Record<SyncCategory, boolean>>;
   frontDoor: string | null;
+  /** The front door's upstream order the user set: host ids (self included). */
+  frontDoorOrder?: string[];
 }
 
 export type PeersRead = { ok: true; config: PeersConfig } | { ok: false; error: string; missing?: true };
@@ -95,6 +99,8 @@ export function validatePeers(raw: unknown): { config: PeersConfig } | { error: 
   const selfId = selfRaw.id === undefined ? defaultSelfId() : selfRaw.id;
   if (typeof selfId !== "string" || !PEER_ID_RE.test(selfId)) return { error: `self.id must match ${PEER_ID_RE}` };
   if (selfRaw.label !== undefined && !text(selfRaw.label)) return { error: "self.label must be a non-empty string (≤ 80)" };
+  const selfServe = selfRaw.serveUrl === undefined || selfRaw.serveUrl === null ? null : checkUrl(selfRaw.serveUrl);
+  if (selfServe && "error" in selfServe) return { error: `self.serveUrl ${selfServe.error}` };
   if (r.peers !== undefined && !Array.isArray(r.peers)) return { error: "peers must be an array" };
   const peers: PeerEntry[] = [];
   const ids = new Set([selfId]);
@@ -113,6 +119,8 @@ export function validatePeers(raw: unknown): { config: PeersConfig } | { error: 
     const url = e.url === undefined ? null : checkUrl(e.url);
     if (url && "error" in url) return { error: `peers[${i}].url ${url.error}` };
     if (e.priority !== undefined && !Number.isFinite(e.priority)) return { error: `peers[${i}].priority must be a number` };
+    const serve = e.serveUrl === undefined || e.serveUrl === null ? null : checkUrl(e.serveUrl);
+    if (serve && "error" in serve) return { error: `peers[${i}].serveUrl ${serve.error}` };
     ids.add(e.id);
     nodes.add(nodeId);
     peers.push({
@@ -122,6 +130,7 @@ export function validatePeers(raw: unknown): { config: PeersConfig } | { error: 
       dnsName: dnsName.replace(/\.$/, ""),
       ...(url ? { url: url.url } : {}),
       ...(e.priority !== undefined ? { priority: e.priority as number } : {}),
+      ...(serve ? { serveUrl: serve.url } : {}),
     });
   }
   const syncRaw = r.sync ?? {};
@@ -138,7 +147,17 @@ export function validatePeers(raw: unknown): { config: PeersConfig } | { error: 
     if ("error" in fd) return { error: `frontDoor ${fd.error}` };
     frontDoor = fd.url;
   }
-  return { config: { self: { id: selfId, label: text(selfRaw.label) ?? selfId }, peers, sync, frontDoor } };
+  let frontDoorOrder: string[] | undefined;
+  if (r.frontDoorOrder !== undefined && r.frontDoorOrder !== null) {
+    if (!Array.isArray(r.frontDoorOrder) || r.frontDoorOrder.some((x) => typeof x !== "string" || !PEER_ID_RE.test(x))) {
+      return { error: "frontDoorOrder must be a list of host ids" };
+    }
+    if (new Set(r.frontDoorOrder).size !== r.frontDoorOrder.length) return { error: "frontDoorOrder lists a host twice" };
+    // Ids that are no longer hosts (a removed peer) are tolerated here and skipped where it is used.
+    frontDoorOrder = r.frontDoorOrder as string[];
+  }
+  const self = { id: selfId, label: text(selfRaw.label) ?? selfId, ...(selfServe ? { serveUrl: selfServe.url } : {}) };
+  return { config: { self, peers, sync, frontDoor, ...(frontDoorOrder ? { frontDoorOrder } : {}) } };
 }
 
 /** The file, parsed and validated. Missing → `missing: true`; anything else wrong → its reason. */
@@ -163,7 +182,14 @@ export function readPeers(file = peersFile()): PeersRead {
 /** Write the file atomically at 0600 (tmp + rename). The caller has validated `config`. */
 export function writePeers(config: PeersConfig, file = peersFile()): void {
   mkdirSync(dirname(file), { recursive: true });
-  const doc = { version: 1, self: config.self, peers: config.peers, sync: config.sync, frontDoor: config.frontDoor };
+  const doc = {
+    version: 1,
+    self: config.self,
+    peers: config.peers,
+    sync: config.sync,
+    frontDoor: config.frontDoor,
+    ...(config.frontDoorOrder ? { frontDoorOrder: config.frontDoorOrder } : {}),
+  };
   const tmp = `${file}.${process.pid}.tmp`;
   writeFileSync(tmp, `${JSON.stringify(doc, null, 2)}\n`, { mode: 0o600 });
   chmodSync(tmp, 0o600); // an existing tmp keeps its old mode through writeFileSync

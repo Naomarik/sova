@@ -119,12 +119,24 @@ check() {
   for p in "$port" "$pport"; do
     timeout 6 bash -c "exec 3<>/dev/tcp/$ip/$p" 2>/dev/null && die "laptop reaches $ip:$p over the tailnet" || log "laptop: $ip:$p closed (ok)"
   done
-  # every non-loopback address (IPv4 and IPv6, Wi-Fi, mobile data, tun0), as node lists them on the phone
-  local n open
+  # every non-loopback address (IPv4 and IPv6, Wi-Fi, mobile data, tun0), as node lists them on the phone. Explicit bash on
+  # the phone (the login shell has no /dev/tcp), with two positive controls through the same connect: 127.0.0.1:$port
+  # (Sova) and $PHONE:$PHONE_PORT (the sshd this harness uses) must read open.
+  local n res open
   n=$(addrs | wc -l)
-  open=$(addrs | ph "while read -r a; do { : 3<>/dev/tcp/\$a/$port; } 2>/dev/null && echo \"\$a:$port\"; { : 3<>/dev/tcp/\$a/$pport; } 2>/dev/null && echo \"\$a:$pport\"; done; true" | grep -vxF "$([ "$peers" = 0 ] || echo "$ip:$pport")" || true)
+  [ "$n" -gt 0 ] || die "no addresses to probe"
+  res=$( { echo "port=$port; pport=$pport; ctl=$PHONE; ctlport=$PHONE_PORT"
+           echo 'c() { { : 3<>/dev/tcp/$1/$2; } 2>/dev/null && echo open || echo closed; }'
+           echo 'echo "control 127.0.0.1:$port $(c 127.0.0.1 $port)"; echo "control $ctl:$ctlport $(c $ctl $ctlport)"'
+           echo 'n=0; while read -r a; do n=$((n+1)); [ "$(c $a $port)" = open ] && echo "open $a:$port"; [ "$(c $a $pport)" = open ] && echo "open $a:$pport"; done; echo "probed $n"'
+           addrs; } | ph "bash -s" )
+  printf '%s\n' "$res" | grep '^control' | sed "s/^/[phone-test] /" >&2
+  printf '%s\n' "$res" | grep -qx "control 127.0.0.1:$port open" || die "positive control failed: 127.0.0.1:$port reads closed (the probe is broken)"
+  printf '%s\n' "$res" | grep -qx "control $PHONE:$PHONE_PORT open" || die "positive control failed: sshd $PHONE:$PHONE_PORT reads closed (the probe is broken)"
+  [ "$(printf '%s\n' "$res" | sed -n 's/^probed //p')" = "$n" ] || die "probed $(printf '%s\n' "$res" | sed -n 's/^probed //p') of $n addresses"
+  open=$(printf '%s\n' "$res" | sed -n 's/^open //p' | grep -vxF "$([ "$peers" = 0 ] || echo "$ip:$pport")" || true)
   [ -z "$open" ] || die "open on non-loopback addresses: $(echo $open)"
-  log "phone: $port closed on all $n non-loopback addresses; $pport $([ "$peers" = 0 ] && echo "closed on all" || echo "open on $ip only")"
+  log "phone: $port closed on all $n non-loopback addresses probed; $pport $([ "$peers" = 0 ] && echo "closed on all" || echo "open on $ip only")"
   # runit restarts it after a kill
   local pid1 pid2
   pid1=$(ph 'SVDIR=$PREFIX/var/service sv status sova-mesh' | sed -n 's/^run: [^(]*(pid \([0-9]*\)).*/\1/p')
@@ -178,30 +190,62 @@ addrs() {
   [ -s "$OUT/addrs.txt" ] || die "no address list (install once so node can list them)"
   cat "$OUT/addrs.txt"
 }
-# a connect() to every port 1-65535 of every address, run ON the phone (bash /dev/tcp: no forks per port, so no phantom
-# process pressure; 16 parallel chunks per address). bash's connect has no timeout: a port whose connect hangs (a
-# listener with a full accept queue) holds its chunk until the kernel gives up (slow, not wrong).
-# Detached on the phone (nohup, $PREFIX/tmp/sova-scan.*, removed at the end); this side polls every 10 s.
+# a connect() to every port 1-65535 of every address, run ON the phone with explicit bash (/dev/tcp; no fork per port, so no
+# phantom-process pressure): 16 parallel chunks per address. bash's connect has no timeout, so each chunk writes the port it
+# is on and a watchdog (every 5 s) kills a chunk stuck on one port for >10 s, records "HANG <addr> <port>" and resumes the
+# chunk after it. Detached on the phone (nohup; $PREFIX/tmp/sova-scan.*, removed at the end); this side polls every 10 s.
+# Positive control: the sshd this harness uses ($PHONE:$PHONE_PORT) must be in the result, else the scan is broken.
 scan() {
   local name=${1:?scan <name>} d="$OUT/scan"; mkdir -p "$d"
   local list; list=$(addrs | tr '\n' ' ')
   local t0=$SECONDS
-  ph "cat > \$PREFIX/tmp/sova-scan.sh; rm -f \$PREFIX/tmp/sova-scan.out \$PREFIX/tmp/sova-scan.done; nohup bash \$PREFIX/tmp/sova-scan.sh > \$PREFIX/tmp/sova-scan.out 2>/dev/null < /dev/null &" <<EOS
-for a in $list; do
-  for c in \$(seq 0 15); do
-    ( lo=\$((c*4096+1)); hi=\$((lo+4095)); [ \$hi -gt 65535 ] && hi=65535
-      for p in \$(seq \$lo \$hi); do { : 3<>/dev/tcp/\$a/\$p; } 2>/dev/null && echo "\$a \$p"; done ) &
+  local script
+  script=$(cat <<'EOS'
+W=$PREFIX/tmp/sova-scan.d; mkdir -p $W
+chunk() { # addr lo hi id
+  local p
+  for ((p=$2; p<=$3; p++)); do echo $p > $W/pos.$4; { : 3<>/dev/tcp/$1/$p; } 2>/dev/null && echo "$1 $p" >> $W/open.$4; done
+  echo done > $W/pos.$4
+}
+for a in ADDRS; do
+  declare -A pid last same
+  for c in $(seq 0 15); do lo=$((c*4096+1)); hi=$((lo+4095)); [ $hi -gt 65535 ] && hi=65535; hi_[$c]=$hi
+    chunk $a $lo $hi $c & pid[$c]=$!; last[$c]=''; same[$c]=0; done
+  while :; do
+    sleep 5; alive=0
+    for c in $(seq 0 15); do
+      kill -0 ${pid[$c]} 2>/dev/null || continue
+      alive=1; p=$(cat $W/pos.$c 2>/dev/null)
+      if [ "$p" = "${last[$c]}" ]; then same[$c]=$((same[$c]+1)); else same[$c]=0; last[$c]=$p; fi
+      if [ ${same[$c]} -ge 2 ] && [ "$p" != done ]; then
+        kill ${pid[$c]} 2>/dev/null; wait ${pid[$c]} 2>/dev/null; echo "HANG $a $p" >> $W/hang
+        if [ $p -lt ${hi_[$c]} ]; then chunk $a $((p+1)) ${hi_[$c]} $c & pid[$c]=$!; fi
+        last[$c]=''; same[$c]=0
+      fi
+    done
+    [ $alive = 1 ] || break
   done
   wait
-done | sort -k1,1 -k2,2n > \$PREFIX/tmp/sova-scan.res
-touch \$PREFIX/tmp/sova-scan.done
+  unset pid last same
+done
+# confirm: a connect to one's own address can "succeed" once by connecting to itself (the kernel picked the same port as
+# the source port); a real listener accepts two more connects
+cat $W/open.* 2>/dev/null | sort -u -k1,1 -k2,2n | while read -r a p; do
+  { : 3<>/dev/tcp/$a/$p; } 2>/dev/null && { : 3<>/dev/tcp/$a/$p; } 2>/dev/null && echo "$a $p" || echo "SELF $a $p"
+done > $W/confirmed
+{ grep -v '^SELF' $W/confirmed; cat $W/hang 2>/dev/null; grep '^SELF' $W/confirmed; } > $PREFIX/tmp/sova-scan.res
+rm -rf $W
+touch $PREFIX/tmp/sova-scan.done
 EOS
+)
+  printf '%s\n' "${script//ADDRS/$list}" | ph "cat > \$PREFIX/tmp/sova-scan.sh; rm -rf \$PREFIX/tmp/sova-scan.d \$PREFIX/tmp/sova-scan.res \$PREFIX/tmp/sova-scan.done; nohup bash \$PREFIX/tmp/sova-scan.sh > /dev/null 2>&1 < /dev/null &"
   until ph 'test -e $PREFIX/tmp/sova-scan.done'; do
     sleep 10
-    [ $((SECONDS - t0)) -lt 3600 ] || die "scan $name: not done within an hour"
+    [ $((SECONDS - t0)) -lt 5400 ] || die "scan $name: not done within 90 min"
   done
-  ph 'cat $PREFIX/tmp/sova-scan.res; rm -f $PREFIX/tmp/sova-scan.sh $PREFIX/tmp/sova-scan.out $PREFIX/tmp/sova-scan.res $PREFIX/tmp/sova-scan.done' > "$d/$name.txt"
-  log "scan $name: $(wc -l < "$d/$name.txt") open (address, port) pairs over $(echo $list | wc -w) addresses in $((SECONDS - t0)) s"
+  ph 'cat $PREFIX/tmp/sova-scan.res; rm -f $PREFIX/tmp/sova-scan.sh $PREFIX/tmp/sova-scan.res $PREFIX/tmp/sova-scan.done' > "$d/$name.txt"
+  grep -qx "$PHONE $PHONE_PORT" "$d/$name.txt" || die "scan $name broken: the control (sshd $PHONE:$PHONE_PORT) is not in the result"
+  log "scan $name: $(grep -vcE '^(HANG|SELF)' "$d/$name.txt") open (address, port) pairs, $(grep -c '^HANG' "$d/$name.txt") hung ports, $(grep -c '^SELF' "$d/$name.txt") self-connects dropped, $(echo $list | wc -w) addresses, $((SECONDS - t0)) s; control $PHONE:$PHONE_PORT open"
 }
 
 # ---- pairing (only with PAIR_GO=1: coordinator-2's go) ---------------------------------------------------------
@@ -318,7 +362,14 @@ case "$cmd" in
   unpair) unpair ;;
   snapshot) snapshot "$@" ;;
   addrs) addrs ;;
+  placeholder) # on: mesh on with the gate's placeholder peer (listener on the tailnet IP); off: mesh off
+    case "${1:-}" in
+      on) [ "$(phone_put /api/mesh/peers '{"peers":[{"id":"gate-dummy","label":"gate dummy","nodeId":"nGATEDUMMY00CNTRL","name":"100.64.0.1","url":"http://100.64.0.1:4801"}]}')" = 200 ] || die "PUT placeholder" ;;
+      off) [ "$(phone_put /api/mesh/peers '{"peers":[]}')" = 200 ] || die "PUT peers []" ;;
+      *) die "placeholder on|off" ;;
+    esac; echo; log "placeholder $1" ;;
   scan) scan "$@" ;;
+  scandiff) d="$OUT/scan"; diff <(grep -v '^SELF' "$d/${1:?}.txt") <(grep -v '^SELF' "$d/${2:?}.txt") && echo "SCAN SAME: $1 == $2 (open + hung, self-connects excluded)" || { echo "SCAN DIFFERS: $1 != $2"; exit 1; } ;;
   diff) diffsnap "$@" ;;
   loop)
     # INSTALL=ssh (tarball of HEAD/REV over ssh, default) | github (the real one-liner); UNINSTALL=keep-ssh (default) | full.

@@ -272,24 +272,37 @@ log "health ok: $(sv status sova-mesh | cut -d';' -f1)"
 # exposure: the main port answers on loopback only; the peer port only on the tailnet IP, and not at all while the mesh is
 # off. Proven by connecting to every non-loopback address of every interface (Wi-Fi, mobile data, tun0; IPv4 and IPv6),
 # as node lists them: Android denies apps ifconfig's IPv6 view and ss/netstat.
-open_on() { # port -> the non-loopback addresses that accept a connection on it
+probe() { # port -> "probed <n>", "loopback open|closed", then "open <address>" per non-loopback address that accepts
   node -e '
     const net = require("net"), port = +process.argv[1];
     const addrs = Object.entries(require("os").networkInterfaces()).flatMap(([n, a]) =>
       a.filter((x) => !x.internal).map((x) => (x.family === "IPv6" && x.address.startsWith("fe80:") ? `${x.address}%${n}` : x.address)));
-    Promise.all(addrs.map((host) => new Promise((ok) => {
+    const connects = (host) => new Promise((ok) => {
       const s = net.connect({ host, port, timeout: 3000 });
-      s.on("connect", () => { s.destroy(); ok(host); });
-      s.on("error", () => ok(null));
-      s.on("timeout", () => { s.destroy(); ok(null); });
-    }))).then((r) => r.filter(Boolean).forEach((h) => console.log(h)));' "$1"
+      s.on("connect", () => { s.destroy(); ok(true); });
+      s.on("error", () => ok(false));
+      s.on("timeout", () => { s.destroy(); ok(false); });
+    });
+    (async () => {
+      console.log(`probed ${addrs.length}`);
+      for (const a of addrs) console.log(`addr ${a}`);
+      console.log(`loopback ${(await connects("127.0.0.1")) ? "open" : "closed"}`);
+      for (const [i, ok] of (await Promise.all(addrs.map(connects))).entries()) if (ok) console.log(`open ${addrs[i]}`);
+    })();' "$1"
 }
 peers=$(node -e 'try{console.log((JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).peers??[]).length)}catch{console.log(0)}' "$BASE/agent/sova/peers.json")
-bad=$(open_on "$PORT")
+main=$(probe "$PORT") || die "the exposure probe failed (node)"
+n=$(printf '%s\n' "$main" | sed -n 's/^probed //p')
+[ "${n:-0}" -gt 0 ] || die "the exposure probe found no network addresses (node's os.networkInterfaces() is empty here): cannot prove exposure"
+printf '%s\n' "$main" | grep -qxF "addr $TAILNET_IP" || die "the exposure probe does not see $TAILNET_IP among this phone's addresses"
+# the positive control: the same connect reaches the main port on loopback, so a closed answer elsewhere means closed
+printf '%s\n' "$main" | grep -qx 'loopback open' || die "positive control failed: 127.0.0.1:$PORT does not accept a connection"
+bad=$(printf '%s\n' "$main" | sed -n 's/^open //p')
 [ -z "$bad" ] || die "the main port answers on $(echo $bad) :$PORT (must be loopback only)"
-bad=$(open_on "$PEER_PORT" | grep -vxF "$([ "$peers" = 0 ] || echo "$TAILNET_IP")" || true)
+peer=$(probe "$PEER_PORT") || die "the exposure probe failed (node)"
+bad=$(printf '%s\n' "$peer" | sed -n 's/^open //p' | grep -vxF "$([ "$peers" = 0 ] || echo "$TAILNET_IP")" || true)
 [ -z "$bad" ] || die "the peer port answers on $(echo $bad) :$PEER_PORT"
-log "exposure ok on $(node -e 'console.log(Object.values(require("os").networkInterfaces()).flat().filter((x)=>!x.internal).length)') addresses: 127.0.0.1:$PORT only; peer port $([ "$peers" = 0 ] && echo "closed (mesh off)" || echo "on $TAILNET_IP only")"
+log "exposure ok on the $n addresses probed (control: 127.0.0.1:$PORT open): main port loopback only; peer port $([ "$peers" = 0 ] && echo "closed everywhere (mesh off)" || echo "on $TAILNET_IP only")"
 
 upgraded=''
 [ ! -s "$M/packages-upgraded" ] || upgraded="Existing packages upgraded as dependencies: $(wc -l < "$M/packages-upgraded" | tr -d ' ') (see ~/sova-mesh/.install/packages-upgraded)."

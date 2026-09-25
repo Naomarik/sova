@@ -1,0 +1,25 @@
+# §mesh/front-door — Front door
+> Part of the Sova design spec · [overview](../design/overview.md)
+
+An optional stable address, served by a reverse proxy in front of the hosts, in an order the user
+sets. It is a new address, not a host's own.
+
+## §mesh.front-door/failover — Failover in order
+
+The front door sends the page to the first healthy host in the user's order, moves to the next when
+that host stops answering its health check, and returns when it recovers. A single slow or lost
+connection never benches a healthy host: at most that one request is retried on the next host.
+
+## §mesh.front-door/stale-tab — An open tab after failover
+
+A tab that reconnects to a different host or a different Sova version notices it on reconnect and
+offers to reload, rather than running old code against a new server. A host change is announced only
+once it is confirmed, never on one request answered by another host during a network stall.
+
+## §mesh.front-door/config — The order and the configuration
+
+The Mesh page shows the front door's host order, which the user can change, and the reverse-proxy
+configuration generated from it. That configuration sends to the first healthy host in order,
+checks each host's health, gives up quickly on a host that stops answering, and never reuses an
+idle connection to a host. Sova only generates the configuration; it never runs or changes the
+front door itself.

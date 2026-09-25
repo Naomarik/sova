@@ -1828,6 +1828,42 @@
       "code": [
         "src/components/MeshView.tsx"
       ]
+    },
+    "§mesh.front-door/config": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/mesh/front-door.ts",
+        "server/mesh/index.ts",
+        "src/components/MeshView.tsx"
+      ]
+    },
+    "§mesh.front-door/failover": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/mesh/front-door.ts"
+      ]
+    },
+    "§mesh.front-door/stale-tab": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/App.tsx",
+        "src/lib/mesh.ts",
+        "server/mesh/hello.ts"
+      ]
+    },
+    "§mesh/front-door": {
+      "kind": "surface",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/mesh/front-door.ts"
+      ]
     }
   }
 }

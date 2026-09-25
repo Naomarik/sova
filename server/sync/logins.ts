@@ -331,10 +331,13 @@ export class CredentialSync {
       const logout =
         !rec.meta.dead &&
         (!fileGone || store.fileDeleteIsLogout || (store.id === "pi" && !!this.opts.treatPiFileDeleteAsLogout));
-      const tombstone = logout ? tombstoneFor(rec.meta, now, this.hostId) : rec.tombstone;
+      // A key this host doesn't sync (its own OAuth login, API-keys-only mode) is logged out here
+      // only: no tombstone, so none travels later either, when the host goes back to "all".
+      const spreads = logout && this.syncs(key);
+      const tombstone = spreads ? tombstoneFor(rec.meta, now, this.hostId) : rec.tombstone;
       out.dirty = this.setRecord(key, tombstone ? { tombstone } : {}) || out.dirty;
-      if (logout) out.pushed.push(key);
-      else out.pull = true;
+      if (spreads) out.pushed.push(key);
+      else if (!logout) out.pull = true;
     }
     return out;
   }

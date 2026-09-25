@@ -794,6 +794,29 @@ test("api-keys mode: B's own OAuth login stays on B, unlisted and unoffered; A's
   assert.equal(pushedOAuth(b!), false, "not even the logout was sent");
 });
 
+test("api-keys mode: a host's logout of its own OAuth login stays local, also after it switches back to all", async () => {
+  const [a, b] = makeMesh(2);
+  const { lineage: first } = await claudeSim.login(a!.claudeDir, mockUrl);
+  await a!.sync.observe("claude");
+  await converge([a!, b!]);
+  assert.ok(b!.claude());
+  b!.kinds = "api-keys";
+  rmSync(join(b!.claudeDir, ".credentials.json")); // Claude Code's logout on B only
+  await b!.sync.observe("claude");
+  // A logs in again over its live login: Claude's store can't tell that from a refresh, so the
+  // lineage keeps its login time, older than B's logout.
+  await new Promise((r) => setTimeout(r, 5));
+  const { lineage: second } = await claudeSim.login(a!.claudeDir, mockUrl);
+  await a!.sync.observe("claude");
+  await converge([a!, b!]);
+  assert.ok(first !== second);
+  assert.equal(b!.claude(), undefined);
+  b!.kinds = "all";
+  await converge([a!, b!]);
+  assert.ok(a!.claude(), "B's local logout never reached A");
+  assert.equal(sha(b!.claude()?.refreshToken), latest(second).refreshSha256, "back to all, B took A's login");
+});
+
 test("api-keys mode: c-lite never refreshes an OAuth login on that host", async () => {
   const [a] = makeMesh(1);
   const timers = () => (a!.sync as unknown as { refreshTimers: Map<string, unknown> }).refreshTimers;

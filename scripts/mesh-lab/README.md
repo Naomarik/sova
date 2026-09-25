@@ -141,8 +141,20 @@ The harnesses:
   and WS); sova-stop gives down/502, never 4422; a killed container is down; unpair turns the mesh
   off.
 
+- **m4** (restores order and hosts): the first host in the order serves the SPA; Sova stopped on the
+  first host fails over to the second in ~1 s and fails back in <1 s; a killed first container fails
+  over in ~1.3 s; with the first two down, the third serves; an order change applies at once; a WS
+  held through the front door closes when its host dies (never 4422), and a reconnect lands on the
+  next host. The stale-tab check itself is frontend's.
+
+Front-door Caddyfile essentials, the template for the real one: `lb_policy first`,
+`health_uri /api/health` with 1 s interval/timeout, `lb_try_duration 5s`, `flush_interval -1`,
+`header_up Host {upstream_hostport}` (for `tailscale serve` upstreams), and
+`transport http { dial_timeout 1s; keepalive off }`. Without the last one, a request written into
+a killed host's idle pooled connection hangs (measured 15.5 s before the fix, 1.3 s after).
+
 Times measured on 2026-09-25: a cold `up` takes ~2 min, a rebuild after a code change ~40 s, m0
-~17 s and m1 ~40 s.
+~17 s, m1 ~40 s and m4 ~30 s.
 
 ## Gotchas
 

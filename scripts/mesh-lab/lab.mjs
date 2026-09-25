@@ -320,6 +320,12 @@ export function writeCaddyfile(cfg) {
 \t\thealth_timeout 1s
 \t\tflush_interval -1
 \t\theader_up Host {upstream_hostport}
+\t\t# a killed host's address blackholes: bound the dial, and never reuse an idle upstream
+\t\t# connection (a request written into a dead host's pooled connection waits forever)
+\t\ttransport http {
+\t\t\tdial_timeout 1s
+\t\t\tkeepalive off
+\t\t}
 \t\theader_down X-Lab-Upstream {upstream_hostport}
 \t}
 }

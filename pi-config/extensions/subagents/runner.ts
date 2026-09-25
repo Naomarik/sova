@@ -33,6 +33,7 @@ import { StringDecoder } from "node:string_decoder";
 import { fileURLToPath } from "node:url";
 import type { Worker, SteerMode } from "./contracts.ts";
 import { summarizeFileChange } from "./codefold.ts";
+import { WORKER_TOOLS_ENV } from "./worker-mark.ts";
 
 /** Pi's built-in tool names. `--tools` and `--exclude-tools` also govern extension tools, so restriction must be phrased per case. */
 export const BUILTIN_TOOLS: readonly string[] = ["read", "bash", "powershell", "edit", "write", "grep", "find", "ls"];
@@ -498,6 +499,10 @@ export class SubagentRunner implements Worker {
 		else this.push("task", options.task);
 		const args = this.adopted ? [] : this.buildArgs(options);
 		if (!args) return; // fail() already ran
+		// Restricted by exclusion (buildArgs): the marker extension activates the requested
+		// built-ins that pi's default set lacks (grep, find, ls), see worker-mark.ts.
+		const toolsEnv = options.tools?.length && options.extensions?.length ? { [WORKER_TOOLS_ENV]: options.tools.join(",") } : undefined;
+		const env = toolsEnv || options.env ? { ...options.env, ...toolsEnv } : undefined;
 
 		let proc: ChildProcess;
 		try {
@@ -507,7 +512,7 @@ export class SubagentRunner implements Worker {
 				cwd: options.cwd,
 				shell: false,
 				stdio: ["pipe", "pipe", "pipe"],
-				...(options.env ? { env: { ...process.env, ...options.env } } : {}),
+				...(env ? { env: { ...process.env, ...env } } : {}),
 			});
 		} catch (e) {
 			this.taskOutcome = "error";

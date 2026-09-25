@@ -387,8 +387,11 @@ test("with extensions, built-ins are restricted by exclusion so extension tools 
 			"--exclude-tools",
 			"bash,powershell,edit,write,find,ls",
 		]);
+		// The marker extension turns on the requested built-ins pi's default set lacks (worker-mark.ts).
+		assert.equal(some.spawnCalls[0].opts.env?.PI_SUBAGENT_BUILTIN_TOOLS, "read,grep");
 		const b = none.spawnCalls[0].args;
 		assert.ok(b.includes("--no-builtin-tools") && !b.includes("--no-tools"));
+		assert.equal(none.spawnCalls[0].opts.env?.PI_SUBAGENT_BUILTIN_TOOLS, undefined);
 		const c = all.spawnCalls[0].args;
 		assert.ok(!c.some((x) => x === "--tools" || x === "--exclude-tools" || x === "--no-tools" || x === "--no-builtin-tools"));
 	} finally {

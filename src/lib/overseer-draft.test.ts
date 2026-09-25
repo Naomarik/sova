@@ -17,7 +17,6 @@ import {
   resetOverseerDraft,
   setOverseerDraft,
   setOverseerSaved,
-  explorerOptions,
 } from "./overseer-draft";
 
 const settings = (): OverseerSettings => ({
@@ -198,28 +197,4 @@ test("the exploratory agent: an edit is dirty, deep-cloned, rebased as one choic
   const badCap = cloneOverseer({ settings: settings(), notes: "" });
   badCap.settings.caps.explorePerTurn = -1;
   assert.match(overseerDraftProblem(badCap)!, /Ideas explored/);
-});
-
-test("the explorer's model lists: the shipped default is known, Claude Opus 5 is never offered", () => {
-  const shipped = { backend: "claude-code" as const, model: "opus[1m]", effort: "medium" };
-  const info = { backends: [{ id: "claude-code" as const, label: "Claude Code", efforts: ["low", "medium", "high"] }, { id: "pi" as const, label: "pi", efforts: ["low"] }] };
-  const out = explorerOptions(
-    {
-      backends: [
-        { id: "claude-code", label: "Claude Code", models: [{ id: "claude-opus-5", name: "Opus 5", efforts: ["low"] }, { id: "claude-opus-5[1m]", name: "Opus 5 (1M)", efforts: ["low"] }, { id: "claude-opus-5-5", name: "Opus 5.5", efforts: ["low"] }] },
-        { id: "pi", label: "pi", models: [{ id: "claude-code-cli/claude-opus-5", name: "x", efforts: ["low"] }, { id: "zai/glm-5.3", name: "GLM", efforts: ["low"] }] },
-      ],
-    },
-    info,
-    shipped,
-  )!;
-  assert.deepEqual(out.backends[0]!.models!.map((m) => m.id), ["opus[1m]", "claude-opus-5-5"]);
-  assert.deepEqual(out.backends[0]!.models![0]!.efforts, ["low", "medium", "high"], "the default takes every effort its backend does");
-  assert.deepEqual(out.backends[1]!.models!.map((m) => m.id), ["zai/glm-5.3"]);
-  // Listed already: not duplicated. Discovery failed: still unknown, not invented.
-  const listed = explorerOptions({ backends: [{ id: "claude-code", label: "Claude Code", models: [{ id: "opus[1m]", name: "Opus", efforts: ["high"] }] }] }, info, shipped)!;
-  assert.deepEqual(listed.backends[0]!.models, [{ id: "opus[1m]", name: "Opus", efforts: ["high"] }]);
-  const down = explorerOptions({ backends: [{ id: "claude-code", label: "Claude Code", models: null, error: "no CLI" }] }, info, shipped)!;
-  assert.equal(down.backends[0]!.models, null);
-  assert.equal(explorerOptions(undefined, info, shipped), undefined);
 });

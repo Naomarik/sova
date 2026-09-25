@@ -1,6 +1,5 @@
 import { createSignal, untrack } from "solid-js";
-import type { DelegateOptions, OverseerCaps, OverseerQuickAction, OverseerSaveResult, OverseerSettings, OverseerSettingsInfo, WorkerChoice } from "../../shared/protocol";
-import type { BackendsInfo } from "./delegate-form";
+import type { OverseerCaps, OverseerQuickAction, OverseerSaveResult, OverseerSettings, OverseerSettingsInfo } from "../../shared/protocol";
 
 /**
  * Settings → Overseer's unsaved edits: the settings file and the standing notes, edited together
@@ -191,28 +190,4 @@ export function moveQuickAction<T>(list: readonly T[], i: number, delta: number)
   const next = [...list];
   [next[i], next[j]] = [next[j]!, next[i]!];
   return next;
-}
-
-/** Claude Opus 5 — never offered for the explorer (plain or `[1m]`, bare or as a pi ref's id). "Opus"
-    means Opus 5.5 (`opus`, `opus[1m]`); `claude-opus-5-5` is a different id and stays. */
-export const NEVER_EXPLORER_MODEL = /(^|\/)claude-opus-5(\[1m\])?$/;
-
-/**
- * The exploratory agent row's model lists: Delegate's discovery, minus Claude Opus 5, plus the
- * shipped default when discovery didn't list it. The Claude Code CLI's list is remote and
- * alternates between shapes with and without the `[1m]` aliases, so the out-of-the-box choice
- * would otherwise read "not verified" on a fresh install, although it launches. It is offered with
- * every effort its backend takes. A backend that couldn't list its models stays unlisted (null).
- */
-export function explorerOptions(options: DelegateOptions | undefined, info: BackendsInfo, shipped: WorkerChoice): DelegateOptions | undefined {
-  if (!options) return undefined;
-  return {
-    backends: options.backends.map((b) => {
-      if (b.models === null) return b;
-      const models = b.models.filter((m) => !NEVER_EXPLORER_MODEL.test(m.id));
-      if (b.id === shipped.backend && !models.some((m) => m.id === shipped.model))
-        models.unshift({ id: shipped.model, name: shipped.model, efforts: info.backends.find((x) => x.id === b.id)?.efforts ?? [shipped.effort] });
-      return { ...b, models };
-    }),
-  };
 }

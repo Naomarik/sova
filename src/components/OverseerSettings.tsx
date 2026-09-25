@@ -9,7 +9,6 @@ import {
   CAP_KEYS,
   CAP_LABEL,
   cloneOverseer,
-  explorerOptions,
   moveQuickAction,
   newQuickAction,
   overseerDirty,
@@ -272,7 +271,7 @@ export function OverseerSettingsSection() {
                       slot="primary"
                       alone="Exploratory agent"
                       info={b()}
-                      options={explorerOptions(knownOptions(), b(), loaded()!.defaults.explorer)}
+                      options={knownOptions()}
                       choice={cur().settings.explorer}
                       other={null}
                       disabled={saving()}

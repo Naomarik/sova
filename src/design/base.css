@@ -5123,10 +5123,21 @@ a.chip:hover { color: var(--color-ink); border-color: var(--color-border-strong)
 .overseer-head .button-sm { flex: none; }
 .overseer-proactivity { gap: var(--space-1); }
 .action-menu-text { display: inline-flex; align-items: center; gap: var(--space-2); }
+/* "N finished" and "N drafts" in the meta line open the lists of those sessions: text-sized
+   triggers, so the line keeps its height, with the meta's own voice until hovered. */
+.session-head-meta .overseer-count { flex: none; min-height: 0; padding: 0 var(--space-1); gap: var(--space-1); font-size: inherit; color: inherit; }
+/* The line clips its overflow, and with it an outset ring: this one is drawn inside. */
+.session-head-meta .overseer-count:focus-visible { outline-offset: calc(-1 * var(--focus-width)); }
+.overseer-count-state { margin: 0; padding: var(--space-2) var(--space-3); }
 @container session-head (max-width: 479px) {
-  .overseer-proactivity .icon { display: none; }
-  /* History keeps its clock and its name for AT; the word goes, so Clear stays on screen. */
-  .overseer-head .action-menu-text { display: none; }
+  /* The counts keep their words: their icons, chevrons and separating dots go first. */
+  .overseer-proactivity .icon,
+  .overseer-count > .icon:first-child,
+  .overseer-count .action-menu-text > .icon,
+  .overseer-count-sep { display: none; }
+  /* History keeps its clock and its name for AT; the word goes, so Clear stays on screen.
+     A direct child only: "N finished" and "N drafts" in the meta line are their words. */
+  .overseer-head > .button .action-menu-text { display: none; }
 }
 
 /* The Overseer's empty thread: a live fact, then the absence. */

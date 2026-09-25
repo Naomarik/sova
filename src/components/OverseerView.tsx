@@ -1,8 +1,9 @@
 import { createEffect, createMemo, createResource, createSignal, For, on, Show } from "solid-js";
 import type { OverseerInfo, OverseerProactivity, SessionSummary } from "../../shared/protocol";
-import { clearOverseer, getOverseer, getOverseerIdeas, getOverseerSettings, putOverseerSettings } from "../lib/api";
+import { clearOverseer, getAttention, getOverseer, getOverseerIdeas, getOverseerSettings, putOverseerSettings } from "../lib/api";
 import { relativeTime, shortModel } from "../lib/format";
-import { nextProactivity, OVERSEER_HASH, overseerHistoryHref, PROACTIVITY_HINT, PROACTIVITY_LABEL } from "../lib/overseer";
+import { type HeadList, headLists, nextProactivity, OVERSEER_HASH, OVERSEER_POLL_MS, overseerHistoryHref, PROACTIVITY_HINT, PROACTIVITY_LABEL } from "../lib/overseer";
+import { createPoll } from "../lib/poll";
 import { isMainThread } from "../lib/regions";
 import { settingsOpenAt } from "../lib/settings-nav";
 import { announce, toast } from "../lib/ui-state";
@@ -53,15 +54,24 @@ export function OverseerView(props: {
   const main = createMemo(() => props.sessions.filter(isMainThread));
   const working = () => main().filter((s) => s.busy || sessionWorking(s) > 0 || s.activity?.state === "working").length;
   const act = () => props.info?.badge.act ?? 0;
-  const decide = () => props.info?.badge.decide ?? 0;
-  /** The head's one line: what the Overseer is watching, as counts. */
+  /** The head's one line: what the Overseer is watching, as counts. "N finished" and "N drafts" are the menus after it. */
   const facts = () => {
     const parts = [`${sessions(main().length)}`];
     if (working()) parts.push(`${working()} working`);
     if (act()) parts.push(`${act()} ${act() === 1 ? "needs" : "need"} you`);
-    if (decide()) parts.push(`${decide()} finished`);
     return parts.join(" · ");
   };
+
+  // ---- Finished and drafts: two menus read from the attention digest, so each count is its list --
+  const [reading, setReading] = createSignal(false);
+  const digest = createPoll(async () => {
+    setReading(true);
+    try {
+      return headLists(await getAttention());
+    } finally {
+      setReading(false);
+    }
+  }, OVERSEER_POLL_MS);
 
   // ---- Ideas: the backlog the Overseer files, in a panel over the chat's right side -----------
   const [ideasOpen, setIdeasOpen] = createSignal(false);
@@ -172,7 +182,16 @@ export function OverseerView(props: {
           {p.earlier ? "Earlier Overseer Conversation" : "Overseer"}
         </h1>
         <p class="session-head-meta">
-          <Show when={p.earlier} fallback={<span>{facts()}</span>}>
+          <Show
+            when={p.earlier}
+            fallback={
+              <>
+                <span title={facts()}>{facts()}</span>
+                <HeadMenu kind={FINISHED} list={digest.data()?.finished} error={digest.error()} reading={reading()} retry={digest.refetch} now={props.wiring.now} />
+                <HeadMenu kind={DRAFTS} list={digest.data()?.drafts} error={digest.error()} reading={reading()} retry={digest.refetch} now={props.wiring.now} />
+              </>
+            }
+          >
             {(e) => (
               <span title={e().title}>
                 {e().title} · {relativeTime(e().lastActiveAt, props.wiring.now)}
@@ -379,6 +398,122 @@ export function OverseerView(props: {
           );
         }}
       </Show>
+    </Show>
+  );
+}
+
+/** The words one head menu uses: "3 finished" and its list, or "2 drafts" and its list. */
+interface HeadMenuKind {
+  count(n: number): string;
+  /** The trigger's accessible name: "3 finished sessions", "1 draft". */
+  name(n: number): string;
+  title: string;
+  icon: "check" | "pencil";
+  /** What a read is of: "the finished sessions". */
+  subject: string;
+  empty: string;
+  cut: string;
+}
+
+const FINISHED: HeadMenuKind = {
+  count: (n) => `${n} finished`,
+  name: (n) => `${n} finished ${n === 1 ? "session" : "sessions"}`,
+  title: "Finished sessions",
+  icon: "check",
+  subject: "the finished sessions",
+  empty: "Nothing finished right now.",
+  cut: "Some finished sessions may not be listed: this list stops at the 30 most urgent items.",
+};
+
+const DRAFTS: HeadMenuKind = {
+  count: (n) => `${n} ${n === 1 ? "draft" : "drafts"}`,
+  name: (n) => `${n} ${n === 1 ? "draft" : "drafts"}`,
+  title: "Drafts and queued messages",
+  icon: "pencil",
+  subject: "the drafts",
+  empty: "No drafts right now.",
+  cut: "Some drafts may not be listed: this list stops at the 30 most urgent items.",
+};
+
+/**
+ * One count in the head's meta line that opens the list of its sessions. Its number is its rows,
+ * read from the digest poll; it is hidden at 0 unless its menu is open, where a list that emptied
+ * says so instead of vanishing under the pointer.
+ */
+function HeadMenu(props: { kind: HeadMenuKind; list: HeadList | undefined; error: string | null; reading: boolean; retry(): void; now: number }) {
+  const [open, setOpen] = createSignal(false);
+  const n = () => props.list?.rows.length ?? 0;
+  let body: HTMLDivElement | undefined;
+  let retried = false;
+  // After Try Again the pressed row goes with the error: put focus on the first row, and say how it went.
+  createEffect(
+    on(
+      () => props.reading,
+      (reading) => {
+        if (reading || !retried) return;
+        retried = false;
+        // A task, not a microtask: the poll stores the result after the read itself settles.
+        setTimeout(() => {
+          if (props.error) announce(`Couldn't read ${props.kind.subject}.`);
+          // Only when focus went with the pressed row: never pull it back from where the user took it.
+          const at = document.activeElement;
+          if (!body?.closest(":popover-open") || (at && at !== document.body)) return;
+          body.querySelector<HTMLElement>("[role=menuitem]")?.focus();
+        });
+      },
+      { defer: true },
+    ),
+  );
+  const note = (r: { where: string; since: number }) => [r.where, r.since ? relativeTime(r.since, props.now) : ""].filter(Boolean).join(" · ");
+  const retry = () => {
+    retried = true;
+    props.retry();
+  };
+  return (
+    <Show when={n() > 0 || open()}>
+      <span class="overseer-count-sep" aria-hidden="true">·</span>
+      {/* `contain` portals the panel out of this line, whose nowrap and caption styles would
+          otherwise reach the rows. */}
+      <ActionMenu
+        label={`${props.kind.name(n())}, show list`}
+        title={props.kind.title}
+        icon={props.kind.icon}
+        text={props.kind.count(n())}
+        class="button-sm button-ghost overseer-count"
+        align="start"
+        contain
+        onToggle={setOpen}
+      >
+        {(menu) => (
+          <div class="overseer-count-list" ref={body}>
+            <Show when={props.reading && (props.error || !props.list)}>
+              <p class="mode-option-note overseer-count-state">Reading {props.kind.subject}.</p>
+            </Show>
+            <Show when={!props.reading && props.error}>
+              {(message) => (
+                <>
+                  <p class="mode-option-note overseer-count-state">
+                    Couldn't read {props.kind.subject}. {sentenceOf(message())} Nothing was changed.
+                  </p>
+                  <menu.Item label="Try Again" aria={`Read ${props.kind.subject} again`} stayOpen onRun={retry} />
+                </>
+              )}
+            </Show>
+            <Show when={props.list}>
+              {(list) => (
+                <>
+                  <For each={list().rows} fallback={<p class="mode-option-note overseer-count-state">{props.kind.empty}</p>}>
+                    {(r) => <menu.Item label={r.title} title={r.title} aria={`${r.title}, ${note(r)}`} description={note(r)} href={r.href} />}
+                  </For>
+                  <Show when={list().cut}>
+                    <p class="mode-option-note overseer-count-state">{props.kind.cut}</p>
+                  </Show>
+                </>
+              )}
+            </Show>
+          </div>
+        )}
+      </ActionMenu>
     </Show>
   );
 }

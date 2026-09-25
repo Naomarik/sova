@@ -22,7 +22,7 @@ import {
 import { socketReconnects } from "./lib/socket";
 import { firstBaseline, helloStep, HOST_CONFIRM_MS, type HelloBaseline, type PendingHost, type HelloChange, sessionHrefOn } from "./lib/mesh";
 import { hostLabel, hostOf, isMeshHash, joinHostLists, linkedSessionRow, meshRetryDelay, meshState, meshOn, meshPeers, mergePeerLists, noteHost, notePeerSessions, peerInfo, peerUnavailable, sessionRouteFromHash, setMeshState } from "./lib/mesh";
-import { isOverseerHash, isOverseerShortcut, OVERSEER_HASH, overseerHistoryId } from "./lib/overseer";
+import { isOverseerHash, isOverseerShortcut, OVERSEER_HASH, OVERSEER_POLL_MS, overseerHistoryId } from "./lib/overseer";
 import { isMainThread } from "./lib/regions";
 import { sessionIdFromHash, setGroupLinkIndex, setSessionIndex } from "./lib/session-links";
 import { agentsHref, insightsRouteFromHash, legacyInsightsTarget } from "./lib/insights";
@@ -87,8 +87,6 @@ const USAGE_POLL_MS = 60_000;
 const AGENTS_POLL_MS = 5_000;
 /** The explanations store only changes when a /explain subagent finishes; the sidebar row can wait. */
 const EXPLAIN_POLL_MS = 60_000;
-/** The Overseer's entry button: its attention counts and unread messages. No LLM behind it. */
-const OVERSEER_POLL_MS = 10_000;
 
 /** `#/overseer` (null: another route), with the earlier file `#/overseer/h/<id>` names. */
 const overseerRouteFromHash = (hash: string) => (isOverseerHash(hash) ? { historyId: overseerHistoryId(hash) } : null);

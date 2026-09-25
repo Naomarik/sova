@@ -1,4 +1,4 @@
-import { OVERSEER_BRIEF_PREFIX, type SovaConfirmDetails, type SovaNavigateDetails, type TranscriptItem } from "../../shared/protocol";
+import { type AttentionDigest, OVERSEER_BRIEF_PREFIX, type SovaConfirmDetails, type SovaNavigateDetails, type TranscriptItem } from "../../shared/protocol";
 import { isObj, str } from "./message";
 import { openSettings, SETTINGS_TABS, type SettingsSection, type SettingsTab } from "./settings-nav";
 
@@ -132,6 +132,51 @@ export function overseerButtonLabel(badge: { act: number; decide: number } | nul
   if (badge?.decide) parts.push(`${badge.decide} finished`);
   if (unread) parts.push(`${unread} new ${unread === 1 ? "message" : "messages"}`);
   return parts.length ? `Overseer · ${parts.join(" · ")}` : "Overseer";
+}
+
+// ---- The head's finished and drafts lists ----------------------------------------------------
+
+/** How often the Overseer's counts are re-read: the entry button's poll, and the head's digest poll. */
+export const OVERSEER_POLL_MS = 10_000;
+
+/** One session in the head's "N finished" or "N drafts" menu. */
+export interface HeadRow {
+  id: string;
+  title: string;
+  where: string;
+  href: string;
+  /** ms epoch of its newest item of the menu's kind; 0 unknown. */
+  since: number;
+}
+
+/** One head menu: its rows (their count is the menu's number) and whether the digest's cap may have dropped some. */
+export interface HeadList {
+  rows: HeadRow[];
+  cut: boolean;
+}
+
+/**
+ * The head's two menus, from the attention digest's decide items, minus any session that also has
+ * an act item (that one is counted as "needs you"). `finished`: a reply since last seen (kind
+ * "finished"). `drafts`: an unsent draft or queued input. A session with both is in both; each
+ * menu has one row per session, newest first. `cut` is true when the digest's 30-item cap dropped
+ * act or decide items, so either menu may be short.
+ */
+export function headLists(digest: Pick<AttentionDigest, "items" | "counts">): { finished: HeadList; drafts: HeadList } {
+  const needsYou = new Set(digest.items.filter((i) => i.tier === "act").map((i) => i.id));
+  const finished = new Map<string, HeadRow>();
+  const drafts = new Map<string, HeadRow>();
+  for (const it of digest.items) {
+    if (it.tier !== "decide" || needsYou.has(it.id)) continue;
+    const into = it.kind === "finished" ? finished : it.kind === "draft" || it.kind === "queued" ? drafts : null;
+    if (!into) continue;
+    const row = into.get(it.id);
+    if (row) row.since = Math.max(row.since, it.since);
+    else into.set(it.id, { id: it.id, title: it.title, where: it.where, href: it.href, since: it.since });
+  }
+  const cut = digest.counts.act + digest.counts.decide > digest.items.length;
+  const list = (m: Map<string, HeadRow>): HeadList => ({ rows: [...m.values()].sort((a, b) => b.since - a.since), cut });
+  return { finished: list(finished), drafts: list(drafts) };
 }
 
 /** Alt+O opens the Overseer. `code`, not `key`: on a Mac, Option+O types "ø". */

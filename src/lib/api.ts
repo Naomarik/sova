@@ -1,5 +1,6 @@
 import type {
   AgentsInsight,
+  AttentionDigest,
   ChatModeResult,
   ClaudeCliStatus,
   ContextInfo,
@@ -202,6 +203,9 @@ export const getOverseerIdea = (id: string) => request<OverseerIdeaDetail>(`/api
     IdeaConflict carrying the current detail in `ApiError.body`) when the idea changed since. */
 export const patchOverseerIdea = (id: string, patch: IdeaPatch) =>
   request<OverseerIdeaDetail>(`/api/overseer/idea?id=${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(patch) });
+
+/** The attention digest: what needs the user, what finished, what is running (≤30 items, tier first). */
+export const getAttention = () => request<AttentionDigest>("/api/overseer/attention");
 
 /** Settings → Overseer. */
 export const getOverseerSettings = () => request<OverseerSettingsInfo>("/api/settings/overseer");

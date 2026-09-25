@@ -87,6 +87,8 @@ export function ActionMenu(props: {
    *   summary.
    */
   contain?: boolean;
+  /** Called as the panel opens and closes: a trigger that would otherwise unmount can stay while open. */
+  onToggle?(open: boolean): void;
   children: (api: ActionMenuApi) => JSX.Element;
 }) {
   let trigger!: HTMLButtonElement;
@@ -232,6 +234,7 @@ export function ActionMenu(props: {
       onToggle={(e) => {
         setOpen((e as ToggleEvent).newState === "open");
         if ((e as ToggleEvent).newState !== "open") setScreen(null);
+        props.onToggle?.(open());
       }}
     >
       {props.children(api)}

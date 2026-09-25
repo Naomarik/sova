@@ -4,6 +4,9 @@
 #   scripts/mesh-termux/phone-test.sh install [args…]      push the tarball + install.sh, run `sh -s -- --source-url file://…`
 #   scripts/mesh-termux/phone-test.sh install-http [args…] the same through curl | sh, both served from this laptop's
 #                                                          tailnet IP for the run only (python http.server)
+#   scripts/mesh-termux/phone-test.sh install-github [args…] the real one-liner from GitHub (GH_REF, default master)
+#   scripts/mesh-termux/phone-test.sh gate                 mesh on with a placeholder peer: non-peer tailnet node, the phone
+#                                                          itself and a Wi-Fi source are refused; back to mesh off
 #   scripts/mesh-termux/phone-test.sh check                health, listeners, exposure, runit restart after a kill
 #   scripts/mesh-termux/phone-test.sh uninstall [--keep-ssh]
 #   scripts/mesh-termux/phone-test.sh snapshot <name>      packages, files, services, processes → $OUT/<name>/
@@ -75,6 +78,23 @@ install_http() {
   ph "curl -fsSL http://$LAPTOP_IP:$HTTP_PORT/install.sh | sh -s -- --source-url http://$LAPTOP_IP:$HTTP_PORT/sova-src.tar.gz $(printf '%q ' "$@")" 2>&1 | tee "$OUT/install.log"
   log "install (curl | sh) after $((SECONDS - t0)) s"
   grep -q 'Sova is running' "$OUT/install.log" || die "install did not finish"
+}
+
+# the real one-liner from GitHub (GH_REF, default master): nothing from this laptop but the ssh session
+GH_REPO=${GH_REPO:-Naomarik/sova}
+install_github() {
+  local ref=${GH_REF:-master} t0=$SECONDS
+  local url="https://raw.githubusercontent.com/$GH_REPO/$ref/scripts/mesh-termux/install.sh"
+  local extra=''; [ "$ref" = master ] || extra="--ref $ref"
+  ph "curl -fsSL $url | sh -s -- $extra $(printf '%q ' "$@")" 2>&1 | tee "$OUT/install.log"
+  log "install (GitHub $ref one-liner) after $((SECONDS - t0)) s"
+  grep -q 'Sova is running' "$OUT/install.log" || die "install did not finish"
+}
+
+# install.sh options from local.env (id, label, StableID, MagicDNS name) and the phone's own first ssh key
+default_args() {
+  need PHONE_ID PHONE_NODE_ID PHONE_DNS
+  ARGS=(--id "$PHONE_ID" --label "$PHONE_LABEL" --node-id "$PHONE_NODE_ID" --dns "$PHONE_DNS" --ssh-key "$(ph 'head -1 ~/.ssh/authorized_keys')")
 }
 
 check() {
@@ -160,9 +180,9 @@ code_from_laptop() { curl -s -m 8 -o /dev/null -w '%{http_code}' "$PHONE_PEER_UR
 phone_log_tail() { ph 'tail -n 40 $PREFIX/var/log/sv/sova-mesh/current' | grep -E '\[mesh\]' | tail -"${1:-8}" >&2 || true; }
 
 # the gate with a placeholder peer (an unused tailnet IP, a fake StableID): mesh on, but the laptop is NOT a peer yet
+# (not pairing: nothing outside the phone changes, so no PAIR_GO; the phone is back to mesh off afterwards)
 gate() {
-  go
-  local dummy='{"peers":[{"id":"gate-dummy","label":"gate dummy","nodeId":"nGATEDUMMY00CNTRL","dnsName":"100.64.0.1","url":"http://100.64.0.1:4801"}]}'
+  local dummy='{"peers":[{"id":"gate-dummy","label":"gate dummy","nodeId":"nGATEDUMMY00CNTRL","name":"100.64.0.1","url":"http://100.64.0.1:4801"}]}'
   [ "$(phone_put /api/mesh/peers "$dummy")" = 200 ] || die "phone PUT peers (placeholder)"
   local ok=0 c
   for _ in $(seq 1 20); do c=$(code_from_laptop /api/peer/hello); [ "$c" != 000 ] && { ok=1; break; }; sleep 0.5; done
@@ -184,7 +204,15 @@ gate() {
   c=$(ph "curl -s -m 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:4801/api/peer/hello" || true)
   [ "$c" = 000 ] || die "the peer port answers on loopback ($c)"
   timeout 6 bash -c "exec 3<>/dev/tcp/$PHONE/4800" 2>/dev/null && die "main port reachable over the tailnet"
-  phone_log_tail 8
+  local refused
+  refused=$(ph 'grep -c "\[mesh\] refused" $PREFIX/var/log/sv/sova-mesh/current' || true)
+  [ "${refused:-0}" -ge 2 ] || { phone_log_tail 12; die "no '[mesh] refused' lines in the phone's log"; }
+  ph 'grep -E "\[mesh\] (refused|peer listener)" $PREFIX/var/log/sv/sova-mesh/current | tail -6' >&2
+  # back to mesh off: the listener closes
+  [ "$(phone_put /api/mesh/peers '{"peers":[]}')" = 200 ] || die "phone PUT peers []"
+  sleep 1
+  timeout 6 bash -c "exec 3<>/dev/tcp/$PHONE/4801" 2>/dev/null && die "peer port still open after the placeholder was removed"
+  log "gate: placeholder removed, mesh off, $PHONE:4801 closed"
   echo "GATE PASS"
 }
 
@@ -194,11 +222,11 @@ pair() {
   cp "$LAPTOP_PEERS_FILE" "$OUT/laptop-peers.before.json"
   # the laptop: its current peers plus the phone (PUT replaces the list)
   local body
-  body=$(node -e 'const [f,id,label,nodeId,dns,url]=process.argv.slice(1);const c=JSON.parse(require("fs").readFileSync(f,"utf8"));const peers=(c.peers||[]).filter(p=>p.id!==id);peers.push({id,label,nodeId,dnsName:dns,url});console.log(JSON.stringify({peers}))' \
+  body=$(node -e 'const [f,id,label,nodeId,dns,url]=process.argv.slice(1);const c=JSON.parse(require("fs").readFileSync(f,"utf8"));const peers=(c.peers||[]).filter(p=>p.id!==id).map(({dnsName,...p})=>({...p,name:dnsName}));peers.push({id,label,nodeId,name:dns,url});console.log(JSON.stringify({peers}))' \
     "$LAPTOP_PEERS_FILE" "$PHONE_ID" "$PHONE_LABEL" "$PHONE_NODE_ID" "$PHONE_DNS" "$PHONE_PEER_URL")
   [ "$(laptop_put /api/mesh/peers "$body")" = 200 ] || { cat "$OUT/put.json" >&2; die "laptop PUT peers"; }
   local lip=${LAPTOP_PEER_URL#http://}; lip=${lip%%:*}
-  body=$(printf '{"peers":[{"id":"%s","label":"%s","nodeId":"%s","dnsName":"%s","url":"%s"}]}' "$LAPTOP_ID" "$LAPTOP_ID" "$LAPTOP_NODE_ID" "$lip" "$LAPTOP_PEER_URL")
+  body=$(printf '{"peers":[{"id":"%s","label":"%s","nodeId":"%s","name":"%s","url":"%s"}]}' "$LAPTOP_ID" "$LAPTOP_ID" "$LAPTOP_NODE_ID" "$lip" "$LAPTOP_PEER_URL")
   [ "$(phone_put /api/mesh/peers "$body")" = 200 ] || die "phone PUT peers"
   local ok=0 a b
   for _ in $(seq 1 40); do
@@ -225,7 +253,7 @@ pair() {
 unpair() {
   [ -f "$OUT/laptop-peers.before.json" ] || die "no saved laptop peers list"
   local body
-  body=$(node -e 'const c=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log(JSON.stringify({peers:c.peers||[]}))' "$OUT/laptop-peers.before.json")
+  body=$(node -e 'const c=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log(JSON.stringify({peers:(c.peers||[]).map(({dnsName,...p})=>({...p,name:dnsName}))}))' "$OUT/laptop-peers.before.json")
   [ "$(laptop_put /api/mesh/peers "$body")" = 200 ] || die "laptop PUT peers (restore)"
   [ "$(phone_put /api/mesh/peers '{"peers":[]}')" = 200 ] || die "phone PUT peers []"
   sleep 1
@@ -235,10 +263,11 @@ unpair() {
 
 cmd=${1:-}; shift || true
 case "$cmd" in tarball|diff|"") ;; *) need PHONE ;; esac
-case "$cmd" in install-http) need LAPTOP_IP ;; gate|pair|unpair) pairing_vars ;; esac
+case "$cmd" in install-http) need LAPTOP_IP ;; pair|unpair) pairing_vars ;; esac
 case "$cmd" in
   tarball) tarball ;;
   install) install_ssh "$@" ;;
+  install-github) install_github "$@" ;;
   install-http) install_http "$@" ;;
   check) check ;;
   uninstall) script "$HERE/uninstall.sh" | ph "sh -s -- $*" 2>&1 | tee "$OUT/uninstall.log" ;;
@@ -248,14 +277,28 @@ case "$cmd" in
   snapshot) snapshot "$@" ;;
   diff) diffsnap "$@" ;;
   loop)
-    tarball
+    # INSTALL=ssh (tarball of HEAD/REV over ssh, default) | github (the real one-liner); UNINSTALL=keep-ssh (default) | full.
+    # A full uninstall releases the Termux wake lock, which this ssh loop needs: it is taken again right after, in the same
+    # ssh session (the baseline had one too), and recorded in the log.
+    [ $# -gt 0 ] && ARGS=("$@") || default_args
+    inst() { if [ "${INSTALL:-ssh}" = github ]; then install_github "${ARGS[@]}"; else install_ssh "${ARGS[@]}"; fi; }
+    unin() {
+      if [ "${UNINSTALL:-keep-ssh}" = full ]; then
+        script "$HERE/uninstall.sh" | ph 'sh -s --; rc=$?; termux-wake-lock; echo "[phone-test] wake lock taken again for the ssh loop"; exit $rc' 2>&1 | tee "$OUT/uninstall.log"
+      else
+        script "$HERE/uninstall.sh" | ph "sh -s -- --keep-ssh" 2>&1 | tee "$OUT/uninstall.log"
+      fi
+      grep -q 'removed ~/sova-mesh' "$OUT/uninstall.log" || die "uninstall did not finish"
+    }
+    [ "${INSTALL:-ssh}" = github ] || tarball
+    if ph 'test -d ~/sova-mesh'; then log "installed: uninstalling first, so 'pre' is the uninstalled baseline"; unin; fi
     snapshot pre
-    install_ssh "$@"; check
-    script "$HERE/uninstall.sh" | ph "sh -s -- --keep-ssh" 2>&1 | tee "$OUT/uninstall.log"
+    inst; check; gate
+    unin
     snapshot post
     diffsnap pre post
-    install_ssh "$@"; check
-    echo "LOOP PASS"
+    inst; check
+    echo "LOOP PASS ($(ph 'cat ~/sova-mesh/app/BUILD_COMMIT'))"
     ;;
   *) sed -n '2,15p' "$0"; exit 2 ;;
 esac

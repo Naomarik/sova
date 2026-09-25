@@ -52,7 +52,11 @@ anything else that took it.
 
 ## Testing from the laptop
 
-`phone-test.sh` (ssh to the phone's Termux sshd on 8022): `loop` = snapshot, install, check (health, SPA, listeners by
-connect since the phone has no ss/netstat for apps, runit restart after `kill -9`, logger), `uninstall --keep-ssh`,
-snapshot, diff (must be clean), install, check. `install-http` runs the real `curl | sh` path with both files
-served from the laptop's tailnet IP for the run only.
+`phone-test.sh` (ssh to the phone's Termux sshd on 8022; site values in the untracked `local.env`, see
+`local.env.example`): `loop` = uninstall first if installed, snapshot, install, check (health, SPA, listeners by
+connect since the phone has no ss/netstat for apps, runit restart after `kill -9`, logger), gate (mesh on with a
+placeholder peer: a non-peer tailnet node, the phone itself and a Wi-Fi source get 403 and `[mesh] refused` lines;
+back to mesh off), uninstall, snapshot, diff (must be clean), install, check. `INSTALL=github` uses the real
+one-liner (`GH_REF`, default master), otherwise a tarball of HEAD (or `REV=<sha>`) goes over ssh. `UNINSTALL=full`
+runs the default uninstall and takes the wake lock again for the ssh loop; the default keeps ssh. `install-http` runs
+`curl | sh` with both files served from the laptop's tailnet IP for the run only. `pair`/`unpair` need `PAIR_GO=1`.

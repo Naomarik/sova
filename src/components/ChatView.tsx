@@ -62,6 +62,8 @@ import { inputCount } from "../lib/input-count";
 import { messageCount } from "../lib/message-count";
 import type { RewindControl, RewindResult } from "../lib/inputs";
 import type { RewindRefusal } from "../../shared/protocol";
+import { COMPACT_IMAGES_REFUSAL, compactCommand } from "../../shared/compact";
+import { COMPACT_STREAMING_REASON, COMPACTING_REASON, compactedAnnouncement } from "../lib/compact";
 import {
   ACTION_LABEL,
   actionReason,
@@ -256,8 +258,9 @@ export function ChatView(props: {
   /** This chat's sandbox (WS "sandbox"), null while its runtime has no sandbox extension. */
   const [sandbox, setSandboxState] = createSignal<SandboxInfo | null>(null);
   const [sandboxPending, setSandboxPending] = createSignal(false);
-  /** Local "Ran /name args" rows; `tui` marks one that asked for a UI Sova can't show. */
-  const [commandRows, setCommandRows] = createSignal<{ label: string; tui: boolean }[]>([]);
+  /** Local "Ran /name args" rows; `tui` marks one that asked for a UI Sova can't show, `note` one
+      that was refused (a /compact), whose row then says why instead of "Ran". */
+  const [commandRows, setCommandRows] = createSignal<{ label: string; tui: boolean; note?: string }[]>([]);
   /** Subagents working now (WS "workers"); 0 until the first one arrives. */
   const [workersWorking, setWorkersWorking] = createSignal(0);
   /** The same message's list, so the status row can split the count against this session's teams. */
@@ -334,7 +337,9 @@ export function ChatView(props: {
         if (isObj(ev) && ev.type === "compaction_start") setCompacting(true);
         if (isObj(ev) && ev.type === "compaction_end") {
           setCompacting(false);
-          setSessionContext(props.path, "compacted");
+          // Only a compaction that WROTE one makes the fill stale; a failed or cancelled one
+          // (no `result`) left the context exactly as it was.
+          if (isObj(ev.result)) setSessionContext(props.path, "compacted");
         }
         applyEvent(setLive, ev);
         if (isObj(ev) && ev.type === "agent_settled") settled = true;
@@ -392,8 +397,9 @@ export function ChatView(props: {
           statusAsker.hello();
           batch(() => {
             setItems(msg.items);
-            setLive(reconcile({ ...emptyLive(), running: msg.isStreaming }));
-            setCompacting(false);
+            // A client that connects mid-compaction shows it, as the compaction_start it missed would.
+            setLive(reconcile({ ...emptyLive(), running: msg.isStreaming, activity: msg.isCompacting ? "Compacting context" : null }));
+            setCompacting(!!msg.isCompacting);
           });
           setModel(msg.model);
           setSandboxState(null); // a "sandbox" message follows when the runtime has the extension
@@ -531,6 +537,13 @@ export function ChatView(props: {
         case "rewind_refused":
           settleRequest(msg.id, { ok: false, reason: msg.reason, message: msg.message });
           break;
+        // The hello that carries the compaction row has already arrived; this only settles the ask.
+        case "compacted":
+          settleRequest(msg.id, { ok: true, tokensBefore: msg.tokensBefore });
+          break;
+        case "compact_refused":
+          settleRequest(msg.id, { ok: false, reason: msg.reason, message: msg.message });
+          break;
         case "commands":
           setCommands(msg.commands);
           // A runtime that outlived its last socket won't report again until something happens,
@@ -629,16 +642,17 @@ export function ChatView(props: {
    * Timeline row and the message strip show the same sentence inline), so the live region says
    * each one exactly once.
    */
-  type RequestKind = "rewind" | "regenerate" | "queue_remove";
-  /** What a request settles as. `text` is a rewind's message, on its way to the composer. */
-  type ActionResult = { ok: true; text?: string } | { ok: false; reason: string; message: string };
+  type RequestKind = "rewind" | "regenerate" | "queue_remove" | "compact";
+  /** What a request settles as. `text` is a rewind's message, on its way to the composer;
+      `tokensBefore` a compaction's count of what it summarized. */
+  type ActionResult = { ok: true; text?: string; tokensBefore?: number } | { ok: false; reason: string; message: string };
   const requests = new Map<string, { kind: RequestKind; resolve: (result: ActionResult) => void }>();
   let requestSeq = 0;
   /** How many of each kind are waiting, reactively: a strip greys its own action while one is out,
       and the flyout's Undo row greys out while a rewind is. */
-  const [pending, setPending] = createSignal<Record<RequestKind, number>>({ rewind: 0, regenerate: 0, queue_remove: 0 });
+  const [pending, setPending] = createSignal<Record<RequestKind, number>>({ rewind: 0, regenerate: 0, queue_remove: 0, compact: 0 });
   const countPending = () => {
-    const n: Record<RequestKind, number> = { rewind: 0, regenerate: 0, queue_remove: 0 };
+    const n: Record<RequestKind, number> = { rewind: 0, regenerate: 0, queue_remove: 0, compact: 0 };
     for (const r of requests.values()) n[r.kind]++;
     setPending(n);
   };
@@ -903,6 +917,9 @@ export function ChatView(props: {
     if (!items()) return { icon: "clock", text: "Connecting…" };
     if (syncing()) return { icon: "clock", text: "Saving this turn…" };
     if (pendingModel()) return { icon: "clock", text: "Switching model…" };
+    // Any compaction: this chat's /compact (asked, or already running), pi's automatic one, or an
+    // extension's. The server would hold a send meanwhile; saying so is better than a queue row.
+    if (compacting() || pending().compact > 0) return { icon: "clock", text: COMPACTING_REASON };
     return null;
   };
 
@@ -1064,6 +1081,9 @@ export function ChatView(props: {
     // The id this message is known by from here on: the server echoes it in `send_ack`, lists it
     // in the queue snapshot, and takes it back by it. Minted per send, so two identical messages
     // are still two messages — which is what makes removing the middle one of three possible.
+    // "/compact [instructions]" is Sova's builtin: a request with its own answer, not a message.
+    const compact = compactCommand(text);
+    if (compact) return sendCompact(text, compact.instructions, steer, attachments.length > 0);
     const clientId = newClientId();
     if (!socket.send({ type: steer ? "steer" : "prompt", text, clientId })) return false;
     // A known slash command isn't a message to the model (templates and skills expand into other
@@ -1084,6 +1104,35 @@ export function ChatView(props: {
       addPendingPrompt(setLive, text, [], attachments, clientId);
       setLive("running", true);
       setResume((n) => n + 1);
+    });
+    return true;
+  };
+
+  /**
+   * The web /compact (§chat.slash-commands/compact): a "Ran" row now, "Compacting context" in the
+   * run status until pi's compaction_end, and Stop cancels it. A refusal turns the row into an
+   * attention row that says why. Mid-turn, or with images, it is refused here without a round
+   * trip — the server's reasons and copy — and the draft stays, since nothing was sent. A landed
+   * one leaves the compaction row the server's hello already drew, so the local row goes.
+   */
+  const sendCompact = (text: string, instructions: string | undefined, streaming: boolean, images: boolean): boolean => {
+    const label = text.length > 61 ? `${text.slice(0, 60)}…` : text;
+    const localRefusal = images ? COMPACT_IMAGES_REFUSAL : streaming || live.running ? COMPACT_STREAMING_REASON : null;
+    if (localRefusal) {
+      setCommandRows((rows) => [...rows, { label, tui: false, note: localRefusal }]);
+      announce(localRefusal);
+      return false;
+    }
+    const row = { label, tui: false };
+    batch(() => {
+      setCommandRows((rows) => [...rows, row]);
+      setResume((n) => n + 1);
+    });
+    void ask("compact", { type: "compact", ...(instructions ? { instructions } : {}) }).then((result) => {
+      if (result.ok) {
+        setCommandRows((rows) => rows.filter((r) => r !== row));
+        announce(compactedAnnouncement(result.tokensBefore ?? 0));
+      } else setCommandRows((rows) => rows.map((r) => (r === row ? { ...r, note: result.message } : r)));
     });
     return true;
   };
@@ -1273,19 +1322,27 @@ export function ChatView(props: {
                 {(row) => (
                   <div class="info-row" role="note">
                     <span class="info-row-text">
-                      <Icon name={row.tui ? "attention" : "terminal"} small />
-                      <Show
-                        when={row.tui}
+                      <Icon name={row.tui || row.note ? "attention" : "terminal"} small />
+                      <Switch
                         fallback={
                           <span>
                             Ran <code>{row.label}</code>
                           </span>
                         }
                       >
-                        <span>
-                          <code>{row.label.split(/\s/)[0]}</code> needs the terminal UI. Run it in pi in a terminal.
-                        </span>
-                      </Show>
+                        <Match when={row.note}>
+                          {(note) => (
+                            <span>
+                              <code>{row.label}</code>: {note()}
+                            </span>
+                          )}
+                        </Match>
+                        <Match when={row.tui}>
+                          <span>
+                            <code>{row.label.split(/\s/)[0]}</code> needs the terminal UI. Run it in pi in a terminal.
+                          </span>
+                        </Match>
+                      </Switch>
                     </span>
                   </div>
                 )}
@@ -1312,6 +1369,7 @@ export function ChatView(props: {
         blocked={blocked()}
         commands={commands()}
         running={live.running}
+        compacting={compacting()}
         stopping={live.stopping}
         detail={live.activity ?? runDetail(live)}
         workersWorking={workersWorking()}

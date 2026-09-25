@@ -8,15 +8,16 @@
  */
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough, Writable } from "node:stream";
-import { test } from "node:test";
+import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { type Api, type AssistantMessageEvent, type Model, normalizeContext, Type, type Message, type Tool } from "@earendil-works/pi-ai";
 import {
-	claudeSessionId, foldHistory, getSessionBridge, isPrefix, LIMITS, resetSessionBridge, SessionBridge, transcriptFingerprint, uuidv5,
+	claudeSessionId, FOLD_CHARS_PER_TOKEN, foldBudgetChars, foldHistory, foldSizeEstimate, getSessionBridge, isPrefix, LIMITS, MAX_FOLD_CHARS, MIN_FOLD_CHARS,
+	resetSessionBridge, SessionBridge, transcriptFingerprint, uuidv5, windowOverflow,
 } from "./session-bridge.ts";
 import { streamClaudeCode } from "./stream.ts";
 import { STATIC_MODELS } from "./index.ts";
@@ -146,8 +147,10 @@ const tools: Tool[] = [
  */
 /** An empty CLI projects dir, so no test reads the real ~/.claude. */
 const EMPTY_PROJECTS = mkdtempSync(join(tmpdir(), "pi-bridge-projects-"));
+// /tmp is inode-limited on the dev machine: leave nothing behind.
+after(() => rmSync(EMPTY_PROJECTS, { recursive: true, force: true }));
 
-function harness({ refuseSessionId = 0, manualInitialize = false, projectsRoot = EMPTY_PROJECTS }: { refuseSessionId?: number; manualInitialize?: boolean; projectsRoot?: string } = {}) {
+function harness({ refuseSessionId = 0, manualInitialize = false, projectsRoot = EMPTY_PROJECTS, limits }: { refuseSessionId?: number; manualInitialize?: boolean; projectsRoot?: string; limits?: Partial<typeof LIMITS> } = {}) {
 	const children: FakeClaude[] = [];
 	const debug: Record<string, unknown>[] = [];
 	const bridge = new SessionBridge({
@@ -172,6 +175,7 @@ function harness({ refuseSessionId = 0, manualInitialize = false, projectsRoot =
 			children.find((c) => c.pid === pid)?.kill();
 		},
 		timings: { requestTimeoutMs: 500, eofGraceMs: 20, termGraceMs: 20, pipeDrainMs: 5, toolDispatchTimeoutMs: 300, abortGraceMs: 200, heldCallTimeoutMs: 10_000 },
+		limits,
 	});
 	return { bridge, children, debug };
 }
@@ -281,7 +285,7 @@ test("first fold of a multi-message history is framed as joined", () => {
 
 test("first fold of a lone tool result falls back to joined", () => {
 	const folded = foldHistory([toolResult("toolu_1", "read", "body")], FOLD_LIMITS, "first");
-	assert.ok(folded.text.startsWith(`<conversation-history>\n${JOINED_HEADER}\n\n## Tool \`read\``), folded.text);
+	assert.ok(folded.text.startsWith(`<conversation-history>\n${JOINED_HEADER}\n\n## Tool \`mcp__sova__read\``), folded.text);
 	assert.ok(folded.text.endsWith(`</conversation-history>\n\n${FOLD_CLOSING}`));
 });
 
@@ -335,7 +339,7 @@ test("folded history is labelled lossy and carries images out of band", () => {
 	const folded = foldHistory(messages, { maxLineBytes: 1, maxIdleSessions: 1, maxFoldedResultChars: 100, maxFoldedReportChars: 1_000, maxFoldedChars: 10_000 });
 	assert.ok(folded.text.startsWith(`<conversation-history>\n${RESTARTED_HEADER}\n\n## User\nhello`), folded.text);
 	assert.match(folded.text, /## User\nhello/);
-	assert.match(folded.text, /tool call `read`/);
+	assert.match(folded.text, /tool call `mcp__sova__read`/);
 	assert.match(folded.text, /file body/);
 	assert.equal(folded.images.length, 1);
 	assert.equal(folded.images[0]!.data, "AAAA");
@@ -364,7 +368,7 @@ test("a clipped tool result keeps its head and tail around an omission marker", 
 test("a folded tool result under its cap is verbatim", () => {
 	const body = "y".repeat(LIMITS.maxFoldedResultChars);
 	const folded = foldHistory([user("go"), toolResult("toolu_1", "bash", body)], LIMITS);
-	assert.equal(folded.text, `<conversation-history>\n${RESTARTED_HEADER}\n\n## User\ngo\n\n## Tool \`bash\` (id toolu_1) returned\n${body}\n</conversation-history>\n\n${FOLD_CLOSING}`);
+	assert.equal(folded.text, `<conversation-history>\n${RESTARTED_HEADER}\n\n## User\ngo\n\n## Tool \`mcp__sova__bash\` (id toolu_1) returned\n${body}\n</conversation-history>\n\n${FOLD_CLOSING}`);
 });
 
 // ---------------------------------------------------------------------------
@@ -434,8 +438,9 @@ test("a --session-id the CLI already wrote is probed past, not retried forever",
  * 0..42, and every turn failed with "session id already in use, for 33 ids in
  * a row". The first launch now starts past the records on disk.
  */
-test("a new bridge starts past the session records a previous process left", { timeout: 8000 }, async () => {
+test("a new bridge starts past the session records a previous process left", { timeout: 8000 }, async (t) => {
 	const root = mkdtempSync(join(tmpdir(), "pi-bridge-projects-"));
+	t.after(() => rmSync(root, { recursive: true, force: true }));
 	const dir = join(root, "-tmp-pi-bridge-test");
 	mkdirSync(dir);
 	for (let n = 0; n <= 42; n++) writeFileSync(join(dir, `${claudeSessionId("pi-session-1", n)}.jsonl`), "{}\n");
@@ -1456,33 +1461,338 @@ test("a system prompt differing only in its untagged lead-in restarts the child:
  * message holding the transcript to summarize. It is not an extension of the
  * conversation, so it cannot reuse the conversation's child.
  */
-test("a compaction summary costs two restarts: one for the summary, one to resume", { timeout: 8000 }, async () => {
+// ---------------------------------------------------------------------------
+// Fold budget, tail-preserving clip, CLI tool names
+// ---------------------------------------------------------------------------
+
+function assistantText(text: string): Message {
+	return {
+		role: "assistant", content: [{ type: "text", text }],
+		api: "anthropic-messages", provider: "anthropic", model: "sonnet",
+		usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+		stopReason: "stop", timestamp: 2,
+	} as Message;
+}
+
+/** `pairs` user/assistant exchanges of about `size` characters each, numbered from 1. */
+function longHistory(pairs: number, size: number): Message[] {
+	const out: Message[] = [];
+	for (let n = 1; n <= pairs; n++) {
+		out.push(user(`QUESTION-${n} ${"q".repeat(size)}`));
+		out.push(assistantText(`ANSWER-${n} ${"a".repeat(size)}`));
+	}
+	return out;
+}
+
+const bodyOf = (text: string) => text.slice(text.indexOf("\n\n") + 2, text.indexOf("\n</conversation-history>"));
+
+test("the fold budget scales with the context window: 1M gets a bigger cap than 200K", () => {
+	const small = foldBudgetChars({ contextWindow: 200_000, maxTokens: 64_000 });
+	const large = foldBudgetChars({ contextWindow: 1_000_000, maxTokens: 64_000 });
+	assert.equal(FOLD_CHARS_PER_TOKEN, 2.2, "measured live: 524,682 fold chars cost 231,491 input tokens");
+	// (200_000 - 16_384 reserve - 4_000 overhead - 64_000 output) * 0.85 tokens * 2.2 chars.
+	assert.equal(small, Math.floor((200_000 - 16_384 - 4_000 - 64_000) * 0.85 * 2.2));
+	assert.equal(small, 216_201);
+	assert.equal(large, Math.floor((1_000_000 - 16_384 - 4_000 - 64_000) * 0.85 * 2.2));
+	assert.equal(large, 1_712_201);
+	assert.ok(large < MAX_FOLD_CHARS, "at 2.2 chars/token the 1M window, not the line ceiling, sets the cap");
+	assert.ok(small > MIN_FOLD_CHARS && small < large);
+	// What shares the window comes off the fold, at the same density.
+	const prompt = "p".repeat(22_000);
+	assert.equal(foldBudgetChars({ contextWindow: 200_000, maxTokens: 64_000, systemPrompt: prompt }), Math.floor((200_000 - 16_384 - 4_000 - 10_000 - 64_000) * 0.85 * 2.2));
+	// The ceiling still binds for a window past it.
+	assert.equal(foldBudgetChars({ contextWindow: 2_000_000, maxTokens: 64_000 }), MAX_FOLD_CHARS);
+	assert.ok(foldBudgetChars({ contextWindow: 200_000, maxTokens: 64_000, tools }) < small);
+	// No window: the fixed cap. A tiny window: the floor.
+	assert.equal(foldBudgetChars({}), LIMITS.maxFoldedChars);
+	assert.equal(foldBudgetChars({}, 1234), 1234);
+	assert.equal(foldBudgetChars({ contextWindow: 50_000, maxTokens: 64_000 }), MIN_FOLD_CHARS);
+});
+
+test("an over-budget fold drops the oldest messages, keeps the newest and the task, and says so at the head", () => {
+	const history = [...longHistory(40, 1_000), user("LATEST please finish")];
+	const folded = foldHistory(history, LIMITS, "restarted", 20_000);
+	const body = bodyOf(folded.text);
+	assert.ok(folded.omitted > 0);
+	assert.match(body, new RegExp(`^\\[${folded.omitted} earlier message\\(s\\) omitted to fit the context window\\]\n\n## User\nQUESTION-1 `), "marker first, then the task");
+	assert.ok(body.endsWith("## User\nLATEST please finish"), "the newest message is last and whole");
+	assert.ok(body.includes("ANSWER-40 "), "the newest exchange survives");
+	assert.ok(!body.includes("ANSWER-1 ") && !body.includes("QUESTION-2 "), "the oldest go first");
+	assert.match(body, /\n\n\[… \d+ message\(s\) omitted here …\]\n\n/, "the gap after the task is marked");
+	assert.ok(folded.text.startsWith(`<conversation-history>\n${RESTARTED_HEADER} The conversation is longer than fits: its oldest messages are left out`), "the framing says so too");
+	assert.ok(body.length <= 20_000, `${body.length}`);
+	// Kept messages are contiguous from the end: nothing newer than a dropped one is missing.
+	const kept = [...body.matchAll(/(?:QUESTION|ANSWER)-(\d+) /g)].map((m) => Number(m[1]));
+	const tail = kept.slice(2); // after QUESTION-1 and ... its gap
+	assert.deepEqual(tail, [...tail].sort((a, b) => a - b));
+	assert.equal(tail.at(-1), 40);
+	assert.equal(folded.omitted, history.length - (kept.length + 1));
+});
+
+test("a clipped fold never splits a message, and keeps the last user message even when it alone is over budget", () => {
+	const huge = `LAST ${"z".repeat(30_000)}`;
+	const folded = foldHistory([...longHistory(5, 1_000), user(huge)], LIMITS, "restarted", 10_000);
+	const body = bodyOf(folded.text);
+	assert.ok(body.startsWith("[10 earlier message(s) omitted to fit the context window]\n\n"), body.slice(0, 80));
+	assert.ok(body.endsWith(`## User\n${huge}`));
+	assert.ok(!body.includes("[truncated]"));
+});
+
+test("a task statement too big for a quarter of the budget is dropped like any old message", () => {
+	const history = [user(`TASK ${"t".repeat(8_000)}`), ...longHistory(20, 500).slice(1), user("LATEST")];
+	const body = bodyOf(foldHistory(history, LIMITS, "restarted", 12_000).text);
+	assert.ok(!body.includes("TASK "));
+	assert.match(body, /^\[\d+ earlier message\(s\) omitted to fit the context window\]\n\n## (User|Assistant)\n/);
+	assert.ok(!body.includes("omitted here"), "one leading gap, one marker");
+});
+
+test("a fold within budget is unchanged: no marker, nothing omitted", () => {
+	const history = longHistory(3, 100);
+	const folded = foldHistory(history, LIMITS, "restarted", 1_000_000);
+	assert.equal(folded.omitted, 0);
+	assert.ok(!folded.text.includes("omitted to fit") && !folded.text.includes("omitted here"));
+	assert.equal(foldHistory(history, LIMITS).text, folded.text);
+	assert.equal(foldSizeEstimate(history), folded.text.length);
+});
+
+test("images of dropped messages are dropped with them; kept ones stay in order", () => {
+	const image = (data: string): Message => ({ role: "user", content: [{ type: "text", text: `img ${data} ${"i".repeat(3_000)}` }, { type: "image", data, mimeType: "image/png" }], timestamp: 1 });
+	const history = [image("OLD"), ...longHistory(10, 1_000), image("NEW")];
+	const folded = foldHistory(history, LIMITS, "restarted", 8_000);
+	assert.deepEqual(folded.images.map((i) => i.data), ["NEW"]);
+});
+
+test("folded tool calls and results carry the CLI's full tool names, never doubled", () => {
+	const folded = foldHistory([
+		user("go"),
+		assistantWithCall("toolu_1", "bash", { command: "ls" }),
+		toolResult("toolu_1", "bash", "a.txt"),
+		toolResult("toolu_2", "mcp__sova__agent_transcript", "report"),
+	], LIMITS);
+	assert.match(folded.text, /## Assistant tool call `mcp__sova__bash` \(id toolu_1\)/);
+	assert.match(folded.text, /## Tool `mcp__sova__bash` \(id toolu_1\) returned\na\.txt/);
+	assert.match(folded.text, /## Tool `mcp__sova__agent_transcript` \(id toolu_2\) returned\nreport/);
+	assert.ok(!folded.text.includes("mcp__sova__mcp__sova__"));
+	assert.ok(!/`(bash|read)`/.test(folded.text), "no bare pi name the CLI would refuse");
+});
+
+test("a restart sizes its fold from the request's context window", { timeout: 8000 }, async () => {
+	// ~660K characters of history: over the 200K model's budget, under the 1M model's.
+	const history = [...longHistory(300, 1_100), user("LATEST")];
+	const sent: Record<string, string> = {};
+	for (const [label, contextWindow] of [["200k", 200_000], ["1m", 1_000_000]] as const) {
+		const { bridge, children } = harness();
+		await collectAfter(bridge.runTurn(request(history, { contextWindow, maxTokens: 64_000, sessionId: `window-${label}` })), async () => {
+			const cli = await child(children, 1);
+			const frame = await cli.waitFor((f) => f.type === "user");
+			sent[label] = frame.message.content[0].text;
+			cli.emitFrame({ type: "result", subtype: "success", is_error: false, result: "ok" });
+		});
+		await bridge.disposeAll();
+	}
+	const budget200k = foldBudgetChars({ contextWindow: 200_000, maxTokens: 64_000, tools });
+	assert.match(sent["200k"]!, /\[\d+ earlier message\(s\) omitted to fit the context window\]/);
+	assert.ok(bodyOf(sent["200k"]!).length <= budget200k);
+	assert.ok(sent["200k"]!.includes("## User\nLATEST"));
+	assert.ok(!sent["1m"]!.includes("omitted to fit"), "the 1M window takes the whole history");
+	assert.ok(sent["1m"]!.includes("QUESTION-1 ") && sent["1m"]!.includes("## User\nLATEST"));
+});
+
+// ---------------------------------------------------------------------------
+// Every new user message reaches the CLI
+// ---------------------------------------------------------------------------
+
+test("several user messages in one tail are all sent, in order, as one CLI message", { timeout: 8000 }, async () => {
 	const { bridge, children } = harness();
-	const finish = async (n: number) => {
-		const cli = await child(children, n);
+	const m1 = [user("start")];
+	await collectAfter(bridge.runTurn(request(m1)), async () => {
+		const cli = await child(children, 1);
+		await cli.waitFor((f) => f.type === "user");
+		cli.emitFrame({ type: "result", subtype: "success", is_error: false, result: "ok" });
+	});
+	const cli = children[0]!;
+	const before = cli.sent.filter((f) => f.type === "user").length;
+	const m2 = [...m1, assistantText("ok"), user("FIRST queued"), user("SECOND queued"), user("THIRD queued")];
+	await collectAfter(bridge.runTurn(request(m2)), async () => {
+		await cli.waitFor((f) => f.type === "user" && JSON.stringify(f.message?.content).includes("THIRD"));
+		cli.emitFrame({ type: "result", subtype: "success", is_error: false, result: "ok" });
+	});
+	const users = cli.sent.filter((f) => f.type === "user").slice(before);
+	assert.equal(users.length, 1, "one stream-json message, not a steer per message");
+	assert.deepEqual(users[0]!.message.content, [{ type: "text", text: "FIRST queued\n\nSECOND queued\n\nTHIRD queued" }]);
+	assert.equal(children.length, 1, "a clean append, no restart");
+	await bridge.disposeAll();
+});
+
+test("steering messages queued behind a held call are all sent after its answer", { timeout: 8000 }, async () => {
+	const { bridge, children } = harness();
+	const m1 = [user("start")];
+	await collectAfter(bridge.runTurn(request(m1)), async () => {
+		const cli = await child(children, 1);
 		await cli.waitFor((f) => f.request?.subtype === "initialize");
 		await cli.handshake();
+		for (const frame of toolUseFrames("toolu_1", "read", { path: "a.txt" })) cli.emitFrame(frame);
+		cli.toolCall("read", { path: "a.txt" }, "held-1");
+	});
+	const cli = children[0]!;
+	const image: Message = { role: "user", content: [{ type: "text", text: "and this" }, { type: "image", data: "BBBB", mimeType: "image/png" }], timestamp: 1 };
+	const m2 = [...m1, assistantWithCall("toolu_1", "read", { path: "a.txt" }), toolResult("toolu_1", "read", "body"), user("one"), image];
+	await collectAfter(bridge.runTurn(request(m2)), async () => {
+		await cli.waitFor((f) => f.type === "user" && JSON.stringify(f.message?.content).includes("and this"));
+		cli.emitFrame({ type: "result", subtype: "success", is_error: false, result: "ok" });
+	});
+	const answerAt = cli.sent.findIndex((f) => f.response?.request_id === "held-1");
+	const steers = cli.sent.map((f, i) => [f, i] as const).filter(([f]) => f.type === "user" && JSON.stringify(f.message?.content).includes("and this"));
+	assert.equal(steers.length, 1);
+	const [steer, steerAt] = steers[0]!;
+	assert.ok(answerAt >= 0 && answerAt < steerAt);
+	assert.deepEqual(steer.message.content, [
+		{ type: "text", text: "one\n\nand this" },
+		{ type: "image", source: { type: "base64", media_type: "image/png", data: "BBBB" } },
+	]);
+	await bridge.disposeAll();
+});
+
+// ---------------------------------------------------------------------------
+// pi owns compaction
+// ---------------------------------------------------------------------------
+
+test("the child is launched with the CLI's auto-compact disabled, manual /compact left alone", { timeout: 8000 }, async () => {
+	const { bridge, children } = harness();
+	await collectAfter(bridge.runTurn(request([user("hi")])), async () => {
+		const cli = await child(children, 1);
+		await cli.waitFor((f) => f.type === "user");
+		cli.emitFrame({ type: "result", subtype: "success", is_error: false, result: "ok" });
+	});
+	assert.equal(children[0]!.env.DISABLE_AUTO_COMPACT, "1");
+	assert.equal(children[0]!.env.DISABLE_COMPACT, undefined);
+	await bridge.disposeAll();
+});
+
+test("a compact_boundary from the child makes the next turn restart onto pi's transcript", { timeout: 8000 }, async () => {
+	const { bridge, children, debug } = harness();
+	const m1 = [user("hi")];
+	await collectAfter(bridge.runTurn(request(m1)), async () => {
+		const cli = await child(children, 1);
+		await cli.waitFor((f) => f.type === "user");
+		cli.emitFrame({ type: "system", subtype: "compact_boundary", compact_metadata: { trigger: "auto", pre_tokens: 1 } });
+		cli.emitFrame({ type: "result", subtype: "success", is_error: false, result: "ok" });
+	});
+	assert.deepEqual(debug.map((d) => d.event), ["desynced"]);
+	await collectAfter(bridge.runTurn(request([...m1, assistantText("ok"), user("next")])), async () => {
+		const cli = await child(children, 2);
+		const sent = await cli.waitFor((f) => f.type === "user");
+		assert.match(sent.message.content[0].text, /^<conversation-history>\n/);
+		cli.emitFrame({ type: "result", subtype: "success", is_error: false, result: "ok" });
+	});
+	assert.equal(children.length, 2);
+	await bridge.disposeAll();
+});
+
+/** pi 0.87.1's summarization request: a fresh uuid session id, pi's summarizer prompt, no tools. */
+function summaryRequest(text: string, sessionId = "0199b6e2-7c1a-7000-8000-000000000001"): ClaudeTurnRequest {
+	return request([user(text)], { sessionId, systemPrompt: "You are a context summarization assistant.", tools: [] });
+}
+
+test("a compaction summary runs on its own child, which is disposed after; the conversation restarts once", { timeout: 8000 }, async () => {
+	const { bridge, children } = harness();
+	bridge.setSessionCwd("pi-session-1", "/tmp/pi-bridge-test");
+	const finish = async (n: number) => {
+		const cli = await child(children, n);
+		await cli.waitFor((f) => f.type === "user");
 		cli.emitFrame({ type: "result", subtype: "success", is_error: false, result: "ok" });
 	};
-
-	const conversation = [user("one"), user("two")];
+	const conversation = [user("one"), assistantText("two")];
 	await collectAfter(bridge.runTurn(request(conversation)), () => finish(1));
-	assert.equal(children.length, 1);
 
-	// The summarization request: same pi session, different everything else.
-	const summary = request([user("Summarize the conversation so far.")], {
-		systemPrompt: "You are a conversation summarizer.",
-		tools: [],
-	});
-	await collectAfter(bridge.runTurn(summary), () => finish(2));
-	assert.equal(children.length, 2, "the summary request cannot reuse the conversation's child");
+	const frames = await collectAfter(bridge.runTurn(summaryRequest("<conversation>…</conversation> Summarize.")), () => finish(2));
+	assert.equal(frames.at(-1)?.type, "result");
+	assert.equal(children.length, 2);
+	// The summary's child was a first contact: its prompt went as-is.
+	assert.equal(children[1]!.sent.find((f) => f.type === "user")!.message.content[0].text, "<conversation>…</conversation> Summarize.");
+	const deadline = Date.now() + 2000;
+	while (!children[1]!.exited && Date.now() < deadline) await new Promise((r) => setTimeout(r, 5));
+	assert.ok(children[1]!.exited, "the summarizer child is disposed, not left idling until reaped");
+	assert.ok(!children[0]!.exited, "the conversation's child is untouched");
+	assert.deepEqual(bridge.activeSessionIds(), ["pi-session-1"]);
 
-	// The next real turn carries the compacted transcript, which is not an
-	// extension of what child 2 saw either.
-	const compacted = request([user("<summary of the conversation>"), user("three")]);
-	await collectAfter(bridge.runTurn(compacted), () => finish(3));
-	assert.equal(children.length, 3, "resuming after compaction restarts again");
-
-	assert.equal(children[1]!.argv.filter((a) => a === "--session-id").length, 1);
+	await collectAfter(bridge.runTurn(request([user("<summary of the conversation>"), user("three")])), () => finish(3));
+	assert.equal(children.length, 3, "resuming after compaction restarts once");
 	await bridge.disposeAll();
+});
+
+test("a pi session's own tool-less turn is not mistaken for a one-shot request", { timeout: 8000 }, async () => {
+	const { bridge, children } = harness();
+	bridge.setSessionCwd("pi-session-7", "/tmp/pi-bridge-test");
+	await collectAfter(bridge.runTurn(request([user("hi")], { sessionId: "pi-session-7", tools: [] })), async () => {
+		const cli = await child(children, 1);
+		await cli.waitFor((f) => f.type === "user");
+		cli.emitFrame({ type: "result", subtype: "success", is_error: false, result: "ok" });
+	});
+	await new Promise((r) => setTimeout(r, 50));
+	assert.ok(!children[0]!.exited);
+	assert.deepEqual(bridge.activeSessionIds(), ["pi-session-7"]);
+	await bridge.disposeAll();
+});
+
+test("an oversized summary request fails loudly at once instead of hanging, and its child is disposed", { timeout: 8000 }, async () => {
+	const { bridge, children } = harness({ limits: { maxLineBytes: 64 * 1024 } });
+	const started = Date.now();
+	const frames = await collect(bridge.runTurn(summaryRequest(`Summarize ${"x".repeat(100_000)}`)));
+	assert.ok(Date.now() - started < 1_500, "no wait on a message the child never received");
+	const last = frames.at(-1);
+	assert.equal(last?.type, "result");
+	assert.equal(last?.type === "result" && last.outcome, "error");
+	assert.match(last?.type === "result" ? last.message ?? "" : "", /over the 65536-byte limit for one stdin line/);
+	assert.ok(!children[0]!.sent.some((f) => f.type === "user"), "nothing partial was written");
+	const deadline = Date.now() + 2000;
+	while (!children[0]!.exited && Date.now() < deadline) await new Promise((r) => setTimeout(r, 5));
+	assert.ok(children[0]!.exited);
+	assert.deepEqual(bridge.activeSessionIds(), []);
+	await bridge.disposeAll();
+});
+
+test("an oversized message fails the turn through stream.ts as an error pi reports, not a hang", { timeout: 8000 }, async () => {
+	const { bridge } = harness({ limits: { maxLineBytes: 64 * 1024 } });
+	const model = { ...STATIC_MODELS.find((m) => m.id === "sonnet")!, provider: "claude-code-cli", api: "claude-code-cli", baseUrl: "x" } as Model<Api>;
+	const context = normalizeContext({ systemPrompt: "You are a context summarization assistant.", messages: [user(`Summarize ${"x".repeat(100_000)}`)] });
+	const events: AssistantMessageEvent[] = [];
+	for await (const event of streamClaudeCode(bridge, model, context, { sessionId: "0199b6e2-7c1a-7000-8000-000000000002" })) events.push(event);
+	const last = events.at(-1);
+	assert.equal(last?.type, "error");
+	assert.match(last?.type === "error" ? last.error.errorMessage ?? "" : "", /stdin line/);
+	await bridge.disposeAll();
+});
+
+test("a request over the model's window fails at once with the sizes, not after an upload", { timeout: 8000 }, async () => {
+	const { bridge, children } = harness();
+	// pi's summary input for one real 3 MB session: 549K characters, fine for [1m], never for a 200K model.
+	const req = summaryRequest(`Summarize ${"x".repeat(549_000)}`);
+	const frames = await collect(bridge.runTurn({ ...req, contextWindow: 200_000, maxTokens: 64_000 }));
+	const last = frames.at(-1);
+	assert.equal(last?.type === "result" && last.outcome, "error");
+	// (549_010 message + 42 system prompt chars) / 2.2, rounded up.
+	assert.match(last?.type === "result" ? last.message ?? "" : "", /its input is about 249570 tokens, which with 64000 for the reply exceeds sonnet's 200000-token context window/);
+	assert.ok(!children[0]!.sent.some((f) => f.type === "user"), "nothing was sent");
+	// The same request on a 1M window goes through whole, never shortened.
+	const { bridge: large, children: largeChildren } = harness();
+	await collectAfter(large.runTurn({ ...req, contextWindow: 1_000_000, maxTokens: 64_000 }), async () => {
+		const cli = await child(largeChildren, 1);
+		const sent = await cli.waitFor((f) => f.type === "user");
+		assert.equal(sent.message.content[0].text, `Summarize ${"x".repeat(549_000)}`);
+		cli.emitFrame({ type: "result", subtype: "success", is_error: false, result: "ok" });
+	});
+	await bridge.disposeAll();
+	await large.disposeAll();
+});
+
+test("the window pre-check refuses only what certainly cannot fit", () => {
+	const at = { model: "sonnet", contextWindow: 200_000, maxTokens: 64_000, systemPrompt: "" };
+	// Exactly the window less the reserve and the reply fits; one token more does not.
+	const room = (200_000 - 16_384 - 64_000) * FOLD_CHARS_PER_TOKEN;
+	assert.equal(windowOverflow(Math.floor(room), at), undefined);
+	assert.match(windowOverflow(Math.floor(room) + 3, at) ?? "", /exceeds sonnet's 200000-token context window/);
+	// The system prompt counts; no window, no verdict.
+	assert.ok(windowOverflow(Math.floor(room) - 100, { ...at, systemPrompt: "s".repeat(1_000) }));
+	assert.equal(windowOverflow(10_000_000, { model: "sonnet" }), undefined);
 });

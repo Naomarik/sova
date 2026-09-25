@@ -1,6 +1,6 @@
 import { createEffect, createResource, createSignal, For, Show } from "solid-js";
 import { fetchMesh, getMeshSettings, putMeshSettings } from "../lib/api";
-import { setMeshState, SYNC_CATEGORIES, type MeshSettings, type SyncCategory } from "../lib/mesh";
+import { meshOn, setMeshState, SYNC_CATEGORIES, type MeshSettings, type SyncCategory } from "../lib/mesh";
 import { announce } from "../lib/ui-state";
 import { SYNC_LABEL } from "./MeshView";
 import { Banner } from "./ui";
@@ -75,6 +75,17 @@ export function MeshSettingsSection() {
     const on = !s.sync[c];
     void save({ ...s, sync: { ...s.sync, [c]: on } }, `${SYNC_LABEL[c]} ${on ? "sync" : "no longer sync"} with your peers.`);
   };
+  /** "api-keys": this host neither takes nor offers subscription sign-ins; only API keys move. */
+  const subscriptionsOn = () => stored()?.loginKinds !== "api-keys";
+  const toggleSubscriptions = () => {
+    const s = stored();
+    if (!s) return;
+    const on = !subscriptionsOn();
+    void save(
+      { ...s, loginKinds: on ? "all" : "api-keys" },
+      on ? "Subscription sign-ins sync with this host again." : "Only API keys sync with this host now.",
+    );
+  };
   const onEnter = (e: KeyboardEvent, commit: () => void) => {
     if (e.key === "Enter") {
       e.preventDefault();
@@ -125,6 +136,34 @@ export function MeshSettingsSection() {
                   </span>
                   <span class="toggle-box" />
                 </label>
+                {/* Only with a peer to sync with, and login sync on: nothing new while the mesh is off. */}
+                <Show when={c === "logins" && meshOn() && stored()?.sync.logins}>
+                  <label class="toggle toggle-switch mesh-sync-row mesh-sync-sub">
+                    <input
+                      type="checkbox"
+                      checked={subscriptionsOn()}
+                      disabled={!stored() || saving() || !!stored()?.loginKindsPinned}
+                      onChange={toggleSubscriptions}
+                    />
+                    <span class="mesh-sync-main">
+                      <span class="mesh-sync-name">Sync subscriptions to this host</span>
+                      <span class="mesh-sync-meta">
+                        <Show
+                          when={!stored()?.loginKindsPinned}
+                          fallback="Set by SOVA_SYNC_LOGIN_KINDS on this host."
+                        >
+                          <Show
+                            when={subscriptionsOn()}
+                            fallback="Only API keys come and go. Sign-ins already here stay, but nothing refreshes or shares them, so a copy from another host can go stale."
+                          >
+                            Sign-ins like Claude Code and ChatGPT move with the API keys.
+                          </Show>
+                        </Show>
+                      </span>
+                    </span>
+                    <span class="toggle-box" />
+                  </label>
+                </Show>
               </li>
             )}
           </For>

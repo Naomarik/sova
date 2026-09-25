@@ -381,6 +381,7 @@ export const conflictSummary = (n: number): string =>
 export function claimRefusal(e: MeshLoginEntry, status: number, message: string): string {
   const noun = e.kind === "api_key" ? "key" : "login";
   if (status === 409 && /sync is off/i.test(message)) return "Login sync is off on this host. Turn it on in Settings → Mesh, then keep one.";
+  if (status === 409 && /api keys only/i.test(message)) return "This host syncs API keys only, so its sign-ins stay here. Turn on “Sync subscriptions to this host” in Settings → Mesh to keep one everywhere.";
   if (status === 409) {
     return `This host's ${noun} is logged out or failed, so there's nothing to keep. ${e.kind === "api_key" ? "Add it again here" : "Log in again here"}, or keep another host's from its own Mesh page.`;
   }

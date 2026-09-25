@@ -221,6 +221,7 @@ test("a refused claim reads as what to do next", () => {
   assert.match(claimRefusal(key, 409, "No live login here to claim"), /logged out or failed.*Add it again here/);
   assert.match(claimRefusal({ ...key, kind: "oauth" }, 409, "No live login here to claim"), /Log in again here/);
   assert.match(claimRefusal(key, 409, "Logins sync is off"), /Login sync is off on this host/);
+  assert.match(claimRefusal({ ...key, kind: "oauth" }, 409, "This host syncs API keys only"), /API keys only, so its sign-ins stay here/);
   assert.equal(claimRefusal(key, 400, "Unknown login"), "This host doesn't hold the zai API key any more.");
   assert.equal(claimRefusal(key, 0, "The Sova server isn't reachable."), "The Sova server isn't reachable.");
 });

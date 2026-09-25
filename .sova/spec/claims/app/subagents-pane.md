@@ -266,7 +266,7 @@ webapp never writes to it (CLAUDE.md: no file locking).
   <header class="subagents-view-head">
     <h3 class="subagents-view-title">designer</h3>
     <span class="chip chip-accent chip-live"><i class="chip-dot"></i>Working</span>
-    <p class="subagents-view-meta meta-line"><span class="text-mono">ag_03</span> <span class="meta-line-sep" aria-hidden="true">·</span> <span>anthropic</span> <span class="meta-line-sep" aria-hidden="true">·</span> <span class="text-mono meta-line-shrink" title="anthropic/claude-opus-5">opus-5</span> <span class="meta-line-sep" aria-hidden="true">·</span> <span>effort <span class="text-mono">medium</span></span> <span class="meta-line-sep" aria-hidden="true">·</span> <span class="text-mono" title="18.4k in · 5.3k out · 242k cache read · 32.1k cache write · $0.41">23.7k tokens</span> <span class="meta-line-sep" aria-hidden="true">·</span> <span class="context-readout"><span class="context-gauge" title="{the sentence}"><span class="context-label" aria-hidden="true">Context</span> <span class="context-value" aria-hidden="true">64k / 1M · 6%</span><span class="context-pct" aria-hidden="true">6%</span></span><span class="visually-hidden">{the sentence}</span></span></p>
+    <p class="subagents-view-meta meta-line"><span class="text-mono">ag_03</span> <span><span class="meta-line-sep" aria-hidden="true">·</span> anthropic</span> <span class="text-mono meta-line-shrink" title="anthropic/claude-opus-5"><span class="meta-line-sep" aria-hidden="true">·</span> opus-5</span> <span><span class="meta-line-sep" aria-hidden="true">·</span> effort <span class="text-mono">medium</span></span> <span class="text-mono" title="18.4k in · 5.3k out · 242k cache read · 32.1k cache write · $0.41"><span class="meta-line-sep" aria-hidden="true">·</span> 23.7k tokens</span> <span><span class="meta-line-sep" aria-hidden="true">·</span> <span class="context-readout"><span class="context-gauge" title="{the sentence}"><span class="context-label" aria-hidden="true">Context</span> <span class="context-value" aria-hidden="true">64k / 1M · 6%</span><span class="context-pct" aria-hidden="true">6%</span></span><span class="visually-hidden">{the sentence}</span></span></span></p>
   </header>
   <section class="subagents-transcript pane" tabindex="0" aria-label="designer transcript">
     <div class="subagents-banner stack-2">…banners, or nothing…</div>
@@ -283,7 +283,11 @@ webapp never writes to it (CLAUDE.md: no file locking).
   that reports none shows nothing here), then the worker's tokens, and last the **context readout**
   (§app.subagents-pane/context-fill): the gauge trails the facts that name the worker and what it
   has spent. **The effort leads the count**: what a worker is thinking at is a fact about
-  the worker, where the count beside it is a running total that changes under the reader. The
+  the worker, where the count beside it is a running total that changes under the reader. **A
+  separator belongs to the fact it introduces**: each `·` is inside its own fact's element, not a
+  sibling before it, so a wrapped line starts with its own dot and no wrap can strand one. The
+  model fact's dot is shown only when a provider precedes it: a worker whose provider can't be
+  derived opens the line on its model, undotted. The
   token number here is the **open transcript's own**
   total, counted from the file as it is tailed (`/ws/watch` sends it with every `snapshot` and
   `append`), so it ticks while you watch instead of waiting for the next worker snapshot; it
@@ -301,7 +305,8 @@ webapp never writes to it (CLAUDE.md: no file locking).
   `append`, and falls back to the row's. It isn't in a `.session-head`, so the head's width
   steps don't apply; it collapses to the percent ("6%") when the pane itself is under 480px, and
   never disappears on a phone. The meta line wraps to a second line rather than clip the facts at
-  its end.
+  its end, and because each dot belongs to the fact it introduces, a wrapped line begins with that
+  fact's own `·` rather than leaving a dot stranded at the end of the line above.
 - **Thread.** The same §chat/transcript rows, capped at the transcript column (`--measure` + `--space-9`) and
   centred, 16px side padding. Auto-follow and Jump to Latest behave exactly as §chat.transcript/live-watch.
   `.subagents-jump` is `.jump-latest` held inside the view's width.

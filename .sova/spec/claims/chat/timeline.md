@@ -155,7 +155,7 @@ the kinds are the whole vocabulary — `input`, `chapter`, `marker`, `density`, 
 |---|---|---|---|---|---|
 | `input` | One message you sent, clamped to two lines (`.timeline-title`, full text in `title`); images-only reads "1 image" / "{n} images" | Solid, muted | Yes | Its own message | Rewind, on the active branch |
 | `chapter` | An outline topic, at its anchored message's time (`.timeline-chapter`, one line, ellipsized; `.outline-hash` for a `manual` topic) | Hollow, larger | Yes | The anchored message | — |
-| `marker` | A notable moment, in regular weight ink-2 | Hollow, small | Yes | The entry it happened on, when there is one — a rewind or a past summary has none, so it is text | — |
+| `marker` | A notable moment, in regular weight ink-2 | Hollow, small | Yes | The entry it happened on, when there is one — a rewind, a past summary or a settings change has none, so it is text | — |
 | `density` | What the agent did after the input directly above it — an input and its density line stay together, input on top | — | — | — | — |
 | `gap` | A stretch over the idle threshold, between the two rows it separates: the later one above it, the earlier one below | — | — | — | — |
 
@@ -251,17 +251,18 @@ not goals) nor the strip (the latest only) can say.
   newest snapshot here. Then the newest *on disk* is still left off, and the strip shows a newer
   one: nothing is doubled, and one summary briefly has no row.
 
-**A marker with no single message behind it is text, not a button.** The rewind marker and the
-past summary are the cases that exist today: both entries render as nothing in the transcript,
-and the message a rewind names is the one it took away, off the active branch by construction —
-so a button there would only ever reach "That message isn't in the transcript on screen." The
-row keeps its clock, its dot and its copy and drops the button:
-`span.timeline-body.timeline-body-static`, no `Jump to this message: ` prefix, no pointer, no
-accent on hover. It is the precedent the density and gap rows already set — nothing to land on,
-so nothing to press — and it differs from them in the one way that matters: it happened at a
-time, on the axis, so it keeps the clock and the dot they don't have.
+**A marker with no single message behind it is text, not a button.** The rewind marker, the
+past summary and the model/thinking/mode change markers are the cases that exist today: their
+entries render as nothing in the transcript (§chat.transcript/transcript-items), and the message
+a rewind names is the one it took away, off the active branch by construction — so a button
+there would only ever reach "That message isn't in the transcript on screen." The row keeps its
+clock, its dot and its copy and drops the button: `span.timeline-body.timeline-body-static`, no
+`Jump to this message: ` prefix, no pointer, no accent on hover. It is the precedent the density
+and gap rows already set — nothing to land on, so nothing to press — and it differs from them in
+the one way that matters: it happened at a time, on the axis, so it keeps the clock and the dot
+they don't have.
 
-Every other marker jumps to the entry it happened on, and a row whose message is gone from the
+Every marker that names a single entry jumps to it, and a row whose message is gone from the
 transcript — a chapter whose anchor was compacted away — still has a button and still says so
 when it can't land. That is a jump that failed, not a row with nowhere to go.
 
@@ -440,8 +441,8 @@ body lands on that message exactly as it would unfiltered, and the filter stays 
   the transcript on screen."
 - **Density and gap rows aren't buttons.** They describe a stretch, and a stretch has no one
   message to land on. The input above the density line is the landing, and it is one row away.
-  The rewind and past-summary markers aren't buttons either, for the same reason and with their
-  clock and dot kept (above, "Markers").
+  The rewind, past-summary and model/thinking/mode change markers aren't buttons either, for the
+  same reason and with their clock and dot kept (above, "Markers").
 
 ## §chat.timeline/watch-mode — Watch mode
 
@@ -488,9 +489,10 @@ refetch or an armed Rewind never remounts the row under focus.
   nothing is armed.
 - **The abandoned rows** carry a visually hidden "Left behind by the rewind.", because muted ink
   and a missing button say nothing out loud.
-- **A row that can't be jumped to isn't a button.** The rewind and past-summary markers are
-  `span`s, so a screen reader reads them as the lines of text they are and they never appear in
-  the tab order — a control that could only fail is worse announced than absent.
+- **A row that can't be jumped to isn't a button.** The rewind, past-summary and
+  model/thinking/mode change markers are `span`s, so a screen reader reads them as the lines of
+  text they are and they never appear in the tab order — a control that could only fail is worse
+  announced than absent.
 - **Times are paired.** The visible clock is the 24-hour mono form (§chat/transcript timestamps); the `title`
   on `.timeline-time` carries the absolute time *and* the relative one ("2026-09-19T14:06:11Z ·
   2d ago"), so neither reading is lost. See §design/deviations for why the clock leads here and the relative form

@@ -29,7 +29,7 @@ runs the tools itself.
 ## Core (read-only)
 
 ```sh
-node core/sova-spec.mjs <check | census [--changed [--base <rev>]] | scope '<§id>' [--budget <bytes>] | impact '<§id>'> [--root DIR] [--spec DIR] [--json]
+node core/sova-spec.mjs <check | census [--changed [--base <rev>] [--related]] | scope '<§id>' [--budget <bytes>] | impact '<§id>'> [--root DIR] [--spec DIR] [--json]
 ```
 
 `census --changed` checks one task's files instead of the whole boundary. It
@@ -40,6 +40,14 @@ Changed files outside the boundary are listed but don't count against it.
 Each unclaimed file is a `changed-unclaimed` finding (exit 1). No Git work
 tree (`not-git`) or a `--base` that isn't a commit (`bad-rev`) exits 2. Git is
 run read-only, without a shell.
+
+`census --changed --related` also lists, as `touched`, each § a changed file
+lands in: its kind, labels, claim file and lines, the changed files that put it
+there, its `requires` (`null` when the key is absent) and its transitive
+consumers with depth. It reads the `--spec` graph when one is given. A touched
+behavior without a `requires` key is a `touched-uninvestigated` note, so the
+exit code stays what the files make it. It lists what to read; it never judges
+a flag. `--related` without `--changed` is a usage error.
 
 Quote IDs, because `§` is not a shell word character. `--budget` is accepted by
 `scope` only; with any other command it's a usage error. `--spec` reads another

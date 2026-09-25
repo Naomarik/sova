@@ -38,8 +38,8 @@ node pi-config/extensions/spec/core/sova-spec.mjs check --spec .sova/spec/drafts
   section gives its members. Then everything they `requires`, depth-first. `--budget BYTES` keeps
   whole passages and names the rest as unread.
 - **`impact §id`** lists what `requires` it, directly or indirectly.
-- **`check`** validates the whole graph. **`census`** needs a `boundary` in the manifest. This one
-  has none, so it reports `boundary-missing`. **`census --changed [--base REV]`** checks only the
+- **`check`** validates the whole graph. **`census`** needs a `boundary` in the manifest; this one
+  includes `server`, `shared`, `src` and `vite.config.ts`. **`census --changed [--base REV]`** checks only the
   files your task changed: the ones that differ from `REV` (default `HEAD`), plus untracked files.
   Each changed file inside the boundary is either claimed (listed with its §IDs) or reported as
   `changed-unclaimed` (exit 1). Changed files outside the boundary are listed, not failed.
@@ -48,9 +48,17 @@ node pi-config/extensions/spec/core/sova-spec.mjs check --spec .sova/spec/drafts
 Exit `0` means the declared closure was delivered, never that it is complete. Exit `1` means
 something relevant is unknown, stale or unread. Exit `2` means the input can't be trusted.
 
-**Current state, 2026-09-24:** `check` exits 1 with 125 `requires-uninvestigated` warnings. Only
-10 records declare `requires`, 25 edges in all. `impact` can't rule out the other behaviors, and
-it lists them as unknown.
+**Current state, 2026-09-26:** 297 records (211 behaviors). `check` exits 1 with 144
+`requires-uninvestigated` warnings and nothing else. 67 records declare `requires` (25 of them
+`[]`), 78 edges in all. `impact` can't rule out the other behaviors, and it lists them as unknown.
+`census` finds 413 files in the boundary: 151 claimed, 262 unclaimed.
+
+**While coding**, run `census --changed --related` after the first edit and whenever the edit set
+reaches a new file; `--related` lists each § a changed file lands in, with its `requires` and
+consumers. One your draft doesn't change is foreign: read it with
+`scope`, and flag it only if the edit contradicts its text or adds something a user would see
+there that it doesn't describe. Batch the flags into one question ("this also changes §X: <what>.
+OK?"); an agreed flag becomes that §'s change in your draft.
 
 ## Changing the docs
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // sova-spec: read-only core for a project's .sova/spec. Node stdlib only; never writes.
-// Commands: check | scope §id | impact §id | census [--changed [--base REV]].  Flags: --root DIR, --spec DIR, --json, --budget BYTES.
+// Commands: check | scope §id | impact §id | census [--changed [--base REV] [--related]].  Flags: --root DIR, --spec DIR, --json, --budget BYTES.
 // Exit: 0 usable known closure (never completeness), 1 relevant unknown/stale/unread, 2 untrustworthy.
 import { readFileSync, readdirSync, lstatSync, existsSync, realpathSync } from "node:fs";
 import { spawnSync } from "node:child_process";
@@ -29,6 +29,7 @@ function parseArgs(argv) {
     const a = argv[i];
     if (a === "--json") o.json = true;
     else if (a === "--changed") o.changed = true;
+    else if (a === "--related") o.related = true;
     else if (a === "--root" || a === "--spec" || a === "--budget" || a === "--base") {
       if (i + 1 >= argv.length) { o.usage = `${a} needs a value`; break; }
       o[a.slice(2)] = argv[++i];
@@ -55,10 +56,11 @@ function parseArgs(argv) {
     else o.budget = Number(o.budget);
   }
   if (!o.usage && o.base !== undefined && !o.changed) o.usage = "--base applies to census --changed only";
+  if (!o.usage && o.related && !o.changed) o.usage = "--related applies to census --changed only";
   if (!o.usage && o.changed && cmd !== "census") o.usage = "--changed applies to census only";
   return o;
 }
-const USAGE = "usage: sova-spec <check | scope §id | impact §id | census [--changed [--base REV]]> [--root DIR] [--spec DIR] [--json] [--budget BYTES]";
+const USAGE = "usage: sova-spec <check | scope §id | impact §id | census [--changed [--base REV] [--related]]> [--root DIR] [--spec DIR] [--json] [--budget BYTES]";
 
 // --spec: a project-relative directory holding manifest.json (default .sova/spec). → {rel} | {why}
 function specDir(raw) {
@@ -385,9 +387,15 @@ function containersOf(ctx, ids) {
   return out;
 }
 
-function impact(ctx, seed) {
+// Reverse requires index: target → the ids that require it.
+function reverseOf(ctx) {
   const rev = new Map();
   for (const [id, r] of ctx.claims) for (const t of r.requires ?? []) rev.set(t, [...(rev.get(t) ?? []), id]);
+  return rev;
+}
+
+// Transitive reverse requires of seed, breadth-first with depth; sorted by depth, then id.
+function consumersOf(ctx, rev, seed) {
   const depth = new Map([[seed, 0]]), consumers = [];
   for (let layer = [seed], d = 1; layer.length; d++) {
     const next = [];
@@ -399,7 +407,11 @@ function impact(ctx, seed) {
     }
     layer = next.sort();
   }
-  consumers.sort((a, b) => a.depth - b.depth || (a.id < b.id ? -1 : 1));
+  return consumers.sort((a, b) => a.depth - b.depth || (a.id < b.id ? -1 : 1));
+}
+
+function impact(ctx, seed) {
+  const consumers = consumersOf(ctx, reverseOf(ctx), seed);
   const frontier = [];
   for (const [id, r] of ctx.claims) if (r.kind === "behavior" && r.requires === undefined && id !== seed) {
     frontier.push({ id, reason: "requires-uninvestigated", note: "undeclared dependencies: could be an unlisted consumer" });
@@ -458,7 +470,7 @@ function readBoundary(ctx) {
 function census(ctx, changed) {
   const claimed = new Map();
   for (const [id, r] of ctx.claims) for (const c of r.code ?? []) claimed.set(posix.normalize(toPosix(c)), [...(claimed.get(posix.normalize(toPosix(c))) ?? []), id]);
-  if (changed) return censusChanged(ctx, changed.base, claimed);
+  if (changed) return censusChanged(ctx, changed, claimed);
   const code = codeUnion(ctx, [...ctx.claims.keys()]);
   const bd = readBoundary(ctx);
   if (bd === null) return { census: { boundary: null, claimed: code.map((c) => c.path), unclaimed: null, outside: null }, code };
@@ -524,7 +536,20 @@ function changedFiles(root, base) {
   return { commit, paths: [...new Set([...nulList(diff.out), ...nulList(others.out)])].sort() };
 }
 
-function censusChanged(ctx, base, claimed) {
+// Each § a changed file lands in, with its declared requires and transitive consumers. No flags are judged here.
+function relatedOf(ctx, hits) {
+  const files = new Map(), rev = reverseOf(ctx);
+  for (const e of hits) for (const id of e.claims) files.set(id, [...(files.get(id) ?? []), e.path]);
+  return [...files.keys()].sort().map((id) => {
+    const rec = ctx.claims.get(id), d = ctx.decls.get(id);
+    if (rec.kind === "behavior" && rec.requires === undefined)
+      add("note", "touched-uninvestigated", `${id} is touched and has no requires key: dependencies not investigated`, { id });
+    return { id, kind: rec.kind, ...labelsOf(rec), file: d?.file, lines: d?.lines, files: files.get(id), requires: rec.requires ?? null,
+      consumers: consumersOf(ctx, rev, id).map((c) => ({ id: c.id, depth: c.depth })) };
+  });
+}
+
+function censusChanged(ctx, { base, related }, claimed) {
   const ch = changedFiles(ctx.root, base);
   if (!ch) return { census: null };
   const bd = readBoundary(ctx);
@@ -541,7 +566,9 @@ function censusChanged(ctx, base, claimed) {
   const entry = (p) => ({ path: p, claims: claimed.get(p) });
   const head = { mode: "changed", base: { rev: base, commit: ch.commit }, changed: ch.paths.length };
   // Without a boundary no population is named: claims are still shown, nothing is judged unclaimed.
-  if (!bd) return { census: { ...head, boundary: null, claimed: files.filter((p) => claimed.has(p)).map(entry), unclaimed: null, outside: null } };
+  const hits = files.filter((p) => claimed.has(p)).map(entry);
+  const touched = related ? { touched: relatedOf(ctx, hits) } : {};
+  if (!bd) return { census: { ...head, boundary: null, claimed: hits, unclaimed: null, outside: null, ...touched } };
   const unclaimed = files.filter((p) => !claimed.has(p));
   for (const p of unclaimed) add("warn", "changed-unclaimed", `${p} changed and no record's code claims it`, { file: p });
   if (symlinks.length) add("note", "census-symlinks", `${symlinks.length} changed symlink(s) inside the boundary were not followed`);
@@ -550,10 +577,11 @@ function censusChanged(ctx, base, claimed) {
       ...head,
       boundary: { include: bd.include, exclude: bd.exclude },
       files: files.length,
-      claimed: files.filter((p) => claimed.has(p)).map(entry),
+      claimed: hits,
       unclaimed,
       outside: paths.filter((p) => !bd.inBoundary(p)),
       symlinks,
+      ...touched,
     },
   };
 }
@@ -583,6 +611,12 @@ function human(out) {
       `in boundary ${c.files}, claimed ${c.claimed.length}, unclaimed ${c.unclaimed.length}, outside ${c.outside.length}`);
     L.push(...c.claimed.map((e) => `  claimed ${e.path} (${e.claims.join(", ")})`), ...(c.unclaimed ?? []).map((f) => `  unclaimed ${f}`),
       ...(c.outside ?? []).map((f) => `  outside boundary ${f}`), ...(c.symlinks ?? []).map((f) => `  symlink not followed ${f}`));
+    if (c.touched) L.push("touched § (read each; flag only a visible change in its area):", ...c.touched.map((t) => {
+      const lb = t.labels ? `; ${[t.labels.authority, t.labels.evidence].map((v) => v ?? "-").join("/")}` : "";
+      const rq = t.requires === null ? "uninvestigated" : t.requires.join(", ") || "none declared";
+      const cs = t.consumers.map((k) => `${k.id} (${k.depth})`).join(", ") || "none declared";
+      return `  ${t.id} [${t.kind}${lb}] ${t.file}:${t.lines.join("-")} ← ${t.files.join(", ")}; requires: ${rq}; consumers: ${cs}`;
+    }));
   } else if (out.census) {
     const c = out.census;
     if (c.boundary) L.push(`boundary include ${c.boundary.include.join(", ")}; exclude ${c.boundary.exclude.map((e) => `${e.path} (${e.reason ?? "no reason"})`).join(", ") || "none"}`,
@@ -614,7 +648,7 @@ function main(argv) {
         if ((opt.cmd === "scope" || opt.cmd === "impact") && !ctx.claims.has(opt.id)) add("error", "unknown-id", `${opt.id} has no manifest record`, { id: opt.id });
         else if (broken && opt.cmd !== "check") add("note", "untrusted", "graph errors prevent a trustworthy result; fix them first");
         else {
-          const run = { check: () => check(ctx), census: () => census(ctx, opt.changed && { base: opt.base ?? "HEAD" }), scope: () => scope(ctx, opt.id, opt.budget), impact: () => impact(ctx, opt.id) }[opt.cmd];
+          const run = { check: () => check(ctx), census: () => census(ctx, opt.changed && { base: opt.base ?? "HEAD", related: opt.related }), scope: () => scope(ctx, opt.id, opt.budget), impact: () => impact(ctx, opt.id) }[opt.cmd];
           out = { ...out, ...(opt.id ? { id: opt.id } : {}), ...run(), notice: NOTICE };
         }
       }

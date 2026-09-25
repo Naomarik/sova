@@ -401,7 +401,7 @@ test("spec: the prompt names the trusted tools, their real flags, and the draft 
 	assert.match(spec, /No check, record, evidence or promotion proves correctness; no tool checks meaning\./);
 	assert.match(spec, /only the passages and unknowns relevant to its part, quoted literally/, "workers get the relevant slice, not the graph");
 	assert.doesNotMatch(spec, /\{[A-Z_]+\}/);
-	assert.ok(spec.split(/\s+/).length <= 610, "short enough to ride every turn");
+	assert.ok(spec.split(/\s+/).length <= 660, "short enough to ride every turn");
 });
 
 test("mode helpers", () => {

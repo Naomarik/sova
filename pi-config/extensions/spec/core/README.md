@@ -8,7 +8,7 @@ node sova-spec.mjs check                [--root DIR] [--spec DIR] [--json]
 node sova-spec.mjs scope  §ns/name      [--root DIR] [--spec DIR] [--json] [--budget BYTES]
 node sova-spec.mjs impact §ns/name      [--root DIR] [--spec DIR] [--json]
 node sova-spec.mjs census               [--root DIR] [--spec DIR] [--json]
-node sova-spec.mjs census --changed [--base REV] [--root DIR] [--spec DIR] [--json]
+node sova-spec.mjs census --changed [--base REV] [--related] [--root DIR] [--spec DIR] [--json]
 ```
 
 `--spec` picks which spec graph to read. It's a directory relative to the project root, and it
@@ -128,6 +128,13 @@ to the project root. New fields are only ever added. Other tools read this outpu
   `claimed: [{path, claims}]`, `unclaimed`, `outside` (changed files beyond the boundary, which
   aren't failures) and `symlinks`. Each unclaimed file is a `changed-unclaimed` warning. With no
   boundary it still lists the claimed files, but `unclaimed` and `outside` are null.
+- **census --changed --related**: adds `touched: [{id, kind, labels?, file, lines, files, requires,
+  consumers: [{id, depth}]}]`, one entry per id that claims a changed file, sorted by id. `files`
+  are the changed files that put it there; `requires` is the record's list, or `null` when the key
+  is absent; `consumers` are transitive reverse `requires`, as `impact` computes them. A touched
+  behavior without `requires` is a `touched-uninvestigated` note, never a warning, so the exit
+  code is unchanged. Without `--related` the output is exactly as above. `--related` without
+  `--changed` is a usage error.
 
 ## Evidence
 

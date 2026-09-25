@@ -141,7 +141,7 @@ is the requirement, but nothing has checked that the code does it. Verify the im
 before you claim a feature.
 - Drafts and reviews are local only (`.sova/spec/.gitignore`); commit by explicit path, as
   `.sova/spec/README.md` shows, never `git add -A`.
-- **Before a task that changes behavior, follow the spec discipline.** If your system prompt
+- **Before and while a task changes behavior, follow the spec discipline.** If your system prompt
   already includes the `# Minor mode: spec` block, follow it without rereading. Otherwise read
   `pi-config/extensions/mode/spec-mode.md`, the same text, and follow it. It applies in Sova
   whether or not that mode is on; don't turn any mode on. Commands are in `.sova/spec/USAGE.md`.

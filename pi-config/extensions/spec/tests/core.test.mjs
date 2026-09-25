@@ -852,3 +852,89 @@ test("census --changed: flag misuse is a usage error", () => {
   hasCode(run(root, "census", "--base", "HEAD"), "usage");
   hasCode(run(root, "census", "--changed", "--base"), "usage");
 });
+
+// --- census --changed --related ---
+
+test("census --changed --related: touched ids carry requires, consumers, files", () => {
+  const root = repo();
+  const f = join(root, ".sova/spec/manifest.json"), m = JSON.parse(readFileSync(f, "utf8"));
+  m.claims["§chat.input/note"] = { kind: "note", requires: ["§chat.input/draft"] };
+  writeFileSync(f, JSON.stringify(m));
+  write(root, ".sova/spec/claims/chat/input.md", readFileSync(join(root, ".sova/spec/claims/chat/input.md"), "utf8") + "\n## §chat.input/note\n\nNote.\n");
+  g(root, "add", "-A"); g(root, "commit", "-qm", "note");
+  write(root, "lib/claimed.js", "2\n");
+  const j = run(root, "census", "--changed", "--related");
+  assert.deepEqual(j.census.touched, [{
+    id: "§chat.input/draft", kind: "behavior", file: ".sova/spec/claims/chat/input.md", lines: [9, 11],
+    files: ["lib/claimed.js"], requires: [], consumers: [{ id: "§chat.input/note", depth: 1 }],
+  }]);
+  assert.equal(j.exit, 0, JSON.stringify(j.findings));
+});
+
+test("census --changed --related: a touched behavior without requires is a note, exit unchanged", () => {
+  const root = base({ boundary: { include: ["lib"], exclude: [] } }, { "§chat.input/draft": { kind: "behavior", code: ["lib/claimed.js"], authority: "accepted" } });
+  write(root, "lib/claimed.js", "1\n");
+  g(root, "init", "-q"); g(root, "add", "-A"); g(root, "commit", "-qm", "base");
+  write(root, "lib/claimed.js", "2\n");
+  const j = run(root, "census", "--changed", "--related");
+  const t = j.census.touched.find((x) => x.id === "§chat.input/draft");
+  assert.equal(t.requires, null);
+  assert.deepEqual(t.labels, { authority: "accepted" });
+  assert.deepEqual(j.findings.map((x) => [x.severity, x.code, x.id]), [["note", "touched-uninvestigated", "§chat.input/draft"]]);
+  assert.equal(j.exit, 0);
+});
+
+test("census --changed --related: transitive consumers carry depth, nearest first", () => {
+  const root = base({ boundary: { include: ["lib"], exclude: [] } }, {
+    "§chat.input/draft": { kind: "behavior", requires: [], code: ["lib/claimed.js"] },
+    "§chat.input/send": { kind: "behavior", requires: ["§core/net", "§chat.input/draft"] },
+    "§core/net": { kind: "surface", requires: ["§chat.input/send"] },
+  });
+  write(root, "lib/claimed.js", "1\n");
+  g(root, "init", "-q"); g(root, "add", "-A"); g(root, "commit", "-qm", "base");
+  write(root, "lib/claimed.js", "2\n");
+  const j = run(root, "census", "--changed", "--related");
+  assert.deepEqual(j.census.touched[0].consumers, [{ id: "§chat.input/send", depth: 1 }, { id: "§core/net", depth: 2 }]);
+  assert.equal(j.exit, 0, JSON.stringify(j.findings));
+});
+
+test("census --related: without --changed, or on another command, is a usage error", () => {
+  const root = repo();
+  for (const args of [["census", "--related"], ["check", "--related"], ["impact", "§core/net", "--related"], ["check", "--changed", "--related"]]) {
+    const j = run(root, ...args);
+    hasCode(j, "usage");
+    assert.equal(j.exit, 2);
+  }
+});
+
+test("census --changed: without --related the JSON shape is unchanged", () => {
+  const root = repo();
+  write(root, "lib/claimed.js", "2\n");
+  const j = run(root, "census", "--changed");
+  assert.equal(j.census.touched, undefined);
+  assert.deepEqual(Object.keys(j.census), ["mode", "base", "changed", "boundary", "files", "claimed", "unclaimed", "outside", "symlinks"]);
+  assert.ok(!codes(j).includes("touched-uninvestigated"));
+});
+
+test("census --changed --related: human output lists touched § with the files that put them there", () => {
+  const root = repo();
+  write(root, "lib/claimed.js", "2\n");
+  const h = spawnSync(process.execPath, [CLI, "census", "--changed", "--related", "--root", root], { encoding: "utf8" });
+  assert.equal(h.status, 0);
+  assert.match(h.stdout, /touched §/);
+  assert.match(h.stdout, /§chat\.input\/draft \[behavior\] \.sova\/spec\/claims\/chat\/input\.md:9-11 ← lib\/claimed\.js; requires: none declared; consumers: none declared/);
+});
+
+test("census --changed --related --spec: the draft's graph supplies requires and consumers", () => {
+  const root = withDraft();
+  const f = join(root, ".sova/spec/drafts/feat/spec/manifest.json"), m = JSON.parse(readFileSync(f, "utf8"));
+  m.claims["§core/net"].requires = ["§core.net/new"];
+  writeFileSync(f, JSON.stringify(m));
+  g(root, "init", "-q"); g(root, "add", "-A"); g(root, "commit", "-qm", "base");
+  write(root, "app.txt", "2\n");
+  const cur = run(root, "census", "--changed", "--related");
+  assert.deepEqual(cur.census.touched.map((t) => [t.id, t.requires, t.consumers]), [["§chat.input/send", ["§core/net"], []]]);
+  const j = run(root, "--spec", ".sova/spec/drafts/feat/spec", "census", "--changed", "--related");
+  assert.deepEqual(j.census.touched.map((t) => [t.id, t.file, t.requires, t.consumers]),
+    [["§core.net/new", ".sova/spec/drafts/feat/spec/claims/core/net.md", [], [{ id: "§core/net", depth: 1 }]]]);
+});

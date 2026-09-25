@@ -27,7 +27,10 @@ Logins (pi `auth.json`: OAuth and API keys; Claude Code credentials) merge per p
 login wins, and within one login the entry with the newest expiry wins, dead or failed entries never win, a login whose access has merely expired (its refresh still works, e.g. a host that slept) gives way only to the same login or a newer one, never to a different older login, a logout is a tombstone with its own
 login time so a later refresh can't resurrect it, and the host that refreshed last refreshes early.
 Every local write takes the owning program's own lock and replaces the file atomically at mode 0600. Claude Code's credentials name no account, so a new entry that
-replaces one with more than 10 minutes left is a login (a re-login or another account), not a refresh.
+replaces one with more than 10 minutes left is a login (a re-login or another account), not a refresh. Known gap:
+a Claude Code re-login made in the last 10 minutes of a pre-sync login's access token is taken for a
+refresh of it, so a logout of the old login made on another host at about the same time also removes
+the new one everywhere; the user logs in once more, and that login survives.
 
 Two hosts that already held different logins for the same provider before they first synced (not
 the same account or key, and not the same lineage: a login first seen before sync that a host then

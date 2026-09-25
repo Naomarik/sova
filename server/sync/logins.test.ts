@@ -493,3 +493,70 @@ test("c-lite: a token living longer than setTimeout can count is not refreshed a
   sync.stop();
   assert.equal(refreshed, 0);
 });
+
+test("first pairing: different pre-existing keys on two hosts are both kept, reported, and settled by a claim", async () => {
+  const [a, b, c] = makeMesh(3);
+  // Written before either host's sync ever ran: the first scan finds them (loginAt 0).
+  writeFileSync(a!.authPath, JSON.stringify({ zai: { type: "api_key", key: "sk-current" } }, null, 2), { mode: 0o600 });
+  writeFileSync(b!.authPath, JSON.stringify({ zai: { type: "api_key", key: "sk-old" } }, null, 2), { mode: 0o600 });
+  for (const h of [a!, b!, c!]) {
+    h.boot();
+    await h.sync.start();
+  }
+  try {
+    await converge([a!, b!, c!]);
+    assert.deepEqual(a!.auth().zai, { type: "api_key", key: "sk-current" }, "A kept its own");
+    assert.deepEqual(b!.auth().zai, { type: "api_key", key: "sk-old" }, "B kept its own");
+    assert.deepEqual(a!.sync.status().entries.find((e) => e.key === "pi:zai")?.conflictWith, ["b"]);
+    const { loginStatus } = await import("./index");
+    const line = loginStatus(a!.sync, true);
+    assert.equal(line.state, "error");
+    assert.match(line.error ?? "", /pi:zai \(b\)/);
+    assert.ok(!JSON.stringify(line).includes("sk-"), "no secret in the status line");
+    // The user picks A's: it becomes a login made now and wins everywhere.
+    assert.equal(await a!.sync.claim("pi:zai"), true);
+    await converge([a!, b!, c!]);
+    for (const h of [a!, b!, c!]) assert.deepEqual(h.auth().zai, { type: "api_key", key: "sk-current" }, h.id);
+    assert.equal(a!.sync.status().entries.find((e) => e.key === "pi:zai")?.conflictWith, undefined);
+    assert.equal(loginStatus(a!.sync, true).state, "ok");
+  } finally {
+    for (const h of [a!, b!, c!]) h.sync.stop();
+  }
+});
+
+test("first pairing: a logout of A's pre-sync key does not delete B's different one", async () => {
+  const [a, b] = makeMesh(2);
+  writeFileSync(a!.authPath, JSON.stringify({ zai: { type: "api_key", key: "sk-a" } }, null, 2), { mode: 0o600 });
+  writeFileSync(b!.authPath, JSON.stringify({ zai: { type: "api_key", key: "sk-b" } }, null, 2), { mode: 0o600 });
+  for (const h of [a!, b!]) {
+    h.boot();
+    await h.sync.start();
+  }
+  try {
+    await converge([a!, b!]);
+    await a!.sync.logout("pi:zai");
+    await converge([a!, b!]);
+    assert.equal(a!.auth().zai, undefined);
+    assert.deepEqual(b!.auth().zai, { type: "api_key", key: "sk-b" });
+  } finally {
+    for (const h of [a!, b!]) h.sync.stop();
+  }
+});
+
+test("first pairing: one pre-existing Codex login copied to two hosts (same account) still converges after a refresh", async () => {
+  const [a, b] = makeMesh(2);
+  const { lineage, credential } = mock.login({ shape: "pi" });
+  for (const h of [a!, b!]) writeFileSync(h.authPath, JSON.stringify({ "openai-codex": credential }, null, 2), { mode: 0o600 });
+  for (const h of [a!, b!]) {
+    h.boot();
+    await h.sync.start();
+  }
+  try {
+    assert.equal(await a!.piRefresh(), "ok");
+    await converge([a!, b!]);
+    for (const h of [a!, b!]) assert.equal(piRefreshSha(h), latest(lineage).refreshSha256, h.id);
+    assert.equal(b!.sync.status().entries.find((e) => e.key === CODEX)?.conflictWith, undefined);
+  } finally {
+    for (const h of [a!, b!]) h.sync.stop();
+  }
+});

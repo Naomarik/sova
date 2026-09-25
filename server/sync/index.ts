@@ -287,5 +287,10 @@ function peerStatusLine(category: SyncCategory, enabled: boolean, peerStates: Re
 export function loginStatus(sync: CredentialSync | null, enabled: boolean): SyncStatus {
   if (!enabled) return { category: "logins", enabled, state: "off", lastAt: null };
   if (!sync) return { category: "logins", enabled, state: "pending", lastAt: null };
-  return peerStatusLine("logins", enabled, sync.status().peers);
+  const status = sync.status();
+  const line = peerStatusLine("logins", enabled, status.peers);
+  const conflicts = status.entries.filter((e) => e.conflictWith?.length);
+  if (!conflicts.length) return line;
+  const which = conflicts.map((e) => `${e.key} (${e.conflictWith!.join(", ")})`).join("; ");
+  return { ...line, state: "error", error: `different logins from before sync, not synced until one is chosen: ${which}` };
 }

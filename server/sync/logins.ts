@@ -1,6 +1,7 @@
 import { readFileSync, watch, type FSWatcher } from "node:fs";
 import { basename, dirname } from "node:path";
 import {
+  admissible,
   advertisable,
   clockSkewed,
   entryKey,
@@ -9,6 +10,7 @@ import {
   laterTombstone,
   parseEntryKey,
   plan,
+  preSyncConflict,
   resolve,
   type EntryKey,
   type EntryMeta,
@@ -16,6 +18,7 @@ import {
   type Records,
   type RejectReason,
   type StoreId,
+  type Tombstone,
 } from "./logins-merge";
 import {
   classifyClaudeEntry,
@@ -85,7 +88,9 @@ export interface CredentialStatusEntry {
   loginAt?: number;
   issuedAt?: number;
   fingerprint?: string;
-  tombstone?: { at: number; by: string };
+  tombstone?: Tombstone;
+  /** Peers holding a different pre-sync login for this key: nothing is synced until one is claimed. */
+  conflictWith?: string[];
 }
 
 export type Refresher = (provider: string, minValidityMs: number) => Promise<void>;
@@ -128,6 +133,8 @@ export class CredentialSync {
   private readonly refreshTimers = new Map<EntryKey, NodeJS.Timeout>();
   private readonly debounce = new Map<StoreId, NodeJS.Timeout>();
   private readonly peerState = new Map<string, PeerSyncState>();
+  /** Keys where a peer holds a different pre-sync login than ours (the user must pick). */
+  private readonly conflicts: Record<EntryKey, Set<string>> = {};
   private watchers: FSWatcher[] = [];
   private started = false;
   private loaded = false;
@@ -300,7 +307,7 @@ export class CredentialSync {
       const logout =
         !rec.meta.dead &&
         (!fileGone || store.fileDeleteIsLogout || (store.id === "pi" && !!this.opts.treatPiFileDeleteAsLogout));
-      const tombstone = logout ? { at: now, by: this.hostId } : rec.tombstone;
+      const tombstone = logout ? tombstoneFor(rec.meta, now, this.hostId) : rec.tombstone;
       out.dirty = this.setRecord(key, tombstone ? { tombstone } : {}) || out.dirty;
       if (logout) out.pushed.push(key);
       else out.pull = true;
@@ -350,7 +357,7 @@ export class CredentialSync {
             const key = entryKey(id, provider);
             const rec = this.records[key];
             if (changes.has(provider) || !rec?.tombstone || rec.meta?.fingerprint !== entry.fingerprint) continue;
-            if (rec.meta.loginAt > rec.tombstone.at) continue;
+            if (admissible(rec.meta, rec.tombstone)) continue;
             changes.set(provider, null);
             this.setRecord(key, { tombstone: rec.tombstone });
           }
@@ -418,9 +425,32 @@ export class CredentialSync {
   async logout(key: EntryKey): Promise<void> {
     const parsed = parseEntryKey(key);
     if (!parsed || !this.stores.has(parsed.store)) throw new Error(`unknown credential key ${key}`);
-    const tombstone = { at: this.now(), by: this.hostId };
+    const tombstone = tombstoneFor(this.records[key]?.meta, this.now(), this.hostId);
     await this.applyRemote(key, { tombstone });
     await this.syncAll();
+  }
+
+  /**
+   * "Use this host's login everywhere": re-stamp the entry this host holds as a login made now, so
+   * it wins over every other host's (the way out of a pre-sync conflict, or any "no, THIS one").
+   * The store is not written; only the stamp changes. False when there is nothing live to claim.
+   */
+  async claim(key: EntryKey): Promise<boolean> {
+    const parsed = parseEntryKey(key);
+    if (!parsed || !this.stores.has(parsed.store)) return false;
+    const claimed = await this.locked(parsed.store, (_store, snap) => {
+      const rec = this.records[key];
+      const entry = snap.entries.get(parsed.provider);
+      const now = this.now();
+      if (!rec?.meta || !entry || entry.fingerprint !== rec.meta.fingerprint || !isLive(rec.meta, now)) return false;
+      this.setRecord(key, { ...rec, meta: { ...rec.meta, loginAt: now, issuedAt: now, origin: this.hostId } });
+      return true;
+    });
+    if (claimed) {
+      delete this.conflicts[key];
+      await this.syncAll();
+    }
+    return claimed;
   }
 
   // ---------------------------------------------------------------- peer-facing (server side)
@@ -483,6 +513,7 @@ export class CredentialSync {
       });
       if (res.ok) reply.accepted.push(key);
       else reply.rejected.push({ key, reason: res.reason });
+      this.noteConflict(key, from, !res.ok && res.reason === "conflict");
     }
     return reply;
   }
@@ -508,6 +539,11 @@ export class CredentialSync {
           if (p && this.stores.has(p.store) && isKeyRecord(rec)) theirs[k] = rec;
         }
         const mine = this.manifest().entries;
+        for (const key of new Set([...Object.keys(mine), ...Object.keys(this.conflicts)])) {
+          const m = mine[key]?.meta;
+          const t = theirs[key]?.meta;
+          this.noteConflict(key, peer.id, !!m && !!t && isLive(t, now) && preSyncConflict(m, t));
+        }
         const todo = plan(mine, theirs, now);
         for (const key of todo.pull) {
           const got = await peer.entry(key).catch(() => null);
@@ -553,6 +589,15 @@ export class CredentialSync {
     if (!this.enabled) return;
     const peers = this.opts.peers?.() ?? [];
     await Promise.all(peers.map((p) => this.syncWith(p)));
+  }
+
+  private noteConflict(key: EntryKey, peer: string, on: boolean): void {
+    const set = this.conflicts[key];
+    if (on) (this.conflicts[key] ??= new Set()).add(peer);
+    else if (set) {
+      set.delete(peer);
+      if (!set.size) delete this.conflicts[key];
+    }
   }
 
   // ---------------------------------------------------------------- c-lite
@@ -627,6 +672,7 @@ export class CredentialSync {
           : {}),
         state: !m ? "logged-out" : m.dead ? "dead" : isLive(m, now) ? "live" : "expired",
         ...(rec.tombstone ? { tombstone: rec.tombstone } : {}),
+        ...(this.conflicts[key] ? { conflictWith: [...this.conflicts[key]].sort() } : {}),
       });
     }
     entries.sort((a, b) => a.key.localeCompare(b.key));
@@ -648,3 +694,8 @@ function verifySecret(store: StoreId, secret: Record<string, unknown>, meta: Ent
 }
 
 const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
+
+/** A logout's tombstone, naming what was logged out (a different pre-sync login survives it). */
+function tombstoneFor(meta: EntryMeta | undefined, at: number, by: string): Tombstone {
+  return meta ? { at, by, of: { fingerprint: meta.fingerprint, ...(meta.account ? { account: meta.account } : {}) } } : { at, by };
+}

@@ -345,3 +345,62 @@ test("property: random gossip converges on the same winner on every host", () =>
     }
   }
 });
+
+// ---------------------------------------------------------------- pre-sync entries (loginAt 0)
+
+test("qa repro: two hosts with DIFFERENT pre-sync api keys are a conflict, never an overwrite", () => {
+  // qa-reviewer's first-pair.mts: A holds the current key (first scanned 2 days ago), B an old
+  // revoked one (its sync started a day later). Before the fix, A adopted B's key.
+  const DAY = 86_400_000;
+  const A = { meta: key({ issuedAt: NOW - 2 * DAY, loginAt: 0, fingerprint: fp("a"), origin: "a" }) };
+  const B = { meta: key({ issuedAt: NOW - 1 * DAY, loginAt: 0, fingerprint: fp("b"), origin: "b" }) };
+  assert.deepEqual(resolve(A, B, NOW), { action: "keep", record: { meta: A.meta }, rejected: "conflict" });
+  assert.deepEqual(resolve(B, A, NOW), { action: "keep", record: { meta: B.meta }, rejected: "conflict" });
+  assert.deepEqual(plan({ "pi:zai": A }, { "pi:zai": B }, NOW), { pull: [], delete: [], push: [], tombstones: [] });
+});
+
+test("pre-sync OAuth: different accounts conflict; the same account (a copied, refreshed lineage) converges by expiry", () => {
+  const personal = oauth({ expires: NOW + H, loginAt: 0, account: "personal", fingerprint: fp("p") });
+  const work = oauth({ expires: NOW + 2 * H, loginAt: 0, account: "work", fingerprint: fp("w"), origin: "b" });
+  assert.equal(resolve({ meta: personal }, { meta: work }, NOW).action, "keep");
+  assert.equal((resolve({ meta: personal }, { meta: work }, NOW) as { rejected?: string }).rejected, "conflict");
+  const refreshedCopy = oauth({ expires: NOW + 2 * H, loginAt: 0, account: "personal", fingerprint: fp("p2"), origin: "b" });
+  assert.equal(resolve({ meta: personal }, { meta: refreshedCopy }, NOW).action, "adopt");
+  // No account on either side: nothing proves it is the same login, so it is a conflict too.
+  const anonA = oauth({ expires: NOW + H, loginAt: 0, fingerprint: fp("x") });
+  const anonB = oauth({ expires: NOW + 2 * H, loginAt: 0, fingerprint: fp("y"), origin: "b" });
+  assert.equal((resolve({ meta: anonA }, { meta: anonB }, NOW) as { rejected?: string }).rejected, "conflict");
+});
+
+test("a pre-sync conflict clears itself when one side's login dies, or when anyone logs in afresh", () => {
+  const mineDead = oauth({ expires: 0, dead: true, loginAt: 0, fingerprint: fp("d") });
+  const theirs = oauth({ expires: NOW + H, loginAt: 0, fingerprint: fp("t"), origin: "b" });
+  assert.equal(resolve({ meta: mineDead }, { meta: theirs }, NOW).action, "adopt", "a dead entry takes the live one");
+  const mine = oauth({ expires: NOW + H, loginAt: 0, fingerprint: fp("m") });
+  const fresh = oauth({ expires: NOW + H, loginAt: NOW - 1000, fingerprint: fp("f"), origin: "b" });
+  assert.equal(resolve({ meta: mine }, { meta: fresh }, NOW).action, "adopt", "a login made during sync is authoritative");
+});
+
+test("a logout removes a pre-sync entry only if it is the login logged out; later logins as before", () => {
+  const t = { at: NOW - H, by: "a", of: { fingerprint: fp("k1") } };
+  const same = key({ issuedAt: NOW - 2 * H, loginAt: 0, fingerprint: fp("k1") });
+  const other = key({ issuedAt: NOW - 2 * H, loginAt: 0, fingerprint: fp("k2"), origin: "b" });
+  assert.equal(admissible(same, t), false);
+  assert.equal(admissible(other, t), true, "B's different pre-sync key survives A's logout");
+  const acct = { at: NOW - H, by: "a", of: { fingerprint: fp("o1"), account: "acct" } };
+  assert.equal(admissible(oauth({ expires: NOW + H, loginAt: 0, account: "acct", fingerprint: fp("o2") }), acct), false, "same account: refreshed copy");
+  // An entry logged in during sync is ruled out by any later logout, whatever `of` names.
+  assert.equal(admissible(key({ issuedAt: NOW - 3 * H, loginAt: NOW - 3 * H, fingerprint: fp("k3") }), t), false);
+  assert.equal(isKeyRecord({ tombstone: t }), true);
+  assert.equal(isKeyRecord({ tombstone: { ...t, of: { fingerprint: 3 } } }), false);
+});
+
+test("a pre-sync entry that survived a logout stays on its host and is not taken by the host that logged out", () => {
+  const t = { at: NOW - H, by: "a", of: { fingerprint: fp("k1") } };
+  const bKey = key({ issuedAt: NOW - 2 * H, loginAt: 0, fingerprint: fp("k2"), origin: "b" });
+  assert.deepEqual(resolve({ tombstone: t }, { meta: bKey }, NOW), { action: "keep", record: { meta: undefined, tombstone: t }, rejected: "tombstoned" });
+  assert.deepEqual(resolve({ meta: bKey }, { tombstone: t }, NOW), { action: "keep", record: { meta: bKey, tombstone: t } });
+  // Claimed on B (a login made now): it spreads, logout or not.
+  const claimed = { ...bKey, loginAt: NOW - 1000, issuedAt: NOW - 1000 };
+  assert.equal(resolve({ tombstone: t }, { meta: claimed }, NOW).action, "adopt");
+});

@@ -22,6 +22,15 @@
  * logins would then remove it, leaving every host logged out although a login newer than the
  * logout existed. With the newest login first, a tombstone that rules out the winner rules out
  * every other entry too, so no order of exchanges can lose a surviving login.
+ *
+ * Pre-sync entries (loginAt 0: found already in a store on a host's first sync scan) carry no
+ * login time, so between two of them nothing says which is current. Two live pre-sync entries
+ * that are not provably the same login (same fingerprint, or the same OAuth account: a copied and
+ * since-refreshed lineage) are a CONFLICT: neither is taken, each host keeps its own, and the user
+ * picks one (`claim` re-stamps it as a login made now, which then wins everywhere, as any fresh
+ * login does). Likewise a logout rules a pre-sync entry out only if it is the login that was
+ * logged out, so it never deletes another host's different key; that key then stays on its own
+ * host (no host takes a peer's entry older than a logout it knows of) until someone claims it.
  */
 
 export type StoreId = "pi" | "claude";
@@ -52,6 +61,8 @@ export interface EntryMeta {
 export interface Tombstone {
   at: number;
   by: string;
+  /** What was logged out, so a pre-sync entry that is a different login survives the logout. */
+  of?: { fingerprint: string; account?: string };
 }
 
 /** What a host knows about one key: the entry it holds (if any) and the newest logout it has seen. */
@@ -66,9 +77,10 @@ export type Records = Record<EntryKey, KeyRecord>;
  * Why a pushed entry was not taken: `older` lost the order, `tombstoned` predates a logout, `dead`
  * is a failed-refresh marker or expired, `local-only` is a key this host keeps as device config,
  * `clock-skew` means the two clocks disagree too much to compare stamps, `invalid` failed a check,
- * `disabled` means this host has login sync turned off.
+ * `disabled` means this host has login sync turned off, `conflict` that both hosts hold a
+ * different pre-sync login and the user has to pick one.
  */
-export type RejectReason = "older" | "tombstoned" | "dead" | "unknown-store" | "local-only" | "clock-skew" | "invalid" | "disabled";
+export type RejectReason = "older" | "tombstoned" | "dead" | "unknown-store" | "local-only" | "clock-skew" | "invalid" | "disabled" | "conflict";
 
 /** Peers whose clocks differ by more than this are not merged with: every stamp is a wall time. */
 export const MAX_CLOCK_SKEW_MS = 60_000;
@@ -94,7 +106,19 @@ export function isLive(meta: EntryMeta, now: number): boolean {
 
 /** An entry survives a tombstone only if its lineage began after the logout. */
 export function admissible(meta: EntryMeta, tombstone: Tombstone | undefined): boolean {
-  return !tombstone || meta.loginAt > tombstone.at;
+  if (!tombstone || meta.loginAt > tombstone.at) return true;
+  // A pre-sync entry is ruled out only by the logout of that same login.
+  return meta.loginAt === 0 && !!tombstone.of && !sameLogin(meta, tombstone.of);
+}
+
+/** Provably the same login: the same entry, or the same OAuth account (a lineage refreshed since). */
+export function sameLogin(a: Pick<EntryMeta, "fingerprint" | "account">, b: { fingerprint: string; account?: string }): boolean {
+  return a.fingerprint === b.fingerprint || (!!a.account && a.account === b.account);
+}
+
+/** Two pre-sync entries that may be different logins: nothing says which is current. */
+export function preSyncConflict(a: EntryMeta, b: EntryMeta): boolean {
+  return a.loginAt === 0 && b.loginAt === 0 && !sameLogin(a, b);
 }
 
 const cmp = (a: number | string, b: number | string): number => (a < b ? -1 : a > b ? 1 : 0);
@@ -142,10 +166,15 @@ export function resolve(local: KeyRecord, remote: KeyRecord, now: number): Resol
   let candidate: EntryMeta | undefined;
   if (rm) {
     if (!isLive(rm, now)) rejected = "dead";
-    else if (!admissible(rm, tombstone)) rejected = "tombstoned";
+    // Taking a peer's entry needs a login after the logout. A pre-sync entry that survived the
+    // logout (a different login) stays where it is; claiming it (a login made now) spreads it.
+    else if (tombstone && rm.loginAt <= tombstone.at) rejected = "tombstoned";
     else candidate = rm;
   }
   const localLive = lm !== undefined && isLive(lm, now);
+  if (candidate && localLive && preSyncConflict(candidate, lm!)) {
+    return { action: "keep", record: withTomb(lm), rejected: "conflict" };
+  }
   if (candidate && (!localLive || compareEntries(candidate, lm!) > 0)) {
     return { action: "adopt", record: withTomb(candidate) };
   }
@@ -207,6 +236,10 @@ export function isKeyRecord(v: unknown): v is KeyRecord {
   if (r.tombstone !== undefined) {
     const t = r.tombstone as Partial<Tombstone>;
     if (!t || typeof t.at !== "number" || !Number.isFinite(t.at) || typeof t.by !== "string") return false;
+    if (t.of !== undefined) {
+      const o = t.of as { fingerprint?: unknown; account?: unknown } | null;
+      if (!o || typeof o.fingerprint !== "string" || (o.account !== undefined && typeof o.account !== "string")) return false;
+    }
   }
   return r.meta === undefined || isEntryMeta(r.meta);
 }

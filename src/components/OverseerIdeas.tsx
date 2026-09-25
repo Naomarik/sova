@@ -59,10 +59,7 @@ export function OverseerIdeas(props: {
     return `${ideasCount(i.toc.total)} Â· ${ns} ${ns === 1 ? "project" : "projects"}`;
   };
 
-  const open = (id: string) => {
-    setSelected(id);
-    queueMicrotask(() => document.getElementById("ideas-detail-title")?.focus());
-  };
+  const open = (id: string) => setSelected(id);
   const back = () => {
     const was = selected();
     setSelected(null);
@@ -265,21 +262,25 @@ const shortLabel = (name: string) => (name.length > 20 ? `${name.slice(0, 19)}â€
 
 function IdeasGraph(props: { info: OverseerIdeasInfo; showSettled: boolean; onOpen(id: string): void }) {
   const shown = createMemo(() => props.info.ideas.filter((r) => props.showSettled || !settled(r.status)));
+  /** A sub-entry hangs off its main entry: drawn dashed, with no arrow, and pulled close like a link. */
+  const partOf = createMemo(() => new Set(shown().flatMap((r) => (r.parent ? [`${r.parent}\0${r.id}`] : []))));
   const layout = createMemo(() => {
     const ids = new Set(shown().map((r) => r.id));
+    const parts = shown().flatMap((r) => (r.parent ? [{ from: r.parent, to: r.id }] : []));
     return layoutGraph(
       shown().map((r) => ({ id: r.id, group: r.ns })),
-      props.info.edges.filter((e) => ids.has(e.from) || ids.has(e.to)),
+      [...props.info.edges.filter((e) => ids.has(e.from) || ids.has(e.to)), ...parts.filter((e) => ids.has(e.from))],
       { width: GRAPH_W, height: GRAPH_H, pad: 28 },
     );
   });
+  const isPart = (e: { from: string; to: string }) => partOf().has(`${e.from}\0${e.to}`);
   const byId = createMemo(() => new Map(shown().map((r) => [r.id, r])));
   const [hot, setHot] = createSignal<string | null>(null);
   const lit = createMemo(() => {
     const h = hot();
     return h ? neighbours(h, layout().edges) : null;
   });
-  const linkCount = () => layout().edges.length;
+  const linkCount = () => layout().edges.filter((e) => !isPart(e)).length;
   // A dangling link here is one to an idea the toggle hides, or to one that no longer parses.
   const hiddenLinks = () => layout().dangling.length;
 
@@ -288,7 +289,7 @@ function IdeasGraph(props: { info: OverseerIdeasInfo; showSettled: boolean; onOp
       <p class="ideas-note">
         {`${ideasCount(layout().nodes.length)}, ${linkCount()} ${linkCount() === 1 ? "link" : "links"}.`}
         <Show when={hiddenLinks() > 0}>{` ${hiddenLinks()} more ${hiddenLinks() === 1 ? "link goes" : "links go"} to hidden ideas.`}</Show>{" "}
-        Arrows point from an idea to what it links to.
+        Arrows point from an idea to what it links to; a dashed line joins a sub-entry to its idea.
       </p>
       <svg class="ideas-graph-svg" viewBox={`0 0 ${GRAPH_W} ${GRAPH_H}`} role="group" aria-label="Link graph of the ideas">
         <defs>
@@ -301,12 +302,13 @@ function IdeasGraph(props: { info: OverseerIdeasInfo; showSettled: boolean; onOp
             {(e) => (
               <line
                 class="ideas-edge"
-                classList={{ "ideas-edge-lit": !!lit() && lit()!.has(e.from) && lit()!.has(e.to) && (e.from === hot() || e.to === hot()), "ideas-dim": !!lit() && !(e.from === hot() || e.to === hot()) }}
+                classList={{
+                  "ideas-edge-part": isPart(e), "ideas-edge-lit": !!lit() && lit()!.has(e.from) && lit()!.has(e.to) && (e.from === hot() || e.to === hot()), "ideas-dim": !!lit() && !(e.from === hot() || e.to === hot()) }}
                 x1={e.x1}
                 y1={e.y1}
                 x2={e.x2}
                 y2={e.y2}
-                marker-end="url(#ideas-arrow)"
+                marker-end={isPart(e) ? undefined : "url(#ideas-arrow)"}
               />
             )}
           </For>
@@ -380,6 +382,11 @@ function IdeaDetailView(props: {
   const [notice, setNotice] = createSignal<string | null>(null);
   const [draft, setDraft] = createSignal({ title: "", tags: "", links: "", text: "" });
   const loaded = (): OverseerIdeaDetail | undefined => (detail.error ? undefined : detail());
+
+  // Focus lands on the idea's title once it has loaded (each idea opened, links included).
+  // A memo, so a refetch (a fresh object, same id) never pulls focus back to the title.
+  const loadedId = createMemo(() => loaded()?.idea.id ?? null);
+  createEffect(on(loadedId, (id) => id && queueMicrotask(() => document.getElementById("ideas-detail-title")?.focus())));
 
   // The backlog changed (an Overseer turn): follow it, unless an edit is open over this copy.
   createEffect(on(() => props.version, () => !editing() && !saving() && void refetch(), { defer: true }));

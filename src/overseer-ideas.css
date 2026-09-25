@@ -34,6 +34,12 @@
     border-left: var(--stroke-thin) solid var(--color-border);
   }
 }
+/* Desktop: the chat gives the panel its room instead of sliding under it, so
+   the Overseer's answer to Explore stays readable beside the idea. */
+@media (min-width: 1120px) {
+  .app-main:has(> .ideas-panel) { padding-right: 480px; }
+  .ideas-panel { box-shadow: none; }
+}
 
 .ideas-head {
   display: flex;
@@ -99,6 +105,7 @@
 .ideas-graph { display: flex; flex-direction: column; gap: var(--space-2); padding-bottom: var(--space-3); }
 .ideas-graph-svg { display: block; width: 100%; height: auto; margin: 0 auto; max-width: 720px; }
 .ideas-edge { stroke: var(--color-border-strong); stroke-width: 1.25; }
+.ideas-edge-part { stroke-dasharray: 3 3; }
 .ideas-edge-lit { stroke: var(--color-ink); stroke-width: 1.75; }
 .ideas-arrow { fill: var(--color-border-strong); }
 .ideas-node { cursor: pointer; outline: none; }
@@ -154,14 +161,8 @@
   color: var(--color-ink-muted);
 }
 .ideas-section .ideas-note { padding: 0; }
-.ideas-prose {
-  padding: var(--space-3) var(--space-4);
-  border-radius: var(--r-lg);
-  background: var(--color-sunken);
-  overflow-wrap: anywhere;
-}
-.ideas-prose > :first-child { margin-top: 0; }
-.ideas-prose > :last-child { margin-bottom: 0; }
+/* Markdown brings the message body's box; here it is the idea's text, so it keeps the box. */
+.ideas-prose { overflow-wrap: anywhere; min-width: 0; }
 .ideas-links { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; }
 .ideas-link {
   display: flex;

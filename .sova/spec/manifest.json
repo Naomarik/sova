@@ -2853,6 +2853,25 @@
         "pi-config/extensions/subagents/teams.ts",
         "pi-config/extensions/subagents/index.ts"
       ]
+    },
+    "§app.overseer/finished-menu": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/OverseerView.tsx",
+        "src/components/ActionMenu.tsx",
+        "src/lib/overseer.ts",
+        "src/lib/api.ts",
+        "src/design/base.css",
+        "src/lib/overseer.test.ts",
+        "src/App.tsx"
+      ],
+      "requires": [
+        "§app.overseer/attention-digest",
+        "§app.overseer/entry-button",
+        "§app.overseer/identity-and-clear"
+      ]
     }
   },
   "boundary": {

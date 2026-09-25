@@ -353,6 +353,44 @@ An unknown id renders as its text, unlinked.
 - They are editable in Settings → Overseer (label, description, prompt; add, remove, reorder,
   reset to defaults).
 
+## §app.overseer/finished-menu — The head's finished and drafts lists
+
+The Overseer page's head says what it watches in one meta line: "{n} sessions · {w} working ·
+{a} need you", then "{f} finished" and "{d} drafts". Each part after the first shows only when it
+is not 0. "{n} sessions", "{w} working" and "{a} need you" stay plain text; `{a}` is the entry
+button's act count (§app.overseer/entry-button).
+
+- **Two menus, one digest.** While the page is open it reads `GET /api/overseer/attention`
+  (§app.overseer/attention-digest) when it opens and again every 10 seconds, the entry button's
+  own cadence (paused while the tab is hidden). Both counts are the number of rows their menus
+  list from that one read, so a number always matches its list. The entry button's decide badge
+  plays no part here, and the sidebar's entry button is unchanged.
+- **Which sessions.** The digest's decide items, minus every session that also has an act item.
+  **Finished** lists the sessions with a reply newer than last seen (kind `finished`). **Drafts**
+  lists the sessions with an unsent draft or queued input (kinds `draft` and `queued`; queued
+  input counts as a draft). A session with both is in both menus. Each menu has **one row per
+  session**, newest first by the latest of that session's items of the menu's kind.
+- **Each count is a menu trigger**, the head's History menu's control
+  (§app.overseer/identity-and-clear) set in the meta line, so the line keeps its height: the words
+  and a chevron, after a check (finished) or a pencil (drafts). Below a 480px head the icons, the
+  chevrons and the dots before the counts go, and the counts keep their words; the plain text
+  gives way first. A trigger is named "{f} finished sessions, show list" ("1 finished session,
+  show list") or "{d} drafts, show list" ("1 draft, show list"). A count of 0 hides its trigger,
+  except while its menu is open: a list that empties under the user says so instead.
+- **Rows.** A row is its title over a quiet line — where it runs and how long ago
+  (`relativeTime`; an unknown time is left out) — and is a real link to the session (`href`), so a
+  middle-click opens a new tab. Choosing one follows the link in this tab. No row carries a kind
+  label: each menu lists one kind.
+- **States.** When the latest read failed, the menu says so ("Couldn't read the finished
+  sessions." / "Couldn't read the drafts."), gives the reason, says nothing changed, and offers
+  **Try Again** above the last rows it had. While that read runs it says "Reading the finished
+  sessions." / "Reading the drafts."; when it lands, focus moves to the first row if it went with
+  the pressed one, and a failure is announced. An empty menu says "Nothing finished right now." or
+  "No drafts right now."
+- **Capped.** The digest keeps 30 items, needs-you first. When act or decide items were cut, each
+  list ends with "Some finished sessions may not be listed: this list stops at the 30 most urgent
+  items." (drafts: "Some drafts may not be listed: …").
+
 ## §app.overseer/entry-button — Entry button
 
 - An **eye** icon button (aria-label "Overseer") sits in the session-list search row, beside the

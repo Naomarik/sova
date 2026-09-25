@@ -58,6 +58,8 @@ class Host {
   offset = 0;
   online = true;
   kinds: LoginKinds = "all";
+  /** A host without Claude Code: no Claude store (a hermetic agent dir without SOVA_SYNC_CLAUDE_DIR). */
+  noClaude = false;
   /** Every push body this host received, as it arrived. */
   readonly received: CredentialPush[] = [];
   sync!: CredentialSync;
@@ -80,7 +82,7 @@ class Host {
   boot() {
     this.sync = new CredentialSync({
       hostId: this.id,
-      stores: [new PiAuthStore(this.authPath), new ClaudeCredentialStore(this.claudeDir)],
+      stores: [new PiAuthStore(this.authPath), ...(this.noClaude ? [] : [new ClaudeCredentialStore(this.claudeDir)])],
       sidecarPath: join(this.dir, "agent", "login-sync.json"),
       peers: () => this.mesh.filter((h) => h !== this).map((h) => this.peerTo(h)),
       now: () => Date.now() + this.offset,
@@ -724,6 +726,35 @@ test("first pairing: a pre-sync Claude login refreshed on its host replaces the 
 /** Every key a host was ever pushed, and whether any of them carried an OAuth secret. */
 const pushedKeys = (h: Host) => new Set(h.received.flatMap((b) => Object.keys(b.entries)));
 const pushedOAuth = (h: Host) => h.received.some((b) => Object.values(b.entries).some((e) => e.record.meta?.kind === "oauth" || e.record.tombstone?.of?.kind === "oauth" || (e.secret as { type?: unknown } | undefined)?.type === "oauth"));
+
+test("a peer without a Claude store is sent no Claude record, secret or logout; a peer that doesn't say which stores it keeps gets everything", async () => {
+  const [a, b] = makeMesh(2);
+  b!.noClaude = true;
+  b!.boot();
+  await claudeSim.login(a!.claudeDir, mockUrl);
+  await a!.sync.observe("claude");
+  await a!.piLogin();
+  await converge([a!, b!]);
+  assert.deepEqual(b!.sync.manifest().stores, ["pi"]);
+  assert.ok(b!.auth()["openai-codex"], "pi still syncs");
+  assert.ok(![...pushedKeys(b!)].some((k) => k.startsWith("claude:")), "no Claude record reached B");
+  await claudeSim.logout(a!.claudeDir, mockUrl);
+  await a!.sync.observe("claude");
+  await converge([a!, b!]);
+  assert.ok(![...pushedKeys(b!)].some((k) => k.startsWith("claude:")), "nor its logout");
+  assert.ok(!a!.logs.some((l) => l.includes("unknown-store")), a!.logs.join("\n"));
+  // A host from before `stores` (its manifest doesn't carry it) gets what it always got.
+  await claudeSim.login(a!.claudeDir, mockUrl);
+  await a!.sync.observe("claude");
+  const manifest = b!.sync.manifest.bind(b!.sync);
+  b!.sync.manifest = () => {
+    const m = manifest();
+    delete m.stores;
+    return m;
+  };
+  await converge([a!, b!]);
+  assert.ok([...pushedKeys(b!)].some((k) => k.startsWith("claude:")), "an old peer is still offered Claude");
+});
 
 test("api-keys mode: OAuth on A never reaches B (never even sent to it); the API key does, both ways", async () => {
   const [a, b, c] = makeMesh(3);

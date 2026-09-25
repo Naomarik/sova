@@ -52,6 +52,8 @@ export interface CredentialManifest {
   loginKinds?: "api-keys";
   /** Keys the sender keeps to itself (its own OAuth logins, API-keys-only mode): send it nothing for them. */
   refuses?: EntryKey[];
+  /** The stores the sender keeps (a host without Claude Code has none for it): send it nothing for the others. Absent = all. */
+  stores?: StoreId[];
 }
 
 /** POST push body: records (tombstones travel alone), with the secret for each live entry. */
@@ -491,6 +493,7 @@ export class CredentialSync {
 
   manifest(): CredentialManifest {
     const m: CredentialManifest = { hostId: this.hostId, now: this.now(), entries: this.recordsView(advertisable) };
+    m.stores = [...this.stores.keys()].filter((id) => this.advertisesStore(id)).sort();
     if (this.kinds === "api-keys" && this.enabled) {
       m.loginKinds = "api-keys";
       const refuses = Object.keys(this.records).filter((key) => !this.syncs(key) && parseEntryKey(key)?.store === "pi");
@@ -596,6 +599,11 @@ export class CredentialSync {
         if (remote.loginKinds === "api-keys") {
           const refused = new Set(Array.isArray(remote.refuses) ? remote.refuses : []);
           for (const [k, rec] of Object.entries(mine)) if (refused.has(k) || !syncsRecord("api-keys", k, rec)) delete mine[k];
+        }
+        // Nor anything of a store the peer doesn't keep: it could only refuse it (a secret sent for nothing).
+        if (Array.isArray(remote.stores)) {
+          const kept = new Set<string>(remote.stores);
+          for (const k of Object.keys(mine)) if (!kept.has(parseEntryKey(k)!.store)) delete mine[k];
         }
         // Conflicts to tell the peer about: it may not exchange with this host again for minutes.
         const notices: EntryKey[] = [];

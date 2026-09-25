@@ -170,6 +170,19 @@ describe("mesh off", () => {
     assert.equal(identityCalls, 0);
     assert.equal(fetches, 0);
   });
+
+  test("a rename in Settings is stamped with the mesh off too (it spreads once paired), and calls no one", async () => {
+    const t0 = Date.now();
+    const [st] = await call("PUT", "/api/mesh/settings", { hostLabel: "Before pairing" });
+    assert.equal(st, 200);
+    const self = peersDoc().self;
+    assert.equal(self.label, "Before pairing");
+    assert.ok(self.labelAt >= t0);
+    await call("PUT", "/api/mesh/settings", { sync: { themes: true } });
+    assert.equal(peersDoc().self.labelAt, self.labelAt, "another setting keeps the stamp");
+    assert.equal(fetches, 0);
+    assert.equal(identityCalls, 0);
+  });
 });
 
 describe("mesh on", () => {
@@ -262,6 +275,22 @@ describe("mesh on", () => {
     }
     whoisNode = null;
     assert.equal((await peerCall("POST", "/api/peer/label", { label: "Evil", labelAt: 9_999 })).status, 403);
+  });
+
+  test("a name typed here for a peer keeps its stamp: the peer's same name again doesn't replace it, a newer rename does", async () => {
+    const list = peersDoc().peers.map((p: { id: string; nodeId: string; dnsName: string; url?: string; label: string }) => ({
+      id: p.id, nodeId: p.nodeId, name: p.dnsName, url: p.url, label: p.id === "b" ? "My phone" : p.label,
+    }));
+    await call("PUT", "/api/mesh/peers", { peers: list });
+    let b = peersDoc().peers.find((p: { id: string }) => p.id === "b");
+    assert.equal(b.label, "My phone");
+    assert.equal(b.labelAt, 1_000, "the stamp stays as it was");
+    whoisNode = "nB";
+    assert.equal((await peerCall("POST", "/api/peer/label", { label: "Bee", labelAt: 1_000 })).status, 200);
+    b = peersDoc().peers.find((p: { id: string }) => p.id === "b");
+    assert.equal(b.label, "My phone", "its peer-up announce of the same name leaves the user's name");
+    assert.equal((await peerCall("POST", "/api/peer/label", { label: "Bee 2", labelAt: 1_001 })).status, 200);
+    assert.equal(peersDoc().peers.find((p: { id: string }) => p.id === "b").label, "Bee 2", "a real rename wins");
   });
 
   test("renaming this host stamps it and tells every peer", async () => {

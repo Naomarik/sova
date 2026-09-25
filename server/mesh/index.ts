@@ -468,8 +468,9 @@ async function putPeers(c: Context): Promise<Response> {
       ...(e.priority !== undefined ? { priority: e.priority } : prior?.priority !== undefined ? { priority: prior.priority } : {}),
       ...(e.serveUrl !== undefined ? { serveUrl: e.serveUrl } : prior?.serveUrl ? { serveUrl: prior.serveUrl } : {}),
       ...(pairedAt !== undefined ? { pairedAt } : {}),
-      // The stamp of a name the peer gave itself, while that is still the name.
-      ...(known?.labelAt !== undefined && known.label === (e.label ?? prior?.label ?? known.label) ? { labelAt: known.labelAt } : {}),
+      // The stamp of the last name the peer gave itself, kept through a local edit: only a newer
+      // rename by that host replaces what the user typed here.
+      ...(known?.labelAt !== undefined ? { labelAt: known.labelAt } : {}),
     });
   }
   const v = validatePeers({ ...base.config, peers });
@@ -505,8 +506,8 @@ async function putSettings(c: Context): Promise<Response> {
     return c.json({ error: "loginKinds is pinned by SOVA_SYNC_LOGIN_KINDS on this host" }, 409);
   }
   const self = { ...base.config.self };
-  // While on, a new name is stamped, so peers take it (server/mesh/details.ts) and never an older one.
-  if (body.hostLabel !== undefined && body.hostLabel !== self.label && meshEnabled()) self.labelAt = Date.now();
+  // A new name is stamped (this host's clock), so peers take it (server/mesh/details.ts) and never an older one.
+  if (body.hostLabel !== undefined && body.hostLabel !== self.label) self.labelAt = Date.now();
   if (body.hostLabel !== undefined) self.label = body.hostLabel;
   if (body.serveUrl === null) delete self.serveUrl;
   else if (body.serveUrl !== undefined) self.serveUrl = body.serveUrl;

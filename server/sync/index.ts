@@ -11,7 +11,7 @@ import { ClaudeCredentialStore, PiAuthStore, piRefresher, type CredentialStore }
 import { CredentialSync, type CredentialEntryReply, type CredentialManifest, type CredentialPushReply, type SyncPeer } from "./logins";
 import { DocSync, type DocManifest, type DocPeer, type DocPushReply, type DocReply } from "./docs";
 import { ExtensionSync, type ExtensionList, type ExtensionPeer } from "./extensions";
-import { readExtensions, setPeerExtensions, validateExtension } from "../extensions";
+import { extensionsFile, readExtensions, setPeerExtensions, validateExtension } from "../extensions";
 
 /**
  * Host-to-host sync, mounted on the mesh. While the mesh is OFF nothing here exists beyond the
@@ -26,6 +26,7 @@ import { readExtensions, setPeerExtensions, validateExtension } from "../extensi
  *   GET  /api/peer/sync/doc?key=<key>
  *   POST /api/peer/sync/push
  *   GET  /api/peer/sync/extensions          this host's own extensions.json entries
+ *   POST /api/peer/sync/extensions          a peer's list, pushed when its manifest changes
  */
 
 const PEER_CALL_TIMEOUT_MS = 5_000;
@@ -73,7 +74,11 @@ function httpDocPeer(mesh: MeshApi, id: string): DocPeer {
 
 function httpExtensionPeer(mesh: MeshApi, id: string): ExtensionPeer {
   const call = peerCall(mesh, id);
-  return { id, extensions: () => call<ExtensionList>("/api/peer/sync/extensions") };
+  return {
+    id,
+    extensions: () => call<ExtensionList>("/api/peer/sync/extensions"),
+    notify: async (list) => void (await call<{ ok: true }>("/api/peer/sync/extensions", postJson(list))),
+  };
 }
 
 function httpPeer(mesh: MeshApi, id: string): SyncPeer {
@@ -157,6 +162,7 @@ export function mountSync(app: Hono, mesh: MeshApi, paths: SyncPaths = defaultPa
     });
     rt.extensions = extensions;
     setPeerExtensions(() => extensions.peerEntries());
+    extensions.start(extensionsFile());
     void extensions.syncAll().catch((err) => console.error("[sync] extensions start failed:", err));
 
     reconcile = setInterval(syncEverything, RECONCILE_MS);
@@ -170,6 +176,7 @@ export function mountSync(app: Hono, mesh: MeshApi, paths: SyncPaths = defaultPa
     rt.docs?.stop();
     rt.docs = null;
     setPeerExtensions(null);
+    rt.extensions?.stop();
     rt.extensions = null;
   };
   mesh.onMeshStart(start);
@@ -236,6 +243,18 @@ export function mountSync(app: Hono, mesh: MeshApi, paths: SyncPaths = defaultPa
   app.get("/api/peer/sync/extensions", (c) => {
     if (!peerCaller(mesh, c) || !rt.extensions) return notFound(c);
     return c.json(rt.extensions.published());
+  });
+  app.post("/api/peer/sync/extensions", bodyLimit({ maxSize: 256 * 1024, onError: (c) => c.json({ error: "Too large" }, 413) }), async (c) => {
+    const from = peerCaller(mesh, c);
+    if (!from || !rt.extensions) return notFound(c);
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: "Expected JSON" }, 400);
+    }
+    rt.extensions.receive(from, body);
+    return c.json({ ok: true });
   });
   return rt;
 }

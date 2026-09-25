@@ -2,7 +2,7 @@
 // they lack, and a peer entry whose dist isn't installed here is marked so (never proxied).
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { findExtension, listExtensions, setPeerExtensions, validateExtension, type ExtensionEntry } from "../extensions";
@@ -22,7 +22,7 @@ function host(id: string, local: ExtensionEntry[], peers: () => ExtensionPeer[],
   const sync = new ExtensionSync({ hostId: id, file: join(dir, "mesh-extensions.json"), local: () => local, validate: validateExtension, peers, ...extra });
   return { sync, dir, local };
 }
-const as = (id: string, s: ExtensionSync): ExtensionPeer => ({ id, extensions: async () => structuredClone(s.published()) });
+const as = (id: string, s: ExtensionSync): ExtensionPeer => ({ id, extensions: async () => structuredClone(s.published()), notify: async () => {} });
 
 test("a peer's extensions are listed here; installed only where its dist exists here; a local id wins", async () => {
   const installed = join(root, "installed-dist");
@@ -62,6 +62,7 @@ test("removing an entry at its origin removes it here at the next exchange; a re
 test("a peer's entries are re-validated with the manifest's own rules; off lists and publishes nothing", async () => {
   const bad: ExtensionPeer = {
     id: "evil",
+    notify: async () => {},
     extensions: async () => ({
       hostId: "evil",
       now: Date.now(),
@@ -88,7 +89,11 @@ test("the peers' lists survive a restart (the file), and a down peer keeps its l
   mkdirSync(dir);
   const file = join(dir, "mesh-extensions.json");
   let up = true;
-  const peer: ExtensionPeer = { id: "a", extensions: async () => (up ? structuredClone(a.sync.published()) : Promise.reject(new Error("down"))) };
+  const peer: ExtensionPeer = {
+    id: "a",
+    extensions: async () => (up ? structuredClone(a.sync.published()) : Promise.reject(new Error("down"))),
+    notify: async () => {},
+  };
   const b1 = new ExtensionSync({ hostId: "b", file, local: () => [], validate: validateExtension, peers: () => [peer] });
   await b1.syncAll();
   up = false;
@@ -137,4 +142,39 @@ test("server/extensions hook: unset, the listing and lookup are exactly the mani
   }
   assert.deepEqual({ list: await listExtensions(), local: findExtension("local"), peer: findExtension("peer-here") }, before);
   assert.equal(before.peer, undefined);
+});
+
+test("a change to this host's manifest is pushed to peers by itself (no reconcile wait)", async () => {
+  const dir = join(root, "watched");
+  mkdirSync(dir);
+  const manifest = join(dir, "extensions.json");
+  const dist = join(root, "watched-dist");
+  mkdirSync(dist);
+  const readLocal = (): ExtensionEntry[] => {
+    try {
+      const d = JSON.parse(readFileSync(manifest, "utf8")) as { extensions: unknown[] };
+      return d.extensions.map((r) => validateExtension(r)).flatMap((v) => ("entry" in v ? [v.entry] : []));
+    } catch {
+      return [];
+    }
+  };
+  const b = host("b", [], () => []);
+  const aDir = join(root, "watched-a");
+  mkdirSync(aDir);
+  const a = new ExtensionSync({
+    hostId: "a",
+    file: join(aDir, "mesh-extensions.json"),
+    local: readLocal,
+    validate: validateExtension,
+    peers: () => [{ id: "b", extensions: async () => structuredClone(b.sync.published()), notify: async (list) => b.sync.receive("a", structuredClone(list)) }],
+  });
+  a.start(manifest, 30);
+  try {
+    writeFileSync(manifest, JSON.stringify({ version: 1, extensions: [entry("fresh", dist)] }));
+    const end = Date.now() + 3000;
+    while (!b.sync.peerEntries().some((p) => p.entry.id === "fresh") && Date.now() < end) await new Promise((r) => setTimeout(r, 20));
+    assert.deepEqual(b.sync.peerEntries().map((p) => [p.entry.id, p.from]), [["fresh", "a"]]);
+  } finally {
+    a.stop();
+  }
 });

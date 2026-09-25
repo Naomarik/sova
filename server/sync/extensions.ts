@@ -1,4 +1,5 @@
-import { readFileSync, statSync } from "node:fs";
+import { readFileSync, statSync, watch, type FSWatcher } from "node:fs";
+import { basename, dirname } from "node:path";
 import type { ExtensionEntry } from "../extensions";
 import { writeFileAtomic } from "./logins-stores";
 
@@ -30,6 +31,8 @@ export interface PeerExtension {
 export interface ExtensionPeer {
   readonly id: string;
   extensions(): Promise<ExtensionList>;
+  /** Hand the peer this host's list now (it stores it under the caller the mesh verified). */
+  notify(list: ExtensionList): Promise<void>;
 }
 
 export interface ExtensionSyncOptions {
@@ -107,16 +110,63 @@ export class ExtensionSync {
   async syncWith(peer: ExtensionPeer): Promise<void> {
     if (!this.enabled) return;
     try {
-      const got = await peer.extensions();
-      const entries = Array.isArray(got?.entries) ? this.clean(got.entries) : [];
-      const lists = this.load();
-      const prev = lists[peer.id];
-      lists[peer.id] = { at: this.now(), entries };
-      if (JSON.stringify(prev?.entries) !== JSON.stringify(entries)) this.persist();
+      this.store(peer.id, await peer.extensions());
       this.peerState.set(peer.id, { state: "ok", at: this.now() });
     } catch (e) {
       this.peerState.set(peer.id, { state: "error", at: this.now(), error: (e as Error).message });
     }
+  }
+
+  /** A peer's list, pulled or pushed; `from` is the mesh-verified caller, never a field of the body. */
+  private store(from: string, got: Partial<ExtensionList> | null | undefined): void {
+    const entries = Array.isArray(got?.entries) ? this.clean(got.entries) : [];
+    const lists = this.load();
+    const prev = lists[from];
+    lists[from] = { at: this.now(), entries };
+    if (JSON.stringify(prev?.entries) !== JSON.stringify(entries)) this.persist();
+  }
+
+  /** POST from a peer whose manifest changed. Off: ignored (and nothing is listed anyway). */
+  receive(from: string, body: unknown): void {
+    if (!this.enabled || !body || typeof body !== "object") return;
+    this.store(from, body as Partial<ExtensionList>);
+    this.peerState.set(from, { state: "ok", at: this.now() });
+  }
+
+  /** Tell every peer this host's list (after a local manifest change). */
+  async notifyAll(): Promise<void> {
+    if (!this.enabled) return;
+    const list = this.published();
+    await Promise.all((this.opts.peers?.() ?? []).map((p) => p.notify(list).catch(() => {})));
+  }
+
+  private watcher: FSWatcher | null = null;
+  private debounce: NodeJS.Timeout | undefined;
+
+  /**
+   * Watch this host's manifest (its folder: editors and installers replace files) and push the
+   * new list to every peer shortly after it changes, as settings and themes do.
+   */
+  start(manifestPath: string, debounceMs = 500): void {
+    if (this.watcher) return;
+    const name = basename(manifestPath);
+    try {
+      this.watcher = watch(dirname(manifestPath), { persistent: false }, (_e, f) => {
+        if (f !== null && f !== name) return;
+        clearTimeout(this.debounce);
+        this.debounce = setTimeout(() => void this.notifyAll(), debounceMs);
+        this.debounce.unref?.();
+      });
+      this.watcher.on("error", () => {});
+    } catch {
+      this.watcher = null; // no folder yet: peer-up and the reconcile still carry changes
+    }
+  }
+
+  stop(): void {
+    this.watcher?.close();
+    this.watcher = null;
+    clearTimeout(this.debounce);
   }
 
   async syncAll(): Promise<void> {

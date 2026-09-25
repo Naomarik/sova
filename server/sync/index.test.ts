@@ -212,3 +212,20 @@ test("two hosts over the real routes: a settings file and a theme propagate; the
     b.fire.stop();
   }
 });
+
+test("a pushed extension list is stored under the verified caller, whatever the body claims", async () => {
+  const hosts = new Map<string, FakeHost>();
+  const a = host("a", hosts);
+  host("b", hosts); // in a's peers.json (a list from a host that isn't would be dropped), not started
+  a.fire.start();
+  try {
+    const list = { hostId: "someone-else", now: Date.now(), entries: [{ id: "pushed", title: "Pushed", dist: "/nonexistent/dist", api: "http://127.0.0.1:7010" }] };
+    const res = await a.app.request("/api/peer/sync/extensions", { method: "POST", body: JSON.stringify(list), headers: { "content-type": "application/json" } }, { meshPeer: { id: "b" } });
+    assert.equal(res.status, 200);
+    assert.deepEqual(a.rt.extensions!.peerEntries().map((p) => [p.entry.id, p.from, p.installed]), [["pushed", "b", false]]);
+    const proxied = await a.app.request("/api/peer/sync/extensions", { method: "POST", body: JSON.stringify(list), headers: { "content-type": "application/json", "X-Forwarded-Host": "a.lab" } }, { meshPeer: { id: "b" } });
+    assert.equal(proxied.status, 404);
+  } finally {
+    a.fire.stop();
+  }
+});

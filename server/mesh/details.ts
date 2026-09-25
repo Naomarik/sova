@@ -9,7 +9,7 @@ import { BatteryReader, buildCommit, cores, deviceType, diskOf, loadAverages, ty
 import { DEFAULT_SERVE_PORT, frontDoorOrder } from "./front-door";
 import { ownHello, peerLastSeen, PROBE_TIMEOUT_MS, probePeer } from "./hello";
 import type { MeshApi } from "./index";
-import type { PeerEntry, PeersConfig } from "./peers";
+import { nextLabelAt, type PeerEntry, type PeersConfig } from "./peers";
 
 // Per-host details and rename (types and routes: shared/mesh-details.ts). A host answers for
 // itself on the peer listener; the page's /api/mesh/details gathers every host's answer. While the
@@ -140,8 +140,7 @@ export function mountDetails(app: Hono, mesh: MeshApi, sources: DetailsSources, 
     }
   }
 
-  async function meshDetails(): Promise<MeshDetails> {
-    const config = mesh.config()!;
+  async function meshDetails(config: PeersConfig): Promise<MeshDetails> {
     const node = mesh.selfNode();
     const front = frontDoorOf(config, node.dnsName ?? null);
     const excluded = new Set(config.frontDoorExclude ?? []);
@@ -213,8 +212,11 @@ export function mountDetails(app: Hono, mesh: MeshApi, sources: DetailsSources, 
 
   /** This host calls itself `label` from now: stamped, so peers take it over an older name. */
   function renameSelf(label: string): { labelAt: number } | { error: string; status: 400 | 409 } {
-    const labelAt = Date.now();
-    const r = mesh.updatePeers((c) => ({ ...c, self: { ...c.self, label, labelAt } }));
+    let labelAt = 0;
+    const r = mesh.updatePeers((c) => {
+      labelAt = nextLabelAt(c.self.labelAt);
+      return { ...c, self: { ...c.self, label, labelAt } };
+    });
     return "error" in r ? r : { labelAt };
   }
 
@@ -233,10 +235,15 @@ export function mountDetails(app: Hono, mesh: MeshApi, sources: DetailsSources, 
     if (mesh.config()?.self.labelAt) void announce(id);
   });
   // A rename on Settings → Mesh goes out like one made from the details.
+  // Seeded when the mesh comes on, so a later settings PUT doesn't re-send a name peers already have.
   let announced: number | undefined;
+  mesh.onMeshStart(() => {
+    announced ??= mesh.config()?.self.labelAt;
+  });
   mesh.onSettingsChange(() => {
+    if (!mesh.enabled()) return; // off: exactly what the PUT did before
     const at = mesh.config()?.self.labelAt;
-    if (!at || at === announced || !mesh.enabled()) return;
+    if (!at || at === announced) return;
     announced = at;
     void announce();
   });
@@ -267,14 +274,18 @@ export function mountDetails(app: Hono, mesh: MeshApi, sources: DetailsSources, 
     return err ? c.json({ error: err.error }, err.status) : c.json({ ok: true as const });
   });
 
-  app.get("/api/mesh/details", async (c) => (mesh.enabled() ? c.json(await meshDetails()) : notFound(c)));
+  app.get("/api/mesh/details", async (c) => {
+    const config = mesh.enabled() ? mesh.config() : null; // null too if a hand edit just broke peers.json
+    return config ? c.json(await meshDetails(config)) : notFound(c);
+  });
 
   app.put("/api/mesh/label", small, async (c) => {
     if (!mesh.enabled()) return notFound(c);
     const body = (await c.req.json().catch(() => null)) as { id?: unknown; label?: unknown } | null;
     const label = cleanLabel(body?.label);
     if (!label) return c.json({ error: "A name is 1–80 characters" }, 400);
-    const config = mesh.config()!;
+    const config = mesh.config();
+    if (!config) return notFound(c);
     if (body?.id === config.self.id) {
       const r = renameSelf(label);
       if ("error" in r) return c.json({ error: r.error }, r.status);

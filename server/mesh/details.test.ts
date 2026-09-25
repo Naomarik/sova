@@ -351,4 +351,27 @@ describe("mesh on", () => {
     assert.equal((await peerCall("POST", "/api/peer/rename", { label: "Evil" })).status, 403);
     assert.equal((await call("POST", "/api/peer/rename", { label: "Browser" }))[0], 404, "never from the main listener");
   });
+
+  test("a new name's stamp is always past the last one, even when this host's clock is behind it", async () => {
+    const future = Date.now() + 10 * 365 * 86_400_000;
+    const doc = peersDoc();
+    doc.self.labelAt = future;
+    writeFileSync(peersFile(), JSON.stringify(doc));
+    await call("PUT", "/api/mesh/label", { id: doc.self.id, label: "Clock behind" });
+    const first = peersDoc().self.labelAt as number;
+    assert.ok(first > future, "the rename in the dialog");
+    await call("PUT", "/api/mesh/settings", { hostLabel: "Clock still behind" });
+    assert.ok((peersDoc().self.labelAt as number) > first, "the rename in Settings");
+  });
+
+  test("a peers.json broken by hand between the checks is the plain 404, not a crash", async () => {
+    const good = readFileSync(peersFile(), "utf8");
+    // The mesh was on at the last read; the file breaks before this request reads it again.
+    writeFileSync(peersFile(), "{ not json");
+    const [st, body] = await call("GET", "/api/mesh/details");
+    assert.equal(st, 404);
+    assert.deepEqual(body, { error: "Not found" });
+    writeFileSync(peersFile(), good);
+    assert.equal((await call("GET", "/api/mesh"))[0], 200);
+  });
 });

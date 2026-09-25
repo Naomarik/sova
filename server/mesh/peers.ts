@@ -190,6 +190,10 @@ export function validatePeers(raw: unknown): { config: PeersConfig } | { error: 
   };
 }
 
+/** A new name's stamp: now, but always past the last one, so a clock that stepped back can't
+    make a rename every peer ignores (they take only a newer stamp). */
+export const nextLabelAt = (prev: number | undefined, now = Date.now()): number => Math.max(now, (prev ?? 0) + 1);
+
 const isTime = (v: unknown): boolean => typeof v === "number" && Number.isFinite(v) && v > 0;
 
 /** A list of host ids (absent/null → undefined), or why it isn't one. */

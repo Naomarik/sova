@@ -19,7 +19,7 @@ import { ownHello, probeHello, probePeer, peerLastSeen, PROBE_TIMEOUT_MS } from 
 import { type ListenerDeps, PeerListener } from "./listener";
 import { addressIdentity, identityMode } from "./address-identity";
 import { getIdentity, setIdentity, type TailnetStatus } from "./localapi";
-import { defaultSelfId, type PeerEntry, type PeersConfig, peerPort, peerUrl, peersFile, readPeers, SYNC_CATEGORIES, validatePeers, writePeers } from "./peers";
+import { defaultSelfId, nextLabelAt, type PeerEntry, type PeersConfig, peerPort, peerUrl, peersFile, readPeers, SYNC_CATEGORIES, validatePeers, writePeers } from "./peers";
 import { PROXIED_HEADER, peerSocketRoute, proxyTail, proxyPeer, upgradePeerSocket } from "./proxy";
 import { loginKindsPin } from "../sync/logins-merge";
 
@@ -507,7 +507,7 @@ async function putSettings(c: Context): Promise<Response> {
   }
   const self = { ...base.config.self };
   // A new name is stamped (this host's clock), so peers take it (server/mesh/details.ts) and never an older one.
-  if (body.hostLabel !== undefined && body.hostLabel !== self.label) self.labelAt = Date.now();
+  if (body.hostLabel !== undefined && body.hostLabel !== self.label) self.labelAt = nextLabelAt(self.labelAt);
   if (body.hostLabel !== undefined) self.label = body.hostLabel;
   if (body.serveUrl === null) delete self.serveUrl;
   else if (body.serveUrl !== undefined) self.serveUrl = body.serveUrl;

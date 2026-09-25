@@ -119,6 +119,12 @@ check() {
   for p in "$port" "$pport"; do
     timeout 6 bash -c "exec 3<>/dev/tcp/$ip/$p" 2>/dev/null && die "laptop reaches $ip:$p over the tailnet" || log "laptop: $ip:$p closed (ok)"
   done
+  # every non-loopback address (IPv4 and IPv6, Wi-Fi, mobile data, tun0), as node lists them on the phone
+  local n open
+  n=$(addrs | wc -l)
+  open=$(addrs | ph "while read -r a; do { : 3<>/dev/tcp/\$a/$port; } 2>/dev/null && echo \"\$a:$port\"; { : 3<>/dev/tcp/\$a/$pport; } 2>/dev/null && echo \"\$a:$pport\"; done; true" | grep -vxF "$([ "$peers" = 0 ] || echo "$ip:$pport")" || true)
+  [ -z "$open" ] || die "open on non-loopback addresses: $(echo $open)"
+  log "phone: $port closed on all $n non-loopback addresses; $pport $([ "$peers" = 0 ] && echo "closed on all" || echo "open on $ip only")"
   # runit restarts it after a kill
   local pid1 pid2
   pid1=$(ph 'SVDIR=$PREFIX/var/service sv status sova-mesh' | sed -n 's/^run: [^(]*(pid \([0-9]*\)).*/\1/p')
@@ -160,6 +166,42 @@ diffsnap() {
     fi
   done
   [ $bad = 0 ] && echo "DIFF CLEAN: $1 == $2" || { echo "DIFF: $1 != $2"; return 1; }
+}
+
+# ---- full port scans (L2) --------------------------------------------------------------------------------------------
+# Every non-loopback address of the phone, from node's os.networkInterfaces() (the phone denies ifconfig/ip IPv6 to apps:
+# /proc/net/if_inet6 and netlink are EACCES). Without node (not installed) the last list saved in $OUT/addrs.txt is used.
+addrs() {
+  if ph 'command -v node >/dev/null'; then
+    ph 'node -e "for(const [n,a] of Object.entries(require(\"os\").networkInterfaces()))for(const x of a)if(!x.internal)console.log(x.family===\"IPv6\"&&x.address.startsWith(\"fe80:\")?x.address+\"%\"+n:x.address)"' > "$OUT/addrs.txt"
+  fi
+  [ -s "$OUT/addrs.txt" ] || die "no address list (install once so node can list them)"
+  cat "$OUT/addrs.txt"
+}
+# a connect() to every port 1-65535 of every address, run ON the phone (bash /dev/tcp: no forks per port, so no phantom
+# process pressure; 16 parallel chunks per address). bash's connect has no timeout: a port whose connect hangs (a
+# listener with a full accept queue) holds its chunk until the kernel gives up (slow, not wrong).
+# Detached on the phone (nohup, $PREFIX/tmp/sova-scan.*, removed at the end); this side polls every 10 s.
+scan() {
+  local name=${1:?scan <name>} d="$OUT/scan"; mkdir -p "$d"
+  local list; list=$(addrs | tr '\n' ' ')
+  local t0=$SECONDS
+  ph "cat > \$PREFIX/tmp/sova-scan.sh; rm -f \$PREFIX/tmp/sova-scan.out \$PREFIX/tmp/sova-scan.done; nohup bash \$PREFIX/tmp/sova-scan.sh > \$PREFIX/tmp/sova-scan.out 2>/dev/null < /dev/null &" <<EOS
+for a in $list; do
+  for c in \$(seq 0 15); do
+    ( lo=\$((c*4096+1)); hi=\$((lo+4095)); [ \$hi -gt 65535 ] && hi=65535
+      for p in \$(seq \$lo \$hi); do { : 3<>/dev/tcp/\$a/\$p; } 2>/dev/null && echo "\$a \$p"; done ) &
+  done
+  wait
+done | sort -k1,1 -k2,2n > \$PREFIX/tmp/sova-scan.res
+touch \$PREFIX/tmp/sova-scan.done
+EOS
+  until ph 'test -e $PREFIX/tmp/sova-scan.done'; do
+    sleep 10
+    [ $((SECONDS - t0)) -lt 3600 ] || die "scan $name: not done within an hour"
+  done
+  ph 'cat $PREFIX/tmp/sova-scan.res; rm -f $PREFIX/tmp/sova-scan.sh $PREFIX/tmp/sova-scan.out $PREFIX/tmp/sova-scan.res $PREFIX/tmp/sova-scan.done' > "$d/$name.txt"
+  log "scan $name: $(wc -l < "$d/$name.txt") open (address, port) pairs over $(echo $list | wc -w) addresses in $((SECONDS - t0)) s"
 }
 
 # ---- pairing (only with PAIR_GO=1: coordinator-2's go) ---------------------------------------------------------
@@ -275,6 +317,8 @@ case "$cmd" in
   pair) pair ;;
   unpair) unpair ;;
   snapshot) snapshot "$@" ;;
+  addrs) addrs ;;
+  scan) scan "$@" ;;
   diff) diffsnap "$@" ;;
   loop)
     # INSTALL=ssh (tarball of HEAD/REV over ssh, default) | github (the real one-liner); UNINSTALL=keep-ssh (default) | full.

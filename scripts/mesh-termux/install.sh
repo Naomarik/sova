@@ -269,14 +269,27 @@ until curl -fsS -m 2 "http://127.0.0.1:$PORT/api/health" 2>/dev/null | grep -q '
   sleep 1
 done
 log "health ok: $(sv status sova-mesh | cut -d';' -f1)"
-# exposure: the main port answers on loopback only; the peer port is closed while the mesh is off
-refused() { ! curl -s -m 3 -o /dev/null "http://$1:$2/" 2>/dev/null; }
-WLAN_IPS=$(ifconfig 2>/dev/null | awk '/^[a-z]/{i=$1} $1=="inet" && i!~/^(lo|tun)/{print $2}')
-for a in "$TAILNET_IP" $WLAN_IPS; do refused "$a" "$PORT" || die "the main port answers on $a:$PORT (must be loopback only)"; done
+# exposure: the main port answers on loopback only; the peer port only on the tailnet IP, and not at all while the mesh is
+# off. Proven by connecting to every non-loopback address of every interface (Wi-Fi, mobile data, tun0; IPv4 and IPv6),
+# as node lists them: Android denies apps ifconfig's IPv6 view and ss/netstat.
+open_on() { # port -> the non-loopback addresses that accept a connection on it
+  node -e '
+    const net = require("net"), port = +process.argv[1];
+    const addrs = Object.entries(require("os").networkInterfaces()).flatMap(([n, a]) =>
+      a.filter((x) => !x.internal).map((x) => (x.family === "IPv6" && x.address.startsWith("fe80:") ? `${x.address}%${n}` : x.address)));
+    Promise.all(addrs.map((host) => new Promise((ok) => {
+      const s = net.connect({ host, port, timeout: 3000 });
+      s.on("connect", () => { s.destroy(); ok(host); });
+      s.on("error", () => ok(null));
+      s.on("timeout", () => { s.destroy(); ok(null); });
+    }))).then((r) => r.filter(Boolean).forEach((h) => console.log(h)));' "$1"
+}
 peers=$(node -e 'try{console.log((JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).peers??[]).length)}catch{console.log(0)}' "$BASE/agent/sova/peers.json")
-if [ "$peers" = 0 ]; then refused "$TAILNET_IP" "$PEER_PORT" || die "mesh off, yet $TAILNET_IP:$PEER_PORT answers"; fi
-for a in $WLAN_IPS; do refused "$a" "$PEER_PORT" || die "the peer port answers on $a:$PEER_PORT"; done
-log "exposure ok: 127.0.0.1:$PORT only; peer port $([ "$peers" = 0 ] && echo "closed (mesh off)" || echo "on $TAILNET_IP")"
+bad=$(open_on "$PORT")
+[ -z "$bad" ] || die "the main port answers on $(echo $bad) :$PORT (must be loopback only)"
+bad=$(open_on "$PEER_PORT" | grep -vxF "$([ "$peers" = 0 ] || echo "$TAILNET_IP")" || true)
+[ -z "$bad" ] || die "the peer port answers on $(echo $bad) :$PEER_PORT"
+log "exposure ok on $(node -e 'console.log(Object.values(require("os").networkInterfaces()).flat().filter((x)=>!x.internal).length)') addresses: 127.0.0.1:$PORT only; peer port $([ "$peers" = 0 ] && echo "closed (mesh off)" || echo "on $TAILNET_IP only")"
 
 upgraded=''
 [ ! -s "$M/packages-upgraded" ] || upgraded="Existing packages upgraded as dependencies: $(wc -l < "$M/packages-upgraded" | tr -d ' ') (see ~/sova-mesh/.install/packages-upgraded)."

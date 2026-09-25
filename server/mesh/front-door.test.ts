@@ -2,7 +2,7 @@
 // The generated front door: order rules, upstream addresses, and the Caddyfile's directives.
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
-import { frontDoorConfig } from "./front-door";
+import { frontDoorConfig, upstreamHostport } from "./front-door";
 import type { PeersConfig } from "./peers";
 
 const config = (over: Partial<PeersConfig> = {}): PeersConfig => ({
@@ -61,6 +61,8 @@ describe("front door order", () => {
 describe("the Caddyfile", () => {
   test("carries the lab-proven directives, each once; one failed connect never benches a host", () => {
     const { caddyfile } = frontDoorConfig(config(), "a.x.ts.net");
+    // The main reverse_proxy, before the bare-502 fallbacks (which repeat the dial settings).
+    const main = caddyfile.split("\t\t@bare502")[0]!;
     for (const d of [
       "lb_policy first",
       "lb_try_duration 6s",
@@ -80,7 +82,7 @@ describe("the Caddyfile", () => {
       "default_bind {$SOVA_FRONT_DOOR_BIND}",
       ":{$SOVA_FRONT_DOOR_PORT:80} {",
     ]) {
-      assert.equal(caddyfile.split("\n").filter((l) => l.trim() === d).length, 1, d);
+      assert.equal(main.split("\n").filter((l) => l.trim() === d).length, 1, d);
     }
     assert.match(caddyfile, /\ttransport http \{\n\t\t\tdial_timeout 2s\n\t\t\tkeepalive 30s\n\t\t\tresponse_header_timeout 35s\n(\t\t\t#[^\n]*\n)?\t\t\tresolvers 100\.100\.100\.100\n\t\t\}/);
     assert.doesNotMatch(caddyfile, /keepalive off/);
@@ -123,5 +125,46 @@ describe("the Caddyfile", () => {
     }
     // {upstream_hostport} placeholders open and close on one line, so they net to zero.
     assert.equal(depth, 0);
+  });
+});
+
+describe("the bare-502 fallback (Sova down behind tailscale serve)", () => {
+  /** The upstreams of the fallback for the host with this dial address, or null. */
+  const fallbackFor = (caddyfile: string, id: string) => {
+    const m = new RegExp(`\\t@from_${id} \\{\\n\\t+method GET HEAD\\n\\t+vars \\{http\\.reverse_proxy\\.upstream\\.hostport\\} (\\S+)\\n\\t+\\}\\n\\t+handle @from_${id} \\{\\n\\t+reverse_proxy (.*) \\{`).exec(caddyfile);
+    return m ? { hostport: m[1], upstreams: m[2]!.split(" ") } : null;
+  };
+
+  test("each host's bare 502 on a GET/HEAD goes to the other hosts, in failover order", () => {
+    const { caddyfile } = frontDoorConfig(config({ frontDoorOrder: ["b", "a", "c"] }), "a.x.ts.net");
+    assert.match(caddyfile, /\t\t@bare502 \{\n\t\t\tstatus 502\n\t\t\theader !Content-Type\n\t\t\}\n\t\thandle_response @bare502 \{/);
+    assert.deepEqual(fallbackFor(caddyfile, "b"), { hostport: "b.x.ts.net:8443", upstreams: ["https://a.x.ts.net:8443", "https://c.x.ts.net:8443"] });
+    assert.deepEqual(fallbackFor(caddyfile, "a"), { hostport: "a.x.ts.net:8443", upstreams: ["https://b.x.ts.net:8443", "https://c.x.ts.net:8443"] });
+    assert.deepEqual(fallbackFor(caddyfile, "c"), { hostport: "c.x.ts.net:8443", upstreams: ["https://b.x.ts.net:8443", "https://a.x.ts.net:8443"] });
+    // Anything else (a POST, Sova's own JSON 502) is the original response.
+    assert.match(caddyfile, /\t\t\thandle \{\n\t\t\t\tcopy_response\n\t\t\t\}\n\t\t\}\n\t\}\n\}/);
+    assert.equal(caddyfile.match(/method GET HEAD/g)!.length, 3);
+    assert.doesNotMatch(caddyfile, /method[^\n]*POST/);
+  });
+
+  test("the fallback proxies dial like the main one: same transport, Host, streaming, passive failures", () => {
+    const { caddyfile } = frontDoorConfig(config(), "a.x.ts.net");
+    const block = caddyfile.split("handle @from_a {")[1]!.split("\t\t\thandle")[0]!;
+    for (const d of ["lb_policy first", "lb_try_duration 6s", "lb_try_interval 250ms", "max_fails 3", "fail_duration 3s", "flush_interval -1", "header_up Host {upstream_hostport}", "dial_timeout 2s", "keepalive 30s", "response_header_timeout 35s", "resolvers 100.100.100.100", "header_down X-Sova-Upstream {upstream_hostport}"]) {
+      assert.equal(block.split("\n").filter((l) => l.trim() === d).length, 1, d);
+    }
+    assert.doesNotMatch(block, /health_/);
+  });
+
+  test("one host: no fallback at all", () => {
+    const { caddyfile } = frontDoorConfig(config({ peers: [] }), "a.x.ts.net");
+    assert.doesNotMatch(caddyfile, /bare502|handle_response|copy_response/);
+  });
+
+  test("upstreamHostport is Caddy's dial address: default ports, bracketed IPv6", () => {
+    assert.equal(upstreamHostport("https://a.x.ts.net:10443"), "a.x.ts.net:10443");
+    assert.equal(upstreamHostport("https://a.x.ts.net"), "a.x.ts.net:443");
+    assert.equal(upstreamHostport("http://100.64.0.2"), "100.64.0.2:80");
+    assert.equal(upstreamHostport("https://[fd7a:115c:a1e0::3]:8443"), "[fd7a:115c:a1e0::3]:8443");
   });
 });

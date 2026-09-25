@@ -86,7 +86,8 @@ if [ "$LAB_SOVA" = 1 ]; then
     ( umask 077; node -e '
       const fs = require("fs");
       const src = JSON.parse(fs.readFileSync("/run/lab-secrets/auth.json", "utf8"));
-      const out = Object.fromEntries(Object.entries(src).filter(([, v]) => v && v.type === "api_key"));
+      const only = (process.env.LAB_AUTH_PROVIDERS || "zai").split(",");
+      const out = Object.fromEntries(Object.entries(src).filter(([k, v]) => v && v.type === "api_key" && only.includes(k)));
       fs.writeFileSync(process.argv[1] + ".tmp", JSON.stringify(out, null, 2) + "\n", { mode: 0o600 });
       fs.renameSync(process.argv[1] + ".tmp", process.argv[1]);
       console.log("[lab] auth.json: api_key entries: " + Object.keys(out).join(", "));

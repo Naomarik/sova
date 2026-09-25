@@ -40,8 +40,8 @@ decimal string on Headscale.
 - **Agent dir** `/sova/.agent` (volume `sovamesh_<id>-agent`) is built by
   `scripts/hermetic-agent-dir.mjs` at every start. Sessions live there, and a fixture session
   "fixture session on lab host <id>" is seeded on first boot (`--no-seed` turns that off).
-- **Auth**: only the `api_key` entries of `<worktree>/.agent/auth.json` (zai, ollama-cloud,
-  deepseek) are copied in, once, at 0600. The file is bind-mounted read-only into the container
+- **Auth**: only the `zai` API key of `<worktree>/.agent/auth.json` is copied in (once, at 0600;
+  `LAB_AUTH_PROVIDERS=zai,deepseek` in the host env widens it, `api_key` entries only). The file is bind-mounted read-only into the container
   and never baked into an image. Later changes, such as login sync, belong to the host; `lab reset`
   re-seeds. `--auth none` or `--auth a` gives the other hosts an empty auth. No subscription login
   ever enters the lab.

@@ -1637,6 +1637,70 @@
         "server/chat-manager.ts",
         "src/lib/live.ts"
       ]
+    },
+    "§mesh.peers/allowlist": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/mesh/peers.ts",
+        "server/mesh/index.ts"
+      ]
+    },
+    "§mesh.peers/discovery": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/mesh/index.ts",
+        "server/mesh/localapi.ts"
+      ]
+    },
+    "§mesh.peers/health": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/mesh/index.ts"
+      ]
+    },
+    "§mesh.peers/hello": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/mesh/hello.ts",
+        "shared/protocol.ts"
+      ]
+    },
+    "§mesh.peers/listener": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/mesh/listener.ts",
+        "server/mesh/localapi.ts",
+        "server/mesh/paths.ts"
+      ]
+    },
+    "§mesh.peers/off": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/mesh/index.ts",
+        "server/mesh/peers.ts",
+        "server/index.ts"
+      ]
+    },
+    "§mesh/peers": {
+      "kind": "surface",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/mesh/index.ts",
+        "server/mesh/peers.ts"
+      ]
     }
   }
 }

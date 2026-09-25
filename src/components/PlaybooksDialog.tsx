@@ -16,6 +16,7 @@ import {
 } from "../lib/playbooks";
 import type { ComposerReason } from "./Composer";
 import { Banner, Icon, trapFocus } from "./ui";
+import { hostOf } from "../lib/mesh";
 
 /** Same rule as everywhere else: a skeleton only after the fetch has actually been slow. */
 const SKELETON_MS = 300;
@@ -82,7 +83,7 @@ export function PlaybooksDialog(props: {
     setLoading(true);
     const slowTimer = setTimeout(() => mine === run && setSlow(true), SKELETON_MS);
     try {
-      const next = await fetchPlaybooks(props.cwd);
+      const next = await fetchPlaybooks(props.cwd, hostOf(props.path));
       if (mine !== run) return;
       setCatalog(next);
       setError(null);

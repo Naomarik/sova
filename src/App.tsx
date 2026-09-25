@@ -2,7 +2,19 @@ import { batch, createEffect, createMemo, createResource, createSignal, Match, o
 import { createStore, reconcile } from "solid-js/store";
 import { Portal } from "solid-js/web";
 import type { SessionSummary, WorkerInfo } from "../shared/protocol";
-import { createSession, fetchAgents, fetchExplanations, fetchExtensions, fetchUsage, getThemes, listSessions, setSessionArchived } from "./lib/api";
+import {
+  createSession,
+  fetchAgents,
+  fetchExplanations,
+  fetchExtensions,
+  fetchMesh,
+  fetchMeshSessions,
+  fetchUsage,
+  getThemes,
+  listSessions,
+  setSessionArchived,
+} from "./lib/api";
+import { hostLabel, hostOf, isMeshHash, meshState, meshOn, meshPeers, mergePeerLists, noteHost, notePeerSessions, peerInfo, peerUnavailable, sessionRouteFromHash, setMeshState } from "./lib/mesh";
 import { agentsHref, insightsRouteFromHash, legacyInsightsTarget } from "./lib/insights";
 import { transcriptRoot } from "./lib/jump";
 import { groupRouteFromHash } from "./lib/group-route";
@@ -25,6 +37,7 @@ import { NewSessionDialog } from "./components/NewSessionDialog";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { ExplainGrid } from "./components/ExplainGallery";
 import { ExtensionCards, ExtensionView } from "./components/ExtensionView";
+import { MeshCard, MeshView } from "./components/MeshView";
 import { FanoutDialog, type FanoutSource } from "./components/FanoutDialog";
 import { GroupView, paneIdFor, workspaceFocus, type PaneWiring } from "./components/GroupView";
 import { SessionPane, type PaneInsight, type TabId } from "./components/SessionPane";
@@ -34,14 +47,13 @@ import { SidebarResizer } from "./components/SidebarResizer";
 import { UsageView } from "./components/UsageView";
 import { GlobalRegions, Icon } from "./components/ui";
 
+/** The session the hash names. A peer's (`#/p/<host>/s/<path>`) records its host first, so every
+    request the view makes for it goes there even before the peer's list has loaded. */
 function pathFromHash(): string | null {
-  const m = /^#\/s\/(.+)$/.exec(location.hash);
-  if (!m) return null;
-  try {
-    return decodeURIComponent(m[1]!);
-  } catch {
-    return null;
-  }
+  const r = sessionRouteFromHash(location.hash);
+  if (!r) return null;
+  if (r.host) noteHost(r.path, r.host);
+  return r.path;
 }
 
 /**
@@ -92,6 +104,8 @@ const AGENTS_POLL_MS = 5_000;
 const EXPLAIN_POLL_MS = 60_000;
 /** Installed extensions and their health; the server caches each health probe for 10 s. */
 const EXTENSIONS_POLL_MS = 15_000;
+/** While a peer is configured, its status and its sessions are re-read this often. Never with none. */
+const MESH_POLL_MS = 15_000;
 const folded = () => window.matchMedia("(max-width: 767px)").matches;
 
 /** Live `matchMedia` (the ExplainGallery pattern): the spine is a desktop affordance, so it only
@@ -144,6 +158,51 @@ export function App() {
     }
   });
   const list = () => sessions.latest; // keeps the old list on screen while refreshing
+
+  // ---- The peer mesh: dormant unless GET /api/mesh names a peer ------------------------------
+  /** Why the mesh couldn't be read (a server without the mesh routes, say); the card says so. */
+  const [meshError, setMeshError] = createSignal<string | null>(null);
+  const loadMesh = () =>
+    fetchMesh()
+      .then((s) => {
+        setMeshState(s);
+        setMeshError(null);
+      })
+      .catch((err: Error) => setMeshError(err.message));
+  void loadMesh();
+  /** Each peer's last good session list, by peer id. */
+  const [peerLists, setPeerLists] = createSignal<Map<string, SessionSummary[]>>(new Map());
+  const loadPeerSessions = async () => {
+    if (!meshOn()) return;
+    try {
+      const answer = await fetchMeshSessions();
+      const next = mergePeerLists(peerLists(), answer, meshPeers());
+      for (const p of meshPeers()) notePeerSessions(p.id, (next.get(p.id) ?? []).map((s) => s.path));
+      setPeerLists(next);
+    } catch {
+      // Keep the last lists: the peers' own status (GET /api/mesh) says what is down.
+    }
+  };
+  createEffect(() => {
+    if (!meshOn()) {
+      if (peerLists().size) setPeerLists(new Map());
+      return;
+    }
+    void loadPeerSessions();
+    const t = setInterval(() => {
+      if (document.hidden) return;
+      void loadMesh();
+      void loadPeerSessions();
+    }, MESH_POLL_MS);
+    onCleanup(() => clearInterval(t));
+  });
+  /** This host's sessions, then every peer's: the sidebar's list. With no peer it IS `list()`. */
+  const allSessions = createMemo(() => {
+    const l = list();
+    const peers = peerLists();
+    if (!l || peers.size === 0) return l;
+    return [...l, ...[...peers.values()].flat()];
+  });
   /**
    * The sidebar's rows: the server list plus the sessions this tab created that the server does
    * not carry — a new session is a hidden husk until its first user message or a stored draft, so
@@ -153,7 +212,7 @@ export function App() {
    */
   const sidebarSessions = createMemo(() => {
     createdVersion();
-    const l = list();
+    const l = allSessions();
     if (!l || created.size === 0) return l;
     const listed = new Set(l.map((s) => s.path));
     const extra = [...created.values()].filter((s) => !listed.has(s.path));
@@ -171,6 +230,7 @@ export function App() {
   const [groupRoute, setGroupRoute] = createSignal(groupRouteFromHash(location.hash));
   const [insightsRoute, setInsightsRoute] = createSignal(insightsRouteFromHash(location.hash));
   const [extRoute, setExtRoute] = createSignal(extRouteFromHash(location.hash));
+  const [meshRoute, setMeshRoute] = createSignal(isMeshHash(location.hash));
   /** The extension on screen: the view is keyed by this, so a sub-route change never remounts it
       (which would reload the extension's iframe). */
   const extId = createMemo(() => extRoute()?.id ?? null);
@@ -243,6 +303,7 @@ export function App() {
   const onFocus = () => {
     setNow(Date.now());
     refresh();
+    void loadPeerSessions();
   };
   const onHash = () => {
     redirectLegacyInsights();
@@ -250,6 +311,7 @@ export function App() {
     setGroupRoute(groupRouteFromHash(location.hash));
     setInsightsRoute(insightsRouteFromHash(location.hash));
     setExtRoute(extRouteFromHash(location.hash));
+    setMeshRoute(isMeshHash(location.hash));
   };
   window.addEventListener("focus", onFocus);
   window.addEventListener("hashchange", onHash);
@@ -263,7 +325,22 @@ export function App() {
   /** The session-list row for a path: the list's, else one this tab created, else the kept one. */
   const summaryOf = (p: string): SessionSummary | undefined => {
     const kept = openKept(); // only for the session on screen; see where it is set
-    return list()?.find((s) => s.path === p) ?? created.get(p) ?? (kept?.path === p ? kept : undefined);
+    return allSessions()?.find((s) => s.path === p) ?? created.get(p) ?? (kept?.path === p ? kept : undefined);
+  };
+
+  /** `path` is on a peer whose list hasn't arrived yet. */
+  const peerListPending = (path: string): boolean => {
+    const h = hostOf(path);
+    return !!h && !peerLists().has(h);
+  };
+  /** Why the peer holding `path` can't be reached, or null: here, or up. */
+  const peerDown = (path: string): string | null => {
+    const h = hostOf(path);
+    if (!h) return null;
+    const p = peerInfo(h);
+    if (p) return peerUnavailable(p);
+    if (meshError()) return `This host couldn't read its peers: ${meshError()}`;
+    return meshState() ? `${h} isn't one of this host's peers.` : null;
   };
 
   /** The session everything session-shaped is about: the open one, or a workspace's focused pane. */
@@ -350,6 +427,8 @@ export function App() {
   createEffect(on(route, (p) => p && folded() && queueMicrotask(() => titleEl?.focus()), { defer: true }));
   let insightsTitleEl: HTMLHeadingElement | undefined;
   let extTitleEl: HTMLHeadingElement | undefined;
+  let meshTitleEl: HTMLHeadingElement | undefined;
+  createEffect(on(meshRoute, (open) => open && folded() && queueMicrotask(() => meshTitleEl?.focus()), { defer: true }));
   createEffect(on(extId, (id) => id && folded() && queueMicrotask(() => extTitleEl?.focus()), { defer: true }));
   // A team deep link focuses its card instead (AgentsView), at every width.
   createEffect(
@@ -590,7 +669,7 @@ export function App() {
       <div
         class="app"
         data-spine={collapsed() ? "on" : undefined}
-        data-view={groupRoute() ? "workspace" : route() || insightsRoute() || extRoute() ? "session" : "list"}
+        data-view={groupRoute() ? "workspace" : route() || insightsRoute() || extRoute() || meshRoute() ? "session" : "list"}
         data-ext-maximized={extMaximized() ? "1" : undefined}
       >
         <Sidebar
@@ -638,6 +717,23 @@ export function App() {
                   <GroupView group={group()} members={groupMembers()} sessions={list() ?? []} focused={groupRoute()!.path} wiring={wiring} />
                 )}
               </Match>
+              {/* A peer's session whose host can't be reached: said plainly, never a chat that
+                  spins on a socket nobody answers. It opens again once the host is back. */}
+              <Match when={route() && peerDown(route()!)}>
+                {(why) => (
+                  <div class="center-fill">
+                    <div class="empty">
+                      <p class="empty-title">{hostLabel(hostOf(route()!)!)} can't be reached.</p>
+                      <p class="empty-body">
+                        {why()} This session lives there, so it opens once that host is back. Nothing here changed.
+                      </p>
+                      <a class="button empty-action" href="#/mesh">
+                        See Hosts
+                      </a>
+                    </div>
+                  </div>
+                )}
+              </Match>
               {/* One session, the whole pane (#/s/<path>), exactly as before. */}
               <Match when={route() && summary() ? route()! : null} keyed>
                 {(path) => {
@@ -678,7 +774,8 @@ export function App() {
                 }}
               </Match>
               {/* A route naming a session the list doesn't have (deleted, or renamed on disk). */}
-              <Match when={route() && list() && !summary()}>
+              {/* A peer's session waits for that peer's list before it is called missing. */}
+              <Match when={route() && list() && !summary() && !peerListPending(route()!)}>
                 <div class="center-fill">
                   <div class="empty">
                     <p class="empty-title">Couldn't find this session.</p>
@@ -688,6 +785,10 @@ export function App() {
                     </a>
                   </div>
                 </div>
+              </Match>
+              {/* The peer mesh (#/mesh): hosts, peers.json, sync, first-peer setup. */}
+              <Match when={meshRoute()}>
+                <MeshView now={now()} titleRef={(el) => (meshTitleEl = el)} />
               </Match>
               {/* An installed extension's own UI (#/ext/<id>). */}
               <Match when={extId()} keyed>
@@ -710,7 +811,7 @@ export function App() {
                   />
                 )}
               </Match>
-              <Match when={!route() && !groupRoute()}>
+              <Match when={!route() && !groupRoute() && !meshRoute()}>
                 <div class="welcome">
                   <div class="welcome-head">
                     <div class="empty">
@@ -736,6 +837,7 @@ export function App() {
                       </div>
                     </div>
                   </div>
+                  <MeshCard error={meshError()} />
                   <Show when={installed()}>{(list) => <ExtensionCards extensions={list()} />}</Show>
                   <Show when={explained()}>
                     {(list) => (

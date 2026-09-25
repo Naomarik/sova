@@ -4,6 +4,7 @@ import { ApiError, connectTarget, createSession, fetchTargets, listCwds } from "
 import { tildePath } from "../lib/format";
 import { localOnly, remoteLabel, type RemotePlace, remoteRecents, splitRemoteCwd, type TargetInfo, targetDown } from "../lib/remote-session";
 import { home } from "../lib/ui-state";
+import { meshOn, meshPeers, noteHost, peerUnavailable, selfLabel } from "../lib/mesh";
 import { FolderPicker } from "./FolderPicker";
 import { Banner, Chip, Icon, trapFocus } from "./ui";
 
@@ -62,7 +63,14 @@ export function NewSessionDialog(props: {
   onFanOut(cwd: string): void;
 }) {
   const prefillRemote = splitRemoteCwd(props.prefill);
-  const [cwds] = createResource(() => listCwds().catch(() => props.knownCwds));
+  /** Where the agent runs and the conversation is stored: null is the host serving this page. Only
+      offered while a peer is configured; with none, the dialog is exactly what it always was. */
+  const [host, setHost] = createSignal<string | null>(null);
+  // The source is an object because a null source means "don't fetch", and null is this host.
+  const [cwds] = createResource(
+    () => ({ h: host() }),
+    ({ h }) => listCwds(h).catch(() => (h ? [] : props.knownCwds)),
+  );
   const [where, setWhere] = createSignal<Where>(prefillRemote ? "remote" : "local");
   /** What the dialog starts: One session is the default and everything below reads
    *  as it always did; Fan out… doesn't create here — it hands the folder to the fanout dialog. */
@@ -85,10 +93,10 @@ export function NewSessionDialog(props: {
 
   // Only fetched once the Remote tab is shown; bounded so "Loading targets…" always ends.
   const [targets, { refetch: refetchTargets }] = createResource(
-    () => where() === "remote",
-    () =>
+    () => where() === "remote" && { h: host() },
+    ({ h }) =>
       Promise.race([
-        fetchTargets(),
+        fetchTargets(h),
         new Promise<never>((_, reject) =>
           setTimeout(() => reject(new ApiError(`No answer within ${TARGETS_TIMEOUT_MS / 1000}s.`, 504)), TARGETS_TIMEOUT_MS),
         ),
@@ -139,6 +147,29 @@ export function NewSessionDialog(props: {
     setPicking(false);
   };
 
+  /** The chosen host's name, for the title and the hint. */
+  const hostName = () => {
+    const h = host();
+    const p = h ? meshPeers().find((x) => x.id === h) : undefined;
+    return p ? p.label || p.id : selfLabel();
+  };
+  /** Peers that can't take a session now, said once under the field (an option can't carry a reason). */
+  const unavailableNote = () => {
+    const out = meshPeers().map(peerUnavailable).filter((x): x is string => !!x);
+    return out.length ? out.join(" ") : null;
+  };
+  /** Another host: every folder, recent and target the dialog shows is that host's, so the
+      choices made for the previous one go. */
+  const chooseHost = (h: string | null) => {
+    if (h === host()) return;
+    setHost(h);
+    setCwd("");
+    setPlace({ target: null, remoteCwd: "" });
+    setPicking(false);
+    setFieldError(null);
+    setRechecks(0);
+  };
+
   const ready = () => (where() === "local" ? !!cwd().trim() : !!place().target && !!place().remoteCwd);
 
   const submit = async (e?: Event) => {
@@ -156,7 +187,11 @@ export function NewSessionDialog(props: {
     setFailed(false);
     try {
       const p = place();
-      props.onCreated(await createSession(where() === "local" ? cwd().trim() : { target: p.target!, remoteCwd: p.remoteCwd }));
+      const h = host();
+      const s = await createSession(where() === "local" ? cwd().trim() : { target: p.target!, remoteCwd: p.remoteCwd }, h);
+      // A session made on a peer lives there: record it before anything asks for it.
+      if (h) noteHost(s.path, h);
+      props.onCreated(s);
     } catch (err) {
       if (err instanceof ApiError && err.status >= 400 && err.status < 500) {
         setFieldError(err.message || "That folder doesn't exist. Pick one that does.");
@@ -175,7 +210,10 @@ export function NewSessionDialog(props: {
     setConnecting(true);
     setConnectError(null);
     try {
-      props.onCreated(await connectTarget());
+      const h = host();
+      const s = await connectTarget(h);
+      if (h) noteHost(s.path, h);
+      props.onCreated(s);
     } catch (err) {
       setConnectError((err as Error).message || "Unknown error.");
       setConnecting(false);
@@ -189,7 +227,11 @@ export function NewSessionDialog(props: {
     setFieldError(null);
     // Fresh-mode fanout is N sessions in one LOCAL folder (the fanout route has no remote shape), so
     // the tabs leave while fanout is chosen: there is no tab whose choice could carry over.
-    if (k === "fanout") setWhere("local");
+    if (k === "fanout") {
+      setWhere("local");
+      // A fanout runs on the host serving this page: a folder chosen on a peer means nothing there.
+      if (host() !== null) chooseHost(null);
+    }
   };
   const switchTo = (w: Where) => {
     if (w === where()) return;
@@ -234,7 +276,7 @@ export function NewSessionDialog(props: {
           {/* The title moves with the type: "Fan out" is the title the dialog it opens
               carries, so the handoff reads as one flow rather than a second question. */}
           <h2 class="modal-title" id="ns-title">
-            {kind() === "fanout" ? "Fan out" : "New Session"}
+            {kind() === "fanout" ? "Fan out" : meshOn() ? `New Session on ${hostName()}` : "New Session"}
           </h2>
         </div>
         <form class="modal-body" id="ns-form" ref={form} onSubmit={submit}>
@@ -268,6 +310,38 @@ export function NewSessionDialog(props: {
               </label>
             </div>
           </div>
+          {/* The Host field: only with a peer configured, and only for one session (a fanout runs
+              here). Host is where the agent runs and the conversation is stored; the tabs below
+              are where its tools run, on that host or on one of its targets. */}
+          <Show when={meshOn() && kind() === "one"}>
+            <div class="field">
+              <label class="field-label" for="ns-host">
+                Host
+              </label>
+              <div class="select-wrap">
+                <select class="select" id="ns-host" aria-describedby="ns-host-hint" disabled={pending() || connecting()} onChange={(e) => chooseHost(e.currentTarget.value || null)}>
+                  <option value="" selected={host() === null}>
+                    {selfLabel()} (this host)
+                  </option>
+                  <For each={meshPeers()}>
+                    {(p) => (
+                      <option value={p.id} selected={host() === p.id} disabled={!!peerUnavailable(p)}>
+                        {p.label || p.id}
+                        {p.status === "up" ? "" : p.status === "skewed" ? " · other version" : p.status === "down" ? " · down" : " · refused"}
+                      </option>
+                    )}
+                  </For>
+                </select>
+                <span class="select-caret" aria-hidden="true">
+                  ▾
+                </span>
+              </div>
+              <span class="field-hint" id="ns-host-hint">
+                The agent runs on {hostName()}, and the conversation is stored there.
+                <Show when={unavailableNote()}>{(note) => <> {note()}</>}</Show>
+              </span>
+            </div>
+          </Show>
           {/* flex: none — .tabs scrolls sideways, so in the scrolling modal body it would otherwise shrink to nothing. */}
           <Show when={kind() === "one"}>
             <div class="tabs" role="tablist" aria-label="Where pi runs" style={{ flex: "none" }}>
@@ -286,7 +360,8 @@ export function NewSessionDialog(props: {
                     onKeyDown={(e) => onTabKey(e, i())}
                   >
                     <Icon name={t.id === "local" ? "folder" : "terminal"} small />
-                    {t.label}
+                    {/* With peers, "this computer" could be any of them: the tab names the host. */}
+                    {t.id === "local" && meshOn() ? hostName() : t.label}
                   </button>
                 )}
               </For>
@@ -325,7 +400,7 @@ export function NewSessionDialog(props: {
                 </span>
               </div>
               <Show when={picking()}>
-                <FolderPicker start={cwd()} recents={recent()} onPick={pick} onClose={() => setPicking(false)} />
+                <FolderPicker start={cwd()} recents={recent()} host={host()} onPick={pick} onClose={() => setPicking(false)} />
               </Show>
               <Show when={!picking() && recent().length > 0}>
                 <div class="field">
@@ -460,6 +535,7 @@ export function NewSessionDialog(props: {
                             start={place().remoteCwd}
                             recents={recentOnTarget()}
                             remote={{ target: n, name: nameOf(n) }}
+                            host={host()}
                             onPick={(path) => pickRemote({ target: n, remoteCwd: path })}
                             onClose={() => setPicking(false)}
                           />

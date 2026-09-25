@@ -1,0 +1,70 @@
+/* The peer mesh: the #/mesh page, Settings → Mesh, and the host mark on session rows. Token
+   values only; the card on the landing page reuses the extension card (extensions.css). */
+
+.mesh-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+}
+.mesh-card-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
+.mesh-card-title {
+  margin: 0;
+  font-size: var(--fs-heading-s);
+  line-height: var(--lh-heading-s);
+  font-weight: var(--fw-semibold);
+  color: var(--color-ink);
+}
+.mesh-host { gap: var(--space-3); align-items: center; min-height: var(--row-height); }
+.mesh-host > .icon { color: var(--color-ink-muted); flex: none; }
+.mesh-host .list-main { flex: 1; min-width: 0; }
+.mesh-host-error {
+  margin: 0;
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+  color: var(--status-error);
+  overflow-wrap: anywhere;
+}
+
+.mesh-add {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-border);
+}
+.mesh-add-title { margin: 0; font-size: var(--fs-body); font-weight: var(--fw-semibold); color: var(--color-ink); }
+.mesh-add-fields { display: grid; grid-template-columns: 1fr; gap: var(--space-3); }
+@container insights (min-width: 768px) {
+  .mesh-add-fields { grid-template-columns: 2fr 1fr 1fr; align-items: start; }
+}
+.mesh-candidates { display: flex; flex-direction: column; gap: var(--space-2); }
+
+.mesh-setup > summary { cursor: pointer; min-height: var(--tap-min); display: flex; align-items: center; }
+.mesh-setup > summary:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); border-radius: var(--r-xs); }
+.mesh-steps { margin: 0; padding-left: var(--space-5); display: flex; flex-direction: column; gap: var(--space-2); color: var(--color-ink-2); }
+
+.mesh-settings-sync { margin: 0; padding: 0; border: 0; min-width: 0; }
+.mesh-settings-sync > legend { padding: 0; }
+.mesh-sync-list { list-style: none; margin: var(--space-2) 0 0; padding: 0; display: flex; flex-direction: column; }
+.mesh-sync-list > li + li { border-top: 1px solid var(--color-border); }
+.mesh-sync-row { padding: var(--space-2) 0; }
+.mesh-sync-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.mesh-sync-name { font-weight: var(--fw-medium); color: var(--color-ink); }
+.mesh-sync-meta { font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); }
+
+/* A peer's session row: the host's name in mono beside the time, and a dot that says up or down.
+   Down is also said in a word: never by hue alone. */
+.session-host {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: none;
+  max-width: 10ch;
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro); /* the session row's meta size */
+  color: var(--color-ink-muted);
+}
+.session-host-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.session-host .chip-dot { width: 6px; height: 6px; flex: none; }
+.session-host-down { color: var(--status-error); max-width: 18ch; }

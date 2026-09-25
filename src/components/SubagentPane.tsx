@@ -1,6 +1,7 @@
 import { createEffect, createMemo, createSignal, For, on, onCleanup, Show } from "solid-js";
 import type { TeamInfo, TeamMember, TranscriptItem, WatchServerMessage, WorkerInfo } from "../../shared/protocol";
 import { ApiError, claudeWatchUrl, resumeWorker, wsUrl } from "../lib/api";
+import { hostOf } from "../lib/mesh";
 import { clockTime, compactModel, shortModel } from "../lib/format";
 import { memberStatus } from "../lib/insights";
 import { createReconnectingSocket } from "../lib/socket";
@@ -351,6 +352,7 @@ export function SubagentPane(props: {
                 {(key) => (
                   <WorkerTranscript
                     source={sourceOf(key)}
+                    host={hostOf(props.path)}
                     name={label(w())}
                     author={shortModel(w().model) ?? label(w())}
                     streaming={w().working}
@@ -508,14 +510,16 @@ function WorkerMeta(props: { worker: WorkerInfo; liveSource: boolean; class: str
   );
 }
 
-const watchUrl = (s: TranscriptSource): string => (s.kind === "pi" ? wsUrl("/ws/watch", s.path) : claudeWatchUrl(s.sessionId));
+/** A worker's transcript lives on its parent session's host, so it is read from there. */
+const watchUrl = (s: TranscriptSource, host: string | null): string =>
+  s.kind === "pi" ? wsUrl("/ws/watch", s.path, false, host) : claudeWatchUrl(s.sessionId, host);
 
 /**
  * One worker's session, tailed read-only (like WatchView, without a composer or head). The
  * socket closes when the selection changes or the pane closes.
  */
 function WorkerTranscript(props: {
-  source: TranscriptSource; name: string; author: string; streaming: boolean;
+  source: TranscriptSource; host: string | null; name: string; author: string; streaming: boolean;
   /** The transcript's own running token total, for the view head; null when it reports none. */
   onUsage(usage: UsageView | null): void;
 }) {
@@ -524,7 +528,7 @@ function WorkerTranscript(props: {
   const [gone, setGone] = createSignal(false);
   const [lastUpdate, setLastUpdate] = createSignal<string | null>(null);
 
-  const socket = createReconnectingSocket<WatchServerMessage>(watchUrl(props.source), {
+  const socket = createReconnectingSocket<WatchServerMessage>(watchUrl(props.source, props.host), {
     onMessage(msg) {
       switch (msg.type) {
         case "snapshot": // may repeat if the file is rewritten: always replace

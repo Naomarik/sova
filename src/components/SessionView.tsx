@@ -19,6 +19,7 @@ import type { FanoutSource } from "./FanoutDialog";
 import type { ForkMarker } from "./Thread";
 import { WatchView } from "./WatchView";
 import { Banner, Chip, CountChip, Icon } from "./ui";
+import { hostLabel, hostOf } from "../lib/mesh";
 
 /** Why a session is open read-only. */
 export type WatchWhy = "tui" | "recent";
@@ -249,6 +250,15 @@ export function SessionView(props: {
         </h1>
         <p class="session-head-meta">
           <ContextMetaPrefix path={path} />
+          {/* A peer's session names its host first: the folder and everything else are that host's. */}
+          <Show when={hostOf(path)}>
+            {(h) => (
+              <>
+                <span title={`This session lives on ${hostLabel(h())}`}>on {hostLabel(h())}</span>
+                <span aria-hidden="true">·</span>
+              </>
+            )}
+          </Show>
           <span class="text-mono" title={cwdLabel(s(), null)}>
             {cwdLabel(s(), home())}
           </span>

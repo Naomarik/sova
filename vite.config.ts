@@ -23,6 +23,8 @@ export default defineConfig({
       // Extensions (UI, API and sockets alike) and the design CSS they link: all the API server's.
       "/ext/": { target: `http://${apiHost}:${apiPort}`, ws: true },
       "/design/": `http://${apiHost}:${apiPort}`,
+      // A peer's sessions, REST and sockets alike, forwarded by the API server to the host that holds them.
+      "/peer/": { target: `http://${apiHost}:${apiPort}`, ws: true },
     },
   },
 });

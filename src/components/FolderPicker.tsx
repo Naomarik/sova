@@ -34,6 +34,8 @@ export function FolderPicker(props: {
   start: string;
   recents: string[];
   remote?: { target: string; name: string };
+  /** The peer whose folders these are (New Session's Host); left out, this host's. */
+  host?: string | null;
   onPick(path: string): void;
   onClose(): void;
 }) {
@@ -53,9 +55,9 @@ export function FolderPicker(props: {
     setLoad({ state: "loading" });
     try {
       const r = props.remote;
-      const listing = r ? await fetchTargetFolders(r.target, path, showHidden) : await listFolders(path, showHidden);
+      const listing = r ? await fetchTargetFolders(r.target, path, showHidden, props.host) : await listFolders(path, showHidden, props.host);
       if (my !== seq) return; // a newer navigation won
-      if (!r && path === undefined && !home()) setHome(listing.path);
+      if (!r && !props.host && path === undefined && !home()) setHome(listing.path);
       setAt(listing.path);
       setLoad({ state: "ok", listing });
       props.onPick(listing.path);

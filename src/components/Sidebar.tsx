@@ -54,6 +54,7 @@ import { GroupNameField } from "./Groups";
 import { RemoteGroupDot } from "./RemoteStatus";
 import { Banner, Chip, Icon } from "./ui";
 import { showSummaries } from "../lib/summary-line";
+import { hostLabel, hostOf, peerInfo, peerUnavailable, sessionHrefOn } from "../lib/mesh";
 
 const ARCHIVE_KEY = "sova:archive-open";
 /** One key per Archive date section, same "1"/"0" values as ARCHIVE_KEY. */
@@ -111,6 +112,14 @@ async function applyDrop(groupId: string | null): Promise<boolean> {
   setDragging(null);
   setDropTarget(null);
   if (!from || from.groupId === groupId) return false;
+  // Groups are this host's; a peer's session can't join one (the peer has its own, unseen here).
+  const host = hostOf(from.path);
+  if (host) {
+    const said = `Groups hold this host's sessions only. That one lives on ${hostLabel(host)}.`;
+    toast(said);
+    announce(said);
+    return false;
+  }
   const before = from.groupId ? groupNameOf(sessionGroups(), from.groupId) : null;
   const after = groupId ? groupNameOf(sessionGroups(), groupId) : null;
   if (!(await setSessionGroup(from.path, groupId))) return false;
@@ -120,7 +129,34 @@ async function applyDrop(groupId: string | null): Promise<boolean> {
   return true;
 }
 
-export const sessionHref = (path: string) => `#/s/${encodeURIComponent(path)}`;
+/** A session's link: `#/s/<path>`, or `#/p/<host>/s/<path>` for one that lives on a peer. */
+export const sessionHref = (path: string) => sessionHrefOn(hostOf(path), path);
+
+/**
+ * A peer's session carries its host's name beside the time; a host that can't be reached says so
+ * in a word too. A session on this host carries nothing, exactly as before the mesh.
+ */
+function HostMark(props: { host: string }) {
+  const peer = () => peerInfo(props.host);
+  const down = () => (peer() ? peerUnavailable(peer()!) : null);
+  return (
+    <span class="session-host" classList={{ "session-host-down": !!down() }} title={down() ?? `On ${hostLabel(props.host)}`}>
+      <Show when={down()}>
+        <span class="chip-dot" />
+      </Show>
+      <span class="session-host-name">{hostLabel(props.host)}</span>
+      <Show when={down()}>
+        <span>down</span>
+      </Show>
+    </span>
+  );
+}
+
+/** The host clause of a peer row's accessible name. */
+const hostClause = (host: string) => {
+  const peer = peerInfo(host);
+  return `, on ${hostLabel(host)}${peer && peerUnavailable(peer) ? ", which can't be reached" : ""}`;
+};
 
 /** "3 subagents working now" / "1 subagent working now" — rail title, toast and hidden row text. */
 const workingNow = (n: number) => `${n} ${n === 1 ? "subagent" : "subagents"} working now`;
@@ -386,6 +422,7 @@ function SessionRow(props: { session: SessionSummary; selected: string | null; n
             </div>
           </Show>
           <div class="list-line list-meta-row">
+            <Show when={hostOf(s().path)}>{(h) => <HostMark host={h()} />}</Show>
             <Show when={mark()}>
               {(m) => (
                 <span
@@ -422,6 +459,7 @@ function SessionRow(props: { session: SessionSummary; selected: string | null; n
         {/* Remote-ness is a fact a row is picked by, so it rides the link's name — the same deal the
             rail's state gets, and the one the topic chip and the ring deliberately don't. */}
         <Show when={mark()}>{(m) => <span class="visually-hidden">{remoteMarkSuffix(m())}</span>}</Show>
+        <Show when={hostOf(s().path)}>{(h) => <span class="visually-hidden">{hostClause(h())}</span>}</Show>
       </a>
     </li>
   );

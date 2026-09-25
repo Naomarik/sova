@@ -39,12 +39,13 @@ import { resetSpecDraft, specDirty } from "../lib/spec-draft";
 import { effectiveStack } from "../lib/typography";
 import { announce, home } from "../lib/ui-state";
 import { DelegateSettingsSection } from "./DelegateSettings";
+import { MeshSettingsSection } from "./MeshSettings";
 import { SpecSettingsSection } from "./SpecSettings";
 import { SummarizerSettingsSection } from "./SummarizerSettings";
 import { TypographySection } from "./TypographySection";
 import { Banner, Icon, trapFocus } from "./ui";
 
-/** The tab rail. Six screens; the rail is the structure further settings slot into. General is
+/** The tab rail. Seven screens; the rail is the structure further settings slot into. General is
     first because it is the one screen about this browser's own behaviour rather than a subsystem.
     Same ids, same order as `SETTINGS_TABS` (lib/settings-nav.ts), which is what opens it. */
 const TABS = [
@@ -53,6 +54,7 @@ const TABS = [
   { id: "modes", label: "Modes", icon: "worker" as const },
   { id: "summaries", label: "Summaries", icon: "chat" as const },
   { id: "themes", label: "Themes", icon: "image" as const },
+  { id: "mesh", label: "Mesh", icon: "branch" as const },
   { id: "experimental", label: "Experimental", icon: "terminal" as const },
 ] as const satisfies readonly { id: SettingsTab; label: string; icon: string }[];
 type TabId = (typeof TABS)[number]["id"];
@@ -223,6 +225,12 @@ export function SettingsDialog(props: { onClose(): void; initialTab?: SettingsTa
           <Show when={tab() === "themes"}>
             <div class="settings-panel" role="tabpanel" id="settings-panel-themes" aria-labelledby="settings-tab-themes">
               <ThemesPanel />
+            </div>
+          </Show>
+          {/* Mounted only while its tab is: the mesh settings are read when the tab opens. */}
+          <Show when={tab() === "mesh"}>
+            <div class="settings-panel" role="tabpanel" id="settings-panel-mesh" aria-labelledby="settings-tab-mesh">
+              <MeshSettingsSection />
             </div>
           </Show>
           {/* Same lifecycle as the other panels: mounted only while its tab is, so the settings

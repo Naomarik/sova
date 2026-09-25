@@ -5,7 +5,7 @@ import { createSignal } from "solid-js";
  * App state so a control deep in a pane — the mode menu's "Configure Delegate" — can open Settings
  * straight at the screen it's about, without threading a callback through every pane between.
  */
-export const SETTINGS_TABS = ["general", "models", "modes", "summaries", "themes", "experimental"] as const;
+export const SETTINGS_TABS = ["general", "models", "modes", "summaries", "themes", "mesh", "experimental"] as const;
 export type SettingsTab = (typeof SETTINGS_TABS)[number];
 
 const [openTab, setOpenTab] = createSignal<SettingsTab | null>(null);

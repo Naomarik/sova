@@ -172,11 +172,13 @@ export function shouldFetchIndex(args: { cwd: string | null | undefined; cached:
 }
 
 const cache = new Map<string, { index: FileIndex; at: number }>();
+/** A cwd names a folder on one host: a peer's session (`host`) keeps its index apart from ours. */
+const indexKey = (cwd: string, host?: string | null) => (host ? `${host}\n${cwd}` : cwd);
 
 /** The session cwd's fresh index, or null when none was fetched (or it has gone stale). Decides
     whether to FETCH; what the menu shows is `heldFileIndex`. */
-export function cachedFileIndex(cwd: string, now = Date.now()): FileIndex | null {
-  const hit = cache.get(cwd);
+export function cachedFileIndex(cwd: string, now = Date.now(), host?: string | null): FileIndex | null {
+  const hit = cache.get(indexKey(cwd, host));
   return hit && now - hit.at < INDEX_TTL_MS ? hit.index : null;
 }
 
@@ -184,27 +186,29 @@ export function cachedFileIndex(cwd: string, now = Date.now()): FileIndex | null
     reason to refetch at the next opening, never to empty a menu the user is typing in: the fetch
     is one attempt per opening, so an index that went stale mid-token used to leave the menu on
     "Reading the folder…" until it was closed and reopened. */
-export function heldFileIndex(cwd: string): FileIndex | null {
-  return cache.get(cwd)?.index ?? null;
+export function heldFileIndex(cwd: string, host?: string | null): FileIndex | null {
+  return cache.get(indexKey(cwd, host))?.index ?? null;
 }
 
 /**
  * Fetches the cwd's index when there is no fresh one. Concurrent callers share one request;
  * failures don't cache (a menu that couldn't read the folder retries on its next open).
  */
-export async function ensureFileIndex(cwd: string): Promise<FileIndex> {
-  if (cachedFileIndex(cwd)) return cachedFileIndex(cwd)!;
-  const inflight = inflightIndexes.get(cwd);
+export async function ensureFileIndex(cwd: string, host?: string | null): Promise<FileIndex> {
+  const key = indexKey(cwd, host);
+  const fresh = cachedFileIndex(cwd, Date.now(), host);
+  if (fresh) return fresh;
+  const inflight = inflightIndexes.get(key);
   if (inflight) return inflight;
-  const p = fetchFileIndex(cwd).then((index) => {
-    cache.set(cwd, { index, at: Date.now() });
+  const p = fetchFileIndex(cwd, host).then((index) => {
+    cache.set(key, { index, at: Date.now() });
     return index;
   });
-  inflightIndexes.set(cwd, p);
+  inflightIndexes.set(key, p);
   try {
     return await p;
   } finally {
-    inflightIndexes.delete(cwd);
+    inflightIndexes.delete(key);
   }
 }
 

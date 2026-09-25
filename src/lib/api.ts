@@ -45,6 +45,7 @@ import type {
   SummarizerSettingsInfo,
 } from "../../shared/protocol";
 import type { TargetInfo } from "./remote-session";
+import { hostOf, hostUrl, noteHost, type MeshCandidate, type MeshSessions, type MeshSettings, type MeshState, peerBase, routeUrl } from "./mesh";
 
 /**
  * What a batch send can come back as. The refusal is a VALUE, not a throw: it is the route's
@@ -81,7 +82,8 @@ export class ApiError extends Error {
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   let res: Response;
   try {
-    res = await fetch(url, init);
+    // A request about a peer's session goes to that peer, through this host (lib/mesh.ts).
+    res = await fetch(routeUrl(url, init?.body), init);
   } catch {
     throw new ApiError("The Sova server isn't reachable.", 0);
   }
@@ -102,15 +104,16 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
 
 export const listSessions = () => request<SessionSummary[]>("/api/sessions");
 
-export const listCwds = () => request<string[]>("/api/cwds");
+/** `host`: a peer's, for New Session's Host field; left out, this host's. */
+export const listCwds = (host?: string | null) => request<string[]>(hostUrl(host, "/api/cwds"));
 
-/** Subfolders of `path` (no path: $HOME). `hidden` includes dot folders. */
-export const listFolders = (path?: string, hidden = false) => {
+/** Subfolders of `path` (no path: $HOME). `hidden` includes dot folders. `host`: on that peer. */
+export const listFolders = (path?: string, hidden = false, host?: string | null) => {
   const q = new URLSearchParams();
   if (path) q.set("path", path);
   if (hidden) q.set("hidden", "1");
   const qs = q.toString();
-  return request<FolderListing>(`/api/folders${qs ? `?${qs}` : ""}`);
+  return request<FolderListing>(hostUrl(host, `/api/folders${qs ? `?${qs}` : ""}`));
 };
 
 export const listModels = () => request<ModelInfo[]>("/api/models");
@@ -173,13 +176,13 @@ export const getClaudeCliStatus = () => request<ClaudeCliStatus>("/api/settings/
 
 /** The session cwd's file index for @-mentions: every non-ignored file under it, relative to
     it, capped (truncated flags the cap). Cached both sides; the menu refetches when stale. */
-export const fetchFileIndex = (cwd: string) =>
-  request<FileIndex>(`/api/files?cwd=${encodeURIComponent(cwd)}`);
+export const fetchFileIndex = (cwd: string, host?: string | null) =>
+  request<FileIndex>(hostUrl(host, `/api/files?cwd=${encodeURIComponent(cwd)}`));
 
 /** The Playbooks dialog's catalog: shipped, the user's, and (given a local cwd) the project's.
     Never an error for a cwd it can't list — `project.state` says why instead. */
-export const fetchPlaybooks = (cwd: string | null) =>
-  request<PlaybookCatalog>(cwd ? `/api/playbooks?cwd=${encodeURIComponent(cwd)}` : "/api/playbooks");
+export const fetchPlaybooks = (cwd: string | null, host?: string | null) =>
+  request<PlaybookCatalog>(hostUrl(host, cwd ? `/api/playbooks?cwd=${encodeURIComponent(cwd)}` : "/api/playbooks"));
 
 /** The default for new sessions, and what exists (GET /api/mode). */
 export const getMode = () => request<ModeInfo>("/api/mode");
@@ -219,15 +222,15 @@ export const setSandbox = (path: string, on: boolean) =>
 export const resumeWorker = (path: string, id: string) =>
   request<WorkerResumeResult>(`/api/workers/resume?path=${encodeURIComponent(path)}&id=${encodeURIComponent(id)}`, { method: "POST" });
 
-/** A local folder (string), or a folder on a configured target. */
-export const createSession = (where: string | { target: string; remoteCwd: string }) =>
-  request<SessionSummary>("/api/sessions", {
+/** A local folder (string), or a folder on a configured target; `host`: on that peer, which then holds it. */
+export const createSession = (where: string | { target: string; remoteCwd: string }, host?: string | null) =>
+  request<SessionSummary>(hostUrl(host, "/api/sessions"), {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(typeof where === "string" ? { cwd: where } : { target: where.target, remoteCwd: where.remoteCwd }),
   });
 
-export const fetchTargets = () => request<TargetInfo[]>("/api/targets");
+export const fetchTargets = (host?: string | null) => request<TargetInfo[]>(hostUrl(host, "/api/targets"));
 
 /** How long the UI waits on a target's folder listing before saying so (the server bounds its own probe too). */
 export const REMOTE_LIST_TIMEOUT_MS = 20_000;
@@ -236,7 +239,7 @@ export const REMOTE_LIST_TIMEOUT_MS = 20_000;
  * Subfolders of `path` on a target (no path: the server's default, the target's cwd or $HOME).
  * Read leniently: the server may send the local FolderListing shape or `{path, dirs}`.
  */
-export async function fetchTargetFolders(target: string, path?: string, hidden = false): Promise<FolderListing> {
+export async function fetchTargetFolders(target: string, path?: string, hidden = false, host?: string | null): Promise<FolderListing> {
   const q = new URLSearchParams();
   if (path) q.set("path", path);
   if (hidden) q.set("hidden", "1");
@@ -245,7 +248,7 @@ export async function fetchTargetFolders(target: string, path?: string, hidden =
   const timer = setTimeout(() => ctrl.abort(), REMOTE_LIST_TIMEOUT_MS);
   try {
     const raw = await request<Partial<FolderListing> & { dirs?: string[] }>(
-      `/api/targets/${encodeURIComponent(target)}/folders${qs ? `?${qs}` : ""}`,
+      hostUrl(host, `/api/targets/${encodeURIComponent(target)}/folders${qs ? `?${qs}` : ""}`),
       { signal: ctrl.signal },
     );
     const at = raw.path ?? path ?? "/";
@@ -262,8 +265,8 @@ export async function fetchTargetFolders(target: string, path?: string, hidden =
 }
 
 /** Spawns the connection agent: a seeded session that probes, verifies and writes a new target. */
-export const connectTarget = () =>
-  request<SessionSummary>("/api/sessions/connect", {
+export const connectTarget = (host?: string | null) =>
+  request<SessionSummary>(hostUrl(host, "/api/sessions/connect"), {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: "{}",
@@ -518,13 +521,20 @@ export const cleanupSessions = (req: CleanupRequest | PathsCleanupRequest, dryRu
     body: JSON.stringify({ ...req, dryRun }),
   }).then((raw) => ({ ...parseCleanupResult(raw), refused: refusedEntries(raw) }));
 
+/** A peer session's items name files on that peer (images it attached): their bytes come from it too. */
+function noteAttachmentsHost(path: string, items: TranscriptItem[]): TranscriptItem[] {
+  const host = hostOf(path);
+  if (host) for (const item of items) for (const a of item.attachments ?? []) noteHost(a.path, host);
+  return items;
+}
+
 export const fetchTranscript = (path: string) =>
-  request<{ items: TranscriptItem[] }>(`/api/transcript?path=${encodeURIComponent(path)}`).then((r) => r.items);
+  request<{ items: TranscriptItem[] }>(`/api/transcript?path=${encodeURIComponent(path)}`).then((r) => noteAttachmentsHost(path, r.items));
 
 /** The transcript plus its context-window fill (null when unknown or stale). */
 export const fetchTranscriptWithContext = (path: string) =>
   request<{ items: TranscriptItem[]; context: ContextInfo | null }>(`/api/transcript?path=${encodeURIComponent(path)}`).then((r) => ({
-    items: r.items,
+    items: noteAttachmentsHost(path, r.items),
     context: r.context ?? null,
   }));
 
@@ -534,7 +544,12 @@ export const fetchDraft = (path: string) =>
   request<{ text: string | null; attachments?: UploadResult[]; updatedAt: string | null }>(
     `/api/sessions/draft?path=${encodeURIComponent(path)}`,
     { cache: "no-store" },
-  ).then((r) => ({ text: r.text, attachments: r.attachments ?? [], updatedAt: r.updatedAt }));
+  ).then((r) => {
+    const attachments = r.attachments ?? [];
+    const host = hostOf(path);
+    if (host) for (const a of attachments) noteHost(a.path, host);
+    return { text: r.text, attachments, updatedAt: r.updatedAt };
+  });
 
 /** Stores a session's draft; blank text with no attachments deletes it. `keepalive` lets the
     write outlive a page that is being hidden or closed. */
@@ -553,6 +568,10 @@ export const uploadImage = (file: File, sessionPath: string) =>
     method: "POST",
     headers: { "content-type": file.type },
     body: file,
+  }).then((u) => {
+    // Stored on the session's own host: its preview, delete and send all go there.
+    noteHost(u.path, hostOf(sessionPath));
+    return u;
   });
 
 /** Deletes a draft attachment the user removed. Only files in the attachments folder qualify. */
@@ -589,8 +608,8 @@ export const fetchSessionSetup = (path: string, fresh = false) =>
  * `force` (chat only) lets the server open a session whose file was written recently by
  * something that isn't a TUI. It never overrides a live TUI.
  */
-export function wsUrl(endpoint: "/ws/chat" | "/ws/watch", path: string, force = false): string {
-  return `${wsOrigin()}${endpoint}?path=${encodeURIComponent(path)}${force ? "&force=1" : ""}`;
+export function wsUrl(endpoint: "/ws/chat" | "/ws/watch", path: string, force = false, host: string | null = hostOf(path)): string {
+  return `${wsOrigin()}${peerBase(host)}${endpoint}?path=${encodeURIComponent(path)}${force ? "&force=1" : ""}`;
 }
 
 function wsOrigin(): string {
@@ -602,8 +621,8 @@ function wsOrigin(): string {
  * These workers write no pi session file; the server finds theirs under ~/.claude/projects and
  * sends the same WatchServerMessages.
  */
-export function claudeWatchUrl(sessionId: string): string {
-  return `${wsOrigin()}/ws/watch?claude=${encodeURIComponent(sessionId)}`;
+export function claudeWatchUrl(sessionId: string, host: string | null = null): string {
+  return `${wsOrigin()}${peerBase(host)}/ws/watch?claude=${encodeURIComponent(sessionId)}`;
 }
 
 /**
@@ -611,3 +630,23 @@ export function claudeWatchUrl(sessionId: string): string {
  * (RECENT_WRITE_MS in server/write-guard.ts). The server decides; this is for reference/copy.
  */
 export const RECENT_WRITE_WINDOW_MS = 120_000;
+
+// ---- the peer mesh (lib/mesh.ts) ----------------------------------------------------------------
+
+/** This host, its peers and what syncs. Answers from local state only: no peer is asked. */
+export const fetchMesh = () => request<MeshState>("/api/mesh");
+
+/** Replace peers.json's list; the answer is the mesh as it stands after the write. */
+export const putMeshPeers = (peers: { id: string; label?: string; node: string }[]) =>
+  request<MeshState>("/api/mesh/peers", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ peers }) });
+
+/** Tailnet nodes the serving host can see, and which of them run Sova. Only asked for on demand. */
+export const fetchMeshCandidates = () => request<MeshCandidate[]>("/api/mesh/candidates");
+
+/** Every peer's own session list, through the proxy. Only asked for while a peer is configured. */
+export const fetchMeshSessions = () => request<MeshSessions>("/api/mesh/sessions");
+
+export const getMeshSettings = () => request<MeshSettings>("/api/mesh/settings");
+
+export const putMeshSettings = (settings: MeshSettings) =>
+  request<MeshSettings>("/api/mesh/settings", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(settings) });

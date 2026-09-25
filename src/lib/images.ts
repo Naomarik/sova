@@ -6,6 +6,7 @@
 import type { UploadResult } from "../../shared/protocol";
 import { uploadImage } from "./api";
 import { isObj, str } from "./message";
+import { routeUrl } from "./mesh";
 
 /** The formats model providers accept. */
 export const ACCEPTED_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"];
@@ -57,7 +58,7 @@ export function acceptFiles(files: File[], pendingCount: number, pasted = false)
 export const uploadAccepted = (a: AcceptedFile, sessionPath: string): Promise<UploadResult> =>
   uploadImage(a.file, sessionPath).then((u) => ({ ...u, name: a.name }));
 
-const previewUrl = (path: string) => `/api/attachment?path=${encodeURIComponent(path)}`;
+const previewUrl = (path: string) => routeUrl(`/api/attachment?path=${encodeURIComponent(path)}`);
 
 /** A stored attachment as a strip row. */
 export const pendingFrom = (a: UploadResult): PendingImage => ({ ...a, id: ++nextId, previewUrl: previewUrl(a.path) });

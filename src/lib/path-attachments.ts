@@ -5,9 +5,10 @@
 import type { TmpAttachment } from "../../shared/protocol";
 import { findTmpImagePaths, isPiClipboardName } from "../../shared/tmp-paths";
 import { copyText, openLightbox } from "./ui-state";
+import { routeUrl } from "./mesh";
 
 /** Where the browser gets the bytes. It never reads /tmp itself. */
-export const attachmentUrl = (path: string) => `/api/attachment?path=${encodeURIComponent(path)}`;
+export const attachmentUrl = (path: string) => routeUrl(`/api/attachment?path=${encodeURIComponent(path)}`);
 
 /** `KB` under 1 MB, rounded; otherwise one decimal (same format as composer attachments). */
 export const fileSize = (bytes: number) =>

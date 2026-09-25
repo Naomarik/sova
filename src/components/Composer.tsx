@@ -51,6 +51,7 @@ import { sandboxBadge } from "../lib/sandbox";
 import type { ModelControl } from "./ModelMenu";
 import { ModeMenu, type ModeControl } from "./ModeMenu";
 import { Icon, type IconName } from "./ui";
+import { hostOf } from "../lib/mesh";
 
 /** The session pane's element id: ONE pane, five tabs, so every trigger controls the same id. */
 const PANE_ID = "session-pane";
@@ -324,13 +325,15 @@ export function Composer(props: {
   };
 
   // ---- @-mention autocomplete (combobox: focus stays in the textarea) -------------------
+  /** The host whose folder `props.cwd` is: a peer's session lists that peer's files. */
+  const indexHost = () => hostOf(props.path);
   // What the menu lists is the HELD index, however old: aging out only re-arms the next opening's
   // fetch (the effect below), so a token open past the TTL keeps its rows.
   /** Every match — the true count, for the head and the announcement. */
   const mentionAll = createMemo(() => {
     indexTick(); // a fetch settling bumps this, so the derivation re-runs
     const token = mentionToken();
-    const idx = props.cwd ? heldFileIndex(props.cwd) : null;
+    const idx = props.cwd ? heldFileIndex(props.cwd, indexHost()) : null;
     return token && idx ? mentionEntries(idx.files, token.query) : [];
   });
   /** The rows drawn (capped); arrow keys, Enter and the ids index into these. */
@@ -339,12 +342,12 @@ export function Composer(props: {
   const mentionIds = createMemo(() => mentionOptionIds(mentionMatches()));
   const mentionTruncated = createMemo(() => {
     indexTick();
-    return props.cwd ? heldFileIndex(props.cwd)?.truncated : undefined;
+    return props.cwd ? heldFileIndex(props.cwd, indexHost())?.truncated : undefined;
   });
   const mentionStatus = createMemo<FileMenuStatus>(() => {
     indexTick();
     const cwd = props.cwd;
-    return mentionIndexStatus({ cwd, cached: !!(cwd && heldFileIndex(cwd)), error: mentionError() });
+    return mentionIndexStatus({ cwd, cached: !!(cwd && heldFileIndex(cwd, indexHost())), error: mentionError() });
   });
   /** Never while disabled. Streaming is fine: a completed path is ordinary prompt text. */
   const mentionOpen = () => {
@@ -379,10 +382,10 @@ export function Composer(props: {
       mentionFetchedFor = null; // closed: the next opening tries again
       return;
     }
-    if (!shouldFetchIndex({ cwd, cached: !!(cwd && cachedFileIndex(cwd)), fetchedFor: mentionFetchedFor })) return;
+    if (!shouldFetchIndex({ cwd, cached: !!(cwd && cachedFileIndex(cwd, Date.now(), indexHost())), fetchedFor: mentionFetchedFor })) return;
     mentionFetchedFor = cwd;
     setMentionError(null);
-    void ensureFileIndex(cwd!).then(
+    void ensureFileIndex(cwd!, indexHost()).then(
       () => setIndexTick((t) => t + 1),
       (err) => {
         if (disposed) return;

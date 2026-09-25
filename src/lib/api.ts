@@ -34,6 +34,8 @@ import type {
   MeshCandidate,
   MeshHello,
   MeshInfo,
+  MeshLoginClaim,
+  MeshLogins,
   MeshPeerEntry,
   MeshSessions,
   MeshSettings,
@@ -665,3 +667,14 @@ export const fetchFrontDoor = () => request<FrontDoorConfig>("/api/mesh/front-do
 
 export const putMeshSettings = (settings: Partial<MeshSettings>) =>
   request<MeshSettings>("/api/mesh/settings", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(settings) });
+
+/** Every login this host syncs, with the ones that differ from a peer's since before sync. */
+export const fetchMeshLogins = () => request<MeshLogins>("/api/mesh/logins");
+
+/** "Use this host's login everywhere": it becomes a login made now, so every peer takes it. */
+export const claimMeshLogin = (key: string) =>
+  request<{ ok: true }>("/api/mesh/logins/claim", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ key } satisfies MeshLoginClaim),
+  });

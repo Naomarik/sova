@@ -22,6 +22,10 @@ import {
   serveUrlProblem,
   setMeshState,
   sessionRouteFromHash,
+  claimRefusal,
+  listWords,
+  loginConflicts,
+  loginName,
   
 } from "./mesh";
 
@@ -189,4 +193,28 @@ test("the front door flags placeholder upstreams and mixed schemes, and nothing 
   assert.equal(serveUrlProblem("http://10.0.0.2:4800"), null);
   assert.match(serveUrlProblem("a.tail1.ts.net")!, /https:\/\//);
   assert.match(serveUrlProblem("")!, /https:\/\//);
+});
+
+test("login conflicts: only keys some peer holds differently, named for the page", () => {
+  const entries = [
+    { key: "pi:zai", store: "pi" as const, provider: "zai", kind: "api_key" as const, state: "live" as const, conflictWith: ["b", "c"] },
+    { key: "pi:deepseek", store: "pi" as const, provider: "deepseek", kind: "api_key" as const, state: "live" as const, conflictWith: [] },
+    { key: "claude:claudeAiOauth", store: "claude" as const, provider: "claudeAiOauth", kind: "oauth" as const, state: "expired" as const },
+  ];
+  assert.deepEqual(loginConflicts(entries).map((e) => e.key), ["pi:zai"]);
+  assert.equal(loginName(entries[0]!), "zai API key");
+  assert.equal(loginName(entries[2]!), "Claude Code login");
+  assert.equal(listWords([]), "");
+  assert.equal(listWords(["b"]), "b");
+  assert.equal(listWords(["b", "c"]), "b and c");
+  assert.equal(listWords(["b", "c", "d"]), "b, c, and d");
+});
+
+test("a refused claim reads as what to do next", () => {
+  const key = { key: "pi:zai", store: "pi" as const, provider: "zai", kind: "api_key" as const, state: "live" as const };
+  assert.match(claimRefusal(key, 409, "No live login here to claim"), /isn't live any more.*Add it again here/);
+  assert.match(claimRefusal({ ...key, kind: "oauth" }, 409, "No live login here to claim"), /Log in again here/);
+  assert.match(claimRefusal(key, 409, "Logins sync is off"), /Login sync is off on this host/);
+  assert.equal(claimRefusal(key, 400, "Unknown login"), "This host doesn't hold the zai API key any more.");
+  assert.equal(claimRefusal(key, 0, "The Sova server isn't reachable."), "The Sova server isn't reachable.");
 });

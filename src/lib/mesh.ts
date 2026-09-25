@@ -1,5 +1,5 @@
 import { createSignal } from "solid-js";
-import type { MeshInfo, MeshSessions, PeerStatus, SessionSummary, SyncCategory } from "../../shared/protocol";
+import type { MeshInfo, MeshLoginEntry, MeshSessions, PeerStatus, SessionSummary, SyncCategory } from "../../shared/protocol";
 
 // The client side of the peer mesh: which host a session lives on, and how a request for it
 // reaches that host. A session is driven only by the host whose disk holds it, and the browser
@@ -9,7 +9,7 @@ import type { MeshInfo, MeshSessions, PeerStatus, SessionSummary, SyncCategory }
 // Everything is dormant until GET /api/mesh names a peer: with none, `hostOf` answers null for
 // every path, no URL changes, and nothing polls.
 
-export type { MeshCandidate, MeshInfo, MeshPeerEntry, MeshSessions, MeshSettings, PeerState, PeerStatus, SyncCategory, SyncStatus } from "../../shared/protocol";
+export type { MeshCandidate, MeshInfo, MeshLoginEntry, MeshLogins, MeshPeerEntry, MeshSessions, MeshSettings, PeerState, PeerStatus, SyncCategory, SyncStatus } from "../../shared/protocol";
 
 export const SYNC_CATEGORIES: readonly SyncCategory[] = ["settings", "themes", "extensions", "logins"];
 
@@ -304,4 +304,34 @@ export function serveUrlProblem(value: string): string | null {
     return "That isn't an address a browser can open.";
   }
   return null;
+}
+
+// ---- login conflicts (GET /api/mesh/logins) ----------------------------------------------------
+
+/** The logins waiting on a choice, in the server's order. */
+export const loginConflicts = (entries: readonly MeshLoginEntry[]): MeshLoginEntry[] =>
+  entries.filter((e) => (e.conflictWith?.length ?? 0) > 0);
+
+/** A login's name on the page: `zai API key`, `openai-codex login`, `Claude Code login`. */
+export function loginName(e: MeshLoginEntry): string {
+  const who = e.store === "claude" ? "Claude Code" : e.provider;
+  return `${who} ${e.kind === "api_key" ? "API key" : "login"}`;
+}
+
+/** `a`, `a and b`, `a, b, and c` (serial comma). */
+export function listWords(items: readonly string[]): string {
+  if (items.length <= 1) return items[0] ?? "";
+  if (items.length === 2) return `${items[0]} and ${items[1]}`;
+  return `${items.slice(0, -1).join(", ")}, and ${items[items.length - 1]}`;
+}
+
+/** What a refused claim means, in the page's words; the server's own message when it's none of these. */
+export function claimRefusal(e: MeshLoginEntry, status: number, message: string): string {
+  const noun = e.kind === "api_key" ? "key" : "login";
+  if (status === 409 && /sync is off/i.test(message)) return "Login sync is off on this host. Turn it on in Settings → Mesh, then keep one.";
+  if (status === 409) {
+    return `This host's ${noun} isn't live any more, so there's nothing to keep. ${e.kind === "api_key" ? "Add it again here" : "Log in again here"}, or keep another host's from its own Mesh page.`;
+  }
+  if (status === 400) return `This host doesn't hold the ${loginName(e)} any more.`;
+  return message;
 }

@@ -1,9 +1,14 @@
 import { createResource, createSignal, For, Show } from "solid-js";
-import { fetchFrontDoor, fetchMesh, fetchMeshCandidates, putMeshPeers, putMeshSettings } from "../lib/api";
+import { ApiError, claimMeshLogin, fetchFrontDoor, fetchMesh, fetchMeshCandidates, fetchMeshLogins, putMeshPeers, putMeshSettings } from "../lib/api";
 import { copyText } from "../lib/ui-state";
 import { relativeTime } from "../lib/format";
 import {
+  claimRefusal,
   frontDoorProblems,
+  hostLabel,
+  listWords,
+  loginConflicts,
+  loginName,
   MESH_HREF,
   meshPeers,
   moveItem,
@@ -15,6 +20,7 @@ import {
   setMeshState,
   type HelloChange,
   type MeshCandidate,
+  type MeshLoginEntry,
   type MeshPeerEntry,
   type PeerState,
   type PeerStatus,
@@ -148,10 +154,12 @@ function candidateNote(c: MeshCandidate): string {
 /** `#/mesh`: every host, its state and why, editing peers.json, what syncs, and how to start. */
 export function MeshView(props: { now: number; titleRef(el: HTMLHeadingElement): void }) {
   // Every answer is the app's mesh state too: the sidebar's marks and New Session follow this page.
+  const [ticks, setTicks] = createSignal(0);
   const poll = createPoll(
     () =>
       fetchMesh().then((s) => {
         setMeshState(s);
+        setTicks((n) => n + 1);
         return s;
       }),
     MESH_PAGE_POLL_MS,
@@ -446,6 +454,9 @@ export function MeshView(props: { now: number; titleRef(el: HTMLHeadingElement):
           <ul class="list">
             <For each={state()?.sync ?? []}>{(row) => <SyncRow row={row} now={props.now} />}</For>
           </ul>
+          <Show when={state()?.sync.find((r) => r.category === "logins" && r.enabled && r.state !== "off")}>
+            <LoginList tick={ticks()} />
+          </Show>
         </Show>
       </section>
 
@@ -498,6 +509,123 @@ function SyncRow(props: { row: SyncStatus; now: number }) {
       </div>
       {chip()}
     </li>
+  );
+}
+
+const LOGIN_STATE: Record<MeshLoginEntry["state"], { word: string; tone?: "success" | "error" | "warn" }> = {
+  live: { word: "Live", tone: "success" },
+  expired: { word: "Expired", tone: "warn" },
+  dead: { word: "Failed", tone: "error" },
+  "logged-out": { word: "Logged out" },
+};
+
+/**
+ * Each login this host syncs, one per key. A key that two hosts held differently before they
+ * synced stays unsynced until the user keeps one host's: that host's then wins everywhere, so the
+ * button asks first. Read only while the mesh is on and login sync is, re-read on each page poll.
+ */
+function LoginList(props: { tick: number }) {
+  const [logins, { refetch }] = createResource(
+    () => ({ tick: props.tick }),
+    () => fetchMeshLogins().then((r) => r.entries).catch(() => null),
+  );
+  const [asking, setAsking] = createSignal<string | null>(null);
+  const [claiming, setClaiming] = createSignal<string | null>(null);
+  const [claimError, setClaimError] = createSignal<{ key: string; message: string } | null>(null);
+  /** The ones waiting on a choice first. */
+  const rows = () => {
+    const all = logins.latest ?? [];
+    const waiting = loginConflicts(all);
+    return [...waiting, ...all.filter((e) => !waiting.includes(e))];
+  };
+  const noun = (e: MeshLoginEntry) => (e.kind === "api_key" ? "key" : "login");
+  const hosts = (e: MeshLoginEntry) => listWords((e.conflictWith ?? []).map(hostLabel));
+
+  const keep = async (e: MeshLoginEntry) => {
+    setAsking(null);
+    setClaiming(e.key);
+    setClaimError(null);
+    try {
+      await claimMeshLogin(e.key);
+      announce(`${selfLabel()}'s ${loginName(e)} now syncs to ${hosts(e)}.`);
+    } catch (err) {
+      const status = err instanceof ApiError ? err.status : 0;
+      setClaimError({ key: e.key, message: claimRefusal(e, status, (err as Error).message) });
+    } finally {
+      setClaiming(null);
+      void refetch();
+    }
+  };
+
+  return (
+    <Show when={rows().length > 0}>
+      <div class="mesh-logins">
+        <h3 class="mesh-add-title">Logins on {selfLabel()}</h3>
+        <ul class="list">
+          <For each={rows()}>
+            {(e) => (
+              <li class="list-row mesh-host">
+                <div class="list-main">
+                  <p class="list-title">{loginName(e)}</p>
+                  <Show
+                    when={e.conflictWith?.length}
+                    fallback={
+                      <p class="list-meta">
+                        <Show when={e.origin} fallback="Not synced yet.">
+                          {(o) => (o() === meshState()?.self.id ? "Made on this host." : `From ${hostLabel(o())}.`)}
+                        </Show>
+                      </p>
+                    }
+                  >
+                    <p class="list-meta">
+                      Different {noun(e)}s on {hosts(e)}, from before they synced. It doesn't sync until you keep one.
+                    </p>
+                    <Show when={asking() === e.key}>
+                      <div class="mesh-login-ask">
+                        <p class="list-meta">
+                          {hosts(e)} {e.conflictWith!.length === 1 ? "replaces its" : "replace theirs"} with this host's {loginName(e)}. This host's stays as
+                          it is.
+                        </p>
+                        <div class="mesh-login-ask-actions">
+                          <button
+                            type="button"
+                            class="button button-sm button-primary"
+                            ref={(el) => queueMicrotask(() => el.focus())}
+                            onClick={() => void keep(e)}
+                          >
+                            Keep This Host's {noun(e) === "key" ? "Key" : "Login"}
+                          </button>
+                          <button type="button" class="button button-sm button-ghost" onClick={() => setAsking(null)}>
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    </Show>
+                    <Show when={claimError()?.key === e.key && claimError()}>{(err) => <p class="mesh-host-error">{err().message}</p>}</Show>
+                  </Show>
+                </div>
+                <Show
+                  when={e.conflictWith?.length}
+                  fallback={<Chip tone={LOGIN_STATE[e.state].tone}>{LOGIN_STATE[e.state].word}</Chip>}
+                >
+                  <Show when={asking() !== e.key}>
+                    <button
+                      type="button"
+                      class="button button-sm"
+                      disabled={claiming() === e.key || e.state !== "live"}
+                      title={e.state !== "live" ? `This host's ${noun(e)} isn't live.` : undefined}
+                      onClick={() => setAsking(e.key)}
+                    >
+                      {claiming() === e.key ? "Keeping…" : `Keep This Host's ${noun(e) === "key" ? "Key" : "Login"}`}
+                    </button>
+                  </Show>
+                </Show>
+              </li>
+            )}
+          </For>
+        </ul>
+      </div>
+    </Show>
   );
 }
 

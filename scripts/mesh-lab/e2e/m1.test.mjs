@@ -11,6 +11,7 @@ let cfg;
 let A, B, C;
 const meshOf = async (n) => (await laptopFetch(n, "/api/mesh")).json();
 const peerState = async (n, id) => (await meshOf(n)).peers?.find((p) => p.id === id)?.state;
+const readMeshLabel = (n) => JSON.parse(readAgentFile(n, "sova/peers.json") || "{}").self?.label;
 const listening = (n) => sh(n, `ss -ltn | grep -q ':${PEER_PORT} '`).code === 0;
 
 before(async () => {
@@ -51,8 +52,27 @@ describe("paired hosts", () => {
     const base = `http://${magicName(A)}:${PEER_PORT}`;
     assert.equal(curlFrom(B, `${base}/api/health`).json?.ok, true);
     assert.ok(Array.isArray(curlFrom(B, `${base}/api/sessions`).json));
-    for (const path of ["/api/mesh", "/api/mesh/hello", "/api/mesh/peers", `/peer/${C}/api/health`, "/", "/index.html"])
+    for (const path of ["/api/mesh", "/api/mesh/hello", "/api/mesh/candidates", `/peer/${C}/api/health`, "/", "/index.html"])
       assert.equal(curlFrom(B, base + path).status, 404, path);
+  });
+
+  test("a peer's writes to /api/mesh/* are 404 and change nothing (peers.json holds the mesh settings too)", () => {
+    // These routes exist on A's main listener (PUT), so a 404 here is the peer listener's refusal,
+    // not the router's; the file check proves no write went through.
+    const base = `http://${magicName(A)}:${PEER_PORT}`;
+    const sha = () => sh(A, 'sha256sum "$PI_CODING_AGENT_DIR/sova/peers.json"').out;
+    const before = sha();
+    assert.match(before, /^[0-9a-f]{64} /, "A has a peers.json");
+    const writes = [
+      ["/api/mesh/peers", { version: 1, self: { id: A }, peers: [] }],
+      ["/api/mesh/settings", { hostLabel: "written by a peer", frontDoorOrder: [C, B, A] }],
+    ];
+    for (const [path, body] of writes) {
+      const r = curlFrom(B, base + path, { method: "PUT", body });
+      assert.equal(r.status, 404, `${path} -> ${r.status}`);
+    }
+    assert.equal(sha(), before, "A's peers.json unchanged");
+    assert.notEqual(readMeshLabel(A), "written by a peer");
   });
 });
 
@@ -108,8 +128,8 @@ describe("encoded paths", () => {
 });
 
 describe("refusals", () => {
-  test("a tailnet node that is in nobody's peers.json gets 403 on every path and on WS", () => {
-    if (!cfg.stranger) return;
+  test("a tailnet node that is in nobody's peers.json gets 403 on every path and on WS", (t) => {
+    if (!cfg.stranger) return t.skip("the lab has no stranger (lab up --no-stranger)");
     const base = `http://${magicName(A)}:${PEER_PORT}`;
     for (const path of ["/api/peer/hello", "/api/health", "/api/sessions"]) {
       const r = curlFrom("stranger", base + path);
@@ -121,8 +141,8 @@ describe("refusals", () => {
     assert.equal(up.status, 403, "WS upgrade refused before the handshake");
   });
 
-  test("a non-tailnet caller never reaches a peer listener", () => {
-    if (!cfg.plain) return;
+  test("a non-tailnet caller never reaches a peer listener", (t) => {
+    if (!cfg.plain) return t.skip("the lab has no plain (lab up --no-plain)");
     // the docker address: nothing listens there
     assert.equal(curlFrom("plain", `http://${dockerIp(A)}:${PEER_PORT}/api/peer/hello`, { timeoutS: 3 }).status, 0);
     // the tailnet address is not routable from outside the tailnet
@@ -154,9 +174,14 @@ describe("proxy", () => {
     assert.equal(unknown.status, 404);
   });
 
-  test("/peer/<id>/ws/* reaches the peer's WS endpoint", () => {
-    const r = wsFrom(A, `ws://127.0.0.1:4800/peer/${B}/ws/watch`, { holdMs: 1500 });
-    assert.ok(r.opened || (r.closeCode >= 4000 && r.closeCode !== 4422), JSON.stringify(r));
+  test("/peer/<id>/ws/* reaches the peer's WS endpoint: a watch of B's fixture streams B's transcript", async (t) => {
+    if (!cfg.seed) return t.skip("the lab has no seed (lab up --no-seed)");
+    const list = await (await laptopFetch(A, `/peer/${B}/api/sessions`)).json();
+    const fixture = list.find((s) => s.title === `fixture session on lab host ${B}`);
+    assert.ok(fixture?.path, `B's fixture listed through A (${list.length} rows)`);
+    const r = wsFrom(A, `ws://127.0.0.1:4800/peer/${B}/ws/watch?path=${encodeURIComponent(fixture.path)}`, { holdMs: 3000 });
+    assert.ok(r.opened, JSON.stringify(r));
+    assert.ok(r.messages.some((m) => m.includes(`Hello from ${B}.`)), `B's transcript in the stream: ${JSON.stringify(r.messages).slice(0, 400)}`);
   });
 
   test("a peer whose Sova is down is reported down (502), never 4422, and comes back", async () => {
@@ -191,8 +216,8 @@ describe("proxy", () => {
 });
 
 describe("mesh off", () => {
-  test("the plain host (no tailscale, no peers.json) reports the mesh off", async () => {
-    if (!cfg.plain) return;
+  test("the plain host (no tailscale, no peers.json) reports the mesh off", async (t) => {
+    if (!cfg.plain) return t.skip("the lab has no plain (lab up --no-plain)");
     const m = await meshOf("plain");
     assert.equal(m.enabled, false);
     assert.deepEqual(m.peers, []);
@@ -204,8 +229,14 @@ describe("mesh off", () => {
       assert.equal((await meshOf(A)).enabled, false);
       assert.equal(listening(A), false, "nothing on the peer port");
       assert.equal(curlFrom(B, `http://${magicName(A)}:${PEER_PORT}/api/peer/hello`, { timeoutS: 3 }).status, 0);
-      const r = await laptopFetch(A, `/peer/${B}/api/health`);
-      assert.notEqual(r.status, 502, "no proxy when off");
+      // with the mesh off, A answers /peer/* exactly as a host that never had a mesh does
+      const [r, ref] = await Promise.all([laptopFetch(A, `/peer/${B}/api/health`), cfg.plain ? laptopFetch("plain", `/peer/${B}/api/health`) : null]);
+      const body = await r.text();
+      assert.equal(r.headers.get("x-sova-mesh"), null, "not the peer proxy");
+      if (ref) {
+        assert.equal(r.status, ref.status, "same status as the plain host");
+        assert.equal(body, await ref.text(), "same body as the plain host");
+      } else assert.notEqual(r.status, 502, "no proxy when off");
     } finally {
       lab("pair", cfg.hosts.join(","));
     }

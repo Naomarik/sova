@@ -105,8 +105,8 @@ describe("hosts", () => {
     }
   });
 
-  test("each host lists its own sessions and not the others'", async () => {
-    if (!cfg.seed) return;
+  test("each host lists its own sessions and not the others'", async (t) => {
+    if (!cfg.seed) return t.skip("the lab has no seed (lab up --no-seed)");
     const seen = new Map();
     for (const n of cfg.hosts) {
       const list = await (await laptopFetch(n, "/api/sessions")).json();
@@ -117,8 +117,8 @@ describe("hosts", () => {
     }
   });
 
-  test("the plain host has no tailscale at all", () => {
-    if (!cfg.plain) return;
+  test("the plain host has no tailscale at all", (t) => {
+    if (!cfg.plain) return t.skip("the lab has no plain (lab up --no-plain)");
     assert.notEqual(sh("plain", "command -v tailscale || command -v tailscaled").code, 0, "no binaries");
     assert.equal(sh("plain", "ip link show tailscale0").code, 1, "no tailscale0");
     assert.equal(sh("plain", "test -e /var/run/tailscale/tailscaled.sock").code, 1, "no LocalAPI socket");
@@ -160,8 +160,8 @@ describe("isolation from the laptop's real tailnet", () => {
 });
 
 describe("front door", () => {
-  test("serves the first healthy host in order, WebSockets included", async () => {
-    if (!cfg.frontdoor) return;
+  test("serves the first healthy host in order, WebSockets included", async (t) => {
+    if (!cfg.frontdoor) return t.skip("the lab has no frontdoor (lab up --no-frontdoor)");
     const first = (cfg.order && cfg.order.length ? cfg.order : cfg.hosts)[0];
     const res = await waitFor(async () => {
       const r = await laptopFetch("frontdoor", "/api/health");

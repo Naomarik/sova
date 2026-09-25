@@ -178,6 +178,18 @@ The body depends on the server message (the server sends free text, so match on 
 The banner goes away on Dismiss, after the next successful switch, or when you leave the session.
 It never auto-dismisses, because it's the only record of the failure.
 
+## §chat.model-menu/saved-default — The default for new sessions
+
+A new session starts on the saved default model and thinking level (`defaults.json` in Sova's
+state directory; a model since turned off in Settings → Models is skipped). **Only an explicit
+pick in a brand-new session's composer becomes that default**: choosing a model in this picker, or
+a level in the flyout's Thinking group, while the session's branch has no message from the user
+yet. After the first message a pick is that session's alone. A switch the user did not pick in
+the composer never saves: one the Overseer makes on a session it creates or acts on
+(§app.overseer/tools), or Settings → Overseer applying its choice to the Overseer's own
+conversation. The Overseer's own composer saves to `overseer.json` instead, never to this default
+(§app.overseer/hosting).
+
 ## §chat.model-menu/tokens — Tokens
 
 - **Trigger.** The flyout's `plus` `.button-icon.button-ghost` at 44px, `--color-sunken` while

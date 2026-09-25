@@ -1,6 +1,6 @@
 import { createEffect, createMemo, createResource, createSignal, For, Index, Show } from "solid-js";
 import type { OverseerCaps, OverseerProactivity, OverseerQuickAction, OverseerSettings } from "../../shared/protocol";
-import { ApiError, getOverseerNotes, getOverseerSettings, putOverseerNotes, putOverseerSettings } from "../lib/api";
+import { ApiError, getDelegateOptions, getDelegateSettings, getOverseerNotes, getOverseerSettings, putOverseerNotes, putOverseerSettings } from "../lib/api";
 import { tildePath } from "../lib/format";
 import { loadModelPolicy, usableModels } from "../lib/model-policy";
 import { loadModels, modelList, thinkingLevelsFor } from "../lib/models";
@@ -22,12 +22,12 @@ import {
 } from "../lib/overseer-draft";
 import { announce, home } from "../lib/ui-state";
 import { Banner, Icon } from "./ui";
-import { RetryButton, sentence } from "./WorkerSlotRow";
+import { RetryButton, sentence, WorkerSlotRow } from "./WorkerSlotRow";
 
 /**
  * Settings → Overseer: the model it runs on, what it is told beyond its own prompt, how forward it
- * is, its quick actions, the limits on what one message can make it do, and the standing notes it
- * keeps across /clear. One Save for all of it, with the Delegate hold on unsaved edits.
+ * is, the exploratory agent it launches per idea, its quick actions, the limits on what one message
+ * can make it do, and the standing notes it keeps across /clear. One Save for all of it, with the Delegate hold on unsaved edits.
  */
 export function OverseerSettingsSection() {
   const [info, { mutate: setInfo, refetch }] = createResource(getOverseerSettings);
@@ -35,6 +35,12 @@ export function OverseerSettingsSection() {
   const [saving, setSaving] = createSignal(false);
   const [saveError, setSaveError] = createSignal<{ message: string; partial: boolean } | null>(null);
   const [warnings, setWarnings] = createSignal<string[]>([]);
+  // The exploratory agent's row: Delegate's backends and discovered models (it is a subagent, so
+  // the same "off for subagents" policy marks apply).
+  const [backends] = createResource(getDelegateSettings);
+  const [workerOptions, { refetch: refetchWorkerOptions }] = createResource(getDelegateOptions);
+  const knownBackends = () => (backends.state === "ready" ? backends() : undefined);
+  const knownOptions = () => (workerOptions.state === "ready" ? workerOptions() : undefined);
   // The model list and the policy that trims it, the composer picker's sources.
   void loadModels().catch(() => {});
   void loadModelPolicy().catch(() => {});
@@ -232,6 +238,56 @@ export function OverseerSettingsSection() {
                   </div>
                 </div>
                 <p class="field-hint">Applies when the Overseer is idle. It never changes the model new sessions start with.</p>
+              </fieldset>
+
+              <fieldset class="settings-delegate-profile">
+                <legend class="settings-delegate-legend">Exploratory agent</legend>
+                <p class="field-hint settings-delegate-desc">
+                  When you keep working on an idea, the Overseer can launch an agent to plan it with you. It reads, never edits a
+                  repository, and reports back to the Overseer.
+                </p>
+                <Show when={workerOptions.error}>
+                  <Banner
+                    tone="warn"
+                    title="Couldn't check which models are offered."
+                    body="Your saved choice stays, marked not verified."
+                    action={<RetryButton label="Check Again" onClick={() => void refetchWorkerOptions()} />}
+                  />
+                </Show>
+                <Show
+                  when={knownBackends()}
+                  fallback={
+                    <p class="field-hint">
+                      <Show when={backends.error} fallback="Loading the backends…">
+                        Couldn't load the backends. Saved: <code>{cur().settings.explorer.backend}</code> · <code>{cur().settings.explorer.model}</code> ·{" "}
+                        {cur().settings.explorer.effort}.
+                      </Show>
+                    </p>
+                  }
+                >
+                  {(b) => (
+                    <WorkerSlotRow
+                      idPrefix="overseer-explorer"
+                      slot="primary"
+                      alone="Exploratory agent"
+                      info={b()}
+                      options={knownOptions()}
+                      choice={cur().settings.explorer}
+                      other={null}
+                      disabled={saving()}
+                      owner="The Overseer"
+                      onChange={(next) => edit({ explorer: next })}
+                    />
+                  )}
+                </Show>
+                <button
+                  type="button"
+                  class="button button-sm button-ghost overseer-caps-reset"
+                  disabled={saving()}
+                  onClick={() => edit({ explorer: { ...loaded()!.defaults.explorer } })}
+                >
+                  Reset to Default
+                </button>
               </fieldset>
 
               <fieldset class="settings-delegate-profile">

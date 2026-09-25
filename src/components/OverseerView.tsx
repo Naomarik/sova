@@ -1,6 +1,6 @@
 import { createEffect, createMemo, createResource, createSignal, For, on, Show } from "solid-js";
 import type { OverseerInfo, OverseerProactivity, SessionSummary } from "../../shared/protocol";
-import { clearOverseer, getOverseer, getOverseerSettings, putOverseerSettings } from "../lib/api";
+import { clearOverseer, getOverseer, getOverseerIdeas, getOverseerSettings, putOverseerSettings } from "../lib/api";
 import { relativeTime, shortModel } from "../lib/format";
 import { nextProactivity, OVERSEER_HASH, overseerHistoryHref, PROACTIVITY_HINT, PROACTIVITY_LABEL } from "../lib/overseer";
 import { isMainThread } from "../lib/regions";
@@ -8,8 +8,9 @@ import { settingsOpenAt } from "../lib/settings-nav";
 import { announce, toast } from "../lib/ui-state";
 import { sessionWorking } from "../lib/workers";
 import { ActionMenu } from "./ActionMenu";
-import type { OverseerChat } from "./ChatView";
+import type { OverseerChat, OverseerSender } from "./ChatView";
 import { ContextGauge } from "./ContextGauge";
+import { OverseerIdeas } from "./OverseerIdeas";
 import type { PaneWiring } from "./GroupView";
 import { SessionView } from "./SessionView";
 import { Icon } from "./ui";
@@ -62,6 +63,27 @@ export function OverseerView(props: {
     return parts.join(" · ");
   };
 
+  // ---- Ideas: the backlog the Overseer files, in a panel over the chat's right side -----------
+  const [ideasOpen, setIdeasOpen] = createSignal(false);
+  const [ideas, { refetch: refetchIdeas }] = createResource(getOverseerIdeas);
+  const ideasInfo = () => (ideas.error ? undefined : ideas());
+  const ideasError = () => (ideas.error ? ((ideas.error as Error).message ?? String(ideas.error)) : null);
+  /** Bumps when the backlog may have changed: an Overseer turn ended, or (panel open) the list refreshed. */
+  const [ideasVersion, setIdeasVersion] = createSignal(0);
+  const bumpIdeas = () => {
+    setIdeasVersion((v) => v + 1);
+    void refetchIdeas();
+  };
+  createEffect(on(() => !!props.info?.busy, (busy, was) => was && !busy && bumpIdeas(), { defer: true }));
+  createEffect(on(() => props.wiring.listVersion, () => ideasOpen() && bumpIdeas(), { defer: true }));
+  createEffect(on(ideasOpen, (open) => open && void refetchIdeas(), { defer: true }));
+  const [sender, setSender] = createSignal<OverseerSender | null>(null);
+  let ideasButton: HTMLButtonElement | undefined;
+  const closeIdeas = () => {
+    setIdeasOpen(false);
+    queueMicrotask(() => ideasButton?.focus());
+  };
+
   const [clearing, setClearing] = createSignal(false);
   const clear = async (): Promise<boolean> => {
     if (clearing()) return false;
@@ -109,6 +131,11 @@ export function OverseerView(props: {
 
   const overseer: OverseerChat = {
     quickActions,
+    // A remount can bind the new chat before the old one unbinds: only the bound one clears.
+    bindSender: (s) => {
+      setSender(() => s);
+      return () => setSender((cur) => (cur === s ? null : cur));
+    },
     onClear: clear,
     // Read the route afresh BEFORE remounting: a remount on the old path would reopen a file the
     // clear just retired. A new path remounts through the key; the same path needs the bump.
@@ -171,6 +198,22 @@ export function OverseerView(props: {
         </button>
           </>
         )}
+      </Show>
+      <Show when={!p.earlier && props.info}>
+        <button
+          type="button"
+          class="button button-sm button-ghost overseer-ideas-toggle"
+          ref={ideasButton}
+          aria-expanded={ideasOpen()}
+          aria-controls="overseer-ideas"
+          aria-label={ideasInfo() ? `Ideas, ${ideasInfo()!.toc.total}` : "Ideas"}
+          title="The ideas the Overseer has filed for later."
+          onClick={() => (ideasOpen() ? closeIdeas() : setIdeasOpen(true))}
+        >
+          <Icon name="star" small />
+          <span class="overseer-ideas-word">Ideas</span>
+          <Show when={ideasInfo()}>{(i) => <span class="chip chip-count">{i().toc.total}</span>}</Show>
+        </button>
       </Show>
       <Show when={history().length > 0}>
         <ActionMenu label="Earlier Overseer conversations" title="Earlier conversations" icon="clock" text="History" class="button-sm">
@@ -294,6 +337,7 @@ export function OverseerView(props: {
           const summary = () => summaryFor(path, info.id, "Overseer");
           const w = props.wiring;
           return (
+            <>
             <SessionView
               path={path}
               summary={summary}
@@ -316,6 +360,22 @@ export function OverseerView(props: {
               subagentsPath={w.subagentsPath}
               onNewSession={w.onNewSession}
             />
+            <Show when={ideasOpen()}>
+              <OverseerIdeas
+                ideas={ideasInfo()}
+                error={ideasError()}
+                refetch={bumpIdeas}
+                version={ideasVersion()}
+                sender={sender}
+                now={w.now}
+                onClose={closeIdeas}
+                onSent={() => {
+                  // Folded, the panel covers the chat: step aside so the Overseer's answer shows.
+                  if (!window.matchMedia("(min-width: 768px)").matches) closeIdeas();
+                }}
+              />
+            </Show>
+            </>
           );
         }}
       </Show>

@@ -11,6 +11,9 @@ import type {
   ModeInfo,
   ModelFavoriteResult,
   ModelInfo,
+  IdeaPatch,
+  OverseerIdeaDetail,
+  OverseerIdeasInfo,
   OverseerInfo,
   OverseerSaveResult,
   OverseerSettings,
@@ -175,6 +178,17 @@ export const getOverseerNotes = () => request<{ text: string }>("/api/overseer/n
     the file holds something else by now, so an edit never deletes a note the Overseer added. */
 export const putOverseerNotes = (text: string, base?: string) =>
   request<{ text: string }>("/api/overseer/notes", { method: "PUT", body: JSON.stringify(base === undefined ? { text } : { text, base }) });
+
+/** The Overseer's ideas backlog: the ToC, every record and the link edges (no prose). */
+export const getOverseerIdeas = () => request<OverseerIdeasInfo>("/api/overseer/ideas");
+
+/** One idea with its prose, the ideas it reaches (scope) and the ones that link to it. 404: no such idea. */
+export const getOverseerIdea = (id: string) => request<OverseerIdeaDetail>(`/api/overseer/idea?id=${encodeURIComponent(id)}`);
+
+/** Edit an idea. `patch.base` = the updatedAt the edit started from: the server refuses (409, an
+    IdeaConflict carrying the current detail in `ApiError.body`) when the idea changed since. */
+export const patchOverseerIdea = (id: string, patch: IdeaPatch) =>
+  request<OverseerIdeaDetail>(`/api/overseer/idea?id=${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(patch) });
 
 /** Settings → Overseer. */
 export const getOverseerSettings = () => request<OverseerSettingsInfo>("/api/settings/overseer");

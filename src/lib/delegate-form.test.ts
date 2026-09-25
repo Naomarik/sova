@@ -92,6 +92,11 @@ test("each row says what the server's save check would", () => {
   assert.deepEqual(issue(claude("bad/alias", "low")), { tone: "error", text: "Claude Code doesn't offer bad/alias." }, "only a shape-invalid Claude id is an error");
   assert.deepEqual(issue(claude("claude-fable-5-1[1m]", "max")), { tone: "error", text: "claude-fable-5-1[1m] doesn't take max effort." });
   assert.deepEqual(issue(claude("opus[1m]", "low")), { tone: "warn", text: "claude-code is off for subagents in Settings → Models. Delegate uses the fallback, or asks." });
+  assert.deepEqual(
+    slotIssue(info, options, claude("opus[1m]", "low"), null, "primary", "Exploring", false),
+    { tone: "warn", text: "claude-code is off for subagents in Settings → Models." },
+    "a row with no fallback never promises one",
+  );
   assert.deepEqual(issue(claude("gone", "low"), claudeDown), {
     tone: "muted",
     text: "Not verified: Claude Code couldn't list its models.",

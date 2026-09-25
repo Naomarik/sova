@@ -28,6 +28,7 @@ export const cloneOverseer = (d: OverseerDraft): OverseerDraft => ({
     ...d.settings,
     quickActions: d.settings.quickActions.map((a) => ({ ...a })),
     caps: { ...d.settings.caps },
+    explorer: { ...d.settings.explorer },
   },
   notes: d.notes,
 });
@@ -152,13 +153,14 @@ export function resetOverseerDraft(): void {
   setSaved(null);
 }
 
-export const CAP_KEYS = ["createPerTurn", "promptsPerTurn", "archivesPerTurn", "concurrentSessions"] as const satisfies readonly (keyof OverseerCaps)[];
+export const CAP_KEYS = ["createPerTurn", "promptsPerTurn", "archivesPerTurn", "concurrentSessions", "explorePerTurn"] as const satisfies readonly (keyof OverseerCaps)[];
 
 export const CAP_LABEL: Record<keyof OverseerCaps, { label: string; hint: string }> = {
   createPerTurn: { label: "Sessions created", hint: "Per message you send." },
   promptsPerTurn: { label: "Prompts to other sessions", hint: "Per message you send." },
   archivesPerTurn: { label: "Sessions archived", hint: "Per message you send." },
   concurrentSessions: { label: "Running at once", hint: "Sessions the Overseer started that are working at the same time." },
+  explorePerTurn: { label: "Ideas explored", hint: "Exploratory agents launched, per message you send." },
 };
 
 /** Why the draft can't be saved, one sentence, or null. */
@@ -169,6 +171,7 @@ export function overseerDraftProblem(d: OverseerDraft): string | null {
   }
   const blank = d.settings.quickActions.findIndex((a) => !a.label.trim() || !a.prompt.trim());
   if (blank >= 0) return `Quick action ${blank + 1} needs a label and a prompt.`;
+  if (!d.settings.explorer.model || !d.settings.explorer.effort) return "The exploratory agent needs a model and an effort.";
   return null;
 }
 

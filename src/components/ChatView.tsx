@@ -119,6 +119,18 @@ export interface OverseerChat {
   onReloaded(): void;
   /** The empty thread's words: a live fact, then the absence. */
   empty(): JSX.Element;
+  /** Hands the page this chat's own send while it is mounted, so a control outside the thread (the
+      Ideas panel) sends an ordinary user message, as a quick action does. Returns the unbind the
+      chat calls when it unmounts. */
+  bindSender?(sender: OverseerSender): () => void;
+}
+
+/** A user message into the Overseer's chat, through the composer's own send. */
+export interface OverseerSender {
+  /** False when nothing was sent (the model is off, the socket is down). */
+  send(text: string): boolean;
+  /** Why sending is not possible right now, in the composer's words; null when it is. */
+  blocked(): string | null;
 }
 
 /** ui_request kinds UiDialog can show; anything else needs the terminal UI. */
@@ -975,6 +987,19 @@ export function ChatView(props: {
     if (compacting() || pending().compact > 0) return { icon: "clock", text: COMPACTING_REASON };
     return null;
   };
+
+  if (props.overseer?.bindSender) {
+    const unbind = props.overseer.bindSender({
+      send: (text) => {
+        if (blocked()) return false;
+        const sent = send(text, false, []);
+        if (sent) focusComposer();
+        return sent;
+      },
+      blocked: () => blocked()?.text ?? null,
+    });
+    onCleanup(unbind);
+  }
 
   // ---- Model switching ------------------------------------------------
   const idOf = (ref: string) => ref.slice(ref.indexOf("/") + 1);

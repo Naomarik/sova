@@ -26,7 +26,8 @@ const settings = (): OverseerSettings => ({
   extraSystemPrompt: "",
   proactivity: "badge",
   quickActions: [{ id: "attention", label: "What Needs Me", description: "Sessions waiting on you.", prompt: "What needs my attention?" }],
-  caps: { createPerTurn: 5, promptsPerTurn: 10, archivesPerTurn: 50, concurrentSessions: 5 },
+  caps: { createPerTurn: 5, promptsPerTurn: 10, archivesPerTurn: 50, concurrentSessions: 5, explorePerTurn: 2 },
+  explorer: { backend: "claude-code", model: "opus[1m]", effort: "medium" },
 });
 
 test("an edit anywhere — a quick action, a cap, the notes — makes the draft dirty; putting it back doesn't", () => {
@@ -71,12 +72,12 @@ function fakeServer(settings: OverseerSettings, notes: string) {
   const file = { settings: cloneOverseer({ settings, notes }).settings, notes };
   const puts: { settings: OverseerSettings[]; notes: { text: string; base: string }[] } = { settings: [], notes: [] };
   const io = {
-    getSettings: async () => ({ settings: cloneOverseer(file).settings, file: "/x/overseer.json", defaults: { quickActions: [], caps: settings.caps } }),
+    getSettings: async () => ({ settings: cloneOverseer(file).settings, file: "/x/overseer.json", defaults: { quickActions: [], caps: settings.caps, explorer: settings.explorer } }),
     getNotes: async () => file.notes,
     putSettings: async (s: OverseerSettings): Promise<OverseerSaveResult> => {
       puts.settings.push(s);
       file.settings = s;
-      return { settings: s, file: "/x/overseer.json", defaults: { quickActions: [], caps: s.caps }, warnings: [] };
+      return { settings: s, file: "/x/overseer.json", defaults: { quickActions: [], caps: s.caps, explorer: s.explorer }, warnings: [] };
     },
     putNotes: async (text: string, base: string) => {
       puts.notes.push({ text, base });
@@ -172,4 +173,28 @@ test("rebase goes cap by cap; a field added to the settings later follows the fi
   assert.equal(out.settings.caps.createPerTurn, 1);
   assert.equal(out.settings.caps.archivesPerTurn, 7);
   assert.equal((out.settings as unknown as Record<string, unknown>).future, "x");
+});
+
+test("the exploratory agent: an edit is dirty, deep-cloned, rebased as one choice, and must be complete", () => {
+  resetOverseerDraft();
+  setOverseerSaved({ settings: settings(), notes: "" });
+  const d = cloneOverseer(overseerDraft()!);
+  d.settings.explorer.effort = "high";
+  assert.equal(overseerSaved()!.settings.explorer.effort, "medium", "the clone is deep: the saved copy keeps its effort");
+  setOverseerDraft(d);
+  assert.equal(overseerDirty(), true);
+
+  // The file changed a cap meanwhile: the user's explorer stays, the cap follows the file.
+  const fresh = settings();
+  fresh.caps.explorePerTurn = 4;
+  const out = rebaseOverseer(d, { settings: settings(), notes: "" }, { settings: fresh, notes: "" });
+  assert.deepEqual(out.settings.explorer, { backend: "claude-code", model: "opus[1m]", effort: "high" });
+  assert.equal(out.settings.caps.explorePerTurn, 4);
+
+  const blank = cloneOverseer({ settings: settings(), notes: "" });
+  blank.settings.explorer = { backend: "pi", model: "", effort: "" };
+  assert.match(overseerDraftProblem(blank)!, /exploratory agent/);
+  const badCap = cloneOverseer({ settings: settings(), notes: "" });
+  badCap.settings.caps.explorePerTurn = -1;
+  assert.match(overseerDraftProblem(badCap)!, /Ideas explored/);
 });

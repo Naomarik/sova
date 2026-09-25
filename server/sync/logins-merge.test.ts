@@ -517,6 +517,11 @@ test("a refreshed pre-sync entry (no account) is the same login as its lineage's
   const logout: Tombstone = { at: NOW, by: "a", of: { fingerprint: once.fingerprint, lineage: old.fingerprint, kind: "oauth" } };
   assert.equal(admissible(old, logout), false);
   assert.equal(admissible(other, logout), true);
+  // And the other way: a peer's logout of the copy from before the refresh rules out the refreshed entry.
+  const oldLogout: Tombstone = { at: NOW, by: "b", of: { fingerprint: old.fingerprint, kind: "oauth" } };
+  assert.equal(admissible(once, oldLogout), false);
+  assert.equal(admissible(twice, oldLogout), false);
+  assert.equal(admissible(other, oldLogout), true);
   assert.ok(isEntryMeta(once) && isKeyRecord({ tombstone: logout }));
   assert.equal(isEntryMeta({ ...once, lineage: "not-a-fingerprint" }), false);
   assert.equal(isKeyRecord({ tombstone: { ...logout, of: { ...logout.of!, lineage: 7 } } }), false);

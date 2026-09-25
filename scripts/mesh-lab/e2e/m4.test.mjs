@@ -136,14 +136,48 @@ describe("ordered failover", () => {
   });
 
   test("first host's container killed: the second serves; restarted: fails back", async () => {
+    // A killed container blackholes its address. Sova's front door reuses upstream connections
+    // (keepalive), so a request written into an idle pooled connection to the dead host waits for
+    // the header timeout (35 s) and gets 504; new requests wait the 2 s dial and are retried on the
+    // next host, and the health check then sends everything there. Checked: the failover time seen
+    // by a client that gives up after 3 s (a browser retry), and that the requests fired every
+    // 100 ms for 5 s after the kill (not waiting for each other) either answer within 3 s or are
+    // among at most POOL hung ones, each a 504 within the header timeout, none longer.
     const [first, second] = order;
+    const POOL = 4;
+    const shots = [];
+    const fire = () => {
+      const t = Date.now();
+      shots.push(
+        laptopFetch("frontdoor", "/api/health", { timeoutMs: 45000 }).then(
+          (r) => ({ ms: Date.now() - t, status: r.status }),
+          (e) => ({ ms: Date.now() - t, status: 0, err: String(e?.cause?.code ?? e?.name ?? e) }),
+        ),
+      );
+    };
     chaos.kill(first);
     try {
       const t0 = Date.now();
-      await servedBy(second, 30000);
+      fire();
+      const timer = setInterval(fire, 100);
+      setTimeout(() => clearInterval(timer), 5000);
+      await waitFor(
+        async () => {
+          const r = await laptopFetch("frontdoor", "/api/health", { timeoutMs: 3000 });
+          return r.status === 200 && r.headers.get("x-sova-upstream")?.split(".")[0] === second;
+        },
+        { timeoutMs: 30000, intervalMs: 500, what: `front door served by ${second}` },
+      );
       const ms = Date.now() - t0;
-      console.log(`# failover ${first} -> ${second} (container killed): ${ms} ms`);
+      console.log(`# failover ${first} -> ${second} (container killed; 3 s client timeout): ${ms} ms`);
+      await new Promise((r) => setTimeout(r, Math.max(0, 5200 - (Date.now() - t0))));
+      const done = await Promise.all(shots);
+      const hung = done.filter((r) => r.ms > 3000);
+      console.log(`# requests fired over 5 s after the kill: ${done.length}; answered within 3 s: ${done.length - hung.length}; hung: ${hung.map((r) => `${r.status || r.err} after ${r.ms} ms`).join(", ") || "none"}`);
       assert.ok(ms <= 8000, `failover on a killed host took ${ms} ms (bound 8 s)`);
+      assert.ok(hung.length <= POOL, `${hung.length} requests hung (at most ${POOL}, the pooled connections)`);
+      for (const r of hung) assert.ok(r.status === 504 && r.ms <= 36000, `a hung request ended ${r.status || r.err} after ${r.ms} ms (want 504 within 35 s)`);
+      for (const r of done.filter((r) => r.ms <= 3000)) assert.equal(r.status, 200, "a request answered within 3 s is a 200");
     } finally {
       chaos.start(first);
     }

@@ -167,8 +167,10 @@ The harnesses:
   sync-engineer's `mock-token-server/m3-drive.mjs`, one test each. H3/H4/H7/H8/H10 partition or
   stop hosts, so skip them with `--test-name-pattern "^(?!H(3|4|7|8|10)\b)"`.
 - **m4** (restores order and hosts): the first host in the order serves the SPA; Sova stopped on the
-  first host fails over to the second in ~1 s and fails back in <1 s; a killed first container fails
-  over in ~1.3 s; with the first two down, the third serves; an order change applies at once; a WS
+  first host fails over to the second in 1–2 s and fails back in 1–2 s; a killed first container fails
+  over within 8 s for a client that retries after 3 s (measured 3.5 s), and of the requests fired every
+  100 ms for 5 s after the kill at most 4 (the pooled connections; measured 1) hang, each a 504 at the
+  35 s header timeout, the rest answer within 3 s; with the first two down, the third serves; an order change applies at once; a WS
   held through the front door closes when its host dies (never 4422), and a reconnect lands on the
   next host. The stale-tab check itself is frontend's.
 

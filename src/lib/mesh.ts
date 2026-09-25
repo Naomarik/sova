@@ -265,3 +265,13 @@ export function helloChange(was: HelloBaseline, now: HelloBaseline): HelloChange
   const host = was.id !== now.id ? { from: was.label || was.id, to: now.label || now.id } : null;
   return protocol || build || host ? { protocol, build, host } : null;
 }
+
+/** `items` with the one at `from` moved to `to`; a copy unchanged when either is out of range. */
+export function moveItem<T>(items: readonly T[], from: number, to: number): T[] {
+  if (from === to || from < 0 || to < 0 || from >= items.length || to >= items.length) return [...items];
+  const next = [...items];
+  const [it] = next.splice(from, 1);
+  next.splice(to, 0, it!);
+  return next;
+}
+

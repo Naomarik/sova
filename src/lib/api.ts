@@ -30,6 +30,7 @@ import type {
   UsageInsight,
   WebSettings,
   WorkerResumeResult,
+  FrontDoorConfig,
   MeshCandidate,
   MeshHello,
   MeshInfo,
@@ -658,6 +659,9 @@ export const fetchMeshCandidates = () => request<MeshCandidate[]>("/api/mesh/can
 export const fetchMeshSessions = () => request<MeshSessions>("/api/mesh/sessions");
 
 export const getMeshSettings = () => request<MeshSettings>("/api/mesh/settings");
+
+/** The Caddy front door these hosts would need, in failover order. Generated only: Sova never runs Caddy. */
+export const fetchFrontDoor = () => request<FrontDoorConfig>("/api/mesh/front-door");
 
 export const putMeshSettings = (settings: Partial<MeshSettings>) =>
   request<MeshSettings>("/api/mesh/settings", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(settings) });

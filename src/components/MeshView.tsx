@@ -1,9 +1,11 @@
-import { createSignal, For, Show } from "solid-js";
-import { fetchMesh, fetchMeshCandidates, putMeshPeers } from "../lib/api";
+import { createResource, createSignal, For, Show } from "solid-js";
+import { fetchFrontDoor, fetchMesh, fetchMeshCandidates, putMeshPeers, putMeshSettings } from "../lib/api";
+import { copyText } from "../lib/ui-state";
 import { relativeTime } from "../lib/format";
 import {
   MESH_HREF,
   meshPeers,
+  moveItem,
   meshState,
   peerUnavailable,
   selfLabel,
@@ -20,7 +22,7 @@ import { createPoll } from "../lib/poll";
 import { openSettings } from "../lib/settings-nav";
 import { announce } from "../lib/ui-state";
 import { iso, InsightsPage } from "./InsightsPage";
-import { Banner, Chip, Icon } from "./ui";
+import { Banner, Chip, CopyButton, Icon } from "./ui";
 import "../mesh.css";
 
 /** While #/mesh is open the host list is re-read this often: status is what the page is for. */
@@ -444,6 +446,8 @@ export function MeshView(props: { now: number; titleRef(el: HTMLHeadingElement):
         </Show>
       </section>
 
+      <FrontDoorSection frontDoor={state()?.frontDoor ?? null} />
+
       <details class="card mesh-card mesh-setup" open={meshPeers().length === 0}>
         <summary class="mesh-card-title">Setting up a first peer</summary>
         <ol class="mesh-steps">
@@ -546,5 +550,133 @@ export function StaleTabBanner(props: { change: HelloChange; onDismiss(): void }
         />
       </Show>
     </div>
+  );
+}
+
+/**
+ * The front door: the order hosts take over in, and the Caddyfile that does it. Sova only
+ * generates the file; Caddy runs wherever the user puts it. Each move is saved at once (the order
+ * is a setting like any other), and the file below is re-read so it always matches the list.
+ */
+function FrontDoorSection(props: { frontDoor: string | null }) {
+  const [config, { refetch, mutate }] = createResource(fetchFrontDoor);
+  const [saving, setSaving] = createSignal(false);
+  const [error, setError] = createSignal<string | null>(null);
+  const buttons = new Map<string, HTMLButtonElement>();
+
+  const move = async (from: number, to: number) => {
+    const c = config();
+    if (!c || saving()) return;
+    const before = c;
+    const order = moveItem(c.order, from, to);
+    const moved = order[to]!;
+    mutate({ ...c, order });
+    setSaving(true);
+    setError(null);
+    try {
+      await putMeshSettings({ frontDoorOrder: order.map((h) => h.id) });
+      announce(`${moved.label || moved.id} is now number ${to + 1} of ${order.length}.`);
+      await refetch();
+    } catch (err) {
+      mutate(before);
+      setError((err as Error).message);
+    } finally {
+      setSaving(false);
+      // The pressed button may be gone (the row moved to an end): keep focus on the row that moved.
+      const key = `${moved.id}:${to > from ? "down" : "up"}`;
+      const alt = `${moved.id}:${to > from ? "up" : "down"}`;
+      const el = buttons.get(key);
+      (el && el.getAttribute("aria-disabled") !== "true" ? el : buttons.get(alt))?.focus();
+    }
+  };
+
+  return (
+    <section class="card mesh-card" aria-labelledby="mesh-front-door-title">
+      <h2 class="mesh-card-title" id="mesh-front-door-title">
+        Front door
+      </h2>
+      <p class="settings-intro">
+        One address for all your hosts: the first one in this order that answers serves you, and the next takes over when it stops.
+        <Show when={props.frontDoor}>
+          {(url) => (
+            <>
+              {" "}
+              Yours is <span class="text-mono">{url()}</span>.
+            </>
+          )}
+        </Show>
+      </p>
+      <Show when={config.error}>
+        {(err) => <Banner tone="error" title="Couldn't read the front door." body={`Nothing was changed. ${(err() as Error).message}`} />}
+      </Show>
+      <Show when={error()}>
+        {(msg) => <Banner tone="error" title="Couldn't save the order." body={`The previous order stands. ${msg()}`} />}
+      </Show>
+      <Show when={config.latest}>
+        {(c) => (
+          <>
+            <ol class="list mesh-order" aria-label="Failover order">
+              <For each={c().order}>
+                {(h, i) => {
+                  const name = () => h.label || h.id;
+                  const first = () => i() === 0;
+                  const last = () => i() === c().order.length - 1;
+                  return (
+                    <li class="list-row mesh-host">
+                      <span class="mesh-order-n text-num" aria-hidden="true">
+                        {i() + 1}
+                      </span>
+                      <div class="list-main">
+                        <p class="list-title">{name()}</p>
+                        <p class="list-meta text-mono">{h.upstream}</p>
+                      </div>
+                      <button
+                        type="button"
+                        class="button button-icon button-ghost"
+                        aria-label={`Move ${name()} Up`}
+                        title="Move Up"
+                        aria-disabled={first() || saving() ? "true" : undefined}
+                        ref={(el) => buttons.set(`${h.id}:up`, el)}
+                        onClick={() => !first() && void move(i(), i() - 1)}
+                      >
+                        <Icon name="chevron-down" class="mesh-icon-up" />
+                      </button>
+                      <button
+                        type="button"
+                        class="button button-icon button-ghost"
+                        aria-label={`Move ${name()} Down`}
+                        title="Move Down"
+                        aria-disabled={last() || saving() ? "true" : undefined}
+                        ref={(el) => buttons.set(`${h.id}:down`, el)}
+                        onClick={() => !last() && void move(i(), i() + 1)}
+                      >
+                        <Icon name="chevron-down" />
+                      </button>
+                    </li>
+                  );
+                }}
+              </For>
+            </ol>
+            <div class="mesh-code-head">
+              <h3 class="mesh-add-title">Caddyfile</h3>
+              <CopyButton label="Copy Caddyfile" text={() => c().caddyfile} onCopy={(t) => copyText(t, "Copied the Caddyfile.")} />
+            </div>
+            <pre class="mesh-code" aria-label="Caddyfile" tabindex="0">
+              <code>{c().caddyfile}</code>
+            </pre>
+            <p class="settings-intro">
+              Run Caddy with this file on a machine that stays up and can reach every host over the tailnet (a small server, or this one).
+            </p>
+            <p class="settings-intro">
+              Then put the address it serves in{" "}
+              <button type="button" class="mesh-link" onClick={() => openSettings("mesh")}>
+                Settings → Mesh → Front door
+              </button>
+              , so the hosts know it.
+            </p>
+          </>
+        )}
+      </Show>
+    </section>
   );
 }

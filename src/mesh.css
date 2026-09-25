@@ -124,3 +124,21 @@
   box-shadow: var(--shadow-2);
   border-radius: var(--r-lg);
 }
+
+/* Front door: the failover order and the generated Caddyfile. */
+.mesh-order { margin: 0; padding: 0; }
+.mesh-order-n { flex: none; width: 2ch; text-align: right; color: var(--color-ink-muted); font-size: var(--fs-caption); }
+.mesh-icon-up { transform: rotate(180deg); }
+.mesh-code-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
+.mesh-code { margin: 0; max-height: 24rem; overflow: auto; font-size: var(--fs-mono); line-height: var(--lh-mono); }
+.mesh-code:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.mesh-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--color-accent);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.mesh-link:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); border-radius: var(--r-xs); }

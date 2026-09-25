@@ -17,6 +17,7 @@ import {
   SELF_FILTER,
   meshRetryDelay,
   helloChange,
+  moveItem,
   setMeshState,
   sessionRouteFromHash,
   
@@ -164,4 +165,11 @@ test("after a failover, the new host's own paths are local again", () => {
   assert.equal(hostOf(A), null, "b's session, and this page is now served by b");
   assert.equal(routeUrl(`/api/transcript?path=${q(A)}`), `/api/transcript?path=${q(A)}`);
   setMeshState(null);
+});
+
+test("moving a host in the front-door order moves only it; an out-of-range move changes nothing", () => {
+  assert.deepEqual(moveItem(["a", "b", "c"], 0, 1), ["b", "a", "c"]);
+  assert.deepEqual(moveItem(["a", "b", "c"], 2, 1), ["a", "c", "b"]);
+  assert.deepEqual(moveItem(["a", "b", "c"], 0, -1), ["a", "b", "c"]);
+  assert.deepEqual(moveItem(["a", "b", "c"], 2, 3), ["a", "b", "c"]);
 });

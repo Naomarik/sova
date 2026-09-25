@@ -458,3 +458,38 @@ test("H11: many hosts, random partitions and refreshes: all converge on the late
   await converge(hosts);
   for (const h of hosts) assert.equal(piRefreshSha(h), latest(lineage).refreshSha256, h.id);
 });
+
+test("pi /logout of an EXPIRED entry is a logout too (pi would have refreshed it), not something to re-pull", async () => {
+  const [a, b] = makeMesh(2);
+  const { credential } = mock.login({ shape: "pi" });
+  const expired = { ...credential, expires: Date.now() - 1000 };
+  await AuthStorage.create(a!.authPath).modify("openai-codex", async () => expired);
+  await AuthStorage.create(b!.authPath).modify("openai-codex", async () => expired);
+  for (const h of [a!, b!]) await h.sync.observe("pi");
+  await AuthStorage.create(a!.authPath).delete("openai-codex");
+  await a!.sync.observe("pi");
+  assert.ok(a!.sync.recordsSnapshot()[CODEX]?.tombstone, "a tombstone, not a forget");
+  await converge([a!, b!]);
+  for (const h of [a!, b!]) assert.equal(h.auth()["openai-codex"], undefined, h.id);
+});
+
+test("c-lite: a token living longer than setTimeout can count is not refreshed at once", async () => {
+  const dir = join(root, "long-life");
+  mkdirSync(dir);
+  const path = join(dir, "auth.json");
+  const life = 60 * 86_400_000; // 60 days: half-life 30 days, past setTimeout's ~24.8-day limit
+  writeFileSync(path, JSON.stringify({ "openai-codex": { type: "oauth", access: "a", refresh: "r", expires: Date.now() + life } }), { mode: 0o600 });
+  let refreshed = 0;
+  const sync = new CredentialSync({
+    hostId: "x",
+    stores: [new PiAuthStore(path)],
+    sidecarPath: join(dir, "sidecar.json"),
+    refreshers: { pi: async () => void refreshed++ },
+    log: () => {},
+  });
+  await sync.start();
+  // The first scan stamps it as ours (origin x, loginAt 0), so c-lite arms a timer for it.
+  await new Promise((r) => setTimeout(r, 100));
+  sync.stop();
+  assert.equal(refreshed, 0);
+});

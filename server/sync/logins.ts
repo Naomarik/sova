@@ -116,6 +116,7 @@ const SIDECAR_VERSION = 1;
 const REFRESH_EXPECT_MS = 60_000;
 /** c-lite never refreshes the same key again sooner than this, whatever the lifetimes say. */
 const MIN_REFRESH_SPACING_MS = 30_000;
+const MAX_TIMER_MS = 2 ** 31 - 1;
 
 export class CredentialSync {
   private records: Records = {};
@@ -291,11 +292,13 @@ export class CredentialSync {
       const provider = key.slice(prefix.length);
       const rec = this.records[key]!;
       if (!rec.meta || snap.entries.has(provider) || snap.localOnly.has(provider)) continue;
-      // The entry is gone and we didn't remove it: a logout if it was live and the consumer
-      // removed it (or deleted a file whose deletion is its logout); otherwise just forget it.
+      // The entry is gone and we didn't remove it: a logout when the consumer removed a login
+      // (or deleted a file whose deletion is its logout). An expired entry is still a login (pi
+      // refreshes it on its next use), so removing it is a logout too; only a dead marker's
+      // removal is nothing to tell anyone.
       const fileGone = snap.state === "missing";
       const logout =
-        isLive(rec.meta, now) &&
+        !rec.meta.dead &&
         (!fileGone || store.fileDeleteIsLogout || (store.id === "pi" && !!this.opts.treatPiFileDeleteAsLogout));
       const tombstone = logout ? { at: now, by: this.hostId } : rec.tombstone;
       out.dirty = this.setRecord(key, tombstone ? { tombstone } : {}) || out.dirty;
@@ -571,7 +574,9 @@ export class CredentialSync {
       if (!this.opts.refreshers?.[p.store]) continue;
       const life = (m.expires ?? 0) - m.issuedAt;
       const at = Math.max(m.issuedAt + life / 2, (this.lastRefreshAt.get(key) ?? 0) + MIN_REFRESH_SPACING_MS);
-      const t = setTimeout(() => void this.refreshNow(key), Math.max(0, at - now));
+      // setTimeout overflows past 2^31-1 ms (~24.8 days) and would fire at once: wait in steps.
+      const delay = Math.max(0, at - now);
+      const t = delay > MAX_TIMER_MS ? setTimeout(() => this.armRefreshTimers(), MAX_TIMER_MS) : setTimeout(() => void this.refreshNow(key), delay);
       t.unref?.();
       this.refreshTimers.set(key, t);
     }

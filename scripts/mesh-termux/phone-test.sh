@@ -193,8 +193,8 @@ addrs() {
   cat "$OUT/addrs.txt"
 }
 # a connect() to every port 1-65535 of every address, run ON the phone with explicit bash (/dev/tcp; no fork per port, so no
-# phantom-process pressure): 16 parallel chunks per address. bash's connect has no timeout, so each chunk writes the port it
-# is on and a watchdog (every 5 s) kills a chunk stuck on one port for >10 s, records "HANG <addr> <port>" and resumes the
+# phantom-process pressure): SCAN_PAR (default 4; 16 once coincided with Android killing Termux) parallel chunks per
+# address. bash's connect has no timeout, so each chunk writes the port it is on and a watchdog (every 5 s) kills a chunk stuck on one port for >10 s, records "HANG <addr> <port>" and resumes the
 # chunk after it. Detached on the phone (nohup; $PREFIX/tmp/sova-scan.*, removed at the end); this side polls every 10 s.
 # Positive control: the sshd this harness uses ($PHONE:$PHONE_PORT) must be in the result, else the scan is broken.
 scan() {
@@ -204,6 +204,7 @@ scan() {
   local script
   script=$(cat <<'EOS'
 W=$PREFIX/tmp/sova-scan.d; mkdir -p $W
+PAR=SCANPAR; SPAN=$(( (65535 + PAR - 1) / PAR ))
 chunk() { # addr lo hi id
   local p
   for ((p=$2; p<=$3; p++)); do echo $p > $W/pos.$4; { : 3<>/dev/tcp/$1/$p; } 2>/dev/null && echo "$1 $p" >> $W/open.$4; done
@@ -211,11 +212,11 @@ chunk() { # addr lo hi id
 }
 for a in ADDRS; do
   declare -A pid last same
-  for c in $(seq 0 15); do lo=$((c*4096+1)); hi=$((lo+4095)); [ $hi -gt 65535 ] && hi=65535; hi_[$c]=$hi
+  for c in $(seq 0 $((PAR-1))); do lo=$((c*SPAN+1)); hi=$((lo+SPAN-1)); [ $hi -gt 65535 ] && hi=65535; hi_[$c]=$hi
     chunk $a $lo $hi $c & pid[$c]=$!; last[$c]=''; same[$c]=0; done
   while :; do
     sleep 5; alive=0
-    for c in $(seq 0 15); do
+    for c in $(seq 0 $((PAR-1))); do
       kill -0 ${pid[$c]} 2>/dev/null || continue
       alive=1; p=$(cat $W/pos.$c 2>/dev/null)
       if [ "$p" = "${last[$c]}" ]; then same[$c]=$((same[$c]+1)); else same[$c]=0; last[$c]=$p; fi
@@ -244,14 +245,20 @@ rm -rf $W
 touch $PREFIX/tmp/sova-scan.done
 EOS
 )
+  local par=${SCAN_PAR:-4}; script=${script//SCANPAR/$par}
   printf '%s\n' "${script//ADDRS/$list}" | ph "cat > \$PREFIX/tmp/sova-scan.sh; rm -rf \$PREFIX/tmp/sova-scan.d \$PREFIX/tmp/sova-scan.res \$PREFIX/tmp/sova-scan.done; nohup bash \$PREFIX/tmp/sova-scan.sh > /dev/null 2>&1 < /dev/null &"
-  until ph 'test -e $PREFIX/tmp/sova-scan.done'; do
+  local down=0 rc
+  while :; do
+    rc=0; ph 'test -e $PREFIX/tmp/sova-scan.done' 2>/dev/null || rc=$?
+    [ $rc = 0 ] && break
+    # ssh itself failing (255) three polls in a row: the phone's sshd is gone, stop instead of retrying for 90 min
+    if [ $rc = 255 ]; then down=$((down+1)); [ $down -lt 3 ] || die "scan $name: ssh to the phone fails (sshd gone? Termux killed?)"; else down=0; fi
     sleep 10
     [ $((SECONDS - t0)) -lt 5400 ] || die "scan $name: not done within 90 min"
   done
   ph 'cat $PREFIX/tmp/sova-scan.res; rm -f $PREFIX/tmp/sova-scan.sh $PREFIX/tmp/sova-scan.res $PREFIX/tmp/sova-scan.done' > "$d/$name.txt"
   grep -qx "$PHONE $PHONE_PORT" "$d/$name.txt" || die "scan $name broken: the control (sshd $PHONE:$PHONE_PORT) is not in the result"
-  log "scan $name: $(grep -vcE '^(HANG|SELF)' "$d/$name.txt") open (address, port) pairs, $(grep -c '^ONCE' "$d/$name.txt") of them accepting once only, $(grep -c '^HANG' "$d/$name.txt") hung ports, $(grep -c '^SELF' "$d/$name.txt") self-connects (ephemeral range) set aside, $(echo $list | wc -w) addresses, $((SECONDS - t0)) s; control $PHONE:$PHONE_PORT open"
+  log "scan $name: $(grep -vcE '^(HANG|SELF)' "$d/$name.txt") open (address, port) pairs, $(grep -c '^ONCE' "$d/$name.txt") of them accepting once only, $(grep -c '^HANG' "$d/$name.txt") hung ports, $(grep -c '^SELF' "$d/$name.txt") self-connects (ephemeral range) set aside, $(echo $list | wc -w) addresses, $par parallel, $((SECONDS - t0)) s; control $PHONE:$PHONE_PORT open"
 }
 
 # ---- deps: every command the phone runs comes from WANT or Termux's bootstrap -----------------------------------------

@@ -312,15 +312,6 @@ export function SubagentPane(props: {
                         </>
                       )}
                     </Show>
-                    {/* How full its own context is, as the chat head says it. */}
-                    <Show when={contextOf(w())}>
-                      {(c) => (
-                        <>
-                          <MetaSep />
-                          <ContextReadout state={c()} />
-                        </>
-                      )}
-                    </Show>
                     {/* The effort sits before the count: what the worker is thinking at is a
                         fact about the worker, where the count beside it is a running total
                         that changes under the reader. */}
@@ -349,6 +340,16 @@ export function SubagentPane(props: {
                           <span class="text-mono" title={usageTitle(u())}>
                             {formatTokens(usageHeadline(u()))} tokens
                           </span>
+                        </>
+                      )}
+                    </Show>
+                    {/* How full its own context is, as the chat head says it — the gauge trails
+                        the facts that name the worker and what it has spent. */}
+                    <Show when={contextOf(w())}>
+                      {(c) => (
+                        <>
+                          <MetaSep />
+                          <ContextReadout state={c()} />
                         </>
                       )}
                     </Show>

@@ -527,8 +527,8 @@ export function StaleTabBanner(props: { change: HelloChange; onDismiss(): void }
               <Show when={c().host}>
                 {(h) => (
                   <>
-                    The front door moved this tab from {h().from}. Sessions stay on the host that made them: {h().from}'s open again
-                    once it answers.{" "}
+                    The front door moved this tab from {h().from}. Every session still lives on the host that made it, and opens from
+                    here while that host answers.{" "}
                   </>
                 )}
               </Show>

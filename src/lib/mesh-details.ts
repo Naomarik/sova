@@ -4,7 +4,7 @@
 
 import { createSignal } from "solid-js";
 import type { HostDetails, MeshHostDetails } from "../../shared/mesh-details";
-import type { PeerStatus } from "../../shared/protocol";
+import type { PeerStatus, SyncCategory } from "../../shared/protocol";
 import { duration, relativeTime, shortDate } from "./format";
 
 export type { HostDetails, HostRenameResult, MeshDetails, MeshHostDetails } from "../../shared/mesh-details";
@@ -56,13 +56,26 @@ export function machineLine(d: HostDetails): string {
   return `${DEVICES[d.identity.device] ?? "Computer"} · ${os}${release} (${d.identity.arch})`;
 }
 
-/** Why a host shows no details, in the words the modal uses. */
-export function unavailableText(h: Pick<MeshHostDetails, "unavailable" | "label">): string | null {
+/** A sync category's name, as #/mesh and Settings say it. */
+export const SYNC_LABEL: Record<SyncCategory, string> = {
+  settings: "Settings",
+  themes: "Themes",
+  extensions: "Extensions",
+  logins: "Logins",
+};
+
+/**
+ * Why a host shows no details, in the words the modal uses. A host whose hello answers but whose
+ * details came too late is slow, not gone: it is said so.
+ */
+export function unavailableText(h: Pick<MeshHostDetails, "unavailable" | "label" | "state">): string | null {
   switch (h.unavailable) {
     case "update":
       return "Update this host to see its details.";
     case "down":
-      return `${h.label} isn't answering. Its details show when it's back.`;
+      return h.state === "up" || h.state === "skewed"
+        ? `${h.label} didn't answer in time. Asking again in a few seconds.`
+        : `${h.label} isn't answering. Its details show when it's back.`;
     case "refused":
       return `${h.label} doesn't list this host as a peer, so it won't answer.`;
     case "skewed":
@@ -193,7 +206,7 @@ export function detailRows(h: MeshHostDetails, ownProtocol: string | undefined, 
     row("Disk", () => x.resources.disk && `${bytes(x.resources.disk.free)} free of ${bytes(x.resources.disk.total)}`);
     row("Battery", () => batteryLine(x.resources));
     row("Activity", () => activityLine(x.activity));
-    row("Sync", () => x.sync.categories.map((s) => `${s.category} ${s.state === "ok" && s.lastAt ? ago(s.lastAt) : s.state}`).join(" · "));
+    row("Sync", () => x.sync.categories.map((s) => `${SYNC_LABEL[s.category] ?? s.category} ${s.state === "ok" && s.lastAt ? ago(s.lastAt) : s.state}`).join(" · "));
     row("Logins", () => loginsLine(x.sync));
   }
   row("Front door", () => frontDoorLine(h.frontDoor));

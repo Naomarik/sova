@@ -1,7 +1,8 @@
-import { createResource, createSignal, For, onCleanup, Show } from "solid-js";
+import { createSignal, For, onCleanup, Show } from "solid-js";
 import { Portal } from "solid-js/web";
 import { fetchMesh, fetchMeshDetails, putHostLabel } from "../lib/api";
 import { isMeshHash, MESH_HREF, SELF_FILTER, setMeshState } from "../lib/mesh";
+import { createPoll } from "../lib/poll";
 import {
   askHostFilter,
   connectedCount,
@@ -20,20 +21,18 @@ import { Banner, Icon, trapFocus } from "./ui";
 
 /**
  * Mesh details: one section per host, this one first, from GET /api/mesh/details. Polls every
- * 5 s while open and not at all otherwise (it exists only while open). Pairing, sync and the
+ * 5 s while open (backing off after failures, paused in a hidden tab) and not at all otherwise
+ * (it exists only while open). Pairing, sync and the
  * front door stay on #/mesh; this is what each host says about itself, plus a rename.
  */
 export function MeshDetails(props: { onClose(): void }) {
-  const [tick, setTick] = createSignal(1);
   const [now, setNow] = createSignal(Date.now());
-  const timer = setInterval(() => {
-    setNow(Date.now());
-    setTick((t) => t + 1);
-  }, DETAILS_POLL_MS);
-  onCleanup(() => clearInterval(timer));
-  const [data, { refetch }] = createResource(tick, () => fetchMeshDetails());
-  /** The last good answer stays on screen while a refresh runs or fails. */
-  const hosts = (): MeshHostDetails[] => data.latest?.hosts ?? [];
+  const clock = setInterval(() => setNow(Date.now()), DETAILS_POLL_MS);
+  onCleanup(() => clearInterval(clock));
+  // Each answer is reconciled into the last by host id, so a host's section (and a rename typed
+  // into it) survives every refresh; a failed refresh keeps the last good answer on screen.
+  const poll = createPoll(() => fetchMeshDetails(), DETAILS_POLL_MS);
+  const hosts = (): MeshHostDetails[] => poll.data()?.hosts ?? [];
   const ownProtocol = () => hosts().find((h) => h.self)?.details?.versions.protocol;
   const count = () => connectedCount(hosts().filter((h) => !h.self).map((h) => ({ state: h.state === "self" ? "up" : h.state })));
 
@@ -67,13 +66,13 @@ export function MeshDetails(props: { onClose(): void }) {
           </Show>
         </div>
         <div class="modal-body">
-          <Show when={data.error && !data.latest}>
-            <Banner tone="error" title="Couldn't read the mesh details." body={`${(data.error as Error).message}. We'll try again in a few seconds.`} />
+          <Show when={poll.error()}>
+            {(message) => <Banner tone="error" title="Couldn't read the mesh details." body={`${message()}. We'll try again in a few seconds.`} />}
           </Show>
-          <Show when={!data.latest && !data.error}>
+          <Show when={poll.pending()}>
             <p class="text-caption text-muted">Asking every host…</p>
           </Show>
-          <For each={hosts()}>{(h) => <HostSection host={h} ownProtocol={ownProtocol()} now={now()} onRenamed={() => void refetch()} onClose={close} />}</For>
+          <For each={hosts()}>{(h) => <HostSection host={h} ownProtocol={ownProtocol()} now={now()} onRenamed={() => poll.refetch()} onClose={close} />}</For>
         </div>
         <div class="modal-foot">
           <a
@@ -117,6 +116,7 @@ function HostSection(props: { host: MeshHostDetails; ownProtocol: string | undef
     setNaming(true);
   };
   const save = async () => {
+    if (saving()) return;
     const problem = labelProblem(name());
     if (problem) return setError(problem);
     if (name().trim() === h().label) return stopNaming();

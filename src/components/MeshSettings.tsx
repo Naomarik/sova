@@ -2,7 +2,7 @@ import { createEffect, createResource, createSignal, For, Show } from "solid-js"
 import { fetchMesh, getMeshSettings, putMeshSettings } from "../lib/api";
 import { meshOn, setMeshState, SYNC_CATEGORIES, type MeshSettings, type SyncCategory } from "../lib/mesh";
 import { announce } from "../lib/ui-state";
-import { SYNC_LABEL } from "./MeshView";
+import { SYNC_LABEL } from "../lib/mesh-details";
 import { Banner } from "./ui";
 
 /** What each category carries between hosts, as the switch's second line. */

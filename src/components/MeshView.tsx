@@ -39,7 +39,7 @@ import { openSettings } from "../lib/settings-nav";
 import { announce } from "../lib/ui-state";
 import { iso, InsightsPage } from "./InsightsPage";
 import { Banner, Chip, CopyButton, Icon } from "./ui";
-import { openMeshDetails } from "../lib/mesh-details";
+import { openMeshDetails, SYNC_LABEL } from "../lib/mesh-details";
 import "../mesh.css";
 
 /** While #/mesh is open the host list is re-read this often: status is what the page is for. */
@@ -56,13 +56,6 @@ export function PeerStateChip(props: { peer: PeerStatus }) {
     </Chip>
   );
 }
-
-export const SYNC_LABEL: Record<SyncCategory, string> = {
-  settings: "Settings",
-  themes: "Themes",
-  extensions: "Extensions",
-  logins: "Logins",
-};
 
 /** The card's one-line summary of the peers: a count, and the first host that needs attention. */
 function cardSummary(peers: PeerStatus[]): { chip: string; tone?: "success" | "warn"; line: string; problem: string | null } {

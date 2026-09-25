@@ -213,6 +213,10 @@ export function App() {
     }, MESH_POLL_MS);
     onCleanup(() => clearInterval(t));
   });
+  /** The mesh going off closes Mesh details for good: it doesn't reappear when the mesh comes back. */
+  createEffect(() => {
+    if (!meshOn()) closeMeshDetails();
+  });
   /** This host's sessions, then every peer's: the sidebar's list. With no peer it IS `list()`. */
   const allSessions = createMemo(() => {
     const l = list();

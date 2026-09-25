@@ -64,9 +64,26 @@ test("battery: a reading, or how to get one on a phone", () => {
 });
 
 test("an older build is told apart from a down host", () => {
-  assert.equal(unavailableText({ unavailable: "update", label: "Phone" }), "Update this host to see its details.");
-  assert.match(unavailableText({ unavailable: "down", label: "Phone" })!, /isn't answering/);
-  assert.equal(unavailableText({ label: "Phone" }), null);
+  assert.equal(unavailableText({ unavailable: "update", label: "Phone", state: "up" }), "Update this host to see its details.");
+  assert.match(unavailableText({ unavailable: "down", label: "Phone", state: "down" })!, /isn't answering/);
+  assert.equal(unavailableText({ label: "Phone", state: "up" }), null);
+});
+
+test("a host that says hello but answers its details late is slow, not gone", () => {
+  const slow = unavailableText({ unavailable: "down", label: "VPS", state: "up" })!;
+  const gone = unavailableText({ unavailable: "down", label: "VPS", state: "down" })!;
+  assert.notEqual(slow, gone);
+  assert.doesNotMatch(slow, /isn't answering/);
+  assert.match(slow, /in time/);
+});
+
+test("the Sync row names each category as #/mesh does, and keeps an unknown one as it came", () => {
+  const d = { ...details(), sync: { categories: [{ category: "themes", state: "ok", lastAt: 1 }, { category: "later", state: "off" }] } };
+  const host = { id: "vps", label: "VPS", self: false, state: "up", details: d, latencyMs: 1, lastSeen: 1, stateSince: null, pairedAt: null,
+    frontDoor: { position: 1, excluded: false }, open: { kind: "through" } } as unknown as MeshHostDetails;
+  const sync = detailRows(host, "aaaa", 10_000).find(([k]) => k === "Sync")![1];
+  assert.match(sync, /^Themes /);
+  assert.match(sync, /· later off$/);
 });
 
 test("rename: always for this host; a peer must answer and run a build that has it", () => {

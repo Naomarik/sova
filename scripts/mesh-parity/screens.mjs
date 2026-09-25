@@ -7,11 +7,18 @@
 // the rest pixel for pixel and by innerText.
 
 import { execFileSync } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, realpathSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join, resolve } from "node:path";
 
 const SKILL = resolve(import.meta.dirname, "../../.claude/skills/playwright/scripts");
+// Hard rule 1: the skill's node_modules once was a symlink into the user's main checkout. Refuse
+// to load anything from a path that resolves outside this worktree.
+const WORKTREE = resolve(import.meta.dirname, "../..");
+for (const p of [SKILL, join(SKILL, "node_modules")]) {
+  const real = realpathSync(p);
+  if (real !== WORKTREE && !real.startsWith(WORKTREE + "/")) throw new Error(`${p} resolves to ${real}, outside ${WORKTREE}: refusing to use it`);
+}
 const skillRequire = createRequire(join(SKILL, "package.json"));
 
 export async function startBrowser() {

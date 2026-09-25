@@ -296,20 +296,20 @@ export function SubagentPane(props: {
                         backend, a pi ref's prefix or a catalog lookup otherwise. */}
                     <Show when={w().provider}>
                       {(p) => (
-                        <>
+                        <span>
                           <MetaSep />
-                          <span>{p()}</span>
-                        </>
+                          {p()}
+                        </span>
                       )}
                     </Show>
                     <Show when={compactModel(w().model)}>
                       {(m) => (
-                        <>
-                          <MetaSep />
-                          <span class="text-mono meta-line-shrink" title={w().model ?? undefined}>
-                            {m()}
-                          </span>
-                        </>
+                        <span class="text-mono meta-line-shrink" title={w().model ?? undefined}>
+                          <Show when={w().provider}>
+                            <MetaSep />
+                          </Show>
+                          {m()}
+                        </span>
                       )}
                     </Show>
                     {/* The effort sits before the count: what the worker is thinking at is a
@@ -317,40 +317,38 @@ export function SubagentPane(props: {
                         that changes under the reader. */}
                     <Show when={w().effort}>
                       {(e) => (
-                        <>
+                        <span>
                           <MetaSep />
-                          <span>
-                            effort <span class="text-mono">{e()}</span>
-                          </span>
-                        </>
+                          effort <span class="text-mono">{e()}</span>
+                        </span>
                       )}
                     </Show>
                     <Show
                       when={watched() ?? workerUsage(w())}
                       fallback={
                         <Show when={usageUnavailable(w())}>
-                          <MetaSep />
-                          <span>usage unavailable</span>
+                          <span>
+                            <MetaSep />
+                            usage unavailable
+                          </span>
                         </Show>
                       }
                     >
                       {(u) => (
-                        <>
+                        <span class="text-mono" title={usageTitle(u())}>
                           <MetaSep />
-                          <span class="text-mono" title={usageTitle(u())}>
-                            {formatTokens(usageHeadline(u()))} tokens
-                          </span>
-                        </>
+                          {formatTokens(usageHeadline(u()))} tokens
+                        </span>
                       )}
                     </Show>
                     {/* How full its own context is, as the chat head says it — the gauge trails
                         the facts that name the worker and what it has spent. */}
                     <Show when={contextOf(w())}>
                       {(c) => (
-                        <>
+                        <span>
                           <MetaSep />
                           <ContextReadout state={c()} />
-                        </>
+                        </span>
                       )}
                     </Show>
                   </p>

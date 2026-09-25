@@ -40,6 +40,8 @@ Then run `sova` and open **http://127.0.0.1:4800**. Uses your existing pi provid
   transcripts with the optional [subagents extension](pi-config/extensions/subagents/README.md).
 - **Work beyond your laptop.** The optional [remote extension](pi-config/extensions/remote/README.md)
   runs session tools on your configured SSH, AWS SSM, Docker, or Incus targets.
+- **Use several machines as one.** The [mesh](docs/mesh.md) lists and drives sessions on every Sova
+  host on your tailnet from any one page. Every host in a mesh must be reachable by the same devices.
 
 Single-user, loopback by default, no built-in authentication. Protect access before exposing it
 beyond your machine. Model requests go to your configured provider; tools and extensions may also

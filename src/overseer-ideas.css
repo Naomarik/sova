@@ -12,7 +12,7 @@
   /* Narrow: icon-only, the count riding its corner like the entry button's (neutral, not the
      accent: an idea doesn't need you), so Clear stays on screen. */
   .overseer-ideas-word { display: none; }
-  .overseer-ideas-toggle { position: relative; padding: 0 var(--space-3); }
+  .overseer-ideas-toggle { position: relative; padding: 0 var(--space-2); }
   .overseer-ideas-toggle .chip-count {
     position: absolute;
     top: -4px;

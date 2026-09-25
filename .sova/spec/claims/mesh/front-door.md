@@ -23,3 +23,7 @@ configuration generated from it. That configuration sends to the first healthy h
 checks each host's health, gives up quickly on a host that stops answering, and never reuses an
 idle connection to a host. Sova only generates the configuration; it never runs or changes the
 front door itself.
+
+The configuration listens where the front door's own environment says (`SOVA_FRONT_DOOR_BIND`,
+`SOVA_FRONT_DOOR_PORT`), by default port 80 on every address, so it can sit on loopback beside
+another web server that owns the usual ports.

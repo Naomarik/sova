@@ -17,4 +17,6 @@ host with no peers.
 ## §mesh.ui/settings — Settings → Mesh
 
 Settings has a Mesh section: this host's name, a toggle per sync category (settings, themes,
-extensions, logins) and the front-door address.
+extensions, logins), under Logins a "Sync subscriptions to this host" switch that turns API-keys-only
+mode on or off (§mesh.sync/api-keys-only), and the front-door address. The switch shows only while
+the mesh and login sync are on.

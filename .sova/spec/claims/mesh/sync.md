@@ -26,10 +26,21 @@ the user adds it to this host's own list, and that entry wins.
 Logins (pi `auth.json`: OAuth and API keys; Claude Code credentials) merge per provider: the most recent
 login wins, and within one login the entry with the newest expiry wins, dead or failed entries never win, a login whose access has merely expired (its refresh still works, e.g. a host that slept) gives way only to the same login or a newer one, never to a different older login, a logout is a tombstone with its own
 login time so a later refresh can't resurrect it, and the host that refreshed last refreshes early.
-Every local write takes the owning program's own lock and replaces the file atomically at mode 0600.
+Every local write takes the owning program's own lock and replaces the file atomically at mode 0600. Claude Code's credentials name no account, so a new entry that
+replaces one with more than 10 minutes left is a login (a re-login or another account), not a refresh.
 
 Two hosts that already held different logins for the same provider before they first synced (not
 the same account or key) are a conflict, never a silent overwrite: each keeps its own and nothing
 for that provider syncs until the user picks one. The Mesh page lists each login with its state and
 names the hosts in conflict; **Keep this host's login** makes this host's login win everywhere. The
 list never shows a secret, and it and its action exist only while the mesh is on.
+
+## §mesh.sync/api-keys-only — A host that syncs API keys only
+
+A host can sync API keys only: set in Settings → Mesh, or pinned by the host's environment
+(`SOVA_SYNC_LOGIN_KINDS`; any value but `all` pins API keys only, so a typo fails closed). Such a
+host never offers, takes, stores or refreshes a subscription (OAuth) login through sync, and its
+peers send it none; API keys still move both ways. Subscription logins already on it stay there,
+unshared and untouched by peers, and logging one out there stays local, also after the host is
+switched back to syncing everything. While the mode is pinned, Settings shows it locked with the
+reason and a request to change it is refused.

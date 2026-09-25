@@ -1864,6 +1864,17 @@
       "code": [
         "server/mesh/front-door.ts"
       ]
+    },
+    "§mesh.sync/api-keys-only": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/sync/logins-merge.ts",
+        "server/sync/logins.ts",
+        "server/mesh/index.ts",
+        "src/components/MeshSettings.tsx"
+      ]
     }
   }
 }

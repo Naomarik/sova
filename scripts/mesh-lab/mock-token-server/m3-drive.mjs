@@ -442,11 +442,10 @@ async function conflict() {
   }
   const wantA = shaOf(a);
   const wantB = shaOf(b);
-  await until("a and b report each other's conflicting login", async () => {
-    const [ra, rb] = await Promise.all([a, b].map((h) => loginRow(h, key).catch(() => undefined)));
-    return (ra?.conflictWith?.includes(b) && rb?.conflictWith?.includes(a)) || { a: ra?.conflictWith ?? null, b: rb?.conflictWith ?? null };
-  }, 60_000);
+  await until(`${a} reports the conflict with ${b}`, async () => (await loginRow(a, key).catch(() => undefined))?.conflictWith?.includes(b) || "not yet", 60_000);
   await sleep(3000);
+  // b notes it on its own next exchange with a (at most the 5-min reconcile): reported, not required (S1).
+  const bSees = !!(await loginRow(b, key).catch(() => undefined))?.conflictWith?.includes(a);
   if (shaOf(a) !== wantA || shaOf(b) !== wantB) throw new Error("a host lost its own pre-sync key while in conflict");
   for (const h of HOSTS) {
     const body = (await mainApi(h, "/api/mesh/logins")).text;
@@ -456,7 +455,7 @@ async function conflict() {
   const viaPeer = sh(b, `curl -s -o /dev/null -w '%{http_code}' -m 5 -X POST -H 'content-type: application/json' --data '{"key":"${key}"}' http://${a}.${DOMAIN}:${PEER_PORT}/api/mesh/logins/claim`);
   if (viaPeer !== "404" && viaPeer !== "403") throw new Error(`claim through a's peer listener answered ${viaPeer}`);
   // --plant-only: leave the conflict for a look at the Mesh page; settle it there, or run `conflict-clean`.
-  if (args.includes("--plant-only")) return `planted: ${key} differs on ${a} and ${b}, each lists the other; peer-listener claim ${viaPeer}`;
+  if (args.includes("--plant-only")) return `planted: ${key} differs on ${a} and ${b}, ${a} lists ${b}; ${b} lists ${a}: ${bSees ? "yes" : "not yet"}; peer-listener claim ${viaPeer}`;
   const claimed = await mainApi(a, "/api/mesh/logins/claim", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ key }) });
   if (claimed.status !== 200 || JSON.parse(claimed.text).ok !== true) throw new Error(`claim on a: ${claimed.status} ${claimed.text.slice(0, 120)}`);
   const t0 = Date.now();
@@ -469,7 +468,7 @@ async function conflict() {
   // Clean up: log the throwaway key out everywhere.
   inHost(a, "pi-delete", provider);
   await until("the throwaway key is gone everywhere", piAbsent(provider));
-  return `a and b kept their own keys and listed each other; claim on a → every host on a's key in ${spread} ms; peer-listener claim ${viaPeer}; no key/fingerprint in any body`;
+  return `a and b kept their own keys, a listed b (b listed a: ${bSees ? "yes" : "not yet"}); claim on a → every host on a's key in ${spread} ms; peer-listener claim ${viaPeer}; no key/fingerprint in any body`;
 }
 
 /** After a claim made elsewhere (the Mesh page on the first host): every host on its key, no conflict left. */

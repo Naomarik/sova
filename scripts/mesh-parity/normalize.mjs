@@ -110,6 +110,9 @@ export function maskModelOutput(v) {
     if (k === "usage" || k === "cost" || k === "context" || k === "args") out[k] = maskLeaves(x);
     else if ((k === "text" || k === "thinking" || k === "delta" || k === "partialJson" || k === "thinkingSignature" || k === "textSignature") && typeof x === "string") out[k] = "<model-text>";
     else if (k === "arguments" && x && typeof x === "object") out[k] = maskLeaves(x);
+    // A streaming `*_end` event repeats the finished block as a string `content` (the model once
+    // answered PING to "reply PONG" on one side only).
+    else if (k === "assistantMessageEvent" && x && typeof x.content === "string") out[k] = maskModelOutput({ ...x, content: "<model-text>" });
     else out[k] = maskModelOutput(x);
   }
   return out;

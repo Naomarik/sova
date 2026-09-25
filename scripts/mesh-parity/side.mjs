@@ -107,6 +107,15 @@ export function sideEnv({ home, tmp, agent, port }) {
   return env;
 }
 
+// Servers run detached (their own process group), so a harness killed mid-run would leave them
+// holding their ports and trees: kill every live group when the harness itself is signalled.
+const liveGroups = new Set();
+for (const sig of ["SIGTERM", "SIGINT", "SIGHUP"])
+  process.once(sig, () => {
+    for (const pgid of liveGroups) try { process.kill(-pgid, "SIGKILL"); } catch {}
+    process.exit(128 + (sig === "SIGINT" ? 2 : sig === "SIGHUP" ? 1 : 15));
+  });
+
 /**
  * Start `node --import tsx server/index.ts` under strace. Traced: every network syscall, execve,
  * file opens/stats (to see any tailscale socket or state path), and the event-loop waits (the
@@ -120,6 +129,8 @@ export async function startServer({ tree, env, logDir, strace = true }) {
     ? ["strace", ["-f", "-qq", "-ttt", "-s", "256", "-e", "trace=%network,execve,openat,newfstatat,statx,access,epoll_wait,epoll_pwait,epoll_pwait2", "-e", "signal=none", "-o", join(logDir, "strace.log"), NODE, ...nodeArgs]]
     : [NODE, nodeArgs];
   const proc = spawn(cmd[0], cmd[1], { cwd: tree, env: { ...env, PARITY_PROBE_OUT: join(logDir, "probe.json") }, stdio: ["ignore", out, out], detached: true });
+  liveGroups.add(proc.pid);
+  proc.once("exit", () => liveGroups.delete(proc.pid));
   const base = `http://127.0.0.1:${env.PORT}`;
   const t0 = Date.now();
   for (;;) {
